@@ -378,7 +378,7 @@ export function SettingsMenu({
 				side={footer ? "top" : undefined}
 				align="start"
 				sideOffset={8}
-				className="min-w-[244px] p-3"
+				className="min-w-[244px]"
 			>
 				{githubAuth ? (
 					// GitHub-verified identity: nothing to switch — show who the
@@ -464,7 +464,7 @@ export function SettingsMenu({
 					</Menu.SubmenuRoot>
 				)}
 
-				<Menu.Separator className="-mx-3 my-3.5" />
+				<Menu.Separator />
 
 				{/* The footer row and the top trigger's avatar dot already show the
 				    connection state, so the menu only repeats it for the compact
@@ -481,7 +481,7 @@ export function SettingsMenu({
 							{connected ? "Connected" : "Reconnecting…"}
 						</div>
 
-						<Menu.Separator className="-mx-3 my-3.5" />
+						<Menu.Separator />
 					</>
 				)}
 

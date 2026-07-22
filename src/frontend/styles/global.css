@@ -343,7 +343,7 @@ button {
 	.slack-avatar,
 	.viewer-branch-editable,
 	.viewer-branch-rename,
-	.viewer-overflow-menu,
+	.session-info-list,
 	.btn-viewer-overflow,
 	.session-link,
 	.btn-panel-toggle,
@@ -428,8 +428,8 @@ a {
    no OS bar, no centered title text, and NO dedicated titlebar band of our
    own. The window's whole first content row IS the titlebar: on the sidebar
    it's a pure chrome row — traffic lights (centered on the row by the shell's
-   trafficLightPosition), then search + collapse + the avatar account trigger,
-   back/forward at the right edge — and it continues through the detail pane's
+   trafficLightPosition), then collapse + the avatar account trigger, with
+   back/forward/search at the right edge — and it continues through the detail pane's
    54px header and the right panel's PR strip. Every segment is a drag region
    so grabbing anywhere along the top moves the window.
 
@@ -655,6 +655,62 @@ html.wco .wco-nav-btn:hover {
 .sidebar-band-label.sidebar-tools-head {
 	padding: 12px 10px 2px;
 }
+/* The three primary sidebar bands replace one another at the top of the single
+   desktop scroll rail. Their opaque surface prevents rows from showing through
+   while the next band scrolls up over the previous one. */
+.sidebar-sticky-section {
+	display: block;
+	flex: none;
+	min-width: 0;
+	max-width: 100%;
+}
+@media (min-width: 721px) {
+	.sidebar-sticky-head {
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		background: var(--bg-raised);
+	}
+	/* One invariant row height prevents the outgoing and incoming sticky labels
+	   from peeking around each other while one section pushes the next away. */
+	.sidebar-band-label.sidebar-tools-head.sidebar-sticky-head,
+	.sidebar-workspace.sidebar-sticky-head,
+	.sidebar-independent-section > .sidebar-band-label.sidebar-sticky-head {
+		display: flex;
+		align-items: center;
+		height: 44px;
+		min-height: 44px;
+		margin-top: 0;
+		padding-top: 7px;
+		padding-bottom: 7px;
+	}
+	.sidebar-workspace.sidebar-sticky-head .sidebar-workspace-head {
+		width: 100%;
+		margin-bottom: 0;
+	}
+	/* Independent bands are inset by their parent. Paint through that gutter
+	   without changing layout width (negative margins caused horizontal scroll). */
+	.sidebar-independent-section > .sidebar-sticky-head {
+		box-shadow:
+			-10px 0 0 var(--bg-raised),
+			10px 0 0 var(--bg-raised);
+	}
+	.sidebar-workspace-fallback {
+		margin-right: 12px;
+		margin-left: 20px;
+	}
+}
+@media (max-width: 720px) {
+	/* Preserve the existing phone layout: Tools has no heading there, so its
+	   wrapper must not become an extra flex/scroll layer around the card strip. */
+	.sidebar-tools-section {
+		display: contents;
+	}
+	.sidebar-workspace-fallback {
+		margin-right: 14px;
+		margin-left: 16px;
+	}
+}
 .sidebar-nav {
 	display: flex;
 	flex-direction: column;
@@ -842,7 +898,9 @@ html.wco .wco-nav-btn:hover {
 	width: 7px;
 	height: 100%;
 	cursor: col-resize;
-	z-index: 6;
+	/* Stay above both primary (20) and nested (15) sticky headers so the
+	   hover/drag hairline remains one uninterrupted edge while scrolling. */
+	z-index: 30;
 }
 .sidebar-resize::after {
 	content: "";
@@ -869,6 +927,7 @@ body.resizing-x {
 	width: 100%;
 	flex: 1;
 	min-height: 0;
+	overflow-x: hidden;
 	overflow-y: auto;
 	scrollbar-width: none;
 }
@@ -1228,6 +1287,7 @@ body.resizing-x {
 .sidebar-independent-section {
 	display: block;
 	flex: none;
+	min-width: 0;
 	margin-right: 10px;
 	margin-left: 10px;
 }
@@ -1236,6 +1296,7 @@ body.resizing-x {
 }
 .sidebar-independent-scroll {
 	overflow-y: visible;
+	min-width: 0;
 	padding-bottom: 6px;
 }
 
@@ -1626,6 +1687,39 @@ body.resizing-x {
    the drag gesture sees the pointer. */
 .sidebar-pin-list.is-drag-active .sidebar-pin-entry > * {
 	pointer-events: none;
+}
+
+/* Keep the active lane visible beneath its section title while the sidebar's
+   single scroll surface moves. Each sticky button remains inside its own
+   group, so the next lane naturally pushes it away instead of stacking over
+   it. Repo status lanes sit one row lower because their repo header occupies
+   the first sub-header slot. */
+@media (min-width: 721px) {
+	.sidebar-status-group > .sidebar-group-header,
+	.sidebar-group--pinned > .sidebar-group-header,
+	.sidebar-group--review > .sidebar-group-header,
+	.sidebar-repo-group > .sidebar-repo-head,
+	.sidebar-folder-section > .sidebar-folder-header {
+		position: sticky;
+		top: 44px;
+		z-index: 15;
+		height: 30px;
+		min-height: 30px;
+		background: var(--bg-raised);
+	}
+
+	.sidebar-repo-lanes .sidebar-status-group > .sidebar-group-header {
+		top: 74px;
+		z-index: 14;
+	}
+
+	.sidebar-status-group > .sidebar-group-header:hover,
+	.sidebar-group--pinned > .sidebar-group-header:hover,
+	.sidebar-group--review > .sidebar-group-header:hover,
+	.sidebar-repo-group > .sidebar-repo-head:hover,
+	.sidebar-folder-section > .sidebar-folder-header:hover {
+		background: var(--bg-hover);
+	}
 }
 
 /* Other people's sessions stack a "name · time" meta line under the title, so
@@ -3008,8 +3102,8 @@ body.resizing-x {
 	padding: 4px;
 }
 
-/* ⋯ overflow: the secondary actions collapse in here when they'd otherwise
-   crowd the title. */
+/* ⋯ overflow: the secondary actions collapse in the shared Menu popup when
+   they'd otherwise crowd the title. */
 .viewer-overflow {
 	position: relative;
 	display: inline-flex;
@@ -3031,76 +3125,6 @@ body.resizing-x {
 	color: var(--text);
 	background: var(--bg-hover);
 }
-.viewer-overflow-menu {
-	position: absolute;
-	top: calc(100% + 6px);
-	right: 0;
-	z-index: 50;
-	display: flex;
-	flex-direction: column;
-	align-items: stretch;
-	gap: 1px;
-	min-width: 200px;
-	padding: 6px;
-	background: var(--bg-panel);
-	border: 1px solid var(--border-strong);
-	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
-	corner-shape: squircle;
-	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
-	/* iOS-style pop: scale up from the ⋯ it's anchored to. */
-	transform-origin: top right;
-	animation: overflow-menu-in 0.16s cubic-bezier(0.32, 0.72, 0, 1);
-}
-@keyframes overflow-menu-in {
-	from {
-		opacity: 0;
-		transform: scale(0.92) translateY(-4px);
-	}
-	to {
-		opacity: 1;
-		transform: scale(1) translateY(0);
-	}
-}
-/* Stack the collapsed actions as a tidy full-width list. On phones the
-   secondary controls (Linear/Plain links, Preview, PR) fold in here too. */
-.viewer-overflow-menu > button,
-.viewer-overflow-menu > a,
-.viewer-overflow-menu > .preview-wrap,
-.viewer-overflow-menu > .spinoff,
-.viewer-overflow-menu > .spinoff > .btn-panel-toggle,
-.viewer-overflow-menu > .viewer-delete-confirm {
-	width: 100%;
-}
-/* Rows read like Base UI Menu.Item (ui/menu.tsx): borderless, full-strength
-   text at rest, a soft rounded highlight on hover — not individually bordered
-   pills. The per-item border/pill styling from the base button rules is
-   overridden here so the menu matches every other dropdown in the app. */
-.viewer-overflow-menu > button,
-.viewer-overflow-menu > a,
-.viewer-overflow-menu > .spinoff > .btn-panel-toggle {
-	justify-content: flex-start;
-	text-align: left;
-	gap: 8px;
-	border: 1px solid transparent;
-	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
-	padding: 6px 8px;
-	font-size: 13px;
-	color: var(--text);
-	background: none;
-}
-.viewer-overflow-menu > button:hover,
-.viewer-overflow-menu > a:hover,
-.viewer-overflow-menu > .spinoff > .btn-panel-toggle:hover {
-	color: var(--text);
-	border-color: transparent;
-	background: var(--bg-hover);
-}
-.viewer-overflow-menu > .viewer-delete-confirm {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-}
-
 /* Squircle user picture (GitHub avatar, initial fallback) — see UserAvatar.tsx.
    Size + font-size come inline from the component; the count badge the
    presence facepile nests inside sits outside the avatar, so no overflow
@@ -3840,13 +3864,6 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 .btn-viewer-pin.active {
 	color: var(--yellow);
 }
-/* Destructive cue stays (red text + soft red wash) but borderless, so Delete
-   reads as a row like the rest — not a boxed-in button. */
-.viewer-overflow-menu > .btn-viewer-delete:hover {
-	color: var(--red);
-	background: var(--red-soft);
-}
-
 .viewer-delete-confirm {
 	display: flex;
 	gap: 6px;
@@ -11785,9 +11802,11 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		color: var(--text-dim);
 	}
 
-	/* Reuse the ⋯ menu row styles, but as a static, full-width card list on
-	   the page instead of a floating dropdown. */
-	.viewer-overflow-menu.session-info-list {
+	/* Static, full-width settings list on the session info page. */
+	.session-info-list {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
 		position: static;
 		inset: auto;
 		width: auto;
@@ -11803,6 +11822,23 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		/* It's part of the page (which animates in) — no popover entrance. */
 		animation: none;
 		transform: none;
+	}
+	.session-info-list > button {
+		width: 100%;
+		justify-content: flex-start;
+		text-align: left;
+		gap: 8px;
+		border: 1px solid transparent;
+		border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
+		padding: 8px 10px;
+		font-size: 13px;
+		color: var(--text);
+		background: none;
+	}
+	.session-info-list > button:hover {
+		color: var(--text);
+		border-color: transparent;
+		background: var(--bg-hover);
 	}
 
 	/* The workspace overview (Info-tab content) embedded below the actions:
@@ -12023,12 +12059,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.viewer-header-actions .btn-viewer-overflow.active {
 		background: var(--accent-soft);
 		border-color: var(--accent-soft);
-	}
-	/* The ⋯ menu is the phone's single action sheet — give it a comfortable,
-	   bounded width so the rows read as a tidy list, not a hairline column. */
-	.viewer-overflow-menu {
-		min-width: 236px;
-		max-width: min(300px, calc(100vw - 24px));
 	}
 	/* Icon-only workspace toggle on phones — the label is kept on desktop */
 	.btn-panel-toggle-label {

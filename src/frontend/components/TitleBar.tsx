@@ -1,4 +1,4 @@
-import { IconChevronLeft, IconChevronRight } from "./icons";
+import { IconChevronLeft, IconChevronRight, IconSearch } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 
 /**
@@ -19,7 +19,13 @@ import { Tooltip } from "../ui/tooltip";
  * in index.html, which also covers the Electron desktop shell where the
  * display-mode media query never matches.
  */
-export function TitleBar({ pane }: { pane?: boolean }) {
+export function TitleBar({
+	pane,
+	onSearch,
+}: {
+	pane?: boolean;
+	onSearch?: () => void;
+}) {
 	return (
 		<div className={pane ? "wco-nav wco-nav-pane" : "wco-nav"}>
 			<Tooltip label="Back" side="bottom">
@@ -40,6 +46,17 @@ export function TitleBar({ pane }: { pane?: boolean }) {
 					<IconChevronRight size={20} />
 				</button>
 			</Tooltip>
+			{onSearch && (
+				<Tooltip label="Search sessions" side="bottom" shortcut={["⌘", "K"]}>
+					<button
+						className="wco-nav-btn"
+						onClick={onSearch}
+						aria-label="Search sessions"
+					>
+						<IconSearch size={20} />
+					</button>
+				</Tooltip>
+			)}
 		</div>
 	);
 }

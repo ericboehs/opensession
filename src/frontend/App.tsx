@@ -1606,25 +1606,28 @@ function App() {
 						    inside the app's own titlebar). Hidden on mobile, where the top
 						    bar carries the brand instead. */}
 						{(() => {
+							const wco = isWco();
 							const brandActions = (
 								<div className="sidebar-brand-actions">
-									<Tooltip
-										label="Search sessions"
-										side="bottom"
-										shortcut={["⌘", "K"]}
-									>
-										<button
-											className="sidebar-toggle-btn"
-											onClick={() => setSearchOpen(true)}
-											aria-label="Search sessions"
+									{!wco && (
+										<Tooltip
+											label="Search sessions"
+											side="bottom"
+											shortcut={["⌘", "K"]}
 										>
-											{/* Optically larger than the panel glyph beside it: the
-											    magnifier is a small circle + thin handle, so it needs more
-											    nominal size to carry the same weight as the globe/play/panel
-											    icons in the session header. */}
-											<IconSearch size={26} />
-										</button>
-									</Tooltip>
+											<button
+												className="sidebar-toggle-btn"
+												onClick={() => setSearchOpen(true)}
+												aria-label="Search sessions"
+											>
+												{/* Optically larger than the panel glyph beside it: the
+												    magnifier is a small circle + thin handle, so it needs more
+												    nominal size to carry the same weight as the globe/play/panel
+												    icons in the session header. */}
+												<IconSearch size={26} />
+											</button>
+										</Tooltip>
+									)}
 									<Tooltip
 										label="Hide sidebar"
 										side="bottom"
@@ -1640,7 +1643,7 @@ function App() {
 									</Tooltip>
 								</div>
 							);
-							return isWco() ? (
+							return wco ? (
 								<div className="sidebar-brand">
 									{brandActions}
 									<SettingsMenu
@@ -1648,7 +1651,7 @@ function App() {
 										onOpenSettings={() => navigate({ view: "settings" })}
 										connected={connected}
 									/>
-									<TitleBar />
+									<TitleBar onSearch={() => setSearchOpen(true)} />
 								</div>
 							) : (
 								<div className="sidebar-brand">

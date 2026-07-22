@@ -148,14 +148,14 @@ const CTX_MENU_STYLE: React.CSSProperties = {
 	maxWidth: 320,
 	maxHeight: "60vh",
 	overflowY: "auto",
-	padding: 8,
+	padding: 4,
 	background: "var(--bg-panel)",
 	border: "1px solid var(--border-strong)",
 	borderRadius: 14,
 	boxShadow: "0 10px 30px rgba(0, 0, 0, 0.32)",
 	display: "flex",
 	flexDirection: "column",
-	gap: 2,
+	gap: 1,
 };
 const CTX_ITEM_STYLE: React.CSSProperties = {
 	display: "block",
@@ -164,9 +164,9 @@ const CTX_ITEM_STYLE: React.CSSProperties = {
 	background: "none",
 	border: "none",
 	color: "var(--text)",
-	fontSize: 14,
-	padding: "9px 11px",
-	borderRadius: 8,
+	fontSize: 13,
+	padding: "6px 8px",
+	borderRadius: 6,
 	cursor: "pointer",
 	whiteSpace: "nowrap",
 	overflow: "hidden",
@@ -175,7 +175,7 @@ const CTX_ITEM_STYLE: React.CSSProperties = {
 const CTX_SEP_STYLE: React.CSSProperties = {
 	height: 1,
 	background: "var(--border-strong)",
-	margin: "7px 4px",
+	margin: "4px 3px",
 };
 
 // Per-person group dots share the repo-tile swatch palette (RepoTile.tsx) —
@@ -2564,8 +2564,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 	return (
 		<div className="sidebar">
+			<div className="sidebar-sticky-section sidebar-tools-section">
 			{!isPhone && visibleTools.length > 0 && (
-				<div className="sidebar-band-label sidebar-tools-head">
+				<div className="sidebar-band-label sidebar-tools-head sidebar-sticky-head">
 					<div className="group flex min-h-[30px] w-full items-center rounded-md hover:bg-hover hover:text-dim">
 						<button
 							className="sidebar-band-toggle w-auto flex-1 hover:bg-transparent"
@@ -2632,9 +2633,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					))}
 				</nav>
 			)}
+			</div>
 
+			<div className="sidebar-sticky-section">
 			<div
-				className={`sidebar-workspace${listScrolled ? " sidebar-workspace--scrolled" : ""}`}
+				className={`sidebar-workspace sidebar-sticky-head${listScrolled ? " sidebar-workspace--scrolled" : ""}`}
 			>
 				<div className="sidebar-workspace-head" ref={headRef}>
 					<button
@@ -2711,10 +2714,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						<RepoFilterChip repo={filter.repo} variant="probe" ref={probeRef} />
 					)}
 				</div>
+			</div>
 
 				{/* Fallback row: only when the chip doesn't fit inline. */}
 				{filter.repo !== "all" && !repoInline && (
-					<div className="sidebar-repo-row">
+					<div className="sidebar-repo-row sidebar-workspace-fallback">
 						<RepoFilterChip
 							repo={filter.repo}
 							repos={repos}
@@ -2724,7 +2728,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						/>
 					</div>
 				)}
-			</div>
 
 			{/* On phones the filter button lives in the top bar (next to Search);
 			    its popover anchors there. Desktop keeps it in the header. */}
@@ -3264,6 +3267,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				)}
 				</div>
 			)}
+			</div>
 
 			{/* Pull requests are an action inbox: personal PRs, direct review
 			    requests and automation output, grouped by what can happen next. */}
@@ -3288,7 +3292,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			    open it; the rest open the session-less ticket preview. ── */}
 			{(supportThreads?.length || 0) > 0 && (
 				<div className="sidebar-independent-section sidebar-group--band-start">
-					<div className="sidebar-band-label">
+					<div className="sidebar-band-label sidebar-sticky-head">
 						<button
 							className="sidebar-band-toggle"
 							onClick={() => toggleBand("support")}
@@ -3330,7 +3334,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					const open = bandOpen("people");
 					return (
 						<div className="sidebar-independent-section sidebar-group--band-start">
-							<div className="sidebar-band-label">
+							<div className="sidebar-band-label sidebar-sticky-head">
 								<button
 									className="sidebar-band-toggle"
 									onClick={() => toggleBand("people")}
@@ -3388,7 +3392,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				{/* ── Automations (one collapsible band, one group per automation) ── */}
 				{groups.length > 0 && (
 					<div className="sidebar-independent-section sidebar-group--automations sidebar-group--band-start">
-						<div className="sidebar-band-label">
+						<div className="sidebar-band-label sidebar-sticky-head">
 							<button
 								className="sidebar-band-toggle"
 								onClick={() => toggleBand("automations")}
