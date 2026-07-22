@@ -417,11 +417,9 @@ a {
 	}
 }
 
-/* The reclaimed PWA back/forward cluster and the desktop-shell user row (see
-   TitleBar.tsx / App.tsx) only exist in Window Controls Overlay mode — hidden
-   everywhere else. */
-.wco-nav,
-.sidebar-user-row {
+/* The reclaimed PWA back/forward cluster (see TitleBar.tsx) only exists in
+   Window Controls Overlay mode — hidden everywhere else. */
+.wco-nav {
 	display: none;
 }
 
@@ -430,11 +428,10 @@ a {
    no OS bar, no centered title text, and NO dedicated titlebar band of our
    own. The window's whole first content row IS the titlebar: on the sidebar
    it's a pure chrome row — traffic lights (centered on the row by the shell's
-   trafficLightPosition), then search + collapse, back/forward at the right
-   edge — and it continues through the detail pane's 54px header and the right
-   panel's PR strip. Every segment is a drag region so grabbing anywhere along
-   the top moves the window; the signed-in user sits on their own row below
-   the chrome row.
+   trafficLightPosition), then search + collapse + the avatar account trigger,
+   back/forward at the right edge — and it continues through the detail pane's
+   54px header and the right panel's PR strip. Every segment is a drag region
+   so grabbing anywhere along the top moves the window.
 
    Keyed off `html.wco` (set by the detection script in index.html), NOT the
    `(display-mode: window-controls-overlay)` media query: Electron (the OS¹
@@ -463,19 +460,18 @@ html.wco :is(.sidebar-brand, .viewer-header, .detail-topbar-title, .pr-bar)
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
 }
-/* Back/forward at the right edge of the sidebar's chrome row. */
+/* Chrome row packs left (actions + avatar); back/forward push to the right
+   edge via their own margin. */
+html.wco .sidebar-brand {
+	justify-content: flex-start;
+}
 html.wco .wco-nav {
 	display: flex;
 	align-items: center;
 	gap: 2px;
 }
-/* The signed-in user on their own row beneath the chrome row. */
-html.wco .sidebar-user-row {
-	display: flex;
-	align-items: center;
-	flex-shrink: 0;
-	min-width: 0;
-	padding: 0 12px 8px calc(var(--sidebar-icon-left) - 8px);
+html.wco .sidebar-brand > .wco-nav {
+	margin-left: auto;
 }
 /* Collapsed sidebar takes the chrome row (and its nav) with it — show the
    floating fallback cluster in the detail pane instead, next to the sidebar

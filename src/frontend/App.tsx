@@ -1641,19 +1641,15 @@ function App() {
 								</div>
 							);
 							return isWco() ? (
-								<>
-									<div className="sidebar-brand">
-										{brandActions}
-										<TitleBar />
-									</div>
-									<div className="sidebar-user-row">
-										<SettingsMenu
-											variant="user"
-											onOpenSettings={() => navigate({ view: "settings" })}
-											connected={connected}
-										/>
-									</div>
-								</>
+								<div className="sidebar-brand">
+									{brandActions}
+									<SettingsMenu
+										variant="user"
+										onOpenSettings={() => navigate({ view: "settings" })}
+										connected={connected}
+									/>
+									<TitleBar />
+								</div>
 							) : (
 								<div className="sidebar-brand">
 									<SettingsMenu

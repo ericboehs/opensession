@@ -316,33 +316,19 @@ export function SettingsMenu({
 					</Tooltip>
 				</div>
 			) : user ? (
+				/* Avatar-only trigger for the desktop shell's chrome row — the name
+				   stays in the menu itself. The avatar carries the connection dot. */
 				<Menu.Trigger
 					aria-label="Account menu"
-					className="group flex min-w-0 items-center gap-2 rounded-md border-none bg-transparent py-1 pl-1 pr-1.5 text-fg hover:bg-hover data-[popup-open]:bg-hover"
+					className="flex shrink-0 items-center rounded-md border-none bg-transparent p-1 text-fg hover:bg-hover data-[popup-open]:bg-hover"
 				>
 					<span className="relative inline-flex shrink-0">
 						<UserAvatar name={currentUser} size={24} />
-						{/* Same corner connection dot the brand logo carries. */}
 						<span
 							className="app-logo-status"
 							style={{ background: connected ? "var(--green)" : "var(--red)" }}
 							title={connected ? "Connected" : "Reconnecting…"}
 						/>
-					</span>
-					<span className="truncate text-[14px] font-semibold leading-none tracking-[-0.01em]">
-						{currentUser}
-					</span>
-					<span className="relative top-px -ml-0.5 inline-flex items-center text-faint opacity-0 transition-opacity group-hover:opacity-100 group-data-[popup-open]:opacity-100">
-						<svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true">
-							<path
-								d="M2 3.5L5 6.5L8 3.5"
-								fill="none"
-								stroke="currentColor"
-								strokeWidth="1.5"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-							/>
-						</svg>
 					</span>
 				</Menu.Trigger>
 			) : top ? (
