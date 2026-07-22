@@ -15472,12 +15472,12 @@ html[data-theme="light"] .palette-card .palette-create {
   width: 3px;
   height: 3px;
   border-radius: calc(1px * var(--rf)); corner-shape: var(--cs);
-  background: rgba(148, 163, 184, 0.15);
+  background: color-mix(in srgb, currentColor 35%, transparent);
   transition:
     background 0.15s,
     box-shadow 0.15s,
     opacity 0.15s;
-  animation-duration: 1.2s;
+  animation-duration: 2s;
   animation-iteration-count: infinite;
   animation-timing-function: ease-out;
 }
@@ -15486,11 +15486,6 @@ html[data-theme="light"] .palette-card .palette-create {
  * state) where the default 1.2s cadence reads as jittery rather than lively. */
 .pixel-spinner.pixel-spinner-slow .pixel {
   animation-duration: 2.4s;
-}
-
-/* Backstage is dark by default; lighten the idle pixels under the light theme. */
-html[data-theme="light"] .pixel-spinner .pixel {
-  background: rgba(148, 163, 184, 0.2);
 }
 
 /* Shape variants */
@@ -15623,36 +15618,29 @@ html[data-theme="light"] .pixel-spinner .pixel {
 @keyframes pixel-snake-trail {
   0% {
     background: var(--glow-color);
-    box-shadow:
-      none,
-      0 0 1px color-mix(in srgb, var(--glow-color) 50%, transparent);
-    opacity: 1;
+    box-shadow: none;
+    opacity: 0.78;
   }
-  10% {
+  15% {
     background: var(--glow-color);
     box-shadow: none;
-    opacity: 0.85;
+    opacity: 0.7;
   }
-  20% {
-    background: var(--glow-dim);
+  30% {
+    background: color-mix(in srgb, var(--glow-color) 70%, transparent);
     box-shadow: none;
     opacity: 0.6;
   }
-  30% {
+  45% {
     background: color-mix(in srgb, var(--glow-color) 50%, transparent);
     box-shadow: none;
-    opacity: 0.4;
+    opacity: 0.5;
   }
-  40% {
-    background: color-mix(in srgb, var(--glow-color) 25%, transparent);
-    box-shadow: none;
-    opacity: 0.25;
-  }
-  50%,
+  60%,
   100% {
-    background: transparent;
+    background: color-mix(in srgb, var(--glow-color) 35%, transparent);
     box-shadow: none;
-    opacity: 0.12;
+    opacity: 1;
   }
 }
 
@@ -16353,22 +16341,22 @@ html[data-theme="light"] .pixel-spinner .pixel {
 .pixel-spinner.diagonal-br .pixel:nth-child(2),
 .pixel-spinner.diagonal-br .pixel:nth-child(4) {
   animation-name: pixel-snake-trail;
-  animation-delay: 200ms;
+  animation-delay: 300ms;
 }
 .pixel-spinner.diagonal-br .pixel:nth-child(3),
 .pixel-spinner.diagonal-br .pixel:nth-child(5),
 .pixel-spinner.diagonal-br .pixel:nth-child(7) {
   animation-name: pixel-snake-trail;
-  animation-delay: 400ms;
+  animation-delay: 600ms;
 }
 .pixel-spinner.diagonal-br .pixel:nth-child(6),
 .pixel-spinner.diagonal-br .pixel:nth-child(8) {
   animation-name: pixel-snake-trail;
-  animation-delay: 600ms;
+  animation-delay: 900ms;
 }
 .pixel-spinner.diagonal-br .pixel:nth-child(9) {
   animation-name: pixel-snake-trail;
-  animation-delay: 800ms;
+  animation-delay: 1200ms;
 }
 
 /* Frame */
