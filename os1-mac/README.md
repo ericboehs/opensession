@@ -22,17 +22,18 @@ the built-in retry screen.
 ### Iterating on the frontend before it ships
 
 The shell renders whatever the server serves. To test unmerged OpenSession
-frontend changes against **live production data**, run the frontend dev proxy
-from your backstage checkout and point the shell at it:
+frontend changes against **live production data**, run this from the Backstage
+repository root:
 
 ```sh
-# from the Backstage repository root
-bun scripts/frontend-dev.ts     # local SPA on :3851, API+WS proxied to prod
-
-# in another terminal
-cd os1-mac
-OS1_URL=http://127.0.0.1:3851 bun start
+bun app:dev
 ```
+
+This starts the local SPA on `:3851`, waits for it to become ready, prepares a
+lightweight unsigned development `.app`, launches it with the proper OS¹ Dock
+name/icon, and stops both processes together on `Ctrl+C`. Fully quit an
+already-running OS¹ first (`⌘Q`); closing its window only hides it and the
+single-instance lock would otherwise reuse that older process.
 
 Edits hot-reload in place (React Fast Refresh + CSS hot-swap; Tailwind output
 refreshes within ~3s). ⚠️ Writes are real — prompts/steers/archives hit

@@ -37,7 +37,8 @@ setup docs.
 The native OS¹ Electron shell lives in [`os1-mac/`](os1-mac/). It shares this
 repository with the frontend so window-material and title-bar changes can be
 developed and released together. See its README for local development,
-signing, and release instructions.
+signing, and release instructions. Run `bun app:dev` from the repository root
+to launch the frontend proxy and desktop app together.
 
 ## License
 

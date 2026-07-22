@@ -151,6 +151,13 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  // `electron .` is not a packaged .app, so macOS otherwise shows Electron's
+  // default Dock icon. Packaged builds get their signed bundle icon from
+  // electron-builder; only the development runtime needs this explicit PNG.
+  if (process.platform === "darwin" && !app.isPackaged) {
+    app.dock.setIcon(path.join(__dirname, "../build/icon-512.png"));
+  }
+
   // The web app's service worker only exists for Web Push, app-shell caching
   // and the PWA badge — none of which function in Electron — and its Cache
   // Storage writes crash Electron 43's renderer (bad CacheStorageCache Mojo

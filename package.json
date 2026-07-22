@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "app:dev": "bun scripts/app-dev.ts",
     "dev": "bun --hot opensession.ts",
     "start": "bun opensession.ts",
     "test": "bun test",
