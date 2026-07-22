@@ -670,8 +670,10 @@ export function automationMcpServersByName(name: string): string[] | undefined {
 }
 
 /** Default engine+model for automations (Michiel 2026-07-09: automations run
- *  on the opencode engine). */
-export const DEFAULT_OPENCODE_AUTOMATION_MODEL = "opencode/anthropic/claude-sonnet-5";
+ *  on the opencode engine; 2026-07-22: model-less automations default to Sol
+ *  on the codex pool — research-class automations pin claude-fable-5
+ *  explicitly instead of relying on this). */
+export const DEFAULT_OPENCODE_AUTOMATION_MODEL = "opencode/openai/gpt-5.6-sol";
 
 /**
  * Map an automation's configured model (or a router's modelOverride) onto the
@@ -692,8 +694,10 @@ export function opencodeAutomationModel(model?: string): string | undefined {
   if (m.startsWith("opencode/")) return m;
   // The openai path keys off codex accounts, not the bridge flag — always map.
   if (m.startsWith("gpt-")) return `opencode/openai/${m}`;
-  if (readOpencodeBridgeConfig()?.enabled !== true) return model;
+  // The default is Sol (openai path), so it applies regardless of the
+  // anthropic bridge flag — the bridge fail-safe below only concerns claude-*.
   if (!m) return DEFAULT_OPENCODE_AUTOMATION_MODEL;
+  if (readOpencodeBridgeConfig()?.enabled !== true) return model;
   if (m.startsWith("claude-")) return `opencode/anthropic/${m}`;
   return model; // unknown shapes (codex-*, custom ids) keep their engine
 }
