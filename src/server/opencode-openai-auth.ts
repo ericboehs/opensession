@@ -336,12 +336,49 @@ export function buildOpenaiRemoteSeedUpload(
  *  keeping genuine wedges bounded; opencode still retries on expiry. */
 const OPENAI_HEADER_TIMEOUT_MS = 60_000;
 
+/** Real context windows of the ChatGPT-Codex backend, which are MUCH smaller
+ *  than the API models' models.dev entries (gpt-5.6: 1.05M context / 922k
+ *  input). opencode's autocompact arms at `limit.input - reserved`, so with
+ *  models.dev numbers it waited for ~902k tokens while the subscription
+ *  backend rejected at its own wall — bks-019f8642 died 2026-07-22 with
+ *  "Input exceeds context window of this model" at ~244k total tokens, which
+ *  is exactly 372k - 128k max-output (the backend requires input + max output
+ *  to fit the window). Numbers below are the codex CLI's baked-in catalog
+ *  (`context_window` per slug); `input` is context minus the 128k output
+ *  ceiling so autocompact fires ~20k before the real wall. Models not listed
+ *  (unknown/new slugs) keep models.dev limits — add them here when they join
+ *  the pool.
+ */
+const CODEX_BACKEND_LIMITS: Record<string, { context: number; input: number; output: number }> = (() => {
+  const lim = (context: number) => ({ context, input: context - 128_000, output: 128_000 });
+  return {
+    "gpt-5.6-sol": lim(372_000),
+    "gpt-5.6-terra": lim(372_000),
+    "gpt-5.6-luna": lim(372_000),
+    "gpt-5.5": lim(272_000),
+    "gpt-5.4": lim(272_000),
+    "gpt-5.4-mini": lim(272_000),
+    // Not in the codex CLI catalog — conservative small-family default.
+    "gpt-5.3-codex-spark": lim(272_000),
+  };
+})();
+
+/** `provider.openai.models` config block carrying the real backend limits —
+ *  opencode deep-merges these over its models.dev catalog, which re-arms
+ *  autocompact at the true window instead of the API models' fictional one. */
+const OPENAI_MODELS_OVERRIDE: Record<string, unknown> = Object.fromEntries(
+  Object.entries(CODEX_BACKEND_LIMITS).map(([id, limit]) => [id, { limit }])
+);
+
 export function bindOpenaiAccount(account: CodexAccount): OpenaiAccountBinding | { error: string } {
   if (account.kind === "api_key") {
     return {
       account,
       mechanism: "api-key",
       extraEnv: {},
+      // NOTE: no models override here — api-key accounts hit the real OpenAI
+      // API, where the models.dev limits (1.05M context) are correct. The
+      // CODEX_BACKEND_LIMITS clamp is subscription-backend-only below.
       providerOverride: {
         openai: { options: { apiKey: account.value, headerTimeout: OPENAI_HEADER_TIMEOUT_MS } },
       },
@@ -414,7 +451,15 @@ export function bindOpenaiAccount(account: CodexAccount): OpenaiAccountBinding |
     mechanism,
     extraEnv: { XDG_DATA_HOME: dataHome },
     // Native OAuth needs no options for auth, but the headerTimeout raise
-    // (constant above) must ride the provider config for oauth accounts too.
-    providerOverride: { openai: { options: { headerTimeout: OPENAI_HEADER_TIMEOUT_MS } } },
+    // (constant above) must ride the provider config for oauth accounts too —
+    // and the ChatGPT-Codex backend's real context windows, so opencode's
+    // autocompact fires before the backend's wall instead of at models.dev's
+    // API-sized limits (see CODEX_BACKEND_LIMITS).
+    providerOverride: {
+      openai: {
+        options: { headerTimeout: OPENAI_HEADER_TIMEOUT_MS },
+        models: OPENAI_MODELS_OVERRIDE,
+      },
+    },
   };
 }
