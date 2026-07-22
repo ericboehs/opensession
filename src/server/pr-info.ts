@@ -208,8 +208,12 @@ export async function getPrDiff(
   const key = cacheKey(repo, branch);
   const hit = diffCache.get(key);
   if (hit && Date.now() - hit.ts < TTL) return hit.data;
-  // While GitHub throttles us, a stale answer beats burning a doomed call.
-  if (ghRateLimited() && hit) return hit.data;
+  // Known backoff window: stale answer if we have one, fast friendly failure
+  // if we don't — never a doomed gh spawn.
+  if (ghRateLimited()) {
+    if (hit) return hit.data;
+    throw new Error(GH_RATE_LIMIT_MESSAGE);
+  }
 
   try {
     const metaRaw = await $`gh pr view ${branch} --repo ${repo} --json number,headRefOid`
@@ -529,7 +533,12 @@ export async function getPrDetails(
   const key = cacheKey(repo, branch);
   const hit = cache.get(key);
   if (hit && Date.now() - hit.ts < TTL) return hit.data;
-  if (ghRateLimited() && hit) return hit.data;
+  // Known backoff window: serve any cached answer, and with nothing cached
+  // fail fast with the friendly message rather than spawning a doomed gh call.
+  if (ghRateLimited()) {
+    if (hit) return hit.data;
+    throw new Error(GH_RATE_LIMIT_MESSAGE);
+  }
 
   let refresh = inflight.get(key);
   if (!refresh) {
