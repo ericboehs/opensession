@@ -41,6 +41,8 @@ jobs:
         run: |
           test -n "$PROFILE_BASE64"
           printf '%s' "$PROFILE_BASE64" | base64 -D > build/os1.provisionprofile
+          security cms -D -i build/os1.provisionprofile > /tmp/os1-profile.plist
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.associated-domains' /tmp/os1-profile.plist | grep -q 'applinks:os.tella.dev'
 
       - name: Build, sign & notarize
         run: |
@@ -55,10 +57,12 @@ jobs:
 
       - name: Verify universal-link signing
         run: |
-          test -f dist/mac-arm64/OS¹.app/Contents/embedded.provisionprofile
-          codesign -d --entitlements :- dist/mac-arm64/OS¹.app 2>&1 | grep -q 'com.apple.developer.associated-domains'
-          security cms -D -i dist/mac-arm64/OS¹.app/Contents/embedded.provisionprofile > /tmp/os1-profile.plist
-          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.associated-domains' /tmp/os1-profile.plist | grep -q 'applinks:os.tella.dev'
+          APP='dist/mac-arm64/OS¹.app'
+          test -f "$APP/Contents/embedded.provisionprofile" || { echo '::error::Signed app has no embedded provisioning profile'; ls -la "$APP/Contents"; exit 1; }
+          codesign -d --entitlements :- "$APP" > /tmp/os1-entitlements.plist
+          /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.associated-domains' /tmp/os1-entitlements.plist | grep -q 'applinks:os.tella.dev'
+          security cms -D -i "$APP/Contents/embedded.provisionprofile" > /tmp/os1-embedded-profile.plist
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.associated-domains' /tmp/os1-embedded-profile.plist | grep -q 'applinks:os.tella.dev'
 
       - name: Notarize & staple DMG
         run: |
