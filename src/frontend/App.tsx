@@ -531,10 +531,12 @@ function App() {
 	// and the project-scoped tab strip. Refetched on focus and when sessions change
 	// (a new PR chat can auto-create a folder server-side).
 	const [projects, setProjects] = useState<Project[]>([]);
+	const [projectsLoaded, setProjectsLoaded] = useState(false);
 	const refreshProjects = React.useCallback(() => {
 		fetchProjects()
 			.then(setProjects)
-			.catch(() => {});
+			.catch(() => {})
+			.finally(() => setProjectsLoaded(true));
 	}, []);
 	useEffect(() => {
 		refreshProjects();
@@ -1668,6 +1670,7 @@ function App() {
 						<Sidebar
 							ref={sidebarRef}
 							sessions={sessions}
+							workspaceDataReady={!loading && projectsLoaded}
 							projects={projects}
 							notes={notes.map((n) => ({ id: n.id, title: n.title }))}
 							teamViewing={teamViewing}

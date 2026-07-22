@@ -197,6 +197,8 @@ const KNOWN_PEOPLE = new Set([...TEAM, AGENT_NAME].map((n) => n.toLowerCase()));
 
 interface Props {
 	sessions: UnifiedSession[];
+	/** Initial sessions + project metadata have loaded, so dependent queues can render. */
+	workspaceDataReady: boolean;
 	/** Project folders that group chats. */
 	projects: Project[];
 	/** Notes (id + title), to render pinned-note rows. */
@@ -830,6 +832,7 @@ function sessionRepo(s: UnifiedSession): string {
 
 export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	sessions,
+	workspaceDataReady,
 	projects,
 	notes,
 	selectedId,
@@ -3689,7 +3692,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 			{/* Pull requests are an action inbox: personal PRs, direct review
 			    requests and automation output, grouped by what can happen next. */}
-			{openPrs && openPrs.length > 0 && (
+			{workspaceDataReady && openPrs && openPrs.length > 0 && (
 				<ReviewQueue
 					prs={openPrs}
 					sessions={sessions}
