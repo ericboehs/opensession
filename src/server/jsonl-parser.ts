@@ -133,10 +133,10 @@ function attachUploads(
   }
 }
 
-// Tools can't return video blocks (unlike Read-of-image), so a tool that
-// produces a video prints `BACKSTAGE_VIDEO: <abs-path>` and we turn each marker
-// into a /backstage/media URL the frontend streams. Used by tella-local rec.mjs.
-const VIDEO_MARKER = /^\s*BACKSTAGE_VIDEO:\s*(\/\S+)\s*$/gm;
+// Transcript messages can't return video blocks (unlike Read-of-image), so a
+// tool or assistant can print `BACKSTAGE_VIDEO: <abs-path>` and we turn each
+// marker into a /backstage/media URL the frontend streams.
+const VIDEO_MARKER = /^[\t ]*BACKSTAGE_VIDEO:[\t ]*(\/\S+)[\t ]*$/gm;
 
 export function extractBackstageVideos(text: string): string[] {
   if (!text) return [];
@@ -145,6 +145,14 @@ export function extractBackstageVideos(text: string): string[] {
     out.push(`/backstage/media?path=${encodeURIComponent(m[1])}`);
   }
   return out;
+}
+
+export function extractAssistantVideos(text: string): { content: string; videos: string[] } {
+  const videos = extractBackstageVideos(text);
+  return {
+    content: videos.length > 0 ? text.replace(VIDEO_MARKER, "").trimEnd() : text,
+    videos,
+  };
 }
 
 /**
@@ -326,13 +334,15 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
     if (Array.isArray(content)) {
       for (const block of content) {
         if (block.type === "text" && block.text) {
+          const assistant = extractAssistantVideos(block.text);
           entries.push({
             id: raw.uuid || crypto.randomUUID(),
             type: "assistant",
-            content: block.text,
+            content: assistant.content,
             timestamp: ts,
             requestId: raw.requestId,
             ...(model ? { model } : {}),
+            ...(assistant.videos.length > 0 ? { videos: assistant.videos } : {}),
           });
         }
         if (block.type === "tool_use") {
@@ -351,13 +361,15 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
     } else {
       const text = extractText(content);
       if (text) {
+        const assistant = extractAssistantVideos(text);
         entries.push({
           id: raw.uuid || crypto.randomUUID(),
           type: "assistant",
-          content: text,
+          content: assistant.content,
           timestamp: ts,
           requestId: raw.requestId,
           ...(model ? { model } : {}),
+          ...(assistant.videos.length > 0 ? { videos: assistant.videos } : {}),
         });
       }
     }
@@ -443,11 +455,13 @@ function parseCodexEntry(raw: any): TranscriptEntry[] {
       }];
     }
     if (p.type === "agent_message" && typeof p.message === "string" && p.message.trim()) {
+      const assistant = extractAssistantVideos(p.message);
       return [{
         id: p.id || stableCodexId("codex-assistant", raw, p, p.message),
         type: "assistant",
-        content: p.message,
+        content: assistant.content,
         timestamp: ts,
+        ...(assistant.videos.length > 0 ? { videos: assistant.videos } : {}),
       }];
     }
     return [];

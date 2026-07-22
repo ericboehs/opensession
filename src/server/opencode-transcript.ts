@@ -32,6 +32,7 @@ import { Database } from "bun:sqlite";
 import type { TranscriptEntry } from "./types";
 import type { ImageInput } from "./run-events";
 import { stripContext } from "./prompt-context";
+import { extractAssistantVideos } from "./jsonl-parser";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 
@@ -624,12 +625,14 @@ export function readOpencodeTranscript(
           if (part.synthetic) continue;
           const text = role === "user" ? stripContext(part.text || "") : part.text || "";
           if (!text.trim()) continue;
+          const assistant = role === "assistant" ? extractAssistantVideos(text) : undefined;
           entries.push({
             id: p.id,
             type: role,
-            content: text,
+            content: assistant?.content ?? text,
             timestamp: ts,
             ...(model ? { model } : {}),
+            ...(assistant?.videos.length ? { videos: assistant.videos } : {}),
           });
         } else if (part.type === "tool") {
           entries.push({
