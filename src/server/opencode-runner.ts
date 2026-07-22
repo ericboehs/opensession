@@ -1712,6 +1712,25 @@ export function clientFor(entry: OpencodeServerEntry): OpencodeClient {
   });
 }
 
+export async function reconnectSharedInProcessMcp(
+  client: Pick<OpencodeClient, "mcp">,
+  names: string[],
+  query: { query?: { directory?: string } } = {}
+): Promise<string[]> {
+  if (!names.length) return [];
+
+  const status = await client.mcp.status(query as any);
+  const current = (status.data || {}) as Record<string, { status?: string }>;
+  const disconnected = names.filter((name) => current[name]?.status !== "connected");
+  const results = await Promise.all(
+    disconnected.map(async (name) => {
+      const result = await client.mcp.connect({ path: { name }, ...query } as any);
+      return result.error ? name : undefined;
+    })
+  );
+  return results.filter((name): name is string => !!name);
+}
+
 // ── Meridian usage quota (accounts-layer data source) ────────────────────────
 //
 // Every live meridian-mode server carries an in-process Meridian proxy whose
@@ -2687,6 +2706,14 @@ async function* runOpencodeAttempt(
             : {}),
         };
 
+    // A fresh OpenCode server discovers MCP tools as part of startup. Make the
+    // shared proxy token routable before spawning it; otherwise that first
+    // tools/list fails and OpenCode caches every in-process server as failed.
+    if (!prebuiltProxies && hasInProcess && journal?.bksSessionId) {
+      registerRunToken(rpcToken, { sessionId: journal.bksSessionId, user });
+      rpcTokenRegistered = true;
+    }
+
     entry = await ensureOpencodeServer(
       serverKey,
       shared ? SHARED_CWD : cwd,
@@ -2717,12 +2744,23 @@ async function* runOpencodeAttempt(
         failRun();
       });
     }
-    if (!prebuiltProxies && hasInProcess && journal?.bksSessionId) {
-      registerRunToken(rpcToken, { sessionId: journal.bksSessionId, user });
-      rpcTokenRegistered = true;
-    }
-
     const client = clientFor(entry);
+
+    // Existing shared servers may have cached a failed proxy connection from
+    // an earlier process boot. Reconnect this run's servers while its token is
+    // registered so existing Desk sessions gain newly-added MCPs too.
+    if (shared && rpcTokenRegistered) {
+      const failed = await reconnectSharedInProcessMcp(
+        client,
+        Object.keys(opts.inProcessMcp || {}),
+        q
+      );
+      if (failed.length) {
+        console.warn(
+          `[opencode-runner] failed to reconnect in-process MCP servers: ${failed.join(", ")}`
+        );
+      }
+    }
 
     // Resolve/create the opencode session. Shared servers scope every call to
     // the run's directory (opencode's per-directory app instances).

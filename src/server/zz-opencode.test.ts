@@ -6,6 +6,7 @@ import {
   opencodeDeniedToolIds,
   proxyOpencodeMcpConfigs,
   buildOpencodeInstructions,
+  reconnectSharedInProcessMcp,
 } from "./opencode-runner";
 import { STRIPE_CONFIRM_TOOLS, filterMcpServers } from "./runner-shared";
 import {
@@ -260,6 +261,48 @@ describe("proxyOpencodeMcpConfigs", () => {
   test("empty without token or servers (fail closed)", () => {
     expect(proxyOpencodeMcpConfigs({ "michael-admin": {} }, undefined)).toEqual({});
     expect(proxyOpencodeMcpConfigs(undefined, "tok")).toEqual({});
+  });
+});
+
+describe("reconnectSharedInProcessMcp", () => {
+  test("reconnects failed or newly-added proxies and leaves connected ones alone", async () => {
+    const connected: string[] = [];
+    const client = {
+      mcp: {
+        status: async () => ({
+          data: {
+            "opensession-sessions": { status: "connected" },
+            "opensession-notes": { status: "failed", error: "Failed to get tools" },
+          },
+        }),
+        connect: async ({ path }: { path: { name: string } }) => {
+          connected.push(path.name);
+          return { data: true };
+        },
+      },
+    };
+
+    const failed = await reconnectSharedInProcessMcp(
+      client as any,
+      ["opensession-sessions", "opensession-notes", "opensession-assets"],
+      { query: { directory: "/tmp/worktree" } }
+    );
+
+    expect(connected).toEqual(["opensession-notes", "opensession-assets"]);
+    expect(failed).toEqual([]);
+  });
+
+  test("reports proxies OpenCode could not reconnect", async () => {
+    const client = {
+      mcp: {
+        status: async () => ({ data: { "opensession-notes": { status: "failed" } } }),
+        connect: async () => ({ error: { message: "no tools" } }),
+      },
+    };
+
+    expect(
+      await reconnectSharedInProcessMcp(client as any, ["opensession-notes"])
+    ).toEqual(["opensession-notes"]);
   });
 });
 
