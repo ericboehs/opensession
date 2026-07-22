@@ -446,23 +446,10 @@ a {
 html.wco .app {
 	border-top: none;
 }
-/* The native shell supplies the window's visual-effect backdrop. Let it reach
-   the web content instead of stopping at the document's opaque --bg canvas;
-   the detail pane is deliberately repainted below so only the sidebar takes
-   on the macOS material. */
-@media (min-width: 721px) {
-	html.wco,
-	html.wco body,
-	html.wco #root,
-	html.wco .app,
-	html.wco .app-body {
-		background: transparent;
-	}
-
-	html.wco .detail-pane {
-		background: var(--bg);
-	}
-}
+/* (The shell used to supply a vibrancy backdrop revealed through a transparent
+   canvas here; removed 2026-07-22 together with the shell's transparent window
+   while chasing whole-window flashes — the app now paints its normal opaque
+   --bg everywhere, in the shell too.) */
 /* Sidebar top row clears the traffic lights. env(titlebar-area-x) is the
    controls' right edge on macOS; it drops to 0 in fullscreen (lights hidden)
    and on Windows (controls on the right), where the default padding wins. */
