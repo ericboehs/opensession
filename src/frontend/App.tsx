@@ -1408,11 +1408,11 @@ function App() {
 
 	// The "toggle left sidebar" panel glyph — a framed rectangle with a divider
 	// marking the collapsible left column. Reused by the brand-row collapse button
-	// and the floating re-open control. Size 28 to match the right-panel toggle
+	// and the floating re-open control. Sized to match the right-panel toggle
 	// (IconSidebarRight) in the session header, and to carry the same visual
 	// weight as the fuller play/globe glyphs there (a framed rectangle reads a
 	// hair lighter than a filled triangle / globe at the same nominal size).
-	const panelIcon = <IconSidebarLeft size={26} />;
+	const panelIcon = <IconSidebarLeft size={24} />;
 
 	return (
 		<UserGate>
@@ -1645,11 +1645,11 @@ function App() {
 										onClick={() => setSearchOpen(true)}
 										aria-label="Search sessions"
 									>
-										{/* Optically larger than the 28 panel glyph beside it: the
+										{/* Optically larger than the panel glyph beside it: the
 										    magnifier is a small circle + thin handle, so it needs more
 										    nominal size to carry the same weight as the globe/play/panel
 										    icons in the session header. */}
-										<IconSearch size={28} />
+										<IconSearch size={26} />
 									</button>
 								</Tooltip>
 								<Tooltip

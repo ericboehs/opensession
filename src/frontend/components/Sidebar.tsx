@@ -2149,16 +2149,27 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return expanded.has(key);
 	};
 
-	// The People / Automations bands are open by default, so — like
+	// Collapsible bands are open by default, so — like
 	// repo groups — their *collapsed* state is what's persisted. Collapsing one
 	// hides every group within that band. Searching forces them open.
 	const bandOpen = (
 		band: GroupBand | "support" | "pullrequests" | "workspaces",
 	) =>
 		search.trim().length > 0 ? true : !expanded.has(`collapsed:band:${band}`);
+	const toolsOpen = !expanded.has("collapsed:band:tools");
 	const workspacesOpen = bandOpen("workspaces");
+	const supportOpen = bandOpen("support");
+	const visibleSupportThreads = supportOpen
+		? supportThreads || []
+		: (supportThreads || []).filter(supportThreadActive);
+	const automationsOpen = bandOpen("automations");
+	const visibleAutomationGroups = automationsOpen
+		? groups
+		: groups.filter((group) =>
+				group.items.some((session) => session.id === selectedId),
+			);
 	function toggleBand(
-		band: GroupBand | "support" | "pullrequests" | "workspaces",
+		band: GroupBand | "support" | "pullrequests" | "tools" | "workspaces",
 	) {
 		const key = `collapsed:band:${band}`;
 		setExpanded((prev) => {
@@ -2536,11 +2547,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// status (faint when no session exists yet); click opens the session, or the
 	// session-less ticket preview when there isn't one. Hovering swaps the
 	// timestamp for a one-click "mark done".
-	function renderSupportRow(t: SupportThread) {
-		const session = supportSessionByThread.get(t.id) || null;
-		const active = session
+	function supportThreadActive(t: SupportThread) {
+		const session = supportSessionByThread.get(t.id);
+		return session
 			? session.id === selectedId
 			: selectedSupportThreadId === t.id;
+	}
+
+	function renderSupportRow(t: SupportThread) {
+		const session = supportSessionByThread.get(t.id) || null;
+		const active = supportThreadActive(t);
 		const customer = t.customer.name || t.customer.email || "Unknown";
 		const label = t.title || customer;
 		return (
@@ -2711,6 +2727,26 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			{/* Checks — the only non-workspace area in the sidebar. Every other
 			    tool (Automations, Goals, Actions, Security, Notes) lives in
 			    Settings now. */}
+			{!isPhone && (
+				<div className="sidebar-band-label sidebar-tools-head">
+					<button
+						className="sidebar-band-toggle"
+						onClick={() => toggleBand("tools")}
+						aria-expanded={toolsOpen}
+						title={toolsOpen ? "Collapse tools" : "Expand tools"}
+					>
+						<span className="sidebar-band-name">Tools</span>
+						<IconChevronDown
+							className="sidebar-band-chevron"
+							size={18}
+							style={{
+								transform: toolsOpen ? "none" : "rotate(-90deg)",
+							}}
+						/>
+					</button>
+				</div>
+			)}
+			{(isPhone || toolsOpen) && (
 			<nav className="sidebar-nav">
 				<button
 					className={`sidebar-nav-item ${watercoolerActive ? "active" : ""}`}
@@ -2791,6 +2827,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					Analytics
 				</button>
 			</nav>
+			)}
 
 			<div
 				className={`sidebar-workspace${listScrolled ? " sidebar-workspace--scrolled" : ""}`}
@@ -3711,34 +3748,34 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			{/* ── Support: the Plain TODO queue, newest status change first (the
 			    same ordering as Plain's Todo inbox). Rows with a linked session
 			    open it; the rest open the session-less ticket preview. ── */}
-			{(supportThreads?.length || 0) > 0 &&
-					(() => {
-						const open = bandOpen("support");
-						return (
-							<div className="sidebar-independent-section sidebar-group--band-start">
-								<div className="sidebar-band-label">
-									<button
-										className="sidebar-band-toggle"
-										onClick={() => toggleBand("support")}
-										title={open ? "Collapse support" : "Expand support"}
-									>
-										<span className="sidebar-band-name">Support</span>
-										<span className="sidebar-group-count">{supportThreads!.length}</span>
-										<IconChevronDown
-											className="sidebar-band-chevron"
-											size={18}
-											style={{ transform: open ? "none" : "rotate(-90deg)" }}
-										/>
-									</button>
-								</div>
-								{open && (
-									<div className="sidebar-independent-scroll">
-										{supportThreads!.map(renderSupportRow)}
-									</div>
-								)}
-							</div>
-						);
-					})()}
+			{(supportThreads?.length || 0) > 0 && (
+				<div className="sidebar-independent-section sidebar-group--band-start">
+					<div className="sidebar-band-label">
+						<button
+							className="sidebar-band-toggle"
+							onClick={() => toggleBand("support")}
+							title={supportOpen ? "Collapse support" : "Expand support"}
+						>
+							<span className="sidebar-band-name">Support</span>
+							<span className="sidebar-group-count">
+								{supportThreads!.length}
+							</span>
+							<IconChevronDown
+								className="sidebar-band-chevron"
+								size={18}
+								style={{
+									transform: supportOpen ? "none" : "rotate(-90deg)",
+								}}
+							/>
+						</button>
+					</div>
+					{visibleSupportThreads.length > 0 && (
+						<div className="sidebar-independent-scroll">
+							{visibleSupportThreads.map(renderSupportRow)}
+						</div>
+					)}
+				</div>
+			)}
 
 				{/* ── People: teammates who are looking at a session right now. Click
 				    to follow along (your navigation shadows theirs); click again to
@@ -3818,7 +3855,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								className="sidebar-band-toggle"
 								onClick={() => toggleBand("automations")}
 								title={
-									bandOpen("automations")
+									automationsOpen
 										? "Collapse automations"
 										: "Expand automations"
 								}
@@ -3828,13 +3865,13 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								<IconChevronDown
 									className="sidebar-band-chevron"
 									size={18}
-									style={{ transform: bandOpen("automations") ? "none" : "rotate(-90deg)" }}
+									style={{ transform: automationsOpen ? "none" : "rotate(-90deg)" }}
 								/>
 							</button>
 						</div>
-						{bandOpen("automations") && (
+						{visibleAutomationGroups.length > 0 && (
 							<div className="sidebar-independent-scroll">
-								{groups.map((group) => {
+								{visibleAutomationGroups.map((group) => {
 									const open = isOpen(group.key);
 									return (
 									<React.Fragment key={group.key}>

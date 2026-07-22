@@ -3204,6 +3204,7 @@ export function SessionViewer({
 							repo={session.repo || undefined}
 							archived={session.archived}
 							send={connected ? send : undefined}
+							onOpenPrTab={() => onOpenReview?.()}
 							onArchive={handleArchive}
 							variant="header"
 							running={isRunningLive}
@@ -3234,9 +3235,9 @@ export function SessionViewer({
 								}}
 								aria-label="Toggle side panel"
 							>
-								{/* Iconic sidebar-right glyph — reads as "right side panel".
-								    28 to sit level with the play/globe weight beside it. */}
-								<IconSidebarRight className="btn-panel-toggle-icon" size={26} />
+								{/* Iconic sidebar-right glyph — reads as "right side panel" and
+								    sits level with the play/globe weight beside it. */}
+								<IconSidebarRight className="btn-panel-toggle-icon" size={24} />
 							</button>
 						</Tooltip>
 					)}

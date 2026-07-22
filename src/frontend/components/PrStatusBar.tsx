@@ -1,5 +1,4 @@
 import { AGENT_NAME } from "../lib/brand";
-import { BASE_PATH } from "../lib/base";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { GitStatusInfo, PrDetails } from "../lib/types";
 import {
@@ -199,17 +198,16 @@ const PR_CHORD = /Mac|iPhone|iPad|iPod/.test(navigator.platform)
  * separate outbound action, while the context menu holds copy actions.
  */
 function PrNumberChip({
-	sessionId,
 	pr,
 	tone,
+	onOpenPrTab,
 }: {
-	sessionId: string;
 	pr: PrDetails;
 	tone: PrHeadline["tone"];
+	onOpenPrTab?: () => void;
 }) {
 	const [copied, setCopied] = useState<"link" | "number" | null>(null);
 	const provider = providerFromUrl(pr.url);
-	const reviewUrl = `${BASE_PATH}/reviews/${encodeURIComponent(sessionId)}`;
 
 	const copy = useCallback((kind: "link" | "number", text: string) => {
 		navigator.clipboard?.writeText(text).then(() => {
@@ -223,9 +221,10 @@ function PrNumberChip({
 			<ContextMenu.Root>
 				<ContextMenu.Trigger
 					render={
-						<a
+						<button
+							type="button"
 							className={`pr-num-chip pr-num-chip-${tone}`}
-							href={reviewUrl}
+							onClick={onOpenPrTab}
 							title={`Review #${pr.number}: ${pr.title}`}
 						/>
 					}
@@ -527,7 +526,7 @@ export function PrStatusBar({
 	if (variant === "header") {
 		return (
 			<div className="pr-head">
-				<PrNumberChip sessionId={sessionId} pr={pr!} tone={headline.tone} />
+				<PrNumberChip pr={pr!} tone={headline.tone} onOpenPrTab={onOpenPrTab} />
 				{error && (
 					<span className="pr-bar-error" title={error}>
 						{error}
@@ -541,7 +540,9 @@ export function PrStatusBar({
 	return (
 		<div className={`pr-bar pr-bar-${headline.tone}`}>
 			{leading}
-			{pr && <PrNumberChip sessionId={sessionId} pr={pr} tone={headline.tone} />}
+			{pr && (
+				<PrNumberChip pr={pr} tone={headline.tone} onOpenPrTab={onOpenPrTab} />
+			)}
 			{headline.key !== "no-pr" && (
 				<Tooltip label="Open the PR tab">
 					<button

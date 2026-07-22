@@ -360,7 +360,7 @@ export function PreviewButton({
                 }
               }}
             >
-              <CopyCheck copied={copied} size={24} idle={<IconPlayOutline size={24} />} />
+              <CopyCheck copied={copied} size={22} idle={<IconPlayOutline size={22} />} />
             </a>
           </Tooltip>
         ) : isStarting ? (
@@ -376,7 +376,7 @@ export function PreviewButton({
             >
               <span className="preview-spinner-wrap">
                 <span className="preview-spinner" aria-hidden="true" />
-                <IconPlayOutline size={24} />
+                <IconPlayOutline size={22} />
               </span>
             </button>
           </Tooltip>
@@ -388,7 +388,7 @@ export function PreviewButton({
               onContextMenu={openMenu}
               aria-disabled="true"
             >
-              <IconPlayOutline size={24} />
+              <IconPlayOutline size={22} />
             </button>
           </Tooltip>
         ) : (
@@ -398,7 +398,7 @@ export function PreviewButton({
               onClick={start}
               onContextMenu={openMenu}
             >
-              <IconPlayOutline size={24} />
+              <IconPlayOutline size={22} />
             </button>
           </Tooltip>
         )}

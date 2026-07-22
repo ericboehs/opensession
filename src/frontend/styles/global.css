@@ -608,12 +608,11 @@ a {
 	}
 }
 
-/* The "Tools" band header sits above the top-level nav as a collapse toggle,
-   matching the Projects/People band toggles. The compound selector beats the
-   later `.sidebar-band-label` padding so the indent lands where we want; 16px
-   left matches the band labels (10px list pad + 6px) and the Sessions header. */
+/* The "Tools" band header sits above the top-level nav as a collapse toggle.
+   Its 10px inset plus the shared toggle's 8px padding matches the band headings
+   inside `.sidebar-list`. */
 .sidebar-band-label.sidebar-tools-head {
-	padding: 12px 16px 2px;
+	padding: 12px 10px 2px;
 }
 .sidebar-nav {
 	display: flex;
@@ -846,7 +845,7 @@ body.resizing-x {
 /* Workspace header: "My sessions" title row (+ optional repo chip + action
    icons), with the session search bar directly below it. */
 .sidebar-workspace {
-	padding: 12px 18px 2px 20px;
+	padding: 12px 12px 2px 20px;
 	/* Transparent by default so toggling the color on scroll never shifts layout;
 	   turns into a visible divider under the header once the list scrolls. */
 	border-bottom: 1px solid transparent;
@@ -3092,7 +3091,7 @@ body.resizing-x {
 	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	padding: 3px 5px;
-	font-size: 22px;
+	font-size: 20px;
 	line-height: 1;
 }
 .btn-viewer-overflow.active,
