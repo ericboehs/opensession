@@ -25,6 +25,8 @@ const ENV_KEYS = [
   "BACKSTAGE_CLAUDE_BIN",
   "BACKSTAGE_OPENCODE_BIN",
   "BACKSTAGE_MCP_CONFIG",
+  "OPENSESSION_CLAUDE_BIN",
+  "OPENSESSION_OPENCODE_BIN",
   "OPENSESSION_PROFILE",
   "OPENSESSION_CONFIG",
   "OPENSESSION_WORKTREES_DIR",
@@ -102,10 +104,13 @@ describe("config loader", () => {
     delete process.env.OPENSESSION_CONFIG;
     delete process.env.OPENSESSION_WORKTREES_DIR;
     delete process.env.BACKSTAGE_WORKTREES_DIR;
+    delete process.env.OPENSESSION_CLAUDE_BIN;
+    delete process.env.BACKSTAGE_CLAUDE_BIN;
     process.env.OPENSESSION_PROFILE = "local";
 
     expect(configuredRepos()).toEqual({});
     expect(configuredPaths().worktreesDir).toBe(`${process.env.HOME}/os1/worktrees`);
+    expect(configuredPaths().claudeBin).toBe(Bun.which("claude") || "claude");
     expect(configPath()).toBe(`${process.env.HOME}/os1/config.json`);
     expect(configuredIdentity()).toEqual({ team: [], slackNames: {} });
     expect(() => defaultRepo()).toThrow("No repositories are registered");

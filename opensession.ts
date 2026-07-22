@@ -27,6 +27,7 @@ import {
 	localRequestAllowed,
 } from "./src/server/profile";
 import { assertLocalEngineCredentials } from "./src/server/local-engine-auth";
+import { assertLocalEngineRuntime } from "./src/server/opencode-runner";
 import { startPrReviewNotificationTicker } from "./src/server/pr-review-notifications";
 import { startPublicIngress } from "./src/server/public-ingress";
 import { envAlias } from "./src/server/rename-compat";
@@ -73,7 +74,10 @@ const SESSIONS_DIR = OPENSESSION_CHATS_DIR;
 if (isLocalProfile() && !isLoopbackHostname(HOST)) {
 	throw new Error("OPENSESSION_PROFILE=local only supports a loopback HOST");
 }
-if (isLocalProfile()) assertLocalEngineCredentials();
+if (isLocalProfile()) {
+	const localCredentials = assertLocalEngineCredentials();
+	assertLocalEngineRuntime(localCredentials.providers);
+}
 
 mkdirSync(SESSIONS_DIR, { recursive: true });
 

@@ -259,9 +259,9 @@ export function localOpencodeDataRoot(provider: LocalEngineProvider): string {
   return `${localProfileRoot()}/auth/opencode-${provider}`;
 }
 
-export function assertLocalEngineCredentials(): void {
+export function assertLocalEngineCredentials(): LocalEngineCredentials {
   const credentials = discoverLocalEngineCredentials();
-  if (credentials.providers.length) return;
+  if (credentials.providers.length) return credentials;
   const detail = credentials.errors.length ? ` (${credentials.errors.join("; ")})` : "";
   throw new Error(
     "OPENSESSION_PROFILE=local found no model subscription credentials. " +

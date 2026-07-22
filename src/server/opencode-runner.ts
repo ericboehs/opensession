@@ -178,6 +178,7 @@ import {
   localClaudeAccount,
   localOpencodeDataRoot,
   localProviderError,
+  type LocalEngineProvider,
 } from "./local-engine-auth";
 import {
   normalizeModelEffort,
@@ -247,6 +248,31 @@ export const OPENCODE_BIN =
   envAlias("OPENSESSION_OPENCODE_BIN", "BACKSTAGE_OPENCODE_BIN") ||
   Bun.which("opencode") ||
   `${HOME}/.nvm/versions/node/v20.20.0/bin/opencode`;
+
+function executableAvailable(path: string): boolean {
+  return path.includes("/") ? existsSync(path) : !!Bun.which(path);
+}
+
+/** Fail at local-profile startup instead of deferring missing engine binaries
+ * to a first turn that can otherwise look like a silently empty response. */
+export function assertLocalEngineRuntime(providers: LocalEngineProvider[]): void {
+  if (!isLocalProfile()) return;
+  if (!executableAvailable(OPENCODE_BIN)) {
+    throw new Error(
+      `OPENSESSION_PROFILE=local could not find OpenCode at ${OPENCODE_BIN}. ` +
+        "Install it with `npm i -g opencode-ai` or set OPENSESSION_OPENCODE_BIN.",
+    );
+  }
+  if (providers.includes("anthropic")) {
+    if (!executableAvailable(CLAUDE_CODE_BIN)) {
+      throw new Error(
+        `OPENSESSION_PROFILE=local could not find Claude Code at ${CLAUDE_CODE_BIN}. ` +
+          "Install Claude Code or set OPENSESSION_CLAUDE_BIN.",
+      );
+    }
+    meridianStackInfo();
+  }
+}
 
 /** Instructions/state under the chat store (exported for the state-path
  *  regression test — must stay derived from the SAME dual-read resolution the
@@ -554,6 +580,29 @@ interface MeridianStackInfo {
   pluginPath: string;
   pluginVersion: string;
   meridianVersion: string;
+}
+
+export function meridianProxyBaseUrl(port: string | number | undefined): string {
+  const parsed = Number(port);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535) {
+    throw new Error(`Invalid Meridian proxy port: ${port ?? "missing"}`);
+  }
+  return `http://127.0.0.1:${parsed}`;
+}
+
+export function missingAssistantTurnError(provider: string): string {
+  return (
+    `opencode ${provider} turn ended without an assistant message. ` +
+    "The provider or engine bridge failed before producing output; retry after checking the OpenSession server logs."
+  );
+}
+
+export function latestTurnAssistant<T extends { info?: { role?: string } }>(messages: T[]): T | undefined {
+  const lastUser = messages.findLastIndex((message) => message.info?.role === "user");
+  return messages
+    .slice(lastUser + 1)
+    .reverse()
+    .find((message) => message.info?.role === "assistant");
 }
 
 let cachedMeridianStack: MeridianStackInfo | undefined;
@@ -1275,6 +1324,8 @@ export interface OpencodeServerEntry {
   meridianPort?: number;
   /** Claude account the Meridian proxy authenticates as (from spawn env). */
   accountId?: string;
+  /** Local-profile first-run check completed against this server's proxy. */
+  meridianReady?: boolean;
   /** Per-server SQLite shard this process writes (OPENCODE_DB at spawn) —
    *  absent on legacy/unsharded servers, which use opencode's default paths. */
   dbPath?: string;
@@ -1663,6 +1714,22 @@ export function peekOpencodeServer(key: string): OpencodeServerEntry | undefined
   return servers.get(key);
 }
 
+export function opencodeServerConfigHash(
+  config: Record<string, unknown>,
+  cwd: string,
+  extraEnv: Record<string, string> = {},
+): string {
+  const { CLAUDE_PROXY_PORT: _proxyPort, ...identityEnv } = extraEnv;
+  const serializedConfig = JSON.stringify(config);
+  const identityConfig = extraEnv.CLAUDE_PROXY_PORT
+    ? serializedConfig.replaceAll(
+        meridianProxyBaseUrl(extraEnv.CLAUDE_PROXY_PORT),
+        "http://127.0.0.1:<meridian-port>",
+      )
+    : serializedConfig;
+  return Bun.hash(identityConfig + "\n" + cwd + "\n" + JSON.stringify(identityEnv)).toString(16);
+}
+
 export async function ensureOpencodeServer(
   key: string,
   cwd: string,
@@ -1683,11 +1750,10 @@ export async function ensureOpencodeServer(
   // extraEnv is part of the identity: a different meridian account/token must
   // respawn the server (env only applies at spawn). CLAUDE_PROXY_PORT is the
   // one exception — it's freshly allocated on every call (meridianAccountEnv),
-  // so hashing it would drain/respawn the server on every run.
-  const { CLAUDE_PROXY_PORT: _proxyPort, ...identityEnv } = extraEnv || {};
-  const configHash = Bun.hash(
-    JSON.stringify(config) + "\n" + cwd + "\n" + JSON.stringify(identityEnv)
-  ).toString(16);
+  // so hashing it would drain/respawn the server on every run. The direct
+  // provider baseURL contains that same ephemeral port, so normalize it too;
+  // a reused server keeps its originally-spawned config and meridianPort.
+  const configHash = opencodeServerConfigHash(config, cwd, extraEnv);
   for (;;) {
     const existing = servers.get(key);
     if (existing) {
@@ -1725,6 +1791,58 @@ export function clientFor(entry: OpencodeServerEntry): OpencodeClient {
     baseUrl: entry.url,
     headers: { Authorization: `Basic ${btoa(`opencode:${entry.password}`)}` },
   });
+}
+
+export async function ensureLocalMeridianReady(
+  entry: OpencodeServerEntry,
+  stack: MeridianStackInfo,
+  opts: {
+    timeoutMs?: number;
+    fetcher?: typeof fetch;
+    sleep?: (ms: number) => Promise<unknown>;
+    signal?: AbortSignal;
+  } = {},
+): Promise<void> {
+  if (!isLocalProfile() || entry.meridianReady) return;
+  opts.signal?.throwIfAborted();
+  if (!entry.meridianPort) {
+    throw new Error("Local Claude bridge started without an allocated Meridian proxy port.");
+  }
+
+  const timeoutMs = opts.timeoutMs ?? 10_000;
+  const fetcher = opts.fetcher ?? fetch;
+  const sleep = opts.sleep ?? Bun.sleep;
+  const healthUrl = `${meridianProxyBaseUrl(entry.meridianPort)}/health`;
+  const deadline = Date.now() + timeoutMs;
+  let lastError = "proxy did not answer";
+
+  do {
+    try {
+      const requestTimeout = AbortSignal.timeout(Math.min(2_000, Math.max(1, timeoutMs)));
+      const response = await fetcher(healthUrl, {
+        signal: opts.signal ? AbortSignal.any([opts.signal, requestTimeout]) : requestTimeout,
+      });
+      const health = response.ok ? await response.json().catch(() => null) : null;
+      if (health?.status === "healthy") {
+        entry.meridianReady = true;
+        return;
+      }
+      lastError = response.ok
+        ? `unexpected health response ${JSON.stringify(health)}`
+        : `HTTP ${response.status}`;
+    } catch (error: any) {
+      opts.signal?.throwIfAborted();
+      lastError = error?.message || String(error);
+    }
+    if (Date.now() < deadline) await sleep(100);
+    opts.signal?.throwIfAborted();
+  } while (Date.now() < deadline);
+
+  throw new Error(
+    `Local Claude bridge failed to start at ${healthUrl} within ${timeoutMs}ms ` +
+      `(opencode-with-claude ${stack.pluginVersion}, Meridian ${stack.meridianVersion}): ${lastError}. ` +
+      "Run `bun install`, verify the Claude CLI works, and retry.",
+  );
 }
 
 export async function reconnectSharedInProcessMcp(
@@ -2290,20 +2408,27 @@ async function* runOpencodeAttempt(
         const meridianKey =
           servers.get(shared ? sharedServerKey(bridgeTag, user) : sessionKey)?.meridianKey ||
           crypto.randomUUID();
+        const meridianEnv = meridianAccountEnv(picked, meridianKey);
         serverExtraEnv = {
-          ...meridianAccountEnv(picked, meridianKey),
+          ...meridianEnv,
           ...(isLocalProfile() ? { XDG_DATA_HOME: localOpencodeDataRoot("anthropic") } : {}),
         };
         // Ensure the server-side fingerprint scrub is present before this
         // server's proxy starts (engine-agnostic billing — see fn doc).
         ensureMeridianProxyScrub();
         meridianPlugin = [stack.pluginPath];
-        // The plugin rewrites baseURL to its live proxy URL at startup; the
-        // placeholder guarantees a hard connection failure (never a real
-        // Anthropic endpoint) if the plugin ever fails to load. apiKey is the
-        // proxy key — Meridian requires it on every request.
+        // Point at the allocated proxy directly. The plugin also applies this
+        // rewrite, but relying on that config hook made fresh/newer OpenCode
+        // installs hit the old port-1 placeholder when plugin hook timing
+        // changed. The first-run health gate below still proves the plugin
+        // actually loaded and started Meridian before any model request.
         providerOverride = {
-          anthropic: { options: { baseURL: "http://127.0.0.1:1", apiKey: meridianKey } },
+          anthropic: {
+            options: {
+              baseURL: meridianProxyBaseUrl(meridianEnv.CLAUDE_PROXY_PORT),
+              apiKey: meridianKey,
+            },
+          },
         };
         const auditBase = {
           msg: "opencode_meridian_run",
@@ -2980,11 +3105,19 @@ async function* runOpencodeAttempt(
     });
     yield { type: "init", sessionId: ocSessionId, provider: PROVIDER, model };
 
+    if (parsed.providerID === "anthropic" && pickedMeridian && isLocalProfile()) {
+      await ensureLocalMeridianReady(entry, meridianStackInfo(), {
+        signal: abortController.signal,
+      });
+    }
+    if (abortController.signal.aborted) return;
+
     // Abort → tell the server to stop the turn (best-effort), our loops exit
     // on the signal. Also wake the drain loop directly (failRun → signalDone):
     // waiting for the engine's abort to come back as an SSE/poll observation
     // left cancelled runs parked forever when both were wedged (zombie run,
-    // 2026-07-09 bks-019f488c).
+    // 2026-07-09 bks-019f488c). Install this only after readiness: aborting an
+    // idle OpenCode session latches the abort onto its next prompt.
     abortController.signal.addEventListener("abort", () => {
       void client.session.abort({ path: { id: ocSessionId }, ...q }).catch(() => {});
       failRun();
@@ -3649,7 +3782,7 @@ async function* runOpencodeAttempt(
     reachedTerminal = true;
     const msgs = await client.session.messages({ path: { id: ocSessionId }, ...q });
     const list = (msgs.data || []) as Array<{ info: any; parts: any[] }>;
-    const lastAssistant = [...list].reverse().find((m) => m.info?.role === "assistant");
+    const lastAssistant = latestTurnAssistant(list);
     const info = lastAssistant?.info;
     const parts = lastAssistant?.parts || [];
     const textOut = parts
@@ -3731,6 +3864,14 @@ async function* runOpencodeAttempt(
       return;
     }
 
+    if (!lastAssistant) {
+      const message = missingAssistantTurnError(parsed.providerID);
+      turnEvent({ direction: "out", kind: "error", error: message });
+      bridgeRunEnd("error", message);
+      yield { type: "error", content: message, provider: PROVIDER, model };
+      return;
+    }
+
     const tokens = info?.tokens;
     const usage: TurnUsage | undefined = tokens
       ? {
@@ -3770,6 +3911,7 @@ async function* runOpencodeAttempt(
     };
   } catch (e: any) {
     if (!abortController.signal.aborted) {
+      reachedTerminal = true;
       const message = e?.message || String(e);
       turnEvent({ direction: "out", kind: "error", error: message });
       bridgeRunEnd("error", message);
@@ -4331,7 +4473,7 @@ export async function tryReattachOpencodeRun(
       // double-appending).
       const msgs = await client.session.messages({ path: { id: ocSessionId! }, ...q });
       const list = (msgs.data || []) as Array<{ info: any; parts: any[] }>;
-      const lastAssistant = [...list].reverse().find((m) => m.info?.role === "assistant");
+      const lastAssistant = latestTurnAssistant(list);
       const info = lastAssistant?.info;
       const parts = lastAssistant?.parts || [];
       const textOut = parts
@@ -4358,6 +4500,18 @@ export async function tryReattachOpencodeRun(
         return;
       }
       if (abortController.signal.aborted) return;
+      if (info?.error?.name === "MessageAbortedError" && !textOut) {
+        const message = "opencode engine turn was aborted externally before producing output";
+        turnEvent({ direction: "out", kind: "error", error: message });
+        yield { type: "error", content: message, provider: PROVIDER, model };
+        return;
+      }
+      if (!lastAssistant) {
+        const message = missingAssistantTurnError(parseOpencodeModel(model)?.providerID || "provider");
+        turnEvent({ direction: "out", kind: "error", error: message });
+        yield { type: "error", content: message, provider: PROVIDER, model };
+        return;
+      }
 
       const tokens = info?.tokens;
       const usage: TurnUsage | undefined = tokens

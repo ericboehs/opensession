@@ -482,7 +482,10 @@ export function configuredPaths(): ResolvedPaths {
   const p = getConfig().paths || {};
   const localRoot = localProfileRoot();
   return {
-    claudeBin: envAlias("OPENSESSION_CLAUDE_BIN", "BACKSTAGE_CLAUDE_BIN") || p.claudeBin || "/home/ubuntu/.local/bin/claude",
+    claudeBin:
+      envAlias("OPENSESSION_CLAUDE_BIN", "BACKSTAGE_CLAUDE_BIN") ||
+      p.claudeBin ||
+      (isLocalProfile() ? Bun.which("claude") || "claude" : "/home/ubuntu/.local/bin/claude"),
     opencodeBin: envAlias("OPENSESSION_OPENCODE_BIN", "BACKSTAGE_OPENCODE_BIN") || p.opencodeBin || null,
     worktreesDir: envAlias("OPENSESSION_WORKTREES_DIR", "BACKSTAGE_WORKTREES_DIR") || p.worktreesDir || (isLocalProfile() ? `${localRoot}/worktrees` : "/home/ubuntu/worktrees"),
     wtScript: p.wtScript || "/home/ubuntu/bin/wt",

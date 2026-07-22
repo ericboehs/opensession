@@ -24,6 +24,8 @@ import {
   parseOpencodeModel,
   meridianStackInfo,
   meridianAccountEnv,
+  meridianProxyBaseUrl,
+  ensureLocalMeridianReady,
   pickMeridianAccount,
   OPENCODE_STATE_DIR,
   type OpencodeServerEntry,
@@ -163,13 +165,19 @@ export async function opencodeOneShot(
           account = picked;
           stickyAccounts.set(serverKey, picked.id);
           const meridianKey = peekOpencodeServer(serverKey)?.meridianKey || crypto.randomUUID();
+          const meridianEnv = meridianAccountEnv(picked, meridianKey);
           extraEnv = {
-            ...meridianAccountEnv(picked, meridianKey),
+            ...meridianEnv,
             ...(localProfile ? { XDG_DATA_HOME: localOpencodeDataRoot("anthropic") } : {}),
           };
           plugin = [stack.pluginPath];
           providerOverride = {
-            anthropic: { options: { baseURL: "http://127.0.0.1:1", apiKey: meridianKey } },
+            anthropic: {
+              options: {
+                baseURL: meridianProxyBaseUrl(meridianEnv.CLAUDE_PROXY_PORT),
+                apiKey: meridianKey,
+              },
+            },
           };
         } else if (bridgeMode === "native") {
           const bridge = ensureAnthropicBridge();
@@ -219,6 +227,9 @@ export async function opencodeOneShot(
         const created = await client.session.create({ body: { title: `oneshot ${label}` } });
         if (!created.data) throw new Error(`session create failed: ${JSON.stringify(created.error ?? "")}`);
         ocSessionId = created.data.id;
+        if (localProfile && parsed.providerID === "anthropic") {
+          await ensureLocalMeridianReady(entry, meridianStackInfo());
+        }
 
         const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
         const result = await Promise.race([
