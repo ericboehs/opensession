@@ -35,12 +35,30 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATES_P12 }}
           p12-password: ${{ secrets.APPLE_CERTIFICATES_PASSWORD }}
 
+      - name: Install Developer ID provisioning profile
+        env:
+          PROFILE_BASE64: ${{ secrets.OS1_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          test -n "$PROFILE_BASE64"
+          printf '%s' "$PROFILE_BASE64" | base64 -D > build/os1.provisionprofile
+
       - name: Build, sign & notarize
-        run: bunx electron-builder --mac --publish never
+        run: |
+          bunx electron-builder --mac --publish never \
+            --config.mac.entitlements=build/entitlements.mac.applinks.plist \
+            --config.mac.entitlementsInherit=build/entitlements.mac.applinks.plist \
+            --config.mac.provisioningProfile=build/os1.provisionprofile
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || '6GUXT43C8B' }}
+
+      - name: Verify universal-link signing
+        run: |
+          test -f dist/mac-arm64/OS¹.app/Contents/embedded.provisionprofile
+          codesign -d --entitlements :- dist/mac-arm64/OS¹.app 2>&1 | grep -q 'com.apple.developer.associated-domains'
+          security cms -D -i dist/mac-arm64/OS¹.app/Contents/embedded.provisionprofile > /tmp/os1-profile.plist
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.associated-domains' /tmp/os1-profile.plist | grep -q 'applinks:os.tella.dev'
 
       - name: Notarize & staple DMG
         run: |

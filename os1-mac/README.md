@@ -77,15 +77,11 @@ allowed navigation origin); the device-flow fallback link works too. The
 - **Universal links** (plain `https://os.tella.dev/…` links opening the app,
   e.g. from Slack): the server side is done — OpenSession serves
   `/.well-known/apple-app-site-association` for app ID
-  `6GUXT43C8B.dev.tella.os1` (backstage PR #67) — and the app side is prewired
-  (`continue-activity` handler in `main.js`,
-  `build/entitlements.mac.applinks.plist` ready). Remaining, human-only:
-  1. In the Apple developer portal, register `dev.tella.os1` as an App ID with
-     the Associated Domains capability and create a **Developer ID
-     provisioning profile** for it (restricted entitlement — signing fails
-     without the profile).
-  2. Drop the profile at `build/os1.provisionprofile` and flip the commented
-     lines in `electron-builder.yml`.
+  `6GUXT43C8B.dev.tella.os1` (backstage PR #67). Signed CI builds install the
+  Developer ID profile from the `OS1_PROVISIONING_PROFILE_BASE64` repository
+  secret and use `build/entitlements.mac.applinks.plist`; the release fails if
+  either the signed entitlement or embedded profile is missing. Local unsigned
+  builds keep using `build/entitlements.mac.plist` and need no profile.
   Caveat: os.tella.dev resolves to a tailnet IP, so Apple's AASA CDN cannot
   fetch the association file. The entitlement therefore also lists the
   `?mode=developer` alternate, which fetches directly — each team device must
