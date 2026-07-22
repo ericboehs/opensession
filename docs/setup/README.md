@@ -3,6 +3,9 @@
 Operator documentation for self-hosting OpenSession. Start at
 [install.md](install.md); the other pages are per-integration and optional.
 
+For a single-user, interactive-only installation on macOS, use the smaller
+[local profile guide](../local-profile.md) instead.
+
 ## What it is
 
 OpenSession is a self-hosted agent-infrastructure server. One Bun process serves:

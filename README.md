@@ -21,6 +21,7 @@ bun run opensession.ts
 
 Then read the real setup guide — secrets, accounts, integrations, systemd:
 
+- **[docs/local-profile.md](docs/local-profile.md)** — minimal single-user setup on macOS
 - **[docs/setup/](docs/setup/README.md)** — overview, requirements, trust model
 - [docs/setup/install.md](docs/setup/install.md) — bare box → running service
 - [docs/self-hosting-sandboxes.md](docs/self-hosting-sandboxes.md) — isolated

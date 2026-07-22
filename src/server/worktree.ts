@@ -38,7 +38,11 @@ export const REPOS: Record<string, Repo> = new Proxy({} as Record<string, Repo>,
 });
 
 export function getRepo(id?: string): Repo {
-  return (id && configuredRepos()[id]) || defaultRepo();
+  if (!id) return defaultRepo();
+  const repo = configuredRepos()[id];
+  if (repo) return repo;
+  if (isLocalProfile()) throw new Error(`Unknown repo "${id}"`);
+  return defaultRepo();
 }
 
 /** Infer the repo that owns a checkout/worktree path. */
@@ -46,6 +50,7 @@ export function repoForPath(p: string): Repo {
   for (const r of Object.values(configuredRepos())) {
     if (p === r.repo || p.startsWith(`${worktreesDir()}/${r.wtPrefix}-`)) return r;
   }
+  if (isLocalProfile()) throw new Error(`No registered repo owns path "${p}"`);
   return defaultRepo();
 }
 

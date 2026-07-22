@@ -1,4 +1,4 @@
-const HOME = process.env.HOME || "/home/ubuntu";
+import { resolve } from "path";
 
 /** The backstage-side RPC socket the MCP proxy talks to. Stable path. */
 export function rpcSocketPath(chatsDir: string): string {
@@ -6,6 +6,6 @@ export function rpcSocketPath(chatsDir: string): string {
 }
 
 /** Absolute paths used by Codex MCP stdio proxy config. */
-export const BUN_BIN = `${HOME}/.bun/bin/bun`;
-export const REPO_ROOT = `${HOME}/projects/tella-backstage`;
-export const MCP_PROXY_ENTRY = `${REPO_ROOT}/src/runner-host/mcp-proxy.ts`;
+export const BUN_BIN = process.execPath;
+export const REPO_ROOT = resolve(import.meta.dir, "../..");
+export const MCP_PROXY_ENTRY = resolve(import.meta.dir, "../runner-host/mcp-proxy.ts");

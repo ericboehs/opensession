@@ -23,7 +23,7 @@ import {
   BRIDGE_PROVIDER_IDS,
 } from "./opencode-config";
 import { envAlias, stateDir } from "./rename-compat";
-import { isLocalProfile } from "./profile";
+import { isLocalProfile, localProfileRoot } from "./profile";
 
 export type Provider = "claude" | "codex" | "opencode";
 
@@ -111,10 +111,15 @@ export const LOCAL_PROFILE_MODELS: ModelInfo[] = [
 ];
 
 export function localProfileDefaultModel(): string {
-  const requested = envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL");
+  const requested =
+    envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL") ||
+    loadInteractiveOverride() ||
+    loadOverride();
   if (!requested) return LOCAL_PROFILE_MODELS[0].id;
   const native = (toOpencodeModel(requested) || requested).replace(/^opencode\//, "");
-  return /^(anthropic|openai)\//.test(native) ? native : LOCAL_PROFILE_MODELS[0].id;
+  return LOCAL_PROFILE_MODELS.some((model) => model.id === native)
+    ? native
+    : LOCAL_PROFILE_MODELS[0].id;
 }
 
 // ── The Dial ──────────────────────────────────────────────────────────────
@@ -579,7 +584,10 @@ const FALLBACK_DESTINATIONS = [
  *  preselected row) start on, without touching those loops. Dial preset ids
  *  are valid here — interactiveDefaultModel returns them unresolved so the
  *  session stores `dial/<tier>` and keeps its oracle+effort. */
-const DEFAULT_MODEL_STORE = stateDir("default-model.json");
+const defaultModelStore = () =>
+  isLocalProfile()
+    ? `${localProfileRoot()}/default-model.json`
+    : stateDir("default-model.json");
 const FALLBACK_AUTO_STORE = stateDir("model-fallback.json");
 const CODEX_MODEL_EXHAUST_MS = 60 * 60 * 1000;
 const codexModelExhaustedUntil = new Map<string, number>();
@@ -590,8 +598,8 @@ let interactiveOverrideCache: string | null | undefined;
 
 function loadStoredDefault(field: "model" | "interactiveModel"): string | null {
   try {
-    if (existsSync(DEFAULT_MODEL_STORE)) {
-      const raw = JSON.parse(readFileSync(DEFAULT_MODEL_STORE, "utf8"));
+    if (existsSync(defaultModelStore())) {
+      const raw = JSON.parse(readFileSync(defaultModelStore(), "utf8"));
       const id = typeof raw?.[field] === "string" ? raw[field].trim() : "";
       return id && resolveModel(id) ? resolveModel(id)!.id : null;
     }
@@ -615,12 +623,12 @@ function loadInteractiveOverride(): string | null {
 function patchDefaultModelStore(patch: Record<string, string | null>): void {
   let raw: Record<string, unknown> = {};
   try {
-    if (existsSync(DEFAULT_MODEL_STORE)) {
-      const parsed = JSON.parse(readFileSync(DEFAULT_MODEL_STORE, "utf8"));
+    if (existsSync(defaultModelStore())) {
+      const parsed = JSON.parse(readFileSync(defaultModelStore(), "utf8"));
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) raw = parsed;
     }
   } catch {}
-  writeJsonAtomic(DEFAULT_MODEL_STORE, { ...raw, ...patch });
+  writeJsonAtomic(defaultModelStore(), { ...raw, ...patch });
 }
 
 /**

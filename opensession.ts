@@ -15,12 +15,17 @@ import { startTodoReminderTicker } from "./src/server/todos";
 import { makeAskHandler } from "./src/server/asks";
 import { getWebhookRoutes, setEventSessionCallback, startScheduler } from "./src/server/automations";
 import { startUsagePoller } from "./src/server/claude-accounts";
-import { FRONTEND_SRC, IS_DEV, frontend, scheduleFrontendRebuild, sharedCheckoutEditors, spaEntry } from "./src/server/frontend-build";
+import { FRONTEND_SRC, IS_DEV, SPA_HEADERS, frontend, scheduleFrontendRebuild, sharedCheckoutEditors, spaEntry } from "./src/server/frontend-build";
 import { initHumanAsks } from "./src/server/human-asks";
 import { interactiveMcpServers } from "./src/server/interactive-mcp";
 import { OPENSESSION_CHATS_DIR } from "./src/server/paths";
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
-import { isLocalProfile, localProfileUser } from "./src/server/profile";
+import {
+	isLocalProfile,
+	isLoopbackHostname,
+	localProfileUser,
+	localRequestAllowed,
+} from "./src/server/profile";
 import { startPrReviewNotificationTicker } from "./src/server/pr-review-notifications";
 import { startPublicIngress } from "./src/server/public-ingress";
 import { envAlias } from "./src/server/rename-compat";
@@ -63,6 +68,10 @@ const PORT = parseInt(process.env.PORT || "3850");
 const HOST = process.env.HOST || "127.0.0.1";
 const HOME = process.env.HOME || "/home/ubuntu";
 const SESSIONS_DIR = OPENSESSION_CHATS_DIR;
+
+if (isLocalProfile() && !isLoopbackHostname(HOST)) {
+	throw new Error("OPENSESSION_PROFILE=local only supports a loopback HOST");
+}
 
 mkdirSync(SESSIONS_DIR, { recursive: true });
 
@@ -155,6 +164,12 @@ const server: import("bun").Server<WSClientData> = hotServe({
 			// confirmed poisoning self-restarts the process (run-ws.ts tripwire).
 			timerPoisonRequestCheck();
 			const url = new URL(req.url);
+			if (isLocalProfile() && !localRequestAllowed(req)) {
+				return Response.json(
+					{ error: "Local profile only accepts same-origin loopback requests" },
+					{ status: 403 },
+				);
+			}
 			// The bare domain root is the ONLY public URL form (os.tella.dev,
 			// 2026-07-10 — prefixes dropped). Handlers below still match the
 			// historical /backstage/* literals, so the root form normalizes onto
@@ -283,7 +298,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				!path.startsWith("/backstage/api/")
 			) {
 				return new Response(frontend.indexHtml, {
-					headers: { "Content-Type": "text/html; charset=utf-8" },
+					headers: SPA_HEADERS,
 				});
 			}
 

@@ -21,7 +21,8 @@
  * stateless across hot reloads (every mutable bit is parked on globalThis).
  */
 
-import { existsSync, unlinkSync, chmodSync } from "fs";
+import { existsSync, unlinkSync, chmodSync, mkdirSync } from "fs";
+import { dirname } from "path";
 import { timingSafeEqual } from "crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -314,6 +315,7 @@ export function startRunRpcServer(): void {
     return;
   }
   const sock = rpcSocketPath(BACKSTAGE_CHATS_DIR);
+  mkdirSync(dirname(sock), { recursive: true });
   try {
     if (existsSync(sock)) unlinkSync(sock);
   } catch {}

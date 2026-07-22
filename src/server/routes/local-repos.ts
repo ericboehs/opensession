@@ -1,6 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+} from "fs";
 import { basename } from "path";
 import { configPath, configuredRepos, type RepoSection } from "../config";
+import { OPENSESSION_CHATS_DIR } from "../paths";
 import { isLocalProfile, localProfileRoot } from "../profile";
 import { writeJsonAtomic } from "../shared/atomic-write";
 import type { RouteContext } from "./context";
@@ -11,18 +19,51 @@ interface GitResult {
   stderr: string;
 }
 
-async function git(args: string[], cwd?: string): Promise<GitResult> {
+async function git(
+  args: string[],
+  cwd?: string,
+  options?: { clone?: boolean },
+): Promise<GitResult> {
   const proc = Bun.spawn(["git", ...args], {
     ...(cwd ? { cwd } : {}),
+    ...(options?.clone
+      ? {
+          env: {
+            ...process.env,
+            GIT_ALLOW_PROTOCOL: "file:https:ssh",
+            GIT_SSH_COMMAND:
+              process.env.GIT_SSH_COMMAND ||
+              "ssh -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=3",
+          },
+        }
+      : {}),
     stdout: "pipe",
     stderr: "pipe",
   });
+  const timeout = setTimeout(() => proc.kill(9), options?.clone ? 5 * 60_000 : 30_000);
   const [exitCode, stdout, stderr] = await Promise.all([
-    proc.exited,
+    proc.exited.finally(() => clearTimeout(timeout)),
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
   ]);
   return { exitCode, stdout: stdout.trim(), stderr: stderr.trim() };
+}
+
+const CLONE_URL = /^(?:https:\/\/|ssh:\/\/|file:\/\/|[^/@\s]+@[^/:\s]+:).+/i;
+
+export function localCloneUrlAllowed(url: string): boolean {
+  return CLONE_URL.test(url);
+}
+
+const repoMutationState: { chain: Promise<unknown> } = ((globalThis as any)
+  .__localRepoMutationState ??= { chain: Promise.resolve() });
+function withRepoMutationLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = repoMutationState.chain.then(fn, fn);
+  repoMutationState.chain = run.then(
+    () => {},
+    () => {},
+  );
+  return run;
 }
 
 function rawConfig(): Record<string, unknown> {
@@ -96,53 +137,101 @@ async function registerRepo(input: { url?: string; path?: string }) {
 
   let requestedName: string;
   let checkoutPath: string;
+  let clonedCheckout = false;
   if (input.url) {
+    if (!localCloneUrlAllowed(input.url)) {
+      throw new Error("Clone URL must use HTTPS, SSH, or file://");
+    }
     requestedName = repoName(input.url);
     const id = localRepoId(requestedName);
+    if (configuredRepos()[id]) throw new Error(`Repository id already registered: ${id}`);
     checkoutPath = `${localProfileRoot()}/repos/${id}`;
     if (existsSync(checkoutPath)) {
       throw new Error(`Clone destination already exists: ${checkoutPath}`);
     }
     mkdirSync(`${localProfileRoot()}/repos`, { recursive: true });
-    const cloned = await git(["clone", "--", input.url, checkoutPath]);
-    if (cloned.exitCode !== 0) {
-      throw new Error(cloned.stderr || "git clone failed");
+    try {
+      const cloned = await git(["clone", "--", input.url, checkoutPath], undefined, {
+        clone: true,
+      });
+      if (cloned.exitCode !== 0) {
+        throw new Error(cloned.stderr || "git clone failed");
+      }
+      clonedCheckout = true;
+    } catch (error) {
+      rmSync(checkoutPath, { recursive: true, force: true });
+      throw error;
     }
   } else {
     checkoutPath = realpathSync(input.path!);
     requestedName = basename(checkoutPath);
+    const id = localRepoId(requestedName);
+    if (configuredRepos()[id]) throw new Error(`Repository id already registered: ${id}`);
   }
 
-  const inspected = await inspectRepo(checkoutPath);
-  const id = localRepoId(requestedName);
-  const current = configuredRepos();
-  if (current[id]) throw new Error(`Repository id already registered: ${id}`);
-
-  const config = rawConfig();
-  const repos = {
-    ...((config.repos && typeof config.repos === "object" && !Array.isArray(config.repos)
-      ? config.repos
-      : {}) as Record<string, RepoSection>),
-    [id]: {
-      repo: inspected.path,
-      wtPrefix: id,
-      defaultBranch: inspected.defaultBranch,
-      ...(inspected.ghRepo ? { ghRepo: inspected.ghRepo } : {}),
-      ...(Object.keys(current).length === 0 ? { default: true } : {}),
-    },
-  };
-  persistRepos(repos);
-  return configuredRepos()[id];
+  try {
+    const inspected = await inspectRepo(checkoutPath);
+    const id = localRepoId(requestedName);
+    const current = configuredRepos();
+    const config = rawConfig();
+    const repos = {
+      ...((config.repos && typeof config.repos === "object" && !Array.isArray(config.repos)
+        ? config.repos
+        : {}) as Record<string, RepoSection>),
+      [id]: {
+        repo: inspected.path,
+        wtPrefix: id,
+        defaultBranch: inspected.defaultBranch,
+        ...(inspected.ghRepo ? { ghRepo: inspected.ghRepo } : {}),
+        ...(Object.keys(current).length === 0 ? { default: true } : {}),
+      },
+    };
+    persistRepos(repos);
+    return configuredRepos()[id];
+  } catch (error) {
+    if (clonedCheckout) rmSync(checkoutPath, { recursive: true, force: true });
+    throw error;
+  }
 }
 
-function removeRepo(id: string): boolean {
+export function sessionDataReferencesRepo(data: unknown, id: string): boolean {
+  if (!data || typeof data !== "object") return false;
+  const session = data as {
+    id?: unknown;
+    repo?: unknown;
+    project?: unknown;
+    attachedRepos?: Array<{ repo?: unknown }>;
+    linkedPrs?: Array<{ repo?: unknown }>;
+  };
+  if (!session.id) return false;
+  return (
+    (session.repo ?? session.project) === id ||
+    session.attachedRepos?.some((repo) => repo.repo === id) === true ||
+    session.linkedPrs?.some((repo) => repo.repo === id) === true
+  );
+}
+
+function repoIsInUse(id: string): boolean {
+  if (!existsSync(OPENSESSION_CHATS_DIR)) return false;
+  for (const file of readdirSync(OPENSESSION_CHATS_DIR)) {
+    if (!file.endsWith(".json")) continue;
+    try {
+      const data = JSON.parse(readFileSync(`${OPENSESSION_CHATS_DIR}/${file}`, "utf-8"));
+      if (sessionDataReferencesRepo(data, id)) return true;
+    } catch {}
+  }
+  return false;
+}
+
+function removeRepo(id: string): "removed" | "missing" | "in-use" {
   const config = rawConfig();
   const repos = {
     ...((config.repos && typeof config.repos === "object" && !Array.isArray(config.repos)
       ? config.repos
       : {}) as Record<string, RepoSection>),
   };
-  if (!repos[id]) return false;
+  if (!repos[id]) return "missing";
+  if (repoIsInUse(id)) return "in-use";
   const wasDefault = repos[id].default === true;
   delete repos[id];
   if (wasDefault) {
@@ -150,7 +239,7 @@ function removeRepo(id: string): boolean {
     if (next) repos[next] = { ...repos[next], default: true };
   }
   persistRepos(repos);
-  return true;
+  return "removed";
 }
 
 export async function handleLocalReposRoutes(
@@ -169,14 +258,16 @@ export async function handleLocalReposRoutes(
       path?: unknown;
     } | null;
     try {
-      const repo = await registerRepo({
-        ...(typeof body?.url === "string" && body.url.trim()
-          ? { url: body.url.trim() }
-          : {}),
-        ...(typeof body?.path === "string" && body.path.trim()
-          ? { path: body.path.trim() }
-          : {}),
-      });
+      const repo = await withRepoMutationLock(() =>
+        registerRepo({
+          ...(typeof body?.url === "string" && body.url.trim()
+            ? { url: body.url.trim() }
+            : {}),
+          ...(typeof body?.path === "string" && body.path.trim()
+            ? { path: body.path.trim() }
+            : {}),
+        }),
+      );
       return Response.json(repo, { status: 201 });
     } catch (e) {
       return Response.json(
@@ -189,9 +280,15 @@ export async function handleLocalReposRoutes(
   const removeMatch = path.match(/^\/backstage\/api\/repos\/([^/]+)\/remove$/);
   if (removeMatch && req.method === "POST") {
     const id = decodeURIComponent(removeMatch[1]);
-    return removeRepo(id)
-      ? Response.json({ ok: true })
-      : Response.json({ error: "Repository not found" }, { status: 404 });
+    const result = await withRepoMutationLock(async () => removeRepo(id));
+    if (result === "removed") return Response.json({ ok: true });
+    if (result === "in-use") {
+      return Response.json(
+        { error: "Repository is still referenced by a session" },
+        { status: 409 },
+      );
+    }
+    return Response.json({ error: "Repository not found" }, { status: 404 });
   }
 
   return undefined;

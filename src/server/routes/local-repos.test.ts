@@ -4,7 +4,14 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { mkdtempSync } from "fs";
 import { configuredRepos } from "../config";
-import { githubRepoFromRemote, handleLocalReposRoutes, localRepoId } from "./local-repos";
+import { getRepo, repoForPath } from "../worktree";
+import {
+  githubRepoFromRemote,
+  handleLocalReposRoutes,
+  localCloneUrlAllowed,
+  localRepoId,
+  sessionDataReferencesRepo,
+} from "./local-repos";
 import type { RouteContext } from "./context";
 
 const saved = {
@@ -104,6 +111,27 @@ describe("local repo routes", () => {
     expect(existsSync(join(body.repo, ".git"))).toBe(true);
   });
 
+  test("promotes the next repo when the default is removed", async () => {
+    for (const name of ["first", "second"]) {
+      const response = await handleLocalReposRoutes(
+        context("/backstage/api/repos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: makeRepo(name) }),
+        }),
+      );
+      expect(response?.status).toBe(201);
+    }
+    expect(configuredRepos().first.default).toBe(true);
+    expect(configuredRepos().second.default).toBeUndefined();
+
+    const removed = await handleLocalReposRoutes(
+      context("/backstage/api/repos/first/remove", { method: "POST" }),
+    );
+    expect(removed?.status).toBe(200);
+    expect(configuredRepos().second.default).toBe(true);
+  });
+
   test("is dormant outside the local profile", async () => {
     process.env.OPENSESSION_PROFILE = "cloud";
     expect(
@@ -111,6 +139,13 @@ describe("local repo routes", () => {
         context("/backstage/api/repos", { method: "POST", body: "{}" }),
       ),
     ).toBeUndefined();
+  });
+
+  test("never falls back to another repo for an unknown local id or path", () => {
+    expect(() => getRepo("missing")).toThrow('Unknown repo "missing"');
+    expect(() => repoForPath(join(root, "unregistered"))).toThrow(
+      "No registered repo owns path",
+    );
   });
 });
 
@@ -120,4 +155,16 @@ test("repo ids and GitHub remotes are normalized", () => {
     "tellahq/os1-mac",
   );
   expect(githubRepoFromRemote("https://example.com/acme/app.git")).toBeUndefined();
+  expect(localCloneUrlAllowed("https://github.com/acme/app.git")).toBe(true);
+  expect(localCloneUrlAllowed("git@github.com:acme/app.git")).toBe(true);
+  expect(localCloneUrlAllowed("ext::sh -c 'touch /tmp/pwned'")).toBe(false);
+  expect(localCloneUrlAllowed("http://169.254.169.254/repo.git")).toBe(false);
+  expect(sessionDataReferencesRepo({ id: "bks-1", repo: "my-app" }, "my-app")).toBe(true);
+  expect(
+    sessionDataReferencesRepo(
+      { id: "bks-1", attachedRepos: [{ repo: "other" }] },
+      "other",
+    ),
+  ).toBe(true);
+  expect(sessionDataReferencesRepo({ repo: "my-app" }, "my-app")).toBe(false);
 });

@@ -32,7 +32,7 @@ import { readOpencodeBridgeConfig, opencodeProviderOptions } from "./opencode-co
 import { ensureAnthropicBridge } from "./anthropic-bridge";
 import { isClaudeUsageLimitError } from "./runner-shared";
 import { markExhausted, getUsableAccountById, type ClaudeAccount } from "./claude-accounts";
-import { toOpencodeModel } from "./models";
+import { localProfileDefaultModel, toOpencodeModel } from "./models";
 import { envAlias } from "./rename-compat";
 import { audit } from "./audit";
 import { isLocalProfile } from "./profile";
@@ -105,10 +105,13 @@ export async function opencodeOneShot(
   prompt: string,
   opts: OneShotOpts = {}
 ): Promise<string | null> {
-  const requested =
-    opts.model ||
-    envAlias("OPENSESSION_ONESHOT_MODEL", "BACKSTAGE_ONESHOT_MODEL") ||
-    DEFAULT_ONESHOT_MODEL;
+  const localProfile = isLocalProfile();
+  const requested = localProfile
+    ? envAlias("OPENSESSION_ONESHOT_MODEL", "BACKSTAGE_ONESHOT_MODEL") ||
+      `opencode/${localProfileDefaultModel()}`
+    : opts.model ||
+      envAlias("OPENSESSION_ONESHOT_MODEL", "BACKSTAGE_ONESHOT_MODEL") ||
+      DEFAULT_ONESHOT_MODEL;
   const model = toOpencodeModel(requested) || requested;
   const parsed = parseOpencodeModel(model);
   const label = opts.label || "oneshot";
@@ -120,7 +123,6 @@ export async function opencodeOneShot(
   }
 
   const startedAt = Date.now();
-  const localProfile = isLocalProfile();
   const serverKey = localProfile ? "oneshot:local" : `oneshot:${parsed.providerID}`;
   // Two attempts max: an unhealthy meridian account (a usage limit, or a wedged
   // subscription/provider fault that only ever reaches us as our own 120s

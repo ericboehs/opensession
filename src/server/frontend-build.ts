@@ -152,13 +152,19 @@ export const frontend: FrontendBundle | null = IS_DEV
 	? null
 	: (g.__backstageFrontend as FrontendBundle);
 
+export const SPA_HEADERS = {
+	"Content-Type": "text/html; charset=utf-8",
+	"Content-Security-Policy": "frame-ancestors 'none'",
+	"X-Frame-Options": "DENY",
+};
+
 // SPA entry: the HMR bundle in dev, the prebuilt index.html in prod. Reads
 // `frontend.indexHtml` fresh on each request so an in-process rebuild is served
 // immediately (the object is mutated, not replaced).
 export const spaEntry = frontend
 	? () =>
 			new Response(frontend.indexHtml, {
-				headers: { "Content-Type": "text/html; charset=utf-8" },
+				headers: SPA_HEADERS,
 			})
 	: homepage;
 

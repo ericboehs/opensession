@@ -117,7 +117,9 @@ export async function handleModelsRoutes(
 				{ status: 400 },
 			);
 		}
-		return Response.json({ autoFallback: setModelFallbackAuto(body.auto) });
+		return Response.json({
+			autoFallback: isLocalProfile() ? false : setModelFallbackAuto(body.auto),
+		});
 	}
 
 	// Suggest a branch name from a task prompt (one no-tools Haiku call).

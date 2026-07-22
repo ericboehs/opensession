@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { isLocalProfile, localProfileUser } from "./profile";
+import { isLocalProfile, localProfileUser, localRequestAllowed } from "./profile";
 
 const savedProfile = process.env.OPENSESSION_PROFILE;
 const savedUser = process.env.OPENSESSION_LOCAL_USER;
@@ -27,5 +27,24 @@ describe("local profile", () => {
     process.env.OPENSESSION_PROFILE = "local";
     process.env.OPENSESSION_LOCAL_USER = "Ada Lovelace";
     expect(localProfileUser()).toBe("Ada Lovelace");
+  });
+
+  test("accepts only same-origin loopback browser requests", () => {
+    expect(localRequestAllowed(new Request("http://127.0.0.1:3850/api/health"))).toBe(true);
+    expect(
+      localRequestAllowed(
+        new Request("http://localhost:3850/api/health", {
+          headers: { Origin: "http://localhost:3850" },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      localRequestAllowed(
+        new Request("http://127.0.0.1:3850/api/repos", {
+          headers: { Origin: "https://attacker.example" },
+        }),
+      ),
+    ).toBe(false);
+    expect(localRequestAllowed(new Request("http://192.168.1.2:3850/api/health"))).toBe(false);
   });
 });
