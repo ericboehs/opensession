@@ -1,13 +1,23 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
 import { BottomSheet } from "../ui/sheet";
 import { useIsPhone } from "../hooks/useIsPhone";
-import { IconCheck, IconChevronRight, IconGear } from "./icons";
+import {
+	IconCheck,
+	IconChevronRight,
+	IconDotsHorizontal,
+	IconGear,
+} from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { TEAM, setCurrentUser, signOut, useAuthStatus, useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { PRODUCT_MARK, PRODUCT_NAME } from "../lib/brand";
+import {
+	areAllSidebarToolsHidden,
+	onSidebarToolsChanged,
+	showAllSidebarTools,
+} from "../lib/sidebar-tools";
 
 // The account menu: the account switcher (who you're acting as), the live
 // connection status, and an entry into the full Settings page (theme,
@@ -86,10 +96,12 @@ function UserRow({
 function SettingsSheet({
 	onOpenSettings,
 	connected,
+	allToolsHidden,
 	variant = "chevron",
 }: {
 	onOpenSettings?: () => void;
 	connected?: boolean;
+	allToolsHidden: boolean;
 	variant?: "chevron" | "brand" | "top" | "footer";
 }) {
 	const currentUser = useCurrentUser();
@@ -191,6 +203,22 @@ function SettingsSheet({
 							)}
 
 							<div className="mt-4 overflow-hidden rounded-xl border border-line bg-panel">
+								{allToolsHidden && (
+									<button
+										className="flex w-full items-center gap-3 border-x-0 border-b border-t-0 border-solid border-line bg-transparent px-3.5 py-3 text-left active:bg-hover"
+										onClick={() => {
+											dismiss();
+											showAllSidebarTools();
+										}}
+									>
+										<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-dim">
+											<IconDotsHorizontal size={22} />
+										</span>
+										<span className="min-w-0 flex-1 text-[15px] font-medium text-fg">
+											Show tools
+										</span>
+									</button>
+								)}
 								<button
 									className="flex w-full items-center gap-3 border-none bg-transparent px-3.5 py-3 text-left active:bg-hover"
 									onClick={() => {
@@ -237,6 +265,16 @@ export function SettingsMenu({
 	const currentUser = useCurrentUser();
 	const isPhone = useIsPhone();
 	const auth = useAuthStatus();
+	const [allToolsHidden, setAllToolsHidden] = useState(
+		areAllSidebarToolsHidden,
+	);
+	useEffect(
+		() =>
+			onSidebarToolsChanged(() =>
+				setAllToolsHidden(areAllSidebarToolsHidden()),
+			),
+		[],
+	);
 	// GitHub sign-in active ⇒ identity is server-verified, no account switcher.
 	const githubAuth = auth?.required && auth.authenticated ? auth : null;
 
@@ -245,6 +283,7 @@ export function SettingsMenu({
 			<SettingsSheet
 				onOpenSettings={onOpenSettings}
 				connected={connected}
+				allToolsHidden={allToolsHidden}
 				variant={variant}
 			/>
 		);
@@ -426,6 +465,12 @@ export function SettingsMenu({
 					</>
 				)}
 
+				{allToolsHidden && (
+					<Menu.Item onClick={showAllSidebarTools}>
+						<IconDotsHorizontal size={22} />
+						Show tools
+					</Menu.Item>
+				)}
 				<Menu.Item onClick={() => onOpenSettings?.()}>
 					<IconGear size={22} />
 					Settings

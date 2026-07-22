@@ -62,6 +62,12 @@ import { RepoTile, swatchColor, repoLabel } from "./RepoTile";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { ReviewQueue } from "./ReviewQueue";
 import { PixelSpinner } from "./PixelSpinner";
+import {
+	readHiddenSidebarTools,
+	setSidebarToolVisible,
+	onSidebarToolsChanged,
+	type SidebarToolId,
+} from "../lib/sidebar-tools";
 
 const AUTOMATION_COLOR = "#d29922";
 
@@ -712,41 +718,6 @@ type GroupBy = "status" | "repo" | "recently";
 type SortBy = "updated" | "created";
 const DEFAULT_PROJECT = "tella-fusion";
 const FILTER_KEY = "opensession-sidebar-filter";
-const HIDDEN_TOOLS_KEY = "opensession-sidebar-hidden-tools";
-
-type ToolId =
-	| "watercooler"
-	| "catchup"
-	| "reviews"
-	| "prtinder"
-	| "supporttinder"
-	| "reports"
-	| "analytics"
-	| "notes";
-
-const TOOL_IDS: ToolId[] = [
-	"watercooler",
-	"catchup",
-	"reviews",
-	"prtinder",
-	"supporttinder",
-	"reports",
-	"analytics",
-	"notes",
-];
-
-function readHiddenTools(): Set<ToolId> {
-	try {
-		const stored = JSON.parse(localStorage.getItem(HIDDEN_TOOLS_KEY) || "[]");
-		return new Set(
-			Array.isArray(stored)
-				? stored.filter((id): id is ToolId => TOOL_IDS.includes(id))
-				: [],
-		);
-	} catch {
-		return new Set();
-	}
-}
 
 interface FilterState {
 	groupBy: GroupBy;
@@ -841,7 +812,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const [search, setSearch] = useState("");
 	// Groups are collapsed by default; the expanded set persists per browser
 	const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
-	const [hiddenTools, setHiddenTools] = useState<Set<ToolId>>(readHiddenTools);
+	const [hiddenTools, setHiddenTools] = useState(readHiddenSidebarTools);
 	const [pins, setPins] = useState<string[]>(getPins);
 	// Drag-to-reorder in the Pinned band. onReorder fires continuously during a
 	// drag, so the in-flight order lives in local state (pinOrderDraft) and only
@@ -857,6 +828,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// same event the viewer fires when it marks a session read.
 	const [reads, setReads] = useState(getReads);
 	const currentUser = useCurrentUser();
+	useEffect(
+		() => onSidebarToolsChanged(() => setHiddenTools(readHiddenSidebarTools())),
+		[],
+	);
 
 	// Filter popover (group by / repo / sort) — its choices persist together.
 	const [filter, setFilterState] = useState<FilterState>(readFilter);
@@ -1990,7 +1965,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	}, [sessions, openPrs, currentUser]);
 
 	const tools: Array<{
-		id: ToolId;
+		id: SidebarToolId;
 		label: string;
 		icon: React.ReactNode;
 		active: boolean;
@@ -2065,16 +2040,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			title: "Shared notes and documentation",
 		},
 	];
+	const visibleTools = tools.filter((tool) => !hiddenTools.has(tool.id));
 
-	function setToolVisible(id: ToolId, visible: boolean) {
-		setHiddenTools((previous) => {
-			const next = new Set(previous);
-			if (visible) next.delete(id);
-			else next.add(id);
-			localStorage.setItem(HIDDEN_TOOLS_KEY, JSON.stringify([...next]));
-			return next;
-		});
-	}
+	const setToolVisible = setSidebarToolVisible;
 
 	// "Archived" reads as a peer of the My-sessions status buckets (Needs input /
 	// Done …): an icon-led row that sits flush under them. Unlike those, it doesn't
@@ -2596,7 +2564,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 	return (
 		<div className="sidebar">
-			{!isPhone && (
+			{!isPhone && visibleTools.length > 0 && (
 				<div className="sidebar-band-label sidebar-tools-head">
 					<div className="group flex min-h-[30px] w-full items-center rounded-md hover:bg-hover hover:text-dim">
 						<button
@@ -2646,24 +2614,22 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					</div>
 				</div>
 			)}
-			{(isPhone || toolsOpen) && (
+			{visibleTools.length > 0 && (isPhone || toolsOpen) && (
 				<nav className="sidebar-nav">
-					{tools
-						.filter((tool) => !hiddenTools.has(tool.id))
-						.map((tool) => (
-							<button
-								key={tool.id}
-								className={`sidebar-nav-item ${tool.active ? "active" : ""}`}
-								onClick={tool.onClick}
-								title={tool.title}
-							>
-								<span className="sidebar-nav-icon">{tool.icon}</span>
-								{tool.label}
-								{!!tool.count && (
-									<span className="sidebar-nav-count">{tool.count}</span>
-								)}
-							</button>
-						))}
+					{visibleTools.map((tool) => (
+						<button
+							key={tool.id}
+							className={`sidebar-nav-item ${tool.active ? "active" : ""}`}
+							onClick={tool.onClick}
+							title={tool.title}
+						>
+							<span className="sidebar-nav-icon">{tool.icon}</span>
+							{tool.label}
+							{!!tool.count && (
+								<span className="sidebar-nav-count">{tool.count}</span>
+							)}
+						</button>
+					))}
 				</nav>
 			)}
 
