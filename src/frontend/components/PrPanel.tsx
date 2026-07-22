@@ -52,7 +52,7 @@ type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 
 interface Props {
   sessionId: string;
-  /** When provided, renders an "Open session →" action (used by the Reviews view). */
+  /** When provided, renders an "Open workspace" action (used by the Reviews view). */
   onOpenSession?: () => void;
   /** Append PR/check/comment context to this session's composer draft. */
   onAddToInput?: (text: string) => void;
@@ -821,7 +821,7 @@ export function PrPanel({
                 className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs font-medium text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
                 onClick={onOpenSession}
               >
-                Open session
+                Open workspace
               </button>
             )}
             {pr.state === "OPEN" && !pr.isDraft && (
@@ -1199,7 +1199,7 @@ export function PrPanel({
                 className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs text-dim hover:bg-hover hover:text-fg"
                 onClick={onOpenSession}
               >
-                Open session
+                Open workspace
               </button>
             )}
             {pr.state === "OPEN" && !pr.isDraft && (
@@ -1331,7 +1331,7 @@ export function PrPanel({
             </a>
             {onOpenSession && (
               <button className="prc-btn" onClick={onOpenSession}>
-                Open session →
+                Open workspace →
               </button>
             )}
             {linkable && !showBar && (
