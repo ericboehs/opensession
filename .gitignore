@@ -18,8 +18,13 @@ node_modules
 __pycache__/
 *.pyc
 
-# Scratch/deliverable output from local sessions (icon renders, etc.)
-output/
+# output/ holds session deliverables (e.g. the OS1 app icon under
+# output/os1-icons). Sources are tracked — only rendered artifacts are
+# ignored (rebuild via generate.ts + build-fallbacks.sh + ictool).
+output/**/previews/
+output/**/*.icns
+output/**/*.iconset/
+output/os1-icons/icon-512-padded.png
 
 # macOS Finder metadata
 .DS_Store
