@@ -78,6 +78,10 @@ export function PrPreview({
 	const [guideLoading, setGuideLoading] = useState(false);
 	const [guideFailed, setGuideFailed] = useState(false);
 	const [loading, setLoading] = useState(true);
+	const [loadError, setLoadError] = useState<string | null>(null);
+	const [diffLoading, setDiffLoading] = useState(true);
+	const [diffError, setDiffError] = useState<string | null>(null);
+	const loadGenerationRef = useRef(0);
 	const [prompt, setPrompt] = useState(() => loadDraft(draftKey).text);
 	useEffect(() => {
 		saveDraft(draftKey, { text: prompt });
@@ -92,27 +96,52 @@ export function PrPreview({
 	const currentUser = useCurrentUser();
 
 	const load = useCallback(async () => {
+		const generation = ++loadGenerationRef.current;
+		const isCurrent = () => generation === loadGenerationRef.current;
+		setDiffLoading(true);
+		const diffRequest = fetchPrPreviewDiff(repo, branch)
+			.then((data) => {
+				if (isCurrent()) {
+					setDiff(data);
+					setDiffError(null);
+				}
+				return data;
+			})
+			.catch((e: any) => {
+				if (isCurrent()) {
+					setDiff(null);
+					setDiffError(e?.message || "Failed to load pull request changes.");
+				}
+				return null;
+			})
+			.finally(() => {
+				if (isCurrent()) setDiffLoading(false);
+			});
 		try {
-			const [prData, diffData] = await Promise.all([
-				fetchPrPreview(repo, branch),
-				fetchPrPreviewDiff(repo, branch).catch(() => null),
-			]);
+			const [prData] = await Promise.all([fetchPrPreview(repo, branch), diffRequest]);
+			if (!isCurrent()) return;
 			setPr(prData);
-			setDiff(diffData);
-		} catch {
-			setPr(null);
+			setLoadError(null);
+		} catch (e: any) {
+			if (isCurrent()) setLoadError(e?.message || "Failed to load the pull request.");
 		} finally {
-			setLoading(false);
+			if (isCurrent()) setLoading(false);
 		}
 	}, [repo, branch]);
 
 	useEffect(() => {
 		setLoading(true);
+		setLoadError(null);
+		setDiffLoading(true);
+		setDiffError(null);
 		setPr(null);
 		setDiff(null);
 		load();
 		const interval = setInterval(load, 60000);
-		return () => clearInterval(interval);
+		return () => {
+			clearInterval(interval);
+			loadGenerationRef.current += 1;
+		};
 	}, [load]);
 
 	useEffect(() => {
@@ -324,6 +353,20 @@ export function PrPreview({
 				<div className="w-full max-w-[860px] mx-auto px-5 py-6">
 					{loading ? (
 						<div className="panel-placeholder">Loading PR…</div>
+					) : loadError && !pr ? (
+						<div className="panel-placeholder panel-error">
+							<div>{loadError}</div>
+							<button
+								className="mt-3 rounded-sm border border-line bg-panel px-3 py-1.5 text-xs text-fg hover:bg-hover"
+								onClick={() => {
+									setLoading(true);
+									setLoadError(null);
+									void load();
+								}}
+							>
+								Retry
+							</button>
+						</div>
 					) : !pr ? (
 						<div className="panel-placeholder">
 							No PR found for <code>{branch}</code> in {repo}. It may have just
@@ -495,8 +538,24 @@ export function PrPreview({
 								</>
 							) : tab === "guide" ? (
 								!diff?.patch ? (
-									<div className="panel-placeholder">
-										Couldn't load the diff for this PR.
+									<div className={`panel-placeholder ${!diffLoading && diffError ? "panel-error" : ""}`}>
+										<div>
+											{diffLoading
+												? "Loading pull request changes…"
+												: diffError || "No text diff is available for this PR."}
+										</div>
+										{!diffLoading && diffError && (
+											<button
+												className="mt-3 rounded-sm border border-line bg-panel px-3 py-1.5 text-xs text-fg hover:bg-hover"
+												onClick={() => {
+													setDiffLoading(true);
+													setDiffError(null);
+													void load();
+												}}
+											>
+												Retry
+											</button>
+										)}
 									</div>
 								) : guideLoading ? (
 									<div className="pr-guide-status">Writing the review guide…</div>
@@ -551,8 +610,24 @@ export function PrPreview({
 									/>
 								</div>
 							) : (
-								<div className="panel-placeholder">
-									Couldn't load the diff for this PR.
+								<div className={`panel-placeholder ${!diffLoading && diffError ? "panel-error" : ""}`}>
+									<div>
+										{diffLoading
+											? "Loading pull request changes…"
+											: diffError || "No text diff is available for this PR."}
+									</div>
+									{!diffLoading && diffError && (
+										<button
+											className="mt-3 rounded-sm border border-line bg-panel px-3 py-1.5 text-xs text-fg hover:bg-hover"
+											onClick={() => {
+												setDiffLoading(true);
+												setDiffError(null);
+												void load();
+											}}
+										>
+											Retry
+										</button>
+									)}
 								</div>
 							)}
 						</div>

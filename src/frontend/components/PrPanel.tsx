@@ -301,7 +301,9 @@ export function PrPanel({
   const [diffGroupsLoading, setDiffGroupsLoading] = useState(false);
   const [diffGroupsRetry, setDiffGroupsRetry] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(true);
+  const [diffError, setDiffError] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingComment[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewEvent, setReviewEvent] = useState<ReviewEvent>(() =>
@@ -360,13 +362,16 @@ export function PrPanel({
       .then((data) => {
         prSettled = true;
         prResult = data;
-        if (isCurrent()) setPr(data);
+        if (isCurrent()) {
+          setPr(data);
+          setLoadError(null);
+        }
         commitDiff();
       })
-      .catch(() => {
+      .catch((e: any) => {
         prSettled = true;
         prResult = null;
-        if (isCurrent()) setPr(null);
+        if (isCurrent()) setLoadError(e?.message || "Failed to load the pull request.");
         commitDiff();
       })
       .finally(() => {
@@ -379,11 +384,13 @@ export function PrPanel({
       .then((data) => {
         diffSettled = true;
         diffResult = data;
+        if (isCurrent()) setDiffError(null);
         commitDiff();
       })
-      .catch(() => {
+      .catch((e: any) => {
         diffSettled = true;
         diffResult = null;
+        if (isCurrent()) setDiffError(e?.message || "Failed to load pull request changes.");
         commitDiff();
       });
     // A linked PR has no local worktree in this session — no git state.
@@ -418,7 +425,9 @@ export function PrPanel({
 
   useEffect(() => {
     setLoading(true);
+    setLoadError(null);
     setDiffLoading(true);
+    setDiffError(null);
     setPr(null);
     setDiff(null);
     setGit(null);
@@ -786,6 +795,26 @@ export function PrPanel({
       </div>
     );
 
+  if (loadError && !pr)
+    return (
+      <div className="pr-panel">
+        {switcher}
+        <div className="panel-placeholder panel-error">
+          <div>{loadError}</div>
+          <button
+            className="mt-3 rounded-sm border border-line bg-panel px-3 py-1.5 text-xs text-fg hover:bg-hover"
+            onClick={() => {
+              setLoading(true);
+              setLoadError(null);
+              void load(true);
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+
   if (!pr)
     return (
       <div className="pr-panel">
@@ -1004,7 +1033,21 @@ export function PrPanel({
                 />
               ) : !diff?.patch ? (
                 <div className="py-12 text-center text-sm text-faint">
-                  {diffLoading
+                  {diffError ? (
+                    <>
+                      <span className="text-red">{diffError}</span>
+                      <button
+                        className="ml-2 border-0 bg-transparent text-accent"
+                        onClick={() => {
+                          setDiffLoading(true);
+                          setDiffError(null);
+                          void load(true);
+                        }}
+                      >
+                        Retry
+                      </button>
+                    </>
+                  ) : diffLoading
                     ? "Loading pull request changes…"
                     : diffOutOfDate
                       ? "The pull request changed while loading. It will refresh automatically."
@@ -1454,10 +1497,24 @@ export function PrPanel({
         </div>
       </SelectionToSession>
 
-      {(diffLoading || diffOutOfDate) && !diff?.patch && (
+      {(diffLoading || diffOutOfDate || diffError) && !diff?.patch && (
         <div className="pr-panel-diff">
-          <div className="panel-placeholder">
-            {diffOutOfDate
+          <div className={`panel-placeholder ${diffError ? "panel-error" : ""}`}>
+            {diffError ? (
+              <>
+                <div>{diffError}</div>
+                <button
+                  className="mt-3 rounded-sm border border-line bg-panel px-3 py-1.5 text-xs text-fg hover:bg-hover"
+                  onClick={() => {
+                    setDiffLoading(true);
+                    setDiffError(null);
+                    void load(true);
+                  }}
+                >
+                  Retry
+                </button>
+              </>
+            ) : diffOutOfDate
               ? "The pull request changed while loading. It will refresh automatically."
               : "Loading pull request changes…"}
           </div>

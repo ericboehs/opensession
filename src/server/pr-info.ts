@@ -175,20 +175,24 @@ export async function getPrDiff(
   const hit = diffCache.get(key);
   if (hit && Date.now() - hit.ts < TTL) return hit.data;
 
-  let data: PrDiffData | null = null;
   try {
     const metaRaw = await $`gh pr view ${branch} --repo ${repo} --json number,headRefOid`
       .quiet()
       .text();
     const meta = JSON.parse(metaRaw);
     const patch = await $`gh pr diff ${meta.number} --repo ${repo}`.quiet().text();
-    data = { number: meta.number, headRefOid: meta.headRefOid, patch };
-  } catch {
-    data = null;
+    const data = { number: meta.number, headRefOid: meta.headRefOid, patch };
+    diffCache.set(key, { data, ts: Date.now() });
+    return data;
+  } catch (e: any) {
+    const msg = String(e?.stderr || e?.message || e).slice(0, 300);
+    if (!isNoPrError(msg)) {
+      console.warn(`[pr-info] gh pr diff ${branch} (${repo}) failed: ${msg}`);
+      throw new Error(prApiErrorMessage(msg));
+    }
+    diffCache.set(key, { data: null, ts: Date.now() });
+    return null;
   }
-
-  diffCache.set(key, { data, ts: Date.now() });
-  return data;
 }
 
 export interface PrCommentInput {
@@ -206,7 +210,8 @@ export async function postPrComment(
   input: PrCommentInput,
   repo: string = DEFAULT_REPO()
 ): Promise<{ ok: true; url?: string } | { error: string }> {
-  const diff = await getPrDiff(branch, repo);
+  const diff = await getPrDiff(branch, repo).catch((e: any) => ({ error: e?.message || String(e) }));
+  if (diff && "error" in diff) return diff;
   if (!diff) return { error: "No PR found for this branch" };
 
   try {
@@ -286,7 +291,8 @@ export async function submitPrReview(
   input: PrReviewInput,
   repo: string = DEFAULT_REPO()
 ): Promise<{ ok: true; url?: string } | { error: string }> {
-  const diff = await getPrDiff(branch, repo);
+  const diff = await getPrDiff(branch, repo).catch((e: any) => ({ error: e?.message || String(e) }));
+  if (diff && "error" in diff) return diff;
   if (!diff) return { error: "No PR found for this branch" };
   if (!input.comments.length && !input.body?.trim()) {
     return { error: "Nothing to submit" };
@@ -493,7 +499,10 @@ export async function getPrDetails(
       .finally(() => inflight.delete(key));
     inflight.set(key, refresh);
   }
-  if (hit) return hit.data;
+  if (hit?.data) {
+    void refresh.catch(() => {});
+    return hit.data;
+  }
   return refresh;
 }
 
@@ -508,8 +517,20 @@ export async function getPrDetailsFresh(
 }
 
 /** True for "this branch/number has no PR" — a real answer, not a failure. */
-function isNoPrError(msg: string): boolean {
-  return /no pull requests found|Could not resolve/i.test(msg);
+export function isNoPrError(msg: string): boolean {
+  return /no pull requests found|Could not resolve to a PullRequest/i.test(msg);
+}
+
+export function prApiErrorMessage(msg: string): string {
+  if (/rate limit/i.test(msg))
+    return "GitHub's API rate limit has been reached. Try again after it resets.";
+  if (/authentication|bad credentials|requires authentication/i.test(msg))
+    return "GitHub authentication failed. Check the GitHub connection.";
+  return "GitHub's pull request API is unavailable right now.";
+}
+
+function isPermanentPrApiError(msg: string): boolean {
+  return /rate limit|authentication|bad credentials|requires authentication/i.test(msg);
 }
 
 async function fetchPrDetails(
@@ -531,7 +552,7 @@ async function fetchPrDetails(
         break;
       } catch (e: any) {
         const msg = String(e?.stderr || e?.message || e).slice(0, 300);
-        if (isNoPrError(msg) || attempt >= 3) throw e;
+        if (isNoPrError(msg) || isPermanentPrApiError(msg) || attempt >= 3) throw e;
         console.warn(`[pr-info] gh pr view ${branch} (${repo}) attempt ${attempt} failed, retrying: ${msg}`);
         await new Promise((r) => setTimeout(r, attempt * 2000));
       }
@@ -588,11 +609,11 @@ async function fetchPrDetails(
       staging: parseStaging(pr.comments),
     };
   } catch (e: any) {
-    // No PR for this branch, or a gh failure — both fine to cache briefly. But
-    // say which: the silent version hid a real failure as "no PR" (PR #4910).
     const msg = String(e?.stderr || e?.message || e).slice(0, 300);
-    if (!isNoPrError(msg))
+    if (!isNoPrError(msg)) {
       console.warn(`[pr-info] gh pr view ${branch} (${repo}) failed: ${msg}`);
+      throw new Error(prApiErrorMessage(msg));
+    }
     data = null;
   }
 

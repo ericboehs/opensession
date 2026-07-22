@@ -36,6 +36,17 @@ function validDiffGroupingInput(body: any): {
 	return files.length === body.files.length ? { files, patch: body.patch } : null;
 }
 
+async function prApiResponse(load: () => Promise<unknown>): Promise<Response> {
+	try {
+		return Response.json(await load());
+	} catch (e: any) {
+		return Response.json(
+			{ error: e?.message || "GitHub's pull request API is unavailable right now." },
+			{ status: 502 },
+		);
+	}
+}
+
 export async function handlePrRoutes(
 	ctx: RouteContext,
 ): Promise<Response | undefined> {
@@ -161,7 +172,7 @@ export async function handlePrRoutes(
 			url.searchParams.get("branch"),
 		);
 		if (!target) return Response.json(null);
-		return Response.json(await getPrDetails(target.branch, target.ghRepo));
+		return prApiResponse(() => getPrDetails(target.branch, target.ghRepo));
 	}
 
 	// PR diff for inline review in the PR tab
@@ -181,7 +192,7 @@ export async function handlePrRoutes(
 			url.searchParams.get("branch"),
 		);
 		if (!target) return Response.json(null);
-		return Response.json(await getPrDiff(target.branch, target.ghRepo));
+		return prApiResponse(() => getPrDiff(target.branch, target.ghRepo));
 	}
 
 	// AI-powered file categories for the PR Changes view. Kept separate from
@@ -289,8 +300,8 @@ export async function handlePrRoutes(
 		);
 		if (!target) return Response.json(null);
 		const { getReviewGuide } = await import("../../server/review-guide");
-		return Response.json(
-			await getReviewGuide(target.branch, target.ghRepo),
+		return prApiResponse(
+			() => getReviewGuide(target.branch, target.ghRepo),
 		);
 	}
 
@@ -329,14 +340,14 @@ export async function handlePrRoutes(
 		if (!branch)
 			return Response.json({ error: "branch required" }, { status: 400 });
 		const repo = getRepo(url.searchParams.get("repo") || undefined);
-		return Response.json(await getPrDetails(branch, repo.ghRepo));
+		return prApiResponse(() => getPrDetails(branch, repo.ghRepo));
 	}
 	if (path === "/backstage/api/pr-preview-diff" && req.method === "GET") {
 		const branch = url.searchParams.get("branch") || "";
 		if (!branch)
 			return Response.json({ error: "branch required" }, { status: 400 });
 		const repo = getRepo(url.searchParams.get("repo") || undefined);
-		return Response.json(await getPrDiff(branch, repo.ghRepo));
+		return prApiResponse(() => getPrDiff(branch, repo.ghRepo));
 	}
 	if (path === "/backstage/api/pr-preview-diff-groups" && req.method === "POST") {
 		const repo = getRepo(url.searchParams.get("repo") || undefined);
@@ -357,7 +368,7 @@ export async function handlePrRoutes(
 			return Response.json({ error: "branch required" }, { status: 400 });
 		const repo = getRepo(url.searchParams.get("repo") || undefined);
 		const { getReviewGuide } = await import("../../server/review-guide");
-		return Response.json(await getReviewGuide(branch, repo.ghRepo));
+		return prApiResponse(() => getReviewGuide(branch, repo.ghRepo));
 	}
 	if (path === "/backstage/api/pr-preview-review" && req.method === "POST") {
 		const body = await req.json().catch(() => null);
@@ -424,7 +435,7 @@ export async function handlePrRoutes(
 		} catch (e: any) {
 			return Response.json(
 				{ error: e.message || String(e) },
-				{ status: 500 },
+				{ status: 502 },
 			);
 		}
 	}
@@ -563,7 +574,7 @@ export async function handlePrRoutes(
 		} catch (e: any) {
 			return Response.json(
 				{ error: e.message || String(e) },
-				{ status: 500 },
+				{ status: 502 },
 			);
 		}
 	}
@@ -602,7 +613,15 @@ export async function handlePrRoutes(
 				{ status: 400 },
 			);
 
-		const details = await getPrDetails(target.branch, target.ghRepo);
+		let details;
+		try {
+			details = await getPrDetails(target.branch, target.ghRepo);
+		} catch (e: any) {
+			return Response.json(
+				{ error: e?.message || "GitHub's pull request API is unavailable right now." },
+				{ status: 502 },
+			);
+		}
 		if (!details?.number)
 			return Response.json(
 				{ error: "No open PR for this branch yet" },
