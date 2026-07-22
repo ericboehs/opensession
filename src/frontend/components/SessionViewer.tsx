@@ -209,6 +209,8 @@ interface Props {
 	showReview?: boolean;
 	/** Open/foreground this session's Review view-tab (PR/review triggers). */
 	onOpenReview?: () => void;
+	/** Return from the Review view-tab to this workspace's active chat. */
+	onOpenWorkspace?: () => void;
 }
 
 type PanelTab =
@@ -373,6 +375,7 @@ export function SessionViewer({
 	onReviewChange,
 	showReview = false,
 	onOpenReview,
+	onOpenWorkspace,
 }: Props) {
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	// Initial scrolling must wait for this session's transcript_init. During a
@@ -3482,6 +3485,7 @@ export function SessionViewer({
 								sessionId={session.id}
 								send={send}
 								reviewCanvas
+								onOpenSession={onOpenWorkspace}
 								onAddToInput={(text) =>
 									setComposerPrefill((p) => ({
 										seq: (p?.seq ?? 0) + 1,

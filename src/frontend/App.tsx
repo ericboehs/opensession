@@ -2041,6 +2041,7 @@ function App() {
 									workspaceChats={projectChats}
 									showReview={reviewActive}
 									onOpenReview={openReview}
+									onOpenWorkspace={() => setReviewActive(false)}
 									allSessions={sessions}
 									allProjects={projects}
 									onNewChat={handleNewChat}
