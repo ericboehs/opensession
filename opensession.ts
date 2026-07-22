@@ -15,7 +15,7 @@ import { startTodoReminderTicker } from "./src/server/todos";
 import { makeAskHandler } from "./src/server/asks";
 import { getWebhookRoutes, setEventSessionCallback, startScheduler } from "./src/server/automations";
 import { startUsagePoller } from "./src/server/claude-accounts";
-import { FRONTEND_SRC, IS_DEV, frontend, scheduleFrontendRebuild, spaEntry } from "./src/server/frontend-build";
+import { FRONTEND_SRC, IS_DEV, frontend, scheduleFrontendRebuild, sharedCheckoutEditors, spaEntry } from "./src/server/frontend-build";
 import { initHumanAsks } from "./src/server/human-asks";
 import { interactiveMcpServers } from "./src/server/interactive-mcp";
 import { OPENSESSION_CHATS_DIR } from "./src/server/paths";
@@ -41,7 +41,9 @@ import {
 import { startWebhookServer } from "./src/server/webhook-server";
 import { sweepArchivedWorktrees } from "./src/server/worktree";
 import { type WSClientData, broadcastToAll } from "./src/server/ws-hub";
-import { mkdirSync, watch } from "fs";
+import { mkdirSync, watch, writeFileSync } from "fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 // Side-effect modules: these must be loaded even when the entry references
 // nothing from them — they register builders/listeners and start tickers.
@@ -663,7 +665,18 @@ if (!g.__backstageBooted) {
 		// Tell connected UIs we're going down so they can show a "restarting" modal
 		// and auto-refresh once the new instance is up (instead of silently queuing
 		// messages that would be lost). Brief pause to let the frames flush.
-		broadcastToAll({ type: "server_restarting" });
+		// Best-effort attribution: a session-triggered `systemctl restart` shows
+		// up as an in-flight run in this checkout (sharedCheckoutEditors). The
+		// marker file lets the NEXT boot's hello frame name the culprit in the
+		// post-restart toast; the `by` here feeds the pre-restart overlay.
+		const restartBy = sharedCheckoutEditors();
+		try {
+			writeFileSync(
+				join(homedir(), ".opensession-last-restart.json"),
+				JSON.stringify({ by: restartBy || "", at: new Date().toISOString(), signal }),
+			);
+		} catch {}
+		broadcastToAll({ type: "server_restarting", ...(restartBy ? { by: restartBy } : {}) });
 		if (!timersDead) await new Promise((r) => setTimeout(r, 150));
 		// Stop agents from accepting new work (Slack socket, webhook intake, …).
 		// BOUNDED: an agent shutdown that awaits a flaky network call (e.g. the

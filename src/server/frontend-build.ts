@@ -5,8 +5,11 @@
  * (globalThis-parked, mutated in place) and the debounced rebuild.
  */
 
-import { join } from "path";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "path";
+import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias } from "./rename-compat";
+import { activeRunRecords } from "./run-journal";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { broadcastToAll } from "./ws-hub";
 // The dev-mode SPA entry: Bun's HTML import (HMR bundle). Prod serves the
@@ -159,6 +162,51 @@ export const spaEntry = frontend
 			})
 	: homepage;
 
+function sessionTitle(id: string | undefined): string | undefined {
+	if (!id) return undefined;
+	try {
+		const raw = readFileSync(join(OPENSESSION_CHATS_DIR, `${id}.json`), "utf8");
+		const title = JSON.parse(raw)?.title;
+		return typeof title === "string" && title.trim()
+			? title.trim().slice(0, 60)
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Best-effort "who caused this" label for update/restart notices. Backstage
+ * sessions all work in THIS shared checkout, so when the file-watch fires (or
+ * a session runs `systemctl restart`), the culprit is an in-flight run whose
+ * cwd is this checkout — the run journal knows those, with user + session id.
+ * Edits from a CLI/tmux Claude or a human editor aren't journaled here, so no
+ * candidates → undefined, never a guess. `writeCapableOnly` skips ask-mode
+ * runs (they have no Write/Edit, so they can't have fired the file-watch).
+ */
+export function sharedCheckoutEditors(writeCapableOnly = false): string | undefined {
+	try {
+		const checkout = resolve(REPO_ROOT);
+		const labels: string[] = [];
+		const seen = new Set<string>();
+		for (const run of activeRunRecords()) {
+			if (!run.cwd || resolve(run.cwd) !== checkout) continue;
+			if (writeCapableOnly && run.mode === "ask") continue;
+			const user = (run.user || "").trim();
+			const title = sessionTitle(run.bksSessionId);
+			const label = user && title ? `${user} · ${title}` : user || title || "";
+			if (!label || seen.has(label)) continue;
+			seen.add(label);
+			labels.push(label);
+		}
+		if (!labels.length) return undefined;
+		const shown = labels.slice(0, 2).join(", ");
+		return labels.length > 2 ? `${shown} +${labels.length - 2}` : shown;
+	} catch {
+		return undefined;
+	}
+}
+
 // Debounced in-process rebuild + client nudge. Triggered by the frontend
 // file-watch, a SIGUSR2 signal, or POST /backstage/api/rebuild-frontend — all of
 // which replace the "systemctl restart to see my CSS change" habit that was
@@ -177,10 +225,11 @@ export function scheduleFrontendRebuild(reason: string, debounceMs = 300): void 
 		try {
 			const version = await buildFrontend();
 			if (version !== before) {
+				const by = sharedCheckoutEditors(true);
 				console.log(
-					`[frontend] Rebuilt (${reason}); notifying clients (v=${version})`,
+					`[frontend] Rebuilt (${reason}); notifying clients (v=${version}${by ? `, by ${by}` : ""})`,
 				);
-				broadcastToAll({ type: "frontend_updated", version });
+				broadcastToAll({ type: "frontend_updated", version, ...(by ? { by } : {}) });
 			}
 		} catch (e) {
 			console.error(`[frontend] Rebuild failed (${reason}):`, e);

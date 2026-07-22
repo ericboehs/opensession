@@ -40,7 +40,28 @@ import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "
 import { createWorktree, createWorktreeForExistingBranch, getRepo, listWorktrees, repoForPath, resolveUniqueBranch, worktreeHeadBranch, worktreePathFor } from "./worktree";
 import { BOOT_ID, allClients, b64decode, b64encode, broadcastToNote, broadcastToSession, joinNote, joinSession, leaveNote, leaveSession, preparingWorkspaces } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
-import { watch } from "fs";
+import { readFileSync, watch } from "fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+// Who likely triggered the restart that booted THIS process — read once from
+// the marker the previous process wrote in gracefulShutdown, and only trusted
+// when the shutdown was recent (a stale marker from days ago means this boot
+// wasn't that restart). Parked on globalThis so hot reloads keep the value.
+function lastRestartBy(): string {
+	const g = globalThis as any;
+	if (g.__lastRestartBy === undefined) {
+		g.__lastRestartBy = "";
+		try {
+			const d = JSON.parse(
+				readFileSync(join(homedir(), ".opensession-last-restart.json"), "utf8"),
+			);
+			if (d?.by && Date.now() - Date.parse(d.at) < 10 * 60_000)
+				g.__lastRestartBy = String(d.by);
+		} catch {}
+	}
+	return g.__lastRestartBy;
+}
 
 export const websocketHandlers: WebSocketHandler<WSClientData> = {
 	// Default is 16 MB — too small for a base64'd attachment near MAX_UPLOAD_BYTES,
@@ -55,9 +76,17 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 		// can tell a real restart (bootId changed → "restarted" toast) from a
 		// transient socket blip (unchanged → clear the reconnecting pill
 		// silently). Clients on servers without this frame fall back to
-		// polling /api/health, which also carries bootId.
+		// polling /api/health, which also carries bootId. `restartBy` names the
+		// session that likely triggered the restart (marker written by the OLD
+		// process's shutdown — see gracefulShutdown) so the toast can say who.
 		try {
-			ws.send(JSON.stringify({ type: "hello", bootId: BOOT_ID }));
+			ws.send(
+				JSON.stringify({
+					type: "hello",
+					bootId: BOOT_ID,
+					...(lastRestartBy() ? { restartBy: lastRestartBy() } : {}),
+				}),
+			);
 		} catch {}
 		console.log("WebSocket client connected");
 	},
