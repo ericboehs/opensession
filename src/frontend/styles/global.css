@@ -5704,12 +5704,12 @@ a.workspace-info-check-row {
 }
 
 /* The PR number opens OpenSession's review; the adjacent outbound action opens
-   the provider. Keeping both controls grouped makes the internal path primary
-   without hiding GitHub. */
+   the provider. Join them as a split button so the related actions read as one
+   control while the wider internal-review side remains primary. */
 .pr-num-chip-group {
 	display: inline-flex;
 	align-items: center;
-	gap: 4px;
+	gap: 0;
 }
 .pr-num-chip {
 	display: inline-flex;
@@ -5956,6 +5956,24 @@ a.workspace-info-check-row {
 	padding: 5px 11px;
 	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	font-size: 13px;
+}
+/* Keep the shared split-button seam after the bar/header size overrides above,
+   which otherwise restore the number chip's radius on all four corners. */
+.pr-num-chip-group .pr-num-chip {
+	border-start-end-radius: 0;
+	border-end-end-radius: 0;
+}
+.pr-num-chip-group .pr-num-chip-external {
+	margin-left: -1px;
+	border-start-start-radius: 0;
+	border-end-start-radius: 0;
+}
+.pr-num-chip-group .pr-num-chip:hover,
+.pr-num-chip-group .pr-num-chip:focus-visible,
+.pr-num-chip-group .pr-num-chip-external:hover,
+.pr-num-chip-group .pr-num-chip-external:focus-visible {
+	position: relative;
+	z-index: 1;
 }
 .pr-head .pr-bar-error {
 	max-width: 120px;
