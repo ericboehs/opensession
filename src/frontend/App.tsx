@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { Sidebar, type SidebarHandle } from "./components/Sidebar";
 import { Tooltip, TooltipProvider } from "./ui/tooltip";
 import { ToastHost, toast } from "./ui/toast";
+import { suppressLayoutAnimations } from "./ui/motion";
 import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
 import { SessionSearch } from "./components/SessionSearch";
@@ -470,6 +471,9 @@ function App() {
 	function startSidebarResize(e: React.MouseEvent) {
 		e.preventDefault();
 		document.body.classList.add("resizing-x");
+		// Snap Motion layout morphs while dragging — the composer + sidebar rows
+		// re-measure on every step, so springing them reads as funky text.
+		const restoreMotion = suppressLayoutAnimations();
 		const onMove = (ev: MouseEvent) => {
 			// The sidebar is the leftmost element, so the pointer's x is its width.
 			const w = Math.min(480, Math.max(200, ev.clientX));
@@ -478,6 +482,7 @@ function App() {
 		};
 		const onUp = () => {
 			document.body.classList.remove("resizing-x");
+			restoreMotion();
 			window.removeEventListener("mousemove", onMove);
 			window.removeEventListener("mouseup", onUp);
 			localStorage.setItem(

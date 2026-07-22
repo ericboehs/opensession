@@ -4,7 +4,7 @@
  * components and spread these — don't build wrapper components around Motion.
  */
 
-import type { Transition } from "motion/react";
+import { MotionGlobalConfig, type Transition } from "motion/react";
 
 /** Snappy pop for small anchored popups (tooltips, menus, popovers). */
 export const popupTransition: Transition = {
@@ -49,3 +49,27 @@ export const composerChipMotion = {
 	animate: { opacity: 1, scale: 1 },
 	transition: composerMorph,
 } as const;
+
+/**
+ * Suppress Motion animations for the duration of a synchronous UI gesture such
+ * as a drag-resize, then restore. While active, any Motion animation that
+ * STARTS snaps to its end instead of tweening — crucially this includes the
+ * `layout` ("morph") animations the composer and sidebar rows run whenever
+ * their measured width changes. Dragging the sidebar / right-panel resize
+ * handles changes those widths on every mousemove; without this each step
+ * springs, which reads as a "funky" text morph. (Motion already blocks layout
+ * animation during a real window resize via projection update-blocking; a
+ * custom drag doesn't trip that path, so we snap explicitly.)
+ *
+ * Returns a restore fn. It defers by one frame so the gesture's final layout
+ * change settles instantly too, before normal animation resumes.
+ */
+export function suppressLayoutAnimations(): () => void {
+	const prev = MotionGlobalConfig.instantAnimations;
+	MotionGlobalConfig.instantAnimations = true;
+	return () => {
+		requestAnimationFrame(() => {
+			MotionGlobalConfig.instantAnimations = prev;
+		});
+	};
+}

@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { Reorder } from "motion/react";
+import { suppressLayoutAnimations } from "../ui/motion";
 import { renderMarkdown } from "../lib/markdown";
 import { AGENT_NAME, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { isGitHubAttribution, parseHumanReply } from "../lib/humanReply";
@@ -596,6 +597,9 @@ export function SessionViewer({
 			(e.currentTarget.parentElement as HTMLElement | null)?.getBoundingClientRect()
 				.right ?? window.innerWidth;
 		document.body.classList.add("resizing-x");
+		// Snap Motion layout morphs while dragging — the composer re-measures on
+		// every step, so springing it reads as funky text (mirrors the sidebar).
+		const restoreMotion = suppressLayoutAnimations();
 		const onMove = (ev: MouseEvent) => {
 			// Wide enough to review code side-by-side: only reserve room for the
 			// left sidebar + a readable chat column instead of a fixed 900px cap.
@@ -606,6 +610,7 @@ export function SessionViewer({
 		};
 		const onUp = () => {
 			document.body.classList.remove("resizing-x");
+			restoreMotion();
 			window.removeEventListener("mousemove", onMove);
 			window.removeEventListener("mouseup", onUp);
 			localStorage.setItem(
