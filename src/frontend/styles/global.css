@@ -1334,6 +1334,9 @@ body.resizing-x {
 .sidebar-group--automations {
 	margin-bottom: 0;
 }
+.sidebar-group--automations {
+	padding-bottom: 28px;
+}
 
 /* Whitespace (not a divider line) separates one band from the next
    (personal → people → automations). */
@@ -12496,6 +12499,13 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.sidebar-ws-time,
 	.sidebar-ws-ticker {
 		font-size: 12px;
+	}
+	.sidebar-ws-row .sidebar-ws-ticker {
+		flex: 0 0 28px;
+		width: 28px;
+		min-width: 28px;
+		justify-content: center;
+		text-align: center;
 	}
 	.sidebar-item-title,
 	.sidebar-item-rename {
