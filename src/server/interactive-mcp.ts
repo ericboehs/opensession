@@ -27,6 +27,7 @@ import { createTodosMcpServer } from "../agents/slack/todos-tools";
 import { createSearchMcpServer } from "../agents/slack/search-tools";
 import { createAssetsMcpServer } from "../agents/slack/assets-tools";
 import { createWorkflowsMcpServer } from "../agents/slack/workflow-tools";
+import { createNotesMcpServer } from "../agents/slack/notes-tools";
 import { papercutsEnabledForRepo } from "./papercuts";
 import { productName } from "./config";
 import { repoForPath, REPOS } from "./worktree";
@@ -92,6 +93,9 @@ export function interactiveMcpServers(
 		// but transcripts can hold sensitive material — interactive-only like the
 		// siblings (the automation gate in the run-rpc builder below fails closed).
 		"opensession-search": createSearchMcpServer(),
+		// Workspace-wide collaborative notes. Read/write/delete is interactive-only
+		// because notes can contain sensitive material and persistent instructions.
+		"opensession-notes": createNotesMcpServer(),
 		// Human-in-the-loop: ask a teammate and fold the answer back into this
 		// session. Needs the session id so the answer routes home. Withheld (like
 		// the others) from automation runs — see the runSessionPrompt call site.

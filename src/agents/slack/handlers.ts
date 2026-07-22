@@ -31,6 +31,7 @@ import { createAdminMcpServer } from "./admin-tools";
 import { createGithubMcpServer } from "./github-tools";
 import { createSessionsMcpServer } from "./sessions-tools";
 import { createHumansMcpServer } from "./humans-tools";
+import { createNotesMcpServer } from "./notes-tools";
 import { matchReply as matchHumanAskReply } from "../../server/human-asks";
 import { triggerPrAction } from "../github/trigger";
 import { classifyMention } from "./mention-intent";
@@ -851,6 +852,7 @@ export async function processMessage(
           createdBy: userName || msg.userId,
           isAdmin,
         }),
+        "opensession-notes": createNotesMcpServer(),
       };
       adminMcpServersCache.set(sessionKey, { tools: adminMcpServers, memoryHash });
     }
