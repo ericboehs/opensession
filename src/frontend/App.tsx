@@ -29,7 +29,6 @@ import { UserGate, getCurrentUser } from "./components/UserPicker";
 import { PreviewWait, matchPreviewWaitRoute } from "./components/PreviewWait";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { TitleBar } from "./components/TitleBar";
-import { isWco } from "./lib/wco";
 import { Settings, type SettingsSectionKey } from "./components/Settings";
 import { SessionTabs, type ViewTab } from "./components/SessionTabs";
 import { RestartOverlay } from "./components/RestartOverlay";
@@ -1597,73 +1596,35 @@ function App() {
 							{ "--sidebar-w": `${sidebarWidth}px` } as React.CSSProperties
 						}
 					>
-						{/* Desktop brand row. Web: the whole Backstage brand (logo +
-						    wordmark) opens the account/settings menu on the left, and the
-						    search/collapse cluster sits on the right. Desktop shell (wco):
-						    the row is pure window chrome — search + collapse tuck in beside
-						    the traffic lights, back/forward sit at the row's right edge,
-						    and the signed-in user moves to its own row below (no app brand
-						    inside the app's own titlebar). Hidden on mobile, where the top
+						{/* Desktop chrome row — identical on web and in the desktop shell
+						    (the shell additionally insets it past the traffic lights and
+						    makes it a drag region): collapse toggle + the avatar account
+						    trigger on the left, back/forward + search at the right edge.
+						    No app brand inside the app. Hidden on mobile, where the top
 						    bar carries the brand instead. */}
-						{(() => {
-							const wco = isWco();
-							const brandActions = (
-								<div className="sidebar-brand-actions">
-									{!wco && (
-										<Tooltip
-											label="Search sessions"
-											side="bottom"
-											shortcut={["⌘", "K"]}
-										>
-											<button
-												className="sidebar-toggle-btn"
-												onClick={() => setSearchOpen(true)}
-												aria-label="Search sessions"
-											>
-												{/* Optically larger than the panel glyph beside it: the
-												    magnifier is a small circle + thin handle, so it needs more
-												    nominal size to carry the same weight as the globe/play/panel
-												    icons in the session header. */}
-												<IconSearch size={26} />
-											</button>
-										</Tooltip>
-									)}
-									<Tooltip
-										label="Hide sidebar"
-										side="bottom"
-										shortcut={["⌘", "B"]}
+						<div className="sidebar-brand">
+							<div className="sidebar-brand-actions">
+								<Tooltip
+									label="Hide sidebar"
+									side="bottom"
+									shortcut={["⌘", "B"]}
+								>
+									<button
+										className="sidebar-toggle-btn"
+										onClick={toggleSidebarCollapsed}
+										aria-label="Hide sidebar"
 									>
-										<button
-											className="sidebar-toggle-btn"
-											onClick={toggleSidebarCollapsed}
-											aria-label="Hide sidebar"
-										>
-											{panelIcon}
-										</button>
-									</Tooltip>
-								</div>
-							);
-							return wco ? (
-								<div className="sidebar-brand">
-									{brandActions}
-									<SettingsMenu
-										variant="user"
-										onOpenSettings={() => navigate({ view: "settings" })}
-										connected={connected}
-									/>
-									<TitleBar onSearch={() => setSearchOpen(true)} />
-								</div>
-							) : (
-								<div className="sidebar-brand">
-									<SettingsMenu
-										variant="top"
-										onOpenSettings={() => navigate({ view: "settings" })}
-										connected={connected}
-									/>
-									{brandActions}
-								</div>
-							);
-						})()}
+										{panelIcon}
+									</button>
+								</Tooltip>
+							</div>
+							<SettingsMenu
+								variant="user"
+								onOpenSettings={() => navigate({ view: "settings" })}
+								connected={connected}
+							/>
+							<TitleBar onSearch={() => setSearchOpen(true)} />
+						</div>
 						<Sidebar
 							ref={sidebarRef}
 							sessions={sessions}

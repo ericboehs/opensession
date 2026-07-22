@@ -468,9 +468,6 @@ html.wco .app {
    and on Windows (controls on the right), where the default padding wins. */
 html.wco .sidebar-brand {
 	padding-left: max(env(titlebar-area-x, 78px), calc(var(--sidebar-icon-left) - 8px));
-	/* Continue the header rows' divider (.viewer-header / .pr-bar) across the
-	   sidebar so the top line runs the full window width. */
-	border-bottom: 1px solid var(--border);
 }
 /* The whole first row doubles as the titlebar — everything interactive in it
    opts back out so it stays clickable. */
@@ -486,43 +483,43 @@ html.wco :is(.sidebar-brand, .viewer-header, .detail-topbar-title, .pr-bar)
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
 }
-/* Chrome row packs left (actions + avatar); back/forward push to the right
-   edge via their own margin. */
-html.wco .sidebar-brand {
-	justify-content: flex-start;
-}
-html.wco .wco-nav {
+/* The chrome row itself (collapse + avatar left, back/forward + search at the
+   right edge) is shared by web and the desktop shell — only the traffic-light
+   inset and drag regions above are shell-specific. */
+.sidebar-brand .wco-nav {
 	display: flex;
 	align-items: center;
 	gap: 2px;
-}
-html.wco .sidebar-brand > .wco-nav {
 	margin-left: auto;
 }
 /* Collapsed sidebar takes the chrome row (and its nav) with it — show the
    floating fallback cluster in the detail pane instead, next to the sidebar
-   re-open control, and inset the header text past both. With no sidebar the
-   detail pane starts at x=0, so the traffic lights overlay ITS left edge:
-   everything shifts right of env(titlebar-area-x) (0 in fullscreen, where the
-   lights hide and the row packs left again). */
+   re-open control, and inset the header text past both. In the shell the
+   detail pane starts at x=0 with the traffic lights overlaying its left edge,
+   so everything additionally shifts right of env(titlebar-area-x) (0 in
+   fullscreen, where the lights hide and the row packs left again). */
+.wco-nav-pane {
+	position: absolute;
+	top: 13px;
+	left: 50px;
+	z-index: 20;
+}
+.app-body.sidebar-collapsed .detail-pane .wco-nav-pane {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
 html.wco .sidebar-reopen {
 	left: calc(env(titlebar-area-x, 78px) + 6px);
 }
 html.wco .wco-nav-pane {
-	display: none;
-	position: absolute;
-	top: 13px;
 	left: calc(env(titlebar-area-x, 78px) + 48px);
-	z-index: 20;
-}
-html.wco .app-body.sidebar-collapsed .detail-pane .wco-nav-pane {
-	display: flex;
 }
 html.wco .app-body.sidebar-collapsed .viewer-header,
 html.wco .app-body.sidebar-collapsed .detail-topbar-title {
-	padding-left: calc(env(titlebar-area-x, 78px) + 118px);
+	padding-left: calc(env(titlebar-area-x, 78px) + 148px);
 }
-html.wco .wco-nav-btn {
+.wco-nav-btn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -537,7 +534,7 @@ html.wco .wco-nav-btn {
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
 }
-html.wco .wco-nav-btn:hover {
+.wco-nav-btn:hover {
 	background: var(--bg-hover);
 	color: var(--text);
 }
@@ -861,8 +858,11 @@ html.wco .wco-nav-btn:hover {
 .sidebar-brand {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
+	justify-content: flex-start;
 	gap: 8px;
+	/* Continue the header rows' divider (.viewer-header / .pr-bar) across the
+	   sidebar so the top line runs the full window width. */
+	border-bottom: 1px solid var(--border);
 	height: 54px;
 	/* The brand trigger carries its own 8px left padding, so pull the row's in
 	   to keep the logo aligned with the list icons at --sidebar-icon-left. */
@@ -2434,13 +2434,14 @@ body.resizing-x {
 	.app-body.sidebar-collapsed .sidebar-reopen {
 		display: inline-flex;
 	}
-	/* Clear the floating control so it never sits on top of the topbar title or
-	   the session header's first row. */
+	/* Clear the floating re-open control AND the fallback nav/search cluster
+	   beside it, so neither sits on top of the topbar title or the session
+	   header's first row. */
 	.app-body.sidebar-collapsed .detail-topbar-title {
-		padding-left: 52px;
+		padding-left: 148px;
 	}
 	.app-body.sidebar-collapsed .viewer-header {
-		padding-left: 52px;
+		padding-left: 148px;
 	}
 }
 
