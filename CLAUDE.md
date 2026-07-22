@@ -1,5 +1,15 @@
 Default to using Bun instead of Node.js.
 
+## Public repositories require confirmation
+
+NEVER publish changes to an open-source or public repository without explicit
+user confirmation in the current conversation. A request to investigate,
+implement, or prepare a change is not permission to publish it. Local edits and
+commits are allowed, but before creating a fork, pushing a branch, opening a pull
+request, or otherwise writing to any public/open-source repository, stop and ask
+the user. This rule overrides bias-to-action and generic commit/push/PR defaults;
+automatic PR creation applies only to Tella's private repositories.
+
 ## Data handling — never upload to public hosts
 
 NEVER upload files or data to public file-sharing hosts or pastebins (gofile.io,
