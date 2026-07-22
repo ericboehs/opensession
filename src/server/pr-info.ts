@@ -49,6 +49,14 @@ export interface PrReviewer {
   isTeam?: boolean;
 }
 
+export interface PrCommit {
+  oid: string;
+  messageHeadline: string;
+  messageBody?: string;
+  authoredDate?: string;
+  author: string;
+}
+
 export interface PrDetails {
   number: number;
   title: string;
@@ -67,6 +75,7 @@ export interface PrDetails {
   body: string;
   checks: PrCheck[];
   comments: PrComment[];
+  commits: PrCommit[];
   /** Per-file line stats, sorted by churn (biggest first). */
   files: PrFile[];
   /** People/teams on the reviewer list, with their latest review state. */
@@ -516,7 +525,7 @@ async function fetchPrDetails(
     let raw = "";
     for (let attempt = 1; ; attempt++) {
       try {
-        raw = await $`gh pr view ${branch} --repo ${repo} --json number,title,url,state,isDraft,baseRefName,headRefName,headRefOid,additions,deletions,changedFiles,reviewDecision,author,body,statusCheckRollup,mergeable,mergeStateStatus,comments,files,latestReviews,reviewRequests`
+        raw = await $`gh pr view ${branch} --repo ${repo} --json number,title,url,state,isDraft,baseRefName,headRefName,headRefOid,additions,deletions,changedFiles,reviewDecision,author,body,statusCheckRollup,mergeable,mergeStateStatus,comments,commits,files,latestReviews,reviewRequests`
           .quiet()
           .text();
         break;
@@ -560,6 +569,18 @@ async function fetchPrDetails(
           url: c.url || undefined,
           createdAt: c.createdAt || undefined,
         })),
+      commits: (pr.commits || []).map((commit: any) => ({
+        oid: commit.oid || "",
+        messageHeadline: commit.messageHeadline || "Commit",
+        messageBody: commit.messageBody || undefined,
+        authoredDate: commit.authoredDate || commit.committedDate || undefined,
+        author:
+          commit.authors?.[0]?.login ||
+          commit.authors?.[0]?.name ||
+          commit.author?.login ||
+          commit.author?.name ||
+          "Unknown",
+      })),
       files: buildFiles(pr.files),
       reviewers: buildReviewers(pr.latestReviews, pr.reviewRequests),
       mergeable: pr.mergeable || "UNKNOWN",

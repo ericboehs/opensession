@@ -441,6 +441,14 @@ export interface PrReviewer {
 	isTeam?: boolean;
 }
 
+export interface PrCommit {
+	oid: string;
+	messageHeadline: string;
+	messageBody?: string;
+	authoredDate?: string;
+	author: string;
+}
+
 export interface PrDetails {
 	number: number;
 	title: string;
@@ -457,6 +465,7 @@ export interface PrDetails {
 	body: string;
 	checks: PrCheck[];
 	comments?: PrComment[];
+	commits?: PrCommit[];
 	/** Per-file line stats, biggest churn first. */
 	files?: PrFile[];
 	/** People/teams on the reviewer list with their latest review state. */

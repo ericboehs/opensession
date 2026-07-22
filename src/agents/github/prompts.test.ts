@@ -20,6 +20,7 @@ function pr(overrides: Partial<PrDetails> = {}): PrDetails {
     body: "",
     checks: [],
     comments: [],
+    commits: [],
     files: [],
     reviewers: [],
     mergeable: "MERGEABLE",

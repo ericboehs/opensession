@@ -4,6 +4,7 @@ import type {
   DiffFileGroup,
   PrCheck,
   PrComment,
+  PrCommit,
   PrDetails,
   PrFile,
   PrReviewer,
@@ -311,8 +312,8 @@ export function PrPanel({
   const [checksOpen, setChecksOpen] = useState(false);
   const [allFilesOpen, setAllFilesOpen] = useState(false);
   const [diffView, setDiffView] = useState<
-    "intent" | "guide" | "diff" | "checks" | "conversation"
-  >(() => (reviewCanvas ? "guide" : "diff"));
+    "guide" | "diff" | "checks" | "conversation" | "commits"
+  >(() => "diff");
   const [guide, setGuide] = useState<ReviewGuideData | null>(null);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideFailed, setGuideFailed] = useState(false);
@@ -439,6 +440,22 @@ export function PrPanel({
     if (guide && guide.headRefOid === diff.headRefOid) return;
     void loadGuide();
   }, [diffView, diff?.patch, diff?.headRefOid, guide, guideLoading, guideFailed, loadGuide]);
+
+  // Conversation stays first in the DOM, but narrow screens should still reveal
+  // the selected tab (Files changed is the default review surface).
+  useEffect(() => {
+    if (!reviewCanvas) return;
+    requestAnimationFrame(() => {
+      const tab = rootRef.current?.querySelector<HTMLElement>(
+        '[role="tablist"] [aria-selected="true"]',
+      );
+      const tabList = tab?.parentElement;
+      if (!tab || !tabList || tabList.scrollWidth <= tabList.clientWidth) return;
+      tabList.scrollTo({
+        left: tab.offsetLeft - (tabList.clientWidth - tab.offsetWidth) / 2,
+      });
+    });
+  }, [diffView, pr?.number, reviewCanvas]);
 
   // Inline comments don't post one-by-one — they accumulate as pending and ship
   // together when the reviewer finishes the review (the provider's native flow).
@@ -758,11 +775,6 @@ export function PrPanel({
         : reviewEvent === "REQUEST_CHANGES"
           ? "Request changes"
           : "Submit review";
-    const openFile = (path: string) => {
-      setDiffView("diff");
-      requestAnimationFrame(() => scrollToFile(path));
-    };
-
     return (
       <div
         className="relative flex h-full min-h-0 flex-col overflow-hidden bg-surface"
@@ -771,38 +783,26 @@ export function PrPanel({
       >
         {switcher}
 
-        <header className="flex min-h-[78px] shrink-0 items-center gap-5 border-b border-line px-5 py-3">
+        <header className="flex min-h-[96px] shrink-0 items-center gap-5 px-6 py-4 max-[720px]:min-h-[78px] max-[720px]:px-3">
           <div className="min-w-0 flex-1">
-            <div className="mb-1 flex items-center gap-1.5 text-[11px] text-faint">
-              <span>{pr.author}</span>
-              <span>·</span>
-              <a
-                className="cursor-text select-text hover:text-dim"
-                href={pr.url}
-                target="_blank"
-                rel="noopener"
-              >
-                #{pr.number}
-              </a>
-              <span>·</span>
-              <span>{active?.repo || "tella-fusion"}</span>
-            </div>
             <a
-              className="block truncate text-[17px] font-semibold tracking-[-0.015em] text-fg no-underline hover:text-accent"
+              className="block truncate text-[24px] font-semibold tracking-[-0.025em] text-fg no-underline hover:text-accent max-[720px]:text-[18px]"
               href={pr.url}
               target="_blank"
               rel="noopener"
             >
-              {pr.title}
+              {pr.title} <span className="font-normal text-faint">#{pr.number}</span>
             </a>
-            <div className="mt-1 flex items-center gap-1.5 overflow-hidden whitespace-nowrap text-[11px] text-faint">
-              <span className="truncate font-mono">{pr.headRefName}</span>
-              <span>→</span>
-              <span className="font-mono">{pr.baseRefName}</span>
-              <span>·</span>
-              <span>{pr.changedFiles} files</span>
-              <span className="font-mono text-green">+{pr.additions}</span>
-              <span className="font-mono text-red">−{pr.deletions}</span>
+            <div className="mt-2 flex items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-dim">
+              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold ${pr.state === "OPEN" ? "bg-green text-surface" : pr.state === "MERGED" ? "bg-purple text-surface" : "bg-active text-dim"}`}>
+                <PrStateIcon state={pr.state} isDraft={pr.isDraft} />
+                {pr.isDraft ? "Draft" : status.label}
+              </span>
+              <span className="truncate">
+                <strong>{pr.author}</strong> wants to merge {pr.commits?.length || 0} commit{pr.commits?.length === 1 ? "" : "s"} into
+                {" "}<span className="rounded-sm bg-blue-soft px-1.5 py-0.5 font-mono text-blue">{pr.baseRefName}</span>
+                {" "}from <span className="rounded-sm bg-blue-soft px-1.5 py-0.5 font-mono text-blue">{pr.headRefName}</span>
+              </span>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2 max-[760px]:hidden">
@@ -861,212 +861,67 @@ export function PrPanel({
           </div>
         </header>
 
-        <div className="flex h-11 shrink-0 overflow-x-auto border-b border-line">
-          <ReviewSignal
-            tone={
-              checkSummary.failed > 0
-                ? "red"
-                : checkSummary.pending > 0
-                  ? "yellow"
-                  : "green"
-            }
-            label={
-              checkSummary.failed > 0
-                ? `${checkSummary.failed} checks failing`
-                : checkSummary.pending > 0
-                  ? `${checkSummary.pending} checks running`
-                  : `${checkSummary.passed} checks passed`
-            }
-            detail={`${checkSummary.total} total`}
-          />
-          <ReviewSignal
-            tone={pr.mergeable === "CONFLICTING" ? "red" : "green"}
-            label={
-              pr.mergeable === "CONFLICTING" ? "Merge conflict" : "No conflicts"
-            }
-            detail={pr.mergeStateStatus || "Cleanly mergeable"}
-          />
-          <ReviewSignal
-            tone={needsReview ? "yellow" : "green"}
-            label={needsReview ? "Your review needed" : status.qualifier || status.label}
-            detail={
-              myReview?.state === "PENDING"
-                ? "Requested directly from you"
-                : pr.author === "tella-butler"
-                  ? "tella-butler pull request"
-                  : pr.reviewDecision === "APPROVED"
-                    ? "Approved"
-                    : "Review status"
-            }
-          />
-          {pr.staging?.url && (
-            <ReviewSignal
-              tone={pr.staging.status === "SUCCESS" ? "green" : "yellow"}
-              label={
-                pr.staging.status === "SUCCESS" ? "Preview ready" : "Preview building"
-              }
-              detail="Open staging build"
-              href={pr.staging.url}
-            />
-          )}
+        <div className="flex h-[52px] shrink-0 items-end gap-1 overflow-x-auto border-b border-line px-6 max-[720px]:px-2" role="tablist">
+          {([
+            ["conversation", "Conversation", comments.length, <IconMessage size={17} />],
+            ["commits", "Commits", pr.commits?.length || 0, <CommitIcon />],
+            ["checks", "Checks", checkSummary.total, <IconCheck size={17} />],
+            ["diff", "Files changed", files.length, <IconFile size={17} />],
+          ] as const).map(([key, label, count, icon]) => {
+            const activeTab = key === "diff" ? diffView === "diff" || diffView === "guide" : diffView === key;
+            return (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={activeTab}
+                className={`flex h-[43px] shrink-0 items-center gap-2 rounded-t-md border px-4 text-[13px] font-medium ${activeTab ? "relative top-px border-line border-b-surface bg-surface text-fg" : "border-transparent bg-transparent text-dim hover:border-line hover:bg-hover hover:text-fg"}`}
+                onClick={() => setDiffView(key)}
+              >
+                {icon}
+                {label}
+                <span className="rounded-full bg-active px-2 py-0.5 text-[11px] font-semibold text-dim">{count}</span>
+              </button>
+            );
+          })}
+          <span className="ml-auto mb-3 shrink-0 font-mono text-[11px] max-[720px]:hidden">
+            <span className="text-green">+{pr.additions}</span>{" "}
+            <span className="text-red">−{pr.deletions}</span>
+          </span>
         </div>
 
-        <div className="flex min-h-0 flex-1">
-          <aside className="w-[520px] shrink-0 overflow-y-auto border-r border-line bg-panel/30 px-4 py-4 max-[1100px]:hidden">
-            <div className="mb-2 px-2 text-[11px] font-medium text-faint">
-              Review
-            </div>
-            <div className="mb-5 grid gap-0.5">
-              <button
-                className={`flex items-center gap-2 rounded-sm border-0 px-2 py-2 text-left text-xs ${diffView === "guide" ? "bg-active text-fg" : "bg-transparent text-dim hover:bg-hover hover:text-fg"}`}
-                onClick={() => setDiffView("guide")}
-              >
-                <span className="text-blue">✦</span>
-                Review guide
-              </button>
-              <button
-                className={`flex items-center gap-2 rounded-sm border-0 px-2 py-2 text-left text-xs ${diffView === "diff" ? "bg-active text-fg" : "bg-transparent text-dim hover:bg-hover hover:text-fg"}`}
-                onClick={() => setDiffView("diff")}
-              >
-                <IconFile size={14} />
-                Files changed
-                <span className="ml-auto text-[10px] text-faint">{files.length}</span>
-              </button>
-              <button
-                className={`flex items-center gap-2 rounded-sm border-0 px-2 py-2 text-left text-xs ${diffView === "checks" ? "bg-active text-fg" : "bg-transparent text-dim hover:bg-hover hover:text-fg"}`}
-                onClick={() => setDiffView("checks")}
-              >
-                <IconCheck size={14} />
-                Checks
-                <span className="ml-auto text-[10px] text-faint">{checkSummary.total}</span>
-              </button>
-              <button
-                className={`flex items-center gap-2 rounded-sm border-0 px-2 py-2 text-left text-xs ${diffView === "conversation" ? "bg-active text-fg" : "bg-transparent text-dim hover:bg-hover hover:text-fg"}`}
-                onClick={() => setDiffView("conversation")}
-              >
-                <IconMessage size={14} />
-                Conversation
-                <span className="ml-auto text-[10px] text-faint">{comments.length}</span>
-              </button>
-            </div>
-
-            {!!bodyHtml && (
-              <>
-                <div className="mb-2 px-2 text-[11px] font-medium text-faint">
-                  Intent
-                </div>
-                <div
-                  className="markdown mb-5 px-2 text-xs leading-relaxed text-dim"
-                  dangerouslySetInnerHTML={{ __html: bodyHtml }}
-                />
-              </>
-            )}
-
-            <div className="mb-2 px-2 text-[11px] font-medium text-faint">
-              Review path
-            </div>
-            <div className="mb-5 ml-2 border-l border-line">
-              {guideSections.length > 0 ? (
-                guideSections.map((section, index) => (
-                  <button
-                    key={`${section.title}-${index}`}
-                    className="block w-full border-0 bg-transparent px-3 pb-3 text-left text-[11px] leading-snug text-dim hover:text-fg"
-                    onClick={() =>
-                      document
-                        .getElementById(`review-guide-${index}`)
-                        ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                    }
-                  >
-                    <span className="mr-1.5 font-mono text-faint">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    {section.title}
-                  </button>
-                ))
-              ) : (
-                <div className="px-3 pb-2 text-[11px] text-faint">
-                  {guideLoading ? "Writing review guide…" : "Open Guide to generate a path."}
-                </div>
-              )}
-            </div>
-
-            <div className="mb-2 px-2 text-[11px] font-medium text-faint">
-              Files
-            </div>
-            <div className="grid gap-0.5">
-              {files.slice(0, 12).map((file) => {
-                const base = file.path.split("/").pop() || file.path;
-                return (
-                  <button
-                    key={file.path}
-                    className="flex min-w-0 items-center gap-2 rounded-sm border-0 bg-transparent px-2 py-1.5 text-left font-mono text-[11px] text-dim hover:bg-hover hover:text-fg"
-                    onClick={() => openFile(file.path)}
-                    title={file.path}
-                  >
-                    <span className="truncate">{base}</span>
-                    <span className="ml-auto shrink-0 text-green">+{file.additions}</span>
-                    <span className="shrink-0 text-red">−{file.deletions}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </aside>
-
-          <main className="min-w-0 flex-1 overflow-y-auto bg-surface pb-24">
-            <div className="sticky top-0 z-[7] flex h-[50px] items-center gap-2 border-b border-line bg-surface/95 px-5 backdrop-blur max-[600px]:px-2">
-              <div className="flex min-w-0 gap-1 overflow-x-auto">
+        <main className="min-h-0 flex-1 overflow-y-auto bg-surface pb-24">
+          {(diffView === "diff" || diffView === "guide") && (
+            <div className="sticky top-0 z-[7] flex h-[54px] items-center border-b border-line bg-surface/95 px-6 backdrop-blur max-[720px]:px-2">
+              <div className="inline-flex rounded-md border border-line bg-panel p-0.5">
                 <button
-                  className={`shrink-0 rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "intent" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
-                  onClick={() => setDiffView("intent")}
-                >
-                  Intent
-                </button>
-                <button
-                  className={`shrink-0 rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "guide" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
-                  onClick={() => setDiffView("guide")}
-                >
-                  Guide
-                </button>
-                <button
-                  className={`shrink-0 rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "diff" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
+                  className={`rounded-sm border-0 px-3 py-1.5 text-xs ${diffView === "diff" ? "bg-active text-fg" : "bg-transparent text-dim hover:text-fg"}`}
                   onClick={() => setDiffView("diff")}
                 >
-                  Files
+                  All changes
                 </button>
                 <button
-                  className={`shrink-0 rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "checks" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
-                  onClick={() => setDiffView("checks")}
+                  className={`rounded-sm border-0 px-3 py-1.5 text-xs ${diffView === "guide" ? "bg-active text-fg" : "bg-transparent text-dim hover:text-fg"}`}
+                  onClick={() => setDiffView("guide")}
                 >
-                  Checks
-                </button>
-                <button
-                  className={`shrink-0 rounded-sm border-0 px-2.5 py-1.5 text-xs ${diffView === "conversation" ? "bg-active text-fg" : "bg-transparent text-faint hover:text-fg"}`}
-                  onClick={() => setDiffView("conversation")}
-                >
-                  Conversation
+                  Review guide
                 </button>
               </div>
-              <span className="ml-auto shrink-0 text-[11px] text-faint max-[600px]:hidden">
-                {diffView === "intent"
-                  ? "PR description"
-                  : diffView === "checks"
-                    ? `${checkSummary.total} checks`
-                    : diffView === "conversation"
-                  ? `${comments.length} comment${comments.length === 1 ? "" : "s"}`
-                  : pending.length > 0
+              <span className="ml-auto text-[11px] text-faint">
+                {pending.length > 0
                   ? `${pending.length} pending comment${pending.length === 1 ? "" : "s"}`
-                  : `${files.length} file${files.length === 1 ? "" : "s"}`}
+                  : "Split diff"}
               </span>
             </div>
+          )}
 
-            <div className="mx-auto max-w-[980px] px-5 py-6 max-[720px]:px-2">
-              {diffView === "intent" ? (
-                <IntentView author={pr.author} descriptionHtml={bodyHtml} />
-              ) : diffView === "checks" ? (
+          <div className={`${diffView === "diff" || diffView === "guide" ? "mx-auto max-w-[1500px] px-5 py-5 max-[720px]:px-2" : "mx-auto max-w-[900px] px-5 py-7 max-[720px]:px-3"}`}>
+              {diffView === "checks" ? (
                 <ChecksView
                   checks={checkSummary.checks}
                   deployments={checkSummary.deployments}
                 />
+              ) : diffView === "commits" ? (
+                <CommitsView commits={pr.commits || []} />
               ) : diffView === "conversation" ? (
                 <ConversationView
                   author={pr.author}
@@ -1085,6 +940,7 @@ export function PrPanel({
                     </div>
                     <CommentableDiff
                       patch={diff.patch}
+                      diffStyle="split"
                       defaultExpandedFiles={10}
                       submitLabel="Add comment"
                       placeholder={`Comment on #${diff.number} — added to your pending review…`}
@@ -1139,6 +995,7 @@ export function PrPanel({
                         {section.patch && (
                           <CommentableDiff
                             patch={section.patch}
+                            diffStyle="split"
                             defaultExpandedFiles={Math.max(
                               0,
                               10 -
@@ -1165,6 +1022,7 @@ export function PrPanel({
               ) : (
                 <CommentableDiff
                   patch={diff.patch}
+                  diffStyle="split"
                   defaultExpandedFiles={10}
                   submitLabel="Add comment"
                   placeholder={`Comment on #${diff.number} — added to your pending review…`}
@@ -1174,11 +1032,10 @@ export function PrPanel({
                   imageSrcs={prImageSrcs}
                 />
               )}
-            </div>
-          </main>
-        </div>
+          </div>
+        </main>
 
-        <div className="pointer-events-none absolute bottom-4 left-[536px] right-4 z-10 flex min-h-[54px] items-center rounded-md border border-line-strong bg-panel/95 px-3 py-2 shadow-[0_12px_35px_rgba(0,0,0,0.3)] backdrop-blur max-[1100px]:left-4">
+        <div className="pointer-events-none absolute bottom-4 left-4 right-4 z-10 flex min-h-[54px] items-center rounded-md border border-line-strong bg-panel/95 px-3 py-2 shadow-[0_12px_35px_rgba(0,0,0,0.3)] backdrop-blur">
           <div className="min-w-0 flex-1">
             <div className="text-xs font-medium text-fg">
               {reviewDone === "merged"
@@ -1692,26 +1549,6 @@ function PrDescriptionCard({
   );
 }
 
-function IntentView({
-  author,
-  descriptionHtml,
-}: {
-  author: string;
-  descriptionHtml: string;
-}) {
-  return (
-    <div className="mx-auto max-w-[760px]">
-      <div className="mb-6">
-        <h2 className="m-0 text-[17px] font-semibold tracking-[-0.01em] text-fg">
-          Intent
-        </h2>
-        <p className="mt-1 text-xs text-faint">Pull request description</p>
-      </div>
-      <PrDescriptionCard author={author} descriptionHtml={descriptionHtml} />
-    </div>
-  );
-}
-
 function ChecksView({
   checks,
   deployments,
@@ -1752,6 +1589,54 @@ function ChecksView({
               ))}
             </section>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CommitsView({ commits }: { commits: PrCommit[] }) {
+  return (
+    <div className="mx-auto max-w-[760px]">
+      <div className="mb-6">
+        <h2 className="m-0 text-[17px] font-semibold tracking-[-0.01em] text-fg">
+          Commits
+        </h2>
+        <p className="mt-1 text-xs text-faint">
+          {commits.length} commit{commits.length === 1 ? "" : "s"}
+        </p>
+      </div>
+      {commits.length === 0 ? (
+        <div className="rounded-md border border-dashed border-line px-4 py-10 text-center text-xs text-faint">
+          No commits reported.
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-md border border-line bg-panel">
+          {commits.map((commit) => (
+            <article
+              className="flex items-start gap-3 border-b border-line px-4 py-3 last:border-b-0"
+              key={commit.oid}
+            >
+              <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-line bg-surface text-dim">
+                <CommitIcon />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-medium text-fg">{commit.messageHeadline}</div>
+                {commit.messageBody && (
+                  <div className="mt-1 line-clamp-2 whitespace-pre-wrap text-[11px] leading-relaxed text-dim">
+                    {commit.messageBody}
+                  </div>
+                )}
+                <div className="mt-1.5 text-[10px] text-faint">
+                  {commit.author}
+                  {commit.authoredDate ? ` committed ${new Date(commit.authoredDate).toLocaleString()}` : ""}
+                </div>
+              </div>
+              <code className="shrink-0 rounded-sm border border-line bg-surface px-2 py-1 text-[10px] text-dim">
+                {commit.oid.slice(0, 7)}
+              </code>
+            </article>
+          ))}
         </div>
       )}
     </div>
@@ -1834,60 +1719,11 @@ function ConversationView({
   );
 }
 
-function ReviewSignal({
-  tone,
-  label,
-  detail,
-  href,
-}: {
-  tone: "green" | "yellow" | "red";
-  label: string;
-  detail: string;
-  href?: string;
-}) {
-  const content = (
-    <>
-      <span
-        className={`flex size-[18px] shrink-0 items-center justify-center rounded-full border ${
-          tone === "green"
-            ? "border-green/40 text-green"
-            : tone === "red"
-              ? "border-red/40 text-red"
-              : "border-yellow/40 text-yellow"
-        }`}
-      >
-        {tone === "green" ? (
-          <IconCheck size={11} />
-        ) : tone === "red" ? (
-          <IconX size={11} />
-        ) : (
-          <IconClock size={11} />
-        )}
-      </span>
-      <span>
-        <span
-          className={`block text-[11px] font-semibold leading-tight ${
-            tone === "green"
-              ? "text-green"
-              : tone === "red"
-                ? "text-red"
-                : "text-yellow"
-          }`}
-        >
-          {label}
-        </span>
-        <span className="block text-[9px] leading-tight text-faint">{detail}</span>
-      </span>
-    </>
-  );
-  const className =
-    "flex min-w-[155px] items-center gap-2 border-r border-line px-4 no-underline";
-  return href ? (
-    <a className={className} href={href} target="_blank" rel="noopener">
-      {content}
-    </a>
-  ) : (
-    <div className={className}>{content}</div>
+function CommitIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+      <path d="M11.5 7.25a3.5 3.5 0 0 0-6.92 0H1.75a.75.75 0 0 0 0 1.5h2.83a3.5 3.5 0 0 0 6.92 0h2.75a.75.75 0 0 0 0-1.5H11.5ZM8 10a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" />
+    </svg>
   );
 }
 

@@ -46,6 +46,8 @@ interface Props {
    *  unavailable, preserving the ordinary flat file list. */
   groups?: DiffFileGroup[];
   groupsLoading?: boolean;
+  /** PR review canvases use GitHub's side-by-side presentation; workspace diffs stay unified. */
+  diffStyle?: "unified" | "split";
   /**
    * Review-batching mode: when provided, already-added comments render inline as
    * pending cards (the parent owns the list and submits them as one review).
@@ -123,6 +125,7 @@ export function CommentableDiff({
   imageSrcs,
   groups,
   groupsLoading,
+  diffStyle = "unified",
 }: Props) {
   const reviewMode = pendingComments !== undefined;
   const theme = useResolvedTheme();
@@ -433,6 +436,7 @@ export function CommentableDiff({
               file={file}
               fileIndex={i}
               theme={theme}
+              diffStyle={diffStyle}
               annotations={annotations}
               selectedLines={isDraftFile ? draft!.range : null}
               onSelect={handleSelect}
@@ -643,6 +647,7 @@ const FileDiffRow = React.memo(function FileDiffRow({
   file,
   fileIndex,
   theme,
+  diffStyle,
   annotations,
   selectedLines,
   onSelect,
@@ -651,6 +656,7 @@ const FileDiffRow = React.memo(function FileDiffRow({
   file: FileDiffMetadata;
   fileIndex: number;
   theme: "light" | "dark";
+  diffStyle: "unified" | "split";
   annotations: DiffLineAnnotation<Meta>[];
   selectedLines: SelectedLineRange | null;
   onSelect: (fileIndex: number, path: string, range: SelectedLineRange | null) => void;
@@ -659,11 +665,12 @@ const FileDiffRow = React.memo(function FileDiffRow({
   const options = useMemo(
     () => ({
       ...BASE_OPTIONS,
+      diffStyle,
       theme: theme === "light" ? "pierre-light" : "pierre-dark",
       themeType: theme,
       onLineSelected: (range: SelectedLineRange | null) => onSelect(fileIndex, file.name, range),
     }),
-    [fileIndex, file.name, onSelect, theme],
+    [diffStyle, fileIndex, file.name, onSelect, theme],
   );
 
   return (
