@@ -8133,13 +8133,14 @@ a.workspace-info-check-row {
 }
 .update-toast-body {
 	display: flex;
-	align-items: center;
-	gap: 9px;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
 	flex: 1;
 	min-width: 0;
 }
 .update-toast-text {
-	min-width: 0;
+	max-width: 100%;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -8148,9 +8149,9 @@ a.workspace-info-check-row {
 	color: var(--text);
 	line-height: 1.3;
 }
-/* Who caused the update (session attribution) — dim, truncates first. */
+/* Who caused the update (session attribution) — dim second line, truncates. */
 .update-toast-by {
-	min-width: 0;
+	max-width: 100%;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
