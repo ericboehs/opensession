@@ -120,6 +120,7 @@ export function makeFakeEngine(turns: FakeTurn[]): FakeEngine {
         runKey,
         bksSessionId: bks,
         claudeSessionId: engineSessionId,
+        cwd: opts.cwd,
         kind: opts.journal?.kind,
         model,
         startedAt: new Date().toISOString(),

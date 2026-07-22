@@ -497,7 +497,17 @@ export type WSClientMessage =
 	// Liveness probe — the server echoes `pong`. Detects half-open sockets
 	// (iOS/Safari kills backgrounded connections without firing onclose).
 	| { type: "ping" }
-	| { type: "watch"; sessionId: string; user?: string }
+	| {
+			type: "watch";
+			sessionId: string;
+			user?: string;
+			/** Reconnect resume cursor: the endOffset/rev of the last
+			 *  transcript_init/append this client received for the session. When
+			 *  they still match the live mirror file, the server skips the full
+			 *  transcript_init replace and replays only the gap from the jsonl. */
+			sinceOffset?: number;
+			sinceRev?: string;
+	  }
 	| { type: "unwatch"; sessionId: string }
 	| { type: "load_history"; sessionId: string }
 	| {
@@ -614,6 +624,11 @@ export type WSServerMessage =
 			/** Byte offset the shipped tail begins at — the "load earlier"
 			 *  pagination cursor (absent on older servers → full-resend fallback). */
 			startOffset?: number;
+			/** Resume cursor: where this snapshot ends in the mirror file, and an
+			 *  opaque tag identifying which file that was. Echoed back on a
+			 *  reconnect watch as sinceOffset/sinceRev. */
+			endOffset?: number;
+			rev?: string;
 	  }
 	| {
 			/** Older entries: the bulk of a two-stage init, or one "load earlier"
@@ -624,7 +639,14 @@ export type WSServerMessage =
 			truncated?: boolean;
 			startOffset?: number;
 	  }
-	| { type: "transcript_append"; sessionId?: string; entries: TranscriptEntry[] }
+	| {
+			type: "transcript_append";
+			sessionId?: string;
+			entries: TranscriptEntry[];
+			/** Resume cursor after this append (see transcript_init.endOffset). */
+			endOffset?: number;
+			rev?: string;
+	  }
 	| { type: "session_status"; sessionId?: string; isRunning: boolean }
 	| { type: "presence"; sessionId: string; viewers: string[] }
 	| {

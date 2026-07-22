@@ -2,7 +2,11 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startWatching, stopAllWatchesForClient } from "./file-watcher";
+import {
+  startWatching,
+  stopAllWatchesForClient,
+  transcriptRev,
+} from "./file-watcher";
 
 const dir = mkdtempSync(join(tmpdir(), "file-watcher-test-"));
 
@@ -47,9 +51,24 @@ describe("startWatching", () => {
       expect(msg.entries.map((e: { content: string }) => e.content)).toEqual([
         "Opening prompt",
       ]);
+      // The replay carries the reconnect-resume cursor: where it ends in the
+      // file, and which file that was (echoed back as sinceOffset/sinceRev).
+      expect(msg.endOffset).toBe(Bun.file(path).size);
+      expect(msg.rev).toBe(transcriptRev(path));
     } finally {
       stopAllWatchesForClient(first);
       stopAllWatchesForClient(second);
     }
+  });
+
+  it("transcriptRev tells mirror files apart (engine-rotation safety)", () => {
+    // An offset into the old engine session's mirror must never be applied to
+    // the new one — the rev is what the watch handler compares.
+    expect(transcriptRev("/x/ses_one.jsonl")).not.toBe(
+      transcriptRev("/x/ses_two.jsonl"),
+    );
+    expect(transcriptRev("/x/ses_one.jsonl")).toBe(
+      transcriptRev("/x/ses_one.jsonl"),
+    );
   });
 });

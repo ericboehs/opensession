@@ -11,7 +11,7 @@ import { type StreamEvent, cancelAgentRun, interruptAndSteerAgentRun, isAgentSes
 import { audit } from "./audit";
 import { makeAskHandler, pendingAsks } from "./asks";
 import { getAccountById } from "./claude-accounts";
-import { startWatching, stopAllWatchesForClient } from "./file-watcher";
+import { startWatching, stopAllWatchesForClient, transcriptRev } from "./file-watcher";
 import { buildForkHandoffNote } from "./fork-handoff";
 import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
@@ -40,7 +40,7 @@ import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "
 import { createWorktree, createWorktreeForExistingBranch, getRepo, listWorktrees, repoForPath, resolveUniqueBranch, worktreeHeadBranch, worktreePathFor } from "./worktree";
 import { BOOT_ID, allClients, b64decode, b64encode, broadcastToNote, broadcastToSession, joinNote, joinSession, leaveNote, leaveSession, preparingWorkspaces } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
-import { readFileSync, watch } from "fs";
+import { existsSync, readFileSync, statSync, watch } from "fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -69,6 +69,60 @@ function lastRestartBy(): string {
 		} catch {}
 	}
 	return g.__lastRestartBy;
+}
+
+/**
+ * The non-transcript half of the watch handshake — pending question, queue +
+ * steer receipts, running status. Sent on both watch paths: the full-snapshot
+ * one AND the sinceOffset resume (these are cheap and idempotent; the client
+ * replaces rather than merges them).
+ */
+function sendWatchExtras(
+	ws: any,
+	sessionId: string,
+	session: NonNullable<ReturnType<typeof findSession>>,
+): void {
+	const pendingAsk = pendingAsks.get(sessionId);
+	if (pendingAsk) {
+		ws.send(
+			JSON.stringify({
+				type: "ask_question",
+				sessionId,
+				questionId: pendingAsk.questionId,
+				questions: pendingAsk.questions,
+			}),
+		);
+	}
+
+	// Older in-memory rows may lack ids; assign and persist them before
+	// sending so edit/delete/steer actions can address the same row.
+	const queuedPrompts = queueWithIds(promptQueues.get(sessionId));
+	const steeredPrompts = queueWithIds(steeredReceipts.get(sessionId));
+	if (queuedPrompts.length > 0) promptQueues.set(sessionId, queuedPrompts);
+	if (steeredPrompts.length > 0) steeredReceipts.set(sessionId, steeredPrompts);
+	if (queuedPrompts.length > 0 || steeredPrompts.length > 0) persistQueues();
+	ws.send(
+		JSON.stringify({
+			type: "queue_update",
+			sessionId,
+			queued: queuedPrompts,
+			steered: steeredPrompts,
+		}),
+	);
+
+	ws.send(
+		JSON.stringify({
+			type: "session_status",
+			sessionId,
+			isRunning:
+				session.isRunning ||
+				isAgentSessionBusy(
+					session.claudeSessionId,
+					session.codexThreadId,
+					session.id,
+				),
+		}),
+	);
 }
 
 export const websocketHandlers: WebSocketHandler<WSClientData> = {
@@ -154,6 +208,34 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				if (msg.user) data.user = msg.user;
 				joinSession(ws, sessionId);
 
+				// Reconnect resume: a client that still holds this session's entries
+				// re-watches with the byte cursor of the last transcript frame it
+				// received (sinceOffset + sinceRev from transcript_init/append). When
+				// the cursor still matches the live mirror file — same rev (the
+				// transcript didn't rotate to a new engine id) and an offset the file
+				// still covers — skip the full-tail transcript_init replace and let
+				// the file-watcher's gap-fill replay exactly the missed entries from
+				// the jsonl (the client's id-keyed upsert absorbs any overlap). The
+				// jsonl IS the replay buffer: append-only, restart-proof, and it
+				// covers entries written while nobody was watching. Any mismatch
+				// falls through to the full snapshot below.
+				const sinceOffset =
+					typeof msg.sinceOffset === "number" && msg.sinceOffset > 0
+						? msg.sinceOffset
+						: undefined;
+				if (
+					sinceOffset !== undefined &&
+					typeof msg.sinceRev === "string" &&
+					session.transcriptPath &&
+					msg.sinceRev === transcriptRev(session.transcriptPath) &&
+					existsSync(session.transcriptPath) &&
+					sinceOffset <= statSync(session.transcriptPath).size
+				) {
+					startWatching(session.transcriptPath, ws, sinceOffset, sessionId);
+					sendWatchExtras(ws, sessionId, session);
+					break;
+				}
+
 				// Send the tail of the transcript for a fast initial render. A large
 				// (multi-MB) transcript would otherwise block the open for seconds;
 				// `truncated` tells the client to offer "load earlier history", which
@@ -197,6 +279,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						entries: clampEntriesForWire(head, INIT_WIRE_CLAMP_BYTES),
 						truncated,
 						startOffset,
+						// Resume cursor (see the sinceOffset branch above): where this
+						// snapshot ends in the mirror file, and which file that was.
+						...(session.transcriptPath
+							? { endOffset, rev: transcriptRev(session.transcriptPath) }
+							: {}),
 					}),
 				);
 				if (rest.length) {
@@ -222,50 +309,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					startWatching(session.transcriptPath, ws, endOffset, sessionId);
 				}
 
-				// Pending interactive question, if any
-				const pendingAsk = pendingAsks.get(sessionId);
-				if (pendingAsk) {
-					ws.send(
-						JSON.stringify({
-							type: "ask_question",
-							sessionId,
-							questionId: pendingAsk.questionId,
-							questions: pendingAsk.questions,
-						}),
-					);
-				}
-
-				// Current message queue + steer receipts for this session. Older
-				// in-memory rows may lack ids; assign and persist them before
-				// sending so edit/delete/steer actions can address the same row.
-				const queuedPrompts = queueWithIds(promptQueues.get(sessionId));
-				const steeredPrompts = queueWithIds(steeredReceipts.get(sessionId));
-				if (queuedPrompts.length > 0) promptQueues.set(sessionId, queuedPrompts);
-				if (steeredPrompts.length > 0) steeredReceipts.set(sessionId, steeredPrompts);
-				if (queuedPrompts.length > 0 || steeredPrompts.length > 0) persistQueues();
-				ws.send(
-					JSON.stringify({
-						type: "queue_update",
-						sessionId,
-						queued: queuedPrompts,
-						steered: steeredPrompts,
-					}),
-				);
-
-				// Send running status
-				ws.send(
-					JSON.stringify({
-						type: "session_status",
-						sessionId,
-						isRunning:
-							session.isRunning ||
-							isAgentSessionBusy(
-								session.claudeSessionId,
-								session.codexThreadId,
-								session.id,
-							),
-					}),
-				);
+				sendWatchExtras(ws, sessionId, session);
 				break;
 			}
 

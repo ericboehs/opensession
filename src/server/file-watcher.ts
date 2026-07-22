@@ -39,6 +39,20 @@ function notifyAppendListener(sessionId: string | undefined, entries: Transcript
   }
 }
 
+/**
+ * Opaque revision tag for a transcript file, sent with transcript_init/append
+ * and echoed back by clients on a resume-watch (`sinceRev`). It only has to
+ * distinguish "same mirror file" from "the session's transcript moved" (engine
+ * id rotation swaps transcriptPath; a byte offset into the OLD file must never
+ * be applied to the new one) — a short path hash does that without leaking
+ * server paths to the browser.
+ */
+export function transcriptRev(path: string): string {
+  let h = 5381;
+  for (let i = 0; i < path.length; i++) h = ((h * 33) ^ path.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
 function getMtime(path: string): number {
   try {
     return statSync(path).mtimeMs;
@@ -72,10 +86,15 @@ function pollFile(state: WatchState) {
 
   notifyAppendListener(state.sessionId, entries);
 
+  // endOffset + rev = the client's resume cursor: on reconnect it re-watches
+  // with sinceOffset/sinceRev and the gap since this exact byte is replayed
+  // from the jsonl instead of a full transcript_init replace.
   const msg = JSON.stringify({
     type: "transcript_append",
     ...(state.sessionId ? { sessionId: state.sessionId } : {}),
     entries: clampEntriesForWire(entries),
+    endOffset: state.lastByteOffset,
+    rev: transcriptRev(state.path),
   });
   for (const ws of state.viewers) {
     try {
@@ -89,7 +108,9 @@ function pollFile(state: WatchState) {
 function sendTranscriptAppend(
   ws: any,
   entries: TranscriptEntry[],
-  sessionId?: string
+  sessionId: string | undefined,
+  endOffset: number,
+  rev: string
 ): void {
   if (entries.length === 0) return;
   try {
@@ -98,6 +119,8 @@ function sendTranscriptAppend(
         type: "transcript_append",
         ...(sessionId ? { sessionId } : {}),
         entries: clampEntriesForWire(entries),
+        endOffset,
+        rev,
       })
     );
   } catch {
@@ -118,8 +141,14 @@ export function startWatching(
     // ask to stream from that offset. Fill that viewer's gap without rewinding
     // the global watch for everyone else.
     if (initialOffset !== undefined && initialOffset < state.lastByteOffset) {
-      const { entries } = parseTranscriptFrom(path, initialOffset);
-      sendTranscriptAppend(ws, entries, sessionId || state.sessionId);
+      const { entries, newOffset } = parseTranscriptFrom(path, initialOffset);
+      sendTranscriptAppend(
+        ws,
+        entries,
+        sessionId || state.sessionId,
+        newOffset,
+        transcriptRev(path)
+      );
     }
     state.viewers.add(ws);
     if (sessionId && !state.sessionId) state.sessionId = sessionId;

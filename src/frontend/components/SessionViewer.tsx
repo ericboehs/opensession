@@ -383,6 +383,16 @@ export function SessionViewer({
 	// session switch, entries from the previous session remain rendered until the
 	// WebSocket response arrives and must not consume the new session's scroll.
 	const transcriptReadySessionRef = useRef<string | null>(null);
+	// Reconnect resume cursor: endOffset/rev of the last transcript frame the
+	// server sent (transcript_init/append). On a re-watch of the SAME session
+	// with entries still mounted, it rides the watch message as
+	// sinceOffset/sinceRev so the server replays only the gap from the mirror
+	// jsonl instead of replacing the whole tail.
+	const transcriptCursorRef = useRef<{
+		sessionId: string;
+		rev: string;
+		offset: number;
+	} | null>(null);
 	// No transcript file yet (a fresh chat that hasn't run) → nothing to load;
 	// render the empty chat immediately instead of a "Loading transcript…" flash.
 	const [loading, setLoading] = useState(!!session.transcriptPath);
@@ -1234,7 +1244,21 @@ export function SessionViewer({
 	useEffect(() => {
 		if (!connected) return;
 
-		send({ type: "watch", sessionId: session.id, user: getCurrentUser() });
+		// Resume rather than re-snapshot when this exact session's transcript is
+		// still mounted (a reconnect blip, not a session switch) and we hold a
+		// cursor from a previous frame.
+		const cursor = transcriptCursorRef.current;
+		const resume =
+			transcriptReadySessionRef.current === session.id &&
+			cursor?.sessionId === session.id
+				? { sinceOffset: cursor.offset, sinceRev: cursor.rev }
+				: {};
+		send({
+			type: "watch",
+			sessionId: session.id,
+			user: getCurrentUser(),
+			...resume,
+		});
 
 		const unsubscribe = addHandler((msg) => {
 			// Session-scoped messages carry the session id — drop anything meant
@@ -1276,6 +1300,15 @@ export function SessionViewer({
 							new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
 					);
 					transcriptReadySessionRef.current = session.id;
+					if (typeof msg.endOffset === "number" && msg.rev) {
+						transcriptCursorRef.current = {
+							sessionId: session.id,
+							rev: msg.rev,
+							offset: msg.endOffset,
+						};
+					} else {
+						transcriptCursorRef.current = null;
+					}
 					setEntries(merged);
 					setHistoryTruncated(!!msg.truncated);
 					setLoadingHistory(false);
@@ -1315,6 +1348,13 @@ export function SessionViewer({
 					break;
 				}
 				case "transcript_append": {
+					if (typeof msg.endOffset === "number" && msg.rev) {
+						transcriptCursorRef.current = {
+							sessionId: session.id,
+							rev: msg.rev,
+							offset: msg.endOffset,
+						};
+					}
 					setEntries((prev) => mergeEntries(prev, msg.entries));
 					// The live stream and the transcript tail both carry assistant text.
 					// stream_text accumulates whole blocks until stream_done (end of the
