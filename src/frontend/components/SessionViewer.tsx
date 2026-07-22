@@ -906,6 +906,26 @@ export function SessionViewer({
 		() => onPinsChanged(() => setPinned(isPinned(session.id))),
 		[session.id],
 	);
+	useEffect(() => {
+		function onKeyDown(e: KeyboardEvent) {
+			if (
+				e.defaultPrevented ||
+				!(e.metaKey || e.ctrlKey) ||
+				!e.altKey ||
+				e.shiftKey ||
+				(e.key.toLowerCase() !== "p" && e.code !== "KeyP") ||
+				document.querySelector(
+					".palette-backdrop, .composer-schedule-modal-backdrop, .session-delete-overlay",
+				)
+			) {
+				return;
+			}
+			e.preventDefault();
+			togglePin(session.id);
+		}
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [session.id]);
 
 	const isAsk = session.mode === "ask";
 	const hasWorkspace = !isAsk && Boolean(session.worktreeDir || session.branch);
@@ -3137,7 +3157,11 @@ export function SessionViewer({
 						)}
 					</div>
 					{!isPhone && (
-						<Tooltip label={pinned ? "Unpin tab" : "Pin as tab"} side="bottom">
+						<Tooltip
+							label={pinned ? "Unpin tab" : "Pin as tab"}
+							shortcut={isApple ? ["⌘", "⌥", "P"] : ["Ctrl", "Alt", "P"]}
+							side="bottom"
+						>
 							<button
 								type="button"
 								className={`viewer-code-icon ${pinned ? "text-yellow" : ""}`}
