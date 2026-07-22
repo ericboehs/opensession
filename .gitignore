@@ -17,3 +17,9 @@ node_modules/.bin/codex
 node_modules
 __pycache__/
 *.pyc
+
+# Scratch/deliverable output from local sessions (icon renders, etc.)
+output/
+
+# macOS Finder metadata
+.DS_Store
