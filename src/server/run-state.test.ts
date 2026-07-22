@@ -177,13 +177,31 @@ describe("illegal combinations are rejected (the zombie class)", () => {
 		["running", "ask_resolved"], // ask already gone
 		["idle", "steer"], // steer with no live run
 		["idle", "reattach_ok"], // reattach completion nobody started
-		["interrupted", "turn_end"], // dead run reporting a clean finish
 	];
 	for (const [state, event] of rejected) {
 		test(`${event} while ${state}`, () => {
 			expect(nextRunState(state, event)).toBeUndefined();
 		});
 	}
+});
+
+describe("engine death settles through interrupted", () => {
+	// The mid-run death watchers fire engine_died → interrupted, then the
+	// run's own terminal outcome (recordRunOutcome) lands moments later. A
+	// dead-server turn is lost, not resumable — the follow-up outcome must
+	// settle it instead of rejecting.
+	test("engine_died then run_failed lands on failed", () => {
+		expect(walk("running", ["engine_died", "run_failed"])).toBe("failed");
+	});
+	test("engine_died then turn_end lands on idle", () => {
+		expect(walk("running", ["engine_died", "turn_end"])).toBe("idle");
+	});
+	test("boot-recovery paths still work from interrupted", () => {
+		expect(walk("interrupted", ["reattach_start", "reattach_ok"])).toBe(
+			"running",
+		);
+		expect(walk("interrupted", ["resume_reprompt"])).toBe("starting");
+	});
 });
 
 describe("transitionRunState (stateful wrapper)", () => {

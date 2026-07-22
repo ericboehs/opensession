@@ -171,6 +171,13 @@ export const RUN_STATE_TRANSITIONS: Record<
 		engine_died: "interrupted",
 		boot_journal_found: "interrupted",
 		run_registered: "running",
+		// An engine death mid-run fires engine_died → interrupted at the
+		// watcher, then the run's own terminal outcome (recordRunOutcome)
+		// lands moments later. A dead-server turn is lost, not resumable —
+		// the follow-up outcome settles it as failed/idle rather than
+		// rejecting.
+		run_failed: "failed",
+		turn_end: "idle",
 	},
 	reattaching: {
 		reattach_ok: "running",

@@ -141,6 +141,7 @@ import type { Subprocess } from "bun";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
 import type { RunAgentOpts } from "./agent-runner";
 import { journalSet, journalClear, registerActiveRunProbe, type ActiveRunRecord } from "./run-journal";
+import { transitionRunState } from "./run-state";
 import {
   adoptedProcHandle,
   bunProcHandle,
@@ -2893,6 +2894,12 @@ async function* runOpencodeAttempt(
         drainingServers.delete(watched);
         if (runEnded) return;
         runFailure ??= `opencode serve exited mid-run (code ${code}) — the turn was lost; send the prompt again to restart on a fresh server`;
+        if (journal?.bksSessionId) {
+          transitionRunState(journal.bksSessionId, "engine_died", {
+            source: "proc_exit",
+            code,
+          });
+        }
         if (servers.get(serverKey) === watched) killServer(serverKey, watched, "died mid-run");
         failRun();
       });
@@ -3595,6 +3602,12 @@ async function* runOpencodeAttempt(
             runFailure ??=
               "opencode server stopped answering status polls for 60s — ending the turn " +
               "(engine state preserved; send again to continue)";
+            if (journal?.bksSessionId) {
+              transitionRunState(journal.bksSessionId, "engine_died", {
+                source: "status_poll_zombie",
+                failures: statusPollFailures,
+              });
+            }
             signalDone();
           }
         }
@@ -4151,6 +4164,11 @@ export async function tryReattachOpencodeRun(
         if (runEnded) return;
         runFailure ??=
           "opencode serve exited mid-run (detached server died) — the turn was lost; send the prompt again to restart on a fresh server";
+        if (run.bksSessionId) {
+          transitionRunState(run.bksSessionId, "engine_died", {
+            source: "reattach_proc_exit",
+          });
+        }
         if (servers.get(serverKey!) === server) killServer(serverKey!, server, "died mid-run");
         signalDone();
       });

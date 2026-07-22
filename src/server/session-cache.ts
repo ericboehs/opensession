@@ -8,8 +8,9 @@ import { existsSync, readFileSync } from "fs";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { getAllSessions } from "./sessions";
 import { activeRunRecords } from "./run-journal";
-import { transitionRunState } from "./run-state";
+import { getRunState, transitionRunState, type RunState } from "./run-state";
 import { isAgentSessionBusy } from "./agent-runner";
+import { audit } from "./audit";
 import { SESSION_EFFORTS as MODEL_EFFORTS } from "./models";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import type { UnifiedSession, BackstageSessionFile } from "./types";
@@ -58,9 +59,98 @@ export function getCachedSessions(): UnifiedSession[] {
 				(s.claudeSessionId ? runStarts.get(s.claudeSessionId) : undefined) ||
 				(s.codexThreadId ? runStarts.get(s.codexThreadId) : undefined);
 		}
+		const rs = getRunState(s.id);
+		if (rs !== "idle") s.runState = rs;
+		checkRunStateWedge(s.id, rs, s.isRunning);
 	}
 	sessionsCache = { data, ts: Date.now() };
 	return data;
+}
+
+// ── Run-state readers ─────────────────────────────────────────────────────────
+
+/** FSM states in which a session's run is still in flight or pending recovery. */
+const UNSETTLED_STATES: ReadonlySet<RunState> = new Set([
+	"preparing",
+	"starting",
+	"running",
+	"ask_blocked",
+	"interrupted",
+	"reattaching",
+] satisfies RunState[]);
+
+/**
+ * A run is SETTLED only when nothing more will happen without new input: the
+ * state machine is at rest (idle/stopped/failed), the engine layer isn't busy
+ * (covers rotation/fallback/auto-continue windows the FSM sees as a plain
+ * turn_end→prompt gap), and no queued prompt is waiting to drain. This is the
+ * "don't trust turn_end alone" rule: retries, reattaches, and queued
+ * continuations all follow an apparent turn end.
+ */
+export function isRunSettled(sessionId: string): boolean {
+	const session = findSession(sessionId);
+	const id = session?.id || sessionId;
+	if (UNSETTLED_STATES.has(getRunState(id))) return false;
+	if (
+		isAgentSessionBusy(session?.claudeSessionId, session?.codexThreadId, id)
+	) {
+		return false;
+	}
+	// promptQueues lives in queue-state.ts, which imports SESSIONS_DIR from
+	// this module — importing it back would be a TDZ-crashing cycle. The map
+	// is parked on globalThis (hot-reload survival), so read it there.
+	const queues = g.__promptQueues as Map<string, unknown[]> | undefined;
+	if ((queues?.get(id)?.length ?? 0) > 0) return false;
+	return true;
+}
+
+// FSM-vs-engine wedge detector: the state machine says a run is in flight but
+// the engine layer has been idle (or the inverse) for a sustained window.
+// That divergence is exactly the zombie/orphan class — surface it as an audit
+// event (grep run_state_wedge) instead of letting it hide until a human asks
+// why a session is stuck. Piggybacks on the 2s session-cache refresh; one
+// event per session per wedge episode.
+const WEDGE_AFTER_MS = 3 * 60 * 1000;
+const wedgeSince: Map<string, number> = (g.__runStateWedgeSince ??= new Map());
+const wedgeReported: Set<string> = (g.__runStateWedgeReported ??= new Set());
+
+function checkRunStateWedge(
+	sessionId: string,
+	state: RunState,
+	engineBusy: boolean,
+): void {
+	const fsmActive =
+		state === "running" || state === "starting" || state === "ask_blocked";
+	// ask_blocked idles the engine legitimately (the turn is parked on a
+	// question card) — only a busy-engine-while-FSM-idle or an idle-engine
+	// while the FSM believes a turn is RUNNING counts as divergence.
+	const diverged =
+		state === "ask_blocked"
+			? false
+			: fsmActive !== engineBusy;
+	if (!diverged) {
+		wedgeSince.delete(sessionId);
+		wedgeReported.delete(sessionId);
+		return;
+	}
+	const since = wedgeSince.get(sessionId);
+	if (!since) {
+		wedgeSince.set(sessionId, Date.now());
+		return;
+	}
+	if (Date.now() - since < WEDGE_AFTER_MS || wedgeReported.has(sessionId))
+		return;
+	wedgeReported.add(sessionId);
+	console.warn(
+		`[run-state] wedge: session ${sessionId} FSM=${state} engineBusy=${engineBusy} for ${Math.round((Date.now() - since) / 1000)}s`,
+	);
+	audit({
+		msg: "run_state_wedge",
+		bks_session_id: sessionId,
+		run_state: state,
+		engine_busy: engineBusy,
+		diverged_for_ms: Date.now() - since,
+	});
 }
 
 export function findSession(sessionId: string): UnifiedSession | undefined {

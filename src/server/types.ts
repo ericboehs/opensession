@@ -50,6 +50,14 @@ export interface UnifiedSession {
    * so it's absent there and the UI falls back to a client-observed start).
    */
   runStartedAt?: string;
+  /**
+   * The run-state machine's view of this session (src/server/run-state.ts),
+   * stamped by the session-cache enrichment. Only present when not "idle" —
+   * lets the UI and session-control tools distinguish running / ask_blocked /
+   * interrupted / failed without re-deriving it from busy flags. In-memory
+   * (restart-fresh) by design.
+   */
+  runState?: string;
   transcriptPath: string | null;
   prUrl?: string;
   prState?: "OPEN" | "MERGED" | "CLOSED";
