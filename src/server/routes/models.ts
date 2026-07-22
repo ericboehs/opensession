@@ -7,13 +7,14 @@
  */
 
 import { requestUser, type RouteContext } from "./context";
-import { KNOWN_MODELS, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, modelEfforts, refreshOpencodePickerModels, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto } from "../models";
+import { KNOWN_MODELS, LOCAL_PROFILE_MODELS, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, localProfileDefaultModel, modelEfforts, refreshOpencodePickerModels, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto } from "../models";
 import { envAlias } from "../rename-compat";
 import { type Sandbox } from "../sandbox";
 import { sandboxCapabilityStatus } from "../sandbox/config";
 import { suggestBranchName } from "../suggest-branch";
 import { buildSystemPromptParts } from "../system-prompt";
 import { MAX_AUDIO_BYTES, transcribeAudio } from "../transcribe";
+import { isLocalProfile } from "../profile";
 
 export async function handleModelsRoutes(
 	ctx: RouteContext,
@@ -22,6 +23,16 @@ export async function handleModelsRoutes(
 
 	// ── Models available to sessions ──
 	if (path === "/backstage/api/models" && req.method === "GET") {
+		if (isLocalProfile()) {
+			return Response.json({
+				models: LOCAL_PROFILE_MODELS.map((model) => ({
+					...model,
+					efforts: modelEfforts(model.id),
+				})),
+				default: localProfileDefaultModel(),
+				autoFallback: false,
+			});
+		}
 		// Re-fold the opencode entries from config on every fetch (cheap, tiny
 		// JSON read — same "read fresh" contract as /sandbox/status below) so a
 		// config flip like the Orchestrator opt-in shows up on the next picker

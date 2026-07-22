@@ -23,6 +23,7 @@ import {
   BRIDGE_PROVIDER_IDS,
 } from "./opencode-config";
 import { envAlias, stateDir } from "./rename-compat";
+import { isLocalProfile } from "./profile";
 
 export type Provider = "claude" | "codex" | "opencode";
 
@@ -98,6 +99,23 @@ export const KNOWN_MODELS: ModelInfo[] = [
   { id: "gpt-5.4-mini", provider: "codex", label: "GPT-5.4 mini (Codex)", aliases: ["mini"] },
   { id: "gpt-5.3-codex-spark", provider: "codex", label: "GPT-5.3 Codex Spark", aliases: ["spark"] },
 ];
+
+/** Native OpenCode ids offered by a local install; auth comes from OpenCode. */
+export const LOCAL_PROFILE_MODELS: ModelInfo[] = [
+  { id: "anthropic/claude-sonnet-5", provider: "opencode", label: "Claude Sonnet 5", aliases: [] },
+  { id: "anthropic/claude-opus-4-8", provider: "opencode", label: "Claude Opus 4.8", aliases: [] },
+  { id: "anthropic/claude-haiku-4-5", provider: "opencode", label: "Claude Haiku 4.5", aliases: [] },
+  { id: "openai/gpt-5.6-sol", provider: "opencode", label: "GPT-5.6 Sol", aliases: [] },
+  { id: "openai/gpt-5.5", provider: "opencode", label: "GPT-5.5", aliases: [] },
+  { id: "openai/gpt-5.4-mini", provider: "opencode", label: "GPT-5.4 mini", aliases: [] },
+];
+
+export function localProfileDefaultModel(): string {
+  const requested = envAlias("OPENSESSION_MODEL", "MICHAEL_MODEL");
+  if (!requested) return LOCAL_PROFILE_MODELS[0].id;
+  const native = (toOpencodeModel(requested) || requested).replace(/^opencode\//, "");
+  return /^(anthropic|openai)\//.test(native) ? native : LOCAL_PROFILE_MODELS[0].id;
+}
 
 // ── The Dial ──────────────────────────────────────────────────────────────
 //
@@ -748,6 +766,7 @@ export function resolveConcreteModel(
  * explicitly configured. This no longer invents a Claude → Codex fallback.
  */
 export function interactiveFallbackModel(_primaryModel?: string): string | undefined {
+  if (isLocalProfile()) return undefined;
   if (!getModelFallbackAuto()) return undefined;
   return DEFAULT_FALLBACK_MODEL;
 }
@@ -808,6 +827,7 @@ export function toOpencodeModel(model?: string | null): string | undefined {
  * on the SDK — so this is deliberately a separate, interactive-only default.
  */
 export function interactiveDefaultModel(): string {
+  if (isLocalProfile()) return `opencode/${localProfileDefaultModel()}`;
   const o = loadInteractiveOverride();
   // Preset ids (dial/orchestrator) return unresolved: the session must store
   // the preset id for the runner's hook (oracle/workers + effort) to engage —

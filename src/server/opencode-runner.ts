@@ -173,6 +173,7 @@ import { gitIdentityEnv, githubLoginFor, userMatchesAny, type GitIdentity } from
 import { githubAuthEnv, githubUserLoginForRun } from "./github-auth";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
+import { isLocalProfile } from "./profile";
 import {
   normalizeModelEffort,
   dialPreset,
@@ -1350,6 +1351,12 @@ export function opencodeEnv(author?: GitIdentity | null): Record<string, string>
     PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
     HOME,
     LANG: process.env.LANG || "en_US.UTF-8",
+    ...(isLocalProfile() && process.env.XDG_CONFIG_HOME
+      ? { XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME }
+      : {}),
+    ...(isLocalProfile() && process.env.XDG_DATA_HOME
+      ? { XDG_DATA_HOME: process.env.XDG_DATA_HOME }
+      : {}),
     ...gitIdentityEnv(author),
   };
 }
@@ -2163,7 +2170,11 @@ async function* runOpencodeAttempt(
     // provider-half of the shared pool key ("plain" = no per-run auth env,
     // e.g. API-key providers configured in opencode itself).
     let bridgeTag = "plain";
-    if (parsed.providerID === "anthropic") {
+    if (isLocalProfile() && (parsed.providerID === "anthropic" || parsed.providerID === "openai")) {
+      // Local installs use the user's native `opencode auth login` credential.
+      // One stable tag means no bridge/codex account selection or pool fan-out.
+      bridgeTag = "local";
+    } else if (parsed.providerID === "anthropic") {
       const cfg = readOpencodeBridgeConfig();
       const bridgeMode = cfg?.enabled ? cfg.bridgeMode : "off";
       if (bridgeMode === "meridian") {
@@ -2458,7 +2469,7 @@ async function* runOpencodeAttempt(
     // identically; per-session unattended runs gate at their call site
     // (automations/github yes, plain no). In sandboxes the mint fails (IMDS
     // blocked) and the run proceeds without AWS — documented docker caveat.
-    if (opts.aws) {
+    if (!isLocalProfile() && opts.aws) {
       const awsPointerEnv = await ensureAgentAwsCredsFile();
       if (Object.keys(awsPointerEnv).length) {
         serverExtraEnv = { ...(serverExtraEnv || {}), ...awsPointerEnv };
@@ -2489,7 +2500,7 @@ async function* runOpencodeAttempt(
     // in the shared-server config hash (a token change drain-respawns, same as
     // an identity change).
     const githubUserLogin =
-      !policy.unattended && INTERACTIVE_KINDS.has(baseJournalKind(journal?.kind))
+      !isLocalProfile() && !policy.unattended && INTERACTIVE_KINDS.has(baseJournalKind(journal?.kind))
         ? githubUserLoginForRun(user || author?.name)
         : null;
     if (githubUserLogin) {
@@ -2588,10 +2599,12 @@ async function* runOpencodeAttempt(
     // always win. When both are empty the `provider` key is omitted entirely —
     // keeps the config hash (and thus server reuse) identical for setups with
     // no providers configured.
-    const providerConfig = {
-      ...opencodeProviderOptions(),
-      ...(providerOverride || {}),
-    };
+    const providerConfig = isLocalProfile()
+      ? {}
+      : {
+          ...opencodeProviderOptions(),
+          ...(providerOverride || {}),
+        };
 
     // Per-prompt policy for shared runs: everything a per-session server
     // bakes into its config rides the prompt body instead. Ask mode selects

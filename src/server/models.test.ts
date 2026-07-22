@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import {
   BEST_AVAILABLE_CODEX_MODEL,
   DIAL_ORACLE_AGENTS,
@@ -15,13 +15,25 @@ import {
   nextFallbackModel,
   markCodexModelExhausted,
   modelEfforts,
+  interactiveDefaultModel,
+  interactiveFallbackModel,
+  LOCAL_PROFILE_MODELS,
+  localProfileDefaultModel,
   normalizeModelEffort,
   opencodeModelLabel,
   resolveConcreteModel,
   resolveModel,
   toOpencodeModel,
 } from "./models";
-import { bridgeEnabled } from "./opencode-config";
+
+const savedProfile = process.env.OPENSESSION_PROFILE;
+const savedModel = process.env.OPENSESSION_MODEL;
+afterEach(() => {
+  if (savedProfile === undefined) delete process.env.OPENSESSION_PROFILE;
+  else process.env.OPENSESSION_PROFILE = savedProfile;
+  if (savedModel === undefined) delete process.env.OPENSESSION_MODEL;
+  else process.env.OPENSESSION_MODEL = savedModel;
+});
 
 describe("opencodeModelLabel", () => {
   it("gives opencode ids first-class friendly names — never the engine", () => {
@@ -101,13 +113,27 @@ describe("toOpencodeModel", () => {
       "opencode/openai/gpt-5.6-sol"
     );
   });
-  it("maps claude tiers only when the anthropic bridge is enabled (fail-safe)", () => {
-    const mapped = toOpencodeModel("claude-fable-5");
-    if (bridgeEnabled()) {
-      expect(mapped).toBe("opencode/anthropic/claude-fable-5");
-    } else {
-      expect(mapped).toBe("claude-fable-5"); // degrades to native, not broken
-    }
+  it("maps claude tiers onto the single opencode engine", () => {
+    expect(toOpencodeModel("claude-fable-5")).toBe(
+      "opencode/anthropic/claude-fable-5",
+    );
+  });
+});
+
+describe("local profile models", () => {
+  it("offers only native Anthropic and OpenAI ids", () => {
+    expect(LOCAL_PROFILE_MODELS.length).toBeGreaterThan(0);
+    expect(
+      LOCAL_PROFILE_MODELS.every((model) => /^(anthropic|openai)\//.test(model.id)),
+    ).toBe(true);
+  });
+
+  it("maps the local default straight through OpenCode and disables fallback", () => {
+    process.env.OPENSESSION_PROFILE = "local";
+    process.env.OPENSESSION_MODEL = "openai/gpt-5.5";
+    expect(localProfileDefaultModel()).toBe("openai/gpt-5.5");
+    expect(interactiveDefaultModel()).toBe("opencode/openai/gpt-5.5");
+    expect(interactiveFallbackModel()).toBeUndefined();
   });
 });
 
@@ -306,10 +332,8 @@ describe("fallback graph (nextFallbackModel)", () => {
     // re-evaluated against the model it leaves, so lateral moves lower in the
     // chain can be auto again — that's intended).
     expect(plan.find((h) => h.id === opus)?.mode).toBe("ask");
-    // With the anthropic bridge on, every hop is an opencode id (no native SDK).
-    if (bridgeEnabled()) {
-      for (const hop of plan) expect(hop.id.startsWith("opencode/")).toBe(true);
-    }
+    // The single-engine fallback graph always emits OpenCode ids.
+    for (const hop of plan) expect(hop.id.startsWith("opencode/")).toBe(true);
   });
 
   it("tiers Fable/Sol above Opus above Sonnet", () => {
