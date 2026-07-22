@@ -817,7 +817,9 @@ export function PrPanel({
 
   if (!pr)
     return (
-      <div className="pr-panel">
+      <div
+        className={`pr-panel ${reviewCanvas ? "h-full min-h-0 overflow-y-auto" : ""}`}
+      >
         {switcher}
         <div className="pr-panel-info">
           {walkthrough && <WalkthroughCard walkthrough={walkthrough} />}
