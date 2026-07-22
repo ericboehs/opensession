@@ -2362,7 +2362,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					className="relative flex shrink-0 items-center justify-center"
 					style={{ width: 22, height: 22 }}
 				>
-					{(row.unread || waiting) && (
+					{!isPhone && (row.unread || waiting) && (
 						<span
 							className="sidebar-workspace-attention"
 							title={waiting ? "Needs your attention" : "New activity"}
@@ -2426,7 +2426,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				    including while a run is live (the --running modifier keeps it
 				    hidden until then, so the ticker owns the resting slot). */}
 				{runStartMs !== null && <RunTicker startMs={runStartMs} />}
-				{wsTimePref !== "off" && row.lastActivity && (
+				{!isPhone && wsTimePref !== "off" && row.lastActivity && (
 					<span
 						className={`sidebar-ws-time${
 							wsTimePref === "hover" ? " sidebar-ws-time--hover" : ""
@@ -2442,6 +2442,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					<span className="sidebar-ws-draft" title="Unsent draft. Return to finish it.">
 						<IconPencil size={20} />
 					</span>
+				)}
+				{isPhone && (row.unread || waiting) && (
+					<span
+						className="sidebar-workspace-attention sidebar-workspace-attention--trailing"
+						title={waiting ? "Needs your attention" : "New activity"}
+					/>
 				)}
 				{/* Hover actions: pin + archive, side by side. */}
 				<span className="sidebar-ws-actions">

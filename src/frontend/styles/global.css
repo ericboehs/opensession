@@ -14999,6 +14999,11 @@ html[data-theme="light"] .palette-card .palette-create {
 	border-radius: 50%;
 	background: var(--green);
 }
+.sidebar-workspace-attention--trailing {
+	position: static;
+	flex: 0 0 auto;
+	margin-left: auto;
+}
 .sidebar-ws-actions {
 	display: none;
 	align-items: center;
