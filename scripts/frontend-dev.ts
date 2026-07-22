@@ -179,12 +179,31 @@ async function tailwindCss(): Promise<Response> {
 
 // Serve the SPA shell through a rewriter: fetch Bun's HTML-import output from
 // the internal /__shell route and add the Tailwind link (after the bundled
-// global.css so utilities keep winning source-order ties, as in prod).
+// global.css so utilities keep winning source-order ties, as in prod), plus a
+// watcher that hot-swaps that link when the compiled output changes — Bun's
+// HMR covers the bundle (App.tsx, global.css) but knows nothing about our
+// injected stylesheet.
+const TW_REFRESH = `<script>
+(() => {
+	let last = null;
+	setInterval(async () => {
+		try {
+			const css = await (await fetch("/tailwind-dev.css", { cache: "no-store" })).text();
+			if (last !== null && css !== last) {
+				const link = document.querySelector('link[href^="/tailwind-dev.css"]');
+				if (link) link.href = "/tailwind-dev.css?v=" + last.length;
+			}
+			last = css;
+		} catch {}
+	}, 3000);
+})();
+</script>`;
+
 async function shell(req: Request): Promise<Response> {
 	const res = await fetch(new URL("/__shell", req.url));
 	const html = (await res.text()).replace(
 		"</head>",
-		'  <link rel="stylesheet" href="/tailwind-dev.css">\n</head>',
+		`  <link rel="stylesheet" href="/tailwind-dev.css">\n${TW_REFRESH}\n</head>`,
 	);
 	return new Response(html, {
 		status: res.status,
@@ -194,7 +213,9 @@ async function shell(req: Request): Promise<Response> {
 
 const server = Bun.serve<Bridge, {}>({
 	port: PORT,
-	development: true,
+	// hmr: edits to App.tsx/global.css hot-apply without a manual Cmd+R
+	// (React Fast Refresh through Bun's dev pipeline).
+	development: { hmr: true, console: true },
 	idleTimeout: 240,
 	routes: {
 		"/__shell": spaEntry,
@@ -218,8 +239,13 @@ const server = Bun.serve<Bridge, {}>({
 			return new Response("upgrade failed", { status: 400 });
 		}
 		// SPA fallback, like prod's: any other extension-less GET is a client
-		// route (e.g. /workspace/*) — serve the rewritten shell.
-		if (req.method === "GET" && !url.pathname.includes(".")) {
+		// route (e.g. /workspace/*) — serve the rewritten shell. Bun-internal
+		// paths (/_bun/* — HMR socket, dev assets) must never hit this.
+		if (
+			req.method === "GET" &&
+			!url.pathname.includes(".") &&
+			!url.pathname.startsWith("/_bun")
+		) {
 			return shell(req);
 		}
 		return new Response("not found", { status: 404 });
