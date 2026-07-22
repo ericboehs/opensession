@@ -187,6 +187,48 @@ export function webAuthToken(req: Request): string | null {
   return tokenFromRequest(req);
 }
 
+// ── Cross-site request rejection (CSRF belt-and-braces) ──────────────────────
+
+/**
+ * Reject browser-originated cross-site requests: state-changing API calls and
+ * the UI WebSocket upgrade must come from our own origin. SameSite=Lax on the
+ * auth cookie already blocks most CSRF, but (a) deployments without sign-in
+ * (webAuthRequired() false) have no cookie gating at all — any page in a
+ * tailnet user's browser could fire POSTs at us — and (b) an explicit origin
+ * check also covers same-site-but-different-origin callers and future cookie
+ * regressions. Fail-open for non-browser callers: curl/CDP/server-to-server
+ * requests carry neither Sec-Fetch-Site nor Origin and pass through (Bearer
+ * auth still applies to them separately).
+ *
+ * Rules, in order:
+ *  - Sec-Fetch-Site: "cross-site" → reject; "same-origin"/"none" → allow.
+ *  - Otherwise, if an Origin header is present its host must equal the
+ *    request's Host (scheme-insensitive: Caddy terminates TLS, so the origin
+ *    is https://os.tella.dev while we see plain HTTP with that Host).
+ */
+export function crossSiteViolation(req: Request): string | null {
+  const fetchSite = req.headers.get("sec-fetch-site");
+  if (fetchSite === "cross-site") return "cross-site request";
+  if (fetchSite === "same-origin" || fetchSite === "none") return null;
+  const origin = req.headers.get("origin");
+  if (!origin || origin === "null") {
+    // "null" Origin (sandboxed iframe / data: page) never legitimately calls
+    // us; absent Origin = non-browser caller.
+    return origin === "null" ? "null origin" : null;
+  }
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return "malformed origin";
+  }
+  const host = req.headers.get("host");
+  if (!host || originHost.toLowerCase() !== host.toLowerCase()) {
+    return `origin host ${originHost} != ${host || "(no host)"}`;
+  }
+  return null;
+}
+
 // ── One-time migration: link existing sessions to GitHub logins ──────────────
 
 /**

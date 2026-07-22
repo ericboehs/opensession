@@ -40,6 +40,7 @@ import { buildReposNote } from "./src/server/session-repos";
 import { destroySessionSandbox } from "./src/server/session-sandbox";
 import { getAllSessions } from "./src/server/sessions";
 import {
+	crossSiteViolation,
 	keypadBearerAuthorized,
 	migrateSessionsToGithubUser,
 	resolveWebAuth,
@@ -208,6 +209,30 @@ const server: import("bun").Server<WSClientData> = hotServe({
 			) {
 				const stripped = path.slice("/backstage".length) || "/";
 				return Response.redirect(stripped + url.search, 301);
+			}
+
+			// Cross-site rejection (web-auth.ts crossSiteViolation): browser
+			// cross-site mutations and cross-site UI-WS upgrades are refused
+			// regardless of auth mode — SameSite=Lax already blocks the cookie
+			// riding along, but no-sign-in deployments have no cookie at all.
+			// Non-browser callers (no Origin/Sec-Fetch-Site) pass through; the
+			// sandbox run-ws/rpc-ws dial-backs are machine clients gated by
+			// their own per-launch tokens and never match these paths.
+			{
+				const mutation =
+					path.startsWith("/backstage/api/") &&
+					req.method !== "GET" &&
+					req.method !== "HEAD" &&
+					req.method !== "OPTIONS";
+				if (mutation || path === "/backstage/ws") {
+					const violation = crossSiteViolation(req);
+					if (violation) {
+						return Response.json(
+							{ error: `Cross-site request rejected (${violation})` },
+							{ status: 403 },
+						);
+					}
+				}
 			}
 
 			// GitHub-backed sign-in gate (src/server/web-auth.ts) — active only
