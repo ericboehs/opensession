@@ -10,9 +10,8 @@
 	--bg: #1b1b1b;
 	--bg-raised: #212121;
 	/* Desktop sidebar material: a translucent charcoal wash over the native
-	   window/backdrop, with a slightly denser layer for scrolling headers. */
+	   window/backdrop. */
 	--sidebar-material: rgba(33, 33, 33, 0.66);
-	--sidebar-material-sticky: rgba(33, 33, 33, 0.82);
 	--sidebar-material-sheen: rgba(255, 255, 255, 0.035);
 	/* Surface for the session top bar + tab strip. Matches --bg-raised in dark;
 	   in light it's pulled a touch toward white so the bar reads cleaner. */
@@ -80,7 +79,6 @@ html[data-theme="light"] {
 	--bg: #ffffff;
 	--bg-raised: #f7f6f4;
 	--sidebar-material: rgba(247, 246, 244, 0.72);
-	--sidebar-material-sticky: rgba(247, 246, 244, 0.86);
 	--sidebar-material-sheen: rgba(255, 255, 255, 0.42);
 	--topbar-bg: #fcfbfa;
 	/* Pure white, a hair brighter than the warm topbar, + a barely-there shadow —
@@ -681,8 +679,11 @@ html.wco .wco-nav-btn:hover {
 	padding: 12px 10px 2px;
 }
 /* The three primary sidebar bands replace one another at the top of the single
-   desktop scroll rail. Their opaque surface prevents rows from showing through
-   while the next band scrolls up over the previous one. */
+   desktop scroll rail. While pinned they get a frosted surface (translucent +
+   backdrop blur) so rows sliding beneath read as intentional depth rather than
+   getting chopped by an opaque slab; at rest they stay fully transparent
+   (is-stuck is displacement-based, so the first section never paints a pill
+   while unscrolled). */
 .sidebar-sticky-section {
 	display: block;
 	flex: none;
@@ -694,9 +695,13 @@ html.wco .wco-nav-btn:hover {
 		position: sticky;
 		top: 0;
 		z-index: 20;
-		background: var(--sidebar-material-sticky);
-		-webkit-backdrop-filter: blur(24px) saturate(150%);
-		backdrop-filter: blur(24px) saturate(150%);
+		background: transparent;
+	}
+	.sidebar-sticky-head.is-stuck {
+		background: color-mix(in srgb, var(--bg-raised) 72%, transparent);
+		-webkit-backdrop-filter: blur(10px);
+		backdrop-filter: blur(10px);
+		box-shadow: 0 1px 0 0 color-mix(in srgb, var(--border) 70%, transparent);
 	}
 	/* One invariant row height prevents the outgoing and incoming sticky labels
 	   from peeking around each other while one section pushes the next away. */
@@ -718,9 +723,13 @@ html.wco .wco-nav-btn:hover {
 	/* Independent bands are inset by their parent. Paint through that gutter
 	   without changing layout width (negative margins caused horizontal scroll). */
 	.sidebar-independent-section > .sidebar-sticky-head {
+		box-shadow: none;
+	}
+	.sidebar-independent-section > .sidebar-sticky-head.is-stuck {
 		box-shadow:
-			-10px 0 0 var(--sidebar-material-sticky),
-			10px 0 0 var(--sidebar-material-sticky);
+			-10px 0 0 color-mix(in srgb, var(--bg-raised) 72%, transparent),
+			10px 0 0 color-mix(in srgb, var(--bg-raised) 72%, transparent),
+			0 1px 0 0 color-mix(in srgb, var(--border) 70%, transparent);
 	}
 	.sidebar-workspace-fallback {
 		margin-right: 12px;
@@ -1749,9 +1758,18 @@ body.resizing-x {
 		z-index: 15;
 		height: 30px;
 		min-height: 30px;
-		background: var(--sidebar-material-sticky);
-		-webkit-backdrop-filter: blur(20px) saturate(145%);
-		backdrop-filter: blur(20px) saturate(145%);
+		/* Draw no pill while the label is in its normal flow position. */
+		background: transparent;
+	}
+
+	.sidebar-status-group > .sidebar-group-header.is-stuck,
+	.sidebar-group--pinned > .sidebar-group-header.is-stuck,
+	.sidebar-group--review > .sidebar-group-header.is-stuck,
+	.sidebar-repo-group > .sidebar-repo-head.is-stuck,
+	.sidebar-folder-section > .sidebar-folder-header.is-stuck {
+		background: color-mix(in srgb, var(--bg-raised) 72%, transparent);
+		-webkit-backdrop-filter: blur(10px);
+		backdrop-filter: blur(10px);
 	}
 
 	.sidebar-repo-lanes .sidebar-status-group > .sidebar-group-header {

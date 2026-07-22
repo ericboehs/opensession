@@ -832,6 +832,69 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		() => onSidebarToolsChanged(() => setHiddenTools(readHiddenSidebarTools())),
 		[],
 	);
+	const sidebarScrollRef = useRef<HTMLDivElement>(null);
+
+	// CSS has no interoperable :stuck selector. Track the shared sidebar
+	// scrollport instead so section/lane labels can stay transparent in-flow and
+	// gain an opaque surface only while position:sticky is actively pinning them.
+	useLayoutEffect(() => {
+		const root = sidebarScrollRef.current;
+		if (!root) return;
+		let frame = 0;
+		const selector = [
+			".sidebar-sticky-head",
+			".sidebar-status-group > .sidebar-group-header",
+			".sidebar-group--pinned > .sidebar-group-header",
+			".sidebar-group--review > .sidebar-group-header",
+			".sidebar-repo-group > .sidebar-repo-head",
+		].join(",");
+
+		const update = () => {
+			frame = 0;
+			const rootTop = root.getBoundingClientRect().top;
+			root.querySelectorAll<HTMLElement>(selector).forEach((header) => {
+				const style = getComputedStyle(header);
+				const parent = header.parentElement;
+				if (style.position !== "sticky" || !parent) {
+					header.classList.remove("is-stuck");
+					return;
+				}
+				const stickyTop = Number.parseFloat(style.top) || 0;
+				const rect = header.getBoundingClientRect();
+				const pinned = rect.top <= rootTop + stickyTop + 0.5;
+				// Pin-line position alone also matches a header that naturally
+				// RESTS at its sticky offset (the first section at scrollTop 0 —
+				// the solid-pill-while-unscrolled bug), so additionally require
+				// real displacement from the parent. All of these headers sit
+				// flush with their parent's top in static layout, so a positive
+				// delta means sticky is actively holding the header back. (Don't
+				// try offsetTop for this: Chromium reports the displaced sticky
+				// position there, not static layout.)
+				const displaced =
+					rect.top - parent.getBoundingClientRect().top > 1.5;
+				header.classList.toggle("is-stuck", pinned && displaced);
+			});
+		};
+		const schedule = () => {
+			if (!frame) frame = requestAnimationFrame(update);
+		};
+
+		update();
+		root.addEventListener("scroll", schedule, { passive: true });
+		window.addEventListener("resize", schedule);
+		const resizeObserver = new ResizeObserver(schedule);
+		resizeObserver.observe(root);
+		const mutationObserver = new MutationObserver(schedule);
+		mutationObserver.observe(root, { childList: true, subtree: true });
+
+		return () => {
+			root.removeEventListener("scroll", schedule);
+			window.removeEventListener("resize", schedule);
+			resizeObserver.disconnect();
+			mutationObserver.disconnect();
+			if (frame) cancelAnimationFrame(frame);
+		};
+	}, []);
 
 	// Filter popover (group by / repo / sort) — its choices persist together.
 	const [filter, setFilterState] = useState<FilterState>(readFilter);
@@ -2563,7 +2626,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	}
 
 	return (
-		<div className="sidebar">
+		<div className="sidebar" ref={sidebarScrollRef}>
 			<div className="sidebar-sticky-section sidebar-tools-section">
 			{!isPhone && visibleTools.length > 0 && (
 				<div className="sidebar-band-label sidebar-tools-head sidebar-sticky-head">
