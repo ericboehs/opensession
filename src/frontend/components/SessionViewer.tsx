@@ -911,7 +911,7 @@ export function SessionViewer({
 			if (
 				e.defaultPrevented ||
 				!(e.metaKey || e.ctrlKey) ||
-				!e.altKey ||
+				e.altKey ||
 				e.shiftKey ||
 				(e.key.toLowerCase() !== "p" && e.code !== "KeyP") ||
 				document.querySelector(
@@ -2860,20 +2860,24 @@ export function SessionViewer({
 						</button>
 					</>
 				);
-				// Pin stays in the menu on phones, where Preview isn't in the top bar.
-				// Spin off lives here at every width alongside the destructive actions.
+				// Pin and Spin off live here at every width alongside the other
+				// session-level actions, keeping the visible header focused on status.
 				const overflowActions = (
 					<>
-						{isPhone && (
-							<button
-								className={`btn-viewer-pin ${pinned ? "active" : ""}`}
-								onClick={() => togglePin(session.id)}
-								aria-pressed={pinned}
-							>
-								<IconPin size={20} fill={pinned ? "currentColor" : "none"} />
-								{pinned ? "Unpin tab" : "Pin as tab"}
-							</button>
-						)}
+						<button
+							className={`btn-viewer-pin ${pinned ? "active" : ""}`}
+							onClick={() => {
+								setOverflowOpen(false);
+								togglePin(session.id);
+							}}
+							aria-pressed={pinned}
+						>
+							<IconPin size={20} fill={pinned ? "currentColor" : "none"} />
+							{pinned ? "Unpin tab" : "Pin as tab"}
+							<span className="btn-viewer-shortcut">
+								{isApple ? "⌘P" : "Ctrl+P"}
+							</span>
+						</button>
 						<SpinOffMenu
 							session={session}
 							entries={entries}
@@ -3156,23 +3160,6 @@ export function SessionViewer({
 							</div>
 						)}
 					</div>
-					{!isPhone && (
-						<Tooltip
-							label={pinned ? "Unpin tab" : "Pin as tab"}
-							shortcut={isApple ? ["⌘", "⌥", "P"] : ["Ctrl", "Alt", "P"]}
-							side="bottom"
-						>
-							<button
-								type="button"
-								className={`viewer-code-icon ${pinned ? "text-yellow" : ""}`}
-								onClick={() => togglePin(session.id)}
-								aria-label={pinned ? "Unpin tab" : "Pin as tab"}
-								aria-pressed={pinned}
-							>
-								<IconPin size={20} fill={pinned ? "currentColor" : "none"} />
-							</button>
-						</Tooltip>
-					)}
 					{/* Code-workspace testing affordances as state-colored icons, docked
 					    immediately left of the side-panel toggle. Each self-gates
 					    (renders null when not applicable). The play button stays put;

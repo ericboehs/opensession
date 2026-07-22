@@ -93,6 +93,7 @@ const ARCHIVE_SHORTCUT_KEYS = isChromium
 	: isApple
 		? ["⌘", "E"]
 		: ["Ctrl", "E"];
+const PIN_SHORTCUT_KEYS = isApple ? ["⌘", "P"] : ["Ctrl", "P"];
 
 /** ⌘E (primary) or ⌘⇧A (legacy) — the archive-this-chat chord. */
 function isArchiveChord(e: KeyboardEvent): boolean {
@@ -4941,7 +4942,10 @@ function SidebarItem({
 					))}
 				</div>
 			)}
-			<Tooltip label={pinned ? "Unpin session" : "Pin session"}>
+			<Tooltip
+				label={pinned ? "Unpin session" : "Pin session"}
+				shortcut={selected ? PIN_SHORTCUT_KEYS : undefined}
+			>
 				<span
 					className={`sidebar-item-pin${pinned ? " is-on" : ""}`}
 					role="button"
