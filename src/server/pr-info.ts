@@ -1,10 +1,15 @@
 /**
  * PR details for a session branch via the gh CLI, Devin-style "PR" tab.
- * Cached per branch for 30s to keep the UI snappy without hammering GitHub.
+ * Cached per branch for 30s (stale-while-revalidate) to keep the UI snappy
+ * without hammering GitHub; snapshotted to disk so restarts keep last-good
+ * data; and wired into the shared rate-limit gate (github-limit.ts) so a
+ * throttled quota serves stale snapshots instead of errors.
  */
 import { defaultRepo } from "./config";
 import { $ } from "bun";
+import { readFileSync, writeFileSync } from "fs";
 import { audited } from "./audit";
+import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg } from "./github-limit";
 
 export interface PrCheck {
   name: string;
@@ -155,6 +160,35 @@ const DEFAULT_REPO = () => defaultRepo().ghRepo;
 const cache = new Map<string, { data: PrDetails | null; ts: number }>();
 const TTL = 30_000;
 
+// The details cache is snapshotted to disk (debounced) and seeded on boot —
+// without this, a restart during a GitHub outage or rate-limit window boots
+// with an empty cache and the PR panel shows a dead error instead of the
+// last-good snapshot (same failure mode the bulk cache fixed on 2026-07-22).
+// Entries keep their original ts, so everything seeds as stale: served
+// immediately while a background refresh runs. The diff cache is NOT
+// persisted — patches are big and cheap to refetch.
+const DETAILS_CACHE_FILE = `${process.env.HOME || "/home/ubuntu"}/.opensession-pr-details-cache.json`;
+try {
+  const raw: Record<string, { data: PrDetails | null; ts: number }> = JSON.parse(
+    readFileSync(DETAILS_CACHE_FILE, "utf8"),
+  );
+  for (const [k, v] of Object.entries(raw)) cache.set(k, v);
+} catch {}
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePersist() {
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    try {
+      const cutoff = Date.now() - 7 * 24 * 3600_000; // drop long-dead branches
+      const obj: Record<string, { data: PrDetails | null; ts: number }> = {};
+      for (const [k, v] of cache) if (v.ts > cutoff) obj[k] = v;
+      writeFileSync(DETAILS_CACHE_FILE, JSON.stringify(obj));
+    } catch {}
+  }, 5_000);
+}
+
 // Caches are keyed by `<repo>\0<branch>` so the same branch name in different
 // repos (multi-repo sessions share a branch name) never collides.
 const cacheKey = (repo: string, branch: string) => `${repo}\u0000${branch}`;
@@ -174,6 +208,8 @@ export async function getPrDiff(
   const key = cacheKey(repo, branch);
   const hit = diffCache.get(key);
   if (hit && Date.now() - hit.ts < TTL) return hit.data;
+  // While GitHub throttles us, a stale answer beats burning a doomed call.
+  if (ghRateLimited() && hit) return hit.data;
 
   try {
     const metaRaw = await $`gh pr view ${branch} --repo ${repo} --json number,headRefOid`
@@ -187,7 +223,9 @@ export async function getPrDiff(
   } catch (e: any) {
     const msg = String(e?.stderr || e?.message || e).slice(0, 300);
     if (!isNoPrError(msg)) {
+      if (isGhRateLimitMsg(msg)) noteGhRateLimited("pr-info");
       console.warn(`[pr-info] gh pr diff ${branch} (${repo}) failed: ${msg}`);
+      if (hit) return hit.data; // stale beats an error
       throw new Error(prApiErrorMessage(msg));
     }
     diffCache.set(key, { data: null, ts: Date.now() });
@@ -479,7 +517,10 @@ const inflight = new Map<string, Promise<PrDetails | null>>();
  * Stale-while-revalidate: a fresh cache entry answers directly; an EXPIRED one
  * still answers immediately (the status header shouldn't block ~1s on a GitHub
  * round-trip every 30s) while the refresh runs in the background and lands for
- * the next poll. Only a branch with no cache at all waits on gh.
+ * the next poll. Only a branch with no cache at all waits on gh. During a
+ * rate-limit window, ANY cached answer (even a stale "no PR") is served
+ * without spawning gh; when a refresh fails outright, a stale snapshot still
+ * beats surfacing an error to the panel.
  */
 export async function getPrDetails(
   branch: string,
@@ -488,12 +529,14 @@ export async function getPrDetails(
   const key = cacheKey(repo, branch);
   const hit = cache.get(key);
   if (hit && Date.now() - hit.ts < TTL) return hit.data;
+  if (ghRateLimited() && hit) return hit.data;
 
   let refresh = inflight.get(key);
   if (!refresh) {
     refresh = fetchPrDetails(branch, repo)
       .then((data) => {
         cache.set(key, { data, ts: Date.now() });
+        schedulePersist();
         return data;
       })
       .finally(() => inflight.delete(key));
@@ -503,7 +546,10 @@ export async function getPrDetails(
     void refresh.catch(() => {});
     return hit.data;
   }
-  return refresh;
+  return refresh.catch((e) => {
+    if (hit) return hit.data;
+    throw e;
+  });
 }
 
 /** Bypass the UI's stale-while-revalidate cache for action completion gates. */
@@ -511,8 +557,12 @@ export async function getPrDetailsFresh(
   branch: string,
   repo: string = DEFAULT_REPO()
 ): Promise<PrDetails | null> {
+  // A completion gate must not act on stale data, so during a rate-limit
+  // window it fails fast with the friendly message instead of burning a call.
+  if (ghRateLimited()) throw new Error(GH_RATE_LIMIT_MESSAGE);
   const data = await fetchPrDetails(branch, repo);
   cache.set(cacheKey(repo, branch), { data, ts: Date.now() });
+  schedulePersist();
   return data;
 }
 
@@ -521,9 +571,11 @@ export function isNoPrError(msg: string): boolean {
   return /no pull requests found|Could not resolve to a PullRequest/i.test(msg);
 }
 
+export const GH_RATE_LIMIT_MESSAGE =
+  "GitHub's API rate limit has been reached. Try again after it resets.";
+
 export function prApiErrorMessage(msg: string): string {
-  if (/rate limit/i.test(msg))
-    return "GitHub's API rate limit has been reached. Try again after it resets.";
+  if (/rate limit/i.test(msg)) return GH_RATE_LIMIT_MESSAGE;
   if (/authentication|bad credentials|requires authentication/i.test(msg))
     return "GitHub authentication failed. Check the GitHub connection.";
   return "GitHub's pull request API is unavailable right now.";
@@ -611,6 +663,7 @@ async function fetchPrDetails(
   } catch (e: any) {
     const msg = String(e?.stderr || e?.message || e).slice(0, 300);
     if (!isNoPrError(msg)) {
+      if (isGhRateLimitMsg(msg)) noteGhRateLimited("pr-info");
       console.warn(`[pr-info] gh pr view ${branch} (${repo}) failed: ${msg}`);
       throw new Error(prApiErrorMessage(msg));
     }

@@ -9,6 +9,7 @@
  */
 import { $ } from "bun";
 import { getPrDetailsFresh, type PrDetails } from "../../server/pr-info";
+import { ghBackoffUntil } from "../../server/github-limit";
 import { createWorktreeForPrBranch } from "../../server/worktree";
 import {
   claimLock,
@@ -72,7 +73,14 @@ async function waitForChecks(
   let last: CiState = { settled: false, green: false, failing: [] };
   let matchingHeadSeenAt = 0;
   while (Date.now() < deadline) {
-    const details = await getPrDetailsFresh(headRef, ghRepo || undefined);
+    let details: PrDetails | null;
+    try {
+      details = await getPrDetailsFresh(headRef, ghRepo || undefined);
+    } catch {
+      // Rate-limited — wait out the backoff (or at least one poll interval) and retry.
+      await new Promise((r) => setTimeout(r, Math.min(deadline, Math.max(ghBackoffUntil(), Date.now() + CHECK_POLL_MS)) - Date.now()));
+      continue;
+    }
     if (details?.headRefOid !== expectedHeadSha) {
       await new Promise((r) => setTimeout(r, CHECK_POLL_MS));
       continue;
@@ -100,7 +108,14 @@ async function waitForMergeability(headRef: string, expectedHeadSha: string, ghR
   const deadline = Date.now() + MERGEABILITY_TIMEOUT_MS;
   let probe: MergeabilityProbe = { state: "pending", details: null };
   while (Date.now() < deadline) {
-    const details = await getPrDetailsFresh(headRef, ghRepo || undefined);
+    let details: PrDetails | null;
+    try {
+      details = await getPrDetailsFresh(headRef, ghRepo || undefined);
+    } catch {
+      // Rate-limited — wait out the backoff (or at least one poll interval) and retry.
+      await new Promise((r) => setTimeout(r, Math.min(deadline, Math.max(ghBackoffUntil(), Date.now() + MERGEABILITY_POLL_MS)) - Date.now()));
+      continue;
+    }
     probe = { state: mergeabilityState(details, expectedHeadSha), details };
     if (probe.state !== "pending") return probe;
     await new Promise((r) => setTimeout(r, MERGEABILITY_POLL_MS));

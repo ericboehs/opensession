@@ -13,6 +13,7 @@ import { audited } from "./audit";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { defaultRepo } from "./config";
 import { stateDir } from "./rename-compat";
+import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "./github-limit";
 
 const repoName = () => defaultRepo().ghRepo;
 const STATE_PATH = stateDir("prtinder.json");
@@ -46,30 +47,38 @@ const PR_TTL = 60_000;
 
 export async function listTinderPrs(): Promise<TinderPr[]> {
   if (prCache && Date.now() - prCache.ts < PR_TTL) return prCache.data;
-  const raw =
-    await $`gh pr list --repo ${repoName()} --state open --limit 300 --json ${PR_FIELDS}`
-      .quiet()
-      .text();
-  const data: TinderPr[] = JSON.parse(raw).map((pr: any) => ({
-    number: pr.number,
-    title: pr.title,
-    url: pr.url,
-    author: pr.author?.login || "unknown",
-    isDraft: !!pr.isDraft,
-    createdAt: pr.createdAt,
-    updatedAt: pr.updatedAt,
-    labels: (pr.labels || []).map((l: any) => ({
-      name: l.name,
-      color: l.color || "",
-    })),
-    body: pr.body || "",
-    reviewDecision: pr.reviewDecision || "",
-    additions: pr.additions ?? 0,
-    deletions: pr.deletions ?? 0,
-    changedFiles: pr.changedFiles ?? 0,
-  }));
-  prCache = { data, ts: Date.now() };
-  return data;
+  if (ghRateLimited() && prCache) return prCache.data; // serve stale during a backoff window
+  try {
+    const raw =
+      await $`gh pr list --repo ${repoName()} --state open --limit 300 --json ${PR_FIELDS}`
+        .quiet()
+        .text();
+    const data: TinderPr[] = JSON.parse(raw).map((pr: any) => ({
+      number: pr.number,
+      title: pr.title,
+      url: pr.url,
+      author: pr.author?.login || "unknown",
+      isDraft: !!pr.isDraft,
+      createdAt: pr.createdAt,
+      updatedAt: pr.updatedAt,
+      labels: (pr.labels || []).map((l: any) => ({
+        name: l.name,
+        color: l.color || "",
+      })),
+      body: pr.body || "",
+      reviewDecision: pr.reviewDecision || "",
+      additions: pr.additions ?? 0,
+      deletions: pr.deletions ?? 0,
+      changedFiles: pr.changedFiles ?? 0,
+    }));
+    prCache = { data, ts: Date.now() };
+    return data;
+  } catch (e: any) {
+    const msg = String(e?.stderr || e?.message || e);
+    if (isGhRateLimitMsg(msg)) noteGhRateLimited("pr-tinder");
+    if (prCache) return prCache.data;
+    throw e;
+  }
 }
 
 let labelCache: { data: Array<{ name: string; color: string }>; ts: number } | null =
@@ -78,6 +87,7 @@ const LABEL_TTL = 10 * 60_000;
 
 export async function listTinderLabels(): Promise<Array<{ name: string; color: string }>> {
   if (labelCache && Date.now() - labelCache.ts < LABEL_TTL) return labelCache.data;
+  if (ghRateLimited() && labelCache) return labelCache.data; // serve stale during a backoff window
   try {
     const raw = await $`gh label list --repo ${repoName()} --limit 200 --json name,color`
       .quiet()
@@ -86,8 +96,11 @@ export async function listTinderLabels(): Promise<Array<{ name: string; color: s
       (a, b) => a.name.localeCompare(b.name),
     );
     labelCache = { data, ts: Date.now() };
-  } catch {
-    labelCache = { data: [], ts: Date.now() };
+  } catch (e: any) {
+    const msg = String(e?.stderr || e?.message || e);
+    if (isGhRateLimitMsg(msg)) noteGhRateLimited("pr-tinder");
+    // Keep stale labels on failure rather than clobbering with empty.
+    if (!labelCache) labelCache = { data: [], ts: Date.now() };
   }
   return labelCache.data;
 }

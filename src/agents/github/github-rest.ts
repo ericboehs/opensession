@@ -8,6 +8,7 @@
  */
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import { defaultRepo, personaName } from "../../server/config";
+import { isGhRateLimitMsg, noteGhRateLimited } from "../../server/github-limit";
 
 const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
 /** The PR agent's target — the instance's default repo (config-driven). */
@@ -85,6 +86,14 @@ export async function githubRequest<T = any>(
     if (!resp.ok) {
       const error = (data && (data.message || data.error)) || `GitHub ${resp.status}`;
       console.warn(`[github] ${method} ${path} → ${resp.status}: ${error}`);
+      if (
+        (resp.status === 403 || resp.status === 429) &&
+        (resp.headers.get("x-ratelimit-remaining") === "0" || isGhRateLimitMsg(String(error)))
+      ) {
+        const resetHeader = resp.headers.get("x-ratelimit-reset");
+        if (resetHeader) noteGhRateLimited("github-rest", Number(resetHeader) * 1000);
+        else noteGhRateLimited("github-rest");
+      }
       return { ok: false, status: resp.status, data, error };
     }
     return { ok: true, status: resp.status, data };
@@ -116,6 +125,9 @@ export async function githubGraphQL<T = any>(
     if (!resp.ok || !json || json.errors) {
       const msg = json?.errors?.map((e: any) => e.message).join("; ") || `GitHub GraphQL ${resp.status}`;
       console.warn(`[github] graphql → ${resp.status}: ${msg}`);
+      if (json?.errors?.some((e: any) => e.type === "RATE_LIMITED") || isGhRateLimitMsg(msg)) {
+        noteGhRateLimited("github-graphql");
+      }
       return null;
     }
     return json.data as T;

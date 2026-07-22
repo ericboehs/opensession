@@ -19,6 +19,7 @@ import { $ } from "bun";
 import { stateDir } from "./rename-compat";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { configuredRepos } from "./config";
+import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "./github-limit";
 
 const AUDIT_DIR = stateDir("audit");
 const CACHE_DIR = stateDir("analytics-cache");
@@ -274,6 +275,7 @@ async function fetchRepoPrs(repoId: string, ghRepo: string, fromDate: string): P
 	const key = `${ghRepo}:${fromDate}`;
 	const cached = prCache.get(key);
 	if (cached && Date.now() - cached.at < PR_CACHE_TTL_MS) return cached.prs;
+	if (ghRateLimited() && cached) return cached.prs; // serve stale during a backoff window
 
 	const fields = "number,title,url,state,createdAt,mergedAt,headRefName";
 	const seen = new Map<number, AnalyticsPr>();
@@ -300,6 +302,7 @@ async function fetchRepoPrs(repoId: string, ghRepo: string, fromDate: string): P
 			}
 		} catch (e) {
 			console.error(`[analytics] gh pr list failed for ${ghRepo}:`, e);
+			if (isGhRateLimitMsg(String((e as any)?.stderr || e))) noteGhRateLimited("analytics");
 		}
 	}
 	const prs = [...seen.values()];

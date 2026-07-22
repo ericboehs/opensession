@@ -20,6 +20,8 @@ import {
 } from "./opencode-transcript";
 import { configuredRepos, defaultRepo } from "./config";
 import { isLockHeld, readPrState } from "../agents/github/state";
+import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg, botGhToken } from "./github-limit";
+import { fetchWithTimeout } from "./shared/fetch-with-timeout";
 import type {
   UnifiedSession,
   SlackSessionFile,
@@ -607,34 +609,49 @@ function persistPrCache(data: Map<string, Map<string, PrInfo>>) {
   }
 }
 
-// When gh reports rate-limit exhaustion, stop refreshing until GitHub's stated
-// reset (plus slack) instead of re-firing 8 doomed GraphQL calls a minute. The
-// cache keeps serving its stale (possibly disk-seeded) snapshot meanwhile.
-let ghBackoffUntil = 0;
-let ghBackoffProbe: Promise<void> | null = null;
-function noteGhRateLimited() {
-  if (Date.now() < ghBackoffUntil || ghBackoffProbe) return;
-  // Fallback first, in case the probe below fails (core quota can be gone too).
-  ghBackoffUntil = Date.now() + 15 * 60_000;
-  // rate_limit is REST (core quota), so it usually still answers when GraphQL
-  // — what `gh pr list` runs on — is exhausted.
-  ghBackoffProbe = (async () => {
-    try {
-      const proc = Bun.spawn(
-        ["gh", "api", "rate_limit", "--jq", ".resources.graphql.reset"],
-        { stdout: "pipe", stderr: "ignore" },
-      );
-      const raw = await new Response(proc.stdout).text();
-      if ((await proc.exited) === 0) {
-        const reset = parseInt(raw.trim(), 10) * 1000;
-        if (reset > Date.now()) ghBackoffUntil = reset + 30_000;
-      }
-    } catch {}
-    console.error(
-      `gh rate-limited; pausing PR refresh until ${new Date(ghBackoffUntil).toISOString()}`,
+// Rate-limit backoff is shared across ALL GitHub callers (github-limit.ts):
+// when any caller reports exhaustion, this refresh pauses too and keeps
+// serving its stale (possibly disk-seeded) snapshot until GitHub's reset.
+
+// ── Cheap change detection for the bulk refresh ──────────────────────────────
+// Before burning the expensive GraphQL `gh pr list` calls (the notifier drives
+// a refresh every minute around the clock, even with zero users), ask REST
+// whether anything changed at all: a conditional GET (If-None-Match) on the
+// most recently updated PR answers 304 when the repo's PR set is untouched —
+// and GitHub documents that 304s on conditional requests don't count against
+// the rate limit, so an idle instance polls for free. Some mutations may not
+// bump a PR's updatedAt, so a full GraphQL refresh still runs at least every
+// PROBE_MAX_SKIP_MS as a safety net.
+const probeEtags = new Map<string, string>(); // ghRepo → last seen ETag
+const lastFullRefresh = new Map<string, number>(); // repo id → epoch ms
+const PROBE_MAX_SKIP_MS = 5 * 60_000;
+
+async function repoPrsUnchanged(ghRepo: string): Promise<boolean> {
+  const token = await botGhToken();
+  if (!token) return false;
+  const etag = probeEtags.get(ghRepo);
+  try {
+    const resp = await fetchWithTimeout(
+      `https://api.github.com/repos/${ghRepo}/pulls?state=all&sort=updated&direction=desc&per_page=1`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          ...(etag ? { "If-None-Match": etag } : {}),
+        },
+      },
     );
-    ghBackoffProbe = null;
-  })();
+    if (resp.status === 304) return true;
+    if (resp.ok) {
+      const fresh = resp.headers.get("etag");
+      if (fresh) probeEtags.set(ghRepo, fresh);
+    }
+    await resp.text().catch(() => {}); // drain so the socket frees
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 // GitHub only populates a PR's `reviewDecision` when branch protection *requires*
@@ -672,7 +689,7 @@ async function ghJson<T>(args: string[]): Promise<T | null> {
       new Response(proc.stderr).text(),
     ]);
     if ((await proc.exited) !== 0) {
-      if (/rate limit/i.test(err)) noteGhRateLimited();
+      if (isGhRateLimitMsg(err)) noteGhRateLimited("pr-cache");
       return null;
     }
     if (!raw.trim()) return null;
@@ -692,7 +709,7 @@ export function refreshPrCache(): Promise<Set<string>> {
 
 async function refreshPrCacheInner(): Promise<Set<string>> {
   const freshRepos = new Set<string>();
-  if (Date.now() < ghBackoffUntil) {
+  if (ghRateLimited()) {
     // Rate-limited — keep serving the stale snapshot, don't burn calls.
     prCache.ts = Date.now();
     return freshRepos;
@@ -711,6 +728,8 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
       // enum (unlike statusCheckRollup), so it's safe to add to the bulk list;
       // mergeStateStatus is NOT a `gh pr list` field (detail-only), don't add it.
       mergeable?: string;
+      // Only requested on the open-PR query (see below), absent on recentAll.
+      latestReviews?: Array<{ state?: string; author?: { login?: string } }>;
     };
     const FIELDS =
       "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,createdAt,updatedAt,reviewRequests,assignees,mergeable";
@@ -719,27 +738,37 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
     // PR — not just the newest N. Fusion carries 200+ open PRs at a time, so a
     // single `--state all --limit 200` window silently drops older open ones
     // (the bug where a real PR wouldn't show on its session). Split it:
-    //   - `--state open` with a generous limit → all open PRs (the live matches)
+    //   - `--state open` with a generous limit → all open PRs (the live
+    //     matches), carrying latestReviews so review state (an approval GitHub
+    //     won't report via reviewDecision — see deriveReviewDecision) needs no
+    //     third query; latestReviews is cheap (~2 GraphQL points across the
+    //     full open window)
     //   - `--state all` window → recently merged/closed (Reviews "merged" view +
     //     sessions whose PR just landed)
     const next = new Map<string, Map<string, PrInfo>>();
     await Promise.all(prRepos().map(async (repo) => {
-      const [openPrs, recentAll, reviews] = await Promise.all([
+      // Skip both GraphQL calls entirely when the conditional REST probe says
+      // nothing changed since the last full refresh (bounded by the safety-net
+      // interval): an unchanged snapshot is by definition current, so the repo
+      // still counts as fresh for notification consumers.
+      const stale = prCache.data.get(repo.id);
+      if (
+        stale &&
+        Date.now() - (lastFullRefresh.get(repo.id) || 0) < PROBE_MAX_SKIP_MS &&
+        (await repoPrsUnchanged(repo.ghRepo))
+      ) {
+        next.set(repo.id, stale);
+        freshRepos.add(repo.id);
+        return;
+      }
+      const [openPrs, recentAll] = await Promise.all([
         ghJson<BulkPr[]>([
           "pr", "list", "--repo", repo.ghRepo, "--state", "open",
-          "--limit", String(repo.openLimit), "--json", FIELDS,
+          "--limit", String(repo.openLimit), "--json", `${FIELDS},latestReviews`,
         ]),
         ghJson<BulkPr[]>([
           "pr", "list", "--repo", repo.ghRepo, "--state", "all",
           "--limit", String(repo.recentLimit), "--json", FIELDS,
-        ]),
-        // Review state per open PR, to fill in an approval GitHub won't report
-        // via reviewDecision (see deriveReviewDecision). latestReviews is cheap
-        // (~4s and ~2 GraphQL points across every open PR), so it covers the
-        // full open window rather than a scoped slice.
-        ghJson<Array<{ number: number; latestReviews?: Array<{ state?: string; author?: { login?: string } }> }>>([
-          "pr", "list", "--repo", repo.ghRepo, "--state", "open",
-          "--limit", String(repo.openLimit), "--json", "number,latestReviews",
         ]),
       ]);
 
@@ -752,10 +781,11 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
         return;
       }
 			freshRepos.add(repo.id);
+      lastFullRefresh.set(repo.id, Date.now());
 
       const reviewByNumber = new Map<number, string>();
       const reviewedByNumber = new Map<number, string[]>();
-      for (const r of reviews || []) {
+      for (const r of openPrs) {
         const decision = deriveReviewDecision(r.latestReviews);
         if (decision) reviewByNumber.set(r.number, decision);
         // Teammates whose latest submitted review stands (approve / changes /

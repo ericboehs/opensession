@@ -14,6 +14,7 @@ import {
 import { sendSlackMessage, postSlackBlocks } from "./slack-api";
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import { GITHUB_REPO } from "./state";
+import { ghRateLimited, noteGhRateLimited } from "../../server/github-limit";
 
 const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
@@ -33,6 +34,11 @@ export async function githubApi(path: string): Promise<any> {
     });
     if (!resp.ok) {
       console.warn(`[slack] GitHub API ${path}: ${resp.status}`);
+      if ((resp.status === 403 || resp.status === 429) && resp.headers.get("x-ratelimit-remaining") === "0") {
+        const resetHeader = resp.headers.get("x-ratelimit-reset");
+        if (resetHeader) noteGhRateLimited("slack-github", Number(resetHeader) * 1000);
+        else noteGhRateLimited("slack-github");
+      }
       return null;
     }
     return resp.json();
@@ -56,6 +62,7 @@ export async function pollForVercelPreview(
 
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((r) => setTimeout(r, interval));
+    if (ghRateLimited()) return; // best-effort nicety — abandon rather than burn the backoff window
     try {
       // Get the PR's head commit SHA
       const pr = await githubApi(`/repos/${GITHUB_REPO}/pulls/${prNumber}`);
