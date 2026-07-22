@@ -16,21 +16,19 @@ import os
 from PIL import Image, ImageDraw, ImageFilter
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "frontend", "splash")
+LOGO_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "os1-mac", "build", "icon-512.png"
+)
 
-BG = (11, 8, 9)          # #0b0809
-TILE = (10, 6, 8)        # #0a0608
-RED = (255, 42, 42)      # #ff2a2a
-BAR = (255, 34, 34)      # #ff2222
-RED_TOP = (255, 77, 77)  # #ff4d4d (icon gradient top — keep in sync with gen-icons.py)
-RED_BOTTOM = (193, 0, 0) # #c10000
-DARK_LOBE = (30, 13, 16) # #1e0d10
+BG = (27, 27, 27)  # #1b1b1b, matching the HTML launch splash
+BAR = (236, 236, 236)  # #ececec
 
 # Portrait device pixel sizes for modern iPhones (the standard PWA set).
 # (width_px, height_px)
 DEVICES = [
-    (640, 1136),   # SE 1st gen
-    (750, 1334),   # 8, SE 2/3
-    (828, 1792),   # XR, 11
+    (640, 1136),  # SE 1st gen
+    (750, 1334),  # 8, SE 2/3
+    (828, 1792),  # XR, 11
     (1125, 2436),  # X, XS, 11 Pro, 12/13 mini
     (1170, 2532),  # 12, 12 Pro, 13, 13 Pro, 14
     (1179, 2556),  # 14 Pro, 15, 15 Pro, 16
@@ -46,89 +44,44 @@ DEVICES = [
 def render(w, h):
     img = Image.new("RGB", (w, h), BG)
 
-    # Soft red glow behind the logo.
+    cx, cy = w // 2, h // 2
+    logo_size = int(w * 0.21)
+
+    # A subtle neutral glow keeps the dark half of the mark visible without
+    # changing the logo itself.
     glow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     gd = ImageDraw.Draw(glow)
-    r = int(w * 0.42)
-    cx, cy = w // 2, h // 2
-    gd.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 40, 40, 46))
-    glow = glow.filter(ImageFilter.GaussianBlur(int(w * 0.12)))
-    img = Image.alpha_composite(img.convert("RGBA"), glow).convert("RGB")
-    d = ImageDraw.Draw(img)
-
-    # Rounded logo tile.
-    tile = int(w * 0.21)
-    rad = int(tile * 0.26)
-    tx0, ty0 = cx - tile // 2, cy - tile // 2
-    tx1, ty1 = tx0 + tile, ty0 + tile
-    d.rounded_rectangle(
-        [tx0, ty0, tx1, ty1], radius=rad, fill=TILE,
-        outline=(255, 40, 40), width=max(1, int(tile * 0.012)),
+    glow_r = int(logo_size * 0.9)
+    gd.ellipse(
+        [cx - glow_r, cy - glow_r, cx + glow_r, cy + glow_r],
+        fill=(210, 225, 232, 28),
     )
+    glow = glow.filter(ImageFilter.GaussianBlur(int(logo_size * 0.35)))
+    img = Image.alpha_composite(img.convert("RGBA"), glow)
 
-    # Glowing red yin-yang (same construction as scripts/gen-icons.py).
-    r = int(tile * 0.30)
-    red_mask = Image.new("L", (w, h), 0)
-    dark_mask = Image.new("L", (w, h), 0)
-    rd, dd = ImageDraw.Draw(red_mask), ImageDraw.Draw(dark_mask)
-    outer = [cx - r, cy - r, cx + r, cy + r]
-    half = r / 2
-    top = [cx - half, cy - r, cx + half, cy]
-    bottom = [cx - half, cy, cx + half, cy + r]
-    dot = r / 6
-    top_dot = [cx - dot, cy - half - dot, cx + dot, cy - half + dot]
-    bottom_dot = [cx - dot, cy + half - dot, cx + dot, cy + half + dot]
-    rd.pieslice(outer, -90, 90, fill=255)   # right half red
-    rd.ellipse(top, fill=0)
-    rd.ellipse(bottom, fill=255)
-    rd.ellipse(top_dot, fill=255)
-    rd.ellipse(bottom_dot, fill=0)
-    dd.pieslice(outer, 90, 270, fill=255)   # left half dark
-    dd.ellipse(top, fill=255)
-    dd.ellipse(bottom, fill=0)
-    dd.ellipse(top_dot, fill=0)
-    dd.ellipse(bottom_dot, fill=255)
-
-    glow_alpha = red_mask.filter(ImageFilter.GaussianBlur(int(tile * 0.06))).point(
-        lambda v: v * 60 // 100
-    )
-    mglow = Image.new("RGBA", (w, h), (255, 40, 40, 0))
-    mglow.putalpha(glow_alpha)
-    img = Image.alpha_composite(img.convert("RGBA"), mglow)
-
-    dark_layer = Image.new("RGBA", (w, h), DARK_LOBE + (0,))
-    dark_layer.putalpha(dark_mask)
-    img = Image.alpha_composite(img, dark_layer)
-
-    lin = Image.linear_gradient("L").resize((w, h))
-    red_grad = Image.composite(
-        Image.new("RGB", (w, h), RED_BOTTOM),
-        Image.new("RGB", (w, h), RED_TOP),
-        lin,
-    ).convert("RGBA")
-    red_grad.putalpha(red_mask)
-    img = Image.alpha_composite(img, red_grad)
-
-    ring = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    ImageDraw.Draw(ring).ellipse(outer, outline=RED + (180,), width=max(2, int(tile * 0.018)))
-    img = Image.alpha_composite(img, ring).convert("RGB")
-    d = ImageDraw.Draw(img)
+    logo = Image.open(LOGO_PATH).convert("RGBA")
+    logo = logo.resize((logo_size, logo_size), Image.Resampling.LANCZOS)
+    logo_x = cx - logo_size // 2
+    logo_y = cy - logo_size // 2
+    img.alpha_composite(logo, (logo_x, logo_y))
 
     # Audio bars below the tile.
-    bw = max(2, int(tile * 0.05))
+    bw = max(2, int(logo_size * 0.05))
     gap = bw
     heights = [0.18, 0.30, 0.42, 0.30, 0.18]
     alphas = [90, 153, 255, 153, 90]
     total = len(heights) * bw + (len(heights) - 1) * gap
     bx = cx - total // 2
-    by = ty1 + int(tile * 0.22)
+    by = logo_y + logo_size + int(logo_size * 0.22)
     bars = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     bd = ImageDraw.Draw(bars)
     for hh, a in zip(heights, alphas):
-        bh = int(tile * hh)
-        bd.rounded_rectangle([bx, by, bx + bw, by + bh], radius=bw // 2, fill=BAR + (a,))
+        bh = int(logo_size * hh)
+        bd.rounded_rectangle(
+            [bx, by, bx + bw, by + bh], radius=bw // 2, fill=BAR + (a,)
+        )
         bx += bw + gap
-    img = Image.alpha_composite(img.convert("RGBA"), bars).convert("RGB")
+    img = Image.alpha_composite(img, bars).convert("RGB")
 
     return img
 

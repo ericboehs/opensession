@@ -138,7 +138,7 @@ function SettingsSheet({
 					className="app-logo-button"
 					onClick={() => setOpen(true)}
 				>
-					<span className="app-logo">{PRODUCT_MARK}</span>
+					<img className="app-logo-image" src="/mac-app-icon.png" alt="" />
 				</button>
 			) : (
 				<button

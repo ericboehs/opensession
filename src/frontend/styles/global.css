@@ -661,6 +661,11 @@ html.wco .app-body.sidebar-collapsed .detail-topbar-title {
 .app-logo-button:active {
 	background: var(--bg-hover);
 }
+.app-logo-image {
+	display: block;
+	width: 32px;
+	height: 32px;
+}
 @keyframes kitt-scan {
 	from {
 		transform: translateX(-130%);
