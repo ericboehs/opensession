@@ -286,9 +286,14 @@ export function PrPanel({
     () => (targets.find((t) => t.primary) ?? targets[0])?.key,
   );
   const active = targets.find((t) => t.key === activeKey) ?? targets[0];
+  const loadTargetKey = previewTarget
+    ? `preview:${previewTarget.repo}:${previewTarget.branch}`
+    : active?.key || sessionId;
   const [pr, setPr] = useState<PrDetails | null>(null);
   const [git, setGit] = useState<GitStatusInfo | null>(null);
-  const [diff, setDiff] = useState<PrDiffData | null>(null);
+  const [loadedDiff, setDiff] = useState<PrDiffData | null>(null);
+  const diff = loadedDiff?.headRefOid === pr?.headRefOid ? loadedDiff : null;
+  const diffOutOfDate = !!loadedDiff && !diff;
   const [diffGroups, setDiffGroups] = useState<{
     oid: string;
     groups: DiffFileGroup[] | null;
@@ -296,6 +301,7 @@ export function PrPanel({
   const [diffGroupsLoading, setDiffGroupsLoading] = useState(false);
   const [diffGroupsRetry, setDiffGroupsRetry] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [diffLoading, setDiffLoading] = useState(true);
   const [pending, setPending] = useState<PendingComment[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewEvent, setReviewEvent] = useState<ReviewEvent>(() =>
@@ -321,32 +327,88 @@ export function PrPanel({
   const [bodyOverflows, setBodyOverflows] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const loadGenerationRef = useRef(0);
+  const activeLoadTargetRef = useRef(loadTargetKey);
+  const loadInFlightRef = useRef<{ key: string; promise: Promise<void> } | null>(null);
+  activeLoadTargetRef.current = loadTargetKey;
 
-  const load = useCallback(async () => {
-    try {
-      const [prData, diffData, gitData] = await Promise.all([
-        previewTarget
-          ? fetchPrPreview(previewTarget.repo, previewTarget.branch)
-          : fetchPr(sessionId, active?.repo, active?.branch),
-        (previewTarget
-          ? fetchPrPreviewDiff(previewTarget.repo, previewTarget.branch)
-          : fetchPrDiff(sessionId, active?.repo, active?.branch)
-        ).catch(() => null),
-        // A linked PR has no local worktree in this session — no git state.
-        previewTarget || active?.linked
-          ? Promise.resolve(null)
-          : fetchGitStatus(sessionId, active?.repo).catch(() => null),
-      ]);
-      setPr(prData);
-      setDiff(diffData);
-      setGit(gitData);
-    } catch {
-      setPr(null);
-    } finally {
-      setLoading(false);
-    }
+  const load = useCallback((force = false): Promise<void> => {
+    if (loadTargetKey !== activeLoadTargetRef.current) return Promise.resolve();
+    const existing = loadInFlightRef.current;
+    if (!force && existing?.key === loadTargetKey) return existing.promise;
+
+    const generation = ++loadGenerationRef.current;
+    setDiffLoading(true);
+    let prSettled = false;
+    let diffSettled = false;
+    let prResult: PrDetails | null = null;
+    let diffResult: PrDiffData | null = null;
+    const isCurrent = () =>
+      generation === loadGenerationRef.current &&
+      loadTargetKey === activeLoadTargetRef.current;
+    const commitDiff = () => {
+      if (!isCurrent() || !prSettled || !diffSettled) return;
+      setDiff(
+        diffResult?.headRefOid === prResult?.headRefOid ? diffResult : null,
+      );
+      setDiffLoading(false);
+    };
+    const prRequest = (previewTarget
+      ? fetchPrPreview(previewTarget.repo, previewTarget.branch)
+      : fetchPr(sessionId, active?.repo, active?.branch)
+    )
+      .then((data) => {
+        prSettled = true;
+        prResult = data;
+        if (isCurrent()) setPr(data);
+        commitDiff();
+      })
+      .catch(() => {
+        prSettled = true;
+        prResult = null;
+        if (isCurrent()) setPr(null);
+        commitDiff();
+      })
+      .finally(() => {
+        if (isCurrent()) setLoading(false);
+      });
+    const diffRequest = (previewTarget
+      ? fetchPrPreviewDiff(previewTarget.repo, previewTarget.branch)
+      : fetchPrDiff(sessionId, active?.repo, active?.branch)
+    )
+      .then((data) => {
+        diffSettled = true;
+        diffResult = data;
+        commitDiff();
+      })
+      .catch(() => {
+        diffSettled = true;
+        diffResult = null;
+        commitDiff();
+      });
+    // A linked PR has no local worktree in this session — no git state.
+    const gitRequest = (previewTarget || active?.linked
+      ? Promise.resolve(null)
+      : fetchGitStatus(sessionId, active?.repo)
+    )
+      .then((data) => {
+        if (isCurrent()) setGit(data);
+      })
+      .catch(() => {
+        if (isCurrent()) setGit(null);
+      });
+
+    const promise = Promise.allSettled([prRequest, diffRequest, gitRequest]).then(
+      () => undefined,
+    );
+    loadInFlightRef.current = { key: loadTargetKey, promise };
+    void promise.then(() => {
+      if (loadInFlightRef.current?.promise === promise) loadInFlightRef.current = null;
+    });
+    return promise;
   }, [
     sessionId,
+    loadTargetKey,
     active?.repo,
     active?.branch,
     active?.linked,
@@ -356,10 +418,17 @@ export function PrPanel({
 
   useEffect(() => {
     setLoading(true);
+    setDiffLoading(true);
+    setPr(null);
+    setDiff(null);
+    setGit(null);
     setPending([]);
     load();
     const interval = setInterval(load, 60000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      loadGenerationRef.current += 1;
+    };
   }, [load]);
 
   useEffect(() => {
@@ -470,6 +539,7 @@ export function PrPanel({
 
   async function handleSubmitReview() {
     if (submitting) return;
+    const actionTargetKey = loadTargetKey;
     if (
       pending.length === 0 &&
       !summary.trim() &&
@@ -522,15 +592,17 @@ export function PrPanel({
           );
         }
       }
+      if (actionTargetKey !== activeLoadTargetRef.current) return;
       setPending([]);
       setSummary("");
       setReviewOpen(false);
       setReviewEvent(reviewCanvas ? "APPROVE" : "COMMENT");
       setReviewDone(merged ? "merged" : result.url || "submitted");
       setTimeout(() => setReviewDone(null), 6000);
-      await load();
+      await load(true);
     } catch (e: any) {
-      setReviewError(e.message || "Failed to submit review");
+      if (actionTargetKey === activeLoadTargetRef.current)
+        setReviewError(e.message || "Failed to submit review");
     } finally {
       setSubmitting(false);
     }
@@ -547,6 +619,7 @@ export function PrPanel({
     setConfirmMerge(false);
     setMerging(true);
     setMergeError(null);
+    const actionTargetKey = loadTargetKey;
     try {
       if (previewTarget)
         await mergePrPreviewApi(
@@ -555,9 +628,10 @@ export function PrPanel({
           "squash",
         );
       else await mergePrApi(sessionId, "squash", active?.repo, active?.branch);
-      await load();
+      if (actionTargetKey === activeLoadTargetRef.current) await load(true);
     } catch (e: any) {
-      setMergeError(e.message || "Merge failed");
+      if (actionTargetKey === activeLoadTargetRef.current)
+        setMergeError(e.message || "Merge failed");
     } finally {
       setMerging(false);
     }
@@ -930,7 +1004,11 @@ export function PrPanel({
                 />
               ) : !diff?.patch ? (
                 <div className="py-12 text-center text-sm text-faint">
-                  No text diff is available for this pull request.
+                  {diffLoading
+                    ? "Loading pull request changes…"
+                    : diffOutOfDate
+                      ? "The pull request changed while loading. It will refresh automatically."
+                      : "No text diff is available for this pull request."}
                 </div>
               ) : diffView === "guide" ? (
                 guideLoading ? (
@@ -1376,6 +1454,15 @@ export function PrPanel({
         </div>
       </SelectionToSession>
 
+      {(diffLoading || diffOutOfDate) && !diff?.patch && (
+        <div className="pr-panel-diff">
+          <div className="panel-placeholder">
+            {diffOutOfDate
+              ? "The pull request changed while loading. It will refresh automatically."
+              : "Loading pull request changes…"}
+          </div>
+        </div>
+      )}
       {diff?.patch && (
         <div className="pr-panel-diff">
           <div className="pr-diff-section">

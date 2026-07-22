@@ -457,6 +457,8 @@ export interface PrDetails {
 	isDraft: boolean;
 	baseRefName: string;
 	headRefName: string;
+	/** Current head commit, used to keep independently loaded metadata and diffs aligned. */
+	headRefOid?: string;
 	additions: number;
 	deletions: number;
 	changedFiles: number;
