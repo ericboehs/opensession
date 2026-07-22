@@ -137,5 +137,32 @@ export async function handleStaticAssetsRoutes(
 		);
 	}
 
+	// Universal links for the OS¹ desktop app (tellahq/os1-mac): lets plain
+	// https://os.tella.dev/… links open the app once it's signed with the
+	// associated-domains entitlement. Both spec locations, since Apple has
+	// probed the bare path historically. Caveat: os.tella.dev resolves to a
+	// tailnet IP, so Apple's AASA CDN can't fetch this — team devices need the
+	// entitlement's `?mode=developer` alternate (direct fetch) for links to
+	// activate; harmless for everyone else.
+	if (
+		path === "/backstage/.well-known/apple-app-site-association" ||
+		path === "/backstage/apple-app-site-association"
+	) {
+		return Response.json(
+			{
+				applinks: {
+					apps: [],
+					details: [
+						{
+							appIDs: ["6GUXT43C8B.dev.tella.os1"],
+							components: [{ "/": "/*" }],
+						},
+					],
+				},
+			},
+			{ headers: { "Cache-Control": "public, max-age=3600" } },
+		);
+	}
+
 	return undefined;
 }

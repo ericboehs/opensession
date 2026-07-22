@@ -415,6 +415,11 @@ function App() {
 			setAppBadge?: (n?: number) => Promise<void>;
 			clearAppBadge?: () => Promise<void>;
 		};
+		// The OS¹ desktop app (tellahq/os1-mac) exposes window.os1: the Badging
+		// API doesn't reach Electron's dock, so mirror the count through its
+		// bridge there.
+		const os1 = (window as { os1?: { setBadge: (n: number) => void } }).os1;
+		os1?.setBadge(chatUnread);
 		if (!nav.setAppBadge) return;
 		if (chatUnread > 0) nav.setAppBadge(chatUnread).catch(() => {});
 		else nav.clearAppBadge?.().catch(() => {});
