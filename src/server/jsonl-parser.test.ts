@@ -515,6 +515,48 @@ describe("Codex rollout parsing", () => {
       "/backstage/media?path=%2Fvar%2Ftmp%2Fmcp-recording.webm",
     ]);
   });
+
+  it("extracts and hides video markers from Codex assistant messages", () => {
+    const path = writeCodexFixture([
+      JSON.stringify({
+        timestamp: TS,
+        type: "event_msg",
+        payload: {
+          type: "agent_message",
+          message: "Captured the production flow.\n\nBACKSTAGE_VIDEO: /tmp/codex-demo.mov",
+        },
+      }),
+    ]);
+
+    const entries = parseTranscript(path);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].type).toBe("assistant");
+    expect(entries[0].content).toBe("Captured the production flow.");
+    expect(entries[0].videos).toEqual([
+      "/backstage/media?path=%2Ftmp%2Fcodex-demo.mov",
+    ]);
+  });
+});
+
+describe("assistant video markers", () => {
+  it("extracts a session asset and hides the marker from assistant content", () => {
+    const assetPath =
+      "/home/ubuntu/.opensession-assets/bks-019f861d-ffe5-7000-8638-5f69fc798fac/capture/tella-production-login-recording.mov";
+    const path = writeFixture([
+      assistantLine(
+        "a-video",
+        `Captured the production flow.\n\nBACKSTAGE_VIDEO: ${assetPath}`,
+      ),
+    ]);
+
+    const entries = parseTranscript(path);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].type).toBe("assistant");
+    expect(entries[0].content).toBe("Captured the production flow.");
+    expect(entries[0].videos).toEqual([
+      `/backstage/media?path=${encodeURIComponent(assetPath)}`,
+    ]);
+  });
 });
 
 describe("extractBackstageVideos", () => {
