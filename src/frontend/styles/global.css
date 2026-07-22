@@ -3107,9 +3107,9 @@ body.resizing-x {
 	display: flex;
 	flex-direction: column;
 	align-items: stretch;
-	gap: 2px;
+	gap: 1px;
 	min-width: 200px;
-	padding: 8px;
+	padding: 6px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
 	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
@@ -3151,7 +3151,7 @@ body.resizing-x {
 	gap: 8px;
 	border: 1px solid transparent;
 	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
-	padding: 8px 10px;
+	padding: 6px 8px;
 	font-size: 13px;
 	color: var(--text);
 	background: none;
