@@ -150,12 +150,56 @@ const proxied = [
 	"/splash/*",
 ];
 
+// Tailwind isn't bundleable by Bun (see frontend-build.ts) — prod compiles it
+// with the real CLI and injects a <link>. Mirror that here: compile on demand
+// (~50-100ms, fine per reload since utilities depend on class usage across all
+// source files) and inject the link by rewriting the shell HTML on the way out.
+async function tailwindCss(): Promise<Response> {
+	const out = "/tmp/os1-frontend-dev-tailwind.css";
+	const proc = Bun.spawn(
+		[
+			"node_modules/.bin/tailwindcss",
+			"-i",
+			"src/frontend/styles/tailwind.css",
+			"-o",
+			out,
+		],
+		{ stdout: "pipe", stderr: "pipe" },
+	);
+	if ((await proc.exited) !== 0) {
+		console.error("[tailwind]", await new Response(proc.stderr).text());
+		return new Response("/* tailwind compile failed */", {
+			headers: { "content-type": "text/css" },
+		});
+	}
+	return new Response(Bun.file(out), {
+		headers: { "content-type": "text/css", "cache-control": "no-store" },
+	});
+}
+
+// Serve the SPA shell through a rewriter: fetch Bun's HTML-import output from
+// the internal /__shell route and add the Tailwind link (after the bundled
+// global.css so utilities keep winning source-order ties, as in prod).
+async function shell(req: Request): Promise<Response> {
+	const res = await fetch(new URL("/__shell", req.url));
+	const html = (await res.text()).replace(
+		"</head>",
+		'  <link rel="stylesheet" href="/tailwind-dev.css">\n</head>',
+	);
+	return new Response(html, {
+		status: res.status,
+		headers: { "content-type": "text/html; charset=utf-8" },
+	});
+}
+
 const server = Bun.serve<Bridge, {}>({
 	port: PORT,
 	development: true,
 	idleTimeout: 240,
 	routes: {
-		...Object.fromEntries(spaRoutes.map((p) => [p, spaEntry])),
+		"/__shell": spaEntry,
+		"/tailwind-dev.css": tailwindCss,
+		...Object.fromEntries(spaRoutes.map((p) => [p, shell])),
 		...Object.fromEntries(proxied.map((p) => [p, proxy])),
 	},
 	// The WS upgrade lives in the fetch fallback (not routes): Bun's router
@@ -174,10 +218,9 @@ const server = Bun.serve<Bridge, {}>({
 			return new Response("upgrade failed", { status: 400 });
 		}
 		// SPA fallback, like prod's: any other extension-less GET is a client
-		// route (e.g. /workspace/*) — serve the shell by re-fetching "/" (HTML
-		// imports are only servable through `routes`).
+		// route (e.g. /workspace/*) — serve the rewritten shell.
 		if (req.method === "GET" && !url.pathname.includes(".")) {
-			return fetch(new URL("/", url));
+			return shell(req);
 		}
 		return new Response("not found", { status: 404 });
 	},
