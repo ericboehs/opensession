@@ -1680,6 +1680,8 @@ function App() {
 							}
 							selectedId={currentSession?.id || null}
 							activeNoteId={currentNoteId}
+							notesActive={route.view === "notes"}
+							onOpenNotes={() => navigate({ view: "notes", sel: null })}
 							reviewsActive={route.view === "reviews"}
 							onOpenReviews={() => navigate({ view: "reviews" })}
 							onOpenAutomation={(name) =>

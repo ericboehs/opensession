@@ -68,8 +68,10 @@ import {
 	IconWatercooler,
 	IconChart,
 	IconFile,
+	IconDotsHorizontal,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
+import { Menu } from "../ui/menu";
 import { RepoTile, swatchColor, repoLabel } from "./RepoTile";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { ReviewQueue } from "./ReviewQueue";
@@ -206,6 +208,10 @@ interface Props {
 	selectedId: string | null;
 	/** The note currently open (highlights its pinned row), or null. */
 	activeNoteId: string | null;
+	/** True while the Notes tool is open. */
+	notesActive: boolean;
+	/** Open the shared Notes tool. */
+	onOpenNotes: () => void;
 	/** True while the Checks view is open — highlights the Checks entry. */
 	reviewsActive: boolean;
 	/** Open the Checks view (the sidebar's one non-workspace area). */
@@ -792,6 +798,41 @@ type GroupBy = "status" | "repo" | "recently";
 type SortBy = "updated" | "created";
 const DEFAULT_PROJECT = "tella-fusion";
 const FILTER_KEY = "opensession-sidebar-filter";
+const HIDDEN_TOOLS_KEY = "opensession-sidebar-hidden-tools";
+
+type ToolId =
+	| "watercooler"
+	| "catchup"
+	| "reviews"
+	| "prtinder"
+	| "supporttinder"
+	| "reports"
+	| "analytics"
+	| "notes";
+
+const TOOL_IDS: ToolId[] = [
+	"watercooler",
+	"catchup",
+	"reviews",
+	"prtinder",
+	"supporttinder",
+	"reports",
+	"analytics",
+	"notes",
+];
+
+function readHiddenTools(): Set<ToolId> {
+	try {
+		const stored = JSON.parse(localStorage.getItem(HIDDEN_TOOLS_KEY) || "[]");
+		return new Set(
+			Array.isArray(stored)
+				? stored.filter((id): id is ToolId => TOOL_IDS.includes(id))
+				: [],
+		);
+	} catch {
+		return new Set();
+	}
+}
 
 interface FilterState {
 	groupBy: GroupBy;
@@ -837,6 +878,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	notes,
 	selectedId,
 	activeNoteId,
+	notesActive,
+	onOpenNotes,
 	reviewsActive,
 	onOpenReviews,
 	onOpenAutomation,
@@ -884,6 +927,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const [search, setSearch] = useState("");
 	// Groups are collapsed by default; the expanded set persists per browser
 	const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
+	const [hiddenTools, setHiddenTools] = useState<Set<ToolId>>(readHiddenTools);
 	const [pins, setPins] = useState<string[]>(getPins);
 	// Drag-to-reorder in the Pinned band. onReorder fires continuously during a
 	// drag, so the in-flight order lives in local state (pinOrderDraft) and only
@@ -2204,6 +2248,93 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return urls.size;
 	}, [sessions, openPrs, currentUser]);
 
+	const tools: Array<{
+		id: ToolId;
+		label: string;
+		icon: React.ReactNode;
+		active: boolean;
+		onClick: () => void;
+		title?: string;
+		count?: number;
+	}> = [
+		{
+			id: "watercooler",
+			label: "Watercooler",
+			icon: <IconWatercooler />,
+			active: watercoolerActive,
+			onClick: onOpenWatercooler,
+			title: "Team chat. @ a teammate to ping them, or a session to link it.",
+			count: watercoolerUnread,
+		},
+		{
+			id: "catchup",
+			label: "Catch up",
+			icon: <IconStack />,
+			active: catchUpActive,
+			onClick: onOpenCatchUp,
+			title: "Swipe through your unread workspaces",
+			count: catchUpCount,
+		},
+		{
+			id: "reviews",
+			label: "Reviews",
+			icon: <IconEye />,
+			active: reviewsActive,
+			onClick: onOpenReviews,
+			count: openPrCount,
+		},
+		{
+			id: "prtinder",
+			label: "PR Tinder",
+			icon: <IconFlame />,
+			active: prTinderActive,
+			onClick: onOpenPrTinder,
+			title: "Swipe through the repo's open PRs",
+		},
+		{
+			id: "supporttinder",
+			label: "Support Tinder",
+			icon: <IconInbox />,
+			active: supportTinderActive,
+			onClick: onOpenSupportTinder,
+			title: "Swipe through the Plain Todo queue",
+		},
+		{
+			id: "reports",
+			label: "Reports",
+			icon: <IconFile />,
+			active: reportsActive,
+			onClick: onOpenReports,
+			title: "Recurring automation reports",
+		},
+		{
+			id: "analytics",
+			label: "Analytics",
+			icon: <IconChart />,
+			active: analyticsActive,
+			onClick: onOpenAnalytics,
+			title: "Sessions, tokens, models & PRs over time",
+		},
+		{
+			id: "notes",
+			label: "Notes",
+			icon: <IconPencil />,
+			active: notesActive,
+			onClick: onOpenNotes,
+			title: "Shared notes and documentation",
+		},
+	];
+
+	function setToolVisible(id: ToolId, visible: boolean) {
+		setHiddenTools((previous) => {
+			const next = new Set(previous);
+			if (visible) next.delete(id);
+			else next.add(id);
+			localStorage.setItem(HIDDEN_TOOLS_KEY, JSON.stringify([...next]));
+			return next;
+		});
+	}
+
 	// "Archived" reads as a peer of the My-sessions status buckets (Needs input /
 	// Done …): an icon-led row that sits flush under them. Unlike those, it doesn't
 	// expand inline — it navigates to the archived page, and highlights while that
@@ -2724,109 +2855,75 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 	return (
 		<div className="sidebar">
-			{/* Checks — the only non-workspace area in the sidebar. Every other
-			    tool (Automations, Goals, Actions, Security, Notes) lives in
-			    Settings now. */}
 			{!isPhone && (
 				<div className="sidebar-band-label sidebar-tools-head">
-					<button
-						className="sidebar-band-toggle"
-						onClick={() => toggleBand("tools")}
-						aria-expanded={toolsOpen}
-						title={toolsOpen ? "Collapse tools" : "Expand tools"}
-					>
-						<span className="sidebar-band-name">Tools</span>
-						<IconChevronDown
-							className="sidebar-band-chevron"
-							size={18}
-							style={{
-								transform: toolsOpen ? "none" : "rotate(-90deg)",
-							}}
-						/>
-					</button>
+					<div className="group flex min-h-[30px] w-full items-center rounded-md hover:bg-hover hover:text-dim">
+						<button
+							className="sidebar-band-toggle w-auto flex-1 hover:bg-transparent"
+							onClick={() => toggleBand("tools")}
+							aria-expanded={toolsOpen}
+							title={toolsOpen ? "Collapse tools" : "Expand tools"}
+						>
+							<span className="sidebar-band-name">Tools</span>
+							<IconChevronDown
+								className="sidebar-band-chevron"
+								size={18}
+								style={{
+									transform: toolsOpen ? "none" : "rotate(-90deg)",
+								}}
+							/>
+						</button>
+						<Menu.Root>
+							<Menu.Trigger
+								type="button"
+								className="sidebar-band-action invisible group-hover:visible data-[popup-open]:visible data-[popup-open]:text-dim"
+								aria-label="Choose toolbar tools"
+								title="Choose toolbar tools"
+							>
+								<IconDotsHorizontal size={18} />
+							</Menu.Trigger>
+							<Menu.Popup side="bottom" align="end" sideOffset={4}>
+								<Menu.Group>
+									<Menu.GroupLabel>Show in toolbar</Menu.GroupLabel>
+									{tools.map((tool) => (
+										<Menu.CheckboxItem
+											key={tool.id}
+											checked={!hiddenTools.has(tool.id)}
+											onCheckedChange={(checked) =>
+												setToolVisible(tool.id, checked)
+											}
+										>
+											<span className="flex size-4 shrink-0 items-center justify-center rounded-xs border border-line-strong text-fg">
+												{!hiddenTools.has(tool.id) && <IconCheck size={12} />}
+											</span>
+											<span className="text-fg">{tool.label}</span>
+										</Menu.CheckboxItem>
+									))}
+								</Menu.Group>
+							</Menu.Popup>
+						</Menu.Root>
+					</div>
 				</div>
 			)}
 			{(isPhone || toolsOpen) && (
-			<nav className="sidebar-nav">
-				<button
-					className={`sidebar-nav-item ${watercoolerActive ? "active" : ""}`}
-					onClick={onOpenWatercooler}
-					title="Team chat. @ a teammate to ping them, or a session to link it."
-				>
-					<span className="sidebar-nav-icon">
-						<IconWatercooler />
-					</span>
-					Watercooler
-					{watercoolerUnread > 0 && (
-						<span className="sidebar-nav-count">{watercoolerUnread}</span>
-					)}
-				</button>
-				<button
-					className={`sidebar-nav-item ${catchUpActive ? "active" : ""}`}
-					onClick={onOpenCatchUp}
-					title="Swipe through your unread workspaces"
-				>
-					<span className="sidebar-nav-icon">
-						<IconStack />
-					</span>
-					Catch up
-					{catchUpCount > 0 && (
-						<span className="sidebar-nav-count">{catchUpCount}</span>
-					)}
-				</button>
-				<button
-					className={`sidebar-nav-item ${reviewsActive ? "active" : ""}`}
-					onClick={onOpenReviews}
-				>
-					<span className="sidebar-nav-icon">
-						<IconEye />
-					</span>
-					Reviews
-					{openPrCount > 0 && (
-						<span className="sidebar-nav-count">{openPrCount}</span>
-					)}
-				</button>
-				<button
-					className={`sidebar-nav-item ${prTinderActive ? "active" : ""}`}
-					onClick={onOpenPrTinder}
-					title="Swipe through the repo's open PRs"
-				>
-					<span className="sidebar-nav-icon">
-						<IconFlame />
-					</span>
-					PR Tinder
-				</button>
-				<button
-					className={`sidebar-nav-item ${supportTinderActive ? "active" : ""}`}
-					onClick={onOpenSupportTinder}
-					title="Swipe through the Plain Todo queue"
-				>
-					<span className="sidebar-nav-icon">
-						<IconInbox />
-					</span>
-					Support Tinder
-				</button>
-				<button
-					className={`sidebar-nav-item ${reportsActive ? "active" : ""}`}
-					onClick={onOpenReports}
-					title="Recurring automation reports"
-				>
-					<span className="sidebar-nav-icon">
-						<IconFile />
-					</span>
-					Reports
-				</button>
-				<button
-					className={`sidebar-nav-item ${analyticsActive ? "active" : ""}`}
-					onClick={onOpenAnalytics}
-					title="Sessions, tokens, models & PRs over time"
-				>
-					<span className="sidebar-nav-icon">
-						<IconChart />
-					</span>
-					Analytics
-				</button>
-			</nav>
+				<nav className="sidebar-nav">
+					{tools
+						.filter((tool) => !hiddenTools.has(tool.id))
+						.map((tool) => (
+							<button
+								key={tool.id}
+								className={`sidebar-nav-item ${tool.active ? "active" : ""}`}
+								onClick={tool.onClick}
+								title={tool.title}
+							>
+								<span className="sidebar-nav-icon">{tool.icon}</span>
+								{tool.label}
+								{!!tool.count && (
+									<span className="sidebar-nav-count">{tool.count}</span>
+								)}
+							</button>
+						))}
+				</nav>
 			)}
 
 			<div
