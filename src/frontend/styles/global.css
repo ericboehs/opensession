@@ -423,59 +423,62 @@ a {
 	display: none;
 }
 
-/* Window Controls Overlay (desktop PWA): the OS titlebar is replaced by just
-   the window-control buttons overlaid on our own chrome — no OS bar, no
-   centered title text. We own the full window, so we paint our own titlebar
-   band across the top (`.wco-titlebar`): it fills the reclaimed strip with the
-   sidebar colour so the traffic lights sit on our surface (not a bare white
-   band), it's a drag region so the window still moves, and it carries the
-   back/forward the browser chrome no longer provides. Everything below it —
-   including the sidebar brand row (the OS¹ logo) — flows beneath, so the logo
-   lands under the controls instead of colliding with them. */
-@media (display-mode: window-controls-overlay) {
-	.app {
-		border-top: none;
-	}
-	.wco-titlebar {
-		display: flex;
-		align-items: center;
-		flex-shrink: 0;
-		height: env(titlebar-area-height, 34px);
-		/* Clear the window controls: traffic lights on the left on macOS
-		   (titlebar-area-x ≈ their width); on Windows they're on the right and
-		   titlebar-area-x is 0, so this is a no-op there. */
-		padding-left: env(titlebar-area-x, 0px);
-		background: var(--bg-raised);
-		border-bottom: 1px solid var(--border);
-		-webkit-app-region: drag;
-		app-region: drag;
-	}
-	.wco-titlebar-nav {
-		display: flex;
-		align-items: center;
-		gap: 2px;
-		padding-left: 8px;
-	}
-	.wco-nav-btn {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 28px;
-		height: 28px;
-		padding: 0;
-		border: none;
-		border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
-		background: transparent;
-		color: var(--text-dim);
-		cursor: pointer;
-		/* Buttons opt out of the drag region so they stay clickable. */
-		-webkit-app-region: no-drag;
-		app-region: no-drag;
-	}
-	.wco-nav-btn:hover {
-		background: var(--bg-hover);
-		color: var(--text);
-	}
+/* Window Controls Overlay (desktop PWA + the OS¹ desktop app): the OS titlebar
+   is replaced by just the window-control buttons overlaid on our own chrome —
+   no OS bar, no centered title text. We own the full window, so we paint our
+   own titlebar band across the top (`.wco-titlebar`): it fills the reclaimed
+   strip with the sidebar colour so the traffic lights sit on our surface (not
+   a bare white band), it's a drag region so the window still moves, and it
+   carries the back/forward the browser chrome no longer provides. Everything
+   below it — including the sidebar brand row (the OS¹ logo) — flows beneath,
+   so the logo lands under the controls instead of colliding with them.
+
+   Keyed off `html.wco` (set by the detection script in index.html), NOT the
+   `(display-mode: window-controls-overlay)` media query: Electron (the OS¹
+   desktop shell, tellahq/os1-mac) exposes the WCO geometry and env() vars but
+   keeps display-mode at "browser", so the media query never matches there. */
+html.wco .app {
+	border-top: none;
+}
+html.wco .wco-titlebar {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+	height: env(titlebar-area-height, 34px);
+	/* Clear the window controls: traffic lights on the left on macOS
+	   (titlebar-area-x ≈ their width); on Windows they're on the right and
+	   titlebar-area-x is 0, so this is a no-op there. */
+	padding-left: env(titlebar-area-x, 0px);
+	background: var(--bg-raised);
+	border-bottom: 1px solid var(--border);
+	-webkit-app-region: drag;
+	app-region: drag;
+}
+html.wco .wco-titlebar-nav {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding-left: 8px;
+}
+html.wco .wco-nav-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: none;
+	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
+	background: transparent;
+	color: var(--text-dim);
+	cursor: pointer;
+	/* Buttons opt out of the drag region so they stay clickable. */
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}
+html.wco .wco-nav-btn:hover {
+	background: var(--bg-hover);
+	color: var(--text);
 }
 
 /* The top bar is mobile-only: on desktop the brand + user controls live in the

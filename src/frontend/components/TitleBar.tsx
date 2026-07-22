@@ -11,8 +11,9 @@ import { Tooltip } from "../ui/tooltip";
  * reclaimed band: it's a drag region (so the window still moves) and carries
  * in-app back/forward wired to the same history the router drives (pushState /
  * popstate). Rendered always but `display:none` outside WCO — the visibility +
- * the traffic-light inset live in the `(display-mode: window-controls-overlay)`
- * block in global.css.
+ * the traffic-light inset live in the `html.wco` rules in global.css (class
+ * set by the WCO detection script in index.html, which also covers the
+ * Electron desktop shell where the display-mode media query never matches).
  */
 export function TitleBar() {
 	return (
