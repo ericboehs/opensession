@@ -32,6 +32,8 @@ interface LatestRelease {
 	publishedAt: string;
 	/** Release asset name, e.g. "OS1-0.2.0-arm64.zip". */
 	asset: string;
+	/** REST asset URL (api.github.com/…/releases/assets/<id>). */
+	assetApiUrl: string;
 }
 
 const g = globalThis as {
@@ -58,24 +60,30 @@ async function latestRelease(): Promise<LatestRelease | null> {
 	if (cached && Date.now() - cached.at < LATEST_TTL_MS) return cached.value;
 	let value: LatestRelease | null = null;
 	try {
-		const raw = await $`gh release view --repo ${RELEASE_REPO} --json tagName,body,publishedAt,assets`
+		// REST on purpose (not `gh release view`/`download`, which go through
+		// GraphQL): the two API pools are metered separately, and pr-info's gh
+		// traffic periodically exhausts GraphQL while core stays healthy.
+		const raw = await $`gh api repos/${RELEASE_REPO}/releases/latest`
 			.quiet()
 			.text();
 		const rel = JSON.parse(raw) as {
-			tagName?: string;
+			tag_name?: string;
 			body?: string;
-			publishedAt?: string;
-			assets?: { name?: string }[];
+			published_at?: string;
+			assets?: { name?: string; url?: string }[];
 		};
-		const version = parseVersion(rel.tagName || "");
-		const asset = (rel.assets || []).find((a) => /^OS1-.*-arm64\.zip$/.test(a?.name || ''))?.name;
-		if (version && rel.tagName && asset) {
+		const version = parseVersion(rel.tag_name || "");
+		const asset = (rel.assets || []).find((a) =>
+			/^OS1-.*-arm64\.zip$/.test(a?.name || ""),
+		);
+		if (version && rel.tag_name && asset?.name && asset?.url) {
 			value = {
-				tag: rel.tagName,
+				tag: rel.tag_name,
 				version,
 				notes: (rel.body || "").slice(0, 4000),
-				publishedAt: rel.publishedAt || new Date().toISOString(),
-				asset,
+				publishedAt: rel.published_at || new Date().toISOString(),
+				asset: asset.name,
+				assetApiUrl: asset.url,
 			};
 		}
 	} catch (err) {
@@ -100,12 +108,12 @@ async function cachedAssetPath(rel: LatestRelease): Promise<string | null> {
 	let inflight = downloads.get(rel.tag);
 	if (!inflight) {
 		inflight = (async () => {
+			// Download to a temp dir then move into place so a crashed/partial
+			// download never gets served.
+			const tmp = `${CACHE_DIR}/.tmp-${rel.tag}-${Date.now()}`;
 			try {
-				// Download to a temp dir then move into place so a crashed/partial
-				// download never gets served.
-				const tmp = `${CACHE_DIR}/.tmp-${rel.tag}-${Date.now()}`;
 				mkdirSync(tmp, { recursive: true });
-				await $`gh release download ${rel.tag} --repo ${RELEASE_REPO} --pattern ${rel.asset} --dir ${tmp}`.quiet();
+				await $`gh api ${rel.assetApiUrl} -H "Accept: application/octet-stream" > ${tmp}/${rel.asset}`.quiet();
 				mkdirSync(CACHE_DIR, { recursive: true });
 				rmSync(dir, { recursive: true, force: true });
 				await $`mv ${tmp} ${dir}`.quiet();
@@ -116,8 +124,11 @@ async function cachedAssetPath(rel: LatestRelease): Promise<string | null> {
 				}
 				return existsSync(file) ? file : null;
 			} catch (err) {
+				// Transient failures (e.g. GitHub rate-limit exhaustion) are fine:
+				// Squirrel retries on its next check. Just don't leave debris.
 				const stderr = (err as { stderr?: { toString(): string } })?.stderr?.toString() ?? "";
 				console.warn(`[os1-update] release download failed: ${err} ${stderr}`.trim());
+				rmSync(tmp, { recursive: true, force: true });
 				return null;
 			} finally {
 				downloads.delete(rel.tag);
