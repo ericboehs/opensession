@@ -2876,7 +2876,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						<Menu.Root>
 							<Menu.Trigger
 								type="button"
-								className="sidebar-band-action invisible group-hover:visible data-[popup-open]:visible data-[popup-open]:text-dim"
+								className="sidebar-band-action invisible mr-1 group-hover:visible data-[popup-open]:visible data-[popup-open]:text-dim"
 								aria-label="Choose toolbar tools"
 								title="Choose toolbar tools"
 							>
