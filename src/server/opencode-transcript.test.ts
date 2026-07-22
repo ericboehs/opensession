@@ -105,6 +105,38 @@ describe("readOpencodeTranscript (SQLite)", () => {
     expect(entries[2].toolUseId).toBe("prt_tool");
     expect(entries[3].content).toBe("OK, noted.");
   });
+  test("extracts and hides video markers from assistant text parts", () => {
+    const sessionId = "ses_video_marker";
+    const createdAt = 1783501000000;
+    const db = new Database(dbPath);
+    db.query("INSERT INTO session VALUES (?, 'p', 't', 1, 1)").run(sessionId);
+    db.query("INSERT INTO message VALUES (?, ?, ?, ?, ?)").run(
+      "msg_video",
+      sessionId,
+      createdAt,
+      createdAt,
+      JSON.stringify({ role: "assistant", time: { created: createdAt } }),
+    );
+    db.query("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)").run(
+      "prt_video",
+      "msg_video",
+      sessionId,
+      createdAt,
+      createdAt,
+      JSON.stringify({
+        type: "text",
+        text: "Captured the production flow.\n\nBACKSTAGE_VIDEO: /tmp/opencode-demo.mov",
+      }),
+    );
+    db.close();
+
+    const entries = readOpencodeTranscript(sessionId);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].content).toBe("Captured the production flow.");
+    expect(entries[0].videos).toEqual([
+      "/backstage/media?path=%2Ftmp%2Fopencode-demo.mov",
+    ]);
+  });
   test("unknown session / missing db degrade to []", () => {
     expect(readOpencodeTranscript("ses_nope")).toEqual([]);
     expect(readOpencodeTranscript(SES, join(scratch, "missing.db"))).toEqual([]);
