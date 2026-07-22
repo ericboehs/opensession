@@ -287,6 +287,7 @@ export function ReviewQueue({
 				<div className="sidebar-independent-scroll mt-1">
 					{GROUPS.map((group) => {
 						const items = byBucket.get(group.key) || [];
+						if (items.length === 0) return null;
 						const groupIsOpen = groupOpen(group.key);
 						return (
 							<div className="sidebar-status-group" key={group.key}>
