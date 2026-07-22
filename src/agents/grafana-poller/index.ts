@@ -119,6 +119,9 @@ function ensureSeeds(): void {
       eventKey: seed.eventKey,
       mcpServers: ["TellaInternalSupportMCP", "slack", "grafana"],
       grafanaPoll: seed.grafanaPoll,
+      // Investigations are research — never let them fall back to the
+      // model-less automation default (sonnet); Michiel 2026-07-22.
+      model: "claude-fable-5",
     });
     if ("error" in created) {
       console.error(`[grafana-poller] Failed to seed "${seed.name}":`, created.error);

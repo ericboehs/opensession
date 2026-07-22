@@ -77,6 +77,9 @@ export const SWEEP_LOOPS: SweepConfig[] = [
     titlePrefix: "Production Error Sweep",
     schedule: "0 16 * * 1-5", // ~9am PT, weekday mornings (server is UTC)
     mcpServers: ["grafana", "sentry"],
+    // Error investigation is research — never the model-less sonnet default
+    // (Michiel 2026-07-22).
+    model: "claude-fable-5",
     task:
       "Use the Grafana MCP to review production logs for errors — the high-volume targets first (`vercel` especially), plus `instant` and `temporal`. The Sentry MCP is also available for error context. Focus on real, recurring, actionable errors — not one-offs, known-flaky noise, or things outside our control; prioritize by impact and frequency, and trace each to its root cause before fixing.",
   },
