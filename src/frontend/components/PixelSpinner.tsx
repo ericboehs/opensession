@@ -2,10 +2,13 @@ import React from "react";
 
 /**
  * Pixel spinner — a 3×3 grid of tiny pixels that light up in a single,
- * consistent top-to-bottom "rain" pattern, ported from tella-fusion's
- * `UI__PixelSpinner`. The pixels inherit the surrounding text color (via
- * `currentColor`), so the color is controlled by the caller's text class
- * (e.g. `text-fg` for a neutral black/white loader).
+ * consistent diagonal wave sweeping top-left → bottom-right (the
+ * `diagonal-br` pattern). The wavefront runs along successive anti-diagonals,
+ * so the number of lit pixels grows 1 → 2 → 3 and then recedes 3 → 2 → 1 as
+ * it crosses the grid. Ported from tella-fusion's `UI__PixelSpinner`. The
+ * pixels inherit the surrounding text color (via `currentColor`), so the
+ * color is controlled by the caller's text class (e.g. `text-fg` for a
+ * neutral black/white loader).
  *
  * Styling + keyframes live in global.css under the "PIXEL SPINNER" section.
  *
@@ -25,7 +28,7 @@ interface Props {
 
 export function PixelSpinner({ className = "" }: Props) {
 	return (
-		<div className={`pixel-spinner rain ${className}`.trim()} aria-hidden>
+		<div className={`pixel-spinner diagonal-br ${className}`.trim()} aria-hidden>
 			{Array.from({ length: 9 }, (_, i) => (
 				<div key={i} className="pixel" />
 			))}
