@@ -56,6 +56,13 @@ export interface PathsSection {
   mcpConfig?: string;
 }
 
+export interface CloudSection {
+  /** Hosted OpenSession instance merged into the local profile. */
+  upstream?: string;
+  /** Web-session bearer token for the hosted instance. */
+  token?: string;
+}
+
 /** A `repos` entry in config.json — partial; merged over the built-in repo
  *  with the same id, or (with at least `repo`) adds a new one. */
 export interface RepoSection {
@@ -133,6 +140,7 @@ export interface BrandingSection {
 export interface BackstageConfig {
   server?: ServerSection;
   paths?: PathsSection;
+  cloud?: CloudSection;
   repos?: Record<string, RepoSection>;
   identity?: IdentitySection;
   integrations?: IntegrationsSection;
@@ -193,6 +201,11 @@ export interface ResolvedPaths {
   worktreesDir: string;
   wtScript: string;
   mcpConfig: string;
+}
+
+export interface ResolvedCloud {
+  upstream: string;
+  token: string | null;
 }
 
 export interface ResolvedIdentity {
@@ -352,6 +365,14 @@ function parseConfig(text: string): BackstageConfig {
       });
     }
 
+    const cloud = obj(raw.cloud);
+    if (cloud) {
+      cfg.cloud = defined({
+        upstream: str(cloud.upstream),
+        token: str(cloud.token),
+      });
+    }
+
     const repos = obj(raw.repos);
     if (repos) {
       const parsed: Record<string, RepoSection> = {};
@@ -466,6 +487,20 @@ export function configuredPaths(): ResolvedPaths {
     worktreesDir: envAlias("OPENSESSION_WORKTREES_DIR", "BACKSTAGE_WORKTREES_DIR") || p.worktreesDir || (isLocalProfile() ? `${localRoot}/worktrees` : "/home/ubuntu/worktrees"),
     wtScript: p.wtScript || "/home/ubuntu/bin/wt",
     mcpConfig: envAlias("OPENSESSION_MCP_CONFIG", "BACKSTAGE_MCP_CONFIG") || p.mcpConfig || (isLocalProfile() ? `${localRoot}/mcp-config.json` : `${HOME}/projects/tella-backstage/mcp-config.json`),
+  };
+}
+
+export function configuredCloud(): ResolvedCloud {
+  const cloud = getConfig().cloud || {};
+  return {
+    upstream:
+      process.env.OPENSESSION_CLOUD_UPSTREAM?.trim() ||
+      cloud.upstream?.trim() ||
+      "https://os.tella.dev",
+    token:
+      process.env.OPENSESSION_CLOUD_TOKEN?.trim() ||
+      cloud.token?.trim() ||
+      null,
   };
 }
 

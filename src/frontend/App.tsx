@@ -314,7 +314,7 @@ function routePath(route: Route): string {
 }
 
 function App() {
-	const { sessions, loading, refresh, inject, unstick, patch, remove } =
+	const { sessions, loading, cloudUnreachable, refresh, inject, unstick, patch, remove } =
 		useSessions();
 	const { connected, send, addHandler } = useWebSocket();
 	const sessionsRef = useRef(sessions);
@@ -344,6 +344,9 @@ function App() {
 	const showToast = useCallback((message: string) => {
 		toast(message);
 	}, []);
+	useEffect(() => {
+		if (cloudUnreachable) showToast("Cloud sessions are temporarily unreachable");
+	}, [cloudUnreachable, showToast]);
 	// Watercooler unread badge: messages newer than the locally-stored
 	// last-read stamp (own messages never count). Live chat_message events bump
 	// it; having the Watercooler open marks read continuously.

@@ -35,6 +35,7 @@ import { type Workspace, deleteWorkspace, getWorkspace } from "../workspaces";
 import { removeWorktree, repoForPath } from "../worktree";
 import { preparingWorkspaces } from "../ws-hub";
 import { existsSync } from "fs";
+import { mergedCloudSessions } from "../cloud-proxy";
 
 /**
  * List which of `files` contain `query` (case-insensitive, literal) via
@@ -88,7 +89,12 @@ export async function handleSessionsRoutes(
 			// on backstage session files, in-memory for slack/linear sessions.
 			lastRunError: runErrors.get(s.id) || s.lastRunError,
 		}));
-		return Response.json(enriched);
+		const { sessions, cloudUnreachable } = await mergedCloudSessions(enriched);
+		return Response.json(sessions, {
+			headers: cloudUnreachable
+				? { "X-OpenSession-Cloud-Unreachable": "true" }
+				: undefined,
+		});
 	}
 
 	// Get transcript for a session

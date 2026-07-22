@@ -268,6 +268,9 @@ const server: import("bun").Server<WSClientData> = hotServe({
 						user: authFirst,
 						authUser: authFirst,
 						authLogin: authUser?.login || null,
+						cloudProxy:
+							!isLocalProfile() &&
+							req.headers.get("x-opensession-cloud-proxy") === "1",
 					},
 				});
 				if (!upgraded) {

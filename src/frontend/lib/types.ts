@@ -177,6 +177,8 @@ export interface SessionWalkthrough {
 
 export interface UnifiedSession {
 	id: string;
+	/** Present and true when the local-profile server owns this session. */
+	local?: boolean;
 	claudeSessionId: string | null;
 	source: SessionSource;
 	branch: string | null;

@@ -28,6 +28,8 @@ export interface SessionUsage {
 
 export interface UnifiedSession {
   id: string;
+  /** Present and true when a local-profile server owns this session. */
+  local?: boolean;
   claudeSessionId: string | null;
   source: SessionSource;
   branch: string | null;

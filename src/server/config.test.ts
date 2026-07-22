@@ -8,6 +8,7 @@ import {
   configuredPaths,
   configuredServer,
   configuredIdentity,
+  configuredCloud,
   configPath,
   defaultRepo,
   personaName,
@@ -27,6 +28,8 @@ const ENV_KEYS = [
   "OPENSESSION_PROFILE",
   "OPENSESSION_CONFIG",
   "OPENSESSION_WORKTREES_DIR",
+  "OPENSESSION_CLOUD_UPSTREAM",
+  "OPENSESSION_CLOUD_TOKEN",
 ] as const;
 const saved: Record<string, string | undefined> = {};
 for (const k of ENV_KEYS) saved[k] = process.env[k];
@@ -106,7 +109,32 @@ describe("config loader", () => {
     expect(configPath()).toBe(`${process.env.HOME}/os1/config.json`);
     expect(configuredIdentity()).toEqual({ team: [], slackNames: {} });
     expect(() => defaultRepo()).toThrow("No repositories are registered");
+		expect(configuredCloud()).toEqual({
+			upstream: "https://os.tella.dev",
+			token: null,
+		});
   });
+
+	test("cloud config uses environment overrides over the local config", () => {
+		withConfig(JSON.stringify({ cloud: { upstream: "https://config.example", token: "config" } }));
+		process.env.OPENSESSION_PROFILE = "local";
+		process.env.OPENSESSION_CLOUD_UPSTREAM = "https://env.example";
+		process.env.OPENSESSION_CLOUD_TOKEN = "env-token";
+		expect(configuredCloud()).toEqual({
+			upstream: "https://env.example",
+			token: "env-token",
+		});
+	});
+
+	test("cloud config is parsed from the local config file", () => {
+		withConfig(JSON.stringify({ cloud: { upstream: "https://config.example", token: "config-token" } }));
+		delete process.env.OPENSESSION_CLOUD_UPSTREAM;
+		delete process.env.OPENSESSION_CLOUD_TOKEN;
+		expect(configuredCloud()).toEqual({
+			upstream: "https://config.example",
+			token: "config-token",
+		});
+	});
 
   test("partial file → merges over defaults", () => {
     withConfig(

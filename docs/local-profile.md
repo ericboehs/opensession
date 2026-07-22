@@ -108,6 +108,44 @@ Removal only updates the registry. It never deletes the checkout, cloned
 repository, worktrees, or session data. A repository still referenced by a
 session cannot be removed; the endpoint returns HTTP 409 instead.
 
+## Cloud sessions
+
+The local app can merge sessions from a hosted OpenSession instance into the
+same sidebar. Add a web-session bearer token to `~/os1/config.json`:
+
+```json
+{
+  "cloud": {
+    "upstream": "https://os.tella.dev",
+    "token": "your-web-session-token"
+  }
+}
+```
+
+`upstream` is optional and defaults to `https://os.tella.dev`. The environment
+variables `OPENSESSION_CLOUD_UPSTREAM` and `OPENSESSION_CLOUD_TOKEN` override
+the file. The token is the same web-session bearer used by
+`scripts/frontend-dev.ts`; it stays in the local server and is never sent to
+browser JavaScript.
+
+With a token configured, `/api/sessions` combines the hosted list with the
+sessions stored under `~/os1/sessions`. Local sessions win an id collision and
+carry `local: true`. Session API calls are routed by ownership, so transcripts,
+diffs, assets, Git and PR actions for hosted sessions go to the upstream while
+new sessions remain local by default.
+
+Live hosted-session traffic shares one lazy upstream WebSocket. Each local
+browser socket gets an isolated virtual lane on that connection, so simultaneous
+watches, cancels, direct replies, and terminals retain their own hosted socket
+context. A disconnect closes the hosted virtual lanes; bounded reconnect restores
+each watched session, while terminal processes exit instead of being replayed.
+
+Without a token, the server makes no cloud requests. If the upstream is down,
+the session list still returns local sessions and sets
+`X-OpenSession-Cloud-Unreachable: true`; local sessions and local live work keep
+running while the cloud WebSocket reconnects with a maximum 15-second delay. The
+UI also shows a transient cloud-unreachable notice.
+
 ## Models
 
 The local picker offers Anthropic models when Claude Code credentials are found

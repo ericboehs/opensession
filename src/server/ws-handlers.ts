@@ -43,6 +43,14 @@ import { randomUUIDv7 } from "bun";
 import { readFileSync, watch } from "fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import {
+	cloudWebSocketClientClosed,
+	routeCloudWebSocketMessage,
+} from "./cloud-proxy";
+import {
+	closeCloudProxyProtocol,
+	handleCloudProxyProtocolMessage,
+} from "./cloud-proxy-protocol";
 
 // Who likely triggered the restart that booted THIS process — read once from
 // the marker the previous process wrote in gracefulShutdown, and only trusted
@@ -106,6 +114,17 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 		// name the client claims in any message, so attribution and per-user
 		// gating stop trusting self-declared users.
 		if (ws.data?.authUser) msg.user = ws.data.authUser;
+		if (
+			await handleCloudProxyProtocolMessage(
+				ws,
+				msg,
+				(lane, payload) => websocketHandlers.message?.(lane, payload),
+				(lane) => websocketHandlers.close?.(lane, 1000, "cloud proxy lane closed"),
+			)
+		) {
+			return;
+		}
+		if (routeCloudWebSocketMessage(ws, msg)) return;
 
 		switch (msg.type) {
 			case "ping": {
@@ -1506,6 +1525,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 	close(ws) {
 		if (sandboxWsClose(ws)) return;
+		closeCloudProxyProtocol(ws, (lane) =>
+			websocketHandlers.close?.(lane, 1000, "cloud proxy disconnected"),
+		);
+		cloudWebSocketClientClosed(ws);
 		allClients.delete(ws);
 		stopAllWatchesForClient(ws);
 		leaveSession(ws);

@@ -28,6 +28,14 @@ export function broadcastToAll(msg: object) {
 // WebSocket client state
 export interface WSClientData {
 	watchingSessionId: string | null;
+	/** Hosted session watched through the local profile's shared cloud lane. */
+	cloudWatchingSessionId?: string | null;
+	/** Stable virtual-client lane on the one hosted WebSocket connection. */
+	cloudLaneId?: string | null;
+	cloudTerminalActive?: boolean;
+	/** Hosted-side authorization for the virtual-client multiplex protocol. */
+	cloudProxy?: boolean;
+	cloudProxyLanes?: Map<string, any>;
 	watchingNoteId: string | null;
 	user: string | null;
 	/** Verified sign-in identity stamped at upgrade (web-auth.ts). When set,

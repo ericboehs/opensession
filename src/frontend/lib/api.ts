@@ -113,10 +113,21 @@ async function request<T>(
  * the app-wide re-render) entirely when nothing changed.
  */
 export async function fetchSessionsText(): Promise<string> {
+	return (await fetchSessionsSnapshot()).text;
+}
+
+export async function fetchSessionsSnapshot(): Promise<{
+	text: string;
+	cloudUnreachable: boolean;
+}> {
 	const res = await fetch(`${BASE}/sessions`);
 	if (!res.ok)
 		throw new ApiError(`Failed to fetch sessions: ${res.status}`, res.status);
-	return res.text();
+	return {
+		text: await res.text(),
+		cloudUnreachable:
+			res.headers.get("X-OpenSession-Cloud-Unreachable") === "true",
+	};
 }
 
 // ── Session assets (scratch folder previewed in the Assets tab) ─────────────

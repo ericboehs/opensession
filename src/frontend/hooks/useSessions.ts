@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { UnifiedSession } from "../lib/types";
-import { fetchSessionsText } from "../lib/api";
+import { fetchSessionsSnapshot } from "../lib/api";
 
 export function useSessions(pollInterval = 5000) {
   const [sessions, setSessions] = useState<UnifiedSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cloudUnreachable, setCloudUnreachable] = useState(false);
   const mountedRef = useRef(true);
   // Raw JSON text of the last applied poll. When a poll returns byte-identical
   // data (the common case every 5s), skip setSessions entirely — a fresh array
@@ -35,8 +36,10 @@ export function useSessions(pollInterval = 5000) {
 
   const poll = useCallback(async () => {
     try {
-      const text = await fetchSessionsText();
+      const snapshot = await fetchSessionsSnapshot();
+      const { text } = snapshot;
       if (!mountedRef.current) return;
+      setCloudUnreachable(snapshot.cloudUnreachable);
       if (text !== lastTextRef.current) {
         lastTextRef.current = text;
         applyServer(JSON.parse(text));
@@ -115,5 +118,5 @@ export function useSessions(pollInterval = 5000) {
     setSessions((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
-  return { sessions, loading, error, refresh, inject, unstick, patch, remove };
+  return { sessions, loading, error, cloudUnreachable, refresh, inject, unstick, patch, remove };
 }
