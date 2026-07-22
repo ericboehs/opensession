@@ -32,6 +32,13 @@ Portability status: parts of the codebase still carry Tella-specific literals
 config today vs. what still needs a code edit is called out per page in the
 setup docs.
 
+## macOS app
+
+The native OS¹ Electron shell lives in [`os1-mac/`](os1-mac/). It shares this
+repository with the frontend so window-material and title-bar changes can be
+developed and released together. See its README for local development,
+signing, and release instructions.
+
 ## License
 
 TBD — not yet licensed for redistribution.

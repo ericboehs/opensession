@@ -1,0 +1,72 @@
+name: Release OS¹ for Mac
+
+# Builds, signs, notarizes and publishes the vendored Electron shell.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: os1-mac-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: os1-mac
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Import Developer ID certificate
+        uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATES_P12 }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATES_PASSWORD }}
+
+      - name: Build, sign & notarize
+        run: bunx electron-builder --mac --publish never
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || '6GUXT43C8B' }}
+
+      - name: Notarize & staple DMG
+        run: |
+          xcrun notarytool submit dist/*.dmg --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple dist/*.dmg
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || '6GUXT43C8B' }}
+
+      - name: Verify Gatekeeper acceptance
+        run: |
+          xcrun stapler validate dist/mac-arm64/*.app
+          spctl --assess --type open --context context:primary-signature -v dist/*.dmg
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        run: gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*.zip --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload artifacts (manual run)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: OS1
+          path: |
+            os1-mac/dist/*.dmg
+            os1-mac/dist/*.zip
