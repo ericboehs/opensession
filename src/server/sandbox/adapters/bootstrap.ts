@@ -71,6 +71,7 @@ import {
   appendOpencodeTranscript,
   ensureOpencodeTranscriptFile,
   getOpencodeTranscriptPath,
+  recordBksSessionFor,
   transcriptLineUser,
   transcriptLineRunnerNotice,
   transcriptLineAssistantText,
@@ -959,6 +960,10 @@ export async function* withOpencodeTranscriptMirror(
   }
   let oc = spec.engineSessionId || "";
   if (ocRef) ocRef.id = oc;
+  // Transcript v2: record the oc→unified mapping BEFORE any mirror write so
+  // the flag-gated store path in opencode-transcript.ts can resolve it (the
+  // sandbox host is the recording site here — the spec carries both ids).
+  if (oc && spec.bksSessionId) recordBksSessionFor(oc, spec.bksSessionId);
   const syntheticContinuation = spec.prompt === RESUME_CONTINUATION_PROMPT;
   const promptUuid = `${spec.hostId}-prompt`;
   const promptWrittenTo = new Set<string>();
@@ -989,6 +994,9 @@ export async function* withOpencodeTranscriptMirror(
       if (ev.type === "init" && ev.sessionId) {
         oc = ev.sessionId;
         if (ocRef) ocRef.id = oc;
+        // Rotation-safe: every init that lands on a NEW engine session id
+        // re-records the mapping before the mirror/store writes below.
+        if (spec.bksSessionId) recordBksSessionFor(oc, spec.bksSessionId);
         ensureOpencodeTranscriptFile(oc);
         writePrompt(oc);
       } else if (ev.type === "text_chunk" && ev.text) {

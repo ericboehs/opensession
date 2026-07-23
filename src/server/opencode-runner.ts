@@ -204,6 +204,7 @@ import {
   ensureOpencodeTranscriptFile,
   existingOpencodeTranscriptPath,
   opencodeTurnLooksCompleted,
+  recordBksSessionFor,
   recordOpencodeDbFor,
   transcriptLineUser,
   transcriptLineRunnerNotice,
@@ -2952,6 +2953,11 @@ async function* runOpencodeAttempt(
     // Sharded storage: remember which DB file this engine session lives in so
     // transcript readers / gap backfill can find it after the server is gone.
     if (entry.dbPath) recordOpencodeDbFor(ocSessionId, entry.dbPath);
+    // Transcript v2: remember which unified session this engine session's
+    // lines belong to (covers run start AND rotation — a rotation re-enters
+    // here with the freshly-minted oc id), so the flag-gated store writes in
+    // opencode-transcript.ts can resolve it.
+    if (journal?.bksSessionId) recordBksSessionFor(ocSessionId, journal.bksSessionId);
     // A resumed session may carry a transcript-mirror gap (e.g. a turn that
     // ran orphaned after a restart — 2026-07-17: an hour of work invisible
     // until a manual backfill). Reconcile on EVERY resume, not just reattach.
@@ -4131,6 +4137,10 @@ export async function tryReattachOpencodeRun(
           : "turn finished during restart — finalizing from the engine store",
       });
 
+      // Transcript v2: re-record the oc→unified mapping before the gap
+      // backfill below runs the store's import-first gate — the reattach path
+      // is the first writer for every in-flight run at activation.
+      if (run.bksSessionId) recordBksSessionFor(ocSessionId!, run.bksSessionId);
       // Seed mirror dedup from what the file already has + backfill the gap.
       const seenUuids = backfillOpencodeTranscriptGap(ocSessionId!);
       const emittedText = new Set<string>();

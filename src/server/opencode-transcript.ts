@@ -32,7 +32,8 @@ import { Database } from "bun:sqlite";
 import type { TranscriptEntry } from "./types";
 import type { ImageInput } from "./run-events";
 import { stripContext } from "./prompt-context";
-import { extractAssistantVideos } from "./jsonl-parser";
+import { extractAssistantVideos, parseJsonlLines } from "./jsonl-parser";
+import { transcriptStore } from "./transcript-store";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 
@@ -151,6 +152,179 @@ export function resolveOpencodeDbFor(ocSessionId: string | null | undefined): st
     }
   }
   return OPENCODE_DB_PATH;
+}
+
+// ── Transcript v2 (docs/transcript-v2-design.md §3): oc id → unified id ──────
+//
+// The runner records which UNIFIED session (bks-*/slack-*/…) an engine
+// session's transcript lines belong to (recordBksSessionFor — same
+// persisted-JSON pattern as recordOpencodeDbFor above; rotation-safe: many oc
+// ids map onto one unified id). Recording is UNCONDITIONAL cheap bookkeeping
+// (like the db map) so the activation restart finds mappings for runs that
+// started while the flag was still off. When OPENSESSION_TRANSCRIPT_V2=1 the
+// three mirror writers below (appendOpencodeTranscript /
+// ensureOpencodeTranscriptFile / backfillOpencodeTranscriptGap) ALSO write
+// parsed entries into the owned transcript store, resolving the unified id
+// through this map — unresolvable oc id degrades to mirror-only with a
+// once-per-session warn, and no store failure ever throws into a mirror write.
+
+/** ocSessionId → unified session id, written by the runner call sites. */
+const OPENCODE_BKS_MAP_PATH =
+  envAlias("OPENSESSION_OPENCODE_BKS_MAP", "BACKSTAGE_OPENCODE_BKS_MAP") ||
+  `${HOME}/.opensession-chats/opencode/bks-map.json`;
+
+interface BksMapState {
+  map: Map<string, string>;
+  loaded: boolean;
+  /** oc ids we already warned "no unified session mapped" for. */
+  warnedUnmapped: Set<string>;
+}
+
+/** Parked on globalThis so hot reloads keep the loaded map + warn dedup. */
+const bksMapState: BksMapState = ((globalThis as Record<string, unknown> & {
+  __osOcBksMap?: BksMapState;
+}).__osOcBksMap ??= { map: new Map(), loaded: false, warnedUnmapped: new Set() });
+
+function bksMap(): Map<string, string> {
+  if (!bksMapState.loaded) {
+    bksMapState.loaded = true;
+    try {
+      if (existsSync(OPENCODE_BKS_MAP_PATH)) {
+        const parsed = JSON.parse(readFileSync(OPENCODE_BKS_MAP_PATH, "utf-8"));
+        if (parsed && typeof parsed === "object") {
+          for (const [k, v] of Object.entries(parsed)) {
+            if (typeof v === "string" && v) bksMapState.map.set(k, v);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[opencode-transcript] bks-map read failed:", e);
+    }
+  }
+  return bksMapState.map;
+}
+
+/** Remember which unified session an engine session belongs to. Called from
+ *  the runner (run start / rotation / reattach) and the sandbox host mirror —
+ *  wherever both ids are in scope. Never throws. */
+export function recordBksSessionFor(ocSessionId: string, unifiedId: string): void {
+  if (!ocSessionId || !unifiedId) return;
+  try {
+    const map = bksMap();
+    if (map.get(ocSessionId) === unifiedId) return;
+    map.set(ocSessionId, unifiedId);
+    mkdirSync(OPENCODE_BKS_MAP_PATH.slice(0, OPENCODE_BKS_MAP_PATH.lastIndexOf("/")), {
+      recursive: true,
+    });
+    const tmp = `${OPENCODE_BKS_MAP_PATH}.tmp`;
+    writeFileSync(tmp, JSON.stringify(Object.fromEntries(map)));
+    renameSync(tmp, OPENCODE_BKS_MAP_PATH);
+  } catch (e) {
+    console.warn("[opencode-transcript] bks-map write failed:", e);
+  }
+}
+
+function transcriptV2Enabled(): boolean {
+  return envAlias("OPENSESSION_TRANSCRIPT_V2", "BACKSTAGE_TRANSCRIPT_V2") === "1";
+}
+
+/** The unified session id for an engine session, or null (+ one warn). */
+function resolveBksSessionFor(ocSessionId: string): string | null {
+  const unifiedId = bksMap().get(ocSessionId);
+  if (unifiedId) return unifiedId;
+  if (!bksMapState.warnedUnmapped.has(ocSessionId)) {
+    bksMapState.warnedUnmapped.add(ocSessionId);
+    console.warn(
+      `[opencode-transcript] v2: no unified session mapped for ${ocSessionId} — mirror-only`
+    );
+  }
+  return null;
+}
+
+/**
+ * Import-first gate body (§3): synchronously import the session's legacy
+ * history (mergedSessionTranscript over the session's transcript file(s) +
+ * engine store) into the transcript store. importLegacyTranscript marks the
+ * session imported itself; an empty history is marked 'live-only'.
+ *
+ * Cycle note: sessions.ts / session-cache.ts import THIS module, so they can
+ * never be static imports here. A call-time require() is the synchronous
+ * shape of the design's "lazy dynamic import()" cycle-breaker: by the time
+ * any store write runs, both modules are long-evaluated, so this is a module
+ * cache hit — and merely importing opencode-transcript.ts (tests, tools)
+ * never pulls the sessions graph in, because the require only executes on
+ * the flag-gated write path.
+ */
+function importLegacyIntoStore(unifiedId: string, ocSessionId: string): void {
+  const sessionsMod = require("./sessions") as typeof import("./sessions");
+  let session:
+    | Parameters<typeof sessionsMod.mergedSessionTranscript>[0]
+    | undefined;
+  try {
+    const cacheMod = require("./session-cache") as typeof import("./session-cache");
+    session = cacheMod.findSession(unifiedId);
+  } catch {}
+  const entries = sessionsMod.mergedSessionTranscript(
+    session ?? {
+      transcriptPath: existingOpencodeTranscriptPath(ocSessionId),
+      opencodeSessionId: ocSessionId,
+      claudeSessionId: null,
+    }
+  );
+  // Watermark = the oc mirror file's size at import time (§8 drift check —
+  // the mirror is the only legacy file that still grows for these sessions).
+  let watermark: number | null = null;
+  try {
+    const p = getOpencodeTranscriptPath(ocSessionId);
+    if (existsSync(p)) watermark = statSync(p).size;
+  } catch {}
+  transcriptStore().importLegacyTranscript(
+    unifiedId,
+    entries,
+    entries.length ? "merged" : "live-only",
+    watermark
+  );
+}
+
+/** Run the import-first gate for a session without appending anything —
+ *  ensure/backfill call this so run start front-loads the legacy import
+ *  instead of racing it against the first live append. Never throws. */
+function storeEnsureImported(ocSessionId: string): void {
+  if (!transcriptV2Enabled()) return;
+  const unifiedId = resolveBksSessionFor(ocSessionId);
+  if (!unifiedId) return;
+  try {
+    if (transcriptStore().needsImport(unifiedId)) {
+      importLegacyIntoStore(unifiedId, ocSessionId);
+    }
+  } catch (e) {
+    console.warn(
+      `[opencode-transcript] v2 legacy import failed for ${ocSessionId} → ${unifiedId} (mirror-only):`,
+      e
+    );
+  }
+}
+
+/** Flag-gated store write for freshly-appended mirror lines. The mirror file
+ *  write has already happened (dual-write, mirror first); the store append
+ *  runs the import-first gate itself and upsert-dedupes by entry id, so the
+ *  just-appended lines landing in the import too is harmless. Never throws. */
+function storeAppendLines(ocSessionId: string, lines: JsonlLine[]): void {
+  if (!transcriptV2Enabled()) return;
+  const unifiedId = resolveBksSessionFor(ocSessionId);
+  if (!unifiedId) return;
+  try {
+    const entries = parseJsonlLines(lines.map((l) => JSON.stringify(l)));
+    if (!entries.length) return;
+    transcriptStore().appendTranscriptEvents(unifiedId, entries, {
+      ensureImported: (sid) => importLegacyIntoStore(sid, ocSessionId),
+    });
+  } catch (e) {
+    console.warn(
+      `[opencode-transcript] v2 store append failed for ${ocSessionId} (mirror-only):`,
+      e
+    );
+  }
 }
 
 /**
@@ -355,6 +529,8 @@ export function appendOpencodeTranscript(
   } catch (e) {
     console.warn(`[opencode-transcript] append failed for ${ocSessionId}:`, e);
   }
+  // Transcript v2 dual-write (no-op unless OPENSESSION_TRANSCRIPT_V2=1).
+  storeAppendLines(ocSessionId, lines);
 }
 
 /**
@@ -370,19 +546,24 @@ export function ensureOpencodeTranscriptFile(
 ): void {
   try {
     const path = getOpencodeTranscriptPath(ocSessionId);
-    if (existsSync(path)) return;
-    const entries = seed?.length ? seed : readOpencodeTranscript(ocSessionId);
-    const lines = entries
-      .map(transcriptLineForEntry)
-      .filter((l): l is JsonlLine => !!l);
-    mkdirSync(OPENCODE_TRANSCRIPTS_DIR, { recursive: true });
-    writeFileSync(
-      path,
-      lines.length ? lines.map((l) => JSON.stringify(l)).join("\n") + "\n" : ""
-    );
+    if (!existsSync(path)) {
+      const entries = seed?.length ? seed : readOpencodeTranscript(ocSessionId);
+      const lines = entries
+        .map(transcriptLineForEntry)
+        .filter((l): l is JsonlLine => !!l);
+      mkdirSync(OPENCODE_TRANSCRIPTS_DIR, { recursive: true });
+      writeFileSync(
+        path,
+        lines.length ? lines.map((l) => JSON.stringify(l)).join("\n") + "\n" : ""
+      );
+    }
   } catch (e) {
     console.warn(`[opencode-transcript] ensure failed for ${ocSessionId}:`, e);
   }
+  // Transcript v2 (flag-gated no-op otherwise): ensure runs at run start, so
+  // front-load the legacy import here — the first live append then never
+  // races the import-first gate (§3).
+  storeEnsureImported(ocSessionId);
 }
 
 /** Uuids already present in a session's persisted transcript file. */
@@ -414,6 +595,10 @@ export function opencodeTranscriptUuids(ocSessionId: string): Set<string> {
  * dedup sets so post-gap events don't double-append.
  */
 export function backfillOpencodeTranscriptGap(ocSessionId: string): Set<string> {
+  // Transcript v2 (flag-gated no-op otherwise): the restart-reattach path is
+  // the first store writer for every in-flight run at activation — run the
+  // import-first gate even when the mirror has no gap to fill (§3).
+  storeEnsureImported(ocSessionId);
   const seen = opencodeTranscriptUuids(ocSessionId);
   try {
     const missing: JsonlLine[] = [];
