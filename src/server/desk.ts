@@ -16,10 +16,9 @@ import { randomUUIDv7 } from "bun";
 import { stateDir } from "./rename-compat";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import {
-	SESSIONS_DIR,
 	findSession,
-	invalidateSessionsCache,
 	touchBackstageSession,
+	updateSessionFile,
 } from "./session-cache";
 import type { BackstageSessionFile } from "./types";
 
@@ -68,23 +67,31 @@ export function ensureDeskSession(user: string): {
 	}
 	const bksId = `bks-${randomUUIDv7()}`;
 	const now = new Date().toISOString();
-	const data: BackstageSessionFile = {
-		id: bksId,
-		claudeSessionId: "",
-		branch: "",
-		worktreeDir: "",
-		mode: "ask",
-		desk: true,
-		repo: "backstage",
-		createdBy: user,
-		createdAt: now,
-		lastActivity: now,
-		title: "Desk",
-		model: DESK_MODEL,
-		effort: DESK_EFFORT,
-	};
-	writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
-	invalidateSessionsCache();
+	// Field-scoped create via the serialized session-file writer — this site
+	// owns every creation field (the fresh id means the file never pre-exists,
+	// so the create-if-absent overlay is just belt-and-braces). Uncontended
+	// writes run synchronously, so the caller can open the session immediately.
+	updateSessionFile(bksId, (data) => {
+		const existing: Partial<BackstageSessionFile> = data;
+		return {
+			id: bksId,
+			claudeSessionId: "",
+			branch: "",
+			worktreeDir: "",
+			mode: "ask" as const,
+			desk: true,
+			repo: "backstage",
+			createdBy: user,
+			createdAt: now,
+			lastActivity: now,
+			title: "Desk",
+			model: DESK_MODEL,
+			effort: DESK_EFFORT,
+			...existing,
+		};
+	}).catch((e) =>
+		console.error(`[desk] failed to write Desk session ${bksId}:`, e),
+	);
 	st.sessionId = bksId;
 	writeJsonAtomic(CONFIG_PATH, store);
 	console.log(`[desk] created Desk session ${bksId} for ${user}`);

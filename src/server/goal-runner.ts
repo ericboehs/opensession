@@ -20,9 +20,8 @@ import { DEFAULT_FALLBACK_MODEL, providerFor } from "./models";
 import { engineSessionPatch } from "./sessions";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { gitIdentityFor } from "./shared/user-mappings";
-import { writeJsonAtomic } from "./shared/atomic-write";
 import { createWorktree, getRepo, reviveWorktree, worktreeHeadBranch } from "./worktree";
-import { invalidateSessionsCache, SESSIONS_DIR } from "./session-cache";
+import { updateSessionFile } from "./session-cache";
 import { attachSessionWatchersToEngineTranscript } from "./run-session";
 import type { BackstageSessionFile } from "./types";
 
@@ -128,32 +127,39 @@ export async function runGoal(goal: Goal): Promise<void> {
 		const createdBy = `${goal.name} (goal)`;
 		let effectiveModel = goal.model;
 		let effectiveProvider = providerFor(effectiveModel);
-		const persistSession = (engineSessionId: string) => {
-			const data: BackstageSessionFile = {
-				id: bksId,
-				claudeSessionId: "",
-				...(engineSessionId
-					? engineSessionPatch(effectiveProvider, engineSessionId)
-					: {}),
-				...(engineSessionId
-					? { lastEngineProvider: effectiveProvider }
-					: {}),
-				...(effectiveModel ? { model: effectiveModel } : {}),
-				// Actual worktree HEAD wins over the recorded name — the agent may
-				// have switched branches mid-run (see run-session.ts's same sync).
-				branch: goal.mode === "code" ? worktreeHeadBranch(cwd) || branch : "",
-				worktreeDir: cwd,
-				...(goal.mode === "code" ? { repo: getRepo(goal.repo).id } : {}),
-				createdBy,
-				createdAt: goal.createdAt,
-				lastActivity: new Date().toISOString(),
-				title: `${goal.name} — goal`,
-				mode: goal.mode,
-				goalId: goal.id,
-			};
-			writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
-			invalidateSessionsCache();
-		};
+		// Field-scoped write: creation fields are create-if-absent defaults (the
+		// first wake creates the file, later wakes keep it); each wake owns the
+		// engine-id/model fields plus the goal's live config projection
+		// (mode/repo/worktree/branch/title track the goal record). Serialized
+		// via updateSessionFile.
+		const persistSession = (engineSessionId: string) =>
+			updateSessionFile(bksId, (data) => {
+				// Widen to Partial: the file may not exist yet (create-if-absent).
+				const existing: Partial<BackstageSessionFile> = data;
+				return {
+					id: bksId,
+					claudeSessionId: "",
+					createdBy,
+					createdAt: goal.createdAt,
+					...existing,
+					...(engineSessionId
+						? engineSessionPatch(effectiveProvider, engineSessionId)
+						: {}),
+					...(engineSessionId
+						? { lastEngineProvider: effectiveProvider }
+						: {}),
+					...(effectiveModel ? { model: effectiveModel } : {}),
+					// Actual worktree HEAD wins over the recorded name — the agent may
+					// have switched branches mid-run (see run-session.ts's same sync).
+					branch: goal.mode === "code" ? worktreeHeadBranch(cwd) || branch : "",
+					worktreeDir: cwd,
+					...(goal.mode === "code" ? { repo: getRepo(goal.repo).id } : {}),
+					title: `${goal.name} — goal`,
+					mode: goal.mode,
+					goalId: goal.id,
+					lastActivity: new Date().toISOString(),
+				};
+			});
 
 		console.log(`[goals] Wake #${wake} of "${goal.name}" → ${bksId}`);
 
@@ -184,7 +190,7 @@ export async function runGoal(goal: Goal): Promise<void> {
 				engineSessionId = event.sessionId || engineSessionId;
 				if (event.provider) effectiveProvider = event.provider;
 				if (event.model) effectiveModel = event.model;
-				persistSession(engineSessionId);
+				await persistSession(engineSessionId);
 				// A goal wake's transcript file is new each wake — attach anyone
 				// already viewing the goal session so the turn streams live.
 				if (engineSessionId) {
@@ -210,7 +216,7 @@ export async function runGoal(goal: Goal): Promise<void> {
 			}
 			if (event.type === "error") errorMsg = event.content || "Unknown error";
 		}
-		persistSession(engineSessionId);
+		await persistSession(engineSessionId);
 
 		// The run may have rescheduled / paused / finished itself via
 		// opensession-goal-self — reload so we don't clobber those, then apply

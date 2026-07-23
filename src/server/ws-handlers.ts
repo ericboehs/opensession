@@ -29,10 +29,9 @@ import { sandboxWsClose, sandboxWsMessage, sandboxWsOpen } from "./run-ws";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { type Sandbox, hasRemoteWorkspace } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox, sandboxConfig, sandboxesEnabled } from "./sandbox/config";
-import { SESSIONS_DIR, SESSION_EFFORTS, findSession, invalidateSessionsCache, maybePersistEffort, recordRunOutcome, touchBackstageSession } from "./session-cache";
+import { SESSION_EFFORTS, findSession, invalidateSessionsCache, maybePersistEffort, recordRunOutcome, touchBackstageSession, updateSessionFile } from "./session-cache";
 import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
 import { engineSessionPatch, engineUserTexts, mergedSessionTranscript } from "./sessions";
-import { writeJsonAtomic } from "./shared/atomic-write";
 import { handleSlashCommand } from "./slash-commands";
 import { resizeTerminal, startSessionTerminal, stopTerminal, writeTerminal } from "./terminals";
 import { subscribeTranscript } from "./transcript-bus";
@@ -1417,66 +1416,71 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						const head = sessionBranch ? worktreeHeadBranch(wtPath) : null;
 						return head && head !== sessionBranch ? { branch: head } : {};
 					};
-					const persist = () => {
-						const sessionData: BackstageSessionFile = {
-							id: bksId,
-							claudeSessionId: "",
-							...(engineSessionId
-								? engineSessionPatch(effectiveProvider, engineSessionId)
-								: {}),
-							// Record the engine that ran so the first later cross-provider
-							// switch bridges context (see runSessionPromptInner handoff).
-							...(engineSessionId
-								? { lastEngineProvider: effectiveProvider }
-								: {}),
-							...(effectiveModel ? { model: effectiveModel } : {}),
-							...(createEffort ? { effort: createEffort } : {}),
-							...(createAccountId ? { accountId: createAccountId } : {}),
-							...(modelHistory.length ? { modelHistory } : {}),
-							branch: sessionBranch,
-							...headBranchPatch(),
-							worktreeDir: wtPath,
-							repo: repoForPath(wtPath).id,
-							...(workspace
-								? { projectId: workspace.id }
-								: forkSource?.projectId
-									? // A fork lands next to its source in the same workspace.
-										{ projectId: forkSource.projectId }
-									: typeof msg.projectId === "string" && msg.projectId
-										? { projectId: msg.projectId }
-										: {}),
-							createdBy: user || "Anonymous",
-							...(ws.data?.authLogin
-								? { createdByLogin: ws.data.authLogin }
-								: {}),
-							createdAt: new Date().toISOString(),
-							lastActivity: new Date().toISOString(),
-							title,
-							mode: isAsk ? "ask" : "code",
-							...(plainThreadId ? { plainThreadId } : {}),
-							...(createMcpServers && createMcpServers.length ? { mcpServers: createMcpServers } : {}),
-							...(createSandboxProvider
-								? {
-										sandbox: {
-											provider: createSandboxProvider,
-											// Volume intent is recorded up front so the prompt
-											// paths know the workspace never exists host-side
-											// (hasRemoteWorkspace) even before the first ensure.
-											// Remote providers are ALWAYS volume — no host mounts.
-											...(volumeWorkspace || remoteSandbox
-												? { workspace: "volume" as const }
-												: {}),
-										},
-									}
-								: {}),
-						};
-						writeJsonAtomic(
-							`${SESSIONS_DIR}/${bksId}.json`,
-							sessionData,
-						);
-						invalidateSessionsCache();
-						persisted = true;
-					};
+					// Field-scoped write: creation fields are create-if-absent defaults
+					// (an existing file — e.g. one touched with the engine id or a
+					// materialized sandboxId while the opening run streams — wins);
+					// this run only owns the engine-id/model/HEAD-sync fields it
+					// actually changes. Serialized via updateSessionFile.
+					const persist = () =>
+						updateSessionFile(bksId, (data) => {
+							// Widen to Partial: the file may not exist yet.
+							const existing: Partial<BackstageSessionFile> = data;
+							return {
+								id: bksId,
+								claudeSessionId: "",
+								branch: sessionBranch,
+								worktreeDir: wtPath,
+								repo: repoForPath(wtPath).id,
+								...(workspace
+									? { projectId: workspace.id }
+									: forkSource?.projectId
+										? // A fork lands next to its source in the same workspace.
+											{ projectId: forkSource.projectId }
+										: typeof msg.projectId === "string" && msg.projectId
+											? { projectId: msg.projectId }
+											: {}),
+								createdBy: user || "Anonymous",
+								...(ws.data?.authLogin
+									? { createdByLogin: ws.data.authLogin }
+									: {}),
+								createdAt: new Date().toISOString(),
+								title,
+								mode: (isAsk ? "ask" : "code") as "ask" | "code",
+								...(createEffort ? { effort: createEffort } : {}),
+								...(createAccountId ? { accountId: createAccountId } : {}),
+								...(plainThreadId ? { plainThreadId } : {}),
+								...(createMcpServers && createMcpServers.length ? { mcpServers: createMcpServers } : {}),
+								...(createSandboxProvider
+									? {
+											sandbox: {
+												provider: createSandboxProvider,
+												// Volume intent is recorded up front so the prompt
+												// paths know the workspace never exists host-side
+												// (hasRemoteWorkspace) even before the first ensure.
+												// Remote providers are ALWAYS volume — no host mounts.
+												...(volumeWorkspace || remoteSandbox
+													? { workspace: "volume" as const }
+													: {}),
+											},
+										}
+									: {}),
+								...existing,
+								...(engineSessionId
+									? engineSessionPatch(effectiveProvider, engineSessionId)
+									: {}),
+								// Record the engine that ran so the first later cross-provider
+								// switch bridges context (see runSessionPromptInner handoff).
+								...(engineSessionId
+									? { lastEngineProvider: effectiveProvider }
+									: {}),
+								...(effectiveModel ? { model: effectiveModel } : {}),
+								...(modelHistory.length ? { modelHistory } : {}),
+								...headBranchPatch(),
+								lastActivity: new Date().toISOString(),
+							};
+						}).then(() => {
+							persisted = true;
+						});
 
 					// Persist + announce BEFORE the slow parts (worktree git work,
 					// engine boot with its MCP connects) so the client drops into
@@ -1488,7 +1492,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					markSessionStarting(bksId);
 					if (needsWorktree) preparingWorkspaces.add(bksId);
 					try {
-						persist();
+						await persist();
 						ws.send(
 							JSON.stringify({
 								type: "session_created",
@@ -1728,7 +1732,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						}
 					}
 
-					if (!persisted) persist();
+					if (!persisted) await persist();
 					else
 						touchBackstageSession(
 							bksId,

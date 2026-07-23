@@ -19,11 +19,10 @@ import { attachSessionWatchersToEngineTranscript, attachSessionWatchersToTranscr
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { type Sandbox } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox } from "./sandbox/config";
-import { SESSIONS_DIR, findSession, getCachedSessions, invalidateSessionsCache, recordRunOutcome, touchBackstageSession } from "./session-cache";
+import { findSession, getCachedSessions, invalidateSessionsCache, recordRunOutcome, touchBackstageSession, updateSessionFile } from "./session-cache";
 import { type SessionState, type SessionSummary, registerSessionControl } from "./session-control";
 import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
 import { engineSessionPatch, engineUserTexts, getAllSessions, mergedSessionTranscript } from "./sessions";
-import { writeJsonAtomic } from "./shared/atomic-write";
 import { rebuildIndex } from "./slack-links";
 import { handleSlashCommand } from "./slash-commands";
 import { type BackstageSessionFile, type SessionUsage, type UnifiedSession } from "./types";
@@ -300,42 +299,49 @@ registerSessionControl({
 			const head = !isAsk && sessionBranch ? worktreeHeadBranch(wtPath) : null;
 			return head && head !== sessionBranch ? { branch: head } : {};
 		};
-		const persist = () => {
-			const sessionData: BackstageSessionFile = {
-				id: bksId,
-				claudeSessionId: "",
-				...(engineSessionId
-					? engineSessionPatch(effectiveProvider, engineSessionId)
-					: {}),
-				...(effectiveModel ? { model: effectiveModel } : {}),
-				...(modelHistory.length ? { modelHistory } : {}),
-				branch: isAsk ? "" : sessionBranch,
-				...headBranchPatch(),
-				worktreeDir: wtPath,
-				repo: repo.id,
-				...(projectId ? { projectId } : {}),
-				...(parentSessionId ? { parentSessionId } : {}),
-				createdBy: user || personaName(),
-				createdAt: new Date().toISOString(),
-				lastActivity: new Date().toISOString(),
-				title,
-				mode: isAsk ? "ask" : "code",
-				// Sandbox opt-in: the opening run below and every later prompt
-				// route through maybeLaunchSandboxedRun for this provider.
-				...(sandboxProvider
-					? {
-							sandbox: {
-								provider: sandboxProvider,
-								// Remote providers are always volume-style (no host mounts).
-								...(remoteSandbox ? { workspace: "volume" as const } : {}),
-							},
-						}
-					: {}),
-			};
-			writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, sessionData);
-			invalidateSessionsCache();
-			persisted = true;
-		};
+		// Field-scoped write: creation fields are create-if-absent defaults (an
+		// existing file — e.g. one a sandbox launch already stamped a sandboxId
+		// onto — wins); this run only owns the engine-id/model/HEAD-sync fields
+		// it actually changes. Serialized via updateSessionFile.
+		const persist = () =>
+			updateSessionFile(bksId, (data) => {
+				// Widen to Partial: the file may not exist yet (create-if-absent).
+				const existing: Partial<BackstageSessionFile> = data;
+				return {
+					id: bksId,
+					claudeSessionId: "",
+					branch: isAsk ? "" : sessionBranch,
+					worktreeDir: wtPath,
+					repo: repo.id,
+					...(projectId ? { projectId } : {}),
+					...(parentSessionId ? { parentSessionId } : {}),
+					createdBy: user || personaName(),
+					createdAt: new Date().toISOString(),
+					title,
+					mode: (isAsk ? "ask" : "code") as "ask" | "code",
+					// Sandbox opt-in: the opening run below and every later prompt
+					// route through maybeLaunchSandboxedRun for this provider.
+					...(sandboxProvider
+						? {
+								sandbox: {
+									provider: sandboxProvider,
+									// Remote providers are always volume-style (no host mounts).
+									...(remoteSandbox ? { workspace: "volume" as const } : {}),
+								},
+							}
+						: {}),
+					...existing,
+					...(engineSessionId
+						? engineSessionPatch(effectiveProvider, engineSessionId)
+						: {}),
+					...(effectiveModel ? { model: effectiveModel } : {}),
+					...(modelHistory.length ? { modelHistory } : {}),
+					...headBranchPatch(),
+					lastActivity: new Date().toISOString(),
+				};
+			}).then(() => {
+				persisted = true;
+			});
 
 		// @session:<id> mentions in a create_session prompt (e.g. a monitor
 		// session spun up to watch others) get the same resolving footer as
@@ -358,7 +364,7 @@ registerSessionControl({
 				// opening turn with a clear error instead.
 				let sandboxOpeningRun: AsyncGenerator<StreamEvent> | null = null;
 				if (sandboxProvider) {
-					if (!persisted) persist();
+					if (!persisted) await persist();
 					const created = findSession(bksId);
 					sandboxOpeningRun = created
 						? await maybeLaunchSandboxedRun(created, {
@@ -421,14 +427,15 @@ registerSessionControl({
 						// model_switch below still adopts: a real fallback ends the dial.
 						if (event.model && !modelPreset(model)) effectiveModel = event.model;
 						// A sandbox session was persisted before launch and its file has
-						// since been touched with the materialized sandboxId — a full
-						// persist() here would rebuild from closure vars and wipe that.
+						// since been touched with the materialized sandboxId — persist()
+						// is field-scoped now, but the narrower touch stays the clearer
+						// statement of what init actually changes.
 						if (persisted)
 							touchBackstageSession(bksId, {
 								...engineSessionPatch(effectiveProvider, engineSessionId),
 								...(effectiveModel ? { model: effectiveModel } : {}),
 							});
-						else persist();
+						else await persist();
 						// Attach anyone already viewing this fresh chat to its brand-new
 						// transcript file so the first turn streams live (see
 						// attachSessionWatchersToTranscript).
@@ -560,7 +567,7 @@ registerSessionControl({
 						});
 					}
 				}
-				if (!persisted) persist();
+				if (!persisted) await persist();
 				else
 					touchBackstageSession(
 						bksId,

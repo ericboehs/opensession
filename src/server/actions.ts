@@ -14,19 +14,18 @@
  * and UI edits are preserved.
  */
 import { randomUUIDv7 } from "bun";
-import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, existsSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { runAgent } from "./agent-runner";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from "./models";
 import { engineSessionPatch } from "./sessions";
+import { updateSessionFile } from "./session-cache";
 import type { BackstageSessionFile } from "./types";
 import { defaultRepo } from "./config";
 import { stateDir } from "./rename-compat";
 
 const ACTIONS_DIR = stateDir("actions");
-const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
 
 /** Fast/cheap model for action runs (the LLM only orchestrates one Bash call). */
 const ACTION_MODEL = "claude-haiku-4-5";
@@ -363,25 +362,31 @@ export function runAction(
     let effectiveModel = model;
     let effectiveProvider = providerFor(model);
     const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [];
-    const persist = (engineSessionId: string) => {
-      const data: BackstageSessionFile = {
-        id: bksId,
-        claudeSessionId: "",
-        ...(engineSessionId
-          ? engineSessionPatch(effectiveProvider, engineSessionId)
-          : {}),
-        ...(effectiveModel ? { model: effectiveModel } : {}),
-        ...(modelHistory.length ? { modelHistory } : {}),
-        branch: "",
-        worktreeDir: cwd,
-        createdBy: `${action.name} (action)`,
-        createdAt: startedAt.toISOString(),
-        lastActivity: new Date().toISOString(),
-        title: `${action.name} — ${startedAt.toISOString().slice(0, 16).replace("T", " ")}`,
-        mode: "code",
-      };
-      writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
-    };
+    // Field-scoped write: creation fields are create-if-absent defaults (an
+    // existing file wins); this run only ever owns the engine-id/model
+    // tracking fields it actually changes. Serialized via updateSessionFile.
+    const persist = (engineSessionId: string) =>
+      updateSessionFile(bksId, (data) => {
+        // Widen to Partial: the file may not exist yet (create-if-absent).
+        const existing: Partial<BackstageSessionFile> = data;
+        return {
+          id: bksId,
+          claudeSessionId: "",
+          branch: "",
+          worktreeDir: cwd,
+          createdBy: `${action.name} (action)`,
+          createdAt: startedAt.toISOString(),
+          title: `${action.name} — ${startedAt.toISOString().slice(0, 16).replace("T", " ")}`,
+          mode: "code" as const,
+          ...existing,
+          ...(engineSessionId
+            ? engineSessionPatch(effectiveProvider, engineSessionId)
+            : {}),
+          ...(effectiveModel ? { model: effectiveModel } : {}),
+          ...(modelHistory.length ? { modelHistory } : {}),
+          lastActivity: new Date().toISOString(),
+        };
+      });
 
     try {
       saveAction({ ...action, lastRunAt: startedAt.toISOString(), lastRunSessionId: bksId });
@@ -411,7 +416,7 @@ export function runAction(
           engineSessionId = event.sessionId || "";
           if (event.provider) effectiveProvider = event.provider;
           if (event.model) effectiveModel = event.model;
-          persist(engineSessionId);
+          await persist(engineSessionId);
           onSessionCreated?.(bksId);
         }
         if (event.type === "model_switch") {
@@ -432,7 +437,7 @@ export function runAction(
           if (event.model) effectiveModel = event.model;
         }
       }
-      persist(engineSessionId);
+      await persist(engineSessionId);
     } catch (e) {
       console.error(`[actions] "${action.name}" run failed:`, e);
     }

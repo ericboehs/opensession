@@ -157,24 +157,76 @@ export function findSession(sessionId: string): UnifiedSession | undefined {
 	return getCachedSessions().find((s) => s.id === sessionId);
 }
 
+// ── Serialized session-file writes ────────────────────────────────────────────
+// Every session-file writer goes through updateSessionFile: fresh read →
+// field-scoped mutator → atomic write, serialized per session id by a
+// promise-chain mutex (parked on globalThis so hot reloads keep in-flight
+// chains). This replaces the blind full-object rebuilds that let concurrent
+// writers clobber each other's fields (docs/transcript-v2-design.md §6).
+// Each write bumps a `rev` counter on the file — readers ignore it; it exists
+// so lost updates are observable.
+
+/** Receives the fresh on-disk session file ({} as the type when the file
+ *  doesn't exist yet — create-if-absent) and returns the object to write.
+ *  Sites overlay ONLY the fields they own; unknown/foreign fields survive. */
+export type SessionFileMutator = (
+	data: BackstageSessionFile,
+) => BackstageSessionFile;
+
+const sessionFileLocks: Map<string, Promise<void>> = (g.__osSessionFileLocks ??=
+	new Map());
+
+export function updateSessionFile(
+	sessionId: string,
+	mutator: SessionFileMutator,
+): Promise<void> {
+	const write = () => {
+		const path = `${SESSIONS_DIR}/${sessionId}.json`;
+		const current: BackstageSessionFile = existsSync(path)
+			? JSON.parse(readFileSync(path, "utf-8"))
+			: ({} as BackstageSessionFile);
+		const next = mutator(current) ?? current;
+		const rev = (current as { rev?: unknown }).rev;
+		(next as { rev?: number }).rev = (typeof rev === "number" ? rev : 0) + 1;
+		writeJsonAtomic(path, next);
+		sessionsCache = null;
+	};
+	const prev = sessionFileLocks.get(sessionId);
+	let done: Promise<void>;
+	if (!prev) {
+		// Uncontended fast path: run synchronously so read-after-write callers
+		// (`persist(); findSession(id)`) keep today's visibility.
+		try {
+			write();
+			done = Promise.resolve();
+		} catch (e) {
+			done = Promise.reject(e);
+		}
+	} else {
+		done = prev.then(write);
+	}
+	// The stored chain link never rejects, so one failed write can't poison
+	// (or double-report through) the writes queued behind it.
+	const settled = done.catch(() => {});
+	sessionFileLocks.set(sessionId, settled);
+	void settled.finally(() => {
+		if (sessionFileLocks.get(sessionId) === settled)
+			sessionFileLocks.delete(sessionId);
+	});
+	return done;
+}
+
 export function touchBackstageSession(
 	bksId: string,
 	patch: Partial<BackstageSessionFile>,
 ): void {
-	const path = `${SESSIONS_DIR}/${bksId}.json`;
-	try {
-		const data: BackstageSessionFile = existsSync(path)
-			? JSON.parse(readFileSync(path, "utf-8"))
-			: ({} as BackstageSessionFile);
-		writeJsonAtomic(path, {
-			...data,
-			...patch,
-			lastActivity: new Date().toISOString(),
-		});
-		sessionsCache = null;
-	} catch (e) {
+	updateSessionFile(bksId, (data) => ({
+		...data,
+		...patch,
+		lastActivity: new Date().toISOString(),
+	})).catch((e) => {
 		console.error(`Failed to update backstage session ${bksId}:`, e);
-	}
+	});
 }
 
 // Reasoning-effort values the composer/new-session pill can send. Model-specific

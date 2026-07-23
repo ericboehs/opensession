@@ -15,6 +15,7 @@ import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from ".
 import { readOpencodeBridgeConfig } from "./opencode-config";
 import { createWorktree, getRepo, listWorktrees, REPOS, worktreeHeadBranch } from "./worktree";
 import { engineSessionPatch } from "./sessions";
+import { updateSessionFile } from "./session-cache";
 import type { BackstageSessionFile } from "./types";
 import { stateDir } from "./rename-compat";
 import { linkThreadInIndex, createSlackPostScanner } from "./slack-links";
@@ -870,44 +871,55 @@ export async function runAutomation(
         return;
       slackThreads.push({ channel, threadTs });
       // Live-link + persist immediately so a fast reply routes even while
-      // the run is still going.
+      // the run is still going (fire-and-forget: the per-session write chain
+      // orders it against the init/final persists).
       linkThreadInIndex(bksId, channel, threadTs);
-      persistSession(engineSessionId);
+      persistSession(engineSessionId).catch((e) =>
+        console.error(`[automations] session persist failed for ${bksId}:`, e)
+      );
     };
-    const persistSession = (engineSessionId: string) => {
-      const data: BackstageSessionFile = {
-        id: bksId,
-        claudeSessionId: "",
-        ...(engineSessionId
-          ? engineSessionPatch(effectiveProvider, engineSessionId)
-          : {}),
-        ...(effectiveModel ? { model: effectiveModel } : {}),
-        ...(modelHistory.length ? { modelHistory } : {}),
-        // Keep the automation's account pin on the session so interactive
-        // resumes of this session run on the same subscription.
-        ...(automation.accountId ? { accountId: automation.accountId } : {}),
-        // Code-mode runs can rename their auto-generated branch before opening
-        // a PR — record the worktree's actual HEAD so PR lookups and the
-        // review handoff keep resolving this session.
-        branch: (branch && worktreeHeadBranch(cwd)) || branch,
-        worktreeDir: cwd,
-        createdBy: `${automation.name} (automation)`,
-        createdAt: startedAt.toISOString(),
-        lastActivity: new Date().toISOString(),
-        title: eventTitle || `${automation.name} — ${stamp}`,
-        mode: automation.mode,
-        automation: automation.name,
-        automationId: automation.id,
-        // Keep the trigger payload so a thread reply of "retrigger" can replay
-        // this exact run (same truncation as the prompt embed).
-        ...(options?.eventContext
-          ? { automationEvent: options.eventContext.slice(0, 10_000) }
-          : {}),
-        plainThreadId,
-        ...(slackThreads.length ? { slackThreads: [...slackThreads] } : {}),
-      };
-      writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
-    };
+    // Field-scoped write: creation fields are create-if-absent defaults (an
+    // existing file — e.g. one an interactive thread-reply resume already
+    // wrote to — wins); this run only owns the engine-id/model fields, the
+    // HEAD-synced branch, and the Slack threads it posted. Serialized via
+    // updateSessionFile.
+    const persistSession = (engineSessionId: string) =>
+      updateSessionFile(bksId, (data) => {
+        // Widen to Partial: the file may not exist yet (create-if-absent).
+        const existing: Partial<BackstageSessionFile> = data;
+        return {
+          id: bksId,
+          claudeSessionId: "",
+          worktreeDir: cwd,
+          createdBy: `${automation.name} (automation)`,
+          createdAt: startedAt.toISOString(),
+          title: eventTitle || `${automation.name} — ${stamp}`,
+          mode: automation.mode,
+          automation: automation.name,
+          automationId: automation.id,
+          // Keep the automation's account pin on the session so interactive
+          // resumes of this session run on the same subscription.
+          ...(automation.accountId ? { accountId: automation.accountId } : {}),
+          // Keep the trigger payload so a thread reply of "retrigger" can replay
+          // this exact run (same truncation as the prompt embed).
+          ...(options?.eventContext
+            ? { automationEvent: options.eventContext.slice(0, 10_000) }
+            : {}),
+          ...(plainThreadId ? { plainThreadId } : {}),
+          ...existing,
+          ...(engineSessionId
+            ? engineSessionPatch(effectiveProvider, engineSessionId)
+            : {}),
+          ...(effectiveModel ? { model: effectiveModel } : {}),
+          ...(modelHistory.length ? { modelHistory } : {}),
+          // Code-mode runs can rename their auto-generated branch before opening
+          // a PR — record the worktree's actual HEAD so PR lookups and the
+          // review handoff keep resolving this session.
+          branch: (branch && worktreeHeadBranch(cwd)) || branch,
+          ...(slackThreads.length ? { slackThreads: [...slackThreads] } : {}),
+          lastActivity: new Date().toISOString(),
+        };
+      });
 
     console.log(
       `[automations] Running "${automation.name}" → ${bksId}${runModel ? ` (${runModel})` : ""}${options?.modelOverride ? " [routed]" : ""}`
@@ -999,7 +1011,7 @@ export async function runAutomation(
         engineSessionId = event.sessionId || "";
         if (event.provider) effectiveProvider = event.provider;
         if (event.model) effectiveModel = event.model;
-        persistSession(engineSessionId);
+        await persistSession(engineSessionId);
         onSessionCreated?.(bksId);
       }
       // Capture Slack posts (slack MCP calls + SLACK_MSG_POSTED markers from
@@ -1031,7 +1043,7 @@ export async function runAutomation(
       }
     }
 
-    persistSession(engineSessionId);
+    await persistSession(engineSessionId);
 
     settleRun(automation.id, bksId, {
       status: errorMsg ? "error" : "ok",
