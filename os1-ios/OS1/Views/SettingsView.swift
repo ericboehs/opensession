@@ -8,11 +8,11 @@ struct SettingsView: View {
     @State private var token = ServerConfig.shared.token
     @State private var checkResult: String?
 
-    // GitHub device-flow state. The poll task is retained so leaving the
-    // sheet (or tapping Cancel) stops the background polling.
-    @State private var deviceFlow: GitHubAuth.DeviceFlowStart?
-    @State private var pollTask: Task<Void, Never>?
-    @State private var signInError: String?
+    // GitHub device-flow state lives in GitHubSignIn.shared (NOT sheet
+    // @State): entering the code happens outside the app, and the sheet —
+    // or the whole app — can be torn down in the meantime. The model
+    // persists + resumes the flow; this view just renders it.
+    private var signIn: GitHubSignIn { .shared }
 
     private var signedInLogin: String? {
         let login = ServerConfig.shared.githubLogin
@@ -31,7 +31,7 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    if let flow = deviceFlow {
+                    if let flow = signIn.flow {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Enter this code on GitHub:")
                                 .font(.footnote)
@@ -49,7 +49,7 @@ struct SettingsView: View {
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                 Spacer()
-                                Button("Cancel", role: .cancel) { cancelSignIn() }
+                                Button("Cancel", role: .cancel) { signIn.cancel() }
                             }
                         }
                         .padding(.vertical, 4)
@@ -63,10 +63,12 @@ struct SettingsView: View {
                         Button {
                             startSignIn()
                         } label: {
-                            Label("Sign in with GitHub", systemImage: "person.badge.key")
+                            Label(signIn.starting ? "Starting…" : "Sign in with GitHub",
+                                  systemImage: "person.badge.key")
                         }
+                        .disabled(signIn.starting)
                     }
-                    if let signInError {
+                    if let signInError = signIn.error {
                         Text(signInError)
                             .font(.footnote)
                             .foregroundStyle(.red)
@@ -109,36 +111,24 @@ struct SettingsView: View {
                     Button("Cancel") { dismiss() }
                 }
             }
-            .onDisappear { cancelSignIn() }
+            // No onDisappear cancel: the sign-in keeps polling after the
+            // sheet closes (only the explicit Cancel button stops it).
+            .onChange(of: signIn.flow?.deviceCode) { _, deviceCode in
+                // Sign-in finished while the sheet is open — reflect the
+                // minted credentials in the editable fields.
+                if deviceCode == nil, ServerConfig.shared.token != token {
+                    token = ServerConfig.shared.token
+                    userName = ServerConfig.shared.userName
+                    checkResult = nil
+                }
+            }
         }
     }
 
     private func startSignIn() {
-        signInError = nil
         // The flow talks to the server, so the URL field must be applied first.
         ServerConfig.shared.baseURLString = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        pollTask = Task {
-            do {
-                let flow = try await GitHubAuth.start()
-                deviceFlow = flow
-                _ = try await GitHubAuth.waitForAuthorization(flow)
-                token = ServerConfig.shared.token
-                userName = ServerConfig.shared.userName
-                checkResult = nil
-            } catch is CancellationError {
-                // user cancelled — nothing to report
-            } catch {
-                signInError = error.localizedDescription
-            }
-            deviceFlow = nil
-            pollTask = nil
-        }
-    }
-
-    private func cancelSignIn() {
-        pollTask?.cancel()
-        pollTask = nil
-        deviceFlow = nil
+        signIn.start()
     }
 
     private func signOut() {

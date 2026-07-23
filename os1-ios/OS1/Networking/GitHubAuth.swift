@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// GitHub device-flow sign-in against the OpenSession server. The server owns
 /// the OAuth app: we start a flow (`/api/auth/device`), show the user code,
@@ -45,10 +46,11 @@ enum GitHubAuth {
     }
 
     /// Polls until sign-in completes, the flow expires, or the task is
-    /// cancelled. On success the token + identity are already stored.
-    static func waitForAuthorization(_ flow: DeviceFlowStart) async throws -> String {
+    /// cancelled. On success the token + identity are already stored. The
+    /// deadline is passed in (not derived from `expiresIn`) so a resumed
+    /// flow keeps its original expiry.
+    static func waitForAuthorization(_ flow: DeviceFlowStart, until deadline: Date) async throws -> String {
         var interval = TimeInterval(max(flow.interval ?? 5, 1))
-        let deadline = Date().addingTimeInterval(TimeInterval(flow.expiresIn ?? 900))
         while Date() < deadline {
             try await Task.sleep(for: .seconds(interval))
             let poll: PollResponse
@@ -104,5 +106,118 @@ enum GitHubAuth {
             throw AuthError.server("Server returned HTTP \(http.statusCode).")
         }
         return try JSONDecoder().decode(T.self, from: data)
+    }
+}
+
+/// Persisted shape of an in-flight device flow, so the sign-in survives the
+/// app being jettisoned while the person is over in Safari entering the code.
+private struct PendingDeviceFlow: Codable {
+    let deviceCode: String
+    let userCode: String
+    let verificationUri: String
+    let interval: Int
+    let expiresAt: Date
+}
+
+/// Owns the device-flow sign-in OUTSIDE any view lifecycle. Entering the code
+/// happens in Safari/the GitHub app, and iOS is free to suspend or kill us in
+/// the meantime — so the code prompt and the polling loop must not live in a
+/// sheet's @State. The Settings sheet just renders whatever is in here; the
+/// flow itself survives the sheet closing, the app backgrounding, and even a
+/// relaunch (the pending flow is persisted until it expires, ~15 min).
+@MainActor
+@Observable
+final class GitHubSignIn {
+    static let shared = GitHubSignIn()
+
+    /// The flow whose code the UI should show (nil = no sign-in running).
+    private(set) var flow: GitHubAuth.DeviceFlowStart?
+    private(set) var starting = false
+    var error: String?
+
+    private var pollTask: Task<Void, Never>?
+    private static let pendingKey = "os1.pendingDeviceFlow"
+
+    private init() {
+        resumePersisted()
+    }
+
+    func start() {
+        cancel()
+        error = nil
+        starting = true
+        pollTask = Task {
+            do {
+                let started = try await GitHubAuth.start()
+                let deadline = Date().addingTimeInterval(TimeInterval(started.expiresIn ?? 900))
+                starting = false
+                flow = started
+                persist(started, expiresAt: deadline)
+                _ = try await GitHubAuth.waitForAuthorization(started, until: deadline)
+            } catch is CancellationError {
+                return // explicit cancel — state already cleared
+            } catch {
+                self.error = error.localizedDescription
+            }
+            starting = false
+            finish()
+        }
+    }
+
+    /// Stop polling and forget the pending flow (explicit user cancel).
+    func cancel() {
+        pollTask?.cancel()
+        pollTask = nil
+        starting = false
+        finish()
+    }
+
+    private func finish() {
+        flow = nil
+        pollTask = nil
+        UserDefaults.standard.removeObject(forKey: Self.pendingKey)
+    }
+
+    private func persist(_ flow: GitHubAuth.DeviceFlowStart, expiresAt: Date) {
+        let pending = PendingDeviceFlow(
+            deviceCode: flow.deviceCode,
+            userCode: flow.userCode,
+            verificationUri: flow.verificationUri,
+            interval: flow.interval ?? 5,
+            expiresAt: expiresAt
+        )
+        if let data = try? JSONEncoder().encode(pending) {
+            UserDefaults.standard.set(data, forKey: Self.pendingKey)
+        }
+    }
+
+    /// Pick an unexpired flow back up after a relaunch mid-sign-in.
+    private func resumePersisted() {
+        guard let data = UserDefaults.standard.data(forKey: Self.pendingKey),
+              let pending = try? JSONDecoder().decode(PendingDeviceFlow.self, from: data),
+              pending.expiresAt > Date()
+        else {
+            UserDefaults.standard.removeObject(forKey: Self.pendingKey)
+            return
+        }
+        let restored = GitHubAuth.DeviceFlowStart(
+            deviceCode: pending.deviceCode,
+            userCode: pending.userCode,
+            verificationUri: pending.verificationUri,
+            interval: pending.interval,
+            expiresIn: nil,
+            error: nil
+        )
+        flow = restored
+        pollTask = Task {
+            do {
+                _ = try await GitHubAuth.waitForAuthorization(restored, until: pending.expiresAt)
+            } catch is CancellationError {
+                return
+            } catch {
+                self.error = error.localizedDescription
+            }
+            finish()
+        }
     }
 }
