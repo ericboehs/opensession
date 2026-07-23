@@ -1,7 +1,6 @@
 import { AGENT_NAME } from "../lib/brand";
 import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { parsePatchFiles } from "@pierre/diffs";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
@@ -262,49 +261,6 @@ function relTime(iso?: string): string {
 const FILE_PREVIEW = 6;
 const COMMENT_PREVIEW = 3;
 
-/** Where to float the hover popover, computed from the card's viewport rect.
-    Prefers the space to the LEFT of the card (the comments live in the right
-    panel) so the popover never covers the list; falls back to overlaying the
-    card only when there isn't room on the left. */
-function popoverPosition(
-	rect: DOMRect,
-	opts: { maxWidth?: number; maxHeightPx?: number; heightFrac?: number } = {},
-): {
-	left: number;
-	top: number;
-	width: number;
-	maxHeight: number;
-} {
-	const { maxWidth = 440, maxHeightPx = 560, heightFrac = 0.7 } = opts;
-	const margin = 12;
-	const gap = 10;
-	const vw = window.innerWidth;
-	const vh = window.innerHeight;
-	const maxHeight = Math.min(Math.round(vh * heightFrac), maxHeightPx);
-	const spaceLeft = rect.left - margin - gap;
-
-	let width: number;
-	let left: number;
-	if (spaceLeft >= 300) {
-		// Prefer floating left, but when there's no room for the wider card fall
-		// back to overlaying the panel (so a code diff isn't squeezed to a sliver).
-		width = spaceLeft >= maxWidth ? maxWidth : Math.min(maxWidth, vw - margin * 2);
-		left =
-			spaceLeft >= maxWidth
-				? rect.left - gap - width
-				: Math.max(margin, Math.min(rect.left, vw - width - margin));
-	} else {
-		width = Math.min(Math.max(rect.width, 380), vw - margin * 2);
-		left = Math.max(margin, Math.min(rect.left, vw - width - margin));
-	}
-	// Align to the card's top, but lift up if it would spill past the bottom.
-	const top = Math.max(
-		margin,
-		Math.min(rect.top, vh - margin - Math.min(maxHeight, vh - margin * 2)),
-	);
-	return { left, top, width, maxHeight };
-}
-
 /** The author's real GitHub avatar (Greptile, Tella Butler, Vercel, a human…),
     served at github.com/<login>.png. Falls back to a lettered brand tile if the
     image 404s or the author isn't a plausible login (e.g. a display name). */
@@ -352,30 +308,12 @@ function CommentCard({
 	onOpenTab?: (tab: PanelTab) => void;
 	onAddToInput?: (text: string) => void;
 }) {
-	const cardRef = useRef<HTMLDivElement>(null);
-	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const [pop, setPop] = useState<DOMRect | null>(null);
 	const html = useMemo(
 		() => renderMarkdown(cleanCommentMarkdown(comment.body)),
 		[comment.body],
 	);
 	// The one-line label: lead with the comment's title/first words, flattened.
 	const title = useMemo(() => plainComment(comment.body), [comment.body]);
-	useEffect(
-		() => () => {
-			if (closeTimer.current) clearTimeout(closeTimer.current);
-		},
-		[],
-	);
-
-	function openPop() {
-		if (closeTimer.current) clearTimeout(closeTimer.current);
-		if (cardRef.current) setPop(cardRef.current.getBoundingClientRect());
-	}
-	function closePop() {
-		if (closeTimer.current) clearTimeout(closeTimer.current);
-		closeTimer.current = setTimeout(() => setPop(null), 90);
-	}
 
 	const addBtn = onAddToInput && (
 		<button
@@ -385,19 +323,21 @@ function CommentCard({
 				e.stopPropagation();
 				onAddToInput(formatPrCommentPrompt(comment, pr));
 			}}
-			title="Add this comment to the chat composer"
+			aria-label="Add this comment to the chat composer"
 		>
 			Add to chat
 		</button>
 	);
 	const avatar = <CommentAvatar author={comment.author} />;
 
-	const pos = pop ? popoverPosition(pop) : null;
-
 	return (
-		<>
-			<div
-				ref={cardRef}
+		<Popover.Root>
+			<Popover.Trigger
+				render={<div />}
+				nativeButton={false}
+				openOnHover
+				delay={200}
+				closeDelay={90}
 				className="workspace-info-comment"
 				role="button"
 				tabIndex={0}
@@ -405,9 +345,7 @@ function CommentCard({
 				onKeyDown={(e) => {
 					if (e.key === "Enter" || e.key === " ") onOpenTab?.("pr");
 				}}
-				onMouseEnter={openPop}
-				onMouseLeave={closePop}
-				title={comment.author}
+				aria-label={`Comment by ${comment.author}`}
 			>
 				{avatar}
 				<span className="workspace-info-comment-title">{title}</span>
@@ -415,42 +353,33 @@ function CommentCard({
 					{relTime(comment.createdAt)}
 				</span>
 				{addBtn}
-			</div>
-			{pop &&
-				pos &&
-				createPortal(
-					<div
-						className="workspace-info-comment-pop"
-						style={{
-							left: pos.left,
-							top: pos.top,
-							width: pos.width,
-							maxHeight: pos.maxHeight,
-						}}
-						onMouseEnter={openPop}
-						onMouseLeave={closePop}
-						onClick={() => onOpenTab?.("pr")}
-					>
-						{avatar}
-						<div className="workspace-info-comment-main">
-							<div className="workspace-info-comment-pop-head">
-								<span className="workspace-info-comment-author">
-									{comment.author}
+			</Popover.Trigger>
+			<Popover.Popup
+				side="left"
+				align="start"
+				sideOffset={10}
+				className="flex max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))] cursor-pointer gap-2 overflow-hidden p-2.5"
+			>
+				<div className="contents" onClick={() => onOpenTab?.("pr")}>
+					{avatar}
+					<div className="workspace-info-comment-main flex min-h-0 flex-col">
+						<div className="workspace-info-comment-pop-head">
+							<span className="workspace-info-comment-author">
+								{comment.author}
+							</span>
+							{comment.createdAt && (
+								<span className="workspace-info-comment-time">
+									{relTime(comment.createdAt)}
 								</span>
-								{comment.createdAt && (
-									<span className="workspace-info-comment-time">
-										{relTime(comment.createdAt)}
-									</span>
-								)}
-							</div>
-							<div className="workspace-info-comment-pop-body">
-								<MarkdownBody html={html} className="markdown" />
-							</div>
+							)}
 						</div>
-					</div>,
-					document.body,
-				)}
-		</>
+						<div className="workspace-info-comment-pop-body">
+							<MarkdownBody html={html} className="markdown" />
+						</div>
+					</div>
+				</div>
+			</Popover.Popup>
+		</Popover.Root>
 	);
 }
 
@@ -638,25 +567,6 @@ function ChecksChip({
 	chip: StatusChip;
 	onOpenTab?: (tab: PanelTab) => void;
 }) {
-	const btnRef = useRef<HTMLButtonElement>(null);
-	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const [pop, setPop] = useState<DOMRect | null>(null);
-	useEffect(
-		() => () => {
-			if (closeTimer.current) clearTimeout(closeTimer.current);
-		},
-		[],
-	);
-
-	function openPop() {
-		if (closeTimer.current) clearTimeout(closeTimer.current);
-		if (btnRef.current) setPop(btnRef.current.getBoundingClientRect());
-	}
-	function closePop() {
-		if (closeTimer.current) clearTimeout(closeTimer.current);
-		closeTimer.current = setTimeout(() => setPop(null), 120);
-	}
-
 	// Failing first, then running, successes, and skipped/neutral last — the
 	// same triage order the PR panel's expanded list uses.
 	const order: Record<CheckVisual, number> = {
@@ -670,37 +580,27 @@ function ChecksChip({
 		(a, b) => order[checkStatusMeta(a).kind] - order[checkStatusMeta(b).kind],
 	);
 	const sum = summarizeChecks(pr);
-	const pos = pop ? popoverPosition(pop) : null;
-
 	return (
-		<>
-			<button
-				ref={btnRef}
+		<Popover.Root>
+			<Popover.Trigger
+				openOnHover={checks.length > 0}
+				delay={200}
+				closeDelay={120}
 				type="button"
 				className={`wi-chip wi-chip-${chip.tone}`}
 				onClick={() => onOpenTab?.("pr")}
-				onMouseEnter={openPop}
-				onMouseLeave={closePop}
 			>
 				{chip.icon && <span className="wi-chip-icon">{chip.icon}</span>}
 				{chip.label}
-			</button>
-			{pop &&
-				pos &&
-				checks.length > 0 &&
-				createPortal(
-					<div
-						className="workspace-info-checks-pop"
-						style={{
-							left: pos.left,
-							top: pos.top,
-							width: pos.width,
-							maxHeight: pos.maxHeight,
-						}}
-						onMouseEnter={openPop}
-						onMouseLeave={closePop}
-					>
-						<div className="workspace-info-checks-head">
+			</Popover.Trigger>
+			{checks.length > 0 && (
+				<Popover.Popup
+					side="left"
+					align="start"
+					sideOffset={10}
+					className="flex max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))] flex-col overflow-hidden p-0"
+				>
+					<div className="workspace-info-checks-head">
 							<span className="workspace-info-checks-title">
 								{checks.length} check{checks.length === 1 ? "" : "s"}
 							</span>
@@ -715,8 +615,8 @@ function ChecksChip({
 									<span className="check-pending-text">{sum.pending} running</span>
 								)}
 							</span>
-						</div>
-						<div className="workspace-info-checks-list">
+					</div>
+					<div className="workspace-info-checks-list">
 							{checks.map((check, i) => {
 								const m = checkStatusMeta(check);
 								const inner = (
@@ -744,11 +644,10 @@ function ChecksChip({
 									</div>
 								);
 							})}
-						</div>
-					</div>,
-					document.body,
-				)}
-		</>
+					</div>
+				</Popover.Popup>
+			)}
+		</Popover.Root>
 	);
 }
 
