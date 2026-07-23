@@ -3,9 +3,6 @@ import SwiftUI
 struct SessionView: View {
     @State private var viewModel: SessionViewModel
     @FocusState private var inputFocused: Bool
-    /// The initial transcript batch arrives async over the socket; it must land
-    /// pre-scrolled to the bottom, not animate down from the top.
-    @State private var hasPlacedInitialTranscript = false
 
     init(session: Session) {
         _viewModel = State(initialValue: SessionViewModel(session: session))
@@ -33,20 +30,18 @@ struct SessionView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             }
+            // Initial render lands at the bottom, and `.sizeChanges` KEEPS it
+            // pinned there through everything that used to leave the list
+            // stranded mid-scroll: the staged transcript prepending ~100
+            // entries above the first-paint head (which never changed
+            // `last?.id`, so no manual scroll fired), lazy rows settling
+            // their real heights, and streaming growth. The pin releases
+            // when the person scrolls up to read — no yanking them back.
             .defaultScrollAnchor(.bottom)
+            .defaultScrollAnchor(.bottom, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: viewModel.displayItems.last?.id) {
-                if hasPlacedInitialTranscript {
-                    scrollToBottom(proxy, animated: true)
-                } else {
-                    scrollToBottom(proxy, animated: false)
-                    hasPlacedInitialTranscript = !viewModel.displayItems.isEmpty
-                }
-            }
-            .onChange(of: viewModel.liveText) {
-                scrollToBottom(proxy, animated: false)
-            }
             .onChange(of: viewModel.pendingQuestion) {
+                // A question needs eyes even if they've scrolled away.
                 scrollToBottom(proxy, animated: true)
             }
         }
