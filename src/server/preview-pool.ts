@@ -182,6 +182,19 @@ function goldenImage(repoId: string): string {
   return `bks-preview-golden-${repoId}`;
 }
 
+/**
+ * Artifacts that MUST exist in a workspace after setup.sh for the app to
+ * actually render — the golden build refuses to commit without them (their
+ * absence only surfaces later as module-not-found crashes on page compile).
+ */
+const PROVISION_MARKERS: Record<string, string[]> = {
+  "tella-fusion": [
+    "packages/core/webapp/src/bindings/wasm-bindings/tella_wasm_bindings.js",
+    "packages/core/render_engine/render_engine.wasm",
+    "packages/core/render_engine/media_worker.wasm",
+  ],
+};
+
 // ── Docker helpers ───────────────────────────────────────────────────────────
 
 async function docker(args: string[], timeoutMs = 60_000): Promise<{ ok: boolean; out: string }> {
@@ -246,20 +259,26 @@ function fullPortsConf(): string {
   ].join("\n");
 }
 
-/** Write the tella-dev AWS profile inside a running container (see module doc). */
+/**
+ * Write the AWS profile file inside a running container (see module doc).
+ * Both sections matter: `[tella-dev]` serves the booted app (.envrc sets
+ * AWS_PROFILE=tella-dev via direnv), `[default]` serves docker-exec'd steps
+ * like setup.sh's WASM S3 install, which run WITHOUT AWS_PROFILE — the
+ * first golden build shipped without WASM because only tella-dev existed.
+ */
 async function refreshContainerCreds(name: string): Promise<boolean> {
   const env = await getAgentAwsEnv();
   if (!env.AWS_ACCESS_KEY_ID) return false;
-  const lines = [
-    "[tella-dev]",
+  const section = [
     `aws_access_key_id = ${env.AWS_ACCESS_KEY_ID}`,
     `aws_secret_access_key = ${env.AWS_SECRET_ACCESS_KEY}`,
     ...(env.AWS_SESSION_TOKEN ? [`aws_session_token = ${env.AWS_SESSION_TOKEN}`] : []),
-    "",
-  ].join("\n");
+  ];
+  const lines = ["[default]", ...section, "", "[tella-dev]", ...section, ""].join("\n");
+  const region = env.AWS_REGION || "us-east-2";
   const r = await dockerExec(
     name,
-    `mkdir -p ~/.aws && cat > ~/.aws/credentials <<'BKSEOF'\n${lines}\nBKSEOF\nprintf '[profile tella-dev]\\nregion = %s\\n' "${env.AWS_REGION || "us-east-2"}" > ~/.aws/config && chmod 600 ~/.aws/credentials`,
+    `mkdir -p ~/.aws && cat > ~/.aws/credentials <<'BKSEOF'\n${lines}\nBKSEOF\nprintf '[default]\\nregion = %s\\n[profile tella-dev]\\nregion = %s\\n' "${region}" "${region}" > ~/.aws/config && chmod 600 ~/.aws/credentials`,
   );
   return r.ok;
 }
@@ -439,6 +458,15 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
       15 * 60_000,
     );
     if (setup.out.includes("ERROR:")) return void (await fail(`setup.sh: ${setup.out.slice(-500)}`));
+    // setup.sh treats a failed WASM install as a non-fatal WARN, but a golden
+    // without these artifacts boots into module-not-found crashes on first
+    // page compile — verify hard instead of shipping a degraded image.
+    for (const marker of PROVISION_MARKERS[repoId] ?? []) {
+      const chk = await dockerExec(name, `test -e ${WORKSPACE}/${marker}`);
+      if (!chk.ok) {
+        return void (await fail(`provisioning incomplete: ${marker} missing after setup.sh (S3 WASM install failed? ${setup.out.slice(-300)})`));
+      }
+    }
 
     // Boot, wait (with failure exits), warm, stop cleanly.
     const inspect = await docker(["port", name, `${CONTAINER_PORT}/tcp`]);
@@ -453,6 +481,13 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
     const up = await waitForUp(name, hostPort, 5 * 60_000);
     if (!up.ok) return void (await fail(`boot: ${up.detail}`));
     await warmRoutes(repo, hostPort);
+    // Route warming compiles real pages — if that crashed the dev tree
+    // (e.g. missing artifacts), the image is broken; don't commit it.
+    const post = await dockerExec(
+      name,
+      `grep -aE 'error: Recipe|fatal error' /tmp/boot.log | head -2; true`,
+    );
+    if (post.out.trim()) return void (await fail(`dev server died during route warming: ${post.out.slice(0, 300)}`));
 
     // Graceful stop so the image carries no dev-server runtime state.
     await dockerExec(
