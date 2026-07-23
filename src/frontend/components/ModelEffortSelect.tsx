@@ -356,9 +356,7 @@ export function ModelEffortSelect({
 				{option.description ? (
 					<span className="flex min-w-0 flex-1 flex-col">
 						<span className="truncate">{option.label}</span>
-						<span className="whitespace-normal text-xs leading-snug text-faint">
-							{option.description}
-						</span>
+						<span className="truncate text-xs text-faint">{option.description}</span>
 					</span>
 				) : (
 					<span className="min-w-0 truncate">{option.label}</span>
@@ -396,11 +394,6 @@ export function ModelEffortSelect({
 			>
 				<span className="palette-pill-label">{modelLabel}</span>
 				{hasEffort && <span className="palette-pill-effort flex-none text-faint">{effortLabel}</span>}
-				{hasAccount && (
-					<span className="max-w-32 flex-none truncate text-faint">
-						Account: {accountLabel}
-					</span>
-				)}
 			</Menu.Trigger>
 			<Menu.Popup align="end" sideOffset={6} className="max-w-[min(360px,calc(100vw-1rem))]">
 				{groupedPrimary
