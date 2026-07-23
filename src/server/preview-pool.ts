@@ -496,7 +496,9 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
       30_000,
     );
     await docker(["stop", "-t", "10", name], 30_000);
-    const commit = await docker(["commit", name, `${goldenImage(repoId)}:new`], 5 * 60_000);
+    // Committing an ~8GB layer is I/O-bound and can take many minutes when
+    // the host is busy — a timeout here discards a fully verified build.
+    const commit = await docker(["commit", name, `${goldenImage(repoId)}:new`], 15 * 60_000);
     if (!commit.ok) return void (await fail(`commit: ${commit.out}`));
     // Rotate: latest -> prev, new -> latest.
     await docker(["rmi", `${goldenImage(repoId)}:prev`]);
