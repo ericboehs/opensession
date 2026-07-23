@@ -171,6 +171,44 @@ export async function handleSystemRoutes(
 		}
 	}
 
+	// Forced client reload (mirror retirement / protocol-break deploys): nudge
+	// every connected tab onto the CURRENT bundle. With `force` (the default)
+	// new-enough bundles auto-reload after a short client-side grace
+	// (UpdatePill.tsx; hidden tabs immediately) — bundles older than that
+	// handler just show the normal update pill, which is the best a broadcast
+	// can do for them. Does NOT rebuild; POST /api/rebuild-frontend first if
+	// the bundle itself changed. Team gated by the global auth layer like
+	// every /backstage/api/* route. Body: { force?: boolean } (default true).
+	if (
+		path === "/backstage/api/admin/frontend-reload" &&
+		req.method === "POST"
+	) {
+		if (IS_DEV || !frontend) {
+			return Response.json(
+				{ ok: false, error: "not available in dev mode" },
+				{ status: 400 },
+			);
+		}
+		let body: { force?: unknown } = {};
+		try {
+			body = ((await req.json()) ?? {}) as typeof body;
+		} catch {
+			// empty/non-JSON body → defaults
+		}
+		const force = body.force !== false;
+		const by = requestUser(ctx) || sharedCheckoutEditors(true);
+		console.log(
+			`[frontend] admin reload broadcast${force ? " (forced)" : ""}${by ? ` by ${by}` : ""} (v=${frontend.version})`,
+		);
+		broadcastToAll({
+			type: "frontend_updated",
+			version: frontend.version,
+			...(force ? { force: true } : {}),
+			...(by ? { by } : {}),
+		});
+		return Response.json({ ok: true, version: frontend.version, force });
+	}
+
 	// Transcript v2 backfill (docs/transcript-v2-design.md §8): migrate legacy
 	// session transcripts into transcripts.db, in-process (invariant 8: the
 	// live server is the DB's only writer — never a standalone script). Team

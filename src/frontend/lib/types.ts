@@ -766,7 +766,10 @@ export type WSServerMessage =
 	// `restartBy` (when the boot was seconds after a shutdown) names the
 	// session that likely triggered that restart.
 	| { type: "hello"; bootId: string; restartBy?: string }
-	| { type: "frontend_updated"; version: string; by?: string }
+	// `force` (admin frontend-reload broadcasts, e.g. before a protocol
+	// change): tabs auto-reload after a short grace instead of waiting for a
+	// click — see UpdatePill.
+	| { type: "frontend_updated"; version: string; by?: string; force?: boolean }
 	// Collaborative notes.
 	| { type: "note_state"; noteId: string; update: string }
 	| { type: "note_update"; noteId: string; update: string }
