@@ -1,6 +1,6 @@
 /**
  * PR details for a session branch via the gh CLI, Devin-style "PR" tab.
- * Cached per branch for 2 minutes (stale-while-revalidate) to keep the UI snappy
+ * Cached per branch for 5 minutes (stale-while-revalidate) to keep the UI snappy
  * without hammering GitHub; snapshotted to disk so restarts keep last-good
  * data; and wired into the shared rate-limit gate (github-limit.ts) so a
  * throttled quota serves stale snapshots instead of errors.
@@ -204,12 +204,12 @@ function buildReviewers(
 
 const DEFAULT_REPO = () => defaultRepo().ghRepo;
 const cache = new Map<string, { data: PrDetails | null; ts: number }>();
-// 2 min: the detail pane and staging/status pollers tolerate that staleness,
+// 5 min: the detail pane and staging/status pollers tolerate that staleness,
 // and each open session tab runs several independent /pr pollers — a short
 // TTL made nearly every tick spawn a real `gh pr view` into the shared
 // GraphQL budget (2026-07-23). Action gates that must not act on stale data
 // use getPrDetailsFresh, which bypasses this cache entirely.
-const TTL = 120_000;
+const TTL = 5 * 60_000;
 
 // The details cache is snapshotted to disk (debounced) and seeded on boot —
 // without this, a restart during a GitHub outage or rate-limit window boots
