@@ -12,6 +12,7 @@ import { useFileMentions } from "./useFileMentions";
 import {
   IconArrowUp,
   IconArrowDownRight,
+  IconBolt,
   IconPlus,
   IconPaperclip,
   IconAtSign,
@@ -905,7 +906,7 @@ export function Composer({
                   }
                 >
                   {steerSend ? (
-                    <IconCrosshair size={24} />
+                    <IconBolt size={24} />
                   ) : busy ? (
                     <IconArrowDownRight size={24} />
                   ) : (
