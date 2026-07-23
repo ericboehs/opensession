@@ -27,6 +27,11 @@ final class OS1Socket {
         lastPong = Date()
         let request = ServerConfig.shared.authorizedRequest(url)
         let task = URLSession.shared.webSocketTask(with: request)
+        // Default cap is 1 MB — a heavy session's transcript_init chunk (up
+        // to ~120 entries × 32 KB wire clamp) blows past it, receive() throws,
+        // and the watcher loops "Connection lost → reconnect" on that one
+        // session forever. Match the web client, which has no such cap.
+        task.maximumMessageSize = 32 * 1024 * 1024
         self.task = task
         task.resume()
 
