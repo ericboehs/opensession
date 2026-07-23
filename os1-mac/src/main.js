@@ -11,6 +11,7 @@ const {
   systemPreferences,
   Menu,
   clipboard,
+  dialog,
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
@@ -54,6 +55,57 @@ function setUpdateState(next) {
   }
 }
 
+// True while a menu-initiated check is in flight: the periodic background
+// check stays silent, but a manual one reports its outcome in dialogs
+// (the toast only appears once an update is actually staged).
+let manualCheck = false;
+let updaterReady = false;
+
+async function promptRestartToUpdate() {
+  const { response } = await dialog.showMessageBox(win, {
+    type: "info",
+    message: "Update ready",
+    detail: updateState.version
+      ? `OS¹ ${updateState.version} has been downloaded. Restart to install it.`
+      : "An update has been downloaded. Restart to install it.",
+    buttons: ["Restart Now", "Later"],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response === 0) {
+    quitting = true;
+    autoUpdater.quitAndInstall();
+  }
+}
+
+function checkForUpdatesFromMenu() {
+  if (!updaterReady) {
+    dialog.showMessageBox(win, {
+      type: "info",
+      message: "Updates unavailable",
+      detail: app.isPackaged
+        ? "The updater failed to initialize — check the logs."
+        : "Auto-update only works in the packaged, signed app.",
+    });
+    return;
+  }
+  if (updateState.state === "downloaded") {
+    promptRestartToUpdate();
+    return;
+  }
+  manualCheck = true;
+  try {
+    autoUpdater.checkForUpdates();
+  } catch (err) {
+    manualCheck = false;
+    dialog.showMessageBox(win, {
+      type: "error",
+      message: "Update check failed",
+      detail: String(err),
+    });
+  }
+}
+
 function initAutoUpdate() {
   // Dev runs (`electron .`) are unsigned — Squirrel refuses to initialize.
   if (!app.isPackaged || process.platform !== "darwin") return;
@@ -66,15 +118,46 @@ function initAutoUpdate() {
     console.error("[update] setFeedURL failed", err);
     return;
   }
+  updaterReady = true;
   autoUpdater.on("update-available", () => {
     setUpdateState({ state: "available", version: null });
+    if (manualCheck) {
+      // Keep manualCheck set: update-downloaded finishes the interaction.
+      dialog.showMessageBox(win, {
+        type: "info",
+        message: "Update available",
+        detail: "Downloading in the background — you'll be asked to restart once it's ready.",
+      });
+    }
+  });
+  autoUpdater.on("update-not-available", () => {
+    if (manualCheck) {
+      manualCheck = false;
+      dialog.showMessageBox(win, {
+        type: "info",
+        message: "You're up to date",
+        detail: `OS¹ ${app.getVersion()} is the latest version.`,
+      });
+    }
   });
   autoUpdater.on("update-downloaded", (_e, _notes, releaseName) => {
     setUpdateState({ state: "downloaded", version: releaseName || null });
+    if (manualCheck) {
+      manualCheck = false;
+      promptRestartToUpdate();
+    }
   });
   autoUpdater.on("error", (err) => {
     // Offline / tailnet-down is normal; log and retry on the next tick.
     console.error("[update]", err);
+    if (manualCheck) {
+      manualCheck = false;
+      dialog.showMessageBox(win, {
+        type: "error",
+        message: "Update check failed",
+        detail: String(err),
+      });
+    }
   });
   const check = () => {
     if (updateState.state === "downloaded") return; // already staged
@@ -288,6 +371,35 @@ function createWindow() {
   win.loadURL(APP_URL);
 }
 
+// Electron's default menu, plus "Check for Updates…" in the app menu — the
+// standard roles keep all the stock items and shortcuts (edit, view, window).
+function buildAppMenu() {
+  if (process.platform !== "darwin") return;
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: app.name,
+        submenu: [
+          { role: "about" },
+          { label: "Check for Updates…", click: checkForUpdatesFromMenu },
+          { type: "separator" },
+          { role: "services" },
+          { type: "separator" },
+          { role: "hide" },
+          { role: "hideOthers" },
+          { role: "unhide" },
+          { type: "separator" },
+          { role: "quit" },
+        ],
+      },
+      { role: "fileMenu" },
+      { role: "editMenu" },
+      { role: "viewMenu" },
+      { role: "windowMenu" },
+    ]),
+  );
+}
+
 app.whenReady().then(async () => {
   // `electron .` is not a packaged .app, so macOS otherwise shows Electron's
   // default Dock icon. Packaged builds get their signed bundle icon from
@@ -335,6 +447,8 @@ app.whenReady().then(async () => {
     quitting = true;
     autoUpdater.quitAndInstall();
   });
+
+  buildAppMenu();
 
   createWindow();
 
