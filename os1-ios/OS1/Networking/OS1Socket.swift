@@ -58,7 +58,23 @@ final class OS1Socket {
     }
 
     func prompt(sessionId: String, content: String, user: String) {
-        send(["type": "prompt", "sessionId": sessionId, "content": content, "user": user])
+        // busyMode "queue" matches the web composer's default: a send during
+        // a run is held as an editable queued message (visible as a chip)
+        // until the run completes; steering it sooner is an explicit action.
+        send([
+            "type": "prompt", "sessionId": sessionId, "content": content,
+            "user": user, "busyMode": "queue",
+        ])
+    }
+
+    /// Deliver a queued message at the run's next turn boundary instead of
+    /// waiting for it to finish.
+    func steerQueued(sessionId: String, queueId: String) {
+        send(["type": "steer_queued_prompt", "sessionId": sessionId, "queueId": queueId])
+    }
+
+    func deleteQueued(sessionId: String, queueId: String) {
+        send(["type": "delete_queued_prompt", "sessionId": sessionId, "queueId": queueId])
     }
 
     func cancelWatchedRun() {

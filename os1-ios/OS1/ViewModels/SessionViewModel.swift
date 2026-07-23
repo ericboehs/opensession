@@ -26,6 +26,10 @@ final class SessionViewModel {
     private(set) var isStreaming = false
     private(set) var isRunning: Bool
     private(set) var queuedCount = 0
+    /// Messages held for after the current run (editable, steerable).
+    private(set) var queuedItems: [QueueItem] = []
+    /// Steer receipts: delivering into the run at its next turn boundary.
+    private(set) var steeredItems: [QueueItem] = []
     private(set) var pendingQuestion: AskQuestion?
     private(set) var connectionState: ConnectionState = .connecting
     private(set) var notice: String?
@@ -90,6 +94,15 @@ final class SessionViewModel {
 
     func cancelRun() {
         socket?.cancelWatchedRun()
+    }
+
+    func steerQueued(_ item: QueueItem) {
+        socket?.steerQueued(sessionId: session.id, queueId: item.id)
+    }
+
+    func deleteQueued(_ item: QueueItem) {
+        socket?.deleteQueued(sessionId: session.id, queueId: item.id)
+        queuedItems.removeAll { $0.id == item.id }
     }
 
     // MARK: - Socket lifecycle
@@ -193,8 +206,10 @@ final class SessionViewModel {
                 // strip there clears it — wiping now blinks the reply out.
             }
 
-        case .queueUpdate(let id, let count) where id == session.id:
-            queuedCount = count
+        case .queueUpdate(let id, let queued, let steered) where id == session.id:
+            queuedItems = queued
+            steeredItems = steered
+            queuedCount = queued.count
 
         case .askQuestion(let id, let question) where id == session.id:
             pendingQuestion = question

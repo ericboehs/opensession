@@ -14,7 +14,7 @@ enum ServerEvent {
     case streamEntry(sessionId: String, entry: TranscriptEntry)
     case streamDone(sessionId: String)
     case sessionStatus(sessionId: String, isRunning: Bool)
-    case queueUpdate(sessionId: String, count: Int)
+    case queueUpdate(sessionId: String, queued: [QueueItem], steered: [QueueItem])
     case askQuestion(sessionId: String, question: AskQuestion)
     case askResolved(sessionId: String, questionId: String)
     case notice(String)
@@ -56,7 +56,11 @@ enum ServerEvent {
             return .sessionStatus(sessionId: id, isRunning: frame.isRunning ?? false)
         case "queue_update":
             guard let id = frame.sessionId else { return .ignored }
-            return .queueUpdate(sessionId: id, count: frame.queued?.count ?? 0)
+            return .queueUpdate(
+                sessionId: id,
+                queued: (frame.queued ?? []).map(QueueItem.init),
+                steered: (frame.steered ?? []).map(QueueItem.init)
+            )
         case "ask_question":
             guard let id = frame.sessionId,
                   let questionId = frame.questionId,
@@ -81,10 +85,26 @@ enum ServerEvent {
     }
 }
 
+/// One message waiting on a busy run — either queued (held until the run
+/// finishes) or steered (delivering at the next turn boundary).
+struct QueueItem: Identifiable, Equatable {
+    let id: String
+    let content: String
+    let user: String?
+
+    fileprivate init(_ wire: RawFrame.WireQueueItem) {
+        id = wire.id ?? UUID().uuidString
+        content = wire.content ?? ""
+        user = wire.user
+    }
+}
+
 /// Superset of every server frame's fields; individual events pick what they need.
 private struct RawFrame: Decodable {
-    struct QueuedItem: Decodable {
+    struct WireQueueItem: Decodable {
         let id: String?
+        let content: String?
+        let user: String?
     }
 
     let type: String
@@ -94,7 +114,8 @@ private struct RawFrame: Decodable {
     let entry: TranscriptEntry?
     let text: String?
     let isRunning: Bool?
-    let queued: [QueuedItem]?
+    let queued: [WireQueueItem]?
+    let steered: [WireQueueItem]?
     let questionId: String?
     let questions: [AskQuestion.Question]?
     let message: String?

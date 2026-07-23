@@ -95,12 +95,33 @@ struct SessionView: View {
 
     private var inputBar: some View {
         VStack(alignment: .leading, spacing: 4) {
+            // Messages waiting on the current run, each visibly either
+            // queued (held until the run finishes — steerable/deletable)
+            // or steering in (delivering at the next turn boundary).
+            if !viewModel.steeredItems.isEmpty || !viewModel.queuedItems.isEmpty {
+                VStack(spacing: 6) {
+                    ForEach(viewModel.steeredItems) { item in
+                        QueuedMessageChip(item: item, steering: true)
+                    }
+                    ForEach(viewModel.queuedItems) { item in
+                        QueuedMessageChip(
+                            item: item,
+                            steering: false,
+                            onSteer: viewModel.isRunning
+                                ? { viewModel.steerQueued(item) } : nil,
+                            onDelete: { viewModel.deleteQueued(item) }
+                        )
+                    }
+                }
+            }
             HStack(spacing: 6) {
                 if viewModel.isRunning {
                     Label("Running", systemImage: "circle.fill")
                         .foregroundStyle(.green)
                 }
-                if viewModel.queuedCount > 0 {
+                if viewModel.queuedCount > 0, viewModel.queuedItems.isEmpty {
+                    // Pre-handshake count from the sessions list, before the
+                    // watch delivers the actual items.
                     Text("\(viewModel.queuedCount) queued")
                         .foregroundStyle(.secondary)
                 }
@@ -137,6 +158,53 @@ struct SessionView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.bar)
+    }
+
+    // MARK: - Queue chips
+
+    /// One message waiting on the current run. "Queued" holds until the run
+    /// fully finishes; "Steering" is already committed to deliver at the
+    /// run's next turn boundary (a receipt — no actions left to take).
+    private struct QueuedMessageChip: View {
+        let item: QueueItem
+        let steering: Bool
+        var onSteer: (() -> Void)?
+        var onDelete: (() -> Void)?
+
+        var body: some View {
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(steering ? "Steering — delivers next turn" : "Queued — after this run")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(steering ? Color.green : Color.orange)
+                    Text(item.content)
+                        .font(.footnote)
+                        .lineLimit(2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if let onSteer {
+                    Button("Steer", action: onSteer)
+                        .font(.footnote.weight(.medium))
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.small)
+                }
+                if let onDelete {
+                    Button(action: onDelete) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                .fill.tertiary,
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+        }
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
