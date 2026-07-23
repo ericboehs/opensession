@@ -1,9 +1,16 @@
 # Transcript v2 — owned event-log store, seq protocol, engine adapter
 
-Status: implementation in progress (2026-07-23). Owner: Michael session, approved by Michiel
-("fully rewrite it", "migrate the old sessions if possible"). This doc is the contract for the
-implementation work packages. Revision 2 — incorporates the 4-lens code-grounded critique
-(15 agents, 11 confirmed serious findings folded in below).
+Status: SHIPPED + ACTIVE (2026-07-23, flag on via ~/.opensession.env, activated 10:27 UTC;
+full migration of 3,201 legacy sessions / 219,371 entries completed 10:34 UTC, failed=0).
+Owner: Michael session, approved by Michiel ("fully rewrite it", "migrate the old sessions if
+possible"). Revision 2 incorporated the 4-lens code-grounded critique (15 agents, 11 confirmed
+serious findings); a post-implementation 5-lens adversarial review (14 agents) produced 4 more
+confirmed fixes (os-blob resolver, WS drift check + degraded marker, delete purge, id fan-out)
+landed as 5e593471/2051f17e/820335f0/7d8afa41. Kill switch: OPENSESSION_TRANSCRIPT_V2=0 +
+restart. Known post-ship note: on the FIRST activation boot, v2 watches died silently until a
+hot reload re-evaluated ws-handlers (never reproduced after; the migration was hammering that
+boot). The serve call is now guarded — any v2 throw logs loudly and degrades to the legacy
+watch (7d8afa41).
 
 ## Why
 
