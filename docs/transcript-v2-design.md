@@ -1,7 +1,11 @@
 # Transcript v2 — owned event-log store, seq protocol, engine adapter
 
-Status: SHIPPED + ACTIVE (2026-07-23, flag on via ~/.opensession.env, activated 10:27 UTC;
-full migration of 3,201 legacy sessions / 219,371 entries completed 10:34 UTC, failed=0).
+Status: SHIPPED + ACTIVE + MIRROR RETIREMENT EXECUTED (activated 2026-07-23 10:27 UTC; full
+migration of 3,201 legacy sessions / 219,371 entries completed 10:34 UTC, failed=0; mirror
+writes, the OPENSESSION_TRANSCRIPT_V2/OPENSESSION_MIRROR_WRITE flags, and the dual-write
+drift tail probe DELETED later the same day on Michiel's "everything is v2 now" — see §11
+for what remains). Sections below §11 describe the shipped design; flag-gating language in
+§3-§8 is historical (v2 is unconditional now).
 Owner: Michael session, approved by Michiel ("fully rewrite it", "migrate the old sessions if
 possible"). Revision 2 incorporated the 4-lens code-grounded critique (15 agents, 11 confirmed
 serious findings); a post-implementation 5-lens adversarial review (14 agents) produced 4 more
@@ -39,16 +43,15 @@ engine becomes a replaceable adapter.**
    changes to exported functions in mixed-graph files must be backward-compatible** (optional
    trailing params / options-bag fields only) — hot callers rebind seconds after a save while
    runner closures keep the old arity until restart.
-3. **Flag:** `OPENSESSION_TRANSCRIPT_V2` via `envAlias` (rename-compat.ts:55; reads process.env
-   at call time). Code default OFF (`=== "1"` enables). We set it in
-   `/home/ubuntu/.opensession.env` (EnvironmentFile; the running process never re-reads it), so
-   the single final restart is the activation event. Keep the window between editing that file
-   and restarting short (anything else launched with that EnvironmentFile would see the flag).
-   Kill switch after activation: `=0` + restart.
-4. **Dual-write, never cut-over-and-delete.** The mirror jsonl keeps being written exactly as
-   today, by every current writer. Every legacy read path stays functional. v2 is an additional,
-   preferred path. (Post-ship: retiring the mirror WRITE is now flag-gated and prepared — §11 —
-   but the flip is a separate, human-announced step; the default stays dual-write.)
+3. **Flag:** ~~`OPENSESSION_TRANSCRIPT_V2` via `envAlias`~~ DELETED 2026-07-23 (§11): v2 is
+   unconditional; the env var (still present in ~/.opensession.env) is inert and can be removed.
+   The safety net is code-level, not env-level: serveTranscriptV2 is try/caught into the legacy
+   watch, mergedSessionTranscript try/catches into the legacy merge, and the /entry route falls
+   through to the legacy scan.
+4. **Dual-write, never cut-over-and-delete.** ~~The mirror jsonl keeps being written exactly as
+   today, by every current writer.~~ RETIRED 2026-07-23 (§11, Michiel-authorized): mirror writes
+   are deleted; the store is the only writer. Every legacy READ path stays functional (import/
+   re-import for never-imported + external sessions, frozen-archive reads).
 5. **No `git reset/checkout/add -A`** in this shared checkout; stage specific files; commit+push
    per milestone. Other sessions may have uncommitted files — never touch them.
 6. **Tests must not transitively import `run-rpc.ts`** (bun test steals the live rpc socket).
@@ -291,10 +294,53 @@ probe → commit specific files.
    clears on a v2 session.
 5. Kick the full backfill; watch its summary + transcripts.db growth metric.
 
-## 11. Mirror retirement (prep landed 2026-07-23 — flag NOT flipped)
+## 11. Mirror retirement — EXECUTED 2026-07-23
 
-Everything the mirror WRITE still fed has been ported off it, so invariant 4's dual-write can
-end behind one flag. Ported in this pass:
+The retirement ran in two passes the same day: the prep pass below (ported consumers, flag,
+force-reload), then the deletion pass (Michiel: "everything is v2 now") which removed the old
+code paths outright. Current state:
+
+**Deleted (permanently):**
+- All mirror WRITES: appendOpencodeTranscript's file append, ensureOpencodeTranscriptFile's
+  new-file seeding (the function is now just the §3 import-first front-load; its `seed` param
+  is kept-but-unused for arity compat), and the gap-backfill's mirror appends (it remains the
+  reattach gap-healer, store-only). Runner call sites are unchanged — every transcriptLine*
+  batch still flows transcriptLineForEntry → parseJsonlLines → appendTranscriptEvents, which is
+  now internal normalization plumbing rather than a file format.
+- `OPENSESSION_MIRROR_WRITE` (never flipped; deletion superseded it) and
+  `OPENSESSION_TRANSCRIPT_V2` (originally "default ON, =0 kill switch"; Michiel removed the
+  kill switch too — v2 is unconditional, `transcriptV2Enabled` no longer exists). The env line
+  in ~/.opensession.env is inert.
+- The §8 dual-write reconciliation: v2MirrorTailInStore (the 256KB tail probe + codex-rollout
+  carve-out) and the "explained growth → refresh watermark" pass. v2TranscriptHasDrift is now:
+  store-degraded flag set → drift; any candidate-file growth beyond the import watermark →
+  drift → one idempotent re-import (which re-watermarks, so growth costs once per burst).
+  With mirrors frozen, growth can only come from EXTERNAL writers (claude/codex CLI
+  transcriptPath) or a pre-retirement watermark gap.
+
+**Kept (the compatibility/ops surface — NOT old code):**
+- The file-watcher + offset WS protocol: the ONLY serve path for external CLI/tmux sessions
+  and the fallback whenever v2 serve refuses/throws. Watcher-feeds-store stays (unconditional
+  now); its appends don't re-watermark, so external growth still re-imports on next store read.
+- All legacy READERS (parseTranscript*, readOpencodeTranscript, the legacy merge in
+  mergedSessionTranscript): they are the import/re-import source for never-imported sessions,
+  external sessions, and every drift heal.
+- The client's dual-protocol handling (legacy offset mode still serves external sessions).
+- Mirror FILES on disk (~/.claude/projects/-opencode-engine): frozen read-only archive. They
+  stay in the §8 watermark candidate set so pre-retirement watermarks remain coherent (their
+  size is constant, so they can never read as drift).
+- serveTranscriptV2's externally-owned refusal + try/catch guard, and the plain- gates
+  (defensive dead code per §3).
+- The store-degraded failure marker — now the ONLY signal for owned-session store-append
+  failures (there is no mirror growth left to notice them); drift checks treat it as
+  unconditional re-import.
+
+**Remaining (the one future step):** a socket-independent watcher-feed lifecycle so the
+externally-owned refusal in serveTranscriptV2 can be relaxed; until then external sessions
+stay on the legacy watch by design. There is no other legacy machinery left to remove without
+touching the external-session surface.
+
+Historical record of the prep pass:
 
 - **engineUserTexts → store-first**: steer-receipt dedup reads user texts through
   mergedSessionTranscript WITH the unified id — store when imported + drift-free (v2ReadAll
@@ -317,32 +363,12 @@ end behind one flag. Ported in this pass:
   after a 20s countdown (hidden tabs immediately). Converges every open tab onto a seq-capable
   bundle before the flip.
 
-**The flag**: `OPENSESSION_MIRROR_WRITE` (envAlias, read at call time like the v2 flag).
-Default ON; `=0` stops appendOpencodeTranscript's file append, ensureOpencodeTranscriptFile's
-seeding of NEW files, and (via the append gate) the gap-backfill's mirror appends — store
-writes always keep running, and `=0` is ignored entirely when OPENSESSION_TRANSCRIPT_V2 isn't
-on (with the store off, the mirror is the only writer — fail-safe). Frozen-mirror coherence:
-a frozen file never grows past its recorded import watermark, so v2TranscriptHasDrift stays
-clean; a mirror ahead of its watermark at flip time is explained once by the tail probe (those
-entries were dual-written) and the watermark refreshes. New sessions post-flip have no mirror
-file at all → v2MirrorFiles is empty → "nothing to drift against", and their
-`session.transcriptPath` stays null, which is why the force-reload precedes the flip (a legacy
-bundle would see a blank live view for them).
+(The prep pass also landed `OPENSESSION_MIRROR_WRITE` and a staged flip procedure; both were
+superseded within hours by the deletion pass above and no longer exist in the code.)
 
-**Flip procedure** (later, deliberate, human-announced):
-1. Rebuild + `POST /backstage/api/admin/frontend-reload {"force":true}` — wait ~1 min for tabs
-   to converge on a seq bundle (older-than-2026-07-23 bundles only get a pill; check for
-   stragglers before proceeding).
-2. Add `OPENSESSION_MIRROR_WRITE=0` to `/home/ubuntu/.opensession.env` + restart (runner
-   closures hold the append path — the env flip needs the restart anyway).
-3. Observe: v2 watches serve, steer receipts clear, reattach gap-backfills hit the store,
-   no drift-re-import storms in the logs, `~/.claude/projects/-opencode-engine` stops growing.
-4. Roll back any time: remove the env line + restart (mirror resumes appending; the §8 tail
-   probe explains the store-ahead window as… nothing — the mirror is simply behind, which no
-   check reads as drift; the next imports re-watermark).
-5. LATER, separately: relax the externally-owned refusal (socket-independent watcher feed),
-   then delete the legacy machinery (mirror seeding/backfill/readers) once no session file
-   references a mirror path that matters.
-
-**Not covered by the flag** (unchanged writers): external CLI/tmux engines writing their own
-transcript files, and OpenCode's SQLite — both remain read sources for imports/drift recovery.
+**Unchanged writers** (outside the retirement, by design): external CLI/tmux engines writing
+their own transcript files, and OpenCode's SQLite — both remain read sources for imports and
+drift recovery. New sessions post-retirement have no mirror file and a null
+`session.transcriptPath`; v2MirrorFiles is empty for them → "nothing to drift against" — which
+is why the forced client reload preceded the retirement (a pre-seq bundle would see a blank
+live view for such sessions).
