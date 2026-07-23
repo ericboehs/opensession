@@ -3,6 +3,7 @@ import SwiftUI
 struct SessionView: View {
     @State private var viewModel: SessionViewModel
     @FocusState private var inputFocused: Bool
+    @Environment(\.scenePhase) private var scenePhase
 
     init(session: Session) {
         _viewModel = State(initialValue: SessionViewModel(session: session))
@@ -69,6 +70,11 @@ struct SessionView: View {
         }
         .onDisappear {
             viewModel.stop()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Backgrounding leaves the socket half-open more often than not;
+            // resync (and reconnect if dead) the moment we're visible again.
+            if phase == .active { viewModel.appDidBecomeActive() }
         }
     }
 

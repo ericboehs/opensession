@@ -26,3 +26,20 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         CURRENT_PROJECT_VERSION: 2
         MARKETING_VERSION: 0.1.0
+    # Explicit scheme (replaces Xcode's autocreated one) so `xcodebuild test
+    # -scheme OS1` runs the unit bundle; archive stays Release, unchanged.
+    scheme:
+      testTargets:
+        - OS1Tests
+  OS1Tests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - OS1Tests
+    dependencies:
+      - target: OS1
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tella.os1.tests
+        SWIFT_VERSION: "5.9"

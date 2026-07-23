@@ -37,6 +37,10 @@ final class SessionViewModel {
 
     private var socket: OS1Socket?
     private var reconnectTask: Task<Void, Never>?
+    /// Foreground liveness probe (see `appDidBecomeActive`).
+    private var resyncProbeTask: Task<Void, Never>?
+    /// When the last server frame arrived — any frame counts.
+    private var lastEventAt = Date.distantPast
     private var stopped = false
     /// stream_done arrived; the durable entry lands via the next transcript_append.
     private var streamEnded = true
@@ -92,8 +96,43 @@ final class SessionViewModel {
     func stop() {
         stopped = true
         reconnectTask?.cancel()
+        resyncProbeTask?.cancel()
         socket?.disconnect()
         socket = nil
+    }
+
+    /// Called when the app returns to the foreground. iOS suspends the socket
+    /// while backgrounded and it often comes back half-open: sends "succeed"
+    /// locally, nothing arrives, and the ping deadline takes tens of seconds
+    /// to notice — the transcript sits stale until the person leaves and
+    /// re-enters the session. Instead: re-send `watch` (the server replies
+    /// with a full resync — transcript_init plus status/queue extras) and
+    /// verify a frame actually comes back; if the socket is dead, tear it
+    /// down and reconnect immediately.
+    func appDidBecomeActive() {
+        guard !stopped else { return }
+        guard connectionState == .connected, let socket else {
+            // Not connected (or a pre-suspension connect is stuck mid
+            // handshake): skip the backoff and reconnect right now.
+            reconnectTask?.cancel()
+            self.socket?.disconnect()
+            self.socket = nil
+            connect()
+            return
+        }
+        let probeStarted = Date()
+        socket.watch(sessionId: session.id)
+        resyncProbeTask?.cancel()
+        resyncProbeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard let self, !Task.isCancelled, !self.stopped else { return }
+            if self.lastEventAt < probeStarted {
+                // Half-open: the re-watch went into the void.
+                self.socket?.disconnect()
+                self.socket = nil
+                self.connect()
+            }
+        }
     }
 
     var canSend: Bool {
@@ -159,7 +198,10 @@ final class SessionViewModel {
 
     // MARK: - Event handling
 
-    private func handle(_ event: ServerEvent) {
+    /// Internal (not private) so unit tests can drive the event state machine
+    /// with raw frames without a live socket.
+    func handle(_ event: ServerEvent) {
+        lastEventAt = Date()
         switch event {
         case .hello:
             connectionState = .connected
@@ -171,6 +213,20 @@ final class SessionViewModel {
             liveEntries.removeAll()
             localEchoIds.removeAll()
             rebuildDisplayItems()
+            // A resync init (reconnect, foreground re-watch) can include
+            // assistant blocks that are still sitting in the live bubble —
+            // strip them or the same text renders twice.
+            if !liveText.isEmpty || !pendingLiveText.isEmpty {
+                flushLiveTextNow()
+                for entry in newEntries.suffix(12)
+                where entry.isAssistant && !entry.text.isEmpty {
+                    liveText = liveText.replacingOccurrences(of: entry.text, with: "")
+                }
+                if liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    liveText = ""
+                    if streamEnded { isStreaming = false }
+                }
+            }
 
         case .transcriptHistory(let id, let older) where id == session.id:
             let known = Set(entries.map(\.id))

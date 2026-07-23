@@ -113,7 +113,10 @@ final class OS1Socket {
                 }
                 guard let data else { continue }
                 let event = ServerEvent.parse(data)
-                if case .pong = event { lastPong = Date() }
+                // Any inbound frame proves the socket is alive — during a
+                // heavy stream the server may not answer pings promptly, and
+                // stream frames are just as good a liveness signal.
+                lastPong = Date()
                 onEvent?(event)
             } catch {
                 finish(reason: closed ? nil : "Connection lost")
@@ -123,10 +126,14 @@ final class OS1Socket {
     }
 
     private func pingLoop() async {
+        // 10s cadence / 30s deadline: a half-open socket (backgrounded app,
+        // wifi→cellular switch) is detected within ~40s even if receive()
+        // never throws. The old 20s/65s pair left the transcript silently
+        // stale for up to ~85s.
         while !closed {
-            try? await Task.sleep(for: .seconds(20))
+            try? await Task.sleep(for: .seconds(10))
             if closed { return }
-            if Date().timeIntervalSince(lastPong) > 65 {
+            if Date().timeIntervalSince(lastPong) > 30 {
                 finish(reason: "Connection timed out")
                 return
             }
