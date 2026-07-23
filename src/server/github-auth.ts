@@ -242,7 +242,9 @@ export function watchGithubDeviceFlow(flow: DeviceFlowStart): void {
   const codeExpiresAt = Date.now() + flow.expiresIn * 1000;
   const keepUntil = codeExpiresAt + 10 * 60_000;
   watchedFlows.set(flow.deviceCode, { status: "pending", expiresAt: keepUntil });
-  console.log(`[auth] device flow ${flow.userCode} started — watching server-side`);
+  console.log(
+    `[auth] device flow ${flow.userCode} (…${flow.deviceCode.slice(-6)}) started — watching server-side`,
+  );
   void (async () => {
     let interval = Math.max(flow.interval, 5);
     while (Date.now() < codeExpiresAt) {

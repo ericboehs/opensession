@@ -51,6 +51,11 @@ struct SettingsView: View {
                                 Spacer()
                                 Button("Cancel", role: .cancel) { signIn.cancel() }
                             }
+                            if let at = signIn.lastPollAt {
+                                Text("Checked \(at.formatted(date: .omitted, time: .standard)) — \(signIn.lastPollNote ?? "")")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
                         .padding(.vertical, 4)
                     } else if let signedInLogin {

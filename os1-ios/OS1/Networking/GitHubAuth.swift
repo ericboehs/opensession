@@ -52,7 +52,8 @@ enum GitHubAuth {
     static func waitForAuthorization(
         _ flow: DeviceFlowStart,
         until deadline: Date,
-        pollImmediately: Bool = false
+        pollImmediately: Bool = false,
+        onPoll: ((String) -> Void)? = nil
     ) async throws -> String {
         var interval = TimeInterval(max(flow.interval ?? 5, 1))
         // The server polls GitHub itself and parks the outcome, so our polls
@@ -77,8 +78,10 @@ enum GitHubAuth {
                 // a poll is often in flight when iOS suspends us and fails with
                 // a network error on resume. That's not a failed sign-in — keep
                 // polling until the code expires.
+                onPoll?("server unreachable — retrying")
                 continue
             }
+            onPoll?(poll.status ?? "pending")
             switch poll.status {
             case "ok":
                 guard let token = poll.token, !token.isEmpty else {
@@ -148,17 +151,34 @@ final class GitHubSignIn {
     private(set) var expiresAt: Date?
     private(set) var starting = false
     var error: String?
+    /// Proof-of-life breadcrumb for the poll loop, shown under the code in
+    /// Settings — makes "is it still checking?" visible on-device.
+    private(set) var lastPollAt: Date?
+    private(set) var lastPollNote: String?
+
+    private func notePoll(_ note: String) {
+        lastPollAt = Date()
+        lastPollNote = note
+    }
 
     private var pollTask: Task<Void, Never>?
     private static let pendingKey = "os1.pendingDeviceFlow"
 
     private init() {
         resumePersisted()
+        // Dev harness: simulator lifecycle tests set OS1_AUTOSIGNIN=1
+        // (SIMCTL_CHILD_*) to start a flow on launch without tapping the UI.
+        // A pending flow restored above takes precedence.
+        if ProcessInfo.processInfo.environment["OS1_AUTOSIGNIN"] == "1", flow == nil {
+            start()
+        }
     }
 
     func start() {
         cancel()
         error = nil
+        lastPollAt = nil
+        lastPollNote = nil
         starting = true
         pollTask = Task {
             do {
@@ -168,7 +188,9 @@ final class GitHubSignIn {
                 flow = started
                 expiresAt = deadline
                 persist(started, expiresAt: deadline)
-                _ = try await GitHubAuth.waitForAuthorization(started, until: deadline)
+                _ = try await GitHubAuth.waitForAuthorization(started, until: deadline) {
+                    [weak self] in self?.notePoll($0)
+                }
             } catch is CancellationError {
                 return // explicit cancel — state already cleared
             } catch {
@@ -197,7 +219,9 @@ final class GitHubSignIn {
         pollTask?.cancel()
         pollTask = Task {
             do {
-                _ = try await GitHubAuth.waitForAuthorization(flow, until: expiresAt, pollImmediately: true)
+                _ = try await GitHubAuth.waitForAuthorization(flow, until: expiresAt, pollImmediately: true) {
+                    [weak self] in self?.notePoll($0)
+                }
             } catch is CancellationError {
                 return // superseded by a newer nudge/start — state stays
             } catch {
@@ -249,7 +273,8 @@ final class GitHubSignIn {
         pollTask = Task {
             do {
                 _ = try await GitHubAuth.waitForAuthorization(
-                    restored, until: pending.expiresAt, pollImmediately: true)
+                    restored, until: pending.expiresAt, pollImmediately: true
+                ) { [weak self] in self?.notePoll($0) }
             } catch is CancellationError {
                 return
             } catch {

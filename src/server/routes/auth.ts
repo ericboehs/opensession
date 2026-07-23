@@ -168,6 +168,9 @@ export async function handleAuthRoutes(
 		// Direct GitHub polling remains as fallback for flows started before
 		// server-side watching existed (e.g. across a process restart).
 		const watched = githubDeviceFlowResult(deviceCode);
+		console.log(
+			`[auth] device/poll …${deviceCode.slice(-6)} → ${watched?.status ?? "unwatched"} (ua: ${req.headers.get("user-agent") ?? "?"})`,
+		);
 		let result: Awaited<ReturnType<typeof pollGithubDeviceFlow>>;
 		if (watched && watched.status === "pending") {
 			return Response.json({ status: "pending" });
