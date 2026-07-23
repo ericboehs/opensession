@@ -18,8 +18,8 @@ FROM ubuntu:24.04
 
 # --- version pins (bump these when the host bumps; see README) ---
 ARG BUN_VERSION=1.3.14
-ARG CLAUDE_VERSION=2.1.204
-ARG NODE_MAJOR=20
+ARG CLAUDE_VERSION=2.1.218
+ARG NODE_MAJOR=24
 ARG OPENCODE_VERSION=1.17.15
 
 # Locale parity note: the host runs a full en_US.UTF-8 locale; the image uses
@@ -64,7 +64,7 @@ RUN curl -fsSL https://just.systems/install.sh \
     && just --version
 
 # --- Node.js LTS (NodeSource) ---
-# Node major must track the host's (host: v20.x via nvm) — native-module ABI
+# Node major must track the host's (host: v24.x via nvm) — native-module ABI
 # and `next dev` behavior are assumed host-equivalent at the same major.
 RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
     && apt-get install -y --no-install-recommends nodejs \
