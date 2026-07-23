@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -19,6 +20,8 @@ struct SettingsView: View {
         return login.isEmpty || token.isEmpty ? nil : login
     }
 
+    @State private var copiedCode = false
+
     var body: some View {
         NavigationStack {
             Form {
@@ -36,9 +39,18 @@ struct SettingsView: View {
                             Text("Enter this code on GitHub:")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
-                            Text(flow.userCode)
-                                .font(.system(.title, design: .monospaced).bold())
-                                .textSelection(.enabled)
+                            Button {
+                                UIPasteboard.general.string = flow.userCode
+                                copiedCode = true
+                            } label: {
+                                Text(flow.userCode)
+                                    .font(.system(.title, design: .monospaced).bold())
+                                    .foregroundStyle(.primary)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            Text(copiedCode ? "Copied — paste it on GitHub." : "Tap the code to copy it.")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                                 .frame(maxWidth: .infinity)
                             if let url = URL(string: flow.verificationUri) {
                                 Link("Open github.com/login/device", destination: url)
@@ -58,6 +70,12 @@ struct SettingsView: View {
                             }
                         }
                         .padding(.vertical, 4)
+                        // CRITICAL: default-styled buttons inside a Form row
+                        // make the WHOLE ROW one tap target — tapping the code
+                        // or the link was ALSO firing the Cancel button and
+                        // silently killing the flow. Borderless buttons get
+                        // individual hit areas instead.
+                        .buttonStyle(.borderless)
                     } else if let signedInLogin {
                         HStack {
                             Label("Signed in as @\(signedInLogin)", systemImage: "checkmark.seal")
@@ -133,6 +151,7 @@ struct SettingsView: View {
             // sheet closes (only the explicit Cancel button stops it).
             .onAppear { signIn.nudge() }
             .onChange(of: signIn.flow?.deviceCode) { _, deviceCode in
+                copiedCode = false
                 // Sign-in finished while the sheet is open — reflect the
                 // minted credentials in the editable fields.
                 if deviceCode == nil, ServerConfig.shared.token != token {
