@@ -315,13 +315,14 @@ async function poolExec(
   if (!isDaytona(c)) return dockerExec(c.name, script, timeoutMs);
   try {
     const sbx = await daytonaSbx(c.name);
-    // Plain `bash -c`, NOT `-l`: a login shell sources the image profile,
-    // which execs a zsh the snapshot doesn't ship (live failure 22:08).
-    // PATH additions are explicit in every script that needs them. No cwd:
-    // the workspace doesn't exist until the toolchain step creates it —
-    // every script cd's or uses absolute paths itself.
+    // base64-wrapped: JSON.stringify escapes newlines to literal \n, which
+    // destroyed every multi-line script (the creds heredoc became cat args —
+    // live failure 22:20). Plain `bash -c`, NOT `-l`: a login shell sources
+    // the image profile, which execs a zsh the snapshot doesn't ship. No
+    // cwd: the workspace doesn't exist until the toolchain step creates it.
+    const b64 = Buffer.from(script, "utf-8").toString("base64");
     const res = await sbx.process.executeCommand(
-      `bash -c ${JSON.stringify(script)}`,
+      `bash -c 'echo ${b64} | base64 -d | bash'`,
       undefined,
       undefined,
       Math.max(10, Math.round(timeoutMs / 1000)),
@@ -423,7 +424,7 @@ async function launchDaytonaDev(c: PoolContainer): Promise<void> {
   const env = `WEBAPP_PORT=${CONTAINER_PORT} BACKSTAGE_BOOT_MODE=snapshot-restore${c.previewUrl ? ` PREVIEW_URL=${c.previewUrl}` : ""}`;
   await poolExec(
     c,
-    `export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH" && ${BOOT_PREP} && (${env} setsid bash .opensession/start.sh > /tmp/boot.log 2>&1 < /dev/null &) && sleep 1`,
+    `export PATH="/usr/bin:$HOME/.bun/bin:$HOME/.local/bin:$PATH" && ${BOOT_PREP} && (${env} setsid bash .opensession/start.sh > /tmp/boot.log 2>&1 < /dev/null &) && sleep 1`,
     30_000,
   );
 }
@@ -671,7 +672,7 @@ async function spawnDaytonaWarm(repo: Repo): Promise<void> {
       [
         `sudo mkdir -p ${WORKSPACE.replace(/\/[^/]+$/, "")} && sudo chown $(id -un) ${WORKSPACE.replace(/\/[^/]+$/, "")}`,
         `command -v git >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq git)`,
-        `node -v 2>/dev/null | grep -q '^v24' || (curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - >/dev/null && sudo apt-get install -y -qq nodejs)`,
+        `/usr/bin/node -v 2>/dev/null | grep -q '^v24' || (curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - >/dev/null && sudo apt-get install -y -qq nodejs)`,
         `command -v bun >/dev/null || (curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1)`,
         `export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"`,
         `command -v just >/dev/null || (curl -fsSL https://just.systems/install.sh | sudo bash -s -- --to /usr/local/bin >/dev/null)`,
@@ -705,13 +706,17 @@ async function spawnDaytonaWarm(repo: Repo): Promise<void> {
 
     const setup = await poolExec(
       c,
-      `export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"; cd ${WORKSPACE} && [ -f .opensession/setup.sh ] && BACKSTAGE_BOOT_MODE=fresh bash .opensession/setup.sh || true`,
+      `export PATH="/usr/bin:$HOME/.bun/bin:$HOME/.local/bin:$PATH"; cd ${WORKSPACE} && [ -f .opensession/setup.sh ] && BACKSTAGE_BOOT_MODE=fresh bash .opensession/setup.sh || true`,
       20 * 60_000,
     );
     if (setup.out.includes("ERROR:")) return void (await fail(`setup.sh: ${setup.out.slice(-400)}`));
     for (const marker of PROVISION_MARKERS[repo.id] ?? []) {
       const chk = await poolExec(c, `test -e ${WORKSPACE}/${marker}`);
-      if (!chk.ok) return void (await fail(`provisioning incomplete: ${marker} missing`));
+      if (!chk.ok) {
+        return void (await fail(
+          `provisioning incomplete: ${marker} missing — setup said: ${setup.out.slice(-500)}`,
+        ));
+      }
     }
 
     await launchDaytonaDev(c);
