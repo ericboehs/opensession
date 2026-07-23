@@ -111,6 +111,7 @@ export async function handlePrefsRoutes(
 					return Response.json({ error: "Invalid JSON" }, { status: 400 });
 				const patch: Record<string, unknown> = {};
 				if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
+				if (typeof body.devAuthBypass === "boolean") patch.devAuthBypass = body.devAuthBypass;
 				for (const k of ["running", "paused", "cpus", "goldenIntervalHours"] as const) {
 					if (typeof body[k] === "number") patch[k] = body[k];
 				}

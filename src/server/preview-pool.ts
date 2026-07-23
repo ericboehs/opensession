@@ -65,6 +65,14 @@ export interface PreviewPoolRepoConfig {
   memory: string;
   /** Rebuild the golden image when older than this (default 24h). */
   goldenIntervalHours: number;
+  /**
+   * Keep the DEV_AUTH_* login bypass in preview containers (default false:
+   * previews use the app's normal auth). The bypass is always active DURING
+   * the golden build so route warming pre-compiles authed pages; when this
+   * is false the vars are stripped from the image before commit. (tella-local
+   * on the host keeps its bypass either way — this only affects the pool.)
+   */
+  devAuthBypass: boolean;
 }
 
 const DEFAULTS: Omit<PreviewPoolRepoConfig, "enabled"> = {
@@ -73,6 +81,7 @@ const DEFAULTS: Omit<PreviewPoolRepoConfig, "enabled"> = {
   cpus: 4,
   memory: "8g",
   goldenIntervalHours: 24,
+  devAuthBypass: false,
 };
 
 function poolDir(): string {
@@ -94,6 +103,7 @@ export function previewPoolConfig(repoId: string): PreviewPoolRepoConfig {
       cpus: clampInt(r.cpus, 1, 16, DEFAULTS.cpus),
       memory: typeof r.memory === "string" ? r.memory : DEFAULTS.memory,
       goldenIntervalHours: clampInt(r.goldenIntervalHours, 1, 24 * 7, DEFAULTS.goldenIntervalHours),
+      devAuthBypass: r.devAuthBypass === true,
     };
   } catch {
     return { enabled: false, ...DEFAULTS };
@@ -505,6 +515,15 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
       `pkill -TERM -f 'start.sh|dev-services|next dev|concurrently' 2>/dev/null; sleep 5; pkill -KILL -f 'next dev|rescript' 2>/dev/null; ${BOOT_PREP}; rm -f /tmp/boot.log; true`,
       30_000,
     );
+    // Previews use the app's NORMAL auth by default: the DEV_AUTH_* bypass
+    // stays active during the build (so route warming pre-compiles authed
+    // pages into the cache) and is stripped from the image before commit.
+    if (!cfg.devAuthBypass) {
+      await dockerExec(
+        name,
+        `find ${WORKSPACE} -maxdepth 4 -name '.env.local' -not -path '*/node_modules/*' -exec sed -i '/^DEV_AUTH_/d' {} +`,
+      );
+    }
     await docker(["stop", "-t", "10", name], 30_000);
     // Committing an ~8GB layer is I/O-bound and can take many minutes when
     // the host is busy — a timeout here discards a fully verified build.

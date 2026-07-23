@@ -440,11 +440,15 @@ function seedHostPortsConf(worktreeDir: string, webappPort: number): void {
  *  .ports.conf entry when nothing else is listening on it, else a free
  *  random port from the host webapp dev range (3100-3999). */
 async function allocateHostWebappPort(worktreeDir: string): Promise<number | null> {
+  // portListening, not pid-counting: preview-pool containers publish on this
+  // same range via docker-proxy (root-owned, no pid visible to ss -p) — the
+  // pid check once handed a session a port already serving another session's
+  // pool container, so both "opened the same preview".
   const existing = readPorts(worktreeDir).find((p) => p.key === "WEBAPP_PORT")?.port;
-  if (existing && (await listenersOnPort(existing)).length === 0) return existing;
+  if (existing && !(await portListening(existing))) return existing;
   for (let i = 0; i < 20; i++) {
     const port = 3100 + Math.floor(Math.random() * 900);
-    if ((await listenersOnPort(port)).length === 0) return port;
+    if (!(await portListening(port))) return port;
   }
   return null;
 }
