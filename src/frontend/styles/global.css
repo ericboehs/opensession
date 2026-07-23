@@ -514,10 +514,12 @@ html.wco .wco-nav-pane {
 	gap: 2px;
 }
 html.wco .sidebar-reopen {
-	left: calc(env(titlebar-area-x, 78px) + 6px);
+	/* Match .sidebar-brand's left padding exactly so collapsing does not move
+	   the panel icon horizontally. */
+	left: max(env(titlebar-area-x, 78px), 8px);
 }
 html.wco .wco-nav-pane {
-	left: calc(env(titlebar-area-x, 78px) + 48px);
+	left: calc(env(titlebar-area-x, 78px) + 42px);
 }
 html.wco .app-body.sidebar-collapsed .viewer-header,
 html.wco .app-body.sidebar-collapsed .detail-topbar-title {
@@ -965,10 +967,10 @@ html.wco .app-body.sidebar-collapsed
    desktop sidebar is collapsed (see the sidebar-collapsed rules below). */
 .sidebar-reopen {
 	position: absolute;
-	/* Center the 34px control on the 54px header row so it lines up with the
-	   right-panel toggle across the bar ((54 - 34) / 2 = 10). */
-	top: 10px;
-	left: 9px;
+	/* Match the open row's center, accounting for its 1px bottom divider. */
+	top: 9.5px;
+	/* Same 8px anchor as the open sidebar's .sidebar-brand row. */
+	left: 8px;
 	z-index: 20;
 	display: none;
 }
