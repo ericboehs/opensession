@@ -36,6 +36,9 @@ struct SessionsListView: View {
     @AppStorage("os1.list.groupBy") private var groupByRaw = GroupBy.status.rawValue
     @AppStorage("os1.list.repo") private var repoFilter = "all"
     @AppStorage("os1.list.sort") private var sortByRaw = SortBy.updated.rawValue
+    // Default to the signed-in person's own sessions, like the web sidebar —
+    // the server also hosts hundreds of automation runs and teammates' chats.
+    @AppStorage("os1.list.people") private var peopleFilter = "mine"
 
     private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .status }
     private var sortBy: SortBy { SortBy(rawValue: sortByRaw) ?? .updated }
@@ -106,8 +109,32 @@ struct SessionsListView: View {
         Array(Set(viewModel.sessions.compactMap(\.repo))).sorted()
     }
 
+    /// Identity strings that count as "me": display name, its first token
+    /// (sessions store first names, e.g. "Jaap"), and the GitHub login.
+    private var myNames: Set<String> {
+        var names: Set<String> = []
+        let user = ServerConfig.shared.userName.trimmingCharacters(in: .whitespaces)
+        if !user.isEmpty {
+            names.insert(user.lowercased())
+            if let first = user.split(separator: " ").first {
+                names.insert(first.lowercased())
+            }
+        }
+        let login = ServerConfig.shared.githubLogin
+        if !login.isEmpty { names.insert(login.lowercased()) }
+        return names
+    }
+
+    private func isMine(_ session: Session) -> Bool {
+        guard !session.isAutomation, let by = session.startedBy?.lowercased() else { return false }
+        return myNames.contains(by)
+    }
+
     private var filteredSessions: [Session] {
         var result = viewModel.sessions
+        if peopleFilter == "mine" {
+            result = result.filter(isMine)
+        }
         if repoFilter != "all" {
             result = result.filter { $0.repo == repoFilter }
         }
@@ -159,6 +186,10 @@ struct SessionsListView: View {
 
     private var filterMenu: some View {
         Menu {
+            Picker("Show", selection: $peopleFilter) {
+                Text("My sessions").tag("mine")
+                Text("Everyone").tag("all")
+            }
             Picker("Group by", selection: $groupByRaw) {
                 ForEach(GroupBy.allCases, id: \.rawValue) { option in
                     Text(option.label).tag(option.rawValue)
@@ -217,7 +248,17 @@ struct SessionsListView: View {
         .searchable(text: $searchText, prompt: "Search sessions")
         .overlay {
             if groups.isEmpty {
-                ContentUnavailableView.search(text: searchText)
+                if !searchText.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
+                } else if peopleFilter == "mine" {
+                    ContentUnavailableView {
+                        Label("No sessions of yours yet", systemImage: "person.crop.circle")
+                    } description: {
+                        Text("Sessions you start appear here.")
+                    } actions: {
+                        Button("Show everyone's") { peopleFilter = "all" }
+                    }
+                }
             }
         }
         .refreshable {

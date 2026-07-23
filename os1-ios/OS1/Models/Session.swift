@@ -20,6 +20,14 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     var lastActivity: String?
     var prUrl: String?
     var prState: String?
+    var startedBy: String?
+    var automation: AutomationFlag?
+
+    /// True for automation-owned sessions (triage runs, scheduled jobs) —
+    /// the bulk of server noise a person's list should hide by default.
+    var isAutomation: Bool {
+        automation?.isAutomation ?? (startedBy?.hasSuffix("(automation)") ?? false)
+    }
 
     var displayTitle: String {
         if let title, !title.isEmpty { return title }
@@ -74,5 +82,22 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
         if let date = formatter.date(from: string) { return date }
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: string)
+    }
+}
+
+/// The server's `automation` field is `true` OR the automation's name —
+/// either way it means "not a person's chat". Tolerant of both shapes.
+struct AutomationFlag: Decodable, Equatable, Hashable {
+    let isAutomation: Bool
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let flag = try? container.decode(Bool.self) {
+            isAutomation = flag
+        } else if let name = try? container.decode(String.self) {
+            isAutomation = !name.isEmpty
+        } else {
+            isAutomation = false
+        }
     }
 }
