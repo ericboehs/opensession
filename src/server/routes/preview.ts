@@ -32,13 +32,20 @@ export async function handlePreviewRoutes(
 			// Sandboxed session with a running container: the dev server (if
 			// any) lives in-container — status/ports/Caddy go through the
 			// sandbox. Otherwise the host path below, unchanged.
+			// Who this preview belongs to — the interstitial displays it so a
+			// stale/reused tab can never masquerade as another session's wait.
+			const who = {
+				sessionTitle: session.title || null,
+				sessionBranch: session.branch || null,
+			};
 			const sbx = session.worktreeDir
 				? await activeSandboxFor(session)
 				: null;
 			if (sbx)
-				return Response.json(
-					await getSandboxPreviewStatus(sbx, session.worktreeDir!),
-				);
+				return Response.json({
+					...(await getSandboxPreviewStatus(sbx, session.worktreeDir!)),
+					...who,
+				});
 			if (!session.worktreeDir || !existsSync(session.worktreeDir)) {
 				return Response.json({
 					hasPortsConf: false,
@@ -47,9 +54,13 @@ export async function handlePreviewRoutes(
 					starting: false,
 					previewUrl: null,
 					services: [],
+					...who,
 				});
 			}
-			return Response.json(await getPreviewStatus(session.worktreeDir));
+			return Response.json({
+				...(await getPreviewStatus(session.worktreeDir)),
+				...who,
+			});
 		}
 	}
 

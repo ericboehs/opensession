@@ -65,6 +65,10 @@ import {
 	fetchWarmTemplates,
 	updateWarmTemplate,
 	refreshWarmTemplateNow,
+	fetchPreviewPool,
+	updatePreviewPool,
+	refreshPreviewPoolGolden,
+	type PreviewPoolEntry,
 	fetchMemory,
 	addMemoryEntryApi,
 	updateMemoryEntryApi,
@@ -121,6 +125,7 @@ export type SettingsSectionKey =
 	| "connections"
 	| "memory"
 	| "warmPreviews"
+	| "previewPool"
 	| "papercuts"
 	| "audit"
 	| ToolSectionKey;
@@ -394,6 +399,25 @@ const SECTIONS: {
 		),
 	},
 	{
+		key: "previewPool",
+		label: "Preview pool",
+		group: "Workspace",
+		icon: (
+			<svg
+				width="20"
+				height="20"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<path d="M3 4.5l5-2.7 5 2.7v7l-5 2.7-5-2.7v-7z" strokeLinejoin="round" />
+				<path d="M3 4.5L8 7.2l5-2.7M8 7.2v7" strokeLinejoin="round" />
+				<path d="M6.6 9.4l1.9 1.1 1.9-1.1" strokeLinecap="round" strokeLinejoin="round" />
+			</svg>
+		),
+	},
+	{
 		key: "papercuts",
 		label: "Papercuts",
 		group: "Workspace",
@@ -461,6 +485,7 @@ function SectionPanel({
 			{section === "connections" && <Connections />}
 			{section === "memory" && <MemoryPanel />}
 			{section === "warmPreviews" && <WarmPreviewsPanel />}
+			{section === "previewPool" && <PreviewPoolPanel />}
 			{section === "papercuts" && <PapercutsPanel />}
 		</>
 	);
@@ -1374,6 +1399,170 @@ function WarmPreviewsPanel() {
 										checked={entry.enabled}
 										onChange={(v) =>
 											apply(updateWarmTemplate(entry.repoId, { enabled: v }))
+										}
+									/>
+								</div>
+							}
+						/>
+					);
+				})}
+			</div>
+		</div>
+	);
+}
+
+// ── Preview pool: warm pre-booted dev-server containers per repo — the
+// Preview button claims one instantly instead of paying a cold boot. ──
+
+const POOL_COUNT_OPTIONS = [0, 1, 2, 3].map((n) => ({
+	value: String(n),
+	label: String(n),
+}));
+
+function PreviewPoolPanel() {
+	const [repos, setRepos] = useState<PreviewPoolEntry[] | null>(null);
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		let alive = true;
+		fetchPreviewPool()
+			.then((r) => alive && setRepos(r.repos))
+			.catch((e) => alive && setError(e.message));
+		return () => {
+			alive = false;
+		};
+	}, []);
+
+	// Poll while a golden build runs (or containers are warming) so the
+	// status line updates on its own.
+	useEffect(() => {
+		if (
+			!repos?.some(
+				(e) => e.goldenBuilding || e.containers.some((c) => c.state === "warming"),
+			)
+		)
+			return;
+		let alive = true;
+		const t = setTimeout(() => {
+			fetchPreviewPool()
+				.then((r) => alive && setRepos(r.repos))
+				.catch(() => {});
+		}, 5000);
+		return () => {
+			alive = false;
+			clearTimeout(t);
+		};
+	}, [repos]);
+
+	function apply(p: Promise<{ repos: PreviewPoolEntry[] }>) {
+		p.then((r) => setRepos(r.repos)).catch((e) => setError(e.message));
+	}
+
+	if (!repos)
+		return (
+			<div className="settings-panel">
+				<h1 className="settings-title">Preview pool</h1>
+				<div className="setting-row-desc">{error || "Loading…"}</div>
+			</div>
+		);
+
+	return (
+		<div className="settings-panel">
+			<h1 className="settings-title">Preview pool</h1>
+			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+				Keep dev-server containers pre-booted from a nightly golden image, so
+				the Preview button claims one in seconds instead of paying a cold
+				boot. Claims follow the session's branch (small edits stream in live;
+				big branch jumps reboot the dev server cleanly) and are released on
+				stop or after sitting unwatched.
+			</div>
+
+			{error && (
+				<div className="form-error" onClick={() => setError(null)}>
+					{error}
+				</div>
+			)}
+
+			<div className="setting-card">
+				{repos.map((entry) => {
+					const counts = {
+						ready: entry.containers.filter((c) => c.state === "ready").length,
+						paused: entry.containers.filter((c) => c.state === "paused").length,
+						warming: entry.containers.filter((c) => c.state === "warming")
+							.length,
+						claimed: entry.containers.filter((c) => c.state === "claimed")
+							.length,
+					};
+					const poolBits = [
+						counts.ready && `${counts.ready} ready`,
+						counts.paused && `${counts.paused} paused`,
+						counts.warming && `${counts.warming} warming`,
+						counts.claimed && `${counts.claimed} in use`,
+					]
+						.filter(Boolean)
+						.join(" · ");
+					const status = entry.goldenBuilding
+						? "Building the golden image — boots the dev server once, warms routes, commits (~10 min)…"
+						: !entry.config.enabled
+							? "Off — previews boot cold on the host."
+							: entry.golden?.sha
+								? `Image at ${entry.golden.sha.slice(0, 10)} · built ${warmAgo(
+										entry.golden.builtAt,
+									)}${poolBits ? ` · ${poolBits}` : " · pool filling…"}${
+										entry.golden.lastError
+											? ` · last build failed: ${entry.golden.lastError.slice(0, 120)}`
+											: ""
+									}`
+								: "Enabled — first golden image builds shortly.";
+					return (
+						<SettingRow
+							key={entry.repoId}
+							title={entry.repoId}
+							desc={status}
+							control={
+								<div className="flex items-center gap-2">
+									{entry.config.enabled && (
+										<>
+											<button
+												className="rounded-md border border-line-strong px-3 py-1.5 text-[13px] font-medium text-dim transition-colors hover:border-faint hover:text-fg disabled:opacity-40"
+												disabled={entry.goldenBuilding}
+												onClick={() =>
+													apply(refreshPreviewPoolGolden(entry.repoId))
+												}
+											>
+												{entry.goldenBuilding ? "Building…" : "Rebuild image"}
+											</button>
+											<Select
+												label={`Warm running containers for ${entry.repoId}`}
+												value={String(entry.config.running)}
+												options={POOL_COUNT_OPTIONS}
+												onChange={(v) =>
+													apply(
+														updatePreviewPool(entry.repoId, {
+															running: parseInt(v, 10),
+														}),
+													)
+												}
+											/>
+											<Select
+												label={`Paused spare containers for ${entry.repoId}`}
+												value={String(entry.config.paused)}
+												options={POOL_COUNT_OPTIONS}
+												onChange={(v) =>
+													apply(
+														updatePreviewPool(entry.repoId, {
+															paused: parseInt(v, 10),
+														}),
+													)
+												}
+											/>
+										</>
+									)}
+									<Toggle
+										label={`Preview pool for ${entry.repoId}`}
+										checked={entry.config.enabled}
+										onChange={(v) =>
+											apply(updatePreviewPool(entry.repoId, { enabled: v }))
 										}
 									/>
 								</div>

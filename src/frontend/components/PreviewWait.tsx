@@ -42,6 +42,9 @@ type WaitState = "waiting" | "timeout" | "gone";
 
 export function PreviewWait({ sessionId }: { sessionId: string }) {
 	const [state, setState] = useState<WaitState>("waiting");
+	// Whose preview this is (title · branch), from the status poll — so a
+	// reused/stale tab is immediately recognizable as belonging to a session.
+	const [who, setWho] = useState<string | null>(null);
 
 	// Tear down the launch splash (rendered in index.html), same as App does.
 	useEffect(() => {
@@ -66,6 +69,10 @@ export function PreviewWait({ sessionId }: { sessionId: string }) {
 			try {
 				const s = await fetchPreview(sessionId);
 				if (!alive) return;
+				const label = [s.sessionTitle, s.sessionBranch]
+					.filter(Boolean)
+					.join(" · ");
+				if (label) setWho(label);
 				if (s.running && s.previewUrl) {
 					// Sever the opener link before leaving — the preview is another
 					// origin and has no business scripting the tab that spawned us.
@@ -116,6 +123,11 @@ export function PreviewWait({ sessionId }: { sessionId: string }) {
 					<div className="text-[15px] font-semibold text-fg">
 						Starting the dev server…
 					</div>
+					{who && (
+						<div className="max-w-sm truncate text-[13px] font-semibold text-dim">
+							{who}
+						</div>
+					)}
 					<div className="max-w-sm text-[13px] font-medium leading-relaxed text-dim">
 						The first build can take a minute. This tab will open the app
 						automatically when it's ready — keep it in the background.

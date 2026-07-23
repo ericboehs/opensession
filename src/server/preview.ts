@@ -372,7 +372,12 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
     hasPortsConf: ports.length > 0,
     webappPort: webapp?.port ?? null,
     running: !!webapp?.running,
-    starting: !webapp?.running && isStarting(worktreeDir),
+    // poolLive === false: a pool claim exists but its dev server isn't
+    // answering yet (big-delta claims REBOOT the container's dev tree) —
+    // that IS a bring-up in progress. Without it the button saw
+    // running:false starting:false right after a claim and closed its own
+    // interstitial ("opens then closes itself, and then I have no tab").
+    starting: !webapp?.running && (isStarting(worktreeDir) || poolLive === false),
     previewUrl,
     bootable:
       !!webapp?.running ||

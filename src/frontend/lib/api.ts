@@ -302,6 +302,10 @@ export interface PreviewStatus {
 	 *  fallback). Absent on servers that predate the field — treat as true. */
 	bootable?: boolean;
 	services: PreviewService[];
+	/** Whose preview this is — shown on the interstitial so a reused tab can
+	 *  never masquerade as another session's wait. */
+	sessionTitle?: string | null;
+	sessionBranch?: string | null;
 }
 
 export async function fetchPreview(sessionId: string): Promise<PreviewStatus> {
@@ -1651,6 +1655,55 @@ export async function refreshWarmTemplateNow(
 	repoId: string,
 ): Promise<{ repos: WarmTemplateEntry[] }> {
 	return request(`/warm-templates/${encodeURIComponent(repoId)}/refresh`, {
+		method: "POST",
+	});
+}
+
+// ── Preview pool (Settings → Preview pool: warm pre-booted dev servers) ──
+
+export interface PreviewPoolEntry {
+	repoId: string;
+	config: {
+		enabled: boolean;
+		running: number;
+		paused: number;
+		cpus: number;
+		memory: string;
+		goldenIntervalHours: number;
+		devAuthBypass: boolean;
+		claimIdleMinutes: number;
+	};
+	golden: { sha: string; builtAt: string; lastError?: string } | null;
+	goldenBuilding: boolean;
+	containers: {
+		name: string;
+		state: "warming" | "ready" | "paused" | "claimed";
+		hostPort: number;
+		sessionWorktree?: string;
+		claimedAt?: string;
+	}[];
+}
+
+export async function fetchPreviewPool(): Promise<{
+	repos: PreviewPoolEntry[];
+}> {
+	return request("/preview-pool", { label: "Failed to fetch preview pool" });
+}
+
+export async function updatePreviewPool(
+	repoId: string,
+	patch: Partial<PreviewPoolEntry["config"]>,
+): Promise<{ repos: PreviewPoolEntry[] }> {
+	return request(`/preview-pool/${encodeURIComponent(repoId)}`, {
+		method: "PUT",
+		body: patch,
+	});
+}
+
+export async function refreshPreviewPoolGolden(
+	repoId: string,
+): Promise<{ repos: PreviewPoolEntry[] }> {
+	return request(`/preview-pool/${encodeURIComponent(repoId)}/refresh`, {
 		method: "POST",
 	});
 }
