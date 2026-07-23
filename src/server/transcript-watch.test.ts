@@ -127,6 +127,42 @@ describe("race-free transcript watch", () => {
     expect(state.frames[0].entries.map((e: TranscriptEntry) => e.id)).toEqual(["a"]);
   });
 
+  test("preserves an ordered feed envelope for the matching durable wake", async () => {
+    const state = setup();
+    const sid = `bks-feed-${crypto.randomUUID()}`;
+    state.store.markImported(sid, "live-only");
+    const handle = startTranscriptWatch({
+      sessionId: sid,
+      store: state.store,
+      socket: state.socket,
+      subscribe: subscribeTranscript,
+      schedule(fn) {
+        state.timers.push(fn);
+        return state.timers.length;
+      },
+      isCurrent: () => true,
+      formatAppend(frame, event) {
+        return event?.feed ? { ...event.feed, event: frame } : frame;
+      },
+    });
+    cleanups.push(() => handle.unsubscribe());
+    state.frames.length = 0;
+
+    state.store.appendTranscriptEvents(sid, [entry("a", "one")]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(state.frames[0]).toMatchObject({
+      type: "session_feed",
+      phase: "committed",
+      event: {
+        type: "transcript_append",
+        lastChangeSeq: 1,
+        entries: [expect.objectContaining({ id: "a", changeSeq: 1 })],
+      },
+    });
+  });
+
   test("unsubscribe is idempotent and releases the bus subscription", () => {
     const state = setup();
     const sid = `bks-unsub-${crypto.randomUUID()}`;

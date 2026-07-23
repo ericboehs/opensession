@@ -7,6 +7,8 @@
  * `bun --hot` reload keeps every connected client and watcher set intact.
  */
 
+import { appendSessionFeed, isFeedEvent } from "./session-feed";
+
 const g = globalThis as any;
 
 // Unique per OS process (survives hot reloads, changes on a real restart) so
@@ -43,6 +45,10 @@ export interface WSClientData {
 	authUser?: string | null;
 	/** Verified GitHub login of the signed-in user (createdByLogin stamping). */
 	authLogin?: string | null;
+	/** This viewer understands ordered session_feed envelopes. */
+	supportsFeed?: boolean;
+	sinceFeedSeq?: number;
+	feedEpoch?: string;
 }
 
 // sessionId → sockets currently viewing that session (collaboration fan-out)
@@ -90,12 +96,18 @@ export function broadcastToSession(
 	except?: any,
 ) {
 	const set = sessionWatchers.get(sessionId);
+	// Advance feed state even with no viewers, so a backgrounded client can
+	// recover an active run on reconnect.
+	const feed = isFeedEvent(msg)
+		? appendSessionFeed(sessionId, msg as Record<string, unknown>)
+		: null;
 	if (!set) return;
 	const payload = JSON.stringify(msg);
+	const feedPayload = feed ? JSON.stringify(feed) : null;
 	for (const ws of set) {
 		if (ws === except) continue;
 		try {
-			ws.send(payload);
+			ws.send(ws.data?.supportsFeed && feedPayload ? feedPayload : payload);
 		} catch {}
 	}
 }

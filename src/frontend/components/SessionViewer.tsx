@@ -6,11 +6,18 @@ import React, {
 	useMemo,
 	useRef,
 	useState,
+	useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 import { Reorder } from "motion/react";
 import { suppressLayoutAnimations } from "../ui/motion";
 import { renderMarkdown } from "../lib/markdown";
+import { LiveTurnStore } from "../lib/live-turn-store";
+import { TranscriptViewStore } from "../lib/transcript-view-store";
+import {
+	measureChatPerf,
+	recordChatPerf,
+} from "../lib/chat-performance";
 import { AGENT_NAME, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { isGitHubAttribution, parseHumanReply } from "../lib/humanReply";
 import type {
@@ -24,6 +31,11 @@ import {
 	orderTranscriptEntries,
 } from "../lib/transcript-state";
 import { TranscriptBlocks } from "./TranscriptBlocks";
+import { MarkdownBody } from "./MarkdownBody";
+import {
+	ToolEvidencePanel,
+	type ToolEvidence,
+} from "./ToolEvidencePanel";
 import { SideChatsPanel } from "./SideChatsPanel";
 import { SubagentPanel, type SubagentRef } from "./SubagentPanel";
 import { TerminalPanel } from "./TerminalPanel";
@@ -246,7 +258,8 @@ type PanelTab =
 	| "sidechats"
 	| "workflows"
 	| "assets"
-	| "reports";
+	| "reports"
+	| "evidence";
 
 const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 const isChromium = /Chrome|Chromium|CriOS|Edg|OPR/.test(navigator.userAgent);
@@ -463,13 +476,67 @@ export function SessionViewer({
 	onCloseAssets,
 	onOpenWorkspace,
 }: Props) {
+	const shellTimingRef = useRef({
+		sessionId: session.id,
+		startedAt: performance.now(),
+		recorded: false,
+	});
+	if (shellTimingRef.current.sessionId !== session.id) {
+		shellTimingRef.current = {
+			sessionId: session.id,
+			startedAt: performance.now(),
+			recorded: false,
+		};
+	}
 	// A full-width view-tab (Review, Staging, or Assets) takes over the chat
 	// column, so the chat DOM isn't mounted while any is up — the scroll /
 	// history / scroll-restore effects below must bail in all cases.
 	const chatHidden = showReview || showStaging || showAssets;
 	const [cachedTranscript] = useState(() => peekCachedTranscriptView(session.id));
-	const [entries, setEntries] = useState<TranscriptEntry[]>(
-		() => withModelSwitches(cachedTranscript?.entries ?? [], session.modelHistory),
+	const transcriptViewStore = useMemo(
+		() =>
+			new TranscriptViewStore(
+				withModelSwitches(
+					peekCachedTranscriptView(session.id)?.entries ?? [],
+					session.modelHistory,
+				),
+			),
+		[session.id],
+	);
+	const entries = useSyncExternalStore(
+		transcriptViewStore.subscribe,
+		transcriptViewStore.getSnapshot,
+		transcriptViewStore.getServerSnapshot,
+	);
+	const setEntries = useCallback(
+		(
+			update:
+				| TranscriptEntry[]
+				| ((previous: TranscriptEntry[]) => TranscriptEntry[]),
+		) => transcriptViewStore.update(update),
+		[transcriptViewStore],
+	);
+	const liveTurnStore = useMemo(() => new LiveTurnStore(), [session.id]);
+	const transcriptCommitCount = useRef(0);
+	const onTranscriptRender = useCallback(
+		(
+			_: string,
+			phase: "mount" | "update" | "nested-update",
+			actualDuration: number,
+		) => {
+			recordChatPerf("react_transcript_commit_ms", actualDuration, {
+				phase,
+				entries: transcriptViewStore.getSnapshot().length,
+			});
+			transcriptCommitCount.current++;
+			if (phase === "mount" || transcriptCommitCount.current % 20 === 0) {
+				recordChatPerf(
+					"transcript_dom_nodes",
+					document.querySelectorAll(".viewer-messages [data-eid]").length,
+				);
+			}
+		},
+		[transcriptViewStore],
 	);
 	// Initial scrolling must wait for this session's transcript_init. During a
 	// session switch, entries from the previous session remain rendered until the
@@ -554,21 +621,6 @@ export function SessionViewer({
 	// Bumped on a `git_pushed` broadcast (server-side auto-push) so the PR status
 	// header refetches immediately and drops "Ahead by N commits".
 	const [gitRefreshTick, setGitRefreshTick] = useState(0);
-	const [streamText, setStreamText] = useState("");
-	const [streamBy, setStreamBy] = useState<string | null>(null);
-	// Assistant blocks that already landed as transcript entries this run.
-	// Transcript v2 pushes an append the moment the store commits — usually
-	// BEFORE the runner's stream_text broadcast for the same block reaches the
-	// client (the bus publish is queued before the generator yields the chunk).
-	// In that order the append-side scrub finds an empty buffer and the block
-	// then enters the bubble with nothing left to remove it — every mid-turn
-	// text showed twice until stream_done (duplicate-transcript reports,
-	// 2026-07-23). Recording landed contents here lets stream_text drop a block
-	// that already landed, making the dedupe correct in BOTH arrival orders.
-	const landedStreamTextRef = useRef<string[]>([]);
-	// Bumped on every stream_start; lets the delayed stream_done cleanup verify
-	// it isn't wiping a NEWER run's in-progress text.
-	const streamSeqRef = useRef(0);
 	const [viewers, setViewers] = useState<string[]>([]);
 	// The create run is still preparing this session's worktree (new workspaces
 	// announce the session before the slow git work). While true the transcript
@@ -691,6 +743,7 @@ export function SessionViewer({
 	// call pushes; nested Task calls push further). Non-empty → the right region
 	// shows the sub-agent conversation instead of the Workspace panel.
 	const [subagentStack, setSubagentStack] = useState<SubagentRef[]>([]);
+	const [toolEvidence, setToolEvidence] = useState<ToolEvidence | null>(null);
 	// Stable identity so the memoized TranscriptBlocks bails out on unrelated
 	// re-renders (e.g. toggling the workspace panel) instead of re-rendering the
 	// whole transcript.
@@ -701,6 +754,18 @@ export function SessionViewer({
 				: [...prev, { agentId, label }],
 		);
 	}, []);
+	const openEvidence = useCallback(
+		(entry: TranscriptEntry, result?: TranscriptEntry) => {
+			setToolEvidence({ entry, result });
+			setPanelTab("evidence");
+			setPanelOpen(true);
+		},
+		[],
+	);
+	useEffect(() => {
+		setToolEvidence(null);
+		if (panelTab === "evidence") setPanelTab("info");
+	}, [session.id]);
 	// Remembered per browser; on phones the panel overlays the chat, so default closed there
 	const [panelOpen, setPanelOpenState] = useState(() => {
 		const stored = localStorage.getItem("opensession-panel-open");
@@ -1149,7 +1214,8 @@ export function SessionViewer({
 		workflowRuns.length > 0 ||
 		subagents.length > 0 ||
 		sessionReports.length > 0 ||
-		canSideChat;
+		canSideChat ||
+		Boolean(toolEvidence);
 	// A persisted "sidechats" tab is meaningless on a session that can't have
 	// side chats (automation view / a side chat itself) — fall back to Info.
 	useEffect(() => {
@@ -1189,7 +1255,7 @@ export function SessionViewer({
 	// a stale sessions poll re-asserting the flag after the workspace_status
 	// event already cleared it.
 	const waitingForWorkspace =
-		workspacePreparing && entries.length === 0 && !streamText;
+		workspacePreparing && entries.length === 0 && !liveTurnStore.hasText();
 
 	// Live worktree diff, shared between the Changes-tab file-count badge and the
 	// DiffPanel (passed in as `diff=` below so they poll once, not twice). Parked
@@ -1483,10 +1549,17 @@ export function SessionViewer({
 							transcriptCursorRef.current = null;
 						}
 					}
-					setEntries(merged);
+					transcriptViewStore.replace(merged, true, v2);
 					setHistoryTruncated(!!msg.truncated);
 					setLoadingHistory(false);
 					setLoading(false);
+					if (!shellTimingRef.current.recorded) {
+						shellTimingRef.current.recorded = true;
+						measureChatPerf(
+							"shell_to_transcript_ms",
+							shellTimingRef.current.startedAt,
+						);
+					}
 					// Pagination cursor for "load earlier" (the byte offset the shipped
 					// tail begins at). The rest of a two-stage init and each history
 					// page arrive as transcript_history below. Seq mode pages with
@@ -1500,13 +1573,7 @@ export function SessionViewer({
 					// Older entries (the bulk of a two-stage init, or one "load
 					// earlier" page): merge by id and re-sort by time — mergeEntries
 					// appends, which is wrong for content older than what's shown.
-					setEntries((prev) =>
-						msg.v2 === true
-							? mergeTranscriptEntries(prev, msg.entries, true)
-							: orderTranscriptEntries(
-									mergeTranscriptEntries(prev, msg.entries),
-								),
-					);
+					transcriptViewStore.prepend(msg.entries, msg.v2 === true);
 					setHistoryTruncated(!!msg.truncated);
 					setLoadingHistory(false);
 					const seqState = transcriptSeqRef.current;
@@ -1558,9 +1625,7 @@ export function SessionViewer({
 							offset: msg.endOffset,
 						};
 					}
-					setEntries((prev) =>
-						mergeTranscriptEntries(prev, msg.entries, inSeqMode),
-					);
+					transcriptViewStore.merge(msg.entries, inSeqMode);
 					// The live stream and the transcript tail both carry assistant text.
 					// stream_text accumulates whole blocks until stream_done (end of the
 					// run), so a mid-run text block would otherwise show twice: as the
@@ -1571,18 +1636,7 @@ export function SessionViewer({
 						(e) => e.type === "assistant" && e.content,
 					);
 					if (landed.length) {
-						setStreamText((prev) => {
-							let next = prev;
-							for (const e of landed) next = next.replace(e.content, "");
-							return next.trim() ? next : "";
-						});
-						// Also remember the contents so a stream_text broadcast that
-						// arrives AFTER this append (the normal v2 order) is dropped
-						// instead of re-adding the block to the bubble.
-						landedStreamTextRef.current = [
-							...landedStreamTextRef.current,
-							...landed.map((e) => e.content),
-						].slice(-30);
+						liveTurnStore.land(landed.map((e) => e.content));
 					}
 					break;
 				}
@@ -1622,41 +1676,20 @@ export function SessionViewer({
 						setWorkspacePreparing(!msg.ready);
 					break;
 				case "stream_start":
-					streamSeqRef.current++;
 					setIsStreaming(true);
-					setStreamBy(msg.by || null);
-					setStreamText("");
-					landedStreamTextRef.current = [];
+					liveTurnStore.start(msg.by);
 					break;
 				case "stream_text": {
-					// Opencode streams whole completed blocks; if this one already
-					// landed as a transcript entry (v2 appends beat the stream
-					// broadcast), keep it out of the bubble — see landedStreamTextRef.
-					const landedIdx = landedStreamTextRef.current.indexOf(msg.text);
-					if (landedIdx !== -1) {
-						landedStreamTextRef.current.splice(landedIdx, 1);
-						break;
-					}
-					setStreamText((prev) => prev + msg.text);
+					liveTurnStore.append(msg.text);
 					break;
 				}
 				case "stream_tool_use":
 				case "stream_tool_result":
-					setEntries((prev) => mergeTranscriptEntries(prev, [msg.entry]));
+					transcriptViewStore.merge([msg.entry]);
 					break;
 				case "stream_done": {
 					setIsStreaming(false);
-					setStreamBy(null);
-					// Don't wipe the streamed text yet: its persisted transcript entry
-					// usually lands a beat later (the 1s file-watcher poll) and the
-					// transcript_append handler strips it then — clearing here made the
-					// reply blink out and back in (or vanish entirely when the watcher
-					// wasn't attached). The timeout is only the fallback for text that
-					// never lands as an entry.
-					const seq = streamSeqRef.current;
-					window.setTimeout(() => {
-						if (streamSeqRef.current === seq) setStreamText("");
-					}, 5000);
+					liveTurnStore.finish();
 					break;
 				}
 				case "model_changed":
@@ -1703,6 +1736,7 @@ export function SessionViewer({
 					break;
 				case "error":
 					setIsStreaming(false);
+					liveTurnStore.finish();
 					// Show the failure where the reply would have been — otherwise a
 					// failed run looks like a send that silently went nowhere.
 					if (msg.message) {
@@ -1730,7 +1764,7 @@ export function SessionViewer({
 		};
 		// transcriptPath in deps: new sessions start without a transcript file —
 		// re-watch once it appears so the live tail attaches
-	}, [session.id, connected, session.transcriptPath]);
+	}, [session.id, connected, session.transcriptPath, liveTurnStore]);
 
 	// Drop optimistic bubbles once their real turn shows up. Each pending message
 	// is claimed (one-to-one) either by a transcript user entry recorded around or
@@ -1820,12 +1854,9 @@ export function SessionViewer({
 				? [{ id: `pending-initial-${session.id}`, ...initialPending }]
 				: [],
 		);
-		streamSeqRef.current++;
-		setStreamText("");
+		liveTurnStore.clear();
 		setIsStreaming(false);
-		setStreamBy(null);
-		landedStreamTextRef.current = [];
-	}, [session.id]);
+	}, [session.id, liveTurnStore]);
 
 	// Every session opens at the live edge. Do this in a layout effect so the
 	// transcript never paints at scrollTop 0 before moving to the end.
@@ -1956,7 +1987,7 @@ export function SessionViewer({
 	lastEntryIdRef.current =
 		entries.length > 0 ? entries[entries.length - 1].id : null;
 	const streamLenRef = useRef(0);
-	streamLenRef.current = streamText.length;
+	streamLenRef.current = liveTurnStore.textLength();
 	const hiddenSnapRef = useRef<{
 		at: number;
 		lastEntryId: string | null;
@@ -2011,14 +2042,28 @@ export function SessionViewer({
 			resumeWatchRef.current = null;
 			return;
 		}
-		if (
-			lastEntryIdRef.current !== watch.lastEntryId ||
-			streamText.length > watch.streamLen
-		) {
+		if (lastEntryIdRef.current !== watch.lastEntryId) {
 			resumeWatchRef.current = null;
 			scrollToLatest("auto");
 		}
-	}, [entries, streamText, scrollToLatest]);
+	}, [entries, scrollToLatest]);
+	useEffect(
+		() =>
+			liveTurnStore.subscribe(() => {
+				streamLenRef.current = liveTurnStore.textLength();
+				const watch = resumeWatchRef.current;
+				if (
+					watch &&
+					performance.now() <= watch.until &&
+					streamLenRef.current > watch.streamLen
+				) {
+					resumeWatchRef.current = null;
+					scrollToLatest("auto");
+				}
+				relayout();
+			}),
+		[liveTurnStore, relayout, scrollToLatest],
+	);
 	useEffect(() => {
 		const el = messagesRef.current;
 		if (!el) return;
@@ -2038,7 +2083,7 @@ export function SessionViewer({
 	// Layout effect so the adjustment happens before the browser paints — no flicker.
 	useLayoutEffect(() => {
 		relayout();
-	}, [entries, streamText, queued, visibleSteered, pending, relayout]);
+	}, [entries, queued, visibleSteered, pending, relayout]);
 
 
 	// Ref mirror keeps rapid clicks from sending duplicate history requests
@@ -2318,9 +2363,8 @@ export function SessionViewer({
 
 	// Returns true when the message was consumed, so the (uncontrolled)
 	// Composer knows to clear its draft; false keeps it for a retry.
-	// `opts.interrupt` is the per-send override (⌘/Ctrl+Enter while busy):
-	// abort the current turn and deliver this message right away.
 	function handleSend(raw: string, opts?: { steer?: boolean }): boolean {
+		const sendStartedAt = performance.now();
 		const text = raw.trim();
 		const imgs = images;
 		const fls = files;
@@ -2413,6 +2457,9 @@ export function SessionViewer({
 					images: imgs.length ? imgs : undefined,
 				},
 			]);
+			requestAnimationFrame(() =>
+				measureChatPerf("send_to_optimistic_paint_ms", sendStartedAt),
+			);
 		} else {
 			// Busy send: show it in the queue flap right away (no transcript
 			// bubble — a steer folds into the RUNNING turn) — the
@@ -2432,6 +2479,7 @@ export function SessionViewer({
 		setImages([]);
 		setFiles([]);
 		setContextChats([]);
+		measureChatPerf("send_handler_ms", sendStartedAt);
 		return true;
 	}
 
@@ -2524,7 +2572,7 @@ export function SessionViewer({
 		(p) => !p.busyMode && !waitingForWorkspace,
 	);
 	const hasLiveConversation =
-		pendingBubbles.length > 0 || !!streamText || isBusy || !!ask;
+		pendingBubbles.length > 0 || liveTurnStore.hasText() || isBusy || !!ask;
 
 	const queueCount = queued.length + visibleSteered.length + pendingQueue.length;
 	// Steered receipts are NOT queued — they're already delivered into the
@@ -4132,27 +4180,33 @@ export function SessionViewer({
 											</button>
 										</div>
 									)}
-									<TranscriptBlocks
-										entries={entries}
-										live={isBusy}
-										sessionId={session.id}
-										onFork={canForkSession ? handleFork : undefined}
-										onOpenSubagent={openSubagent}
-										// For automation-owned sessions (e.g. a GitHub PR run), the
-										// automation never *types* a user turn — humans steer them.
-										// So don't credit un-attributed turns to the automation
-										// ("GitHub (automation)"); leave the owner unset so they read
-										// as "You" (explicit [Name] steers still show the teammate).
-										owner={
-											session.automation
-												? undefined
-												: session.startedBy || undefined
-										}
-									/>
+									<React.Profiler
+										id="transcript"
+										onRender={onTranscriptRender}
+									>
+										<TranscriptBlocks
+											entries={entries}
+											live={isBusy}
+											sessionId={session.id}
+											onFork={canForkSession ? handleFork : undefined}
+											onOpenSubagent={openSubagent}
+											onOpenEvidence={openEvidence}
+											// For automation-owned sessions (e.g. a GitHub PR run), the
+											// automation never *types* a user turn — humans steer them.
+											// So don't credit un-attributed turns to the automation
+											// ("GitHub (automation)"); leave the owner unset so they read
+											// as "You" (explicit [Name] steers still show the teammate).
+											owner={
+												session.automation
+													? undefined
+													: session.startedBy || undefined
+											}
+										/>
+									</React.Profiler>
 								</>
 							)}
 
-							{streamText && <StreamingMessage text={streamText} />}
+							<StreamingMessage store={liveTurnStore} />
 
 							{isBusy && !waitingForWorkspace && (
 								<BusyInline
@@ -4414,6 +4468,14 @@ export function SessionViewer({
 							/>
 						)}
 						<div className="panel-tabs">
+							{toolEvidence && (
+								<button
+									className={`panel-tab ${panelTab === "evidence" ? "active" : ""}`}
+									onClick={() => selectPanelTab("evidence")}
+								>
+									Evidence
+								</button>
+							)}
 							<button
 								className={`panel-tab ${panelTab === "info" ? "active" : ""}`}
 								onClick={() => selectPanelTab("info")}
@@ -4509,7 +4571,18 @@ export function SessionViewer({
 						</div>
 						<div className="panel-body">
 							{/* Plain-only sessions (no code workspace) show just the timeline. */}
-							{panelTab === "info" ? (
+							{panelTab === "evidence" && toolEvidence ? (
+								<ToolEvidencePanel
+									evidence={toolEvidence}
+									sessionId={session.id}
+									onOpenChanges={
+										hasWorkspace ? () => selectPanelTab("changes") : undefined
+									}
+									onOpenTerminal={
+										hasWorkspace ? () => selectPanelTab("terminal") : undefined
+									}
+								/>
+							) : panelTab === "info" ? (
 								<WorkspaceInfo
 									sessionId={session.id}
 									workspaceId={session.projectId || null}
@@ -4683,15 +4756,31 @@ function BusyInline({
 	);
 }
 
-function StreamingMessage({ text }: { text: string }) {
-	const html = React.useMemo(() => renderMarkdown(text), [text]);
+function StreamingMessage({ store }: { store: LiveTurnStore }) {
+	const snapshot = useSyncExternalStore(
+		store.subscribe,
+		store.getSnapshot,
+		store.getServerSnapshot,
+	);
+	const markdownText = snapshot.rapid ? "" : snapshot.text;
+	const html = React.useMemo(
+		() => (markdownText ? renderMarkdown(markdownText) : ""),
+		[markdownText],
+	);
+	if (!snapshot.text) return null;
 
 	return (
 		<div className="msg msg-assistant msg-streaming">
-			<div
-				className="msg-body msg-body-assistant markdown"
-				dangerouslySetInnerHTML={{ __html: html }}
-			/>
+			{snapshot.rapid ? (
+				<div className="msg-body msg-body-assistant whitespace-pre-wrap">
+					{snapshot.text}
+				</div>
+			) : (
+				<MarkdownBody
+					className="msg-body msg-body-assistant markdown"
+					html={html}
+				/>
+			)}
 		</div>
 	);
 }

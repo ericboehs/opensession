@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { WSServerMessage, WSClientMessage } from "../lib/types";
 import { getWebSocketUrl } from "../lib/api";
+import { countChatPerf } from "../lib/chat-performance";
 
 // Liveness probe cadence. iOS/Safari kills backgrounded sockets without firing
 // onclose, leaving a half-open socket that reads as OPEN but delivers nothing —
@@ -31,6 +32,9 @@ export function useWebSocket() {
   // "I clicked create, nothing happened after switching networks" bug. Bounded
   // so a long outage can't replay a stale flood.
   const outboxRef = useRef<{ msg: WSClientMessage; at: number }[]>([]);
+  const feedCursorsRef = useRef(
+    new Map<string, { feedEpoch: string; feedSeq: number }>(),
+  );
   const OUTBOX_MAX = 50;
   const OUTBOX_TTL_MS = 30_000;
 
@@ -62,11 +66,58 @@ export function useWebSocket() {
     ws.onmessage = (e) => {
       if (wsRef.current !== ws) return; // superseded socket — ignore stragglers
       aliveRef.current = true;
+      countChatPerf(
+        "ws_bytes_received",
+        typeof e.data === "string" ? e.data.length : (e.data?.byteLength ?? 0),
+      );
       try {
         const msg = JSON.parse(e.data) as WSServerMessage;
         if (msg.type === "pong") return; // liveness only — not for handlers
-        for (const handler of handlersRef.current) {
-          handler(msg);
+        let delivered: WSServerMessage | null = msg;
+        if (msg.type === "session_feed") {
+          const cursor = feedCursorsRef.current.get(msg.sessionId);
+          if (
+            cursor?.feedEpoch === msg.feedEpoch &&
+            msg.feedSeq <= cursor.feedSeq
+          ) {
+            delivered = null;
+          } else {
+            feedCursorsRef.current.set(msg.sessionId, {
+              feedEpoch: msg.feedEpoch,
+              feedSeq: msg.feedSeq,
+            });
+            delivered = msg.event as WSServerMessage;
+          }
+        } else if (msg.type === "feed_snapshot") {
+          feedCursorsRef.current.set(msg.sessionId, {
+            feedEpoch: msg.feedEpoch,
+            feedSeq: msg.feedSeq,
+          });
+          // A stale cursor gets one cumulative active snapshot. Recreate the
+          // ordinary stream events so every conversation surface shares the
+          // same rendering path.
+          if (msg.active) {
+            const start: WSServerMessage = {
+              type: "stream_start",
+              sessionId: msg.sessionId,
+              by: msg.active.by,
+            };
+            for (const handler of handlersRef.current) handler(start);
+            if (msg.active.text) {
+              const text: WSServerMessage = {
+                type: "stream_text",
+                sessionId: msg.sessionId,
+                text: msg.active.text,
+              };
+              for (const handler of handlersRef.current) handler(text);
+            }
+          }
+          delivered = null;
+        }
+        if (delivered) {
+          for (const handler of handlersRef.current) {
+            handler(delivered);
+          }
         }
       } catch {}
     };
@@ -149,6 +200,19 @@ export function useWebSocket() {
 
   const send = useCallback(
     (msg: WSClientMessage) => {
+      if (msg.type === "watch") {
+        const cursor = feedCursorsRef.current.get(msg.sessionId);
+        msg = {
+          ...msg,
+          supportsFeed: true,
+          ...(cursor
+            ? {
+                sinceFeedSeq: cursor.feedSeq,
+                feedEpoch: cursor.feedEpoch,
+              }
+            : {}),
+        };
+      }
       const ws = wsRef.current;
       if (ws?.readyState === WebSocket.OPEN) {
         try {

@@ -31,6 +31,10 @@ export interface StartTranscriptWatchOptions {
   isCurrent: () => boolean;
   sinceChangeSeq?: number;
   clampSnapshot?: (entries: SeqEntry[]) => SeqEntry[];
+  formatAppend?: (
+    frame: Record<string, unknown>,
+    event?: TranscriptBusEvent
+  ) => Record<string, unknown>;
 }
 
 export interface TranscriptWatchHandle {
@@ -59,6 +63,7 @@ export function startTranscriptWatch(
     schedule,
     isCurrent,
     clampSnapshot = (entries) => entries,
+    formatAppend = (frame) => frame,
   } = options;
   let cursor = 0;
   let initialized = false;
@@ -126,11 +131,12 @@ export function startTranscriptWatch(
           resetPending = false;
           sendSnapshot();
         }
+        let wakeEvent = event;
         for (;;) {
           const page = store.readChangesSince(sessionId, cursor, RESUME_LIMIT);
           if (!page.entries.length) break;
           cursor = Math.max(cursor, ...page.entries.map((entry) => entry.changeSeq));
-          send({
+          const append = {
             type: "transcript_append",
             sessionId,
             entries: page.entries,
@@ -138,7 +144,19 @@ export function startTranscriptWatch(
             lastSeq: page.lastSeq,
             lastChangeSeq: cursor,
             v2: true,
-          });
+          };
+          const matchingEvent =
+            wakeEvent &&
+            wakeEvent.entries.length === page.entries.length &&
+            wakeEvent.entries.every(
+              (entry, index) =>
+                entry.id === page.entries[index]?.id &&
+                entry.changeSeq === page.entries[index]?.changeSeq
+            )
+              ? wakeEvent
+              : undefined;
+          send(formatAppend(append, matchingEvent));
+          wakeEvent = undefined;
           if (page.entries.length < RESUME_LIMIT) break;
         }
       } while (pending && !closed);

@@ -20,6 +20,10 @@
  */
 
 import type { TranscriptEntry } from "./types";
+import {
+  appendSessionFeed,
+  type SessionFeedFrame,
+} from "./session-feed";
 
 /** A stored transcript entry annotated with its per-session sequence number. */
 export type SeqEntry = TranscriptEntry & { seq: number; changeSeq: number };
@@ -34,6 +38,8 @@ export interface TranscriptBusEvent {
   /** The durable transcript was authoritatively replaced. Subscribers must
    * discard their current snapshot rather than merging by id. */
   reset?: boolean;
+  /** This commit's identity in the ordered session feed. */
+  feed?: SessionFeedFrame;
 }
 
 export type TranscriptSubscriber = (event: TranscriptBusEvent) => void;
@@ -78,6 +84,19 @@ export function publishTranscript(
   sessionId: string,
   event: TranscriptBusEvent
 ): void {
+  const lastChangeSeq = event.entries.reduce(
+    (last, entry) => Math.max(last, entry.changeSeq),
+    0
+  );
+  const feed = appendSessionFeed(sessionId, {
+    type: "transcript_append",
+    sessionId,
+    entries: event.entries,
+    firstSeq: event.firstSeq,
+    lastSeq: event.lastSeq,
+    ...(lastChangeSeq ? { lastChangeSeq } : {}),
+    v2: true,
+  });
   const subs = bus().get(sessionId);
   if (!subs || subs.size === 0) return;
   // Snapshot so a subscriber unsubscribing (or subscribing) during fan-out
@@ -85,7 +104,7 @@ export function publishTranscript(
   for (const fn of [...subs]) {
     queueMicrotask(() => {
       try {
-        fn(event);
+        fn({ ...event, feed });
       } catch (e) {
         console.warn("[transcript-bus] subscriber threw:", e);
       }

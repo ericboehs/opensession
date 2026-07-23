@@ -24,6 +24,7 @@ interface Props {
   toolResults: Map<string, TranscriptEntry>;
   live: boolean; // this is the active block of a running stream
   onOpenSubagent?: (agentId: string, label: string) => void;
+  onOpenEvidence?: (entry: TranscriptEntry, result?: TranscriptEntry) => void;
   /** Lets wire-clamped intermediate notes fetch their full content. */
   sessionId?: string;
 }
@@ -46,6 +47,7 @@ export const TurnBlock = React.memo(function TurnBlock({
   toolResults,
   live,
   onOpenSubagent,
+  onOpenEvidence,
   sessionId,
 }: Props) {
   const tools = items.filter((it) => it.type === "tool_use");
@@ -56,6 +58,10 @@ export const TurnBlock = React.memo(function TurnBlock({
   const hasMedia = tools.some((it) => {
     const r = it.toolUseId ? toolResults.get(it.toolUseId) : undefined;
     return (r?.images?.length ?? 0) > 0 || (r?.videos?.length ?? 0) > 0;
+  });
+  const hasFailure = tools.some((it) => {
+    const result = it.toolUseId ? toolResults.get(it.toolUseId) : undefined;
+    return Boolean(result?.isError);
   });
   // Default fold state follows the per-browser preference (Settings →
   // Appearance). "auto": open while the turn is still working (thinking /
@@ -70,7 +76,7 @@ export const TurnBlock = React.memo(function TurnBlock({
     []
   );
   const defaultExpanded =
-    hasMedia || (pref === "auto" ? live : pref === "expanded");
+    hasMedia || hasFailure || (pref === "auto" ? live : pref === "expanded");
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   useEffect(() => {
@@ -96,11 +102,38 @@ export const TurnBlock = React.memo(function TurnBlock({
       if (familyReps.length >= 6) break;
     }
   }
+  const touchedPaths = new Set<string>();
+  for (const tool of tools) {
+    if (!tool.toolInput || typeof tool.toolInput !== "object") continue;
+    const input = tool.toolInput as Record<string, unknown>;
+    const direct =
+      typeof input.file_path === "string"
+        ? input.file_path
+        : typeof input.path === "string" &&
+            ["Edit", "Write", "Read", "FileChange"].includes(tool.toolName || "")
+          ? input.path
+          : null;
+    if (direct) touchedPaths.add(direct);
+    if (Array.isArray(input.changes)) {
+      for (const change of input.changes) {
+        if (
+          change &&
+          typeof change === "object" &&
+          typeof (change as { path?: unknown }).path === "string"
+        ) {
+          touchedPaths.add((change as { path: string }).path);
+        }
+      }
+    }
+  }
 
   const countsLabel = [
     tools.length > 0 &&
-      `${tools.length} tool call${tools.length === 1 ? "" : "s"}`,
-    messages.length > 0 &&
+      `${tools.length} step${tools.length === 1 ? "" : "s"}`,
+    touchedPaths.size > 0 &&
+      `${touchedPaths.size} file${touchedPaths.size === 1 ? "" : "s"}`,
+    tools.length === 0 &&
+      messages.length > 0 &&
       `${messages.length} message${messages.length === 1 ? "" : "s"}`,
   ]
     .filter(Boolean)
@@ -125,7 +158,7 @@ export const TurnBlock = React.memo(function TurnBlock({
 
   return (
     <div
-      className="mx-auto mb-3 max-w-[var(--chat-col)]"
+      className="mx-auto mb-3 max-w-[var(--chat-evidence)]"
       // Anchor identity for the history scroll hold: the LAST item survives a
       // history page merging older items into this turn (the first doesn't).
       data-eid={lastItem ? `${lastItem.id}#turn` : undefined}
@@ -144,7 +177,7 @@ export const TurnBlock = React.memo(function TurnBlock({
           <IconChevronDown size={20} />
         </span>
         <span className={cn("flex-shrink-0 font-medium", live && "text-green")}>
-          {countsLabel || "Worked"}
+          {live ? "Working" : "Worked"}
         </span>
         {familyReps.length > 0 && (
           <span className="flex flex-shrink-0 items-center gap-1.5 text-faint">
@@ -154,7 +187,10 @@ export const TurnBlock = React.memo(function TurnBlock({
           </span>
         )}
         {duration && !live && (
-          <span className="flex-shrink-0 text-faint">· {duration}</span>
+          <span className="flex-shrink-0 text-faint">{duration}</span>
+        )}
+        {countsLabel && (
+          <span className="flex-shrink-0 text-faint">· {countsLabel}</span>
         )}
         {failures > 0 && !live && (
           <span className="flex-shrink-0 text-[11.5px] text-red/80">
@@ -212,6 +248,7 @@ export const TurnBlock = React.memo(function TurnBlock({
                       !toolResults.has(entry.toolUseId)
                     }
                     onOpenSubagent={onOpenSubagent}
+                    onOpenEvidence={onOpenEvidence}
                   />
                 ))}
               </div>
@@ -264,6 +301,7 @@ function TurnMessage({
 function turnBlockPropsEqual(prev: Props, next: Props): boolean {
   if (prev.live !== next.live) return false;
   if (prev.onOpenSubagent !== next.onOpenSubagent) return false;
+  if (prev.onOpenEvidence !== next.onOpenEvidence) return false;
   if (prev.sessionId !== next.sessionId) return false;
   if (prev.items.length !== next.items.length) return false;
   for (let i = 0; i < next.items.length; i++) {
