@@ -14,6 +14,7 @@ const {
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
+const { execFile } = require("node:child_process");
 
 // AppKit can show its persistent-window crash-recovery prompt before Electron
 // finishes launching. On macOS 26 that modal can trap the browser process and
@@ -123,6 +124,27 @@ function inWindow(url) {
   }
 }
 
+// Sign-in pages for external services (e.g. the ChatGPT device-code sign-in
+// from Settings → Models). The default browser is often not where you're
+// logged into these accounts, so prefer Chrome and fall back to the default
+// browser when it isn't installed. The app's own GitHub OAuth is NOT in this
+// list — it must stay in-window so the session cookie lands in the app.
+const CHROME_AUTH_HOSTS = ["auth.openai.com"];
+
+function openExternal(url) {
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {}
+  if (process.platform === "darwin" && CHROME_AUTH_HOSTS.includes(host)) {
+    execFile("open", ["-a", "Google Chrome", url], (err) => {
+      if (err) shell.openExternal(url);
+    });
+    return;
+  }
+  shell.openExternal(url);
+}
+
 // os1://session/abc → https://os.tella.dev/session/abc; https app links pass through.
 function deepLinkToUrl(raw) {
   try {
@@ -195,12 +217,12 @@ function createWindow() {
   win.webContents.on("will-navigate", (e, url) => {
     if (!inWindow(url)) {
       e.preventDefault();
-      shell.openExternal(url);
+      openExternal(url);
     }
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (new URL(url).origin === APP_ORIGIN) return { action: "allow" };
-    shell.openExternal(url);
+    openExternal(url);
     return { action: "deny" };
   });
 
@@ -213,7 +235,7 @@ function createWindow() {
       items.push(
         {
           label: "Open Link in Browser",
-          click: () => shell.openExternal(params.linkURL),
+          click: () => openExternal(params.linkURL),
         },
         {
           label: "Copy Link",
