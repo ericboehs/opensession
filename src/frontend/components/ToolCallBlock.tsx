@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { langForFile, langForGrep } from "../lib/lang";
+import { resolveEntryImageSrc } from "../lib/osBlob";
 import { cn } from "../ui/cn";
 import { openGalleryFrom } from "./MediaLightbox";
 import {
@@ -47,6 +48,9 @@ interface Props {
   pending?: boolean;
   /** For Task/Agent calls with a known sub-agent id: open its conversation. */
   onOpenSubagent?: (agentId: string, label: string) => void;
+  /** Lets os-blob: image markers (transcript-v2 bounded entries) resolve to
+   *  the transcript-image route. Optional — without it markers pass through. */
+  sessionId?: string;
 }
 
 /** Split "mcp__linear__list_issues" into { server: "linear", tool: "list_issues" }. */
@@ -242,7 +246,7 @@ function stepDuration(entry: TranscriptEntry, result?: TranscriptEntry): string 
   return `${Math.floor(secs / 60)}m ${secs % 60}s`;
 }
 
-export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props) {
+export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionId }: Props) {
   const hasMedia = Boolean(result?.images?.length || result?.videos?.length);
   // Default closed for text-only output, but auto-open when media arrives
   // (covers both initial render and the live tool_result streaming in later).
@@ -371,11 +375,14 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent }: Props)
                 )}
                 {result.images && result.images.length > 0 && (
                   <div className="tool-result-images">
-                    {result.images.map((src, i) => (
-                      <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="md-image-link">
-                        <img className="md-image" src={src} alt="" loading="lazy" />
-                      </a>
-                    ))}
+                    {result.images.map((raw, i) => {
+                      const src = resolveEntryImageSrc(raw, sessionId);
+                      return (
+                        <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="md-image-link">
+                          <img className="md-image" src={src} alt="" loading="lazy" />
+                        </a>
+                      );
+                    })}
                   </div>
                 )}
                 {result.videos && result.videos.length > 0 && (

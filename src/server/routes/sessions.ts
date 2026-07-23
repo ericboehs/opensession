@@ -13,7 +13,7 @@ import { audit } from "../audit";
 import { pendingAsks } from "../asks";
 import { transcriptMatchSnippet } from "../jsonl-parser";
 import { envAlias } from "../rename-compat";
-import { transcriptStore } from "../transcript-store";
+import { transcriptDbPath, transcriptStore } from "../transcript-store";
 import { clearSessionFileArchive } from "../plain-archive";
 import { editPrReviewers } from "../pr-info";
 import { promptQueues, requeueSteerReceipts, stoppedSessions } from "../queue-state";
@@ -138,7 +138,15 @@ export async function handleSessionsRoutes(
 			) {
 				try {
 					const full = transcriptStore().getFullEntry(session.id, entryId);
-					if (full) return Response.json({ content: full.content });
+					// content keeps its exact legacy shape; toolInput/images are
+					// additive (existing clients ignore them) — they carry the
+					// unstripped fields the bounded store row summarized away.
+					if (full)
+						return Response.json({
+							content: full.content,
+							toolInput: full.toolInput,
+							images: full.images,
+						});
 				} catch {
 					// store read failed — the legacy scan below still serves the entry
 				}
@@ -148,7 +156,11 @@ export async function handleSessionsRoutes(
 			);
 			if (!entry)
 				return Response.json({ error: "Entry not found" }, { status: 404 });
-			return Response.json({ content: entry.content });
+			return Response.json({
+				content: entry.content,
+				toolInput: entry.toolInput,
+				images: entry.images,
+			});
 		}
 	}
 
@@ -178,13 +190,44 @@ export async function handleSessionsRoutes(
 		);
 		if (m && req.method === "GET") {
 			const session = findSession(decodeURIComponent(m[1]));
-			if (!session?.transcriptPath)
+			if (!session)
 				return Response.json({ error: "Session not found" }, { status: 404 });
-			const img = resolveTranscriptImage(
-				session.transcriptPath,
-				decodeURIComponent(m[2]),
-				parseInt(m[3], 10),
-			);
+			const entryId = decodeURIComponent(m[2]);
+			const idx = parseInt(m[3], 10);
+			let img = session.transcriptPath
+				? resolveTranscriptImage(session.transcriptPath, entryId, idx)
+				: null;
+			// Transcript v2 fallback (docs/transcript-v2-design.md §1): entries
+			// >32KB are stored with images[] replaced by "os-blob:<uuid>/<i>"
+			// markers; the real data-URLs live in the store's full entry. When the
+			// mirror can't resolve the image, decode it from there. Guarded on the
+			// DB file existing — not the flag — so images keep serving through
+			// kill-switch windows.
+			if (!img && existsSync(transcriptDbPath())) {
+				try {
+					const src = transcriptStore().getFullEntry(session.id, entryId)
+						?.images?.[idx];
+					if (typeof src === "string") {
+						if (!src.startsWith("data:")) {
+							img = { redirect: src };
+						} else {
+							const dm = src.match(/^data:([^;,]+);base64,(.*)$/s);
+							if (dm) {
+								const buf = Buffer.from(dm[2], "base64");
+								img = {
+									bytes: buf.buffer.slice(
+										buf.byteOffset,
+										buf.byteOffset + buf.byteLength,
+									) as ArrayBuffer,
+									contentType: dm[1],
+								};
+							}
+						}
+					}
+				} catch {
+					// store read failed — fall through to the 404 below
+				}
+			}
 			if (!img)
 				return Response.json({ error: "Image not found" }, { status: 404 });
 			if ("redirect" in img)
@@ -505,6 +548,16 @@ export async function handleSessionsRoutes(
 			return Response.json({ error: "Session not found" }, { status: 404 });
 
 		const cleanWorktree = url.searchParams.get("worktree") === "true";
+		// Purge any transcript-v2 store rows for a deleted session. Guarded on
+		// the DB file existing — NOT the flag — so a kill-switch window can't
+		// leave resurrectable rows behind for deterministic session ids
+		// (bks-ghpr-*). Best-effort: a store hiccup must never block deletion.
+		const purgeTranscriptRows = (id: string) => {
+			try {
+				if (existsSync(transcriptDbPath()))
+					transcriptStore().deleteSessionTranscript(id);
+			} catch {}
+		};
 		try {
 			// Cascade-delete this session's side chats — they live only in this
 			// session's panel (suppressed from the sidebar), so orphaning them
@@ -517,8 +570,10 @@ export async function handleSessionsRoutes(
 					deleteSession(child);
 					destroySessionSandbox(child, "delete");
 				} catch {}
+				purgeTranscriptRows(child.id);
 			}
 			deleteSession(session);
+			purgeTranscriptRows(session.id);
 			invalidateSessionsCache();
 			// Tear down the session's sandbox (container + engine-state volumes —
 			// and in volume-workspace mode the workspace volume itself; that data

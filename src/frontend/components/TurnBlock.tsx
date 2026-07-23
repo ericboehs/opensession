@@ -8,6 +8,7 @@ import {
   toolSummary,
 } from "./ToolCallBlock";
 import { ClampedBody } from "./MessageBubble";
+import { resolveEntryImageSrc } from "../lib/osBlob";
 import { IconChevronDown } from "./icons";
 import { cn } from "../ui/cn";
 import {
@@ -200,6 +201,7 @@ export const TurnBlock = React.memo(function TurnBlock({
                   <ToolCallBlock
                     key={entry.id}
                     entry={entry}
+                    sessionId={sessionId}
                     result={
                       entry.toolUseId ? toolResults.get(entry.toolUseId) : undefined
                     }
@@ -239,17 +241,20 @@ function TurnMessage({
       />
       {entry.images && entry.images.length > 0 && (
         <div className="msg-images">
-          {entry.images.map((src, i) => (
-            <a
-              key={i}
-              href={src}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="md-image-link"
-            >
-              <img className="md-image" src={src} alt="" loading="lazy" />
-            </a>
-          ))}
+          {entry.images.map((raw, i) => {
+            const src = resolveEntryImageSrc(raw, sessionId);
+            return (
+              <a
+                key={i}
+                href={src}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="md-image-link"
+              >
+                <img className="md-image" src={src} alt="" loading="lazy" />
+              </a>
+            );
+          })}
         </div>
       )}
     </div>

@@ -6,6 +6,7 @@ import { parseHumanReply, parseAttribution, isGitHubAttribution } from "../lib/h
 import { useCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
 import { BASE_PATH } from "../lib/base";
+import { resolveEntryImageSrc } from "../lib/osBlob";
 
 // Only this much of a message is markdown-parsed eagerly. marked is
 // superlinear on input size (~25ms at 10KB, ~400ms at 80KB, seconds past
@@ -149,22 +150,33 @@ interface Props {
 	sessionId?: string;
 }
 
-/** Inline images carried on an entry (Read-of-image results, pasted images). */
-function EntryImages({ images }: { images?: string[] }) {
+/** Inline images carried on an entry (Read-of-image results, pasted images).
+ *  os-blob: markers (transcript-v2 bounded entries) resolve to the
+ *  transcript-image route; real srcs pass through untouched. */
+function EntryImages({
+	images,
+	sessionId,
+}: {
+	images?: string[];
+	sessionId?: string;
+}) {
 	if (!images || images.length === 0) return null;
 	return (
 		<div className="msg-images">
-			{images.map((src, i) => (
-				<a
-					key={i}
-					href={src}
-					target="_blank"
-					rel="noopener noreferrer"
-					className="md-image-link"
-				>
-					<img className="md-image" src={src} alt="" loading="lazy" />
-				</a>
-			))}
+			{images.map((raw, i) => {
+				const src = resolveEntryImageSrc(raw, sessionId);
+				return (
+					<a
+						key={i}
+						href={src}
+						target="_blank"
+						rel="noopener noreferrer"
+						className="md-image-link"
+					>
+						<img className="md-image" src={src} alt="" loading="lazy" />
+					</a>
+				);
+			})}
 		</div>
 	);
 }
@@ -279,7 +291,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 					entry={entry}
 					sessionId={sessionId}
 				/>
-				<EntryImages images={entry.images} />
+				<EntryImages images={entry.images} sessionId={sessionId} />
 				<EntryVideos videos={entry.videos} />
 				<EntryFiles files={entry.files} />
 			</div>
@@ -315,7 +327,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 						sessionId={sessionId}
 					/>
 				)}
-				<EntryImages images={entry.images} />
+				<EntryImages images={entry.images} sessionId={sessionId} />
 				<EntryVideos videos={entry.videos} />
 				<EntryFiles files={entry.files} />
 			</div>
@@ -335,7 +347,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 				entry={entry}
 				sessionId={sessionId}
 			/>
-			<EntryImages images={entry.images} />
+			<EntryImages images={entry.images} sessionId={sessionId} />
 			<EntryVideos videos={entry.videos} />
 		</div>
 	);
