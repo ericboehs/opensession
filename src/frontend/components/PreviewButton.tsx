@@ -143,7 +143,7 @@ export function PreviewButton({
     // running — nothing to wait for, open the app directly. (Out-of-scope
     // origin, so installed PWAs hand this to a normal browser context.)
     if (status?.running && status.previewUrl) {
-      window.open(url, "_blank", "noopener");
+      window.open(url, `preview-${session.id}`, "noopener");
       return;
     }
     // Popup-blocker-safe "open when ready": window.open must fire synchronously
@@ -152,7 +152,12 @@ export function PreviewButton({
     // reports running. On the iOS PWA this opens the in-app browser view — a
     // new context, never replacing the app window. A blocked open returns null
     // and simply degrades to today's inline starting state.
-    const wait = window.open(waitUrl, "_blank");
+    // Per-session window NAME (not _blank): reopening the same session's
+    // preview reuses its own tab instead of spawning duplicates, and — the
+    // real reason — a coalesced/reused browser view (iOS PWA in-app sheet)
+    // can never end up showing ANOTHER session's interstitial (seen live
+    // 2026-07-23: several sessions all presented preview-wait/<other-id>).
+    const wait = window.open(waitUrl, `preview-${session.id}`);
     setStarting(true);
     try {
       const s = await startPreviewApi(session.id);

@@ -201,10 +201,10 @@ function patchContainer(repoId: string, name: string, patch: Partial<PoolContain
 
 const g = globalThis as unknown as {
   __previewPoolTimer?: ReturnType<typeof setInterval>;
-  __previewPoolBusy?: Map<string, Promise<void>>;
+  __previewPoolBusy?: Map<string, Promise<unknown>>;
   __previewPoolSyncs?: Map<string, { timer: ReturnType<typeof setInterval>; mtimes: Map<string, number> }>;
 };
-const busy: Map<string, Promise<void>> = (g.__previewPoolBusy ??= new Map());
+const busy: Map<string, Promise<unknown>> = (g.__previewPoolBusy ??= new Map());
 /** worktreeDir -> live sync loop. */
 const syncs = (g.__previewPoolSyncs ??= new Map());
 
@@ -415,7 +415,7 @@ async function originDefaultSha(repo: Repo): Promise<string | null> {
 
 export async function refreshGoldenImage(repoId: string, force = false): Promise<void> {
   const existing = busy.get(`golden-${repoId}`);
-  if (existing) return existing;
+  if (existing) return existing as Promise<void>;
   const run = doRefreshGolden(repoId, force).finally(() => busy.delete(`golden-${repoId}`));
   busy.set(`golden-${repoId}`, run);
   return run;
@@ -852,6 +852,22 @@ async function convergeContainerToWorktree(
   worktreeDir: string,
   c: PoolContainer,
 ): Promise<string> {
+  // One converge per container at a time: the claim's converge and a status-
+  // poll-resumed sync loop's re-converge raced into the same workspace and
+  // the loser died on git's index.lock (live 21:34, killed a fresh claim).
+  const key = `converge-${c.name}`;
+  const inflight = busy.get(key) as Promise<string> | undefined;
+  if (inflight) return inflight;
+  const run = doConverge(repo, worktreeDir, c).finally(() => busy.delete(key));
+  busy.set(key, run);
+  return run;
+}
+
+async function doConverge(
+  repo: Repo,
+  worktreeDir: string,
+  c: PoolContainer,
+): Promise<string> {
   const base = c.syncBase || c.bootSha;
   const head = (await $`git -C ${worktreeDir} rev-parse HEAD`.quiet().nothrow().text()).trim();
   if (!head || head === base) return base;
@@ -1031,7 +1047,7 @@ export function previewPoolSweepNow(): Promise<void> {
 
 async function sweepPool(): Promise<void> {
   const existing = busy.get("sweep");
-  if (existing) return existing;
+  if (existing) return existing as Promise<void>;
   const run = (async () => {
     for (const repo of Object.values(configuredRepos())) {
       if (repo.sharedCheckout) continue;
