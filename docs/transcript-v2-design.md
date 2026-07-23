@@ -47,7 +47,8 @@ engine becomes a replaceable adapter.**
    Kill switch after activation: `=0` + restart.
 4. **Dual-write, never cut-over-and-delete.** The mirror jsonl keeps being written exactly as
    today, by every current writer. Every legacy read path stays functional. v2 is an additional,
-   preferred path.
+   preferred path. (Post-ship: retiring the mirror WRITE is now flag-gated and prepared — §11 —
+   but the flip is a separate, human-announced step; the default stays dual-write.)
 5. **No `git reset/checkout/add -A`** in this shared checkout; stage specific files; commit+push
    per milestone. Other sessions may have uncommitted files — never touch them.
 6. **Tests must not transitively import `run-rpc.ts`** (bun test steals the live rpc socket).
@@ -289,3 +290,59 @@ probe → commit specific files.
    UI watch gets `v2:true`; a legacy (linear) session still loads via old path; steer receipt
    clears on a v2 session.
 5. Kick the full backfill; watch its summary + transcripts.db growth metric.
+
+## 11. Mirror retirement (prep landed 2026-07-23 — flag NOT flipped)
+
+Everything the mirror WRITE still fed has been ported off it, so invariant 4's dual-write can
+end behind one flag. Ported in this pass:
+
+- **engineUserTexts → store-first**: steer-receipt dedup reads user texts through
+  mergedSessionTranscript WITH the unified id — store when imported + drift-free (v2ReadAll
+  hydrates clamped rows to full forms via getFullEntry, so exact-text matching holds), legacy
+  merge otherwise. Every caller passes a full session; `id` stays optional.
+- **Plain sessions**: no port needed — see §3 (no `plain-` unified ids exist anywhere; gates
+  kept as defensive dead code). The legacy @michael plain loop's turns live on in OpenCode's
+  SQLite; nothing UI-facing reads their mirror files.
+- **Watcher-feeds-store** (file-watcher.ts feedTranscriptStore): the legacy watch's incremental
+  parse also upserts into the store (flag on AND session already imported — the feed never runs
+  the import, so seq order can't invert). External CLI/tmux appends now reach the store live
+  while any legacy watch exists; a feed failure marks the session store-degraded.
+  **serveTranscriptV2's externally-owned refusal deliberately STAYS**: the feed's lifecycle is
+  tied to legacy viewers, so a v2-only viewer set would have no feeder and render stale mid-run.
+  Relaxing it needs a socket-independent feed (watch held open by the v2 subscription itself)
+  and is the LAST retirement step — it is NOT a prerequisite for the flag flip, because
+  external writers never go through the mirror writer.
+- **Forced client reload**: `frontend_updated` carries an optional `force` —
+  POST /backstage/api/admin/frontend-reload broadcasts it; force-capable bundles auto-reload
+  after a 20s countdown (hidden tabs immediately). Converges every open tab onto a seq-capable
+  bundle before the flip.
+
+**The flag**: `OPENSESSION_MIRROR_WRITE` (envAlias, read at call time like the v2 flag).
+Default ON; `=0` stops appendOpencodeTranscript's file append, ensureOpencodeTranscriptFile's
+seeding of NEW files, and (via the append gate) the gap-backfill's mirror appends — store
+writes always keep running, and `=0` is ignored entirely when OPENSESSION_TRANSCRIPT_V2 isn't
+on (with the store off, the mirror is the only writer — fail-safe). Frozen-mirror coherence:
+a frozen file never grows past its recorded import watermark, so v2TranscriptHasDrift stays
+clean; a mirror ahead of its watermark at flip time is explained once by the tail probe (those
+entries were dual-written) and the watermark refreshes. New sessions post-flip have no mirror
+file at all → v2MirrorFiles is empty → "nothing to drift against", and their
+`session.transcriptPath` stays null, which is why the force-reload precedes the flip (a legacy
+bundle would see a blank live view for them).
+
+**Flip procedure** (later, deliberate, human-announced):
+1. Rebuild + `POST /backstage/api/admin/frontend-reload {"force":true}` — wait ~1 min for tabs
+   to converge on a seq bundle (older-than-2026-07-23 bundles only get a pill; check for
+   stragglers before proceeding).
+2. Add `OPENSESSION_MIRROR_WRITE=0` to `/home/ubuntu/.opensession.env` + restart (runner
+   closures hold the append path — the env flip needs the restart anyway).
+3. Observe: v2 watches serve, steer receipts clear, reattach gap-backfills hit the store,
+   no drift-re-import storms in the logs, `~/.claude/projects/-opencode-engine` stops growing.
+4. Roll back any time: remove the env line + restart (mirror resumes appending; the §8 tail
+   probe explains the store-ahead window as… nothing — the mirror is simply behind, which no
+   check reads as drift; the next imports re-watermark).
+5. LATER, separately: relax the externally-owned refusal (socket-independent watcher feed),
+   then delete the legacy machinery (mirror seeding/backfill/readers) once no session file
+   references a mirror path that matters.
+
+**Not covered by the flag** (unchanged writers): external CLI/tmux engines writing their own
+transcript files, and OpenCode's SQLite — both remain read sources for imports/drift recovery.

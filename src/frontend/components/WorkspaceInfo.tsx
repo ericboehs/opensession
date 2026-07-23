@@ -96,6 +96,8 @@ interface Props {
 	reviewRequest?: ReviewRequestInfo | null;
 	/** The chat that owns `reviewRequest` (may be a sibling, not the open one). */
 	reviewRequestSessionId?: string;
+	/** The request is complete because its reviewer submitted a GitHub review. */
+	reviewAcceptedFromPr?: boolean;
 	/** Optimistically push a reviewer pick / sign-off into the app-level session
 	    list, so the sidebar's review bands + the other chip instance flip at once
 	    instead of waiting up to a poll (~5s) for the change to round-trip. */
@@ -915,6 +917,7 @@ function ReviewerChip({
 	sessionId,
 	reviewRequest,
 	requestSessionId,
+	acceptedFromPr,
 	onReviewChange,
 }: {
 	sessionId: string;
@@ -924,6 +927,7 @@ function ReviewerChip({
 	    chip stays consistent with the sidebar's workspace-level band; a brand-new
 	    request (none exists) targets the open `sessionId`. */
 	requestSessionId?: string;
+	acceptedFromPr?: boolean;
 	/** Optimistically mirror a pick / sign-off into the app-level session list so
 	    every other surface (sidebar bands, the sibling chip) updates immediately. */
 	onReviewChange?: (sessionId: string, req: ReviewRequestInfo | null) => void;
@@ -1004,7 +1008,11 @@ function ReviewerChip({
 			<Menu.Popup align="start" sideOffset={6} className="min-w-[200px]">
 				{req &&
 					(accepted ? (
-						<Menu.Item onClick={() => accept(false)}>
+						<Menu.Item
+							onClick={() =>
+								acceptedFromPr && req ? pick(req.to) : accept(false)
+							}
+						>
 							<IconBell size={20} className="text-dim" />
 							<span className="min-w-0 flex-1 truncate">Reopen review</span>
 						</Menu.Item>
@@ -1192,6 +1200,7 @@ export function WorkspaceInfo({
 	sandbox,
 	reviewRequest,
 	reviewRequestSessionId,
+	reviewAcceptedFromPr,
 	onReviewChange,
 	onOpenTab,
 	onAddToInput,
@@ -1426,11 +1435,12 @@ export function WorkspaceInfo({
 						),
 					)}
 					<ReviewerChip
-					sessionId={sessionId}
-					reviewRequest={reviewRequest}
-					requestSessionId={reviewRequestSessionId}
-					onReviewChange={onReviewChange}
-				/>
+						sessionId={sessionId}
+						reviewRequest={reviewRequest}
+						requestSessionId={reviewRequestSessionId}
+						acceptedFromPr={reviewAcceptedFromPr}
+						onReviewChange={onReviewChange}
+					/>
 					<SandboxBadge sandbox={sandbox} />
 				</div>
 				{repo && (

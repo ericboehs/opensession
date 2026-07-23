@@ -42,6 +42,7 @@ import {
 	type PreviewStatus,
 } from "../lib/api";
 import { pollWhileVisible } from "../lib/poll";
+import { prReviewCompletion } from "../lib/review-queue";
 import { Composer } from "./Composer";
 import { ComposerAgents } from "./ComposerAgents";
 import { UsageMeter } from "./UsageMeter";
@@ -2309,10 +2310,18 @@ export function SessionViewer({
 	// workspace's request in the chip: the open chat's own if it has one, else a
 	// sibling's, carrying the owner id so clear/re-assign target the right chat.
 	const effectiveReview = useMemo(() => {
-		if (session.reviewRequest)
-			return { req: session.reviewRequest, ownerId: session.id };
-		const sib = (workspaceChats || []).find((c) => c.reviewRequest);
-		return sib ? { req: sib.reviewRequest!, ownerId: sib.id } : null;
+		const owner = session.reviewRequest
+			? session
+			: (workspaceChats || []).find((c) => c.reviewRequest);
+		if (!owner?.reviewRequest) return null;
+		const completion = prReviewCompletion(owner.reviewRequest, owner);
+		return {
+			req: completion
+				? { ...owner.reviewRequest, accepted: completion }
+				: owner.reviewRequest,
+			ownerId: owner.id,
+			acceptedFromPr: !!completion,
+		};
 	}, [session.reviewRequest, session.id, workspaceChats]);
 
 	// Returns true when the message was consumed, so the (uncontrolled)
@@ -3711,6 +3720,7 @@ export function SessionViewer({
 										sandbox={session.sandbox}
 										reviewRequest={effectiveReview?.req ?? null}
 										reviewRequestSessionId={effectiveReview?.ownerId}
+										reviewAcceptedFromPr={effectiveReview?.acceptedFromPr}
 										onReviewChange={onReviewChange}
 										send={connected ? send : undefined}
 										assets={assetFiles}
@@ -4479,6 +4489,7 @@ export function SessionViewer({
 									sandbox={session.sandbox}
 									reviewRequest={effectiveReview?.req ?? null}
 									reviewRequestSessionId={effectiveReview?.ownerId}
+									reviewAcceptedFromPr={effectiveReview?.acceptedFromPr}
 									onReviewChange={onReviewChange}
 									send={connected ? send : undefined}
 									assets={assetFiles}

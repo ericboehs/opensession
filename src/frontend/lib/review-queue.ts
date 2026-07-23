@@ -16,6 +16,24 @@ export interface ReviewQueueItem {
 	status: string;
 }
 
+export function prReviewCompletion(
+	request: NonNullable<UnifiedSession["reviewRequest"]>,
+	session: UnifiedSession,
+): { by: string; at: string } | null {
+	if (request.accepted || !session.prUpdatedAt) return null;
+	const reviewer = request.to.trim().toLowerCase();
+	if (
+		!reviewer ||
+		Date.parse(session.prUpdatedAt) <= Date.parse(request.at)
+	)
+		return null;
+	const hasReviewer = (people?: string[]) =>
+		(people || []).some((person) => person.toLowerCase() === reviewer);
+	if (!hasReviewer(session.prReviewedBy) || hasReviewer(session.prReviewRequested))
+		return null;
+	return { by: request.to, at: session.prUpdatedAt };
+}
+
 function sessionRepo(session: UnifiedSession): string {
 	return session.repo || "tella-fusion";
 }

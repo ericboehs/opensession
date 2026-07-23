@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { UnifiedSession } from "./types";
 import {
 	buildReviewQueue,
+	prReviewCompletion,
 	type ReviewQueuePr,
 } from "./review-queue";
 
@@ -49,6 +50,59 @@ function session(
 		...patch,
 	};
 }
+
+describe("prReviewCompletion", () => {
+	const request = {
+		to: "Michiel",
+		by: "Kent",
+		at: "2026-07-23T10:22:13Z",
+	};
+
+	test("completes a request when its reviewer submitted a newer review", () => {
+		expect(
+			prReviewCompletion(
+				request,
+				session({
+					id: "reviewed",
+					branch: "please-fix",
+					prReviewedBy: ["michiel"],
+					prReviewRequested: [],
+					prUpdatedAt: "2026-07-23T10:23:34Z",
+				}),
+			),
+		).toEqual({ by: "Michiel", at: "2026-07-23T10:23:34Z" });
+	});
+
+	test("does not reuse an old review or override a pending re-request", () => {
+		const reviewed = {
+			prReviewedBy: ["michiel"],
+			prReviewRequested: [],
+		};
+		expect(
+			prReviewCompletion(
+				request,
+				session({
+					id: "old-review",
+					branch: "old-review",
+					...reviewed,
+					prUpdatedAt: "2026-07-23T10:20:00Z",
+				}),
+			),
+		).toBeNull();
+		expect(
+			prReviewCompletion(
+				request,
+				session({
+					id: "rerequested",
+					branch: "rerequested",
+					...reviewed,
+					prReviewRequested: ["michiel"],
+					prUpdatedAt: "2026-07-23T10:23:34Z",
+				}),
+			),
+		).toBeNull();
+	});
+});
 
 describe("buildReviewQueue", () => {
 	test("puts a green personal PR in ready", () => {
