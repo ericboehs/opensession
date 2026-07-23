@@ -514,6 +514,10 @@ export type WSClientMessage =
 			/** Seq-mode resume cursor: the lastSeq of the last v2 frame this
 			 *  client received for the session (used instead of offset/rev). */
 			sinceSeq?: number;
+			/** Ordered ephemeral-feed capability and reconnect cursor. */
+			supportsFeed?: boolean;
+			sinceFeedSeq?: number;
+			feedEpoch?: string;
 	  }
 	| { type: "unwatch"; sessionId: string }
 	| {
@@ -677,6 +681,38 @@ export type WSServerMessage =
 			v2?: boolean;
 			firstSeq?: number;
 			lastSeq?: number;
+	  }
+	| {
+			type: "session_feed";
+			sessionId: string;
+			feedEpoch: string;
+			feedSeq: number;
+			runId?: string;
+			turnId?: string;
+			entryId?: string;
+			phase: "delta" | "committed" | "status";
+			event:
+				| { type: "transcript_append"; sessionId?: string; entries: TranscriptEntry[]; firstSeq?: number; lastSeq?: number; v2?: boolean }
+				| { type: "stream_start"; sessionId: string; by?: string }
+				| { type: "stream_text"; sessionId?: string; text: string }
+				| { type: "stream_tool_use"; sessionId?: string; entry: TranscriptEntry }
+				| { type: "stream_tool_result"; sessionId?: string; entry: TranscriptEntry }
+				| { type: "stream_done"; sessionId?: string }
+				| { type: "session_status"; sessionId?: string; isRunning: boolean };
+	  }
+	| {
+			type: "feed_snapshot";
+			sessionId: string;
+			feedEpoch: string;
+			feedSeq: number;
+			active: null | {
+				runId: string;
+				turnId: string;
+				entryId: string;
+				by?: string;
+				text: string;
+				startedAt: number;
+			};
 	  }
 	| { type: "session_status"; sessionId?: string; isRunning: boolean }
 	| { type: "presence"; sessionId: string; viewers: string[] }

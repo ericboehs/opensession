@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { recordChatPerf } from "../lib/chat-performance";
 
 // Scroll engineering for the transcript. The guiding rule: never move the reader
 // against their intent. The reader's own scroll position is the source of truth
@@ -138,6 +139,7 @@ export function useChatScroll(initialFollowing = true): ChatScroll {
   // A cached session can mount while intentionally reading history. Its first
   // relayout describes restored content, not content that arrived below it.
   const hasRelayoutRef = useRef(false);
+  const scrollPerfRef = useRef({ raf: 0, startedAt: 0, frames: 0 });
 
   const distanceFromBottom = useCallback(() => {
     const el = containerRef.current;
@@ -319,6 +321,20 @@ export function useChatScroll(initialFollowing = true): ChatScroll {
   // The reader's scroll is the source of truth for following. Reaching the live
   // edge re-engages it; scrolling away disengages it.
   const onScroll = useCallback(() => {
+    const scrollPerf = scrollPerfRef.current;
+    if (!scrollPerf.startedAt) scrollPerf.startedAt = performance.now();
+    if (!scrollPerf.raf) {
+      scrollPerf.raf = requestAnimationFrame(() => {
+        scrollPerf.raf = 0;
+        scrollPerf.frames++;
+        const elapsed = performance.now() - scrollPerf.startedAt;
+        if (elapsed >= 500) {
+          recordChatPerf("scroll_fps", (scrollPerf.frames * 1_000) / elapsed);
+          scrollPerf.startedAt = performance.now();
+          scrollPerf.frames = 0;
+        }
+      });
+    }
     const atEdge = distanceFromBottom() < STICK_THRESHOLD;
     const now = performance.now();
     if (autoFlightRef.current) {

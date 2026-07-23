@@ -17,11 +17,26 @@ export function MarkdownBody({
 }) {
 	const ref = useRef<HTMLDivElement>(null);
 	const [theme, setTheme] = useState<EffectiveTheme>(effectiveTheme);
+	const [visible, setVisible] = useState(false);
 	useEffect(() => onThemeChanged(() => setTheme(effectiveTheme())), []);
+	useEffect(() => {
+		const node = ref.current;
+		if (!node || typeof IntersectionObserver === "undefined") {
+			setVisible(true);
+			return;
+		}
+		const root = node.closest(".viewer-messages");
+		const observer = new IntersectionObserver(
+			([entry]) => setVisible(Boolean(entry?.isIntersecting)),
+			{ root, rootMargin: "800px 0px" },
+		);
+		observer.observe(node);
+		return () => observer.disconnect();
+	}, []);
 
 	useEffect(() => {
 		// marked emits <code class="language-x"> only for tagged fences.
-		if (!html.includes('<code class="language-')) return;
+		if (!visible || !html.includes('<code class="language-')) return;
 		const el = ref.current;
 		if (!el) return;
 		let alive = true;
@@ -38,7 +53,11 @@ export function MarkdownBody({
 				for (const code of blocks) {
 					const lang = /language-([^\s"]+)/.exec(code.className)?.[1];
 					if (!lang) continue;
-					const out = await m.highlightToHtml(code.textContent ?? "", lang);
+					const raw = code.textContent ?? "";
+					// Giant generated files stay a permanent plain <pre>; highlighting
+					// them is expensive and adds little reading value.
+					if (raw.length > 20_000) continue;
+					const out = await m.highlightToHtml(raw, lang);
 					const pre = code.parentElement;
 					if (!alive || !out || !pre || !ref.current?.contains(pre)) continue;
 					const tpl = document.createElement("template");
@@ -54,7 +73,7 @@ export function MarkdownBody({
 		return () => {
 			alive = false;
 		};
-	}, [html, theme]);
+	}, [html, theme, visible]);
 
 	return (
 		<div

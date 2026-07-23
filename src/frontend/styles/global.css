@@ -63,7 +63,8 @@
 	--cs: round;
 	/* Chat column width — messages, work blocks, composer, ask cards all share
 	   it so the conversation reads as one column. */
-	--chat-col: 1000px;
+	--chat-col: 740px;
+	--chat-evidence: 1000px;
 	/* Header height grows by the iOS status-bar inset when installed as a PWA
      (black-translucent draws the webview under the clock/notch) */
 	--header-h: calc(52px + env(safe-area-inset-top, 0px));
@@ -8167,7 +8168,7 @@ a.workspace-info-check-row {
 
 .msg-body {
 	line-height: 1.65;
-	font-size: 14px;
+	font-size: 15px;
 	word-break: break-word;
 	/* Flex column so WebKit doesn't band-paint the gaps between paragraphs
 	   to the full column width (same reason as .viewer-messages / .msg). */
@@ -16803,4 +16804,37 @@ html.wco .settings-sidenav {
 .workspace-info-review-btn:hover {
 	background: var(--bg-hover);
 	border-color: var(--text-faint);
+}
+.transcript-settled {
+	content-visibility: auto;
+	contain-intrinsic-size: auto 96px;
+}
+
+.transcript-window-placeholder {
+	pointer-events: none;
+}
+
+.evidence-label {
+	margin: 0 0 6px;
+	color: var(--text-faint);
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.evidence-action {
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: transparent;
+	padding: 4px 8px;
+	color: var(--text-dim);
+	font: inherit;
+	font-size: 11px;
+	cursor: pointer;
+}
+
+.evidence-action:hover {
+	border-color: var(--line-strong);
+	color: var(--text);
 }

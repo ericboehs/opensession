@@ -1,173 +1,193 @@
-import React, { useEffect, useState } from "react";
-import { createHighlighterCore, type HighlighterCore, type ShikiTransformer } from "shiki/core";
-import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
-import bash from "@shikijs/langs/bash";
-import typescript from "@shikijs/langs/typescript";
-import tsx from "@shikijs/langs/tsx";
-import javascript from "@shikijs/langs/javascript";
-import jsx from "@shikijs/langs/jsx";
-import json from "@shikijs/langs/json";
-import css from "@shikijs/langs/css";
-import html from "@shikijs/langs/html";
-import yaml from "@shikijs/langs/yaml";
-import markdown from "@shikijs/langs/markdown";
-import sql from "@shikijs/langs/sql";
-import diff from "@shikijs/langs/diff";
-import toml from "@shikijs/langs/toml";
-import rust from "@shikijs/langs/rust";
-import swift from "@shikijs/langs/swift";
-import githubDark from "@shikijs/themes/github-dark-default";
-import githubLight from "@shikijs/themes/github-light-default";
-// Shiki ships no ReScript grammar — vendored from rescript-vscode
-import rescriptGrammar from "../lib/rescript.tmLanguage.json";
-import { LANG_BY_EXT } from "../lib/lang";
+import React, { useEffect, useRef, useState } from "react";
+import type { ShikiRequest } from "../lib/shiki-engine";
 
-const rescript = { ...(rescriptGrammar as any), name: "rescript" };
+const MAX_HIGHLIGHT_CHARS = 20_000;
+const CACHE_MAX = 300;
+const cache = new Map<string, string | null>();
+const pending = new Map<
+	number,
+	{ resolve: (html: string | null) => void; reject: (error: unknown) => void }
+>();
+let worker: Worker | null = null;
+let requestId = 0;
 
-// Singleton highlighter, created on first use. Fine-grained core with the
-// JS regex engine keeps the bundle small (no WASM, only the langs we list).
-let highlighterPromise: Promise<HighlighterCore> | null = null;
-
-function getHighlighter(): Promise<HighlighterCore> {
-  if (!highlighterPromise) {
-    highlighterPromise = createHighlighterCore({
-      themes: [githubDark, githubLight],
-      langs: [
-        bash, typescript, tsx, javascript, jsx, json, css, html,
-        yaml, markdown, sql, diff, toml, rust, swift, rescript,
-      ],
-      engine: createJavaScriptRegexEngine({ forgiving: true }),
-    });
-  }
-  return highlighterPromise;
-}
-
-function getResolvedTheme(): "dark" | "light" {
-  if (typeof document === "undefined") return "dark";
-  return document.documentElement.dataset.theme === "light" ? "light" : "dark";
-}
-
-/**
- * Highlight bare code to shiki HTML for the current theme, or null when the
- * language isn't one we ship a grammar for (caller keeps its plain <pre>).
- * Accepts markdown fence infos ("ts", "typescript", "sh", …) — short forms go
- * through the same extension map the tool blocks use.
- */
-export async function highlightToHtml(
-  code: string,
-  lang: string,
-): Promise<string | null> {
-  const h = await getHighlighter();
-  const resolved = LANG_BY_EXT[lang.toLowerCase()] ?? lang.toLowerCase();
-  if (!h.getLoadedLanguages().includes(resolved)) return null;
-  return h.codeToHtml(code, {
-    lang: resolved,
-    theme:
-      getResolvedTheme() === "light"
-        ? "github-light-default"
-        : "github-dark-default",
-  });
+function resolvedTheme(): "dark" | "light" {
+	if (typeof document === "undefined") return "dark";
+	return document.documentElement.dataset.theme === "light" ? "light" : "dark";
 }
 
 export function useResolvedTheme(): "dark" | "light" {
-  const [theme, setTheme] = useState<"dark" | "light">(getResolvedTheme);
+	const [theme, setTheme] = useState<"dark" | "light">(resolvedTheme);
+	useEffect(() => {
+		const root = document.documentElement;
+		const observer = new MutationObserver(() => setTheme(resolvedTheme()));
+		observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+		return () => observer.disconnect();
+	}, []);
+	return theme;
+}
 
-  useEffect(() => {
-    const root = document.documentElement;
-    const observer = new MutationObserver(() => setTheme(getResolvedTheme()));
-    observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => observer.disconnect();
-  }, []);
+function cacheKey(request: ShikiRequest): string {
+	let hash = 2166136261;
+	for (let i = 0; i < request.code.length; i++) {
+		hash ^= request.code.charCodeAt(i);
+		hash = Math.imul(hash, 16777619);
+	}
+	return [
+		request.theme,
+		request.lang,
+		request.gutter ? 1 : 0,
+		request.requireGutter ? 1 : 0,
+		request.code.length,
+		hash >>> 0,
+	].join(":");
+}
 
-  return theme;
+function remember(key: string, value: string | null) {
+	cache.delete(key);
+	cache.set(key, value);
+	while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
 }
 
 /**
- * Tool output carries a line-number gutter that confuses the grammars:
- * Read is cat -n style ("  348\t<code>"), Grep is rg -n style ("348:<code>"
- * match lines, "348-<code>" context lines, "--" group separators). Split the
- * gutter off, highlight the bare code, and re-attach the numbers as a faint
- * non-selectable gutter span.
+ * Imported by the blob worker. Keeping the engine behind this dynamic import
+ * means the multi-MB grammars are neither parsed nor initialized on the UI
+ * thread in the normal path.
  */
-function splitGutter(content: string): { nums: string[]; code: string } | null {
-  const lines = content.split("\n");
-  const formats: { re: RegExp; sep?: string }[] = [
-    { re: /^(\s*\d+)\t/ }, // Read: cat -n
-    { re: /^(\d+[-:])/, sep: "--" }, // Grep: rg -n with context
-  ];
-
-  for (const { re, sep } of formats) {
-    const matches = lines.map((l) => l.match(re));
-    const isSep = lines.map((l) => sep !== undefined && l === sep);
-    const nonEmpty = lines.filter((l) => l.length > 0).length;
-    const matched = matches.filter(Boolean).length + isSep.filter(Boolean).length;
-    if (matched === 0 || matched < nonEmpty * 0.8) continue;
-
-    const width = Math.max(...matches.map((m) => (m ? m[1].length : 0)));
-    return {
-      nums: lines.map((l, i) =>
-        isSep[i] ? sep! : matches[i] ? matches[i]![1].padStart(width) + " " : ""
-      ),
-      code: lines
-        .map((l, i) => (isSep[i] ? "" : matches[i] ? l.slice(matches[i]![0].length) : l))
-        .join("\n"),
-    };
-  }
-  return null;
+export async function runShikiWorker(request: ShikiRequest) {
+	const { renderShiki } = await import("../lib/shiki-engine");
+	return renderShiki(request);
 }
 
-function gutterTransformer(nums: string[]): ShikiTransformer {
-  return {
-    line(node, line) {
-      node.children.unshift({
-        type: "element",
-        tagName: "span",
-        properties: { class: "shiki-gutter" },
-        children: [{ type: "text", value: nums[line - 1] ?? "" }],
-      });
-    },
-  };
+function getWorker(): Worker | null {
+	if (worker || typeof Worker === "undefined") return worker;
+	try {
+		const moduleUrl = import.meta.url;
+		const source = `
+			import { runShikiWorker } from ${JSON.stringify(moduleUrl)};
+			self.onmessage = async ({ data }) => {
+				try {
+					const html = await runShikiWorker(data.request);
+					self.postMessage({ id: data.id, html });
+				} catch (error) {
+					self.postMessage({ id: data.id, error: String(error) });
+				}
+			};
+		`;
+		const url = URL.createObjectURL(
+			new Blob([source], { type: "text/javascript" }),
+		);
+		worker = new Worker(url, { type: "module", name: "chat-shiki" });
+		URL.revokeObjectURL(url);
+		worker.onmessage = ({ data }) => {
+			const job = pending.get(data.id);
+			if (!job) return;
+			pending.delete(data.id);
+			if (data.error) job.reject(new Error(data.error));
+			else job.resolve(data.html ?? null);
+		};
+		worker.onerror = (error) => {
+			for (const job of pending.values()) job.reject(error);
+			pending.clear();
+			worker?.terminate();
+			worker = null;
+		};
+	} catch {
+		worker = null;
+	}
+	return worker;
+}
+
+async function highlight(request: ShikiRequest): Promise<string | null> {
+	if (request.code.length > MAX_HIGHLIGHT_CHARS) return null;
+	const key = cacheKey(request);
+	if (cache.has(key)) return cache.get(key)!;
+	const target = getWorker();
+	let html: string | null;
+	if (target) {
+		html = await new Promise<string | null>((resolve, reject) => {
+			const id = ++requestId;
+			pending.set(id, { resolve, reject });
+			target.postMessage({ id, request });
+		}).catch(async () => runShikiWorker(request));
+	} else {
+		html = await runShikiWorker(request);
+	}
+	remember(key, html);
+	return html;
+}
+
+export async function highlightToHtml(
+	code: string,
+	lang: string,
+): Promise<string | null> {
+	return highlight({ code, lang, theme: resolvedTheme() });
+}
+
+function useVisible<T extends HTMLElement>() {
+	const ref = useRef<T>(null);
+	const [visible, setVisible] = useState(false);
+	useEffect(() => {
+		const node = ref.current;
+		if (!node || typeof IntersectionObserver === "undefined") {
+			setVisible(true);
+			return;
+		}
+		const root = node.closest(".viewer-messages");
+		const observer = new IntersectionObserver(
+			([entry]) => setVisible(Boolean(entry?.isIntersecting)),
+			{ root, rootMargin: "800px 0px" },
+		);
+		observer.observe(node);
+		return () => observer.disconnect();
+	}, []);
+	return [ref, visible] as const;
 }
 
 interface Props {
-  code: string;
-  lang: string;
-  /** Parse and preserve a line-number gutter (Read/Grep tool output). */
-  gutter?: boolean;
-  /** Only highlight when a gutter was actually found (e.g. Grep output may be bare file paths). */
-  requireGutter?: boolean;
+	code: string;
+	lang: string;
+	gutter?: boolean;
+	requireGutter?: boolean;
 }
 
-/** Syntax-highlighted code block; falls back to a plain pre until (or if) shiki is ready. */
+/** Plain immediately; worker-highlighted only once inside the viewport overscan. */
 export function CodeHighlight({ code, lang, gutter, requireGutter }: Props) {
-  const [html, setHtml] = useState<string | null>(null);
-  const theme = useResolvedTheme();
+	const [html, setHtml] = useState<string | null>(null);
+	const [theme, setTheme] = useState<"dark" | "light">(resolvedTheme);
+	const [ref, visible] = useVisible<HTMLDivElement>();
 
-  useEffect(() => {
-    let alive = true;
-    setHtml(null);
-    getHighlighter()
-      .then((h) => {
-        if (!alive) return;
-        const split = gutter ? splitGutter(code) : null;
-        if (requireGutter && !split) return; // leave the plain-pre fallback
-        setHtml(
-          h.codeToHtml(split ? split.code : code, {
-            lang,
-            theme: theme === "light" ? "github-light-default" : "github-dark-default",
-            transformers: split ? [gutterTransformer(split.nums)] : [],
-          })
-        );
-      })
-      .catch((e) => {
-        console.error("[shiki] highlight failed:", e);
-        if (alive) setHtml(null);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [code, lang, gutter, requireGutter, theme]);
+	useEffect(() => {
+		const root = document.documentElement;
+		const observer = new MutationObserver(() => setTheme(resolvedTheme()));
+		observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+		return () => observer.disconnect();
+	}, []);
 
-  if (html === null) return <pre className="tool-pre">{code}</pre>;
-  return <div className="tool-pre tool-pre-code" dangerouslySetInnerHTML={{ __html: html }} />;
+	useEffect(() => {
+		if (!visible || code.length > MAX_HIGHLIGHT_CHARS) return;
+		let alive = true;
+		setHtml(null);
+		highlight({ code, lang, theme, gutter, requireGutter })
+			.then((next) => {
+				if (alive) setHtml(next);
+			})
+			.catch(() => {});
+		return () => {
+			alive = false;
+		};
+	}, [code, gutter, lang, requireGutter, theme, visible]);
+
+	return (
+		<div ref={ref}>
+			{html === null ? (
+				<pre className="tool-pre">{code}</pre>
+			) : (
+				<div
+					className="tool-pre tool-pre-code"
+					dangerouslySetInnerHTML={{ __html: html }}
+				/>
+			)}
+		</div>
+	);
 }

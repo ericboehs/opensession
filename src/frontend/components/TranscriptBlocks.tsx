@@ -3,6 +3,7 @@ import type { TranscriptEntry } from "../lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { TurnBlock } from "./TurnBlock";
 import { TurnFooter, collectTouchedFiles, type TouchedFile } from "./TurnFooter";
+import { VirtualTranscriptBlock } from "./VirtualTranscriptBlock";
 
 type RenderBlock =
 	| { kind: "entry"; entry: TranscriptEntry }
@@ -22,6 +23,7 @@ interface Props {
 	onFork?: (entryId: string) => void;
 	/** Called when a Task/Agent block's "Open sub-agent" affordance is clicked. */
 	onOpenSubagent?: (agentId: string, label: string) => void;
+	onOpenEvidence?: (entry: TranscriptEntry, result?: TranscriptEntry) => void;
 	/** Session owner (startedBy) — credited on un-attributed user turns. */
 	owner?: string;
 	/** Lets wire-clamped entries' "Show full message" fetch the full content. */
@@ -47,6 +49,7 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 	live,
 	onFork,
 	onOpenSubagent,
+	onOpenEvidence,
 	owner,
 	sessionId,
 }: Props) {
@@ -106,19 +109,30 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 
 	return (
 		<>
-			{blocks.map((block, i) =>
-				block.kind === "turn" ? (
+			{blocks.map((block, i) => {
+				const key =
+					block.kind === "turn"
+						? block.items[0].id
+						: block.kind === "footer"
+							? `${block.entry.id}:footer`
+							: block.entry.id;
+				const anchorId =
+					block.kind === "turn"
+						? `${block.items[block.items.length - 1].id}#turn`
+						: key;
+				const isLiveTail = Boolean(live) && i === blocks.length - 1;
+				const content =
+					block.kind === "turn" ? (
 					<TurnBlock
-						key={block.items[0].id}
 						items={block.items}
 						toolResults={toolResults}
-						live={Boolean(live) && i === blocks.length - 1}
+						live={isLiveTail}
 						onOpenSubagent={onOpenSubagent}
+						onOpenEvidence={onOpenEvidence}
 						sessionId={sessionId}
 					/>
 				) : block.kind === "footer" ? (
 					<TurnFooter
-						key={`${block.entry.id}:footer`}
 						entry={block.entry}
 						durationMs={block.durationMs}
 						files={block.files}
@@ -126,13 +140,21 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 					/>
 				) : (
 					<MessageBubble
-						key={block.entry.id}
 						entry={block.entry}
 						owner={owner}
 						sessionId={sessionId}
 					/>
-				),
-			)}
+				);
+				return (
+					<VirtualTranscriptBlock
+						key={key}
+						anchorId={anchorId}
+						enabled={!isLiveTail && i < blocks.length - 24}
+					>
+						{content}
+					</VirtualTranscriptBlock>
+				);
+			})}
 		</>
 	);
 });

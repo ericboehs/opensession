@@ -20,6 +20,10 @@
  */
 
 import type { TranscriptEntry } from "./types";
+import {
+  appendSessionFeed,
+  type SessionFeedFrame,
+} from "./session-feed";
 
 /** A stored transcript entry annotated with its per-session sequence number. */
 export type SeqEntry = TranscriptEntry & { seq: number };
@@ -31,6 +35,8 @@ export interface TranscriptBusEvent {
   entries: SeqEntry[];
   firstSeq: number;
   lastSeq: number;
+  /** This commit's identity in the ordered session feed. */
+  feed?: SessionFeedFrame;
 }
 
 export type TranscriptSubscriber = (event: TranscriptBusEvent) => void;
@@ -75,6 +81,14 @@ export function publishTranscript(
   sessionId: string,
   event: TranscriptBusEvent
 ): void {
+  const feed = appendSessionFeed(sessionId, {
+    type: "transcript_append",
+    sessionId,
+    entries: event.entries,
+    firstSeq: event.firstSeq,
+    lastSeq: event.lastSeq,
+    v2: true,
+  });
   const subs = bus().get(sessionId);
   if (!subs || subs.size === 0) return;
   // Snapshot so a subscriber unsubscribing (or subscribing) during fan-out
@@ -82,7 +96,7 @@ export function publishTranscript(
   for (const fn of [...subs]) {
     queueMicrotask(() => {
       try {
-        fn(event);
+        fn({ ...event, feed });
       } catch (e) {
         console.warn("[transcript-bus] subscriber threw:", e);
       }

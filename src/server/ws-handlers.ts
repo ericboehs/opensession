@@ -36,6 +36,7 @@ import { engineSessionPatch, engineUserTexts, mergedSessionTranscript, mergedSes
 import { handleSlashCommand } from "./slash-commands";
 import { resizeTerminal, startSessionTerminal, stopTerminal, writeTerminal } from "./terminals";
 import { subscribeTranscript } from "./transcript-bus";
+import { resumeSessionFeed } from "./session-feed";
 import { type SeqEntry, transcriptStore } from "./transcript-store";
 import { type BackstageSessionFile, type SessionUsage } from "./types";
 import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
@@ -127,6 +128,18 @@ function sendWatchExtras(
 				),
 		}),
 	);
+
+	// The transcript snapshot above is authoritative. Replay the bounded live
+	// phase after it, or send an active snapshot when the cursor cannot resume.
+	if (ws.data?.supportsFeed) {
+		const { frames, snapshot } = resumeSessionFeed(
+			sessionId,
+			ws.data.sinceFeedSeq,
+			ws.data.feedEpoch,
+		);
+		for (const frame of frames) ws.send(JSON.stringify(frame));
+		ws.send(JSON.stringify(snapshot));
+	}
 }
 
 // ── Transcript v2 serve path (docs/transcript-v2-design.md §4) ──────────────
@@ -434,14 +447,18 @@ function serveTranscriptV2(
 		try {
 			if (ws.data?.watchingSessionId !== sessionId) return;
 			ws.send(
-				JSON.stringify({
-					type: "transcript_append",
-					sessionId,
-					entries: event.entries,
-					firstSeq: event.firstSeq,
-					lastSeq: event.lastSeq,
-					v2: true,
-				}),
+				JSON.stringify(
+					ws.data?.supportsFeed && event.feed
+						? event.feed
+						: {
+								type: "transcript_append",
+								sessionId,
+								entries: event.entries,
+								firstSeq: event.firstSeq,
+								lastSeq: event.lastSeq,
+								v2: true,
+							},
+				),
 			);
 		} catch {
 			// Dead connection — cleaned up on close.
@@ -532,6 +549,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 				const data = ws.data;
 				data.watchingSessionId = sessionId;
+				data.supportsFeed = msg.supportsFeed === true;
+				data.sinceFeedSeq =
+					typeof msg.sinceFeedSeq === "number" ? msg.sinceFeedSeq : undefined;
+				data.feedEpoch =
+					typeof msg.feedEpoch === "string" ? msg.feedEpoch : undefined;
 				if (msg.user) data.user = msg.user;
 				joinSession(ws, sessionId);
 

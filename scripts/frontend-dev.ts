@@ -221,7 +221,7 @@ async function shell(req: Request): Promise<Response> {
 	});
 }
 
-const server = Bun.serve<Bridge, {}>({
+const server = Bun.serve<Bridge>({
 	port: PORT,
 	// hmr: edits to App.tsx/global.css hot-apply without a manual Cmd+R
 	// (React Fast Refresh through Bun's dev pipeline).
