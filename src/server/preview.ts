@@ -437,7 +437,14 @@ function seedHostPortsConf(worktreeDir: string, webappPort: number): void {
   const file = join(worktreeDir, ".ports.conf");
   if (existsSync(file)) {
     const text = readFileSync(file, "utf8");
-    writeFileSync(file, text.replace(/^WEBAPP_PORT=.*$/m, `WEBAPP_PORT=${webappPort}`));
+    // The line may be absent (a pool-preview release strips it) — append
+    // instead of silently replacing nothing, or the claim's port never lands.
+    writeFileSync(
+      file,
+      /^WEBAPP_PORT=/m.test(text)
+        ? text.replace(/^WEBAPP_PORT=.*$/m, `WEBAPP_PORT=${webappPort}`)
+        : `WEBAPP_PORT=${webappPort}\n${text}`,
+    );
   } else {
     writeFileSync(file, freshPortsConfText(webappPort, "host preview"));
   }
