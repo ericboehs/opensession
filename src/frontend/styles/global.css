@@ -518,8 +518,8 @@ html.wco .app-body.sidebar-collapsed .detail-topbar-title {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 28px;
-	height: 28px;
+	width: 30px;
+	height: 30px;
 	padding: 0;
 	border: none;
 	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);

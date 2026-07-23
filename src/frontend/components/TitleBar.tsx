@@ -34,7 +34,7 @@ export function TitleBar({
 					onClick={() => history.back()}
 					aria-label="Back"
 				>
-					<IconChevronLeft size={20} />
+					<IconChevronLeft size={24} />
 				</button>
 			</Tooltip>
 			<Tooltip label="Forward" side="bottom">
@@ -43,7 +43,7 @@ export function TitleBar({
 					onClick={() => history.forward()}
 					aria-label="Forward"
 				>
-					<IconChevronRight size={20} />
+					<IconChevronRight size={24} />
 				</button>
 			</Tooltip>
 			{onSearch && (
@@ -53,7 +53,7 @@ export function TitleBar({
 						onClick={onSearch}
 						aria-label="Search sessions"
 					>
-						<IconSearch size={20} />
+						<IconSearch size={24} />
 					</button>
 				</Tooltip>
 			)}
