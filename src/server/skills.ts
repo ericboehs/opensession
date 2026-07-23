@@ -51,9 +51,9 @@ const BUILTIN_COMMANDS: SkillEntry[] = [
     source: "builtin",
   },
   {
-    name: "sub",
+    name: "account",
     description:
-      "Show or pin the Claude subscription for this session (/sub, /sub <name>, /sub auto)",
+      "Show or pin the current model provider account (/account, /account <name>, /account auto)",
     source: "builtin",
   },
   {

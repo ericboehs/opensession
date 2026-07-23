@@ -158,14 +158,13 @@ export interface Automation {
    */
   fallbackModel?: string;
   /**
-   * Pinned Claude subscription (claude-accounts id). By default a HARD pin:
+   * Pinned account in the model provider's Claude or Codex pool. By default a HARD pin:
    * runs use only that account, and when it's exhausted they fall to
    * `fallbackModel` instead of the shared pool — that makes the account's
    * limits (and its usage-credits monthly cap) this automation's cost
    * ceiling. Set `accountStrict: false` to soften it: the pinned account is
    * preferred, but an exhausted pin rotates into the shared pool like a
-   * session pin does. Unset = shared-pool rotation as before. Claude models
-   * only; Codex runs ignore it.
+   * session pin does. Unset = shared-pool rotation as before.
    */
   accountId?: string;
   /** false = soft pin (pool fallback); unset/true = hard pin (cost cap). */

@@ -1,5 +1,5 @@
 /**
- * Backstage-native slash commands (/goal /loop /model /sub /compact /help) —
+ * Backstage-native slash commands (/goal /loop /model /account /compact /help) —
  * consumed by the WS prompt path, the opensession-sessions send_to_session tool,
  * and interactive resumes. Returns a notice string when the message was handled
  * as a command, or null to send it to the engine as a normal prompt.
@@ -8,9 +8,10 @@
 import { productName } from "./config";
 import {
 	listAccountsPublic,
-	type ClaudeAccountPublic,
 } from "./claude-accounts";
+import { listCodexAccountsPublic } from "./codex-accounts";
 import {
+	accountProviderForModel,
 	formatModelList,
 	getDefaultModel,
 	modelLabel,
@@ -18,6 +19,7 @@ import {
 	resolveModel,
 } from "./models";
 import { engineFamily } from "./agent-runner";
+import { userMatchesAny } from "./shared/user-mappings";
 import { syncAgentSessionEngine } from "./agent-session-sync";
 import { touchBackstageSession } from "./session-cache";
 import { broadcastToSession } from "./ws-hub";
@@ -32,12 +34,16 @@ export function handleSlashCommand(
 	text: string,
 	user?: string,
 ): string | null {
+	const accountCommand =
+		text === "/account" ||
+		text.startsWith("/account ") ||
+		text === "/sub" ||
+		text.startsWith("/sub ");
 	if (
 		!text.startsWith("/goal") &&
 		!text.startsWith("/loop") &&
 		!text.startsWith("/model") &&
-		text !== "/sub" &&
-		!text.startsWith("/sub ") &&
+		!accountCommand &&
 		text !== "/compact" &&
 		!text.startsWith("/compact ") &&
 		text !== "/help"
@@ -64,9 +70,9 @@ export function handleSlashCommand(
 			"/loop stop — stop the loop",
 			"/model — show the session's model and what's available",
 			"/model <name> — switch model (e.g. /model opus, /model gpt-5.5)",
-			"/sub — show the session's pinned Claude subscription and what's available",
-			"/sub <name> — pin a specific subscription for this session's runs",
-			"/sub auto — back to automatic (personal-first, shared-pool fallback)",
+			"/account — show the session's provider account and what's available",
+			"/account <name> — prefer one Claude or Codex account for this conversation",
+			"/account auto — back to automatic (personal-first, shared-pool fallback)",
 			"/compact — summarize the conversation so far to shrink context and cost (Claude sessions only)",
 		].join("\n");
 	}
@@ -99,13 +105,25 @@ export function handleSlashCommand(
 				return "Couldn't update the Slack session file — send /model <name> in the Slack thread instead.";
 			}
 		} else {
+			const switchedProvider =
+				accountProviderForModel(prevModel) !== accountProviderForModel(resolved.id);
 			touchBackstageSession(session.id, {
 				model: resolved.id,
+				...(switchedProvider ? { accountId: undefined } : {}),
 				modelHistory: [
 					...(session.modelHistory || []),
 					{ model: resolved.id, from: prevModel, at: new Date().toISOString(), by: user },
 				],
 			});
+			if (switchedProvider && session.accountId) {
+				broadcastToSession(session.id, {
+					type: "subscription_changed",
+					sessionId: session.id,
+					accountId: null,
+					name: null,
+					by: user,
+				});
+			}
 		}
 		// Everyone watching sees the switch (pill + inline divider) immediately
 		broadcastToSession(session.id, {
@@ -130,31 +148,38 @@ export function handleSlashCommand(
 		);
 	}
 
-	// Pin (or clear) the Claude subscription used for this session's runs. Like
-	// /model, it persists on the session, broadcasts to every viewer, and applies
-	// from the next prompt; unlike /model it's a preference the runner falls back
-	// off when the pinned account is exhausted (never a hard requirement).
-	if (text === "/sub" || text === "/sub show" || text === "/sub list") {
-		const accounts = listAccountsPublic();
+	// Pin (or clear) the current model provider's account. `/sub` remains an
+	// alias for existing links and muscle memory.
+	const accountInput = accountCommand
+		? text.replace(/^\/(?:account|sub)\s*/, "").trim()
+		: "";
+	const accountProvider = accountProviderForModel(session.model);
+	if (accountCommand && !accountProvider) {
+		return `${modelLabel(session.model)} does not use a managed Claude or Codex account pool.`;
+	}
+	const providerLabel = accountProvider === "codex" ? "Codex" : "Claude";
+	const accounts = (accountProvider === "codex"
+		? listCodexAccountsPublic()
+		: listAccountsPublic()
+	).filter((account) => !account.owner || (!!user && userMatchesAny(user, [account.owner])));
+	if (accountCommand && (!accountInput || accountInput === "show" || accountInput === "list")) {
 		const current = session.accountId
 			? accounts.find((a) => a.id === session.accountId)
 			: null;
-		const line = (a: ClaudeAccountPublic) =>
+		const line = (a: (typeof accounts)[number]) =>
 			`${a.id === session.accountId ? "• " : "  "}${a.name}` +
 			`${a.owner ? ` (personal — ${a.owner})` : " (pool)"}` +
 			`${a.usable ? "" : " — exhausted"}`;
 		return [
-			`Subscription: ${current ? current.name : "auto (personal-first, pool fallback)"}`,
+			`${providerLabel} account: ${current ? current.name : "auto (personal-first, pool fallback)"}`,
 			"",
-			"Available (set with /sub <name>, or /sub auto to unpin):",
+			"Available (set with /account <name>, or /account auto to unpin):",
 			...accounts.map(line),
 		].join("\n");
 	}
 	if (
-		text === "/sub auto" ||
-		text === "/sub clear" ||
-		text === "/sub none" ||
-		text === "/sub default"
+		accountCommand &&
+		["auto", "clear", "none", "default"].includes(accountInput.toLowerCase())
 	) {
 		touchBackstageSession(session.id, { accountId: undefined });
 		broadcastToSession(session.id, {
@@ -164,17 +189,16 @@ export function handleSlashCommand(
 			name: null,
 			by: user,
 		});
-		return "Subscription set to auto (personal-first, shared-pool fallback). Applies from the next prompt.";
+		return `${providerLabel} account set to auto (personal-first, shared-pool fallback). Applies from the next prompt.`;
 	}
-	if (text.startsWith("/sub ")) {
-		const input = text.slice("/sub ".length).trim();
-		const accounts = listAccountsPublic();
+	if (accountCommand) {
+		const input = accountInput;
 		const match =
 			accounts.find((a) => a.id === input) ||
 			accounts.find((a) => a.name.toLowerCase() === input.toLowerCase());
 		if (!match) {
 			return [
-				`Unknown subscription "${input}". Available:`,
+				`Unknown ${providerLabel} account "${input}". Available:`,
 				...accounts.map((a) => `  ${a.name}${a.owner ? ` (personal — ${a.owner})` : " (pool)"}`),
 			].join("\n");
 		}
@@ -186,14 +210,10 @@ export function handleSlashCommand(
 			name: match.name,
 			by: user,
 		});
-		const codexNote =
-			providerFor(session.model) === "codex"
-				? " Note: this session is on a Codex model, which uses its own accounts — the pin applies when you switch back to a Claude model."
-				: "";
 		const exhaustedNote = match.usable
 			? ""
-			: " Heads up: this subscription is currently exhausted, so runs fall back to the pool until it resets.";
-		return `Subscription pinned to ${match.name}. Applies from the next prompt.${codexNote}${exhaustedNote}`;
+			: " Heads up: this account is currently exhausted, so runs fall back to the pool until it resets.";
+		return `${providerLabel} account pinned to ${match.name}. Applies from the next prompt.${exhaustedNote}`;
 	}
 
 	// /compact is a built-in command of the Claude Agent SDK, not a backstage

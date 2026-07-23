@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import type { ModelOption, FileMention, ClaudeAccountOption } from "../lib/api";
+import type { ModelOption, FileMention, ProviderAccountOption } from "../lib/api";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft } from "../lib/drafts";
 import {
@@ -81,9 +81,9 @@ interface Props {
    */
   effort?: string;
   onEffortChange?: (effort: string) => void;
-  /** Pinnable Claude subscriptions + current pin, for the model pill's
-   *  Subscription submenu. Empty/omitted hides it (e.g. Codex sessions). */
-  accounts?: ClaudeAccountOption[];
+  /** Pinnable provider accounts + current pin for the model pill's account
+   * submenu. Empty/omitted hides it. */
+  accounts?: ProviderAccountOption[];
   accountId?: string;
   onAccountChange?: (accountId: string) => void;
   /**

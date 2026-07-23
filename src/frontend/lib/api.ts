@@ -1236,6 +1236,8 @@ export interface ModelOption {
 	label: string;
 	aliases: string[];
 	efforts: string[];
+	/** Provider account pool available to this model, if any. */
+	accountProvider?: "claude" | "codex";
 	/** Picker section override ("dial" = The Dial presets). */
 	group?: string;
 	/** One-line subtitle shown under the label (dial presets). */
@@ -1306,28 +1308,37 @@ export async function fetchSystemPrompt(
 	});
 }
 
-/** Trimmed Claude subscription shape for the per-session subscription picker. */
-export interface ClaudeAccountOption {
+/** Trimmed provider account shape for the per-session account picker. */
+export interface ProviderAccountOption {
 	id: string;
 	name: string;
+	provider: "claude" | "codex";
 	/** Personal-sub owner, if any (else it's a shared-pool account). */
 	owner?: string;
 	/** False when the account is currently exhausted / over its cap. */
 	usable: boolean;
 }
 
-export async function fetchClaudeAccounts(): Promise<ClaudeAccountOption[]> {
-	try {
-		const data = await request<{ accounts?: any[] }>("/claude-accounts");
-		return (data?.accounts ?? []).map((a) => ({
-			id: a.id,
-			name: a.name,
-			owner: a.owner || undefined,
-			usable: a.usable !== false,
-		}));
-	} catch {
-		return [];
-	}
+export async function fetchProviderAccounts(): Promise<ProviderAccountOption[]> {
+	const fetchPool = async (provider: "claude" | "codex", path: string) => {
+		try {
+			const data = await request<{ accounts?: any[] }>(path);
+			return (data?.accounts ?? []).map((a) => ({
+				id: a.id,
+				name: a.name,
+				provider,
+				owner: a.owner || undefined,
+				usable: a.usable !== false,
+			}));
+		} catch {
+			return [];
+		}
+	};
+	const [claude, codex] = await Promise.all([
+		fetchPool("claude", "/claude-accounts"),
+		fetchPool("codex", "/codex-accounts"),
+	]);
+	return [...claude, ...codex];
 }
 
 export async function fetchAutomations() {

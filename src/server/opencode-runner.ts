@@ -2486,7 +2486,15 @@ async function* runOpencodeAttempt(
       // opencode-openai-auth.ts for the seed-access-only rotation-hazard fix.
       const cfg = readOpencodeBridgeConfig();
       const openaiPickOut: { reason?: string } = {};
-      const picked = pickOpenaiAccount(parsed.modelID, cfg?.openaiAccounts, sessionKey, openaiPickOut, user);
+      const picked = pickOpenaiAccount(
+        parsed.modelID,
+        cfg?.openaiAccounts,
+        sessionKey,
+        openaiPickOut,
+        user,
+        opts.accountId,
+        opts.accountStrict,
+      );
       if (!("error" in picked)) {
         const bound = bindOpenaiAccount(picked);
         if ("error" in bound) {
@@ -2571,7 +2579,11 @@ async function* runOpencodeAttempt(
       if ("error" in picked && isLocalProfile()) {
         throw new Error(`opencode/openai: ${picked.error}`);
       }
-      if ("error" in picked && !opencodeHasNativeOpenaiAuth()) {
+      if (
+        "error" in picked &&
+        ((!isLocalProfile() && opts.accountId && opts.accountStrict) ||
+          !opencodeHasNativeOpenaiAuth())
+      ) {
         // Also exhaustion-shaped (no account can serve this model here) —
         // flagged so the fallback graph can route to another family rather
         // than dead-ending, same as the bind failure above.
@@ -3742,6 +3754,8 @@ async function* runOpencodeAttempt(
             sessionKey,
             undefined,
             user,
+            opts.accountId,
+            opts.accountStrict,
           );
           if (rotation && !("error" in next) && next.id !== pickedOpenai.id) {
             turnEvent({ direction: "out", kind: "account_switch", account: next.name });

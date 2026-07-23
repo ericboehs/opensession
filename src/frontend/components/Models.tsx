@@ -31,6 +31,7 @@ interface ClaudeAccountInfo {
 	plan?: string;
 	/** Personal sub of this person; unset = shared pool account. */
 	owner?: string;
+	mode: "shared" | "personal";
 	usage: {
 		fetchedAt: string;
 		fiveHour: UsageWindow | null;
@@ -55,6 +56,7 @@ interface CodexAccountInfo {
 	kind: "api_key" | "home";
 	valueMasked: string;
 	owner?: string;
+	mode: "shared" | "personal";
 	createdAt: string;
 	exhaustedUntil: string | null;
 	usable: boolean;

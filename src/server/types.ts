@@ -127,10 +127,9 @@ export interface UnifiedSession {
   /** OpenCode reasoning variant for runs in this session; unset = model default. */
   effort?: string;
   /**
-   * Pinned Claude subscription (claude-accounts id) for runs in this session.
-   * Unset = auto (personal-sub-first, shared-pool fallback). Claude models only;
-   * the pinned account is preferred and the pool is still the fallback when it's
-   * exhausted, so a pin never hard-fails a run.
+   * Pinned provider account for runs in this session. The id belongs to the
+   * active model's Claude or Codex pool. Unset = auto (personal-first, shared
+   * pool fallback); an exhausted soft pin falls back to another eligible account.
    */
   accountId?: string;
   /** Codex thread id, when this session has run on a codex-provider model. */
@@ -371,7 +370,7 @@ export interface BackstageSessionFile {
   plainThreadId?: string; // Plain thread this session is triaging
   model?: string; // model id for this session's runs; unset = default
   effort?: string; // OpenCode reasoning variant for this session's runs; unset = model default
-  accountId?: string; // pinned Claude subscription (claude-accounts id); unset = auto pool
+  accountId?: string; // pinned Claude/Codex provider account; unset = auto pool
   codexThreadId?: string; // codex thread id once the session has run on a codex model
   opencodeSessionId?: string; // opencode session id (ses_…) once the session has run on an opencode/* model
   /** Provider whose engine last actually drove a run in this session. Lets the

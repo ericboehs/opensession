@@ -7,7 +7,7 @@
  */
 
 import { requestUser, type RouteContext } from "./context";
-import { KNOWN_MODELS, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, localProfileDefaultModel, localProfileModels, modelEfforts, refreshOpencodePickerModels, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto } from "../models";
+import { KNOWN_MODELS, accountProviderForModel, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, localProfileDefaultModel, localProfileModels, modelEfforts, refreshOpencodePickerModels, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto } from "../models";
 import { envAlias } from "../rename-compat";
 import { type Sandbox } from "../sandbox";
 import { sandboxCapabilityStatus } from "../sandbox/config";
@@ -29,6 +29,7 @@ export async function handleModelsRoutes(
 				models: models.map((model) => ({
 					...model,
 					efforts: modelEfforts(model.id),
+					accountProvider: accountProviderForModel(model.id),
 				})),
 				default: localProfileDefaultModel(),
 				autoFallback: false,
@@ -50,6 +51,7 @@ export async function handleModelsRoutes(
 			models: (opencodeConfigured ? opencodeOnly : KNOWN_MODELS).map((model) => ({
 				...model,
 				efforts: modelEfforts(model.id),
+				accountProvider: accountProviderForModel(model.id),
 			})),
 			default: opencodeConfigured ? interactiveDefaultModel() : getDefaultModel(),
 			autoFallback: getModelFallbackAuto(),

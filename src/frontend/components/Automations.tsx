@@ -11,8 +11,10 @@ import {
   fetchAutomationTemplates,
   draftAutomationApi,
   fetchConnections,
+  fetchProviderAccounts,
   relativeTime,
   type ModelOption,
+  type ProviderAccountOption,
   type AutomationTemplate,
   type AutomationDraft,
 } from "../lib/api";
@@ -87,19 +89,12 @@ const EVENT_OPTIONS: Array<{ key: string; label: string }> = [
 
 const WEBHOOK_BASE = "https://michael.tella.dev";
 
-/** Claude subscription accounts, for the account-pin select + chips. */
-interface ClaudeAccountOption {
-  id: string;
-  name: string;
-  owner?: string;
-}
-
-function useClaudeAccounts(): ClaudeAccountOption[] {
-  const [accounts, setAccounts] = useState<ClaudeAccountOption[]>([]);
+/** Claude and Codex accounts for provider-aware automation pins. */
+function useProviderAccounts(): ProviderAccountOption[] {
+  const [accounts, setAccounts] = useState<ProviderAccountOption[]>([]);
   useEffect(() => {
-    fetch(`${BASE_PATH}/api/claude-accounts`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((body) => body && setAccounts(body.accounts))
+    fetchProviderAccounts()
+      .then(setAccounts)
       .catch(() => {});
   }, []);
   return accounts;
@@ -109,7 +104,7 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [loading, setLoading] = useState(true);
-  const claudeAccounts = useClaudeAccounts();
+  const providerAccounts = useProviderAccounts();
 
   useEffect(() => {
     fetchModels()
@@ -443,7 +438,7 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
                       <>
                         <DetailKey>Account</DetailKey>
                         <span className="text-dim">
-                          {claudeAccounts.find((x) => x.id === sel.accountId)?.name ||
+                          {providerAccounts.find((x) => x.id === sel.accountId)?.name ||
                             "pinned account"}
                           <span className="text-faint">
                             {sel.accountStrict === false
@@ -1077,7 +1072,7 @@ function AutomationForm({
   const [usageCredits, setUsageCredits] = useState(!!initial?.usageCredits);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
-  const claudeAccounts = useClaudeAccounts();
+  const providerAccounts = useProviderAccounts();
 
   useEffect(() => {
     fetchModels()
@@ -1087,6 +1082,13 @@ function AutomationForm({
       })
       .catch(() => {});
   }, []);
+  const effectiveModel = model || defaultModel;
+  const accountProvider = models.find((item) => item.id === effectiveModel)?.accountProvider;
+  const eligibleAccounts = providerAccounts.filter((account) => account.provider === accountProvider);
+  useEffect(() => {
+    const account = providerAccounts.find((item) => item.id === accountId);
+    if (account && account.provider !== accountProvider) setAccountId("");
+  }, [accountId, accountProvider, providerAccounts]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1294,11 +1296,11 @@ function AutomationForm({
             </select>
           </label>
 
-          <label title="Pin runs to one subscription. Only applies to Claude models; Codex runs use the Codex pool.">
-            Claude account
+          <label title="Pin runs to one account from the selected model's provider pool.">
+            Provider account
             <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
               <option value="">Auto — shared pool rotation</option>
-              {claudeAccounts.map((x) => (
+              {eligibleAccounts.map((x) => (
                 <option key={x.id} value={x.id}>
                   {x.name}
                   {x.owner ? ` — ${x.owner}'s` : ""}

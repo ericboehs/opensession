@@ -29,7 +29,7 @@ import {
 	deleteSessionApi,
 	archiveSessionApi,
 	fetchModels,
-	fetchClaudeAccounts,
+	fetchProviderAccounts,
 	fetchFileMentions,
 	fetchSkillMentions,
 	fetchSessionSubagents,
@@ -37,7 +37,7 @@ import {
 	fetchPr,
 	type WorkspaceMediaItem,
 	type ModelOption,
-	type ClaudeAccountOption,
+	type ProviderAccountOption,
 	type SessionSubagentSnapshot,
 	type PreviewStatus,
 } from "../lib/api";
@@ -1000,8 +1000,8 @@ export function SessionViewer({
 	const [model, setModel] = useState(session.model || "");
 	const [models, setModels] = useState<ModelOption[]>([]);
 	const [defaultModel, setDefaultModel] = useState("");
-	// Pinnable Claude subscriptions + this session's pin ("" = auto pool).
-	const [accounts, setAccounts] = useState<ClaudeAccountOption[]>([]);
+	// Pinnable Claude/Codex accounts + this session's pin ("" = auto pool).
+	const [accounts, setAccounts] = useState<ProviderAccountOption[]>([]);
 	const [accountId, setAccountId] = useState(session.accountId || "");
 	// Live token/cost accounting — seeded from the session, updated per run via
 	// the `usage_update` broadcast. Powers the composer cost/context pill.
@@ -1027,7 +1027,7 @@ export function SessionViewer({
 				setDefaultModel(m.default);
 			})
 			.catch(() => {});
-		fetchClaudeAccounts()
+		fetchProviderAccounts()
 			.then(setAccounts)
 			.catch(() => {});
 	}, []);
@@ -2749,8 +2749,8 @@ export function SessionViewer({
 		});
 	}
 
-	// Pin (or clear, "" = auto) the Claude subscription for this session's runs.
-	// Same shape as the model switch: the /sub slash command persists, notices,
+	// Pin (or clear, "" = auto) the current provider account for this session.
+	// Same shape as the model switch: /account persists, notices,
 	// and broadcasts subscription_changed to every viewer.
 	function handleAccountChange(next: string) {
 		if (next === (accountId || "")) return;
@@ -2761,7 +2761,7 @@ export function SessionViewer({
 			sessionId: session.id,
 			// The name reads better in the transcript; the command matches by
 			// id first, then case-insensitive name, so either form works.
-			content: next ? `/sub ${target?.name || next}` : "/sub auto",
+			content: next ? `/account ${target?.id || next}` : "/account auto",
 			user: getCurrentUser(),
 		});
 	}
@@ -4302,11 +4302,10 @@ export function SessionViewer({
 									}
 									effort={effort}
 									onEffortChange={setEffort}
-									// Subscription pinning is a backstage-session affordance
-									// (routed through /sub), and only meaningful on Claude
-									// models — Codex has its own account pool.
+									// Account pinning is a backstage-session affordance. The
+									// picker filters the combined pool by the active model.
 									accounts={
-										session.source === "backstage" && !isCodexModel
+										session.source === "backstage"
 											? accounts
 											: undefined
 									}

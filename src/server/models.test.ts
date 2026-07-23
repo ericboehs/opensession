@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   BEST_AVAILABLE_CODEX_MODEL,
+  accountProviderForModel,
   DIAL_ORACLE_AGENTS,
   DIAL_PRESETS,
   dialPreset,
@@ -124,6 +125,21 @@ describe("toOpencodeModel", () => {
     expect(toOpencodeModel("claude-fable-5")).toBe(
       "opencode/anthropic/claude-fable-5",
     );
+  });
+});
+
+describe("accountProviderForModel", () => {
+  it("resolves legacy, provider-path, and preset model ids to their account pool", () => {
+    expect(accountProviderForModel("claude-fable-5")).toBe("claude");
+    expect(accountProviderForModel("anthropic/claude-sonnet-5")).toBe("claude");
+    expect(accountProviderForModel("gpt-5.6-sol")).toBe("codex");
+    expect(accountProviderForModel("openai/gpt-5.5")).toBe("codex");
+    expect(accountProviderForModel("dial/ultra")).toBe("claude");
+    expect(accountProviderForModel("dial/high")).toBe("codex");
+  });
+
+  it("does not expose account pinning for unrelated providers", () => {
+    expect(accountProviderForModel("opencode/xai/grok-4.5")).toBeUndefined();
   });
 });
 

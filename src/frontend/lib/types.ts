@@ -281,7 +281,7 @@ export interface UnifiedSession {
 	model?: string;
 	/** OpenCode reasoning variant for this session's runs; unset = model default. */
 	effort?: string;
-	/** Pinned Claude subscription (claude-accounts id); unset = auto pool. */
+	/** Pinned account in the active model provider's pool; unset = auto. */
 	accountId?: string;
 	codexThreadId?: string;
 	modelHistory?: Array<{ model: string; from?: string; at: string; by?: string }>;

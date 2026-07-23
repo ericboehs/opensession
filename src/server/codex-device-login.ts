@@ -61,14 +61,16 @@ function stripAnsi(s: string): string {
 }
 
 function toPublic(l: DeviceLogin): DeviceLoginPublic {
+  // Only include set fields — callers (and the route's error check) use
+  // `"error" in result` semantics, so an ever-present undefined key is a trap.
   return {
     id: l.id,
     name: l.name,
     state: l.state,
-    url: l.url,
-    code: l.code,
-    error: l.error,
-    account: l.account,
+    ...(l.url ? { url: l.url } : {}),
+    ...(l.code ? { code: l.code } : {}),
+    ...(l.error ? { error: l.error } : {}),
+    ...(l.account ? { account: l.account } : {}),
   };
 }
 

@@ -1,5 +1,13 @@
-import { describe, expect, test } from "bun:test";
-import { hrwScore } from "./codex-accounts";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import {
+  __setCodexAccountsPathForTest,
+  hrwScore,
+  markCodexExhausted,
+} from "./codex-accounts";
+import { pickOpenaiAccount } from "./opencode-openai-auth";
 
 // PINNED-HASH tests (pattern from meridian PR #615): session→account affinity
 // is a pure function of these scores. If any assertion here fails, the change
@@ -24,5 +32,56 @@ describe("hrwScore (rendezvous affinity)", () => {
       hrwScore("bks-test-session", "13fde4f9-e1f2-486c-8e04-1d0f322b7636");
     expect(s1).toBe(true);
     expect(s2).toBe(true);
+  });
+});
+
+describe("pickOpenaiAccount pins", () => {
+  const dir = mkdtempSync(join(tmpdir(), "codex-pins-"));
+  const store = join(dir, "accounts.json");
+  let previousStore: string;
+
+  beforeAll(() => {
+    previousStore = __setCodexAccountsPathForTest(store);
+    writeFileSync(
+      store,
+      JSON.stringify({
+        accounts: [
+          { id: "shared", name: "Shared", kind: "api_key", value: "sk-shared-value", createdAt: "2026-01-01T00:00:00Z" },
+          { id: "mine", name: "Mine", kind: "api_key", value: "sk-mine-value", owner: "Michiel", createdAt: "2026-01-01T00:00:00Z" },
+          { id: "theirs", name: "Theirs", kind: "api_key", value: "sk-theirs-value", owner: "Grant", createdAt: "2026-01-01T00:00:00Z" },
+        ],
+      }),
+    );
+  });
+
+  afterAll(() => {
+    __setCodexAccountsPathForTest(previousStore);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("prefers an eligible conversation pin", () => {
+    const reason: { reason?: string } = {};
+    const picked = pickOpenaiAccount("gpt-5.5", undefined, "session", reason, "Michiel", "shared");
+    expect("error" in picked).toBe(false);
+    if (!("error" in picked)) expect(picked.id).toBe("shared");
+    expect(reason.reason).toBe("pinned");
+  });
+
+  test("falls back from an exhausted soft pin but fails a hard pin", () => {
+    markCodexExhausted("mine", "gpt-5.5");
+    const soft = pickOpenaiAccount("gpt-5.5", undefined, "session", {}, "Michiel", "mine");
+    expect("error" in soft).toBe(false);
+    if (!("error" in soft)) expect(soft.id).toBe("shared");
+
+    const strict = pickOpenaiAccount("gpt-5.5", undefined, "session", {}, "Michiel", "mine", true);
+    expect(strict).toEqual({
+      error: "pinned account Mine is not currently usable (hard pin — not falling back to the pool)",
+    });
+  });
+
+  test("never honors another user's personal pin", () => {
+    const picked = pickOpenaiAccount("gpt-5.5", undefined, "session", {}, "Michiel", "theirs");
+    expect("error" in picked).toBe(false);
+    if (!("error" in picked)) expect(picked.id).not.toBe("theirs");
   });
 });

@@ -106,15 +106,15 @@ export interface RunAgentOpts {
    */
   fallbackModel?: string;
   /**
-   * Pinned Claude subscription (claude-accounts id) for this session. Flows to
-   * runClaude, which prefers it and falls back to the pool on exhaustion.
-   * Claude only — Codex has its own account pool. Journaled for resume.
+   * Pinned account in the active model provider's Claude or Codex pool. The
+   * provider runner prefers it and falls back to the pool on exhaustion.
+   * Journaled for resume.
    */
   accountId?: string;
   /**
    * Hard accountId pin (automation cost cap): the run only ever uses that
    * account — an exhausted pin kills the run with usageLimitExhausted so the
-   * fallback-model chain takes over instead of the shared pool. Claude only.
+   * fallback-model chain takes over instead of the shared pool.
    */
   accountStrict?: boolean;
   /**
@@ -360,6 +360,9 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
     currentOpts = {
       ...currentOpts,
       prompt,
+      // Account ids are provider-local. A fallback to another family must not
+      // reinterpret the source provider's pin (including a strict cost cap).
+      ...(crossProvider ? { accountId: undefined, accountStrict: undefined } : {}),
       // Same family can resume the partial session; a family switch starts fresh
       sessionId: crossProvider ? undefined : currentEngineId,
       // The fresh opencode session is seeded with the history the handoff covers.

@@ -15,11 +15,11 @@ import type {
 import {
 	fetchTranscript,
 	fetchModels,
-	fetchClaudeAccounts,
+	fetchProviderAccounts,
 	fetchFileMentions,
 	fetchSkillMentions,
 	type ModelOption,
-	type ClaudeAccountOption,
+	type ProviderAccountOption,
 } from "../lib/api";
 import { loadDraft, saveDraft } from "../lib/drafts";
 import type { FileAttachment } from "../lib/images";
@@ -28,14 +28,6 @@ import { TranscriptBlocks } from "./TranscriptBlocks";
 import { Composer } from "./Composer";
 import { useCurrentUser } from "./UserPicker";
 import { shortTime, elapsedClock } from "../lib/time";
-
-/** Does this model id route to Codex (mirrors SessionViewer)? Codex sessions
- *  have their own account pool, so the subscription pill is hidden for them. */
-function modelIsCodex(id: string, models: ModelOption[]): boolean {
-	const found = models.find((m) => m.id === id);
-	if (found) return found.provider === "codex";
-	return id.startsWith("gpt") || id.startsWith("codex");
-}
 
 /**
  * Catch-up deck — a Slack-style "swipe through your unread" card stack. Each
@@ -104,7 +96,7 @@ export function CatchUpDeck({
 	// across cards). Empty until they load — the composer degrades gracefully.
 	const [models, setModels] = useState<ModelOption[]>([]);
 	const [defaultModel, setDefaultModel] = useState("");
-	const [accounts, setAccounts] = useState<ClaudeAccountOption[]>([]);
+	const [accounts, setAccounts] = useState<ProviderAccountOption[]>([]);
 	useEffect(() => {
 		fetchModels()
 			.then((m) => {
@@ -112,7 +104,7 @@ export function CatchUpDeck({
 				setDefaultModel(m.default);
 			})
 			.catch(() => {});
-		fetchClaudeAccounts()
+		fetchProviderAccounts()
 			.then(setAccounts)
 			.catch(() => {});
 	}, []);
@@ -350,7 +342,7 @@ function SwipeCard({
 	connected: boolean;
 	models: ModelOption[];
 	defaultModel: string;
-	accounts: ClaudeAccountOption[];
+	accounts: ProviderAccountOption[];
 	send: (msg: WSClientMessage) => void;
 	currentUser: string;
 	onArchive: () => void;
@@ -441,7 +433,7 @@ function CardBody({
 	connected: boolean;
 	models: ModelOption[];
 	defaultModel: string;
-	accounts: ClaudeAccountOption[];
+	accounts: ProviderAccountOption[];
 	send: (msg: WSClientMessage) => void;
 	currentUser: string;
 	onOpen: () => void;
@@ -557,7 +549,7 @@ function CatchUpComposer({
 	connected: boolean;
 	models: ModelOption[];
 	defaultModel: string;
-	accounts: ClaudeAccountOption[];
+	accounts: ProviderAccountOption[];
 	send: (msg: WSClientMessage) => void;
 	currentUser: string;
 	onReplied: () => void;
@@ -586,9 +578,6 @@ function CatchUpComposer({
 		goalOverride !== undefined ? goalOverride : target.goal ?? null;
 
 	const isBackstage = target.source === "backstage";
-	const effectiveModel = model || defaultModel;
-	const isCodexModel = modelIsCodex(effectiveModel, models);
-
 	// Send the reply into the target session (images fold in as content blocks;
 	// files route to the queue server-side), then advance the deck.
 	function handleSend(raw: string): boolean {
@@ -614,7 +603,7 @@ function CatchUpComposer({
 		return true;
 	}
 
-	// Model / subscription / goal all route through their slash commands (they
+	// Model / account / goal all route through their slash commands (they
 	// persist, notice, and broadcast to other viewers) — mirrors SessionViewer.
 	function handleModelChange(next: string) {
 		const targetModel = next || defaultModel;
@@ -634,7 +623,7 @@ function CatchUpComposer({
 		send({
 			type: "prompt",
 			sessionId: target.id,
-			content: next ? `/sub ${acct?.name || next}` : "/sub auto",
+			content: next ? `/account ${acct?.id || next}` : "/account auto",
 			user: currentUser,
 		});
 	}
@@ -679,7 +668,7 @@ function CatchUpComposer({
 				}
 				effort={effort}
 				onEffortChange={setEffort}
-				accounts={isBackstage && !isCodexModel ? accounts : undefined}
+				accounts={isBackstage ? accounts : undefined}
 				accountId={accountId}
 				onAccountChange={isBackstage ? handleAccountChange : undefined}
 				goal={currentGoal}

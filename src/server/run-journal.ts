@@ -45,7 +45,7 @@ export interface ActiveRunRecord {
   aws?: boolean; // whether to inject AWS creds, preserved across resume
   model?: string; // per-session model, preserved across resume (decides the provider)
   effort?: string; // reasoning effort, preserved across resume
-  accountId?: string; // pinned Claude subscription, preserved across resume
+  accountId?: string; // pinned provider account, preserved across resume
   accountStrict?: boolean; // hard pin: never rotate into the pool (automation cost cap)
   usageCredits?: boolean; // may run on accounts spending usage-credits past their limits
   fallbackModel?: string; // usage-limit fallback policy, preserved across resume

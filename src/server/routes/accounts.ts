@@ -111,7 +111,9 @@ export async function handleAccountsRoutes(
 			body.name,
 			typeof body.owner === "string" ? body.owner : undefined,
 		);
-		if ("error" in result) return Response.json(result, { status: 400 });
+		// A failed start has no id — a started login may carry a (later) error
+		// field too, so keying the status on "error" alone 400s successes.
+		if (!("id" in result)) return Response.json(result, { status: 400 });
 		// Give the CLI a moment to print the URL + code so the UI can render
 		// them from this response; the client keeps polling either way.
 		for (let i = 0; i < 25 && result.state === "starting"; i++) {

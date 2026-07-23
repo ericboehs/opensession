@@ -92,7 +92,13 @@
 
 import { envAlias, stateDir } from "./rename-compat";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { pickCodexAccount, listCodexAccounts, type CodexAccount } from "./codex-accounts";
+import {
+  getCodexAccountById,
+  getUsableCodexAccountById,
+  pickCodexAccount,
+  listCodexAccounts,
+  type CodexAccount,
+} from "./codex-accounts";
 import { isLocalProfile } from "./profile";
 import { userMatchesAny } from "./shared/user-mappings";
 import { localCodexAccount, localOpencodeDataRoot } from "./local-engine-auth";
@@ -169,7 +175,9 @@ export function pickOpenaiAccount(
   ids?: string[],
   sessionKey?: string,
   out?: { reason?: string },
-  user?: string
+  user?: string,
+  pinnedId?: string,
+  strict?: boolean
 ): CodexAccount | { error: string } {
   if (isLocalProfile()) return localCodexAccount();
   const all = listCodexAccounts();
@@ -181,9 +189,23 @@ export function pickOpenaiAccount(
     };
   }
   const allowedOwner = (a: CodexAccount) => !a.owner || (!!user && userMatchesAny(user, [a.owner]));
+  const designated = (id: string) => !ids?.length || ids.includes(id);
+  if (pinnedId) {
+    const pinned = getUsableCodexAccountById(pinnedId, model);
+    if (pinned && allowedOwner(pinned) && designated(pinnedId)) {
+      if (out) out.reason = "pinned";
+      return pinned;
+    }
+    if (strict) {
+      const name = getCodexAccountById(pinnedId)?.name || pinnedId;
+      return {
+        error: `pinned account ${name} is not currently usable (hard pin — not falling back to the pool)`,
+      };
+    }
+  }
   if (ids?.length) {
     for (const id of ids) {
-      const a = all.find((x) => x.id === id);
+      const a = getUsableCodexAccountById(id, model);
       if (a && allowedOwner(a)) {
         if (out) out.reason = "designated";
         return a;

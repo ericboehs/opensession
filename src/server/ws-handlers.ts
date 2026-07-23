@@ -11,13 +11,14 @@ import { type StreamEvent, cancelAgentRun, interruptAndSteerAgentRun, isAgentSes
 import { audit } from "./audit";
 import { makeAskHandler, pendingAsks } from "./asks";
 import { getAccountById } from "./claude-accounts";
+import { getCodexAccountById } from "./codex-accounts";
 import { startWatching, stopAllWatchesForClient, transcriptRev } from "./file-watcher";
 import { buildForkHandoffNote } from "./fork-handoff";
 import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
 import { INIT_WIRE_CLAMP_BYTES, clampEntriesForWire, parseTranscript, parseTranscriptTail, parseTranscriptWindow } from "./jsonl-parser";
-import { interactiveDefaultModel, interactiveFallbackModel, modelLabel, modelPreset, providerFor, resolveModel } from "./models";
+import { accountProviderForModel, interactiveDefaultModel, interactiveFallbackModel, modelLabel, modelPreset, providerFor, resolveModel } from "./models";
 import { applyNoteUpdate, getNoteState, isValidNoteId } from "./notes";
 import { appendOpencodeTranscript, clearTranscriptStoreDegraded, transcriptLineRunnerNotice } from "./opencode-transcript";
 import { wrapContext } from "./prompt-context";
@@ -42,6 +43,7 @@ import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "
 import { createWorktree, createWorktreeForExistingBranch, getRepo, listWorktrees, repoForPath, resolveUniqueBranch, worktreeHeadBranch, worktreePathFor } from "./worktree";
 import { BOOT_ID, allClients, b64decode, b64encode, broadcastToNote, broadcastToSession, joinNote, joinSession, leaveNote, leaveSession, preparingWorkspaces } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
+import { userMatchesAny } from "./shared/user-mappings";
 import { existsSync, readFileSync, statSync, watch } from "fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -1201,14 +1203,24 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							SESSION_EFFORTS.has(msg.effort.trim().toLowerCase())
 						? msg.effort.trim().toLowerCase()
 						: undefined;
-				// Pinned Claude subscription from the palette (forks inherit).
+				// Pinned provider account from the palette (forks inherit).
 				// Soft pin: the runner prefers it and falls back to the pool when
-				// it's exhausted. Unknown ids are dropped rather than erroring.
+				// it's exhausted. Mismatched, unknown, and foreign personal ids
+				// are dropped rather than persisted as a pin that can never apply.
+				const requestedAccountProvider = accountProviderForModel(model);
+				const requestedAccount =
+					typeof msg.accountId === "string" && msg.accountId
+						? requestedAccountProvider === "codex"
+							? getCodexAccountById(msg.accountId)
+							: requestedAccountProvider === "claude"
+								? getAccountById(msg.accountId)
+								: undefined
+						: undefined;
 				const createAccountId = forkSource
 					? forkSource.accountId
-					: typeof msg.accountId === "string" &&
-							msg.accountId &&
-							getAccountById(msg.accountId)
+					: requestedAccount &&
+							(!requestedAccount.owner ||
+								(!!user && userMatchesAny(user, [requestedAccount.owner])))
 						? msg.accountId
 						: undefined;
 				const createMcpServers = Array.isArray(msg.mcpServers)

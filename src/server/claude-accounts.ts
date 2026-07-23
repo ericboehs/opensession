@@ -108,6 +108,7 @@ export interface ClaudeAccountPublic {
   plan?: string;
   createdAt: string;
   owner?: string;
+  mode: "shared" | "personal";
   usage: AccountUsage | null;
   noUsageScope: boolean;
   credentialsPath?: string;
@@ -645,6 +646,7 @@ function toPublic(a: ClaudeAccount): ClaudeAccountPublic {
     plan: a.plan,
     createdAt: a.createdAt,
     owner: a.owner,
+    mode: a.owner ? "personal" : "shared",
     usage,
     noUsageScope: a.usageScope === "missing" && !a.credentialsPath,
     credentialsPath: a.credentialsPath,

@@ -843,6 +843,22 @@ export function toOpencodeModel(model?: string | null): string | undefined {
   return model ?? undefined;
 }
 
+export type AccountProvider = "claude" | "codex";
+
+/** Account pool used by a model after resolving presets and legacy ids. */
+export function accountProviderForModel(
+  model?: string | null
+): AccountProvider | undefined {
+  const requested = model || interactiveDefaultModel();
+  const resolved = toOpencodeModel(requested) || requested;
+  const upstream = resolved.match(/^opencode\/([^/]+)\//)?.[1];
+  if (upstream === "anthropic" || resolved.startsWith("claude-")) return "claude";
+  if (upstream === "openai" || resolved.startsWith("gpt-") || resolved.startsWith("codex-")) {
+    return "codex";
+  }
+  return undefined;
+}
+
 /**
  * Default model for interactive Backstage sessions and the picker: the global
  * default mapped onto the opencode engine (so new interactive sessions and the

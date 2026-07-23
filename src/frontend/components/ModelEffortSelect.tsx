@@ -1,5 +1,5 @@
 import React from "react";
-import type { ModelOption, ClaudeAccountOption } from "../lib/api";
+import type { ModelOption, ProviderAccountOption } from "../lib/api";
 import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
@@ -27,12 +27,10 @@ type Props = {
 	effort?: string;
 	onEffortChange?: (effort: string) => void;
 	/**
-	 * Pinnable Claude subscriptions. When present (and onAccountChange is wired),
-	 * a "Subscription" submenu lets this session force a specific account; "" =
-	 * auto (personal-first, pool fallback). Only meaningful for Claude models —
-	 * callers pass an empty list for Codex sessions to hide the submenu.
+	 * Pinnable provider accounts. The menu filters these to the active model's
+	 * Claude or Codex pool; "" = auto (personal-first, pool fallback).
 	 */
-	accounts?: ClaudeAccountOption[];
+	accounts?: ProviderAccountOption[];
 	/** Pinned account id; "" / undefined = auto. */
 	accountId?: string;
 	onAccountChange?: (accountId: string) => void;
@@ -233,11 +231,13 @@ export function ModelEffortSelect({
 			: supportedEffortIds[0];
 	const effortLabel = EFFORTS.find((e) => e.id === effectiveEffort)?.label;
 	const hasEffort = !!onEffortChange && supportedEfforts.length > 0;
-	const hasSubscription = !!onAccountChange && !!accounts && accounts.length > 0;
+	const accountProvider = models.find((m) => m.id === effectiveModel)?.accountProvider;
+	const providerAccounts = (accounts || []).filter((a) => a.provider === accountProvider);
+	const hasAccount = !!onAccountChange && providerAccounts.length > 0;
 	const currentAccount = accountId
-		? accounts?.find((a) => a.id === accountId)
+		? providerAccounts.find((a) => a.id === accountId)
 		: undefined;
-	const subscriptionLabel = currentAccount ? currentAccount.name : "Auto";
+	const accountLabel = currentAccount ? currentAccount.name : "Auto";
 
 	const optionFor = (id: string): ModelMenuOption => {
 		const info = models.find((m) => m.id === id);
@@ -431,7 +431,7 @@ export function ModelEffortSelect({
 						</Menu.Popup>
 					</Menu.SubmenuRoot>
 				)}
-				{(hasEffort || hasSubscription) && <Menu.Separator className="my-1" />}
+				{(hasEffort || hasAccount) && <Menu.Separator className="my-1" />}
 				{hasEffort && (
 					<Menu.SubmenuRoot>
 						<Menu.SubmenuTrigger className="justify-between gap-3">
@@ -460,12 +460,12 @@ export function ModelEffortSelect({
 						</Menu.Popup>
 					</Menu.SubmenuRoot>
 				)}
-				{hasSubscription && (
+				{hasAccount && (
 					<Menu.SubmenuRoot>
 						<Menu.SubmenuTrigger className="justify-between gap-3">
-							<span className="min-w-0 truncate">Subscription</span>
+							<span className="min-w-0 truncate">Account</span>
 							<span className="flex flex-none items-center gap-1 text-dim">
-								{subscriptionLabel}
+								{accountLabel}
 								<IconChevronRight className="shrink-0 text-dim" size={17} />
 							</span>
 						</Menu.SubmenuTrigger>
@@ -479,7 +479,7 @@ export function ModelEffortSelect({
 									<IconCheck className="shrink-0 text-dim" size={17} />
 								)}
 							</Menu.Item>
-							{accounts!.map((a) => {
+							{providerAccounts.map((a) => {
 								const selected = a.id === accountId;
 								return (
 									<Menu.Item
