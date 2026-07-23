@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Popover as BasePopover } from "@base-ui/react/popover";
 import { cn } from "./cn";
+import { useExclusivePopup } from "./exclusive-popups";
 
 /**
  * Popover on Base UI parts, styled with Tailwind tokens. Composable shape —
@@ -11,6 +12,8 @@ import { cn } from "./cn";
  * Like ui/menu.tsx this animates with CSS transitions on Base UI's
  * [data-starting-style]/[data-ending-style] lifecycle attributes rather than a
  * Motion render prop, keeping the injected a11y attributes intact.
+ * Roots also close the previously open popover through an imperative registry;
+ * Base UI does not provide tooltip-style delay grouping for hover popovers.
  */
 
 function Trigger({
@@ -20,6 +23,37 @@ function Trigger({
 	className?: string;
 }) {
 	return <BasePopover.Trigger {...props} className={cn(className)} />;
+}
+
+function Root<Payload = unknown>({
+	actionsRef,
+	onOpenChange,
+	...props
+}: BasePopover.Root.Props<Payload>) {
+	const internalActionsRef = React.useRef<BasePopover.Root.Actions | null>(null);
+	const entry = React.useMemo(
+		() => ({ close: () => internalActionsRef.current?.close() }),
+		[],
+	);
+	const group = useExclusivePopup(entry);
+
+	React.useImperativeHandle(
+		actionsRef,
+		() => internalActionsRef.current as BasePopover.Root.Actions,
+		[],
+	);
+
+	return (
+		<BasePopover.Root
+			{...props}
+			actionsRef={internalActionsRef}
+			onOpenChange={(open, eventDetails) => {
+				if (open) group?.activate(entry);
+				else group?.deactivate(entry);
+				onOpenChange?.(open, eventDetails);
+			}}
+		/>
+	);
 }
 
 function Popup({
@@ -51,7 +85,7 @@ function Popup({
 						"rounded-[14px] [corner-shape:squircle] border border-line-strong bg-panel shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none",
 						"origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out",
 						"data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0",
-						"data-[ending-style]:opacity-0",
+						"data-[ending-style]:opacity-0 data-[ending-style]:transition-none",
 						className,
 					)}
 				>
@@ -63,7 +97,7 @@ function Popup({
 }
 
 export const Popover = {
-	Root: BasePopover.Root,
+	Root,
 	Trigger,
 	Popup,
 };
