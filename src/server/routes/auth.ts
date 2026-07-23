@@ -172,8 +172,17 @@ export async function handleAuthRoutes(
 				{ status: "error", error: "Could not create a session" },
 				{ status: 500 },
 			);
+		// Native clients (iOS app) can't use the HttpOnly cookie — they ask for
+		// the token in the body (`native: true`) and store it in the keychain,
+		// sending it back as `Authorization: Bearer`.
+		const native = body?.native === true;
 		return Response.json(
-			{ status: "ok", login: result.login, name: session.name },
+			{
+				status: "ok",
+				login: result.login,
+				name: session.name,
+				...(native ? { token: session.token } : {}),
+			},
 			{ headers: { "Set-Cookie": webAuthSetCookie(session.token) } },
 		);
 	}

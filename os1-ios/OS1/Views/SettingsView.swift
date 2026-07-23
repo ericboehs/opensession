@@ -8,6 +8,13 @@ struct SettingsView: View {
     @State private var token = ServerConfig.shared.token
     @State private var checkResult: String?
 
+    // GitHub device-flow state. The poll task is retained so leaving the
+    // sheet (or tapping Cancel) stops the background polling.
+    @State private var deviceFlow: GitHubAuth.DeviceFlowStart?
+    @State private var pollTask: Task<Void, Never>?
+    @State private var signedInAs: String?
+    @State private var signInError: String?
+
     var body: some View {
         NavigationStack {
             Form {
@@ -20,13 +27,52 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    SecureField("Bearer token", text: $token)
+                    if let flow = deviceFlow {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Enter this code on GitHub:")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            Text(flow.userCode)
+                                .font(.system(.title, design: .monospaced).bold())
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity)
+                            if let url = URL(string: flow.verificationUri) {
+                                Link("Open github.com/login/device", destination: url)
+                            }
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text("Waiting for approval…")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Cancel", role: .cancel) { cancelSignIn() }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    } else {
+                        Button {
+                            startSignIn()
+                        } label: {
+                            Label("Sign in with GitHub", systemImage: "person.badge.key")
+                        }
+                    }
+                    if let signedInAs {
+                        Text("Signed in as @\(signedInAs).")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let signInError {
+                        Text(signInError)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                    SecureField("Bearer token (or paste one manually)", text: $token)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 } header: {
                     Text("Auth")
                 } footer: {
-                    Text("Paste a session token from the OS1 server (web sign-in mints one; it is the opensession_auth cookie value). Stored in the keychain.")
+                    Text("Sign in with GitHub (your account must be on the team), or paste a session token from the OS1 server. Stored in the keychain.")
                 }
 
                 Section("Identity") {
@@ -58,7 +104,38 @@ struct SettingsView: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .onDisappear { cancelSignIn() }
         }
+    }
+
+    private func startSignIn() {
+        signInError = nil
+        signedInAs = nil
+        // The flow talks to the server, so the URL field must be applied first.
+        ServerConfig.shared.baseURLString = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        pollTask = Task {
+            do {
+                let flow = try await GitHubAuth.start()
+                deviceFlow = flow
+                let login = try await GitHubAuth.waitForAuthorization(flow)
+                token = ServerConfig.shared.token
+                userName = ServerConfig.shared.userName
+                signedInAs = login
+                checkResult = nil
+            } catch is CancellationError {
+                // user cancelled — nothing to report
+            } catch {
+                signInError = error.localizedDescription
+            }
+            deviceFlow = nil
+            pollTask = nil
+        }
+    }
+
+    private func cancelSignIn() {
+        pollTask?.cancel()
+        pollTask = nil
+        deviceFlow = nil
     }
 
     private func save() {
