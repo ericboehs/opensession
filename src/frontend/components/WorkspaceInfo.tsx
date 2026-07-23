@@ -45,6 +45,7 @@ import {
 	IconBell,
 	IconCheck,
 	IconClock,
+	IconGlobe,
 	IconPlay,
 	IconPullRequest,
 	IconX,
@@ -63,7 +64,7 @@ import {
  * fallbacks. The PR is fetched here and refreshed on a slow interval.
  */
 
-type PanelTab = "changes" | "terminal" | "pr";
+type PanelTab = "changes" | "terminal" | "pr" | "staging";
 
 type ReviewRequestInfo = {
 	to: string;
@@ -1424,6 +1425,17 @@ export function WorkspaceInfo({
 					>
 						<IconPullRequest />
 						Review changes
+					</button>
+				)}
+				{pr?.staging?.url && (
+					<button
+						type="button"
+						className="workspace-info-review-btn"
+						onClick={() => onOpenTab?.("staging")}
+						title="Open the staging deploy full-width"
+					>
+						<IconGlobe />
+						Staging
 					</button>
 				)}
 				{pr?.number && repo === "tella-fusion" && (

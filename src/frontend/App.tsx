@@ -732,14 +732,24 @@ function App() {
 	// open SessionViewer to clear its composer and scroll to the live edge. With no
 	// session open there's nothing to stay in, so it falls back to the palette.
 	const [newChatSeq, setNewChatSeq] = useState(0);
-	// Whether the current session's Review pane is foregrounded (the top tab
-	// strip's Review view-tab). Reset to chat whenever the open session changes.
-	const [reviewActive, setReviewActive] = useState(false);
-	// Sessions whose Review view-tab is open (opened from the sidebar); empty by default.
+	// Which non-chat view-tab is foregrounded for the current session — Review,
+	// Staging, or neither (the chat). A single field makes "both open at once"
+	// unrepresentable; the two show-flags derive from it. Reset to chat whenever
+	// the open session changes.
+	const [activeViewTab, setActiveViewTab] = useState<
+		"review" | "staging" | null
+	>(null);
+	const reviewActive = activeViewTab === "review";
+	const stagingActive = activeViewTab === "staging";
+	// Sessions whose Review / Staging view-tab is present in the strip; empty by
+	// default (a tab is added when its pane is first opened).
 	const [reviewOpen, setReviewOpen] = useState<Set<string>>(() => new Set());
+	const [stagingOpen, setStagingOpen] = useState<Set<string>>(() => new Set());
 	// One-shot: the session whose Review tab should foreground once it lands, set
 	// when opening Review from the sidebar. Survives the session-change reset
-	// below (a pulse consumed by the effect next to it), then cleared.
+	// below (a pulse consumed by the effect next to it), then cleared. (Staging
+	// only opens from within the already-current session, so it needs no such
+	// pending pulse.)
 	const [pendingReviewOpen, setPendingReviewOpen] = useState<string | null>(null);
 
 	// Set for the render right after opening a workspace from the sidebar, so the
@@ -1063,16 +1073,17 @@ function App() {
 	// The open chat, read by the mount-once tab-shortcut handler (⌘⌥C / ⌘W —
 	// see the effect next to closeChat below).
 	const currentSessionRef = useRef<UnifiedSession | null>(null);
-	// Opening a different session always starts on its chat, never a stale Review.
+	// Opening a different session always starts on its chat, never a stale
+	// Review/Staging pane.
 	useEffect(() => {
-		setReviewActive(false);
+		setActiveViewTab(null);
 	}, [currentSession?.id]);
 	// ...unless we just opened Review for that session from the sidebar: once it
 	// lands (this render or the one after navigation), foreground Review and
 	// consume the pulse. Runs after the reset effect above, so it wins.
 	useEffect(() => {
 		if (pendingReviewOpen && pendingReviewOpen === currentSession?.id) {
-			setReviewActive(true);
+			setActiveViewTab("review");
 			setPendingReviewOpen(null);
 		}
 	}, [currentSession?.id, pendingReviewOpen]);
@@ -1096,6 +1107,21 @@ function App() {
 					},
 				]
 			: [];
+	// The Staging view-tab (the PR's Vercel preview, full-width) — opened from
+	// the Info panel's Staging button. Present once opened for this session.
+	const stagingViewTabs: ViewTab[] =
+		currentSession && stagingOpen.has(currentSession.id)
+			? [
+					{
+						id: `staging:${currentSession.id}`,
+						label: "Staging",
+						active: stagingActive,
+						dotClass: null,
+					},
+				]
+			: [];
+	// Review leftmost, then Staging.
+	const viewTabs: ViewTab[] = [...reviewViewTabs, ...stagingViewTabs];
 	// Foreground/dismiss the Review view-tab; onOpenReview re-adds a dismissed
 	// one (fired by the PR status chip / "open PR" affordances in SessionViewer).
 	function openReview() {
@@ -1105,7 +1131,7 @@ function App() {
 			if (prev.has(id)) return prev;
 			return new Set(prev).add(id);
 		});
-		setReviewActive(true);
+		setActiveViewTab("review");
 	}
 	function closeReviewTab() {
 		if (currentSession) {
@@ -1117,7 +1143,32 @@ function App() {
 				return next;
 			});
 		}
-		setReviewActive(false);
+		// Only fall back to chat if Review was the foregrounded pane — closing the
+		// Review tab while Staging is active leaves Staging up.
+		if (reviewActive) setActiveViewTab(null);
+	}
+	// Open/foreground this session's Staging view-tab (the Info panel's Staging
+	// button). Adds the tab to the strip if absent.
+	function openStaging() {
+		if (!currentSession) return;
+		const id = currentSession.id;
+		setStagingOpen((prev) => {
+			if (prev.has(id)) return prev;
+			return new Set(prev).add(id);
+		});
+		setActiveViewTab("staging");
+	}
+	function closeStagingTab() {
+		if (currentSession) {
+			const id = currentSession.id;
+			setStagingOpen((prev) => {
+				if (!prev.has(id)) return prev;
+				const next = new Set(prev);
+				next.delete(id);
+				return next;
+			});
+		}
+		if (stagingActive) setActiveViewTab(null);
 	}
 	// Open a session's Review tab from the sidebar: select it and foreground its
 	// Review once it lands (pendingReviewOpen survives the session-change reset).
@@ -1858,16 +1909,22 @@ function App() {
 						<SessionTabs
 							tabs={projectChats}
 							archived={archivedChats}
-							activeId={reviewActive ? null : currentSession?.id || null}
+							activeId={activeViewTab ? null : currentSession?.id || null}
 							colors={tabColors}
 							onSelect={(s) => {
-								setReviewActive(false);
+								setActiveViewTab(null);
 								navigate({ view: "session", id: s.id });
 							}}
 							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
-							viewTabs={reviewViewTabs}
-							onSelectView={() => setReviewActive(true)}
-							onCloseView={closeReviewTab}
+							viewTabs={viewTabs}
+							onSelectView={(id) =>
+								setActiveViewTab(
+									id.startsWith("staging:") ? "staging" : "review",
+								)
+							}
+							onCloseView={(id) =>
+								id.startsWith("staging:") ? closeStagingTab() : closeReviewTab()
+							}
 							onNewChat={handleNewChat}
 							onRename={async (id, title) => {
 								try {
@@ -2038,8 +2095,11 @@ function App() {
 									}
 									workspaceChats={projectChats}
 									showReview={reviewActive}
+									showStaging={stagingActive}
 									onOpenReview={openReview}
-									onOpenWorkspace={() => setReviewActive(false)}
+									onOpenStaging={openStaging}
+									onCloseStaging={closeStagingTab}
+									onOpenWorkspace={() => setActiveViewTab(null)}
 									allSessions={sessions}
 									allProjects={projects}
 									onNewChat={handleNewChat}

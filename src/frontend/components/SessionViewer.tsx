@@ -210,14 +210,22 @@ interface Props {
 	showReview?: boolean;
 	/** Open/foreground this session's Review view-tab (PR/review triggers). */
 	onOpenReview?: () => void;
-	/** Return from the Review view-tab to this workspace's active chat. */
+	/**
+	 * Whether the Staging pane (the PR's Vercel preview, full-width) is
+	 * foregrounded — driven by the top tab strip's Staging view-tab (App state).
+	 */
+	showStaging?: boolean;
+	/** Open/foreground this session's Staging view-tab (the Info panel's Staging button). */
+	onOpenStaging?: () => void;
+	/** Close this session's Staging view-tab (the deploy vanished, e.g. PR merged). */
+	onCloseStaging?: () => void;
+	/** Return from a view-tab (Review/Staging) to this workspace's active chat. */
 	onOpenWorkspace?: () => void;
 }
 
 type PanelTab =
 	| "info"
 	| "preview"
-	| "staging"
 	| "changes"
 	| "terminal"
 	| "pr"
@@ -450,8 +458,15 @@ export function SessionViewer({
 	onReviewChange,
 	showReview = false,
 	onOpenReview,
+	showStaging = false,
+	onOpenStaging,
+	onCloseStaging,
 	onOpenWorkspace,
 }: Props) {
+	// A full-width view-tab (Review or Staging) takes over the chat column, so
+	// the chat DOM isn't mounted while either is up — the scroll / history /
+	// scroll-restore effects below must bail in both cases.
+	const chatHidden = showReview || showStaging;
 	const [cachedTranscript] = useState(() => peekCachedTranscriptView(session.id));
 	const [entries, setEntries] = useState<TranscriptEntry[]>(
 		() => withModelSwitches(cachedTranscript?.entries ?? [], session.modelHistory),
@@ -1714,7 +1729,7 @@ export function SessionViewer({
 	);
 	const restoredCachedScrollRef = useRef(false);
 	useLayoutEffect(() => {
-		if (!cachedTranscript || restoredCachedScrollRef.current || showReview) return;
+		if (!cachedTranscript || restoredCachedScrollRef.current || chatHidden) return;
 		const el = messagesRef.current;
 		if (!el) return;
 		restoredCachedScrollRef.current = true;
@@ -1750,7 +1765,7 @@ export function SessionViewer({
 		entries,
 		messagesRef,
 		session.id,
-		showReview,
+		chatHidden,
 		startHistoryHold,
 	]);
 	useLayoutEffect(() => {
@@ -1765,7 +1780,7 @@ export function SessionViewer({
 		initiallyScrolledSessionRef.current = session.id;
 		scrollToLatest("auto");
 		setInitialScrollSession(session.id);
-	}, [entries, session.id, showReview, scrollToLatest, messagesRef]);
+	}, [entries, session.id, chatHidden, scrollToLatest, messagesRef]);
 	// Message blocks use content-visibility with estimated heights. Those estimates
 	// resolve after the first scroll calculation without a React update, growing the
 	// transcript above the viewport. Hold the bottom through that initial browser
@@ -1818,7 +1833,7 @@ export function SessionViewer({
 		expiry = setTimeout(stop, 3000);
 		keepAtLatest();
 		return stop;
-	}, [initialScrollSession, session.id, showReview, messagesRef]);
+	}, [initialScrollSession, session.id, chatHidden, messagesRef]);
 
 	// Returning to the app reads like reopening the session, not resuming a
 	// paused one. On the iOS PWA the page survives backgrounding with the scroll
@@ -2002,7 +2017,7 @@ export function SessionViewer({
 	}, [followingLive, loadEarlierHistory, messagesRef, onScroll, session.id]);
 	useEffect(() => {
 		const el = messagesRef.current;
-		if (!el || showReview) return;
+		if (!el || chatHidden) return;
 		historyGestureUntilRef.current = 0;
 		historyGestureConsumedRef.current = true;
 		lastHistoryWheelAtRef.current = 0;
@@ -2070,7 +2085,7 @@ export function SessionViewer({
 			el.removeEventListener("pointerdown", onPointerDown);
 			window.removeEventListener("keydown", onKeyDown);
 		};
-	}, [session.id, showReview, loadEarlierHistory, messagesRef]);
+	}, [session.id, chatHidden, loadEarlierHistory, messagesRef]);
 
 	// When a turn finishes, release the spacer so the layout settles back.
 	const wasBusyRef = useRef(false);
@@ -2853,16 +2868,26 @@ export function SessionViewer({
 		url: string;
 		status: string;
 	} | null>(null);
+	// True once the PR fetch has resolved at least once for this session — lets us
+	// tell "staging genuinely absent" from "not loaded yet" (the fetch starts null
+	// and fills in async), so the Staging view-tab auto-closes only on the former
+	// rather than flicker-closing during load.
+	const [stagingSettled, setStagingSettled] = useState(false);
 	useEffect(() => {
+		setStagingSettled(false);
 		if (!stagingRelevant) {
 			setStaging(null);
+			setStagingSettled(true);
 			return;
 		}
 		let alive = true;
 		const load = () =>
 			fetchPr(session.id)
 				.then((pr) => {
-					if (alive) setStaging(pr?.staging ?? null);
+					if (alive) {
+						setStaging(pr?.staging ?? null);
+						setStagingSettled(true);
+					}
 				})
 				.catch(() => {});
 		load();
@@ -2875,6 +2900,13 @@ export function SessionViewer({
 	const stagingUrl = staging
 		? withPreviewPath(staging.url, session.previewPath)
 		: null;
+	// The Staging pane is a top-strip view-tab now (App owns whether it's
+	// foregrounded). If the deploy vanishes while its tab is open+active — PR
+	// merged/closed, so `stagingRelevant` drops and the fetch settles with no
+	// staging — close the tab rather than leave it pointing at nothing.
+	useEffect(() => {
+		if (showStaging && stagingSettled && !stagingUrl) onCloseStaging?.();
+	}, [showStaging, stagingSettled, stagingUrl, onCloseStaging]);
 	const [previewStatus, setPreviewStatus] = useState<PreviewStatus | null>(null);
 	const previewUrl =
 		previewStatus?.running && previewStatus.previewUrl
@@ -2882,13 +2914,10 @@ export function SessionViewer({
 			: null;
 	useEffect(() => setPreviewStatus(null), [session.id]);
 	useEffect(() => {
-		if (
-			(panelTab === "preview" && !previewUrl) ||
-			(panelTab === "staging" && !stagingUrl)
-		) {
+		if (panelTab === "preview" && !previewUrl) {
 			setPanelTab("info");
 		}
-	}, [panelTab, previewUrl, stagingUrl]);
+	}, [panelTab, previewUrl]);
 
 	// ⌘O opens the PR's staging deploy (the Vercel preview StagingLink's globe
 	// points at); ⌘G opens its GitHub PR. Chords without a target (no staging
@@ -3548,6 +3577,16 @@ export function SessionViewer({
 										onOpenTab={(tab) => {
 											setInfoPageOpen(false);
 											setSubagentStack([]);
+											// Review + Staging are full-width view-tabs (App state),
+											// not right-panel tabs — route them out.
+											if (tab === "pr") {
+												onOpenReview?.();
+												return;
+											}
+											if (tab === "staging") {
+												onOpenStaging?.();
+												return;
+											}
 											selectPanelTab(tab);
 											setPanelOpen(true);
 										}}
@@ -3681,7 +3720,17 @@ export function SessionViewer({
 
 			<div className="viewer-split">
 				<div className="viewer-chat">
-					{showReview && hasWorkspace ? (
+					{showStaging && stagingUrl ? (
+						<div className="viewer-review-main">
+							<iframe
+								className="block w-full flex-1 border-0 bg-white"
+								src={stagingUrl}
+								title="Staging"
+								allow="clipboard-read; clipboard-write; fullscreen"
+								sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-downloads"
+							/>
+						</div>
+					) : showReview && hasWorkspace ? (
 						<div className="viewer-review-main">
 							<PrPanel
 								sessionId={session.id}
@@ -4128,14 +4177,6 @@ export function SessionViewer({
 									Preview
 								</button>
 							)}
-							{stagingUrl && (
-								<button
-									className={`panel-tab ${panelTab === "staging" ? "active" : ""}`}
-									onClick={() => selectPanelTab("staging")}
-								>
-									Staging
-								</button>
-							)}
 							{canSideChat && (
 								<button
 									className={`panel-tab ${panelTab === "sidechats" ? "active" : ""}`}
@@ -4248,7 +4289,13 @@ export function SessionViewer({
 									reviewRequestSessionId={effectiveReview?.ownerId}
 									onReviewChange={onReviewChange}
 									send={connected ? send : undefined}
-									onOpenTab={(tab) => (tab === "pr" ? onOpenReview?.() : selectPanelTab(tab))}
+									onOpenTab={(tab) =>
+										tab === "pr"
+											? onOpenReview?.()
+											: tab === "staging"
+												? onOpenStaging?.()
+												: selectPanelTab(tab)
+									}
 									onAddToInput={(text) =>
 										setComposerPrefill((p) => ({
 											seq: (p?.seq ?? 0) + 1,
@@ -4264,14 +4311,6 @@ export function SessionViewer({
 									className="block h-full min-h-[320px] w-full border-0 bg-white"
 									src={previewUrl}
 									title="Preview"
-									allow="clipboard-read; clipboard-write; fullscreen"
-									sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-downloads"
-								/>
-							) : panelTab === "staging" && stagingUrl ? (
-								<iframe
-									className="block h-full min-h-[320px] w-full border-0 bg-white"
-									src={stagingUrl}
-									title="Staging"
 									allow="clipboard-read; clipboard-write; fullscreen"
 									sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-downloads"
 								/>
