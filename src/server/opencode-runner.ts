@@ -222,6 +222,7 @@ import {
   bindOpenaiAccount,
   maskOpenaiAccount,
   opencodeHasNativeOpenaiAuth,
+  openaiPromptVariant,
 } from "./opencode-openai-auth";
 import { markCodexExhausted, type CodexAccount } from "./codex-accounts";
 import {
@@ -3153,6 +3154,7 @@ async function* runOpencodeAttempt(
         aws: !!opts.aws,
         model,
         effort,
+        fastMode: opts.fastMode,
         fallbackModel: opts.fallbackModel,
         kind: journal.kind,
         startedAt: new Date().toISOString(),
@@ -3539,7 +3541,13 @@ async function* runOpencodeAttempt(
       ...q,
       body: {
         model: parsed,
-        variant: normalizeModelEffort(model, effort),
+        variant: (() => {
+          const normalizedEffort = normalizeModelEffort(model, effort);
+          return openaiPromptVariant(
+            normalizedEffort,
+            !!opts.fastMode && !!pickedOpenai,
+          );
+        })(),
         // Shared servers: session context (`system` appends to opencode's own
         // system prompt), read-only agent selection, and this run's tool
         // strips all ride the prompt — per-session servers carry them in

@@ -421,6 +421,7 @@ try {
     user: spec.user,
     fallbackModel: spec.fallbackModel,
     effort: spec.effort,
+    fastMode: spec.fastMode,
     accountId: spec.accountId,
     accountStrict: spec.accountStrict,
     usageCredits: spec.usageCredits,

@@ -1242,6 +1242,8 @@ export interface ModelOption {
 	group?: string;
 	/** One-line subtitle shown under the label (dial presets). */
 	description?: string;
+	/** This model has subscription-backend priority-tier variants configured. */
+	fastModeSupported?: boolean;
 }
 
 /**
@@ -1317,6 +1319,8 @@ export interface ProviderAccountOption {
 	owner?: string;
 	/** False when the account is currently exhausted / over its cap. */
 	usable: boolean;
+	/** Credential mechanism; Fast mode is unavailable for direct API keys. */
+	kind?: string;
 }
 
 export async function fetchProviderAccounts(): Promise<ProviderAccountOption[]> {
@@ -1329,6 +1333,7 @@ export async function fetchProviderAccounts(): Promise<ProviderAccountOption[]> 
 				provider,
 				owner: a.owner || undefined,
 				usable: a.usable !== false,
+				kind: typeof a.kind === "string" ? a.kind : undefined,
 			}));
 		} catch {
 			return [];

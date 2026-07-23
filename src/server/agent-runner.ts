@@ -57,6 +57,8 @@ export interface RunAgentOpts {
   model?: string;
   /** OpenCode reasoning variant for this run; unset = the model default. */
   effort?: string;
+  /** Use OpenAI's priority service tier when this is a ChatGPT OAuth Codex run. */
+  fastMode?: boolean;
   mcpServers?: string[];
   /**
    * In-process SDK MCP servers (opensession-sessions / opensession-admin) for trusted
@@ -666,6 +668,7 @@ export function resumeInterruptedRuns(
             mode: run.mode,
             model: run.model,
             effort: run.effort,
+            fastMode: run.fastMode,
             mcpServers: run.mcpServers,
             inProcessMcp: run.bksSessionId
               ? inProcessMcpFor?.(run.bksSessionId, run.user)
@@ -741,6 +744,7 @@ export function resumeInterruptedRuns(
           mode: run.mode,
           model: run.model,
           effort: run.effort,
+          fastMode: run.fastMode,
           mcpServers: run.mcpServers,
           inProcessMcp: run.bksSessionId
             ? inProcessMcpFor?.(run.bksSessionId, run.user)

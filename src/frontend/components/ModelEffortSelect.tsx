@@ -3,7 +3,7 @@ import type { ModelOption, ProviderAccountOption } from "../lib/api";
 import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
-import { IconCheck, IconChevronRight } from "./icons";
+import { IconBolt, IconCheck, IconChevronRight } from "./icons";
 
 export const EFFORTS = [
 	{ id: "none", label: "None" },
@@ -26,6 +26,8 @@ type Props = {
 	/** When effort isn't wired, the menu is just the model list. */
 	effort?: string;
 	onEffortChange?: (effort: string) => void;
+	fastMode?: boolean;
+	onFastModeChange?: (fastMode: boolean) => void;
 	/**
 	 * Pinnable provider accounts. The menu filters these to the active model's
 	 * Claude or Codex pool; "" = auto (personal-first, pool fallback).
@@ -212,6 +214,8 @@ export function ModelEffortSelect({
 	modelTitle,
 	effort,
 	onEffortChange,
+	fastMode,
+	onFastModeChange,
 	accounts,
 	accountId,
 	onAccountChange,
@@ -231,12 +235,21 @@ export function ModelEffortSelect({
 			: supportedEffortIds[0];
 	const effortLabel = EFFORTS.find((e) => e.id === effectiveEffort)?.label;
 	const hasEffort = !!onEffortChange && supportedEfforts.length > 0;
-	const accountProvider = models.find((m) => m.id === effectiveModel)?.accountProvider;
+	const modelInfo = models.find((m) => m.id === effectiveModel);
+	const accountProvider = modelInfo?.accountProvider;
 	const providerAccounts = (accounts || []).filter((a) => a.provider === accountProvider);
 	const hasAccount = !!onAccountChange && providerAccounts.length > 0;
 	const currentAccount = accountId
 		? providerAccounts.find((a) => a.id === accountId)
 		: undefined;
+	const subscriptionAccount = providerAccounts.find(
+		(a) => a.kind !== "api_key" && a.usable,
+	);
+	const hasFastMode =
+		modelInfo?.fastModeSupported === true &&
+		currentAccount?.kind !== "api_key" &&
+		!!(currentAccount || subscriptionAccount) &&
+		!!onFastModeChange;
 	const accountLabel = currentAccount ? currentAccount.name : "Auto";
 
 	const optionFor = (id: string): ModelMenuOption => {
@@ -383,7 +396,7 @@ export function ModelEffortSelect({
 					className,
 				)}
 				title={title}
-				disabled={disabled || (!hasEffort && modelDisabled)}
+				disabled={disabled || (!hasEffort && !hasFastMode && modelDisabled)}
 				aria-label={
 					hasAccount
 						? "Model, reasoning effort, and provider account"
@@ -394,6 +407,9 @@ export function ModelEffortSelect({
 			>
 				<span className="palette-pill-label">{modelLabel}</span>
 				{hasEffort && <span className="palette-pill-effort flex-none text-faint">{effortLabel}</span>}
+				{hasFastMode && fastMode && (
+					<span className="palette-pill-effort flex-none text-faint">Fast</span>
+				)}
 			</Menu.Trigger>
 			<Menu.Popup align="end" sideOffset={6} className="max-w-[min(360px,calc(100vw-1rem))]">
 				{groupedPrimary
@@ -437,7 +453,25 @@ export function ModelEffortSelect({
 						</Menu.Popup>
 					</Menu.SubmenuRoot>
 				)}
-				{(hasEffort || hasAccount) && <Menu.Separator className="my-1" />}
+				{(hasEffort || hasAccount || hasFastMode) && <Menu.Separator className="my-1" />}
+				{hasFastMode && (
+					<Menu.Item
+						onClick={() => {
+							const next = !fastMode;
+							if (next && !currentAccount && subscriptionAccount) {
+								onAccountChange?.(subscriptionAccount.id);
+							}
+							onFastModeChange!(next);
+						}}
+						className={cn("justify-between gap-3", fastMode && "bg-hover")}
+					>
+						<span className="flex min-w-0 items-center gap-2">
+							<IconBolt className="shrink-0 text-dim" size={20} />
+							<span className="truncate">Fast mode</span>
+						</span>
+						{fastMode && <IconCheck className="shrink-0 text-dim" size={17} />}
+					</Menu.Item>
+				)}
 				{hasEffort && (
 					<Menu.SubmenuRoot>
 						<Menu.SubmenuTrigger className="justify-between gap-3">

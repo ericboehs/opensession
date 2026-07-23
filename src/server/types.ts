@@ -126,6 +126,8 @@ export interface UnifiedSession {
   model?: string;
   /** OpenCode reasoning variant for runs in this session; unset = model default. */
   effort?: string;
+  /** Use OpenAI's priority service tier for ChatGPT OAuth Codex runs. */
+  fastMode?: boolean;
   /**
    * Pinned provider account for runs in this session. The id belongs to the
    * active model's Claude or Codex pool. Unset = auto (personal-first, shared
@@ -370,6 +372,7 @@ export interface BackstageSessionFile {
   plainThreadId?: string; // Plain thread this session is triaging
   model?: string; // model id for this session's runs; unset = default
   effort?: string; // OpenCode reasoning variant for this session's runs; unset = model default
+  fastMode?: boolean; // OpenAI priority service tier for ChatGPT OAuth Codex runs
   accountId?: string; // pinned Claude/Codex provider account; unset = auto pool
   codexThreadId?: string; // codex thread id once the session has run on a codex model
   opencodeSessionId?: string; // opencode session id (ses_…) once the session has run on an opencode/* model

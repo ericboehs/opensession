@@ -245,6 +245,22 @@ export function maybePersistEffort(
 	session.effort = e; // keep the in-hand snapshot current for this turn
 }
 
+/** Persist a composer-sent OpenAI priority-tier change on a backstage session. */
+export function maybePersistFastMode(
+	session: UnifiedSession | undefined,
+	fastMode?: boolean,
+): void {
+	if (
+		!session ||
+		session.source !== "backstage" ||
+		typeof fastMode !== "boolean" ||
+		session.fastMode === fastMode
+	)
+		return;
+	touchBackstageSession(session.id, { fastMode });
+	session.fastMode = fastMode;
+}
+
 // Sessions whose LAST run died on a terminal failure (usage limits exhausted on
 // every account, credit/API errors). Those need a human to act — the sidebar
 // surfaces them as "Needs input" instead of letting them sink into the Backlog.

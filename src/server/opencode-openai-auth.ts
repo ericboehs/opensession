@@ -405,8 +405,45 @@ const CODEX_BACKEND_LIMITS: Record<string, { context: number; input: number; out
  *  opencode deep-merges these over its models.dev catalog, which re-arms
  *  autocompact at the true window instead of the API models' fictional one. */
 const OPENAI_MODELS_OVERRIDE: Record<string, unknown> = Object.fromEntries(
-  Object.entries(CODEX_BACKEND_LIMITS).map(([id, limit]) => [id, { limit }])
+  Object.entries(CODEX_BACKEND_LIMITS).map(([id, limit]) => [
+    id,
+    {
+      limit,
+      variants: {
+        fast: {
+          serviceTier: "priority",
+          reasoningSummary: "auto",
+          include: ["reasoning.encrypted_content"],
+        },
+        ...Object.fromEntries(
+          ["none", "low", "medium", "high", "xhigh"].map((effort) => [
+            `${effort}-fast`,
+            {
+              reasoningEffort: effort,
+              serviceTier: "priority",
+              reasoningSummary: "auto",
+              include: ["reasoning.encrypted_content"],
+            },
+          ]),
+        ),
+      },
+    },
+  ])
 );
+
+export function supportsOpenaiFastMode(model?: string): boolean {
+  if (!model) return false;
+  const id = model.replace(/^opencode\/openai\//, "").replace(/^openai\//, "");
+  return id in CODEX_BACKEND_LIMITS;
+}
+
+export function openaiPromptVariant(
+  effort: string | undefined,
+  fastMode: boolean,
+): string | undefined {
+  if (!fastMode) return effort;
+  return effort ? `${effort}-fast` : "fast";
+}
 
 export function bindOpenaiAccount(account: CodexAccount): OpenaiAccountBinding | { error: string } {
   if (account.kind === "api_key") {

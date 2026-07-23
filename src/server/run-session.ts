@@ -1097,6 +1097,7 @@ export async function maybeLaunchSandboxedRun(
 			user: opts.user,
 			fallbackModel: interactiveFallbackModel(session.model),
 			effort: session.effort,
+			fastMode: session.fastMode,
 			accountId: session.accountId,
 			journalKind: "prompt",
 		};
@@ -1547,6 +1548,7 @@ async function runSessionPromptInner(
 		model: session.model,
 		// Reasoning effort from the composer pill, persisted on the session.
 		effort: session.effort,
+		fastMode: session.fastMode,
 		// Pinned subscription for this session (claude-runner prefers it, pool
 		// fallback on exhaustion). Ignored by Codex models.
 		accountId: session.accountId,

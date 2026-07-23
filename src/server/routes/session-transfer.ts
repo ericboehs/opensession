@@ -54,6 +54,7 @@ export interface TransferSessionSubset {
   mode?: "ask" | "code";
   model?: string;
   effort?: string;
+  fastMode?: boolean;
   modelHistory?: BackstageSessionFile["modelHistory"];
   usage?: BackstageSessionFile["usage"];
 }
@@ -248,6 +249,7 @@ function transferredSession(
       ...(input.mode === "ask" || input.mode === "code" ? { mode: input.mode } : {}),
       ...(text("model", 200) ? { model: text("model", 200) } : {}),
       ...(text("effort", 40) ? { effort: text("effort", 40) } : {}),
+      ...(input.fastMode === true ? { fastMode: true } : {}),
       ...(Array.isArray(input.modelHistory)
         ? { modelHistory: input.modelHistory as BackstageSessionFile["modelHistory"] }
         : {}),
@@ -270,6 +272,7 @@ export function sessionSubsetForTransfer(
     ...(data.mode ? { mode: data.mode } : {}),
     ...(data.model ? { model: data.model } : {}),
     ...(data.effort ? { effort: data.effort } : {}),
+    ...(data.fastMode ? { fastMode: true } : {}),
     ...(data.modelHistory ? { modelHistory: data.modelHistory } : {}),
     ...(data.usage ? { usage: data.usage } : {}),
   };
@@ -340,6 +343,7 @@ export async function importCloudSession(
       mode: selected.session.mode || "code",
       ...(selected.session.model ? { model: selected.session.model } : {}),
       ...(selected.session.effort ? { effort: selected.session.effort } : {}),
+      ...(selected.session.fastMode ? { fastMode: true } : {}),
       ...(selected.session.modelHistory
         ? { modelHistory: selected.session.modelHistory }
         : {}),

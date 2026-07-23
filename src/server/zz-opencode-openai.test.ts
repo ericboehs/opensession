@@ -12,6 +12,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   bindOpenaiAccount,
+  openaiPromptVariant,
+  supportsOpenaiFastMode,
   OPENCODE_OPENAI_PLACEHOLDER_REFRESH,
   type OpenaiAccountBinding,
 } from "./opencode-openai-auth";
@@ -104,6 +106,13 @@ describe("bindOpenaiAccount", () => {
     expect(isBinding(bound)).toBe(true);
     if (!isBinding(bound)) return;
     expect(bound.mechanism).toBe("oauth-subscription");
+    const models = (bound.providerOverride!.openai as any).models;
+    expect(models["gpt-5.5"].variants["high-fast"]).toEqual({
+      reasoningEffort: "high",
+      serviceTier: "priority",
+      reasoningSummary: "auto",
+      include: ["reasoning.encrypted_content"],
+    });
     const xdg = bound.extraEnv.XDG_DATA_HOME;
     expect(xdg).toContain("acc-home-123456");
 
@@ -120,5 +129,19 @@ describe("bindOpenaiAccount", () => {
     expect(JSON.stringify(seeded)).not.toContain("SECRET-MUST-NOT-LEAK");
     // Seeded file is 0600.
     expect(statSync(seededPath).mode & 0o777).toBe(0o600);
+  });
+});
+
+describe("openaiPromptVariant", () => {
+  test("combines priority service tier with reasoning effort", () => {
+    expect(openaiPromptVariant("high", true)).toBe("high-fast");
+    expect(openaiPromptVariant("none", true)).toBe("none-fast");
+    expect(openaiPromptVariant(undefined, true)).toBe("fast");
+    expect(openaiPromptVariant("high", false)).toBe("high");
+  });
+
+  test("exposes Fast mode only for models with configured variants", () => {
+    expect(supportsOpenaiFastMode("opencode/openai/gpt-5.5")).toBe(true);
+    expect(supportsOpenaiFastMode("opencode/openai/future-model")).toBe(false);
   });
 });

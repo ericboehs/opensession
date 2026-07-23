@@ -68,6 +68,8 @@ export interface RunHostSpec {
   fallbackModel?: string;
   /** Reasoning effort for the run (UI scale; each runner normalizes it). */
   effort?: string;
+  /** OpenAI priority service tier for ChatGPT OAuth Codex runs. */
+  fastMode?: boolean;
   /** Pinned account in the active model provider's pool; pool fallback applies. */
   accountId?: string;
   /** Hard accountId pin — never rotate into the shared pool (cost cap). */

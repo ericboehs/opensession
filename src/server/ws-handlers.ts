@@ -30,7 +30,7 @@ import { sandboxWsClose, sandboxWsMessage, sandboxWsOpen } from "./run-ws";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { type Sandbox, hasRemoteWorkspace } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox, sandboxConfig, sandboxesEnabled } from "./sandbox/config";
-import { SESSION_EFFORTS, findSession, invalidateSessionsCache, maybePersistEffort, recordRunOutcome, touchBackstageSession, updateSessionFile } from "./session-cache";
+import { SESSION_EFFORTS, findSession, invalidateSessionsCache, maybePersistEffort, maybePersistFastMode, recordRunOutcome, touchBackstageSession, updateSessionFile } from "./session-cache";
 import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
 import { engineSessionPatch, engineUserTexts, mergedSessionTranscript, mergedSessionTranscriptAsync, v2MirrorFiles, v2TranscriptHasDrift } from "./sessions";
 import { handleSlashCommand } from "./slash-commands";
@@ -775,6 +775,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// The composer's effort pill rides every send; persist a change so
 				// this and future runs (queue drains, resumes) honor it.
 				maybePersistEffort(session, msg.effort);
+				maybePersistFastMode(session, msg.fastMode);
 
 				// Slash commands are handled by backstage itself
 				const notice = handleSlashCommand(
@@ -904,6 +905,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					return;
 				}
 				maybePersistEffort(session, msg.effort);
+				maybePersistFastMode(session, msg.fastMode);
 				const attributed = user ? `[${user}] ${content}` : content;
 				// Files can't ride the interrupt/steer content-block channel — a send
 				// carrying files falls through to the queue (drain delivers images +
@@ -1186,6 +1188,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							SESSION_EFFORTS.has(msg.effort.trim().toLowerCase())
 						? msg.effort.trim().toLowerCase()
 						: undefined;
+				const createFastMode = forkSource?.fastMode;
 				// Pinned provider account from the palette (forks inherit).
 				// Soft pin: the runner prefers it and falls back to the pool when
 				// it's exhausted. Mismatched, unknown, and foreign personal ids
@@ -1525,6 +1528,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 								title,
 								mode: (isAsk ? "ask" : "code") as "ask" | "code",
 								...(createEffort ? { effort: createEffort } : {}),
+								...(createFastMode ? { fastMode: true } : {}),
 								...(createAccountId ? { accountId: createAccountId } : {}),
 								...(plainThreadId ? { plainThreadId } : {}),
 								...(createMcpServers && createMcpServers.length ? { mcpServers: createMcpServers } : {}),
@@ -1650,6 +1654,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						mode: isAsk ? "ask" : "code",
 						model,
 						effort: createEffort,
+						fastMode: createFastMode,
 						accountId: createAccountId,
 						fallbackModel: interactiveFallbackModel(model),
 						mcpServers: createMcpServers,

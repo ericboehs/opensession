@@ -7,7 +7,7 @@
  */
 
 import { requestUser, type RouteContext } from "./context";
-import { KNOWN_MODELS, accountProviderForModel, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, localProfileDefaultModel, localProfileModels, modelEfforts, refreshOpencodePickerModels, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto } from "../models";
+import { KNOWN_MODELS, accountProviderForModel, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, localProfileDefaultModel, localProfileModels, modelEfforts, refreshOpencodePickerModels, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto, toOpencodeModel } from "../models";
 import { envAlias } from "../rename-compat";
 import { type Sandbox } from "../sandbox";
 import { sandboxCapabilityStatus } from "../sandbox/config";
@@ -15,6 +15,7 @@ import { suggestBranchName } from "../suggest-branch";
 import { buildSystemPromptParts } from "../system-prompt";
 import { MAX_AUDIO_BYTES, transcribeAudio } from "../transcribe";
 import { isLocalProfile } from "../profile";
+import { supportsOpenaiFastMode } from "../opencode-openai-auth";
 
 export async function handleModelsRoutes(
 	ctx: RouteContext,
@@ -30,6 +31,7 @@ export async function handleModelsRoutes(
 					...model,
 					efforts: modelEfforts(model.id),
 					accountProvider: accountProviderForModel(model.id),
+					fastModeSupported: supportsOpenaiFastMode(toOpencodeModel(model.id)),
 				})),
 				default: localProfileDefaultModel(),
 				autoFallback: false,
@@ -52,6 +54,7 @@ export async function handleModelsRoutes(
 				...model,
 				efforts: modelEfforts(model.id),
 				accountProvider: accountProviderForModel(model.id),
+				fastModeSupported: supportsOpenaiFastMode(toOpencodeModel(model.id)),
 			})),
 			default: opencodeConfigured ? interactiveDefaultModel() : getDefaultModel(),
 			autoFallback: getModelFallbackAuto(),

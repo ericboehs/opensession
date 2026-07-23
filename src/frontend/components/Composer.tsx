@@ -80,6 +80,8 @@ interface Props {
    */
   effort?: string;
   onEffortChange?: (effort: string) => void;
+  fastMode?: boolean;
+  onFastModeChange?: (fastMode: boolean) => void;
   /** Pinnable provider accounts + current pin for the model pill's account
    * submenu. Empty/omitted hides it. */
   accounts?: ProviderAccountOption[];
@@ -242,6 +244,8 @@ export function Composer({
   modelTitle,
   effort,
   onEffortChange,
+  fastMode,
+  onFastModeChange,
   accounts,
   accountId,
   onAccountChange,
@@ -824,6 +828,8 @@ export function Composer({
                   modelTitle={modelTitle}
                   effort={effort}
                   onEffortChange={onEffortChange}
+                  fastMode={fastMode}
+                  onFastModeChange={onFastModeChange}
                   accounts={accounts}
                   accountId={accountId}
                   onAccountChange={onAccountChange}

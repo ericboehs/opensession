@@ -728,6 +728,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       plainThreadId: data.plainThreadId,
       model: data.model,
       effort: data.effort,
+      fastMode: data.fastMode,
       accountId: data.accountId,
       codexThreadId: data.codexThreadId,
       opencodeSessionId: data.opencodeSessionId,

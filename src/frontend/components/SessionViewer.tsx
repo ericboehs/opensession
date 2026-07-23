@@ -1052,6 +1052,7 @@ export function SessionViewer({
 	// Persisted on the session server-side and enforced per run (Claude effort /
 	// Codex modelReasoningEffort), so seed from the session's stored value.
 	const [effort, setEffort] = useState(session.effort || "high");
+	const [fastMode, setFastMode] = useState(session.fastMode || false);
 	// Optimistic goal: reflects a just-set/cleared goal instantly (the /goal
 	// command persists server-side but doesn't broadcast a live session update).
 	// `undefined` = defer to session.goal; a string/null = the pending override.
@@ -1082,6 +1083,9 @@ export function SessionViewer({
 	useEffect(() => {
 		setEffort(session.effort || "high");
 	}, [session.id, session.effort]);
+	useEffect(() => {
+		setFastMode(session.fastMode || false);
+	}, [session.id, session.fastMode]);
 	useEffect(() => {
 		setUsage(session.usage);
 	}, [session.id, session.usage]);
@@ -2415,6 +2419,7 @@ export function SessionViewer({
 							content: text,
 							user,
 							effort,
+							fastMode,
 							busyMode: "steer" as const,
 							...(imgs.length ? { images: imgs } : {}),
 							...(fls.length ? { files: filePayload } : {}),
@@ -2425,6 +2430,7 @@ export function SessionViewer({
 							content: text,
 							user,
 							effort,
+							fastMode,
 							busyMode: "queue" as const,
 							...(imgs.length ? { images: imgs } : {}),
 							...(fls.length ? { files: filePayload } : {}),
@@ -2435,6 +2441,7 @@ export function SessionViewer({
 						content: text,
 						user,
 						effort,
+						fastMode,
 						...(imgs.length ? { images: imgs } : {}),
 						...(fls.length ? { files: filePayload } : {}),
 						// Attached sibling-chat transcripts (fresh chats are idle, so the
@@ -2791,6 +2798,7 @@ export function SessionViewer({
 		if (next === (accountId || "")) return;
 		setAccountId(next);
 		const target = next ? accounts.find((a) => a.id === next) : null;
+		if (target?.kind === "api_key") setFastMode(false);
 		send({
 			type: "prompt",
 			sessionId: session.id,
@@ -4340,6 +4348,8 @@ export function SessionViewer({
 									}
 									effort={effort}
 									onEffortChange={setEffort}
+									fastMode={fastMode}
+									onFastModeChange={setFastMode}
 									// Account pinning is a backstage-session affordance. The
 									// picker filters the combined pool by the active model.
 									accounts={

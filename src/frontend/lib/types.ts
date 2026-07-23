@@ -281,6 +281,8 @@ export interface UnifiedSession {
 	model?: string;
 	/** OpenCode reasoning variant for this session's runs; unset = model default. */
 	effort?: string;
+	/** OpenAI priority service tier for ChatGPT OAuth Codex runs. */
+	fastMode?: boolean;
 	/** Pinned account in the active model provider's pool; unset = auto. */
 	accountId?: string;
 	codexThreadId?: string;
@@ -545,6 +547,7 @@ export type WSClientMessage =
 			busyMode?: "queue" | "steer";
 			/** Reasoning effort — persisted on the session and enforced per run. */
 			effort?: "low" | "medium" | "high" | string;
+			fastMode?: boolean;
 			/** Sibling-chat ids whose transcripts ride along as context (the
 			    fresh-chat "Add chat transcripts" chips). */
 			contextChats?: string[];
@@ -557,6 +560,7 @@ export type WSClientMessage =
 			images?: string[];
 			files?: unknown;
 			effort?: "low" | "medium" | "high" | string;
+			fastMode?: boolean;
 	  }
 	| {
 			type: "delete_queued_prompt";
