@@ -35,7 +35,8 @@
  * entries (with seqs) on transcript-bus, and invokes the optional
  * steer-receipt append hook (setAppendHook — same contract as
  * file-watcher.ts's setTranscriptAppendListener). Both are wrapped so they
- * can never throw back into the append path. Imports publish nothing.
+ * can never throw back into the append path. Imports publish one reconciliation
+ * wake only after all chunks commit; authoritative replacements publish reset.
  *
  * Live-safety: nothing here opens the DB at import time — the singleton
  * (`transcriptStore()`) is lazy, and handle + prepared statements park on
@@ -140,12 +141,15 @@ export function transcriptStore(): TranscriptStore {
 
 interface EventRow {
   seq: number;
+  change_seq: number;
   data: string;
   full_ref: number | null;
 }
 
 interface SessionRow {
   next_seq: number;
+  next_change_seq: number;
+  reset_change_seq: number;
   imported_at: number | null;
   import_src: string | null;
   import_watermark: number | null;
@@ -170,6 +174,9 @@ export class TranscriptStore {
   private txDelete: ((sessionId: string) => void) & {
     immediate: (sessionId: string) => void;
   };
+  private txReplace: ((sessionId: string, entries: TranscriptEntry[]) => WriteOutcome) & {
+    immediate: (sessionId: string, entries: TranscriptEntry[]) => WriteOutcome;
+  };
 
   constructor(public readonly dbPath: string) {
     if (dbPath !== ":memory:") {
@@ -189,6 +196,7 @@ export class TranscriptStore {
         kind       TEXT NOT NULL,
         data       TEXT NOT NULL,
         full_ref   INTEGER,
+        change_seq INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (session_id, seq)
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_te_uuid
@@ -204,12 +212,15 @@ export class TranscriptStore {
       CREATE TABLE IF NOT EXISTS transcript_sessions (
         session_id  TEXT PRIMARY KEY,
         next_seq    INTEGER NOT NULL DEFAULT 1,
+        next_change_seq INTEGER NOT NULL DEFAULT 1,
+        reset_change_seq INTEGER NOT NULL DEFAULT 0,
         last_ts     INTEGER,
         imported_at INTEGER,
         import_src  TEXT,
         import_watermark INTEGER
       );
     `);
+    this.migrateChangeSequence();
     type Tx = typeof this.txWrite;
     this.txWrite = this.db.transaction(
       (sessionId: string, entries: TranscriptEntry[]) =>
@@ -220,6 +231,22 @@ export class TranscriptStore {
       this.db.run("DELETE FROM transcript_blobs WHERE session_id = ?", [sessionId]);
       this.db.run("DELETE FROM transcript_sessions WHERE session_id = ?", [sessionId]);
     }) as unknown as typeof this.txDelete;
+    this.txReplace = this.db.transaction(
+      (sessionId: string, entries: TranscriptEntry[]) => {
+        this.db.run("DELETE FROM transcript_events WHERE session_id = ?", [sessionId]);
+        this.db.run("DELETE FROM transcript_blobs WHERE session_id = ?", [sessionId]);
+        this.db.run(
+          `INSERT INTO transcript_sessions (session_id, next_seq, next_change_seq)
+           VALUES (?, 1, 1)
+           ON CONFLICT(session_id) DO UPDATE SET
+             next_seq = 1,
+             reset_change_seq = transcript_sessions.next_change_seq,
+             next_change_seq = transcript_sessions.next_change_seq + 1`,
+          [sessionId]
+        );
+        return this.writeEntriesInTx(sessionId, entries);
+      }
+    ) as unknown as typeof this.txReplace;
   }
 
   // ── Append (live path) ─────────────────────────────────────────────────────
@@ -294,7 +321,7 @@ export class TranscriptStore {
    * (≤ 500 rows each — never one giant lock hold), then mark the session
    * imported with `src` + `watermark` (mirror file size at import time, §8
    * drift detection). Idempotent: re-import upserts by uuid and keeps seqs.
-   * Publishes nothing on the bus (history, not live).
+   * Publishes one post-import wake so an already-active watcher reconciles.
    */
   importLegacyTranscript(
     sessionId: string,
@@ -311,7 +338,33 @@ export class TranscriptStore {
       updated += outcome.updated;
     }
     this.markImported(sessionId, src, watermark);
+    // Initial imports have no subscribers; drift re-imports can. Publishing a
+    // single wake after all chunks lets active watches reconcile corrections
+    // without exposing partially imported state.
+    if (inserted || updated) {
+      publishTranscript(sessionId, {
+        entries: [],
+        firstSeq: 0,
+        lastSeq: this.getLastSeq(sessionId),
+      });
+    }
     return { inserted, updated };
+  }
+
+  /** Replace a file-backed transcript authoritatively while preserving the
+   * monotonic change cursor. Used for truncation/atomic replacement only. */
+  replaceTranscriptEvents(
+    sessionId: string,
+    entries: TranscriptEntry[]
+  ): { inserted: number; updated: number } {
+    const outcome = this.txReplace.immediate(sessionId, entries);
+    publishTranscript(sessionId, {
+      entries: outcome.affected,
+      firstSeq: outcome.affected[0]?.seq ?? 0,
+      lastSeq: outcome.affected[outcome.affected.length - 1]?.seq ?? 0,
+      reset: true,
+    });
+    return { inserted: outcome.inserted, updated: outcome.updated };
   }
 
   /** True when the session has never been imported (one-time gate; cached). */
@@ -369,7 +422,7 @@ export class TranscriptStore {
   readTail(sessionId: string, limit: number = 50): TranscriptPage {
     const rows = this.db
       .query(
-        `SELECT seq, data, full_ref FROM transcript_events
+        `SELECT seq, change_seq, data, full_ref FROM transcript_events
          WHERE session_id = ? ORDER BY seq DESC LIMIT ?`
       )
       .all(sessionId, Math.max(1, limit)) as EventRow[];
@@ -381,10 +434,27 @@ export class TranscriptStore {
   readSince(sessionId: string, sinceSeq: number, limit: number = 500): TranscriptPage {
     const rows = this.db
       .query(
-        `SELECT seq, data, full_ref FROM transcript_events
+        `SELECT seq, change_seq, data, full_ref FROM transcript_events
          WHERE session_id = ? AND seq > ? ORDER BY seq ASC LIMIT ?`
       )
       .all(sessionId, sinceSeq, Math.max(1, limit)) as EventRow[];
+    return page(rows);
+  }
+
+  /** Row mutations after a synchronization cursor. Unlike readSince(seq),
+   * this includes rewrites of old display-order rows. */
+  readChangesSince(
+    sessionId: string,
+    sinceChangeSeq: number,
+    limit: number = 500
+  ): TranscriptPage {
+    const rows = this.db
+      .query(
+        `SELECT seq, change_seq, data, full_ref FROM transcript_events
+         WHERE session_id = ? AND change_seq > ?
+         ORDER BY change_seq ASC LIMIT ?`
+      )
+      .all(sessionId, sinceChangeSeq, Math.max(1, limit)) as EventRow[];
     return page(rows);
   }
 
@@ -393,7 +463,7 @@ export class TranscriptStore {
   readBefore(sessionId: string, beforeSeq: number, limit: number = 40): TranscriptPage {
     const rows = this.db
       .query(
-        `SELECT seq, data, full_ref FROM transcript_events
+        `SELECT seq, change_seq, data, full_ref FROM transcript_events
          WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?`
       )
       .all(sessionId, beforeSeq, Math.max(1, limit)) as EventRow[];
@@ -432,6 +502,23 @@ export class TranscriptStore {
       .query("SELECT next_seq FROM transcript_sessions WHERE session_id = ?")
       .get(sessionId) as { next_seq: number } | null;
     return row ? row.next_seq - 1 : 0;
+  }
+
+  /** Highest committed mutation cursor for the session (0 when empty). */
+  getLastChangeSeq(sessionId: string): number {
+    const row = this.db
+      .query("SELECT next_change_seq FROM transcript_sessions WHERE session_id = ?")
+      .get(sessionId) as { next_change_seq: number } | null;
+    return row ? row.next_change_seq - 1 : 0;
+  }
+
+  /** Mutation boundary of the latest authoritative replacement. A reconnect
+   * cursor older than this cannot safely merge and must receive a snapshot. */
+  getLastResetChangeSeq(sessionId: string): number {
+    const row = this.db
+      .query("SELECT reset_change_seq FROM transcript_sessions WHERE session_id = ?")
+      .get(sessionId) as { reset_change_seq: number } | null;
+    return row?.reset_change_seq ?? 0;
   }
 
   // ── Delete / maintenance ──────────────────────────────────────────────────
@@ -474,12 +561,15 @@ export class TranscriptStore {
     entries: TranscriptEntry[]
   ): WriteOutcome {
     const sessRow = this.db
-      .query("SELECT next_seq FROM transcript_sessions WHERE session_id = ?")
-      .get(sessionId) as { next_seq: number } | null;
+      .query(
+        "SELECT next_seq, next_change_seq FROM transcript_sessions WHERE session_id = ?"
+      )
+      .get(sessionId) as { next_seq: number; next_change_seq: number } | null;
     let nextSeq = sessRow?.next_seq ?? 1;
+    let nextChangeSeq = sessRow?.next_change_seq ?? 1;
     if (!sessRow) {
       this.db.run(
-        "INSERT INTO transcript_sessions (session_id, next_seq) VALUES (?, 1)",
+        "INSERT INTO transcript_sessions (session_id, next_seq, next_change_seq) VALUES (?, 1, 1)",
         [sessionId]
       );
     }
@@ -498,6 +588,7 @@ export class TranscriptStore {
         continue;
       }
       const ts = entryTs(entry);
+      const changeSeq = nextChangeSeq++;
       lastTs = ts;
       const bounded = boundEntryForStore(entry);
 
@@ -530,30 +621,93 @@ export class TranscriptStore {
           );
         }
         this.db.run(
-          `UPDATE transcript_events SET data = ?, full_ref = ?, ts = ?
+          `UPDATE transcript_events SET data = ?, full_ref = ?, ts = ?, change_seq = ?
            WHERE session_id = ? AND seq = ?`,
-          [bounded.data, fullRef, ts, sessionId, existing.seq]
+          [bounded.data, fullRef, ts, changeSeq, sessionId, existing.seq]
         );
         updated++;
-        affected.push({ ...bounded.entry, seq: existing.seq });
+        affected.push({ ...bounded.entry, seq: existing.seq, changeSeq });
       } else {
         const seq = nextSeq++;
         this.db.run(
-          `INSERT INTO transcript_events (session_id, seq, uuid, ts, kind, data, full_ref)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [sessionId, seq, uuid, ts, entry.type ?? "unknown", bounded.data, fullRef]
+          `INSERT INTO transcript_events
+             (session_id, seq, uuid, ts, kind, data, full_ref, change_seq)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            sessionId,
+            seq,
+            uuid,
+            ts,
+            entry.type ?? "unknown",
+            bounded.data,
+            fullRef,
+            changeSeq,
+          ]
         );
         inserted++;
-        affected.push({ ...bounded.entry, seq });
+        affected.push({ ...bounded.entry, seq, changeSeq });
       }
     }
 
     this.db.run(
-      "UPDATE transcript_sessions SET next_seq = ?, last_ts = COALESCE(?, last_ts) WHERE session_id = ?",
-      [nextSeq, lastTs, sessionId]
+      `UPDATE transcript_sessions
+       SET next_seq = ?, next_change_seq = ?, last_ts = COALESCE(?, last_ts)
+       WHERE session_id = ?`,
+      [nextSeq, nextChangeSeq, lastTs, sessionId]
     );
 
     return { affected, inserted, updated };
+  }
+
+  /** Additive migration from the original seq-only store. Existing rows form
+   * the baseline state, so their immutable seq is the only honest initial
+   * change cursor; future mutations advance independently. */
+  private migrateChangeSequence(): void {
+    const eventColumns = this.db
+      .query("PRAGMA table_info(transcript_events)")
+      .all() as Array<{ name: string }>;
+    const sessionColumns = this.db
+      .query("PRAGMA table_info(transcript_sessions)")
+      .all() as Array<{ name: string }>;
+    const hasEventChange = eventColumns.some((c) => c.name === "change_seq");
+    const hasNextChange = sessionColumns.some(
+      (c) => c.name === "next_change_seq"
+    );
+    const hasResetChange = sessionColumns.some(
+      (c) => c.name === "reset_change_seq"
+    );
+    this.db.transaction(() => {
+      if (!hasEventChange) {
+        this.db.exec(
+          "ALTER TABLE transcript_events ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0"
+        );
+      }
+      if (!hasNextChange) {
+        this.db.exec(
+          "ALTER TABLE transcript_sessions ADD COLUMN next_change_seq INTEGER NOT NULL DEFAULT 1"
+        );
+      }
+      if (!hasResetChange) {
+        this.db.exec(
+          "ALTER TABLE transcript_sessions ADD COLUMN reset_change_seq INTEGER NOT NULL DEFAULT 0"
+        );
+      }
+      this.db.exec("UPDATE transcript_events SET change_seq = seq WHERE change_seq = 0");
+      this.db.exec(`
+        UPDATE transcript_sessions
+        SET next_change_seq = MAX(
+          next_change_seq,
+          reset_change_seq + 1,
+          COALESCE(
+            (SELECT MAX(change_seq) + 1 FROM transcript_events
+             WHERE transcript_events.session_id = transcript_sessions.session_id),
+            1
+          )
+        )
+      `);
+      this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_te_change
+        ON transcript_events(session_id, change_seq)`);
+    }).immediate();
   }
 }
 
@@ -683,11 +837,15 @@ function boundEntryForStore(entry: TranscriptEntry): {
 
 // ── Page hydration ───────────────────────────────────────────────────────────
 
-function page(rows: { seq: number; data: string }[]): TranscriptPage {
+function page(rows: { seq: number; change_seq: number; data: string }[]): TranscriptPage {
   const entries: SeqEntry[] = [];
   for (const r of rows) {
     try {
-      entries.push({ ...(JSON.parse(r.data) as TranscriptEntry), seq: r.seq });
+      entries.push({
+        ...(JSON.parse(r.data) as TranscriptEntry),
+        seq: r.seq,
+        changeSeq: r.change_seq,
+      });
     } catch {
       // A corrupt row must never take the whole page down.
       console.warn(`[transcript-store] corrupt row at seq ${r.seq} skipped`);

@@ -297,7 +297,7 @@ function v2ReadAll(store: TranscriptStore, sessionId: string): TranscriptEntry[]
     if (!page.entries.length) break;
     for (const e of page.entries) {
       const full = store.getFullEntry(sessionId, e.id);
-      out.push(full ? { ...full, seq: e.seq } : e);
+      out.push(full ? { ...full, seq: e.seq, changeSeq: e.changeSeq } : e);
     }
     since = page.entries[page.entries.length - 1].seq;
     if (page.entries.length < PAGE) break;

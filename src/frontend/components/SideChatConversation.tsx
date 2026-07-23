@@ -7,25 +7,7 @@ import { fetchFileMentions } from "../lib/api";
 import { TranscriptBlocks } from "./TranscriptBlocks";
 import { useFileMentions } from "./useFileMentions";
 import { IconChevronLeft, IconAtSign, IconArrowUp } from "./icons";
-
-/** Reconcile incoming entries by id (mirror of SessionViewer's local helper). */
-function mergeEntries(
-	prev: TranscriptEntry[],
-	incoming: TranscriptEntry[],
-): TranscriptEntry[] {
-	if (incoming.length === 0) return prev;
-	const indexById = new Map(prev.map((e, i) => [e.id, i] as const));
-	const next = [...prev];
-	for (const entry of incoming) {
-		const idx = indexById.get(entry.id);
-		if (idx !== undefined) next[idx] = entry;
-		else {
-			indexById.set(entry.id, next.length);
-			next.push(entry);
-		}
-	}
-	return next;
-}
+import { mergeTranscriptEntries } from "../lib/transcript-state";
 
 interface SideChatConversationProps {
 	sideChatId: string;
@@ -108,6 +90,7 @@ export function SideChatConversation({
 			sessionId: sideChatId,
 			user: getCurrentUser(),
 			supportsSeq: true,
+			supportsChangeSeq: true,
 		});
 
 		const unsubscribe = addHandler((msg) => {
@@ -117,8 +100,15 @@ export function SideChatConversation({
 				case "transcript_init":
 					setEntries(msg.entries);
 					break;
+				case "transcript_history":
+					setEntries((prev) =>
+						mergeTranscriptEntries(prev, msg.entries, msg.v2 === true),
+					);
+					break;
 				case "transcript_append": {
-					setEntries((prev) => mergeEntries(prev, msg.entries));
+					setEntries((prev) =>
+						mergeTranscriptEntries(prev, msg.entries, msg.v2 === true),
+					);
 					if (msg.entries.some((e) => e.type === "user")) setPending(null);
 					const landed = msg.entries.filter(
 						(e) => e.type === "assistant" && e.content,
@@ -146,7 +136,7 @@ export function SideChatConversation({
 					break;
 				case "stream_tool_use":
 				case "stream_tool_result":
-					setEntries((prev) => mergeEntries(prev, [msg.entry]));
+					setEntries((prev) => mergeTranscriptEntries(prev, [msg.entry]));
 					break;
 				case "stream_done": {
 					const seq = streamSeqRef.current;

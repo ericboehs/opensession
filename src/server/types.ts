@@ -438,6 +438,10 @@ export interface TranscriptEntry {
   // length; the UI fetches the whole entry on demand.
   contentClamped?: boolean;
   contentLength?: number;
+  /** Owned transcript-store display order and mutation cursor. Present only
+   * on v2 frames; changeSeq advances on both inserts and rewrites. */
+  seq?: number;
+  changeSeq?: number;
 }
 
 export interface FileWatcherState {

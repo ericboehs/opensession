@@ -374,6 +374,9 @@ export interface TranscriptEntry {
 	// GET /api/sessions/:id/entry/:entryId.
 	contentClamped?: boolean;
 	contentLength?: number;
+	/** Transcript v2: immutable display order plus monotonic mutation cursor. */
+	seq?: number;
+	changeSeq?: number;
 }
 
 export interface DiffFile {
@@ -511,9 +514,12 @@ export type WSClientMessage =
 			/** Transcript v2 capability: this bundle understands seq-cursor
 			 *  frames (transcript-v2-design.md §5). Old servers ignore it. */
 			supportsSeq?: boolean;
+			/** This bundle resumes every mutation, including old-seq rewrites. */
+			supportsChangeSeq?: boolean;
 			/** Seq-mode resume cursor: the lastSeq of the last v2 frame this
 			 *  client received for the session (used instead of offset/rev). */
 			sinceSeq?: number;
+			sinceChangeSeq?: number;
 	  }
 	| { type: "unwatch"; sessionId: string }
 	| {
@@ -650,6 +656,7 @@ export type WSServerMessage =
 			v2?: boolean;
 			firstSeq?: number;
 			lastSeq?: number;
+			lastChangeSeq?: number;
 	  }
 	| {
 			/** Older entries: the bulk of a two-stage init, or one "load earlier"
@@ -677,6 +684,7 @@ export type WSServerMessage =
 			v2?: boolean;
 			firstSeq?: number;
 			lastSeq?: number;
+			lastChangeSeq?: number;
 	  }
 	| { type: "session_status"; sessionId?: string; isRunning: boolean }
 	| { type: "presence"; sessionId: string; viewers: string[] }

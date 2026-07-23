@@ -1104,8 +1104,8 @@ export function transcriptMatchSnippet(
 export function parseTranscriptFrom(
   path: string,
   byteOffset: number
-): { entries: TranscriptEntry[]; newOffset: number } {
-  if (!existsSync(path)) return { entries: [], newOffset: byteOffset };
+): { entries: TranscriptEntry[]; newOffset: number; ok: boolean } {
+  if (!existsSync(path)) return { entries: [], newOffset: byteOffset, ok: false };
 
   // Positional read of just [byteOffset, EOF) — this runs every second per
   // watched session (file-watcher poll), and a full readFileSync of a 30 MB
@@ -1116,7 +1116,8 @@ export function parseTranscriptFrom(
     const fd = openSync(path, "r");
     try {
       size = fstatSync(fd).size;
-      if (size <= byteOffset) return { entries: [], newOffset: byteOffset };
+      if (size <= byteOffset)
+        return { entries: [], newOffset: byteOffset, ok: true };
       const len = size - byteOffset;
       buf = Buffer.allocUnsafe(len);
       readSync(fd, buf, 0, len, byteOffset);
@@ -1124,7 +1125,7 @@ export function parseTranscriptFrom(
       closeSync(fd);
     }
   } catch {
-    return { entries: [], newOffset: byteOffset };
+    return { entries: [], newOffset: byteOffset, ok: false };
   }
   // Consume only complete (newline-terminated) lines. The writer appends big
   // jsonl lines non-atomically, so a poll can catch the last line half-written;
@@ -1133,14 +1134,15 @@ export function parseTranscriptFrom(
   // has no other live delivery path, so the sender's bubble never reconciles).
   // Leave the partial tail for the next poll instead.
   const lastNl = buf.lastIndexOf(0x0a);
-  if (lastNl === -1) return { entries: [], newOffset: byteOffset };
+  if (lastNl === -1)
+    return { entries: [], newOffset: byteOffset, ok: true };
   const consumed = lastNl + 1;
   const chunk = buf.subarray(0, consumed).toString("utf-8");
   const newOffset = byteOffset + consumed;
   const lines = chunk.split("\n").filter((l) => l.trim());
 
   if (isCodexRolloutPath(path)) {
-    return { entries: parseCodexLines(lines), newOffset };
+    return { entries: parseCodexLines(lines), newOffset, ok: true };
   }
 
   const entries: TranscriptEntry[] = [];
@@ -1156,5 +1158,5 @@ export function parseTranscriptFrom(
     entries.push(...parseEntry(parsed));
   }
 
-  return { entries, newOffset };
+  return { entries, newOffset, ok: true };
 }

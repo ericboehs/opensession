@@ -1,17 +1,19 @@
 import { statSync } from "fs";
-import { existsSync } from "fs";
 import { clampEntriesForWire, parseTranscriptFrom } from "./jsonl-parser";
 import { markTranscriptStoreDegraded } from "./opencode-transcript";
 import { transcriptStore } from "./transcript-store";
 import type { TranscriptEntry } from "./types";
 
-interface WatchState {
+export interface WatchState {
   path: string;
   /** Session this transcript belongs to — stamped on transcript_append so
       clients can drop events that aren't for the session they're viewing. */
   sessionId?: string;
   lastMtime: number;
   lastByteOffset: number;
+  lastSize: number;
+  lastDev: number;
+  lastIno: number;
   viewers: Set<any>; // WebSocket connections
   interval: ReturnType<typeof setInterval> | null;
 }
@@ -51,7 +53,13 @@ function notifyAppendListener(sessionId: string | undefined, entries: Transcript
  */
 export function transcriptRev(path: string): string {
   let h = 5381;
-  for (let i = 0; i < path.length; i++) h = ((h * 33) ^ path.charCodeAt(i)) >>> 0;
+  let identity = path;
+  try {
+    const stat = statSync(path);
+    identity += `:${stat.dev}:${stat.ino}`;
+  } catch {}
+  for (let i = 0; i < identity.length; i++)
+    h = ((h * 33) ^ identity.charCodeAt(i)) >>> 0;
   return h.toString(36);
 }
 
@@ -90,42 +98,88 @@ function getFileSize(path: string): number {
  */
 function feedTranscriptStore(
   sessionId: string | undefined,
-  entries: TranscriptEntry[]
+  entries: TranscriptEntry[],
+  reset = false
 ): void {
-  if (!sessionId || entries.length === 0) return;
+  if (!sessionId || (!reset && entries.length === 0)) return;
   try {
     const store = transcriptStore();
     if (!store.hasImported(sessionId)) return;
-    store.appendTranscriptEvents(sessionId, entries);
+    if (reset) store.replaceTranscriptEvents(sessionId, entries);
+    else store.appendTranscriptEvents(sessionId, entries);
   } catch (e) {
     markTranscriptStoreDegraded(sessionId);
     console.warn(`[file-watcher] v2 store feed failed for ${sessionId}:`, e);
   }
 }
 
-function pollFile(state: WatchState) {
-  if (!existsSync(state.path)) return;
+export interface FilePollDeps {
+  parseFrom: typeof parseTranscriptFrom;
+  notify(sessionId: string | undefined, entries: TranscriptEntry[]): void;
+  feed(
+    sessionId: string | undefined,
+    entries: TranscriptEntry[],
+    reset?: boolean
+  ): void;
+}
 
-  const mtime = getMtime(state.path);
-  if (mtime <= state.lastMtime) return;
+const pollDeps: FilePollDeps = {
+  parseFrom: parseTranscriptFrom,
+  notify: notifyAppendListener,
+  feed: feedTranscriptStore,
+};
 
-  state.lastMtime = mtime;
-  const { entries, newOffset } = parseTranscriptFrom(
-    state.path,
-    state.lastByteOffset
-  );
+/** One deterministic poll step. Dependencies are explicit so tests use real
+ * temp files while replacing only the surrounding delivery/store ports. */
+export function pollTranscriptFile(
+  state: WatchState,
+  deps: FilePollDeps = pollDeps
+): void {
+  let stat: ReturnType<typeof statSync>;
+  try {
+    stat = statSync(state.path);
+  } catch {
+    return;
+  }
+  const replaced =
+    (state.lastDev !== 0 || state.lastIno !== 0) &&
+    (stat.dev !== state.lastDev || stat.ino !== state.lastIno);
+  const truncated = stat.size < state.lastByteOffset;
+  if (
+    !replaced &&
+    !truncated &&
+    stat.size === state.lastByteOffset &&
+    stat.mtimeMs <= state.lastMtime
+  )
+    return;
+
+  const offset = replaced || truncated ? 0 : state.lastByteOffset;
+  const { entries, newOffset, ok } = deps.parseFrom(state.path, offset);
+  // A transient read failure must not consume either change detector. The
+  // exact range is retried even when no later write bumps mtime.
+  if (!ok) return;
+  const reset = replaced || truncated;
+  // A non-empty replacement with no complete line is not an empty
+  // transcript; retain the old identity/offset and retry after the writer
+  // completes its first line.
+  if (reset && stat.size > 0 && newOffset === 0 && entries.length === 0) return;
+
+  state.lastMtime = stat.mtimeMs;
   state.lastByteOffset = newOffset;
+  state.lastSize = stat.size;
+  state.lastDev = stat.dev;
+  state.lastIno = stat.ino;
 
-  if (entries.length === 0) return;
+  if (entries.length === 0 && !reset) return;
 
-  notifyAppendListener(state.sessionId, entries);
-  feedTranscriptStore(state.sessionId, entries);
+  deps.notify(state.sessionId, entries);
+  deps.feed(state.sessionId, entries, reset);
 
   // endOffset + rev = the client's resume cursor: on reconnect it re-watches
   // with sinceOffset/sinceRev and the gap since this exact byte is replayed
   // from the jsonl instead of a full transcript_init replace.
   const msg = JSON.stringify({
-    type: "transcript_append",
+    type: reset ? "transcript_init" : "transcript_append",
     ...(state.sessionId ? { sessionId: state.sessionId } : {}),
     entries: clampEntriesForWire(entries),
     endOffset: state.lastByteOffset,
@@ -201,11 +255,19 @@ export function startWatching(
     // only from the file's current end.
     lastMtime: initialOffset !== undefined ? 0 : getMtime(path),
     lastByteOffset: initialOffset ?? getFileSize(path),
+    lastSize: getFileSize(path),
+    lastDev: 0,
+    lastIno: 0,
     viewers: new Set([ws]),
     interval: null,
   };
 
-  state.interval = setInterval(() => pollFile(state!), 1000);
+  try {
+    const stat = statSync(path);
+    state.lastDev = stat.dev;
+    state.lastIno = stat.ino;
+  } catch {}
+  state.interval = setInterval(() => pollTranscriptFile(state!), 1000);
   watches.set(path, state);
 }
 

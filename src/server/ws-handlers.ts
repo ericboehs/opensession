@@ -37,6 +37,7 @@ import { handleSlashCommand } from "./slash-commands";
 import { resizeTerminal, startSessionTerminal, stopTerminal, writeTerminal } from "./terminals";
 import { subscribeTranscript } from "./transcript-bus";
 import { type SeqEntry, transcriptStore } from "./transcript-store";
+import { startTranscriptWatch } from "./transcript-watch";
 import { type BackstageSessionFile, type SessionUsage } from "./types";
 import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
 import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
@@ -344,110 +345,30 @@ function serveTranscriptV2(
 		return false;
 	}
 
-	// From here this socket is a v2 viewer for this session: the bus replaces
-	// the mirror file-watcher (never startWatching), and the rotation re-watch
-	// in run-session.ts skips it (a full-file replay would double-feed).
+	// From here this socket is a v2 viewer for this session. The extracted
+	// protocol subscribes BEFORE reading and treats bus events as wake-ups for
+	// durable changeSeq reconciliation, closing both handshake and reconnect
+	// rewrite gaps.
 	ws.data.transcriptV2 = true;
-
-	// Reconnect resume: the client re-watches with the seq of the last entry
-	// it holds — replay just the gap, no snapshot. A full page means it's too
-	// far behind (or the cursor is stale); fall through to the snapshot.
-	const lastSeq = store.getLastSeq(sessionId);
-	const sinceSeq =
-		typeof msg.sinceSeq === "number" &&
-		Number.isFinite(msg.sinceSeq) &&
-		msg.sinceSeq >= 0
-			? Math.floor(msg.sinceSeq)
-			: undefined;
-	let resumed = false;
-	if (sinceSeq !== undefined && sinceSeq <= lastSeq) {
-		const RESUME_LIMIT = 500;
-		const page = store.readSince(sessionId, sinceSeq, RESUME_LIMIT);
-		if (page.entries.length < RESUME_LIMIT) {
-			if (page.entries.length) {
-				ws.send(
-					JSON.stringify({
-						type: "transcript_append",
-						sessionId,
-						entries: page.entries,
-						firstSeq: page.firstSeq,
-						lastSeq: page.lastSeq,
-						v2: true,
-					}),
-				);
-			}
-			resumed = true;
-		}
+	try {
+		const watch = startTranscriptWatch({
+			sessionId,
+			store,
+			socket: ws,
+			subscribe: subscribeTranscript,
+			schedule: (fn, ms) => setTimeout(fn, ms),
+			isCurrent: () =>
+				ws.data?.watchingSessionId === sessionId && !!ws.data?.transcriptV2,
+			...(msg.supportsChangeSeq === true && typeof msg.sinceChangeSeq === "number"
+				? { sinceChangeSeq: msg.sinceChangeSeq }
+				: {}),
+			clampSnapshot: clampV2InitEntries,
+		});
+		v2Unsubs.set(ws, () => watch.unsubscribe());
+	} catch (error) {
+		ws.data.transcriptV2 = false;
+		throw error;
 	}
-
-	if (!resumed) {
-		// Two-stage init, same staging as the legacy path with seq fields added
-		// (old bundles ignore unknown fields; new bundles detect v2 by their
-		// presence): last screenful immediately, the rest of the tail 80ms
-		// later as a transcript_history prepend. Snapshot payloads take the
-		// same INIT_WIRE_CLAMP_BYTES budget as legacy inits (clampV2InitEntries
-		// — the 32KB store bound alone regresses the e4e2340a fix on
-		// entry-heavy sessions).
-		const FIRST_PAINT_ENTRIES = 12;
-		const tail = store.readTail(sessionId, FIRST_PAINT_ENTRIES + 120);
-		const head = tail.entries.slice(-FIRST_PAINT_ENTRIES);
-		const rest = tail.entries.slice(0, -FIRST_PAINT_ENTRIES);
-		const truncated = tail.firstSeq > 1;
-		ws.send(
-			JSON.stringify({
-				type: "transcript_init",
-				sessionId,
-				entries: clampV2InitEntries(head),
-				truncated,
-				firstSeq: head.length ? head[0].seq : 0,
-				lastSeq: head.length ? head[head.length - 1].seq : 0,
-				v2: true,
-			}),
-		);
-		if (rest.length) {
-			const restPayload = JSON.stringify({
-				type: "transcript_history",
-				sessionId,
-				entries: clampV2InitEntries(rest),
-				firstSeq: rest[0].seq,
-				lastSeq: rest[rest.length - 1].seq,
-				truncated,
-				v2: true,
-			});
-			setTimeout(() => {
-				try {
-					if (
-						ws.data?.watchingSessionId === sessionId &&
-						ws.data?.transcriptV2
-					)
-						ws.send(restPayload);
-				} catch {}
-			}, 80);
-		}
-	}
-
-	// Live pushes: committed store appends fan out through the bus. The
-	// subscription is released by releaseTranscriptV2 (watch-switch / unwatch
-	// / close); the watchingSessionId check is belt-and-braces for the gap
-	// between a switch and the teardown running.
-	const unsub = subscribeTranscript(sessionId, (event) => {
-		try {
-			if (ws.data?.watchingSessionId !== sessionId) return;
-			ws.send(
-				JSON.stringify({
-					type: "transcript_append",
-					sessionId,
-					entries: event.entries,
-					firstSeq: event.firstSeq,
-					lastSeq: event.lastSeq,
-					v2: true,
-				}),
-			);
-		} catch {
-			// Dead connection — cleaned up on close.
-		}
-	});
-	v2Unsubs.set(ws, unsub);
 	return true;
 }
 

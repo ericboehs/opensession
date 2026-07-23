@@ -19,6 +19,10 @@ import type {
 	WSServerMessage,
 	AskQuestion,
 } from "../lib/types";
+import {
+	mergeTranscriptEntries,
+	orderTranscriptEntries,
+} from "../lib/transcript-state";
 import { TranscriptBlocks } from "./TranscriptBlocks";
 import { SideChatsPanel } from "./SideChatsPanel";
 import { SubagentPanel, type SubagentRef } from "./SubagentPanel";
@@ -311,32 +315,17 @@ function switchDividerText(model: string, from?: string, by?: string): string {
 	return by ? `${head} · ${by}` : head;
 }
 
-/** Upsert incoming entries by id so stream events and the file watcher never duplicate. */
-function mergeEntries(
-	prev: TranscriptEntry[],
-	incoming: TranscriptEntry[],
-): TranscriptEntry[] {
-	if (incoming.length === 0) return prev;
-	const indexById = new Map(prev.map((e, i) => [e.id, i] as const));
-	const next = [...prev];
-	for (const entry of incoming) {
-		const idx = indexById.get(entry.id);
-		if (idx !== undefined) {
-			next[idx] = entry;
-		} else {
-			indexById.set(entry.id, next.length);
-			next.push(entry);
-		}
-	}
-	return next;
-}
-
 type CachedTranscriptView = {
 	entries: TranscriptEntry[];
 	cursor: { sessionId: string; rev: string; offset: number } | null;
 	/** Transcript v2 seq-mode state (null = legacy mode), so a session
 	 *  switch-back resumes with sinceSeq instead of re-snapshotting. */
-	seq: { sessionId: string; lastSeq: number; firstSeq: number | null } | null;
+	seq: {
+		sessionId: string;
+		lastSeq: number;
+		firstSeq: number | null;
+		lastChangeSeq: number;
+	} | null;
 	historyTruncated: boolean;
 	historyStart: number | null;
 	scrollTop: number;
@@ -402,10 +391,7 @@ function withModelSwitches(
 		})
 	)
 		return entries;
-	return mergeEntries(base, switches).sort(
-		(a, b) =>
-			new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-	);
+	return orderTranscriptEntries(mergeTranscriptEntries(base, switches));
 }
 
 // The element whose position the history hold keeps stable: the first
@@ -512,6 +498,7 @@ export function SessionViewer({
 		sessionId: string;
 		lastSeq: number;
 		firstSeq: number | null;
+		lastChangeSeq: number;
 	} | null>(cachedTranscript?.seq ?? null);
 	// No transcript file yet (a fresh chat that hasn't run) → nothing to load;
 	// render the empty chat immediately instead of a "Loading transcript…" flash.
@@ -1418,7 +1405,10 @@ export function SessionViewer({
 		const ready = transcriptReadySessionRef.current === session.id;
 		const resume =
 			ready && seqState?.sessionId === session.id
-				? { sinceSeq: seqState.lastSeq }
+				? {
+						sinceSeq: seqState.lastSeq,
+						sinceChangeSeq: seqState.lastChangeSeq,
+					}
 				: ready && cursor?.sessionId === session.id
 					? { sinceOffset: cursor.offset, sinceRev: cursor.rev }
 					: {};
@@ -1427,6 +1417,7 @@ export function SessionViewer({
 			sessionId: session.id,
 			user: getCurrentUser(),
 			supportsSeq: true,
+			supportsChangeSeq: true,
 			...resume,
 		});
 
@@ -1473,6 +1464,10 @@ export function SessionViewer({
 								typeof msg.firstSeq === "number" && msg.firstSeq > 0
 									? msg.firstSeq
 									: null,
+							lastChangeSeq:
+								typeof msg.lastChangeSeq === "number"
+									? msg.lastChangeSeq
+									: msg.lastSeq!,
 						};
 						// Seq mode ignores offset/rev cursors entirely.
 						transcriptCursorRef.current = null;
@@ -1505,18 +1500,13 @@ export function SessionViewer({
 					// Older entries (the bulk of a two-stage init, or one "load
 					// earlier" page): merge by id and re-sort by time — mergeEntries
 					// appends, which is wrong for content older than what's shown.
-					setEntries((prev) => {
-						const known = new Set(prev.map((e) => e.id));
-						const older = msg.entries.filter(
-							(e: TranscriptEntry) => !known.has(e.id),
-						);
-						if (!older.length) return prev;
-						return [...prev, ...older].sort(
-							(a, b) =>
-								new Date(a.timestamp).getTime() -
-								new Date(b.timestamp).getTime(),
-						);
-					});
+					setEntries((prev) =>
+						msg.v2 === true
+							? mergeTranscriptEntries(prev, msg.entries, true)
+							: orderTranscriptEntries(
+									mergeTranscriptEntries(prev, msg.entries),
+								),
+					);
 					setHistoryTruncated(!!msg.truncated);
 					setLoadingHistory(false);
 					const seqState = transcriptSeqRef.current;
@@ -1555,6 +1545,12 @@ export function SessionViewer({
 						) {
 							seqState.lastSeq = Math.max(seqState.lastSeq, msg.lastSeq);
 						}
+						if (typeof msg.lastChangeSeq === "number") {
+							seqState.lastChangeSeq = Math.max(
+								seqState.lastChangeSeq,
+								msg.lastChangeSeq,
+							);
+						}
 					} else if (typeof msg.endOffset === "number" && msg.rev) {
 						transcriptCursorRef.current = {
 							sessionId: session.id,
@@ -1562,7 +1558,9 @@ export function SessionViewer({
 							offset: msg.endOffset,
 						};
 					}
-					setEntries((prev) => mergeEntries(prev, msg.entries));
+					setEntries((prev) =>
+						mergeTranscriptEntries(prev, msg.entries, inSeqMode),
+					);
 					// The live stream and the transcript tail both carry assistant text.
 					// stream_text accumulates whole blocks until stream_done (end of the
 					// run), so a mid-run text block would otherwise show twice: as the
@@ -1644,7 +1642,7 @@ export function SessionViewer({
 				}
 				case "stream_tool_use":
 				case "stream_tool_result":
-					setEntries((prev) => mergeEntries(prev, [msg.entry]));
+					setEntries((prev) => mergeTranscriptEntries(prev, [msg.entry]));
 					break;
 				case "stream_done": {
 					setIsStreaming(false);

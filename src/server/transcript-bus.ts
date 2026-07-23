@@ -22,7 +22,7 @@
 import type { TranscriptEntry } from "./types";
 
 /** A stored transcript entry annotated with its per-session sequence number. */
-export type SeqEntry = TranscriptEntry & { seq: number };
+export type SeqEntry = TranscriptEntry & { seq: number; changeSeq: number };
 
 /** Payload published for every committed append/upsert batch. `firstSeq`/
  *  `lastSeq` span the affected rows (an upsert republish keeps its ORIGINAL
@@ -31,6 +31,9 @@ export interface TranscriptBusEvent {
   entries: SeqEntry[];
   firstSeq: number;
   lastSeq: number;
+  /** The durable transcript was authoritatively replaced. Subscribers must
+   * discard their current snapshot rather than merging by id. */
+  reset?: boolean;
 }
 
 export type TranscriptSubscriber = (event: TranscriptBusEvent) => void;
