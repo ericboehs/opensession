@@ -919,10 +919,11 @@ function persistPrCache(data: Map<string, Map<string, PrInfo>>) {
 // the rate limit, so an idle instance polls for free. Some mutations may not
 // bump a PR's updatedAt, so a full GraphQL refresh still runs at least every
 // PROBE_MAX_SKIP_MS as a safety net.
-// One full sweep costs roughly 580 GraphQL points on the current PR set. A
-// five-minute safety sweep alone could exceed the 5,000-point hourly budget;
-// conditional REST still catches normal PR updates every minute, while this
-// bounds the rare mutation that does not change `updated_at` to 30m staleness.
+// Coalesce changes in these active repos: their ETags can change many times per
+// minute, while one full sweep costs hundreds of GraphQL points. REST still
+// notices changes every minute, but GraphQL refreshes at most every 10m. The
+// 30m maximum catches rare mutations that do not change `updated_at` at all.
+const MIN_FULL_REFRESH_MS = 10 * 60_000;
 const PROBE_MAX_SKIP_MS = 30 * 60_000;
 
 async function repoPrsUnchanged(ghRepo: string): Promise<boolean> {
@@ -1064,14 +1065,17 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
       // interval): an unchanged snapshot is by definition current, so the repo
       // still counts as fresh for notification consumers.
       const stale = prCache.data.get(repo.id);
-      if (
-        stale &&
-        Date.now() - (lastFullRefresh.get(repo.id) || 0) < PROBE_MAX_SKIP_MS &&
-        (await repoPrsUnchanged(repo.ghRepo))
-      ) {
-        next.set(repo.id, stale);
-        freshRepos.add(repo.id);
-        continue;
+      const refreshAge = Date.now() - (lastFullRefresh.get(repo.id) || 0);
+      if (stale && refreshAge < PROBE_MAX_SKIP_MS) {
+        if (await repoPrsUnchanged(repo.ghRepo)) {
+          next.set(repo.id, stale);
+          freshRepos.add(repo.id);
+          continue;
+        }
+        if (refreshAge < MIN_FULL_REFRESH_MS) {
+          next.set(repo.id, stale);
+          continue;
+        }
       }
       if (ghRateLimited()) {
         if (stale) next.set(repo.id, stale);
