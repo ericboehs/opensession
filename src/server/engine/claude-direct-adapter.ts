@@ -63,6 +63,7 @@ import {
   transcriptLineForEntry,
   transcriptLineRunnerNotice,
 } from "../opencode-transcript";
+import { transcriptStore } from "../transcript-store";
 import type { TranscriptEntry } from "../types";
 import type {
   EngineAdapter,
@@ -194,8 +195,11 @@ function pickDirectAccount(opts: RunAgentOpts, model: string):
 }
 
 /** Tools ask mode must never run (the SDK executes tools itself here — unlike
- *  the bridge — so mutation tools are denied at the permission layer). */
-const ASK_MODE_DENIED_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
+ *  the bridge — so mutation tools are denied at the permission layer). Bash is
+ *  denied wholesale in v0: the opencode ask-mode read-only bash allowlist
+ *  (ASK_BASH_PERMISSIONS) is not ported yet, and an unfiltered Bash would make
+ *  "read-only session" a fiction — revisit when the allowlist is shared. */
+const ASK_MODE_DENIED_TOOLS = new Set(["Write", "Edit", "NotebookEdit", "Bash"]);
 
 // ── The turn ─────────────────────────────────────────────────────────────────
 
@@ -336,10 +340,17 @@ export async function* runClaudeDirect(
           CLAUDE_CONFIG_DIR: configDir,
         },
         canUseTool: async (toolName, input) => {
-          if (toolName === "AskUserQuestion" && onAskUser) {
+          if (toolName === "AskUserQuestion") {
             // The blocking permission-ask contract: park the turn on the
-            // caller's handler (web UI card + Slack escalation).
-            return onAskUser(input);
+            // caller's handler (web UI card + Slack escalation). Without a
+            // handler (scripted/smoke runs) deny instead of allowing the SDK
+            // to execute an interactive tool nobody can answer.
+            if (onAskUser) return onAskUser(input);
+            return {
+              behavior: "deny",
+              message:
+                "No interactive ask handler on this run — decide with your best judgment and continue.",
+            };
           }
           if (mode !== "code" && ASK_MODE_DENIED_TOOLS.has(toolName)) {
             return {
@@ -559,16 +570,48 @@ export const claudeDirectAdapter: EngineAdapter = {
 
 // ── Scripted smoke harness ───────────────────────────────────────────────────
 
+/** The model the smoke turn runs on — cheap, and pool coverage is widest. */
+const SMOKE_MODEL = "claude-sonnet-5";
+
+export interface ClaudeDirectSmokeOptions {
+  /** Prompt for the scripted turn (default: a one-word reply probe). */
+  prompt?: string;
+  /** Wiring probe: never execute a turn even when the flag is on — no
+   *  account pick, no SDK spawn. (With the flag OFF every call is already a
+   *  dry run: runClaudeDirect stops at its gate error.) */
+  dryRun?: boolean;
+  /** Wall-time cap for the turn (default 120s, clamped 5s–10min). On expiry
+   *  the run is cancelled via the normal abort path — an abort message is
+   *  not a usage-limit shape, so the account is never markExhausted'd. */
+  timeoutMs?: number;
+}
+
 export interface ClaudeDirectSmokeResult {
+  /** True only for a real turn that reached its terminal `done` in time —
+   *  or for an explicit dryRun probe with the flag on. */
+  ok: boolean;
   enabled: boolean;
-  /** True when the flag was off and the turn stopped before any SDK/account use. */
+  /** True when no real turn was executed (flag off, or dryRun requested). */
   dryRun: boolean;
+  /** Human-readable explanation whenever ok is false or no turn ran. */
+  reason?: string;
+  /** Throwaway unified session id (`bks-test-claude-direct-*`) — its prefix
+   *  is the "this is a test session" marker; it never gets a session file,
+   *  so it can't appear in the UI session list. Store rows are purgeable
+   *  later via deleteSessionTranscript(sessionId). */
   sessionId: string;
   engineSessionId?: string;
+  model: string;
   eventTypes: string[];
   text: string;
   error?: string;
   usage?: TurnUsage;
+  timedOut: boolean;
+  durationMs: number;
+  /** transcript_events rows the v2 store holds for the throwaway session
+   *  after the turn (getLastSeq — seq is dense, so last seq = row count).
+   *  Proves the W1 dual-write path end to end; 0 on dry runs. */
+  storeRows: number;
 }
 
 /**
@@ -576,13 +619,43 @@ export interface ClaudeDirectSmokeResult {
  * (`bks-test-claude-direct-*`), for post-restart verification (design §7
  * acceptance: SDK turn → rows in transcripts.db → bus → v2 WS viewer). With
  * the flag OFF this is a pure dry-run: runClaudeDirect yields its gate error
- * before touching accounts or the SDK, so no quota is ever consumed.
+ * before touching accounts or the SDK, so no quota is ever consumed. Safe to
+ * call in-process from the admin route — it never throws, and a real turn is
+ * hard-capped at `timeoutMs` wall time.
  */
 export async function runClaudeDirectSmokeTurn(
-  prompt = "Reply with exactly the single word: ok"
+  opts: ClaudeDirectSmokeOptions = {}
 ): Promise<ClaudeDirectSmokeResult> {
+  const prompt = opts.prompt || "Reply with exactly the single word: ok";
+  const timeoutMs = Math.max(5_000, Math.min(opts.timeoutMs ?? 120_000, 600_000));
   const enabled = claudeDirectEnabled();
   const sessionId = `bks-test-claude-direct-${Date.now().toString(36)}`;
+  const started = Date.now();
+  const storeRowsFor = (id: string): number => {
+    try {
+      return transcriptStore().getLastSeq(id);
+    } catch {
+      return 0;
+    }
+  };
+
+  if (enabled && opts.dryRun) {
+    return {
+      ok: true,
+      enabled,
+      dryRun: true,
+      reason:
+        "dry run requested — flag is ON but no turn was executed (no account pick, no SDK spawn)",
+      sessionId,
+      model: SMOKE_MODEL,
+      eventTypes: [],
+      text: "",
+      timedOut: false,
+      durationMs: Date.now() - started,
+      storeRows: 0,
+    };
+  }
+
   const cwd = `${CLAUDE_DIRECT_STATE_DIR}/smoke`;
   if (enabled) {
     try {
@@ -594,20 +667,59 @@ export async function runClaudeDirectSmokeTurn(
   let error: string | undefined;
   let usage: TurnUsage | undefined;
   let engineSessionId: string | undefined;
-  for await (const ev of runClaudeDirect(
-    {
-      prompt,
-      cwd,
-      mode: "ask",
-      journal: { bksSessionId: sessionId, kind: "claude-direct-smoke" },
-    },
-    "claude-sonnet-5"
-  )) {
-    eventTypes.push(ev.type);
-    if (ev.type === "init") engineSessionId = ev.sessionId;
-    if (ev.type === "text_chunk") text += ev.text || "";
-    if (ev.type === "error") error = ev.content;
-    if (ev.type === "done") usage = ev.usage;
+  let done = false;
+  let timedOut = false;
+  // Wall clamp: runClaudeDirect registers the run under the unified session
+  // id before the SDK spawns, so cancelClaudeDirectRun reaches it; the abort
+  // surfaces as a terminal error event and the stream ends.
+  const timer = setTimeout(() => {
+    timedOut = true;
+    cancelClaudeDirectRun(sessionId);
+  }, timeoutMs);
+  try {
+    for await (const ev of runClaudeDirect(
+      {
+        prompt,
+        cwd,
+        mode: "ask",
+        journal: { bksSessionId: sessionId, kind: "claude-direct-smoke" },
+      },
+      SMOKE_MODEL
+    )) {
+      eventTypes.push(ev.type);
+      if (ev.type === "init") engineSessionId = ev.sessionId;
+      if (ev.type === "text_chunk") text += ev.text || "";
+      if (ev.type === "error") error = ev.content;
+      if (ev.type === "done") {
+        usage = ev.usage;
+        done = true;
+      }
+    }
+  } catch (e) {
+    // runClaudeDirect yields errors rather than throwing; belt-and-braces so
+    // the in-process caller (admin route) can never blow up off this path.
+    error = String((e as Error)?.message || e);
+  } finally {
+    clearTimeout(timer);
   }
-  return { enabled, dryRun: !enabled, sessionId, engineSessionId, eventTypes, text, error, usage };
+  return {
+    ok: done && !timedOut && !error,
+    enabled,
+    dryRun: !enabled,
+    reason: !enabled
+      ? "claude-direct engine is disabled (OPENSESSION_ENGINE_CLAUDE_DIRECT is not 1) — the gate error below is the expected dry-run result; no account or SDK use happened"
+      : timedOut
+        ? `smoke turn exceeded the ${timeoutMs}ms wall cap and was cancelled`
+        : undefined,
+    sessionId,
+    engineSessionId,
+    model: SMOKE_MODEL,
+    eventTypes,
+    text,
+    error,
+    usage,
+    timedOut,
+    durationMs: Date.now() - started,
+    storeRows: storeRowsFor(sessionId),
+  };
 }

@@ -212,6 +212,52 @@ export async function handleSystemRoutes(
 		return Response.json({ ok: true, started: true, ...opts }, { status: 202 });
 	}
 
+	// Claude-direct engine smoke turn (transcript-v2 design §7 acceptance):
+	// one scripted turn against a throwaway `bks-test-claude-direct-*` session
+	// through the experimental in-process SDK adapter, so the orchestrator can
+	// verify SDK turn → transcripts.db rows → bus after a restart flips
+	// OPENSESSION_ENGINE_CLAUDE_DIRECT=1. Team gated by the global auth layer
+	// like every /backstage/api/* route. Body: { dryRun? }. With the flag off
+	// (or dryRun: true) this never picks an account or spawns the SDK — it
+	// returns ok:false + reason (200), never a 500. Real turns are wall-capped
+	// at 120s by the harness (well under Bun.serve's 240s idleTimeout), so the
+	// route can block for the result without hanging.
+	if (
+		path === "/backstage/api/admin/claude-direct-smoke" &&
+		req.method === "POST"
+	) {
+		let body: { dryRun?: unknown } = {};
+		try {
+			body = ((await req.json()) ?? {}) as typeof body;
+		} catch {
+			// empty/non-JSON body → defaults
+		}
+		const dryRun = body.dryRun === true;
+		const by = requestUser(ctx);
+		console.log(
+			`[claude-direct-smoke] admin trigger${by ? ` by ${by}` : ""}${dryRun ? " (dry-run)" : ""}`,
+		);
+		try {
+			// Dynamic import keeps the experimental adapter (and the Agent SDK it
+			// pulls in) out of this hot route file's static graph — it loads on
+			// first call only, same pattern as the backfill route above.
+			const { runClaudeDirectSmokeTurn } = await import(
+				"../engine/claude-direct-adapter"
+			);
+			const result = await runClaudeDirectSmokeTurn({
+				dryRun,
+				timeoutMs: 120_000,
+			});
+			// Snippet, not the full turn output — this is a wiring probe.
+			return Response.json({ ...result, text: result.text.slice(0, 400) });
+		} catch (e) {
+			return Response.json(
+				{ ok: false, error: String((e as Error)?.message || e) },
+				{ status: 500 },
+			);
+		}
+	}
+
 	// Stream a large composer attachment straight to disk (base64-over-WS
 	// can't carry big files). Body is the raw file bytes; filename in the
 	// `x-file-name` header. Returns { name, path } the client echoes back in
