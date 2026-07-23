@@ -50,6 +50,7 @@ import type { Repo } from "./config";
 import { repoForPath } from "./worktree";
 import {
   claimPoolPreview,
+  poolClaimFor,
   poolPreviewLive,
   previewPoolEnabled,
   releasePoolPreview,
@@ -335,6 +336,28 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
   // docker-proxy listens for the container's whole life, so for a pool claim
   // "running" must mean "the dev server inside answers", not "port open".
   const poolLive = await poolPreviewLive(worktreeDir);
+  // Remote-backend claims (daytona) carry their own public preview origin —
+  // no host port, no Caddy route, no .ports.conf involvement at all.
+  const remoteClaim = poolClaimFor(worktreeDir);
+  if (remoteClaim?.previewUrl) {
+    return {
+      hasPortsConf: true,
+      webappPort: null,
+      running: poolLive === true,
+      starting: poolLive !== true,
+      previewUrl: poolLive === true ? remoteClaim.previewUrl : null,
+      bootable: true,
+      services: [
+        {
+          name: "Webapp",
+          key: "WEBAPP_PORT",
+          port: 0,
+          running: poolLive === true,
+          pids: [],
+        },
+      ],
+    };
+  }
   const ports = readPorts(worktreeDir);
   const services: PreviewService[] = await Promise.all(
     ports.map(async ({ key, port }) => {
@@ -512,7 +535,9 @@ export async function startPreview(worktreeDir: string): Promise<PreviewStatus> 
     if (previewPoolEnabled(repo.id)) {
       const claim = await claimPoolPreview(repo.id, worktreeDir);
       if (claim) {
-        seedHostPortsConf(worktreeDir, claim.hostPort);
+        // Remote-backend claims carry a previewUrl and no host port — the
+        // status path serves them directly, no .ports.conf involvement.
+        if (claim.hostPort) seedHostPortsConf(worktreeDir, claim.hostPort);
         return await getPreviewStatus(worktreeDir);
       }
     }

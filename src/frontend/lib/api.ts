@@ -1665,6 +1665,7 @@ export interface PreviewPoolEntry {
 	repoId: string;
 	config: {
 		enabled: boolean;
+		backend: "docker" | "daytona";
 		running: number;
 		paused: number;
 		cpus: number;

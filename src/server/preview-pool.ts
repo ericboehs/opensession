@@ -55,8 +55,18 @@ import { sandboxConfig } from "./sandbox/config";
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
+export type PreviewPoolBackend = "docker" | "daytona";
+
 export interface PreviewPoolRepoConfig {
   enabled: boolean;
+  /**
+   * Where warm containers live (default "docker": local containers from the
+   * golden image). "daytona": remote Daytona sandboxes, provisioned once and
+   * kept running (ready) or stopped-with-disk (the "paused" tier — a claim
+   * restarts them, ~30s, still far cheaper than a cold boot). Requires the
+   * sandbox config's daytona apiKey + a sized org snapshot.
+   */
+  backend: PreviewPoolBackend;
   /** Warm containers kept RUNNING (default 1). */
   running: number;
   /** Additional warm containers kept PAUSED (default 1). */
@@ -79,6 +89,7 @@ export interface PreviewPoolRepoConfig {
 }
 
 const DEFAULTS: Omit<PreviewPoolRepoConfig, "enabled"> = {
+  backend: "docker",
   running: 1,
   paused: 1,
   cpus: 4,
@@ -102,6 +113,7 @@ export function previewPoolConfig(repoId: string): PreviewPoolRepoConfig {
     const r = raw?.repos?.[repoId] ?? {};
     return {
       enabled: r.enabled === true,
+      backend: r.backend === "daytona" ? "daytona" : "docker",
       running: clampInt(r.running, 0, 4, DEFAULTS.running),
       paused: clampInt(r.paused, 0, 8, DEFAULTS.paused),
       cpus: clampInt(r.cpus, 1, 16, DEFAULTS.cpus),
@@ -146,12 +158,20 @@ const CLAIMED_MARKER = ".bks-claimed";
 const LIVE_FLIP_MAX_FILES = 30;
 
 interface PoolContainer {
+  /** Docker container name, or the Daytona sandbox id (backend "daytona"). */
   name: string;
   repoId: string;
-  /** warming = boot in flight; ready = serving; paused = frozen warm spare;
-   *  claimed = attached to a session worktree. */
+  /** Which backend `name` refers to. Absent = docker (pre-field records). */
+  backend?: PreviewPoolBackend;
+  /** warming = boot in flight; ready = serving; paused = frozen warm spare
+   *  (docker pause / daytona stop-with-disk); claimed = attached to a
+   *  session worktree. */
   state: "warming" | "ready" | "paused" | "claimed";
+  /** Published loopback port (docker). 0 for remote backends — they carry
+   *  `previewUrl` instead. */
   hostPort: number;
+  /** The backend's own public preview origin (daytona getPreviewLink). */
+  previewUrl?: string;
   /** origin/<default> sha the workspace was reset to at boot. */
   bootSha: string;
   /** Commit the workspace tree is currently converged to (defaults to
@@ -264,6 +284,145 @@ async function containerRunning(name: string): Promise<"running" | "paused" | "g
   return r.out.includes("running") ? "running" : "gone";
 }
 
+// ── Daytona backend plumbing ─────────────────────────────────────────────────
+// Same pool semantics on remote Daytona sandboxes: `ready` = sandbox running
+// with the dev server up (claim = instant); `paused` = sandbox STOPPED with
+// its disk kept (claim restarts it + reboots dev on warm caches, ~30-60s).
+// The public per-sandbox preview link replaces the docker host-port + Caddy
+// route. The SDK is imported lazily so docker-only setups never load it.
+
+async function daytonaClientForPool() {
+  const cfg = sandboxConfig().daytona;
+  if (!cfg?.apiKey) throw new Error("preview-pool daytona backend: no daytona.apiKey in sandbox config");
+  const { Daytona } = await import("@daytonaio/sdk");
+  return new Daytona({ apiKey: cfg.apiKey, apiUrl: cfg.apiUrl, target: cfg.target as never });
+}
+
+async function daytonaSbx(id: string) {
+  return (await daytonaClientForPool()).get(id);
+}
+
+function isDaytona(c: PoolContainer): boolean {
+  return c.backend === "daytona";
+}
+
+/** One-shot script in the pool workspace, whichever backend. Never throws. */
+async function poolExec(
+  c: PoolContainer,
+  script: string,
+  timeoutMs = 60_000,
+): Promise<{ ok: boolean; out: string }> {
+  if (!isDaytona(c)) return dockerExec(c.name, script, timeoutMs);
+  try {
+    const sbx = await daytonaSbx(c.name);
+    const res = await sbx.process.executeCommand(
+      `bash -lc ${JSON.stringify(script)}`,
+      WORKSPACE,
+      undefined,
+      Math.max(10, Math.round(timeoutMs / 1000)),
+    );
+    return { ok: (res.exitCode ?? 1) === 0, out: String(res.result ?? "").trim() };
+  } catch (e) {
+    return { ok: false, out: String((e as Error)?.message || e) };
+  }
+}
+
+async function poolWriteFile(c: PoolContainer, path: string, content: string): Promise<boolean> {
+  if (!isDaytona(c)) {
+    const r = await dockerExec(
+      c.name,
+      `mkdir -p ${JSON.stringify(path.replace(/\/[^/]+$/, ""))} && cat > ${JSON.stringify(path)} <<'BKSPOOLEOF'\n${content}\nBKSPOOLEOF`,
+    );
+    return r.ok;
+  }
+  try {
+    const sbx = await daytonaSbx(c.name);
+    await sbx.fs.uploadFile(Buffer.from(content, "utf-8"), path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** running/paused/gone in pool terms (daytona "stopped" maps to paused). */
+async function poolRuntimeStatus(c: PoolContainer): Promise<"running" | "paused" | "gone"> {
+  if (!isDaytona(c)) return containerRunning(c.name);
+  try {
+    const sbx = await daytonaSbx(c.name);
+    await (sbx as { refreshData?: () => Promise<void> }).refreshData?.();
+    const s = String((sbx as { state?: string }).state ?? "").toLowerCase();
+    if (s.includes("started") || s.includes("running")) return "running";
+    if (s.includes("stopped") || s.includes("stopping") || s.includes("starting")) return "paused";
+    return "gone";
+  } catch {
+    return "gone";
+  }
+}
+
+async function poolDestroyRef(c: PoolContainer): Promise<void> {
+  if (!isDaytona(c)) {
+    await docker(["rm", "-f", c.name]);
+    return;
+  }
+  try {
+    const client = await daytonaClientForPool();
+    const sbx = await client.get(c.name);
+    if (sbx) await client.delete(sbx, 120);
+  } catch (e) {
+    console.warn(`[preview-pool] daytona delete ${c.name}:`, e);
+  }
+}
+
+async function poolFreeze(c: PoolContainer): Promise<boolean> {
+  if (!isDaytona(c)) return (await docker(["pause", c.name])).ok;
+  try {
+    const sbx = await daytonaSbx(c.name);
+    await (sbx as unknown as { stop: (t?: number) => Promise<void> }).stop(120);
+    return true;
+  } catch (e) {
+    console.warn(`[preview-pool] daytona stop ${c.name}:`, e);
+    return false;
+  }
+}
+
+/** Bring a frozen pool member back to serving. Docker unpause is ~ms; a
+ *  stopped daytona sandbox restarts and reboots its dev server (~30-60s on
+ *  warm disk) — callers treat the member as "starting" until the probe is
+ *  green. */
+async function poolUnfreeze(c: PoolContainer): Promise<boolean> {
+  if (!isDaytona(c)) return (await docker(["unpause", c.name])).ok;
+  try {
+    const sbx = await daytonaSbx(c.name);
+    await sbx.start();
+    await launchDaytonaDev(c);
+    return true;
+  } catch (e) {
+    console.warn(`[preview-pool] daytona start ${c.name}:`, e);
+    return false;
+  }
+}
+
+/** Reboot the dev tree for a clean module graph (big-delta claims). */
+async function poolRestartDev(c: PoolContainer): Promise<void> {
+  if (!isDaytona(c)) {
+    await docker(["restart", "-t", "5", c.name], 60_000);
+    return;
+  }
+  await poolExec(c, `pkill -TERM -f 'start.sh|dev-services|next dev|concurrently' 2>/dev/null; sleep 3; pkill -KILL -f 'next dev|rescript' 2>/dev/null; true`, 30_000);
+  await launchDaytonaDev(c);
+}
+
+/** (Re)launch the dev server inside a daytona sandbox, detached (setsid +
+ *  fully closed fds so the orphaned tree survives the exec returning). */
+async function launchDaytonaDev(c: PoolContainer): Promise<void> {
+  const env = `WEBAPP_PORT=${CONTAINER_PORT} BACKSTAGE_BOOT_MODE=snapshot-restore${c.previewUrl ? ` PREVIEW_URL=${c.previewUrl}` : ""}`;
+  await poolExec(
+    c,
+    `export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH" && ${BOOT_PREP} && (${env} setsid bash .opensession/start.sh > /tmp/boot.log 2>&1 < /dev/null &) && sleep 1`,
+    30_000,
+  );
+}
+
 /** A free host port in the webapp dev range, so httpsPortFor(+6000) applies. */
 async function allocateHostPort(): Promise<number | null> {
   for (let i = 0; i < 25; i++) {
@@ -296,7 +455,7 @@ function fullPortsConf(): string {
  * like setup.sh's WASM S3 install, which run WITHOUT AWS_PROFILE — the
  * first golden build shipped without WASM because only tella-dev existed.
  */
-async function refreshContainerCreds(name: string): Promise<boolean> {
+async function refreshContainerCreds(target: string | PoolContainer): Promise<boolean> {
   const env = await getAgentAwsEnv();
   if (!env.AWS_ACCESS_KEY_ID) return false;
   const section = [
@@ -306,10 +465,11 @@ async function refreshContainerCreds(name: string): Promise<boolean> {
   ];
   const lines = ["[default]", ...section, "", "[tella-dev]", ...section, ""].join("\n");
   const region = env.AWS_REGION || "us-east-2";
-  const r = await dockerExec(
-    name,
-    `mkdir -p ~/.aws && cat > ~/.aws/credentials <<'BKSEOF'\n${lines}\nBKSEOF\nprintf '[default]\\nregion = %s\\n[profile tella-dev]\\nregion = %s\\n' "${region}" "${region}" > ~/.aws/config && chmod 600 ~/.aws/credentials`,
-  );
+  const script = `mkdir -p ~/.aws && cat > ~/.aws/credentials <<'BKSEOF'\n${lines}\nBKSEOF\nprintf '[default]\\nregion = %s\\n[profile tella-dev]\\nregion = %s\\n' "${region}" "${region}" > ~/.aws/config && chmod 600 ~/.aws/credentials`;
+  const r =
+    typeof target === "string"
+      ? await dockerExec(target, script)
+      : await poolExec(target, script);
   return r.ok;
 }
 
@@ -401,6 +561,166 @@ async function dockerReadWorkspaceFile(_repo: Repo, rel: string): Promise<string
   const repoRoot = _repo.repo;
   const p = join(repoRoot, rel);
   return existsSync(p) ? readFileSync(p, "utf-8") : null;
+}
+
+/** HTTP status for a path on a pool member's app, whichever backend. */
+async function poolHttpCode(c: PoolContainer, path: string, timeoutSec: number): Promise<number> {
+  if (isDaytona(c)) {
+    if (!c.previewUrl) return 0;
+    try {
+      const res = await fetch(`${c.previewUrl.replace(/\/$/, "")}${path}`, {
+        signal: AbortSignal.timeout(timeoutSec * 1000),
+        redirect: "manual",
+      });
+      return res.status;
+    } catch {
+      return 0;
+    }
+  }
+  return httpCode(`http://127.0.0.1:${c.hostPort}${path}`, `localhost:${CONTAINER_PORT}`, timeoutSec);
+}
+
+/** Backend-generic waitForUp for pool members (see waitForUp's contract). */
+async function waitForPoolUp(c: PoolContainer, timeoutMs: number): Promise<{ ok: boolean; detail: string }> {
+  const deadline = Date.now() + timeoutMs;
+  let probes = 0;
+  while (Date.now() < deadline) {
+    const code = await poolHttpCode(c, "/", 6);
+    if (code !== 0) return { ok: true, detail: `HTTP ${code}` };
+    probes++;
+    if (probes % 3 === 0) {
+      if ((await poolRuntimeStatus(c)) === "gone") return { ok: false, detail: "sandbox gone" };
+      const log = await poolExec(
+        c,
+        `sed 's/\\x1b\\[[0-9;]*m//g' /tmp/boot.log 2>/dev/null | grep -aE 'error: Recipe|Watcher exited' | tail -3`,
+      );
+      if (log.out.includes("error: Recipe")) {
+        const tail = await poolExec(c, "tail -c 1500 /tmp/boot.log 2>/dev/null");
+        return { ok: false, detail: `boot failed: ${log.out}\n${tail.out}` };
+      }
+    }
+    await Bun.sleep(2500);
+  }
+  return { ok: false, detail: "timed out" };
+}
+
+async function warmRoutesPool(repo: Repo, c: PoolContainer): Promise<void> {
+  let routes = ["/"];
+  try {
+    const raw = await dockerReadWorkspaceFile(repo, ".opensession/preview.json");
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(parsed?.warmRoutes) && parsed.warmRoutes.length) routes = parsed.warmRoutes;
+  } catch {}
+  for (const r of routes) await poolHttpCode(c, r, 120);
+}
+
+/**
+ * Provision + boot a warm Daytona sandbox. Unlike docker there is no golden
+ * image: each sandbox pays the full provision once (toolchain + clone + deps
+ * + WASM + boot, ~5-10 min) and then lives warm — `ready` running, `paused`
+ * stopped-with-disk (restart ≈30-60s on warm caches). Path parity with the
+ * docker image is kept by creating /home/ubuntu/preview-workspace via sudo,
+ * so every shared boot/converge script works unchanged.
+ */
+async function spawnDaytonaWarm(repo: Repo): Promise<void> {
+  const cloneUrl = cloneUrlFor(repo);
+  if (!cloneUrl) {
+    return console.warn(`[preview-pool] ${repo.id}: daytona backend needs a ghRepo + cloneCredential`);
+  }
+  const client = await daytonaClientForPool();
+  const scfg = sandboxConfig();
+  const sbx = await client.create(
+    {
+      ...(scfg.daytona?.snapshot ? { snapshot: scfg.daytona.snapshot } : {}),
+      labels: { [POOL_LABEL]: repo.id, "bks-preview-pool-kind": "warm" },
+      // Never auto-stop a warm pool member — the sweep manages lifecycle.
+      autoStopInterval: 0,
+    } as never,
+    { timeout: 300 },
+  );
+  const c: PoolContainer = {
+    name: sbx.id,
+    repoId: repo.id,
+    backend: "daytona",
+    state: "warming",
+    hostPort: 0,
+    bootSha: "",
+    createdAt: new Date().toISOString(),
+  };
+  patchContainer(repo.id, sbx.id, c);
+  const fail = async (msg: string) => {
+    console.warn(`[preview-pool] ${repo.id}: daytona warm ${sbx.id} failed: ${msg.slice(0, 600)}`);
+    await destroyContainer(repo.id, sbx.id);
+  };
+  try {
+    const link = await sbx.getPreviewLink(CONTAINER_PORT);
+    if (!link?.url) return void (await fail("no preview link"));
+    c.previewUrl = link.url;
+    patchContainer(repo.id, sbx.id, { previewUrl: link.url });
+
+    // Toolchain + path parity (idempotent; daytonaio/sandbox has passwordless
+    // sudo). just needs >=1.40 for Justfile modules — same pin rationale as
+    // the docker image.
+    const tool = await poolExec(
+      c,
+      [
+        `sudo mkdir -p ${WORKSPACE.replace(/\/[^/]+$/, "")} && sudo chown $(id -un) ${WORKSPACE.replace(/\/[^/]+$/, "")}`,
+        `command -v git >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq git)`,
+        `node -v 2>/dev/null | grep -q '^v24' || (curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - >/dev/null && sudo apt-get install -y -qq nodejs)`,
+        `command -v bun >/dev/null || (curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1)`,
+        `export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"`,
+        `command -v just >/dev/null || (curl -fsSL https://just.systems/install.sh | sudo bash -s -- --to /usr/local/bin >/dev/null)`,
+        `sudo apt-get install -y -qq lsof >/dev/null 2>&1 || true`,
+        `echo TOOLCHAIN-OK`,
+      ].join(" && "),
+      12 * 60_000,
+    );
+    if (!tool.out.includes("TOOLCHAIN-OK")) return void (await fail(`toolchain: ${tool.out.slice(-400)}`));
+
+    await refreshContainerCreds(c);
+    const clone = await poolExec(
+      c,
+      `[ -d ${WORKSPACE}/.git ] || git clone --depth 1 --branch ${repo.defaultBranch} ${JSON.stringify(cloneUrl)} ${WORKSPACE}`,
+      8 * 60_000,
+    );
+    if (!clone.ok) return void (await fail(`clone: ${clone.out.slice(-400)}`));
+
+    for (const rel of ["packages/core/webapp/.env.local", ".envrc"]) {
+      const src = join(repo.repo, rel);
+      if (!existsSync(src)) continue;
+      let content = readFileSync(src, "utf-8");
+      if (rel.endsWith(".env.local") && !previewPoolConfig(repo.id).devAuthBypass) {
+        content = content.replace(/^DEV_AUTH_.*\n?/gm, "");
+      }
+      if (!(await poolWriteFile(c, `${WORKSPACE}/${rel}`, content))) {
+        return void (await fail(`seed ${rel} failed`));
+      }
+    }
+    await poolWriteFile(c, `${WORKSPACE}/.ports.conf`, fullPortsConf());
+
+    const setup = await poolExec(
+      c,
+      `export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"; cd ${WORKSPACE} && [ -f .opensession/setup.sh ] && BACKSTAGE_BOOT_MODE=fresh bash .opensession/setup.sh || true`,
+      20 * 60_000,
+    );
+    if (setup.out.includes("ERROR:")) return void (await fail(`setup.sh: ${setup.out.slice(-400)}`));
+    for (const marker of PROVISION_MARKERS[repo.id] ?? []) {
+      const chk = await poolExec(c, `test -e ${WORKSPACE}/${marker}`);
+      if (!chk.ok) return void (await fail(`provisioning incomplete: ${marker} missing`));
+    }
+
+    await launchDaytonaDev(c);
+    const up = await waitForPoolUp(c, 6 * 60_000);
+    if (!up.ok) return void (await fail(`boot: ${up.detail}`));
+    const bootSha = (await poolExec(c, `git -C ${WORKSPACE} rev-parse HEAD`)).out.trim();
+    await warmRoutesPool(repo, c);
+    patchContainer(repo.id, sbx.id, { state: "ready", bootSha, previewUrl: c.previewUrl });
+    console.log(
+      `[preview-pool] ${repo.id}: daytona warm ${sbx.id} ready at ${c.previewUrl} (${bootSha.slice(0, 10)})`,
+    );
+  } catch (e) {
+    await fail(String((e as Error)?.message || e));
+  }
 }
 
 // ── Golden image build ───────────────────────────────────────────────────────
@@ -626,7 +946,9 @@ async function spawnWarmContainer(repo: Repo): Promise<void> {
 }
 
 async function destroyContainer(repoId: string, name: string): Promise<void> {
-  await docker(["rm", "-f", name]);
+  const c = readState(repoId).containers[name];
+  if (c) await poolDestroyRef(c);
+  else await docker(["rm", "-f", name]);
   patchContainer(repoId, name, null);
 }
 
@@ -637,7 +959,7 @@ async function ensurePool(repo: Repo): Promise<void> {
 
   // Reconcile against docker.
   for (const [name, c] of Object.entries(state.containers)) {
-    const status = await containerRunning(name);
+    const status = await poolRuntimeStatus(c);
     if (status === "gone") {
       patchContainer(repo.id, name, null);
       continue;
@@ -672,35 +994,49 @@ async function ensurePool(repo: Repo): Promise<void> {
     return;
   }
 
-  if (!(await docker(["image", "inspect", `${goldenImage(repo.id)}:latest`])).ok) {
+  // Golden images are a docker concept; daytona sandboxes provision directly.
+  if (cfg.backend === "docker" && !(await docker(["image", "inspect", `${goldenImage(repo.id)}:latest`])).ok) {
     return refreshGoldenImage(repo.id);
   }
 
   const fresh = readState(repo.id).containers;
-  const ready = Object.values(fresh).filter((c) => c.state === "ready");
-  const pausedList = Object.values(fresh).filter((c) => c.state === "paused");
-  const warming = Object.values(fresh).filter((c) => c.state === "warming");
+  // A backend switch strands members of the other backend — drain them so
+  // the pool converges onto the configured one.
+  for (const [name, c] of Object.entries(fresh)) {
+    if (c.state !== "claimed" && (c.backend ?? "docker") !== cfg.backend) {
+      await destroyContainer(repo.id, name);
+    }
+  }
+  const mine = Object.values(readState(repo.id).containers).filter(
+    (c) => (c.backend ?? "docker") === cfg.backend,
+  );
+  const ready = mine.filter((c) => c.state === "ready");
+  const pausedList = mine.filter((c) => c.state === "paused");
 
-  // Keep `running` ready + `paused` frozen. Excess ready -> pause; shortfall
-  // paused -> unpause (cheap); then spawn the WHOLE remaining deficit at
-  // once (bounded) — one-per-tick refills left the pool empty for 10+ min
-  // after a golden rotation, so every click fell back to slow host boots.
+  // Keep `running` ready + `paused` frozen. Excess ready -> freeze; shortfall
+  // paused -> unfreeze (docker: ~ms unpause; daytona: sandbox restart, treated
+  // as starting until the probe greens); then spawn the WHOLE remaining
+  // deficit at once (bounded) — one-per-tick refills left the pool empty for
+  // 10+ min after a golden rotation, so every click fell back to host boots.
   if (ready.length > cfg.running) {
     for (const c of ready.slice(cfg.running)) {
-      if ((await docker(["pause", c.name])).ok) patchContainer(repo.id, c.name, { state: "paused" });
+      if (await poolFreeze(c)) patchContainer(repo.id, c.name, { state: "paused" });
     }
   } else if (ready.length < cfg.running && pausedList.length > 0) {
     const c = pausedList[0];
-    if ((await docker(["unpause", c.name])).ok) patchContainer(repo.id, c.name, { state: "ready" });
+    if (await poolUnfreeze(c)) patchContainer(repo.id, c.name, { state: "ready" });
   }
 
-  const after = readState(repo.id).containers;
-  const live = Object.values(after).filter((c) => c.state !== "claimed").length;
-  const deficit = Math.min(cfg.running + cfg.paused - live, 2); // bound host load
+  const after = Object.values(readState(repo.id).containers).filter(
+    (c) => (c.backend ?? "docker") === cfg.backend,
+  );
+  const live = after.filter((c) => c.state !== "claimed").length;
+  const deficit = Math.min(cfg.running + cfg.paused - live, 2); // bound load
   if (deficit > 0) {
-    await Promise.all(Array.from({ length: deficit }, () => spawnWarmContainer(repo)));
+    const spawn = cfg.backend === "daytona" ? spawnDaytonaWarm : spawnWarmContainer;
+    await Promise.all(Array.from({ length: deficit }, () => spawn(repo)));
   }
-  // Freshly-booted extras get paused by the next tick's excess-ready branch.
+  // Freshly-booted extras get frozen by the next tick's excess-ready branch.
 }
 
 // ── Claim / release (the preview integration surface) ───────────────────────
@@ -709,6 +1045,8 @@ export interface PoolClaim {
   containerName: string;
   hostPort: number;
   repoId: string;
+  /** Remote backends' public preview origin (no host port / Caddy route). */
+  previewUrl?: string;
 }
 
 /** The active pool claim backing a worktree's preview, if any. */
@@ -716,7 +1054,7 @@ export function poolClaimFor(worktreeDir: string): PoolClaim | null {
   for (const repoId of Object.keys(configuredRepos())) {
     for (const c of Object.values(readState(repoId).containers)) {
       if (c.state === "claimed" && c.sessionWorktree === worktreeDir) {
-        return { containerName: c.name, hostPort: c.hostPort, repoId };
+        return { containerName: c.name, hostPort: c.hostPort, repoId, previewUrl: c.previewUrl };
       }
     }
   }
@@ -741,16 +1079,8 @@ export async function poolPreviewLive(worktreeDir: string): Promise<boolean | nu
   if (c && Date.now() - Date.parse(c.lastSeenAt || c.claimedAt || c.createdAt) > 60_000) {
     patchContainer(claim.repoId, claim.containerName, { lastSeenAt: new Date().toISOString() });
   }
-  try {
-    const res = await fetch(`http://127.0.0.1:${claim.hostPort}/`, {
-      headers: { Host: `localhost:${CONTAINER_PORT}` },
-      signal: AbortSignal.timeout(1500),
-      redirect: "manual",
-    });
-    return res.status > 0;
-  } catch {
-    return false;
-  }
+  if (!c) return false;
+  return (await poolHttpCode(c, "/", isDaytona(c) ? 5 : 2)) > 0;
 }
 
 /**
@@ -765,11 +1095,15 @@ export async function claimPoolPreview(repoId: string, worktreeDir: string): Pro
   const already = poolClaimFor(worktreeDir);
   if (already) return already;
 
+  const backend = previewPoolConfig(repoId).backend;
   const state = readState(repoId);
-  let pick = Object.values(state.containers).find((c) => c.state === "ready");
+  const eligible = Object.values(state.containers).filter(
+    (c) => (c.backend ?? "docker") === backend,
+  );
+  let pick = eligible.find((c) => c.state === "ready");
   if (!pick) {
-    pick = Object.values(state.containers).find((c) => c.state === "paused");
-    if (pick && !(await docker(["unpause", pick.name])).ok) pick = undefined;
+    pick = eligible.find((c) => c.state === "paused");
+    if (pick && !(await poolUnfreeze(pick))) pick = undefined;
   }
   if (!pick) {
     // Nothing warm: kick a replenish and let the caller fall back.
@@ -781,7 +1115,7 @@ export async function claimPoolPreview(repoId: string, worktreeDir: string): Pro
     sessionWorktree: worktreeDir,
     claimedAt: new Date().toISOString(),
   });
-  await refreshContainerCreds(pick.name);
+  await refreshContainerCreds(pick);
   // The container may have fetched a newer origin/<default> than the host
   // repo has — make sure bootSha resolves locally before diffing against it.
   if (pick.bootSha) {
@@ -794,7 +1128,7 @@ export async function claimPoolPreview(repoId: string, worktreeDir: string): Pro
     const preBase = pick.syncBase || pick.bootSha;
     await convergeContainerToWorktree(repo, worktreeDir, pick);
     // Keep the converged branch across container restarts (see advance guard).
-    await dockerExec(pick.name, `touch ${WORKSPACE}/${CLAIMED_MARKER}`);
+    await poolExec(pick, `touch ${WORKSPACE}/${CLAIMED_MARKER}`);
     // A big flip live under the dev server's watchers causes a module-graph
     // error storm (flapping 500s while ReScript resettles) — reboot the dev
     // tree instead: clean graph on warm caches, ~20-40s, no error overlay.
@@ -807,7 +1141,7 @@ export async function claimPoolPreview(repoId: string, worktreeDir: string): Pro
       console.log(
         `[preview-pool] ${pick.name}: ${delta} files changed — rebooting dev server for a clean graph`,
       );
-      await docker(["restart", "-t", "5", pick.name], 60_000);
+      await poolRestartDev(pick);
     }
     await syncWorktreeIntoContainer(repo, worktreeDir, pick);
   } catch (e) {
@@ -815,8 +1149,12 @@ export async function claimPoolPreview(repoId: string, worktreeDir: string): Pro
   }
   startSyncLoop(repo, worktreeDir, pick);
   void sweepPool().catch(() => {}); // replenish the pool in the background
-  console.log(`[preview-pool] ${repoId}: ${worktreeDir} claimed ${pick.name} (:${pick.hostPort})`);
-  return { containerName: pick.name, hostPort: pick.hostPort, repoId };
+  console.log(
+    `[preview-pool] ${repoId}: ${worktreeDir} claimed ${pick.name} (${
+      pick.previewUrl || `:${pick.hostPort}`
+    })`,
+  );
+  return { containerName: pick.name, hostPort: pick.hostPort, repoId, previewUrl: pick.previewUrl };
 }
 
 /** Release a worktree's pool preview: stop syncing, destroy the container. */
@@ -873,18 +1211,23 @@ async function doConverge(
   if (!head || head === base) return base;
 
   const inContainer = async (sha: string) =>
-    (await dockerExec(c.name, `git -C ${WORKSPACE} cat-file -e ${sha}`)).ok;
+    (await poolExec(c, `git -C ${WORKSPACE} cat-file -e ${sha}`)).ok;
 
   if (!(await inContainer(head))) {
     const cloneUrl = cloneUrlFor(repo);
     let fetched = false;
     if (cloneUrl) {
-      const r = await dockerExec(
-        c.name,
+      const r = await poolExec(
+        c,
         `cd ${WORKSPACE} && git fetch -q --depth 1 ${JSON.stringify(cloneUrl)} ${head}`,
         3 * 60_000,
       );
       fetched = r.ok;
+    }
+    if (!fetched && isDaytona(c)) {
+      // No stdin streaming to remote sandboxes — un-pushed commits can't be
+      // bundled over. Push the branch and re-claim.
+      throw new Error(`sha ${head.slice(0, 10)} not fetchable from the remote — push the branch for daytona previews`);
     }
     if (!fetched) {
       // Un-pushed HEAD: stream a bundle of HEAD ^base from the host.
@@ -909,8 +1252,8 @@ async function doConverge(
     }
   }
 
-  const co = await dockerExec(
-    c.name,
+  const co = await poolExec(
+    c,
     `cd ${WORKSPACE} && git checkout -q -f ${head} && git rev-parse HEAD`,
     2 * 60_000,
   );
@@ -975,10 +1318,31 @@ async function syncWorktreeIntoContainer(
   }
   if (drop.length) {
     const rmList = drop.map((p) => JSON.stringify(p)).join(" ");
-    await dockerExec(c.name, `cd ${WORKSPACE} && rm -f ${rmList} 2>/dev/null; true`);
+    await poolExec(c, `cd ${WORKSPACE} && rm -f ${rmList} 2>/dev/null; true`);
     if (mtimes) for (const p of drop) mtimes.delete(p);
   }
   if (!toCopy.length) return;
+  if (isDaytona(c)) {
+    // No stdin streaming to remote sandboxes — upload per file (uncommitted
+    // deltas are small; converge carries the tracked bulk). Cap pathological
+    // files rather than stalling the loop.
+    const sbx = await daytonaSbx(c.name);
+    for (const rel of toCopy) {
+      const abs = join(worktreeDir, rel);
+      try {
+        const st = statSync(abs);
+        if (st.size > 8 * 1024 * 1024) {
+          console.warn(`[preview-pool] sync skipping ${rel} (${Math.round(st.size / 1e6)}MB)`);
+          continue;
+        }
+        await sbx.fs.uploadFile(readFileSync(abs), `${WORKSPACE}/${rel}`);
+      } catch (e) {
+        console.warn(`[preview-pool] sync upload ${rel} failed:`, e);
+        mtimes?.delete(rel);
+      }
+    }
+    return;
+  }
   // tar stream keeps modes and creates parent dirs in one round trip.
   const tar = Bun.spawn(["tar", "-C", worktreeDir, "-cf", "-", ...toCopy], { stdout: "pipe" });
   const untar = Bun.spawn(["docker", "exec", "-i", c.name, "tar", "-C", WORKSPACE, "-xf", "-"], {
@@ -999,7 +1363,7 @@ function startSyncLoop(repo: Repo, worktreeDir: string, c: PoolContainer): void 
     void (async () => {
       const claim = poolClaimFor(worktreeDir);
       if (!claim || claim.containerName !== c.name) return stopSyncLoop(worktreeDir);
-      if ((await containerRunning(c.name)) !== "running") return stopSyncLoop(worktreeDir);
+      if ((await poolRuntimeStatus(c)) !== "running") return stopSyncLoop(worktreeDir);
       // The agent may commit mid-session — re-converge when HEAD moves so
       // tracked changes land atomically, then sync uncommitted files.
       const head = (await $`git -C ${worktreeDir} rev-parse HEAD`.quiet().nothrow().text()).trim();
@@ -1013,7 +1377,8 @@ function startSyncLoop(repo: Repo, worktreeDir: string, c: PoolContainer): void 
     })().finally(() => {
       busyTick = false;
     });
-  }, 2000);
+    // Remote backends pay HTTPS round-trips per tick — poll gentler.
+  }, isDaytona(c) ? 5000 : 2000);
   (timer as { unref?: () => void }).unref?.();
   syncs.set(worktreeDir, { timer, mtimes });
 }
@@ -1057,13 +1422,16 @@ async function sweepPool(): Promise<void> {
         if (Object.keys(readState(repo.id).containers).length) await ensurePool(repo).catch(() => {});
         continue;
       }
-      await refreshGoldenImage(repo.id).catch((e) =>
-        console.warn(`[preview-pool] golden refresh ${repo.id} failed:`, e),
-      );
+      // Golden images are docker-only; daytona sandboxes provision directly.
+      if (cfg.backend === "docker") {
+        await refreshGoldenImage(repo.id).catch((e) =>
+          console.warn(`[preview-pool] golden refresh ${repo.id} failed:`, e),
+        );
+      }
       await ensurePool(repo).catch((e) => console.warn(`[preview-pool] ensure ${repo.id} failed:`, e));
       // Keep live warm containers' short-lived creds fresh.
       for (const c of Object.values(readState(repo.id).containers)) {
-        if (c.state === "ready") await refreshContainerCreds(c.name).catch(() => {});
+        if (c.state === "ready") await refreshContainerCreds(c).catch(() => {});
       }
     }
   })().finally(() => busy.delete("sweep"));

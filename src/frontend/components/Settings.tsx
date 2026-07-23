@@ -1419,6 +1419,11 @@ const POOL_COUNT_OPTIONS = [0, 1, 2, 3].map((n) => ({
 	label: String(n),
 }));
 
+const POOL_BACKEND_OPTIONS = [
+	{ value: "docker", label: "Docker (local)" },
+	{ value: "daytona", label: "Daytona (remote)" },
+];
+
 function PreviewPoolPanel() {
 	const [repos, setRepos] = useState<PreviewPoolEntry[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -1505,15 +1510,17 @@ function PreviewPoolPanel() {
 						? "Building the golden image — boots the dev server once, warms routes, commits (~10 min)…"
 						: !entry.config.enabled
 							? "Off — previews boot cold on the host."
-							: entry.golden?.sha
-								? `Image at ${entry.golden.sha.slice(0, 10)} · built ${warmAgo(
-										entry.golden.builtAt,
-									)}${poolBits ? ` · ${poolBits}` : " · pool filling…"}${
-										entry.golden.lastError
-											? ` · last build failed: ${entry.golden.lastError.slice(0, 120)}`
-											: ""
-									}`
-								: "Enabled — first golden image builds shortly.";
+							: (entry.config.backend || "docker") === "daytona"
+								? `Daytona sandboxes${poolBits ? ` · ${poolBits}` : " · pool provisioning (first sandbox takes ~10 min)…"}`
+								: entry.golden?.sha
+									? `Image at ${entry.golden.sha.slice(0, 10)} · built ${warmAgo(
+											entry.golden.builtAt,
+										)}${poolBits ? ` · ${poolBits}` : " · pool filling…"}${
+											entry.golden.lastError
+												? ` · last build failed: ${entry.golden.lastError.slice(0, 120)}`
+												: ""
+										}`
+									: "Enabled — first golden image builds shortly.";
 					return (
 						<SettingRow
 							key={entry.repoId}
@@ -1523,15 +1530,29 @@ function PreviewPoolPanel() {
 								<div className="flex items-center gap-2">
 									{entry.config.enabled && (
 										<>
-											<button
-												className="rounded-md border border-line-strong px-3 py-1.5 text-[13px] font-medium text-dim transition-colors hover:border-faint hover:text-fg disabled:opacity-40"
-												disabled={entry.goldenBuilding}
-												onClick={() =>
-													apply(refreshPreviewPoolGolden(entry.repoId))
+											<Select
+												label={`Preview pool backend for ${entry.repoId}`}
+												value={entry.config.backend || "docker"}
+												options={POOL_BACKEND_OPTIONS}
+												onChange={(v) =>
+													apply(
+														updatePreviewPool(entry.repoId, {
+															backend: v as "docker" | "daytona",
+														}),
+													)
 												}
-											>
-												{entry.goldenBuilding ? "Building…" : "Rebuild image"}
-											</button>
+											/>
+											{(entry.config.backend || "docker") === "docker" && (
+												<button
+													className="rounded-md border border-line-strong px-3 py-1.5 text-[13px] font-medium text-dim transition-colors hover:border-faint hover:text-fg disabled:opacity-40"
+													disabled={entry.goldenBuilding}
+													onClick={() =>
+														apply(refreshPreviewPoolGolden(entry.repoId))
+													}
+												>
+													{entry.goldenBuilding ? "Building…" : "Rebuild image"}
+												</button>
+											)}
 											<Select
 												label={`Warm running containers for ${entry.repoId}`}
 												value={String(entry.config.running)}
