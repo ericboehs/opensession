@@ -8354,6 +8354,11 @@ a.workspace-info-check-row {
 .update-toast-refresh:hover {
 	background: color-mix(in srgb, var(--red) 85%, black);
 }
+.update-toast-refresh:disabled,
+.update-pill:disabled {
+	cursor: wait;
+	opacity: 0.75;
+}
 @keyframes update-toast-in {
 	from {
 		opacity: 0;
