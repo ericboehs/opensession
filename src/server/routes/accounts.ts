@@ -9,6 +9,7 @@
 import type { RouteContext } from "./context";
 import { addAccount, listAccountsPublic, refreshAllUsage, removeAccount, setAccountOwner } from "../claude-accounts";
 import { addCodexAccount, listCodexAccountsPublic, removeCodexAccount, setCodexAccountOwner } from "../codex-accounts";
+import { cancelDeviceLogin, getDeviceLogin, startDeviceLogin } from "../codex-device-login";
 
 export async function handleAccountsRoutes(
 	ctx: RouteContext,
@@ -94,6 +95,45 @@ export async function handleAccountsRoutes(
 		);
 		if ("error" in result) return Response.json(result, { status: 400 });
 		return Response.json(result);
+	}
+
+	// ── Device-code sign-in (browser-free `codex login --device-auth`) ──
+	// Keep these ahead of the generic /codex-accounts/:id matchers.
+	if (
+		path === "/backstage/api/codex-accounts/device-login" &&
+		req.method === "POST"
+	) {
+		const body = await req.json().catch(() => null);
+		if (!body?.name) {
+			return Response.json({ error: "name is required" }, { status: 400 });
+		}
+		let result = startDeviceLogin(
+			body.name,
+			typeof body.owner === "string" ? body.owner : undefined,
+		);
+		if ("error" in result) return Response.json(result, { status: 400 });
+		// Give the CLI a moment to print the URL + code so the UI can render
+		// them from this response; the client keeps polling either way.
+		for (let i = 0; i < 25 && result.state === "starting"; i++) {
+			await new Promise((r) => setTimeout(r, 160));
+			result = getDeviceLogin(result.id) ?? result;
+		}
+		return Response.json(result);
+	}
+
+	const deviceLoginMatch = path.match(
+		/^\/backstage\/api\/codex-accounts\/device-login\/([^/]+)$/,
+	);
+	if (deviceLoginMatch && req.method === "GET") {
+		const login = getDeviceLogin(decodeURIComponent(deviceLoginMatch[1]));
+		return login
+			? Response.json(login)
+			: Response.json({ error: "Not found" }, { status: 404 });
+	}
+	if (deviceLoginMatch && req.method === "DELETE") {
+		return cancelDeviceLogin(decodeURIComponent(deviceLoginMatch[1]))
+			? Response.json({ ok: true })
+			: Response.json({ error: "Not found" }, { status: 404 });
 	}
 
 	const codexAccountDelMatch = path.match(

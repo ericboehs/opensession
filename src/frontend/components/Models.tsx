@@ -829,13 +829,70 @@ function AddClaudeAccountForm({ onClose, onAdded }: { onClose: () => void; onAdd
 	);
 }
 
+interface CodexDeviceLogin {
+	id: string;
+	name: string;
+	state: "starting" | "awaiting_code" | "done" | "error" | "cancelled";
+	url?: string;
+	code?: string;
+	error?: string;
+}
+
 function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
 	const [name, setName] = useState("");
-	const [kind, setKind] = useState<"api_key" | "home">("home");
+	const [kind, setKind] = useState<"device" | "api_key" | "home">("device");
 	const [value, setValue] = useState("");
 	const [owner, setOwner] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [login, setLogin] = useState<CodexDeviceLogin | null>(null);
+
+	// Poll an in-flight device sign-in until it lands (or fails).
+	useEffect(() => {
+		if (!login || login.state === "done" || login.state === "error") return;
+		const t = setInterval(async () => {
+			try {
+				const res = await fetch(
+					`${BASE_PATH}/api/codex-accounts/device-login/${encodeURIComponent(login.id)}`
+				);
+				if (!res.ok) return;
+				const next: CodexDeviceLogin = await res.json();
+				setLogin(next);
+				if (next.state === "done") onAdded();
+			} catch {}
+		}, 2000);
+		return () => clearInterval(t);
+	}, [login?.id, login?.state]);
+
+	async function handleStartDeviceLogin() {
+		setSaving(true);
+		setError(null);
+		try {
+			const res = await fetch(`${BASE_PATH}/api/codex-accounts/device-login`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					name: name.trim(),
+					...(owner.trim() ? { owner: owner.trim() } : {}),
+				}),
+			});
+			const body = await res.json();
+			if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+			setLogin(body);
+		} catch (e: any) {
+			setError(e.message);
+		}
+		setSaving(false);
+	}
+
+	function handleCancel() {
+		if (login && (login.state === "starting" || login.state === "awaiting_code")) {
+			fetch(`${BASE_PATH}/api/codex-accounts/device-login/${encodeURIComponent(login.id)}`, {
+				method: "DELETE",
+			}).catch(() => {});
+		}
+		onClose();
+	}
 
 	async function handleAdd() {
 		setSaving(true);
@@ -860,40 +917,66 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 		}
 	}
 
+	const loginPending = login && (login.state === "starting" || login.state === "awaiting_code");
+
 	return (
 		<div className="automation-form" style={{ marginBottom: 12 }}>
 			<div className="automation-form-title">Add Codex account</div>
 			<div className="setting-row-desc" style={{ marginTop: -8 }}>
-				For a ChatGPT plan: on the VPS run{" "}
-				<code>CODEX_HOME=~/.codex-accounts/&lt;name&gt; codex login</code>, then register that
-				directory here. For platform billing, paste an OpenAI API key instead.
+				{kind === "device" ? (
+					<>
+						Sign in with ChatGPT from here — no VPS access needed. You'll get a link and a
+						one-time code to enter on any device. (Device-code login must be enabled in the
+						ChatGPT workspace's security settings.)
+					</>
+				) : kind === "home" ? (
+					<>
+						On the VPS run <code>CODEX_HOME=~/.codex-accounts/&lt;name&gt; codex login</code>{" "}
+						(or copy an <code>auth.json</code> from another machine into that directory),
+						then register the directory here.
+					</>
+				) : (
+					<>For platform billing, paste an OpenAI API key.</>
+				)}
 			</div>
 
 			<div className="automation-form-row">
 				<label>
 					Name
-					<input value={name} onChange={(e) => setName(e.target.value)} placeholder="tella-dev" />
+					<input
+						value={name}
+						onChange={(e) => setName(e.target.value)}
+						placeholder="tella-dev"
+						disabled={!!login}
+					/>
 				</label>
 				<label>
 					Kind
-					<select value={kind} onChange={(e) => setKind(e.target.value as "api_key" | "home")}>
-						<option value="home">ChatGPT login — CODEX_HOME directory</option>
+					<select
+						value={kind}
+						onChange={(e) => setKind(e.target.value as "device" | "api_key" | "home")}
+						disabled={!!login}
+					>
+						<option value="device">ChatGPT sign-in — device code</option>
+						<option value="home">ChatGPT login — existing CODEX_HOME directory</option>
 						<option value="api_key">OpenAI API key</option>
 					</select>
 				</label>
-				<label>
-					{kind === "api_key" ? "API key" : "CODEX_HOME path"}
-					<input
-						className="mono-input"
-						type={kind === "api_key" ? "password" : "text"}
-						value={value}
-						onChange={(e) => setValue(e.target.value)}
-						placeholder={kind === "api_key" ? "sk-…" : "/home/ubuntu/.codex-accounts/tella-dev"}
-					/>
-				</label>
+				{kind !== "device" && (
+					<label>
+						{kind === "api_key" ? "API key" : "CODEX_HOME path"}
+						<input
+							className="mono-input"
+							type={kind === "api_key" ? "password" : "text"}
+							value={value}
+							onChange={(e) => setValue(e.target.value)}
+							placeholder={kind === "api_key" ? "sk-…" : "/home/ubuntu/.codex-accounts/tella-dev"}
+						/>
+					</label>
+				)}
 				<label title="Personal sub: this person's runs use the account first, with the shared pool as backup — nobody else's runs touch it. Shared pool = used by everyone and by automations.">
 					Owner
-					<select value={owner} onChange={(e) => setOwner(e.target.value)}>
+					<select value={owner} onChange={(e) => setOwner(e.target.value)} disabled={!!login}>
 						<option value="">Shared pool</option>
 						{TEAM.map((n) => (
 							<option key={n} value={n}>
@@ -904,20 +987,71 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 				</label>
 			</div>
 
+			{login && (
+				<div className="setting-card" style={{ marginTop: 8, padding: "12px 16px" }}>
+					{login.state === "starting" && (
+						<div className="text-dim text-[12.5px]">Starting sign-in…</div>
+					)}
+					{login.state === "awaiting_code" && (
+						<>
+							<div className="text-[12.5px]" style={{ marginBottom: 6 }}>
+								1. Open{" "}
+								<a href={login.url} target="_blank" rel="noreferrer">
+									{login.url}
+								</a>{" "}
+								and sign in to the ChatGPT account.
+							</div>
+							<div className="text-[12.5px]">2. Enter this one-time code (expires in 15 min):</div>
+							<div
+								className="font-mono"
+								style={{ fontSize: 22, letterSpacing: 2, margin: "8px 0 4px" }}
+							>
+								{login.code}
+							</div>
+							<div className="text-dim text-[12.5px]">
+								Waiting for the sign-in to complete… this panel updates by itself.
+							</div>
+						</>
+					)}
+					{login.state === "done" && (
+						<div className="text-[12.5px]">Signed in — account "{login.name}" added to the pool.</div>
+					)}
+					{login.state === "error" && (
+						<div className="form-error" style={{ whiteSpace: "pre-wrap" }}>
+							{login.error || "Sign-in failed."}{" "}
+							<button className="btn-small" onClick={() => setLogin(null)} style={{ marginLeft: 8 }}>
+								Try again
+							</button>
+						</div>
+					)}
+				</div>
+			)}
+
 			{error && <div className="form-error">{error}</div>}
 
 			<div className="automation-form-actions">
-				<button className="btn-delete-cancel" onClick={onClose} disabled={saving}>
-					Cancel
+				<button className="btn-delete-cancel" onClick={handleCancel} disabled={saving}>
+					{loginPending ? "Cancel sign-in" : "Cancel"}
 				</button>
-				<button
-					className="btn-create"
-					style={{ padding: "8px 22px" }}
-					onClick={handleAdd}
-					disabled={saving || !name.trim() || !value.trim()}
-				>
-					{saving ? "Adding…" : "Add account"}
-				</button>
+				{kind === "device" ? (
+					<button
+						className="btn-create"
+						style={{ padding: "8px 22px" }}
+						onClick={handleStartDeviceLogin}
+						disabled={saving || !name.trim() || !!loginPending || login?.state === "done"}
+					>
+						{saving ? "Starting…" : loginPending ? "Waiting for sign-in…" : "Start sign-in"}
+					</button>
+				) : (
+					<button
+						className="btn-create"
+						style={{ padding: "8px 22px" }}
+						onClick={handleAdd}
+						disabled={saving || !name.trim() || !value.trim()}
+					>
+						{saving ? "Adding…" : "Add account"}
+					</button>
+				)}
 			</div>
 		</div>
 	);
