@@ -193,13 +193,34 @@ function pushUserEntries(
   });
 }
 
-function harnessEntryFor(text: string, ts: string): TranscriptEntry[] | null {
+/** Deterministic id for a harness/system entry (transcript-v2 §1a): derived
+ *  from the raw line's uuid so re-parsing the same line always yields the same
+ *  id — `sys-<uuid>`, with a `-b<i>` suffix when a multi-block line fans out.
+ *  Lines with no uuid fall back to a content+timestamp hash, never
+ *  crypto.randomUUID() (which minted a fresh id per parse, so system chips had
+ *  no stable dedup key — duplicate chips on watcher restarts, and no usable
+ *  upsert key for the v2 transcript store). */
+function harnessEntryId(
+  raw: RawJsonlEntry,
+  text: string,
+  ts: string,
+  blockIndex = 0,
+): string {
+  const base = raw.uuid ? `sys-${raw.uuid}` : `sys-h${fnv1a36(`${ts}|${text}`)}`;
+  return blockIndex > 0 ? `${base}-b${blockIndex}` : base;
+}
+
+function harnessEntryFor(
+  text: string,
+  ts: string,
+  id: string,
+): TranscriptEntry[] | null {
   const t = text.trimStart();
   if (t.startsWith("<task-notification>")) {
     const summary = t.match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim();
     const status = t.match(/<status>([\s\S]*?)<\/status>/)?.[1]?.trim();
     return [{
-      id: crypto.randomUUID(),
+      id,
       type: "system",
       content: summary
         ? `Background task ${status || "update"}: ${summary}`
@@ -214,7 +235,7 @@ function harnessEntryFor(text: string, ts: string): TranscriptEntry[] | null {
   if (t.startsWith("<runner-notice>")) {
     const body = t.match(/<runner-notice>([\s\S]*?)<\/runner-notice>/)?.[1]?.trim();
     return body
-      ? [{ id: crypto.randomUUID(), type: "system", content: body, timestamp: ts }]
+      ? [{ id, type: "system", content: body, timestamp: ts }]
       : [];
   }
   // The SDK writes this marker into the jsonl whenever a turn is interrupted
@@ -237,7 +258,8 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
 
     // Check for tool_result blocks
     if (Array.isArray(content)) {
-      for (const block of content) {
+      for (let bi = 0; bi < content.length; bi++) {
+        const block = content[bi];
         if (block.type === "tool_result") {
           const resultText =
             typeof block.content === "string"
@@ -268,7 +290,11 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
             ...(videos.length > 0 ? { videos } : {}),
           });
         } else if (block.type === "text" && !raw.isMeta) {
-          const harness = harnessEntryFor(block.text || "", ts);
+          const harness = harnessEntryFor(
+            block.text || "",
+            ts,
+            harnessEntryId(raw, block.text || "", ts, bi),
+          );
           if (harness) {
             entries.push(...harness);
             continue;
@@ -313,7 +339,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
     } else if (!raw.isMeta) {
       const stripped = stripContext(extractText(content));
       if (stripped) {
-        const harness = harnessEntryFor(stripped, ts);
+        const harness = harnessEntryFor(stripped, ts, harnessEntryId(raw, stripped, ts));
         if (harness) {
           entries.push(...harness);
         } else {
@@ -416,6 +442,18 @@ function isCodexRolloutPath(path: string): boolean {
   return path.includes("/rollout-") || path.includes("\\rollout-");
 }
 
+/** FNV-1a 32-bit hash rendered base36 — deterministic id material for lines
+ *  that carry no usable native id (Codex rollout lines, uuid-less harness
+ *  lines). */
+function fnv1a36(source: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < source.length; i++) {
+    hash ^= source.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
 function stableCodexId(prefix: string, raw: any, p: any, extra?: unknown): string {
   const source = JSON.stringify({
     ts: raw?.timestamp || "",
@@ -424,12 +462,7 @@ function stableCodexId(prefix: string, raw: any, p: any, extra?: unknown): strin
     payloadId: p?.id || p?.call_id || "",
     extra,
   });
-  let hash = 2166136261;
-  for (let i = 0; i < source.length; i++) {
-    hash ^= source.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `${prefix}-${(hash >>> 0).toString(36)}`;
+  return `${prefix}-${fnv1a36(source)}`;
 }
 
 function parseCodexEntry(raw: any): TranscriptEntry[] {
@@ -575,10 +608,15 @@ function parseCodexLines(lines: string[]): TranscriptEntry[] {
   return entries;
 }
 
-// Parse a set of already-split Claude jsonl lines, deduplicating assistant
-// messages that share a requestId (the SDK rewrites a streamed turn under one
-// requestId; keep the last). Shared by the full parse and the tail parse.
-function parseClaudeLines(lines: string[]): TranscriptEntry[] {
+/**
+ * Parse a set of already-split Claude-shape jsonl lines, deduplicating
+ * assistant messages that share a requestId (the SDK rewrites a streamed turn
+ * under one requestId; keep the last). Shared by the full parse and the tail
+ * parse, and exported as the transcript-v2 (§1a) line→entry helper: the store
+ * keys rows on the parsed entry ids this produces, so live appends, legacy
+ * imports, and wire upserts all agree on identity.
+ */
+export function parseJsonlLines(lines: string[]): TranscriptEntry[] {
   const entries: TranscriptEntry[] = [];
   const seenRequestIds = new Map<string, number>(); // requestId → last index in entries
 
@@ -698,7 +736,7 @@ export function parseTranscript(path: string): TranscriptEntry[] {
   const lines = raw.split("\n").filter((l) => l.trim());
   const entries = isCodexRolloutPath(path)
     ? parseCodexLines(lines)
-    : parseClaudeLines(lines);
+    : parseJsonlLines(lines);
 
   if (mtimeMs) {
     parseCache.set(path, { mtimeMs, size, entries });
@@ -768,7 +806,7 @@ export function parseTranscriptTail(
     const lastNl = buf.lastIndexOf(0x0a);
     const endOffset = size - (buf.length - (lastNl + 1));
     const lines = chunk.toString("utf-8").split("\n").filter((l) => l.trim());
-    const entries = parseClaudeLines(lines);
+    const entries = parseJsonlLines(lines);
 
     if (!truncated || entries.length >= minEntries)
       return { entries, truncated, endOffset, startOffset };
@@ -835,7 +873,7 @@ export function parseTranscriptWindow(
     }
     const startOffset = beforeOffset - chunk.length;
     const lines = chunk.toString("utf-8").split("\n").filter((l) => l.trim());
-    const entries = parseClaudeLines(lines);
+    const entries = parseJsonlLines(lines);
 
     if (start === 0 || entries.length >= minEntries) {
       // A growth pass can overshoot hard — a 4× window jump through a dense
@@ -850,7 +888,7 @@ export function parseTranscriptWindow(
         const frac = (minEntries * 1.5) / entries.length;
         let cut = Math.floor(rawLines.length * (1 - frac));
         while (cut > 0) {
-          const page = parseClaudeLines(
+          const page = parseJsonlLines(
             rawLines.slice(cut).filter((l) => l.trim())
           );
           if (page.length >= minEntries) {
