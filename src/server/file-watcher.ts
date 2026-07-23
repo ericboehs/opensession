@@ -1,6 +1,9 @@
 import { statSync } from "fs";
 import { existsSync } from "fs";
 import { clampEntriesForWire, parseTranscriptFrom } from "./jsonl-parser";
+import { markTranscriptStoreDegraded } from "./opencode-transcript";
+import { envAlias } from "./rename-compat";
+import { transcriptStore } from "./transcript-store";
 import type { TranscriptEntry } from "./types";
 
 interface WatchState {
@@ -69,6 +72,41 @@ function getFileSize(path: string): number {
   }
 }
 
+/**
+ * Watcher-feeds-store (mirror retirement prep, transcript-v2 design
+ * "Mirror retirement"): appends the watcher parsed out of a transcript file
+ * are fed into the owned store too, covering sessions whose file is written
+ * by a process that never dual-writes (external CLI/tmux runs — the sessions
+ * serveTranscriptV2 refuses; a legacy watch is their only live reader). The
+ * store keeps itself consistent: entry-id upserts make the double-feed with
+ * the runner's own dual-write idempotent (same seqs; the bus republish is
+ * absorbed by the client's id-keyed upsert), and the §8 drift check then
+ * classifies the mirror growth as explained instead of forcing re-imports.
+ *
+ * Strictly gated: flag on AND the session ALREADY imported — appending to a
+ * never-imported session would mark it 'live-only' and permanently invert
+ * seq order against the later history import (design §3), so this feed never
+ * runs the import itself. A feed failure flags the session store-degraded
+ * (entries reached the mirror but not the store — a mid-transcript gap the
+ * §8 tail probe can't see later) and never breaks legacy delivery.
+ */
+function feedTranscriptStore(
+  sessionId: string | undefined,
+  entries: TranscriptEntry[]
+): void {
+  if (!sessionId || entries.length === 0) return;
+  if (envAlias("OPENSESSION_TRANSCRIPT_V2", "BACKSTAGE_TRANSCRIPT_V2") !== "1")
+    return;
+  try {
+    const store = transcriptStore();
+    if (!store.hasImported(sessionId)) return;
+    store.appendTranscriptEvents(sessionId, entries);
+  } catch (e) {
+    markTranscriptStoreDegraded(sessionId);
+    console.warn(`[file-watcher] v2 store feed failed for ${sessionId}:`, e);
+  }
+}
+
 function pollFile(state: WatchState) {
   if (!existsSync(state.path)) return;
 
@@ -85,6 +123,7 @@ function pollFile(state: WatchState) {
   if (entries.length === 0) return;
 
   notifyAppendListener(state.sessionId, entries);
+  feedTranscriptStore(state.sessionId, entries);
 
   // endOffset + rev = the client's resume cursor: on reconnect it re-watches
   // with sinceOffset/sinceRev and the gap since this exact byte is replayed

@@ -269,7 +269,10 @@ const storeDegraded: Set<string> = ((globalThis as Record<string, unknown> & {
   __osOcV2StoreDegraded?: Set<string>;
 }).__osOcV2StoreDegraded ??= new Set());
 
-function markTranscriptStoreDegraded(id: string | null | undefined): void {
+/** Exported for the sibling store writers (file-watcher's watcher-feed) —
+ *  any path that got entries into a mirror file but not the store must flag
+ *  the session, or the §8 tail probe later masks the mid-transcript gap. */
+export function markTranscriptStoreDegraded(id: string | null | undefined): void {
   if (id) storeDegraded.add(id);
 }
 

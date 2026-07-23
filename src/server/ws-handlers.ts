@@ -274,8 +274,14 @@ function serveTranscriptV2(
 	// enabling restart degrade safely via the §8 store-degraded/drift path.)
 	if (sessionId.startsWith("plain-")) return false;
 	// Externally-owned runs (CLI/tmux: running via PID but not in our
-	// activeRuns — session-control's observe-only signal) write only the
-	// mirror; the bus never fires for them, so they stay on the file-watcher.
+	// activeRuns — session-control's observe-only signal) write only their
+	// transcript file. The file-watcher now feeds parsed appends into the
+	// store (file-watcher.ts feedTranscriptStore), but that feed only runs
+	// while some legacy watch exists — a v2-only viewer set would have no
+	// feeder, so v2 here would render silently stale mid-run. The refusal
+	// stays until a socket-independent feed lifecycle exists; relaxing it is
+	// the LAST step of mirror retirement (design doc "Mirror retirement"),
+	// and external writers are unaffected by OPENSESSION_MIRROR_WRITE anyway.
 	if (
 		session.isRunning &&
 		!isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)
