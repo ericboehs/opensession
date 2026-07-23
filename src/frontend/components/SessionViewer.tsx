@@ -2322,7 +2322,14 @@ export function SessionViewer({
 			ownerId: owner.id,
 			acceptedFromPr: !!completion,
 		};
-	}, [session.reviewRequest, session.id, workspaceChats]);
+	}, [
+		session.reviewRequest,
+		session.id,
+		session.prReviewedBy,
+		session.prReviewRequested,
+		session.prUpdatedAt,
+		workspaceChats,
+	]);
 
 	// Returns true when the message was consumed, so the (uncontrolled)
 	// Composer knows to clear its draft; false keeps it for a retry.

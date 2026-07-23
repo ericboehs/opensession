@@ -22,10 +22,9 @@ export function prReviewCompletion(
 ): { by: string; at: string } | null {
 	if (request.accepted || !session.prUpdatedAt) return null;
 	const reviewer = request.to.trim().toLowerCase();
-	if (
-		!reviewer ||
-		Date.parse(session.prUpdatedAt) <= Date.parse(request.at)
-	)
+	const reviewedAt = Date.parse(session.prUpdatedAt);
+	const requestedAt = Date.parse(request.at);
+	if (!reviewer || !Number.isFinite(reviewedAt) || reviewedAt <= requestedAt)
 		return null;
 	const hasReviewer = (people?: string[]) =>
 		(people || []).some((person) => person.toLowerCase() === reviewer);
