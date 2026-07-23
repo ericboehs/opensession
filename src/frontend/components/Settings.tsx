@@ -33,8 +33,15 @@ import {
 	setSendKeyPref,
 	onSendKeyChanged,
 	MOD_ENTER_LABEL,
+	MOD_ENTER_GLYPH,
 	type SendKeyPref,
 } from "../lib/send-key";
+import {
+	getBusySendPref,
+	setBusySendPref,
+	onBusySendChanged,
+	type BusySendPref,
+} from "../lib/busy-send-pref";
 import {
 	getVimModePref,
 	setVimModePref,
@@ -1648,10 +1655,12 @@ function AuditPanel() {
 /** Composer preferences — per-browser, like theme (lib/send-key). */
 function ComposerPanel() {
 	const [sendKey, setSendKey] = useState<SendKeyPref>(getSendKeyPref);
+	const [busySend, setBusySend] = useState<BusySendPref>(getBusySendPref);
 	const [vimMode, setVimMode] = useState<boolean>(getVimModePref);
 	const [pinNew, setPinNew] = useState<boolean>(getPinNewSessions);
 	const [pinNewWs, setPinNewWs] = useState<boolean>(getPinNewWorkspaces);
 	useEffect(() => onSendKeyChanged(() => setSendKey(getSendKeyPref())), []);
+	useEffect(() => onBusySendChanged(() => setBusySend(getBusySendPref())), []);
 	useEffect(() => onVimModeChanged(() => setVimMode(getVimModePref())), []);
 	useEffect(
 		() => onPinNewSessionsChanged(() => setPinNew(getPinNewSessions())),
@@ -1680,6 +1689,34 @@ function ComposerPanel() {
 								{ value: "mod-enter", label: MOD_ENTER_LABEL },
 							]}
 							onChange={setSendKeyPref}
+						/>
+					}
+				/>
+				<SettingRow
+					title="Follow-up behavior"
+					desc={
+						<>
+							What sending does while the agent is busy. Queue waits until
+							the run fully finishes (including running worker sessions);
+							Steer folds your message into the running turn at its next
+							step, without stopping the work. Stored per user, follows you
+							across devices.
+							{sendKey === "enter" && (
+								<div className="text-dim text-xs mt-1">
+									Hold {MOD_ENTER_GLYPH} while sending to do the other one
+								</div>
+							)}
+						</>
+					}
+					control={
+						<Select
+							label="Follow-up behavior"
+							value={busySend}
+							options={[
+								{ value: "queue", label: "Queue" },
+								{ value: "steer", label: "Steer" },
+							]}
+							onChange={setBusySendPref}
 						/>
 					}
 				/>

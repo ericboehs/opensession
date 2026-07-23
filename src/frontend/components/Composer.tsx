@@ -27,6 +27,7 @@ import {
   sendKeyLabel,
 } from "../lib/send-key";
 import { VoiceInput } from "./VoiceInput";
+import { getBusySendPref, onBusySendChanged } from "../lib/busy-send-pref";
 import { getVimModePref, onVimModeChanged } from "../lib/vim-pref";
 import { useVimMode } from "../hooks/useVimMode";
 import { useIsPhone } from "../hooks/useIsPhone";
@@ -54,8 +55,9 @@ interface Props {
    */
   draftKey?: string;
   /** `steer` is set when the send should fold into the running turn right
-   * away (⌘/Ctrl+Enter or Command/Ctrl-click while a run is busy) — the turn
-   * keeps running. Plain busy sends queue for after the run fully finishes. */
+   * away — the turn keeps running. Busy sends follow the per-user follow-up
+   * preference (default queue: delivered after the run fully finishes);
+   * ⌘/Ctrl+Enter or Command/Ctrl-click flips to the non-default action. */
   onSend: (text: string, opts?: { steer?: boolean }) => boolean | void;
   placeholder?: string;
   disabled?: boolean;
@@ -281,6 +283,13 @@ export function Composer({
   // "Send messages with" preference (Settings → Composer): Enter or ⌘/Ctrl+Enter.
   const [sendKey, setSendKey] = useState(getSendKeyPref);
   useEffect(() => onSendKeyChanged(() => setSendKey(getSendKeyPref())), []);
+  // Follow-up behavior preference (Settings → Composer): what a plain send
+  // does while the run is busy. ⌘/Ctrl flips to the non-default action.
+  const [busySendPref, setBusySendPrefState] = useState(getBusySendPref);
+  useEffect(
+    () => onBusySendChanged(() => setBusySendPrefState(getBusySendPref())),
+    [],
+  );
   const [sendModifierHeld, setSendModifierHeld] = useState(false);
   useEffect(() => {
     const syncModifier = (e: KeyboardEvent) =>
@@ -352,7 +361,14 @@ export function Composer({
   const hasContent = !!text.trim() || imgs.length > 0 || fls.length > 0 || hasAttached;
   const minimized = isPhone && !focused && !hasContent && !modelMenuOpen;
   const showSend = !busy || hasContent;
-  const steerSend = !!busy && sendModifierHeld;
+  // Whether the send button/plain send steers right now: the preference sets
+  // the busy default, holding ⌘/Ctrl flips to the other action. (With
+  // ⌘/Ctrl+Enter as the send key the modifier is held on every send, so the
+  // flip only applies when plain Enter is the send key — pref rules there.)
+  const prefSteer = busySendPref === "steer";
+  const modifierFlips = sendKey === "enter";
+  const steerSend =
+    !!busy && (modifierFlips && sendModifierHeld ? !prefSteer : prefSteer);
 
   // Which toolbar popover is open ("add" menu or "goal" editor). Closed on an
   // outside click or after an action.
@@ -574,10 +590,10 @@ export function Composer({
       const fences = text.slice(0, caret).match(/```/g);
       if (fences && fences.length % 2 === 1) return; // let the newline land
     }
-    // While a run is busy, ⌘/Ctrl+Enter steers: fold this send into the
-    // running turn now, WITHOUT stopping it. Plain Enter queues for after the
-    // run fully finishes. (Only when plain Enter is the send key — otherwise
-    // ⌘/Ctrl+Enter already means "send".)
+    // While a run is busy, ⌘/Ctrl+Enter is the flip of the follow-up
+    // preference: steer (fold into the running turn now, WITHOUT stopping it)
+    // when queue is the default, queue when steer is. (Only when plain Enter
+    // is the send key — otherwise ⌘/Ctrl+Enter already means "send".)
     if (
       busy &&
       sendKey === "enter" &&
@@ -585,12 +601,14 @@ export function Composer({
       (e.metaKey || e.ctrlKey)
     ) {
       e.preventDefault();
-      if (!disabled && !isSendDisabled) fireSend(onSend, { steer: true });
+      if (!disabled && !isSendDisabled)
+        fireSend(onSend, prefSteer ? undefined : { steer: true });
       return;
     }
     if (isSendCombo(e, sendKey)) {
       e.preventDefault();
-      if (!disabled && !isSendDisabled) fireSend(onSend);
+      if (!disabled && !isSendDisabled)
+        fireSend(onSend, busy && prefSteer ? { steer: true } : undefined);
     }
   }
 
@@ -872,8 +890,10 @@ export function Composer({
               </button>
             </Tooltip>
           )}
-          {/* One busy-send button: queue by default, steer while Command/Ctrl is
-              held. Niche actions such as scheduling live under the + menu. */}
+          {/* One busy-send button: the follow-up preference (Settings →
+              Composer, default queue) picks its busy action; holding
+              Command/Ctrl flips to the other one. Niche actions such as
+              scheduling live under the + menu. */}
           {showSend && (
             <motion.div
               layout="position"
@@ -883,10 +903,14 @@ export function Composer({
               <Tooltip
                 label={
                   steerSend
-                    ? "Steer — fold into the running turn now, without stopping it"
+                    ? `Steer — fold into the running turn now, without stopping it${
+                        prefSteer && modifierFlips ? "; hold ⌘/Ctrl to queue" : ""
+                      }`
                     : sendTitle ||
                       (busy
-                        ? `Queue — delivered when the agent fully finishes; hold ⌘/Ctrl to steer (${sendKeyLabel(sendKey)})`
+                        ? `Queue — delivered when the agent fully finishes${
+                            modifierFlips ? "; hold ⌘/Ctrl to steer" : ""
+                          } (${sendKeyLabel(sendKey)})`
                         : `Send (${sendKeyLabel(sendKey)})`)
                 }
               >
