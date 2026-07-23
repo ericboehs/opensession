@@ -171,6 +171,47 @@ export async function handleSystemRoutes(
 		}
 	}
 
+	// Transcript v2 backfill (docs/transcript-v2-design.md §8): migrate legacy
+	// session transcripts into transcripts.db, in-process (invariant 8: the
+	// live server is the DB's only writer — never a standalone script). Team
+	// gated by the global auth layer like every /backstage/api/* route. Body:
+	// { limit?, dryRun?, wait? }. Idempotent (store imports are upserts), so
+	// it's also safe to run pre-activation to warm the store. A full run takes
+	// minutes (paced), so it defaults to background + immediate 202; pass
+	// `wait: true` (with a small `limit`) to block for the summary.
+	if (
+		path === "/backstage/api/admin/transcript-backfill" &&
+		req.method === "POST"
+	) {
+		let body: { limit?: unknown; dryRun?: unknown; wait?: unknown } = {};
+		try {
+			body = ((await req.json()) ?? {}) as typeof body;
+		} catch {
+			// empty/non-JSON body → defaults
+		}
+		const opts = {
+			limit:
+				typeof body.limit === "number" && body.limit > 0
+					? Math.floor(body.limit)
+					: undefined,
+			dryRun: body.dryRun === true,
+		};
+		const by = requestUser(ctx);
+		console.log(
+			`[transcript-backfill] admin trigger${by ? ` by ${by}` : ""}:`,
+			opts,
+		);
+		const { runTranscriptBackfill } = await import("../transcript-backfill");
+		if (body.wait === true) {
+			const summary = await runTranscriptBackfill(opts);
+			return Response.json({ ok: true, ...summary });
+		}
+		void runTranscriptBackfill(opts).catch((e) => {
+			console.error("[transcript-backfill] admin-triggered run failed:", e);
+		});
+		return Response.json({ ok: true, started: true, ...opts }, { status: 202 });
+	}
+
 	// Stream a large composer attachment straight to disk (base64-over-WS
 	// can't carry big files). Body is the raw file bytes; filename in the
 	// `x-file-name` header. Returns { name, path } the client echoes back in

@@ -12,6 +12,7 @@ import { enableOpencodeServerDetach } from "./src/server/opencode-detach";
 import { adoptDetachedOpencodeServers } from "./src/server/opencode-runner";
 import { startAccountHealthMonitor } from "./src/server/account-health";
 import { startTodoReminderTicker } from "./src/server/todos";
+import { kickTranscriptBackfillOnce } from "./src/server/transcript-backfill";
 import { makeAskHandler } from "./src/server/asks";
 import { getWebhookRoutes, setEventSessionCallback, startScheduler } from "./src/server/automations";
 import { startUsagePoller } from "./src/server/claude-accounts";
@@ -568,6 +569,12 @@ if (!g.__backstageBooted) {
 
 	// Desk todo reminders: push + Slack DM when a remindAt passes (todos.ts)
 	startTodoReminderTicker();
+
+	// Transcript v2 (docs/transcript-v2-design.md §8): one-time full backfill of
+	// legacy transcripts into transcripts.db. The helper self-gates (no-op
+	// unless OPENSESSION_TRANSCRIPT_V2=1, marker file once it completed); the
+	// delay keeps its import chunks out of the restart-resume window below.
+	setTimeout(() => kickTranscriptBackfillOnce(), 15_000);
 	} else {
 		agents = [];
 		g.__agents = agents;

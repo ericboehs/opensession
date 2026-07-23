@@ -12,6 +12,8 @@ import { archiveOlderThan, setArchived, unpinArchivedSessions } from "../archive
 import { audit } from "../audit";
 import { pendingAsks } from "../asks";
 import { transcriptMatchSnippet } from "../jsonl-parser";
+import { envAlias } from "../rename-compat";
+import { transcriptStore } from "../transcript-store";
 import { clearSessionFileArchive } from "../plain-archive";
 import { editPrReviewers } from "../pr-info";
 import { promptQueues, requeueSteerReceipts, stoppedSessions } from "../queue-state";
@@ -127,6 +129,20 @@ export async function handleSessionsRoutes(
 			if (!session)
 				return Response.json({ error: "Session not found" }, { status: 404 });
 			const entryId = decodeURIComponent(m[2]);
+			// Transcript v2 (docs/transcript-v2-design.md §8, flag-gated): the
+			// store keeps the full unstripped entry (blob when the stored row was
+			// bounded) — consult it first; unknown ids fall through to the legacy
+			// merged-transcript scan unchanged.
+			if (
+				envAlias("OPENSESSION_TRANSCRIPT_V2", "BACKSTAGE_TRANSCRIPT_V2") === "1"
+			) {
+				try {
+					const full = transcriptStore().getFullEntry(session.id, entryId);
+					if (full) return Response.json({ content: full.content });
+				} catch {
+					// store read failed — the legacy scan below still serves the entry
+				}
+			}
 			const entry = mergedSessionTranscript(session).find(
 				(e) => e.id === entryId,
 			);

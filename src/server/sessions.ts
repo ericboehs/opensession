@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { existsSync } from "fs";
 import {
@@ -12,7 +12,9 @@ import { getReviewRequest } from "./review-requests";
 import { getGeneratedTitle } from "./generated-titles";
 import { findCodexRollout } from "./codex-accounts";
 import { providerFor } from "./models";
-import { parseTranscript } from "./jsonl-parser";
+import { parseJsonlLines, parseTranscript } from "./jsonl-parser";
+import { envAlias } from "./rename-compat";
+import { type TranscriptStore, transcriptStore } from "./transcript-store";
 import {
   isOpencodeSessionId,
   readOpencodeTranscript,
@@ -98,6 +100,15 @@ export function readEngineTranscript(
   return path ? parseTranscript(path) : [];
 }
 
+/** What mergedSessionTranscript needs from a session. `id` (the unified
+ *  session id) is optional and only consulted by the flag-gated transcript v2
+ *  read path — callers passing a full UnifiedSession opt in automatically;
+ *  id-less callers (engineUserTexts) always take the legacy merge. */
+type TranscriptSessionRef = Pick<
+  UnifiedSession,
+  "transcriptPath" | "opencodeSessionId" | "claudeSessionId"
+> & { id?: string };
+
 /**
  * Full UI transcript for a session that may span engines: the claude/codex
  * transcript file (turns before a migration to opencode, or the whole history
@@ -105,12 +116,42 @@ export function readEngineTranscript(
  * after), ordered by timestamp. Also covers legacy session files where the
  * opencode id rides the claude slot (pre-`opencodeSessionId` runs) — those
  * previously rendered as an empty transcript after a reload.
+ *
+ * Transcript v2 (docs/transcript-v2-design.md §8, OPENSESSION_TRANSCRIPT_V2=1
+ * only): when the session's history has been imported into the owned
+ * transcript store and the mirror files show no unexplained growth beyond the
+ * import watermark, this serves the store's entries instead (bounded wire
+ * forms — the /entry/:id route resolves full content). On drift it triggers a
+ * re-import (upserts make that idempotent) and serves legacy for that call.
+ * With the flag off the behavior is byte-identical to the legacy merge.
  */
 export function mergedSessionTranscript(
-  session: Pick<
-    UnifiedSession,
-    "transcriptPath" | "opencodeSessionId" | "claudeSessionId"
-  >
+  session: TranscriptSessionRef
+): TranscriptEntry[] {
+  if (
+    transcriptV2Enabled() &&
+    session.id &&
+    // Linear/Plain loop runs don't journal a unified session id in v1 (§3) —
+    // their store rows would be forever partial; they stay fully legacy.
+    !session.id.startsWith("linear-") &&
+    !session.id.startsWith("plain-")
+  ) {
+    try {
+      const served = v2StoreTranscript(session.id, session);
+      if (served) return served;
+    } catch (e) {
+      console.warn(
+        `[sessions] transcript v2 read failed for ${session.id} — legacy path:`,
+        e instanceof Error ? e.message : e
+      );
+    }
+  }
+  return legacyMergedSessionTranscript(session);
+}
+
+/** The pre-v2 merge (transcript file(s) + opencode store), unchanged. */
+function legacyMergedSessionTranscript(
+  session: TranscriptSessionRef
 ): TranscriptEntry[] {
   const fileEntries = session.transcriptPath
     ? parseTranscript(session.transcriptPath)
@@ -138,6 +179,154 @@ export function mergedSessionTranscript(
   return merged.sort((a, b) =>
     (a.timestamp || "").localeCompare(b.timestamp || "")
   );
+}
+
+// ── Transcript v2 read path (docs/transcript-v2-design.md §8) ───────────────
+// Everything here is only reached when OPENSESSION_TRANSCRIPT_V2=1 AND the
+// caller passed a session id; transcriptStore() is never touched otherwise
+// (its DB open is lazy).
+
+function transcriptV2Enabled(): boolean {
+  return envAlias("OPENSESSION_TRANSCRIPT_V2", "BACKSTAGE_TRANSCRIPT_V2") === "1";
+}
+
+/** Mirror-tail window scanned when deciding whether growth beyond the import
+ *  watermark is already in the store (flag-on dual-writes) or real drift. */
+const V2_TAIL_SCAN_BYTES = 256 * 1024;
+/** Non-empty tail lines examined before giving up (→ treated as drift). */
+const V2_TAIL_SCAN_LINES = 40;
+
+/** The legacy files that still grow for this session (same candidate set as
+ *  the backfill's watermark: the session transcript file + the oc mirror). */
+function v2MirrorFiles(
+  session: TranscriptSessionRef
+): { path: string; size: number }[] {
+  const candidates: string[] = [];
+  if (session.transcriptPath) candidates.push(session.transcriptPath);
+  const ocId =
+    session.opencodeSessionId ||
+    (isOpencodeSessionId(session.claudeSessionId) ? session.claudeSessionId : null);
+  if (ocId) {
+    const ocPath = existingOpencodeTranscriptPath(ocId);
+    if (ocPath && !candidates.includes(ocPath)) candidates.push(ocPath);
+  }
+  const files: { path: string; size: number }[] = [];
+  for (const path of candidates) {
+    try {
+      files.push({ path, size: statSync(path).size });
+    } catch {
+      // missing candidate — nothing to drift against from it
+    }
+  }
+  return files;
+}
+
+/**
+ * Does the newest content of a mirror file already live in the store? Parses
+ * the last complete jsonl lines of the file (bounded window) into entries and
+ * probes the store for the newest entry id. True = the growth is explained by
+ * the flag-on dual-writes; false = unverifiable or genuinely missing → drift.
+ */
+function v2MirrorTailInStore(
+  store: TranscriptStore,
+  sessionId: string,
+  file: { path: string; size: number }
+): boolean {
+  if (file.size === 0) return true;
+  const start = Math.max(0, file.size - V2_TAIL_SCAN_BYTES);
+  let text: string;
+  try {
+    const fd = openSync(file.path, "r");
+    try {
+      const buf = Buffer.alloc(Math.min(file.size, V2_TAIL_SCAN_BYTES));
+      const read = readSync(fd, buf, 0, buf.length, start);
+      text = buf.subarray(0, read).toString("utf-8");
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+  const lines = text.split("\n");
+  // Reading mid-file: the first line is (probably) partial — drop it.
+  if (start > 0) lines.shift();
+  let checked = 0;
+  for (let i = lines.length - 1; i >= 0 && checked < V2_TAIL_SCAN_LINES; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    checked++;
+    let entries: TranscriptEntry[];
+    try {
+      entries = parseJsonlLines([line]);
+    } catch {
+      continue;
+    }
+    // One mirror line fans out to N entries (§1a) — probe the newest id.
+    const last = entries.filter((e) => typeof e.id === "string" && e.id).pop();
+    if (!last) continue; // meta/summary line — keep walking back
+    return store.getFullEntry(sessionId, last.id) !== null;
+  }
+  // No verifiable entry in the tail window (e.g. one giant trailing line) —
+  // treat as drift; the re-import refreshes the watermark so this stays a
+  // once-per-growth cost, not a per-read one.
+  return false;
+}
+
+/** Every stored entry for the session, ascending seq (paged readSince). */
+function v2ReadAll(store: TranscriptStore, sessionId: string): TranscriptEntry[] {
+  const PAGE = 2000;
+  const out: TranscriptEntry[] = [];
+  let since = 0;
+  for (;;) {
+    const page = store.readSince(sessionId, since, PAGE);
+    if (!page.entries.length) break;
+    out.push(...page.entries);
+    since = page.entries[page.entries.length - 1].seq;
+    if (page.entries.length < PAGE) break;
+  }
+  return out;
+}
+
+/**
+ * §8 store-serve decision: entries from the store when imported and the
+ * mirror shows no unexplained growth; null → caller falls back to legacy; on
+ * drift this re-imports (idempotent upserts) and returns the legacy merge
+ * for this call directly.
+ */
+function v2StoreTranscript(
+  sessionId: string,
+  session: TranscriptSessionRef
+): TranscriptEntry[] | null {
+  const store = transcriptStore();
+  if (!store.hasImported(sessionId)) return null;
+  const info = store.getImportInfo(sessionId);
+  const files = v2MirrorFiles(session);
+  // No mirror files at all → nothing to drift against; the store is the best
+  // (only) source.
+  if (!files.length) return v2ReadAll(store, sessionId);
+  const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+  if (info?.watermark != null && totalSize <= info.watermark)
+    return v2ReadAll(store, sessionId);
+  // Mirror grew beyond the watermark (or none was recorded). The growth is
+  // explained when the newest mirror content already reached the store via
+  // the flag-on dual-writes — verify by tail probe, then refresh the
+  // watermark so the next read fast-paths on size alone.
+  if (files.every((f) => v2MirrorTailInStore(store, sessionId, f))) {
+    store.markImported(sessionId, info?.src || "merged", totalSize);
+    return v2ReadAll(store, sessionId);
+  }
+  // Unexplained growth → drift (§8): re-import (upserts keep original seqs,
+  // making this safe to repeat) and serve legacy for THIS call.
+  const legacy = legacyMergedSessionTranscript(session);
+  try {
+    store.importLegacyTranscript(sessionId, legacy, info?.src || "merged", totalSize);
+  } catch (e) {
+    console.warn(
+      `[sessions] transcript v2 drift re-import failed for ${sessionId}:`,
+      e instanceof Error ? e.message : e
+    );
+  }
+  return legacy;
 }
 
 /**
