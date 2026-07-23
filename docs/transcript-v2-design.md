@@ -159,8 +159,14 @@ sandbox/adapters/bootstrap.ts (ActiveRunRecord carries both ids). Slack loop alr
 at the same recordBksSessionFor site (journal.bksSessionId wins when both are set); their
 journal stays kind-only, so resume/run-state/MCP-identity semantics are untouched, and
 `linear-` sessions are v2-eligible (serve gate + backfill). Plain loop runs still thread no
-unified id: their sessions remain REFUSED v2 serve (gate on the `plain-` id prefix) on the
-fully-working legacy path; a follow-up threads transcriptSessionId through that loop too.**
+unified id — investigated 2026-07-23 and left that way deliberately: plain sessions have no UI
+surface, because nothing ever mints a `plain-` unified session id (SessionSource is
+slack|linear|backstage|cli; sessions.ts scans only those stores; the only `plain-` string in the
+tree is a git *branch* name, src/agents/plain/handlers.ts:351; the plain loop's ActiveSession map
+is in-memory keyed by threadId and never scanned; and plain *triage* automations run as ordinary
+`bks-*` backstage sessions, which are already v2-eligible via their journaled bksSessionId). The
+`plain-` gates are therefore defensive dead code — kept as cheap insurance should such an id
+family ever appear.**
 
 **Import-first invariant (critical):** before assigning the first live seq for a session, the
 store append path checks transcript_sessions; if never imported, it synchronously runs the
