@@ -45,6 +45,7 @@ import {
 	IconBell,
 	IconCheck,
 	IconClock,
+	IconFile,
 	IconGlobe,
 	IconPlay,
 	IconPullRequest,
@@ -64,7 +65,7 @@ import {
  * fallbacks. The PR is fetched here and refreshed on a slow interval.
  */
 
-type PanelTab = "changes" | "terminal" | "pr" | "staging";
+type PanelTab = "changes" | "terminal" | "pr" | "staging" | "assets";
 
 type ReviewRequestInfo = {
 	to: string;
@@ -99,6 +100,9 @@ interface Props {
 	onReviewChange?: (sessionId: string, req: ReviewRequestInfo | null) => void;
 	/** Jump to a sibling tab when a status chip / reply row is clicked. */
 	onOpenTab?: (tab: PanelTab) => void;
+	/** Whether the session has scratch assets — gates the Info panel's Assets
+	    button, which opens the full-width Assets view-tab. */
+	hasAssets?: boolean;
 	/** Prefill the composer (the per-comment "Add to chat" hover action). */
 	onAddToInput?: (text: string) => void;
 	/** Navigate to a session — used by Auto-fix, which spins up a new chat in this
@@ -1185,6 +1189,7 @@ export function WorkspaceInfo({
 	send,
 	liveMediaCount,
 	liveMedia = [],
+	hasAssets = false,
 }: Props) {
 	const chatsKey = chats.map((c) => c.id).join(",");
 	const cacheKey = workspaceId || `chats:${chatsKey}`;
@@ -1436,6 +1441,17 @@ export function WorkspaceInfo({
 					>
 						<IconGlobe />
 						Staging
+					</button>
+				)}
+				{hasAssets && (
+					<button
+						type="button"
+						className="workspace-info-review-btn"
+						onClick={() => onOpenTab?.("assets")}
+						title="Open the session's assets full-width"
+					>
+						<IconFile />
+						Assets
 					</button>
 				)}
 				{pr?.number && repo === "tella-fusion" && (

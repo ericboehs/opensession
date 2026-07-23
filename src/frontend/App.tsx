@@ -738,14 +738,16 @@ function App() {
 	// unrepresentable; the two show-flags derive from it. Reset to chat whenever
 	// the open session changes.
 	const [activeViewTab, setActiveViewTab] = useState<
-		"review" | "staging" | null
+		"review" | "staging" | "assets" | null
 	>(null);
 	const reviewActive = activeViewTab === "review";
 	const stagingActive = activeViewTab === "staging";
+	const assetsActive = activeViewTab === "assets";
 	// Sessions whose Review / Staging view-tab is present in the strip; empty by
 	// default (a tab is added when its pane is first opened).
 	const [reviewOpen, setReviewOpen] = useState<Set<string>>(() => new Set());
 	const [stagingOpen, setStagingOpen] = useState<Set<string>>(() => new Set());
+	const [assetsOpen, setAssetsOpen] = useState<Set<string>>(() => new Set());
 	// Bumped when the per-workspace tab order changes (a drag-drop commit, or a
 	// storage push from another tab) so the strip re-derives `projectChats` in
 	// the new order. The order itself lives in localStorage (lib/tab-order).
@@ -1132,8 +1134,25 @@ function App() {
 					},
 				]
 			: [];
-	// Review leftmost, then Staging.
-	const viewTabs: ViewTab[] = [...reviewViewTabs, ...stagingViewTabs];
+	// The Assets view-tab (the session's scratch artifacts, full-width) — opened
+	// from the Info panel's Assets button. Present once opened for this session.
+	const assetsViewTabs: ViewTab[] =
+		currentSession && assetsOpen.has(currentSession.id)
+			? [
+					{
+						id: `assets:${currentSession.id}`,
+						label: "Assets",
+						active: assetsActive,
+						dotClass: null,
+					},
+				]
+			: [];
+	// Review leftmost, then Staging, then Assets.
+	const viewTabs: ViewTab[] = [
+		...reviewViewTabs,
+		...stagingViewTabs,
+		...assetsViewTabs,
+	];
 	// Foreground/dismiss the Review view-tab; onOpenReview re-adds a dismissed
 	// one (fired by the PR status chip / "open PR" affordances in SessionViewer).
 	function openReview() {
@@ -1181,6 +1200,29 @@ function App() {
 			});
 		}
 		if (stagingActive) setActiveViewTab(null);
+	}
+	// Open/foreground this session's Assets view-tab (the Info panel's Assets
+	// button). Adds the tab to the strip if absent.
+	function openAssets() {
+		if (!currentSession) return;
+		const id = currentSession.id;
+		setAssetsOpen((prev) => {
+			if (prev.has(id)) return prev;
+			return new Set(prev).add(id);
+		});
+		setActiveViewTab("assets");
+	}
+	function closeAssetsTab() {
+		if (currentSession) {
+			const id = currentSession.id;
+			setAssetsOpen((prev) => {
+				if (!prev.has(id)) return prev;
+				const next = new Set(prev);
+				next.delete(id);
+				return next;
+			});
+		}
+		if (assetsActive) setActiveViewTab(null);
 	}
 	// Open a session's Review tab from the sidebar: select it and foreground its
 	// Review once it lands (pendingReviewOpen survives the session-change reset).
@@ -1953,11 +1995,19 @@ function App() {
 							viewTabs={viewTabs}
 							onSelectView={(id) =>
 								setActiveViewTab(
-									id.startsWith("staging:") ? "staging" : "review",
+									id.startsWith("staging:")
+										? "staging"
+										: id.startsWith("assets:")
+											? "assets"
+											: "review",
 								)
 							}
 							onCloseView={(id) =>
-								id.startsWith("staging:") ? closeStagingTab() : closeReviewTab()
+								id.startsWith("staging:")
+									? closeStagingTab()
+									: id.startsWith("assets:")
+										? closeAssetsTab()
+										: closeReviewTab()
 							}
 							onNewChat={handleNewChat}
 							onRename={async (id, title) => {
@@ -2130,9 +2180,12 @@ function App() {
 									workspaceChats={projectChats}
 									showReview={reviewActive}
 									showStaging={stagingActive}
+									showAssets={assetsActive}
 									onOpenReview={openReview}
 									onOpenStaging={openStaging}
 									onCloseStaging={closeStagingTab}
+									onOpenAssets={openAssets}
+									onCloseAssets={closeAssetsTab}
 									onOpenWorkspace={() => setActiveViewTab(null)}
 									allSessions={sessions}
 									allProjects={projects}

@@ -221,7 +221,16 @@ interface Props {
 	onOpenStaging?: () => void;
 	/** Close this session's Staging view-tab (the deploy vanished, e.g. PR merged). */
 	onCloseStaging?: () => void;
-	/** Return from a view-tab (Review/Staging) to this workspace's active chat. */
+	/**
+	 * Whether the Assets pane (the session's scratch artifacts, full-width) is
+	 * foregrounded — driven by the top tab strip's Assets view-tab (App state).
+	 */
+	showAssets?: boolean;
+	/** Open/foreground this session's Assets view-tab (the Info panel's Assets button). */
+	onOpenAssets?: () => void;
+	/** Close this session's Assets view-tab (its last asset was deleted). */
+	onCloseAssets?: () => void;
+	/** Return from a view-tab (Review/Staging/Assets) to this workspace's active chat. */
 	onOpenWorkspace?: () => void;
 }
 
@@ -466,12 +475,15 @@ export function SessionViewer({
 	showStaging = false,
 	onOpenStaging,
 	onCloseStaging,
+	showAssets = false,
+	onOpenAssets,
+	onCloseAssets,
 	onOpenWorkspace,
 }: Props) {
-	// A full-width view-tab (Review or Staging) takes over the chat column, so
-	// the chat DOM isn't mounted while either is up — the scroll / history /
-	// scroll-restore effects below must bail in both cases.
-	const chatHidden = showReview || showStaging;
+	// A full-width view-tab (Review, Staging, or Assets) takes over the chat
+	// column, so the chat DOM isn't mounted while any is up — the scroll /
+	// history / scroll-restore effects below must bail in all cases.
+	const chatHidden = showReview || showStaging || showAssets;
 	const [cachedTranscript] = useState(() => peekCachedTranscriptView(session.id));
 	const [entries, setEntries] = useState<TranscriptEntry[]>(
 		() => withModelSwitches(cachedTranscript?.entries ?? [], session.modelHistory),
@@ -2993,6 +3005,12 @@ export function SessionViewer({
 	useEffect(() => {
 		if (showStaging && stagingSettled && !stagingUrl) onCloseStaging?.();
 	}, [showStaging, stagingSettled, stagingUrl, onCloseStaging]);
+	// The Assets pane is a top-strip view-tab too (App owns whether it's
+	// foregrounded). If the last asset is deleted while its tab is up, close it
+	// rather than leave an empty pane pointing at nothing.
+	useEffect(() => {
+		if (showAssets && assetFiles.length === 0) onCloseAssets?.();
+	}, [showAssets, assetFiles.length, onCloseAssets]);
 	const [previewStatus, setPreviewStatus] = useState<PreviewStatus | null>(null);
 	const previewUrl =
 		previewStatus?.running && previewStatus.previewUrl
@@ -3660,6 +3678,7 @@ export function SessionViewer({
 										reviewRequestSessionId={effectiveReview?.ownerId}
 										onReviewChange={onReviewChange}
 										send={connected ? send : undefined}
+										hasAssets={assetFiles.length > 0}
 										onOpenTab={(tab) => {
 											setInfoPageOpen(false);
 											setSubagentStack([]);
@@ -3671,6 +3690,10 @@ export function SessionViewer({
 											}
 											if (tab === "staging") {
 												onOpenStaging?.();
+												return;
+											}
+											if (tab === "assets") {
+												onOpenAssets?.();
 												return;
 											}
 											selectPanelTab(tab);
@@ -3853,6 +3876,18 @@ export function SessionViewer({
 									login, so it can&apos;t be embedded here.
 								</div>
 							</div>
+						</div>
+					) : showAssets ? (
+						// The session's scratch assets, full-width (same component
+						// the Info panel's Assets button opens). AssetsPanel is
+						// `h-full`, so the flex-column viewer-review-main gives it
+						// height exactly like the Review PrPanel.
+						<div className="viewer-review-main">
+							<AssetsPanel
+								sessionId={session.id}
+								files={assetFiles}
+								refresh={refreshAssets}
+							/>
 						</div>
 					) : showReview && hasWorkspace ? (
 						<div className="viewer-review-main">
@@ -4367,18 +4402,9 @@ export function SessionViewer({
 									) : null}
 								</button>
 							)}
-							{/* Scratch artifacts the agent saved for previewing (works in
-							    ask mode too — no workspace needed). Appears once the first
-							    file lands; the assets_changed broadcast keeps it live. */}
-							{assetFiles.length > 0 && (
-								<button
-									className={`panel-tab ${panelTab === "assets" ? "active" : ""}`}
-									onClick={() => selectPanelTab("assets")}
-								>
-									Assets
-									<span className="panel-tab-count">{assetFiles.length}</span>
-								</button>
-							)}
+							{/* Assets are a full-width main-area view-tab now (opened
+							    from the Info panel's Assets button), so there's no
+							    sidebar assets tab — see the Assets view-tab in App.tsx. */}
 							{sessionReports.length > 0 && (
 								<button
 									className={`panel-tab ${panelTab === "reports" ? "active" : ""}`}
@@ -4413,12 +4439,15 @@ export function SessionViewer({
 									reviewRequestSessionId={effectiveReview?.ownerId}
 									onReviewChange={onReviewChange}
 									send={connected ? send : undefined}
+									hasAssets={assetFiles.length > 0}
 									onOpenTab={(tab) =>
 										tab === "pr"
 											? onOpenReview?.()
 											: tab === "staging"
 												? onOpenStaging?.()
-												: selectPanelTab(tab)
+												: tab === "assets"
+													? onOpenAssets?.()
+													: selectPanelTab(tab)
 									}
 									onAddToInput={(text) =>
 										setComposerPrefill((p) => ({
@@ -4456,14 +4485,6 @@ export function SessionViewer({
 									onCancel={cancelWorkflowRun}
 									subagents={subagents}
 									onOpenSubagent={openSubagent}
-								/>
-							) : panelTab === "assets" ? (
-								// Also before the Plain fallthrough: assets exist for
-								// ask/Plain sessions with no code workspace.
-								<AssetsPanel
-									sessionId={session.id}
-									files={assetFiles}
-									refresh={refreshAssets}
 								/>
 							) : panelTab === "reports" ? (
 								<SessionReportsPanel reports={sessionReports} />
