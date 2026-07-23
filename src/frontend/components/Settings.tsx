@@ -37,10 +37,10 @@ import {
 	type SendKeyPref,
 } from "../lib/send-key";
 import {
-	getBusySendPref,
+	getBusySendPrefs,
 	setBusySendPref,
 	onBusySendChanged,
-	type BusySendPref,
+	type BusySendPrefs,
 } from "../lib/busy-send-pref";
 import {
 	getVimModePref,
@@ -1655,12 +1655,12 @@ function AuditPanel() {
 /** Composer preferences — per-browser, like theme (lib/send-key). */
 function ComposerPanel() {
 	const [sendKey, setSendKey] = useState<SendKeyPref>(getSendKeyPref);
-	const [busySend, setBusySend] = useState<BusySendPref>(getBusySendPref);
+	const [busySend, setBusySend] = useState<BusySendPrefs>(getBusySendPrefs);
 	const [vimMode, setVimMode] = useState<boolean>(getVimModePref);
 	const [pinNew, setPinNew] = useState<boolean>(getPinNewSessions);
 	const [pinNewWs, setPinNewWs] = useState<boolean>(getPinNewWorkspaces);
 	useEffect(() => onSendKeyChanged(() => setSendKey(getSendKeyPref())), []);
-	useEffect(() => onBusySendChanged(() => setBusySend(getBusySendPref())), []);
+	useEffect(() => onBusySendChanged(() => setBusySend(getBusySendPrefs())), []);
 	useEffect(() => onVimModeChanged(() => setVimMode(getVimModePref())), []);
 	useEffect(
 		() => onPinNewSessionsChanged(() => setPinNew(getPinNewSessions())),
@@ -1696,30 +1696,48 @@ function ComposerPanel() {
 					title="Follow-up behavior"
 					desc={
 						<>
-							What sending does while the agent is busy. Queue waits until
-							the run fully finishes (including running worker sessions);
-							Steer folds your message into the running turn at its next
-							step, without stopping the work. Stored per user, follows you
-							across devices.
-							{sendKey === "enter" && (
-								<div className="text-dim text-xs mt-1">
-									Hold {MOD_ENTER_GLYPH} while sending to do the other one
-								</div>
-							)}
+							What {sendKey === "enter" ? "Enter" : "sending"} does while the
+							agent is busy. Queue waits until the run fully finishes
+							(including running worker sessions); Steer folds your message
+							into the running turn at its next step, without stopping the
+							work. Stored per user, follows you across devices.
 						</>
 					}
 					control={
 						<Select
 							label="Follow-up behavior"
-							value={busySend}
+							value={busySend.enter}
 							options={[
 								{ value: "queue", label: "Queue" },
 								{ value: "steer", label: "Steer" },
 							]}
-							onChange={setBusySendPref}
+							onChange={(v) => setBusySendPref("enter", v)}
 						/>
 					}
 				/>
+				{sendKey === "enter" && (
+					<SettingRow
+						title={`${MOD_ENTER_LABEL} while busy`}
+						desc={
+							<>
+								What {MOD_ENTER_GLYPH} does while the agent is busy — set both
+								to the same action if you never want the modifier to change
+								it. Also applies when ⌘/Ctrl-clicking the send button.
+							</>
+						}
+						control={
+							<Select
+								label={`${MOD_ENTER_LABEL} while busy`}
+								value={busySend.mod}
+								options={[
+									{ value: "queue", label: "Queue" },
+									{ value: "steer", label: "Steer" },
+								]}
+								onChange={(v) => setBusySendPref("mod", v)}
+							/>
+						}
+					/>
+				)}
 				<SettingRow
 					title="Vim mode"
 					desc="Modal editing in the message composer: Esc for normal mode, the usual motions and operators, i to type. Enter still sends."
