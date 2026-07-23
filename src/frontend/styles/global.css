@@ -711,7 +711,9 @@ html.wco .app-body.sidebar-collapsed .detail-topbar-title {
 		content: "";
 		position: absolute;
 		top: 0;
-		bottom: 0;
+		/* Cover the host's translucent bottom border too; otherwise text passing
+		   underneath can show through its 1px border box. */
+		bottom: -1px;
 		left: -400px;
 		right: -400px;
 		z-index: -1;
