@@ -99,7 +99,16 @@ export function SideChatConversation({
 		setStreamText("");
 		setPending(null);
 		followRef.current = true;
-		send({ type: "watch", sessionId: sideChatId, user: getCurrentUser() });
+		// supportsSeq: transcript v2 capability (transcript-v2-design.md §5).
+		// This view merges by entry id and never uses offset/rev cursors or
+		// history paging, so seq-mode frames need no extra state here; old
+		// servers ignore the field entirely.
+		send({
+			type: "watch",
+			sessionId: sideChatId,
+			user: getCurrentUser(),
+			supportsSeq: true,
+		});
 
 		const unsubscribe = addHandler((msg) => {
 			if ("sessionId" in msg && msg.sessionId && msg.sessionId !== sideChatId)

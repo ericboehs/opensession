@@ -507,6 +507,12 @@ export type WSClientMessage =
 			 *  transcript_init replace and replays only the gap from the jsonl. */
 			sinceOffset?: number;
 			sinceRev?: string;
+			/** Transcript v2 capability: this bundle understands seq-cursor
+			 *  frames (transcript-v2-design.md §5). Old servers ignore it. */
+			supportsSeq?: boolean;
+			/** Seq-mode resume cursor: the lastSeq of the last v2 frame this
+			 *  client received for the session (used instead of offset/rev). */
+			sinceSeq?: number;
 	  }
 	| { type: "unwatch"; sessionId: string }
 	| {
@@ -514,6 +520,9 @@ export type WSClientMessage =
 			sessionId: string;
 			beforeOffset?: number;
 			beforeRev?: string;
+			/** Transcript v2 seq paging: earliest seq the client holds — the
+			 *  server returns the page just before it. */
+			beforeSeq?: number;
 	  }
 	| {
 			type: "prompt";
@@ -634,6 +643,12 @@ export type WSServerMessage =
 			 *  reconnect watch as sinceOffset/sinceRev. */
 			endOffset?: number;
 			rev?: string;
+			/** Transcript v2 (seq protocol): present iff served from the owned
+			 *  store. firstSeq/lastSeq bound the shipped entries' seqs; their
+			 *  presence switches the client into seq mode for the session. */
+			v2?: boolean;
+			firstSeq?: number;
+			lastSeq?: number;
 	  }
 	| {
 			/** Older entries: the bulk of a two-stage init, or one "load earlier"
@@ -643,6 +658,10 @@ export type WSServerMessage =
 			entries: TranscriptEntry[];
 			truncated?: boolean;
 			startOffset?: number;
+			/** Transcript v2 seq page bounds (see transcript_init). */
+			v2?: boolean;
+			firstSeq?: number;
+			lastSeq?: number;
 	  }
 	| {
 			type: "transcript_append";
@@ -651,6 +670,12 @@ export type WSServerMessage =
 			/** Resume cursor after this append (see transcript_init.endOffset). */
 			endOffset?: number;
 			rev?: string;
+			/** Transcript v2 seq bounds. Upsert republishes reuse the entry's
+			 *  ORIGINAL seq, so firstSeq can sit below the client's lastSeq —
+			 *  merge by id, track lastSeq as a max, never assume monotonic. */
+			v2?: boolean;
+			firstSeq?: number;
+			lastSeq?: number;
 	  }
 	| { type: "session_status"; sessionId?: string; isRunning: boolean }
 	| { type: "presence"; sessionId: string; viewers: string[] }

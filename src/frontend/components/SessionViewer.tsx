@@ -326,6 +326,9 @@ function mergeEntries(
 type CachedTranscriptView = {
 	entries: TranscriptEntry[];
 	cursor: { sessionId: string; rev: string; offset: number } | null;
+	/** Transcript v2 seq-mode state (null = legacy mode), so a session
+	 *  switch-back resumes with sinceSeq instead of re-snapshotting. */
+	seq: { sessionId: string; lastSeq: number; firstSeq: number | null } | null;
 	historyTruncated: boolean;
 	historyStart: number | null;
 	scrollTop: number;
@@ -487,6 +490,18 @@ export function SessionViewer({
 		rev: string;
 		offset: number;
 	} | null>(cachedTranscript?.cursor ?? null);
+	// Transcript v2 seq mode (transcript-v2-design.md §5): when init/append
+	// frames carry seq fields the server is serving from the owned store —
+	// resume watches with sinceSeq, page older history with beforeSeq, and
+	// ignore offset/rev cursors while in this mode. null = legacy mode (old
+	// server or ineligible session): behavior byte-identical to pre-v2.
+	// lastSeq tracks the newest seq seen (max — upsert republishes reuse old
+	// seqs); firstSeq the earliest loaded (the "load earlier" cursor).
+	const transcriptSeqRef = useRef<{
+		sessionId: string;
+		lastSeq: number;
+		firstSeq: number | null;
+	} | null>(cachedTranscript?.seq ?? null);
 	// No transcript file yet (a fresh chat that hasn't run) → nothing to load;
 	// render the empty chat immediately instead of a "Loading transcript…" flash.
 	const [loading, setLoading] = useState(
@@ -778,6 +793,7 @@ export function SessionViewer({
 		cacheTranscriptView(session.id, {
 			entries,
 			cursor: transcriptCursorRef.current,
+			seq: transcriptSeqRef.current,
 			historyTruncated,
 			historyStart: historyStartRef.current,
 			scrollTop: el?.scrollTop ?? previous?.scrollTop ?? 0,
@@ -1372,17 +1388,23 @@ export function SessionViewer({
 
 		// Resume rather than re-snapshot when this exact session's transcript is
 		// still mounted (a reconnect blip, not a session switch) and we hold a
-		// cursor from a previous frame.
+		// cursor from a previous frame. Seq mode (transcript v2) resumes with
+		// sinceSeq; legacy with the byte cursor. supportsSeq advertises the
+		// capability — old servers ignore it and behave exactly as before.
 		const cursor = transcriptCursorRef.current;
+		const seqState = transcriptSeqRef.current;
+		const ready = transcriptReadySessionRef.current === session.id;
 		const resume =
-			transcriptReadySessionRef.current === session.id &&
-			cursor?.sessionId === session.id
-				? { sinceOffset: cursor.offset, sinceRev: cursor.rev }
-				: {};
+			ready && seqState?.sessionId === session.id
+				? { sinceSeq: seqState.lastSeq }
+				: ready && cursor?.sessionId === session.id
+					? { sinceOffset: cursor.offset, sinceRev: cursor.rev }
+					: {};
 		send({
 			type: "watch",
 			sessionId: session.id,
 			user: getCurrentUser(),
+			supportsSeq: true,
 			...resume,
 		});
 
@@ -1415,14 +1437,34 @@ export function SessionViewer({
 					// Weave persisted model switches into the conversation as dividers.
 					const merged = withModelSwitches(msg.entries, session.modelHistory);
 					transcriptReadySessionRef.current = session.id;
-					if (typeof msg.endOffset === "number" && msg.rev) {
-						transcriptCursorRef.current = {
+					// Mode detection (transcript v2): an init carrying seq fields
+					// switches this session into seq mode; one without switches it
+					// back to legacy (e.g. the flag was turned off — the resume
+					// falls back to a full legacy snapshot). Init frames are
+					// authoritative for the mode.
+					const v2 = msg.v2 === true && typeof msg.lastSeq === "number";
+					if (v2) {
+						transcriptSeqRef.current = {
 							sessionId: session.id,
-							rev: msg.rev,
-							offset: msg.endOffset,
+							lastSeq: msg.lastSeq!,
+							firstSeq:
+								typeof msg.firstSeq === "number" && msg.firstSeq > 0
+									? msg.firstSeq
+									: null,
 						};
-					} else {
+						// Seq mode ignores offset/rev cursors entirely.
 						transcriptCursorRef.current = null;
+					} else {
+						transcriptSeqRef.current = null;
+						if (typeof msg.endOffset === "number" && msg.rev) {
+							transcriptCursorRef.current = {
+								sessionId: session.id,
+								rev: msg.rev,
+								offset: msg.endOffset,
+							};
+						} else {
+							transcriptCursorRef.current = null;
+						}
 					}
 					setEntries(merged);
 					setHistoryTruncated(!!msg.truncated);
@@ -1430,8 +1472,9 @@ export function SessionViewer({
 					setLoading(false);
 					// Pagination cursor for "load earlier" (the byte offset the shipped
 					// tail begins at). The rest of a two-stage init and each history
-					// page arrive as transcript_history below.
-					if (typeof msg.startOffset === "number") {
+					// page arrive as transcript_history below. Seq mode pages with
+					// beforeSeq instead, so the byte cursor stays untouched there.
+					if (!v2 && typeof msg.startOffset === "number") {
 						historyStartRef.current = msg.startOffset;
 					}
 					break;
@@ -1454,7 +1497,20 @@ export function SessionViewer({
 					});
 					setHistoryTruncated(!!msg.truncated);
 					setLoadingHistory(false);
-					if (typeof msg.startOffset === "number") {
+					const seqState = transcriptSeqRef.current;
+					const inSeqMode = seqState?.sessionId === session.id;
+					if (
+						inSeqMode &&
+						msg.v2 === true &&
+						typeof msg.firstSeq === "number" &&
+						msg.firstSeq > 0
+					) {
+						// Older-page cursor: earliest seq loaded so far (min).
+						seqState.firstSeq =
+							seqState.firstSeq === null
+								? msg.firstSeq
+								: Math.min(seqState.firstSeq, msg.firstSeq);
+					} else if (!inSeqMode && typeof msg.startOffset === "number") {
 						historyStartRef.current =
 							historyStartRef.current === null
 								? msg.startOffset
@@ -1463,7 +1519,21 @@ export function SessionViewer({
 					break;
 				}
 				case "transcript_append": {
-					if (typeof msg.endOffset === "number" && msg.rev) {
+					const seqState = transcriptSeqRef.current;
+					const inSeqMode = seqState?.sessionId === session.id;
+					if (inSeqMode) {
+						// Seq mode: track the resume cursor as a max — upsert
+						// republishes reuse the entry's ORIGINAL seq, so a frame's
+						// lastSeq can sit below what we already hold. Offset/rev
+						// fields (if any) are ignored while in this mode.
+						if (
+							msg.v2 === true &&
+							typeof msg.lastSeq === "number" &&
+							msg.lastSeq > 0
+						) {
+							seqState.lastSeq = Math.max(seqState.lastSeq, msg.lastSeq);
+						}
+					} else if (typeof msg.endOffset === "number" && msg.rev) {
 						transcriptCursorRef.current = {
 							sessionId: session.id,
 							rev: msg.rev,
@@ -1956,6 +2026,20 @@ export function SessionViewer({
 				});
 		}
 		setLoadingHistory(true);
+		const seqState = transcriptSeqRef.current;
+		if (seqState?.sessionId === session.id) {
+			// Seq mode (transcript v2): page backwards from the earliest seq we
+			// hold. Without a usable cursor the server falls back to a full
+			// legacy resend, same as the legacy no-offset case below.
+			send({
+				type: "load_history",
+				sessionId: session.id,
+				...(seqState.firstSeq !== null && seqState.firstSeq > 1
+					? { beforeSeq: seqState.firstSeq }
+					: {}),
+			});
+			return;
+		}
 		const cursor = transcriptCursorRef.current;
 		send({
 			type: "load_history",
