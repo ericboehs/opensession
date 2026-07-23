@@ -315,9 +315,14 @@ async function poolExec(
   if (!isDaytona(c)) return dockerExec(c.name, script, timeoutMs);
   try {
     const sbx = await daytonaSbx(c.name);
+    // Plain `bash -c`, NOT `-l`: a login shell sources the image profile,
+    // which execs a zsh the snapshot doesn't ship (live failure 22:08).
+    // PATH additions are explicit in every script that needs them. No cwd:
+    // the workspace doesn't exist until the toolchain step creates it —
+    // every script cd's or uses absolute paths itself.
     const res = await sbx.process.executeCommand(
-      `bash -lc ${JSON.stringify(script)}`,
-      WORKSPACE,
+      `bash -c ${JSON.stringify(script)}`,
+      undefined,
       undefined,
       Math.max(10, Math.round(timeoutMs / 1000)),
     );
