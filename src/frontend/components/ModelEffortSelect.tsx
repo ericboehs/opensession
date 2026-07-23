@@ -384,10 +384,21 @@ export function ModelEffortSelect({
 				)}
 				title={title}
 				disabled={disabled || (!hasEffort && modelDisabled)}
-				aria-label={hasEffort ? "Model and reasoning effort" : "Model"}
+				aria-label={
+					hasAccount
+						? "Model, reasoning effort, and provider account"
+						: hasEffort
+							? "Model and reasoning effort"
+							: "Model"
+				}
 			>
 				<span className="palette-pill-label">{modelLabel}</span>
 				{hasEffort && <span className="palette-pill-effort flex-none text-faint">{effortLabel}</span>}
+				{hasAccount && (
+					<span className="max-w-32 flex-none truncate text-faint">
+						Account: {accountLabel}
+					</span>
+				)}
 			</Menu.Trigger>
 			<Menu.Popup align="end" sideOffset={6} className="max-w-[min(360px,calc(100vw-1rem))]">
 				{groupedPrimary
