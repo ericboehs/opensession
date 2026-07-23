@@ -94,6 +94,7 @@ import { envAlias, stateDir } from "./rename-compat";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { pickCodexAccount, listCodexAccounts, type CodexAccount } from "./codex-accounts";
 import { isLocalProfile } from "./profile";
+import { userMatchesAny } from "./shared/user-mappings";
 import { localCodexAccount, localOpencodeDataRoot } from "./local-engine-auth";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -157,17 +158,18 @@ export function maskOpenaiAccount(account: CodexAccount): string {
  * accounts in list order; otherwise the normal codex pool pick
  * (least-recently-used, exhaustion-aware).
  *
- * NB: unlike the Claude pool, CodexAccount has no `owner` field today — every
- * codex account is a shared pool account, so there is no personal-vs-pool
- * distinction (and thus no "another user's personal account" to fail closed
- * against) to enforce here yet. If codex accounts gain owners, add the same
- * fail-closed owner filter pickMeridianAccount uses.
+ * Owner rule (mirrors pickMeridianAccount, fail-closed): a personal codex
+ * account (`owner` set) is only ever returned for its owner's runs — including
+ * when it is named in the designated list — and the pool pick prefers the run
+ * user's own personal accounts over the shared pool. Runs with no `user`
+ * (automations, one-shots) only ever see owner-less pool accounts.
  */
 export function pickOpenaiAccount(
   model: string,
   ids?: string[],
   sessionKey?: string,
-  out?: { reason?: string }
+  out?: { reason?: string },
+  user?: string
 ): CodexAccount | { error: string } {
   if (isLocalProfile()) return localCodexAccount();
   const all = listCodexAccounts();
@@ -178,10 +180,11 @@ export function pickOpenaiAccount(
         "(kind: home) or API-key codex account (add one in Connections)",
     };
   }
+  const allowedOwner = (a: CodexAccount) => !a.owner || (!!user && userMatchesAny(user, [a.owner]));
   if (ids?.length) {
     for (const id of ids) {
       const a = all.find((x) => x.id === id);
-      if (a) {
+      if (a && allowedOwner(a)) {
         if (out) out.reason = "designated";
         return a;
       }
@@ -189,7 +192,7 @@ export function pickOpenaiAccount(
     const known = ids.join(", ");
     return { error: `no designated openai account is configured (bridge.openaiAccounts: ${known})` };
   }
-  const picked = pickCodexAccount(undefined, model, sessionKey, out);
+  const picked = pickCodexAccount(undefined, model, sessionKey, out, user);
   if (picked) return picked;
   return { error: "no usable codex account for opencode/openai (all currently sidelined)" };
 }
@@ -284,10 +287,10 @@ export function buildSeededOpenaiAuth(
  * THIS run's opencode/openai/* traffic, and the seed file for each "home"
  * account. Mirrors pickOpenaiAccount's eligibility exactly — an explicit
  * bridge.openaiAccounts list restricts to those ids; otherwise the whole pool.
- * `_user` is accepted (threaded from the run spec, mirroring
- * accountsForRemoteUpload) but unused today: CodexAccount has no `owner`
- * field, so every codex account is a shared pool account — if owners land,
- * filter here fail-closed exactly like the Claude slice.
+ * `user` scopes the slice fail-closed exactly like the Claude
+ * accountsForRemoteUpload: another user's personal (`owner`-carrying) account
+ * never leaves the box — runs with no user get pool (owner-less) accounts
+ * only.
  *
  * "home" accounts whose seed can't be built (expired access token, unreadable
  * auth.json) are EXCLUDED from the upload — an unusable-remotely account must
@@ -296,17 +299,20 @@ export function buildSeededOpenaiAuth(
 export function buildOpenaiRemoteSeedUpload(
   accounts: CodexAccount[],
   restrictIds?: string[],
-  _user?: string
+  user?: string
 ): {
   accounts: CodexAccount[];
   seeds: Array<{ accountId: string; content: string }>;
   skipped: Array<{ account: CodexAccount; reason: string }>;
 } {
-  const eligible = restrictIds?.length
-    ? restrictIds
-        .map((id) => accounts.find((a) => a.id === id))
-        .filter((a): a is CodexAccount => !!a)
-    : accounts;
+  const allowedOwner = (a: CodexAccount) => !a.owner || (!!user && userMatchesAny(user, [a.owner]));
+  const eligible = (
+    restrictIds?.length
+      ? restrictIds
+          .map((id) => accounts.find((a) => a.id === id))
+          .filter((a): a is CodexAccount => !!a)
+      : accounts
+  ).filter(allowedOwner);
   const out: CodexAccount[] = [];
   const seeds: Array<{ accountId: string; content: string }> = [];
   const skipped: Array<{ account: CodexAccount; reason: string }> = [];

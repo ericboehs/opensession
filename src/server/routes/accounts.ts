@@ -8,7 +8,7 @@
 
 import type { RouteContext } from "./context";
 import { addAccount, listAccountsPublic, refreshAllUsage, removeAccount, setAccountOwner } from "../claude-accounts";
-import { addCodexAccount, listCodexAccountsPublic, removeCodexAccount } from "../codex-accounts";
+import { addCodexAccount, listCodexAccountsPublic, removeCodexAccount, setCodexAccountOwner } from "../codex-accounts";
 
 export async function handleAccountsRoutes(
 	ctx: RouteContext,
@@ -86,7 +86,12 @@ export async function handleAccountsRoutes(
 				{ status: 400 },
 			);
 		}
-		const result = addCodexAccount(body.name, body.kind, body.value);
+		const result = addCodexAccount(
+			body.name,
+			body.kind,
+			body.value,
+			typeof body.owner === "string" ? body.owner : undefined,
+		);
 		if ("error" in result) return Response.json(result, { status: 400 });
 		return Response.json(result);
 	}
@@ -97,6 +102,17 @@ export async function handleAccountsRoutes(
 	if (codexAccountDelMatch && req.method === "DELETE") {
 		return removeCodexAccount(decodeURIComponent(codexAccountDelMatch[1]))
 			? Response.json({ ok: true })
+			: Response.json({ error: "Not found" }, { status: 404 });
+	}
+	// Set/clear an account's personal owner ({"owner": "Michiel"} or "").
+	if (codexAccountDelMatch && req.method === "PUT") {
+		const body = await req.json().catch(() => null);
+		const updated = setCodexAccountOwner(
+			decodeURIComponent(codexAccountDelMatch[1]),
+			typeof body?.owner === "string" ? body.owner : undefined,
+		);
+		return updated
+			? Response.json(updated)
 			: Response.json({ error: "Not found" }, { status: 404 });
 	}
 

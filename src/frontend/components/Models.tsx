@@ -51,6 +51,7 @@ interface CodexAccountInfo {
 	name: string;
 	kind: "api_key" | "home";
 	valueMasked: string;
+	owner?: string;
 	createdAt: string;
 	exhaustedUntil: string | null;
 	usable: boolean;
@@ -594,6 +595,22 @@ function CodexAccountsSection() {
 		return () => clearInterval(t);
 	}, [load]);
 
+	async function handleSetOwner(a: CodexAccountInfo, owner: string) {
+		if (owner === (a.owner || "")) return;
+		try {
+			const res = await fetch(`${BASE_PATH}/api/codex-accounts/${encodeURIComponent(a.id)}`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ owner }),
+			});
+			const body = await res.json();
+			if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+			load();
+		} catch (e: any) {
+			setError(e.message);
+		}
+	}
+
 	async function handleRemove(a: CodexAccountInfo) {
 		if (!confirm(`Remove Codex account "${a.name}"? Runs will stop using it.`)) return;
 		try {
@@ -668,7 +685,29 @@ function CodexAccountsSection() {
 									<span className="font-mono">{a.valueMasked}</span>
 								</div>
 							</div>
-							<div className="setting-row-control">
+							<div className="setting-row-control flex flex-col items-stretch gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+								<select
+									className="ui-select"
+									value={a.owner || ""}
+									onChange={(e) => handleSetOwner(a, e.target.value)}
+									aria-label={`Owner of ${a.name}`}
+									title={
+										a.owner
+											? `${a.owner}'s personal subscription — their runs use it first, everyone else never does.`
+											: "Shared pool account — used by everyone and by automations."
+									}
+								>
+									<option value="">Shared pool</option>
+									{/* Keep a non-team owner (e.g. set via API) selectable. */}
+									{a.owner && !TEAM.includes(a.owner) && (
+										<option value={a.owner}>👤 {a.owner}</option>
+									)}
+									{TEAM.map((name) => (
+										<option key={name} value={name}>
+											👤 {name}
+										</option>
+									))}
+								</select>
 								<button
 									className="btn-small btn-small-danger"
 									onClick={() => handleRemove(a)}
@@ -683,7 +722,8 @@ function CodexAccountsSection() {
 			</div>
 			<div className="settings-hint">
 				The pool for GPT/Codex session runs — runs rotate to the next account when one hits its
-				usage limit.
+				usage limit. A personal account is used first by its owner's runs and never by anyone
+				else's; automations only use the shared pool.
 			</div>
 		</>
 	);
@@ -793,6 +833,7 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 	const [name, setName] = useState("");
 	const [kind, setKind] = useState<"api_key" | "home">("home");
 	const [value, setValue] = useState("");
+	const [owner, setOwner] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -803,7 +844,12 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 			const res = await fetch(`${BASE_PATH}/api/codex-accounts`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ name: name.trim(), kind, value: value.trim() }),
+				body: JSON.stringify({
+					name: name.trim(),
+					kind,
+					value: value.trim(),
+					...(owner.trim() ? { owner: owner.trim() } : {}),
+				}),
 			});
 			const body = await res.json();
 			if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
@@ -844,6 +890,17 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 						onChange={(e) => setValue(e.target.value)}
 						placeholder={kind === "api_key" ? "sk-…" : "/home/ubuntu/.codex-accounts/tella-dev"}
 					/>
+				</label>
+				<label title="Personal sub: this person's runs use the account first, with the shared pool as backup — nobody else's runs touch it. Shared pool = used by everyone and by automations.">
+					Owner
+					<select value={owner} onChange={(e) => setOwner(e.target.value)}>
+						<option value="">Shared pool</option>
+						{TEAM.map((n) => (
+							<option key={n} value={n}>
+								👤 {n}
+							</option>
+						))}
+					</select>
 				</label>
 			</div>
 
