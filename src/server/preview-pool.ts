@@ -130,8 +130,12 @@ interface PoolContainer {
    *  claimed = attached to a session worktree. */
   state: "warming" | "ready" | "paused" | "claimed";
   hostPort: number;
-  /** origin/<default> sha the workspace was reset to at boot (sync base). */
+  /** origin/<default> sha the workspace was reset to at boot. */
   bootSha: string;
+  /** Commit the workspace tree is currently converged to (defaults to
+   *  bootSha; updated when a claim checks out the session's HEAD). The
+   *  uncommitted-file sync diffs against THIS. */
+  syncBase?: string;
   createdAt: string;
   sessionWorktree?: string;
   claimedAt?: string;
@@ -713,6 +717,7 @@ export async function claimPoolPreview(repoId: string, worktreeDir: string): Pro
     }
   }
   try {
+    await convergeContainerToWorktree(repo, worktreeDir, pick);
     await syncWorktreeIntoContainer(repo, worktreeDir, pick);
   } catch (e) {
     console.warn(`[preview-pool] initial sync into ${pick.name} failed:`, e);
@@ -735,6 +740,83 @@ export async function releasePoolPreview(worktreeDir: string): Promise<boolean> 
 }
 
 // ── Worktree -> container file sync ──────────────────────────────────────────
+
+/**
+ * Converge the container workspace's TRACKED tree to the worktree's HEAD via
+ * `git checkout -f` — atomic adds/removes, so ReScript/Turbopack never see an
+ * incoherent module graph. (File-level copying of a big reverse delta broke
+ * exactly that way on an old branch: main-only modules got deleted while
+ * files importing them stayed — Michiel's Module-not-found, 2026-07-23.)
+ *
+ * Object transfer, in order:
+ *  1. shallow fetch of the exact sha from the remote (works whenever the
+ *     commit is pushed — the overwhelmingly common case here);
+ *  2. streamed `git bundle` from the host worktree (covers un-pushed local
+ *     commits, which are by construction ahead of a pushed/known base).
+ * Returns the sha the workspace now sits at (the sync base for uncommitted
+ * file diffs).
+ */
+async function convergeContainerToWorktree(
+  repo: Repo,
+  worktreeDir: string,
+  c: PoolContainer,
+): Promise<string> {
+  const base = c.syncBase || c.bootSha;
+  const head = (await $`git -C ${worktreeDir} rev-parse HEAD`.quiet().nothrow().text()).trim();
+  if (!head || head === base) return base;
+
+  const inContainer = async (sha: string) =>
+    (await dockerExec(c.name, `git -C ${WORKSPACE} cat-file -e ${sha}`)).ok;
+
+  if (!(await inContainer(head))) {
+    const cloneUrl = cloneUrlFor(repo);
+    let fetched = false;
+    if (cloneUrl) {
+      const r = await dockerExec(
+        c.name,
+        `cd ${WORKSPACE} && git fetch -q --depth 1 ${JSON.stringify(cloneUrl)} ${head}`,
+        3 * 60_000,
+      );
+      fetched = r.ok;
+    }
+    if (!fetched) {
+      // Un-pushed HEAD: stream a bundle of HEAD ^base from the host.
+      const bundle = Bun.spawn(
+        ["git", "-C", worktreeDir, "bundle", "create", "-", "HEAD", `^${base}`],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      const recv = Bun.spawn(
+        ["docker", "exec", "-i", c.name, "bash", "-c", "cat > /tmp/claim.bundle"],
+        { stdin: bundle.stdout, stdout: "ignore", stderr: "pipe" },
+      );
+      const [bcode, rcode] = await Promise.all([bundle.exited, recv.exited]);
+      if (bcode !== 0 || rcode !== 0) {
+        throw new Error(`bundle transfer failed (git=${bcode} docker=${rcode})`);
+      }
+      const f = await dockerExec(
+        c.name,
+        `cd ${WORKSPACE} && git fetch -q /tmp/claim.bundle HEAD && rm -f /tmp/claim.bundle`,
+        2 * 60_000,
+      );
+      if (!f.ok) throw new Error(`bundle fetch failed: ${f.out.slice(-300)}`);
+    }
+  }
+
+  const co = await dockerExec(
+    c.name,
+    `cd ${WORKSPACE} && git checkout -q -f ${head} && git rev-parse HEAD`,
+    2 * 60_000,
+  );
+  if (!co.ok || !co.out.includes(head)) {
+    throw new Error(`in-container checkout of ${head.slice(0, 10)} failed: ${co.out.slice(-300)}`);
+  }
+  patchContainer(repo.id, c.name, { syncBase: head });
+  c.syncBase = head;
+  console.log(
+    `[preview-pool] ${c.name}: workspace converged ${base.slice(0, 10)} -> ${head.slice(0, 10)}`,
+  );
+  return head;
+}
 
 /**
  * Changed files between the container's bootSha and the worktree's current
@@ -766,8 +848,9 @@ async function syncWorktreeIntoContainer(
   c: PoolContainer,
   mtimes?: Map<string, number>,
 ): Promise<void> {
-  if (!c.bootSha) return;
-  const { copy, drop } = await changedFiles(worktreeDir, c.bootSha);
+  const base = c.syncBase || c.bootSha;
+  if (!base) return;
+  const { copy, drop } = await changedFiles(worktreeDir, base);
   const toCopy: string[] = [];
   for (const rel of copy) {
     const abs = join(worktreeDir, rel);
@@ -802,13 +885,27 @@ async function syncWorktreeIntoContainer(
 function startSyncLoop(repo: Repo, worktreeDir: string, c: PoolContainer): void {
   stopSyncLoop(worktreeDir);
   const mtimes = new Map<string, number>();
+  let busyTick = false;
   const timer = setInterval(() => {
+    if (busyTick) return; // a converge can outlast the interval
+    busyTick = true;
     void (async () => {
       const claim = poolClaimFor(worktreeDir);
       if (!claim || claim.containerName !== c.name) return stopSyncLoop(worktreeDir);
       if ((await containerRunning(c.name)) !== "running") return stopSyncLoop(worktreeDir);
+      // The agent may commit mid-session — re-converge when HEAD moves so
+      // tracked changes land atomically, then sync uncommitted files.
+      const head = (await $`git -C ${worktreeDir} rev-parse HEAD`.quiet().nothrow().text()).trim();
+      if (head && head !== (c.syncBase || c.bootSha)) {
+        await convergeContainerToWorktree(repo, worktreeDir, c).catch((e) =>
+          console.warn(`[preview-pool] re-converge of ${c.name} failed:`, e),
+        );
+        mtimes.clear();
+      }
       await syncWorktreeIntoContainer(repo, worktreeDir, c, mtimes).catch(() => {});
-    })();
+    })().finally(() => {
+      busyTick = false;
+    });
   }, 2000);
   (timer as { unref?: () => void }).unref?.();
   syncs.set(worktreeDir, { timer, mtimes });
