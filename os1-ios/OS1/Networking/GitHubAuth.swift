@@ -51,16 +51,26 @@ enum GitHubAuth {
         let deadline = Date().addingTimeInterval(TimeInterval(flow.expiresIn ?? 900))
         while Date() < deadline {
             try await Task.sleep(for: .seconds(interval))
-            let poll: PollResponse = try await post(
-                "/api/auth/device/poll",
-                body: ["deviceCode": flow.deviceCode, "native": true]
-            )
+            let poll: PollResponse
+            do {
+                poll = try await post(
+                    "/api/auth/device/poll",
+                    body: ["deviceCode": flow.deviceCode, "native": true]
+                )
+            } catch is URLError {
+                // Entering the code happens outside the app (Safari/GitHub), so
+                // a poll is often in flight when iOS suspends us and fails with
+                // a network error on resume. That's not a failed sign-in — keep
+                // polling until the code expires.
+                continue
+            }
             switch poll.status {
             case "ok":
                 guard let token = poll.token, !token.isEmpty else {
                     throw AuthError.server("Server returned no token — is it up to date?")
                 }
                 ServerConfig.shared.token = token
+                ServerConfig.shared.githubLogin = poll.login ?? ""
                 if let name = poll.name, !name.isEmpty {
                     ServerConfig.shared.userName = name
                 }

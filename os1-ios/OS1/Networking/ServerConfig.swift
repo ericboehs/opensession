@@ -13,6 +13,7 @@ final class ServerConfig {
 
     private static let urlDefaultsKey = "os1.serverURL"
     private static let userNameDefaultsKey = "os1.userName"
+    private static let githubLoginDefaultsKey = "os1.githubLogin"
     private static let tokenKeychainKey = "os1.token"
 
     var baseURLString: String {
@@ -26,10 +27,18 @@ final class ServerConfig {
         didSet { UserDefaults.standard.set(userName, forKey: Self.userNameDefaultsKey) }
     }
 
+    /// GitHub login the current token was minted for — empty when the token
+    /// was pasted manually. Persisted so Settings can show the signed-in
+    /// state across launches.
+    var githubLogin: String {
+        didSet { UserDefaults.standard.set(githubLogin, forKey: Self.githubLoginDefaultsKey) }
+    }
+
     var token: String {
         didSet {
             if token.isEmpty {
                 Keychain.delete(Self.tokenKeychainKey)
+                githubLogin = ""
             } else {
                 Keychain.set(token, for: Self.tokenKeychainKey)
             }
@@ -44,6 +53,7 @@ final class ServerConfig {
             ?? UserDefaults.standard.string(forKey: Self.urlDefaultsKey)
             ?? "https://os.tella.dev"
         userName = UserDefaults.standard.string(forKey: Self.userNameDefaultsKey) ?? "ios"
+        githubLogin = UserDefaults.standard.string(forKey: Self.githubLoginDefaultsKey) ?? ""
         token = env["OS1_TOKEN"] ?? Keychain.get(Self.tokenKeychainKey) ?? ""
     }
 

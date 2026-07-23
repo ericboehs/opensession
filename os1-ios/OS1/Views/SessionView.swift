@@ -3,6 +3,9 @@ import SwiftUI
 struct SessionView: View {
     @State private var viewModel: SessionViewModel
     @FocusState private var inputFocused: Bool
+    /// The initial transcript batch arrives async over the socket; it must land
+    /// pre-scrolled to the bottom, not animate down from the top.
+    @State private var hasPlacedInitialTranscript = false
 
     init(session: Session) {
         _viewModel = State(initialValue: SessionViewModel(session: session))
@@ -32,8 +35,13 @@ struct SessionView: View {
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: viewModel.entries.count) {
-                scrollToBottom(proxy, animated: true)
+            .onChange(of: viewModel.displayItems.last?.id) {
+                if hasPlacedInitialTranscript {
+                    scrollToBottom(proxy, animated: true)
+                } else {
+                    scrollToBottom(proxy, animated: false)
+                    hasPlacedInitialTranscript = !viewModel.displayItems.isEmpty
+                }
             }
             .onChange(of: viewModel.liveText) {
                 scrollToBottom(proxy, animated: false)

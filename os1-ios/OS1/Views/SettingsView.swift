@@ -12,8 +12,12 @@ struct SettingsView: View {
     // sheet (or tapping Cancel) stops the background polling.
     @State private var deviceFlow: GitHubAuth.DeviceFlowStart?
     @State private var pollTask: Task<Void, Never>?
-    @State private var signedInAs: String?
     @State private var signInError: String?
+
+    private var signedInLogin: String? {
+        let login = ServerConfig.shared.githubLogin
+        return login.isEmpty || token.isEmpty ? nil : login
+    }
 
     var body: some View {
         NavigationStack {
@@ -49,17 +53,18 @@ struct SettingsView: View {
                             }
                         }
                         .padding(.vertical, 4)
+                    } else if let signedInLogin {
+                        HStack {
+                            Label("Signed in as @\(signedInLogin)", systemImage: "checkmark.seal")
+                            Spacer()
+                            Button("Sign out", role: .destructive) { signOut() }
+                        }
                     } else {
                         Button {
                             startSignIn()
                         } label: {
                             Label("Sign in with GitHub", systemImage: "person.badge.key")
                         }
-                    }
-                    if let signedInAs {
-                        Text("Signed in as @\(signedInAs).")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
                     }
                     if let signInError {
                         Text(signInError)
@@ -110,17 +115,15 @@ struct SettingsView: View {
 
     private func startSignIn() {
         signInError = nil
-        signedInAs = nil
         // The flow talks to the server, so the URL field must be applied first.
         ServerConfig.shared.baseURLString = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
         pollTask = Task {
             do {
                 let flow = try await GitHubAuth.start()
                 deviceFlow = flow
-                let login = try await GitHubAuth.waitForAuthorization(flow)
+                _ = try await GitHubAuth.waitForAuthorization(flow)
                 token = ServerConfig.shared.token
                 userName = ServerConfig.shared.userName
-                signedInAs = login
                 checkResult = nil
             } catch is CancellationError {
                 // user cancelled — nothing to report
@@ -138,10 +141,21 @@ struct SettingsView: View {
         deviceFlow = nil
     }
 
+    private func signOut() {
+        // Clearing the token also clears githubLogin (ServerConfig.token didSet).
+        ServerConfig.shared.token = ""
+        token = ""
+    }
+
     private func save() {
         ServerConfig.shared.baseURLString = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
         ServerConfig.shared.userName = userName.trimmingCharacters(in: .whitespacesAndNewlines)
-        ServerConfig.shared.token = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedToken != ServerConfig.shared.token {
+            // A manually pasted token isn't the GitHub sign-in's token anymore.
+            ServerConfig.shared.githubLogin = ""
+        }
+        ServerConfig.shared.token = trimmedToken
     }
 
     private func testConnection() async {
