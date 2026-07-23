@@ -651,12 +651,10 @@ function mineStatus(s: UnifiedSession): MineStatus {
 }
 
 // PR state overrides the manual review bands. A merged PR means the work is
-// done → the row leaves every review band and falls into the "Done" status
-// lane. An approved-but-unmerged PR means the reviewer already signed off on
-// GitHub → the review has landed, so the row leaves "Awaiting review" and moves
-// to "Reviewed" (same as a manual "Mark as reviewed"). Without this a session
-// you sent out sits in "Awaiting review" forever, since the band otherwise only
-// clears on a manual accept.
+// done and falls into the "Done" status lane. An approved-but-unmerged PR means
+// the review has landed, so the row leaves the sidebar until another review is
+// requested. Without this a session you sent out sits in "Awaiting review"
+// forever, since the band otherwise only clears on a manual accept.
 function wsPrMerged(r: { chats: UnifiedSession[] }): boolean {
 	return r.chats.some((c) => c.prState === "MERGED");
 }
@@ -690,7 +688,6 @@ const DEFAULT_EXPANDED = [
 	"pinned",
 	"needsreview",
 	"awaitingreview",
-	"reviewed",
 	"status:needsinput",
 	"status:merged",
 	"status:pending",
@@ -1438,8 +1435,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				!wsPrMerged(r) &&
 				!wsPrApproved(r) &&
 				// You already reviewed the PR on GitHub (approve/changes/comment,
-				// no re-request since) → your part is done, the row moves to
-				// "Reviewed" instead of nagging you here.
+				// no re-request since) → your part is done, so hide the row.
 				!wsPrReviewGivenBy(r, me) &&
 				r.chats.some(
 					(c) =>
@@ -1467,22 +1463,20 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						c.reviewRequest?.by?.toLowerCase() === me &&
 						!c.reviewRequest?.accepted &&
 						// The reviewer already gave their review on GitHub → the
-						// request landed; the row belongs in "Reviewed", not here.
+						// request landed, so it leaves the sidebar.
 						!wsPrReviewGivenBy(r, c.reviewRequest.to.toLowerCase()),
 				),
 		);
 	}, [reviewScopeRows, currentUser, needsReviewRows]);
-	// Reviewed: the request landed — the reviewer signed off via the info
-	// panel's "Mark as reviewed" (`reviewRequest.accepted`), approved the PR on
-	// GitHub (`prReviewDecision === "APPROVED"`, wsPrApproved), or submitted
+	// Completed reviews are hidden from the sidebar, but their keys still need to
+	// be excluded from the normal status lanes. A fresh or reopened request clears
+	// the completion state and makes the row actionable again. Completion can come
+	// from the info panel's "Mark as reviewed" (`reviewRequest.accepted`), approval
+	// on GitHub (`prReviewDecision === "APPROVED"`, wsPrApproved), or submitted
 	// their review on GitHub in any form (approve/changes/comment, no pending
-	// re-request — wsPrReviewGivenBy). Shown to
-	// both parties (asker or reviewer) so a session you sent out reads as done
-	// instead of vanishing back into the status lanes, and the reviewer sees their
-	// sign-off confirmed. Accepted/approved rows leave Needs / Awaiting and land
-	// here instead. A merged PR skips this band entirely — it's fully done, so it
-	// belongs in the "Done" status lane, not "Reviewed".
-	const reviewedRows = useMemo(() => {
+	// re-request — wsPrReviewGivenBy). A merged PR skips this hidden set because it
+	// belongs in the "Done" status lane.
+	const completedReviewRows = useMemo(() => {
 		const me = currentUser.toLowerCase();
 		return reviewScopeRows.filter((r) => {
 			if (wsPrMerged(r)) return false;
@@ -1504,16 +1498,17 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			);
 		});
 	}, [reviewScopeRows, currentUser]);
-	// Every workspace pulled into a review band (Needs / Awaiting / Reviewed) —
-	// excluded from the pinned/status lanes below so it lives in exactly one place.
+	// Every workspace with active or completed review state is excluded from the
+	// pinned/status lanes. Completed rows therefore disappear rather than falling
+	// back into Backlog.
 	const reviewBandKeys = useMemo(
 		() =>
 			new Set([
 				...needsReviewRows.map((r) => r.key),
 				...awaitingReviewRows.map((r) => r.key),
-				...reviewedRows.map((r) => r.key),
+				...completedReviewRows.map((r) => r.key),
 			]),
-		[needsReviewRows, awaitingReviewRows, reviewedRows],
+		[needsReviewRows, awaitingReviewRows, completedReviewRows],
 	);
 	const pinnedWsRows = useMemo(() => {
 		const pinSet = new Set(pins);
@@ -1559,7 +1554,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		() => [
 			...needsReviewRows,
 			...awaitingReviewRows,
-			...reviewedRows,
 			...pinnedWsRows,
 			...MINE_STATUS_META.flatMap((meta) =>
 				focusWsRows.filter((r) => r.status === meta.key),
@@ -1568,7 +1562,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		[
 			needsReviewRows,
 			awaitingReviewRows,
-			reviewedRows,
 			pinnedWsRows,
 			focusWsRows,
 		],
@@ -1578,7 +1571,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const workspaceListEmpty =
 		needsReviewRows.length === 0 &&
 		awaitingReviewRows.length === 0 &&
-		reviewedRows.length === 0 &&
 		pinnedWsRows.length === 0 &&
 		focusWsRows.length === 0;
 
@@ -3066,41 +3058,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									/>
 								</button>
 								{awaitingReviewRows
-									.filter(
-										(r) => open || r.chats.some((c) => c.id === selectedId),
-									)
-									.map(renderWsRow)}
-							</div>
-						);
-					})()}
-
-				{/* ── Reviewed: the request landed — the reviewer signed off. Shown to
-				    both the asker and the reviewer so a session sent out for review
-				    reads as done rather than dropping back into the status lanes. ── */}
-				{reviewedRows.length > 0 &&
-					(() => {
-						const open = isOpen("reviewed");
-						return (
-							<div className="sidebar-group sidebar-group--review">
-								<button
-									className="sidebar-group-header"
-									onClick={() => toggleGroup("reviewed")}
-								>
-									<IconCheck
-										className="sidebar-group-icon"
-										style={{ color: "var(--green)" }}
-									/>
-									<span className="sidebar-group-name">Reviewed</span>
-									<span className="sidebar-group-count">
-										{reviewedRows.length}
-									</span>
-									<IconChevronDown
-										className="sidebar-group-chevron"
-										size={22}
-										style={{ transform: open ? "none" : "rotate(-90deg)" }}
-									/>
-								</button>
-								{reviewedRows
 									.filter(
 										(r) => open || r.chats.some((c) => c.id === selectedId),
 									)
