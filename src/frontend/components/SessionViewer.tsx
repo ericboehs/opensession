@@ -773,6 +773,12 @@ export function SessionViewer({
 		session.id,
 		addHandler,
 	);
+	// Which asset the main-area Assets view-tab previews — set when an asset row
+	// in the Info panel is clicked (the main-tab tree is hidden, so the Info-panel
+	// list is the navigator).
+	const [selectedAssetPath, setSelectedAssetPath] = useState<string | null>(
+		null,
+	);
 	const sessionReports = useSessionReports(session.id, addHandler);
 	const panelResizeHandle = (
 		<div
@@ -3678,7 +3684,12 @@ export function SessionViewer({
 										reviewRequestSessionId={effectiveReview?.ownerId}
 										onReviewChange={onReviewChange}
 										send={connected ? send : undefined}
-										hasAssets={assetFiles.length > 0}
+										assets={assetFiles}
+										onOpenAsset={(path) => {
+											setInfoPageOpen(false);
+											setSelectedAssetPath(path);
+											onOpenAssets?.();
+										}}
 										onOpenTab={(tab) => {
 											setInfoPageOpen(false);
 											setSubagentStack([]);
@@ -3887,6 +3898,8 @@ export function SessionViewer({
 								sessionId={session.id}
 								files={assetFiles}
 								refresh={refreshAssets}
+								selectedPath={selectedAssetPath}
+								showTree={false}
 							/>
 						</div>
 					) : showReview && hasWorkspace ? (
@@ -4439,7 +4452,11 @@ export function SessionViewer({
 									reviewRequestSessionId={effectiveReview?.ownerId}
 									onReviewChange={onReviewChange}
 									send={connected ? send : undefined}
-									hasAssets={assetFiles.length > 0}
+									assets={assetFiles}
+									onOpenAsset={(path) => {
+										setSelectedAssetPath(path);
+										onOpenAssets?.();
+									}}
 									onOpenTab={(tab) =>
 										tab === "pr"
 											? onOpenReview?.()

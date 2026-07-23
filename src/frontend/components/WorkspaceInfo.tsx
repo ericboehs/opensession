@@ -18,6 +18,7 @@ import {
 	type PrAgentAction,
 	type WorkspaceMediaItem,
 	type WorkspaceOverview,
+	type SessionAssetFile,
 } from "../lib/api";
 import { getCurrentUser, TEAM } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
@@ -100,9 +101,11 @@ interface Props {
 	onReviewChange?: (sessionId: string, req: ReviewRequestInfo | null) => void;
 	/** Jump to a sibling tab when a status chip / reply row is clicked. */
 	onOpenTab?: (tab: PanelTab) => void;
-	/** Whether the session has scratch assets — gates the Info panel's Assets
-	    button, which opens the full-width Assets view-tab. */
-	hasAssets?: boolean;
+	/** The session's scratch assets — listed in the Info panel; clicking one
+	    opens the full-width Assets view-tab focused on that file. */
+	assets?: SessionAssetFile[];
+	/** Open the Assets view-tab focused on a specific asset (a list-row click). */
+	onOpenAsset?: (path: string) => void;
 	/** Prefill the composer (the per-comment "Add to chat" hover action). */
 	onAddToInput?: (text: string) => void;
 	/** Navigate to a session — used by Auto-fix, which spins up a new chat in this
@@ -217,6 +220,12 @@ function cleanCommentMarkdown(body: string): string {
 		.replace(/<[^>]+>/g, "") // remaining tags → keep inner text
 		.replace(/\n{3,}/g, "\n\n")
 		.trim();
+}
+
+function fmtBytes(n: number): string {
+	if (n < 1024) return `${n} B`;
+	if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+	return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
 const STATUS_CHAR: Record<DiffFile["status"], string> = {
@@ -1189,7 +1198,8 @@ export function WorkspaceInfo({
 	send,
 	liveMediaCount,
 	liveMedia = [],
-	hasAssets = false,
+	assets = [],
+	onOpenAsset,
 }: Props) {
 	const chatsKey = chats.map((c) => c.id).join(",");
 	const cacheKey = workspaceId || `chats:${chatsKey}`;
@@ -1382,7 +1392,8 @@ export function WorkspaceInfo({
 			comments.length > 0 ||
 			changed.length > 0 ||
 			(data && data.prompt) ||
-			media.length > 0,
+			media.length > 0 ||
+			assets.length > 0,
 	);
 
 	return (
@@ -1441,17 +1452,6 @@ export function WorkspaceInfo({
 					>
 						<IconGlobe />
 						Staging
-					</button>
-				)}
-				{hasAssets && (
-					<button
-						type="button"
-						className="workspace-info-review-btn"
-						onClick={() => onOpenTab?.("assets")}
-						title="Open the session's assets full-width"
-					>
-						<IconFile />
-						Assets
 					</button>
 				)}
 				{pr?.number && repo === "tella-fusion" && (
@@ -1619,6 +1619,32 @@ export function WorkspaceInfo({
 												</span>
 											</>
 										)}
+									</button>
+								))}
+							</div>
+						</div>
+					)}
+					{assets.length > 0 && (
+						<div className="workspace-info-section">
+							<div className="workspace-info-label">
+								{assets.length} asset{assets.length === 1 ? "" : "s"}
+							</div>
+							<div className="flex flex-col gap-0.5">
+								{assets.map((a) => (
+									<button
+										key={a.path}
+										type="button"
+										onClick={() => onOpenAsset?.(a.path)}
+										title={`Open ${a.path}`}
+										className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-[12px] text-fg hover:bg-hover"
+									>
+										<IconFile size={14} className="shrink-0 text-faint" />
+										<span className="min-w-0 flex-1 truncate">
+											{a.path}
+										</span>
+										<span className="shrink-0 text-[11px] text-faint">
+											{fmtBytes(a.size)}
+										</span>
 									</button>
 								))}
 							</div>

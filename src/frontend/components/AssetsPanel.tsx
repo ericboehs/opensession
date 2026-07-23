@@ -127,12 +127,24 @@ export function AssetsPanel({
 	sessionId,
 	files,
 	refresh,
+	selectedPath = null,
+	showTree = true,
 }: {
 	sessionId: string;
 	files: SessionAssetFile[];
 	refresh: () => void;
+	/** Controlled selection — when the Info-panel assets list opens a specific
+	 *  asset, the main-tab panel previews it. */
+	selectedPath?: string | null;
+	/** Show the built-in file tree. false in the main-tab preview, where the
+	 *  Info-panel assets list is the navigator instead. */
+	showTree?: boolean;
 }) {
-	const [selected, setSelected] = useState<string | null>(null);
+	const [selected, setSelected] = useState<string | null>(selectedPath);
+	// Follow the controlled selection when the list opens a new asset.
+	useEffect(() => {
+		if (selectedPath) setSelected(selectedPath);
+	}, [selectedPath]);
 	const paths = useMemo(() => files.map((f) => f.path), [files]);
 
 	// Keep the selection while its file survives; otherwise default to the
@@ -197,6 +209,7 @@ export function AssetsPanel({
 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
+			{showTree ? (
 			<div className="flex max-h-[38%] min-h-[88px] flex-col overflow-hidden border-b border-line">
 				<div className="flex items-center justify-between px-3 pt-2 pb-1">
 					<span className="text-[11px] font-medium uppercase tracking-wide text-faint">
@@ -219,6 +232,7 @@ export function AssetsPanel({
 					/>
 				</div>
 			</div>
+			) : null}
 			{file && rawUrl ? (
 				<>
 					<div className="flex items-center gap-2 border-b border-line px-3 py-1.5">
