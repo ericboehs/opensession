@@ -205,7 +205,6 @@ struct ToolCallRow: View {
 /// transcript entry exists.
 struct StreamingBubble: View {
     let text: String
-    var live = true
 
     var body: some View {
         HStack {
@@ -215,10 +214,6 @@ struct StreamingBubble: View {
                         .controlSize(.small)
                 } else {
                     MarkdownBody(text)
-                }
-                if live {
-                    Text("▍")
-                        .foregroundStyle(.tertiary)
                 }
             }
             .padding(.horizontal, 12)
