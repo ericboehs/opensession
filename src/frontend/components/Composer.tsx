@@ -25,7 +25,6 @@ import {
   onSendKeyChanged,
   isSendCombo,
   sendKeyLabel,
-  MOD_ENTER_GLYPH,
 } from "../lib/send-key";
 import { VoiceInput } from "./VoiceInput";
 import { getVimModePref, onVimModeChanged } from "../lib/vim-pref";
@@ -55,7 +54,7 @@ interface Props {
    */
   draftKey?: string;
   /** `steer` is set when the send should fold into the running turn right
-   * away (⌘/Ctrl+Enter or the steer button while a run is busy) — the turn
+   * away (⌘/Ctrl+Enter or Command/Ctrl-click while a run is busy) — the turn
    * keeps running. Plain busy sends queue for after the run fully finishes. */
   onSend: (text: string, opts?: { steer?: boolean }) => boolean | void;
   placeholder?: string;
@@ -278,6 +277,20 @@ export function Composer({
   // "Send messages with" preference (Settings → Composer): Enter or ⌘/Ctrl+Enter.
   const [sendKey, setSendKey] = useState(getSendKeyPref);
   useEffect(() => onSendKeyChanged(() => setSendKey(getSendKeyPref())), []);
+  const [sendModifierHeld, setSendModifierHeld] = useState(false);
+  useEffect(() => {
+    const syncModifier = (e: KeyboardEvent) =>
+      setSendModifierHeld(e.metaKey || e.ctrlKey);
+    const clearModifier = () => setSendModifierHeld(false);
+    window.addEventListener("keydown", syncModifier);
+    window.addEventListener("keyup", syncModifier);
+    window.addEventListener("blur", clearModifier);
+    return () => {
+      window.removeEventListener("keydown", syncModifier);
+      window.removeEventListener("keyup", syncModifier);
+      window.removeEventListener("blur", clearModifier);
+    };
+  }, []);
   // Vim mode preference (Settings → Composer, default off).
   const [vimEnabled, setVimEnabled] = useState(getVimModePref);
   useEffect(() => onVimModeChanged(() => setVimEnabled(getVimModePref())), []);
@@ -335,6 +348,7 @@ export function Composer({
   const hasContent = !!text.trim() || imgs.length > 0 || fls.length > 0 || hasAttached;
   const minimized = isPhone && !focused && !hasContent && !modelMenuOpen;
   const showSend = !busy || hasContent;
+  const steerSend = !!busy && sendModifierHeld;
 
   // Which toolbar popover is open ("add" menu or "goal" editor). Closed on an
   // outside click or after an action.
@@ -852,27 +866,8 @@ export function Composer({
               </button>
             </Tooltip>
           )}
-          {/* Keep the right edge clean: stop + steer (while busy) and send.
-              Niche actions such as scheduling live under the + menu. Plain
-              send while busy ALWAYS queues (delivered once the run fully
-              finishes); steering is only ever explicit — this button or
-              ⌘/Ctrl+Enter. */}
-          {busy && showSend && (
-            <Tooltip
-              label={`Steer — fold into the running turn now, without stopping it${
-                sendKey === "enter" ? ` (${MOD_ENTER_GLYPH})` : ""
-              }`}
-            >
-              <button
-                className="composer-send composer-send-interrupt"
-                {...tapProps(() => fireSend(onSend, { steer: true }))}
-                disabled={disabled || isSendDisabled}
-                aria-label="Steer into the running turn"
-              >
-                <IconCrosshair size={24} />
-              </button>
-            </Tooltip>
-          )}
+          {/* One busy-send button: queue by default, steer while Command/Ctrl is
+              held. Niche actions such as scheduling live under the + menu. */}
           {showSend && (
             <motion.div
               layout="position"
@@ -881,18 +876,37 @@ export function Composer({
             >
               <Tooltip
                 label={
-                  sendTitle ||
-                  (busy
-                    ? `Queue — delivered when the agent fully finishes (${sendKeyLabel(sendKey)})`
-                    : `Send (${sendKeyLabel(sendKey)})`)
+                  steerSend
+                    ? "Steer — fold into the running turn now, without stopping it"
+                    : sendTitle ||
+                      (busy
+                        ? `Queue — delivered when the agent fully finishes; hold ⌘/Ctrl to steer (${sendKeyLabel(sendKey)})`
+                        : `Send (${sendKeyLabel(sendKey)})`)
                 }
               >
                 <button
-                  className={`composer-send ${busy ? "composer-send-queue-main" : ""}`}
-                  {...tapProps(() => fireSend(onSend))}
+                  className={`composer-send ${
+                    steerSend
+                      ? "composer-send-interrupt"
+                      : busy
+                        ? "composer-send-queue-main"
+                        : ""
+                  }`}
+                  {...tapProps(() =>
+                    fireSend(onSend, steerSend ? { steer: true } : undefined),
+                  )}
                   disabled={disabled || isSendDisabled}
+                  aria-label={
+                    steerSend
+                      ? "Steer into the running turn"
+                      : busy
+                        ? "Queue until the current turn finishes"
+                        : "Send message"
+                  }
                 >
-                  {busy ? (
+                  {steerSend ? (
+                    <IconCrosshair size={24} />
+                  ) : busy ? (
                     <IconArrowDownRight size={24} />
                   ) : (
                     <IconArrowUp size={24} />
