@@ -3,6 +3,7 @@ import type { UnifiedSession } from "./types";
 import {
 	buildReviewQueue,
 	prReviewCompletion,
+	reviewRowMatchesPersonFilter,
 	type ReviewQueuePr,
 } from "./review-queue";
 
@@ -50,6 +51,36 @@ function session(
 		...patch,
 	};
 }
+
+describe("reviewRowMatchesPersonFilter", () => {
+	const request = { to: "Kent", by: "Louise", at: "2026-07-23T14:10:00Z" };
+
+	test("shows cross-owner review requests in the default Me view", () => {
+		expect(
+			reviewRowMatchesPersonFilter("louise", [request], "me", "Kent"),
+		).toBe(true);
+	});
+
+	test("keeps explicit teammate filters owner-scoped", () => {
+		expect(
+			reviewRowMatchesPersonFilter("louise", [request], "kent", "Kent"),
+		).toBe(false);
+		expect(
+			reviewRowMatchesPersonFilter("louise", [request], "louise", "Kent"),
+		).toBe(true);
+	});
+
+	test("does not pull unrelated teammates' work into the Me view", () => {
+		expect(
+			reviewRowMatchesPersonFilter(
+				"louise",
+				[{ ...request, to: "Michiel" }],
+				"me",
+				"Kent",
+			),
+		).toBe(false);
+	});
+});
 
 describe("prReviewCompletion", () => {
 	const request = {

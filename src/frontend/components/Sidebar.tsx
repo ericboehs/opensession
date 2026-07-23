@@ -61,6 +61,7 @@ import { Menu } from "../ui/menu";
 import { RepoTile, swatchColor, repoLabel } from "./RepoTile";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { ReviewQueue } from "./ReviewQueue";
+import { reviewRowMatchesPersonFilter } from "../lib/review-queue";
 import { PixelSpinner } from "./PixelSpinner";
 import {
 	readHiddenSidebarTools,
@@ -1418,14 +1419,17 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// and the focus person's rows — shared by the list rendering below and by
 	// archive-next, so both always agree on what's actually in the sidebar.
 	// Rows a teammate flagged for YOUR review (the info panel's Reviewer picker).
-	// Review bands obey the same Person filter as every status lane. In particular,
-	// the default view cannot pull in another person's workspace just because its
-	// review request involves you, and review bands stay out of the Backlog lens.
+	// Explicit teammate filters stay owner-scoped, while the default "Me" view
+	// also includes cross-owner work that was sent to or requested by you.
 	const reviewScopeRows = useMemo(() => {
-		const focus =
-			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
-		if (focus === "unassigned") return [];
-		return wsRows.filter((r) => focus === "everyone" || r.owner === focus);
+		return wsRows.filter((r) =>
+			reviewRowMatchesPersonFilter(
+				r.owner,
+				r.chats.map((chat) => chat.reviewRequest),
+				filter.person,
+				currentUser,
+			),
+		);
 	}, [wsRows, filter.person, currentUser]);
 	const needsReviewRows = useMemo(() => {
 		const me = currentUser.toLowerCase();

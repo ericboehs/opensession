@@ -16,6 +16,26 @@ export interface ReviewQueueItem {
 	status: string;
 }
 
+export function reviewRowMatchesPersonFilter(
+	owner: string,
+	requests: Array<UnifiedSession["reviewRequest"]>,
+	person: string,
+	currentUser: string,
+): boolean {
+	if (person === "unassigned") return false;
+	if (person === "everyone") return true;
+	if (person !== "me") return owner === person;
+
+	const me = currentUser.toLowerCase();
+	return (
+		owner === me ||
+		requests.some(
+			(request) =>
+				request?.to.toLowerCase() === me || request?.by.toLowerCase() === me,
+		)
+	);
+}
+
 export function prReviewCompletion(
 	request: NonNullable<UnifiedSession["reviewRequest"]>,
 	session: UnifiedSession,
