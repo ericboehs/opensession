@@ -919,7 +919,11 @@ function persistPrCache(data: Map<string, Map<string, PrInfo>>) {
 // the rate limit, so an idle instance polls for free. Some mutations may not
 // bump a PR's updatedAt, so a full GraphQL refresh still runs at least every
 // PROBE_MAX_SKIP_MS as a safety net.
-const PROBE_MAX_SKIP_MS = 5 * 60_000;
+// One full sweep costs roughly 580 GraphQL points on the current PR set. A
+// five-minute safety sweep alone could exceed the 5,000-point hourly budget;
+// conditional REST still catches normal PR updates every minute, while this
+// bounds the rare mutation that does not change `updated_at` to 30m staleness.
+const PROBE_MAX_SKIP_MS = 30 * 60_000;
 
 async function repoPrsUnchanged(ghRepo: string): Promise<boolean> {
   const token = await botGhToken();
