@@ -523,6 +523,15 @@ html.wco .app-body.sidebar-collapsed .viewer-header,
 html.wco .app-body.sidebar-collapsed .detail-topbar-title {
 	padding-left: calc(env(titlebar-area-x, 78px) + 148px);
 }
+/* Electron does not reliably subtract a no-drag region when it belongs to an
+   overlapping sibling of the draggable header. The collapsed controls float
+   above that header, so make the underlying row non-draggable in this state;
+   otherwise it intercepts sidebar/back/forward clicks before they reach DOM. */
+html.wco .app-body.sidebar-collapsed
+	:is(.viewer-header, .detail-topbar-title, .pr-bar) {
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}
 .wco-nav-btn {
 	display: inline-flex;
 	align-items: center;
