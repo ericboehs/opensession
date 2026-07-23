@@ -682,7 +682,9 @@ async function ensurePool(repo: Repo): Promise<void> {
   const warming = Object.values(fresh).filter((c) => c.state === "warming");
 
   // Keep `running` ready + `paused` frozen. Excess ready -> pause; shortfall
-  // paused -> unpause the newest (cheap) or boot new ones.
+  // paused -> unpause (cheap); then spawn the WHOLE remaining deficit at
+  // once (bounded) — one-per-tick refills left the pool empty for 10+ min
+  // after a golden rotation, so every click fell back to slow host boots.
   if (ready.length > cfg.running) {
     for (const c of ready.slice(cfg.running)) {
       if ((await docker(["pause", c.name])).ok) patchContainer(repo.id, c.name, { state: "paused" });
@@ -690,19 +692,15 @@ async function ensurePool(repo: Repo): Promise<void> {
   } else if (ready.length < cfg.running && pausedList.length > 0) {
     const c = pausedList[0];
     if ((await docker(["unpause", c.name])).ok) patchContainer(repo.id, c.name, { state: "ready" });
-  } else if (ready.length + warming.length < cfg.running) {
-    await spawnWarmContainer(repo);
   }
 
   const after = readState(repo.id).containers;
-  const pausedNow = Object.values(after).filter((c) => c.state === "paused").length;
-  const warmingNow = Object.values(after).filter((c) => c.state === "warming").length;
-  const readyNow = Object.values(after).filter((c) => c.state === "ready").length;
-  if (readyNow >= cfg.running && pausedNow + warmingNow < cfg.paused) {
-    // Boot one more, the next sweep pauses it once ready (one per tick keeps
-    // the sweep cheap and the host load bounded).
-    await spawnWarmContainer(repo);
+  const live = Object.values(after).filter((c) => c.state !== "claimed").length;
+  const deficit = Math.min(cfg.running + cfg.paused - live, 2); // bound host load
+  if (deficit > 0) {
+    await Promise.all(Array.from({ length: deficit }, () => spawnWarmContainer(repo)));
   }
+  // Freshly-booted extras get paused by the next tick's excess-ready branch.
 }
 
 // ── Claim / release (the preview integration surface) ───────────────────────

@@ -121,8 +121,11 @@ export async function handlePrefsRoutes(
 			}
 			if (m[2] && req.method === "POST") {
 				// Fire-and-forget: a golden rebuild boots a dev server (minutes);
-				// the UI polls GET for progress via `goldenBuilding`.
-				void refreshGoldenImage(repoId, true).catch(() => {});
+				// the UI polls GET for progress via `goldenBuilding`. Refill the
+				// warm pool right after (the rebuild retires old-image spares).
+				void refreshGoldenImage(repoId, true)
+					.then(() => import("../preview-pool").then((p) => p.previewPoolSweepNow()))
+					.catch(() => {});
 				return Response.json({ repos: previewPoolStatus() });
 			}
 		}

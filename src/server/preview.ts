@@ -596,6 +596,17 @@ export async function stopPreview(worktreeDir: string): Promise<PreviewStatus> {
   // host process tree — release it (stops the sync loop, destroys the
   // container) and let the normal status path report the now-empty port.
   if (await releasePoolPreview(worktreeDir)) {
+    // Strip the pool's port from .ports.conf: a later HOST fallback boot
+    // would otherwise adopt the now-free port ("existing" fast path in
+    // allocateHostWebappPort), and any stale tab/status pointing at the old
+    // port would silently show whatever serves there next.
+    const conf = join(worktreeDir, ".ports.conf");
+    if (existsSync(conf)) {
+      try {
+        const text = readFileSync(conf, "utf8");
+        writeFileSync(conf, text.replace(/^WEBAPP_PORT=.*\n?/m, ""));
+      } catch {}
+    }
     return getPreviewStatus(worktreeDir);
   }
   const ports = readPorts(worktreeDir);
