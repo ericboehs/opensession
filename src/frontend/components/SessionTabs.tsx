@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { Reorder } from "motion/react";
 import type { UnifiedSession } from "../lib/types";
 import { TAB_COLORS, colorHex } from "../lib/tab-colors";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
@@ -27,12 +28,17 @@ import { useIsPhone } from "../hooks/useIsPhone";
 export type ViewTab = {
 	/** Stable id, e.g. `review:<sessionId>`. */
 	id: string;
-	/** Tab label ("Review"). */
+	/** Tab label ("Review"). Also the tooltip/aria label when `icon` is set. */
 	label: string;
 	/** Whether this pane is the foregrounded tab. */
 	active: boolean;
 	/** Optional status-dot class (e.g. PR state) shown before the label. */
 	dotClass?: string | null;
+	/**
+	 * Optional glyph shown INSTEAD of the text label — the tab reads as just the
+	 * icon (e.g. Staging → a globe). `label` still supplies the tooltip/aria.
+	 */
+	icon?: React.ReactNode;
 };
 
 interface Props {
@@ -46,6 +52,11 @@ interface Props {
 	colors: Record<string, string>;
 	onSelect: (session: UnifiedSession) => void;
 	onSetColor: (key: string, color: string | null) => void;
+	/**
+	 * Commit a new left-to-right order for the chat tabs (desktop drag-drop).
+	 * Receives the reordered session ids; the parent persists it per-workspace.
+	 */
+	onReorderTabs: (orderedIds: string[]) => void;
 	/**
 	 * Non-chat "view" tabs (currently just Review) pinned to the LEFT of the
 	 * chat tabs. Each is bound to a session; selecting one foregrounds that
@@ -89,6 +100,7 @@ export function SessionTabs({
 	colors,
 	onSelect,
 	onSetColor,
+	onReorderTabs,
 	viewTabs,
 	onSelectView,
 	onCloseView,
@@ -111,6 +123,42 @@ export function SessionTabs({
 	// touch for an easier hit.
 	const isPhone = useIsPhone();
 	const ctrlIconSize = isPhone ? 25 : 22;
+
+	// Drag-to-reorder the chat tabs (desktop only — an x-drag would fight touch
+	// scrolling / the phone swipe gestures). `orderDraft` holds the in-flight
+	// order during a drag so the strip stays smooth; it's cleared on drop once
+	// the parent's reordered `tabs` come back. `justDragged` swallows the click
+	// that fires synchronously after a drop so it doesn't select the tab.
+	const [orderDraft, setOrderDraft] = useState<string[] | null>(null);
+	const justDragged = useRef(false);
+	const canReorder = !isPhone && tabs.length > 1;
+
+	// Render order: the in-flight drag draft when dragging, else the parent's
+	// (already persisted) order. Any tab absent from the draft is appended so a
+	// mid-drag arrival is never dropped.
+	const orderedTabs: UnifiedSession[] = React.useMemo(() => {
+		if (!orderDraft) return tabs;
+		const byId = new Map(tabs.map((s) => [s.id, s] as const));
+		const out: UnifiedSession[] = [];
+		for (const id of orderDraft) {
+			const s = byId.get(id);
+			if (s) out.push(s);
+		}
+		for (const s of tabs) if (!orderDraft.includes(s.id)) out.push(s);
+		return out;
+	}, [tabs, orderDraft]);
+
+	// Drop: hand the new order to the parent (which persists it and feeds it back
+	// as the next `tabs`), swallow the trailing click, then release the draft.
+	function commitReorder() {
+		justDragged.current = true;
+		setTimeout(() => {
+			justDragged.current = false;
+		}, 0);
+		const order = orderDraft;
+		setOrderDraft(null);
+		if (order) onReorderTabs(order);
+	}
 
 	function commitRename() {
 		if (editKey !== null) onRename(editKey, draft.trim());
@@ -201,12 +249,19 @@ export function SessionTabs({
 						key={v.id}
 						role="tab"
 						aria-selected={v.active}
-						className={`session-tab session-tab-view ${v.active ? "session-tab-active" : ""}`}
+						aria-label={v.icon ? v.label : undefined}
+						className={`session-tab session-tab-view ${v.icon ? "session-tab-view-icon" : ""} ${v.active ? "session-tab-active" : ""}`}
 						onClick={() => onSelectView(v.id)}
 						title={v.label}
 					>
 						{v.dotClass && <span className={`panel-tab-dot ${v.dotClass}`} />}
-						<span className="session-tab-title">{v.label}</span>
+						{v.icon ? (
+							<span className="session-tab-vicon" aria-hidden="true">
+								{v.icon}
+							</span>
+						) : (
+							<span className="session-tab-title">{v.label}</span>
+						)}
 						<button
 							type="button"
 							className="session-tab-close"
@@ -221,12 +276,35 @@ export function SessionTabs({
 						</button>
 					</div>
 				))}
-				{tabs.map((session) => {
+				<Reorder.Group
+					as="div"
+					axis="x"
+					className="session-tabs-chatgroup"
+					values={orderedTabs.map((s) => s.id)}
+					onReorder={(ids: string[]) => setOrderDraft(ids)}
+				>
+				{orderedTabs.map((session) => {
 					const key = session.id;
 					const waiting = !!session.waitingForInput;
 					const hex = colorHex(colors[key]);
 					return (
-						<ContextMenu.Root key={key}>
+						<Reorder.Item
+							as="div"
+							key={key}
+							value={key}
+							dragListener={canReorder && editKey !== key}
+							transition={{ duration: 0 }}
+							onDragEnd={commitReorder}
+							whileDrag={{ scale: 1.02, zIndex: 3 }}
+							onClickCapture={(e) => {
+								if (justDragged.current) {
+									e.stopPropagation();
+									e.preventDefault();
+								}
+							}}
+							className="session-tab-reorder"
+						>
+						<ContextMenu.Root>
 							<ContextMenu.Trigger
 								render={
 									<div
@@ -368,8 +446,10 @@ export function SessionTabs({
 								</ContextMenu.Item>
 							</ContextMenu.Popup>
 						</ContextMenu.Root>
+						</Reorder.Item>
 						);
 					})}
+				</Reorder.Group>
 					{/* Phone: the +/history controls scroll WITH the tabs so the strip
 					    uses the full width — nothing pinned eating horizontal room. */}
 					{isPhone && newTabButton}

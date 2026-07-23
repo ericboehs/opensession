@@ -35,7 +35,7 @@ import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
 import { UpdatePill } from "./components/UpdatePill";
 import { DesktopUpdateToast } from "./components/DesktopUpdateToast";
-import { IconDesk, IconSearch, IconSidebarLeft } from "./components/icons";
+import { IconDesk, IconGlobe, IconSearch, IconSidebarLeft } from "./components/icons";
 import { DeskOverlay } from "./components/DeskOverlay";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -77,6 +77,7 @@ import {
 	getPinNewWorkspaces,
 	receivePins,
 } from "./lib/pins";
+import { applyTabOrder, saveTabOrder, onTabOrderChanged } from "./lib/tab-order";
 import {
 	getTabColors,
 	setTabColor,
@@ -745,6 +746,14 @@ function App() {
 	// default (a tab is added when its pane is first opened).
 	const [reviewOpen, setReviewOpen] = useState<Set<string>>(() => new Set());
 	const [stagingOpen, setStagingOpen] = useState<Set<string>>(() => new Set());
+	// Bumped when the per-workspace tab order changes (a drag-drop commit, or a
+	// storage push from another tab) so the strip re-derives `projectChats` in
+	// the new order. The order itself lives in localStorage (lib/tab-order).
+	const [, setTabOrderRev] = useState(0);
+	useEffect(
+		() => onTabOrderChanged(() => setTabOrderRev((v) => v + 1)),
+		[],
+	);
 	// One-shot: the session whose Review tab should foreground once it lands, set
 	// when opening Review from the sidebar. Survives the session-change reset
 	// below (a pulse consumed by the effect next to it), then cleared. (Staging
@@ -1117,6 +1126,9 @@ function App() {
 						label: "Staging",
 						active: stagingActive,
 						dotClass: null,
+						// The Staging tab reads as just a globe (the preview it points at);
+						// "Staging" stays as its tooltip / aria label.
+						icon: <IconGlobe size={16} />,
 					},
 				]
 			: [];
@@ -1226,7 +1238,8 @@ function App() {
 	// viewing (e.g. opened from Archived), which keeps its tab.
 	const liveTab = (s: UnifiedSession) =>
 		!s.archived || s.id === currentSession?.id;
-	const projectChats: UnifiedSession[] = activeProjectId
+	// The strip's natural order (createdAt asc), before any user reordering.
+	const naturalChats: UnifiedSession[] = activeProjectId
 		? sessions
 				.filter(
 					(s) =>
@@ -1245,6 +1258,26 @@ function App() {
 			: currentSession
 				? [currentSession]
 				: [];
+	// The stable workspace key the tab order is saved under: the workspace id, or
+	// the shared isolated-worktree path for workspace-less (slack/linear) groups.
+	// Empty ⇒ a lone standalone chat, which has nothing to reorder.
+	const tabOrderKey = activeProjectId
+		? activeProjectId
+		: currentSession?.worktreeDir?.startsWith("/home/ubuntu/worktrees/")
+			? currentSession.worktreeDir
+			: "";
+	// Apply the user's saved left-to-right order (drag-drop). Unknown/new chats
+	// fall to the end in natural order; a stale saved id matches nothing.
+	const projectChats: UnifiedSession[] = (() => {
+		if (!tabOrderKey || naturalChats.length < 2) return naturalChats;
+		const byId = new Map(naturalChats.map((s) => [s.id, s] as const));
+		return applyTabOrder(
+			tabOrderKey,
+			naturalChats.map((s) => s.id),
+		)
+			.map((id) => byId.get(id))
+			.filter((s): s is UnifiedSession => !!s);
+	})();
 	// The strip's history menu: archived (closed) chats of the same workspace,
 	// newest activity first. The open chat is excluded — if it's archived it
 	// already holds a live tab via liveTab().
@@ -1916,6 +1949,7 @@ function App() {
 								navigate({ view: "session", id: s.id });
 							}}
 							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
+							onReorderTabs={(ids) => saveTabOrder(tabOrderKey, ids)}
 							viewTabs={viewTabs}
 							onSelectView={(id) =>
 								setActiveViewTab(

@@ -2522,6 +2522,33 @@ body.resizing-x {
 	margin-left: auto;
 }
 
+/* The drag-to-reorder group wraps just the chat tabs (view tabs stay pinned to
+   the left, outside it). It's a transparent flex row that keeps the same 3px
+   inter-tab gap as the scroll, so nesting it changes nothing visually. */
+.session-tabs-chatgroup {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	min-width: 0;
+}
+/* Each chat tab's Reorder.Item wrapper — the draggable flex child. It hugs the
+   pill inside it and never shrinks, so a full strip scrolls rather than squishes.
+   position:relative lets whileDrag's z-index lift the dragged tab over siblings. */
+.session-tab-reorder {
+	display: inline-flex;
+	align-items: center;
+	flex-shrink: 0;
+	position: relative;
+}
+/* Icon-only view tab (Staging → globe): center the glyph, drop the label's text
+   metrics so the pill sizes to the icon. */
+.session-tab-vicon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	line-height: 0;
+}
+
 .session-tab {
 	display: inline-flex;
 	align-items: center;
@@ -2606,6 +2633,14 @@ body.resizing-x {
 	   bottom hairline. */
 	.session-tabs-scroll {
 		flex: 0 1 auto;
+		align-items: stretch;
+	}
+	/* The reorder group + its item wrappers are extra flex layers between the
+	   scroll and each tab; stretch them full-height too so the flat tabs' active
+	   underline still lands flush on the baseline hairline. */
+	.session-tabs-chatgroup,
+	.session-tab-reorder {
+		align-self: stretch;
 		align-items: stretch;
 	}
 	/* Plain text tabs — no fill, outline, shadow, or rounding. Just the label, with
