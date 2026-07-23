@@ -573,6 +573,16 @@ export function SessionViewer({
 	const [gitRefreshTick, setGitRefreshTick] = useState(0);
 	const [streamText, setStreamText] = useState("");
 	const [streamBy, setStreamBy] = useState<string | null>(null);
+	// Assistant blocks that already landed as transcript entries this run.
+	// Transcript v2 pushes an append the moment the store commits — usually
+	// BEFORE the runner's stream_text broadcast for the same block reaches the
+	// client (the bus publish is queued before the generator yields the chunk).
+	// In that order the append-side scrub finds an empty buffer and the block
+	// then enters the bubble with nothing left to remove it — every mid-turn
+	// text showed twice until stream_done (duplicate-transcript reports,
+	// 2026-07-23). Recording landed contents here lets stream_text drop a block
+	// that already landed, making the dedupe correct in BOTH arrival orders.
+	const landedStreamTextRef = useRef<string[]>([]);
 	// Bumped on every stream_start; lets the delayed stream_done cleanup verify
 	// it isn't wiping a NEWER run's in-progress text.
 	const streamSeqRef = useRef(0);
@@ -1577,6 +1587,13 @@ export function SessionViewer({
 							for (const e of landed) next = next.replace(e.content, "");
 							return next.trim() ? next : "";
 						});
+						// Also remember the contents so a stream_text broadcast that
+						// arrives AFTER this append (the normal v2 order) is dropped
+						// instead of re-adding the block to the bubble.
+						landedStreamTextRef.current = [
+							...landedStreamTextRef.current,
+							...landed.map((e) => e.content),
+						].slice(-30);
 					}
 					break;
 				}
@@ -1620,10 +1637,20 @@ export function SessionViewer({
 					setIsStreaming(true);
 					setStreamBy(msg.by || null);
 					setStreamText("");
+					landedStreamTextRef.current = [];
 					break;
-				case "stream_text":
+				case "stream_text": {
+					// Opencode streams whole completed blocks; if this one already
+					// landed as a transcript entry (v2 appends beat the stream
+					// broadcast), keep it out of the bubble — see landedStreamTextRef.
+					const landedIdx = landedStreamTextRef.current.indexOf(msg.text);
+					if (landedIdx !== -1) {
+						landedStreamTextRef.current.splice(landedIdx, 1);
+						break;
+					}
 					setStreamText((prev) => prev + msg.text);
 					break;
+				}
 				case "stream_tool_use":
 				case "stream_tool_result":
 					setEntries((prev) => mergeEntries(prev, [msg.entry]));
@@ -1808,6 +1835,7 @@ export function SessionViewer({
 		setStreamText("");
 		setIsStreaming(false);
 		setStreamBy(null);
+		landedStreamTextRef.current = [];
 	}, [session.id]);
 
 	// Every session opens at the live edge. Do this in a layout effect so the
