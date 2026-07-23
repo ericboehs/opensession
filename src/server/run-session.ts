@@ -588,7 +588,13 @@ export function attachSessionWatchersToTranscript(
 ): void {
 	const set = sessionWatchers.get(sessionId);
 	if (!set) return;
-	for (const ws of set) startWatching(path, ws, 0, sessionId);
+	for (const ws of set) {
+		// Transcript v2 viewers (ws-handlers.ts serveTranscriptV2) are fed by
+		// the in-process bus — force-registering them onto the (new) mirror
+		// watch would double-feed a full-file replay.
+		if ((ws as any)?.data?.transcriptV2) continue;
+		startWatching(path, ws, 0, sessionId);
+	}
 }
 
 export function attachSessionWatchersToEngineTranscript(

@@ -5,7 +5,6 @@
  * transport sockets are delegated to run-ws.ts before any of this runs.
  */
 
-import { existsSync, statSync } from "node:fs";
 import type { WebSocketHandler } from "bun";
 import type { WSClientData } from "./ws-hub";
 import { type StreamEvent, cancelAgentRun, interruptAndSteerAgentRun, isAgentSessionBusy, markSessionStarting, runAgent, steerAgentRun, stopAgentRunTurn, unmarkSessionStarting } from "./agent-runner";
@@ -23,6 +22,7 @@ import { applyNoteUpdate, getNoteState, isValidNoteId } from "./notes";
 import { appendOpencodeTranscript, transcriptLineRunnerNotice } from "./opencode-transcript";
 import { wrapContext } from "./prompt-context";
 import { deleteQueuedPrompt, persistQueues, promptQueues, queueWithIds, recordSteer, reorderQueuedPrompt, requeueSteerReceipts, steeredReceipts, stoppedSessions, updateQueuedPrompt } from "./queue-state";
+import { envAlias } from "./rename-compat";
 import { transitionRunState } from "./run-state";
 import { abortTurnAndDrain, attachSessionWatchersToEngineTranscript, drainQueue, enqueuePrompt, foldSessionUsage, interruptQueuedPrompt, maybeLaunchSandboxedRun, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, steerQueuedPrompt, watchExternalRunAndDrain } from "./run-session";
 import { sandboxWsClose, sandboxWsMessage, sandboxWsOpen } from "./run-ws";
@@ -35,6 +35,8 @@ import { engineSessionPatch, engineUserTexts, mergedSessionTranscript } from "./
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { handleSlashCommand } from "./slash-commands";
 import { resizeTerminal, startSessionTerminal, stopTerminal, writeTerminal } from "./terminals";
+import { subscribeTranscript } from "./transcript-bus";
+import { transcriptStore } from "./transcript-store";
 import { type BackstageSessionFile, type SessionUsage } from "./types";
 import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
 import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
@@ -126,6 +128,242 @@ function sendWatchExtras(
 	);
 }
 
+// ── Transcript v2 serve path (docs/transcript-v2-design.md §4) ──────────────
+// Flag-gated (OPENSESSION_TRANSCRIPT_V2=1) + capability-gated (the client
+// sends `supportsSeq: true` on watch). Eligible watches are served from the
+// owned transcript store and fed live by the in-process bus — no mirror
+// file-watcher polling. Everything below is a no-op with the flag off; the
+// legacy path stays byte-identical.
+
+function transcriptV2Enabled(): boolean {
+	return envAlias("OPENSESSION_TRANSCRIPT_V2", "BACKSTAGE_TRANSCRIPT_V2") === "1";
+}
+
+// Per-socket bus unsubscribe handles. Parked on globalThis so a hot reload
+// can still tear down subscriptions made by the previous module instance
+// (same reason file-watcher parks its watch map).
+const v2Unsubs: Map<unknown, () => void> = ((globalThis as any)
+	.__osTranscriptV2Unsubs ??= new Map());
+
+/**
+ * The ONE v2 teardown helper — called from all three paths that end a
+ * socket's view of a session (mirroring stopAllWatchesForClient's contract):
+ * watch-switch (re-watch of a different session on the same socket), unwatch,
+ * and close. Releases the bus subscription and clears the v2 mark so the
+ * rotation re-watch (run-session.ts) treats the socket as legacy again.
+ */
+function releaseTranscriptV2(ws: any): void {
+	const unsub = v2Unsubs.get(ws);
+	if (unsub) {
+		v2Unsubs.delete(ws);
+		try {
+			unsub();
+		} catch {}
+	}
+	if (ws?.data?.transcriptV2) ws.data.transcriptV2 = false;
+}
+
+/** Legacy transcripts above this mirror-file size import in the background
+ *  (this watch serves legacy) instead of blocking the watch handshake — the
+ *  §4 "import timeout → legacy + queued background import" behavior, applied
+ *  proactively by size since the import itself is synchronous. */
+const V2_SYNC_IMPORT_MAX_BYTES = 2 * 1024 * 1024;
+
+/** Session ids with a background import scheduled (dedupe). */
+const v2BgImports: Set<string> = ((globalThis as any).__osTranscriptV2BgImports ??=
+	new Set());
+
+/** One-time legacy import for a session (same routine as §3's import-first
+ *  gate): merged cross-engine history → importLegacyTranscript (which marks
+ *  the session imported; empty history marks 'live-only'). Watermark = the
+ *  mirror file's size at import time (§8 drift detection). */
+function v2ImportSession(
+	session: NonNullable<ReturnType<typeof findSession>>,
+): void {
+	const entries = mergedSessionTranscript(session);
+	let watermark: number | null = null;
+	try {
+		if (session.transcriptPath && existsSync(session.transcriptPath))
+			watermark = statSync(session.transcriptPath).size;
+	} catch {}
+	transcriptStore().importLegacyTranscript(
+		session.id,
+		entries,
+		entries.length ? "merged" : "live-only",
+		watermark,
+	);
+}
+
+function v2QueueBackgroundImport(sessionId: string): void {
+	if (v2BgImports.has(sessionId)) return;
+	v2BgImports.add(sessionId);
+	setTimeout(() => {
+		try {
+			const session = findSession(sessionId);
+			if (session && transcriptStore().needsImport(sessionId))
+				v2ImportSession(session);
+		} catch (e) {
+			console.warn(`[ws] v2 background import failed for ${sessionId}:`, e);
+		} finally {
+			v2BgImports.delete(sessionId);
+		}
+	}, 0);
+}
+
+/**
+ * Serve a watch from the v2 store + bus. Returns true when the watch was
+ * fully served (caller sends the watch extras and stops); false = not
+ * eligible / import deferred / flag off — fall through to the untouched
+ * legacy path.
+ */
+function serveTranscriptV2(
+	ws: any,
+	sessionId: string,
+	session: NonNullable<ReturnType<typeof findSession>>,
+	msg: any,
+): boolean {
+	if (!transcriptV2Enabled() || msg.supportsSeq !== true) return false;
+	// Linear/Plain loop runs don't journal a unified session id in v1 (§3), so
+	// their store rows would be forever partial — refuse v2, keep legacy.
+	if (sessionId.startsWith("linear-") || sessionId.startsWith("plain-"))
+		return false;
+	// Externally-owned runs (CLI/tmux: running via PID but not in our
+	// activeRuns — session-control's observe-only signal) write only the
+	// mirror; the bus never fires for them, so they stay on the file-watcher.
+	if (
+		session.isRunning &&
+		!isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)
+	)
+		return false;
+
+	let store: ReturnType<typeof transcriptStore>;
+	try {
+		store = transcriptStore();
+		if (store.needsImport(sessionId)) {
+			// Lazy import: small legacy transcripts import synchronously inside
+			// the watch; big ones import in the background and THIS watch serves
+			// legacy (the next one upgrades).
+			let mirrorSize = 0;
+			try {
+				if (session.transcriptPath && existsSync(session.transcriptPath))
+					mirrorSize = statSync(session.transcriptPath).size;
+			} catch {}
+			if (mirrorSize > V2_SYNC_IMPORT_MAX_BYTES) {
+				v2QueueBackgroundImport(sessionId);
+				return false;
+			}
+			v2ImportSession(session);
+		}
+	} catch (e) {
+		console.warn(`[ws] v2 import failed for ${sessionId} — legacy path:`, e);
+		return false;
+	}
+
+	// From here this socket is a v2 viewer for this session: the bus replaces
+	// the mirror file-watcher (never startWatching), and the rotation re-watch
+	// in run-session.ts skips it (a full-file replay would double-feed).
+	ws.data.transcriptV2 = true;
+
+	// Reconnect resume: the client re-watches with the seq of the last entry
+	// it holds — replay just the gap, no snapshot. A full page means it's too
+	// far behind (or the cursor is stale); fall through to the snapshot.
+	const lastSeq = store.getLastSeq(sessionId);
+	const sinceSeq =
+		typeof msg.sinceSeq === "number" &&
+		Number.isFinite(msg.sinceSeq) &&
+		msg.sinceSeq >= 0
+			? Math.floor(msg.sinceSeq)
+			: undefined;
+	let resumed = false;
+	if (sinceSeq !== undefined && sinceSeq <= lastSeq) {
+		const RESUME_LIMIT = 500;
+		const page = store.readSince(sessionId, sinceSeq, RESUME_LIMIT);
+		if (page.entries.length < RESUME_LIMIT) {
+			if (page.entries.length) {
+				ws.send(
+					JSON.stringify({
+						type: "transcript_append",
+						sessionId,
+						entries: page.entries,
+						firstSeq: page.firstSeq,
+						lastSeq: page.lastSeq,
+						v2: true,
+					}),
+				);
+			}
+			resumed = true;
+		}
+	}
+
+	if (!resumed) {
+		// Two-stage init, same staging as the legacy path with seq fields added
+		// (old bundles ignore unknown fields; new bundles detect v2 by their
+		// presence): last screenful immediately, the rest of the tail 80ms
+		// later as a transcript_history prepend. Store rows are already
+		// wire-bounded (≤32KB), so no clampEntriesForWire here.
+		const FIRST_PAINT_ENTRIES = 12;
+		const tail = store.readTail(sessionId, FIRST_PAINT_ENTRIES + 120);
+		const head = tail.entries.slice(-FIRST_PAINT_ENTRIES);
+		const rest = tail.entries.slice(0, -FIRST_PAINT_ENTRIES);
+		const truncated = tail.firstSeq > 1;
+		ws.send(
+			JSON.stringify({
+				type: "transcript_init",
+				sessionId,
+				entries: head,
+				truncated,
+				firstSeq: head.length ? head[0].seq : 0,
+				lastSeq: head.length ? head[head.length - 1].seq : 0,
+				v2: true,
+			}),
+		);
+		if (rest.length) {
+			const restPayload = JSON.stringify({
+				type: "transcript_history",
+				sessionId,
+				entries: rest,
+				firstSeq: rest[0].seq,
+				lastSeq: rest[rest.length - 1].seq,
+				truncated,
+				v2: true,
+			});
+			setTimeout(() => {
+				try {
+					if (
+						ws.data?.watchingSessionId === sessionId &&
+						ws.data?.transcriptV2
+					)
+						ws.send(restPayload);
+				} catch {}
+			}, 80);
+		}
+	}
+
+	// Live pushes: committed store appends fan out through the bus. The
+	// subscription is released by releaseTranscriptV2 (watch-switch / unwatch
+	// / close); the watchingSessionId check is belt-and-braces for the gap
+	// between a switch and the teardown running.
+	const unsub = subscribeTranscript(sessionId, (event) => {
+		try {
+			if (ws.data?.watchingSessionId !== sessionId) return;
+			ws.send(
+				JSON.stringify({
+					type: "transcript_append",
+					sessionId,
+					entries: event.entries,
+					firstSeq: event.firstSeq,
+					lastSeq: event.lastSeq,
+					v2: true,
+				}),
+			);
+		} catch {
+			// Dead connection — cleaned up on close.
+		}
+	});
+	v2Unsubs.set(ws, unsub);
+	return true;
+}
+
 export const websocketHandlers: WebSocketHandler<WSClientData> = {
 	// Default is 16 MB — too small for a base64'd attachment near MAX_UPLOAD_BYTES,
 	// which would otherwise drop the frame (close 1009) before staging. See above.
@@ -202,12 +440,21 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 				// Stop watching any previous session first
 				stopAllWatchesForClient(ws);
+				releaseTranscriptV2(ws);
 				leaveSession(ws);
 
 				const data = ws.data;
 				data.watchingSessionId = sessionId;
 				if (msg.user) data.user = msg.user;
 				joinSession(ws, sessionId);
+
+				// Transcript v2 (flag + supportsSeq gated): eligible watches are
+				// served from the owned store + bus with seq cursors — no mirror
+				// file-watcher. Ineligible/flag-off falls through byte-identical.
+				if (serveTranscriptV2(ws, sessionId, session, msg)) {
+					sendWatchExtras(ws, sessionId, session);
+					break;
+				}
 
 				// Reconnect resume: a client that still holds this session's entries
 				// re-watches with the byte cursor of the last transcript frame it
@@ -320,6 +567,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// Mirrors the disconnect/close cleanup; leaveSession broadcasts
 				// presence to the viewers who remain.
 				stopAllWatchesForClient(ws);
+				releaseTranscriptV2(ws);
 				leaveSession(ws);
 				break;
 			}
@@ -331,6 +579,38 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// (re-send the ENTIRE transcript) hit ~15MB wire payloads and a
 				// 600-bubble render on big transcripts; it survives only as the
 				// fallback for clients that don't send an offset.
+				//
+				// Transcript v2 seq paging (flag-gated): a client in seq mode pages
+				// backwards with `beforeSeq` → one ~40-entry page from the store.
+				// Legacy offset paging below is untouched; a store failure falls
+				// through to it.
+				if (
+					transcriptV2Enabled() &&
+					typeof msg.beforeSeq === "number" &&
+					msg.beforeSeq > 0
+				) {
+					try {
+						const page = transcriptStore().readBefore(
+							msg.sessionId,
+							Math.floor(msg.beforeSeq),
+							40,
+						);
+						ws.send(
+							JSON.stringify({
+								type: "transcript_history",
+								sessionId: msg.sessionId,
+								entries: page.entries,
+								firstSeq: page.firstSeq,
+								lastSeq: page.lastSeq,
+								truncated: page.firstSeq > 1,
+								v2: true,
+							}),
+						);
+						break;
+					} catch (e) {
+						console.warn(`[ws] v2 load_history failed for ${msg.sessionId}:`, e);
+					}
+				}
 				const session = findSession(msg.sessionId);
 				if (!session?.transcriptPath) {
 					// Same no-mirror-file state as the watch fallback: serve the merged
@@ -1615,6 +1895,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 		cloudWebSocketClientClosed(ws);
 		allClients.delete(ws);
 		stopAllWatchesForClient(ws);
+		releaseTranscriptV2(ws);
 		leaveSession(ws);
 		leaveNote(ws);
 		stopTerminal(ws); // the Shell tab's PTY dies with its socket

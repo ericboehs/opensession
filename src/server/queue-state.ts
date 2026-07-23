@@ -16,6 +16,8 @@ import { writeJsonAtomic } from "./shared/atomic-write";
 import { setTranscriptAppendListener } from "./file-watcher";
 import { stripContext } from "./prompt-context";
 import { SESSIONS_DIR } from "./session-cache";
+import { setAppendHook } from "./transcript-store";
+import type { TranscriptEntry } from "./types";
 import { broadcastToSession } from "./ws-hub";
 
 const g = globalThis as any;
@@ -153,7 +155,10 @@ export function steerDelivered(item: QueueItem, userTexts: string[]): boolean {
 	return userTexts.some((u) => u === attributed || u.includes(attributed));
 }
 
-setTranscriptAppendListener((sessionId, entries) => {
+function reconcileSteerReceiptsOnAppend(
+	sessionId: string,
+	entries: TranscriptEntry[],
+): void {
 	const steered = steeredReceipts.get(sessionId);
 	if (!steered?.length) return;
 	const users = entries
@@ -166,7 +171,16 @@ setTranscriptAppendListener((sessionId, entries) => {
 	else steeredReceipts.delete(sessionId);
 	persistQueues();
 	broadcastQueue(sessionId);
-});
+}
+
+setTranscriptAppendListener(reconcileSteerReceiptsOnAppend);
+// Transcript v2 (docs/transcript-v2-design.md §4a): v2 viewers retire the
+// mirror file-watcher, so delivered-steer reconciliation ALSO rides the
+// store's post-commit append hook (same contract, same function; fires only
+// when the flag-gated store path writes). Single globalThis slot — each hot
+// reload replaces the registration rather than stacking, and the reconcile
+// is idempotent, so both channels firing for one append is harmless.
+setAppendHook(reconcileSteerReceiptsOnAppend);
 
 /**
  * Put unconfirmed steers back into the normal queue when their run is
