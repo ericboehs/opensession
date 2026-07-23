@@ -9,8 +9,18 @@
  * callers without any answer fast with a friendly error instead of spawning gh.
  *
  * State parks on globalThis so a `bun --hot` reload keeps an active backoff
- * window instead of resetting it and re-firing everything at once.
+ * window instead of resetting it and re-firing everything at once — and the
+ * backoff window is ALSO persisted to disk, because a real `systemctl restart`
+ * used to forget it and boot the PR-cache warm sweep straight into the
+ * exhausted window (2026-07-23: restarts every ~10min kept the GraphQL quota
+ * pinned at 0 for hours).
  */
+
+import { existsSync, readFileSync } from "fs";
+import { writeFileAtomic } from "./shared/atomic-write";
+import { stateDir } from "./rename-compat";
+
+const PERSIST_PATH = stateDir("github-limit.json");
 
 interface GhLimitState {
   /** Epoch ms until which GitHub calls should not be attempted. 0 = clear. */
@@ -20,11 +30,27 @@ interface GhLimitState {
   botToken: string | null | undefined;
 }
 
-const state: GhLimitState = ((globalThis as any).__osGhLimitState ||= {
-  backoffUntil: 0,
-  probe: null,
-  botToken: undefined,
-});
+const state: GhLimitState = ((globalThis as any).__osGhLimitState ||= (() => {
+  const s: GhLimitState = { backoffUntil: 0, probe: null, botToken: undefined };
+  try {
+    if (existsSync(PERSIST_PATH)) {
+      const parsed = JSON.parse(readFileSync(PERSIST_PATH, "utf-8"));
+      if (typeof parsed?.backoffUntil === "number" && parsed.backoffUntil > Date.now()) {
+        s.backoffUntil = parsed.backoffUntil;
+        console.error(
+          `[github-limit] resuming persisted backoff until ${new Date(s.backoffUntil).toISOString()}`,
+        );
+      }
+    }
+  } catch {}
+  return s;
+})());
+
+function persistBackoff(): void {
+  try {
+    writeFileAtomic(PERSIST_PATH, JSON.stringify({ backoffUntil: state.backoffUntil }) + "\n");
+  } catch {}
+}
 
 export function ghRateLimited(): boolean {
   return Date.now() < state.backoffUntil;
@@ -54,6 +80,7 @@ export function noteGhRateLimited(source: string, resetEpochMs?: number): void {
     const until = Math.min(resetEpochMs + 30_000, Date.now() + 2 * 3600_000);
     if (until > state.backoffUntil) {
       state.backoffUntil = until;
+      persistBackoff();
       console.error(
         `[github-limit] ${source}: rate-limited; pausing GitHub calls until ${new Date(until).toISOString()}`,
       );
@@ -63,6 +90,7 @@ export function noteGhRateLimited(source: string, resetEpochMs?: number): void {
   if (ghRateLimited() || state.probe) return;
   // Fallback first, in case the probe below fails.
   state.backoffUntil = Date.now() + 15 * 60_000;
+  persistBackoff();
   state.probe = (async () => {
     try {
       const proc = Bun.spawn(
@@ -72,7 +100,10 @@ export function noteGhRateLimited(source: string, resetEpochMs?: number): void {
       const raw = await new Response(proc.stdout).text();
       if ((await proc.exited) === 0) {
         const reset = parseInt(raw.trim(), 10) * 1000;
-        if (reset > Date.now()) state.backoffUntil = reset + 30_000;
+        if (reset > Date.now()) {
+          state.backoffUntil = reset + 30_000;
+          persistBackoff();
+        }
       }
     } catch {}
     console.error(
