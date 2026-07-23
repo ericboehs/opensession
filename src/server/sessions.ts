@@ -133,9 +133,10 @@ export function mergedSessionTranscript(
   if (
     transcriptV2Enabled() &&
     session.id &&
-    // Linear/Plain loop runs don't journal a unified session id in v1 (§3) —
+    // Plain loop runs don't thread a unified session id to the runner (§3) —
     // their store rows would be forever partial; they stay fully legacy.
-    !session.id.startsWith("linear-") &&
+    // (Linear runs thread transcriptSessionId, so linear- sessions are
+    // v2-eligible like everything else.)
     !session.id.startsWith("plain-")
   ) {
     try {

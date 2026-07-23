@@ -10,7 +10,7 @@
  *   mergedSessionTranscript(session) → store.importLegacyTranscript (which
  *   marks the session imported with src + mirror-size watermark)
  * skipping sessions that are already imported (hasImported), v2-ineligible
- * (`linear-`/`plain-` id prefixes, design §3/§4), or have no resolvable
+ * (`plain-` id prefix, design §3/§4), or have no resolvable
  * transcript. Paced: one session per chunk with an awaited setTimeout between
  * sessions (the store's chunked import bounds per-transaction size) so the
  * event loop keeps serving while ~3,100 sessions migrate.
@@ -48,9 +48,11 @@ function transcriptV2Enabled(): boolean {
 	return envAlias("OPENSESSION_TRANSCRIPT_V2", "BACKSTAGE_TRANSCRIPT_V2") === "1";
 }
 
-/** v2-ineligible session families stay on the legacy path (design §3). */
+/** v2-ineligible session families stay on the legacy path (design §3).
+ *  Only plain- now: linear runs thread transcriptSessionId to the runner, so
+ *  linear- sessions import like everything else. */
 function v2EligibleId(sessionId: string): boolean {
-	return !sessionId.startsWith("linear-") && !sessionId.startsWith("plain-");
+	return !sessionId.startsWith("plain-");
 }
 
 function sleep(ms: number): Promise<void> {

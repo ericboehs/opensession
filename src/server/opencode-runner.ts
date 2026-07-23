@@ -2956,8 +2956,11 @@ async function* runOpencodeAttempt(
     // Transcript v2: remember which unified session this engine session's
     // lines belong to (covers run start AND rotation — a rotation re-enters
     // here with the freshly-minted oc id), so the flag-gated store writes in
-    // opencode-transcript.ts can resolve it.
-    if (journal?.bksSessionId) recordBksSessionFor(ocSessionId, journal.bksSessionId);
+    // opencode-transcript.ts can resolve it. transcriptSessionId is the
+    // map-only carrier for kind-only-journal loop runs (Linear passes
+    // `linear-<branch>`); journaled runs keep using their bksSessionId.
+    const transcriptUnifiedId = journal?.bksSessionId || opts.transcriptSessionId;
+    if (transcriptUnifiedId) recordBksSessionFor(ocSessionId, transcriptUnifiedId);
     // A resumed session may carry a transcript-mirror gap (e.g. a turn that
     // ran orphaned after a restart — 2026-07-17: an hour of work invisible
     // until a manual backfill). Reconcile on EVERY resume, not just reattach.

@@ -154,9 +154,13 @@ warn; NEVER throw from the append path.
 Recording call sites: opencode-runner.ts wherever it calls recordOpencodeDbFor (run start,
 rotation — journal.bksSessionId is in scope), and the sandbox host path in
 sandbox/adapters/bootstrap.ts (ActiveRunRecord carries both ids). Slack loop already journals
-`bksSessionId = slack-<key>` — covered. **Linear/Plain loop runs do NOT journal a session id in
-v1: their sessions are REFUSED v2 serve (gate on `linear-`/`plain-` id prefixes) so they stay on
-the fully-working legacy path; follow-up threads a transcriptSessionId through those loops.**
+`bksSessionId = slack-<key>` — covered. **Linear loop runs thread a dedicated
+`transcriptSessionId` (RunAgentOpts, optional; `linear-<branch>`) — a map-only carrier consumed
+at the same recordBksSessionFor site (journal.bksSessionId wins when both are set); their
+journal stays kind-only, so resume/run-state/MCP-identity semantics are untouched, and
+`linear-` sessions are v2-eligible (serve gate + backfill). Plain loop runs still thread no
+unified id: their sessions remain REFUSED v2 serve (gate on the `plain-` id prefix) on the
+fully-working legacy path; a follow-up threads transcriptSessionId through that loop too.**
 
 **Import-first invariant (critical):** before assigning the first live seq for a session, the
 store append path checks transcript_sessions; if never imported, it synchronously runs the
@@ -170,7 +174,7 @@ run at activation.
 ## 4. WS protocol v2 (ws-handlers.ts — hot-applies, strictly flag-gated)
 
 Client capability: `watch` gains optional `supportsSeq: true` + `sinceSeq`. Server picks v2 iff
-**flag && supportsSeq && session id is v2-eligible (not `linear-`/`plain-` prefixed, not an
+**flag && supportsSeq && session id is v2-eligible (not `plain-` prefixed, not an
 externally-owned/observe-only run per session-control's external-PID signal) && (store has the
 session or lazy import succeeds)**. Otherwise byte-identical legacy path. Externally-written
 sessions (CLI/tmux) stay legacy — the bus only fires on in-process appends (watcher-as-bus-feeder

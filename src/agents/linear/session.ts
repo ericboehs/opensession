@@ -395,6 +395,11 @@ export async function runAgentHeadless(
       // journal — this loop tracks its own engine session ids per Linear
       // session and re-drives turns from Linear events.
       journal: { kind: "linear" },
+      // Transcript v2: key this run's store appends on the unified session id
+      // the UI knows this session by (sessions.ts scanLinearSessions:
+      // `linear-<branch>`). Map-only — journal/resume/run-state semantics are
+      // untouched (see RunAgentOpts.transcriptSessionId).
+      transcriptSessionId: session?.branch ? `linear-${session.branch}` : undefined,
       // Money-moving Stripe tools need the per-call human confirmation the
       // interactive runner provides; this path has no approval card, so they
       // are stripped from the tool list with this guidance.

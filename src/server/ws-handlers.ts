@@ -267,10 +267,12 @@ function serveTranscriptV2(
 	msg: any,
 ): boolean {
 	if (!transcriptV2Enabled() || msg.supportsSeq !== true) return false;
-	// Linear/Plain loop runs don't journal a unified session id in v1 (§3), so
+	// Plain loop runs don't thread a unified session id to the runner (§3), so
 	// their store rows would be forever partial — refuse v2, keep legacy.
-	if (sessionId.startsWith("linear-") || sessionId.startsWith("plain-"))
-		return false;
+	// (Linear runs DO since transcriptSessionId landed; they lazy-import here
+	// like any other session, and appends from runs started before the
+	// enabling restart degrade safely via the §8 store-degraded/drift path.)
+	if (sessionId.startsWith("plain-")) return false;
 	// Externally-owned runs (CLI/tmux: running via PID but not in our
 	// activeRuns — session-control's observe-only signal) write only the
 	// mirror; the bus never fires for them, so they stay on the file-watcher.

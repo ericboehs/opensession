@@ -124,6 +124,16 @@ export interface RunAgentOpts {
    */
   usageCredits?: boolean;
   journal?: { bksSessionId?: string; kind?: string };
+  /**
+   * Unified session id (e.g. `linear-<branch>`) for the transcript-v2 oc→
+   * unified map ONLY (opencode-transcript.ts recordBksSessionFor) — lets loop
+   * runs whose journal is deliberately kind-only (no crash journal; the loop
+   * re-drives its own turns) still key their store appends on their unified
+   * session. Never journaled, never used for resume/run-state/MCP identity —
+   * runs that journal a bksSessionId don't need this (it wins when both are
+   * set, since they must agree anyway).
+   */
+  transcriptSessionId?: string;
   onAskUser?: (input: Record<string, unknown>) => Promise<
     | { behavior: "allow"; updatedInput: Record<string, unknown> }
     | { behavior: "deny"; message: string }
