@@ -50,6 +50,7 @@ import type { Repo } from "./config";
 import { repoForPath } from "./worktree";
 import {
   claimPoolPreview,
+  poolPreviewLive,
   previewPoolEnabled,
   releasePoolPreview,
   resumePoolSyncIfNeeded,
@@ -331,6 +332,9 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
   // Pool-backed previews: claims persist on disk but sync timers don't —
   // re-attach after a process restart (cheap no-op otherwise).
   resumePoolSyncIfNeeded(worktreeDir);
+  // docker-proxy listens for the container's whole life, so for a pool claim
+  // "running" must mean "the dev server inside answers", not "port open".
+  const poolLive = await poolPreviewLive(worktreeDir);
   const ports = readPorts(worktreeDir);
   const services: PreviewService[] = await Promise.all(
     ports.map(async ({ key, port }) => {
@@ -338,7 +342,10 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
       // Root-owned listeners (docker-proxy fronting a preview-pool container)
       // show no pid to non-root `ss -p` — a listening socket counts as
       // running even when we can't see who owns it.
-      const running = pids.length > 0 || (await portListening(port));
+      const running =
+        key === "WEBAPP_PORT" && poolLive != null
+          ? poolLive
+          : pids.length > 0 || (await portListening(port));
       return { name: friendly(key), key, port, running, pids };
     }),
   );

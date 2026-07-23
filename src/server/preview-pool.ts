@@ -73,6 +73,9 @@ export interface PreviewPoolRepoConfig {
    * on the host keeps its bypass either way — this only affects the pool.)
    */
   devAuthBypass: boolean;
+  /** Release a claimed preview whose status hasn't been polled for this long
+   *  (default 90 min) — the UI polls every few seconds while it's on screen. */
+  claimIdleMinutes: number;
 }
 
 const DEFAULTS: Omit<PreviewPoolRepoConfig, "enabled"> = {
@@ -82,6 +85,7 @@ const DEFAULTS: Omit<PreviewPoolRepoConfig, "enabled"> = {
   memory: "8g",
   goldenIntervalHours: 24,
   devAuthBypass: false,
+  claimIdleMinutes: 90,
 };
 
 function poolDir(): string {
@@ -104,6 +108,7 @@ export function previewPoolConfig(repoId: string): PreviewPoolRepoConfig {
       memory: typeof r.memory === "string" ? r.memory : DEFAULTS.memory,
       goldenIntervalHours: clampInt(r.goldenIntervalHours, 1, 24 * 7, DEFAULTS.goldenIntervalHours),
       devAuthBypass: r.devAuthBypass === true,
+      claimIdleMinutes: clampInt(r.claimIdleMinutes, 5, 24 * 60, DEFAULTS.claimIdleMinutes),
     };
   } catch {
     return { enabled: false, ...DEFAULTS };
@@ -132,6 +137,13 @@ function clampInt(v: unknown, min: number, max: number, dflt: number): number {
 const WORKSPACE = "/home/ubuntu/preview-workspace";
 const CONTAINER_PORT = 3300;
 const POOL_LABEL = "bks-preview-pool";
+/** Untracked marker a claim drops in the workspace — tells the container's
+ *  boot cmd to keep the converged branch instead of resetting to default. */
+const CLAIMED_MARKER = ".bks-claimed";
+/** Changed-file count above which a claim reboots the dev server instead of
+ *  letting HMR chew through the flip (a live flip of a big delta produces a
+ *  module-graph error storm — flapping 500s — until ReScript resettles). */
+const LIVE_FLIP_MAX_FILES = 30;
 
 interface PoolContainer {
   name: string;
@@ -149,6 +161,10 @@ interface PoolContainer {
   createdAt: string;
   sessionWorktree?: string;
   claimedAt?: string;
+  /** Last preview-status poll for the claiming worktree (the UI polls every
+   *  few seconds while someone is looking) — the sweep releases claims idle
+   *  longer than claimIdleMinutes. */
+  lastSeenAt?: string;
 }
 
 interface PoolState {
@@ -572,8 +588,11 @@ async function spawnWarmContainer(repo: Repo): Promise<void> {
 
   // Advance the workspace to current origin/<default> before boot so warm
   // containers never serve a stale golden tree (delta fetch — seconds).
+  // Guarded by the claimed-marker: once a claim converges the workspace to a
+  // session branch, a `docker restart` (the big-delta clean-reboot path) must
+  // NOT reset it back to the default branch.
   const advance = cloneUrl
-    ? `(git fetch --depth 1 ${JSON.stringify(cloneUrl)} ${repo.defaultBranch} && git reset --hard FETCH_HEAD) || true && `
+    ? `{ [ -f ${WORKSPACE}/${CLAIMED_MARKER} ] || (git fetch --depth 1 ${JSON.stringify(cloneUrl)} ${repo.defaultBranch} && git reset --hard FETCH_HEAD) || true; } && `
     : "";
   const run = await docker([
     "run", "-d", "--name", name,
@@ -625,6 +644,18 @@ async function ensurePool(repo: Repo): Promise<void> {
     }
     if (c.state === "claimed" && c.sessionWorktree && !existsSync(c.sessionWorktree)) {
       await destroyContainer(repo.id, name); // session worktree is gone
+      continue;
+    }
+    // Idle claims: nobody has polled this preview's status in a while — the
+    // viewer is gone. Release the container (the pool refills fresh ones).
+    if (c.state === "claimed") {
+      const lastSeen = Date.parse(c.lastSeenAt || c.claimedAt || c.createdAt);
+      if (Date.now() - lastSeen > cfg.claimIdleMinutes * 60_000) {
+        console.log(
+          `[preview-pool] ${repo.id}: releasing idle claim ${name} (${c.sessionWorktree})`,
+        );
+        await destroyContainer(repo.id, name);
+      }
       continue;
     }
     // A warming entry with no live boot (e.g. process restarted mid-boot).
@@ -699,6 +730,32 @@ export function previewPoolEnabled(repoId: string): boolean {
 }
 
 /**
+ * Is the claimed container's dev server actually answering? docker-proxy
+ * listens on the host port for the container's whole lifetime, so ss-level
+ * checks always look "up" — pool-backed preview status must probe the app.
+ * null = worktree has no pool claim (caller uses its normal detection).
+ */
+export async function poolPreviewLive(worktreeDir: string): Promise<boolean | null> {
+  const claim = poolClaimFor(worktreeDir);
+  if (!claim) return null;
+  // Status polls double as the claim's liveness signal (throttled writes).
+  const c = readState(claim.repoId).containers[claim.containerName];
+  if (c && Date.now() - Date.parse(c.lastSeenAt || c.claimedAt || c.createdAt) > 60_000) {
+    patchContainer(claim.repoId, claim.containerName, { lastSeenAt: new Date().toISOString() });
+  }
+  try {
+    const res = await fetch(`http://127.0.0.1:${claim.hostPort}/`, {
+      headers: { Host: `localhost:${CONTAINER_PORT}` },
+      signal: AbortSignal.timeout(1500),
+      redirect: "manual",
+    });
+    return res.status > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Claim a warm container for a session worktree. Returns the claim (the
  * caller writes WEBAPP_PORT=<hostPort> into the worktree's .ports.conf and
  * lets the normal status path take over) or null when the pool has nothing
@@ -736,7 +793,24 @@ export async function claimPoolPreview(repoId: string, worktreeDir: string): Pro
     }
   }
   try {
+    const preBase = pick.syncBase || pick.bootSha;
     await convergeContainerToWorktree(repo, worktreeDir, pick);
+    // Keep the converged branch across container restarts (see advance guard).
+    await dockerExec(pick.name, `touch ${WORKSPACE}/${CLAIMED_MARKER}`);
+    // A big flip live under the dev server's watchers causes a module-graph
+    // error storm (flapping 500s while ReScript resettles) — reboot the dev
+    // tree instead: clean graph on warm caches, ~20-40s, no error overlay.
+    const delta = pick.syncBase && pick.syncBase !== preBase
+      ? (await $`git -C ${worktreeDir} diff --name-only ${preBase} HEAD`.quiet().nothrow().text())
+          .split("\n")
+          .filter(Boolean).length
+      : 0;
+    if (delta > LIVE_FLIP_MAX_FILES) {
+      console.log(
+        `[preview-pool] ${pick.name}: ${delta} files changed — rebooting dev server for a clean graph`,
+      );
+      await docker(["restart", "-t", "5", pick.name], 60_000);
+    }
     await syncWorktreeIntoContainer(repo, worktreeDir, pick);
   } catch (e) {
     console.warn(`[preview-pool] initial sync into ${pick.name} failed:`, e);

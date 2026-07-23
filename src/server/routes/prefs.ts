@@ -112,7 +112,7 @@ export async function handlePrefsRoutes(
 				const patch: Record<string, unknown> = {};
 				if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
 				if (typeof body.devAuthBypass === "boolean") patch.devAuthBypass = body.devAuthBypass;
-				for (const k of ["running", "paused", "cpus", "goldenIntervalHours"] as const) {
+				for (const k of ["running", "paused", "cpus", "goldenIntervalHours", "claimIdleMinutes"] as const) {
 					if (typeof body[k] === "number") patch[k] = body[k];
 				}
 				if (typeof body.memory === "string") patch.memory = body.memory;
