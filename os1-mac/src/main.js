@@ -9,6 +9,8 @@ const {
   ipcMain,
   autoUpdater,
   systemPreferences,
+  Menu,
+  clipboard,
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
@@ -200,6 +202,51 @@ function createWindow() {
     if (new URL(url).origin === APP_ORIGIN) return { action: "allow" };
     shell.openExternal(url);
     return { action: "deny" };
+  });
+
+  // Native right-click menu (copy link, copy, paste, …) — Electron shows
+  // nothing by default.
+  win.webContents.on("context-menu", (_e, params) => {
+    const items = [];
+
+    if (params.linkURL) {
+      items.push(
+        {
+          label: "Open Link in Browser",
+          click: () => shell.openExternal(params.linkURL),
+        },
+        {
+          label: "Copy Link",
+          click: () => clipboard.writeText(params.linkURL),
+        },
+        { type: "separator" },
+      );
+    }
+
+    if (params.hasImageContents && params.srcURL) {
+      items.push(
+        { label: "Copy Image", click: () => win.webContents.copyImageAt(params.x, params.y) },
+        { label: "Copy Image Address", click: () => clipboard.writeText(params.srcURL) },
+        { type: "separator" },
+      );
+    }
+
+    if (params.isEditable) {
+      items.push(
+        { role: "cut", enabled: params.editFlags.canCut },
+        { role: "copy", enabled: params.editFlags.canCopy },
+        { role: "paste", enabled: params.editFlags.canPaste },
+        { type: "separator" },
+        { role: "selectAll" },
+      );
+    } else if (params.selectionText.trim()) {
+      items.push({ role: "copy" });
+    }
+
+    // Drop a trailing separator so link-only menus end cleanly.
+    while (items.length && items[items.length - 1].type === "separator") items.pop();
+    if (!items.length) return;
+    Menu.buildFromTemplate(items).popup({ window: win });
   });
 
   // Tailnet-only server: show a local retry page instead of Chromium's error.
