@@ -8,6 +8,7 @@
 import type { WebSocketHandler } from "bun";
 import type { WSClientData } from "./ws-hub";
 import { type StreamEvent, cancelAgentRun, interruptAndSteerAgentRun, isAgentSessionBusy, markSessionStarting, runAgent, steerAgentRun, stopAgentRunTurn, unmarkSessionStarting } from "./agent-runner";
+import { isLocalSessionUpgradeInProgress } from "./session-transfer-state";
 import { audit } from "./audit";
 import { makeAskHandler, pendingAsks } from "./asks";
 import { getAccountById } from "./claude-accounts";
@@ -792,6 +793,15 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					);
 					return;
 				}
+				if (session.upgradedTo || isLocalSessionUpgradeInProgress(sessionId)) {
+					ws.send(
+						JSON.stringify({
+							type: "error",
+							message: "This session is being upgraded to the cloud. Retry the prompt in the cloud session.",
+						}),
+					);
+					return;
+				}
 
 				// The composer's effort pill rides every send; persist a change so
 				// this and future runs (queue drains, resumes) honor it.
@@ -908,6 +918,15 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				if (!session) {
 					ws.send(
 						JSON.stringify({ type: "error", message: "Session not found" }),
+					);
+					return;
+				}
+				if (session.upgradedTo || isLocalSessionUpgradeInProgress(sessionId)) {
+					ws.send(
+						JSON.stringify({
+							type: "error",
+							message: "This session is being upgraded to the cloud. Retry the prompt in the cloud session.",
+						}),
 					);
 					return;
 				}

@@ -138,6 +138,22 @@ describe("buildEngineSwitchHandoffNote", () => {
 		expect(note).toContain("- Assistant: Codex did the migration.");
 	});
 
+	it("includes tool activity when a fresh session replaces the same engine", () => {
+		const note = buildEngineSwitchHandoffNote({
+			fromProvider: "opencode",
+			toProvider: "opencode",
+			sameEngineRestart: true,
+			entries: [
+				entry("u1", "user", "Inspect the failing build."),
+				entry("t1", "tool_use", "Running the test suite"),
+				entry("r1", "tool_result", "3 tests failed in session-transfer"),
+			],
+		});
+
+		expect(note).toContain("- Tool: Running the test suite");
+		expect(note).toContain("- Tool result: 3 tests failed in session-transfer");
+	});
+
 	it("degrades gracefully with no transcript entries", () => {
 		const note = buildEngineSwitchHandoffNote({
 			fromProvider: "claude",

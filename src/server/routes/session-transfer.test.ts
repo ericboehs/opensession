@@ -5,6 +5,7 @@ import type { RouteContext } from "./context";
 import {
   handleSessionTransferRoutes,
   importCloudSession,
+  transcriptJsonlForTransfer,
   upgradeLocalSession,
 } from "./session-transfer";
 
@@ -68,8 +69,9 @@ function importBody(overrides: Record<string, unknown> = {}) {
       mode: "code",
       model: "opencode/anthropic/claude-sonnet-5",
     },
+    transcriptFormat: "transcript-v2-jsonl",
     transcriptJsonl:
-      '{"type":"user","uuid":"u1","timestamp":"2026-07-22T10:01:00.000Z","message":{"role":"user","content":[{"type":"text","text":"Continue this"}]}}\n',
+      '{"id":"u1","type":"user","content":"Continue this","timestamp":"2026-07-22T10:01:00.000Z"}\n',
     repo: "cloud-repo",
     branch: "feature/local-work",
     ...overrides,
@@ -83,7 +85,7 @@ function importDeps(overrides: Record<string, unknown> = {}) {
     branchExists: async () => true,
     createWorktree: async () => "/cloud/worktrees/local-work",
     verifyWorktree: async () => {},
-    writeTranscript: () => {},
+    importTranscript: () => {},
     removeTranscript: () => {},
     writeSession: () => {},
     sessionUrl: (id: string) => `https://cloud.example/session/${id}`,
@@ -97,6 +99,7 @@ function upgradeDeps(overrides: Record<string, unknown> = {}) {
     findSession: () => session(),
     readSession: () => sessionFile(),
     isBusy: () => false,
+    hasQueuedPrompts: () => false,
     reserve: () => {},
     release: () => {},
     gitState: async () => ({
@@ -104,7 +107,8 @@ function upgradeDeps(overrides: Record<string, unknown> = {}) {
       uncommittedFiles: [],
     }),
     push: async () => ({ ok: true as const }),
-    readTranscript: () => '{"type":"user","uuid":"u1"}\n',
+    readTranscript: () =>
+      '{"id":"u1","type":"user","content":"Continue this","timestamp":"2026-07-22T10:01:00.000Z"}\n',
     cloud: () => ({ upstream: "https://cloud.example", token: "secret" }),
     fetch: (async () =>
       new Response(null, { status: 500 })) as unknown as typeof fetch,
@@ -153,7 +157,37 @@ describe("cloud session import", () => {
       importDeps(),
     );
     expect(unsupportedTranscript.status).toBe(400);
-    expect((await unsupportedTranscript.json()).error).toContain("Claude-shape");
+    expect((await unsupportedTranscript.json()).error).toContain("transcript-v2");
+
+    const unknownFormat = await importCloudSession(
+      importBody({ transcriptFormat: "future-v3" }),
+      null,
+      importDeps(),
+    );
+    expect(unknownFormat.status).toBe(400);
+    expect((await unknownFormat.json()).error).toContain("transcriptFormat");
+  });
+
+  test("accepts the original unversioned Claude-shape JSONL contract", async () => {
+    let entries: unknown[] = [];
+    const response = await importCloudSession(
+      importBody({
+        transcriptFormat: undefined,
+        transcriptJsonl:
+          '{"type":"user","uuid":"u1","timestamp":"2026-07-22T10:01:00.000Z","message":{"role":"user","content":[{"type":"text","text":"Continue this"}]}}\n',
+      }),
+      null,
+      importDeps({
+        importTranscript: (_id: string, imported: unknown[]) => {
+          entries = imported;
+        },
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(entries).toEqual([
+      expect.objectContaining({ id: "u1", type: "user", content: "Continue this" }),
+    ]);
   });
 
   test("returns 409 without side effects when the id already exists", async () => {
@@ -173,10 +207,34 @@ describe("cloud session import", () => {
     expect(created).toBe(false);
   });
 
-  test("creates the existing-branch worktree and a synthetic transcript-backed engine", async () => {
+  test("cleans up a partial transcript-v2 import and returns JSON", async () => {
+    let removed = false;
+    const response = await importCloudSession(
+      importBody(),
+      null,
+      importDeps({
+        importTranscript: () => {
+          throw new Error("transcript store unavailable");
+        },
+        removeTranscript: (id: string) => {
+          expect(id).toBe(SESSION_ID);
+          removed = true;
+        },
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(await response.json()).toEqual({
+      error: "transcript store unavailable",
+    });
+    expect(removed).toBe(true);
+  });
+
+  test("creates the existing-branch worktree and imports history into transcript v2", async () => {
     const calls: string[] = [];
     let persisted: any;
-    let transcript: { id: string; jsonl: string } | undefined;
+    let transcript: { id: string; entries: unknown[] } | undefined;
     const response = await importCloudSession(
       importBody(),
       { login: "ada", name: "Ada Lovelace" },
@@ -185,9 +243,9 @@ describe("cloud session import", () => {
           calls.push(`worktree:${repoId}:${branch}`);
           return "/cloud/worktrees/local-work";
         },
-        writeTranscript: (id: string, jsonl: string) => {
+        importTranscript: (id: string, entries: unknown[]) => {
           calls.push("transcript");
-          transcript = { id, jsonl };
+          transcript = { id, entries };
         },
         writeSession: (_id: string, data: unknown) => {
           calls.push("session");
@@ -206,12 +264,18 @@ describe("cloud session import", () => {
       "transcript",
       "session",
     ]);
-    expect(transcript?.id).toBe("ses_import_019f8a5bc1227000aebd3cf01eb664ca");
-    expect(transcript?.jsonl).toContain("Continue this");
+    expect(transcript?.id).toBe(SESSION_ID);
+    expect(transcript?.entries).toEqual([
+      expect.objectContaining({
+        id: "u1",
+        type: "user",
+        content: "Continue this",
+      }),
+    ]);
     expect(persisted).toMatchObject({
       id: SESSION_ID,
-      claudeSessionId: transcript?.id,
-      opencodeSessionId: transcript?.id,
+      claudeSessionId: "ses_import_019f8a5bc1227000aebd3cf01eb664ca",
+      opencodeSessionId: "ses_import_019f8a5bc1227000aebd3cf01eb664ca",
       repo: "cloud-repo",
       branch: "feature/local-work",
       worktreeDir: "/cloud/worktrees/local-work",
@@ -222,9 +286,92 @@ describe("cloud session import", () => {
     expect(persisted).not.toHaveProperty("accountId");
     expect(persisted).not.toHaveProperty("automation");
   });
+
+  test("serializes full hydrated transcript-v2 entries without derived seqs", () => {
+    const jsonl = transcriptJsonlForTransfer([
+      {
+        id: "u1",
+        type: "user",
+        content: "Continue this",
+        timestamp: "2026-07-22T10:01:00.000Z",
+        seq: 1,
+      } as any,
+      {
+        id: "a1",
+        type: "assistant",
+        content: "I remember.",
+        timestamp: "2026-07-22T10:01:01.000Z",
+        model: "opencode/anthropic/claude-sonnet-5",
+        videos: ["/backstage/media/demo.mp4"],
+      },
+      {
+        id: "notice-1",
+        type: "system",
+        content: "Runner switched accounts",
+        timestamp: "2026-07-22T10:01:02.000Z",
+      },
+    ]);
+
+    expect(jsonl.endsWith("\n")).toBe(true);
+    expect(jsonl.split("\n").filter(Boolean).map((line) => JSON.parse(line))).toEqual([
+      {
+        id: "u1",
+        type: "user",
+        content: "Continue this",
+        timestamp: "2026-07-22T10:01:00.000Z",
+      },
+      expect.objectContaining({
+        id: "a1",
+        type: "assistant",
+        videos: ["/backstage/media/demo.mp4"],
+      }),
+      expect.objectContaining({ id: "notice-1", type: "system" }),
+    ]);
+  });
 });
 
 describe("local session upgrade", () => {
+  test("allows only one in-flight upgrade for a session", async () => {
+    let resolveRepos: ((response: Response) => void) | undefined;
+    const reposResponse = new Promise<Response>((resolve) => {
+      resolveRepos = resolve;
+    });
+    const first = upgradeLocalSession(
+      SESSION_ID,
+      upgradeDeps({
+        fetch: (async () => reposResponse) as unknown as typeof fetch,
+      }),
+    );
+
+    const second = await upgradeLocalSession(SESSION_ID, upgradeDeps());
+    expect(second.status).toBe(409);
+    expect((await second.json()).error).toContain("already in progress");
+
+    resolveRepos?.(new Response(null, { status: 502 }));
+    expect((await first).status).toBe(502);
+
+    const retry = await upgradeLocalSession(SESSION_ID, upgradeDeps());
+    expect(retry.status).not.toBe(409);
+  });
+
+  test("rejects an existing prompt queue before reserving the transfer", async () => {
+    let pushed = false;
+    const response = await upgradeLocalSession(
+      SESSION_ID,
+      upgradeDeps({
+        hasQueuedPrompts: () => true,
+        push: async () => {
+          pushed = true;
+          return { ok: true };
+        },
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain("queued prompts");
+    expect(pushed).toBe(false);
+  });
+
   test("rejects dirty worktrees with the file list before pushing", async () => {
     let pushed = false;
     const response = await upgradeLocalSession(
@@ -290,7 +437,9 @@ describe("local session upgrade", () => {
     expect(importPayload).toMatchObject({
       repo: "different-cloud-id",
       branch: "feature/local-work",
-      transcriptJsonl: '{"type":"user","uuid":"u1"}\n',
+      transcriptFormat: "transcript-v2-jsonl",
+      transcriptJsonl:
+        '{"id":"u1","type":"user","content":"Continue this","timestamp":"2026-07-22T10:01:00.000Z"}\n',
       session: {
         id: SESSION_ID,
         title: "Local work",
@@ -327,6 +476,52 @@ describe("local session upgrade", () => {
     expect(response.status).toBe(422);
     expect(await response.json()).toEqual({ error: "Branch vanished" });
     expect(archived).toBe(false);
+  });
+
+  test("turns empty upstream failures into diagnostic JSON", async () => {
+    const reposFailure = await upgradeLocalSession(
+      SESSION_ID,
+      upgradeDeps({
+        fetch: (async () =>
+          new Response(null, { status: 502 })) as unknown as typeof fetch,
+      }),
+    );
+    expect(reposFailure.status).toBe(502);
+    expect(reposFailure.headers.get("content-type")).toContain("application/json");
+    expect(await reposFailure.json()).toEqual({
+      error: "Cloud OpenSession returned HTTP 502",
+    });
+
+    const importFailure = await upgradeLocalSession(
+      SESSION_ID,
+      upgradeDeps({
+        fetch: (async (input: string | URL | Request) =>
+          String(input).endsWith("/backstage/api/repos")
+            ? Response.json({
+                repos: [{ id: "cloud-repo", ghRepo: "acme/widget" }],
+              })
+            : new Response(null, { status: 502 })) as typeof fetch,
+      }),
+    );
+    expect(importFailure.status).toBe(502);
+    expect(importFailure.headers.get("content-type")).toContain("application/json");
+    expect(await importFailure.json()).toEqual({
+      error: "Cloud OpenSession returned HTTP 502",
+    });
+
+    const messageFailure = await upgradeLocalSession(
+      SESSION_ID,
+      upgradeDeps({
+        fetch: (async (input: string | URL | Request) =>
+          String(input).endsWith("/backstage/api/repos")
+            ? Response.json({ message: "temporarily unavailable" }, { status: 502 })
+            : new Response()) as typeof fetch,
+      }),
+    );
+    expect(await messageFailure.json()).toMatchObject({
+      error: "temporarily unavailable",
+      message: "temporarily unavailable",
+    });
   });
 
   test("recovers when cloud import succeeded before the local archive write", async () => {

@@ -175,7 +175,8 @@ curl -sS https://os.example.com/backstage/api/sessions/import \
     "mode": "code",
     "model": "opencode/anthropic/claude-sonnet-5"
   },
-  "transcriptJsonl": "{\"type\":\"user\",\"uuid\":\"u1\",\"timestamp\":\"2026-07-22T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Continue this\"}]}}\n",
+  "transcriptFormat": "transcript-v2-jsonl",
+  "transcriptJsonl": "{\"id\":\"u1\",\"type\":\"user\",\"content\":\"Continue this\",\"timestamp\":\"2026-07-22T10:01:00.000Z\"}\n",
   "repo": "hosted-repo-id",
   "branch": "feature/local-work"
 }
@@ -188,14 +189,30 @@ The hosted endpoint accepts only this allowlisted session subset: `id`,
 automation ownership, sandboxes, and MCP configuration are ignored. The repo
 must be registered, the branch must exist on its `origin`, the id must be a
 lowercase `bks-` UUIDv7, and an existing id returns HTTP 409. Success returns
-HTTP 201 with the same `{ "id", "url" }` shape as the local route.
+HTTP 201 with the same `{ "id", "url" }` shape as the local route. Every error
+response from the local upgrade route is JSON shaped as `{ "error": "..." }`
+(with fields such as `uncommittedFiles` when relevant), including an empty or
+non-JSON error returned by the hosted server.
 
-The hosted session stores the shipped Claude-shape JSONL under a synthetic
-OpenCode session id. Its first hosted prompt deliberately starts a fresh engine
-session: the normal same-engine recovery path seeds the new transcript mirror
-and injects a bounded, hidden transcript handoff into model context. The real
-hosted engine id then replaces the synthetic id, while the UI history keeps the
-same message ids and remains continuous.
+`transcriptFormat: "transcript-v2-jsonl"` makes `transcriptJsonl` a sequence of
+full `TranscriptEntry` objects. The local server reads the hydrated history
+through transcript-v2's public `mergedSessionTranscript` path and serializes it
+without the store's derived `seq`; it does not read the retired OpenCode JSONL
+mirror. The hosted server validates those entries and bulk-imports them into
+transcript-v2 under the unified `bks-` session id. This preserves system events,
+tool metadata, media references, and message ids, and makes history visible
+immediately through the normal UI transcript reader. Local path-backed media or
+file attachments are not uploaded by session upgrade and may therefore be
+unavailable on the hosted server. For retry compatibility with local
+servers from before this format field existed, an omitted `transcriptFormat`
+is still accepted as the original Claude-shape JSONL format.
+
+The imported session carries a synthetic OpenCode session id only as a pending
+resume marker. Its first hosted prompt deliberately starts a fresh engine
+session and injects a bounded, hidden handoff built from the transcript-v2
+history into model context. The real hosted engine id then replaces the
+synthetic id, while the store-backed UI history keeps the same message ids and
+remains continuous. No transcript mirror file is created or written.
 
 ## Cloud sessions
 

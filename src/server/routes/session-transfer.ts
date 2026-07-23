@@ -1,21 +1,28 @@
-import { existsSync, readFileSync, rmSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { configuredCloud, configuredRepos, configuredServer, type Repo } from "../config";
 import { gitPush } from "../git-status";
+import { parseJsonlLines } from "../jsonl-parser";
 import { sessionHasJournaledRun } from "../migrate-engine";
-import {
-  existingOpencodeTranscriptPath,
-  getOpencodeTranscriptPath,
-  isOpencodeSessionId,
-} from "../opencode-transcript";
 import { OPENSESSION_CHATS_DIR } from "../paths";
 import { isLocalProfile } from "../profile";
+import { promptQueues } from "../queue-state";
 import {
   findSession,
   getCachedSessions,
   invalidateSessionsCache,
 } from "../session-cache";
-import { writeFileAtomic, writeJsonAtomic } from "../shared/atomic-write";
-import type { BackstageSessionFile, UnifiedSession } from "../types";
+import {
+  beginLocalSessionUpgrade,
+  endLocalSessionUpgrade,
+} from "../session-transfer-state";
+import { writeJsonAtomic } from "../shared/atomic-write";
+import { mergedSessionTranscript } from "../sessions";
+import { transcriptStore } from "../transcript-store";
+import type {
+  BackstageSessionFile,
+  TranscriptEntry,
+  UnifiedSession,
+} from "../types";
 import {
   createWorktreeForExistingBranch,
   worktreeHeadBranch,
@@ -53,6 +60,7 @@ export interface TransferSessionSubset {
 
 export interface SessionImportRequest {
   session: TransferSessionSubset;
+  transcriptFormat: "transcript-v2-jsonl";
   transcriptJsonl: string;
   repo: string;
   branch: string;
@@ -64,8 +72,8 @@ interface ImportDependencies {
   branchExists(repo: Repo, branch: string): Promise<boolean>;
   createWorktree(branch: string, repo: string): Promise<string>;
   verifyWorktree(repo: Repo, branch: string, worktreeDir: string): Promise<void>;
-  writeTranscript(engineSessionId: string, transcriptJsonl: string): void;
-  removeTranscript(engineSessionId: string): void;
+  importTranscript(sessionId: string, entries: TranscriptEntry[]): void;
+  removeTranscript(sessionId: string): void;
   writeSession(id: string, session: BackstageSessionFile & ImportedFromLocalMarker): void;
   sessionUrl(id: string): string;
 }
@@ -80,6 +88,7 @@ interface UpgradeDependencies {
   findSession(id: string): UnifiedSession | undefined;
   readSession(id: string): BackstageSessionFile | null;
   isBusy(session: UnifiedSession, data: BackstageSessionFile): boolean;
+  hasQueuedPrompts(id: string): boolean;
   reserve(id: string): void;
   release(id: string): void;
   gitState(dir: string): Promise<GitState>;
@@ -109,9 +118,49 @@ function validDate(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
-function validateTranscriptJsonl(value: unknown): string | null {
-  if (typeof value !== "string") return "transcriptJsonl must be a string";
-  for (const [index, line] of value.split("\n").entries()) {
+function parseTranscriptJsonl(
+  value: unknown,
+  format: "transcript-v2-jsonl" | "claude-jsonl-v1",
+): { entries: TranscriptEntry[]; error: null } | { entries: null; error: string } {
+  if (typeof value !== "string") {
+    return { entries: null, error: "transcriptJsonl must be a string" };
+  }
+  const rawLines = value.split("\n");
+  if (format === "transcript-v2-jsonl") {
+    const entries: TranscriptEntry[] = [];
+    for (const [index, line] of rawLines.entries()) {
+      if (!line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        if (
+          !parsed ||
+          typeof parsed.id !== "string" ||
+          !parsed.id ||
+          (parsed.type !== "user" &&
+            parsed.type !== "assistant" &&
+            parsed.type !== "tool_use" &&
+            parsed.type !== "tool_result" &&
+            parsed.type !== "system") ||
+          typeof parsed.content !== "string" ||
+          typeof parsed.timestamp !== "string"
+        ) {
+          return {
+            entries: null,
+            error: `transcriptJsonl line ${index + 1} is not a supported transcript-v2 entry`,
+          };
+        }
+        delete parsed.seq;
+        entries.push(parsed as unknown as TranscriptEntry);
+      } catch {
+        return {
+          entries: null,
+          error: `transcriptJsonl line ${index + 1} is not valid JSON`,
+        };
+      }
+    }
+    return { entries, error: null };
+  }
+  for (const [index, line] of rawLines.entries()) {
     if (!line.trim()) continue;
     try {
       const parsed = JSON.parse(line) as Record<string, unknown>;
@@ -125,13 +174,38 @@ function validateTranscriptJsonl(value: unknown): string | null {
         (message.role !== "user" && message.role !== "assistant") ||
         !Array.isArray(message.content)
       ) {
-        return `transcriptJsonl line ${index + 1} is not a supported Claude-shape transcript record`;
+        return {
+          entries: null,
+          error: `transcriptJsonl line ${index + 1} is not a supported Claude-shape transcript record`,
+        };
       }
     } catch {
-      return `transcriptJsonl line ${index + 1} is not valid JSON`;
+      return {
+        entries: null,
+        error: `transcriptJsonl line ${index + 1} is not valid JSON`,
+      };
     }
   }
-  return null;
+  const lines = rawLines.filter((line) => line.trim());
+  try {
+    return { entries: parseJsonlLines(lines), error: null };
+  } catch (error) {
+    return {
+      entries: null,
+      error: `transcriptJsonl could not be parsed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+export function transcriptJsonlForTransfer(entries: TranscriptEntry[]): string {
+  const lines = entries
+    .map((entry) => {
+      const { seq: _seq, ...transferred } = entry as TranscriptEntry & {
+        seq?: number;
+      };
+      return JSON.stringify(transferred);
+    });
+  return lines.length ? `${lines.join("\n")}\n` : "";
 }
 
 function importEngineId(sessionId: string): string {
@@ -214,8 +288,23 @@ export async function importCloudSession(
   const repo = deps.repos()[repoId];
   if (!repo) return errorResponse(`Repository "${repoId}" is not registered`);
   if (!branch) return errorResponse("branch is required");
-  const transcriptError = validateTranscriptJsonl(input.transcriptJsonl);
-  if (transcriptError) return errorResponse(transcriptError);
+  const transcriptFormat =
+    input.transcriptFormat === undefined
+      ? "claude-jsonl-v1"
+      : input.transcriptFormat;
+  if (
+    transcriptFormat !== "transcript-v2-jsonl" &&
+    transcriptFormat !== "claude-jsonl-v1"
+  ) {
+    return errorResponse(
+      'transcriptFormat must be "transcript-v2-jsonl" or "claude-jsonl-v1"',
+    );
+  }
+  const transcript = parseTranscriptJsonl(
+    input.transcriptJsonl,
+    transcriptFormat,
+  );
+  if (transcript.entries === null) return errorResponse(transcript.error);
 
   const id = selected.session.id;
   if (deps.sessionExists(id) || importingSessionIds.has(id)) {
@@ -223,7 +312,7 @@ export async function importCloudSession(
   }
   importingSessionIds.add(id);
   const engineId = importEngineId(id);
-  let transcriptWritten = false;
+  let transcriptImportStarted = false;
   try {
     if (!(await deps.branchExists(repo, branch))) {
       return errorResponse(
@@ -254,12 +343,16 @@ export async function importCloudSession(
       ...(selected.session.usage ? { usage: selected.session.usage } : {}),
       importedFrom: "local",
     };
-    deps.writeTranscript(engineId, input.transcriptJsonl as string);
-    transcriptWritten = true;
+    transcriptImportStarted = true;
+    deps.importTranscript(id, transcript.entries);
     deps.writeSession(id, session);
     return Response.json({ id, url: deps.sessionUrl(id) }, { status: 201 });
   } catch (error) {
-    if (transcriptWritten) deps.removeTranscript(engineId);
+    if (transcriptImportStarted) {
+      try {
+        deps.removeTranscript(id);
+      } catch {}
+    }
     return errorResponse(
       error instanceof Error ? error.message : String(error),
       500,
@@ -307,14 +400,31 @@ function cloudSessionDestination(
 }
 
 async function passUpstreamError(response: Response): Promise<Response> {
-  const headers = new Headers();
-  const contentType = response.headers.get("content-type");
-  if (contentType) headers.set("content-type", contentType);
-  return new Response(await response.text(), {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
+  let text = "";
+  try {
+    text = await response.text();
+  } catch {}
+  if (text.trim()) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const body = parsed as Record<string, unknown>;
+        const error =
+          typeof body.error === "string" && body.error
+            ? body.error
+            : typeof body.message === "string" && body.message
+              ? body.message
+              : `Cloud OpenSession returned HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
+        return Response.json({ ...body, error }, { status: response.status });
+      }
+    } catch {}
+  }
+  const detail = text.trim().slice(0, 2_000);
+  return errorResponse(
+    detail ||
+      `Cloud OpenSession returned HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`,
+    response.status,
+  );
 }
 
 export async function upgradeLocalSession(
@@ -338,14 +448,26 @@ export async function upgradeLocalSession(
   if (deps.isBusy(session, data)) {
     return errorResponse("Session is running; stop it before upgrading", 409);
   }
+  if (deps.hasQueuedPrompts(id)) {
+    return errorResponse(
+      "Session has queued prompts; let them finish or remove them before upgrading",
+      409,
+    );
+  }
+  if (!beginLocalSessionUpgrade(id)) {
+    return errorResponse("Session upgrade is already in progress", 409);
+  }
   // Reserve synchronously before the first await below. This uses the same
   // starting-state gate as a prompt, so no new engine turn can begin while the
   // branch and transcript are being shipped.
-  deps.reserve(id);
+  let reserved = false;
   try {
+    deps.reserve(id);
+    reserved = true;
     return await finishLocalUpgrade(id, session, data, deps);
   } finally {
-    deps.release(id);
+    if (reserved) deps.release(id);
+    endLocalSessionUpgrade(id);
   }
 }
 
@@ -457,6 +579,7 @@ async function finishLocalUpgrade(
   }
   const importBody: SessionImportRequest = {
     session: sessionSubsetForTransfer(data),
+    transcriptFormat: "transcript-v2-jsonl",
     transcriptJsonl,
     repo: cloudRepo.id,
     branch: session.branch,
@@ -581,15 +704,15 @@ const productionImportDependencies: ImportDependencies = {
       throw new Error(`Cloud worktree for "${branch}" has uncommitted changes`);
     }
   },
-  writeTranscript: (engineId, transcriptJsonl) =>
-    writeFileAtomic(
-      getOpencodeTranscriptPath(engineId),
-      transcriptJsonl && !transcriptJsonl.endsWith("\n")
-        ? `${transcriptJsonl}\n`
-        : transcriptJsonl,
+  importTranscript: (sessionId, entries) =>
+    transcriptStore().importLegacyTranscript(
+      sessionId,
+      entries,
+      "local-import",
+      null,
     ),
-  removeTranscript: (engineId) =>
-    rmSync(getOpencodeTranscriptPath(engineId), { force: true }),
+  removeTranscript: (sessionId) =>
+    transcriptStore().deleteSessionTranscript(sessionId),
   writeSession: (id, session) => {
     writeJsonAtomic(`${OPENSESSION_CHATS_DIR}/${id}.json`, session);
     invalidateSessionsCache();
@@ -618,6 +741,7 @@ const productionUpgradeDependencies: UpgradeDependencies = {
       session.id,
     ) ||
     sessionHasJournaledRun(session.id, data),
+  hasQueuedPrompts: (id) => !!promptQueues.get(id)?.length,
   reserve: markSessionStarting,
   release: unmarkSessionStarting,
   gitState: async (dir) => {
@@ -637,18 +761,12 @@ const productionUpgradeDependencies: UpgradeDependencies = {
     };
   },
   push: gitPush,
-  readTranscript: (session, data) => {
-    const engineId =
-      data.opencodeSessionId ||
-      (isOpencodeSessionId(data.claudeSessionId)
-        ? data.claudeSessionId
-        : undefined);
-    const path = existingOpencodeTranscriptPath(engineId) || session.transcriptPath;
-    if (!path || !existsSync(path)) {
-      if (engineId) throw new Error("OpenCode transcript mirror not found");
-      return "";
-    }
-    return readFileSync(path, "utf-8");
+  readTranscript: (session) => {
+    // A drifted v2 read repairs the store but returns the legacy fallback for
+    // that call. Read once to perform any repair, then export the authoritative
+    // store view so store-only notices and live entries cannot be omitted.
+    mergedSessionTranscript(session);
+    return transcriptJsonlForTransfer(mergedSessionTranscript(session));
   },
   cloud: configuredCloud,
   fetch,
@@ -675,17 +793,35 @@ export async function handleSessionTransferRoutes(
     ctx.req.method === "POST"
   ) {
     const body = await ctx.req.json().catch(() => null);
-    return importCloudSession(body, ctx.authUser, productionImportDependencies);
+    try {
+      return await importCloudSession(
+        body,
+        ctx.authUser,
+        productionImportDependencies,
+      );
+    } catch (error) {
+      return errorResponse(
+        error instanceof Error ? error.message : String(error),
+        500,
+      );
+    }
   }
 
   const upgradeMatch = ctx.path.match(
     /^\/backstage\/api\/sessions\/([^/]+)\/upgrade$/,
   );
   if (isLocalProfile() && upgradeMatch && ctx.req.method === "POST") {
-    return upgradeLocalSession(
-      decodeURIComponent(upgradeMatch[1]),
-      productionUpgradeDependencies,
-    );
+    try {
+      return await upgradeLocalSession(
+        decodeURIComponent(upgradeMatch[1]),
+        productionUpgradeDependencies,
+      );
+    } catch (error) {
+      return errorResponse(
+        error instanceof Error ? error.message : String(error),
+        500,
+      );
+    }
   }
 
   return undefined;

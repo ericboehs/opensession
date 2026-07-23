@@ -122,9 +122,11 @@ export function buildEngineSwitchHandoffNote(input: {
 	maxChars?: number;
 }): string {
 	const maxChars = input.maxChars ?? 180_000;
-	const conversational = input.entries.filter((e) =>
-		["user", "assistant", "system"].includes(e.type),
-	);
+	const conversational = input.sameEngineRestart
+		? input.entries
+		: input.entries.filter((e) =>
+				["user", "assistant", "system"].includes(e.type),
+			);
 	const useful = input.maxEntries !== undefined
 		? conversational.slice(-input.maxEntries)
 		: conversational;

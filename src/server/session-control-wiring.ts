@@ -23,6 +23,7 @@ import { findSession, getCachedSessions, invalidateSessionsCache, recordRunOutco
 import { type SessionState, type SessionSummary, registerSessionControl } from "./session-control";
 import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
 import { engineSessionPatch, engineUserTexts, getAllSessions, mergedSessionTranscript } from "./sessions";
+import { isLocalSessionUpgradeInProgress } from "./session-transfer-state";
 import { rebuildIndex } from "./slack-links";
 import { handleSlashCommand } from "./slash-commands";
 import { type BackstageSessionFile, type SessionUsage, type UnifiedSession } from "./types";
@@ -101,6 +102,12 @@ registerSessionControl({
 		const session = findSession(id);
 		if (!session)
 			return { status: "error" as const, message: "No session with that id." };
+		if (session.upgradedTo || isLocalSessionUpgradeInProgress(id)) {
+			return {
+				status: "error" as const,
+				message: "This session is being upgraded to the cloud. Retry there after the upgrade completes.",
+			};
+		}
 
 		// Slash commands (/loop, /goal, /model, /help) are handled by backstage
 		// itself, exactly like the WebSocket prompt path — checked BEFORE the
@@ -150,7 +157,6 @@ registerSessionControl({
 				message: "Queued behind the current run.",
 			};
 		}
-
 		// Backstage chats with no engine id are fresh chats — the first prompt
 		// starts a new conversation (see runSessionPrompt).
 		if (

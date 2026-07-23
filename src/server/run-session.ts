@@ -60,6 +60,7 @@ import {
 	engineSessionPatch,
 	engineUserTexts,
 	getEngineTranscriptPath,
+	mergedSessionTranscript,
 	readEngineTranscript,
 } from "./sessions";
 import {
@@ -1134,8 +1135,14 @@ async function runSessionPromptInner(
 	// claude slot — recognizable by the ses_ shape; see engineSessionPatch).
 	// A claude run never resumes a ses_-shaped id: that ride was written by an
 	// opencode run, and handing it to the Claude SDK would fail the resume.
+	const pendingImportedEngineId =
+		session.importedFrom === "local" &&
+		session.opencodeSessionId?.startsWith("ses_import_")
+			? session.opencodeSessionId
+			: undefined;
 	const engineSessionId =
-		provider === "codex"
+		pendingImportedEngineId ||
+		(provider === "codex"
 			? session.codexThreadId
 			: provider === "opencode"
 				? session.opencodeSessionId ||
@@ -1144,7 +1151,7 @@ async function runSessionPromptInner(
 						: undefined)
 				: isOpencodeSessionId(session.claudeSessionId)
 					? undefined
-					: session.claudeSessionId;
+					: session.claudeSessionId);
 	// A claude session with no engine id yet is a *fresh* chat (e.g. a new sibling
 	// chat opened from the tab strip's +): its first prompt starts a new claude
 	// conversation, and finalSessionId is persisted below — same as codex, which
@@ -1222,6 +1229,23 @@ async function runSessionPromptInner(
 			console.log(
 				`[prompt] ${sessionId}: cross-${familySwitch ? "family" : "provider"} switch ${lastProvider}→${provider}; bridging ${prevEntries.length} transcript entries`,
 			);
+		}
+	}
+	// A local-to-cloud import deliberately carries a synthetic OpenCode id so
+	// the first cloud turn attempts a resume, falls back to a fresh engine
+	// session, and then persists that real id. Its history lives in transcript
+	// v2 under the unified bks id, not in the retired OpenCode JSONL mirror, so
+	// bridge that store history into the fresh engine's first prompt here.
+	if (pendingImportedEngineId) {
+		const importedEntries = mergedSessionTranscript(session);
+		if (importedEntries.length) {
+			switchHandoffEntries = importedEntries;
+			switchHandoff = buildEngineSwitchHandoffNote({
+				fromProvider: "opencode",
+				toProvider: "opencode",
+				sameEngineRestart: true,
+				entries: importedEntries,
+			});
 		}
 	}
 
