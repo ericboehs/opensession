@@ -2,10 +2,13 @@ import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useState, useCallback } from "react";
 import { TEAM } from "./UserPicker";
 import { shortModelLabel, splitModelOptions } from "./ModelEffortSelect";
+import { Menu } from "../ui/menu";
+import { IconDotsHorizontal, IconSliders, IconTrash } from "./icons";
 
-// The Settings → Models panel: which model new sessions run on, plus the
-// Claude / Codex account pools those runs draw from. Everything here follows
-// the Settings idiom (setting-card row lists), not the Connections card grid.
+// The Settings → Accounts panel: the Claude / Codex subscription accounts
+// session runs draw from, plus the default model new runs start on. Everything
+// here follows the Settings idiom (setting-card row lists), not the
+// Connections card grid.
 
 interface ModelInfo {
 	id: string;
@@ -57,10 +60,15 @@ interface CodexAccountInfo {
 	usable: boolean;
 }
 
-export function ModelsPanel() {
+export function AccountsPanel() {
 	return (
 		<div className="settings-panel">
-			<h1 className="settings-title">Models</h1>
+			<h1 className="settings-title">Accounts</h1>
+			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+				The Claude (Anthropic) and Codex (OpenAI) subscription accounts that
+				session runs draw from, plus the model new runs start on. Other model
+				providers with their own API keys live under Model providers.
+			</div>
 
 			<div className="settings-group-label">Default model</div>
 			<div className="setting-card">
@@ -258,6 +266,11 @@ function SectionHeader({
 	);
 }
 
+/** ⋯ trigger for a row's overflow actions — always visible (setting rows have
+ * no hover-group), lights up while its menu is open. */
+const rowMenuTriggerClasses =
+	"flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-faint transition-[color,background] hover:bg-active hover:text-fg data-[popup-open]:bg-active data-[popup-open]:text-fg";
+
 function Avatar({ name, className }: { name: string; className: string }) {
 	return (
 		<span
@@ -442,7 +455,7 @@ function ClaudeAccountsSection() {
 				actions={
 					<>
 						<button className="btn-small" onClick={() => load(true)} disabled={refreshing}>
-							{refreshing ? "Checking…" : "↻ Refresh usage"}
+							{refreshing ? "Checking…" : "Refresh usage"}
 						</button>
 						<button className="btn-small" onClick={() => setShowAdd(true)}>
 							+ Add account
@@ -521,7 +534,7 @@ function ClaudeAccountsSection() {
 									</>
 								)}
 							</div>
-							<div className="setting-row-control flex flex-col items-stretch gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+							<div className="setting-row-control flex items-center gap-1.5">
 								<select
 									className="ui-select"
 									value={a.owner || ""}
@@ -544,20 +557,27 @@ function ClaudeAccountsSection() {
 										</option>
 									))}
 								</select>
-								<button
-									className="btn-small"
-									onClick={() => handleSetCredentialsPath(a)}
-									title="Set the OAuth credentials file used only for usage polling"
-								>
-									Usage creds
-								</button>
-								<button
-									className="btn-small btn-small-danger"
-									onClick={() => handleRemove(a)}
-									title="Remove this account"
-								>
-									Remove
-								</button>
+								<Menu.Root>
+									<Menu.Trigger
+										className={rowMenuTriggerClasses}
+										aria-label={`Manage ${a.name}`}
+									>
+										<IconDotsHorizontal size={18} />
+									</Menu.Trigger>
+									<Menu.Popup align="end" sideOffset={4}>
+										<Menu.Item onClick={() => handleSetCredentialsPath(a)}>
+											<IconSliders size={16} className="text-faint" />
+											Usage credentials…
+										</Menu.Item>
+										<Menu.Item
+											onClick={() => handleRemove(a)}
+											className="text-red data-[highlighted]:bg-red-soft"
+										>
+											<IconTrash size={16} />
+											Remove account
+										</Menu.Item>
+									</Menu.Popup>
+								</Menu.Root>
 							</div>
 						</div>
 					))
@@ -685,7 +705,7 @@ function CodexAccountsSection() {
 									<span className="font-mono">{a.valueMasked}</span>
 								</div>
 							</div>
-							<div className="setting-row-control flex flex-col items-stretch gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+							<div className="setting-row-control flex items-center gap-1.5">
 								<select
 									className="ui-select"
 									value={a.owner || ""}
@@ -708,13 +728,23 @@ function CodexAccountsSection() {
 										</option>
 									))}
 								</select>
-								<button
-									className="btn-small btn-small-danger"
-									onClick={() => handleRemove(a)}
-									title="Remove this account"
-								>
-									Remove
-								</button>
+								<Menu.Root>
+									<Menu.Trigger
+										className={rowMenuTriggerClasses}
+										aria-label={`Manage ${a.name}`}
+									>
+										<IconDotsHorizontal size={18} />
+									</Menu.Trigger>
+									<Menu.Popup align="end" sideOffset={4}>
+										<Menu.Item
+											onClick={() => handleRemove(a)}
+											className="text-red data-[highlighted]:bg-red-soft"
+										>
+											<IconTrash size={16} />
+											Remove account
+										</Menu.Item>
+									</Menu.Popup>
+								</Menu.Root>
 							</div>
 						</div>
 					))

@@ -54,7 +54,7 @@ import {
 	onPinNewWorkspacesChanged,
 } from "../lib/pins";
 import { Connections } from "./Connections";
-import { ModelsPanel } from "./Models";
+import { AccountsPanel } from "./Models";
 import { ModelProvidersPanel } from "./ModelProviders";
 import {
 	fetchAudit,
@@ -292,7 +292,7 @@ const SECTIONS: {
 	},
 	{
 		key: "model",
-		label: "Models",
+		label: "Accounts",
 		group: "Workspace",
 		icon: (
 			<svg
@@ -303,14 +303,10 @@ const SECTIONS: {
 				stroke="currentColor"
 				strokeWidth="1.4"
 			>
-				<path
-					d="M8 2.3l1.2 3.3 3.3 1.2-3.3 1.2L8 11.3 6.8 8 3.5 6.8l3.3-1.2L8 2.3z"
-					strokeLinejoin="round"
-				/>
-				<path
-					d="M12.4 10.4l.4 1.3 1.3.4-1.3.4-.4 1.3-.4-1.3-1.3-.4 1.3-.4.4-1.3z"
-					strokeLinejoin="round"
-				/>
+				<rect x="1.75" y="3.25" width="12.5" height="9.5" rx="1.5" />
+				<circle cx="5.75" cy="7" r="1.5" />
+				<path d="M3.75 10.75c.4-1.1 1.3-1.6 2-1.6s1.6.5 2 1.6" strokeLinecap="round" />
+				<path d="M9.75 6.5h2.75M9.75 9h2.75" strokeLinecap="round" />
 			</svg>
 		),
 	},
@@ -456,7 +452,7 @@ function SectionPanel({
 			{section === "appearance" && <AppearancePanel />}
 			{section === "workspace" && <WorkspacePanel />}
 			{section === "audit" && <AuditPanel />}
-			{section === "model" && <ModelsPanel />}
+			{section === "model" && <AccountsPanel />}
 			{section === "modelProviders" && <ModelProvidersPanel />}
 			{section === "connections" && <Connections />}
 			{section === "memory" && <MemoryPanel />}

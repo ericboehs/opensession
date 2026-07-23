@@ -5,7 +5,7 @@ import { toast } from "../ui/toast";
 // Settings → Model providers: third-party OpenCode providers (xai, openrouter,
 // groq, …) — API key + optional baseURL, stored server-side (0600, returned
 // masked) — plus the model ids each one surfaces in the model picker. The
-// anthropic/openai bridges are configured under Models, never here; the server
+// anthropic/openai bridges are configured under Accounts, never here; the server
 // rejects those ids.
 
 interface ProviderInfo {
@@ -80,7 +80,7 @@ export function ModelProvidersPanel() {
 				OpenRouter, Groq, Mistral, …) with your API key. Registered model ids
 				show up in the model picker; runs on them authenticate with the stored
 				key. Anthropic and OpenAI run on the subscription bridges — manage
-				those under Models.
+				those under Accounts.
 			</div>
 
 			<div className="settings-group-label flex items-center justify-between gap-2">
