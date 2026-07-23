@@ -3,11 +3,10 @@
  *
  * The Electron shell (os1-mac/) auto-updates via Electron's built-in
  * Squirrel.Mac updater pointed at `GET /api/os1-mac/update?version=<installed>`
- * (JSON server type: respond 204 when current, or `{url, name, notes,
- * pub_date}` when an update exists). Releases are the signed + notarized
- * arm64 zips that .github/workflows/os1-mac-release.yml publishes to the
- * private GitHub repo — which Squirrel's plain NSURLSession can't reach — so
- * `GET /api/os1-mac/download/<tag>.zip` proxies the asset through the gh CLI,
+ * using its static JSON feed mode. Releases are the signed + notarized arm64
+ * zips that .github/workflows/os1-mac-release.yml publishes to the private
+ * GitHub repo — which Squirrel's plain NSURLSession can't reach — so `GET
+ * /api/os1-mac/download/<tag>.zip` proxies the asset through the gh CLI,
  * disk-cached under ~/.opensession-os1-mac-updates/<tag>/.
  *
  * Both endpoints are exempt from the web-auth gate (opensession.ts fetch
@@ -47,11 +46,6 @@ function parseVersion(v: string): [number, number, number] | null {
 		.replace(/^v/, "")
 		.match(/^(\d+)\.(\d+)\.(\d+)/);
 	return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
-}
-
-function isNewer(a: [number, number, number], b: [number, number, number]): boolean {
-	for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
-	return false;
 }
 
 /** Latest published release (memory-cached) — null when none or gh failed. */
@@ -146,21 +140,33 @@ export async function handleOs1UpdateRoutes(
 	if (!path.startsWith("/backstage/api/os1-mac/")) return undefined;
 	if (req.method !== "GET") return undefined;
 
-	// Squirrel.Mac JSON feed. 204 = up to date.
+	// Squirrel.Mac static JSON feed. Squirrel compares currentRelease with the
+	// app version itself; unlike the dynamic server mode, this mode cannot use a
+	// 204 response to signal that the app is current.
 	if (path === "/backstage/api/os1-mac/update") {
 		const current = parseVersion(url.searchParams.get("version") || "");
 		const rel = await latestRelease();
-		if (!rel || !current || !isNewer(rel.version, current)) {
-			return new Response(null, { status: 204 });
+		if (!rel) {
+			const currentRelease = current?.join(".") || "0.0.0";
+			return Response.json({ currentRelease, releases: [] });
 		}
 		// Canonical public form is prefix-less (os.tella.dev root); it
 		// normalizes back onto /backstage/api/* in the fetch preamble.
 		const base = configuredServer().publicBaseUrl.replace(/\/$/, "");
 		return Response.json({
-			url: `${base}/api/os1-mac/download/${rel.tag}.zip`,
-			name: rel.tag,
-			notes: rel.notes,
-			pub_date: rel.publishedAt,
+			currentRelease: rel.version.join("."),
+			releases: [
+				{
+					version: rel.version.join("."),
+					updateTo: {
+						version: rel.version.join("."),
+						url: `${base}/api/os1-mac/download/${rel.tag}.zip`,
+						name: rel.tag,
+						notes: rel.notes,
+						pub_date: rel.publishedAt,
+					},
+				},
+			],
 		});
 	}
 

@@ -42,10 +42,10 @@ let quitting = false;
 // ---- Auto-update ------------------------------------------------------------
 // Electron's built-in Squirrel.Mac updater against the OpenSession server's
 // release proxy (src/server/routes/os1-update.ts server-side). The server
-// compares versions and answers 204 (current) or JSON {url,...}; on a hit
-// Squirrel downloads the signed zip immediately, so "available" doubles as
-// "downloading". State mirrors to the renderer (window.os1.updates in
-// preload.js), which shows the update toast and calls install to restart.
+// serves Squirrel's static JSON feed; Squirrel compares versions and downloads
+// the signed zip immediately when newer, so "available" doubles as
+// "downloading". State mirrors to the renderer (window.os1.updates in preload.js),
+// which shows the update toast and calls install to restart.
 let updateState = { state: "idle", version: null };
 
 function setUpdateState(next) {
