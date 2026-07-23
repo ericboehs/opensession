@@ -15,6 +15,13 @@ final class SessionViewModel {
     let session: Session
 
     private(set) var entries: [TranscriptEntry] = []
+    /// Ephemeral entries from the live engine stream (tool calls mid-run).
+    /// They render at the end in stream order and graduate into `entries`
+    /// when the file watcher lands them via transcript_append — the
+    /// transcript FILE is the order authority. (Appending stream entries to
+    /// `entries` directly put tool calls ahead of the assistant text that
+    /// precedes them in the file, because that text lands ~1s later.)
+    private(set) var liveEntries: [TranscriptEntry] = []
     private(set) var liveText = ""
     private(set) var isStreaming = false
     private(set) var isRunning: Bool
@@ -118,6 +125,7 @@ final class SessionViewModel {
 
         case .transcriptInit(let id, let newEntries) where id == session.id:
             entries = newEntries
+            liveEntries.removeAll()
             localEchoIds.removeAll()
 
         case .transcriptHistory(let id, let older) where id == session.id:
@@ -126,6 +134,15 @@ final class SessionViewModel {
 
         case .transcriptAppend(let id, let appended) where id == session.id:
             upsert(appended)
+            // Landed durably — drop the ephemeral copies (match by id, or by
+            // toolUseId in case the two channels mint different entry ids).
+            liveEntries.removeAll { live in
+                appended.contains {
+                    $0.id == live.id
+                        || ($0.type == live.type && $0.toolUseId != nil
+                            && $0.toolUseId == live.toolUseId)
+                }
+            }
             // A mid-run assistant block that lands as a durable entry must be
             // stripped from the live bubble (it would render twice otherwise),
             // and remembered so a stream_text that arrives AFTER the append is
@@ -142,6 +159,7 @@ final class SessionViewModel {
 
         case .streamStart(let id) where id == session.id:
             liveText = ""
+            liveEntries = []
             landedStreamTexts = []
             isStreaming = true
             streamEnded = false
@@ -155,7 +173,12 @@ final class SessionViewModel {
             }
 
         case .streamEntry(let id, let entry) where id == session.id:
-            upsert([entry])
+            guard !entries.contains(where: { $0.id == entry.id }) else { break }
+            if let index = liveEntries.firstIndex(where: { $0.id == entry.id }) {
+                liveEntries[index] = entry
+            } else {
+                liveEntries.append(entry)
+            }
 
         case .streamDone(let id) where id == session.id:
             streamEnded = true
@@ -203,16 +226,21 @@ final class SessionViewModel {
     }
 
     var displayItems: [DisplayItem] {
+        // Durable file-ordered entries first, then the ephemeral live tail.
+        var all = entries
+        let knownIds = Set(entries.map(\.id))
+        all.append(contentsOf: liveEntries.filter { !knownIds.contains($0.id) })
+
         var resultByUseId: [String: TranscriptEntry] = [:]
-        for entry in entries where entry.type == "tool_result" {
+        for entry in all where entry.type == "tool_result" {
             let key = entry.toolUseId ?? String(entry.id.dropFirst("tr-".count))
             if resultByUseId[key] == nil { resultByUseId[key] = entry }
         }
         let useIds = Set(
-            entries.filter { $0.type == "tool_use" }.map { $0.toolUseId ?? $0.id }
+            all.filter { $0.type == "tool_use" }.map { $0.toolUseId ?? $0.id }
         )
         var items: [DisplayItem] = []
-        for entry in entries {
+        for entry in all {
             switch entry.type {
             case "tool_use":
                 let key = entry.toolUseId ?? entry.id

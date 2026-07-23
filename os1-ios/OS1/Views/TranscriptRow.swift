@@ -218,7 +218,7 @@ struct StreamingBubble: View {
                 }
                 if live {
                     Text("▍")
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(.tertiary)
                 }
             }
             .padding(.horizontal, 12)
