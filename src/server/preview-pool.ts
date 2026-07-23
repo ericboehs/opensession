@@ -186,14 +186,28 @@ function goldenImage(repoId: string): string {
 
 async function docker(args: string[], timeoutMs = 60_000): Promise<{ ok: boolean; out: string }> {
   const proc = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe" });
-  const killer = setTimeout(() => proc.kill(), timeoutMs);
-  const [out, err, code] = await Promise.all([
+  let timedOut = false;
+  const killer = setTimeout(() => {
+    timedOut = true;
+    proc.kill(9);
+  }, timeoutMs);
+  const collect = Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
     proc.exited,
+  ]).then(([out, err, code]) => ({ ok: code === 0 && !timedOut, out: (out + err).trim() }));
+  // Absolute backstop: stream reads can wedge after a kill — never let a
+  // docker call hang the caller past its budget (bit us live 2026-07-23:
+  // a timed-out in-container clone left the whole golden build stuck).
+  const result = await Promise.race([
+    collect,
+    new Promise<{ ok: boolean; out: string }>((res) =>
+      setTimeout(() => res({ ok: false, out: `docker ${args[0]} timed out after ${timeoutMs}ms` }), timeoutMs + 10_000),
+    ),
   ]);
   clearTimeout(killer);
-  return { ok: code === 0, out: (out + err).trim() };
+  if (timedOut) return { ok: false, out: `timed out after ${timeoutMs}ms: ${result.out.slice(-300)}` };
+  return result;
 }
 
 async function dockerExec(name: string, script: string, timeoutMs = 60_000): Promise<{ ok: boolean; out: string }> {
@@ -392,13 +406,15 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
 
     // Workspace: clone from the RO-mounted host checkout (fast), then align
     // to origin/<default> over https so the golden never lags the remote.
-    let r = await dockerExec(name, `git clone --depth 50 --branch ${repo.defaultBranch} file:///src ${WORKSPACE}`, 180_000);
+    // Depth 1: the workspace never needs history (worktree->container sync is
+    // computed host-side; the container only ever resets to a fetched tip).
+    let r = await dockerExec(name, `git clone --depth 1 --branch ${repo.defaultBranch} file:///src ${WORKSPACE}`, 5 * 60_000);
     if (!r.ok) return void (await fail(`clone: ${r.out.slice(-500)}`));
     if (cloneUrl) {
       r = await dockerExec(
         name,
-        `cd ${WORKSPACE} && git fetch --depth 50 ${JSON.stringify(cloneUrl)} ${repo.defaultBranch} && git reset --hard FETCH_HEAD`,
-        180_000,
+        `cd ${WORKSPACE} && git fetch --depth 1 ${JSON.stringify(cloneUrl)} ${repo.defaultBranch} && git reset --hard FETCH_HEAD`,
+        5 * 60_000,
       );
       if (!r.ok) return void (await fail(`fetch/reset: ${r.out.slice(-500)}`));
     }
@@ -491,7 +507,7 @@ async function spawnWarmContainer(repo: Repo): Promise<void> {
   // Advance the workspace to current origin/<default> before boot so warm
   // containers never serve a stale golden tree (delta fetch — seconds).
   const advance = cloneUrl
-    ? `(git fetch --depth 50 ${JSON.stringify(cloneUrl)} ${repo.defaultBranch} && git reset --hard FETCH_HEAD) || true && `
+    ? `(git fetch --depth 1 ${JSON.stringify(cloneUrl)} ${repo.defaultBranch} && git reset --hard FETCH_HEAD) || true && `
     : "";
   const run = await docker([
     "run", "-d", "--name", name,
