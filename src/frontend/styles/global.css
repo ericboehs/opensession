@@ -14655,6 +14655,14 @@ html[data-theme="light"] .palette-card .palette-create {
 	gap: 2px;
 	overflow-y: auto;
 }
+/* In the desktop shell (os1-mac) the settings page fills the whole window,
+   including the titlebar band — but it has no .sidebar-brand to reserve it, so
+   the traffic lights overlay the first row and land on "Back to app". Reserve
+   the app's 54px titlebar band at the top so the button clears the lights.
+   Keyed off html.wco (the WCO/desktop-shell flag); web keeps the base 16px. */
+html.wco .settings-sidenav {
+	padding-top: 54px;
+}
 .settings-back {
 	display: flex;
 	align-items: center;
