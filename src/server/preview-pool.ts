@@ -569,6 +569,15 @@ async function dockerReadWorkspaceFile(_repo: Repo, rel: string): Promise<string
   return existsSync(p) ? readFileSync(p, "utf-8") : null;
 }
 
+/** Is this HTTP status "the app answered"? Daytona's proxy answers even
+ *  when the upstream is down (502/503) or the link is token-gated (401) —
+ *  those mean NOT up. Docker's loopback only answers when dev listens. */
+function poolCodeLive(c: PoolContainer, code: number): boolean {
+  if (code === 0) return false;
+  if (!isDaytona(c)) return true;
+  return code < 500 && code !== 401 && code !== 403;
+}
+
 /** HTTP status for a path on a pool member's app, whichever backend. */
 async function poolHttpCode(c: PoolContainer, path: string, timeoutSec: number): Promise<number> {
   if (isDaytona(c)) {
@@ -592,7 +601,7 @@ async function waitForPoolUp(c: PoolContainer, timeoutMs: number): Promise<{ ok:
   let probes = 0;
   while (Date.now() < deadline) {
     const code = await poolHttpCode(c, "/", 6);
-    if (code !== 0) return { ok: true, detail: `HTTP ${code}` };
+    if (poolCodeLive(c, code)) return { ok: true, detail: `HTTP ${code}` };
     probes++;
     if (probes % 3 === 0) {
       if ((await poolRuntimeStatus(c)) === "gone") return { ok: false, detail: "sandbox gone" };
@@ -639,6 +648,10 @@ async function spawnDaytonaWarm(repo: Repo): Promise<void> {
     {
       ...(scfg.daytona?.snapshot ? { snapshot: scfg.daytona.snapshot } : {}),
       labels: { [POOL_LABEL]: repo.id, "bks-preview-pool-kind": "warm" },
+      // Preview links are token-gated by Daytona's proxy (401 for browsers);
+      // public:true makes the per-sandbox URL open — access control is the
+      // unguessable sandbox uuid, same trade-off as Modal publicPreviews.
+      public: true,
       // Never auto-stop a warm pool member — the sweep manages lifecycle.
       autoStopInterval: 0,
     } as never,
@@ -1090,7 +1103,7 @@ export async function poolPreviewLive(worktreeDir: string): Promise<boolean | nu
     patchContainer(claim.repoId, claim.containerName, { lastSeenAt: new Date().toISOString() });
   }
   if (!c) return false;
-  return (await poolHttpCode(c, "/", isDaytona(c) ? 5 : 2)) > 0;
+  return poolCodeLive(c, await poolHttpCode(c, "/", isDaytona(c) ? 5 : 2));
 }
 
 /**
