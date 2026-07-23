@@ -1,0 +1,80 @@
+import Foundation
+import Observation
+
+/// Server endpoint + credentials. The URL lives in UserDefaults, the bearer
+/// token in the keychain. `ws` path and `Authorization` header conventions
+/// follow the OpenSession server (see README for the wire protocol).
+// Deliberately not actor-isolated: views read `shared` from nonisolated
+// property initializers, and the backing stores (UserDefaults/Keychain) are
+// safe to touch from any thread.
+@Observable
+final class ServerConfig {
+    static let shared = ServerConfig()
+
+    private static let urlDefaultsKey = "os1.serverURL"
+    private static let userNameDefaultsKey = "os1.userName"
+    private static let tokenKeychainKey = "os1.token"
+
+    var baseURLString: String {
+        didSet { UserDefaults.standard.set(baseURLString, forKey: Self.urlDefaultsKey) }
+    }
+
+    /// Display name attached to prompts. When GitHub sign-in is active the
+    /// server overrides this with the verified identity; it still matters for
+    /// servers running without the auth gate.
+    var userName: String {
+        didSet { UserDefaults.standard.set(userName, forKey: Self.userNameDefaultsKey) }
+    }
+
+    var token: String {
+        didSet {
+            if token.isEmpty {
+                Keychain.delete(Self.tokenKeychainKey)
+            } else {
+                Keychain.set(token, for: Self.tokenKeychainKey)
+            }
+        }
+    }
+
+    private init() {
+        // OS1_SERVER / OS1_TOKEN env overrides exist for dev runs on the
+        // simulator (SIMCTL_CHILD_* injection); they are not persisted.
+        let env = ProcessInfo.processInfo.environment
+        baseURLString = env["OS1_SERVER"]
+            ?? UserDefaults.standard.string(forKey: Self.urlDefaultsKey)
+            ?? "https://os.tella.dev"
+        userName = UserDefaults.standard.string(forKey: Self.userNameDefaultsKey) ?? "ios"
+        token = env["OS1_TOKEN"] ?? Keychain.get(Self.tokenKeychainKey) ?? ""
+    }
+
+    /// Base URL without a trailing slash, e.g. `https://os.tella.dev`.
+    var baseURL: URL? {
+        var trimmed = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        guard !trimmed.isEmpty else { return nil }
+        if !trimmed.contains("://") { trimmed = "https://" + trimmed }
+        return URL(string: trimmed)
+    }
+
+    /// The UI WebSocket endpoint: same host, `/ws`, ws(s) scheme.
+    var wsURL: URL? {
+        guard let baseURL,
+              var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        else { return nil }
+        components.scheme = components.scheme == "http" ? "ws" : "wss"
+        components.path = "/ws"
+        return components.url
+    }
+
+    var isConfigured: Bool {
+        baseURL != nil && !token.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    func authorizedRequest(_ url: URL) -> URLRequest {
+        var request = URLRequest(url: url)
+        if !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        return request
+    }
+}
