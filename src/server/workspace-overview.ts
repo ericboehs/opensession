@@ -12,7 +12,7 @@
  * /backstage/media, and http(s) image URLs pass through as-is.
  */
 
-import { parseTranscript } from "./jsonl-parser";
+import { parseTranscriptAsync } from "./jsonl-parser";
 import type { TranscriptEntry } from "./types";
 
 export interface OverviewChat {
@@ -54,7 +54,9 @@ function imageSrcFor(sessionId: string, entry: TranscriptEntry, idx: number, raw
   return `/backstage/api/sessions/${encodeURIComponent(sessionId)}/transcript-image/${encodeURIComponent(entry.id)}/${idx}`;
 }
 
-export function buildWorkspaceOverview(chats: OverviewChat[]): WorkspaceOverview {
+export async function buildWorkspaceOverview(
+  chats: OverviewChat[],
+): Promise<WorkspaceOverview> {
   const ordered = [...chats].sort((a, b) =>
     (a.createdAt || "").localeCompare(b.createdAt || ""),
   );
@@ -65,7 +67,9 @@ export function buildWorkspaceOverview(chats: OverviewChat[]): WorkspaceOverview
 
   for (const chat of ordered) {
     if (!chat.transcriptPath) continue;
-    const entries = parseTranscript(chat.transcriptPath);
+    // Async: this loops over EVERY chat in the workspace — back-to-back sync
+    // parses of fat transcripts wedged the event loop for the whole sweep.
+    const entries = await parseTranscriptAsync(chat.transcriptPath);
     if (!prompt) {
       const first = entries.find(isOpeningPrompt);
       if (first)
@@ -110,12 +114,14 @@ export function buildWorkspaceOverview(chats: OverviewChat[]): WorkspaceOverview
  * entry/index doesn't exist, or a redirect target when the image is already a
  * plain URL.
  */
-export function resolveTranscriptImage(
+export async function resolveTranscriptImage(
   transcriptPath: string,
   entryId: string,
   idx: number,
-): { bytes: ArrayBuffer; contentType: string } | { redirect: string } | null {
-  const entry = parseTranscript(transcriptPath).find((e) => e.id === entryId);
+): Promise<{ bytes: ArrayBuffer; contentType: string } | { redirect: string } | null> {
+  const entry = (await parseTranscriptAsync(transcriptPath)).find(
+    (e) => e.id === entryId,
+  );
   const src = entry?.images?.[idx];
   if (!src) return null;
   if (!src.startsWith("data:")) return { redirect: src };

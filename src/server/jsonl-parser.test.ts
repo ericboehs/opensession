@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   extractBackstageVideos,
+  parseJsonlLinesAsync,
   parseTranscript,
+  parseTranscriptAsync,
   parseTranscriptFrom,
   parseTranscriptTail,
   parseTranscriptWindow,
@@ -187,6 +189,26 @@ describe("parseTranscript", () => {
 
   it("returns [] for a missing file", () => {
     expect(parseTranscript(join(dir, "does-not-exist.jsonl"))).toEqual([]);
+  });
+
+  it("produces identical output through the yielding parser", async () => {
+    const lines = [
+      userLine("u1", "first"),
+      toolUseLine("a1", "toolu_001", "ls"),
+      "not json",
+      toolResultLine("u2", "toolu_001", "done"),
+      assistantLine("a2", "last"),
+    ];
+    const path = writeFixture(lines);
+
+    expect(await parseJsonlLinesAsync(lines, 1)).toEqual(parseTranscript(path));
+    expect(await parseTranscriptAsync(path)).toEqual(parseTranscript(path));
+  });
+
+  it("returns [] asynchronously for a missing file", async () => {
+    expect(
+      await parseTranscriptAsync(join(dir, "does-not-exist-async.jsonl")),
+    ).toEqual([]);
   });
 });
 

@@ -21,6 +21,8 @@ import {
 } from "./state";
 import { worktreePathFor } from "../../server/worktree";
 import { defaultRepo } from "../../server/config";
+import { runCommand } from "../../server/run-command";
+import { statSync } from "fs";
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const WORKTREE_CHANNELS_FILE = `${SESSION_DIR}/worktree-channels.json`;
@@ -238,13 +240,11 @@ export async function inviteBotToChannel(channelId: string): Promise<void> {
 
 export async function cleanupWorktrees(): Promise<void> {
   const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-  const { spawnSync } = require("child_process");
 
   try {
     // List all worktree branches
-    const result = spawnSync("git", ["worktree", "list", "--porcelain"], {
+    const result = await runCommand(["git", "worktree", "list", "--porcelain"], {
       cwd: DEFAULT_CWD,
-      encoding: "utf-8",
     });
     if (result.status !== 0) return;
 
@@ -282,10 +282,7 @@ export async function cleanupWorktrees(): Promise<void> {
         // Fallback: check worktree directory mtime
         if (!lastActiveMs) {
           try {
-            const stat = spawnSync("stat", ["-c", "%Y", wtPath], {
-              encoding: "utf-8",
-            });
-            lastActiveMs = parseInt(stat.stdout?.trim() || "0") * 1000;
+            lastActiveMs = statSync(wtPath).mtimeMs;
           } catch {}
         }
 
@@ -295,10 +292,11 @@ export async function cleanupWorktrees(): Promise<void> {
         );
       }
 
-      // Clean up via wt delete (sessions can be revived — worktree gets recreated)
-      const del = spawnSync("/home/ubuntu/bin/wt", ["delete", branch], {
-        encoding: "utf-8",
-        timeout: 30000,
+      // Clean up via wt delete (sessions can be revived — worktree gets
+      // recreated). Async: a wt delete takes ~10s and used to block the
+      // whole event loop via spawnSync.
+      const del = await runCommand(["/home/ubuntu/bin/wt", "delete", branch], {
+        timeoutMs: 30000,
       });
       if (del.status === 0) {
         console.log(`[slack] [cleanup] Deleted worktree: ${branch}`);

@@ -12,7 +12,7 @@ import { getReviewRequest } from "./review-requests";
 import { getGeneratedTitle } from "./generated-titles";
 import { findCodexRollout } from "./codex-accounts";
 import { providerFor } from "./models";
-import { parseTranscript } from "./jsonl-parser";
+import { parseTranscript, parseTranscriptAsync } from "./jsonl-parser";
 import { type SeqEntry, type TranscriptStore, transcriptStore } from "./transcript-store";
 import {
   isOpencodeSessionId,
@@ -102,6 +102,18 @@ export function readEngineTranscript(
   return path ? parseTranscript(path) : [];
 }
 
+/** readEngineTranscript with the file parse yielding to the event loop —
+ *  identical output. The opencode SQLite read stays sync (bounded pages). */
+export async function readEngineTranscriptAsync(
+  worktreeDir: string,
+  engineSessionId: string,
+  provider: "claude" | "codex" | "opencode"
+): Promise<TranscriptEntry[]> {
+  if (provider === "opencode") return readOpencodeTranscript(engineSessionId);
+  const path = getEngineTranscriptPath(worktreeDir, engineSessionId, provider);
+  return path ? parseTranscriptAsync(path) : [];
+}
+
 /** What mergedSessionTranscript needs from a session. `id` (the unified
  *  session id) is optional and only consulted by the flag-gated transcript v2
  *  read path — callers passing a full UnifiedSession opt in automatically;
@@ -153,6 +165,39 @@ export function mergedSessionTranscript(
   return legacyMergedSessionTranscript(session);
 }
 
+/**
+ * mergedSessionTranscript for bulk/background paths (legacy v2 imports, the
+ * session-index sweep): identical output, but the big JSONL parses go through
+ * parseTranscriptAsync so a fat transcript yields to the event loop instead
+ * of wedging it. The v2 store read stays sync (bounded SQLite pages).
+ */
+export async function mergedSessionTranscriptAsync(
+  session: TranscriptSessionRef
+): Promise<TranscriptEntry[]> {
+  if (session.id && !session.id.startsWith("plain-")) {
+    try {
+      const served = v2StoreTranscript(session.id, session);
+      if (served) return served;
+    } catch (e) {
+      console.warn(
+        `[sessions] transcript v2 read failed for ${session.id} — legacy path:`,
+        e instanceof Error ? e.message : e
+      );
+    }
+  }
+  const fileEntries = session.transcriptPath
+    ? await parseTranscriptAsync(session.transcriptPath)
+    : [];
+  const ocId = legacyOcId(session);
+  if (!ocId) return fileEntries;
+  const ocPath = existingOpencodeTranscriptPath(ocId);
+  if (ocPath && ocPath === session.transcriptPath) return fileEntries;
+  const ocEntries = ocPath
+    ? await parseTranscriptAsync(ocPath)
+    : readOpencodeTranscript(ocId);
+  return mergeLegacyEntries(fileEntries, ocEntries);
+}
+
 /** The pre-v2 merge (transcript file(s) + opencode store), unchanged. */
 function legacyMergedSessionTranscript(
   session: TranscriptSessionRef
@@ -160,9 +205,7 @@ function legacyMergedSessionTranscript(
   const fileEntries = session.transcriptPath
     ? parseTranscript(session.transcriptPath)
     : [];
-  const ocId =
-    session.opencodeSessionId ||
-    (isOpencodeSessionId(session.claudeSessionId) ? session.claudeSessionId : null);
+  const ocId = legacyOcId(session);
   if (!ocId) return fileEntries;
   // Prefer the persisted claude-shape file (it is seeded/backfilled to be
   // self-contained); fall back to reading OpenCode's SQLite store for legacy
@@ -170,6 +213,20 @@ function legacyMergedSessionTranscript(
   const ocPath = existingOpencodeTranscriptPath(ocId);
   if (ocPath && ocPath === session.transcriptPath) return fileEntries;
   const ocEntries = ocPath ? parseTranscript(ocPath) : readOpencodeTranscript(ocId);
+  return mergeLegacyEntries(fileEntries, ocEntries);
+}
+
+function legacyOcId(session: TranscriptSessionRef): string | null {
+  return (
+    session.opencodeSessionId ||
+    (isOpencodeSessionId(session.claudeSessionId) ? session.claudeSessionId : null)
+  );
+}
+
+function mergeLegacyEntries(
+  fileEntries: TranscriptEntry[],
+  ocEntries: TranscriptEntry[]
+): TranscriptEntry[] {
   if (!ocEntries.length) return fileEntries;
   if (!fileEntries.length) return ocEntries;
   // A seeded opencode file repeats the prior engine's entries (same ids) —

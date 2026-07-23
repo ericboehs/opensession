@@ -16,7 +16,7 @@ import {
   endLocalSessionUpgrade,
 } from "../session-transfer-state";
 import { writeJsonAtomic } from "../shared/atomic-write";
-import { mergedSessionTranscript } from "../sessions";
+import { mergedSessionTranscriptAsync } from "../sessions";
 import { transcriptStore } from "../transcript-store";
 import type {
   BackstageSessionFile,
@@ -93,7 +93,10 @@ interface UpgradeDependencies {
   release(id: string): void;
   gitState(dir: string): Promise<GitState>;
   push(dir: string, branch: string): Promise<{ ok: true } | { error: string }>;
-  readTranscript(session: UnifiedSession, data: BackstageSessionFile): string;
+  readTranscript(
+    session: UnifiedSession,
+    data: BackstageSessionFile,
+  ): string | Promise<string>;
   cloud(): { upstream: string; token: string | null };
   fetch: typeof fetch;
   archive(
@@ -570,7 +573,7 @@ async function finishLocalUpgrade(
 
   let transcriptJsonl: string;
   try {
-    transcriptJsonl = deps.readTranscript(session, data);
+    transcriptJsonl = await deps.readTranscript(session, data);
   } catch (error) {
     return errorResponse(
       `Could not read the local transcript: ${error instanceof Error ? error.message : String(error)}`,
@@ -761,12 +764,14 @@ const productionUpgradeDependencies: UpgradeDependencies = {
     };
   },
   push: gitPush,
-  readTranscript: (session) => {
+  readTranscript: async (session) => {
     // A drifted v2 read repairs the store but returns the legacy fallback for
     // that call. Read once to perform any repair, then export the authoritative
     // store view so store-only notices and live entries cannot be omitted.
-    mergedSessionTranscript(session);
-    return transcriptJsonlForTransfer(mergedSessionTranscript(session));
+    await mergedSessionTranscriptAsync(session);
+    return transcriptJsonlForTransfer(
+      await mergedSessionTranscriptAsync(session),
+    );
   },
   cloud: configuredCloud,
   fetch,

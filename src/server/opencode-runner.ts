@@ -212,7 +212,7 @@ import {
   transcriptLineToolUse,
   transcriptLineToolResult,
 } from "./opencode-transcript";
-import { parseTranscript } from "./jsonl-parser";
+import { parseTranscriptAsync } from "./jsonl-parser";
 import { buildEngineSwitchHandoffNote } from "./fork-handoff";
 import { wrapContext } from "./prompt-context";
 import { ensureAnthropicBridge } from "./anthropic-bridge";
@@ -3088,7 +3088,7 @@ async function* runOpencodeAttempt(
     if (createdFresh && !seedEntries?.length && priorOcSessionId) {
       const priorPath = existingOpencodeTranscriptPath(priorOcSessionId);
       if (priorPath) {
-        restartRecovered = parseTranscript(priorPath);
+        restartRecovered = await parseTranscriptAsync(priorPath);
         seedEntries = restartRecovered;
       }
     }

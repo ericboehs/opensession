@@ -38,7 +38,7 @@ import {
 } from "./fork-handoff";
 import { getGitStatus, gitPush } from "./git-status";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
-import { parseTranscript } from "./jsonl-parser";
+import { parseTranscriptAsync } from "./jsonl-parser";
 import {
 	contextWindowFor,
 	modelPreset,
@@ -61,7 +61,8 @@ import {
 	engineUserTexts,
 	getEngineTranscriptPath,
 	mergedSessionTranscript,
-	readEngineTranscript,
+	mergedSessionTranscriptAsync,
+	readEngineTranscriptAsync,
 } from "./sessions";
 import {
 	getSandboxProvider,
@@ -1273,7 +1274,7 @@ async function runSessionPromptInner(
 						? undefined
 						: session.claudeSessionId;
 		const prevEntries = prevEngineId
-			? readEngineTranscript(
+			? await readEngineTranscriptAsync(
 					session.worktreeDir || defaultRepo().repo,
 					prevEngineId,
 					lastProvider,
@@ -1309,7 +1310,7 @@ async function runSessionPromptInner(
 	// v2 under the unified bks id, not in the retired OpenCode JSONL mirror, so
 	// bridge that store history into the fresh engine's first prompt here.
 	if (pendingImportedEngineId) {
-		const importedEntries = mergedSessionTranscript(session);
+		const importedEntries = await mergedSessionTranscriptAsync(session);
 		if (importedEntries.length) {
 			switchHandoffEntries = importedEntries;
 			switchHandoff = buildEngineSwitchHandoffNote({
@@ -1393,16 +1394,28 @@ async function runSessionPromptInner(
 				...sideChatIdsToInline(prompt, sessionId, findSession),
 			]),
 		];
-		const attachedChats = chatIds
+		const attachedSessions = chatIds
 			.filter((id) => id !== sessionId)
 			.map((id) => findSession(id))
-			.filter((s): s is UnifiedSession => !!s)
-			.map((s) => ({
+			.filter((s): s is UnifiedSession => !!s);
+		const attachedChats: {
+			id: string;
+			title: string | undefined;
+			model: string | undefined;
+			entries: TranscriptEntry[];
+		}[] = [];
+		for (const s of attachedSessions) {
+			attachedChats.push({
 				id: s.id,
 				title: s.title,
 				model: s.model,
-				entries: s.transcriptPath ? parseTranscript(s.transcriptPath) : [],
-			}));
+				// Async: an attached side-chat's transcript can be multi-MB — the
+				// sync parse held the event loop for the whole read.
+				entries: s.transcriptPath
+					? await parseTranscriptAsync(s.transcriptPath)
+					: [],
+			});
+		}
 		for (const c of attachedChats) inlinedChatIds.add(c.id);
 		if (attachedChats.length)
 			prompt = `${wrapContext(buildChatContextNote(attachedChats))}\n\n${prompt}`;

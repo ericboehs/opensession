@@ -118,7 +118,7 @@ export async function runTranscriptBackfill(
 	// Dynamic imports: keep run-rpc.ts out of this module's static graph (see
 	// module doc). In the live process these resolve to the already-loaded
 	// modules instantly.
-	const { getAllSessions, mergedSessionTranscript } = await import(
+	const { getAllSessions, mergedSessionTranscriptAsync } = await import(
 		"./sessions"
 	);
 	const { existingOpencodeTranscriptPath, isOpencodeSessionId } = await import(
@@ -154,7 +154,7 @@ export async function runTranscriptBackfill(
 				summary.skipped++;
 				continue;
 			}
-			const entries = mergedSessionTranscript(session);
+			const entries = await mergedSessionTranscriptAsync(session);
 			if (!entries.length) {
 				summary.skipped++;
 				continue;

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
-import { parseTranscript } from "./jsonl-parser";
+import { parseTranscriptAsync } from "./jsonl-parser";
 import type { TranscriptEntry } from "./types";
 
 // When a session spawns sub-agents (Task/Agent tool), the Claude Agent SDK writes
@@ -72,16 +72,17 @@ export function listSubagents(transcriptPath: string): SubagentMeta[] {
 }
 
 /** Load a single sub-agent's conversation (meta + parsed transcript), or null if
- *  its transcript file doesn't exist. */
-export function getSubagentTranscript(
+ *  its transcript file doesn't exist. Async: a sub-agent transcript can be
+ *  multi-MB and the sync parse held the event loop for the whole read. */
+export async function getSubagentTranscript(
   transcriptPath: string,
   agentId: string
-): SubagentTranscript | null {
+): Promise<SubagentTranscript | null> {
   const dir = subagentsDir(transcriptPath);
   if (!dir) return null;
   const file = join(dir, `agent-${agentId}.jsonl`);
   if (!existsSync(file)) return null;
-  return { meta: readMeta(dir, agentId), entries: parseTranscript(file) };
+  return { meta: readMeta(dir, agentId), entries: await parseTranscriptAsync(file) };
 }
 
 /** Absolute path to a sub-agent's transcript file (for live file-watching). */

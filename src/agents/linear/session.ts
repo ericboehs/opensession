@@ -8,6 +8,7 @@ import { productName } from "../../server/config";
 import { getDefaultModel, toOpencodeModel } from "../../server/models";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { worktreePathFor } from "../../server/worktree";
+import { runCommand } from "../../server/run-command";
 import { spawn } from "child_process";
 import { unlinkSync } from "fs";
 import { gitIdentityFor, gitIdentityEnv } from "../../server/shared/user-mappings";
@@ -119,19 +120,20 @@ export function generateBranchName(title: string, issueIdentifier?: string): str
   return branch;
 }
 
-export function createWorktree(
+export async function createWorktree(
   branch: string,
   ticketId: string,
   title: string,
   description: string,
   url: string
-): string {
+): Promise<string> {
   const worktreeDir = worktreePathFor(branch);
 
-  const { spawnSync } = require("child_process");
-  const result = spawnSync(
-    "/home/ubuntu/bin/wt",
+  // Async: a wt new-linear can run for many seconds (fetch + worktree add +
+  // env seed) and used to block the whole event loop via spawnSync.
+  const result = await runCommand(
     [
+      "/home/ubuntu/bin/wt",
       "new-linear",
       branch,
       `--ticket-id=${ticketId}`,
@@ -139,7 +141,7 @@ export function createWorktree(
       `--description=${description}`,
       `--url=${url}`,
     ],
-    { stdio: "inherit", timeout: 120000 }
+    { inheritStdio: true, timeoutMs: 120000 }
   );
 
   if (result.status !== 0) {

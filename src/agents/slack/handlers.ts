@@ -7,7 +7,8 @@
  */
 
 import { envAlias } from "../../server/rename-compat";
-import { existsSync } from "fs";
+import { copyFileSync, existsSync } from "fs";
+import { runCommand } from "../../server/run-command";
 
 import { markdownToSlack } from "../../server/shared/markdown";
 import { productName } from "../../server/config";
@@ -208,17 +209,13 @@ async function persistSession(session: SlackSession): Promise<void> {
 // Worktree helpers
 // ---------------------------------------------------------------------------
 
-function branchExists(branch: string): boolean {
+async function branchExists(branch: string): Promise<boolean> {
   try {
-    const { spawnSync } = require("child_process");
     // Check if worktree directory exists
-    const worktreeDir = worktreePathFor(branch);
-    const dirCheck = spawnSync("test", ["-d", worktreeDir]);
-    if (dirCheck.status === 0) return true;
+    if (existsSync(worktreePathFor(branch))) return true;
     // Check if branch exists in git (local or registered worktree)
-    const gitCheck = spawnSync(
-      "git",
-      ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+    const gitCheck = await runCommand(
+      ["git", "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
       { cwd: DEFAULT_CWD }
     );
     return gitCheck.status === 0;
@@ -227,7 +224,7 @@ function branchExists(branch: string): boolean {
   }
 }
 
-function generateBranchName(text: string): string {
+async function generateBranchName(text: string): Promise<string> {
   // Heuristic: take first 2-3 words, lowercased, hyphen-separated, no special chars
   // Avoids a full Haiku query just for a branch name.
   const words = text
@@ -242,33 +239,34 @@ function generateBranchName(text: string): string {
   const baseName = words || "slack-task";
 
   // Deduplicate: if branch already exists, append a numeric suffix
-  if (!branchExists(baseName)) return baseName;
+  if (!(await branchExists(baseName))) return baseName;
   for (let i = 2; i <= 20; i++) {
     const candidate = `${baseName}-${i}`;
-    if (!branchExists(candidate)) return candidate;
+    if (!(await branchExists(candidate))) return candidate;
   }
   // Last resort: timestamp suffix
   return `${baseName}-${Date.now().toString(36)}`;
 }
 
-function createWorktree(
+async function createWorktree(
   branch: string,
   userId: string,
   message: string
-): string {
+): Promise<string> {
   const worktreeDir = worktreePathFor(branch);
 
   try {
-    const { spawnSync } = require("child_process");
-    const result = spawnSync(
-      "/home/ubuntu/bin/wt",
+    // Async: a wt new-slack can run for many seconds (fetch + worktree add +
+    // env seed) and used to block the whole event loop via spawnSync.
+    const result = await runCommand(
       [
+        "/home/ubuntu/bin/wt",
         "new-slack",
         branch,
         `--user=${userId}`,
         `--message=${(message || "").substring(0, 500)}`,
       ],
-      { encoding: "utf-8", timeout: 120000 }
+      { timeoutMs: 120000 }
     );
 
     if (result.status !== 0) {
@@ -720,40 +718,37 @@ export async function processMessage(
     progress.setAction("Recreating worktree…");
     await streamer.setStatus("recreating worktree...");
     try {
-      const { spawnSync } = require("child_process");
+      // Async: the fetch + worktree add + rebase chain runs for seconds and
+      // used to block the whole event loop via spawnSync.
       const branch = session.branch;
       const wtPath = session.worktreeDir;
 
       // Prune stale registrations
-      spawnSync("git", ["worktree", "prune"], { cwd: DEFAULT_CWD });
+      await runCommand(["git", "worktree", "prune"], { cwd: DEFAULT_CWD });
 
       // Fetch latest main
-      spawnSync("git", ["fetch", "origin", "main", "--quiet"], {
+      await runCommand(["git", "fetch", "origin", "main", "--quiet"], {
         cwd: DEFAULT_CWD,
-        timeout: 30000,
+        timeoutMs: 30000,
       });
 
       // Create worktree — reuse existing branch or create from main
-      let addResult;
-      if (
-        spawnSync(
-          "git",
-          ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
-          { cwd: DEFAULT_CWD }
-        ).status === 0
-      ) {
-        addResult = spawnSync("git", ["worktree", "add", wtPath, branch], {
-          cwd: DEFAULT_CWD,
-          encoding: "utf-8",
-          timeout: 60000,
-        });
-      } else {
-        addResult = spawnSync(
-          "git",
-          ["worktree", "add", "-b", branch, wtPath, "main"],
-          { cwd: DEFAULT_CWD, encoding: "utf-8", timeout: 60000 }
-        );
-      }
+      const haveBranch =
+        (
+          await runCommand(
+            ["git", "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+            { cwd: DEFAULT_CWD }
+          )
+        ).status === 0;
+      const addResult = haveBranch
+        ? await runCommand(["git", "worktree", "add", wtPath, branch], {
+            cwd: DEFAULT_CWD,
+            timeoutMs: 60000,
+          })
+        : await runCommand(
+            ["git", "worktree", "add", "-b", branch, wtPath, "main"],
+            { cwd: DEFAULT_CWD, timeoutMs: 60000 }
+          );
 
       if (addResult.status !== 0) {
         throw new Error(
@@ -762,10 +757,9 @@ export async function processMessage(
       }
 
       // Rebase on latest main
-      spawnSync("git", ["pull", "origin", "main", "--rebase"], {
+      await runCommand(["git", "pull", "origin", "main", "--rebase"], {
         cwd: wtPath,
-        encoding: "utf-8",
-        timeout: 60000,
+        timeoutMs: 60000,
       });
 
       // Copy env files (quick, no bun install — Claude can do that if needed)
@@ -777,7 +771,7 @@ export async function processMessage(
       ];
       for (const [src, dst] of envFiles) {
         try {
-          spawnSync("cp", [`${DEFAULT_CWD}/${src}`, `${wtPath}/${dst}`]);
+          copyFileSync(`${DEFAULT_CWD}/${src}`, `${wtPath}/${dst}`);
         } catch {}
       }
 
@@ -1189,8 +1183,8 @@ export async function handleMessageEvent(event: any): Promise<void> {
     let prompt: string;
 
     try {
-      branch = generateBranchName(text);
-      worktreeDir = createWorktree(branch, user, text);
+      branch = await generateBranchName(text);
+      worktreeDir = await createWorktree(branch, user, text);
 
       prompt = `${userName} sent me a Slack message:
 
@@ -1515,7 +1509,7 @@ Please help with this request. Start by exploring the codebase to understand wha
 
   try {
     branch = await generateBranchName(cleanText);
-    worktreeDir = createWorktree(branch, user, cleanText);
+    worktreeDir = await createWorktree(branch, user, cleanText);
 
     const intro = context
       ? `${userName} tagged me in a Slack thread with this context:

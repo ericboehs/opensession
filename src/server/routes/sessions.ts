@@ -22,7 +22,12 @@ import { transitionRunState } from "../run-state";
 import { findSession, getCachedSessions, invalidateSessionsCache, runErrors } from "../session-cache";
 import { resolvePrTarget } from "../session-repos";
 import { destroySessionSandbox } from "../session-sandbox";
-import { deleteSession, engineUserTexts, getAllSessions, mergedSessionTranscript } from "../sessions";
+import {
+	deleteSession,
+	engineUserTexts,
+	getAllSessions,
+	mergedSessionTranscriptAsync,
+} from "../sessions";
 import { githubLoginFor } from "../shared/user-mappings";
 import {
 	getOpencodeSubagentTranscript,
@@ -117,7 +122,7 @@ export async function handleSessionsRoutes(
 		// opencode history, the opencode store (covers legacy opencode
 		// sessions from before transcript persistence, and migrated
 		// sessions whose history spans engines).
-		return Response.json(mergedSessionTranscript(session));
+		return Response.json(await mergedSessionTranscriptAsync(session));
 	}
 
 	// One transcript entry, unclamped. The WS wire clamps giant entry contents
@@ -150,7 +155,7 @@ export async function handleSessionsRoutes(
 			} catch {
 				// store read failed — the legacy scan below still serves the entry
 			}
-			const entry = mergedSessionTranscript(session).find(
+			const entry = (await mergedSessionTranscriptAsync(session)).find(
 				(e) => e.id === entryId,
 			);
 			if (!entry)
@@ -176,7 +181,7 @@ export async function handleSessionsRoutes(
 			const chats = getCachedSessions().filter(
 				(s) => s.projectId === wsId,
 			);
-			return Response.json(buildWorkspaceOverview(chats));
+			return Response.json(await buildWorkspaceOverview(chats));
 		}
 	}
 
@@ -194,7 +199,7 @@ export async function handleSessionsRoutes(
 			const entryId = decodeURIComponent(m[2]);
 			const idx = parseInt(m[3], 10);
 			let img = session.transcriptPath
-				? resolveTranscriptImage(session.transcriptPath, entryId, idx)
+				? await resolveTranscriptImage(session.transcriptPath, entryId, idx)
 				: null;
 			// Transcript v2 fallback (docs/transcript-v2-design.md §1): entries
 			// >32KB are stored with images[] replaced by "os-blob:<uuid>/<i>"
@@ -307,7 +312,7 @@ export async function handleSessionsRoutes(
 			const agentId = decodeURIComponent(m[2]);
 			const sub =
 				(session.transcriptPath
-					? getSubagentTranscript(session.transcriptPath, agentId)
+					? await getSubagentTranscript(session.transcriptPath, agentId)
 					: null) ?? getOpencodeSubagentTranscript(session, agentId);
 			if (!sub)
 				return Response.json(

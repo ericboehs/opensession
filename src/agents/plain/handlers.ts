@@ -18,6 +18,7 @@ import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { classifyRefundApproval } from "./refund-intent";
 import { worktreePathFor } from "../../server/worktree";
 import { defaultRepo, productName } from "../../server/config";
+import { runCommand } from "../../server/run-command";
 
 const TELLA_FUSION_DIR = defaultRepo().repo;
 
@@ -155,13 +156,14 @@ async function runWorkTurn(
 
 // --- Worktree creation ---
 
-function createWorktree(branch: string, ticketId: string, title: string, description: string): string {
+async function createWorktree(branch: string, ticketId: string, title: string, description: string): Promise<string> {
   const worktreeDir = worktreePathFor(branch);
 
-  const { spawnSync } = require("child_process");
-  const result = spawnSync(
-    "/home/ubuntu/bin/wt",
+  // Async: a wt new-linear can run for many seconds (fetch + worktree add +
+  // env seed) and used to block the whole event loop via spawnSync.
+  const result = await runCommand(
     [
+      "/home/ubuntu/bin/wt",
       "new-linear",
       branch,
       `--ticket-id=${ticketId}`,
@@ -169,10 +171,7 @@ function createWorktree(branch: string, ticketId: string, title: string, descrip
       `--description=${description}`,
       `--url=`,
     ],
-    {
-      stdio: "inherit",
-      timeout: 120000,
-    }
+    { inheritStdio: true, timeoutMs: 120000 }
   );
 
   if (result.status !== 0) {
@@ -358,7 +357,7 @@ async function handleMichaelMention(
         );
 
         if (issue) {
-          const worktreeDir = createWorktree(branchName, issue.identifier, title, result);
+          const worktreeDir = await createWorktree(branchName, issue.identifier, title, result);
 
           const session: ActiveSession = {
             threadId,

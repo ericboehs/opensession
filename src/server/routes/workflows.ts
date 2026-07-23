@@ -18,7 +18,7 @@ import {
 	getOpencodeTranscriptPath,
 	readOpencodeTranscript,
 } from "../opencode-transcript";
-import { parseTranscript } from "../jsonl-parser";
+import { parseTranscriptAsync } from "../jsonl-parser";
 import { existsSync } from "fs";
 
 // Boot pass: flip any run.json still "running" with no live worker to
@@ -85,7 +85,7 @@ export async function handleWorkflowsRoutes(
 			// fallback for older sessions with no mirror file.
 			const mirror = getOpencodeTranscriptPath(engineSessionId);
 			let entries = existsSync(mirror)
-				? parseTranscript(mirror)
+				? await parseTranscriptAsync(mirror)
 				: readOpencodeTranscript(engineSessionId);
 			if (entries.length > 500) entries = entries.slice(-500);
 			return Response.json({ entries });

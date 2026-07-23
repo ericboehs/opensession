@@ -23,7 +23,7 @@
  */
 
 import { getCachedSessions } from "./session-cache";
-import { mergedSessionTranscript } from "./sessions";
+import { mergedSessionTranscriptAsync } from "./sessions";
 import { opencodeOneShot } from "./opencode-oneshot";
 import { audit } from "./audit";
 import { isLocalProfile } from "./profile";
@@ -253,7 +253,6 @@ export async function sweepSessionIndex(): Promise<{
 		let mechBudget = MECH_PER_SWEEP;
 		let indexed = 0;
 		let distilled = 0;
-		let sinceYield = 0;
 
 		for (const s of sessions) {
 			if (mechBudget <= 0) break;
@@ -268,16 +267,15 @@ export async function sweepSessionIndex(): Promise<{
 				upToDate && existing!.distilled === "mech" && llmEligible && distillBudget > 0;
 			if (upToDate && !wantUpgrade) continue;
 
-			// Transcript parsing is sync — yield periodically so a backfill pass
-			// never wedges the event loop.
-			if (++sinceYield >= 10) {
-				sinceYield = 0;
-				await Bun.sleep(0);
-			}
+			// Yield before every parse: even a single big transcript used to
+			// wedge the loop, and the old every-10-sessions cadence let ten
+			// back-to-back parses stack up. The async merge also yields
+			// internally every ~1000 lines while parsing.
+			await Bun.sleep(0);
 
 			let entries: TranscriptEntry[];
 			try {
-				entries = mergedSessionTranscript(s);
+				entries = await mergedSessionTranscriptAsync(s);
 			} catch {
 				continue;
 			}

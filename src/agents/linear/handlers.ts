@@ -622,7 +622,7 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
 
   (async () => {
     try {
-      createWorktree(branch, issue.identifier, issue.title, issue.description || "", issue.url);
+      await createWorktree(branch, issue.identifier, issue.title, issue.description || "", issue.url);
 
       await saveSessionInfo(
         branch,

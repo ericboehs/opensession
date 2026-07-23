@@ -41,7 +41,7 @@ import {
 import { buildEngineSwitchHandoffNote } from "./fork-handoff";
 import { personaName } from "./config";
 import { wrapContext } from "./prompt-context";
-import { readEngineTranscript } from "./sessions";
+import { readEngineTranscriptAsync } from "./sessions";
 import type { GitIdentity } from "./shared/user-mappings";
 import type { TranscriptEntry } from "./types";
 
@@ -336,7 +336,7 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
       // Requiring sawInit here dropped that history and started the fallback
       // model on a blank session (the "history lost after fallback" bug).
       const entries = currentEngineId
-        ? readEngineTranscript(currentOpts.cwd, currentEngineId, "opencode")
+        ? await readEngineTranscriptAsync(currentOpts.cwd, currentEngineId, "opencode")
         : [];
       handoffEntries = entries;
       if (entries.length) {

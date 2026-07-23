@@ -18,7 +18,7 @@ import { buildForkHandoffNote } from "./fork-handoff";
 import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
-import { INIT_WIRE_CLAMP_BYTES, clampEntriesForWire, parseTranscript, parseTranscriptTail, parseTranscriptWindow } from "./jsonl-parser";
+import { INIT_WIRE_CLAMP_BYTES, clampEntriesForWire, parseTranscriptAsync, parseTranscriptTail, parseTranscriptWindow } from "./jsonl-parser";
 import { accountProviderForModel, interactiveDefaultModel, interactiveFallbackModel, modelLabel, modelPreset, providerFor, resolveModel } from "./models";
 import { applyNoteUpdate, getNoteState, isValidNoteId } from "./notes";
 import { appendOpencodeTranscript, clearTranscriptStoreDegraded, transcriptLineRunnerNotice } from "./opencode-transcript";
@@ -32,7 +32,7 @@ import { type Sandbox, hasRemoteWorkspace } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox, sandboxConfig, sandboxesEnabled } from "./sandbox/config";
 import { SESSION_EFFORTS, findSession, invalidateSessionsCache, maybePersistEffort, recordRunOutcome, touchBackstageSession, updateSessionFile } from "./session-cache";
 import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
-import { engineSessionPatch, engineUserTexts, mergedSessionTranscript, v2MirrorFiles, v2TranscriptHasDrift } from "./sessions";
+import { engineSessionPatch, engineUserTexts, mergedSessionTranscript, mergedSessionTranscriptAsync, v2MirrorFiles, v2TranscriptHasDrift } from "./sessions";
 import { handleSlashCommand } from "./slash-commands";
 import { resizeTerminal, startSessionTerminal, stopTerminal, writeTerminal } from "./terminals";
 import { subscribeTranscript } from "./transcript-bus";
@@ -216,6 +216,28 @@ function v2ImportSession(
 		opencodeSessionId: session.opencodeSessionId,
 		claudeSessionId: session.claudeSessionId ?? null,
 	});
+	v2FinishImport(session, entries);
+}
+
+/** v2ImportSession for the background queue: the merge parse yields to the
+ *  event loop (mergedSessionTranscriptAsync), so a multi-MB legacy transcript
+ *  — exactly what gets routed here by the sync-import size ceiling — no
+ *  longer wedges the server for the duration of the parse. */
+async function v2ImportSessionAsync(
+	session: NonNullable<ReturnType<typeof findSession>>,
+): Promise<void> {
+	const entries = await mergedSessionTranscriptAsync({
+		transcriptPath: session.transcriptPath ?? null,
+		opencodeSessionId: session.opencodeSessionId,
+		claudeSessionId: session.claudeSessionId ?? null,
+	});
+	v2FinishImport(session, entries);
+}
+
+function v2FinishImport(
+	session: NonNullable<ReturnType<typeof findSession>>,
+	entries: ReturnType<typeof mergedSessionTranscript>,
+): void {
 	let watermark: number | null = null;
 	try {
 		const files = v2MirrorFiles(session);
@@ -240,11 +262,11 @@ function v2ImportSession(
 function v2QueueBackgroundImport(sessionId: string, reimport = false): void {
 	if (v2BgImports.has(sessionId)) return;
 	v2BgImports.add(sessionId);
-	setTimeout(() => {
+	setTimeout(async () => {
 		try {
 			const session = findSession(sessionId);
 			if (session && (reimport || transcriptStore().needsImport(sessionId)))
-				v2ImportSession(session);
+				await v2ImportSessionAsync(session);
 		} catch (e) {
 			console.warn(`[ws] v2 background import failed for ${sessionId}:`, e);
 		} finally {
@@ -587,7 +609,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					// merged with OpenCode's SQLite store) instead. No byte cursor into
 					// a file here, so no "load earlier" paging — the next run's seeded
 					// file restores it.
-					const merged = mergedSessionTranscript(session);
+					const merged = await mergedSessionTranscriptAsync(session);
 					if (merged.length) {
 						truncated = merged.length > 120;
 						entries = truncated ? merged.slice(-120) : merged;
@@ -696,7 +718,9 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							type: "transcript_init",
 							sessionId: msg.sessionId,
 							entries: session
-								? clampEntriesForWire(mergedSessionTranscript(session))
+								? clampEntriesForWire(
+										await mergedSessionTranscriptAsync(session),
+									)
 								: [],
 							truncated: false,
 						}),
@@ -727,7 +751,9 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 								JSON.stringify({
 									type: "transcript_init",
 									sessionId: msg.sessionId,
-									entries: clampEntriesForWire(mergedSessionTranscript(session)),
+									entries: clampEntriesForWire(
+										await mergedSessionTranscriptAsync(session),
+									),
 									truncated: false,
 								}),
 							);
@@ -770,7 +796,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					);
 					break;
 				}
-				const entries = parseTranscript(session.transcriptPath);
+				const entries = await parseTranscriptAsync(session.transcriptPath);
 				ws.send(
 					JSON.stringify({
 						type: "transcript_init",
@@ -1494,7 +1520,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					}
 					if (needsForkHandoff && forkSource) {
 						const entries = forkSource.transcriptPath
-							? parseTranscript(forkSource.transcriptPath)
+							? await parseTranscriptAsync(forkSource.transcriptPath)
 							: [];
 						openingPrompt += `\n\n${wrapContext(
 							buildForkHandoffNote({

@@ -633,36 +633,69 @@ function parseCodexLines(lines: string[]): TranscriptEntry[] {
  * imports, and wire upserts all agree on identity.
  */
 export function parseJsonlLines(lines: string[]): TranscriptEntry[] {
+  const acc = makeJsonlAccumulator();
+  for (const line of lines) acc.push(line);
+  return acc.entries;
+}
+
+/**
+ * Line-by-line state shared by the sync and async jsonl parses: entry
+ * accumulation plus the assistant-requestId dedupe (keep last). Both variants
+ * MUST produce identical output for the same lines — the async one only
+ * differs in yielding to the event loop between chunks.
+ */
+function makeJsonlAccumulator(): {
+  entries: TranscriptEntry[];
+  push(line: string): void;
+} {
   const entries: TranscriptEntry[] = [];
   const seenRequestIds = new Map<string, number>(); // requestId → last index in entries
-
-  for (const line of lines) {
-    let parsed: RawJsonlEntry;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      continue;
-    }
-
-    // Skip non-message types
-    if (parsed.type !== "user" && parsed.type !== "assistant") continue;
-
-    const newEntries = parseEntry(parsed);
-    for (const entry of newEntries) {
-      // Deduplicate assistant messages with same requestId (keep last)
-      if (entry.type === "assistant" && entry.requestId) {
-        const prevIdx = seenRequestIds.get(entry.requestId);
-        if (prevIdx !== undefined) {
-          entries[prevIdx] = entry;
-          continue;
-        }
-        seenRequestIds.set(entry.requestId, entries.length);
+  return {
+    entries,
+    push(line: string): void {
+      let parsed: RawJsonlEntry;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        return;
       }
-      entries.push(entry);
-    }
-  }
 
-  return entries;
+      // Skip non-message types
+      if (parsed.type !== "user" && parsed.type !== "assistant") return;
+
+      const newEntries = parseEntry(parsed);
+      for (const entry of newEntries) {
+        // Deduplicate assistant messages with same requestId (keep last)
+        if (entry.type === "assistant" && entry.requestId) {
+          const prevIdx = seenRequestIds.get(entry.requestId);
+          if (prevIdx !== undefined) {
+            entries[prevIdx] = entry;
+            continue;
+          }
+          seenRequestIds.set(entry.requestId, entries.length);
+        }
+        entries.push(entry);
+      }
+    },
+  };
+}
+
+/**
+ * parseJsonlLines that yields to the event loop every `yieldEveryLines`
+ * lines. The per-line JSON.parse is the CPU cost of a transcript parse — a
+ * 30 MB legacy import used to hold the loop for seconds; chunking keeps HTTP
+ * and WebSocket traffic flowing underneath it.
+ */
+export async function parseJsonlLinesAsync(
+  lines: string[],
+  yieldEveryLines = 1000
+): Promise<TranscriptEntry[]> {
+  const acc = makeJsonlAccumulator();
+  for (let i = 0; i < lines.length; i++) {
+    if (i > 0 && i % yieldEveryLines === 0) await Bun.sleep(0);
+    acc.push(lines[i]);
+  }
+  return acc.entries;
 }
 
 // Cache full parses keyed by (mtimeMs, size): re-opening an unchanged transcript
@@ -753,6 +786,49 @@ export function parseTranscript(path: string): TranscriptEntry[] {
   const entries = isCodexRolloutPath(path)
     ? parseCodexLines(lines)
     : parseJsonlLines(lines);
+
+  if (mtimeMs) {
+    parseCache.set(path, { mtimeMs, size, entries });
+    pruneParseCache();
+  }
+
+  return entries;
+}
+
+/**
+ * parseTranscript for bulk/background paths (legacy v2 imports, the
+ * session-index sweep): async file read + chunk-yielding line parse so a big
+ * transcript never wedges the event loop. Same cache as parseTranscript
+ * (same key, same LRU), so the two variants serve each other's hits. Codex
+ * rollouts still parse synchronously — they're small and the format isn't
+ * safe to interleave.
+ */
+export async function parseTranscriptAsync(
+  path: string
+): Promise<TranscriptEntry[]> {
+  if (!existsSync(path)) return [];
+
+  let mtimeMs = 0;
+  let size = 0;
+  try {
+    const st = statSync(path);
+    mtimeMs = st.mtimeMs;
+    size = st.size;
+    const hit = parseCache.get(path);
+    if (hit && hit.mtimeMs === mtimeMs && hit.size === size) {
+      parseCache.delete(path);
+      parseCache.set(path, hit);
+      return hit.entries;
+    }
+  } catch {
+    // stat failed — fall through to an uncached parse
+  }
+
+  const raw = await Bun.file(path).text();
+  const lines = raw.split("\n").filter((l) => l.trim());
+  const entries = isCodexRolloutPath(path)
+    ? parseCodexLines(lines)
+    : await parseJsonlLinesAsync(lines);
 
   if (mtimeMs) {
     parseCache.set(path, { mtimeMs, size, entries });
