@@ -21,6 +21,35 @@ export interface PreviewToolContext {
   setPreviewPath: (path: string | null) => void;
   /** Current stored path, or null. */
   current: () => string | null;
+  /** Start (or claim from the warm pool) the session's dev-server preview. */
+  start: () => Promise<PreviewLifecycleStatus>;
+  /** Current preview status (running/starting + URL when live). */
+  status: () => Promise<PreviewLifecycleStatus>;
+  /** Stop the preview (releases a pool container / kills the host boot). */
+  stop: () => Promise<PreviewLifecycleStatus>;
+}
+
+export interface PreviewLifecycleStatus {
+  running: boolean;
+  starting: boolean;
+  previewUrl: string | null;
+}
+
+function describeStatus(s: PreviewLifecycleStatus): string {
+  if (s.running && s.previewUrl) {
+    return [
+      `Preview is RUNNING at ${s.previewUrl}`,
+      "",
+      "To look at it yourself, drive a headless Chrome over CDP:",
+      "  1. `~/bin/cdp-chrome` — starts (or reuses) a detached headless Chrome and prints its CDP port; it self-terminates when idle.",
+      `  2. Open the page, e.g.: \`bunx playwright screenshot --browser chromium ${s.previewUrl} shot.png\` or connect Playwright/Puppeteer to the printed CDP port for clicks, evals and screenshots.`,
+      "The URL serves this session's code (worktree edits sync in live — give big changes a few seconds to recompile).",
+    ].join("\n");
+  }
+  if (s.starting) {
+    return "Preview is STARTING — a dev server is booting (warm pool claims serve in seconds; a cold host boot can take ~1 min; a big branch flip reboots the dev server, ~1 min). Poll preview_status until it reports running.";
+  }
+  return "Preview is NOT running. Call start_preview to bring it up.";
 }
 
 function text(s: string) {
@@ -69,6 +98,46 @@ export function createPreviewMcpServer(ctx: PreviewToolContext) {
             ? `Preview & Staging buttons will now open ${path}.`
             : "Cleared the preview deep link — the buttons open the app root again.",
         );
+      },
+    ),
+    tool(
+      "start_preview",
+      "Start this session's dev-server preview (the same thing the human's Preview button does): a warm pre-booted container is claimed when available (serves in seconds) or a dev server boots for the worktree. Returns the preview URL once running — use it to verify your change in the real app, including headlessly via Chrome CDP. Combine with set_preview_path so humans land on the feature under test.",
+      {},
+      async () => {
+        try {
+          return text(describeStatus(await ctx.start()));
+        } catch (e) {
+          return text(`Failed to start the preview: ${(e as Error)?.message || e}`);
+        }
+      },
+    ),
+    tool(
+      "preview_status",
+      "Check whether this session's preview is running, starting, or stopped — and get its URL when live. Poll this after start_preview until it reports running.",
+      {},
+      async () => {
+        try {
+          return text(describeStatus(await ctx.status()));
+        } catch (e) {
+          return text(`Failed to read preview status: ${(e as Error)?.message || e}`);
+        }
+      },
+    ),
+    tool(
+      "stop_preview",
+      "Stop this session's preview: releases the warm pool container (or kills the host dev server). Do this when you're done verifying — it frees the pool for other sessions.",
+      {},
+      async () => {
+        try {
+          return text(
+            (await ctx.stop()).running
+              ? "Stop was requested but something still reports running — check preview_status again."
+              : "Preview stopped.",
+          );
+        } catch (e) {
+          return text(`Failed to stop the preview: ${(e as Error)?.message || e}`);
+        }
       },
     ),
   ];

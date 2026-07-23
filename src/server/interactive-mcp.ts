@@ -144,8 +144,10 @@ export function interactiveMcpServers(
 							return s ? sessionRepoIds(s) : [];
 						},
 					}),
-					// Deep-link testing: record where the change should be tested so
-					// the Preview/Staging buttons open that route directly.
+					// Preview lifecycle + deep-link: the agent can start/stop/poll its
+					// own dev-server preview (warm pool claim when available) and
+					// record where the change should be tested so the Preview/Staging
+					// buttons open that route directly.
 					"opensession-preview": createPreviewMcpServer({
 						sessionId,
 						setPreviewPath: (path) =>
@@ -153,6 +155,27 @@ export function interactiveMcpServers(
 								previewPath: path || undefined,
 							}),
 						current: () => findSession(sessionId)?.previewPath ?? null,
+						start: async () => {
+							const wt = findSession(sessionId)?.worktreeDir;
+							if (!wt) throw new Error("this session has no worktree to preview");
+							const { startPreview } = await import("./preview");
+							const s = await startPreview(wt);
+							return { running: s.running, starting: s.starting, previewUrl: s.previewUrl };
+						},
+						status: async () => {
+							const wt = findSession(sessionId)?.worktreeDir;
+							if (!wt) throw new Error("this session has no worktree to preview");
+							const { getPreviewStatus } = await import("./preview");
+							const s = await getPreviewStatus(wt);
+							return { running: s.running, starting: s.starting, previewUrl: s.previewUrl };
+						},
+						stop: async () => {
+							const wt = findSession(sessionId)?.worktreeDir;
+							if (!wt) throw new Error("this session has no worktree to preview");
+							const { stopPreview } = await import("./preview");
+							const s = await stopPreview(wt);
+							return { running: s.running, starting: s.starting, previewUrl: s.previewUrl };
+						},
 					}),
 					// Publish a demo walkthrough (video + before/after + writeup) onto
 					// the session's Review tab and the PR description.
