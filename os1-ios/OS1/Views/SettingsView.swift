@@ -87,6 +87,19 @@ struct SettingsView: View {
                     Text("Sign in with GitHub (your account must be on the team), or paste a session token from the OS1 server. Stored in the keychain.")
                 }
 
+                if !signIn.diagnostics.isEmpty {
+                    Section("Sign-in log") {
+                        ForEach(
+                            Array(signIn.diagnostics.suffix(15).reversed().enumerated()),
+                            id: \.offset
+                        ) { _, line in
+                            Text(line)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("Identity") {
                     TextField("Name shown on your prompts", text: $userName)
                         .autocorrectionDisabled()

@@ -30,11 +30,15 @@ enum GitHubAuth {
     enum AuthError: LocalizedError {
         case notConfigured
         case server(String)
+        /// 5xx from the proxy — the backend is briefly away (deploy, hot
+        /// reload, restart). Retryable; must never end a pending sign-in.
+        case transient(String)
 
         var errorDescription: String? {
             switch self {
             case .notConfigured: "Set the server URL first."
             case .server(let message): message
+            case .transient(let message): message
             }
         }
     }
@@ -80,6 +84,12 @@ enum GitHubAuth {
                 // polling until the code expires.
                 onPoll?("server unreachable — retrying")
                 continue
+            } catch AuthError.transient {
+                onPoll?("server hiccup — retrying")
+                continue
+            } catch is DecodingError {
+                onPoll?("bad response — retrying")
+                continue
             }
             onPoll?(poll.status ?? "pending")
             switch poll.status {
@@ -114,6 +124,12 @@ enum GitHubAuth {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            // 502/503 come from Caddy while the backend hot-reloads or
+            // restarts — routine on this server, and exactly when a poll is
+            // likely to be in flight. Transient, not a failed sign-in.
+            if http.statusCode >= 500 {
+                throw AuthError.transient("Server returned HTTP \(http.statusCode).")
+            }
             // The server sends {error} bodies with 400s — surface them.
             if let decoded = try? JSONDecoder().decode(PollResponse.self, from: data),
                let error = decoded.error {
@@ -156,7 +172,23 @@ final class GitHubSignIn {
     private(set) var lastPollAt: Date?
     private(set) var lastPollNote: String?
 
+    /// Rolling on-device diagnostic log (persisted, shown in Settings).
+    /// Answers "what did the sign-in do?" on devices we can't attach a
+    /// debugger to: process relaunches, resume outcomes, poll-state changes,
+    /// and the exact error that cleared the code screen.
+    private static let diagKey = "os1.signInDiag"
+    private(set) var diagnostics: [String] =
+        UserDefaults.standard.stringArray(forKey: GitHubSignIn.diagKey) ?? []
+
+    private func diag(_ line: String) {
+        let stamp = Date().formatted(date: .omitted, time: .standard)
+        diagnostics.append("\(stamp) \(line)")
+        if diagnostics.count > 40 { diagnostics.removeFirst(diagnostics.count - 40) }
+        UserDefaults.standard.set(diagnostics, forKey: Self.diagKey)
+    }
+
     private func notePoll(_ note: String) {
+        if note != lastPollNote { diag("poll: \(note)") }
         lastPollAt = Date()
         lastPollNote = note
     }
@@ -165,6 +197,8 @@ final class GitHubSignIn {
     private static let pendingKey = "os1.pendingDeviceFlow"
 
     private init() {
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        diag("app launch (build \(build))")
         resumePersisted()
         // Dev harness: simulator lifecycle tests set OS1_AUTOSIGNIN=1
         // (SIMCTL_CHILD_*) to start a flow on launch without tapping the UI.
@@ -175,11 +209,13 @@ final class GitHubSignIn {
     }
 
     func start() {
-        cancel()
+        pollTask?.cancel()
+        finish()
         error = nil
         lastPollAt = nil
         lastPollNote = nil
         starting = true
+        diag("sign-in started")
         pollTask = Task {
             do {
                 let started = try await GitHubAuth.start()
@@ -188,13 +224,16 @@ final class GitHubSignIn {
                 flow = started
                 expiresAt = deadline
                 persist(started, expiresAt: deadline)
-                _ = try await GitHubAuth.waitForAuthorization(started, until: deadline) {
+                diag("code \(started.userCode) shown + persisted")
+                let login = try await GitHubAuth.waitForAuthorization(started, until: deadline) {
                     [weak self] in self?.notePoll($0)
                 }
+                diag("signed in as @\(login)")
             } catch is CancellationError {
-                return // explicit cancel — state already cleared
+                return // superseded by a newer start/nudge — state stays
             } catch {
                 self.error = error.localizedDescription
+                diag("failed: \(error.localizedDescription)")
             }
             starting = false
             finish()
@@ -203,6 +242,7 @@ final class GitHubSignIn {
 
     /// Stop polling and forget the pending flow (explicit user cancel).
     func cancel() {
+        diag("cancelled by user")
         pollTask?.cancel()
         pollTask = nil
         starting = false
@@ -216,16 +256,19 @@ final class GitHubSignIn {
     /// just re-asks "is my flow done?".
     func nudge() {
         guard let flow, let expiresAt else { return }
+        diag("nudge — foreground, re-arming poll")
         pollTask?.cancel()
         pollTask = Task {
             do {
-                _ = try await GitHubAuth.waitForAuthorization(flow, until: expiresAt, pollImmediately: true) {
-                    [weak self] in self?.notePoll($0)
-                }
+                let login = try await GitHubAuth.waitForAuthorization(
+                    flow, until: expiresAt, pollImmediately: true
+                ) { [weak self] in self?.notePoll($0) }
+                diag("signed in as @\(login)")
             } catch is CancellationError {
                 return // superseded by a newer nudge/start — state stays
             } catch {
                 self.error = error.localizedDescription
+                diag("failed: \(error.localizedDescription)")
             }
             finish()
         }
@@ -253,13 +296,15 @@ final class GitHubSignIn {
 
     /// Pick an unexpired flow back up after a relaunch mid-sign-in.
     private func resumePersisted() {
-        guard let data = UserDefaults.standard.data(forKey: Self.pendingKey),
-              let pending = try? JSONDecoder().decode(PendingDeviceFlow.self, from: data),
+        guard let data = UserDefaults.standard.data(forKey: Self.pendingKey) else { return }
+        guard let pending = try? JSONDecoder().decode(PendingDeviceFlow.self, from: data),
               pending.expiresAt > Date()
         else {
+            diag("resume: pending flow expired/unreadable — discarded")
             UserDefaults.standard.removeObject(forKey: Self.pendingKey)
             return
         }
+        diag("resume: restored code \(pending.userCode), polling again")
         let restored = GitHubAuth.DeviceFlowStart(
             deviceCode: pending.deviceCode,
             userCode: pending.userCode,
@@ -272,13 +317,15 @@ final class GitHubSignIn {
         expiresAt = pending.expiresAt
         pollTask = Task {
             do {
-                _ = try await GitHubAuth.waitForAuthorization(
+                let login = try await GitHubAuth.waitForAuthorization(
                     restored, until: pending.expiresAt, pollImmediately: true
                 ) { [weak self] in self?.notePoll($0) }
+                diag("signed in as @\(login)")
             } catch is CancellationError {
                 return
             } catch {
                 self.error = error.localizedDescription
+                diag("failed: \(error.localizedDescription)")
             }
             finish()
         }
