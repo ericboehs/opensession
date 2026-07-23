@@ -31,6 +31,11 @@ export type QueueItem = {
 	/** Slack thread this message came from — the turn's reply is mirrored back
 	 *  there (rides the queue + persistence so a busy run can't drop it). */
 	slackReplyTo?: { channel: string; threadTs: string };
+	/** Human composer send made while the agent was busy: held until the agent
+	 *  FULLY finishes (no run and no running child workers), not just until the
+	 *  next turn boundary. Orchestration items (worker reports, auto-continues,
+	 *  GitHub FYIs) leave it unset and flow at any boundary. */
+	hold?: boolean;
 };
 export const promptQueues: Map<string, QueueItem[]> = (g.__promptQueues ??=
 	new Map());

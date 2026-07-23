@@ -836,6 +836,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							user,
 							images: imageUrls,
 							files: msg.files,
+							// Queue-by-choice: held until the agent FULLY completes
+							// (including running child workers), not just until the
+							// next turn boundary. Steer is the deliver-sooner path.
+							hold: true,
 						});
 						watchExternalRunAndDrain(sessionId);
 						break;

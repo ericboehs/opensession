@@ -54,9 +54,10 @@ interface Props {
    * Controlled parents own their value and persist it themselves.
    */
   draftKey?: string;
-  /** `interrupt` is set when the send should abort the current turn and
-   * deliver right away (⌘/Ctrl+Enter while a run is busy). */
-  onSend: (text: string, opts?: { interrupt?: boolean }) => boolean | void;
+  /** `steer` is set when the send should fold into the running turn right
+   * away (⌘/Ctrl+Enter or the steer button while a run is busy) — the turn
+   * keeps running. Plain busy sends queue for after the run fully finishes. */
+  onSend: (text: string, opts?: { steer?: boolean }) => boolean | void;
   placeholder?: string;
   disabled?: boolean;
   /** Boolean, or a predicate on the current draft (for uncontrolled mode,
@@ -65,7 +66,6 @@ interface Props {
   /** Shows on the send button tooltip when busy-queueing. */
   sendTitle?: string;
   busy?: boolean;
-  busySendMode?: "queue" | "steer";
   onStop?: () => void;
   models: ModelOption[];
   defaultModel: string;
@@ -234,7 +234,6 @@ export function Composer({
   sendDisabled,
   sendTitle,
   busy,
-  busySendMode = "queue",
   onStop,
   models,
   defaultModel,
@@ -309,8 +308,8 @@ export function Composer({
   // Fire a send handler with the current draft; in uncontrolled mode a `true`
   // return means "consumed" — clear the draft (falsy keeps it, e.g. offline).
   function fireSend(
-    handler: (t: string, opts?: { interrupt?: boolean }) => boolean | void,
-    opts?: { interrupt?: boolean },
+    handler: (t: string, opts?: { steer?: boolean }) => boolean | void,
+    opts?: { steer?: boolean },
   ) {
     const consumed = handler(text, opts);
     if (!isControlled && consumed === true) setInnerValue("");
@@ -557,9 +556,10 @@ export function Composer({
       const fences = text.slice(0, caret).match(/```/g);
       if (fences && fences.length % 2 === 1) return; // let the newline land
     }
-    // While a run is busy, ⌘/Ctrl+Enter steers: stop the current turn and
-    // deliver this send right away. (Only when plain Enter is the send key —
-    // otherwise ⌘/Ctrl+Enter already means "send".)
+    // While a run is busy, ⌘/Ctrl+Enter steers: fold this send into the
+    // running turn now, WITHOUT stopping it. Plain Enter queues for after the
+    // run fully finishes. (Only when plain Enter is the send key — otherwise
+    // ⌘/Ctrl+Enter already means "send".)
     if (
       busy &&
       sendKey === "enter" &&
@@ -567,7 +567,7 @@ export function Composer({
       (e.metaKey || e.ctrlKey)
     ) {
       e.preventDefault();
-      if (!disabled && !isSendDisabled) fireSend(onSend, { interrupt: true });
+      if (!disabled && !isSendDisabled) fireSend(onSend, { steer: true });
       return;
     }
     if (isSendCombo(e, sendKey)) {
@@ -852,37 +852,48 @@ export function Composer({
               </button>
             </Tooltip>
           )}
-          {/* Keep the right edge clean: stop (while busy) and send only. Niche
-              actions such as scheduling live under the + menu. */}
+          {/* Keep the right edge clean: stop + steer (while busy) and send.
+              Niche actions such as scheduling live under the + menu. Plain
+              send while busy ALWAYS queues (delivered once the run fully
+              finishes); steering is only ever explicit — this button or
+              ⌘/Ctrl+Enter. */}
+          {busy && showSend && (
+            <Tooltip
+              label={`Steer — fold into the running turn now, without stopping it${
+                sendKey === "enter" ? ` (${MOD_ENTER_GLYPH})` : ""
+              }`}
+            >
+              <button
+                className="composer-send composer-send-interrupt"
+                {...tapProps(() => fireSend(onSend, { steer: true }))}
+                disabled={disabled || isSendDisabled}
+                aria-label="Steer into the running turn"
+              >
+                <IconCrosshair size={24} />
+              </button>
+            </Tooltip>
+          )}
           {showSend && (
             <motion.div
               layout="position"
               transition={composerMorph}
-              className={`composer-send-split ${busy && busySendMode === "steer" ? "is-interrupt" : ""}`}
+              className="composer-send-split"
             >
               <Tooltip
                 label={
                   sendTitle ||
                   (busy
-                    ? busySendMode === "steer"
-                      ? `Steer — fold into the running turn now (${sendKeyLabel(sendKey)})`
-                      : `Queue for the next turn (${sendKeyLabel(sendKey)})${
-                          sendKey === "enter" ? ` — ${MOD_ENTER_GLYPH} steers now` : ""
-                        }`
+                    ? `Queue — delivered when the agent fully finishes (${sendKeyLabel(sendKey)})`
                     : `Send (${sendKeyLabel(sendKey)})`)
                 }
               >
                 <button
-                  className={`composer-send ${busy && busySendMode === "steer" ? "composer-send-interrupt" : busy ? "composer-send-queue-main" : ""}`}
+                  className={`composer-send ${busy ? "composer-send-queue-main" : ""}`}
                   {...tapProps(() => fireSend(onSend))}
                   disabled={disabled || isSendDisabled}
                 >
                   {busy ? (
-                    busySendMode === "steer" ? (
-                      <IconArrowUp size={24} />
-                    ) : (
-                      <IconArrowDownRight size={24} />
-                    )
+                    <IconArrowDownRight size={24} />
                   ) : (
                     <IconArrowUp size={24} />
                   )}

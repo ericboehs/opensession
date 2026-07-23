@@ -129,13 +129,17 @@ import {
 	AUTO_CONTINUE_USER,
 	INTERRUPT_STEER_NOTE,
 } from "./auto-continue";
+import { selectQueueBatch } from "./queue-hold";
 
 const g = globalThis as any;
 
 // Sessions whose last turn already got an announce-then-stop auto-continue —
-// one consecutive nudge max, so a model that announces-and-stops twice in a
-// row parks for the human instead of looping. Cleared when a human prompt
-// arrives or a turn does real (tool-calling) work.
+// one consecutive WORKLESS nudge max, so a model that announces-and-stops twice
+// in a row parks for the human instead of looping. Cleared when a human prompt
+// arrives or a turn does real (tool-calling) work — which also means that while
+// the agent keeps genuinely working through announced steps, queued messages
+// stay held behind fresh auto-continues (the queue-hold in the run-end handler)
+// until a turn ends without announcing more work.
 const autoContinueNudged: Set<string> = (g.__autoContinueNudged ??= new Set());
 
 // Sessions whose current queue head was delivered by aborting the running
@@ -172,10 +176,38 @@ function consumeInterruptSoloItem(sessionId: string): string | undefined {
 	return mark.id;
 }
 
-/** Append a message to a session's drainable queue and persist + broadcast. */
-export function enqueuePrompt(sessionId: string, item: QueueItem): void {
+// One "queue held" notice per hold engagement (not one per watcher tick);
+// cleared whenever a drain actually delivers a batch.
+const queueHoldNotified: Set<string> = (g.__queueHoldNotified ??= new Set());
+
+/**
+ * Child worker runs (spawn_task / create_session with a parent link) keep the
+ * parent session "logically working" past its own turn end: the worker's
+ * report arrives as the parent's next turn, so a queued human message
+ * delivered in the gap would land mid-task. The drain holds `hold`-tagged
+ * items while any child run is busy; the queue chip's steer button is the
+ * explicit deliver-sooner escape hatch.
+ */
+export function runningChildCount(sessionId: string): number {
+	let n = 0;
+	for (const s of getCachedSessions()) {
+		if (s.parentSessionId !== sessionId || s.archived) continue;
+		if (isAgentSessionBusy(s.claudeSessionId, s.codexThreadId, s.id)) n++;
+	}
+	return n;
+}
+
+/** Append a message to a session's drainable queue and persist + broadcast.
+ *  `front` puts it ahead of everything already queued — used by the run-end
+ *  queue-hold so its auto-continue delivers before the user's queued messages. */
+export function enqueuePrompt(
+	sessionId: string,
+	item: QueueItem,
+	opts?: { front?: boolean },
+): void {
 	const queue = promptQueues.get(sessionId) || [];
-	queue.push(queueItem(item));
+	if (opts?.front) queue.unshift(queueItem(item));
+	else queue.push(queueItem(item));
 	promptQueues.set(sessionId, queue);
 	persistQueues();
 	broadcastQueue(sessionId);
@@ -197,6 +229,37 @@ export function steerQueuedPrompt(
 	if (index < 0) return false;
 	const [item] = queue.splice(index, 1);
 	if (!item) return false;
+	if (
+		!isAgentSessionBusy(
+			session.claudeSessionId,
+			session.codexThreadId,
+			session.id,
+		)
+	) {
+		// Idle-but-queued (typically held behind running child workers): "steer"
+		// means "get this in front of the agent now" — deliver it as its own
+		// turn immediately. The rest of the queue keeps its hold.
+		if (queue.length > 0) promptQueues.set(sessionId, queue);
+		else promptQueues.delete(sessionId);
+		stoppedSessions.delete(sessionId);
+		persistQueues();
+		broadcastQueue(sessionId);
+		const files =
+			Array.isArray(item.files) && item.files.length > 0
+				? item.files
+				: undefined;
+		void runSessionPromptAndDrain(
+			sessionId,
+			item.content,
+			item.user,
+			parseImageDataUrls(item.images || []),
+			files,
+		).catch((e) => {
+			console.error(`[queue] Steer-deliver failed for ${sessionId}:`, e);
+			enqueuePrompt(sessionId, item);
+		});
+		return true;
+	}
 	// Files can't ride a steer (the fold path is text+images only). GitHub FYI
 	// items CAN steer — folding in is non-interrupting, so it's the right
 	// delivery for them too (they only land in the queue when a steer at
@@ -208,11 +271,6 @@ export function steerQueuedPrompt(
 	const attributed = item.user ? `[${item.user}] ${item.content}` : item.content;
 	const images = parseImageDataUrls(item.images || []);
 	if (
-		!isAgentSessionBusy(
-			session.claudeSessionId,
-			session.codexThreadId,
-			session.id,
-		) ||
 		!steerAgentRun(
 			[session.claudeSessionId, session.codexThreadId, session.id],
 			attributed,
@@ -648,19 +706,33 @@ export async function drainQueue(sessionId: string): Promise<void> {
 			watchExternalRunAndDrain(sessionId);
 			return;
 		}
-		// An interrupt targeting one specific queued item (the queue chip's ▲
-		// send button) delivers ONLY that item; a natural drain — or a stale or
-		// already-removed solo marker — delivers the whole queue combined. The
-		// rest stays queued and drains on the loop's next pass (once this
-		// interrupt turn finishes), so the top item no longer vanishes when you
-		// send a lower one.
-		const soloId = consumeInterruptSoloItem(sessionId);
-		const soloIndex = soloId ? queue.findIndex((m) => m.id === soloId) : -1;
-		const batch =
-			soloIndex >= 0
-				? queue.splice(soloIndex, 1)
-				: queue.splice(0, queue.length);
-		if (queue.length === 0) promptQueues.delete(sessionId);
+		// Batch selection lives in queue-hold.ts (pure, unit-tested): a solo
+		// interrupt (queue chip ▲) delivers one item, a head auto-continue
+		// delivers alone, and while child worker runs are still going, human
+		// composer sends (item.hold) stay parked until the agent FULLY
+		// completes. Orchestration traffic (worker reports, FYIs) keeps
+		// flowing so held items can't wedge the run.
+		const plan = selectQueueBatch(queue, {
+			soloId: consumeInterruptSoloItem(sessionId),
+			interruptMark: interruptDrainMarks.has(sessionId),
+			stillWorking: runningChildCount(sessionId) > 0,
+		});
+		if (plan.kind === "hold") {
+			if (!queueHoldNotified.has(sessionId)) {
+				queueHoldNotified.add(sessionId);
+				broadcastToSession(sessionId, {
+					type: "notice",
+					sessionId,
+					message: `Holding ${plan.heldCount} queued message${plan.heldCount === 1 ? "" : "s"} until the agent fully completes (worker sessions still running). Steer sends one in sooner.`,
+				});
+			}
+			watchExternalRunAndDrain(sessionId);
+			return;
+		}
+		queueHoldNotified.delete(sessionId);
+		const batch = plan.batch;
+		if (plan.rest.length > 0) promptQueues.set(sessionId, plan.rest);
+		else promptQueues.delete(sessionId);
 		persistQueues();
 		broadcastQueue(sessionId);
 		let combined = batch
@@ -1816,15 +1888,25 @@ async function runSessionPromptInner(
 	// bks-019f533e). When a clean, tool-less interactive turn ends on an
 	// announced next action, queue ONE auto-continue; the drain watcher delivers
 	// it as the next turn. Never for automation sessions, never over a user
-	// Stop, never when something is already queued, one consecutive nudge max.
+	// Stop, one consecutive workless nudge max.
+	//
+	// Queue-hold: queued messages are a promise to deliver at FULL completion,
+	// so when the turn ends still announcing work while something is queued,
+	// the nudge fires ahead of the queue (front + solo drain) — regardless of
+	// tool use — and the user's messages stay parked until a turn ends without
+	// announcing more. Turns doing real work reset the nudge budget, so a
+	// genuinely working agent holds the queue as long as it needs; a stalled
+	// one (two workless announces in a row) lets the queue drain.
 	if (toolUseCount > 0) autoContinueNudged.delete(sessionId);
+	const queuedBehind = (promptQueues.get(sessionId) || []).filter(
+		(m) => m.user !== AUTO_CONTINUE_USER,
+	).length;
 	if (
 		!endedWithError &&
 		!runFailure &&
 		session.source === "backstage" &&
 		!isAutomationSession &&
-		toolUseCount === 0 &&
-		!promptQueues.get(sessionId)?.length &&
+		(toolUseCount === 0 || queuedBehind > 0) &&
 		!stoppedSessions.has(sessionId) &&
 		!autoContinueNudged.has(sessionId) &&
 		announcesNextAction(assistantText)
@@ -1834,20 +1916,24 @@ async function runSessionPromptInner(
 			msg: "auto_continue_nudge",
 			bks_session_id: sessionId,
 			tail: assistantText.trim().slice(-200),
+			...(queuedBehind > 0 ? { queued_held: queuedBehind } : {}),
 		});
 		broadcastToSession(sessionId, {
 			type: "notice",
 			message:
-				"Turn ended on an announced next step without doing it — auto-continuing.",
+				queuedBehind > 0
+					? `Still mid-task — auto-continuing first; ${queuedBehind} queued message${queuedBehind === 1 ? "" : "s"} deliver once the agent fully finishes.`
+					: "Turn ended on an announced next step without doing it — auto-continuing.",
 		});
 		// Fenced so the transcript never shows it as a user bubble: the parsers
 		// strip <backstage:context> from user text and skip the then-empty entry,
 		// while the engine still sees the full instruction. The notice above (and
 		// the audit event) are the human-visible trace.
-		enqueuePrompt(sessionId, {
-			content: wrapContext(AUTO_CONTINUE_PROMPT),
-			user: AUTO_CONTINUE_USER,
-		});
+		enqueuePrompt(
+			sessionId,
+			{ content: wrapContext(AUTO_CONTINUE_PROMPT), user: AUTO_CONTINUE_USER },
+			{ front: true },
+		);
 	}
 
 	// The session just finished a turn; if nothing's queued it's idle now, so fire

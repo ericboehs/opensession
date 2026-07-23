@@ -32,12 +32,7 @@ import {
 	getSendKeyPref,
 	setSendKeyPref,
 	onSendKeyChanged,
-	getBusySendPref,
-	setBusySendPref,
-	onBusySendChanged,
 	MOD_ENTER_LABEL,
-	MOD_ENTER_GLYPH,
-	type BusySendPref,
 	type SendKeyPref,
 } from "../lib/send-key";
 import {
@@ -1653,12 +1648,10 @@ function AuditPanel() {
 /** Composer preferences — per-browser, like theme (lib/send-key). */
 function ComposerPanel() {
 	const [sendKey, setSendKey] = useState<SendKeyPref>(getSendKeyPref);
-	const [busySend, setBusySend] = useState<BusySendPref>(getBusySendPref);
 	const [vimMode, setVimMode] = useState<boolean>(getVimModePref);
 	const [pinNew, setPinNew] = useState<boolean>(getPinNewSessions);
 	const [pinNewWs, setPinNewWs] = useState<boolean>(getPinNewWorkspaces);
 	useEffect(() => onSendKeyChanged(() => setSendKey(getSendKeyPref())), []);
-	useEffect(() => onBusySendChanged(() => setBusySend(getBusySendPref())), []);
 	useEffect(() => onVimModeChanged(() => setVimMode(getVimModePref())), []);
 	useEffect(
 		() => onPinNewSessionsChanged(() => setPinNew(getPinNewSessions())),
@@ -1687,33 +1680,6 @@ function ComposerPanel() {
 								{ value: "mod-enter", label: MOD_ENTER_LABEL },
 							]}
 							onChange={setSendKeyPref}
-						/>
-					}
-				/>
-				<SettingRow
-					title="Follow-up behavior"
-					desc={
-						<>
-							Steer folds your message into the running turn (picked up at
-							the next step, without stopping the work); Queue waits until
-							the agent finishes.
-							{sendKey === "enter" && (
-								<div className="text-dim text-xs mt-1">
-									Use {MOD_ENTER_GLYPH} to steer even when Queue is your
-									default
-								</div>
-							)}
-						</>
-					}
-					control={
-						<Select
-							label="Follow-up behavior"
-							value={busySend}
-							options={[
-								{ value: "steer", label: "Steer" },
-								{ value: "queue", label: "Queue" },
-							]}
-							onChange={setBusySendPref}
 						/>
 					}
 				/>

@@ -109,11 +109,6 @@ import { toast } from "../ui/toast";
 import { copySessionTranscript } from "../lib/transcript-copy";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
-import {
-	getBusySendPref,
-	onBusySendChanged,
-	type BusySendPref,
-} from "../lib/send-key";
 
 type QueueReceipt = {
 	id?: string;
@@ -616,11 +611,6 @@ export function SessionViewer({
 		seq: number;
 		text: string;
 	} | null>(null);
-	const [busySend, setBusySend] = useState<BusySendPref>(getBusySendPref);
-	useEffect(
-		() => onBusySendChanged(() => setBusySend(getBusySendPref())),
-		[],
-	);
 	// Optimistic just-sent messages, shown instantly and reconciled once the real
 	// turn lands (transcript) or the server confirms it as queued (busy path).
 	// `busyMode` marks a send made while the run was busy: it renders inside the
@@ -2241,10 +2231,7 @@ export function SessionViewer({
 		!session.claudeSessionId &&
 		!session.codexThreadId &&
 		session.source !== "backstage";
-	const busySendLabel =
-		busySend === "queue"
-			? `Queue for ${AGENT_NAME}'s next turn`
-			: "Steer — stop the current turn and deliver now";
+	const busySendLabel = `Queue — ${AGENT_NAME} sees it after fully finishing this run`;
 	// Exact engine-state forks use Claude's SDK forkSession. Other backends can
 	// still fork as a new sibling with a transcript handoff.
 	const canForkSession =
@@ -2335,7 +2322,7 @@ export function SessionViewer({
 	// Composer knows to clear its draft; false keeps it for a retry.
 	// `opts.interrupt` is the per-send override (⌘/Ctrl+Enter while busy):
 	// abort the current turn and deliver this message right away.
-	function handleSend(raw: string, opts?: { interrupt?: boolean }): boolean {
+	function handleSend(raw: string, opts?: { steer?: boolean }): boolean {
 		const text = raw.trim();
 		const imgs = images;
 		const fls = files;
@@ -2367,16 +2354,16 @@ export function SessionViewer({
 		}
 
 		if (noEngine) return false;
-		// Two follow-up behaviors while busy (per-browser setting): Queue (waits
-		// for the next turn) or Steer (folds into the LIVE run at its next step
-		// boundary — busyMode:"steer", real in-band steering since 2026-07-12;
-		// the server falls back to the queue when nothing is steerable or files
-		// are attached). The turn keeps running: no abort, no lost work, none of
-		// the announce-then-stop residue interrupts used to cause. ⌘/Ctrl+Enter
-		// forces Steer regardless of the default. Idle: just run it. Attachments
-		// ride along on every path — images fold into the run as content blocks;
-		// files route to the queue server-side.
-		const steerNow = isBusy && (!!opts?.interrupt || busySend === "steer");
+		// Two follow-up behaviors while busy: plain send QUEUES (parked until
+		// the run FULLY finishes — including any auto-continue turns the server
+		// holds the queue behind), and the steer button / ⌘Ctrl+Enter STEERS
+		// (folds into the LIVE run at its next step boundary — busyMode:"steer",
+		// real in-band steering since 2026-07-12; the server falls back to the
+		// queue when nothing is steerable or files are attached). The turn keeps
+		// running on both paths: no abort, no lost work. Idle: just run it.
+		// Attachments ride along on every path — images fold into the run as
+		// content blocks; files route to the queue server-side.
+		const steerNow = isBusy && !!opts?.steer;
 		send(
 			isBusy
 				? steerNow
@@ -2661,24 +2648,26 @@ export function SessionViewer({
 								{!isGitHub && (
 									<Tooltip
 										label={
-											canSteer ? "Steer" : "Messages with files cannot be steered"
+											canSteer
+												? "Steer — fold into the running turn now, without stopping it"
+												: "Messages with files cannot be steered"
 										}
 									>
 										<button
 											type="button"
 											className="composer-queue-action composer-queue-steer"
-											aria-label="Steer"
+											aria-label="Steer into the running turn"
 											disabled={!canSteer}
 											onClick={() =>
 												send({
-													type: "interrupt_queued_prompt",
+													type: "steer_queued_prompt",
 													sessionId: session.id,
 													queueId: id,
 													queueIndex: i,
 												})
 											}
 										>
-											<IconArrowUp size={24} />
+											<IconCrosshair size={24} />
 										</button>
 									</Tooltip>
 								)}
@@ -4268,9 +4257,7 @@ export function SessionViewer({
 											: forkFrom
 												? "New direction…"
 												: isBusy
-													? busySend === "steer"
-														? "Steer this run…"
-														: "Queue for later…"
+													? "Queue for when it finishes…"
 													: `Ask ${AGENT_NAME}…`
 									}
 									disabled={!connected}
@@ -4281,7 +4268,6 @@ export function SessionViewer({
 										!forkFrom
 									}
 									busy={isBusy && !forkFrom}
-									busySendMode={busySend}
 									onStop={handleCancel}
 									sendTitle={isBusy ? busySendLabel : undefined}
 									attached={attachedComposer}
