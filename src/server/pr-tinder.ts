@@ -14,6 +14,7 @@ import { writeJsonAtomic } from "./shared/atomic-write";
 import { defaultRepo } from "./config";
 import { stateDir } from "./rename-compat";
 import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "./github-limit";
+import { serviceGithubCredential, type GithubCredential } from "./github-auth";
 
 const repoName = () => defaultRepo().ghRepo;
 const STATE_PATH = stateDir("prtinder.json");
@@ -152,8 +153,15 @@ export function markPrUnseen(user: string, number: number): void {
 
 type ActionResult = { ok: true } | { error: string };
 
-async function ghRun(args: string[]): Promise<ActionResult> {
-  const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
+async function ghRun(
+  args: string[],
+  credential: GithubCredential = serviceGithubCredential,
+): Promise<ActionResult> {
+  const proc = Bun.spawn(["gh", ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, ...credential.env },
+  });
   const [err, code] = await Promise.all([
     new Response(proc.stderr).text(),
     proc.exited,
@@ -166,17 +174,22 @@ async function ghRun(args: string[]): Promise<ActionResult> {
 export async function closeTinderPr(
   number: number,
   reason?: string,
+  credential: GithubCredential = serviceGithubCredential,
 ): Promise<ActionResult> {
   return audited(
-    { context: "pr-tinder", action: "pr_close", args: { number, reason } },
+    {
+      context: "pr-tinder",
+      action: "pr_close",
+      args: { number, reason, credential: credential.principal },
+    },
     async () => {
       if (reason?.trim()) {
         const c = await ghRun([
           "pr", "comment", String(number), "--repo", repoName(), "--body", reason.trim(),
-        ]);
+        ], credential);
         if ("error" in c) return c;
       }
-      const r = await ghRun(["pr", "close", String(number), "--repo", repoName()]);
+      const r = await ghRun(["pr", "close", String(number), "--repo", repoName()], credential);
       if ("ok" in r) prCache = null;
       return r;
     },
@@ -184,11 +197,18 @@ export async function closeTinderPr(
 }
 
 /** Undo for a close. */
-export async function reopenTinderPr(number: number): Promise<ActionResult> {
+export async function reopenTinderPr(
+  number: number,
+  credential: GithubCredential = serviceGithubCredential,
+): Promise<ActionResult> {
   return audited(
-    { context: "pr-tinder", action: "pr_reopen", args: { number } },
+    {
+      context: "pr-tinder",
+      action: "pr_reopen",
+      args: { number, credential: credential.principal },
+    },
     async () => {
-      const r = await ghRun(["pr", "reopen", String(number), "--repo", repoName()]);
+      const r = await ghRun(["pr", "reopen", String(number), "--repo", repoName()], credential);
       if ("ok" in r) prCache = null;
       return r;
     },
@@ -202,14 +222,23 @@ export async function reopenTinderPr(number: number): Promise<ActionResult> {
 export async function commentTinderPr(
   number: number,
   body: string,
+  credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true; commentId?: number } | { error: string }> {
   if (!body.trim()) return { error: "Empty comment" };
   return audited(
-    { context: "pr-tinder", action: "pr_comment", args: { number } },
+    {
+      context: "pr-tinder",
+      action: "pr_comment",
+      args: { number, credential: credential.principal },
+    },
     async () => {
       const proc = Bun.spawn(
         ["gh", "pr", "comment", String(number), "--repo", repoName(), "--body", body.trim()],
-        { stdout: "pipe", stderr: "pipe" },
+        {
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, ...credential.env },
+        },
       );
       const [out, err, code] = await Promise.all([
         new Response(proc.stdout).text(),
@@ -228,19 +257,25 @@ export async function commentTinderPr(
 /** Undo for a comment — deletes it (id from commentTinderPr's response). */
 export async function deleteTinderComment(
   commentId: number,
+  credential: GithubCredential = serviceGithubCredential,
 ): Promise<ActionResult> {
   return audited(
-    { context: "pr-tinder", action: "pr_comment_delete", args: { commentId } },
+    {
+      context: "pr-tinder",
+      action: "pr_comment_delete",
+      args: { commentId, credential: credential.principal },
+    },
     () =>
       ghRun([
         "api", "-X", "DELETE", `repos/${repoName()}/issues/comments/${commentId}`,
-      ]),
+      ], credential),
   );
 }
 
 export async function labelTinderPr(
   number: number,
   opts: { add?: string; remove?: string },
+  credential: GithubCredential = serviceGithubCredential,
 ): Promise<ActionResult> {
   const flagged: string[] = [];
   if (opts.add) flagged.push("--add-label", opts.add);
@@ -250,10 +285,18 @@ export async function labelTinderPr(
     {
       context: "pr-tinder",
       action: "pr_label",
-      args: { number, add: opts.add, remove: opts.remove },
+      args: {
+        number,
+        add: opts.add,
+        remove: opts.remove,
+        credential: credential.principal,
+      },
     },
     async () => {
-      const r = await ghRun(["pr", "edit", String(number), "--repo", repoName(), ...flagged]);
+      const r = await ghRun(
+        ["pr", "edit", String(number), "--repo", repoName(), ...flagged],
+        credential,
+      );
       if ("ok" in r) prCache = null;
       return r;
     },

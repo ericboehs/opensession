@@ -1,6 +1,6 @@
 /**
  * PR details for a session branch via the gh CLI, Devin-style "PR" tab.
- * Cached per branch for 30s (stale-while-revalidate) to keep the UI snappy
+ * Cached per branch for 2 minutes (stale-while-revalidate) to keep the UI snappy
  * without hammering GitHub; snapshotted to disk so restarts keep last-good
  * data; and wired into the shared rate-limit gate (github-limit.ts) so a
  * throttled quota serves stale snapshots instead of errors.
@@ -10,6 +10,7 @@ import { $ } from "bun";
 import { readFileSync, writeFileSync } from "fs";
 import { audited } from "./audit";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg } from "./github-limit";
+import { serviceGithubCredential, type GithubCredential } from "./github-auth";
 
 export interface PrCheck {
   name: string;
@@ -251,6 +252,50 @@ export interface PrDiffData {
 
 const diffCache = new Map<string, { data: PrDiffData | null; ts: number }>();
 
+function spawnGh(args: string[], credential: GithubCredential, stdin?: "pipe") {
+  return Bun.spawn(["gh", ...args], {
+    ...(stdin ? { stdin } : {}),
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, ...credential.env },
+  });
+}
+
+function invalidatePrInfo(repo: string, branch: string): void {
+  const key = cacheKey(repo, branch);
+  cache.delete(key);
+  diffCache.delete(key);
+}
+
+interface MutationPrMeta {
+  number: number;
+  headRefOid: string;
+  state: "OPEN" | "MERGED" | "CLOSED";
+  isDraft: boolean;
+  url: string;
+}
+
+async function getMutationPrMeta(
+  branch: string,
+  repo: string,
+  credential: GithubCredential,
+): Promise<MutationPrMeta | null> {
+  const proc = spawnGh(
+    ["pr", "view", branch, "--repo", repo, "--json", "number,headRefOid,state,isDraft,url"],
+    credential,
+  );
+  const [out, err, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (code !== 0) {
+    if (isNoPrError(err)) return null;
+    throw new Error(prApiErrorMessage(err));
+  }
+  return JSON.parse(out) as MutationPrMeta;
+}
+
 export async function getPrDiff(
   branch: string,
   repo: string = DEFAULT_REPO()
@@ -300,18 +345,17 @@ export interface PrCommentInput {
 export async function postPrComment(
   branch: string,
   input: PrCommentInput,
-  repo: string = DEFAULT_REPO()
+  repo: string = DEFAULT_REPO(),
+  credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true; url?: string } | { error: string }> {
-  const diff = await getPrDiff(branch, repo).catch((e: any) => ({ error: e?.message || String(e) }));
-  if (diff && "error" in diff) return diff;
-  if (!diff) return { error: "No PR found for this branch" };
-
   try {
     if (input.path && input.line) {
+      const meta = await getMutationPrMeta(branch, repo, credential);
+      if (!meta) return { error: "No PR found for this branch" };
       const args = [
-        "api", "-X", "POST", `repos/${repo}/pulls/${diff.number}/comments`,
+        "api", "-X", "POST", `repos/${repo}/pulls/${meta.number}/comments`,
         "-f", `body=${input.body}`,
-        "-f", `commit_id=${diff.headRefOid}`,
+        "-f", `commit_id=${meta.headRefOid}`,
         "-f", `path=${input.path}`,
         "-F", `line=${input.line}`,
         "-f", `side=${input.side || "RIGHT"}`,
@@ -320,7 +364,7 @@ export async function postPrComment(
         args.push("-F", `start_line=${input.startLine}`);
         args.push("-f", `start_side=${input.startSide || input.side || "RIGHT"}`);
       }
-      const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
+      const proc = spawnGh(args, credential);
       const [out, err, code] = await Promise.all([
         new Response(proc.stdout).text(),
         new Response(proc.stderr).text(),
@@ -334,12 +378,13 @@ export async function postPrComment(
           return undefined;
         }
       })();
+      invalidatePrInfo(repo, branch);
       return { ok: true, url };
     }
 
-    const proc = Bun.spawn(
-      ["gh", "pr", "comment", String(diff.number), "--repo", repo, "--body", input.body],
-      { stdout: "pipe", stderr: "pipe" }
+    const proc = spawnGh(
+      ["pr", "comment", branch, "--repo", repo, "--body", input.body],
+      credential,
     );
     const [out, err, code] = await Promise.all([
       new Response(proc.stdout).text(),
@@ -347,6 +392,7 @@ export async function postPrComment(
       proc.exited,
     ]);
     if (code !== 0) return { error: (err || "gh pr comment failed").slice(0, 300) };
+    invalidatePrInfo(repo, branch);
     return { ok: true, url: out.trim() || undefined };
   } catch (e: any) {
     return { error: e.message || String(e) };
@@ -381,17 +427,21 @@ export interface PrReviewInput {
 export async function submitPrReview(
   branch: string,
   input: PrReviewInput,
-  repo: string = DEFAULT_REPO()
+  repo: string = DEFAULT_REPO(),
+  credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true; url?: string } | { error: string }> {
-  const diff = await getPrDiff(branch, repo).catch((e: any) => ({ error: e?.message || String(e) }));
-  if (diff && "error" in diff) return diff;
-  if (!diff) return { error: "No PR found for this branch" };
   if (!input.comments.length && !input.body?.trim()) {
     return { error: "Nothing to submit" };
   }
 
+  const meta = await getMutationPrMeta(branch, repo, credential).catch((e: any) => ({
+    error: e?.message || String(e),
+  }));
+  if (!meta) return { error: "No PR found for this branch" };
+  if ("error" in meta) return meta;
+
   const payload = {
-    commit_id: diff.headRefOid,
+    commit_id: meta.headRefOid,
     event: input.event,
     ...(input.body?.trim() ? { body: input.body.trim() } : {}),
     comments: input.comments.map((c) => ({
@@ -409,12 +459,19 @@ export async function submitPrReview(
     {
       context: "reviews",
       action: "pr_review",
-      args: { branch, number: diff.number, event: input.event, comments: input.comments.length },
+      args: {
+        branch,
+        number: meta.number,
+        event: input.event,
+        comments: input.comments.length,
+        credential: credential.principal,
+      },
     },
     async () => {
-      const proc = Bun.spawn(
-        ["gh", "api", "-X", "POST", `repos/${repo}/pulls/${diff.number}/reviews`, "--input", "-"],
-        { stdin: "pipe", stdout: "pipe", stderr: "pipe" }
+      const proc = spawnGh(
+        ["api", "-X", "POST", `repos/${repo}/pulls/${meta.number}/reviews`, "--input", "-"],
+        credential,
+        "pipe",
       );
       proc.stdin.write(JSON.stringify(payload));
       await proc.stdin.end();
@@ -431,6 +488,7 @@ export async function submitPrReview(
           return undefined;
         }
       })();
+      invalidatePrInfo(repo, branch);
       return { ok: true, url } as const;
     }
   );
@@ -446,9 +504,10 @@ export type MergeMethod = "squash" | "merge" | "rebase";
 export async function mergePr(
   branch: string,
   opts: { method?: MergeMethod; deleteBranch?: boolean } = {},
-  repo: string = DEFAULT_REPO()
+  repo: string = DEFAULT_REPO(),
+  credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true; url?: string } | { error: string }> {
-  const pr = await getPrDetails(branch, repo);
+  const pr = await getMutationPrMeta(branch, repo, credential);
   if (!pr) return { error: "No PR found for this branch" };
   if (pr.state !== "OPEN") return { error: `PR #${pr.number} is ${pr.state.toLowerCase()}, not open` };
   if (pr.isDraft) return { error: `PR #${pr.number} is a draft — mark it ready first` };
@@ -460,12 +519,18 @@ export async function mergePr(
     {
       context: "reviews",
       action: "pr_merge",
-      args: { branch, number: pr.number, method, deleteBranch: !!opts.deleteBranch },
+      args: {
+        branch,
+        number: pr.number,
+        method,
+        deleteBranch: !!opts.deleteBranch,
+        credential: credential.principal,
+      },
     },
     async () => {
       const args = ["pr", "merge", String(pr.number), "--repo", repo, flag];
       if (opts.deleteBranch) args.push("--delete-branch");
-      const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
+      const proc = spawnGh(args, credential);
       const [, err, code] = await Promise.all([
         new Response(proc.stdout).text(),
         new Response(proc.stderr).text(),
@@ -491,7 +556,8 @@ export async function mergePr(
 export async function editPrReviewers(
   branch: string,
   opts: { add?: string | null; remove?: string | null },
-  repo: string = DEFAULT_REPO()
+  repo: string = DEFAULT_REPO(),
+  credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true } | { error: string }> {
   const args = ["pr", "edit", branch, "--repo", repo];
   if (opts.add) args.push("--add-reviewer", opts.add);
@@ -499,7 +565,7 @@ export async function editPrReviewers(
     args.push("--remove-reviewer", opts.remove);
   if (args.length === 4) return { ok: true }; // nothing to do
   try {
-    const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
+    const proc = spawnGh(args, credential);
     const [, err, code] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),

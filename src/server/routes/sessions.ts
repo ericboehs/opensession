@@ -6,7 +6,7 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
-import type { RouteContext } from "./context";
+import { requestUser, type RouteContext } from "./context";
 import { cancelAgentRun, isAgentSessionBusy, stopAgentRunTurn } from "../agent-runner";
 import { archiveOlderThan, setArchived, unpinArchivedSessions } from "../archive";
 import { audit } from "../audit";
@@ -38,6 +38,10 @@ import { removeWorktree, repoForPath } from "../worktree";
 import { preparingWorkspaces } from "../ws-hub";
 import { existsSync } from "fs";
 import { mergedCloudSessions } from "../cloud-proxy";
+import {
+	githubCredentialRequiredResponse,
+	githubMutationCredential,
+} from "./github-credential";
 
 /**
  * List which of `files` contain `query` (case-insensitive, literal) via
@@ -448,7 +452,7 @@ export async function handleSessionsRoutes(
 		if (!session)
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = await req.json().catch(() => ({}));
-		const by = typeof body?.by === "string" ? body.by.trim().slice(0, 40) : "";
+		const by = requestUser(ctx, body?.by).slice(0, 40);
 
 		// Accept / reopen the current request (the reviewer signing off). Keeps
 		// the reviewer assignment intact but flips it to a "Reviewed" state that
@@ -492,14 +496,8 @@ export async function handleSessionsRoutes(
 				? body.reviewer.trim().slice(0, 40)
 				: "";
 		const prevReviewer = getReviewRequest(sessionId)?.to;
-		setReviewRequest(
-			sessionId,
-			reviewer
-				? { to: reviewer, by: by || "someone", at: new Date().toISOString() }
-				: null,
-		);
-		invalidateSessionsCache();
-		// Mirror the request onto GitHub's own Reviewers list (best-effort):
+		// Mirror the request onto GitHub's own Reviewers list before committing the
+		// local assignment, so an auth/API failure cannot leave the two disagreeing.
 		// setting a reviewer adds them, re-assigning swaps, clearing removes.
 		// Only for sessions with a branch/PR whose reviewer maps to a GitHub
 		// login — a phone buzz always fires below regardless.
@@ -510,12 +508,24 @@ export async function handleSessionsRoutes(
 				: null;
 		const target = resolvePrTarget(session, body?.repo);
 		if (target && (addLogin || removeLogin)) {
-			void editPrReviewers(
+			const credential = githubMutationCredential(ctx);
+			if (!credential) return githubCredentialRequiredResponse();
+			const mirrored = await editPrReviewers(
 				target.branch,
 				{ add: addLogin, remove: removeLogin },
 				target.ghRepo,
-			).catch(() => {});
+				credential,
+			).catch((e: any) => ({ error: e?.message || String(e) }));
+			if ("error" in mirrored)
+				return Response.json(mirrored, { status: 502 });
 		}
+		setReviewRequest(
+			sessionId,
+			reviewer
+				? { to: reviewer, by: by || "someone", at: new Date().toISOString() }
+				: null,
+		);
+		invalidateSessionsCache();
 		if (reviewer) {
 			if (target && addLogin)
 				markPrReviewNotified(target.ghRepo, target.branch, reviewer);

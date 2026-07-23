@@ -316,7 +316,7 @@ interface GithubAuthData {
   enabled: boolean;
   clientIdConfigured: boolean;
   accounts: { login: string; name?: string; connectedAt: string; scopes?: string }[];
-  team: { name: string; github: string; connected: boolean }[];
+  team: { name: string; github: string; connected: boolean; canManage: boolean }[];
 }
 
 interface DeviceFlow {
@@ -406,7 +406,7 @@ function GithubAccounts() {
   }
 
   async function disconnect(login: string) {
-    if (!confirm(`Disconnect @${login}? Their sessions go back to opening PRs as the bot.`)) return;
+    if (!confirm(`Disconnect @${login}? Your GitHub actions will be unavailable until you reconnect.`)) return;
     try {
       const res = await fetch(
         `${BASE_PATH}/api/connections/github/account/${encodeURIComponent(login)}`,
@@ -507,7 +507,7 @@ function GithubAccounts() {
                   label={m.connected ? "Connected" : "Not connected"}
                   dot={m.connected ? "var(--green)" : "var(--line-strong, var(--text-faint))"}
                 />
-                {m.connected && (
+                {m.connected && m.canManage && (
                   <button
                     className="text-xs text-faint underline hover:text-red"
                     onClick={() => disconnect(m.github)}

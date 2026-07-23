@@ -1,4 +1,4 @@
-import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { chmodSync, closeSync, openSync, readdirSync, readFileSync, readSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { existsSync } from "fs";
 import {
@@ -26,6 +26,7 @@ import { configuredRepos, defaultRepo } from "./config";
 import { isLockHeld, readPrState } from "../agents/github/state";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg, botGhToken } from "./github-limit";
 import { fetchWithTimeout } from "./shared/fetch-with-timeout";
+import { writeJsonAtomic } from "./shared/atomic-write";
 import type {
   UnifiedSession,
   SlackSessionFile,
@@ -858,23 +859,48 @@ let prRefreshPromise: Promise<Set<string>> | null = null;
 // sidebar's PR queue silently vanishes (2026-07-22). ts stays 0 so the first
 // access still refreshes immediately; the snapshot only serves as stale data.
 const PR_CACHE_FILE = `${HOME}/.opensession-pr-cache.json`;
+const probeEtags = new Map<string, string>(); // ghRepo → last seen ETag
+const lastFullRefresh = new Map<string, number>(); // repo id → epoch ms
 try {
-  const raw: Record<string, Record<string, PrInfo>> = JSON.parse(
-    readFileSync(PR_CACHE_FILE, "utf8"),
-  );
+  const parsed = JSON.parse(readFileSync(PR_CACHE_FILE, "utf8"));
+  const raw: Record<string, Record<string, PrInfo>> =
+    parsed?.version === 2 && parsed?.repos ? parsed.repos : parsed;
   prCache.data = new Map(
     Object.entries(raw).map(([repo, byBranch]) => [
       repo,
       new Map(Object.entries(byBranch)),
     ]),
   );
+  if (parsed?.version === 2) {
+    const now = Date.now();
+    for (const repo of prRepos()) {
+      if (!prCache.data.has(repo.id)) continue;
+      const etag = parsed.probeEtags?.[repo.ghRepo];
+      if (typeof etag === "string" && etag) probeEtags.set(repo.ghRepo, etag);
+      const refreshedAt = parsed.lastFullRefresh?.[repo.id];
+      if (
+        typeof refreshedAt === "number" &&
+        Number.isFinite(refreshedAt) &&
+        refreshedAt > 0 &&
+        refreshedAt <= now + 60_000
+      ) {
+        lastFullRefresh.set(repo.id, refreshedAt);
+      }
+    }
+  }
 } catch {}
 
 function persistPrCache(data: Map<string, Map<string, PrInfo>>) {
   try {
     const obj: Record<string, Record<string, PrInfo>> = {};
     for (const [repo, byBranch] of data) obj[repo] = Object.fromEntries(byBranch);
-    writeFileSync(PR_CACHE_FILE, JSON.stringify(obj));
+    writeJsonAtomic(PR_CACHE_FILE, {
+      version: 2,
+      repos: obj,
+      probeEtags: Object.fromEntries(probeEtags),
+      lastFullRefresh: Object.fromEntries(lastFullRefresh),
+    }, false);
+    chmodSync(PR_CACHE_FILE, 0o600);
   } catch (e) {
     console.error("Failed to persist PR cache:", e);
   }
@@ -893,8 +919,6 @@ function persistPrCache(data: Map<string, Map<string, PrInfo>>) {
 // the rate limit, so an idle instance polls for free. Some mutations may not
 // bump a PR's updatedAt, so a full GraphQL refresh still runs at least every
 // PROBE_MAX_SKIP_MS as a safety net.
-const probeEtags = new Map<string, string>(); // ghRepo → last seen ETag
-const lastFullRefresh = new Map<string, number>(); // repo id → epoch ms
 const PROBE_MAX_SKIP_MS = 5 * 60_000;
 
 async function repoPrsUnchanged(ghRepo: string): Promise<boolean> {
@@ -917,6 +941,16 @@ async function repoPrsUnchanged(ghRepo: string): Promise<boolean> {
     if (resp.ok) {
       const fresh = resp.headers.get("etag");
       if (fresh) probeEtags.set(ghRepo, fresh);
+    } else {
+      const body = await resp.text().catch(() => "");
+      if (
+        (resp.status === 403 || resp.status === 429) &&
+        (resp.headers.get("x-ratelimit-remaining") === "0" || isGhRateLimitMsg(body))
+      ) {
+        const reset = Number(resp.headers.get("x-ratelimit-reset")) * 1000;
+        noteGhRateLimited("pr-cache-rest", Number.isFinite(reset) ? reset : undefined);
+      }
+      return false;
     }
     await resp.text().catch(() => {}); // drain so the socket frees
     return false;
@@ -953,6 +987,7 @@ function getPrsByRepo(): Map<string, Map<string, PrInfo>> {
 }
 
 async function ghJson<T>(args: string[]): Promise<T | null> {
+  if (ghRateLimited()) return null;
   try {
     const proc = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
     const [raw, err] = await Promise.all([
@@ -1017,7 +1052,9 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
     //   - `--state all` window → recently merged/closed (Reviews "merged" view +
     //     sessions whose PR just landed)
     const next = new Map<string, Map<string, PrInfo>>();
-    await Promise.all(prRepos().map(async (repo) => {
+    // Keep repos and their two queries sequential. Besides lowering burst cost,
+    // this lets a rate-limit response stop the remaining sweep immediately.
+    for (const repo of prRepos()) {
       // Skip both GraphQL calls entirely when the conditional REST probe says
       // nothing changed since the last full refresh (bounded by the safety-net
       // interval): an unchanged snapshot is by definition current, so the repo
@@ -1030,27 +1067,28 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
       ) {
         next.set(repo.id, stale);
         freshRepos.add(repo.id);
-        return;
+        continue;
       }
-      const [openPrs, recentAll] = await Promise.all([
-        ghJson<BulkPr[]>([
-          "pr", "list", "--repo", repo.ghRepo, "--state", "open",
-          "--limit", String(repo.openLimit), "--json", `${FIELDS},latestReviews`,
-        ]),
-        ghJson<BulkPr[]>([
-          "pr", "list", "--repo", repo.ghRepo, "--state", "all",
-          "--limit", String(repo.recentLimit), "--json", FIELDS,
-        ]),
+      if (ghRateLimited()) {
+        if (stale) next.set(repo.id, stale);
+        continue;
+      }
+      const openPrs = await ghJson<BulkPr[]>([
+        "pr", "list", "--repo", repo.ghRepo, "--state", "open",
+        "--limit", String(repo.openLimit), "--json", `${FIELDS},latestReviews`,
       ]);
 
       if (!openPrs) {
         // The open list is authoritative. A successful recent-history query
         // cannot prove an open PR disappeared, so preserve this repo's stale
         // snapshot and do not let notification consumers compare against it.
-        const stale = prCache.data.get(repo.id);
         if (stale) next.set(repo.id, stale);
-        return;
+        continue;
       }
+		const recentAll = await ghJson<BulkPr[]>([
+			"pr", "list", "--repo", repo.ghRepo, "--state", "all",
+			"--limit", String(repo.recentLimit), "--json", FIELDS,
+		]);
 			freshRepos.add(repo.id);
       lastFullRefresh.set(repo.id, Date.now());
 
@@ -1105,6 +1143,11 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
       // then let open PRs override: an open PR is the authoritative state for a
       // branch even if an older closed PR reused the same head ref.
       const map = new Map<string, PrInfo>();
+      if (!recentAll && stale) {
+        for (const [branch, pr] of stale) {
+          if (pr.state !== "OPEN") map.set(branch, pr);
+        }
+      }
       for (const pr of recentAll || []) {
         if (!map.has(pr.headRefName)) map.set(pr.headRefName, toInfo(pr));
       }
@@ -1112,7 +1155,7 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
         map.set(pr.headRefName, toInfo(pr));
       }
       next.set(repo.id, map);
-    }));
+    }
     prCache = { data: next, ts: Date.now() };
     if (freshRepos.size) persistPrCache(next);
   } catch (e) {

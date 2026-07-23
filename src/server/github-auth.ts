@@ -40,9 +40,9 @@ function storePath(): string {
   return process.env.OPENSESSION_GITHUB_AUTH_STORE || `${HOME}/.opensession-github-auth.json`;
 }
 
-/** Scopes requested for user tokens: `repo` covers PR create/edit on private
- *  repos; `read:org` lets gh resolve org membership (same pair gh requests). */
-const DEVICE_FLOW_SCOPE = "repo read:org";
+/** Classic OAuth needs `repo` for PR writes on private repositories. Team
+ * membership is resolved from our local identity config, so no org scope. */
+const DEVICE_FLOW_SCOPE = "repo";
 
 export interface GithubUserAuthSettings {
   /** Feature switch (config `integrations.github.userPrAuth`). */
@@ -150,12 +150,35 @@ export type DeviceFlowPoll =
   | { status: "ok"; login: string; name?: string }
   | { status: "error"; error: string };
 
+function stripStoredAccount({ token: _token, ...rest }: StoredAccount): GithubConnectedAccount {
+  return rest;
+}
+
+export function connectedGithubAccount(login: string): GithubConnectedAccount | null {
+  const account = readStore().users[login.toLowerCase()];
+  return account ? stripStoredAccount(account) : null;
+}
+
+export function validateGithubTokenLogin(
+  actualLogin: string,
+  expectedLogin?: string | null
+): { ok: true } | { ok: false; error: string } {
+  if (!expectedLogin || actualLogin.toLowerCase() === expectedLogin.toLowerCase()) return { ok: true };
+  return {
+    ok: false,
+    error: `GitHub authorized @${actualLogin}, but the signed-in user is @${expectedLogin}`,
+  };
+}
+
 /**
  * One poll of the device-flow token endpoint. On success, fetches the token's
  * own /user to learn WHO authorized (the login is ground truth from GitHub —
  * never client-supplied) and stores the token under that login.
  */
-export async function pollGithubDeviceFlow(deviceCode: string): Promise<DeviceFlowPoll> {
+export async function pollGithubDeviceFlow(
+  deviceCode: string,
+  expectedLogin?: string | null
+): Promise<DeviceFlowPoll> {
   const { clientId } = githubUserAuthSettings();
   if (!clientId) return { status: "error", error: "No OAuth client id configured" };
   const res = await fetchWithTimeout("https://github.com/login/oauth/access_token", {
@@ -178,7 +201,7 @@ export async function pollGithubDeviceFlow(deviceCode: string): Promise<DeviceFl
   }
   const token: string | undefined = body.access_token;
   if (!token) return { status: "error", error: "GitHub returned no access token" };
-  return identifyAndStoreToken(token, body.scope);
+  return identifyAndStoreToken(token, body.scope, expectedLogin);
 }
 
 /** Shared tail of both OAuth flows: learn WHO the token belongs to (GET /user
@@ -186,7 +209,8 @@ export async function pollGithubDeviceFlow(deviceCode: string): Promise<DeviceFl
  *  client-supplied) and store it under that login. */
 async function identifyAndStoreToken(
   token: string,
-  scope?: unknown
+  scope?: unknown,
+  expectedLogin?: string | null
 ): Promise<DeviceFlowPoll> {
   const userRes = await fetchWithTimeout("https://api.github.com/user", {
     headers: {
@@ -200,6 +224,9 @@ async function identifyAndStoreToken(
   if (!userRes.ok || !login) {
     return { status: "error", error: "Token issued but GET /user failed — not stored" };
   }
+
+  const ownership = validateGithubTokenLogin(login, expectedLogin);
+  if (!ownership.ok) return { status: "error", error: ownership.error };
 
   const store = readStore();
   store.users[login.toLowerCase()] = {
@@ -271,7 +298,7 @@ export async function exchangeGithubOauthCode(
 /** Connected accounts, tokens stripped (UI/API safe). */
 export function connectedGithubAccounts(): GithubConnectedAccount[] {
   return Object.values(readStore().users)
-    .map(({ token: _token, ...rest }) => rest)
+    .map(stripStoredAccount)
     .sort((a, b) => a.login.localeCompare(b.login));
 }
 
@@ -310,4 +337,28 @@ export function githubAuthEnv(user?: string | null): Record<string, string> {
   const token = readStore().users[login.toLowerCase()]?.token;
   if (!token) return {};
   return { GH_TOKEN: token, GITHUB_TOKEN: token };
+}
+
+export interface GithubCredential {
+  kind: "service" | "user";
+  principal: string;
+  env: Record<string, string>;
+}
+
+export const serviceGithubCredential: GithubCredential = {
+  kind: "service",
+  principal: "service",
+  env: {},
+};
+
+/** Exact-login lookup for an already authenticated web request. */
+export function githubCredentialForLogin(login: string): GithubCredential | null {
+  if (!githubUserAuthActive()) return null;
+  const account = readStore().users[login.toLowerCase()];
+  if (!account?.token) return null;
+  return {
+    kind: "user",
+    principal: `user:${account.login.toLowerCase()}`,
+    env: { GH_TOKEN: account.token, GITHUB_TOKEN: account.token },
+  };
 }

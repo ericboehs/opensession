@@ -13,10 +13,12 @@ import { join } from "path";
 import {
   connectedGithubAccounts,
   githubAuthEnv,
+  githubCredentialForLogin,
   githubUserAuthActive,
   githubUserAuthSettings,
   githubUserLoginForRun,
   removeGithubAccount,
+  validateGithubTokenLogin,
 } from "./github-auth";
 import {
   keypadBearerAuthorized,
@@ -147,6 +149,25 @@ describe("token lookups + runner env", () => {
     expect(accounts).toHaveLength(1);
     expect(accounts[0].login).toBe("happylinks");
     expect((accounts[0] as any).token).toBeUndefined();
+  });
+
+  test("builds a credential only for the exact connected login", () => {
+    enableFeature();
+    seedToken("HappyLinks");
+    expect(githubCredentialForLogin("happylinks")).toEqual({
+      kind: "user",
+      principal: "user:happylinks",
+      env: { GH_TOKEN: "gho_test123", GITHUB_TOKEN: "gho_test123" },
+    });
+    expect(githubCredentialForLogin("9ranty")).toBeNull();
+  });
+
+  test("rejects a device-flow login that differs from the signed-in user", () => {
+    expect(validateGithubTokenLogin("happylinks", "HappyLinks")).toEqual({ ok: true });
+    expect(validateGithubTokenLogin("9ranty", "happylinks")).toEqual({
+      ok: false,
+      error: "GitHub authorized @9ranty, but the signed-in user is @happylinks",
+    });
   });
 
   test("removeGithubAccount on an unknown login is a no-op", () => {

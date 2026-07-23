@@ -193,23 +193,28 @@ export async function handleConnectionsRoutes(
 	// Device-flow connect per teammate; tokens live server-side (0600) and are
 	// never returned here. See src/server/github-auth.ts.
 	if (path === "/backstage/api/connections/github" && req.method === "GET") {
-		const { githubUserAuthSettings, connectedGithubAccounts } = await import(
+		const { githubUserAuthSettings, connectedGithubAccount, connectedGithubAccounts } = await import(
 			"../github-auth"
 		);
 		const { configuredIdentity } = await import("../config");
 		const settings = githubUserAuthSettings();
-		const accounts = connectedGithubAccounts();
-		const connected = new Set(accounts.map((a) => a.login.toLowerCase()));
+		const connected = new Set(
+			connectedGithubAccounts().map((a) => a.login.toLowerCase()),
+		);
+		const ownLogin = ctx.authUser?.login || "";
+		const ownAccount = ownLogin ? connectedGithubAccount(ownLogin) : null;
 		return Response.json({
 			enabled: settings.enabled,
 			clientIdConfigured: !!settings.clientId,
-			accounts,
+			accounts: ownAccount ? [ownAccount] : [],
 			team: configuredIdentity()
 				.team.filter((m) => m.github)
 				.map((m) => ({
 					name: m.name,
 					github: m.github,
 					connected: connected.has(m.github!.toLowerCase()),
+					canManage:
+						!!ownLogin && m.github!.toLowerCase() === ownLogin.toLowerCase(),
 				})),
 		});
 	}
@@ -218,6 +223,8 @@ export async function handleConnectionsRoutes(
 		path === "/backstage/api/connections/github/device" &&
 		req.method === "POST"
 	) {
+		if (!ctx.authUser?.login)
+			return Response.json({ error: "Sign in to connect GitHub" }, { status: 403 });
 		const { startGithubDeviceFlow } = await import("../github-auth");
 		const result = await startGithubDeviceFlow();
 		if ("error" in result) return Response.json(result, { status: 400 });
@@ -228,21 +235,32 @@ export async function handleConnectionsRoutes(
 		path === "/backstage/api/connections/github/device/poll" &&
 		req.method === "POST"
 	) {
+		if (!ctx.authUser?.login)
+			return Response.json({ error: "Sign in to connect GitHub" }, { status: 403 });
 		const body = await req.json().catch(() => null);
 		const deviceCode =
 			typeof body?.deviceCode === "string" ? body.deviceCode : "";
 		if (!deviceCode)
 			return Response.json({ error: "deviceCode required" }, { status: 400 });
 		const { pollGithubDeviceFlow } = await import("../github-auth");
-		return Response.json(await pollGithubDeviceFlow(deviceCode));
+		return Response.json(
+			await pollGithubDeviceFlow(deviceCode, ctx.authUser.login),
+		);
 	}
 
 	const ghAccountMatch = path.match(
 		/^\/backstage\/api\/connections\/github\/account\/([^/]+)$/,
 	);
 	if (ghAccountMatch && req.method === "DELETE") {
+		const login = decodeURIComponent(ghAccountMatch[1]);
+		if (!ctx.authUser?.login || ctx.authUser.login.toLowerCase() !== login.toLowerCase()) {
+			return Response.json(
+				{ error: "You can only disconnect your own GitHub account" },
+				{ status: 403 },
+			);
+		}
 		const { removeGithubAccount } = await import("../github-auth");
-		const removed = removeGithubAccount(decodeURIComponent(ghAccountMatch[1]));
+		const removed = removeGithubAccount(login);
 		if (!removed)
 			return Response.json({ error: "Not connected" }, { status: 404 });
 		return Response.json({ ok: true });

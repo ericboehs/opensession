@@ -8,7 +8,7 @@
  */
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import { defaultRepo, personaName } from "../../server/config";
-import { isGhRateLimitMsg, noteGhRateLimited } from "../../server/github-limit";
+import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "../../server/github-limit";
 
 const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
 /** The PR agent's target — the instance's default repo (config-driven). */
@@ -112,6 +112,7 @@ export async function githubGraphQL<T = any>(
   variables?: Record<string, unknown>,
 ): Promise<T | null> {
   if (!GITHUB_TOKEN) return null;
+  if (ghRateLimited()) return null;
   try {
     const resp = await fetchWithTimeout("https://api.github.com/graphql", {
       method: "POST",

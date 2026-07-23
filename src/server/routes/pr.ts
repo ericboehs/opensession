@@ -16,6 +16,10 @@ import { resolvePrTarget } from "../session-repos";
 import { getOpenPrs } from "../sessions";
 import { getRepo } from "../worktree";
 import { watch } from "fs";
+import {
+	githubCredentialRequiredResponse,
+	githubMutationCredential,
+} from "./github-credential";
 
 function validDiffGroupingInput(body: any): {
 	files: Array<{
@@ -63,7 +67,7 @@ export async function handlePrRoutes(
 	// rich card fields, the repo's labels, and which PRs this user already
 	// kept (so the deck doesn't re-deal them for 14 days).
 	if (path === "/backstage/api/pr-tinder" && req.method === "GET") {
-		const user = url.searchParams.get("user") || "";
+		const user = requestUser(ctx, url.searchParams.get("user"));
 		try {
 			const [prs, labels] = await Promise.all([
 				listTinderPrs(),
@@ -111,15 +115,21 @@ export async function handlePrRoutes(
 						return Response.json({ ok: true });
 					}
 					case "close": {
-						const r = await closeTinderPr(number, body.reason);
+						const credential = githubMutationCredential(ctx);
+						if (!credential) return githubCredentialRequiredResponse();
+						const r = await closeTinderPr(number, body.reason, credential);
 						return Response.json(r, { status: "error" in r ? 502 : 200 });
 					}
 					case "reopen": {
-						const r = await reopenTinderPr(number);
+						const credential = githubMutationCredential(ctx);
+						if (!credential) return githubCredentialRequiredResponse();
+						const r = await reopenTinderPr(number, credential);
 						return Response.json(r, { status: "error" in r ? 502 : 200 });
 					}
 					case "comment": {
-						const r = await commentTinderPr(number, body.body || "");
+						const credential = githubMutationCredential(ctx);
+						if (!credential) return githubCredentialRequiredResponse();
+						const r = await commentTinderPr(number, body.body || "", credential);
 						// Commenting is a triage verdict too — don't re-deal the PR.
 						if ("ok" in r && user) markPrSeen(user, number);
 						return Response.json(r, { status: "error" in r ? 502 : 200 });
@@ -132,15 +142,19 @@ export async function handlePrRoutes(
 								{ error: "commentId required" },
 								{ status: 400 },
 							);
-						const r = await deleteTinderComment(Number(body.commentId));
+						const credential = githubMutationCredential(ctx);
+						if (!credential) return githubCredentialRequiredResponse();
+						const r = await deleteTinderComment(Number(body.commentId), credential);
 						if ("ok" in r && user) markPrUnseen(user, number);
 						return Response.json(r, { status: "error" in r ? 502 : 200 });
 					}
 					case "labels": {
+						const credential = githubMutationCredential(ctx);
+						if (!credential) return githubCredentialRequiredResponse();
 						const r = await labelTinderPr(number, {
 							add: body.add,
 							remove: body.remove,
-						});
+						}, credential);
 						return Response.json(r, { status: "error" in r ? 502 : 200 });
 					}
 				}
@@ -371,6 +385,8 @@ export async function handlePrRoutes(
 		return prApiResponse(() => getReviewGuide(branch, repo.ghRepo));
 	}
 	if (path === "/backstage/api/pr-preview-review" && req.method === "POST") {
+		const credential = githubMutationCredential(ctx);
+		if (!credential) return githubCredentialRequiredResponse();
 		const body = await req.json().catch(() => null);
 		const branch = body?.branch?.trim();
 		if (!branch)
@@ -408,12 +424,15 @@ export async function handlePrRoutes(
 					})),
 			},
 			repo.ghRepo,
+			credential,
 		);
 		if ("error" in result) return Response.json(result, { status: 502 });
 		invalidateSessionsCache();
 		return Response.json(result);
 	}
 	if (path === "/backstage/api/pr-preview-merge" && req.method === "POST") {
+		const credential = githubMutationCredential(ctx);
+		if (!credential) return githubCredentialRequiredResponse();
 		const body = await req.json().catch(() => ({}));
 		const branch = body?.branch?.trim();
 		if (!branch)
@@ -428,6 +447,7 @@ export async function handlePrRoutes(
 				branch,
 				{ method, deleteBranch: !!body.deleteBranch },
 				repo.ghRepo,
+				credential,
 			);
 			if ("error" in result) return Response.json(result, { status: 502 });
 			invalidateSessionsCache();
@@ -445,6 +465,8 @@ export async function handlePrRoutes(
 		path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-comment$/) &&
 		req.method === "POST"
 	) {
+		const credential = githubMutationCredential(ctx);
+		if (!credential) return githubCredentialRequiredResponse();
 		const sessionId = decodeURIComponent(
 			path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-comment$/)![1],
 		);
@@ -474,6 +496,7 @@ export async function handlePrRoutes(
 				startSide: body.startSide,
 			},
 			target.ghRepo,
+			credential,
 		);
 		if ("error" in result) return Response.json(result, { status: 502 });
 		return Response.json(result);
@@ -484,6 +507,8 @@ export async function handlePrRoutes(
 		path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-review$/) &&
 		req.method === "POST"
 	) {
+		const credential = githubMutationCredential(ctx);
+		if (!credential) return githubCredentialRequiredResponse();
 		const sessionId = decodeURIComponent(
 			path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-review$/)![1],
 		);
@@ -533,6 +558,7 @@ export async function handlePrRoutes(
 					})),
 			},
 			target.ghRepo,
+			credential,
 		);
 		if ("error" in result) return Response.json(result, { status: 502 });
 		invalidateSessionsCache(); // a review can change reviewDecision in the list
@@ -544,6 +570,8 @@ export async function handlePrRoutes(
 		path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-merge$/) &&
 		req.method === "POST"
 	) {
+		const credential = githubMutationCredential(ctx);
+		if (!credential) return githubCredentialRequiredResponse();
 		const sessionId = decodeURIComponent(
 			path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-merge$/)![1],
 		);
@@ -567,6 +595,7 @@ export async function handlePrRoutes(
 				target.branch,
 				{ method, deleteBranch: !!body.deleteBranch },
 				target.ghRepo,
+				credential,
 			);
 			if ("error" in result) return Response.json(result, { status: 502 });
 			invalidateSessionsCache(); // refresh prState in the sessions list
