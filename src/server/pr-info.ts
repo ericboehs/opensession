@@ -34,6 +34,14 @@ export interface PrStaging {
   url: string;
   /** Deploy status from the butler table, verbatim: Building | Ready | Error… */
   status: string;
+  /**
+   * Whether this deploy opts into being embedded in the OS1 review iframe —
+   * true once its response CSP names os.tella.dev in frame-ancestors (the
+   * tella-fusion preview change). Probed out-of-band (see embeddableFor); a
+   * deploy predating that change reads back false and the UI shows the launch
+   * panel instead, so nothing regresses.
+   */
+  embeddable?: boolean;
 }
 
 export interface PrFile {
@@ -105,9 +113,46 @@ function parseStaging(comments: Array<{ body?: string }> | undefined): PrStaging
     const m = c.body.match(
       /^\|\s*tella\s*\|\s*([^|]+?)\s*\|\s*\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/m
     );
-    if (m) return { status: m[1], url: m[2] };
+    if (m) return { status: m[1], url: m[2], embeddable: embeddableFor(m[2]) };
   }
   return null;
+}
+
+// Whether a staging deploy opts into being embedded in the OS1 review iframe:
+// true once its response CSP names os.tella.dev in frame-ancestors (the
+// tella-fusion preview change). Probed out-of-band — a plain GET of the deploy,
+// reading the CSP header — and cached, so the PR fetch never blocks on it and a
+// deploy that predates the fusion change simply reads back false (the UI then
+// shows the launch panel, exactly as before). Best-effort: any failure → false.
+const EMBED_TTL = 300_000;
+const embedCache = new Map<string, { ok: boolean; ts: number }>();
+const embedInflight = new Set<string>();
+
+async function probeEmbeddable(url: string): Promise<void> {
+  if (embedInflight.has(url)) return;
+  embedInflight.add(url);
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      redirect: "manual",
+      headers: { "user-agent": "os1-embed-probe" },
+      signal: AbortSignal.timeout(5000),
+    });
+    const csp = res.headers.get("content-security-policy") || "";
+    const ok = /frame-ancestors[^;]*\bos\.tella\.dev\b/i.test(csp);
+    embedCache.set(url, { ok, ts: Date.now() });
+  } catch {
+    embedCache.set(url, { ok: false, ts: Date.now() });
+  } finally {
+    embedInflight.delete(url);
+  }
+}
+
+/** Sync read of the embed-probe cache; kicks a background refresh when stale. */
+function embeddableFor(url: string): boolean {
+  const hit = embedCache.get(url);
+  if (!hit || Date.now() - hit.ts >= EMBED_TTL) void probeEmbeddable(url);
+  return hit?.ok ?? false;
 }
 
 /** Changed files, biggest churn first, so the panel leads with the meat. */

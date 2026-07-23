@@ -478,8 +478,9 @@ export interface PrDetails {
 	mergeable?: string;
 	/** CLEAN | BEHIND | BLOCKED | DIRTY | UNSTABLE | … — merge-box state. */
 	mergeStateStatus?: string;
-	/** The PR's webapp staging deploy (Vercel preview), when one exists. */
-	staging?: { url: string; status: string } | null;
+	/** The PR's webapp staging deploy (Vercel preview), when one exists.
+	 * `embeddable` is true once the deploy's CSP lets os.tella.dev frame it. */
+	staging?: { url: string; status: string; embeddable?: boolean } | null;
 }
 
 /** Local git state of a session's worktree (git-status endpoint). */
