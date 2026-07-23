@@ -11,8 +11,7 @@ import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
 import {
   IconArrowUp,
-  IconArrowDownRight,
-  IconBolt,
+  IconReturn,
   IconPlus,
   IconPaperclip,
   IconAtSign,
@@ -906,9 +905,9 @@ export function Composer({
                   }
                 >
                   {steerSend ? (
-                    <IconBolt size={24} />
+                    <IconArrowUp size={24} />
                   ) : busy ? (
-                    <IconArrowDownRight size={24} />
+                    <IconReturn size={24} />
                   ) : (
                     <IconArrowUp size={24} />
                   )}
