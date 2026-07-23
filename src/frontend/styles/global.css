@@ -499,6 +499,15 @@ html.wco:has(.app-menu-popup)
 	left: 50px;
 	z-index: 20;
 }
+/* These controls are siblings of the draggable header rather than descendants
+   of it, so the generic header no-drag rule above does not reach them. Mark the
+   floating cluster itself as interactive or the desktop shell consumes clicks
+   as window drags while the sidebar is collapsed. */
+html.wco .sidebar-reopen,
+html.wco .wco-nav-pane {
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}
 .app-body.sidebar-collapsed .detail-pane .wco-nav-pane {
 	display: flex;
 	align-items: center;
