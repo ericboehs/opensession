@@ -235,6 +235,12 @@ async function listenersOnPort(port: number): Promise<number[]> {
   return [...pids];
 }
 
+/** Is anything listening on the port (regardless of pid visibility)? */
+async function portListening(port: number): Promise<boolean> {
+  const raw = await $`ss -tlnH sport = :${port}`.quiet().nothrow().text();
+  return raw.trim().length > 0;
+}
+
 async function pgidOf(pid: number): Promise<number | null> {
   const raw = await $`ps -o pgid= -p ${pid}`.quiet().nothrow().text();
   const n = parseInt(raw.trim(), 10);
@@ -329,7 +335,11 @@ export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStat
   const services: PreviewService[] = await Promise.all(
     ports.map(async ({ key, port }) => {
       const pids = await listenersOnPort(port);
-      return { name: friendly(key), key, port, running: pids.length > 0, pids };
+      // Root-owned listeners (docker-proxy fronting a preview-pool container)
+      // show no pid to non-root `ss -p` — a listening socket counts as
+      // running even when we can't see who owns it.
+      const running = pids.length > 0 || (await portListening(port));
+      return { name: friendly(key), key, port, running, pids };
     }),
   );
   const webapp = services.find((s) => s.key === "WEBAPP_PORT");
