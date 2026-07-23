@@ -30,7 +30,7 @@ const popupClasses =
 	"min-w-[180px] overflow-hidden rounded-[14px] [corner-shape:squircle] border border-line-strong bg-panel shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0 data-[ending-style]:opacity-0";
 
 const popupInnerClasses =
-	"max-h-[min(60vh,420px)] overflow-y-auto overflow-x-hidden overscroll-contain p-1.5";
+	"max-h-[min(60vh,420px,var(--available-height))] overflow-y-auto overflow-x-hidden overscroll-contain p-1.5";
 
 function Popup({
 	className,
