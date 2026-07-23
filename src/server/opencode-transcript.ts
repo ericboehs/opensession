@@ -204,6 +204,26 @@ function bksMap(): Map<string, string> {
   return bksMapState.map;
 }
 
+/** Cap for the persisted bks map (db-map.json's prune-on-write pattern —
+ *  without it the file is rewritten whole per new engine session and grows
+ *  forever). Above the cap, mappings whose mirror file is gone are dropped
+ *  first (nothing readable left to attribute), then oldest-inserted (Map /
+ *  JSON object insertion order). The entry being recorded is never dropped. */
+const BKS_MAP_MAX_ENTRIES = 2000;
+
+function pruneBksMap(map: Map<string, string>, keep: string): void {
+  if (map.size <= BKS_MAP_MAX_ENTRIES) return;
+  for (const id of [...map.keys()]) {
+    if (map.size <= BKS_MAP_MAX_ENTRIES) return;
+    if (id === keep) continue;
+    if (!existsSync(getOpencodeTranscriptPath(id))) map.delete(id);
+  }
+  for (const id of [...map.keys()]) {
+    if (map.size <= BKS_MAP_MAX_ENTRIES) return;
+    if (id !== keep) map.delete(id);
+  }
+}
+
 /** Remember which unified session an engine session belongs to. Called from
  *  the runner (run start / rotation / reattach) and the sandbox host mirror —
  *  wherever both ids are in scope. Never throws. */
@@ -213,6 +233,7 @@ export function recordBksSessionFor(ocSessionId: string, unifiedId: string): voi
     const map = bksMap();
     if (map.get(ocSessionId) === unifiedId) return;
     map.set(ocSessionId, unifiedId);
+    pruneBksMap(map, ocSessionId);
     mkdirSync(OPENCODE_BKS_MAP_PATH.slice(0, OPENCODE_BKS_MAP_PATH.lastIndexOf("/")), {
       recursive: true,
     });
@@ -226,6 +247,57 @@ export function recordBksSessionFor(ocSessionId: string, unifiedId: string): voi
 
 function transcriptV2Enabled(): boolean {
   return envAlias("OPENSESSION_TRANSCRIPT_V2", "BACKSTAGE_TRANSCRIPT_V2") === "1";
+}
+
+// ── v2 store-degraded flag (failure-side dirty marker, §8) ───────────────────
+//
+// The §8 drift checks' mirror-tail probe only proves the NEWEST mirror entry
+// reached the store — a MID-transcript gap (one failed store-append batch
+// followed by successful ones) would be classified "explained" and the
+// watermark refresh would mask it permanently. So the failure side records the
+// gap the moment it happens: a failed store append (or one skipped for an
+// unresolved oc→unified mapping) flags the session store-degraded, and both
+// drift checks (sessions.ts v2TranscriptHasDrift, consumed by the store read
+// path AND ws-handlers' serveTranscriptV2) treat a set flag as unconditional
+// drift → full re-import (idempotent upserts), which clears it. Keys are
+// whichever id the failure site had — unified id for append failures, oc id
+// when the mapping was unresolved — and checks probe both. Parked on
+// globalThis (best-effort: a restart drops it; the tail probe stays the
+// secondary signal), no sidecar persistence.
+
+const storeDegraded: Set<string> = ((globalThis as Record<string, unknown> & {
+  __osOcV2StoreDegraded?: Set<string>;
+}).__osOcV2StoreDegraded ??= new Set());
+
+function markTranscriptStoreDegraded(id: string | null | undefined): void {
+  if (id) storeDegraded.add(id);
+}
+
+/** True when any of the ids carries the degraded flag → unconditional drift. */
+export function isTranscriptStoreDegraded(
+  ...ids: (string | null | undefined)[]
+): boolean {
+  return ids.some((id) => !!id && storeDegraded.has(id));
+}
+
+/** A completed full re-import makes the store whole again — clear the flag
+ *  (callers pass every id the session is known by; unknown ids are no-ops). */
+export function clearTranscriptStoreDegraded(
+  ...ids: (string | null | undefined)[]
+): void {
+  for (const id of ids) if (id) storeDegraded.delete(id);
+}
+
+/** oc ids whose store append/import failure already warned — a persistently
+ *  failing store would otherwise warn on every append batch. */
+const storeFailWarned: Set<string> = ((globalThis as Record<string, unknown> & {
+  __osOcV2StoreFailWarned?: Set<string>;
+}).__osOcV2StoreFailWarned ??= new Set());
+
+function warnStoreFailureOnce(ocSessionId: string, msg: string, e: unknown): void {
+  if (storeFailWarned.has(ocSessionId)) return;
+  storeFailWarned.add(ocSessionId);
+  console.warn(`${msg} (further warnings suppressed for this session)`, e);
 }
 
 /** The unified session id for an engine session, or null (+ one warn). */
@@ -264,19 +336,28 @@ function importLegacyIntoStore(unifiedId: string, ocSessionId: string): void {
     const cacheMod = require("./session-cache") as typeof import("./session-cache");
     session = cacheMod.findSession(unifiedId);
   } catch {}
-  const entries = sessionsMod.mergedSessionTranscript(
-    session ?? {
-      transcriptPath: existingOpencodeTranscriptPath(ocSessionId),
-      opencodeSessionId: ocSessionId,
-      claudeSessionId: null,
-    }
-  );
-  // Watermark = the oc mirror file's size at import time (§8 drift check —
-  // the mirror is the only legacy file that still grows for these sessions).
+  // Deliberately id-less ref: guarantees the legacy merge (an id-carrying ref
+  // would route mergedSessionTranscript back into the v2 store path).
+  const ref = session
+    ? {
+        transcriptPath: session.transcriptPath ?? null,
+        opencodeSessionId: session.opencodeSessionId,
+        claudeSessionId: session.claudeSessionId ?? null,
+      }
+    : {
+        transcriptPath: existingOpencodeTranscriptPath(ocSessionId),
+        opencodeSessionId: ocSessionId,
+        claudeSessionId: null,
+      };
+  const entries = sessionsMod.mergedSessionTranscript(ref);
+  // Watermark = TOTAL size of the §8 drift candidate set at import time (the
+  // session transcript file + the oc mirror — sessions.ts v2MirrorFiles, the
+  // same set the drift compare sums). Measuring only one file would make an
+  // imported session look permanently grown-beyond-watermark.
   let watermark: number | null = null;
   try {
-    const p = getOpencodeTranscriptPath(ocSessionId);
-    if (existsSync(p)) watermark = statSync(p).size;
+    const files = sessionsMod.v2MirrorFiles(ref);
+    if (files.length) watermark = files.reduce((sum, f) => sum + f.size, 0);
   } catch {}
   transcriptStore().importLegacyTranscript(
     unifiedId,
@@ -284,6 +365,8 @@ function importLegacyIntoStore(unifiedId: string, ocSessionId: string): void {
     entries.length ? "merged" : "live-only",
     watermark
   );
+  // A full import makes the store whole — release the failure-side marker.
+  clearTranscriptStoreDegraded(unifiedId, ocSessionId);
 }
 
 /** Run the import-first gate for a session without appending anything —
@@ -298,8 +381,12 @@ function storeEnsureImported(ocSessionId: string): void {
       importLegacyIntoStore(unifiedId, ocSessionId);
     }
   } catch (e) {
-    console.warn(
-      `[opencode-transcript] v2 legacy import failed for ${ocSessionId} → ${unifiedId} (mirror-only):`,
+    // No degraded mark needed here: the import failing leaves needsImport
+    // true, so the v2 read/serve paths never trust the store for this
+    // session; the append path retries the gate (and marks on failure).
+    warnStoreFailureOnce(
+      ocSessionId,
+      `[opencode-transcript] v2 legacy import failed for ${ocSessionId} → ${unifiedId} (mirror-only)`,
       e
     );
   }
@@ -312,7 +399,13 @@ function storeEnsureImported(ocSessionId: string): void {
 function storeAppendLines(ocSessionId: string, lines: JsonlLine[]): void {
   if (!transcriptV2Enabled()) return;
   const unifiedId = resolveBksSessionFor(ocSessionId);
-  if (!unifiedId) return;
+  if (!unifiedId) {
+    // Mirror-only write the store never saw — a mid-transcript gap the tail
+    // probe can't detect later. Flag it (by the only id we have) so the §8
+    // drift checks force a full re-import once the mapping resolves.
+    markTranscriptStoreDegraded(ocSessionId);
+    return;
+  }
   try {
     const entries = parseJsonlLines(lines.map((l) => JSON.stringify(l)));
     if (!entries.length) return;
@@ -320,8 +413,12 @@ function storeAppendLines(ocSessionId: string, lines: JsonlLine[]): void {
       ensureImported: (sid) => importLegacyIntoStore(sid, ocSessionId),
     });
   } catch (e) {
-    console.warn(
-      `[opencode-transcript] v2 store append failed for ${ocSessionId} (mirror-only):`,
+    // This batch reached the mirror but not the store — flag the session so
+    // the drift checks stop trusting the store until a full re-import.
+    markTranscriptStoreDegraded(unifiedId);
+    warnStoreFailureOnce(
+      ocSessionId,
+      `[opencode-transcript] v2 store append failed for ${ocSessionId} (mirror-only)`,
       e
     );
   }

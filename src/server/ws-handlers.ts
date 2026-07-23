@@ -19,7 +19,7 @@ import { interactiveMcpServers } from "./interactive-mcp";
 import { INIT_WIRE_CLAMP_BYTES, clampEntriesForWire, parseTranscript, parseTranscriptTail, parseTranscriptWindow } from "./jsonl-parser";
 import { interactiveDefaultModel, interactiveFallbackModel, modelLabel, modelPreset, providerFor, resolveModel } from "./models";
 import { applyNoteUpdate, getNoteState, isValidNoteId } from "./notes";
-import { appendOpencodeTranscript, transcriptLineRunnerNotice } from "./opencode-transcript";
+import { appendOpencodeTranscript, clearTranscriptStoreDegraded, transcriptLineRunnerNotice } from "./opencode-transcript";
 import { wrapContext } from "./prompt-context";
 import { deleteQueuedPrompt, persistQueues, promptQueues, queueWithIds, recordSteer, reorderQueuedPrompt, requeueSteerReceipts, steeredReceipts, stoppedSessions, updateQueuedPrompt } from "./queue-state";
 import { envAlias } from "./rename-compat";
@@ -31,11 +31,11 @@ import { type Sandbox, hasRemoteWorkspace } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox, sandboxConfig, sandboxesEnabled } from "./sandbox/config";
 import { SESSION_EFFORTS, findSession, invalidateSessionsCache, maybePersistEffort, recordRunOutcome, touchBackstageSession, updateSessionFile } from "./session-cache";
 import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
-import { engineSessionPatch, engineUserTexts, mergedSessionTranscript } from "./sessions";
+import { engineSessionPatch, engineUserTexts, mergedSessionTranscript, v2MirrorFiles, v2TranscriptHasDrift } from "./sessions";
 import { handleSlashCommand } from "./slash-commands";
 import { resizeTerminal, startSessionTerminal, stopTerminal, writeTerminal } from "./terminals";
 import { subscribeTranscript } from "./transcript-bus";
-import { transcriptStore } from "./transcript-store";
+import { type SeqEntry, transcriptStore } from "./transcript-store";
 import { type BackstageSessionFile, type SessionUsage } from "./types";
 import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
 import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
@@ -172,18 +172,55 @@ const V2_SYNC_IMPORT_MAX_BYTES = 2 * 1024 * 1024;
 const v2BgImports: Set<string> = ((globalThis as any).__osTranscriptV2BgImports ??=
 	new Set());
 
-/** One-time legacy import for a session (same routine as §3's import-first
+/**
+ * §4 snapshot clamp: v2 store rows are wire-bounded at 32KB, but the legacy
+ * transcript-open payload clamps entries to INIT_WIRE_CLAMP_BYTES (8KB — the
+ * e4e2340a slow-transcript fix; the UI eagerly renders ~6KB per bubble and
+ * fetches the full entry on "Show more" anyway), so v2 init/history/backlog
+ * pages go through the same budget. Same markers as clampEntriesForWire,
+ * except an already-store-stripped entry keeps its original contentLength
+ * (the true pre-strip length) instead of the 32KB form's. Live
+ * transcript_append frames keep the fatter store forms, same as legacy
+ * appends.
+ */
+function clampV2InitEntries(entries: SeqEntry[]): SeqEntry[] {
+	if (!entries.some((e) => (e.content?.length ?? 0) > INIT_WIRE_CLAMP_BYTES))
+		return entries;
+	return entries.map((e) =>
+		(e.content?.length ?? 0) <= INIT_WIRE_CLAMP_BYTES
+			? e
+			: {
+					...e,
+					content: e.content.slice(0, INIT_WIRE_CLAMP_BYTES),
+					contentClamped: true,
+					contentLength: e.contentLength ?? e.content.length,
+				},
+	);
+}
+
+/** Legacy (re-)import for a session (same routine as §3's import-first
  *  gate): merged cross-engine history → importLegacyTranscript (which marks
  *  the session imported; empty history marks 'live-only'). Watermark = the
- *  mirror file's size at import time (§8 drift detection). */
+ *  TOTAL size of the §8 drift candidate set (session transcript file + oc
+ *  mirror — the exact set v2TranscriptHasDrift compares against; measuring
+ *  only transcriptPath would leave opencode sessions permanently
+ *  grown-beyond-watermark). Also the drift RE-import: idempotent upserts, and
+ *  a completed import releases the failure-side store-degraded marker. */
 function v2ImportSession(
 	session: NonNullable<ReturnType<typeof findSession>>,
 ): void {
-	const entries = mergedSessionTranscript(session);
+	// Deliberately id-less ref: guarantees the legacy merge — an id-carrying
+	// ref would route mergedSessionTranscript back into the v2 store path,
+	// which on a drift re-import is exactly what we're refreshing.
+	const entries = mergedSessionTranscript({
+		transcriptPath: session.transcriptPath ?? null,
+		opencodeSessionId: session.opencodeSessionId,
+		claudeSessionId: session.claudeSessionId ?? null,
+	});
 	let watermark: number | null = null;
 	try {
-		if (session.transcriptPath && existsSync(session.transcriptPath))
-			watermark = statSync(session.transcriptPath).size;
+		const files = v2MirrorFiles(session);
+		if (files.length) watermark = files.reduce((sum, f) => sum + f.size, 0);
 	} catch {}
 	transcriptStore().importLegacyTranscript(
 		session.id,
@@ -191,15 +228,23 @@ function v2ImportSession(
 		entries.length ? "merged" : "live-only",
 		watermark,
 	);
+	clearTranscriptStoreDegraded(
+		session.id,
+		session.opencodeSessionId,
+		session.claudeSessionId,
+	);
 }
 
-function v2QueueBackgroundImport(sessionId: string): void {
+/** Queue an off-handshake import. `reimport` = the session is already
+ *  imported but drifted (serveTranscriptV2's §8 check) — run the import even
+ *  though needsImport is false; without it only never-imported sessions load. */
+function v2QueueBackgroundImport(sessionId: string, reimport = false): void {
 	if (v2BgImports.has(sessionId)) return;
 	v2BgImports.add(sessionId);
 	setTimeout(() => {
 		try {
 			const session = findSession(sessionId);
-			if (session && transcriptStore().needsImport(sessionId))
+			if (session && (reimport || transcriptStore().needsImport(sessionId)))
 				v2ImportSession(session);
 		} catch (e) {
 			console.warn(`[ws] v2 background import failed for ${sessionId}:`, e);
@@ -241,17 +286,30 @@ function serveTranscriptV2(
 		if (store.needsImport(sessionId)) {
 			// Lazy import: small legacy transcripts import synchronously inside
 			// the watch; big ones import in the background and THIS watch serves
-			// legacy (the next one upgrades).
+			// legacy (the next one upgrades). The ceiling measures the WHOLE §8
+			// candidate set (session transcript file + oc mirror) — transcriptPath
+			// alone undercounts opencode sessions, whose history mostly lives in
+			// the mirror.
 			let mirrorSize = 0;
 			try {
-				if (session.transcriptPath && existsSync(session.transcriptPath))
-					mirrorSize = statSync(session.transcriptPath).size;
+				for (const f of v2MirrorFiles(session)) mirrorSize += f.size;
 			} catch {}
 			if (mirrorSize > V2_SYNC_IMPORT_MAX_BYTES) {
 				v2QueueBackgroundImport(sessionId);
 				return false;
 			}
 			v2ImportSession(session);
+		} else if (v2TranscriptHasDrift(store, sessionId, session)) {
+			// Imported but stale (§8): the mirror grew in a way the store can't
+			// explain — external CLI/tmux runs while we were idle, unmapped oc
+			// ids, failed store appends, kill-switch windows — or the failure-side
+			// store-degraded flag is set. The bus never fires for those entries,
+			// so serving v2 would render silently stale. Queue the background
+			// re-import (idempotent upserts; clears the flag) and fall through to
+			// the legacy file-watcher path for THIS watch — live external appends
+			// keep streaming; the next watch upgrades to v2.
+			v2QueueBackgroundImport(sessionId, true);
+			return false;
 		}
 	} catch (e) {
 		console.warn(`[ws] v2 import failed for ${sessionId} — legacy path:`, e);
@@ -298,8 +356,10 @@ function serveTranscriptV2(
 		// Two-stage init, same staging as the legacy path with seq fields added
 		// (old bundles ignore unknown fields; new bundles detect v2 by their
 		// presence): last screenful immediately, the rest of the tail 80ms
-		// later as a transcript_history prepend. Store rows are already
-		// wire-bounded (≤32KB), so no clampEntriesForWire here.
+		// later as a transcript_history prepend. Snapshot payloads take the
+		// same INIT_WIRE_CLAMP_BYTES budget as legacy inits (clampV2InitEntries
+		// — the 32KB store bound alone regresses the e4e2340a fix on
+		// entry-heavy sessions).
 		const FIRST_PAINT_ENTRIES = 12;
 		const tail = store.readTail(sessionId, FIRST_PAINT_ENTRIES + 120);
 		const head = tail.entries.slice(-FIRST_PAINT_ENTRIES);
@@ -309,7 +369,7 @@ function serveTranscriptV2(
 			JSON.stringify({
 				type: "transcript_init",
 				sessionId,
-				entries: head,
+				entries: clampV2InitEntries(head),
 				truncated,
 				firstSeq: head.length ? head[0].seq : 0,
 				lastSeq: head.length ? head[head.length - 1].seq : 0,
@@ -320,7 +380,7 @@ function serveTranscriptV2(
 			const restPayload = JSON.stringify({
 				type: "transcript_history",
 				sessionId,
-				entries: rest,
+				entries: clampV2InitEntries(rest),
 				firstSeq: rest[0].seq,
 				lastSeq: rest[rest.length - 1].seq,
 				truncated,
@@ -598,7 +658,9 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							JSON.stringify({
 								type: "transcript_history",
 								sessionId: msg.sessionId,
-								entries: page.entries,
+								// Backlog pages take the same init clamp as legacy history
+								// pages (see clampV2InitEntries).
+								entries: clampV2InitEntries(page.entries),
 								firstSeq: page.firstSeq,
 								lastSeq: page.lastSeq,
 								truncated: page.firstSeq > 1,
