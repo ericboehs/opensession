@@ -24,6 +24,7 @@ import { pollWhileVisible } from "../lib/poll";
 import { getCurrentUser, TEAM } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { Menu } from "../ui/menu";
+import { Popover } from "../ui/popover";
 import type {
 	DiffFile,
 	GitStatusInfo,
@@ -480,25 +481,6 @@ function FileRow({
 	theme: "light" | "dark";
 	onOpenTab?: (tab: PanelTab) => void;
 }) {
-	const rowRef = useRef<HTMLButtonElement>(null);
-	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const [pop, setPop] = useState<DOMRect | null>(null);
-	useEffect(
-		() => () => {
-			if (closeTimer.current) clearTimeout(closeTimer.current);
-		},
-		[],
-	);
-
-	function openPop() {
-		if (closeTimer.current) clearTimeout(closeTimer.current);
-		if (meta && rowRef.current) setPop(rowRef.current.getBoundingClientRect());
-	}
-	function closePop() {
-		if (closeTimer.current) clearTimeout(closeTimer.current);
-		closeTimer.current = setTimeout(() => setPop(null), 90);
-	}
-
 	const slash = file.path.lastIndexOf("/");
 	const dir = slash >= 0 ? file.path.slice(0, slash + 1) : "";
 	const base = slash >= 0 ? file.path.slice(slash + 1) : file.path;
@@ -510,11 +492,6 @@ function FileRow({
 		}),
 		[theme],
 	);
-	// Wider + taller than the comment popover — this is code, so give it room.
-	const pos = pop
-		? popoverPosition(pop, { maxWidth: 720, maxHeightPx: 720, heightFrac: 0.82 })
-		: null;
-
 	const stats = (
 		<span className="diff-file-stats">
 			{file.additions > 0 && <span className="diff-add">+{file.additions}</span>}
@@ -529,36 +506,31 @@ function FileRow({
 	);
 
 	return (
-		<>
-			<button
-				ref={rowRef}
+		<Popover.Root>
+			<Popover.Trigger
+				openOnHover={Boolean(meta)}
+				delay={200}
+				closeDelay={90}
 				type="button"
 				className="workspace-info-file"
 				onClick={() => onOpenTab?.("changes")}
-				onMouseEnter={openPop}
-				onMouseLeave={closePop}
-				title={`${file.path} — open in Changes`}
+				aria-label={`${file.path} — open in Changes`}
 			>
 				<span className={`diff-status diff-status-${statusClass(file.status)}`}>
 					{STATUS_CHAR[file.status]}
 				</span>
 				{path}
 				{stats}
-			</button>
-			{pop &&
-				pos &&
-				meta &&
-				createPortal(
+			</Popover.Trigger>
+			{meta && (
+				<Popover.Popup
+					side="left"
+					align="start"
+					sideOffset={10}
+					className="flex max-h-[min(720px,82vh,var(--available-height))] w-[min(720px,calc(100vw-24px))] cursor-pointer flex-col overflow-hidden px-3 py-2.5"
+				>
 					<div
-						className="workspace-info-file-pop"
-						style={{
-							left: pos.left,
-							top: pos.top,
-							width: pos.width,
-							maxHeight: pos.maxHeight,
-						}}
-						onMouseEnter={openPop}
-						onMouseLeave={closePop}
+						className="flex min-h-0 flex-1 flex-col overflow-hidden"
 						onClick={() => onOpenTab?.("changes")}
 					>
 						<div className="workspace-info-file-pop-head">
@@ -568,10 +540,10 @@ function FileRow({
 						<div className="workspace-info-file-pop-body">
 							<FileDiff fileDiff={meta} options={options} disableWorkerPool />
 						</div>
-					</div>,
-					document.body,
-				)}
-		</>
+					</div>
+				</Popover.Popup>
+			)}
+		</Popover.Root>
 	);
 }
 
