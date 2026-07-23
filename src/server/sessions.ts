@@ -105,7 +105,8 @@ export function readEngineTranscript(
 /** What mergedSessionTranscript needs from a session. `id` (the unified
  *  session id) is optional and only consulted by the flag-gated transcript v2
  *  read path — callers passing a full UnifiedSession opt in automatically;
- *  id-less callers (engineUserTexts) always take the legacy merge. */
+ *  id-less refs (the import routines' deliberately id-less ones) always take
+ *  the legacy merge. */
 type TranscriptSessionRef = Pick<
   UnifiedSession,
   "transcriptPath" | "opencodeSessionId" | "claudeSessionId"
@@ -404,14 +405,25 @@ function v2StoreTranscript(
  * requeueSteerReceipts: a steer that shows up here landed durably (noReply
  * history append), so putting it back into the prompt queue on cancel would
  * deliver it twice.
+ *
+ * Store-first (mirror retirement prep): every caller holds a full
+ * UnifiedSession, so `id` rides along and mergedSessionTranscript serves the
+ * v2 store when the session is imported and drift-free — user entries come
+ * back as FULL forms there (v2ReadAll hydrates clamped rows via getFullEntry,
+ * so the exact-text dedup match still holds). Not imported / drifted /
+ * flag-off / any error all land on the legacy merge exactly as before; `id`
+ * stays optional so old callers (and runner closures pre-restart) keep
+ * working unchanged.
  */
 export function engineUserTexts(session: {
+	id?: string;
 	transcriptPath?: string | null;
 	opencodeSessionId?: string | null;
 	claudeSessionId?: string | null;
 }): string[] {
 	try {
 		return mergedSessionTranscript({
+			id: session.id,
 			transcriptPath: session.transcriptPath ?? null,
 			opencodeSessionId: session.opencodeSessionId ?? undefined,
 			claudeSessionId: session.claudeSessionId ?? null,
