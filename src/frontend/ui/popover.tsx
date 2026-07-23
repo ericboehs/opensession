@@ -1,7 +1,10 @@
 import * as React from "react";
 import { Popover as BasePopover } from "@base-ui/react/popover";
 import { cn } from "./cn";
-import { useExclusivePopup } from "./exclusive-popups";
+import {
+	useExclusivePopup,
+	useExclusivePopupDelay,
+} from "./exclusive-popups";
 
 /**
  * Popover on Base UI parts, styled with Tailwind tokens. Composable shape —
@@ -18,11 +21,19 @@ import { useExclusivePopup } from "./exclusive-popups";
 
 function Trigger({
 	className,
+	delay,
 	...props
 }: Omit<React.ComponentProps<typeof BasePopover.Trigger>, "className"> & {
 	className?: string;
 }) {
-	return <BasePopover.Trigger {...props} className={cn(className)} />;
+	const groupedDelay = useExclusivePopupDelay(delay);
+	return (
+		<BasePopover.Trigger
+			{...props}
+			delay={groupedDelay}
+			className={cn(className)}
+		/>
+	);
 }
 
 function Root<Payload = unknown>({
