@@ -3404,8 +3404,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 											className="shrink-0 ring-2"
 											style={{ "--tw-ring-color": personColor(v.user) } as React.CSSProperties}
 										/>
-										<span className="text-fg shrink-0">{v.user}</span>
-										<span className="text-faint truncate">
+										<span className="text-fg w-[72px] shrink-0 truncate">
+											{v.user}
+										</span>
+										<span className="text-faint min-w-0 flex-1 truncate">
 											{titleFor(v.sessionId)}
 										</span>
 										{followUser === v.user && (
