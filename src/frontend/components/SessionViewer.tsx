@@ -41,6 +41,7 @@ import {
 	type SessionSubagentSnapshot,
 	type PreviewStatus,
 } from "../lib/api";
+import { pollWhileVisible } from "../lib/poll";
 import { Composer } from "./Composer";
 import { ComposerAgents } from "./ComposerAgents";
 import { UsageMeter } from "./UsageMeter";
@@ -2995,10 +2996,10 @@ export function SessionViewer({
 				})
 				.catch(() => {});
 		load();
-		const t = setInterval(load, 60000);
+		const stop = pollWhileVisible(load, 60000);
 		return () => {
 			alive = false;
-			clearInterval(t);
+			stop();
 		};
 	}, [session.id, stagingRelevant]);
 	const stagingUrl = staging

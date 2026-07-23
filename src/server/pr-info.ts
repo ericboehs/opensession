@@ -158,7 +158,12 @@ function buildReviewers(
 
 const DEFAULT_REPO = () => defaultRepo().ghRepo;
 const cache = new Map<string, { data: PrDetails | null; ts: number }>();
-const TTL = 30_000;
+// 2 min: the detail pane and staging/status pollers tolerate that staleness,
+// and each open session tab runs several independent /pr pollers — a short
+// TTL made nearly every tick spawn a real `gh pr view` into the shared
+// GraphQL budget (2026-07-23). Action gates that must not act on stale data
+// use getPrDetailsFresh, which bypasses this cache entirely.
+const TTL = 120_000;
 
 // The details cache is snapshotted to disk (debounced) and seeded on boot —
 // without this, a restart during a GitHub outage or rate-limit window boots

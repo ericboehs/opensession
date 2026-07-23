@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchPr } from "../lib/api";
+import { pollWhileVisible } from "../lib/poll";
 import type { PrCheck, UnifiedSession } from "../lib/types";
 import { withPreviewPath } from "../lib/preview-url";
 import { Tooltip } from "../ui/tooltip";
@@ -79,12 +80,12 @@ export function StagingLink({
 				})
 				.catch(() => {});
 		load();
-		// Slow poll so a Building deploy flips to Ready; the server caches PR
-		// details for 30s so this stays cheap.
-		const t = setInterval(load, 60000);
+		// Slow poll so a Building deploy flips to Ready; hidden tabs skip ticks
+		// and the server caches PR details, so this stays cheap.
+		const stop = pollWhileVisible(load, 60000);
 		return () => {
 			alive = false;
-			clearInterval(t);
+			stop();
 		};
 	}, [session.id, relevant]);
 

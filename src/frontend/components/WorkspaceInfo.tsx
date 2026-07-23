@@ -20,6 +20,7 @@ import {
 	type WorkspaceOverview,
 	type SessionAssetFile,
 } from "../lib/api";
+import { pollWhileVisible } from "../lib/poll";
 import { getCurrentUser, TEAM } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { Menu } from "../ui/menu";
@@ -1260,10 +1261,10 @@ export function WorkspaceInfo({
 				.then((p) => alive && setPr(p))
 				.catch(() => {});
 		load();
-		const iv = setInterval(load, 45000);
+		const stop = pollWhileVisible(load, 45000);
 		return () => {
 			alive = false;
-			clearInterval(iv);
+			stop();
 		};
 	}, [sessionId, repo, prState]);
 

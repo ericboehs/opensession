@@ -9,6 +9,7 @@ import {
 	gitPushApi,
 	mergePrApi,
 } from "../lib/api";
+import { pollWhileVisible } from "../lib/poll";
 import { getCurrentUser } from "./UserPicker";
 import { providerFromUrl } from "../lib/provider";
 import { Tooltip } from "../ui/tooltip";
@@ -341,8 +342,7 @@ export function PrStatusBar({
 		setGit(cached?.git ?? null);
 		setLoaded(!!cached);
 		load();
-		const interval = setInterval(load, 45000);
-		return () => clearInterval(interval);
+		return pollWhileVisible(load, 45000);
 	}, [load]);
 
 	// Refetch the instant a turn ends (running→idle) or an auto-push lands
