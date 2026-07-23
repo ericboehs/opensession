@@ -258,6 +258,12 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
 
     // Check for tool_result blocks
     if (Array.isArray(content)) {
+      // Same multi-text-block id fan-out guard as the assistant branch (§1a):
+      // the 2nd+ renderable text block on one line gets a -t<n> suffix so it
+      // never collides with the first as an upsert key. Only blocks that
+      // actually produce user entries count, so the suffix is stable across
+      // re-parses (harness/empty blocks don't shift it).
+      let userTextCount = 0;
       for (let bi = 0; bi < content.length; bi++) {
         const block = content[bi];
         if (block.type === "tool_result") {
@@ -304,7 +310,9 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
           const stripped = stripContext(block.text || "");
           const { text, files } = extractUploadsNote(stripped);
           if (!text.trim() && !files.length) continue;
-          const id = raw.uuid || crypto.randomUUID();
+          const baseId = raw.uuid || crypto.randomUUID();
+          const id = userTextCount === 0 ? baseId : `${baseId}-t${userTextCount}`;
+          userTextCount++;
           pushUserEntries(entries, id, text, ts);
           if (files.length) {
             // The note rides the end of the turn — attach to its last user entry
@@ -358,11 +366,18 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
     const content = raw.message.content;
     const model = typeof raw.message.model === "string" ? raw.message.model : undefined;
     if (Array.isArray(content)) {
+      // One line can carry several renderable text blocks; sharing the bare
+      // line uuid would collide them as upsert/React keys (and as v2 store
+      // uuids, where the later block silently overwrites the earlier — §1a).
+      // First entry keeps the bare id for back compat; 2nd+ get a
+      // deterministic -t<n> suffix (sibling of the harness -b<i> convention).
+      let textBlockCount = 0;
       for (const block of content) {
         if (block.type === "text" && block.text) {
           const assistant = extractAssistantVideos(block.text);
+          const baseId = raw.uuid || crypto.randomUUID();
           entries.push({
-            id: raw.uuid || crypto.randomUUID(),
+            id: textBlockCount === 0 ? baseId : `${baseId}-t${textBlockCount}`,
             type: "assistant",
             content: assistant.content,
             timestamp: ts,
@@ -370,6 +385,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
             ...(model ? { model } : {}),
             ...(assistant.videos.length > 0 ? { videos: assistant.videos } : {}),
           });
+          textBlockCount++;
         }
         if (block.type === "tool_use") {
           entries.push({

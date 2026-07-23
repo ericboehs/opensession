@@ -21,12 +21,17 @@
  *    bridge's env block leaves open is closed here on purpose).
  *  - Minimal subprocess env: PATH/HOME/LANG + the two vars above. No
  *    OpenSession tokens, ever.
- *  - Transcript: dual-write per invariant 4 — normalized TranscriptEntry rows
- *    go to the v2 transcript store (thin dynamic-import seam; WP-A lands
- *    transcript-store.ts in parallel) AND to the legacy claude-shape mirror
- *    jsonl via appendOpencodeTranscript(transcriptLineForEntry(...)), keyed by
- *    the SDK session id, so /entry, FTS and every legacy read path keep
- *    working.
+ *  - Transcript: dual-write per invariant 4 — normalized entries are mirrored
+ *    as claude-shape jsonl lines via appendOpencodeTranscript(sdkSessionId, …),
+ *    whose flag-gated v2 hook (storeAppendLines in opencode-transcript.ts)
+ *    parses those same lines into the transcript store WITH the W1
+ *    import-first gate (§3): the SDK→unified session mapping is registered
+ *    up front via recordBksSessionFor, so a session with legacy history gets
+ *    that history imported before its first live seq (never marked
+ *    'live-only' with orphaned history), and store uuids are the
+ *    parser-derived ids imports/re-imports produce (no duplicate rows from a
+ *    parallel hand-built id scheme). /entry, FTS and every legacy read path
+ *    keep working.
  *
  * Known v0 gaps (documented, acceptable for experimental):
  *  - steer(): unsupported (single-shot prompt; no streaming-input session) —
@@ -54,7 +59,9 @@ import {
 } from "../runner-shared";
 import {
   appendOpencodeTranscript,
+  recordBksSessionFor,
   transcriptLineForEntry,
+  transcriptLineRunnerNotice,
 } from "../opencode-transcript";
 import type { TranscriptEntry } from "../types";
 import type {
@@ -97,60 +104,31 @@ export function cancelClaudeDirectRun(id: string): boolean {
 
 // ── Transcript integration ───────────────────────────────────────────────────
 
-// Thin seam to WP-A's transcript store (built in parallel — design §1). A
-// non-literal dynamic import keeps tsc/bundling independent of WP-A's landing
-// order AND keeps this module's static import graph free of the store; once
-// transcript-store.ts is stable this collapses to a typed static import.
-let storeWarnedOnce = false;
-async function appendEntries(sessionId: string, entries: TranscriptEntry[]): Promise<void> {
-  if (!entries.length) return;
-  try {
-    const spec = "../transcript-store";
-    const mod = (await import(spec)) as {
-      appendTranscriptEvents?: (sessionId: string, entries: TranscriptEntry[]) => unknown;
-      transcriptStore?: () => {
-        appendTranscriptEvents: (sessionId: string, entries: TranscriptEntry[]) => unknown;
-      };
-    };
-    // WP-A's landed shape is the class instance via transcriptStore(); the
-    // design doc named a module-level function — accept either.
-    if (typeof mod.transcriptStore === "function") {
-      mod.transcriptStore().appendTranscriptEvents(sessionId, entries);
-      return;
-    }
-    if (typeof mod.appendTranscriptEvents === "function") {
-      mod.appendTranscriptEvents(sessionId, entries);
-      return;
-    }
-    throw new Error("appendTranscriptEvents export missing");
-  } catch (e) {
-    if (!storeWarnedOnce) {
-      storeWarnedOnce = true;
-      console.warn(
-        "[claude-direct] transcript store unavailable (mirror jsonl still written):",
-        e instanceof Error ? e.message : e
-      );
-    }
-  }
-}
-
-/** Dual-write one batch of normalized entries: v2 store (unified session id)
- *  + legacy claude-shape mirror (engine/SDK session id). Best-effort — a
+/** Dual-write one batch of normalized entries, keyed by the engine/SDK
+ *  session id: the claude-shape mirror jsonl gets the lines, and
+ *  appendOpencodeTranscript's flag-gated v2 hook (storeAppendLines) parses
+ *  those SAME lines into the transcript store through the W1 import-first
+ *  gate — provided recordBksSessionFor mapped this SDK session to its unified
+ *  session id first (see mapEngineSession in runClaudeDirect; unmapped
+ *  degrades to mirror-only with a once-per-session warn). System entries ride
+ *  a <runner-notice> user line, which the shared parser maps back to a system
+ *  chip — transcriptLineForEntry has no system shape, and dropping them here
+ *  would lose them from BOTH sides of the dual-write. Best-effort — a
  *  transcript write must never take the run down. */
 function persistEntries(
-  unifiedSessionId: string | undefined,
   engineSessionId: string | undefined,
   entries: TranscriptEntry[]
 ): void {
-  if (!entries.length) return;
+  if (!entries.length || !engineSessionId) return;
   try {
-    if (engineSessionId) {
-      const lines = entries
-        .map((e) => transcriptLineForEntry(e))
-        .filter((l): l is Record<string, unknown> => !!l);
-      appendOpencodeTranscript(engineSessionId, lines);
-    }
-    if (unifiedSessionId) void appendEntries(unifiedSessionId, entries);
+    const lines = entries
+      .map((e) =>
+        e.type === "system"
+          ? transcriptLineRunnerNotice(e.content, e.id, e.timestamp)
+          : transcriptLineForEntry(e)
+      )
+      .filter((l): l is Record<string, unknown> => !!l);
+    appendOpencodeTranscript(engineSessionId, lines);
   } catch (e) {
     console.warn("[claude-direct] transcript persist failed:", e);
   }
@@ -295,6 +273,18 @@ export async function* runClaudeDirect(
   register(unifiedSessionId);
   register(engineSessionId);
 
+  // Register the SDK→unified session mapping BEFORE any mirror append: the
+  // v2 store hook inside appendOpencodeTranscript resolves the unified
+  // session (and runs the import-first gate, §3) through this map — without
+  // it the store never sees the run, or worse, a first live append would
+  // mark the session 'live-only' and orphan its legacy history. Idempotent
+  // and rotation-safe (many engine ids → one unified id); recordBksSessionFor
+  // never throws.
+  const mapEngineSession = (id: string | undefined) => {
+    if (id && unifiedSessionId) recordBksSessionFor(id, unifiedSessionId);
+  };
+  mapEngineSession(engineSessionId);
+
   // Pre-init entry buffer: the mirror file is keyed by the SDK session id,
   // unknown for fresh sessions until the init message — buffer until then.
   let pending: TranscriptEntry[] = [];
@@ -306,9 +296,9 @@ export async function* runClaudeDirect(
     if (pending.length) {
       const flush = pending;
       pending = [];
-      persistEntries(unifiedSessionId, engineSessionId, flush);
+      persistEntries(engineSessionId, flush);
     }
-    persistEntries(unifiedSessionId, engineSessionId, entries);
+    persistEntries(engineSessionId, entries);
   };
 
   persist([
@@ -380,6 +370,7 @@ export async function* runClaudeDirect(
       if (m.type === "system" && m.subtype === "init") {
         engineSessionId = String(m.session_id || engineSessionId || "");
         register(engineSessionId);
+        mapEngineSession(engineSessionId);
         sawInit = true;
         yield {
           type: "init",
@@ -465,6 +456,7 @@ export async function* runClaudeDirect(
       if (m.type === "result") {
         engineSessionId = String(m.session_id || engineSessionId || "");
         register(engineSessionId);
+        mapEngineSession(engineSessionId);
         if (m.is_error || m.subtype !== "success") {
           const detail: string =
             (typeof m.result === "string" && m.result) ||

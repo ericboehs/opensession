@@ -7,7 +7,7 @@
 import { envAlias } from "../../server/rename-compat";
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { BACKSTAGE_CHATS_DIR } from "../../server/paths";
-import { writeJsonAtomic } from "../../server/shared/atomic-write";
+import { updateSessionFile } from "../../server/session-cache";
 import { runAgent } from "../../server/agent-runner";
 import { providerFor, DEFAULT_FALLBACK_MODEL, modelLabel } from "../../server/models";
 import { engineSessionPatch } from "../../server/sessions";
@@ -49,7 +49,12 @@ function projectIdForPr(prNumber: number, branch: string, title: string, cwd: st
           const p = `${SESSIONS_DIR}/${file}`;
           const s = JSON.parse(readFileSync(p, "utf-8")) as BackstageSessionFile;
           if (s.id && s.branch === branch && !s.projectId) {
-            writeJsonAtomic(p, { ...s, projectId: project.id });
+            // Serialized field-scoped write (transcript-v2 §6): stamp ONLY
+            // projectId, re-checked against the fresh read inside the mutex so
+            // a concurrent filing wins; every other field survives untouched.
+            void updateSessionFile(file.slice(0, -".json".length), (data) =>
+              data.projectId ? data : { ...data, projectId: project.id }
+            ).catch(() => {});
           }
         } catch {}
       }
@@ -172,29 +177,39 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
   const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [
     ...(existingSessionFile?.modelHistory || []),
   ];
-  const persist = (engineSessionId: string) => {
-    const prior = readSessionFile(bksId) || existingSessionFile;
-    const data: BackstageSessionFile = {
-      id: bksId,
-      claudeSessionId: prior?.claudeSessionId || "",
-      ...(prior?.codexThreadId ? { codexThreadId: prior.codexThreadId } : {}),
-      ...(engineSessionId
-        ? engineSessionPatch(effectiveProvider, engineSessionId)
-        : {}),
-      ...(effectiveModel ? { model: effectiveModel } : {}),
-      ...(modelHistory.length ? { modelHistory } : {}),
-      branch: opts.branch,
-      worktreeDir: opts.cwd,
-      createdBy: "GitHub (automation)",
-      createdAt: startedAt.toISOString(),
-      lastActivity: new Date().toISOString(),
-      title: opts.title,
-      mode: opts.mode,
-      automation: "github-pr-review",
-      ...(projectId ? { projectId } : {}),
-    };
-    writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
-  };
+  // Field-scoped write via the session-file mutex (transcript-v2 §6, same
+  // shape as the six W3 conversions): creation fields are create-if-absent
+  // defaults (an existing file wins), and each call overlays only the fields
+  // this run owns — engine ids, effective model + history, and the per-round
+  // PR shape (branch/cwd/title/mode/projectId). Prior engine ids (e.g. a
+  // codexThreadId from an earlier round) and any concurrent writer's fields
+  // survive via the fresh-read spread instead of being rebuilt from closures.
+  const persist = (engineSessionId: string) =>
+    updateSessionFile(bksId, (data) => {
+      // Widen to Partial: the file may not exist yet (create-if-absent).
+      const existing: Partial<BackstageSessionFile> = data;
+      return {
+        id: bksId,
+        claudeSessionId: "",
+        createdAt: startedAt.toISOString(),
+        ...existing,
+        ...(engineSessionId
+          ? engineSessionPatch(effectiveProvider, engineSessionId)
+          : {}),
+        ...(effectiveModel ? { model: effectiveModel } : {}),
+        ...(modelHistory.length ? { modelHistory } : {}),
+        branch: opts.branch,
+        worktreeDir: opts.cwd,
+        createdBy: "GitHub (automation)",
+        lastActivity: new Date().toISOString(),
+        title: opts.title,
+        mode: opts.mode,
+        automation: "github-pr-review",
+        ...(projectId ? { projectId } : {}),
+      };
+    }).catch((e) => {
+      console.error(`[github-run] failed to persist session ${bksId}:`, e);
+    });
 
   let text = "";
   let engineSessionId = resumeFrom;
