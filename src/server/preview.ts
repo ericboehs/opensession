@@ -48,6 +48,12 @@ import type { Sandbox } from "./sandbox/provider";
 import { shellQuoteWord } from "./sandbox/adapters/bootstrap";
 import type { Repo } from "./config";
 import { repoForPath } from "./worktree";
+import {
+  claimPoolPreview,
+  previewPoolEnabled,
+  releasePoolPreview,
+  resumePoolSyncIfNeeded,
+} from "./preview-pool";
 
 export interface PreviewService {
   /** Friendly label, e.g. "Webapp". */
@@ -249,7 +255,7 @@ const g = globalThis as unknown as {
 const previewRoutes: Map<number, number> = (g.__previewRoutes ??= new Map());
 
 /** This machine's tailnet hostname (e.g. michael.taila5d766.ts.net). */
-async function previewHost(): Promise<string> {
+export async function previewHost(): Promise<string> {
   if (g.__previewHost) return g.__previewHost;
   let host = process.env.PREVIEW_HOST || "";
   if (!host) {
@@ -264,8 +270,9 @@ async function previewHost(): Promise<string> {
 }
 
 // Webapp dev ports are 3100-3999 and globally unique among running servers, so
-// +6000 gives a unique, stable preview port in 9100-9999.
-function httpsPortFor(webappPort: number): number {
+// +6000 gives a unique, stable preview port in 9100-9999. (Preview-pool
+// container host ports come from the same range so this scheme covers them.)
+export function httpsPortFor(webappPort: number): number {
   return webappPort + 6000;
 }
 
@@ -315,6 +322,9 @@ async function removePreviewRoute(httpsPort: number): Promise<void> {
 }
 
 export async function getPreviewStatus(worktreeDir: string): Promise<PreviewStatus> {
+  // Pool-backed previews: claims persist on disk but sync timers don't —
+  // re-attach after a process restart (cheap no-op otherwise).
+  resumePoolSyncIfNeeded(worktreeDir);
   const ports = readPorts(worktreeDir);
   const services: PreviewService[] = await Promise.all(
     ports.map(async ({ key, port }) => {
@@ -459,6 +469,24 @@ function setupStampPath(worktreeDir: string): string {
 export async function startPreview(worktreeDir: string): Promise<PreviewStatus> {
   const status = await getPreviewStatus(worktreeDir);
   if (status.running || status.starting) return status;
+
+  // Warm preview pool: adopt an already-booted container when one is ready —
+  // the claim syncs the worktree into it and hands back its host port; from
+  // there the normal status path (listener on the port -> Caddy route) takes
+  // over. Falls through to the host boot when the pool has nothing warm.
+  try {
+    const repo = repoForPath(worktreeDir);
+    if (previewPoolEnabled(repo.id)) {
+      const claim = await claimPoolPreview(repo.id, worktreeDir);
+      if (claim) {
+        seedHostPortsConf(worktreeDir, claim.hostPort);
+        return await getPreviewStatus(worktreeDir);
+      }
+    }
+  } catch (e) {
+    console.warn(`[preview] pool claim for ${worktreeDir} failed (falling back to host boot):`, e);
+  }
+
   const boot = await resolvePreviewBoot(worktreeDir, repoForPath(worktreeDir), hostExists);
   if (!boot) return status; // nothing to run (status.bootable is false)
 
@@ -543,6 +571,12 @@ export async function startPreview(worktreeDir: string): Promise<PreviewStatus> 
  */
 export async function stopPreview(worktreeDir: string): Promise<PreviewStatus> {
   starting.delete(worktreeDir); // a stop cancels any in-flight "starting" state
+  // Pool-backed preview: the "dev server" is a claimed warm container, not a
+  // host process tree — release it (stops the sync loop, destroys the
+  // container) and let the normal status path report the now-empty port.
+  if (await releasePoolPreview(worktreeDir)) {
+    return getPreviewStatus(worktreeDir);
+  }
   const ports = readPorts(worktreeDir);
   const pgids = new Set<number>();
   // An in-flight bring-up has nothing listening yet, so the port scan below

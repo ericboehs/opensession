@@ -62,6 +62,7 @@ import "./src/server/run-session"; // /loop ticker
 import "./src/server/goal-runner"; // goals ticker
 import "./src/server/session-index"; // session search index sweeper
 import "./src/server/session-control-wiring"; // opensession-sessions MCP + Slack-link bridge
+import "./src/server/preview-pool"; // warm dev-server pool sweeper
 import { websocketHandlers } from "./src/server/ws-handlers";
 import {
 	routeHandlers,
