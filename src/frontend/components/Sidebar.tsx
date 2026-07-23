@@ -2287,7 +2287,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						/>
 					)}
 					{row.running ? (
-						<PixelSpinner className="text-yellow" />
+						<PixelSpinner className="text-yellow sidebar-spinner" />
 					) : (
 						<WsPrStatusMark chats={row.chats} size={18} />
 					)}
@@ -4282,7 +4282,7 @@ function SidebarItem({
 						/>
 					)}
 					{session.isRunning ? (
-						<PixelSpinner className="text-yellow" />
+						<PixelSpinner className="text-yellow sidebar-spinner" />
 					) : (
 						<WsPrStatusMark chats={[session]} size={18} />
 					)}

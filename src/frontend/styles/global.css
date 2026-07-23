@@ -16449,6 +16449,32 @@ html[data-theme="light"] .palette-card .palette-create {
   animation-delay: 840ms;
 }
 
+/* Sidebar in-progress spinners — a touch larger and a bit faster than the
+ * default so the "working right now" sessions read clearly at a glance in the
+ * dense session list. The diagonal-br delays are scaled with the shortened
+ * duration (0.82×) so the wave keeps its shape and just runs quicker. */
+.pixel-spinner.sidebar-spinner .pixel {
+  width: 4px;
+  height: 4px;
+  animation-duration: 1.15s;
+}
+.pixel-spinner.sidebar-spinner.diagonal-br .pixel:nth-child(2),
+.pixel-spinner.sidebar-spinner.diagonal-br .pixel:nth-child(4) {
+  animation-delay: 170ms;
+}
+.pixel-spinner.sidebar-spinner.diagonal-br .pixel:nth-child(3),
+.pixel-spinner.sidebar-spinner.diagonal-br .pixel:nth-child(5),
+.pixel-spinner.sidebar-spinner.diagonal-br .pixel:nth-child(7) {
+  animation-delay: 345ms;
+}
+.pixel-spinner.sidebar-spinner.diagonal-br .pixel:nth-child(6),
+.pixel-spinner.sidebar-spinner.diagonal-br .pixel:nth-child(8) {
+  animation-delay: 520ms;
+}
+.pixel-spinner.sidebar-spinner.diagonal-br .pixel:nth-child(9) {
+  animation-delay: 690ms;
+}
+
 /* Frame */
 .pixel-spinner.frame .pixel:nth-child(1) {
   animation-name: pixel-snake-trail;
