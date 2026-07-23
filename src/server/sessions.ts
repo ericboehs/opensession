@@ -1,4 +1,4 @@
-import { chmodSync, closeSync, openSync, readdirSync, readFileSync, readSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { chmodSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { existsSync } from "fs";
 import {
@@ -12,8 +12,7 @@ import { getReviewRequest } from "./review-requests";
 import { getGeneratedTitle } from "./generated-titles";
 import { findCodexRollout } from "./codex-accounts";
 import { providerFor } from "./models";
-import { parseJsonlLines, parseTranscript } from "./jsonl-parser";
-import { envAlias } from "./rename-compat";
+import { parseTranscript } from "./jsonl-parser";
 import { type SeqEntry, type TranscriptStore, transcriptStore } from "./transcript-store";
 import {
   isOpencodeSessionId,
@@ -121,19 +120,19 @@ type TranscriptSessionRef = Pick<
  * opencode id rides the claude slot (pre-`opencodeSessionId` runs) — those
  * previously rendered as an empty transcript after a reload.
  *
- * Transcript v2 (docs/transcript-v2-design.md §8, OPENSESSION_TRANSCRIPT_V2=1
- * only): when the session's history has been imported into the owned
- * transcript store and the mirror files show no unexplained growth beyond the
- * import watermark, this serves the store's entries instead (bounded wire
- * forms — the /entry/:id route resolves full content). On drift it triggers a
- * re-import (upserts make that idempotent) and serves legacy for that call.
- * With the flag off the behavior is byte-identical to the legacy merge.
+ * Transcript v2 (docs/transcript-v2-design.md §8): when the session's history
+ * has been imported into the owned transcript store and the legacy files show
+ * no unexplained growth beyond the import watermark, this serves the store's
+ * entries (bounded wire forms — the /entry/:id route resolves full content).
+ * On drift it triggers a re-import (upserts make that idempotent) and serves
+ * legacy for that call. Id-less refs (the import routines') and any store
+ * failure take the legacy merge below — the code-level fallback that replaced
+ * the retired env kill switch.
  */
 export function mergedSessionTranscript(
   session: TranscriptSessionRef
 ): TranscriptEntry[] {
   if (
-    transcriptV2Enabled() &&
     session.id &&
     // Plain loop runs don't thread a unified session id to the runner (§3) —
     // their store rows would be forever partial; they stay fully legacy.
@@ -187,26 +186,18 @@ function legacyMergedSessionTranscript(
 }
 
 // ── Transcript v2 read path (docs/transcript-v2-design.md §8) ───────────────
-// Everything here is only reached when OPENSESSION_TRANSCRIPT_V2=1 AND the
-// caller passed a session id; transcriptStore() is never touched otherwise
-// (its DB open is lazy).
+// Only reached when the caller passed a session id; transcriptStore() is
+// never touched otherwise (its DB open is lazy).
 
-function transcriptV2Enabled(): boolean {
-  return envAlias("OPENSESSION_TRANSCRIPT_V2", "BACKSTAGE_TRANSCRIPT_V2") === "1";
-}
-
-/** Mirror-tail window scanned when deciding whether growth beyond the import
- *  watermark is already in the store (flag-on dual-writes) or real drift. */
-const V2_TAIL_SCAN_BYTES = 256 * 1024;
-/** Non-empty tail lines examined before giving up (→ treated as drift). */
-const V2_TAIL_SCAN_LINES = 40;
-
-/** The legacy files that still grow for this session (same candidate set as
- *  the backfill's watermark: the session transcript file + the oc mirror).
- *  Exported for the sibling §8 consumers — ws-handlers' serveTranscriptV2
- *  (sync-import ceiling + import watermark) and opencode-transcript's
- *  importLegacyIntoStore (import watermark) — so every watermark covers the
- *  exact set this module drifts against. */
+/** The legacy transcript files for this session (same candidate set as the
+ *  import watermark: the session transcript file + the oc mirror). Since the
+ *  2026-07-23 mirror retirement only EXTERNAL-writer files (claude/codex CLI
+ *  transcriptPath) still grow — oc mirrors are a frozen archive whose
+ *  constant size keeps pre-retirement watermarks coherent, which is why they
+ *  stay in the set. Exported for the sibling §8 consumers — ws-handlers'
+ *  serveTranscriptV2 (sync-import ceiling + import watermark) and
+ *  opencode-transcript's importLegacyIntoStore (import watermark) — so every
+ *  watermark covers the exact set this module drifts against. */
 export function v2MirrorFiles(
   session: TranscriptSessionRef
 ): { path: string; size: number }[] {
@@ -228,66 +219,6 @@ export function v2MirrorFiles(
     }
   }
   return files;
-}
-
-/**
- * Does the newest content of a mirror file already live in the store? Parses
- * the last complete jsonl lines of the file (bounded window) into entries and
- * probes the store for the newest entry id. True = the growth is explained by
- * the flag-on dual-writes; false = unverifiable or genuinely missing → drift.
- */
-function v2MirrorTailInStore(
-  store: TranscriptStore,
-  sessionId: string,
-  file: { path: string; size: number }
-): boolean {
-  if (file.size === 0) return true;
-  // Codex rollout files ({timestamp,type,payload} lines — same path test as
-  // jsonl-parser's isCodexRolloutPath) don't parse as claude-shape mirror
-  // lines: the probe below would always come back "unverifiable" after paying
-  // the read+parse cost. Growth in a rollout can also never be explained by
-  // the v2 dual-writes (those only reach the oc mirror), so classify it as
-  // drift directly without the probe — the cheaper correct option; the drift
-  // re-import refreshes the watermark, keeping this once-per-growth.
-  if (file.path.includes("/rollout-") || file.path.includes("\\rollout-"))
-    return false;
-  const start = Math.max(0, file.size - V2_TAIL_SCAN_BYTES);
-  let text: string;
-  try {
-    const fd = openSync(file.path, "r");
-    try {
-      const buf = Buffer.alloc(Math.min(file.size, V2_TAIL_SCAN_BYTES));
-      const read = readSync(fd, buf, 0, buf.length, start);
-      text = buf.subarray(0, read).toString("utf-8");
-    } finally {
-      closeSync(fd);
-    }
-  } catch {
-    return false;
-  }
-  const lines = text.split("\n");
-  // Reading mid-file: the first line is (probably) partial — drop it.
-  if (start > 0) lines.shift();
-  let checked = 0;
-  for (let i = lines.length - 1; i >= 0 && checked < V2_TAIL_SCAN_LINES; i--) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    checked++;
-    let entries: TranscriptEntry[];
-    try {
-      entries = parseJsonlLines([line]);
-    } catch {
-      continue;
-    }
-    // One mirror line fans out to N entries (§1a) — probe the newest id.
-    const last = entries.filter((e) => typeof e.id === "string" && e.id).pop();
-    if (!last) continue; // meta/summary line — keep walking back
-    return store.getFullEntry(sessionId, last.id) !== null;
-  }
-  // No verifiable entry in the tail window (e.g. one giant trailing line) —
-  // treat as drift; the re-import refreshes the watermark so this stays a
-  // once-per-growth cost, not a per-read one.
-  return false;
 }
 
 /**
@@ -318,15 +249,19 @@ function v2ReadAll(store: TranscriptStore, sessionId: string): TranscriptEntry[]
 }
 
 /**
- * §8 drift decision, shared by the store read path below and ws-handlers'
- * serveTranscriptV2. True = the store can't be trusted for this session: the
- * failure-side store-degraded flag is set (a dual-write failed or was skipped
- * — a mid-transcript gap the tail probe can't see), or the mirror candidate
- * set grew beyond the import watermark in a way the tail probe can't explain
- * (external CLI/tmux appends, kill-switch windows). False = clean; an
- * explained-growth pass refreshes the watermark so the next read fast-paths
- * on size alone. Callers react to drift with a full re-import (idempotent
- * upserts keep original seqs) + clearTranscriptStoreDegraded.
+ * §8 staleness decision, shared by the store read path below and ws-handlers'
+ * serveTranscriptV2. True = the store can't be trusted for this session:
+ * either the failure-side store-degraded flag is set (a store append failed
+ * or was skipped — with mirror writes retired that flag is the ONLY signal
+ * for owned-session gaps), or a legacy candidate file grew beyond the import
+ * watermark — which, with oc mirrors frozen since the 2026-07-23 retirement,
+ * means an EXTERNAL writer (claude/codex CLI transcriptPath) appended, or a
+ * pre-retirement watermark gap that one idempotent re-import settles. The
+ * dual-write tail probe that used to classify growth as "explained" was
+ * deleted with the mirror writes; every unexplained-growth case now re-imports
+ * (idempotent upserts keep original seqs), which also refreshes the watermark
+ * so growth costs once per burst, not per read. Callers react to drift with a
+ * full re-import + clearTranscriptStoreDegraded.
  */
 export function v2TranscriptHasDrift(
   store: TranscriptStore,
@@ -342,21 +277,12 @@ export function v2TranscriptHasDrift(
   )
     return true;
   const files = v2MirrorFiles(session);
-  // No mirror files at all → nothing to drift against; the store is the best
-  // (only) source.
+  // No legacy files at all (every post-retirement session) → nothing to
+  // drift against; the store is the only source.
   if (!files.length) return false;
   const info = store.getImportInfo(sessionId);
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
-  if (info?.watermark != null && totalSize <= info.watermark) return false;
-  // Mirror grew beyond the watermark (or none was recorded). The growth is
-  // explained when the newest mirror content already reached the store via
-  // the flag-on dual-writes — verify by tail probe (the secondary signal
-  // behind the degraded flag), then refresh the watermark.
-  if (files.every((f) => v2MirrorTailInStore(store, sessionId, f))) {
-    store.markImported(sessionId, info?.src || "merged", totalSize);
-    return false;
-  }
-  return true;
+  return !(info?.watermark != null && totalSize <= info.watermark);
 }
 
 /**
@@ -385,8 +311,8 @@ function v2StoreTranscript(
       store.getImportInfo(sessionId)?.src || "merged",
       totalSize
     );
-    // The full re-import restored every mirror-only entry — release the
-    // failure-side marker (no-op for ids that never carried it).
+    // The full re-import restored every entry the store had missed — release
+    // the failure-side marker (no-op for ids that never carried it).
     clearTranscriptStoreDegraded(
       sessionId,
       session.opencodeSessionId,

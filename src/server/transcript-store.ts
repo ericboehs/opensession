@@ -28,8 +28,8 @@
  * inside importLegacyTranscript). If the hook returns without importing (or
  * no hook is given), the session is marked 'live-only' so the gate is a
  * one-time cost. If the hook THROWS, the append is aborted and the error
- * propagates — the wiring layer catches and falls back to mirror-only
- * (live appends must never precede history import).
+ * propagates — the wiring layer catches, warns, and marks the session
+ * store-degraded (live appends must never precede history import).
  *
  * Post-commit hooks (§4a): every committed append publishes the affected
  * entries (with seqs) on transcript-bus, and invokes the optional
@@ -241,7 +241,7 @@ export class TranscriptStore {
 
     // Import-first gate (§3). The hook runs synchronously; the store is
     // single-writer and sync, so nothing can interleave a live seq before it
-    // completes. A throw here propagates (wiring falls back to mirror-only).
+    // completes. A throw here propagates (wiring warns + marks degraded).
     if (this.needsImport(sessionId)) {
       opts?.ensureImported?.(sessionId);
       if (this.needsImport(sessionId)) {

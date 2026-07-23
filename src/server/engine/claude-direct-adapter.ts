@@ -21,10 +21,10 @@
  *    bridge's env block leaves open is closed here on purpose).
  *  - Minimal subprocess env: PATH/HOME/LANG + the two vars above. No
  *    OpenSession tokens, ever.
- *  - Transcript: dual-write per invariant 4 — normalized entries are mirrored
- *    as claude-shape jsonl lines via appendOpencodeTranscript(sdkSessionId, …),
- *    whose flag-gated v2 hook (storeAppendLines in opencode-transcript.ts)
- *    parses those same lines into the transcript store WITH the W1
+ *  - Transcript: store-only since the 2026-07-23 mirror retirement (§11) —
+ *    normalized entries go through appendOpencodeTranscript(sdkSessionId, …)
+ *    as claude-shape jsonl lines, which storeAppendLines (opencode-transcript
+ *    .ts) parses into the transcript store WITH the W1
  *    import-first gate (§3): the SDK→unified session mapping is registered
  *    up front via recordBksSessionFor, so a session with legacy history gets
  *    that history imported before its first live seq (never marked
@@ -105,16 +105,15 @@ export function cancelClaudeDirectRun(id: string): boolean {
 
 // ── Transcript integration ───────────────────────────────────────────────────
 
-/** Dual-write one batch of normalized entries, keyed by the engine/SDK
- *  session id: the claude-shape mirror jsonl gets the lines, and
- *  appendOpencodeTranscript's flag-gated v2 hook (storeAppendLines) parses
- *  those SAME lines into the transcript store through the W1 import-first
- *  gate — provided recordBksSessionFor mapped this SDK session to its unified
- *  session id first (see mapEngineSession in runClaudeDirect; unmapped
- *  degrades to mirror-only with a once-per-session warn). System entries ride
- *  a <runner-notice> user line, which the shared parser maps back to a system
- *  chip — transcriptLineForEntry has no system shape, and dropping them here
- *  would lose them from BOTH sides of the dual-write. Best-effort — a
+/** Store one batch of normalized entries, keyed by the engine/SDK session
+ *  id: appendOpencodeTranscript (store-only since mirror retirement) parses
+ *  the claude-shape lines into the transcript store through the W1
+ *  import-first gate — provided recordBksSessionFor mapped this SDK session
+ *  to its unified session id first (see mapEngineSession in runClaudeDirect;
+ *  unmapped batches are skipped with a once-per-session warn + degraded
+ *  mark). System entries ride a <runner-notice> user line, which the shared
+ *  parser maps back to a system chip — transcriptLineForEntry has no system
+ *  shape, and dropping them here would lose them entirely. Best-effort — a
  *  transcript write must never take the run down. */
 function persistEntries(
   engineSessionId: string | undefined,
@@ -277,8 +276,8 @@ export async function* runClaudeDirect(
   register(unifiedSessionId);
   register(engineSessionId);
 
-  // Register the SDK→unified session mapping BEFORE any mirror append: the
-  // v2 store hook inside appendOpencodeTranscript resolves the unified
+  // Register the SDK→unified session mapping BEFORE any append: the
+  // store write inside appendOpencodeTranscript resolves the unified
   // session (and runs the import-first gate, §3) through this map — without
   // it the store never sees the run, or worse, a first live append would
   // mark the session 'live-only' and orphan its legacy history. Idempotent
@@ -610,7 +609,7 @@ export interface ClaudeDirectSmokeResult {
   durationMs: number;
   /** transcript_events rows the v2 store holds for the throwaway session
    *  after the turn (getLastSeq — seq is dense, so last seq = row count).
-   *  Proves the W1 dual-write path end to end; 0 on dry runs. */
+   *  Proves the W1 store-write path end to end; 0 on dry runs. */
   storeRows: number;
 }
 

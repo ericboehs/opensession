@@ -23,7 +23,6 @@ import { applyNoteUpdate, getNoteState, isValidNoteId } from "./notes";
 import { appendOpencodeTranscript, clearTranscriptStoreDegraded, transcriptLineRunnerNotice } from "./opencode-transcript";
 import { wrapContext } from "./prompt-context";
 import { deleteQueuedPrompt, persistQueues, promptQueues, queueWithIds, recordSteer, reorderQueuedPrompt, requeueSteerReceipts, steeredReceipts, stoppedSessions, updateQueuedPrompt } from "./queue-state";
-import { envAlias } from "./rename-compat";
 import { transitionRunState } from "./run-state";
 import { abortTurnAndDrain, attachSessionWatchersToEngineTranscript, drainQueue, enqueuePrompt, foldSessionUsage, interruptQueuedPrompt, maybeLaunchSandboxedRun, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, steerQueuedPrompt, watchExternalRunAndDrain } from "./run-session";
 import { sandboxWsClose, sandboxWsMessage, sandboxWsOpen } from "./run-ws";
@@ -130,15 +129,12 @@ function sendWatchExtras(
 }
 
 // ── Transcript v2 serve path (docs/transcript-v2-design.md §4) ──────────────
-// Flag-gated (OPENSESSION_TRANSCRIPT_V2=1) + capability-gated (the client
-// sends `supportsSeq: true` on watch). Eligible watches are served from the
-// owned transcript store and fed live by the in-process bus — no mirror
-// file-watcher polling. Everything below is a no-op with the flag off; the
-// legacy path stays byte-identical.
-
-function transcriptV2Enabled(): boolean {
-	return envAlias("OPENSESSION_TRANSCRIPT_V2", "BACKSTAGE_TRANSCRIPT_V2") === "1";
-}
+// Capability-gated: the client sends `supportsSeq: true` on watch. Eligible
+// watches are served from the owned transcript store and fed live by the
+// in-process bus — no mirror file-watcher polling. The legacy offset/rev
+// watch below stays as the serve path for external CLI/tmux sessions and as
+// the code-level fallback whenever the v2 serve refuses or throws (the env
+// kill switch was retired with the mirror writes, 2026-07-23).
 
 // Per-socket bus unsubscribe handles. Parked on globalThis so a hot reload
 // can still tear down subscriptions made by the previous module instance
@@ -268,7 +264,7 @@ function serveTranscriptV2(
 	session: NonNullable<ReturnType<typeof findSession>>,
 	msg: any,
 ): boolean {
-	if (!transcriptV2Enabled() || msg.supportsSeq !== true) return false;
+	if (msg.supportsSeq !== true) return false;
 	// Plain loop runs don't thread a unified session id to the runner (§3), so
 	// their store rows would be forever partial — refuse v2, keep legacy.
 	// (Linear runs DO since transcriptSessionId landed; they lazy-import here
@@ -277,13 +273,12 @@ function serveTranscriptV2(
 	if (sessionId.startsWith("plain-")) return false;
 	// Externally-owned runs (CLI/tmux: running via PID but not in our
 	// activeRuns — session-control's observe-only signal) write only their
-	// transcript file. The file-watcher now feeds parsed appends into the
-	// store (file-watcher.ts feedTranscriptStore), but that feed only runs
-	// while some legacy watch exists — a v2-only viewer set would have no
-	// feeder, so v2 here would render silently stale mid-run. The refusal
-	// stays until a socket-independent feed lifecycle exists; relaxing it is
-	// the LAST step of mirror retirement (design doc "Mirror retirement"),
-	// and external writers are unaffected by OPENSESSION_MIRROR_WRITE anyway.
+	// transcript file. The file-watcher feeds parsed appends into the store
+	// (file-watcher.ts feedTranscriptStore), but that feed only runs while
+	// some legacy watch exists — a v2-only viewer set would have no feeder,
+	// so v2 here would render silently stale mid-run. The refusal stays until
+	// a socket-independent feed lifecycle exists — the one remaining step of
+	// mirror retirement (design doc §11); mirror writes themselves are gone.
 	if (
 		session.isRunning &&
 		!isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)
@@ -662,15 +657,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// 600-bubble render on big transcripts; it survives only as the
 				// fallback for clients that don't send an offset.
 				//
-				// Transcript v2 seq paging (flag-gated): a client in seq mode pages
-				// backwards with `beforeSeq` → one ~40-entry page from the store.
-				// Legacy offset paging below is untouched; a store failure falls
+				// Transcript v2 seq paging: a client in seq mode pages backwards
+				// with `beforeSeq` → one ~40-entry page from the store. Legacy
+				// offset paging below is untouched; a store failure falls
 				// through to it.
-				if (
-					transcriptV2Enabled() &&
-					typeof msg.beforeSeq === "number" &&
-					msg.beforeSeq > 0
-				) {
+				if (typeof msg.beforeSeq === "number" && msg.beforeSeq > 0) {
 					try {
 						const page = transcriptStore().readBefore(
 							msg.sessionId,

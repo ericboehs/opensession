@@ -571,9 +571,9 @@ if (!g.__backstageBooted) {
 	startTodoReminderTicker();
 
 	// Transcript v2 (docs/transcript-v2-design.md §8): one-time full backfill of
-	// legacy transcripts into transcripts.db. The helper self-gates (no-op
-	// unless OPENSESSION_TRANSCRIPT_V2=1, marker file once it completed); the
-	// delay keeps its import chunks out of the restart-resume window below.
+	// legacy transcripts into transcripts.db. The helper self-gates (marker
+	// file once it completed — already done since 2026-07-23); the delay keeps
+	// its import chunks out of the restart-resume window below.
 	setTimeout(() => kickTranscriptBackfillOnce(), 15_000);
 	} else {
 		agents = [];

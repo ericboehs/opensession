@@ -27,7 +27,6 @@
 
 import { existsSync, statSync, writeFileSync } from "fs";
 import { OPENSESSION_CHATS_DIR } from "./paths";
-import { envAlias } from "./rename-compat";
 import { audit } from "./audit";
 import type { UnifiedSession } from "./types";
 // WP-A touchpoint (design §1) — the only store API this module uses:
@@ -43,10 +42,6 @@ const PACE_MS = 35;
 /** Extra pause after big imports (a chunked import still runs sync per call). */
 const BIG_IMPORT_ENTRIES = 1000;
 const BIG_IMPORT_EXTRA_MS = 150;
-
-function transcriptV2Enabled(): boolean {
-	return envAlias("OPENSESSION_TRANSCRIPT_V2", "BACKSTAGE_TRANSCRIPT_V2") === "1";
-}
 
 /** v2-ineligible session families stay on the legacy path (design §3).
  *  Only plain- now: linear runs thread transcriptSessionId to the runner, so
@@ -212,7 +207,6 @@ export async function runTranscriptBackfill(
  * yet.
  */
 export function kickTranscriptBackfillOnce(): void {
-	if (!transcriptV2Enabled()) return;
 	if (existsSync(MARKER_PATH)) return;
 	const g = globalThis as typeof globalThis & {
 		__osTranscriptBackfillKick?: boolean;

@@ -19,7 +19,6 @@
  */
 import { envAlias } from "./rename-compat";
 import {
-  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -157,16 +156,18 @@ export function resolveOpencodeDbFor(ocSessionId: string | null | undefined): st
 // ── Transcript v2 (docs/transcript-v2-design.md §3): oc id → unified id ──────
 //
 // The runner records which UNIFIED session (bks-*/slack-*/…) an engine
-// session's transcript lines belong to (recordBksSessionFor — same
+// session's transcript entries belong to (recordBksSessionFor — same
 // persisted-JSON pattern as recordOpencodeDbFor above; rotation-safe: many oc
 // ids map onto one unified id). Recording is UNCONDITIONAL cheap bookkeeping
-// (like the db map) so the activation restart finds mappings for runs that
-// started while the flag was still off. When OPENSESSION_TRANSCRIPT_V2=1 the
-// three mirror writers below (appendOpencodeTranscript /
-// ensureOpencodeTranscriptFile / backfillOpencodeTranscriptGap) ALSO write
-// parsed entries into the owned transcript store, resolving the unified id
-// through this map — unresolvable oc id degrades to mirror-only with a
-// once-per-session warn, and no store failure ever throws into a mirror write.
+// (like the db map). The three transcript writers below
+// (appendOpencodeTranscript / ensureOpencodeTranscriptFile /
+// backfillOpencodeTranscriptGap) write parsed entries into the owned
+// transcript store, resolving the unified id through this map. Since the
+// 2026-07-23 mirror retirement (§11) the store is the ONLY thing they write —
+// mirror jsonl files on disk are a frozen read-only archive. Unresolvable oc
+// id → the batch is skipped with a once-per-session warn + store-degraded
+// mark (the §8 re-import heals from OpenCode's SQLite once mapped); no store
+// failure ever throws into a runner append.
 
 /** ocSessionId → unified session id, written by the runner call sites. */
 const OPENCODE_BKS_MAP_PATH =
@@ -245,41 +246,20 @@ export function recordBksSessionFor(ocSessionId: string, unifiedId: string): voi
   }
 }
 
-function transcriptV2Enabled(): boolean {
-  return envAlias("OPENSESSION_TRANSCRIPT_V2", "BACKSTAGE_TRANSCRIPT_V2") === "1";
-}
-
-/**
- * Mirror retirement flag (transcript-v2 design "Mirror retirement"): default
- * ON — `OPENSESSION_MIRROR_WRITE=0` stops the runner-side mirror jsonl WRITES
- * (appendOpencodeTranscript's appendFileSync, ensureOpencodeTranscriptFile's
- * seeding of NEW files, and via the append gate the gap-backfill's mirror
- * appends) while every store write keeps running. Existing mirror files are
- * left frozen in place — a frozen mirror never grows past its §8 watermark,
- * so it reads as neither drift nor staleness. Only meaningful under v2: with
- * the store flag off the mirror is the ONLY transcript writer, so =0 is
- * ignored there (fail-safe, never a transcript-less run).
- */
-function mirrorWriteEnabled(): boolean {
-  if (!transcriptV2Enabled()) return true;
-  return envAlias("OPENSESSION_MIRROR_WRITE", "BACKSTAGE_MIRROR_WRITE") !== "0";
-}
-
 // ── v2 store-degraded flag (failure-side dirty marker, §8) ───────────────────
 //
-// The §8 drift checks' mirror-tail probe only proves the NEWEST mirror entry
-// reached the store — a MID-transcript gap (one failed store-append batch
-// followed by successful ones) would be classified "explained" and the
-// watermark refresh would mask it permanently. So the failure side records the
-// gap the moment it happens: a failed store append (or one skipped for an
-// unresolved oc→unified mapping) flags the session store-degraded, and both
-// drift checks (sessions.ts v2TranscriptHasDrift, consumed by the store read
-// path AND ws-handlers' serveTranscriptV2) treat a set flag as unconditional
-// drift → full re-import (idempotent upserts), which clears it. Keys are
-// whichever id the failure site had — unified id for append failures, oc id
-// when the mapping was unresolved — and checks probe both. Parked on
-// globalThis (best-effort: a restart drops it; the tail probe stays the
-// secondary signal), no sidecar persistence.
+// With mirror writes retired there is no file growth to notice when a store
+// append fails for an OWNED session — this flag is the ONLY signal. The
+// failure side records the gap the moment it happens: a failed store append
+// (or one skipped for an unresolved oc→unified mapping) flags the session
+// store-degraded, and both drift checks (sessions.ts v2TranscriptHasDrift,
+// consumed by the store read path AND ws-handlers' serveTranscriptV2) treat a
+// set flag as unconditional drift → full re-import (idempotent upserts),
+// which clears it. Keys are whichever id the failure site had — unified id
+// for append failures, oc id when the mapping was unresolved — and checks
+// probe both. Parked on globalThis (best-effort: a restart drops it; the
+// dropped batch is then healed by the next re-import from OpenCode's SQLite),
+// no sidecar persistence.
 
 const storeDegraded: Set<string> = ((globalThis as Record<string, unknown> & {
   __osOcV2StoreDegraded?: Set<string>;
@@ -326,7 +306,7 @@ function resolveBksSessionFor(ocSessionId: string): string | null {
   if (!bksMapState.warnedUnmapped.has(ocSessionId)) {
     bksMapState.warnedUnmapped.add(ocSessionId);
     console.warn(
-      `[opencode-transcript] v2: no unified session mapped for ${ocSessionId} — mirror-only`
+      `[opencode-transcript] v2: no unified session mapped for ${ocSessionId} — entries not stored (degraded until mapped + re-imported)`
     );
   }
   return null;
@@ -392,7 +372,6 @@ function importLegacyIntoStore(unifiedId: string, ocSessionId: string): void {
  *  ensure/backfill call this so run start front-loads the legacy import
  *  instead of racing it against the first live append. Never throws. */
 function storeEnsureImported(ocSessionId: string): void {
-  if (!transcriptV2Enabled()) return;
   const unifiedId = resolveBksSessionFor(ocSessionId);
   if (!unifiedId) return;
   try {
@@ -405,23 +384,24 @@ function storeEnsureImported(ocSessionId: string): void {
     // session; the append path retries the gate (and marks on failure).
     warnStoreFailureOnce(
       ocSessionId,
-      `[opencode-transcript] v2 legacy import failed for ${ocSessionId} → ${unifiedId} (mirror-only)`,
+      `[opencode-transcript] v2 legacy import failed for ${ocSessionId} → ${unifiedId} (legacy readers serve until an import succeeds)`,
       e
     );
   }
 }
 
-/** Flag-gated store write for freshly-appended mirror lines. The mirror file
- *  write has already happened (dual-write, mirror first); the store append
- *  runs the import-first gate itself and upsert-dedupes by entry id, so the
- *  just-appended lines landing in the import too is harmless. Never throws. */
+/** The store write behind appendOpencodeTranscript — since mirror retirement
+ *  the ONLY transcript write. Normalizes claude-shape lines through the
+ *  shared parse path (transcriptLineForEntry-built lines → parseJsonlLines →
+ *  appendTranscriptEvents), runs the import-first gate itself, and
+ *  upsert-dedupes by entry id. Never throws. */
 function storeAppendLines(ocSessionId: string, lines: JsonlLine[]): void {
-  if (!transcriptV2Enabled()) return;
   const unifiedId = resolveBksSessionFor(ocSessionId);
   if (!unifiedId) {
-    // Mirror-only write the store never saw — a mid-transcript gap the tail
-    // probe can't detect later. Flag it (by the only id we have) so the §8
-    // drift checks force a full re-import once the mapping resolves.
+    // No unified id yet — this batch never reaches the store, and with no
+    // mirror growth there is nothing else to notice it later. Flag it (by
+    // the only id we have) so the §8 drift checks force a full re-import
+    // from OpenCode's SQLite once the mapping resolves.
     markTranscriptStoreDegraded(ocSessionId);
     return;
   }
@@ -432,27 +412,30 @@ function storeAppendLines(ocSessionId: string, lines: JsonlLine[]): void {
       ensureImported: (sid) => importLegacyIntoStore(sid, ocSessionId),
     });
   } catch (e) {
-    // This batch reached the mirror but not the store — flag the session so
-    // the drift checks stop trusting the store until a full re-import.
+    // The batch is dropped — flag the session so the drift checks stop
+    // trusting the store until a full re-import restores it from the engine
+    // sources (runner notices in the batch are lost; engine turns are not —
+    // they live in OpenCode's SQLite).
     markTranscriptStoreDegraded(unifiedId);
     warnStoreFailureOnce(
       ocSessionId,
-      `[opencode-transcript] v2 store append failed for ${ocSessionId} (mirror-only)`,
+      `[opencode-transcript] v2 store append failed for ${ocSessionId} (batch dropped until re-import)`,
       e
     );
   }
 }
 
 /**
- * Where the runner PERSISTS a claude-shape JSONL transcript per opencode
- * session (opencode itself only has the SQLite store — no tailable file, which
- * is why opencode sessions used to come back as "No transcript available" on
- * every reload). Deliberately a directory *inside* ~/.claude/projects: the
+ * Where the runner USED to persist a claude-shape JSONL mirror per opencode
+ * session, until the 2026-07-23 mirror retirement (design §11). The files
+ * that exist are a FROZEN read-only archive: nothing appends to or seeds
+ * them anymore, but every legacy reader (parseTranscript, the resolver scan,
+ * import/re-import via mergedSessionTranscript, the §8 watermark math) keeps
+ * reading them. Deliberately a directory *inside* ~/.claude/projects: the
  * transcript resolver's last-resort scan (sessions.ts findTranscriptBySessionId)
- * walks every projects subdir for `<id>.jsonl`, so files here are discovered
- * by that existing convention with zero resolver special-cases — including by
- * code paths from before this module existed. The dir name follows the hashed
- * -cwd- convention and corresponds to no real checkout path.
+ * walks every projects subdir for `<id>.jsonl`, so the archive is discovered
+ * by that existing convention with zero resolver special-cases. The dir name
+ * follows the hashed -cwd- convention and corresponds to no real checkout path.
  */
 export let OPENCODE_TRANSCRIPTS_DIR =
   envAlias(
@@ -593,8 +576,10 @@ export function transcriptLineToolResult(
 
 /** Map an already-parsed TranscriptEntry (any engine) back onto a claude-shape
  *  jsonl line, preserving ids so re-parsed copies upsert instead of duplicate.
- *  Used to seed a migrated session's opencode transcript file with its prior
- *  claude/codex history, and to backfill legacy opencode sessions from SQLite. */
+ *  Since mirror retirement this is internal normalization plumbing only: the
+ *  reattach gap-backfill (and the claude-direct adapter) route entries through
+ *  transcriptLineForEntry → parseJsonlLines → appendTranscriptEvents so every
+ *  writer shares ONE parse/identity path into the store — no file is written. */
 export function transcriptLineForEntry(e: TranscriptEntry): JsonlLine | null {
   switch (e.type) {
     case "user": {
@@ -629,69 +614,35 @@ export function transcriptLineForEntry(e: TranscriptEntry): JsonlLine | null {
   }
 }
 
-/** Append lines to a session's persisted transcript (best-effort — a
- *  transcript write must never take the run down). */
+/** Append transcript entries for an engine session to the owned store
+ *  (best-effort — a transcript write must never take the run down). `lines`
+ *  are claude-shape jsonl lines (the transcriptLine* builders above); since
+ *  the 2026-07-23 mirror retirement they are internal plumbing only — parsed
+ *  straight into entries (parseJsonlLines) inside storeAppendLines and
+ *  stored, never written to a file. Mirror jsonl files on disk are a frozen
+ *  read-only archive. */
 export function appendOpencodeTranscript(
   ocSessionId: string,
   lines: JsonlLine[]
 ): void {
   if (!lines.length) return;
-  // Mirror write, skipped when retired (OPENSESSION_MIRROR_WRITE=0 under v2).
-  // The store write below parses `lines` directly — it never reads the file —
-  // so skipping here changes nothing about what reaches the store.
-  if (mirrorWriteEnabled()) {
-    try {
-      mkdirSync(OPENCODE_TRANSCRIPTS_DIR, { recursive: true });
-      appendFileSync(
-        getOpencodeTranscriptPath(ocSessionId),
-        lines.map((l) => JSON.stringify(l)).join("\n") + "\n"
-      );
-    } catch (e) {
-      console.warn(`[opencode-transcript] append failed for ${ocSessionId}:`, e);
-    }
-  }
-  // Transcript v2 dual-write (no-op unless OPENSESSION_TRANSCRIPT_V2=1).
   storeAppendLines(ocSessionId, lines);
 }
 
 /**
- * Make sure the persisted transcript file exists before a run starts writing
- * to it. `seed` (a cross-engine handoff's prior-engine entries) wins for
- * fresh sessions; otherwise a missing file is backfilled from OpenCode's
- * SQLite store, which heals sessions that ran before transcript persistence
- * existed on their next prompt. No-op when the file is already there.
+ * Run-start transcript prep: front-load the store's legacy-history import
+ * (§3 import-first gate) so the first live append never races it. Mirror
+ * retirement (2026-07-23): this no longer seeds a mirror jsonl file. `_seed`
+ * (a cross-engine handoff's prior-engine entries) is deliberately unused —
+ * the store import reads the same sources directly (the session's
+ * prior-engine transcript file(s) + OpenCode's SQLite, via
+ * mergedSessionTranscript); the parameter stays so pre-restart runner
+ * closures and existing call sites keep the old arity.
  */
 export function ensureOpencodeTranscriptFile(
   ocSessionId: string,
-  seed?: TranscriptEntry[]
+  _seed?: TranscriptEntry[]
 ): void {
-  // Mirror retired (OPENSESSION_MIRROR_WRITE=0 under v2): stop seeding NEW
-  // mirror files; existing files stay untouched (frozen, still readable by
-  // every legacy path). History still reaches the store: storeEnsureImported
-  // below imports through mergedSessionTranscript, which reads the session's
-  // prior-engine transcript file(s) and OpenCode's SQLite directly — the
-  // seed entries were only ever a copy of those sources.
-  if (mirrorWriteEnabled()) {
-    try {
-      const path = getOpencodeTranscriptPath(ocSessionId);
-      if (!existsSync(path)) {
-        const entries = seed?.length ? seed : readOpencodeTranscript(ocSessionId);
-        const lines = entries
-          .map(transcriptLineForEntry)
-          .filter((l): l is JsonlLine => !!l);
-        mkdirSync(OPENCODE_TRANSCRIPTS_DIR, { recursive: true });
-        writeFileSync(
-          path,
-          lines.length ? lines.map((l) => JSON.stringify(l)).join("\n") + "\n" : ""
-        );
-      }
-    } catch (e) {
-      console.warn(`[opencode-transcript] ensure failed for ${ocSessionId}:`, e);
-    }
-  }
-  // Transcript v2 (flag-gated no-op otherwise): ensure runs at run start, so
-  // front-load the legacy import here — the first live append then never
-  // races the import-first gate (§3).
   storeEnsureImported(ocSessionId);
 }
 
@@ -724,17 +675,18 @@ export function opencodeTranscriptUuids(ocSessionId: string): Set<string> {
  * dedup sets so post-gap events don't double-append.
  */
 export function backfillOpencodeTranscriptGap(ocSessionId: string): Set<string> {
-  // Transcript v2 (flag-gated no-op otherwise): the restart-reattach path is
-  // the first store writer for every in-flight run at activation — run the
-  // import-first gate even when the mirror has no gap to fill (§3).
+  // Run the import-first gate even when there is no gap to fill (§3): the
+  // restart-reattach path is the first store writer for every in-flight run
+  // after a restart.
   //
-  // Mirror retired (OPENSESSION_MIRROR_WRITE=0): the appendOpencodeTranscript
-  // call below inherits the gate — gap entries keep reaching the STORE while
-  // the frozen mirror gets no appends. With the file frozen, `seen` (its
-  // uuids) stops growing, so each reattach recomputes the same `missing` set
-  // from SQLite and re-upserts it — idempotent (§1 upsert semantics), just a
-  // little churn; the returned set still correctly seeds the live pump's
-  // mirror-dedup, which is moot without mirror writes.
+  // `seen` starts from the frozen mirror file's uuids (empty for sessions
+  // created after the 2026-07-23 mirror retirement): entries already in the
+  // frozen archive were covered by the store import, so only SQLite entries
+  // beyond them need appending. The append below is store-only; with the
+  // file frozen, each reattach recomputes the same `missing` set from SQLite
+  // and re-upserts it — idempotent (§1 upsert semantics), just a little
+  // churn. The returned set still seeds the live pump's dedup so post-gap
+  // SSE events don't double-append to the store.
   storeEnsureImported(ocSessionId);
   const seen = opencodeTranscriptUuids(ocSessionId);
   try {

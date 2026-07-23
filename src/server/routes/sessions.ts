@@ -12,7 +12,6 @@ import { archiveOlderThan, setArchived, unpinArchivedSessions } from "../archive
 import { audit } from "../audit";
 import { pendingAsks } from "../asks";
 import { transcriptMatchSnippet } from "../jsonl-parser";
-import { envAlias } from "../rename-compat";
 import { transcriptDbPath, transcriptStore } from "../transcript-store";
 import { clearSessionFileArchive } from "../plain-archive";
 import { editPrReviewers } from "../pr-info";
@@ -133,27 +132,23 @@ export async function handleSessionsRoutes(
 			if (!session)
 				return Response.json({ error: "Session not found" }, { status: 404 });
 			const entryId = decodeURIComponent(m[2]);
-			// Transcript v2 (docs/transcript-v2-design.md §8, flag-gated): the
-			// store keeps the full unstripped entry (blob when the stored row was
-			// bounded) — consult it first; unknown ids fall through to the legacy
-			// merged-transcript scan unchanged.
-			if (
-				envAlias("OPENSESSION_TRANSCRIPT_V2", "BACKSTAGE_TRANSCRIPT_V2") === "1"
-			) {
-				try {
-					const full = transcriptStore().getFullEntry(session.id, entryId);
-					// content keeps its exact legacy shape; toolInput/images are
-					// additive (existing clients ignore them) — they carry the
-					// unstripped fields the bounded store row summarized away.
-					if (full)
-						return Response.json({
-							content: full.content,
-							toolInput: full.toolInput,
-							images: full.images,
-						});
-				} catch {
-					// store read failed — the legacy scan below still serves the entry
-				}
+			// Transcript v2 (docs/transcript-v2-design.md §8): the store keeps the
+			// full unstripped entry (blob when the stored row was bounded) —
+			// consult it first; unknown ids and store failures fall through to
+			// the legacy merged-transcript scan unchanged.
+			try {
+				const full = transcriptStore().getFullEntry(session.id, entryId);
+				// content keeps its exact legacy shape; toolInput/images are
+				// additive (existing clients ignore them) — they carry the
+				// unstripped fields the bounded store row summarized away.
+				if (full)
+					return Response.json({
+						content: full.content,
+						toolInput: full.toolInput,
+						images: full.images,
+					});
+			} catch {
+				// store read failed — the legacy scan below still serves the entry
 			}
 			const entry = mergedSessionTranscript(session).find(
 				(e) => e.id === entryId,
