@@ -113,6 +113,7 @@ struct SettingsView: View {
             }
             // No onDisappear cancel: the sign-in keeps polling after the
             // sheet closes (only the explicit Cancel button stops it).
+            .onAppear { signIn.nudge() }
             .onChange(of: signIn.flow?.deviceCode) { _, deviceCode in
                 // Sign-in finished while the sheet is open — reflect the
                 // minted credentials in the editable fields.

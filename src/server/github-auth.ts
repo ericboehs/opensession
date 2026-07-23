@@ -204,6 +204,96 @@ export async function pollGithubDeviceFlow(
   return identifyAndStoreToken(token, body.scope, expectedLogin);
 }
 
+// ── Server-driven device-flow completion ──
+// The device code is entered OUTSIDE the requesting client (Safari, the
+// GitHub app, another machine), and mobile clients get suspended or killed
+// exactly while that happens — a client-driven poll loop dies with them.
+// That's how sign-ins were getting lost: the GitHub grant landed, but nobody
+// was polling anymore (or the one response carrying the minted session never
+// reached the suspended app). So the SERVER owns the poll loop: the auth
+// route calls watchGithubDeviceFlow after starting a flow, the outcome parks
+// here until the code's expiry, and the client's /poll just consults it —
+// idempotent, so a lost response is simply re-delivered on the next ask.
+// Parked on globalThis so a bun --hot reload doesn't strand in-flight flows.
+
+export type DeviceFlowServerState =
+  | { status: "pending" }
+  | { status: "ok"; login: string; name?: string }
+  | { status: "error"; error: string };
+
+type WatchedFlow = DeviceFlowServerState & { expiresAt: number };
+
+const watchedFlows: Map<string, WatchedFlow> = ((globalThis as any).__osWatchedDeviceFlows ??=
+  new Map());
+
+function sweepWatchedFlows(): void {
+  const now = Date.now();
+  for (const [code, flow] of watchedFlows) {
+    if (flow.expiresAt < now) watchedFlows.delete(code);
+  }
+}
+
+/** Poll a just-started device flow to completion server-side. */
+export function watchGithubDeviceFlow(flow: DeviceFlowStart): void {
+  sweepWatchedFlows();
+  if (watchedFlows.has(flow.deviceCode)) return;
+  // Results stay retrievable for 10 min past the code's own expiry so a
+  // client that resumes late still gets a definitive answer.
+  const codeExpiresAt = Date.now() + flow.expiresIn * 1000;
+  const keepUntil = codeExpiresAt + 10 * 60_000;
+  watchedFlows.set(flow.deviceCode, { status: "pending", expiresAt: keepUntil });
+  console.log(`[auth] device flow ${flow.userCode} started — watching server-side`);
+  void (async () => {
+    let interval = Math.max(flow.interval, 5);
+    while (Date.now() < codeExpiresAt) {
+      await new Promise((r) => setTimeout(r, interval * 1000));
+      let result: DeviceFlowPoll;
+      try {
+        result = await pollGithubDeviceFlow(flow.deviceCode);
+      } catch {
+        continue; // transient — GitHub unreachable etc.
+      }
+      if (result.status === "pending") continue;
+      if (result.status === "slow_down") {
+        interval = Math.max(result.interval, interval);
+        continue;
+      }
+      if (result.status === "ok") {
+        watchedFlows.set(flow.deviceCode, {
+          status: "ok",
+          login: result.login,
+          name: result.name,
+          expiresAt: keepUntil,
+        });
+        console.log(`[auth] device flow ${flow.userCode} authorized by @${result.login}`);
+      } else {
+        watchedFlows.set(flow.deviceCode, {
+          status: "error",
+          error: result.error,
+          expiresAt: keepUntil,
+        });
+        console.log(`[auth] device flow ${flow.userCode} failed: ${result.error}`);
+      }
+      return;
+    }
+    watchedFlows.set(flow.deviceCode, {
+      status: "error",
+      error: "The sign-in code expired — try again.",
+      expiresAt: keepUntil,
+    });
+    console.log(`[auth] device flow ${flow.userCode} expired unused`);
+  })();
+}
+
+/** Outcome of a server-watched flow (null: unknown code, or pre-watch flow). */
+export function githubDeviceFlowResult(deviceCode: string): DeviceFlowServerState | null {
+  sweepWatchedFlows();
+  const flow = watchedFlows.get(deviceCode);
+  if (!flow) return null;
+  const { expiresAt: _expiresAt, ...state } = flow;
+  return state;
+}
+
 /** Shared tail of both OAuth flows: learn WHO the token belongs to (GET /user
  *  with the token itself — the login is ground truth from GitHub, never
  *  client-supplied) and store it under that login. */

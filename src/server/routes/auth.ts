@@ -21,10 +21,12 @@ import {
 import {
   exchangeGithubOauthCode,
   githubAuthorizeUrl,
+  githubDeviceFlowResult,
   githubRedirectFlowAvailable,
   pollGithubDeviceFlow,
   removeGithubAccount,
   startGithubDeviceFlow,
+  watchGithubDeviceFlow,
 } from "../github-auth";
 import { configuredServer } from "../config";
 import { randomBytes } from "crypto";
@@ -142,6 +144,10 @@ export async function handleAuthRoutes(
 			return Response.json({ error: "Sign-in is not enabled" }, { status: 400 });
 		const result = await startGithubDeviceFlow();
 		if ("error" in result) return Response.json(result, { status: 400 });
+		// The server polls GitHub to completion itself — mobile clients get
+		// suspended/killed while the code is entered in Safari, so their own
+		// poll loop can't be trusted to survive to the finish.
+		watchGithubDeviceFlow(result);
 		return Response.json(result);
 	}
 
@@ -157,7 +163,21 @@ export async function handleAuthRoutes(
 			typeof body?.deviceCode === "string" ? body.deviceCode : "";
 		if (!deviceCode)
 			return Response.json({ error: "deviceCode required" }, { status: 400 });
-		const result = await pollGithubDeviceFlow(deviceCode);
+		// Prefer the server-watched outcome (idempotent — a client whose
+		// earlier response got lost to an app suspension just asks again).
+		// Direct GitHub polling remains as fallback for flows started before
+		// server-side watching existed (e.g. across a process restart).
+		const watched = githubDeviceFlowResult(deviceCode);
+		let result: Awaited<ReturnType<typeof pollGithubDeviceFlow>>;
+		if (watched && watched.status === "pending") {
+			return Response.json({ status: "pending" });
+		} else if (watched && watched.status === "error") {
+			return Response.json(watched);
+		} else if (watched) {
+			result = { status: "ok", login: watched.login, name: watched.name };
+		} else {
+			result = await pollGithubDeviceFlow(deviceCode);
+		}
 		if (result.status !== "ok") return Response.json(result);
 		if (!teamMemberForLogin(result.login)) {
 			removeGithubAccount(result.login);
@@ -176,6 +196,9 @@ export async function handleAuthRoutes(
 		// the token in the body (`native: true`) and store it in the keychain,
 		// sending it back as `Authorization: Bearer`.
 		const native = body?.native === true;
+		console.log(
+			`[auth] device-flow session delivered to ${native ? "native" : "web"} client for @${result.login}`,
+		);
 		return Response.json(
 			{
 				status: "ok",

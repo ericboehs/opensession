@@ -49,10 +49,23 @@ enum GitHubAuth {
     /// cancelled. On success the token + identity are already stored. The
     /// deadline is passed in (not derived from `expiresIn`) so a resumed
     /// flow keeps its original expiry.
-    static func waitForAuthorization(_ flow: DeviceFlowStart, until deadline: Date) async throws -> String {
+    static func waitForAuthorization(
+        _ flow: DeviceFlowStart,
+        until deadline: Date,
+        pollImmediately: Bool = false
+    ) async throws -> String {
         var interval = TimeInterval(max(flow.interval ?? 5, 1))
+        // The server polls GitHub itself and parks the outcome, so our polls
+        // only hit our own server — an immediate poll on resume is cheap and
+        // makes the sign-in land the moment the person returns to the app.
+        var skipSleep = pollImmediately
         while Date() < deadline {
-            try await Task.sleep(for: .seconds(interval))
+            if skipSleep {
+                skipSleep = false
+            } else {
+                try await Task.sleep(for: .seconds(interval))
+            }
+            try Task.checkCancellation()
             let poll: PollResponse
             do {
                 poll = try await post(
@@ -132,6 +145,7 @@ final class GitHubSignIn {
 
     /// The flow whose code the UI should show (nil = no sign-in running).
     private(set) var flow: GitHubAuth.DeviceFlowStart?
+    private(set) var expiresAt: Date?
     private(set) var starting = false
     var error: String?
 
@@ -152,6 +166,7 @@ final class GitHubSignIn {
                 let deadline = Date().addingTimeInterval(TimeInterval(started.expiresIn ?? 900))
                 starting = false
                 flow = started
+                expiresAt = deadline
                 persist(started, expiresAt: deadline)
                 _ = try await GitHubAuth.waitForAuthorization(started, until: deadline)
             } catch is CancellationError {
@@ -172,8 +187,29 @@ final class GitHubSignIn {
         finish()
     }
 
+    /// Re-arm the poll loop with an immediate first poll. Called on app
+    /// foregrounding: the person likely just approved the code on GitHub, and
+    /// the previous loop may have died with the process or be mid-sleep.
+    /// Idempotent — the server parks the flow's outcome, so an extra poll
+    /// just re-asks "is my flow done?".
+    func nudge() {
+        guard let flow, let expiresAt else { return }
+        pollTask?.cancel()
+        pollTask = Task {
+            do {
+                _ = try await GitHubAuth.waitForAuthorization(flow, until: expiresAt, pollImmediately: true)
+            } catch is CancellationError {
+                return // superseded by a newer nudge/start — state stays
+            } catch {
+                self.error = error.localizedDescription
+            }
+            finish()
+        }
+    }
+
     private func finish() {
         flow = nil
+        expiresAt = nil
         pollTask = nil
         UserDefaults.standard.removeObject(forKey: Self.pendingKey)
     }
@@ -209,9 +245,11 @@ final class GitHubSignIn {
             error: nil
         )
         flow = restored
+        expiresAt = pending.expiresAt
         pollTask = Task {
             do {
-                _ = try await GitHubAuth.waitForAuthorization(restored, until: pending.expiresAt)
+                _ = try await GitHubAuth.waitForAuthorization(
+                    restored, until: pending.expiresAt, pollImmediately: true)
             } catch is CancellationError {
                 return
             } catch {
