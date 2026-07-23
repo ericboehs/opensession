@@ -397,8 +397,13 @@ export function matchReply(input: {
 
   let match =
     (input.threadTs && candidates.find((a) => a.slack!.rootTs === input.threadTs)) || undefined;
-  if (!match) {
-    // Newest delivered ask in this DM wins for an un-threaded reply.
+  if (!match && !input.threadTs) {
+    // Newest delivered ask in this DM wins for an un-threaded reply. Only for
+    // genuinely un-threaded ones: a reply threaded under some OTHER message is
+    // about that thread (often one a session posted and linked), and grabbing
+    // it here hijacks it from the thread→session routing downstream
+    // (2026-07-23: a reply under an iOS-session thread got steered into a
+    // week-old session's stale ask this way).
     match = candidates.sort(
       (x, y) => new Date(y.deliveredAt!).getTime() - new Date(x.deliveredAt!).getTime()
     )[0];
