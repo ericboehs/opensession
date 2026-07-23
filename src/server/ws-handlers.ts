@@ -510,7 +510,20 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// Transcript v2 (flag + supportsSeq gated): eligible watches are
 				// served from the owned store + bus with seq cursors — no mirror
 				// file-watcher. Ineligible/flag-off falls through byte-identical.
-				if (serveTranscriptV2(ws, sessionId, session, msg)) {
+				// The call itself is guarded: a throw anywhere in the v2 path must
+				// degrade to the legacy watch, never kill the watch silently (a
+				// cold-boot binding failure did exactly that on 2026-07-23 — the
+				// client got no init and no error).
+				let v2Served = false;
+				try {
+					v2Served = serveTranscriptV2(ws, sessionId, session, msg);
+				} catch (e) {
+					console.error(
+						`[ws] transcript v2 serve threw for ${sessionId} — falling back to legacy watch:`,
+						e,
+					);
+				}
+				if (v2Served) {
 					sendWatchExtras(ws, sessionId, session);
 					break;
 				}
