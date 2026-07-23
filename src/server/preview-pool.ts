@@ -295,6 +295,12 @@ function cloneUrlFor(repo: Repo): string | null {
 /** Boot preamble every warm/golden boot runs: lock cleanup + full ports.conf. */
 const BOOT_PREP = [
   `cd ${WORKSPACE}`,
+  // The committed image can carry a stale /tmp/boot.log from the golden
+  // build's shutdown (its 'error: Recipe … signal 15' lines). start.sh's
+  // redirect truncates it — but only after the git-advance step, and
+  // waitForUp's early error grep reads the stale file in that window and
+  // kills a healthy boot. Truncate FIRST.
+  `: > /tmp/boot.log`,
   // ReScript watch.lock survives SIGKILL and blocks the next boot.
   `find . -maxdepth 6 -name watch.lock -not -path '*/node_modules/*' -delete 2>/dev/null || true`,
   `rm -f .ports/dev-pgid`,
