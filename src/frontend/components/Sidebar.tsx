@@ -1758,6 +1758,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	function wsRowHoverEnter(row: WsRow, el: HTMLElement) {
 		if (rowRenameEditing(row)) return;
 		cancelWsHoverTimers();
+		if (wsHover) {
+			setWsHover({ row, anchor: el.getBoundingClientRect() });
+			return;
+		}
 		wsHoverOpenT.current = setTimeout(() => {
 			setWsHover({ row, anchor: el.getBoundingClientRect() });
 		}, 380);
@@ -2276,7 +2280,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						y: e.clientY,
 					});
 					}}
-					title={row.name}
+					aria-label={row.name}
 				>
 				{/* Keep the PR glyph in its original 22px column; attention sits just
 				    before it without shifting the icon or workspace title. */}
@@ -2287,7 +2291,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					{!isPhone && waiting && (
 						<span
 							className="sidebar-workspace-attention"
-							title="Needs your attention"
+							aria-label="Needs your attention"
 						/>
 					)}
 					{row.running ? (
@@ -2353,7 +2357,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						className={`sidebar-ws-time${
 							wsTimePref === "hover" ? " sidebar-ws-time--hover" : ""
 						}${runStartMs !== null ? " sidebar-ws-time--running" : ""}`}
-						title={new Date(row.lastActivity).toLocaleString()}
+						aria-label={new Date(row.lastActivity).toLocaleString()}
 					>
 						{shortTime(row.lastActivity)}
 					</span>
@@ -2361,14 +2365,17 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				{/* Slack-style pencil: a chat here holds an unsent draft — come back
 				    and finish it. Yields to the hover actions like the count/time. */}
 				{row.chats.some((c) => hasDraft(`chat:${c.id}`)) && (
-					<span className="sidebar-ws-draft" title="Unsent draft. Return to finish it.">
+					<span
+						className="sidebar-ws-draft"
+						aria-label="Unsent draft. Return to finish it."
+					>
 						<IconPencil size={20} />
 					</span>
 				)}
 				{isPhone && waiting && (
 					<span
 						className="sidebar-workspace-attention sidebar-workspace-attention--trailing"
-						title="Needs your attention"
+						aria-label="Needs your attention"
 					/>
 				)}
 				{/* Hover actions: pin + archive, side by side. */}
@@ -2377,7 +2384,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						role="button"
 						tabIndex={0}
 						className={`sidebar-ws-action${pinned ? " is-on" : ""}`}
-						title={pinned ? "Unpin workspace" : "Pin workspace"}
+						aria-label={pinned ? "Unpin workspace" : "Pin workspace"}
+						onMouseEnter={closeWsHover}
 						onClick={(e) => {
 							e.stopPropagation();
 							toggleRowPin();
@@ -2414,6 +2422,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								tabIndex={0}
 								className="sidebar-ws-action"
 								aria-label="Archive workspace"
+								onMouseEnter={closeWsHover}
 								onClick={(e) => {
 									e.stopPropagation();
 									archiveWorkspaceWithNext(row);
@@ -4282,7 +4291,7 @@ function SidebarItem({
 					{waiting && (
 						<span
 							className="sidebar-workspace-attention"
-							title="Needs your attention"
+							aria-label="Needs your attention"
 						/>
 					)}
 					{session.isRunning ? (
@@ -4330,7 +4339,10 @@ function SidebarItem({
 					</span>
 				)}
 				{!editing && hasDraft(`chat:${session.id}`) && (
-					<span className="sidebar-ws-draft" title="Unsent draft. Return to finish it.">
+					<span
+						className="sidebar-ws-draft"
+						aria-label="Unsent draft. Return to finish it."
+					>
 						<IconPencil size={20} />
 					</span>
 				)}
@@ -4353,6 +4365,7 @@ function SidebarItem({
 					className={`sidebar-item-pin${pinned ? " is-on" : ""}`}
 					role="button"
 					aria-label={pinned ? "Unpin session" : "Pin session"}
+					onMouseEnter={closeHover}
 					onClick={(e) => {
 						e.stopPropagation();
 						onTogglePin();
@@ -4369,6 +4382,7 @@ function SidebarItem({
 					className="sidebar-item-x"
 					role="button"
 					aria-label="Archive session"
+					onMouseEnter={closeHover}
 					onClick={(e) => {
 						e.stopPropagation();
 						onArchive();
