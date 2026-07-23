@@ -76,6 +76,17 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Run unit tests
+        run: |
+          # Any available iPhone simulator will do; the suite is pure logic.
+          UDID=$(xcrun simctl list devices available | grep iPhone | grep -m1 -oE '[0-9A-F-]{36}')
+          test -n "$UDID"
+          xcodebuild test \
+            -project OS1.xcodeproj \
+            -scheme OS1 \
+            -destination "id=$UDID" \
+            CODE_SIGNING_ALLOWED=NO
+
       - name: Archive
         run: |
           xcodebuild archive \
