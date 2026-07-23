@@ -1,9 +1,44 @@
 import SwiftUI
 
+/// Sessions list, mirroring the web sidebar's organization: group by Status
+/// (Needs input / In progress / In review / Done / Backlog), by Repo, or a
+/// flat Recent list — plus a repo filter, updated/created sort, and search.
+/// The grouping/filter choices persist like the web's filter popover does.
 struct SessionsListView: View {
+    enum GroupBy: String, CaseIterable {
+        case status, repo, recent
+
+        var label: String {
+            switch self {
+            case .status: "Status"
+            case .repo: "Repo"
+            case .recent: "Recently active"
+            }
+        }
+    }
+
+    enum SortBy: String, CaseIterable {
+        case updated, created
+
+        var label: String {
+            switch self {
+            case .updated: "Last activity"
+            case .created: "Created"
+            }
+        }
+    }
+
     @State private var viewModel = SessionsListViewModel()
     @State private var showSettings = false
     @State private var path = NavigationPath()
+    @State private var searchText = ""
+
+    @AppStorage("os1.list.groupBy") private var groupByRaw = GroupBy.status.rawValue
+    @AppStorage("os1.list.repo") private var repoFilter = "all"
+    @AppStorage("os1.list.sort") private var sortByRaw = SortBy.updated.rawValue
+
+    private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .status }
+    private var sortBy: SortBy { SortBy(rawValue: sortByRaw) ?? .updated }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -19,6 +54,9 @@ struct SessionsListView: View {
             }
             .navigationTitle("Sessions")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    filterMenu
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showSettings = true
@@ -62,13 +100,126 @@ struct SessionsListView: View {
         path.append(session)
     }
 
-    private var list: some View {
-        List(viewModel.sessions) { session in
-            NavigationLink(value: session) {
-                SessionRow(session: session)
+    // ── Filtering / grouping ──────────────────────────────────────────────
+
+    private var availableRepos: [String] {
+        Array(Set(viewModel.sessions.compactMap(\.repo))).sorted()
+    }
+
+    private var filteredSessions: [Session] {
+        var result = viewModel.sessions
+        if repoFilter != "all" {
+            result = result.filter { $0.repo == repoFilter }
+        }
+        let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
+        if !query.isEmpty {
+            result = result.filter { session in
+                for term in [session.title, session.repo, session.branch, session.id] {
+                    if let term, term.lowercased().contains(query) { return true }
+                }
+                return false
             }
         }
-        .listStyle(.plain)
+        return result.sorted {
+            switch sortBy {
+            case .updated:
+                ($0.lastActivityDate ?? .distantPast) > ($1.lastActivityDate ?? .distantPast)
+            case .created:
+                (Session.parseISO($0.createdAt) ?? .distantPast)
+                    > (Session.parseISO($1.createdAt) ?? .distantPast)
+            }
+        }
+    }
+
+    private struct SessionGroup: Identifiable {
+        let id: String
+        let title: String
+        let sessions: [Session]
+    }
+
+    private var groups: [SessionGroup] {
+        let sessions = filteredSessions
+        switch groupBy {
+        case .recent:
+            return sessions.isEmpty ? [] : [SessionGroup(id: "recent", title: "", sessions: sessions)]
+        case .repo:
+            let byRepo = Dictionary(grouping: sessions) { $0.repo ?? "no repo" }
+            return byRepo.keys.sorted().map {
+                SessionGroup(id: "repo-\($0)", title: $0, sessions: byRepo[$0]!)
+            }
+        case .status:
+            return Session.Lane.allCases.compactMap { lane in
+                let inLane = sessions.filter { $0.lane == lane }
+                return inLane.isEmpty
+                    ? nil
+                    : SessionGroup(id: "lane-\(lane.rawValue)", title: lane.label, sessions: inLane)
+            }
+        }
+    }
+
+    private var filterMenu: some View {
+        Menu {
+            Picker("Group by", selection: $groupByRaw) {
+                ForEach(GroupBy.allCases, id: \.rawValue) { option in
+                    Text(option.label).tag(option.rawValue)
+                }
+            }
+            Picker("Repo", selection: $repoFilter) {
+                Text("All repos").tag("all")
+                ForEach(availableRepos, id: \.self) { repo in
+                    Text(repo).tag(repo)
+                }
+            }
+            .pickerStyle(.menu)
+            Picker("Sort by", selection: $sortByRaw) {
+                ForEach(SortBy.allCases, id: \.rawValue) { option in
+                    Text(option.label).tag(option.rawValue)
+                }
+            }
+        } label: {
+            Image(
+                systemName: repoFilter == "all"
+                    ? "line.3.horizontal.decrease.circle"
+                    : "line.3.horizontal.decrease.circle.fill"
+            )
+        }
+    }
+
+    // ── List body ─────────────────────────────────────────────────────────
+
+    private var list: some View {
+        List {
+            ForEach(groups) { group in
+                Section {
+                    ForEach(group.sessions) { session in
+                        NavigationLink(value: session) {
+                            SessionRow(session: session)
+                        }
+                    }
+                } header: {
+                    if !group.title.isEmpty {
+                        HStack(spacing: 6) {
+                            if groupBy == .status,
+                               let lane = Session.Lane(rawValue: String(group.id.dropFirst("lane-".count))) {
+                                Circle()
+                                    .fill(lane.color)
+                                    .frame(width: 7, height: 7)
+                            }
+                            Text(group.title)
+                            Text("\(group.sessions.count)")
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .searchable(text: $searchText, prompt: "Search sessions")
+        .overlay {
+            if groups.isEmpty {
+                ContentUnavailableView.search(text: searchText)
+            }
+        }
         .refreshable {
             await viewModel.refresh()
         }
@@ -84,6 +235,19 @@ struct SessionsListView: View {
             Text(viewModel.error ?? "Sessions from the OS1 server will appear here.")
         } actions: {
             Button("Settings") { showSettings = true }
+        }
+    }
+}
+
+extension Session.Lane {
+    /// Dot colors matching the web sidebar's lane dots.
+    var color: Color {
+        switch self {
+        case .needsInput: .blue
+        case .inProgress: .yellow
+        case .inReview: .green
+        case .done: .purple
+        case .backlog: .secondary.opacity(0.4)
         }
     }
 }
@@ -107,6 +271,10 @@ struct SessionRow: View {
                     Text(branch)
                         .lineLimit(1)
                 }
+                if session.prState == "OPEN" {
+                    Text("PR open")
+                        .foregroundStyle(.green)
+                }
                 if session.queuedCount ?? 0 > 0 {
                     Text("+\(session.queuedCount!) queued")
                 }
@@ -123,15 +291,7 @@ struct SessionRow: View {
 
     private var statusDot: some View {
         Circle()
-            .fill(statusColor)
+            .fill(session.lane.color)
             .frame(width: 8, height: 8)
-    }
-
-    private var statusColor: Color {
-        switch session.status {
-        case .needsInput: .orange
-        case .running: .green
-        case .idle: .secondary.opacity(0.4)
-        }
     }
 }

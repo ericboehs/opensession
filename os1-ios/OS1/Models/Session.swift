@@ -42,6 +42,31 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
         return .idle
     }
 
+    /// The web sidebar's status lanes (Sidebar.tsx MINE_STATUS_META), in its
+    /// display order, derived from the same signals we have: waiting beats
+    /// running beats PR state; everything else is backlog.
+    enum Lane: String, CaseIterable {
+        case needsInput, inProgress, inReview, done, backlog
+
+        var label: String {
+            switch self {
+            case .needsInput: "Needs input"
+            case .inProgress: "In progress"
+            case .inReview: "In review"
+            case .done: "Done"
+            case .backlog: "Backlog"
+            }
+        }
+    }
+
+    var lane: Lane {
+        if waitingForInput == true { return .needsInput }
+        if isRunning == true { return .inProgress }
+        if prState == "OPEN" { return .inReview }
+        if prState == "MERGED" { return .done }
+        return .backlog
+    }
+
     static func parseISO(_ string: String?) -> Date? {
         guard let string else { return nil }
         let formatter = ISO8601DateFormatter()
