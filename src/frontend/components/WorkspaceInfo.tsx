@@ -1427,7 +1427,7 @@ export function WorkspaceInfo({
 						Review changes
 					</button>
 				)}
-				{pr?.staging?.url && (
+				{prState === "OPEN" && pr?.staging?.url && (
 					<button
 						type="button"
 						className="workspace-info-review-btn"

@@ -94,6 +94,8 @@ import {
 	IconCopy,
 	IconFile,
 	IconMessage,
+	IconGlobe,
+	IconArrowUpRight,
 } from "./icons";
 import { SessionRelations, type RelatedSession } from "./SessionRelations";
 import { PixelSpinner } from "./PixelSpinner";
@@ -3805,14 +3807,52 @@ export function SessionViewer({
 			<div className="viewer-split">
 				<div className="viewer-chat">
 					{showStaging && stagingUrl ? (
+						// A PR's staging deploy sits behind WorkOS login, whose
+						// AuthKit page refuses to be framed by os.tella.dev
+						// (frame-ancestors), and its session cookie is SameSite=Lax
+						// so it isn't sent in a cross-site iframe (and iOS Safari
+						// blocks third-party cookies outright) — an embedded iframe
+						// renders a blocked/blank frame. So the Staging view-tab is a
+						// launch panel: it opens the deploy first-party in a new tab,
+						// which is authenticated and works on every device.
 						<div className="viewer-review-main">
-							<iframe
-								className="block w-full flex-1 border-0 bg-white"
-								src={stagingUrl}
-								title="Staging"
-								allow="clipboard-read; clipboard-write; fullscreen"
-								sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-downloads"
-							/>
+							<div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+								<IconGlobe size={40} className="text-dim" />
+								<div className="flex flex-col items-center gap-1">
+									<div className="text-base font-medium text-fg">
+										Staging deploy
+									</div>
+									<div className="text-xs text-dim">
+										{staging?.status === "Ready"
+											? "Test this PR on real infra"
+											: `Deploy is ${(staging?.status ?? "building").toLowerCase()}…`}
+									</div>
+								</div>
+								<a
+									href={stagingUrl}
+									target="_blank"
+									rel="noopener"
+									className="inline-flex items-center gap-2 rounded-md border border-line bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-panel"
+								>
+									<IconGlobe size={16} />
+									Open staging
+									<IconArrowUpRight size={16} />
+								</a>
+								<button
+									type="button"
+									onClick={() =>
+										shareLink(stagingUrl, { toast: "Link copied" })
+									}
+									className="inline-flex items-center gap-1.5 text-xs text-dim transition-colors hover:text-fg"
+								>
+									<IconCopy size={14} />
+									Copy link
+								</button>
+								<div className="max-w-xs text-xs leading-relaxed text-dim">
+									Opens in a new tab — the staging deploy sits behind
+									login, so it can&apos;t be embedded here.
+								</div>
+							</div>
 						</div>
 					) : showReview && hasWorkspace ? (
 						<div className="viewer-review-main">
