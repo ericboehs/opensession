@@ -48,6 +48,35 @@ final class SessionViewModel {
     /// shows twice: in the transcript AND in the live bubble. Mirrors the
     /// web viewer's landedStreamTextRef.
     private var landedStreamTexts: [String] = []
+    /// Stream text is coalesced here and flushed to `liveText` at ~8Hz:
+    /// every liveText change re-parses the whole bubble's markdown and
+    /// re-anchors the scroll view, so per-chunk updates burn a full layout
+    /// pass each on fast streams.
+    private var pendingLiveText = ""
+    private var liveFlushTask: Task<Void, Never>?
+
+    private func appendLiveText(_ text: String) {
+        pendingLiveText += text
+        guard liveFlushTask == nil else { return }
+        liveFlushTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard let self, !Task.isCancelled else { return }
+            self.liveFlushTask = nil
+            if !self.pendingLiveText.isEmpty {
+                self.liveText += self.pendingLiveText
+                self.pendingLiveText = ""
+            }
+        }
+    }
+
+    private func flushLiveTextNow() {
+        liveFlushTask?.cancel()
+        liveFlushTask = nil
+        if !pendingLiveText.isEmpty {
+            liveText += pendingLiveText
+            pendingLiveText = ""
+        }
+    }
 
     init(session: Session) {
         self.session = session
@@ -84,6 +113,7 @@ final class SessionViewModel {
             content: text,
             timestamp: ISO8601DateFormatter().string(from: .now)
         ))
+        rebuildDisplayItems()
         socket.prompt(sessionId: session.id, content: text, user: ServerConfig.shared.userName)
     }
 
@@ -140,10 +170,12 @@ final class SessionViewModel {
             entries = newEntries
             liveEntries.removeAll()
             localEchoIds.removeAll()
+            rebuildDisplayItems()
 
         case .transcriptHistory(let id, let older) where id == session.id:
             let known = Set(entries.map(\.id))
             entries.insert(contentsOf: older.filter { !known.contains($0.id) }, at: 0)
+            rebuildDisplayItems()
 
         case .transcriptAppend(let id, let appended) where id == session.id:
             upsert(appended)
@@ -156,10 +188,14 @@ final class SessionViewModel {
                             && $0.toolUseId == live.toolUseId)
                 }
             }
+            rebuildDisplayItems()
             // A mid-run assistant block that lands as a durable entry must be
             // stripped from the live bubble (it would render twice otherwise),
             // and remembered so a stream_text that arrives AFTER the append is
-            // dropped instead of re-adding the block.
+            // dropped instead of re-adding the block. Flush the coalescing
+            // buffer first so a block split across flushed + pending text
+            // still matches.
+            flushLiveTextNow()
             for entry in appended where entry.isAssistant && !entry.text.isEmpty {
                 liveText = liveText.replacingOccurrences(of: entry.text, with: "")
                 landedStreamTexts.append(entry.text)
@@ -171,18 +207,22 @@ final class SessionViewModel {
             }
 
         case .streamStart(let id) where id == session.id:
+            liveFlushTask?.cancel()
+            liveFlushTask = nil
+            pendingLiveText = ""
             liveText = ""
             liveEntries = []
             landedStreamTexts = []
             isStreaming = true
             streamEnded = false
+            rebuildDisplayItems()
 
         case .streamText(let id, let text) where id == session.id:
             isStreaming = true
             if let landed = landedStreamTexts.firstIndex(of: text) {
                 landedStreamTexts.remove(at: landed)
             } else {
-                liveText += text
+                appendLiveText(text)
             }
 
         case .streamEntry(let id, let entry) where id == session.id:
@@ -192,15 +232,18 @@ final class SessionViewModel {
             } else {
                 liveEntries.append(entry)
             }
+            rebuildDisplayItems()
 
         case .streamDone(let id) where id == session.id:
             streamEnded = true
+            flushLiveTextNow()
 
         case .sessionStatus(let id, let running) where id == session.id:
             isRunning = running
             if !running {
                 streamEnded = true
                 isStreaming = false
+                flushLiveTextNow()
                 // liveText is NOT cleared here: the durable entry usually lands
                 // via transcript_append a beat later (1s file watcher) and the
                 // strip there clears it — wiping now blinks the reply out.
@@ -240,7 +283,12 @@ final class SessionViewModel {
         }
     }
 
-    var displayItems: [DisplayItem] {
+    /// Stored, not computed: rebuilt only when entries/liveEntries mutate.
+    /// As a computed property it re-ran (dictionary builds and all) on every
+    /// body evaluation — including each ~8Hz liveText flush mid-stream.
+    private(set) var displayItems: [DisplayItem] = []
+
+    private func rebuildDisplayItems() {
         // Durable file-ordered entries first, then the ephemeral live tail.
         var all = entries
         let knownIds = Set(entries.map(\.id))
@@ -271,7 +319,7 @@ final class SessionViewModel {
                 items.append(.entry(entry))
             }
         }
-        return items
+        displayItems = items
     }
 
     private func upsert(_ incoming: [TranscriptEntry]) {

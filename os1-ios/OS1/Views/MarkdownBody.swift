@@ -12,7 +12,7 @@ struct MarkdownBody: View {
     }
 
     var body: some View {
-        let blocks = MarkdownBlock.parse(text)
+        let blocks = MarkdownParseCache.parse(text)
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 blockView(block)
@@ -248,5 +248,27 @@ enum MarkdownBlock {
         let rest = line.dropFirst(digits.count)
         guard rest.hasPrefix(". ") || rest.hasPrefix(") ") else { return nil }
         return String(rest.dropFirst(2))
+    }
+}
+
+/// Parsed-block memo. Rows re-enter the lazy stack constantly while
+/// scrolling and their text never changes, so parsing once per unique text
+/// turns every re-appearance into a dictionary hit. (The streaming bubble's
+/// growing text misses by design — it's bounded by the ~8Hz flush.)
+@MainActor
+enum MarkdownParseCache {
+    private static var blocks: [String: [MarkdownBlock]] = [:]
+    private static var order: [String] = []
+
+    static func parse(_ text: String) -> [MarkdownBlock] {
+        if let hit = blocks[text] { return hit }
+        let parsed = MarkdownBlock.parse(text)
+        blocks[text] = parsed
+        order.append(text)
+        if order.count > 400 {
+            for key in order.prefix(100) { blocks.removeValue(forKey: key) }
+            order.removeFirst(100)
+        }
+        return parsed
     }
 }
