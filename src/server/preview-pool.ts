@@ -418,15 +418,21 @@ async function poolRestartDev(c: PoolContainer): Promise<void> {
   await launchDaytonaDev(c);
 }
 
-/** (Re)launch the dev server inside a daytona sandbox, detached (setsid +
- *  fully closed fds so the orphaned tree survives the exec returning). */
+/** (Re)launch the dev server inside a daytona sandbox. MUST go through a
+ *  Daytona process session with runAsync — plain-exec children are reaped
+ *  when the exec ends (verified live: setsid-orphaned dev servers died a
+ *  couple of minutes after passing the ready gate). */
 async function launchDaytonaDev(c: PoolContainer): Promise<void> {
   const env = `WEBAPP_PORT=${CONTAINER_PORT} BACKSTAGE_BOOT_MODE=snapshot-restore${c.previewUrl ? ` PREVIEW_URL=${c.previewUrl}` : ""}`;
-  await poolExec(
-    c,
-    `export PATH="/usr/bin:$HOME/.bun/bin:$HOME/.local/bin:$PATH" && ${BOOT_PREP} && (${env} setsid bash .opensession/start.sh > /tmp/boot.log 2>&1 < /dev/null &) && sleep 1`,
-    30_000,
-  );
+  const script = `export PATH="/usr/bin:$HOME/.bun/bin:$HOME/.local/bin:$PATH" && ${BOOT_PREP} && ${env} bash .opensession/start.sh > /tmp/boot.log 2>&1`;
+  const b64 = Buffer.from(script, "utf-8").toString("base64");
+  const sbx = await daytonaSbx(c.name);
+  const sid = `bks-preview-dev-${Date.now().toString(36)}`;
+  await sbx.process.createSession(sid);
+  await sbx.process.executeSessionCommand(sid, {
+    command: `bash -c 'echo ${b64} | base64 -d | bash'`,
+    runAsync: true,
+  } as never);
 }
 
 /** A free host port in the webapp dev range, so httpsPortFor(+6000) applies. */
