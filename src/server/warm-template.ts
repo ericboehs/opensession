@@ -341,7 +341,7 @@ async function doRefresh(repoId: string, force: boolean): Promise<void> {
       await $`git -C ${dir} rev-parse --short origin/${repo.defaultBranch}`.nothrow().text()
     ).trim();
     if (!sha) return void (await fail(`can't resolve origin/${repo.defaultBranch}`));
-    if (!force && prev?.ok && prev.sha === sha && existsSync(manifestFile(repoId))) {
+    if (!force && prev?.ok && prev.sha === sha && templateDepsPresent(repoId, dir)) {
       return; // already warm at this sha
     }
     console.log(`[warm-template] ${repoId}: refreshing template to ${sha} (${dir})`);
@@ -412,6 +412,28 @@ async function doRefresh(repoId: string, force: boolean): Promise<void> {
     try {
       unlinkSync(refreshLockFile(repoId));
     } catch {}
+  }
+}
+
+/**
+ * Do the template's manifest dep trees actually exist on disk? A recreated
+ * template worktree (an external cleanup deleted the original — the hourly
+ * closed-worktree cron did exactly that, 180 times, until it learned to skip
+ * `-warm-template`) satisfies the sha check while carrying zero node_modules;
+ * treating that as warm wedged the template empty forever and produced husk
+ * spares. Never trust state.ok without the trees behind it.
+ */
+function templateDepsPresent(repoId: string, dir: string): boolean {
+  const mf = manifestFile(repoId);
+  if (!existsSync(mf)) return false;
+  try {
+    const entries = seedableManifest(readFileSync(mf, "utf-8").split("\n"));
+    return (
+      entries.length > 0 &&
+      entries.every((e) => existsSync(join(dir, e.replace(/\/$/, ""))))
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -553,6 +575,19 @@ function listSpares(repo: Repo): string[] {
   }
 }
 
+/** A spare is intact when every tree its .spare-paths lists is present. */
+function spareIntact(spare: string): boolean {
+  try {
+    const rels = readFileSync(join(spare, SPARE_PATHS_FILE), "utf-8")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    return rels.length > 0 && rels.every((rel) => existsSync(join(spare, rel)));
+  } catch {
+    return false;
+  }
+}
+
 function claimSpare(repo: Repo): string | null {
   for (const spare of listSpares(repo)) {
     const claimed = `${spare}.claimed-${Math.random().toString(36).slice(2, 8)}`;
@@ -597,10 +632,11 @@ async function doReplenish(repo: Repo): Promise<void> {
     // Template mid-rewrite: don't link from a tree being reset. The
     // post-refresh rotate (or the next sweep tick) picks this back up.
     if (refreshLockHeld(repo.id) || refreshing.has(repo.id)) return;
-    // Unclaimed spares from an older template link outdated deps — drop them
-    // so sessions start current; the loop below rebuilds fresh ones.
+    // Unclaimed spares from an older template link outdated deps, and husk
+    // spares (built while the template was missing its trees) seed nothing —
+    // drop both so sessions start current; the loop below rebuilds fresh ones.
     for (const p of listSpares(repo)) {
-      if (!p.includes(`spare-${state.sha}-`)) {
+      if (!p.includes(`spare-${state.sha}-`) || !spareIntact(p)) {
         try {
           rmSync(p, { recursive: true, force: true });
         } catch {}
@@ -619,7 +655,12 @@ async function doReplenish(repo: Repo): Promise<void> {
       mkdirSync(building, { recursive: true });
       for (const rel of entries) {
         const src = join(state.dir, rel);
-        if (!existsSync(src)) continue;
+        // A missing tree means the template is gutted despite state.ok —
+        // building a spare anyway ships an empty husk that seeds nothing.
+        // Abort; the sweep's templateDepsPresent check forces a re-refresh.
+        if (!existsSync(src)) {
+          throw new Error(`template tree ${rel} missing on disk — refresh required`);
+        }
         const dst = join(building, rel);
         mkdirSync(dirname(dst), { recursive: true });
         await $`cp -al ${src} ${dst}`.quiet();
@@ -648,7 +689,12 @@ async function sweepWarmTemplates(): Promise<void> {
     if (!cfg.enabled) continue;
     const state = warmTemplateState(repo.id);
     const ageMs = state?.refreshedAt ? Date.now() - Date.parse(state.refreshedAt) : Infinity;
-    const due = !state?.ok || ageMs > cfg.intervalHours * 3_600_000;
+    const due =
+      !state?.ok ||
+      ageMs > cfg.intervalHours * 3_600_000 ||
+      // ok-but-gutted (template deleted/recreated externally): refresh now
+      // rather than serving cold seeds until the interval elapses.
+      !templateDepsPresent(repo.id, state.dir);
     if (due) {
       // Serialized: one template rebuild at a time.
       await refreshWarmTemplate(repo.id).catch((e) =>
