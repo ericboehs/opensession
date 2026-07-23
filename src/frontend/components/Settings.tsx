@@ -29,13 +29,15 @@ import {
 	type TurnActivityPref,
 } from "../lib/turn-activity";
 import {
-	getSendKeyPref,
-	setSendKeyPref,
-	onSendKeyChanged,
 	MOD_ENTER_LABEL,
 	MOD_ENTER_GLYPH,
 	type SendKeyPref,
 } from "../lib/send-key";
+import {
+	getSendKeyPref,
+	setSendKeyPref,
+	onSendKeyChanged,
+} from "../lib/send-key-pref";
 import {
 	getBusySendPrefs,
 	setBusySendPref,

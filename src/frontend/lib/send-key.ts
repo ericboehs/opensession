@@ -1,35 +1,8 @@
-// "Send messages with" — whether Enter sends in the composer (default, with
-// Shift+Enter for new lines) or ⌘/Ctrl+Enter sends (plain Enter inserts a new
-// line). Stored per-browser in localStorage like the theme: it's a keyboard
-// habit, not per-user cloud state.
+// Pure helpers for the "Send messages with" preference: key-combo matching
+// and platform-aware labels. Deliberately side-effect-free (unit-tested) —
+// the stored per-user preference itself lives in lib/send-key-pref.
 
 export type SendKeyPref = "enter" | "mod-enter";
-
-const KEY = "opensession-send-key";
-const CHANGE_EVENT = "opensession-send-key-changed";
-
-export function getSendKeyPref(): SendKeyPref {
-	return localStorage.getItem(KEY) === "mod-enter" ? "mod-enter" : "enter";
-}
-
-export function setSendKeyPref(pref: SendKeyPref) {
-	// "enter" is the default, so its absence is the stored form.
-	if (pref === "enter") localStorage.removeItem(KEY);
-	else localStorage.setItem(KEY, pref);
-	window.dispatchEvent(new Event(CHANGE_EVENT));
-}
-
-export function onSendKeyChanged(handler: () => void): () => void {
-	window.addEventListener(CHANGE_EVENT, handler);
-	return () => window.removeEventListener(CHANGE_EVENT, handler);
-}
-
-// Mirror changes made in another tab (storage events don't fire same-tab).
-if (typeof window !== "undefined") {
-	window.addEventListener("storage", (e) => {
-		if (e.key === KEY) window.dispatchEvent(new Event(CHANGE_EVENT));
-	});
-}
 
 const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
@@ -39,14 +12,14 @@ export const MOD_ENTER_LABEL = isApple ? "⌘ Enter" : "Ctrl Enter";
 /** Compact glyph form for inline hints ("⌘↩" / "Ctrl ↩"). */
 export const MOD_ENTER_GLYPH = isApple ? "⌘↩" : "Ctrl ↩";
 
-export function sendKeyLabel(pref: SendKeyPref = getSendKeyPref()): string {
+export function sendKeyLabel(pref: SendKeyPref): string {
 	return pref === "mod-enter" ? MOD_ENTER_LABEL : "Enter";
 }
 
 /** True when this keydown should send under the given preference. */
 export function isSendCombo(
 	e: { key: string; shiftKey: boolean; metaKey: boolean; ctrlKey: boolean },
-	pref: SendKeyPref = getSendKeyPref(),
+	pref: SendKeyPref,
 ): boolean {
 	if (e.key !== "Enter") return false;
 	if (pref === "mod-enter") return e.metaKey || e.ctrlKey;

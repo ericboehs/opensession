@@ -20,12 +20,8 @@ import {
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { Modal } from "../ui/modal";
-import {
-  getSendKeyPref,
-  onSendKeyChanged,
-  isSendCombo,
-  sendKeyLabel,
-} from "../lib/send-key";
+import { isSendCombo, sendKeyLabel } from "../lib/send-key";
+import { getSendKeyPref, onSendKeyChanged } from "../lib/send-key-pref";
 import { VoiceInput } from "./VoiceInput";
 import { getBusySendPrefs, onBusySendChanged } from "../lib/busy-send-pref";
 import { getVimModePref, onVimModeChanged } from "../lib/vim-pref";
