@@ -251,8 +251,52 @@ export const OPENCODE_BIN =
   Bun.which("opencode") ||
   `${HOME}/.nvm/versions/node/v20.20.0/bin/opencode`;
 
+// Source-verified floor: anomalyco/opencode@fa95a61c4 first classified
+// absolute paths as file plugins, and v1.3.8 is the first release containing it.
+export const LOCAL_OPENCODE_MIN_VERSION = "1.3.8";
+
 function executableAvailable(path: string): boolean {
   return path.includes("/") ? existsSync(path) : !!Bun.which(path);
+}
+
+function versionTuple(value: string): [number, number, number] | undefined {
+  const match = value.match(/\bv?(\d+)\.(\d+)\.(\d+)\b/i);
+  if (!match) return;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+export function assertLocalOpencodeVersion(found: string, bin = OPENCODE_BIN): void {
+  const current = versionTuple(found);
+  const minimum = versionTuple(LOCAL_OPENCODE_MIN_VERSION)!;
+  const supported =
+    current &&
+    (current[0] > minimum[0] ||
+      (current[0] === minimum[0] &&
+        (current[1] > minimum[1] ||
+          (current[1] === minimum[1] && current[2] >= minimum[2]))));
+  if (supported) return;
+
+  const shown = found.trim() || "an unreadable version";
+  throw new Error(
+    `OPENSESSION_PROFILE=local requires OpenCode >= ${LOCAL_OPENCODE_MIN_VERSION} for local bridge plugins, ` +
+      `but ${bin} reports ${shown}. Update OpenCode or point OPENSESSION_OPENCODE_BIN at a newer binary.`,
+  );
+}
+
+function installedOpencodeVersion(): string {
+  const result = Bun.spawnSync([OPENCODE_BIN, "--version"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const stdout = new TextDecoder().decode(result.stdout).trim();
+  const stderr = new TextDecoder().decode(result.stderr).trim();
+  const output = stdout || stderr;
+  if (result.exitCode === 0 && output) return output;
+  const detail = stderr || stdout || `exit code ${result.exitCode}`;
+  throw new Error(
+    `OPENSESSION_PROFILE=local could not read the OpenCode version from ${OPENCODE_BIN} --version (${detail}). ` +
+      `Install OpenCode >= ${LOCAL_OPENCODE_MIN_VERSION} or point OPENSESSION_OPENCODE_BIN at a newer binary.`,
+  );
 }
 
 /** Fail at local-profile startup instead of deferring missing engine binaries
@@ -265,6 +309,7 @@ export function assertLocalEngineRuntime(providers: LocalEngineProvider[]): void
         "Install it with `npm i -g opencode-ai` or set OPENSESSION_OPENCODE_BIN.",
     );
   }
+  assertLocalOpencodeVersion(installedOpencodeVersion());
   if (providers.includes("anthropic")) {
     if (!executableAvailable(CLAUDE_CODE_BIN)) {
       throw new Error(

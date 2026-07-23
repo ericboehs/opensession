@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
+  assertLocalOpencodeVersion,
   ensureLocalMeridianReady,
+  LOCAL_OPENCODE_MIN_VERSION,
   meridianProxyBaseUrl,
   meridianStackInfo,
   latestTurnAssistant,
@@ -33,6 +35,31 @@ function serverEntry(): OpencodeServerEntry {
 }
 
 describe("local engine runtime", () => {
+  it("accepts the first source-verified OpenCode path-plugin release and newer versions", () => {
+    expect(LOCAL_OPENCODE_MIN_VERSION).toBe("1.3.8");
+    expect(() => assertLocalOpencodeVersion("1.3.8", "/usr/local/bin/opencode")).not.toThrow();
+    expect(() => assertLocalOpencodeVersion("opencode v1.18.4", "/usr/local/bin/opencode")).not.toThrow();
+    expect(() => assertLocalOpencodeVersion("2.0.0-beta.1", "/usr/local/bin/opencode")).not.toThrow();
+  });
+
+  it("rejects OpenCode versions that cannot load absolute path plugins", () => {
+    expect(() => assertLocalOpencodeVersion("1.3.7", "/opt/homebrew/bin/opencode")).toThrow(
+      "requires OpenCode >= 1.3.8",
+    );
+    expect(() => assertLocalOpencodeVersion("1.2.27", "/opt/homebrew/bin/opencode")).toThrow(
+      "requires OpenCode >= 1.3.8",
+    );
+    expect(() => assertLocalOpencodeVersion("1.2.27", "/opt/homebrew/bin/opencode")).toThrow(
+      "OPENSESSION_OPENCODE_BIN",
+    );
+  });
+
+  it("rejects unreadable OpenCode version output", () => {
+    expect(() => assertLocalOpencodeVersion("unknown", "opencode-custom")).toThrow(
+      "opencode-custom reports unknown",
+    );
+  });
+
   it("uses the allocated Meridian port instead of a placeholder", () => {
     expect(meridianProxyBaseUrl("4567")).toBe("http://127.0.0.1:4567");
     expect(() => meridianProxyBaseUrl(undefined)).toThrow("Invalid Meridian proxy port");

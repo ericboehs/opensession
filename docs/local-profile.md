@@ -19,9 +19,12 @@ The profile is deliberately smaller than a hosted installation:
 
 ## Prerequisites
 
-Install [Bun](https://bun.sh), Git, [OpenCode](https://opencode.ai/docs), and at
-least one of the Claude Code or Codex CLIs. Log into the subscriptions you want
-to use with their own CLIs:
+Install [Bun](https://bun.sh), Git, [OpenCode](https://opencode.ai/docs) 1.3.8
+or newer, and at least one of the Claude Code or Codex CLIs. OpenCode 1.3.8 is
+the oldest source-verified release that can load the bundled bridge from its
+absolute path. Update OpenCode, or set `OPENSESSION_OPENCODE_BIN` to a newer
+binary, if an older copy is first on `PATH`. Log into the subscriptions you
+want to use with their own CLIs:
 
 ```sh
 claude
