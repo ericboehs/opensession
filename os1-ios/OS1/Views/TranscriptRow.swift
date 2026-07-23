@@ -1,24 +1,31 @@
 import SwiftUI
 
-/// Renders one transcript entry according to its type: user prompts as tinted
-/// right-aligned bubbles, assistant text as left-aligned markdown, tool
-/// activity and system events as compact caption rows.
+/// Renders one display item: user prompts as tinted right-aligned bubbles,
+/// assistant text as left-aligned markdown, tool calls as compact collapsible
+/// rows (summary line; tap to expand input + result), system events as
+/// centered captions.
 struct TranscriptRow: View {
-    let entry: TranscriptEntry
+    let item: SessionViewModel.DisplayItem
 
     var body: some View {
-        if entry.isUser {
-            userBubble
-        } else if entry.isAssistant {
-            assistantBubble
-        } else if entry.isTool {
-            toolRow
-        } else {
-            systemRow
+        switch item {
+        case .toolCall(let use, let result):
+            ToolCallRow(use: use, result: result)
+        case .entry(let entry):
+            if entry.isUser {
+                userBubble(entry)
+            } else if entry.isAssistant {
+                assistantBubble(entry)
+            } else if entry.isTool {
+                // Orphan tool_result — same compact treatment.
+                ToolCallRow(use: nil, result: entry)
+            } else {
+                systemRow(entry)
+            }
         }
     }
 
-    private var userBubble: some View {
+    private func userBubble(_ entry: TranscriptEntry) -> some View {
         HStack {
             Spacer(minLength: 48)
             Text(entry.text)
@@ -26,13 +33,14 @@ struct TranscriptRow: View {
                 .padding(.vertical, 8)
                 .foregroundStyle(.white)
                 .background(.tint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
-    private var assistantBubble: some View {
+    private func assistantBubble(_ entry: TranscriptEntry) -> some View {
         HStack {
-            MarkdownText(entry.text)
+            MarkdownBody(entry.text)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(
@@ -44,35 +52,7 @@ struct TranscriptRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var toolRow: some View {
-        HStack(spacing: 6) {
-            Image(systemName: entry.type == "tool_use" ? "wrench.and.screwdriver" : "arrow.turn.down.right")
-                .font(.caption2)
-            Text(toolSummary)
-                .lineLimit(2)
-            if entry.isError == true {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-            }
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 12)
-    }
-
-    private var toolSummary: String {
-        if entry.type == "tool_use" {
-            return entry.toolName ?? "Tool call"
-        }
-        let text = entry.text
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\n", with: " ")
-        return text.isEmpty ? "Result" : String(text.prefix(120))
-    }
-
-    private var systemRow: some View {
+    private func systemRow(_ entry: TranscriptEntry) -> some View {
         Text(entry.text)
             .font(.caption2)
             .foregroundStyle(.tertiary)
@@ -82,22 +62,164 @@ struct TranscriptRow: View {
     }
 }
 
+// MARK: - Tool calls
+
+/// One tool call: a caption summary row that expands to the pretty-printed
+/// input and the (clamped) result output. Raw JSON never shows collapsed.
+struct ToolCallRow: View {
+    let use: TranscriptEntry?
+    let result: TranscriptEntry?
+
+    @State private var expanded = false
+
+    private var isError: Bool {
+        use?.isError == true || result?.isError == true
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) { expanded.toggle() }
+            } label: {
+                summaryRow
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                detail
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 12)
+    }
+
+    private var summaryRow: some View {
+        HStack(spacing: 6) {
+            Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.tertiary)
+            Image(systemName: "wrench.and.screwdriver")
+                .font(.caption2)
+            Text(title)
+                .lineLimit(1)
+            if result == nil, use != nil {
+                ProgressView()
+                    .controlSize(.mini)
+            }
+            if isError {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .contentShape(Rectangle())
+    }
+
+    /// A friendly one-liner: the server's summary ("Read path", "$ cmd") when
+    /// it says more than "Using X", else a cleaned tool name plus its most
+    /// interesting input value.
+    private var title: String {
+        guard let use else {
+            let text = firstLine(result?.text ?? "")
+            return text.isEmpty ? "Tool result" : text
+        }
+        let summary = firstLine(use.text)
+        let name = cleanedToolName(use.toolName ?? "tool")
+        if !summary.isEmpty && summary != "Using \(use.toolName ?? "")" {
+            return summary
+        }
+        if let hint = inputHint(use.toolInput) {
+            return "\(name): \(hint)"
+        }
+        return name
+    }
+
+    /// "mcp__oc__linear_list_issues" → "linear list_issues"; "Bash" stays.
+    private func cleanedToolName(_ raw: String) -> String {
+        var name = raw
+        for prefix in ["mcp__oc__", "mcp__"] where name.hasPrefix(prefix) {
+            name = String(name.dropFirst(prefix.count))
+        }
+        return name.replacingOccurrences(of: "__", with: " ")
+    }
+
+    /// The single most informative input value, for tools the server has no
+    /// summary for (MCP tools mostly).
+    private func inputHint(_ input: JSONValue?) -> String? {
+        guard case .object(let dict)? = input else { return nil }
+        for key in ["command", "filePath", "file_path", "path", "query", "pattern", "url", "prompt", "question", "title", "name"] {
+            if let value = dict[key]?.stringValue, !value.isEmpty {
+                return String(firstLine(value).prefix(60))
+            }
+        }
+        return nil
+    }
+
+    private func firstLine(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: "\n").first ?? ""
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let input = use?.toolInput, case .object(let dict) = input, !dict.isEmpty {
+                codeBox(label: "Input", text: input.pretty.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            if let result {
+                let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                codeBox(
+                    label: result.contentClamped == true ? "Result (truncated)" : "Result",
+                    text: text.isEmpty ? "(empty)" : String(text.prefix(4000))
+                )
+            }
+        }
+        .padding(.leading, 14)
+    }
+
+    private func codeBox(label: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(text)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .lineLimit(24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(8)
+            .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+}
+
+// MARK: - Streaming bubble
+
 /// Assistant text streaming in over `stream_text` frames, before the durable
 /// transcript entry exists.
 struct StreamingBubble: View {
     let text: String
+    var live = true
 
     var body: some View {
         HStack {
-            HStack(alignment: .bottom, spacing: 4) {
+            VStack(alignment: .leading, spacing: 4) {
                 if text.isEmpty {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    MarkdownText(text)
+                    MarkdownBody(text)
                 }
-                Text("▍")
-                    .foregroundStyle(.tint)
+                if live {
+                    Text("▍")
+                        .foregroundStyle(.tint)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -108,29 +230,5 @@ struct StreamingBubble: View {
             Spacer(minLength: 48)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-/// Best-effort markdown: inline styling via AttributedString (bold, italics,
-/// code, links); falls back to plain text. Full block rendering (code fences,
-/// lists) is a later milestone.
-struct MarkdownText: View {
-    let text: String
-
-    init(_ text: String) {
-        self.text = text
-    }
-
-    var body: some View {
-        Text(attributed)
-            .textSelection(.enabled)
-    }
-
-    private var attributed: AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(
-            interpretedSyntax: .inlineOnlyPreservingWhitespace
-        )
-        return (try? AttributedString(markdown: text, options: options))
-            ?? AttributedString(text)
     }
 }

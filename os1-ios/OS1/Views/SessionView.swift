@@ -12,9 +12,9 @@ struct SessionView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 10) {
-                    ForEach(viewModel.entries) { entry in
-                        TranscriptRow(entry: entry)
-                            .id(entry.id)
+                    ForEach(viewModel.displayItems) { item in
+                        TranscriptRow(item: item)
+                            .id(item.id)
                     }
                     if viewModel.isStreaming || !viewModel.liveText.isEmpty {
                         StreamingBubble(text: viewModel.liveText)
@@ -142,7 +142,7 @@ struct SessionView: View {
             target = "ask-\(viewModel.pendingQuestion!.id)"
         } else if viewModel.isStreaming || !viewModel.liveText.isEmpty {
             target = "live-stream"
-        } else if let last = viewModel.entries.last {
+        } else if let last = viewModel.displayItems.last {
             target = last.id
         } else {
             return

@@ -31,6 +31,12 @@ final class SessionViewModel {
     private var streamEnded = true
     /// Optimistic local user messages, removed once the server echoes them back.
     private var localEchoIds: Set<String> = []
+    /// Assistant blocks that already landed as transcript entries. Opencode
+    /// streams whole completed blocks, and the durable entry can beat the
+    /// stream_text broadcast (or vice versa) — without this the same text
+    /// shows twice: in the transcript AND in the live bubble. Mirrors the
+    /// web viewer's landedStreamTextRef.
+    private var landedStreamTexts: [String] = []
 
     init(session: Session) {
         self.session = session
@@ -120,19 +126,33 @@ final class SessionViewModel {
 
         case .transcriptAppend(let id, let appended) where id == session.id:
             upsert(appended)
-            if streamEnded {
+            // A mid-run assistant block that lands as a durable entry must be
+            // stripped from the live bubble (it would render twice otherwise),
+            // and remembered so a stream_text that arrives AFTER the append is
+            // dropped instead of re-adding the block.
+            for entry in appended where entry.isAssistant && !entry.text.isEmpty {
+                liveText = liveText.replacingOccurrences(of: entry.text, with: "")
+                landedStreamTexts.append(entry.text)
+            }
+            landedStreamTexts = Array(landedStreamTexts.suffix(30))
+            if liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 liveText = ""
-                isStreaming = false
+                if streamEnded { isStreaming = false }
             }
 
         case .streamStart(let id) where id == session.id:
             liveText = ""
+            landedStreamTexts = []
             isStreaming = true
             streamEnded = false
 
         case .streamText(let id, let text) where id == session.id:
             isStreaming = true
-            liveText += text
+            if let landed = landedStreamTexts.firstIndex(of: text) {
+                landedStreamTexts.remove(at: landed)
+            } else {
+                liveText += text
+            }
 
         case .streamEntry(let id, let entry) where id == session.id:
             upsert([entry])
@@ -144,8 +164,10 @@ final class SessionViewModel {
             isRunning = running
             if !running {
                 streamEnded = true
-                liveText = ""
                 isStreaming = false
+                // liveText is NOT cleared here: the durable entry usually lands
+                // via transcript_append a beat later (1s file watcher) and the
+                // strip there clears it — wiping now blinks the reply out.
             }
 
         case .queueUpdate(let id, let count) where id == session.id:
@@ -163,6 +185,50 @@ final class SessionViewModel {
         default:
             break
         }
+    }
+
+    /// Transcript entries prepared for display: each tool_use is merged with
+    /// its tool_result (matched on toolUseId, or the server's `tr-<id>`
+    /// convention) into one collapsible item; orphan results stay standalone.
+    enum DisplayItem: Identifiable, Equatable {
+        case entry(TranscriptEntry)
+        case toolCall(use: TranscriptEntry, result: TranscriptEntry?)
+
+        var id: String {
+            switch self {
+            case .entry(let entry): entry.id
+            case .toolCall(let use, _): "tool-\(use.id)"
+            }
+        }
+    }
+
+    var displayItems: [DisplayItem] {
+        var resultByUseId: [String: TranscriptEntry] = [:]
+        for entry in entries where entry.type == "tool_result" {
+            let key = entry.toolUseId ?? String(entry.id.dropFirst("tr-".count))
+            if resultByUseId[key] == nil { resultByUseId[key] = entry }
+        }
+        let useIds = Set(
+            entries.filter { $0.type == "tool_use" }.map { $0.toolUseId ?? $0.id }
+        )
+        var items: [DisplayItem] = []
+        for entry in entries {
+            switch entry.type {
+            case "tool_use":
+                let key = entry.toolUseId ?? entry.id
+                items.append(.toolCall(use: entry, result: resultByUseId[key]))
+            case "tool_result":
+                // Only orphans render standalone — a result whose use exists
+                // anywhere in the transcript is folded into that item.
+                let key = entry.toolUseId ?? String(entry.id.dropFirst("tr-".count))
+                if !useIds.contains(key) {
+                    items.append(.entry(entry))
+                }
+            default:
+                items.append(.entry(entry))
+            }
+        }
+        return items
     }
 
     private func upsert(_ incoming: [TranscriptEntry]) {
