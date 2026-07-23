@@ -16454,8 +16454,8 @@ html[data-theme="light"] .palette-card .palette-create {
  * dense session list. The diagonal-br delays are scaled with the shortened
  * duration (0.82×) so the wave keeps its shape and just runs quicker. */
 .pixel-spinner.sidebar-spinner .pixel {
-  width: 4px;
-  height: 4px;
+  width: 3.5px;
+  height: 3.5px;
   animation-duration: 1.15s;
 }
 .pixel-spinner.sidebar-spinner.diagonal-br .pixel:nth-child(2),
