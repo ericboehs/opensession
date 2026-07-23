@@ -1,0 +1,124 @@
+name: Release OS1 for iOS (TestFlight)
+
+# Builds, signs and uploads the native SwiftUI OS1 iOS client to TestFlight
+# whenever iOS code lands on master. Signing mirrors the manual path that works
+# for this team: cloud-managed *distribution* signing is forbidden for our App
+# Store Connect key's role, so we import a stored Apple Distribution cert + the
+# "OS1 App Store" provisioning profile and sign manually (development/automatic
+# signing is NOT used here). See os1-mac-release.yml for the sibling Mac shell.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "os1-ios/**"
+      - ".github/workflows/os1-ios-testflight.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: os1-ios-testflight
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: os1-ios
+
+jobs:
+  testflight:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Import Apple Distribution certificate
+        uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
+        with:
+          p12-file-base64: ${{ secrets.OS1_IOS_DIST_P12_BASE64 }}
+          p12-password: ${{ secrets.OS1_IOS_DIST_P12_PASSWORD }}
+
+      - name: Install App Store provisioning profile
+        env:
+          PROFILE_BASE64: ${{ secrets.OS1_IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          test -n "$PROFILE_BASE64"
+          PROFILES="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES"
+          printf '%s' "$PROFILE_BASE64" | base64 -D > "$PROFILES/OS1_App_Store.mobileprovision"
+          # Sanity: it must be the App Store profile for our bundle id.
+          security cms -D -i "$PROFILES/OS1_App_Store.mobileprovision" > /tmp/os1-ios-profile.plist
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' /tmp/os1-ios-profile.plist | grep -q 'dev.tella.os1'
+
+      - name: Install App Store Connect API key
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          test -n "$ASC_KEY_P8_BASE64"
+          KEYS="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$KEYS"
+          printf '%s' "$ASC_KEY_P8_BASE64" | base64 -D > "$KEYS/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: Compute build number
+        id: build
+        run: |
+          # Builds 1 and 2 were uploaded manually before this pipeline existed;
+          # offset by 2 so CI build numbers stay strictly increasing.
+          BN=$(( 2 + GITHUB_RUN_NUMBER ))
+          echo "number=$BN" >> "$GITHUB_OUTPUT"
+          echo "iOS build number: $BN"
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project OS1.xcodeproj \
+            -scheme OS1 \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/OS1.xcarchive" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="OS1 App Store" \
+            DEVELOPMENT_TEAM=6GUXT43C8B \
+            CURRENT_PROJECT_VERSION=${{ steps.build.outputs.number }}
+
+      - name: Export signed IPA
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>6GUXT43C8B</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution: Tella HQ Inc. (6GUXT43C8B)</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>dev.tella.os1</key><string>OS1 App Store</string>
+            </dict>
+            <key>destination</key><string>export</string>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/OS1.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcrun altool --upload-app -f "$RUNNER_TEMP/export/OS1.ipa" -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
