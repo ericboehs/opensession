@@ -431,6 +431,301 @@ final class SendDraftTests: XCTestCase {
         XCTAssertTrue(viewModel.queuedItems.isEmpty)
         XCTAssertEqual(socket.deletedQueueIds, ["q1"])
     }
+
+    // MARK: - Delivering hold state (the vanish-then-reappear bug)
+
+    private func sendEmptyQueueUpdate() {
+        let json = #"""
+        {"type":"queue_update","sessionId":"bks-1","queued":[],"steered":[]}
+        """#
+        viewModel.handle(ServerEvent.parse(Data(json.utf8)))
+    }
+
+    /// The core bug: the queue drain broadcasts the EMPTIED queue seconds
+    /// before the delivered prompt lands via the ~1s file watcher. The chip
+    /// must hold as "delivering" across that gap — the message is never
+    /// absent from the UI.
+    func testDrainedChipHoldsAsDeliveringUntilEchoLands() {
+        markRunning()
+        viewModel.draft = "do this next"
+        viewModel.sendDraft()
+        // Server registers the queued item (replaces the local chip).
+        let registered = #"""
+        {"type":"queue_update","sessionId":"bks-1",
+         "queued":[{"id":"q1","content":"do this next","user":"jaap"}],
+         "steered":[]}
+        """#
+        viewModel.handle(ServerEvent.parse(Data(registered.utf8)))
+        // Run ends; the drain empties the queue BEFORE the transcript echo.
+        viewModel.handle(.sessionStatus(sessionId: "bks-1", isRunning: false))
+        sendEmptyQueueUpdate()
+        XCTAssertTrue(viewModel.queuedItems.isEmpty)
+        XCTAssertEqual(
+            viewModel.deliveringItems.map(\.content), ["do this next"],
+            "the message must stay visible while the echo is in flight"
+        )
+        // Echo lands: the delivering chip retires; exactly one copy remains.
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u9", "user", text: "do this next")
+        ]))
+        XCTAssertTrue(viewModel.deliveringItems.isEmpty)
+        XCTAssertEqual(viewModel.entries.map(\.id), ["u9"])
+    }
+
+    /// Race: a queue_update computed before our prompt reached the server
+    /// (run ended in the gap; the prompt went straight to the engine) must
+    /// not wipe the local chip — it holds as delivering until the entry lands.
+    func testLocalChipSurvivesQueueUpdateThatOmitsIt() {
+        markRunning()
+        viewModel.draft = "do this next"
+        viewModel.sendDraft()
+        sendEmptyQueueUpdate()
+        XCTAssertEqual(viewModel.deliveringItems.map(\.content), ["do this next"])
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "do this next")
+        ]))
+        XCTAssertTrue(viewModel.deliveringItems.isEmpty)
+        XCTAssertEqual(viewModel.entries.map(\.id), ["u1"])
+    }
+
+    /// Steered/attributed deliveries land as "[user] content", and a
+    /// multi-message drain joins the batch into ONE user entry — containment
+    /// must retire every chip the entry covers (mirrors the server's own
+    /// steer-receipt reconciliation).
+    func testAttributedAndBatchedEchoRetiresDeliveringChips() {
+        markRunning()
+        viewModel.draft = "first"
+        viewModel.sendDraft()
+        viewModel.draft = "second"
+        viewModel.sendDraft()
+        sendEmptyQueueUpdate()
+        XCTAssertEqual(viewModel.deliveringItems.map(\.content), ["first", "second"])
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "[jaap] first\n\n[jaap] second")
+        ]))
+        XCTAssertTrue(viewModel.deliveringItems.isEmpty)
+    }
+
+    func testDeliveringChipIgnoresUnrelatedUserEntry() {
+        markRunning()
+        viewModel.draft = "mine"
+        viewModel.sendDraft()
+        sendEmptyQueueUpdate()
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "someone else's")
+        ]))
+        XCTAssertEqual(viewModel.deliveringItems.map(\.content), ["mine"])
+    }
+
+    /// A queue_update that re-lists a delivering chip's message (the prompt
+    /// arrived after the drain frame was computed and got queued after all)
+    /// moves it back to a live queue chip instead of duplicating it.
+    func testRequeuedMessageLeavesDeliveringState() {
+        markRunning()
+        viewModel.draft = "do this next"
+        viewModel.sendDraft()
+        sendEmptyQueueUpdate()
+        XCTAssertEqual(viewModel.deliveringItems.count, 1)
+        let requeued = #"""
+        {"type":"queue_update","sessionId":"bks-1",
+         "queued":[{"id":"q1","content":"do this next","user":"jaap"}],
+         "steered":[]}
+        """#
+        viewModel.handle(ServerEvent.parse(Data(requeued.utf8)))
+        XCTAssertTrue(viewModel.deliveringItems.isEmpty)
+        XCTAssertEqual(viewModel.queuedItems.map(\.id), ["q1"])
+    }
+
+    /// A resync's transcript_init is a full snapshot — no upsert runs on it,
+    /// so a delivering chip whose message it already contains (attributed
+    /// form here) must retire there instead of lingering.
+    func testResyncInitRetiresDeliveredChip() {
+        markRunning()
+        viewModel.draft = "do this next"
+        viewModel.sendDraft()
+        sendEmptyQueueUpdate()
+        XCTAssertEqual(viewModel.deliveringItems.count, 1)
+        viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "[jaap] do this next")
+        ], cursor: .empty))
+        XCTAssertTrue(viewModel.deliveringItems.isEmpty)
+        XCTAssertEqual(viewModel.entries.map(\.id), ["u1"])
+    }
+
+    /// Ghost protection: a chip whose echo never comes (deleted from another
+    /// device, server restart) drops once the grace window passes — but not
+    /// a moment before.
+    func testDeliveringChipExpiresOnlyAfterGrace() {
+        markRunning()
+        viewModel.draft = "gone"
+        viewModel.sendDraft()
+        sendEmptyQueueUpdate()
+        XCTAssertEqual(viewModel.deliveringItems.count, 1)
+        viewModel.pruneExpiredDelivering(
+            now: Date().addingTimeInterval(viewModel.deliveringGrace - 5)
+        )
+        XCTAssertEqual(viewModel.deliveringItems.count, 1, "still within the grace window")
+        viewModel.pruneExpiredDelivering(
+            now: Date().addingTimeInterval(viewModel.deliveringGrace + 5)
+        )
+        XCTAssertTrue(viewModel.deliveringItems.isEmpty)
+    }
+
+    /// A re-send of an identical message must not be retired against the OLD
+    /// copy in history: the drain holds it as delivering until ITS echo
+    /// lands. (The whole-history containment scan dropped it immediately and
+    /// blinked the message out — the steering vanish-then-reappear.)
+    func testRepeatedSendHoldsAsDeliveringDespiteIdenticalOldMessage() {
+        viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "continue"),
+            entry("a1", "assistant", text: "done"),
+        ], cursor: .empty))
+        markRunning()
+        viewModel.draft = "continue"
+        viewModel.sendDraft()
+        sendEmptyQueueUpdate()
+        XCTAssertEqual(
+            viewModel.deliveringItems.map(\.content), ["continue"],
+            "the old identical message must not count as this chip's echo"
+        )
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u2", "user", text: "continue")
+        ]))
+        XCTAssertTrue(viewModel.deliveringItems.isEmpty)
+        XCTAssertEqual(viewModel.entries.map(\.id), ["u1", "a1", "u2"])
+    }
+
+    /// Same protection on the resync path: a snapshot that re-lists only
+    /// entries we already hold must not retire a delivering chip — only a
+    /// NEW entry (an id we didn't know) counts as its echo.
+    func testResyncInitKeepsDeliveringChipAgainstOldIdenticalMessage() {
+        viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "continue")
+        ], cursor: .empty))
+        markRunning()
+        viewModel.draft = "continue"
+        viewModel.sendDraft()
+        sendEmptyQueueUpdate()
+        XCTAssertEqual(viewModel.deliveringItems.count, 1)
+        viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "continue")
+        ], cursor: .empty))
+        XCTAssertEqual(
+            viewModel.deliveringItems.map(\.content), ["continue"],
+            "an old identical entry in the snapshot is not this chip's echo"
+        )
+        viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "continue"),
+            entry("u2", "user", text: "[jaap] continue"),
+        ], cursor: .empty))
+        XCTAssertTrue(
+            viewModel.deliveringItems.isEmpty,
+            "the snapshot carrying the NEW echo retires the chip"
+        )
+    }
+
+    /// Echo-before-drain ordering: when the durable entry lands while the
+    /// server still lists the chip as queued, the eventual drain drops the
+    /// chip outright instead of resurrecting a delivered message as a
+    /// "Delivering…" ghost.
+    func testDrainDropsChipWhoseEchoAlreadyLanded() {
+        markRunning()
+        let registered = #"""
+        {"type":"queue_update","sessionId":"bks-1",
+         "queued":[{"id":"q1","content":"do this next","user":"jaap"}],
+         "steered":[]}
+        """#
+        viewModel.handle(ServerEvent.parse(Data(registered.utf8)))
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "[jaap] do this next")
+        ]))
+        XCTAssertEqual(viewModel.queuedItems.map(\.id), ["q1"], "server chips retire only via queue_update")
+        sendEmptyQueueUpdate()
+        XCTAssertTrue(viewModel.deliveringItems.isEmpty)
+        XCTAssertTrue(viewModel.queuedItems.isEmpty)
+    }
+
+    /// The steer flow end-to-end: steered receipt → drain → attributed echo.
+    /// The message must be visible at every step.
+    func testSteeredChipHoldsAcrossDrainUntilEchoLands() {
+        markRunning()
+        let steered = #"""
+        {"type":"queue_update","sessionId":"bks-1","queued":[],
+         "steered":[{"id":"s1","content":"go left","user":"jaap"}]}
+        """#
+        viewModel.handle(ServerEvent.parse(Data(steered.utf8)))
+        XCTAssertEqual(viewModel.steeredItems.map(\.id), ["s1"])
+        sendEmptyQueueUpdate()
+        XCTAssertEqual(viewModel.deliveringItems.map(\.content), ["go left"])
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "[jaap] go left")
+        ]))
+        XCTAssertTrue(viewModel.deliveringItems.isEmpty)
+        XCTAssertEqual(viewModel.entries.map(\.id), ["u1"])
+    }
+
+    // MARK: - Stale-busy sends (bubble ↔ queue reconciliation)
+
+    /// A resync racing the ~1s persist of a just-delivered send must not wipe
+    /// its optimistic bubble — the snapshot doesn't contain the message yet.
+    func testResyncInitKeepsUnlandedOptimisticBubble() {
+        viewModel.draft = "hi there"
+        viewModel.sendDraft()
+        viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [
+            entry("u0", "user", text: "earlier message")
+        ], cursor: .empty))
+        XCTAssertEqual(
+            viewModel.entries.map(\.text), ["earlier message", "hi there"],
+            "the unlanded bubble must survive the snapshot"
+        )
+        // The echo then replaces the preserved bubble without duplication.
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "hi there")
+        ]))
+        XCTAssertEqual(viewModel.entries.map(\.id), ["u0", "u1"])
+    }
+
+    func testResyncInitRetiresLandedOptimisticBubble() {
+        viewModel.draft = "hi there"
+        viewModel.sendDraft()
+        viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "hi there")
+        ], cursor: .empty))
+        XCTAssertEqual(
+            viewModel.entries.map(\.id), ["u1"],
+            "a landed echo must replace the bubble, not join it"
+        )
+    }
+
+    /// The stale-isRunning hole: the client thought the session idle (bubble
+    /// echo), but the server was mid-run and QUEUED the prompt. The bubble
+    /// converts to the server's queue chip — one representation, no thread
+    /// copy for the next resync to wipe — and the message stays visible
+    /// through drain and delivery.
+    func testStaleBusySendConvertsBubbleToChipWhenServerQueuesIt() {
+        viewModel.draft = "do this next"
+        viewModel.sendDraft()
+        XCTAssertEqual(viewModel.entries.map(\.text), ["do this next"])
+        let registered = #"""
+        {"type":"queue_update","sessionId":"bks-1",
+         "queued":[{"id":"q1","content":"do this next","user":"jaap"}],
+         "steered":[]}
+        """#
+        viewModel.handle(ServerEvent.parse(Data(registered.utf8)))
+        XCTAssertTrue(viewModel.entries.isEmpty, "the queue chip now represents the message")
+        XCTAssertEqual(viewModel.queuedItems.map(\.id), ["q1"])
+        // A resync mid-queue has nothing to wipe — the chip carries on.
+        viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [], cursor: .empty))
+        XCTAssertEqual(viewModel.queuedItems.map(\.id), ["q1"])
+        // Drain → delivering hold → attributed echo lands exactly once.
+        sendEmptyQueueUpdate()
+        XCTAssertEqual(viewModel.deliveringItems.map(\.content), ["do this next"])
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "[jaap] do this next")
+        ]))
+        XCTAssertTrue(viewModel.deliveringItems.isEmpty)
+        XCTAssertEqual(viewModel.entries.map(\.id), ["u1"])
+    }
 }
 
 /// Records every outgoing frame; never touches the network.

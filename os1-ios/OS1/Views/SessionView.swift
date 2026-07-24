@@ -191,17 +191,22 @@ struct SessionView: View {
     private var inputBar: some View {
         VStack(alignment: .leading, spacing: 4) {
             // Messages waiting on the current run, each visibly either
+            // delivering (left the server queue, transcript echo in flight),
             // queued (held until the run finishes — steerable/deletable)
             // or steering in (delivering at the next turn boundary).
-            if !viewModel.steeredItems.isEmpty || !viewModel.queuedItems.isEmpty {
+            if !viewModel.deliveringItems.isEmpty || !viewModel.steeredItems.isEmpty
+                || !viewModel.queuedItems.isEmpty {
                 VStack(spacing: 6) {
+                    ForEach(viewModel.deliveringItems) { item in
+                        QueuedMessageChip(item: item, phase: .delivering)
+                    }
                     ForEach(viewModel.steeredItems) { item in
-                        QueuedMessageChip(item: item, steering: true)
+                        QueuedMessageChip(item: item, phase: .steering)
                     }
                     ForEach(viewModel.queuedItems) { item in
                         QueuedMessageChip(
                             item: item,
-                            steering: false,
+                            phase: .queued,
                             onSteer: viewModel.isRunning
                                 ? { viewModel.steerQueued(item) } : nil,
                             onDelete: { viewModel.deleteQueued(item) }
@@ -404,19 +409,31 @@ struct SessionView: View {
 
     /// One message waiting on the current run. "Queued" holds until the run
     /// fully finishes; "Steering" is already committed to deliver at the
-    /// run's next turn boundary (a receipt — no actions left to take).
+    /// run's next turn boundary (a receipt — no actions left to take);
+    /// "Delivering" has left the server queue and is waiting on its
+    /// transcript echo (~1s file watcher) — inert, just kept visible.
     private struct QueuedMessageChip: View {
+        enum Phase { case queued, steering, delivering }
+
         let item: QueueItem
-        let steering: Bool
+        let phase: Phase
         var onSteer: (() -> Void)?
         var onDelete: (() -> Void)?
+
+        private var label: String {
+            switch phase {
+            case .queued: "Queued — after this run"
+            case .steering: "Steering — delivers next turn"
+            case .delivering: "Delivering…"
+            }
+        }
 
         var body: some View {
             HStack(alignment: .center, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(steering ? "Steering — delivers next turn" : "Queued — after this run")
+                    Text(label)
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(steering ? Color.green : Color.orange)
+                        .foregroundStyle(phase == .queued ? Color.orange : Color.green)
                     Text(item.content)
                         .font(.footnote)
                         .lineLimit(2)

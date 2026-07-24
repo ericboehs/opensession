@@ -34,6 +34,15 @@ final class SessionViewModel {
     private(set) var queuedItems: [QueueItem] = []
     /// Steer receipts: delivering into the run at its next turn boundary.
     private(set) var steeredItems: [QueueItem] = []
+    /// Chips the server's queue no longer lists but whose message hasn't
+    /// landed in the transcript yet. The queue drain broadcasts the emptied
+    /// queue BEFORE the delivered prompt reaches the transcript (the ~1s
+    /// file watcher echoes it seconds later) — dropping the chip on that
+    /// queue_update blinks the message out of the UI until the echo
+    /// arrives. Held here (rendered as "Delivering…") until the durable
+    /// user entry retires them; `pruneExpiredDelivering` drops ghosts whose
+    /// echo never comes (e.g. deleted from another device).
+    private(set) var deliveringItems: [QueueItem] = []
     private(set) var pendingQuestion: AskQuestion?
     private(set) var connectionState: ConnectionState = .connecting
     private(set) var isLoadingConversation = true
@@ -75,6 +84,17 @@ final class SessionViewModel {
     private var streamEnded = true
     /// Optimistic local user messages, removed once the server echoes them back.
     private var localEchoIds: Set<String> = []
+    /// Chip ids whose message text landed in a user entry that arrived AFTER
+    /// the chip was known — marked by `upsert` echoes and by resync entries
+    /// under previously-unknown ids. `messageLanded` reads this instead of
+    /// scanning the transcript, which false-positived on repeated sends.
+    private var landedChipIds: Set<String> = []
+    /// When each delivering chip entered the holding state (for the prune).
+    private var deliveringSince: [String: Date] = [:]
+    private var deliveringPruneTask: Task<Void, Never>?
+    /// How long a delivering chip may wait for its transcript echo before
+    /// being dropped as a ghost. Internal so tests can reference it.
+    let deliveringGrace: TimeInterval = 30
     /// Assistant blocks that already landed as transcript entries. Opencode
     /// streams whole completed blocks, and the durable entry can beat the
     /// stream_text broadcast (or vice versa) — without this the same text
@@ -213,6 +233,7 @@ final class SessionViewModel {
         reconnectTask?.cancel()
         resyncProbeTask?.cancel()
         creationRetryTask?.cancel()
+        deliveringPruneTask?.cancel()
         socket?.disconnect()
         socket = nil
     }
@@ -403,10 +424,39 @@ final class SessionViewModel {
                 break
             }
             awaitingCreation = false
-            entries = newEntries
+            // Entries the snapshot adds under ids we didn't hold arrived
+            // while we were out of sync — they are the only echo candidates
+            // for chips and optimistic bubbles. Matching the WHOLE snapshot
+            // used to false-positive on repeated sends ("continue"): an old
+            // identical message retired the fresh chip and blinked the
+            // message out until its real echo landed.
+            let knownIds = Set(entries.map(\.id))
+            for candidate in newEntries
+            where candidate.isUser && !knownIds.contains(candidate.id) {
+                for chip in queuedItems + steeredItems + deliveringItems
+                where chipDelivered(chip, in: candidate.text) {
+                    landedChipIds.insert(chip.id)
+                }
+            }
+            // Optimistic bubbles whose echo the snapshot doesn't carry
+            // survive the resync: an init can race the ~1s persist of a
+            // delivered send — or the send was QUEUED server-side behind a
+            // run this client thought idle — and wiping the bubble blinks
+            // the message out until it finally lands.
+            let pendingEchoes = entries.filter { echo in
+                localEchoIds.contains(echo.id) && !newEntries.contains {
+                    !knownIds.contains($0.id) && echoDelivered(echo, in: $0)
+                }
+            }
+            entries = newEntries + pendingEchoes
             isLoadingConversation = false
             liveEntries.removeAll()
-            localEchoIds.removeAll()
+            localEchoIds = Set(pendingEchoes.map(\.id))
+            // A resync snapshot is authoritative for landed messages — no
+            // upsert runs on it, so retire delivered chips here.
+            if !deliveringItems.isEmpty {
+                updateDelivering(deliveringItems.filter { !messageLanded($0) })
+            }
             applyHistoryCursor(cursor)
             // A rev-mismatch reply to load_history comes back as a fresh init.
             loadingEarlier = false
@@ -518,9 +568,51 @@ final class SessionViewModel {
             }
 
         case .queueUpdate(let id, let queued, let steered) where id == session.id:
+            // A chip that vanishes from the server's queue without its message
+            // having landed in the transcript is mid-delivery: the drain
+            // broadcasts the emptied queue before the engine turn writes the
+            // user entry (which reaches us via the ~1s file watcher). Hold it
+            // as "delivering" instead of blinking the message out of the UI.
+            // A chip the frame still lists — by id, or by content for a local
+            // chip being replaced with the server's copy — is simply replaced.
+            let incoming = queued + steered
+            // A send echoed as a thread bubble (the session looked idle) that
+            // the server actually QUEUED behind a run: the chip is now the
+            // message's representation — it enters the transcript only at the
+            // drain — so drop the bubble rather than showing an out-of-order
+            // thread copy the next resync would wipe.
+            if !localEchoIds.isEmpty {
+                let queuedContents = Set(incoming.map {
+                    $0.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                })
+                let orphaned = Set(entries.filter { echo in
+                    localEchoIds.contains(echo.id) && queuedContents.contains(
+                        echo.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    )
+                }.map(\.id))
+                if !orphaned.isEmpty {
+                    localEchoIds.subtract(orphaned)
+                    entries.removeAll { orphaned.contains($0.id) }
+                    rebuildDisplayItems()
+                }
+            }
+            var held = Set<String>()
+            updateDelivering(
+                (queuedItems + steeredItems + deliveringItems).filter { chip in
+                    guard held.insert(chip.id).inserted else { return false }
+                    let replaced = incoming.contains {
+                        $0.id == chip.id || $0.content == chip.content
+                    }
+                    return !replaced && !messageLanded(chip)
+                }
+            )
             queuedItems = queued
             steeredItems = steered
             queuedCount = queued.count
+            // Landed flags outlive their purpose once the chip is gone.
+            landedChipIds.formIntersection(
+                Set((queued + steered + deliveringItems).map(\.id))
+            )
 
         case .askQuestion(let id, let question) where id == session.id:
             pendingQuestion = question
@@ -629,9 +721,11 @@ final class SessionViewModel {
             if let index = entries.firstIndex(where: { $0.id == entry.id }) {
                 entries[index] = entry
             } else {
-                // Drop the optimistic copy once the server's own user entry arrives.
+                // Drop the optimistic copy once the server's own user entry
+                // arrives — verbatim, or the attributed/batched drain form
+                // for a send that spent time in the queue.
                 if entry.isUser, let localIndex = entries.firstIndex(where: {
-                    localEchoIds.contains($0.id) && $0.content == entry.content
+                    localEchoIds.contains($0.id) && echoDelivered($0, in: entry)
                 }) {
                     localEchoIds.remove(entries[localIndex].id)
                     entries.remove(at: localIndex)
@@ -641,13 +735,94 @@ final class SessionViewModel {
                 // never gets a queue_update — retire its local chip when the
                 // server's user entry lands instead.
                 if entry.isUser, let chipIndex = queuedItems.firstIndex(where: {
-                    $0.id.hasPrefix("local-queued-") && $0.content == entry.content
+                    $0.id.hasPrefix("local-queued-") && chipDelivered($0, in: entry.text)
                 }) {
                     queuedItems.remove(at: chipIndex)
                     queuedCount = queuedItems.count
                 }
+                // The durable copy of a delivering chip's message landing is
+                // the hand-off the holding state exists for — one entry can
+                // retire several chips (multi-message drains join a batch
+                // into a single attributed user entry).
+                if entry.isUser,
+                   deliveringItems.contains(where: { chipDelivered($0, in: entry.text) }) {
+                    updateDelivering(
+                        deliveringItems.filter { !chipDelivered($0, in: entry.text) }
+                    )
+                }
+                // Chips the server still lists as queued/steered when their
+                // echo lands are remembered — the eventual drain drops them
+                // outright instead of holding a delivered message as a
+                // "Delivering…" ghost.
+                if entry.isUser {
+                    for chip in queuedItems + steeredItems
+                    where chipDelivered(chip, in: entry.text) {
+                        landedChipIds.insert(chip.id)
+                    }
+                }
                 entries.append(entry)
             }
         }
+    }
+
+    // MARK: - Delivering chips
+
+    /// Whether a landed user entry's text is the delivered form of `chip`:
+    /// bare, attributed ("[user] content" — the steer and batched-drain
+    /// form), or embedded in a joined batch / fenced-context wrapper.
+    /// Containment mirrors the server's own steer-receipt reconciliation.
+    private func chipDelivered(_ chip: QueueItem, in text: String) -> Bool {
+        let content = chip.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else { return true }
+        return text.contains(content)
+    }
+
+    /// Whether `chip`'s message has landed SINCE the chip existed. Reads the
+    /// flags marked by `upsert` and the resync path — a whole-transcript text
+    /// scan here retired fresh chips against old identical messages and
+    /// blinked repeated sends out of the UI until their real echo arrived.
+    private func messageLanded(_ chip: QueueItem) -> Bool {
+        landedChipIds.contains(chip.id)
+    }
+
+    /// Whether a server user entry is the delivered form of an optimistic
+    /// echo bubble: verbatim, or embedded in the attributed/batched drain
+    /// form ("[user] content").
+    private func echoDelivered(_ echo: TranscriptEntry, in entry: TranscriptEntry) -> Bool {
+        guard entry.isUser else { return false }
+        let content = echo.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else { return true }
+        return entry.content == echo.content || entry.text.contains(content)
+    }
+
+    private func updateDelivering(_ items: [QueueItem]) {
+        deliveringItems = items
+        let now = Date()
+        var since: [String: Date] = [:]
+        for item in items { since[item.id] = deliveringSince[item.id] ?? now }
+        deliveringSince = since
+        deliveringPruneTask?.cancel()
+        deliveringPruneTask = nil
+        guard !items.isEmpty else { return }
+        deliveringPruneTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard let self, !Task.isCancelled else { return }
+                self.pruneExpiredDelivering()
+                if self.deliveringItems.isEmpty { return }
+            }
+        }
+    }
+
+    /// Drop delivering chips whose transcript echo never came (deleted from
+    /// another device, server restart) once the grace window passes.
+    /// Internal so tests can drive it with a fixed clock.
+    func pruneExpiredDelivering(now: Date = Date()) {
+        let live = deliveringItems.filter { chip in
+            guard let start = deliveringSince[chip.id] else { return true }
+            return now.timeIntervalSince(start) < deliveringGrace
+        }
+        guard live.count != deliveringItems.count else { return }
+        updateDelivering(live)
     }
 }
