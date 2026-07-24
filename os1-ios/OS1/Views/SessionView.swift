@@ -5,6 +5,10 @@ struct SessionView: View {
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Full-window-width chat text is unreadable on the Mac; cap the content
+    /// column (transcript AND composer) and center it, like other chat apps.
+    private let contentMaxWidth: CGFloat = 720
+
     init(session: Session) {
         _viewModel = State(initialValue: SessionViewModel(session: session))
     }
@@ -28,8 +32,10 @@ struct SessionView: View {
                         .id("ask-\(ask.id)")
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 8)
+                .frame(maxWidth: contentMaxWidth)
+                .frame(maxWidth: .infinity)
             }
             // Initial render lands at the bottom, and `.sizeChanges` KEEPS it
             // pinned there through everything that used to leave the list
@@ -120,53 +126,89 @@ struct SessionView: View {
                     }
                 }
             }
-            HStack(spacing: 6) {
-                if viewModel.isRunning {
-                    Label("Running", systemImage: "circle.fill")
-                        .foregroundStyle(.green)
+            if viewModel.isRunning
+                || (viewModel.queuedCount > 0 && viewModel.queuedItems.isEmpty)
+                || viewModel.notice != nil {
+                HStack(spacing: 6) {
+                    if viewModel.isRunning {
+                        Label("Running", systemImage: "circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                    if viewModel.queuedCount > 0, viewModel.queuedItems.isEmpty {
+                        // Pre-handshake count from the sessions list, before
+                        // the watch delivers the actual items.
+                        Text("\(viewModel.queuedCount) queued")
+                            .foregroundStyle(.secondary)
+                    }
+                    if let notice = viewModel.notice {
+                        Text(notice)
+                            .foregroundStyle(.orange)
+                            .lineLimit(1)
+                    }
                 }
-                if viewModel.queuedCount > 0, viewModel.queuedItems.isEmpty {
-                    // Pre-handshake count from the sessions list, before the
-                    // watch delivers the actual items.
-                    Text("\(viewModel.queuedCount) queued")
-                        .foregroundStyle(.secondary)
-                }
-                if let notice = viewModel.notice {
-                    Text(notice)
-                        .foregroundStyle(.orange)
-                        .lineLimit(1)
-                }
+                .font(.caption2)
+                .padding(.horizontal, 4)
             }
-            .font(.caption2)
-            .padding(.horizontal, 4)
 
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField(
-                    viewModel.isRunning ? "Message (queued)" : "Message",
-                    text: $viewModel.draft,
-                    axis: .vertical
-                )
-                .lineLimit(1...5)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 18))
-                .focused($inputFocused)
-                // Mac: Return sends (Option-Return inserts a newline); on iOS
-                // the software keyboard's return key just wraps, as before.
-                .onSubmit { viewModel.sendDraft() }
-
-                Button {
-                    viewModel.sendDraft()
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 30))
-                }
-                .disabled(!viewModel.canSend)
-            }
+            composer
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .frame(maxWidth: contentMaxWidth)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
         .background(.bar)
+    }
+
+    /// The message composer: one bordered rounded container holding the
+    /// multiline text field and an embedded send button — the shape chat
+    /// apps converge on, instead of a floating button next to a pill.
+    private var composer: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField(
+                viewModel.isRunning ? "Message — queues for after this run" : "Message",
+                text: $viewModel.draft,
+                axis: .vertical
+            )
+            .textFieldStyle(.plain)
+            .lineLimit(1...10)
+            .padding(.leading, 6)
+            .padding(.vertical, 7)
+            .focused($inputFocused)
+            // Mac: Return sends (Option-Return inserts a newline); on iOS
+            // the software keyboard's return key just wraps, as before.
+            .onSubmit { viewModel.sendDraft() }
+
+            Button {
+                viewModel.sendDraft()
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(viewModel.canSend ? Color.white : Color.secondary)
+                    .frame(width: 27, height: 27)
+                    .background(
+                        viewModel.canSend
+                            ? AnyShapeStyle(.tint)
+                            : AnyShapeStyle(.fill.secondary),
+                        in: Circle()
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(!viewModel.canSend)
+            .padding(.bottom, 3)
+            .padding(.trailing, 1)
+            .animation(.easeOut(duration: 0.15), value: viewModel.canSend)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(
+            .fill.tertiary,
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(.separator, lineWidth: 1)
+        )
     }
 
     // MARK: - Queue chips
