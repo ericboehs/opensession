@@ -1038,11 +1038,18 @@ function readExpanded(): Set<string> {
 // flat Conductor-style list, Repo and status with lanes nested per repo, or
 // Recently opened), narrowed to a single repo ("Repo") or a single person
 // ("Person"), and ordered by recency of activity or creation ("Sort by"). The
-// choices persist together per browser.
+// choices persist together per browser; the default grouping is repo + status.
 type GroupBy = "status" | "repo" | "repo-status" | "recently";
 type SortBy = "updated" | "created";
 const DEFAULT_PROJECT = "tella-fusion";
 const FILTER_KEY = "opensession-sidebar-filter";
+// Bumped when the default grouping changes. Because setFilter persists the
+// whole state, a stored "status" from before v2 is ambiguous — most people got
+// it by touching Repo or Person, not by choosing it — so a pre-v2 blob keeps
+// its repo/person/sort but takes the new default grouping once. Anything
+// written after that carries v2 and is honoured verbatim.
+const FILTER_VERSION = 2;
+const DEFAULT_GROUP_BY: GroupBy = "repo-status";
 
 interface FilterState {
 	groupBy: GroupBy;
@@ -1057,13 +1064,15 @@ interface FilterState {
 function readFilter(): FilterState {
 	try {
 		const v = JSON.parse(localStorage.getItem(FILTER_KEY) || "{}");
+		const chosen = v.v === FILTER_VERSION;
 		return {
 			groupBy:
 				v.groupBy === "repo" ||
 				v.groupBy === "repo-status" ||
-				v.groupBy === "recently"
+				v.groupBy === "recently" ||
+				(chosen && v.groupBy === "status")
 					? v.groupBy
-					: "status",
+					: DEFAULT_GROUP_BY,
 			repo: typeof v.repo === "string" ? v.repo : "all",
 			// Legacy stored "all" behaved as "you" in the lanes — map it to "me"
 			// so nobody's default flips to everyone.
@@ -1074,7 +1083,12 @@ function readFilter(): FilterState {
 			sort: v.sort === "created" ? "created" : "updated",
 		};
 	} catch {
-		return { groupBy: "status", repo: "all", person: "me", sort: "updated" };
+		return {
+			groupBy: DEFAULT_GROUP_BY,
+			repo: "all",
+			person: "me",
+			sort: "updated",
+		};
 	}
 }
 
@@ -1293,7 +1307,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	function setFilter(patch: Partial<FilterState>) {
 		setFilterState((prev) => {
 			const next = { ...prev, ...patch };
-			localStorage.setItem(FILTER_KEY, JSON.stringify(next));
+			localStorage.setItem(
+				FILTER_KEY,
+				JSON.stringify({ ...next, v: FILTER_VERSION }),
+			);
 			return next;
 		});
 	}
