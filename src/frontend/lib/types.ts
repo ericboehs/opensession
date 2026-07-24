@@ -50,6 +50,12 @@ export interface PlainLabelType {
 }
 
 /** A TODO Plain thread in the sidebar's Support queue. */
+export interface SupportThreadAssignee {
+	id: string;
+	name: string;
+	isBot: boolean;
+}
+
 export interface SupportThread {
 	id: string;
 	title: string | null;
@@ -62,6 +68,8 @@ export interface SupportThread {
 	 *  so rows cached by an older server shape still render. */
 	labels?: { id: string; typeId: string; name: string; icon: string | null }[];
 	customer: { name: string | null; email: string | null };
+	/** Plain user the thread is assigned to (optional: older server shape). */
+	assignee?: SupportThreadAssignee | null;
 }
 
 /** One item on a user's Desk todo list (mirror of src/server/todos.ts). */
@@ -675,8 +683,8 @@ export type WSServerMessage =
 			lastChangeSeq?: number;
 	  }
 	| {
-			/** Older entries: the bulk of a two-stage init, or one "load earlier"
-			 *  page. Client merges by id and re-sorts by time (prepend semantics). */
+			/** Older entries from one "load earlier" page. Client merges by id and
+			 *  re-sorts by time (prepend semantics). */
 			type: "transcript_history";
 			sessionId?: string;
 			entries: TranscriptEntry[];

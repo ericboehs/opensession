@@ -187,6 +187,48 @@ const CTX_SEP_STYLE: React.CSSProperties = {
 
 // Per-person group dots share the repo-tile swatch palette (RepoTile.tsx) —
 // the same deterministic hash keeps each teammate's color stable.
+// ── Support band: priority buckets + persisted filter ──
+// Plain priorities are ints 0..3; unset buckets as Normal (Plain's default).
+const SUPPORT_PRIORITY_GROUPS = [
+	{ p: 0, label: "Urgent" },
+	{ p: 1, label: "High" },
+	{ p: 2, label: "Normal" },
+	{ p: 3, label: "Low" },
+] as const;
+
+interface SupportFilterState {
+	/** "all" | "me" | "unassigned" | "name:<assignee name>" */
+	assignee: string;
+	/** "all" | a label-type name present on the queue */
+	label: string;
+	session: "all" | "with" | "without";
+}
+const SUPPORT_FILTER_KEY = "opensession-support-filter";
+const DEFAULT_SUPPORT_FILTER: SupportFilterState = {
+	assignee: "all",
+	label: "all",
+	session: "all",
+};
+function readSupportFilter(): SupportFilterState {
+	try {
+		const saved = JSON.parse(
+			localStorage.getItem(SUPPORT_FILTER_KEY) || "null",
+		);
+		if (!saved) return DEFAULT_SUPPORT_FILTER;
+		return {
+			assignee:
+				typeof saved.assignee === "string" ? saved.assignee : "all",
+			label: typeof saved.label === "string" ? saved.label : "all",
+			session:
+				saved.session === "with" || saved.session === "without"
+					? saved.session
+					: "all",
+		};
+	} catch {
+		return DEFAULT_SUPPORT_FILTER;
+	}
+}
+
 const personColor = swatchColor;
 
 // Only recognized people get their own "people" section. Sessions whose
@@ -1144,6 +1186,21 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		};
 	}, []);
 
+	// Support band filter (assignee / label / has-session; free text rides the
+	// sidebar-wide search box). Persisted per browser.
+	const [supportFilter, setSupportFilterState] = useState<SupportFilterState>(
+		readSupportFilter,
+	);
+	const setSupportFilter = (patch: Partial<SupportFilterState>) => {
+		setSupportFilterState((prev) => {
+			const next = { ...prev, ...patch };
+			try {
+				localStorage.setItem(SUPPORT_FILTER_KEY, JSON.stringify(next));
+			} catch {}
+			return next;
+		});
+	};
+
 	// Newest live session per Plain thread — a Support row with one opens that
 	// session instead of the session-less ticket preview.
 	const supportSessionByThread = useMemo(() => {
@@ -1334,12 +1391,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		// palette. A workspace whose chats are all *automation* runs is NOT chatless
 		// (those render in the Automations band), and neither is one whose chats
 		// are all *archived* (archiving a workspace must not resurrect it as an
-		// empty row) — so both get no row here.
+		// empty row) — so both get no row here. Chat-less PR/ticket workspaces
+		// (ghpr-/plain- keys, minted by a sidebar click or agent run) are also
+		// excluded: they live under Pull requests / Support until a chat joins.
 		if (!search && filter.repo === "all") {
 			const hasAnyChat = new Set(
 				sessions.filter((s) => s.projectId).map((s) => s.projectId),
 			);
 			for (const p of projects) {
+				if (p.key?.startsWith("ghpr-") || p.key?.startsWith("plain-"))
+					continue;
 				if (!byWs.has(p.id) && !hasAnyChat.has(p.id))
 					rows.push({
 						key: `workspace:${p.id}`,
@@ -2023,7 +2084,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		if (search.trim().length > 0) return true;
 		if (
 			key.startsWith("repo:") ||
-			key.startsWith("review:")
+			key.startsWith("review:") ||
+			key.startsWith("support:")
 		)
 			return !expanded.has(`collapsed:${key}`);
 		return expanded.has(key);
@@ -2039,9 +2101,48 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const toolsOpen = !expanded.has("collapsed:band:tools");
 	const workspacesOpen = bandOpen("workspaces");
 	const supportOpen = bandOpen("support");
+	// Assignee/label/session filter over the Plain queue; free text rides the
+	// sidebar-wide search box (title/customer/preview).
+	const filteredSupportThreads = (() => {
+		let list = supportThreads || [];
+		const q = search.trim().toLowerCase();
+		if (q)
+			list = list.filter((t) =>
+				[t.title, t.customer.name, t.customer.email, t.previewText].some(
+					(v) => !!v && v.toLowerCase().includes(q),
+				),
+			);
+		const f = supportFilter;
+		if (f.assignee === "me") {
+			// Name-based: Plain user ids aren't backstage users, so match the
+			// first name (the same convention reply signing uses).
+			const me = currentUser.trim().toLowerCase().split(/\s+/)[0];
+			list = list.filter(
+				(t) =>
+					t.assignee &&
+					t.assignee.name.toLowerCase().split(/\s+/)[0] === me,
+			);
+		} else if (f.assignee === "unassigned") {
+			list = list.filter((t) => !t.assignee);
+		} else if (f.assignee.startsWith("name:")) {
+			const name = f.assignee.slice(5);
+			list = list.filter((t) => t.assignee?.name === name);
+		}
+		if (f.label !== "all")
+			list = list.filter((t) =>
+				(t.labels || []).some((l) => l.name === f.label),
+			);
+		if (f.session !== "all")
+			list = list.filter((t) =>
+				f.session === "with"
+					? supportSessionByThread.has(t.id)
+					: !supportSessionByThread.has(t.id),
+			);
+		return list;
+	})();
 	const visibleSupportThreads = supportOpen
-		? supportThreads || []
-		: (supportThreads || []).filter(supportThreadActive);
+		? filteredSupportThreads
+		: filteredSupportThreads.filter(supportThreadActive);
 	const automationsOpen = bandOpen("automations");
 	const visibleAutomationGroups = automationsOpen
 		? groups
@@ -3500,20 +3601,21 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				/>
 			)}
 
-			{/* ── Support: the Plain TODO queue, newest status change first (the
-			    same ordering as Plain's Todo inbox). Rows with a linked session
-			    open it; the rest open the session-less ticket preview. ── */}
+			{/* ── Support: the Plain TODO queue straight from Plain, grouped by
+			    priority (Urgent/High/Normal/Low; within a bucket newest status
+			    change first, the same ordering as Plain's Todo inbox), with an
+			    assignee/label/session filter. ── */}
 			{(supportThreads?.length || 0) > 0 && (
 				<div className="sidebar-independent-section sidebar-group--band-start">
-					<div className="sidebar-band-label sidebar-sticky-head">
+					<div className="sidebar-band-label sidebar-sticky-head flex items-center gap-1">
 						<button
-							className="sidebar-band-toggle"
+							className="sidebar-band-toggle min-w-0 flex-1"
 							onClick={() => toggleBand("support")}
 							title={supportOpen ? "Collapse support" : "Expand support"}
 						>
 							<span className="sidebar-band-name">Support</span>
 							<span className="sidebar-group-count">
-								{supportThreads!.length}
+								{filteredSupportThreads.length}
 							</span>
 							<IconChevronDown
 								className="sidebar-band-chevron"
@@ -3523,10 +3625,150 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								}}
 							/>
 						</button>
+						{(() => {
+							const customFilter =
+								supportFilter.assignee !== "all" ||
+								supportFilter.label !== "all" ||
+								supportFilter.session !== "all";
+							const assigneeNames = [
+								...new Set(
+									(supportThreads || [])
+										.map((t) => t.assignee?.name)
+										.filter((n): n is string => !!n),
+								),
+							].sort();
+							const labelNames = [
+								...new Set(
+									(supportThreads || []).flatMap((t) =>
+										(t.labels || []).map((l) => l.name),
+									),
+								),
+							].sort();
+							const item = (
+								label: string,
+								selected: boolean,
+								onClick: () => void,
+							) => (
+								<Menu.Item key={label} onClick={onClick}>
+									<span className="flex size-4 shrink-0 items-center justify-center">
+										{selected && <IconCheck size={13} />}
+									</span>
+									<span className="truncate">{label}</span>
+								</Menu.Item>
+							);
+							return (
+								<Menu.Root>
+									<Menu.Trigger
+										className={`sidebar-band-action sidebar-filter-btn${customFilter ? " has-filter" : ""}`}
+										aria-label="Filter support tickets"
+										title="Filter support tickets"
+									>
+										<IconFilter size={19} />
+									</Menu.Trigger>
+									<Menu.Popup align="end" sideOffset={5} className="min-w-[230px]">
+										<Menu.Group>
+											<Menu.GroupLabel>Assignee</Menu.GroupLabel>
+											{item("Anyone", supportFilter.assignee === "all", () =>
+												setSupportFilter({ assignee: "all" }),
+											)}
+											{item("Me", supportFilter.assignee === "me", () =>
+												setSupportFilter({ assignee: "me" }),
+											)}
+											{item(
+												"Unassigned",
+												supportFilter.assignee === "unassigned",
+												() => setSupportFilter({ assignee: "unassigned" }),
+											)}
+											{assigneeNames.map((name) =>
+												item(
+													name,
+													supportFilter.assignee === `name:${name}`,
+													() =>
+														setSupportFilter({ assignee: `name:${name}` }),
+												),
+											)}
+										</Menu.Group>
+										{labelNames.length > 0 && (
+											<>
+												<Menu.Separator />
+												<Menu.Group>
+													<Menu.GroupLabel>Label</Menu.GroupLabel>
+													{item(
+														"All labels",
+														supportFilter.label === "all",
+														() => setSupportFilter({ label: "all" }),
+													)}
+													{labelNames.map((name) =>
+														item(name, supportFilter.label === name, () =>
+															setSupportFilter({ label: name }),
+														),
+													)}
+												</Menu.Group>
+											</>
+										)}
+										<Menu.Separator />
+										<Menu.Group>
+											<Menu.GroupLabel>Session</Menu.GroupLabel>
+											{item("All tickets", supportFilter.session === "all", () =>
+												setSupportFilter({ session: "all" }),
+											)}
+											{item(
+												"Have session",
+												supportFilter.session === "with",
+												() => setSupportFilter({ session: "with" }),
+											)}
+											{item(
+												"No session",
+												supportFilter.session === "without",
+												() => setSupportFilter({ session: "without" }),
+											)}
+										</Menu.Group>
+									</Menu.Popup>
+								</Menu.Root>
+							);
+						})()}
 					</div>
 					{visibleSupportThreads.length > 0 && (
 						<div className="sidebar-independent-scroll">
-							{visibleSupportThreads.map(renderSupportRow)}
+							{supportOpen
+								? SUPPORT_PRIORITY_GROUPS.map((group) => {
+										const items = visibleSupportThreads.filter(
+											(t) => (t.priority ?? 2) === group.p,
+										);
+										if (items.length === 0) return null;
+										const groupIsOpen = isOpen(`support:prio:${group.p}`);
+										return (
+											<div
+												className="sidebar-status-group"
+												key={`support-prio-${group.p}`}
+											>
+												<button
+													className="sidebar-group-header"
+													onClick={() =>
+														toggleGroup(`support:prio:${group.p}`)
+													}
+												>
+													<span className="sidebar-group-name">
+														{group.label}
+													</span>
+													<span className="sidebar-group-count">
+														{items.length}
+													</span>
+													<IconChevronDown
+														className="sidebar-group-chevron"
+														size={20}
+														style={{
+															transform: groupIsOpen
+																? "none"
+																: "rotate(-90deg)",
+														}}
+													/>
+												</button>
+												{groupIsOpen && items.map(renderSupportRow)}
+											</div>
+										);
+									})
+								: visibleSupportThreads.map(renderSupportRow)}
 						</div>
 					)}
 				</div>
