@@ -34,5 +34,9 @@ sudo install -m 0755 "$HERE/.cache-busybox" "$MNT/opt/bks/busybox"
 sudo rm -f "$MNT/etc/resolv.conf"
 printf 'nameserver 8.8.8.8\n' | sudo tee "$MNT/etc/resolv.conf" >/dev/null
 
+# 4G swapfile: cushions HMR recompile spikes (a 177-file branch flip OOMed
+# next-server at 6.5GB anon in an 8GB guest). bks-init swapons it.
+sudo fallocate -l 4G "$MNT/swapfile" && sudo chmod 600 "$MNT/swapfile" && sudo mkswap -q "$MNT/swapfile"
+
 sudo umount "$MNT"
 echo "[build-rootfs] $OUT ready ($(du -h "$OUT" | cut -f1) used, ${SIZE_GB}G apparent)"

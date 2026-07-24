@@ -20,6 +20,6 @@ fc() { curl -s --unix-socket "$API" -X "$1" "http://x$2" -H 'Content-Type: appli
 fc PUT /boot-source "{\"kernel_image_path\":\"$KERNEL\",\"boot_args\":\"console=ttyS0 reboot=k panic=1 pci=off init=/sbin/bks-init ip=$GUEST_IP::$HOST_IP:255.255.255.252::eth0:off\"}"
 fc PUT /drives/rootfs "{\"drive_id\":\"rootfs\",\"path_on_host\":\"$ROOTFS\",\"is_root_device\":true,\"is_read_only\":false}"
 fc PUT /network-interfaces/eth0 "{\"iface_id\":\"eth0\",\"guest_mac\":\"06:00:AC:10:64:02\",\"host_dev_name\":\"$TAP\"}"
-fc PUT /machine-config '{"vcpu_count":4,"mem_size_mib":8192}'
+fc PUT /machine-config '{"vcpu_count":4,"mem_size_mib":12288}'
 fc PUT /actions '{"action_type":"InstanceStart"}'
 echo "started — guest at $GUEST_IP (dev :3300, agent :8080); serial: tail -f $LOG"

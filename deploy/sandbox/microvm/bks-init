@@ -21,6 +21,7 @@ chmod 1777 /tmp
 
 BB=/opt/bks/busybox
 $BB hostname bks-preview
+swapon /swapfile 2>/dev/null || true
 $BB ip link set lo up 2>/dev/null || true
 # Public resolvers: the exported image carries docker's 127.0.0.11 stub.
 printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n' > /etc/resolv.conf
