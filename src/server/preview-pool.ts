@@ -1434,8 +1434,11 @@ export async function claimPoolPreview(repoId: string, worktreeDir: string): Pro
 export async function releasePoolPreview(worktreeDir: string): Promise<boolean> {
   const claim = poolClaimFor(worktreeDir);
   if (!claim) return false;
+  console.log(`[preview-pool] release: claim=${claim.containerName}, stopping sync`);
   stopSyncLoop(worktreeDir);
+  console.log(`[preview-pool] release: destroying ${claim.containerName}`);
   await destroyContainer(claim.repoId, claim.containerName);
+  console.log(`[preview-pool] release: destroyed ${claim.containerName}`);
   void sweepPool().catch(() => {});
   console.log(`[preview-pool] released ${claim.containerName} for ${worktreeDir}`);
   return true;

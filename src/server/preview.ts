@@ -632,6 +632,7 @@ export async function stopPreview(worktreeDir: string): Promise<PreviewStatus> {
   // Pool-backed preview: the "dev server" is a claimed warm container, not a
   // host process tree — release it (stops the sync loop, destroys the
   // container) and let the normal status path report the now-empty port.
+  console.log(`[preview] stop: releasing pool claim for ${worktreeDir}`);
   if (await releasePoolPreview(worktreeDir)) {
     // Strip the pool's port from .ports.conf: a later HOST fallback boot
     // would otherwise adopt the now-free port ("existing" fast path in
