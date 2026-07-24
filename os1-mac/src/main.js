@@ -16,7 +16,7 @@ const {
 const path = require("node:path");
 const fs = require("node:fs");
 const { execFile } = require("node:child_process");
-const { LocalServerSupervisor } = require("./local-server.js");
+const { configForCloudSession, LocalServerSupervisor } = require("./local-server.js");
 
 // AppKit can show its persistent-window crash-recovery prompt before Electron
 // finishes launching. On macOS 26 that modal can trap the browser process and
@@ -534,8 +534,12 @@ app.whenReady().then(async () => {
   localMode = process.env.OS1_LOCAL === "1" || shellSettings.localMode === true;
   let initialStatus = null;
   if (localMode) {
+    const cloudSession = await session.defaultSession.cookies
+      .get({ url: CLOUD_URL, name: "opensession_auth" })
+      .then((cookies) => cookies[0]?.value || null)
+      .catch(() => null);
     localSupervisor = new LocalServerSupervisor({
-      config: shellSettings,
+      config: configForCloudSession(shellSettings, cloudSession),
       resourcesPath: process.resourcesPath,
       userDataDir: app.getPath("userData"),
       onState: handleLocalServerState,

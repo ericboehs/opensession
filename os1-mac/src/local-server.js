@@ -40,15 +40,14 @@ function resolveBun(homeDir, envPath) {
   return candidates.find((candidate) => candidate && executable(candidate)) || null;
 }
 
-function readToken(file) {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-    return typeof parsed.token === "string" && parsed.token.trim()
-      ? parsed.token.trim()
-      : null;
-  } catch {
-    return null;
-  }
+function configForCloudSession(config, cloudSession) {
+  return {
+    ...config,
+    cloudToken:
+      typeof cloudSession === "string" && cloudSession.trim()
+        ? cloudSession.trim()
+        : "",
+  };
 }
 
 function pickFreePort() {
@@ -107,13 +106,15 @@ class LocalServerSupervisor {
     }
 
     const port = await pickFreePort();
-    const configuredToken =
+    const cloudToken =
       typeof this.config.cloudToken === "string" && this.config.cloudToken.trim()
         ? this.config.cloudToken.trim()
         : null;
-    const cloudToken =
-      configuredToken ||
-      readToken(path.join(this.homeDir, ".opensession-frontend-dev-token.json"));
+    if (!cloudToken) {
+      throw new Error(
+        "Local sessions require GitHub sign-in; switch to cloud mode and sign in first",
+      );
+    }
 
     this.prepared = {
       bunBin,
@@ -265,6 +266,7 @@ class LocalServerSupervisor {
 }
 
 module.exports = {
+  configForCloudSession,
   LocalServerSupervisor,
   resolveBun,
   resolveOpencode,

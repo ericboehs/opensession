@@ -39,17 +39,16 @@ directory:
 ```json
 {
   "localMode": true,
-  "serverDir": "/Users/ada/code/backstage",
-  "cloudToken": "optional-web-session-bearer-token"
+  "serverDir": "/Users/ada/code/backstage"
 }
 ```
 
 All fields are optional. `localMode` defaults to `false`; `serverDir` defaults to
-`~/os1/server` when that directory exists. `cloudToken` falls back to the
-`token` field in `~/.opensession-frontend-dev-token.json`. With no token the
-session backend remains purely local, while the public hosted frontend is still
-proxied without authentication. Child output is appended to `local-server.log`
-in the same user-data directory.
+`~/os1/server` when that directory exists. Local mode accepts only the active
+`opensession_auth` cookie from the Electron cloud session: sign in through cloud
+mode first, then enable local sessions. An expired or revoked session locks the
+local API and WebSocket until cloud sign-in and local mode are restarted. Child
+output is appended to `local-server.log` in the same user-data directory.
 
 The local checkout supplies backend code only. It never builds or serves its
 frontend; shell documents and assets are proxied from the configured cloud

@@ -18,6 +18,25 @@ const g = globalThis as any;
 export const BOOT_ID: string = (g.__bootId ??= crypto.randomUUID());
 export const allClients: Set<any> = (g.__allClients ??= new Set());
 
+/** Close retained UI sockets that no longer belong to the verified local user. */
+export function revalidateLocalClients(
+	identity: { login: string; name: string } | null,
+): number {
+	let closed = 0;
+	for (const ws of allClients) {
+		if (identity && ws.data?.authLogin === identity.login) {
+			ws.data.authUser = identity.name;
+			ws.data.user = identity.name;
+			continue;
+		}
+		closed++;
+		try {
+			ws.close(4001, "Hosted GitHub session expired");
+		} catch {}
+	}
+	return closed;
+}
+
 export function broadcastToAll(msg: object) {
 	const payload = JSON.stringify(msg);
 	for (const ws of allClients) {

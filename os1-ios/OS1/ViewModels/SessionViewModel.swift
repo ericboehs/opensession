@@ -25,6 +25,10 @@ final class SessionViewModel {
     private(set) var liveText = ""
     private(set) var isStreaming = false
     private(set) var isRunning: Bool
+    /// Anchor for the elapsed-run clock. Opening a session mid-run uses the
+    /// server's journaled run start (from the sessions list row); a run that
+    /// starts while watching anchors to the status flip.
+    private(set) var runStartedAt: Date?
     private(set) var queuedCount = 0
     /// Messages held for after the current run (editable, steerable).
     private(set) var queuedItems: [QueueItem] = []
@@ -143,6 +147,9 @@ final class SessionViewModel {
         self.session = session
         self.isRunning = session.isRunning ?? false
         self.queuedCount = session.queuedCount ?? 0
+        if self.isRunning {
+            self.runStartedAt = session.runStartedDate
+        }
     }
 
     func start() {
@@ -386,6 +393,14 @@ final class SessionViewModel {
             flushLiveTextNow()
 
         case .sessionStatus(let id, let running) where id == session.id:
+            if running {
+                // Keep the earliest known anchor across resync re-sends.
+                if runStartedAt == nil {
+                    runStartedAt = session.runStartedDate ?? Date()
+                }
+            } else {
+                runStartedAt = nil
+            }
             isRunning = running
             if !running {
                 streamEnded = true

@@ -188,8 +188,11 @@ struct SessionView: View {
                 || viewModel.notice != nil {
                 HStack(spacing: 6) {
                     if viewModel.isRunning {
-                        Label("Running", systemImage: "circle.fill")
-                            .foregroundStyle(.green)
+                        // Pulsing dot + live elapsed clock, like the web
+                        // viewer's busy row — not a static "Running" label.
+                        PulsingDot(color: .green, size: 7)
+                        RunElapsedLabel(since: viewModel.runStartedAt)
+                            .foregroundStyle(.secondary)
                     }
                     if viewModel.queuedCount > 0, viewModel.queuedItems.isEmpty {
                         // Pre-handshake count from the sessions list, before

@@ -1,14 +1,22 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { isLocalProfile, localProfileUser, localRequestAllowed } from "./profile";
+import {
+  isLocalProfile,
+	localAuthRequestKind,
+  localProfileLogin,
+  localProfileUser,
+  localRequestAllowed,
+  setLocalProfileIdentity,
+} from "./profile";
 
 const savedProfile = process.env.OPENSESSION_PROFILE;
 const savedUser = process.env.OPENSESSION_LOCAL_USER;
 
 afterEach(() => {
+	setLocalProfileIdentity(null);
   if (savedProfile === undefined) delete process.env.OPENSESSION_PROFILE;
   else process.env.OPENSESSION_PROFILE = savedProfile;
-  if (savedUser === undefined) delete process.env.OPENSESSION_LOCAL_USER;
-  else process.env.OPENSESSION_LOCAL_USER = savedUser;
+	if (savedUser === undefined) delete process.env.OPENSESSION_LOCAL_USER;
+	else process.env.OPENSESSION_LOCAL_USER = savedUser;
 });
 
 describe("local profile", () => {
@@ -23,11 +31,26 @@ describe("local profile", () => {
     expect(isLocalProfile()).toBe(true);
   });
 
-  test("uses the explicit local user verbatim", () => {
-    process.env.OPENSESSION_PROFILE = "local";
-    process.env.OPENSESSION_LOCAL_USER = "Ada Lovelace";
-    expect(localProfileUser()).toBe("Ada Lovelace");
-  });
+	test("has no identity fallback before hosted verification", () => {
+		process.env.OPENSESSION_LOCAL_USER = "Unverified";
+		expect(localProfileUser()).toBe("");
+		expect(localProfileLogin()).toBe("");
+	});
+
+	test("prefers the verified hosted identity", () => {
+		setLocalProfileIdentity({ login: "ada", name: "Ada Lovelace" });
+		expect(localProfileUser()).toBe("Ada");
+		expect(localProfileLogin()).toBe("ada");
+	});
+
+	test("requires verified identity for local APIs and the UI socket", () => {
+		expect(localAuthRequestKind("/backstage/api/auth/status", "GET")).toBe("status");
+		expect(localAuthRequestKind("/backstage/api/sessions", "GET")).toBe("protected");
+		expect(localAuthRequestKind("/backstage/api/auth/logout", "POST")).toBe("protected");
+		expect(localAuthRequestKind("/backstage/ws", "GET")).toBe("protected");
+		expect(localAuthRequestKind("/backstage/api/health", "GET")).toBeNull();
+		expect(localAuthRequestKind("/backstage/assets/app.js", "GET")).toBeNull();
+	});
 
   test("accepts only same-origin loopback browser requests", () => {
     expect(localRequestAllowed(new Request("http://127.0.0.1:3850/api/health"))).toBe(true);

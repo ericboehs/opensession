@@ -8,12 +8,14 @@ import type { ServerWebSocket } from "bun";
 import { configuredCloud } from "./config";
 import { stopAllWatchesForClient } from "./file-watcher";
 import { isLocalProfile } from "./profile";
+import type { LocalProfileIdentity } from "./profile";
 import type { RouteContext } from "./routes/context";
 import { findSession } from "./session-cache";
 import type { UnifiedSession } from "./types";
 import { leaveSession, type WSClientData } from "./ws-hub";
 
 const LIST_TIMEOUT_MS = 3_000;
+const IDENTITY_TTL_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 60_000;
 const CONNECT_TIMEOUT_MS = 8_000;
 const MAX_INITIAL_QUEUE = 100;
@@ -53,6 +55,12 @@ function freshSocketState(): CloudSocketState {
 }
 
 const g = globalThis as any;
+type IdentityState = {
+	token: string;
+	checkedAt: number;
+	identity: LocalProfileIdentity | null;
+	pending?: Promise<LocalProfileIdentity | null>;
+};
 const previousSocketState = g.__localCloudSocketState as CloudSocketState | undefined;
 if (!previousSocketState?.lanes) {
 	try {
@@ -67,8 +75,78 @@ const socketState: CloudSocketState = previousSocketState?.lanes
 	: freshSocketState();
 g.__localCloudSocketState = socketState;
 
+function cloudToken(): string | null {
+	if (!isLocalProfile()) return configuredCloud().token;
+	if (g.__localCloudToken === undefined) {
+		g.__localCloudToken = configuredCloud().token || null;
+		delete process.env.OPENSESSION_CLOUD_TOKEN;
+	}
+	return g.__localCloudToken;
+}
+
+export function configuredCloudAccess(): ReturnType<typeof configuredCloud> {
+	return { ...configuredCloud(), token: cloudToken() };
+}
+
 function cloudEnabled(): boolean {
-	return isLocalProfile() && !!configuredCloud().token;
+	return isLocalProfile() && !!cloudToken();
+}
+
+/** Resolve the local process owner through the hosted GitHub web session. */
+export async function resolveCloudIdentity(
+	fetchImpl: typeof fetch = fetch,
+): Promise<LocalProfileIdentity | null> {
+	if (!isLocalProfile() || !cloudToken()) return null;
+	try {
+		const response = await fetchImpl(upstreamUrl("/backstage/api/auth/status"), {
+			headers: proxyHeaders(new Headers()),
+			signal: AbortSignal.timeout(LIST_TIMEOUT_MS),
+		});
+		if (!response.ok) return null;
+		const body = await response.json();
+		return body?.required === true &&
+			body.authenticated === true &&
+			typeof body.login === "string" &&
+			body.login.trim() &&
+			typeof body.name === "string" &&
+			body.name.trim()
+			? { login: body.login.trim(), name: body.name.trim().split(" ")[0] }
+			: null;
+	} catch (error) {
+		console.warn("[cloud-proxy] identity verification failed:", error);
+		return null;
+	}
+}
+
+export async function verifiedCloudIdentity(
+	fetchImpl: typeof fetch = fetch,
+	maxAgeMs = IDENTITY_TTL_MS,
+): Promise<LocalProfileIdentity | null> {
+	const token = cloudToken() || "";
+	const cached = g.__localCloudIdentityState as IdentityState | undefined;
+	if (
+		cached &&
+		cached.token === token &&
+		Date.now() - cached.checkedAt < maxAgeMs
+	) {
+		return cached.identity;
+	}
+	if (cached?.token === token && cached.pending) return cached.pending;
+	const state: IdentityState = {
+		token,
+		checkedAt: cached?.checkedAt || 0,
+		identity: cached?.identity || null,
+	};
+	state.pending = resolveCloudIdentity(fetchImpl).then((identity) => {
+		if (g.__localCloudIdentityState === state) {
+			state.identity = identity;
+			state.checkedAt = Date.now();
+			delete state.pending;
+		}
+		return identity;
+	});
+	g.__localCloudIdentityState = state;
+	return state.pending;
 }
 
 export function isCloudCreateRequest(message: any, localProfile = isLocalProfile()): boolean {
@@ -135,7 +213,7 @@ export function sessionRequestTarget(
 
 function proxyHeaders(source: Headers): Headers {
 	const headers = new Headers(source);
-	const token = configuredCloud().token;
+	const token = cloudToken();
 	if (token) headers.set("authorization", `Bearer ${token}`);
 	headers.delete("host");
 	headers.delete("cookie");
@@ -416,7 +494,7 @@ function scheduleReconnect(): void {
 function connectUpstream(): void {
 	if (!cloudEnabled() || socketState.status !== "idle" || socketState.lanes.size === 0) return;
 	socketState.status = "connecting";
-	const token = configuredCloud().token!;
+	const token = cloudToken()!;
 	let socket: WebSocket;
 	try {
 		socket = new WebSocket(websocketUpstream(), {

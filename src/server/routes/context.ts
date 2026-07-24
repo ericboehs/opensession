@@ -1,5 +1,3 @@
-import { isLocalProfile, localProfileUser } from "../profile";
-
 /**
  * Shared request context for the HTTP route handlers under src/server/routes/.
  * Built once per request in opensession.ts's fetch and passed down the
@@ -35,7 +33,6 @@ export type RouteHandler = (
  * enforces this at the socket).
  */
 export function requestUser(ctx: RouteContext, claimed?: unknown): string {
-	if (isLocalProfile()) return localProfileUser();
 	if (ctx.authUser?.name) return ctx.authUser.name.split(" ")[0];
 	return typeof claimed === "string" ? claimed.trim() : "";
 }

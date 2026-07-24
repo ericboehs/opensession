@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { WSServerMessage, WSClientMessage } from "../lib/types";
-import { getWebSocketUrl } from "../lib/api";
+import { API_BASE, getWebSocketUrl } from "../lib/api";
 import { countChatPerf } from "../lib/chat-performance";
 
 // Liveness probe cadence. iOS/Safari kills backgrounded sockets without firing
@@ -122,12 +122,24 @@ export function useWebSocket() {
       } catch {}
     };
 
-    ws.onclose = () => {
+    ws.onclose = async (event) => {
       // A close from an already-replaced socket must not flip `connected` or
       // schedule a competing reconnect — only the current socket owns state.
       if (wsRef.current !== ws) return;
       setConnected(false);
       if (disposedRef.current) return;
+      if (event.code === 4001) {
+        window.location.reload();
+        return;
+      }
+      if (event.code === 1006) {
+        try {
+          const response = await fetch(`${API_BASE}/auth/status`);
+          const status = response.ok ? await response.json() : null;
+          if (status?.local && !status.authenticated) return;
+        } catch {}
+      }
+      if (disposedRef.current || wsRef.current !== ws) return;
       reconnectTimer.current = setTimeout(connect, 2000);
     };
 

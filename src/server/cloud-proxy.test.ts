@@ -7,10 +7,12 @@ import {
 	proxyCloudFrontendRequest,
 	proxyCloudSessionRequest,
 	proxyCloudTargetRequest,
+	resolveCloudIdentity,
 	sessionIdFromApiPath,
 	sessionRequestTarget,
 	shouldProxyCloudTargetRequest,
 	shouldProxyCloudFrontendRequest,
+	verifiedCloudIdentity,
 } from "./cloud-proxy";
 import type { UnifiedSession } from "./types";
 
@@ -22,6 +24,8 @@ const ENV_KEYS = [
 const saved = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
 afterEach(() => {
+	delete (globalThis as any).__localCloudIdentityState;
+	delete (globalThis as any).__localCloudToken;
 	for (const key of ENV_KEYS) {
 		const value = saved[key];
 		if (value === undefined) delete process.env[key];
@@ -137,6 +141,68 @@ describe("local cloud session merge", () => {
 });
 
 describe("local cloud request routing", () => {
+	test("verifies the local owner through the hosted GitHub session", async () => {
+		enableCloud();
+		let authorization = "";
+		const identity = await resolveCloudIdentity(
+			(async (_url: string | URL | Request, init?: RequestInit) => {
+				authorization = new Headers(init?.headers).get("authorization") || "";
+				return Response.json({
+					required: true,
+					authenticated: true,
+					login: "jfrolich",
+					name: "Jaap Frolich",
+				});
+			}) as unknown as typeof fetch,
+		);
+		expect(authorization).toBe("Bearer secret-token");
+		expect(identity).toEqual({ login: "jfrolich", name: "Jaap" });
+		expect(process.env.OPENSESSION_CLOUD_TOKEN).toBeUndefined();
+	});
+
+	test("rejects hosted responses without enabled GitHub auth", async () => {
+		enableCloud();
+		const identity = await resolveCloudIdentity(
+			(async () =>
+				Response.json({
+					required: false,
+					authenticated: true,
+					login: "jfrolich",
+					name: "Jaap Frolich",
+				})) as unknown as typeof fetch,
+		);
+		expect(identity).toBeNull();
+	});
+
+	test("caches verification briefly and then observes revocation", async () => {
+		enableCloud();
+		process.env.OPENSESSION_CLOUD_TOKEN = "revocation-token";
+		let authenticated = true;
+		let calls = 0;
+		const fetchIdentity = (async () => {
+			calls++;
+			return Response.json({
+				required: true,
+				authenticated,
+				login: "jfrolich",
+				name: "Jaap Frolich",
+			});
+		}) as unknown as typeof fetch;
+
+		expect(await verifiedCloudIdentity(fetchIdentity)).toEqual({
+			login: "jfrolich",
+			name: "Jaap",
+		});
+		authenticated = false;
+		expect(await verifiedCloudIdentity(fetchIdentity)).toEqual({
+			login: "jfrolich",
+			name: "Jaap",
+		});
+		expect(calls).toBe(1);
+		expect(await verifiedCloudIdentity(fetchIdentity, 0)).toBeNull();
+		expect(calls).toBe(2);
+	});
+
 	test("proxies only local-profile frontend reads", () => {
 		process.env.OPENSESSION_PROFILE = "local";
 		const request = new Request("http://127.0.0.1:3850/session/bks-1");

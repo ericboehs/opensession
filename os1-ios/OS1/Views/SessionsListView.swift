@@ -466,8 +466,31 @@ struct SessionRow: View {
     }
 
     private var statusDot: some View {
-        Circle()
-            .fill(session.lane.color)
-            .frame(width: 8, height: 8)
+        // A running session's dot pulses (like the web sidebar) so in-flight
+        // work is visible at a glance.
+        PulsingDot(color: session.lane.color, active: session.lane == .inProgress)
+    }
+}
+
+/// Status dot that softly pulses while `active` — mirrors the web's
+/// `.pulse-dot` (1.4s opacity cycle).
+struct PulsingDot: View {
+    let color: Color
+    var active: Bool = true
+    var size: CGFloat = 8
+
+    var body: some View {
+        let dot = Circle()
+            .fill(color)
+            .frame(width: size, height: size)
+        if active {
+            dot.phaseAnimator([1.0, 0.35]) { view, opacity in
+                view.opacity(opacity)
+            } animation: { _ in
+                .easeInOut(duration: 0.7)
+            }
+        } else {
+            dot
+        }
     }
 }

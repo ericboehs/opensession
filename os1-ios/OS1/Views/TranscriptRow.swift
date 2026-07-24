@@ -223,15 +223,41 @@ struct StreamingBubble: View {
 }
 
 /// Small constant-height activity row shown for the whole run — the stable
-/// "still working" anchor at the bottom of the transcript.
+/// "still working" anchor at the bottom of the transcript. A pulsing dot,
+/// mirroring the web viewer's busy row; the elapsed clock lives in the
+/// composer's status caption.
 struct RunActivityIndicator: View {
     var body: some View {
         HStack {
-            ProgressView()
-                .controlSize(.small)
+            PulsingDot(color: .green)
             Spacer()
         }
         .padding(.leading, 12)
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
+    }
+}
+
+/// Ticking elapsed-run clock ("8.3s", "2m 14s", "1h 5m") — the web viewer's
+/// BusyElapsed format. Falls back to "Running" with no anchor.
+struct RunElapsedLabel: View {
+    let since: Date?
+
+    var body: some View {
+        if let since {
+            TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                Text(label(elapsed: context.date.timeIntervalSince(since)))
+                    .monospacedDigit()
+            }
+        } else {
+            Text("Running")
+        }
+    }
+
+    private func label(elapsed: TimeInterval) -> String {
+        let s = max(0, elapsed)
+        if s < 60 { return String(format: "%.1fs", s) }
+        let total = Int(s)
+        if total < 3600 { return "\(total / 60)m \(total % 60)s" }
+        return "\(total / 3600)h \((total % 3600) / 60)m"
     }
 }

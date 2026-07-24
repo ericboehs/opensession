@@ -7,8 +7,10 @@ keeps the normal server behavior.
 
 The profile is deliberately smaller than a hosted installation:
 
-- The web UI and interactive sessions run on loopback.
-- GitHub web sign-in and the user picker are replaced by one local identity.
+- The hosted web UI runs on the loopback origin; interactive APIs and WebSockets
+  stay local.
+- Identity comes from the Mac app's verified hosted GitHub session. There is no
+  user picker or self-declared local identity.
 - Repositories start empty and are registered explicitly.
 - Sessions and worktrees stay under `~/os1` by default.
 - Model access comes from the Claude Code and Codex CLI subscriptions already
@@ -54,20 +56,16 @@ bun install
 OPENSESSION_PROFILE=local bun run opensession.ts
 ```
 
-Open <http://127.0.0.1:3850>. Because local mode has no login screen, it only
-accepts same-origin loopback requests and refuses a non-loopback `HOST`.
-
-The local identity is resolved in this order:
-
-1. `OPENSESSION_LOCAL_USER`
-2. `git config user.name`
-3. `local`
-
-For example:
-
-```sh
-OPENSESSION_PROFILE=local OPENSESSION_LOCAL_USER="Ada" bun run opensession.ts
-```
+Open <http://127.0.0.1:3850>. Local mode requires a valid hosted web-session
+token in `OPENSESSION_CLOUD_TOKEN` (or `cloud.token` in `~/os1/config.json`) and
+verifies it against the configured upstream before starting. The Mac app passes
+its `opensession_auth` cookie automatically; sign in through cloud mode first.
+The server removes that bearer token from its child-process environment after
+capture and revalidates it every 15 seconds. Revocation closes existing UI
+WebSockets and blocks protected local APIs until local mode restarts with a new
+cloud session.
+The loopback server accepts only same-origin requests and refuses a
+non-loopback `HOST`.
 
 ## Register repositories
 

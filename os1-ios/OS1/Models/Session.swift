@@ -13,6 +13,8 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     var model: String?
     var isRunning: Bool?
     var runState: String?
+    /// Journaled start of the current run — only present while running.
+    var runStartedAt: String?
     var waitingForInput: Bool?
     var queuedCount: Int?
     var archived: Bool?
@@ -36,6 +38,10 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
 
     var lastActivityDate: Date? {
         Self.parseISO(lastActivity)
+    }
+
+    var runStartedDate: Date? {
+        Self.parseISO(runStartedAt)
     }
 
     enum Status {

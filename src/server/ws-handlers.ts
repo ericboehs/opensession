@@ -43,7 +43,7 @@ import { type BackstageSessionFile, type SessionUsage } from "./types";
 import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
 import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
 import { createWorktree, createWorktreeForExistingBranch, ensureAskCheckout, getRepo, listWorktrees, repoForPath, resolveUniqueBranch, worktreeHeadBranch, worktreePathFor } from "./worktree";
-import { BOOT_ID, allClients, b64decode, b64encode, broadcastToNote, broadcastToSession, joinNote, joinSession, leaveNote, leaveSession, preparingWorkspaces } from "./ws-hub";
+import { BOOT_ID, allClients, b64decode, b64encode, broadcastToNote, broadcastToSession, joinNote, joinSession, leaveNote, leaveSession, preparingWorkspaces, revalidateLocalClients } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
 import { userMatchesAny } from "./shared/user-mappings";
 import { existsSync, readFileSync, statSync, watch } from "fs";
@@ -52,7 +52,9 @@ import { join } from "node:path";
 import {
 	cloudWebSocketClientClosed,
 	routeCloudWebSocketMessage,
+	verifiedCloudIdentity,
 } from "./cloud-proxy";
+import { isLocalProfile, setLocalProfileIdentity } from "./profile";
 import {
 	closeCloudProxyProtocol,
 	handleCloudProxyProtocolMessage,
@@ -419,6 +421,15 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 	async message(ws, message) {
 		if (sandboxWsMessage(ws, message as any)) return;
+		if (isLocalProfile()) {
+			const identity = await verifiedCloudIdentity();
+			setLocalProfileIdentity(identity);
+			revalidateLocalClients(identity);
+			if (!identity || ws.data.authLogin !== identity.login) {
+				ws.close(4001, "Hosted GitHub session expired");
+				return;
+			}
+		}
 		let msg: any;
 		try {
 			msg = JSON.parse(String(message));

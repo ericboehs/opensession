@@ -103,7 +103,7 @@ export function UserGate({ children }: { children: React.ReactNode }) {
         setAuth(body);
         setAuthStatusCache(body);
         if ((body.local || body.required) && body.authenticated && body.name) {
-          const user = body.local ? body.name : body.name.split(" ")[0];
+          const user = body.name.split(" ")[0];
           // Always emit the user-change event after authenticated startup. The
           // per-user sidebar caches hydrate at module load and may have raced
           // auth/network readiness; selecting the same profile manually fixed
@@ -116,6 +116,7 @@ export function UserGate({ children }: { children: React.ReactNode }) {
 
   if (auth?.required) {
     if (auth.authenticated) return <>{children}</>;
+    if (auth.local) return <LocalSessionExpired />;
     return (
       <GithubSignIn
         redirect={auth.redirect === true}
@@ -147,6 +148,19 @@ export function UserGate({ children }: { children: React.ReactNode }) {
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function LocalSessionExpired() {
+  return (
+    <div className="user-gate-overlay">
+      <div className="user-gate-card">
+        <h2>GitHub sign-in expired</h2>
+        <p className="text-dim">
+          Switch to cloud mode, sign in with GitHub, then restart local mode.
+        </p>
       </div>
     </div>
   );

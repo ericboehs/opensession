@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "fs";
-import { configuredCloud, configuredRepos, configuredServer, type Repo } from "../config";
+import { configuredRepos, configuredServer, type Repo } from "../config";
+import { configuredCloudAccess } from "../cloud-proxy";
 import { gitPush } from "../git-status";
 import { parseJsonlLines } from "../jsonl-parser";
 import { sessionHasJournaledRun } from "../migrate-engine";
@@ -783,7 +784,7 @@ const productionUpgradeDependencies: UpgradeDependencies = {
       await mergedSessionTranscriptAsync(session),
     );
   },
-  cloud: configuredCloud,
+  cloud: configuredCloudAccess,
   fetch,
   archive: (id, data, upgradedTo) => {
     const now = new Date().toISOString();

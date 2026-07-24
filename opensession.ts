@@ -24,9 +24,13 @@ import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import {
 	isLocalProfile,
 	isLoopbackHostname,
+	localAuthRequestKind,
+	localProfileLogin,
 	localProfileUser,
 	localRequestAllowed,
+	setLocalProfileIdentity,
 } from "./src/server/profile";
+import { verifiedCloudIdentity } from "./src/server/cloud-proxy";
 import { assertLocalEngineCredentials } from "./src/server/local-engine-auth";
 import { assertLocalEngineRuntime } from "./src/server/opencode-runner";
 import { startPrReviewNotificationTicker } from "./src/server/pr-review-notifications";
@@ -49,7 +53,11 @@ import {
 } from "./src/server/web-auth";
 import { startWebhookServer } from "./src/server/webhook-server";
 import { sweepArchivedWorktrees } from "./src/server/worktree";
-import { type WSClientData, broadcastToAll } from "./src/server/ws-hub";
+import {
+	type WSClientData,
+	broadcastToAll,
+	revalidateLocalClients,
+} from "./src/server/ws-hub";
 import { mkdirSync, watch, writeFileSync } from "fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -78,6 +86,14 @@ if (isLocalProfile() && !isLoopbackHostname(HOST)) {
 	throw new Error("OPENSESSION_PROFILE=local only supports a loopback HOST");
 }
 if (isLocalProfile()) {
+	const identity = await verifiedCloudIdentity();
+	if (!identity) {
+		throw new Error(
+			"Local profile requires a valid hosted GitHub session; sign in through cloud mode first",
+		);
+	}
+	setLocalProfileIdentity(identity);
+	revalidateLocalClients(identity);
 	const localCredentials = assertLocalEngineCredentials();
 	assertLocalEngineRuntime(localCredentials.providers);
 }
@@ -96,6 +112,19 @@ mkdirSync(SESSIONS_DIR, { recursive: true });
 // graceful (see SIGTERM handler below). A plain `bun run` (no --hot) just runs
 // each branch once, exactly as before.
 const g = globalThis as any;
+
+if (g.__localIdentityTimer) clearInterval(g.__localIdentityTimer);
+if (isLocalProfile()) {
+	g.__localIdentityTimer = setInterval(() => {
+		void verifiedCloudIdentity(fetch, 0).then((identity) => {
+			setLocalProfileIdentity(identity);
+			revalidateLocalClients(identity);
+		});
+	}, 15_000);
+	g.__localIdentityTimer.unref?.();
+} else {
+	delete g.__localIdentityTimer;
+}
 
 // Loaded agents (Plain/Linear/Slack/Stripe/…). Module-scoped because request
 // handlers (health routes) read it, and globalThis-backed so the set survives a
@@ -246,9 +275,23 @@ const server: import("bun").Server<WSClientData> = hotServe({
 			// page/asset loads (the sign-in screen must render). The verified
 			// identity rides RouteContext and the WS upgrade data, where it
 			// overrides any client-claimed user name.
-			let authUser: { login: string; name: string } | null = isLocalProfile()
-				? { login: "", name: localProfileUser() }
-				: null;
+			let authUser: { login: string; name: string } | null = null;
+			if (isLocalProfile()) {
+				const localAuthKind = localAuthRequestKind(path, req.method);
+				if (localAuthKind) {
+					authUser = await verifiedCloudIdentity();
+					setLocalProfileIdentity(authUser);
+					revalidateLocalClients(authUser);
+					if (!authUser && localAuthKind === "protected") {
+						return Response.json(
+							{ error: "Hosted GitHub session expired; sign in through cloud mode again" },
+							{ status: 401 },
+						);
+					}
+				} else if (localProfileLogin()) {
+					authUser = { login: localProfileLogin(), name: localProfileUser() };
+				}
+			}
 			if (!isLocalProfile() && webAuthRequired()) {
 				authUser = resolveWebAuth(req);
 				// GET /api/health stays open: it's the liveness signal for
