@@ -1286,7 +1286,16 @@ async function ensurePool(repo: Repo): Promise<void> {
     for (const c of ready.slice(cfg.running)) {
       if (await poolFreeze(c)) patchContainer(repo.id, c.name, { state: "paused" });
     }
-  } else if (ready.length < cfg.running && pausedList.length > 0) {
+  }
+  // Drain paused members beyond target — with microvm's restore-on-demand
+  // (running/paused 0) idle VMs must actually go away, not linger frozen.
+  const pausedNow = Object.values(readState(repo.id).containers).filter(
+    (c) => (c.backend ?? "docker") === cfg.backend && c.state === "paused",
+  );
+  for (const c of pausedNow.slice(cfg.paused)) {
+    await destroyContainer(repo.id, c.name);
+  }
+  if (ready.length < cfg.running && pausedList.length > 0) {
     const c = pausedList[0];
     if (await poolUnfreeze(c)) patchContainer(repo.id, c.name, { state: "ready" });
   }
