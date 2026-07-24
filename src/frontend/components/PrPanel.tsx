@@ -21,6 +21,7 @@ import {
   gitPushApi,
   submitPrReviewApi,
   mergePrApi,
+  closePrApi,
   linkPrApi,
   unlinkPrApi,
 } from "../lib/api";
@@ -30,6 +31,7 @@ import {
   fetchPrPreviewGuide,
   submitPrPreviewReviewApi,
   mergePrPreviewApi,
+  closePrPreviewApi,
 } from "../lib/api";
 import { toast } from "../ui/toast";
 import type { FileDiffMetadata } from "@pierre/diffs";
@@ -316,6 +318,9 @@ export function PrPanel({
   const [merging, setMerging] = useState(false);
   const [confirmMerge, setConfirmMerge] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
   const [mergeAfterReview, setMergeAfterReview] = useState(reviewCanvas === true);
   const [checksOpen, setChecksOpen] = useState(false);
   const [allFilesOpen, setAllFilesOpen] = useState(false);
@@ -643,6 +648,30 @@ export function PrPanel({
         setMergeError(e.message || "Merge failed");
     } finally {
       setMerging(false);
+    }
+  }
+
+  async function handleClose() {
+    if (!confirmClose) {
+      setConfirmClose(true);
+      setCloseError(null);
+      setTimeout(() => setConfirmClose(false), 4000);
+      return;
+    }
+    setConfirmClose(false);
+    setClosing(true);
+    setCloseError(null);
+    const actionTargetKey = loadTargetKey;
+    try {
+      if (previewTarget)
+        await closePrPreviewApi(previewTarget.repo, previewTarget.branch);
+      else await closePrApi(sessionId, active?.repo, active?.branch);
+      if (actionTargetKey === activeLoadTargetRef.current) await load(true);
+    } catch (e: any) {
+      if (actionTargetKey === activeLoadTargetRef.current)
+        setCloseError(e.message || "Failed to close pull request");
+    } finally {
+      setClosing(false);
     }
   }
 
@@ -1032,6 +1061,11 @@ export function PrPanel({
                   author={pr.author}
                   descriptionHtml={bodyHtml}
                   comments={comments}
+                  canClose={pr.state === "OPEN"}
+                  closing={closing}
+                  confirmClose={confirmClose}
+                  closeError={closeError}
+                  onClose={handleClose}
                 />
               ) : !diff?.patch ? (
                 <div className="py-12 text-center text-sm text-faint">
@@ -1793,10 +1827,20 @@ function ConversationView({
   author,
   descriptionHtml,
   comments,
+  canClose,
+  closing,
+  confirmClose,
+  closeError,
+  onClose,
 }: {
   author: string;
   descriptionHtml: string;
   comments: PrComment[];
+  canClose: boolean;
+  closing: boolean;
+  confirmClose: boolean;
+  closeError: string | null;
+  onClose: () => void;
 }) {
   return (
     <div className="mx-auto max-w-[760px]">
@@ -1859,6 +1903,32 @@ function ConversationView({
               </article>
             );
           })}
+        </div>
+      )}
+      {canClose && (
+        <div className="mt-6 flex items-center justify-between gap-4 border-t border-line pt-5">
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-fg">Close this pull request</div>
+            <div className="mt-0.5 text-[11px] text-faint">
+              Close without merging. The branch and its commits will remain available.
+            </div>
+            {closeError && <div className="mt-1 text-[11px] text-red">{closeError}</div>}
+          </div>
+          <button
+            className={`shrink-0 rounded-sm border px-3 py-2 text-xs font-semibold ${
+              confirmClose
+                ? "border-red bg-red text-surface"
+                : "border-red/40 bg-transparent text-red hover:border-red hover:bg-red-soft"
+            }`}
+            onClick={onClose}
+            disabled={closing}
+          >
+            {closing
+              ? "Closing…"
+              : confirmClose
+                ? "Confirm close"
+                : "Close pull request"}
+          </button>
         </div>
       )}
     </div>

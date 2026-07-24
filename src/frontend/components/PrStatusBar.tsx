@@ -3,7 +3,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { GitStatusInfo, PrDetails } from "../lib/types";
 import {
 	archiveSessionApi,
-	closePrApi,
 	fetchGitStatus,
 	fetchPr,
 	gitPullApi,
@@ -24,7 +23,6 @@ import {
 	IconCopy,
 	IconHash,
 	IconCheck,
-	IconX,
 } from "./icons";
 
 /**
@@ -319,7 +317,6 @@ export function PrStatusBar({
 	const [loaded, setLoaded] = useState(!!seed);
 	const [busy, setBusy] = useState<string | null>(null);
 	const [confirmMerge, setConfirmMerge] = useState(false);
-	const [confirmClose, setConfirmClose] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [isArchived, setIsArchived] = useState(!!archived);
 	const [prompted, setPrompted] = useState<string | null>(null);
@@ -387,16 +384,6 @@ export function PrStatusBar({
 		}
 		setConfirmMerge(false);
 		run("merge", () => mergePrApi(sessionId, "squash", repo));
-	}
-
-	function handleClose() {
-		if (!confirmClose) {
-			setConfirmClose(true);
-			setTimeout(() => setConfirmClose(false), 4000);
-			return;
-		}
-		setConfirmClose(false);
-		run("close", () => closePrApi(sessionId, repo));
 	}
 
 	// Session-driven actions: ask the agent instead of doing bare git plumbing —
@@ -536,21 +523,6 @@ export function PrStatusBar({
 		}
 	}
 
-	function renderCloseAction(): React.ReactNode {
-		if (pr?.state !== "OPEN") return null;
-		return (
-			<PrBarButton
-				tone={confirmClose ? "red" : "secondary"}
-				icon={!busy && !confirmClose ? <IconX size={18} /> : undefined}
-				disabled={!!busy}
-				onClick={handleClose}
-				title="Close this PR without merging it"
-			>
-				{busy === "close" ? "Closing…" : confirmClose ? "Confirm close" : "Close"}
-			</PrBarButton>
-		);
-	}
-
 	if (variant === "header") {
 		return (
 			<div className="pr-head">
@@ -560,7 +532,6 @@ export function PrStatusBar({
 						{error}
 					</span>
 				)}
-				{renderCloseAction()}
 				{renderAction()}
 			</div>
 		);
@@ -584,7 +555,6 @@ export function PrStatusBar({
 			)}
 			<span className="pr-bar-spacer" />
 			{error && <span className="pr-bar-error" title={error}>{error}</span>}
-			{renderCloseAction()}
 			{renderAction()}
 		</div>
 	);
