@@ -2319,6 +2319,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const rowPin = workspacePinState(row);
 		const pinned = rowPin.pinned;
 		const toggleRowPin = rowPin.toggle;
+		const flatRepoGrouping = filter.groupBy === "repo";
 		// Conductor-style right-edge diff stat, only under "Group by: Repo" —
 		// the flat rows there carry status in their glyph, so the resting right
 		// slot shows the row's PR size instead of the idle time (the time badge
@@ -2428,19 +2429,22 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					}}
 					aria-label={row.name}
 				>
-				{/* Keep the PR glyph in its original 22px column; attention sits just
-				    before it without shifting the icon or workspace title. */}
+				{/* Flat repo grouping has no lane heading, so its leading mark must carry
+				    the workspace status. Grouped lanes already provide that context and
+				    keep the richer PR lifecycle mark here instead. */}
 				<span
 					className="relative flex shrink-0 items-center justify-center"
 					style={{ width: 22, height: 22 }}
 				>
-					{!isPhone && waiting && (
+					{!flatRepoGrouping && !isPhone && waiting && (
 						<span
 							className="absolute left-[-9px] top-[7px] block size-[7px] rounded-full bg-green"
 							aria-label="Needs your attention"
 						/>
 					)}
-					{row.running ? (
+					{flatRepoGrouping ? (
+						<WsStatusMark row={row} size={18} />
+					) : row.running ? (
 						<PixelSpinner className="text-yellow sidebar-spinner" />
 					) : (
 						<WsPrStatusMark chats={row.chats} size={18} />
