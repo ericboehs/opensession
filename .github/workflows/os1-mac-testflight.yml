@@ -28,24 +28,14 @@ permissions:
 
 concurrency:
   group: os1-mac-testflight-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'push' }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  cancel-in-progress: false
 
 defaults:
   run:
     working-directory: os1-ios
 
 jobs:
-  debounce:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Wait for development activity to settle
-        if: github.event_name == 'push'
-        working-directory: .
-        run: sleep 900
-
   testflight:
-    needs: debounce
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -165,3 +155,13 @@ jobs:
         run: |
           xcrun altool --upload-app -f "$RUNNER_TEMP/export/OS1.pkg" -t macos \
             --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+  cooldown:
+    needs: testflight
+    if: ${{ !cancelled() && github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 125
+    steps:
+      - name: Hold automatic release cooldown
+        working-directory: .
+        run: sleep 7200
