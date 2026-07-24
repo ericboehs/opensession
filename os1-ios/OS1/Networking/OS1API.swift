@@ -38,6 +38,16 @@ enum OS1API {
         return response.content
     }
 
+    /// Archive (or unarchive) a session. Archiving an in-flight session also
+    /// stops its run server-side.
+    static func setArchived(sessionId: String, archived: Bool) async throws {
+        struct ArchiveResponse: Decodable { let ok: Bool? }
+        let _: ArchiveResponse = try await post(
+            "/api/sessions/\(sessionId)/archive",
+            body: ["archived": archived]
+        )
+    }
+
     /// Unauthenticated liveness probe; also carries the server bootId.
     static func health() async throws -> Bool {
         struct Health: Decodable { let ok: Bool? }

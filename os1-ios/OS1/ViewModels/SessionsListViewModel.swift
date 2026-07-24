@@ -48,6 +48,36 @@ final class SessionsListViewModel {
         sessions.removeAll { $0.id == id }
     }
 
+    /// Sessions archived locally that the server's (2s-cached) list may still
+    /// include for a poll or two — suppressed until it catches up, with a
+    /// safety expiry so a failed archive doesn't hide the row forever.
+    private var locallyArchived: [String: Date] = [:]
+
+    /// Swipe-to-archive: drop the row immediately, tell the server in the
+    /// background, and roll back (surfacing the error) if that fails.
+    func archive(_ session: Session) {
+        sessions.removeAll { $0.id == session.id }
+        locallyArchived[session.id] = Date()
+        Task {
+            do {
+                try await OS1API.setArchived(sessionId: session.id, archived: true)
+            } catch {
+                locallyArchived.removeValue(forKey: session.id)
+                self.error = "Couldn't archive: \(error.localizedDescription)"
+                await refresh()
+            }
+        }
+    }
+
+    private func isLocallyArchived(_ id: String) -> Bool {
+        guard let added = locallyArchived[id] else { return false }
+        if Date().timeIntervalSince(added) > 30 {
+            locallyArchived.removeValue(forKey: id)
+            return false
+        }
+        return true
+    }
+
     private func mergeOptimistic(into list: [Session]) -> [Session] {
         guard !optimistic.isEmpty else { return list }
         let serverIds = Set(list.map(\.id))
@@ -81,7 +111,7 @@ final class SessionsListViewModel {
         do {
             let all = try await OS1API.sessions()
             let next = mergeOptimistic(into: all
-                .filter { $0.archived != true && $0.desk != true }
+                .filter { $0.archived != true && $0.desk != true && !isLocallyArchived($0.id) }
                 .sorted {
                     ($0.lastActivityDate ?? .distantPast) > ($1.lastActivityDate ?? .distantPast)
                 })

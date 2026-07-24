@@ -430,11 +430,35 @@ struct SessionsListView: View {
         // by polling (fresh struct values every refresh) keep the selection.
         SessionRow(session: session)
             .tag(session.id)
+            .swipeActions(edge: .trailing) { archiveButton(session) }
+            .contextMenu { archiveButton(session) }
         #else
         NavigationLink(value: session) {
             SessionRow(session: session)
         }
+        .swipeActions(edge: .trailing) { archiveButton(session) }
         #endif
+    }
+
+    /// Trailing swipe (and Mac context-menu) action. Hidden for optimistic
+    /// `pending-` rows — the server doesn't know those ids yet.
+    @ViewBuilder
+    private func archiveButton(_ session: Session) -> some View {
+        if !session.id.hasPrefix("pending-") {
+            Button {
+                archive(session)
+            } label: {
+                Label("Archive", systemImage: "archivebox")
+            }
+            .tint(.purple)
+        }
+    }
+
+    private func archive(_ session: Session) {
+        #if os(macOS)
+        if selectedSessionID == session.id { selectedSessionID = nil }
+        #endif
+        viewModel.archive(session)
     }
 
     private var listSections: some View {

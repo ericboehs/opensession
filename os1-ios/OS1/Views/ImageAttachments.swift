@@ -157,37 +157,97 @@ struct DataImage: View {
 #if os(macOS)
 extension View {
     /// Cmd+V of a copied screenshot/image drops it into the attachments.
-    /// Scoped to image content: the handler only claims the Paste command
-    /// when the pasteboard's content matches, so text pastes keep flowing
-    /// to the focused text view untouched.
+    ///
+    /// Not `onPasteCommand`: with a focused TextEditor/TextField the backing
+    /// NSTextView is the first responder for the Paste command and swallows
+    /// image pastes silently, so SwiftUI's handler never fires. A local
+    /// key-event monitor scoped to this view's window sees Cmd+V before the
+    /// responder chain, claims it only when the pasteboard actually carries
+    /// an image, and lets every other paste reach the text view untouched.
     func pastesImages(
         into images: Binding<[AttachedImage]>, maxCount: Int = 6
     ) -> some View {
-        onPasteCommand(of: [.image]) { providers in
-            Task { @MainActor in
-                for provider in providers {
-                    guard images.wrappedValue.count < maxCount,
-                          let data = await provider.imageDataRepresentation(),
-                          let image = AttachedImage(rawData: data)
-                    else { continue }
-                    images.wrappedValue.append(image)
-                }
-            }
-        }
+        background(ImagePasteMonitor(images: images, maxCount: maxCount))
     }
 }
 
-extension NSItemProvider {
-    /// Raw bytes of the first image flavor this provider carries.
-    func imageDataRepresentation() async -> Data? {
-        let type = registeredTypeIdentifiers.first {
-            UTType($0)?.conforms(to: .image) == true
-        }
-        guard let type else { return nil }
-        return await withCheckedContinuation { continuation in
-            _ = loadDataRepresentation(forTypeIdentifier: type) { data, _ in
-                continuation.resume(returning: data)
+private struct ImagePasteMonitor: NSViewRepresentable {
+    @Binding var images: [AttachedImage]
+    var maxCount: Int
+
+    func makeNSView(context: Context) -> MonitorView { MonitorView() }
+
+    func updateNSView(_ view: MonitorView, context: Context) {
+        view.onPaste = { datas in
+            for data in datas {
+                guard images.count < maxCount,
+                      let image = AttachedImage(rawData: data)
+                else { continue }
+                images.append(image)
             }
+        }
+    }
+
+    final class MonitorView: NSView {
+        var onPaste: (([Data]) -> Void)?
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window == nil {
+                removeMonitor()
+            } else if monitor == nil {
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+                    [weak self] event in
+                    guard let self, self.claims(event) else { return event }
+                    return nil
+                }
+            }
+        }
+
+        /// Plain Cmd+V, in this view's own window, with image content on the
+        /// pasteboard. Anything else stays on the normal responder path.
+        private func claims(_ event: NSEvent) -> Bool {
+            guard event.window === window,
+                  event.modifierFlags.intersection(
+                      [.command, .shift, .option, .control]
+                  ) == .command,
+                  event.charactersIgnoringModifiers?.lowercased() == "v"
+            else { return false }
+            let datas = NSPasteboard.general.imageDataRepresentations()
+            guard !datas.isEmpty else { return false }
+            onPaste?(datas)
+            return true
+        }
+
+        private func removeMonitor() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+
+        deinit { removeMonitor() }
+    }
+}
+
+extension NSPasteboard {
+    /// Raw bytes of every image on the pasteboard: direct image flavors
+    /// (screenshots, a browser's "Copy Image") plus copied files that are
+    /// themselves images (Finder, the screenshot thumbnail).
+    func imageDataRepresentations() -> [Data] {
+        (pasteboardItems ?? []).compactMap { item in
+            if let type = item.types.first(where: {
+                UTType($0.rawValue)?.conforms(to: .image) == true
+            }) {
+                return item.data(forType: type)
+            }
+            guard let urlString = item.string(forType: .fileURL),
+                  let url = URL(string: urlString),
+                  let type = UTType(filenameExtension: url.pathExtension),
+                  type.conforms(to: .image)
+            else { return nil }
+            return try? Data(contentsOf: url)
         }
     }
 }
