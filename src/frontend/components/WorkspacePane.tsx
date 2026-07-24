@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { Project, UnifiedSession, WSServerMessage } from "../lib/types";
 import { fetchModels, type ModelOption } from "../lib/api";
 import { Composer } from "./Composer";
+import { ConversationPane } from "./ConversationPane";
 import { PrPanel } from "./PrPanel";
 import { useCurrentUser } from "./UserPicker";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
@@ -147,6 +148,18 @@ export function WorkspacePane({
 						reviewSession ? () => onOpenSession(reviewSession.id) : undefined
 					}
 					walkthrough={reviewSession?.walkthrough}
+				/>
+			</div>
+		);
+	}
+
+	if (tab === "conversation" && workspace.plainThreadId) {
+		return (
+			<div className="flex flex-col h-full min-h-0">
+				<ConversationPane
+					threadId={workspace.plainThreadId}
+					onOpenSession={onOpenSession}
+					hideTriage={chats.length > 0}
 				/>
 			</div>
 		);

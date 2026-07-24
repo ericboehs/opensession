@@ -760,15 +760,20 @@ function App() {
 	// unrepresentable; the two show-flags derive from it. Reset to chat whenever
 	// the open session changes.
 	const [activeViewTab, setActiveViewTab] = useState<
-		"review" | "staging" | "assets" | "preview" | null
+		"review" | "conversation" | "staging" | "assets" | "preview" | null
 	>(null);
 	const reviewActive = activeViewTab === "review";
+	const conversationActive = activeViewTab === "conversation";
 	const stagingActive = activeViewTab === "staging";
 	const assetsActive = activeViewTab === "assets";
 	const previewLiveActive = activeViewTab === "preview";
-	// Sessions whose Review / Preview environment view-tab is present in the strip; empty by
-	// default (a tab is added when its pane is first opened).
+	// Workspaces whose Review / Conversation / Preview environment view-tab is
+	// present in the strip; empty by default (a tab is added when its pane is
+	// first opened).
 	const [reviewOpen, setReviewOpen] = useState<Set<string>>(() => new Set());
+	const [conversationOpen, setConversationOpen] = useState<Set<string>>(
+		() => new Set(),
+	);
 	const [stagingOpen, setStagingOpen] = useState<Set<string>>(() => new Set());
 	// Sessions whose local-dev Preview view-tab is open (full-width iframe of
 	// the running dev server — sibling of Staging, which shows the PR deploy).
@@ -1161,14 +1166,25 @@ function App() {
 			return;
 		}
 		const p = projects.find((x) => x.id === route.id) || null;
+		// Default pane by workspace shape: ticket workspaces open on the
+		// Conversation, PR-backed ones on Review, plain ones in their first chat.
 		const tab =
 			route.tab ??
-			(p && (p.branch || p.prNumber !== undefined) ? "review" : null);
+			(p?.plainThreadId
+				? "conversation"
+				: p && (p.branch || p.prNumber !== undefined)
+					? "review"
+					: null);
+		const key = route.id;
 		if (tab === "review") {
-			const key = route.id;
 			setReviewOpen((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
 			setActiveViewTab("review");
-		} else if (tab !== "conversation") {
+		} else if (tab === "conversation") {
+			setConversationOpen((prev) =>
+				prev.has(key) ? prev : new Set(prev).add(key),
+			);
+			setActiveViewTab("conversation");
+		} else {
 			const first = sessionsRef.current
 				.filter(
 					(s) => !s.archived && s.projectId === route.id && !s.sideChatOf,
@@ -1204,6 +1220,21 @@ function App() {
 								? "pr-dot-conflict"
 								: `pr-dot-${currentSession.prState.toLowerCase()}`
 							: null,
+					},
+				]
+			: [];
+	// The Conversation view-tab: the Plain support-ticket thread the workspace
+	// (or the open chat) is attached to — timeline, admin actions, replies.
+	const conversationThreadId =
+		routeWorkspace?.plainThreadId ?? currentSession?.plainThreadId ?? null;
+	const conversationViewTabs: ViewTab[] =
+		conversationThreadId && wsKey && conversationOpen.has(wsKey)
+			? [
+					{
+						id: `conversation:${wsKey}`,
+						label: "Conversation",
+						active: conversationActive,
+						dotClass: null,
 					},
 				]
 			: [];
@@ -1249,9 +1280,10 @@ function App() {
 					},
 				]
 			: [];
-	// Review leftmost, then Preview environment, then Preview, then Assets.
+	// Review leftmost, then Conversation, Preview environment, Preview, Assets.
 	const viewTabs: ViewTab[] = [
 		...reviewViewTabs,
+		...conversationViewTabs,
 		...stagingViewTabs,
 		...previewViewTabs,
 		...assetsViewTabs,
@@ -1280,6 +1312,29 @@ function App() {
 		// Only fall back to chat if Review was the foregrounded pane — closing the
 		// Review tab while the Preview environment is active leaves it up.
 		if (reviewActive) setActiveViewTab(null);
+	}
+	// Open/foreground this workspace's Conversation view-tab (the Plain ticket
+	// thread). Adds the tab to the strip if absent.
+	function openConversation() {
+		if (!wsKey) return;
+		const key = wsKey;
+		setConversationOpen((prev) => {
+			if (prev.has(key)) return prev;
+			return new Set(prev).add(key);
+		});
+		setActiveViewTab("conversation");
+	}
+	function closeConversationTab() {
+		if (wsKey) {
+			const key = wsKey;
+			setConversationOpen((prev) => {
+				if (!prev.has(key)) return prev;
+				const next = new Set(prev);
+				next.delete(key);
+				return next;
+			});
+		}
+		if (conversationActive) setActiveViewTab(null);
 	}
 	// Open/foreground this workspace's Preview environment view-tab (the Info
 	// panel button). Adds the tab to the strip if absent.
@@ -2149,13 +2204,18 @@ function App() {
 										? ("assets" as const)
 										: id.startsWith("preview:")
 											? ("preview" as const)
-											: ("review" as const);
+											: id.startsWith("conversation:")
+												? ("conversation" as const)
+												: ("review" as const);
 								setActiveViewTab(tab);
 								// On the chat-less workspace route the URL carries the
 								// foregrounded pane (deep-linkable); replace, not push.
-								if (route.view === "workspace" && tab === "review")
+								if (
+									route.view === "workspace" &&
+									(tab === "review" || tab === "conversation")
+								)
 									navigate(
-										{ view: "workspace", id: route.id, tab: "review" },
+										{ view: "workspace", id: route.id, tab },
 										{ replace: true },
 									);
 							}}
@@ -2164,11 +2224,16 @@ function App() {
 								else if (id.startsWith("assets:")) closeAssetsTab();
 								else if (id.startsWith("preview:")) closePreviewTab();
 								else {
-									closeReviewTab();
-									// Drop the /review suffix; the URL replace re-runs the
+									const isConversation = id.startsWith("conversation:");
+									if (isConversation) closeConversationTab();
+									else closeReviewTab();
+									// Drop the tab suffix; the URL replace re-runs the
 									// seeding effect, so arm its one-shot suppress (a close
 									// with no suffix causes no replace and needs none).
-									if (route.view === "workspace" && route.tab === "review") {
+									if (
+										route.view === "workspace" &&
+										route.tab === (isConversation ? "conversation" : "review")
+									) {
 										suppressWsSeedRef.current = true;
 										navigate(
 											{ view: "workspace", id: route.id },
@@ -2204,7 +2269,13 @@ function App() {
 									workspace={routeWorkspace}
 									chats={projectChats}
 									sessions={sessions}
-									tab={reviewActive ? "review" : null}
+									tab={
+										reviewActive
+											? "review"
+											: conversationActive
+												? "conversation"
+												: null
+									}
 									connected={connected}
 									send={send}
 									addHandler={addHandler}
@@ -2367,6 +2438,8 @@ function App() {
 									}
 									workspaceChats={projectChats}
 									showReview={reviewActive}
+									showConversation={conversationActive}
+									conversationThreadId={conversationThreadId}
 									showStaging={stagingActive}
 									showAssets={assetsActive}
 									showPreviewTab={previewLiveActive}

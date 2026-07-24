@@ -12150,10 +12150,12 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 
 	/* 16px stops iOS Safari from zooming into focused inputs, and reads at a
 	   comfortable iOS body size. Includes the in-session composer textarea — the
-	   primary chat input — which otherwise zoomed on focus at 13.5px. */
+	   primary chat input — which otherwise zoomed on focus at 13.5px, and the
+	   Plain reply box now that Conversation is a primary phone surface. */
 	.prompt-input,
 	.composer-textarea,
 	.ask-input,
+	.plain-reply-textarea,
 	.new-session-form select,
 	.new-session-form input,
 	.new-session-form textarea {

@@ -83,6 +83,7 @@ import { PrStatusBar } from "./PrStatusBar";
 
 import { TeamChat } from "./TeamChat";
 import { PlainThreadPanel } from "./PlainThreadPanel";
+import { ConversationPane } from "./ConversationPane";
 import { WorkflowPanel } from "./WorkflowPanel";
 import { AssetsPanel, useSessionAssets } from "./AssetsPanel";
 import {
@@ -250,6 +251,14 @@ interface Props {
 	onOpenAssets?: () => void;
 	/** Close this session's Assets view-tab (its last asset was deleted). */
 	onCloseAssets?: () => void;
+	/**
+	 * Whether the Conversation pane (the workspace's Plain support-ticket
+	 * thread, full-width) is foregrounded — driven by the top tab strip's
+	 * Conversation view-tab (App state).
+	 */
+	showConversation?: boolean;
+	/** The Plain thread the Conversation pane renders (workspace or session). */
+	conversationThreadId?: string | null;
 	/** Foregrounded full-width local-dev Preview view-tab (App state). */
 	showPreviewTab?: boolean;
 	/** Open/foreground the Preview view-tab (header Preview button). */
@@ -488,6 +497,8 @@ export function SessionViewer({
 	onOpenStaging,
 	onCloseStaging,
 	showAssets = false,
+	showConversation = false,
+	conversationThreadId = null,
 	showPreviewTab = false,
 	onOpenPreviewTab,
 	onClosePreviewTab,
@@ -549,7 +560,12 @@ export function SessionViewer({
 	// A full-width view-tab (Review, Staging, or Assets) takes over the chat
 	// column, so the chat DOM isn't mounted while any is up — the scroll /
 	// history / scroll-restore effects below must bail in all cases.
-	const chatHidden = showReview || showStaging || showAssets || showPreviewTab;
+	const chatHidden =
+		showReview ||
+		showStaging ||
+		showAssets ||
+		showPreviewTab ||
+		(showConversation && !!conversationThreadId);
 	const [cachedTranscript] = useState(() => peekCachedTranscriptView(session.id));
 	const transcriptViewStore = useMemo(
 		() =>
@@ -4146,6 +4162,17 @@ export function SessionViewer({
 								selectedPath={selectedAssetPath}
 								showTree={false}
 								onOpenNewSession={onOpenNewSession}
+							/>
+						</div>
+					) : showConversation && conversationThreadId ? (
+						// The workspace's Plain ticket thread, full-width — same
+						// ConversationPane the chat-less workspace route renders, so
+						// the chat stays mounted underneath exactly like Review.
+						<div className="viewer-review-main">
+							<ConversationPane
+								threadId={conversationThreadId}
+								onOpenSession={() => {}}
+								hideTriage
 							/>
 						</div>
 					) : showReview && hasWorkspace ? (
