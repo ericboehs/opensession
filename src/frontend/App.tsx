@@ -60,6 +60,7 @@ import {
 	resolveWorkspaceApi,
 	type NoteMeta,
 } from "./lib/api";
+import { pickLandingChat } from "./lib/landing-chat";
 import type { Project, SupportThread } from "./lib/types";
 import type { ReviewQueueItem } from "./lib/review-queue";
 import { pushRecent } from "./lib/recents";
@@ -1186,12 +1187,7 @@ function App() {
 		// including the right sidebar — around the foregrounded pane (wsKey is
 		// unchanged, so the view-tab reset effect doesn't fire). Chat-less
 		// workspaces stay on WorkspacePane, which renders its own info panel.
-		const firstChat = () =>
-			sessionsRef.current
-				.filter(
-					(s) => !s.archived && s.projectId === key && !s.sideChatOf,
-				)
-				.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))[0];
+		const firstChat = () => pickLandingChat(sessionsRef.current, key);
 		if (tab === "review") {
 			setReviewOpen((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
 			setActiveViewTab("review");
@@ -1208,11 +1204,7 @@ function App() {
 			const first = firstChat();
 			if (first) navigate({ view: "session", id: first.id }, { replace: true });
 		} else {
-			const first = sessionsRef.current
-				.filter(
-					(s) => !s.archived && s.projectId === route.id && !s.sideChatOf,
-				)
-				.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))[0];
+			const first = firstChat();
 			if (first) navigate({ view: "session", id: first.id }, { replace: true });
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
