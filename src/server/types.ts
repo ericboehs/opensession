@@ -294,6 +294,8 @@ export interface SessionPrRef {
   title?: string;
   isDraft?: boolean;
   reviewDecision?: string;
+  additions?: number;
+  deletions?: number;
   checks?: { total: number; passed: number; failed: number; pending: number };
 }
 

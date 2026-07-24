@@ -255,6 +255,8 @@ export interface UnifiedSession {
 		title?: string;
 		isDraft?: boolean;
 		reviewDecision?: string;
+		additions?: number;
+		deletions?: number;
 		checks?: { total: number; passed: number; failed: number; pending: number };
 	}>;
 	/** Route the Preview/Preview environment buttons deep-link to (agent-set via

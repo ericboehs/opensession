@@ -2235,6 +2235,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const rowPin = workspacePinState(row);
 		const pinned = rowPin.pinned;
 		const toggleRowPin = rowPin.toggle;
+		// Conductor-style right-edge diff stat, only under "Group by: Repo" —
+		// the flat rows there carry status in their glyph, so the resting right
+		// slot shows the row's PR size instead of the idle time (the time badge
+		// drops to hover-reveal while the stat is shown).
+		const diff =
+			!isPhone && filter.groupBy === "repo" ? wsRowDiff(row) : null;
 		return (
 			<div
 				key={row.key}
@@ -2410,10 +2416,23 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				    including while a run is live (the --running modifier keeps it
 				    hidden until then, so the ticker owns the resting slot). */}
 				{runStartMs !== null && <RunTicker startMs={runStartMs} />}
+				{diff && !editing && (
+					<span
+						className="sidebar-ws-diff"
+						aria-label={`+${diff.add} −${diff.del} lines in PR`}
+					>
+						<span className="sidebar-ws-diff-add">
+							+{compactNum(diff.add)}
+						</span>
+						<span className="sidebar-ws-diff-del">
+							-{compactNum(diff.del)}
+						</span>
+					</span>
+				)}
 				{!isPhone && wsTimePref !== "off" && row.lastActivity && (
 					<span
 						className={`sidebar-ws-time${
-							wsTimePref === "hover" ? " sidebar-ws-time--hover" : ""
+							wsTimePref === "hover" || diff ? " sidebar-ws-time--hover" : ""
 						}${runStartMs !== null ? " sidebar-ws-time--running" : ""}`}
 						aria-label={new Date(row.lastActivity).toLocaleString()}
 					>
@@ -2585,16 +2604,38 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return row.chats[0] ? sessionRepo(row.chats[0]) : DEFAULT_PROJECT;
 	}
 
+	// The row's headline diff size (Conductor-style "+66 −43"): its most
+	// recently active chat's primary PR, preferring open PRs so a live branch
+	// outranks a long-merged predecessor; falls back to the multi-PR refs
+	// (attached/linked repos) when no primary-branch PR carries numbers.
+	function wsRowDiff(row: WsRow): { add: number; del: number } | null {
+		const chats = [...row.chats].sort((a, b) =>
+			(b.lastActivity || "").localeCompare(a.lastActivity || ""),
+		);
+		const primary = (openOnly: boolean) => {
+			for (const c of chats) {
+				if (c.prAdditions == null || c.prDeletions == null) continue;
+				if (openOnly && c.prState !== "OPEN") continue;
+				return { add: c.prAdditions, del: c.prDeletions };
+			}
+			return null;
+		};
+		const fromPrimary = primary(true) || primary(false);
+		if (fromPrimary) return fromPrimary;
+		for (const c of chats)
+			for (const pr of c.prs || [])
+				if (pr.additions != null && pr.deletions != null)
+					return { add: pr.additions, del: pr.deletions };
+		return null;
+	}
+
 	// The Conductor-style status lanes (Needs input / In progress / …) over a set
-	// of workspace rows. `ns` namespaces the per-lane collapse keys so the same
-	// lane can appear once per repo with independent open/closed state; the
-	// default (status grouping) passes "" to keep the original `status:<key>`
-	// keys and their persisted state.
-	function renderStatusLanes(rows: WsRow[], ns: string) {
+	// of workspace rows — the default "Group by: Status" view.
+	function renderStatusLanes(rows: WsRow[]) {
 		return MINE_STATUS_META.map((meta) => {
 			const items = rows.filter((r) => r.status === meta.key);
 			if (items.length === 0) return null;
-			const gkey = `${ns}status:${meta.key}`;
+			const gkey = `status:${meta.key}`;
 			const open = isOpen(gkey);
 			return (
 				<div className="sidebar-status-group" key={gkey}>
@@ -2620,10 +2661,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		});
 	}
 
-	// "Group by: Repo" — one collapsible band per repo, each holding that repo's
-	// status lanes. Repos are ordered by the sidebar's frequency list (`repos`),
-	// with any stragglers appended; a band is force-open while it holds the
-	// selected row so the open session never hides inside a collapsed repo.
+	// "Group by: Repo" — one collapsible band per repo, holding that repo's rows
+	// as a flat Conductor-style list: status lives in each row's own glyph
+	// (attention dot / spinner / PR mark) plus a right-edge diff stat, not in
+	// nested lanes. Needs-input rows float to the top, and a collapsed band
+	// wears a count of the urgent rows it hides. Repos are ordered by the
+	// sidebar's frequency list (`repos`), with any stragglers appended; a band
+	// is force-open while it holds the selected row so the open session never
+	// hides inside a collapsed repo.
 	function renderRepoGroups() {
 		const byRepo = new Map<string, WsRow[]>();
 		const bucket = (repo: string) => {
@@ -2643,6 +2688,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			.filter((repo) => byRepo.has(repo))
 			.map((repo) => {
 				const rows = byRepo.get(repo)!;
+				const urgent = rows.filter((r) => r.status === "needsinput");
+				const ordered = [
+					...urgent,
+					...rows.filter((r) => r.status !== "needsinput"),
+				];
 				const gkey = `repo:${repo}`;
 				const hasSelected = rows.some((r) =>
 					r.chats.some((c) => c.id === selectedId),
@@ -2660,6 +2710,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							<span className="sidebar-group-count">
 								{rows.length}
 							</span>
+							{/* Urgent rows must not vanish into a closed band — a collapsed
+							    header wears the count of rows waiting for input. */}
+							{!open && urgent.length > 0 && (
+								<span
+									className="sidebar-repo-attn"
+									aria-label={`${urgent.length} waiting for input`}
+								>
+									{urgent.length}
+								</span>
+							)}
 							<IconChevronDown
 								className="sidebar-group-chevron"
 								size={22}
@@ -2688,7 +2748,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						</button>
 						{open && (
 							<div className="sidebar-repo-lanes">
-								{renderStatusLanes(rows, `repo:${repo}::`)}
+								{ordered.map(renderWsRow)}
 							</div>
 						)}
 					</div>
@@ -3369,12 +3429,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					{/* Status groups over the focus person's workspaces. The Person
 					    filter defaults to you; picking a teammate shows all their groups,
 					    "Unassigned" shows every Backlog, and "Everyone" shows all workspaces.
-					    "Group by: Repo"
-					    nests those same status lanes under one band per repo. Empty
-					    lanes/bands are hidden — only groups with sessions render. */}
+					    "Group by: Repo" shows one band per repo instead, holding a flat
+					    Conductor-style row list (status in the row glyph, not lanes).
+					    Empty lanes/bands are hidden — only groups with sessions render. */}
 					{filter.groupBy === "repo"
 						? renderRepoGroups()
-						: renderStatusLanes(focusWsRows, "")}
+						: renderStatusLanes(focusWsRows)}
 				</div>
 
 				{archivedBand && (

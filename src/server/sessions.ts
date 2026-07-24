@@ -1508,6 +1508,8 @@ export function getAllSessions(): UnifiedSession[] {
           title: pr.title,
           isDraft: pr.isDraft,
           reviewDecision: pr.reviewDecision,
+          additions: pr.additions,
+          deletions: pr.deletions,
           checks: pr.checks,
         });
       } else if (

@@ -1456,6 +1456,20 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	margin-left: 0;
 	padding-right: 0;
 }
+/* Needs-input count on a COLLAPSED repo band — urgent rows must not vanish
+   inside a closed group. Wears the needs-input lane color. */
+.sidebar-repo-attn {
+	flex: 0 0 auto;
+	min-width: 16px;
+	padding: 0 4px;
+	border-radius: 999px;
+	background: var(--blue);
+	color: #fff;
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 16px;
+	text-align: center;
+}
 /* Hover action at the far end: "+" that starts a session in this repo. Sits
    right, reveals on hover like the chevron, and never squeezes the name. */
 .sidebar-repo-new {
@@ -15409,6 +15423,41 @@ html.wco .settings-sidenav {
 }
 @media (hover: hover) {
 	.sidebar-ws-row:hover .sidebar-ws-draft {
+		display: none;
+	}
+}
+
+/* Conductor-style diff stat on workspace rows (repo grouping only): the row's
+   PR size, "+adds -dels", resting in the right slot the idle time badge would
+   occupy (the time drops to hover-reveal while this shows). Yields to the
+   hover actions like the count/time do. */
+.sidebar-ws-diff {
+	flex: 0 0 auto;
+	margin-left: auto;
+	display: inline-flex;
+	gap: 5px;
+	font-family: var(--mono);
+	font-size: 10.5px;
+	font-variant-numeric: tabular-nums;
+}
+.sidebar-ws-diff-add {
+	color: var(--green);
+}
+.sidebar-ws-diff-del {
+	color: var(--red);
+}
+/* A count/ticker already pushed the cluster to the right edge — keep a small
+   fixed gap instead of a second auto margin (two autos would split the free
+   space and strand a badge mid-row). Same for the badges after the stat. */
+.sidebar-group-count + .sidebar-ws-diff,
+.sidebar-ws-ticker + .sidebar-ws-diff {
+	margin-left: 6px;
+}
+.sidebar-ws-diff ~ .sidebar-ws-draft {
+	margin-left: 6px;
+}
+@media (hover: hover) {
+	.sidebar-ws-row:hover .sidebar-ws-diff {
 		display: none;
 	}
 }
