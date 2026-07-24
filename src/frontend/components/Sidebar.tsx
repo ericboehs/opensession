@@ -2533,6 +2533,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								<button
 									className={cn(
 										"sidebar-item",
+										"sidebar-ws-row",
 										archivedActive && "sidebar-item-selected",
 									)}
 									onClick={onOpenArchived}
@@ -5652,7 +5653,7 @@ function SnoozeBadge({ until }: { until: string }) {
 	}, []);
 	return (
 		<span
-			className="flex shrink-0 items-center gap-1 text-[12px] text-faint"
+			className="sidebar-ws-snooze"
 			title={`Snoozed until ${new Date(until).toLocaleString()}`}
 		>
 			<IconMoon size={20} />

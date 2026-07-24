@@ -15230,6 +15230,36 @@ html.wco .settings-sidenav {
 		display: none;
 	}
 }
+
+/* Wake countdown on a snoozed workspace row (moon + "1h"): it stands in for
+   the idle time badge, so it rests in that same right-edge slot and matches
+   its type — and yields it to the pin/archive actions on hover, like every
+   other trailing badge. */
+.sidebar-ws-snooze {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	margin-left: auto;
+	font-size: 10.5px;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-faint);
+}
+/* Something ahead of it already pushed the cluster right — a second auto
+   margin would split the free space and strand a badge mid-row. */
+.sidebar-group-count + .sidebar-ws-snooze,
+.sidebar-ws-ticker + .sidebar-ws-snooze {
+	margin-left: 6px;
+}
+.sidebar-ws-snooze ~ .sidebar-ws-diff,
+.sidebar-ws-snooze ~ .sidebar-ws-draft {
+	margin-left: 6px;
+}
+@media (hover: hover) {
+	.sidebar-ws-row:hover .sidebar-ws-snooze {
+		display: none;
+	}
+}
 .session-tab-draft {
 	display: inline-flex;
 	align-items: center;
