@@ -15172,7 +15172,6 @@ html.wco .settings-sidenav {
 	display: inline-flex;
 	gap: 5px;
 	padding-right: 16px;
-	font-family: var(--mono);
 	font-size: 10.5px;
 	font-variant-numeric: tabular-nums;
 }
