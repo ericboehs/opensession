@@ -2301,17 +2301,23 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const wsSwipeOffset = useRef(0);
 	const [wsSwipe, setWsSwipe] = useState<SwipeState | null>(null);
 	const [wsDraggingKey, setWsDraggingKey] = useState<string | null>(null);
+	// Which action the in-flight drag is revealing. Split from wsSwipe so a
+	// touchmove only re-renders when the side FLIPS — the per-frame offset is
+	// written straight to the DOM in wsRowTouchMove.
+	const [wsDragSide, setWsDragSide] = useState<SwipeAction | null>(null);
 	useEffect(() => {
 		if (!isPhone) {
 			setWsSwipe(null);
 			wsSwipeOffset.current = 0;
 			setWsDraggingKey(null);
+			setWsDragSide(null);
 		}
 	}, [isPhone]);
 	useEffect(() => {
 		setWsSwipe(null);
 		wsSwipeOffset.current = 0;
 		setWsDraggingKey(null);
+		setWsDragSide(null);
 	}, [selectedId]);
 
 	function clearWsPress() {
@@ -2362,7 +2368,17 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				e.preventDefault();
 				const offset = clampSwipe(dx, swipeO.width);
 				wsSwipeOffset.current = offset;
-				setWsSwipe({ key: row.key, offset });
+				// Per-frame position goes straight to the DOM: a setState here
+				// re-rendered the entire sidebar on every touchmove, which
+				// phones can't do at 60fps. React only hears about drag start
+				// and side flips; touchend reconciles the settled state.
+				const btn = e.currentTarget as HTMLElement;
+				btn.style.setProperty("--swipe-x", `${offset}px`);
+				btn.parentElement?.style.setProperty(
+					"--swipe-action-w",
+					`${Math.max(SWIPE_REVEAL_PX, Math.abs(offset))}px`,
+				);
+				setWsDragSide(offset < 0 ? "archive" : offset > 0 ? "star" : null);
 				return;
 			}
 		}
@@ -2391,6 +2407,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		wsSwipeOrigin.current = null;
 		wsSwiping.current = false;
 		setWsDraggingKey(null);
+		setWsDragSide(null);
+		// The drag wrote --swipe-x / --swipe-action-w straight onto the DOM;
+		// React never owned them, so a re-render with an undefined style prop
+		// won't remove them. Clear here — the settled wsSwipe state (if any)
+		// re-applies them through the style props on this same flush.
+		const rowEl = e.currentTarget as HTMLElement;
+		rowEl.style.removeProperty("--swipe-x");
+		rowEl.parentElement?.style.removeProperty("--swipe-action-w");
 		if (rowRenameEditing(row)) return;
 		if (wasSwiping) {
 			e.preventDefault();
@@ -2867,6 +2891,17 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		}
 		const swipeOffset = isPhone && wsSwipe?.key === row.key ? wsSwipe.offset : 0;
 		const swipeAction = isPhone && wsSwipe?.key === row.key ? wsSwipe.action : null;
+		const draggingRow = wsDraggingKey === row.key;
+		// Which underlay to show: the in-flight drag reveals its side via
+		// wsDragSide (per-frame offsets live only in the DOM now), a settled
+		// open/committing row falls back to the reconciled wsSwipe state.
+		const swipeSide: SwipeAction | null = draggingRow
+			? wsDragSide
+			: swipeAction === "archive" || swipeOffset < 0
+				? "archive"
+				: swipeAction === "star" || swipeOffset > 0
+					? "star"
+					: null;
 		const rowPin = workspacePinState(row);
 		const pinned = rowPin.pinned;
 		const toggleRowPin = rowPin.toggle;
@@ -2888,12 +2923,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			<div
 				key={row.key}
 				className={`sidebar-swipe-row${
-					swipeAction === "archive" || swipeOffset < 0
-						? " is-open is-swipe-archive"
-						: swipeAction === "star" || swipeOffset > 0
-							? " is-open is-swipe-star"
-							: ""
-				}${wsDraggingKey === row.key ? " is-dragging" : ""}`}
+					swipeSide ? ` is-open is-swipe-${swipeSide}` : ""
+				}${draggingRow ? " is-dragging" : ""}`}
 				style={
 					swipeOffset
 						? ({
@@ -2963,11 +2994,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					onTouchStart={(e) => wsRowTouchStart(row, e)}
 					onTouchMove={(e) => wsRowTouchMove(row, e)}
 					onTouchEnd={(e) => wsRowTouchEnd(row, e)}
-					onTouchCancel={() => {
+					onTouchCancel={(e) => {
 						clearWsPress();
 						wsSwipeOrigin.current = null;
 						wsSwiping.current = false;
 						setWsDraggingKey(null);
+						setWsDragSide(null);
+						const rowEl = e.currentTarget as HTMLElement;
+						rowEl.style.removeProperty("--swipe-x");
+						rowEl.parentElement?.style.removeProperty("--swipe-action-w");
 					}}
 					onContextMenu={(e) => {
 					e.preventDefault();

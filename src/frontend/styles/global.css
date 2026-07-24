@@ -1966,8 +1966,16 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	touch-action: pan-y;
 	/* No will-change here: it promoted EVERY sidebar row to its own compositor
 	   layer (dozens of retina-sized layers just sitting in the list), a real
-	   GPU-memory tax on loaded machines. The swipe transform still animates
-	   fine — is-dragging rows get promoted implicitly by the transform. */
+	   GPU-memory tax on loaded machines. */
+}
+/* ...but the ONE row under an active drag (or settling after it) does get its
+   own layer. "Implicit promotion by the transform" didn't hold on iOS: without
+   will-change each touchmove re-rasterized the row on the main thread, so the
+   swipe visibly chugged after 4cbb585b. Scoped to is-dragging/is-open the idle
+   list still holds zero extra layers. */
+.sidebar-swipe-row.is-dragging > .sidebar-item,
+.sidebar-swipe-row.is-open > .sidebar-item {
+	will-change: transform;
 }
 .sidebar-swipe-row > .sidebar-item:hover {
 	background: var(--bg-hover);

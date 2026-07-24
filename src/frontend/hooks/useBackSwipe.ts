@@ -22,9 +22,10 @@ interface Opts {
 }
 
 const MOBILE = "(max-width: 720px)";
-const EDGE = 28; // px from the left that may begin a back drag
+const EDGE = 32; // px from the left that may begin a back drag
 const SLOP = 8; // px of movement before committing to an axis
 const SNAP_MS = 260; // matches the CSS page transition
+const FLICK_VX = 0.35; // px/ms rightward at release that pops even a short drag
 
 export function useBackSwipe({ active, onBack, paneRef }: Opts) {
   // Callers pass a fresh `onBack` closure every render. Going through a ref
@@ -46,6 +47,9 @@ export function useBackSwipe({ active, onBack, paneRef }: Opts) {
     let candidate = false; // touch began in the left-edge zone
     let dragging = false; // committed to a horizontal drag
     let startTarget: EventTarget | null = null;
+    let lastX = 0;
+    let lastT = 0;
+    let vx = 0; // smoothed horizontal velocity, px/ms (+ = rightward)
 
     const setTransform = (px: number) => {
       const el = paneRef.current;
@@ -82,6 +86,9 @@ export function useBackSwipe({ active, onBack, paneRef }: Opts) {
       const t = e.touches[0];
       startX = t.clientX;
       startY = t.clientY;
+      lastX = t.clientX;
+      lastT = performance.now();
+      vx = 0;
       dragging = false;
       candidate = startX <= EDGE;
       startTarget = candidate ? e.target : null;
@@ -103,15 +110,30 @@ export function useBackSwipe({ active, onBack, paneRef }: Opts) {
       const dx = t.clientX - startX;
       const dy = t.clientY - startY;
       if (!dragging) {
-        if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
-        // Only a rightward, horizontal-dominant move drives the back gesture.
-        if (Math.abs(dy) > Math.abs(dx) || dx < 0) {
+        const ax = Math.abs(dx);
+        const ay = Math.abs(dy);
+        if (ax < SLOP && ay < SLOP) return;
+        // Commit on a rightward move within ~50° of horizontal. Only a clearly
+        // vertical (or leftward) move aborts; an ambiguous diagonal keeps
+        // watching instead of giving up forever on the first sample — the old
+        // strict dy>dx test killed any thumb arc that dipped a few px first.
+        if (dx > 0 && ax >= ay * 0.8) {
+          dragging = true;
+        } else if (dx < -SLOP || ay > ax * 1.4) {
           candidate = false;
           return;
+        } else {
+          return;
         }
-        dragging = true;
       }
       e.preventDefault(); // we own this gesture now; stop scrolling
+      const now = performance.now();
+      if (now > lastT) {
+        // Exponentially smoothed so the release reads intent, not one sample.
+        vx = 0.6 * vx + (0.4 * (t.clientX - lastX)) / (now - lastT);
+      }
+      lastX = t.clientX;
+      lastT = now;
       const px = Math.max(0, Math.min(width, dx));
       setTransform(px);
     };
@@ -146,7 +168,11 @@ export function useBackSwipe({ active, onBack, paneRef }: Opts) {
       }
       const m = /translateX\(([-0-9.]+)px\)/.exec(el.style.transform);
       const px = m ? parseFloat(m[1]) : 0;
-      settle(px > width / 2);
+      // A rightward flick pops even a short drag (and a leftward flick cancels
+      // even a long one); a slow release falls back to the halfway rule.
+      const pop =
+        vx > FLICK_VX ? px > 24 : vx < -FLICK_VX ? false : px > width / 2;
+      settle(pop);
     };
 
     document.addEventListener("touchstart", onStart, { passive: false });
