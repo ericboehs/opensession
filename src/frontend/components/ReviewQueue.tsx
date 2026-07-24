@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import type { UnifiedSession } from "../lib/types";
-import { relativeTime, type OpenPr } from "../lib/api";
+import { closePrPreviewApi, relativeTime, type OpenPr } from "../lib/api";
 import {
 	buildReviewQueue,
 	type ReviewBucket,
@@ -9,14 +9,17 @@ import {
 import { githubLoginFor } from "./UserAvatar";
 import {
 	IconCheck,
+	IconArrowUpRight,
 	IconChevronDown,
 	IconClock,
 	IconFilter,
 	IconGitMerge,
 	IconMessageQuestion,
+	IconX,
 } from "./icons";
-import { Menu } from "../ui/menu";
+import { ContextMenu, Menu } from "../ui/menu";
 import { Tooltip } from "../ui/tooltip";
+import { providerFromUrl } from "../lib/provider";
 
 const FILTER_KEY = "opensession-review-queue-filter";
 
@@ -145,6 +148,8 @@ export function ReviewQueue({
 	onOpenSessionReview,
 }: Props) {
 	const [filter, setFilterState] = useState<ReviewFilter>(readFilter);
+	const [closingUrls, setClosingUrls] = useState<Set<string>>(() => new Set());
+	const [closeError, setCloseError] = useState<string | null>(null);
 	const githubLogin = githubLoginFor(currentUser);
 	const allItems = useMemo(
 		() => buildReviewQueue(prs, sessions, currentUser, githubLogin),
@@ -161,6 +166,23 @@ export function ReviewQueue({
 			localStorage.setItem(FILTER_KEY, JSON.stringify(next));
 			return next;
 		});
+	}
+
+	async function closePr(item: ReviewQueueItem) {
+		if (!window.confirm(`Close PR #${item.pr.number} without merging it?`)) return;
+		setClosingUrls((current) => new Set(current).add(item.pr.url));
+		setCloseError(null);
+		try {
+			await closePrPreviewApi(item.pr.repo, item.pr.branch);
+		} catch (error: any) {
+			setCloseError(error.message || `Failed to close PR #${item.pr.number}.`);
+		} finally {
+			setClosingUrls((current) => {
+				const next = new Set(current);
+				next.delete(item.pr.url);
+				return next;
+			});
+		}
 	}
 
 	const visible = allItems.filter((item) => {
@@ -322,6 +344,8 @@ export function ReviewQueue({
 													? onOpenSessionReview(item.sessionId)
 													: onOpenPr(item.pr.repo, item.pr.branch)
 											}
+											onClose={() => void closePr(item)}
+											closing={closingUrls.has(item.pr.url)}
 										/>
 									))}
 							</div>
@@ -331,6 +355,9 @@ export function ReviewQueue({
 						<div className="px-6 py-3 text-xs text-faint">
 							No pull requests in these filters.
 						</div>
+					)}
+					{closeError && (
+						<div className="px-6 py-2 text-xs text-red">{closeError}</div>
 					)}
 				</div>
 			)}
@@ -385,18 +412,28 @@ function ReviewRow({
 	item,
 	selected,
 	onOpen,
+	onClose,
+	closing,
 }: {
 	item: ReviewQueueItem;
 	selected: boolean;
 	onOpen: () => void;
+	onClose: () => void;
+	closing: boolean;
 }) {
 	const status = rowStatus(item);
 	return (
-		<button
-			className={`sidebar-item sidebar-item--twoline${selected ? " sidebar-item-selected" : ""}`}
-			onClick={onOpen}
-			title={item.pr.title}
-		>
+		<ContextMenu.Root>
+			<ContextMenu.Trigger
+				render={
+					<button
+						type="button"
+						className={`sidebar-item sidebar-item--twoline${selected ? " sidebar-item-selected" : ""}`}
+						onClick={onOpen}
+						title={item.pr.title}
+					/>
+				}
+			>
 			<span className="sidebar-item-top">
 				<RowIcon bucket={item.bucket} />
 				<span className="sidebar-item-title">{item.pr.title}</span>
@@ -419,6 +456,29 @@ function ReviewRow({
 					<span className={`shrink-0 ${statusTone(item)}`}>{status}</span>
 				)}
 			</span>
-		</button>
+			</ContextMenu.Trigger>
+			<ContextMenu.Popup className="min-w-[220px]">
+				<ContextMenu.Item onClick={onOpen}>
+					<span className="grow">Open review</span>
+				</ContextMenu.Item>
+				<ContextMenu.Item
+					render={
+						<a href={item.pr.url} target="_blank" rel="noopener" />
+					}
+				>
+					<IconArrowUpRight size={18} />
+					<span className="grow">Open on {providerFromUrl(item.pr.url).name}</span>
+				</ContextMenu.Item>
+				<ContextMenu.Separator />
+				<ContextMenu.Item
+					className="text-red data-[highlighted]:bg-red-soft"
+					disabled={closing}
+					onClick={onClose}
+				>
+					<IconX size={18} />
+					<span className="grow">{closing ? "Closing…" : "Close pull request…"}</span>
+				</ContextMenu.Item>
+			</ContextMenu.Popup>
+		</ContextMenu.Root>
 	);
 }

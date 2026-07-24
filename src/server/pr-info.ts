@@ -501,7 +501,7 @@ export async function closePr(
   branch: string,
   repo: string = DEFAULT_REPO(),
   credential: GithubCredential = serviceGithubCredential,
-): Promise<{ ok: true; url?: string } | { error: string }> {
+): Promise<{ ok: true; url?: string; number: number } | { error: string }> {
   const pr = await getMutationPrMeta(branch, repo, credential);
   if (!pr) return { error: "No PR found for this branch" };
   if (pr.state !== "OPEN") return { error: `PR #${pr.number} is ${pr.state.toLowerCase()}, not open` };
@@ -526,7 +526,7 @@ export async function closePr(
       if (code !== 0) return { error: (err || "gh pr close failed").slice(0, 300) } as const;
       cache.delete(cacheKey(repo, branch));
       diffCache.delete(cacheKey(repo, branch));
-      return { ok: true, url: pr.url } as const;
+      return { ok: true, url: pr.url, number: pr.number } as const;
     },
   );
 }

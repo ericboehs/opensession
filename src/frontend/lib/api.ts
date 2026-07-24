@@ -1261,7 +1261,7 @@ export async function closePrApi(
 	repo?: string,
 	branch?: string,
 ) {
-	return request<{ ok: true; url?: string }>(
+	const result = await request<{ ok: true; url?: string }>(
 		`/sessions/${encodeURIComponent(sessionId)}/pr-close`,
 		{
 			method: "POST",
@@ -1271,13 +1271,29 @@ export async function closePrApi(
 			},
 		},
 	);
+	notifyPrClosed({ repo, branch, url: result.url });
+	return result;
 }
 
 export async function closePrPreviewApi(repo: string, branch: string) {
-	return request<{ ok: true; url?: string }>("/pr-preview-close", {
+	const result = await request<{ ok: true; url?: string }>("/pr-preview-close", {
 		method: "POST",
 		body: { repo, branch },
 	});
+	notifyPrClosed({ repo, branch, url: result.url });
+	return result;
+}
+
+export const PR_CLOSED_EVENT = "opensession:pr-closed";
+
+export interface PrClosedDetail {
+	repo?: string;
+	branch?: string;
+	url?: string;
+}
+
+function notifyPrClosed(detail: PrClosedDetail) {
+	window.dispatchEvent(new CustomEvent(PR_CLOSED_EVENT, { detail }));
 }
 
 /** GitHub PR agent behaviors (the opensession-* PR labels) fired straight from the

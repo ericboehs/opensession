@@ -13,7 +13,7 @@ import { closeTinderPr, commentTinderPr, deleteTinderComment, getSeenPrs, labelT
 import { findSession, invalidateSessionsCache } from "../session-cache";
 import { getSessionControl } from "../session-control";
 import { resolvePrTarget } from "../session-repos";
-import { getOpenPrs } from "../sessions";
+import { getOpenPrs, markCachedPrClosed } from "../sessions";
 import { getRepo } from "../worktree";
 import { watch } from "fs";
 import {
@@ -469,6 +469,7 @@ export async function handlePrRoutes(
 		const repo = getRepo(body?.repo || undefined);
 		const result = await closePr(branch, repo.ghRepo, credential);
 		if ("error" in result) return Response.json(result, { status: 502 });
+		markCachedPrClosed(repo.ghRepo, result.number);
 		invalidateSessionsCache();
 		return Response.json(result);
 	}
@@ -644,6 +645,7 @@ export async function handlePrRoutes(
 			);
 		const result = await closePr(target.branch, target.ghRepo, credential);
 		if ("error" in result) return Response.json(result, { status: 502 });
+		markCachedPrClosed(target.ghRepo, result.number);
 		invalidateSessionsCache();
 		return Response.json(result);
 	}

@@ -12,7 +12,9 @@ import {
 	relativeTime,
 	fetchOpenPrs,
 	fetchSupportThreads,
+	PR_CLOSED_EVENT,
 	setPlainThreadStatusApi,
+	type PrClosedDetail,
 	type OpenPr,
 	type WorkspaceOverview,
 } from "../lib/api";
@@ -1052,14 +1054,32 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// falls back to session-derived PRs so the section still renders if the
 	// endpoint is unreachable.
 	const [openPrs, setOpenPrs] = useState<OpenPr[] | null>(null);
+	const prCloseGeneration = useRef(0);
+	const closedPrTombstones = useRef(new Map<string, number>());
+	const openPrRequestSequence = useRef(0);
+	const latestOpenPrResponse = useRef(0);
 	useEffect(() => {
 		let alive = true;
-		const load = () =>
-			fetchOpenPrs()
-				.then((prs) => {
-					if (alive) setOpenPrs(prs);
-				})
-				.catch(() => {});
+		const load = () => {
+			const requestSequence = ++openPrRequestSequence.current;
+			const requestGeneration = prCloseGeneration.current;
+			return (
+				fetchOpenPrs()
+					.then((prs) => {
+						if (!alive) return;
+						if (requestSequence < latestOpenPrResponse.current) return;
+						latestOpenPrResponse.current = requestSequence;
+						for (const [url, closeGeneration] of closedPrTombstones.current) {
+							if (closeGeneration <= requestGeneration)
+								closedPrTombstones.current.delete(url);
+						}
+						setOpenPrs(
+							prs.filter((pr) => !closedPrTombstones.current.has(pr.url)),
+						);
+					})
+					.catch(() => {})
+			);
+		};
 		load();
 		// The response is backed by the server's PR cache, but also carries live
 		// OpenSession review state. Poll it often enough that a PR moves in and out
@@ -1069,6 +1089,24 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			alive = false;
 			clearInterval(t);
 		};
+	}, []);
+	useEffect(() => {
+		const onClosed = (event: Event) => {
+			const { repo, branch, url } = (event as CustomEvent<PrClosedDetail>).detail;
+			if (url) {
+				prCloseGeneration.current++;
+				closedPrTombstones.current.set(url, prCloseGeneration.current);
+			}
+			setOpenPrs((current) =>
+				current?.filter(
+					(pr) =>
+						!(url && pr.url === url) &&
+						!(!url && repo === pr.repo && branch === pr.branch),
+				) ?? null,
+			);
+		};
+		window.addEventListener(PR_CLOSED_EVENT, onClosed);
+		return () => window.removeEventListener(PR_CLOSED_EVENT, onClosed);
 	}, []);
 
 	// The Plain TODO queue for the Support band, polled gently (the server

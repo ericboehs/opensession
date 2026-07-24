@@ -836,6 +836,13 @@ function prRepos() {
 let prCache: { data: Map<string, Map<string, PrInfo>>; ts: number } = { data: new Map(), ts: 0 };
 const PR_CACHE_TTL = 60_000;
 let prRefreshPromise: Promise<Set<string>> | null = null;
+const prCloseState: { generation: number; closed: Map<string, number> } = ((
+	globalThis as any
+).__opensessionPrCloseState ??= { generation: 0, closed: new Map() });
+
+function closeTombstoneKey(ghRepo: string, number: number): string {
+	return `${ghRepo}#${number}`;
+}
 
 // The cache is also snapshotted to disk after every successful refresh and
 // seeded from there on boot. Without this, a restart during a GitHub outage or
@@ -888,6 +895,50 @@ function persistPrCache(data: Map<string, Map<string, PrInfo>>) {
   } catch (e) {
     console.error("Failed to persist PR cache:", e);
   }
+}
+
+/** Keep the repo-wide PR queue coherent after a human closes a PR in OS1. */
+export function markCachedPrClosed(ghRepo: string, number: number): void {
+	prCloseState.generation++;
+	prCloseState.closed.set(
+		closeTombstoneKey(ghRepo, number),
+		prCloseState.generation,
+	);
+	const repoId = prRepos().find((repo) => repo.ghRepo === ghRepo)?.id;
+	if (!repoId) return;
+	const byBranch = prCache.data.get(repoId);
+	if (!byBranch) return;
+	for (const [branch, pr] of byBranch) {
+		if (pr.number !== number) continue;
+		byBranch.set(branch, {
+			...pr,
+			state: "CLOSED",
+			updatedAt: new Date().toISOString(),
+		});
+		prCache.ts = Date.now();
+		persistPrCache(prCache.data);
+		return;
+	}
+}
+
+function applyPrCloseTombstones(
+	data: Map<string, Map<string, PrInfo>>,
+	refreshGeneration: number,
+): void {
+	for (const [key, closeGeneration] of prCloseState.closed) {
+		// A refresh that began after this close is authoritative. Earlier refreshes
+		// retain the tombstone so their pre-close OPEN result cannot win the race.
+		if (closeGeneration <= refreshGeneration) prCloseState.closed.delete(key);
+	}
+	for (const repo of prRepos()) {
+		const byBranch = data.get(repo.id);
+		if (!byBranch) continue;
+		for (const [branch, pr] of byBranch) {
+			if (!prCloseState.closed.has(closeTombstoneKey(repo.ghRepo, pr.number)))
+				continue;
+			byBranch.set(branch, { ...pr, state: "CLOSED" });
+		}
+	}
 }
 
 // Rate-limit backoff is shared across ALL GitHub callers (github-limit.ts):
@@ -1003,6 +1054,7 @@ export function refreshPrCache(): Promise<Set<string>> {
 }
 
 async function refreshPrCacheInner(): Promise<Set<string>> {
+  const refreshGeneration = prCloseState.generation;
   const freshRepos = new Set<string>();
   if (ghRateLimited()) {
     // Rate-limited — keep serving the stale snapshot, don't burn calls.
@@ -1148,6 +1200,9 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
       }
       next.set(repo.id, map);
     }
+    // A close can land while this slow GitHub sweep is in flight. Preserve the
+    // mutation over any pre-close OPEN row the sweep already fetched.
+    applyPrCloseTombstones(next, refreshGeneration);
     prCache = { data: next, ts: Date.now() };
     if (freshRepos.size) persistPrCache(next);
   } catch (e) {
