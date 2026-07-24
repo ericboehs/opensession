@@ -35,7 +35,7 @@ const {
   transcriptLineToolResult,
   transcriptLineForEntry,
 } = mod;
-const { parseTranscript } = await import("./jsonl-parser");
+const { parseTranscript, parseJsonlLines } = await import("./jsonl-parser");
 
 const SES = "ses_testabc123";
 
@@ -136,6 +136,76 @@ describe("readOpencodeTranscript (SQLite)", () => {
     expect(entries[0].videos).toEqual([
       "/backstage/media?path=%2Ftmp%2Fopencode-demo.mov",
     ]);
+  });
+  test("autocompact summaries become compaction system entries", () => {
+    const sessionId = "ses_compaction";
+    const t = 1783502000000;
+    const db = new Database(dbPath);
+    db.query("INSERT INTO session VALUES (?, 'p', 't', 1, 1)").run(sessionId);
+    const insM = db.query("INSERT INTO message VALUES (?, ?, ?, ?, ?)");
+    // Trigger: synthetic user message with a compaction part. Its `summary` is
+    // a diffs OBJECT — must not be mistaken for the boolean summary marker.
+    insM.run(
+      "msg_trig", sessionId, t, t,
+      JSON.stringify({ role: "user", time: { created: t }, summary: { diffs: [] } })
+    );
+    insM.run(
+      "msg_sum", sessionId, t + 1000, t + 1000,
+      JSON.stringify({
+        role: "assistant",
+        agent: "compaction",
+        mode: "compaction",
+        summary: true,
+        providerID: "openai",
+        modelID: "gpt-5.6-sol",
+        time: { created: t + 1000 },
+      })
+    );
+    const insP = db.query("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)");
+    insP.run("prt_trig", "msg_trig", sessionId, t, t,
+      JSON.stringify({ type: "compaction", auto: true }));
+    insP.run("prt_sum", "msg_sum", sessionId, t + 1000, t + 1000,
+      JSON.stringify({ type: "text", text: "## Objective\nKeep going." }));
+    db.close();
+
+    const entries = readOpencodeTranscript(sessionId);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: "sys-prt_sum",
+      type: "system",
+      compaction: true,
+      content: "## Objective\nKeep going.",
+    });
+  });
+  test("compaction system entries round-trip through transcriptLineForEntry", () => {
+    const entry: TranscriptEntry = {
+      id: "sys-prt_sum",
+      type: "system",
+      content: "## Objective\nKeep going.",
+      timestamp: "2026-07-24T00:00:00.000Z",
+      compaction: true,
+    };
+    const line = transcriptLineForEntry(entry);
+    expect(line).not.toBeNull();
+    // Parser derives `sys-<uuid>` — the builder strips the prefix so the
+    // upsert key is stable across the live writer and the gap backfill.
+    expect(line!.uuid).toBe("prt_sum");
+    const [parsed] = parseJsonlLines([JSON.stringify(line)]);
+    expect(parsed).toMatchObject({
+      id: "sys-prt_sum",
+      type: "system",
+      compaction: true,
+      content: "## Objective\nKeep going.",
+    });
+    // Other system entries stay derived-only, as before.
+    expect(
+      transcriptLineForEntry({
+        id: "sys-x",
+        type: "system",
+        content: "notice",
+        timestamp: "2026-07-24T00:00:00.000Z",
+      })
+    ).toBeNull();
   });
   test("unknown session / missing db degrade to []", () => {
     expect(readOpencodeTranscript("ses_nope")).toEqual([]);

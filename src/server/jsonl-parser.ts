@@ -238,6 +238,17 @@ function harnessEntryFor(
       ? [{ id, type: "system", content: body, timestamp: ts }]
       : [];
   }
+  // Engine context-compaction summary (transcriptLineCompactionSummary in
+  // opencode-transcript.ts): the handoff the model wrote when its history was
+  // summarized to fit the context window. A system entry with `compaction`
+  // set, so the UI shows a collapsed "context compacted" chip instead of the
+  // model apparently dumping a status report mid-conversation.
+  if (t.startsWith("<compaction-summary>")) {
+    const body = t.match(/<compaction-summary>([\s\S]*?)<\/compaction-summary>/)?.[1]?.trim();
+    return body
+      ? [{ id, type: "system", content: body, timestamp: ts, compaction: true }]
+      : [];
+  }
   // The SDK writes this marker into the jsonl whenever a turn is interrupted
   // ("… for tool use" when the abort landed on a pending tool call).
   // Interrupt-and-redirect is the default send-while-busy now, so this would

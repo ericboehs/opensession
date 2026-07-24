@@ -113,6 +113,46 @@ export function ClampedBody({
 	);
 }
 
+/** Engine context-compaction summary (entry.compaction): the conversation
+ * history was summarized to fit the model's context window and the handoff
+ * summary is this entry's content. Rendered as a collapsed system pill —
+ * without this it looks like the model randomly dumping a status report
+ * mid-conversation — with the summary expandable for anyone who wants to see
+ * what the model carried forward. */
+function CompactionNotice({
+	entry,
+	sessionId,
+}: {
+	entry: TranscriptEntry;
+	sessionId?: string;
+}) {
+	const [open, setOpen] = useState(false);
+	return (
+		<div className="msg msg-system" data-eid={entry.id}>
+			<button
+				type="button"
+				onClick={() => setOpen((v) => !v)}
+				className="msg-system-text cursor-pointer [font-family:inherit]"
+			>
+				Context compacted — earlier conversation summarized to keep going ·{" "}
+				<span className="font-medium text-dim">
+					{open ? "hide summary" : "show summary"}
+				</span>
+			</button>
+			{open && (
+				<div className="mx-auto mt-2 w-full max-w-[560px] rounded-lg border border-line bg-panel px-4 py-3 text-left">
+					<ClampedBody
+						className="msg-body markdown"
+						content={entry.content}
+						entry={entry}
+						sessionId={sessionId}
+					/>
+				</div>
+			)}
+		</div>
+	);
+}
+
 /** Very short relative time for the message label ("now", "5m", "3h", "2d",
  * then a date). Hover shows the full local time. */
 function shortTime(ts: string): string {
@@ -265,6 +305,10 @@ export const MessageBubble = React.memo(function MessageBubble({
 				<span className="msg-system-text">{displayContent}</span>
 			</div>
 		);
+	}
+
+	if (entry.type === "system" && entry.compaction) {
+		return <CompactionNotice entry={entry} sessionId={sessionId} />;
 	}
 
 	if (entry.type === "system") {

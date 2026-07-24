@@ -182,6 +182,23 @@ describe("parseTranscript", () => {
     expect(entries[2].content).toBe("Transient engine error — retrying once.");
   });
 
+  it("maps compaction-summary lines to system entries with the compaction flag", () => {
+    const path = writeFixture([
+      userLine(
+        "prt_sum1",
+        "<compaction-summary>## Objective\nShip the sidebar refactor.</compaction-summary>",
+      ),
+    ]);
+    const entries = parseTranscript(path);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: "sys-prt_sum1",
+      type: "system",
+      compaction: true,
+      content: "## Objective\nShip the sidebar refactor.",
+    });
+  });
+
   it("returns [] for an empty file", () => {
     const path = writeFixture([]);
     expect(parseTranscript(path)).toEqual([]);

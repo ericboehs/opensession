@@ -457,6 +457,11 @@ export interface TranscriptEntry {
    * on v2 frames; changeSeq advances on both inserts and rewrites. */
   seq?: number;
   changeSeq?: number;
+  // Set on a system entry holding an engine context-compaction summary (the
+  // handoff the model wrote when its history was summarized to fit the
+  // context window) — the UI renders a collapsed "context compacted" chip
+  // instead of an assistant bubble.
+  compaction?: boolean;
 }
 
 export interface FileWatcherState {

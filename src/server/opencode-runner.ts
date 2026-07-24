@@ -210,6 +210,7 @@ import {
   transcriptLineUser,
   transcriptLineRunnerNotice,
   transcriptLineAssistantText,
+  transcriptLineCompactionSummary,
   transcriptLineToolUse,
   transcriptLineToolResult,
 } from "./opencode-transcript";
@@ -652,6 +653,21 @@ export function latestTurnAssistant<T extends { info?: { role?: string } }>(mess
     .slice(lastUser + 1)
     .reverse()
     .find((message) => message.info?.role === "assistant");
+}
+
+/** An assistant message that is opencode's autocompact handoff summary — the
+ *  reply to the synthetic `compaction`-part user message. Its text must land
+ *  in the transcript as a "context compacted" system chip, never as the
+ *  model's own reply (and never be pushed to stream consumers like the Slack
+ *  loop). NOTE: user messages carry `summary` as a diffs OBJECT — gate on
+ *  role + `summary === true`, never truthiness. */
+export function isCompactionMessageInfo(info: unknown): boolean {
+  const m = info as { role?: string; summary?: unknown; mode?: string; agent?: string } | null;
+  return (
+    !!m &&
+    m.role === "assistant" &&
+    (m.summary === true || m.mode === "compaction" || m.agent === "compaction")
+  );
 }
 
 let cachedMeridianStack: MeridianStackInfo | undefined;
@@ -3336,6 +3352,10 @@ async function* runOpencodeAttempt(
     // (2026-07-16 bks-019f6c33).
     let engineAbortInFlight: Promise<unknown> | null = null;
     const emittedText = new Set<string>();
+    // Assistant messages flagged as autocompact summaries (message.updated
+    // fires on creation, before their text parts complete) — their text
+    // becomes a "context compacted" system chip, not assistant output.
+    const compactionMsgs = new Set<string>();
     const startedTools = new Set<string>();
     const finishedTools = new Set<string>();
     let sawFirstOutput = false;
@@ -3548,11 +3568,18 @@ async function* runOpencodeAttempt(
           }
           if (part.type === "text" && !part.synthetic && part.time?.end && !emittedText.has(part.id)) {
             emittedText.add(part.id);
-            turnEvent({ direction: "out", kind: "assistant_text", ...summarizeText(part.text) });
-            appendOpencodeTranscript(ocSessionId, [
-              transcriptLineAssistantText(part.text, part.id, undefined, model),
-            ]);
-            push({ type: "text_chunk", text: part.text });
+            if (compactionMsgs.has(part.messageID)) {
+              turnEvent({ direction: "out", kind: "compaction_summary", ...summarizeText(part.text) });
+              appendOpencodeTranscript(ocSessionId, [
+                transcriptLineCompactionSummary(part.text, part.id),
+              ]);
+            } else {
+              turnEvent({ direction: "out", kind: "assistant_text", ...summarizeText(part.text) });
+              appendOpencodeTranscript(ocSessionId, [
+                transcriptLineAssistantText(part.text, part.id, undefined, model),
+              ]);
+              push({ type: "text_chunk", text: part.text });
+            }
           }
           if (part.type === "reasoning" && part.time?.end && !emittedText.has(part.id)) {
             emittedText.add(part.id);
@@ -3594,6 +3621,12 @@ async function* runOpencodeAttempt(
               });
             }
           }
+          return;
+        }
+        case "message.updated": {
+          const info = p?.info;
+          if (info?.sessionID !== ocSessionId) return;
+          if (isCompactionMessageInfo(info)) compactionMsgs.add(info.id);
           return;
         }
         // opencode renamed this event: pre-1.17 servers emit
@@ -4000,18 +4033,25 @@ async function* runOpencodeAttempt(
     const lastAssistant = latestTurnAssistant(list);
     const info = lastAssistant?.info;
     const parts = lastAssistant?.parts || [];
+    // Edge: a turn can end right on the autocompact summary (the trigger is a
+    // user-role message, so latestTurnAssistant lands on the summary). Its
+    // text is the compaction handoff, not the model's reply.
+    const finalIsCompaction = isCompactionMessageInfo(info);
     const textOut = parts
       .filter((pt) => pt.type === "text" && !pt.synthetic && pt.text)
       .map((pt) => {
         if (!emittedText.has(pt.id)) {
           emittedText.add(pt.id);
           appendOpencodeTranscript(ocSessionId, [
-            transcriptLineAssistantText(pt.text, pt.id, undefined, model),
+            finalIsCompaction
+              ? transcriptLineCompactionSummary(pt.text, pt.id)
+              : transcriptLineAssistantText(pt.text, pt.id, undefined, model),
           ]);
-          pending.push({ type: "text_chunk", text: pt.text });
+          if (!finalIsCompaction) pending.push({ type: "text_chunk", text: pt.text });
         }
-        return pt.text;
+        return finalIsCompaction ? "" : pt.text;
       })
+      .filter(Boolean)
       .join("\n\n");
     while (pending.length) yield pending.shift()!;
 
@@ -4340,6 +4380,11 @@ export async function tryReattachOpencodeRun(
       // Seed mirror dedup from what the file already has + backfill the gap.
       const seenUuids = backfillOpencodeTranscriptGap(ocSessionId!);
       const emittedText = new Set<string>();
+      // Autocompact-summary messages seen via message.updated (fires on
+      // creation, before text parts complete). A restart landing exactly
+      // mid-compaction can miss the flag — worst case that one summary
+      // renders as a plain assistant bubble, the pre-fix behavior.
+      const compactionMsgs = new Set<string>();
       const startedTools = new Set<string>();
       const finishedTools = new Set<string>();
       for (const uuid of seenUuids) {
@@ -4488,11 +4533,18 @@ export async function tryReattachOpencodeRun(
               !emittedText.has(part.id)
             ) {
               emittedText.add(part.id);
-              turnEvent({ direction: "out", kind: "assistant_text", ...summarizeText(part.text) });
-              appendOpencodeTranscript(ocSessionId!, [
-                transcriptLineAssistantText(part.text, part.id, undefined, model),
-              ]);
-              push({ type: "text_chunk", text: part.text });
+              if (compactionMsgs.has(part.messageID)) {
+                turnEvent({ direction: "out", kind: "compaction_summary", ...summarizeText(part.text) });
+                appendOpencodeTranscript(ocSessionId!, [
+                  transcriptLineCompactionSummary(part.text, part.id),
+                ]);
+              } else {
+                turnEvent({ direction: "out", kind: "assistant_text", ...summarizeText(part.text) });
+                appendOpencodeTranscript(ocSessionId!, [
+                  transcriptLineAssistantText(part.text, part.id, undefined, model),
+                ]);
+                push({ type: "text_chunk", text: part.text });
+              }
             }
             if (part.type === "tool") {
               const state = part.state;
@@ -4544,6 +4596,12 @@ export async function tryReattachOpencodeRun(
                 });
               }
             }
+            return;
+          }
+          case "message.updated": {
+            const info = p?.info;
+            if (info?.sessionID !== ocSessionId) return;
+            if (isCompactionMessageInfo(info)) compactionMsgs.add(info.id);
             return;
           }
           case "permission.updated":
@@ -4700,18 +4758,24 @@ export async function tryReattachOpencodeRun(
       const lastAssistant = latestTurnAssistant(list);
       const info = lastAssistant?.info;
       const parts = lastAssistant?.parts || [];
+      // Edge: a turn can end right on the autocompact summary — see the
+      // master-copy final read.
+      const finalIsCompaction = isCompactionMessageInfo(info);
       const textOut = parts
         .filter((pt) => pt.type === "text" && !pt.synthetic && pt.text)
         .map((pt) => {
           if (!emittedText.has(pt.id)) {
             emittedText.add(pt.id);
             appendOpencodeTranscript(ocSessionId!, [
-              transcriptLineAssistantText(pt.text, pt.id, undefined, model),
+              finalIsCompaction
+                ? transcriptLineCompactionSummary(pt.text, pt.id)
+                : transcriptLineAssistantText(pt.text, pt.id, undefined, model),
             ]);
-            pending.push({ type: "text_chunk", text: pt.text });
+            if (!finalIsCompaction) pending.push({ type: "text_chunk", text: pt.text });
           }
-          return pt.text;
+          return finalIsCompaction ? "" : pt.text;
         })
+        .filter(Boolean)
         .join("\n\n");
       while (pending.length) yield pending.shift()!;
 

@@ -393,6 +393,9 @@ export interface TranscriptEntry {
 	/** Transcript v2: immutable display order plus monotonic mutation cursor. */
 	seq?: number;
 	changeSeq?: number;
+	// Set on a system entry holding an engine context-compaction summary —
+	// rendered as a collapsed "context compacted" chip, not an assistant bubble.
+	compaction?: boolean;
 }
 
 export interface DiffFile {

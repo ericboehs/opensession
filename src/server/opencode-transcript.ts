@@ -548,6 +548,20 @@ export function transcriptLineRunnerNotice(
   return transcriptLineUser(`<runner-notice>${text}</runner-notice>`, id, ts);
 }
 
+/** Engine context-compaction summary (opencode autocompact: a synthetic user
+ *  message with a `compaction` part, answered by an assistant message with
+ *  `summary: true` whose text is the handoff summary). Same user-role +
+ *  harness-marker pattern as runner notices; the jsonl parser maps it to a
+ *  system entry with `compaction: true` so the UI renders a collapsed
+ *  "context compacted" chip instead of an assistant bubble. */
+export function transcriptLineCompactionSummary(
+  text: string,
+  id?: string,
+  ts?: string
+): JsonlLine {
+  return transcriptLineUser(`<compaction-summary>${text}</compaction-summary>`, id, ts);
+}
+
 export function transcriptLineAssistantText(
   text: string,
   id?: string,
@@ -644,8 +658,20 @@ export function transcriptLineForEntry(e: TranscriptEntry): JsonlLine | null {
       return e.toolUseId
         ? transcriptLineToolResult(e.toolUseId, e.content, e.isError, e.timestamp)
         : null;
+    case "system":
+      // Compaction summaries round-trip (readOpencodeTranscript emits them and
+      // the reattach gap-backfill must not drop them). The parser derives the
+      // entry id as `sys-<line uuid>`, so strip the prefix to keep the upsert
+      // key stable. Other system entries stay derived-only.
+      return e.compaction
+        ? transcriptLineCompactionSummary(
+            e.content,
+            e.id.startsWith("sys-") ? e.id.slice(4) : e.id,
+            e.timestamp
+          )
+        : null;
     default:
-      return null; // system entries are derived, not re-serialized
+      return null;
   }
 }
 
@@ -764,6 +790,21 @@ interface MessageData {
   // Assistant messages carry the upstream provider/model that produced them.
   providerID?: string;
   modelID?: string;
+  // Autocompact summary marker on assistant messages (`summary: true`, agent/
+  // mode "compaction"). NOTE: user messages carry `summary` too, as a diffs
+  // OBJECT — always gate on role + `summary === true`, never truthiness.
+  agent?: string;
+  mode?: string;
+  summary?: unknown;
+}
+
+/** An assistant message that is opencode's autocompact handoff summary (the
+ *  reply to a synthetic user message bearing a `compaction` part). */
+function isCompactionMessage(data: MessageData): boolean {
+  return (
+    data.role === "assistant" &&
+    (data.summary === true || data.agent === "compaction" || data.mode === "compaction")
+  );
 }
 
 interface PartData {
@@ -934,6 +975,20 @@ export function readOpencodeTranscript(
           if (part.synthetic) continue;
           const text = role === "user" ? stripContext(part.text || "") : part.text || "";
           if (!text.trim()) continue;
+          // Autocompact handoff summary: a system chip, not an assistant
+          // bubble. `sys-` prefix matches the id the jsonl parser derives for
+          // the live-written <compaction-summary> line, so both writers upsert
+          // the same entry.
+          if (isCompactionMessage(data)) {
+            entries.push({
+              id: `sys-${p.id}`,
+              type: "system",
+              content: text,
+              timestamp: ts,
+              compaction: true,
+            });
+            continue;
+          }
           const assistant = role === "assistant" ? extractAssistantVideos(text) : undefined;
           entries.push({
             id: p.id,
