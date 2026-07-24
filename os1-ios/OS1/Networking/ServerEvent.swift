@@ -117,6 +117,15 @@ struct QueueItem: Identifiable, Equatable {
         content = wire.content ?? ""
         user = wire.user
     }
+
+    /// Local optimistic construction — the composer's echo of a send made
+    /// while a run is busy, shown as a queue chip until the server's own
+    /// queue_update replaces it.
+    init(id: String, content: String, user: String?) {
+        self.id = id
+        self.content = content
+        self.user = user
+    }
 }
 
 /// Superset of every server frame's fields; individual events pick what they need.

@@ -256,16 +256,30 @@ final class SessionViewModel {
         guard !text.isEmpty || !images.isEmpty, let socket else { return }
         draft = ""
         attachedImages = []
-        let localId = "local-\(UUID().uuidString)"
-        localEchoIds.insert(localId)
-        entries.append(TranscriptEntry(
-            id: localId,
-            type: "user",
-            content: text,
-            timestamp: ISO8601DateFormatter().string(from: .now),
-            images: images.isEmpty ? nil : images
-        ))
-        rebuildDisplayItems()
+        if isRunning {
+            // A send during a run is held server-side (busyMode "queue") and
+            // only enters the transcript when the queue delivers it after the
+            // run — echoing it into the thread now would strand a bubble out
+            // of chronological order. Echo it as a queue chip instead; the
+            // server's next queue_update replaces this local copy.
+            queuedItems.append(QueueItem(
+                id: "local-queued-\(UUID().uuidString)",
+                content: text,
+                user: ServerConfig.shared.userName
+            ))
+            queuedCount = queuedItems.count
+        } else {
+            let localId = "local-\(UUID().uuidString)"
+            localEchoIds.insert(localId)
+            entries.append(TranscriptEntry(
+                id: localId,
+                type: "user",
+                content: text,
+                timestamp: ISO8601DateFormatter().string(from: .now),
+                images: images.isEmpty ? nil : images
+            ))
+            rebuildDisplayItems()
+        }
         socket.prompt(
             sessionId: session.id,
             content: text,
@@ -598,6 +612,16 @@ final class SessionViewModel {
                 }) {
                     localEchoIds.remove(entries[localIndex].id)
                     entries.remove(at: localIndex)
+                }
+                // A send made while the run looked busy but was actually
+                // delivered straight to the engine (run ended in the gap)
+                // never gets a queue_update — retire its local chip when the
+                // server's user entry lands instead.
+                if entry.isUser, let chipIndex = queuedItems.firstIndex(where: {
+                    $0.id.hasPrefix("local-queued-") && $0.content == entry.content
+                }) {
+                    queuedItems.remove(at: chipIndex)
+                    queuedCount = queuedItems.count
                 }
                 entries.append(entry)
             }
