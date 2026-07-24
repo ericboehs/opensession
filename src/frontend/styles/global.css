@@ -54,12 +54,10 @@
 	--sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
 	--radius: 14px;
 	/* Squircle corner treatment (Chrome 139+ `corner-shape`). A superellipse
-	   hugs the corner tighter than a circular arc, so at the same radius a
-	   squircle reads LESS round — the fix is to scale every radius up. --rf is
-	   that multiplier (1 = untouched) and --cs flips the corner from a circular
-	   arc to a squircle. Both stay no-ops until the @supports block below
-	   confirms corner-shape, so non-Chrome browsers keep the original radii. */
-	--rf: 1;
+	   hugs the corner tighter than a circular arc, so supported browsers use a
+	   larger radius multiplier than circular-corner fallbacks. --rf scales the
+	   app's legacy radii universally and --cs selects the corner shape. */
+	--rf: 0.85;
 	--cs: round;
 	/* Chat column width — messages, work blocks, composer, ask cards all share
 	   it so the conversation reads as one column. */
@@ -305,11 +303,11 @@ button {
 @supports (corner-shape: squircle) {
 	/* Turn the squircle treatment on everywhere: every corner radius in this
 	   file is authored as `calc(<value> * var(--rf))` + `corner-shape: var(--cs)`,
-	   so flipping these two tokens rounds up ALL radii at once. 1.6 matches the
+	   so flipping these two tokens rounds up ALL radii at once. 1.35 matches the
 	   bump the Tailwind utilities already ship in tailwind.css, so legacy CSS
 	   and the new UI system land on the same corner. */
 	:root {
-		--rf: 1.6;
+		--rf: 1.35;
 		--cs: squircle;
 	}
 
@@ -691,10 +689,10 @@ html.wco .app-body.sidebar-collapsed
 }
 
 /* The "Tools" band header sits above the top-level nav as a collapse toggle.
-   Its 10px inset plus the shared toggle's 8px padding matches the band headings
+   Its 6px inset plus the shared toggle's 8px padding matches the band headings
    inside `.sidebar-list`. */
 .sidebar-band-label.sidebar-tools-head {
-	padding: 12px 10px 2px;
+	padding: 12px 6px 2px;
 }
 /* The three primary sidebar bands replace one another at the top of the single
    desktop scroll rail. While pinned they get a frosted surface (translucent +
@@ -761,8 +759,8 @@ html.wco .app-body.sidebar-collapsed
 		margin-bottom: 0;
 	}
 	.sidebar-workspace-fallback {
-		margin-right: 12px;
-		margin-left: 20px;
+		margin-right: 8px;
+		margin-left: 16px;
 	}
 }
 @media (max-width: 720px) {
@@ -772,15 +770,15 @@ html.wco .app-body.sidebar-collapsed
 		display: contents;
 	}
 	.sidebar-workspace-fallback {
-		margin-right: 14px;
-		margin-left: 16px;
+		margin-right: 10px;
+		margin-left: 12px;
 	}
 }
 .sidebar-nav {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
-	--sidebar-nav-x: 10px;
+	--sidebar-nav-x: 6px;
 	padding: 4px var(--sidebar-nav-x) 6px;
 }
 
@@ -1032,7 +1030,7 @@ body.resizing-x {
 /* Workspace header: "My sessions" title row (+ optional repo chip + action
    icons), with the session search bar directly below it. */
 .sidebar-workspace {
-	padding: 12px 11px 2px 20px;
+	padding: 12px 7px 2px 16px;
 	/* Transparent by default so toggling the color on scroll never shifts layout;
 	   turns into a visible divider under the header once the list scrolls. */
 	border-bottom: 1px solid transparent;
@@ -1366,7 +1364,7 @@ body.resizing-x {
 	   and so row content lands on the shared columns: leading icons under the
 	   group-header icons, trailing times/numbers flush-right under the header's
 	   filter/＋ buttons. */
-	padding: 1px 10px 0 10px;
+	padding: 1px 6px 0;
 }
 
 /* These bands are siblings of the workspace list, but participate in the
@@ -1375,8 +1373,8 @@ body.resizing-x {
 	display: block;
 	flex: none;
 	min-width: 0;
-	margin-right: 10px;
-	margin-left: 10px;
+	margin-right: 6px;
+	margin-left: 6px;
 }
 .sidebar-independent-section.sidebar-group--band-start {
 	margin-top: 28px;
@@ -1497,7 +1495,7 @@ body.resizing-x {
 
 /* The same nesting cue for the status-grouping (and Pinned / review) view:
    workspace rows step in one gentle 14px inset under their band header (the
-   header stays at the list's 10px edge), so a row reads as a child of its lane
+   header stays at the list's 6px edge), so a row reads as a child of its lane
    rather than a sibling of the header. Scoped to the workspace-bearing bands;
    the inset lives in the row's own left padding so its hover/selection pill
    still runs the sidebar's full width — only the icons and text indent. */
@@ -1633,8 +1631,7 @@ body.resizing-x {
 	font-size: 14px;
 	font-weight: 500;
 	letter-spacing: 0;
-	/* Left pad matches the row's (list 10 + 10 = 20) so a lane's header icon
-	   sits on the same column as its rows' leading status marks. */
+	/* Left pad aligns the icon with a base row (list 6 + row/header 10 = 16). */
 	padding: 4px 6px 4px 10px;
 }
 .sidebar-group-header:hover {
@@ -1736,7 +1733,7 @@ body.resizing-x {
 	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	/* Compact rows: a tight but still-clickable hit target. The left
 	   padding lands the leading icon on the same column as the group-header
-	   icons above it (list pad-left 10 + 6 = 16), so a row's status mark sits
+	   icons above it (list pad-left 6 + 10 = 16), so a row's status mark sits
 	   directly under its lane's icon; the right padding lands the trailing
 	   time/number flush under the header's filter/＋ buttons. */
 	padding: 9px 8px 9px 10px;
