@@ -239,7 +239,7 @@ describe("The Dial", () => {
       {
         id: "dial/medium",
         model: "gpt-5.6-sol",
-        effort: "medium",
+        effort: "high",
         oracleAgent: "oracle-sol",
       },
       {

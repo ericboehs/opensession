@@ -252,9 +252,9 @@ export const DIAL_PRESETS: DialPreset[] = [
   {
     id: "dial/medium",
     label: "Dial · Medium",
-    description: "Balanced depth and speed for everyday work — Sol-medium with a Sol-high oracle",
+    description: "Balanced depth and speed for everyday work — Sol-high with a Sol-high oracle",
     model: "gpt-5.6-sol",
-    effort: "medium",
+    effort: "high",
     oracleAgent: "oracle-sol",
   },
   {
