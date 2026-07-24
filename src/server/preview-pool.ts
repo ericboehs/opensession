@@ -89,7 +89,10 @@ export interface PreviewPoolRepoConfig {
 }
 
 const DEFAULTS: Omit<PreviewPoolRepoConfig, "enabled"> = {
-  backend: "docker",
+  // Microvm became the default 2026-07-24 after the restart-survival test:
+  // snapshot restores beat warm docker containers on both latency and RAM.
+  // Docker/daytona remain selectable per repo.
+  backend: "microvm",
   running: 1,
   paused: 1,
   cpus: 4,
@@ -516,10 +519,11 @@ async function poolWriteFile(c: PoolContainer, path: string, content: string): P
 /** running/paused/gone in pool terms (daytona "stopped" maps to paused). */
 async function poolRuntimeStatus(c: PoolContainer): Promise<"running" | "paused" | "gone"> {
   if (isMicrovm(c)) {
-    const r = await $`pgrep -f fc-clone${c.mvmIdx}.sock`.quiet().nothrow();
+    // The transient scope is the authoritative process handle.
+    const r = await $`systemctl is-active --quiet bks-fc-clone${c.mvmIdx}`.quiet().nothrow();
     if (r.exitCode === 0) return "running";
-    // pgrep can hiccup and a false "gone" deletes a live claim (bit us
-    // 2026-07-24) — the agent answering proves the VM is alive.
+    // A transient check hiccup must not delete a live claim — the agent
+    // answering proves the VM is alive.
     const alive = await mvmAgent(c, { command: "echo alive", timeoutMs: 3000 });
     return alive.ok ? "running" : "gone";
   }

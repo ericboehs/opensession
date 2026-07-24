@@ -23,7 +23,9 @@ API="$POOL/fc-clone$IDX.sock"; DISK="$POOL/clone$IDX.ext4"; LOG="$POOL/fc-clone$
 FC=/opt/firecracker/firecracker
 
 destroy() {
-  pkill -f "fc-clone$IDX.sock" 2>/dev/null || true
+  # The scope is the process handle — no pkill patterns (a -f pattern once
+  # matched the INVOKER's own command text and killed the calling shell).
+  systemctl stop "bks-fc-clone$IDX" 2>/dev/null || true
   sleep 0.3
   ip netns del "$NS" 2>/dev/null || true
   ip link del "$VETH_H" 2>/dev/null || true
@@ -36,7 +38,7 @@ if [ "$CMD" = "destroy" ]; then destroy; echo "destroyed clone $IDX"; exit 0; fi
 # Never destroy-first: a concurrent caller re-using a live index must FAIL,
 # not silently kill the running VM (a claim's VM died mid-converge to a
 # racing sweep spawn before this guard).
-if pgrep -f "fc-clone$IDX.sock" >/dev/null 2>&1; then
+if systemctl is-active --quiet "bks-fc-clone$IDX" 2>/dev/null; then
   echo "index $IDX already has a live VM — pick another" >&2
   exit 3
 fi
@@ -79,10 +81,15 @@ iptables -C FORWARD -d "10.200.$IDX.0/30" -m state --state RELATED,ESTABLISHED -
 # RAM, not EBS ("restored VM feels native immediately"). No-op when cached.
 cat "$POOL/golden.mem" > /dev/null 2>&1 || true
 
-# firecracker inside netns + private mountns (clone disk over the golden path)
-ip netns exec "$NS" unshare -m bash -c \
-  "mount --bind '$DISK' '$POOL/golden.ext4' && exec '$FC' --api-sock '$API'" > "$LOG" 2>&1 &
-for i in $(seq 1 50); do [ -S "$API" ] && break; sleep 0.1; done
+# firecracker inside netns + private mountns (clone disk over the golden
+# path), detached into its own transient systemd scope — clone VMs must
+# OUTLIVE whoever spawned them (previews died on every opensession restart
+# while FCs were children of the service cgroup; same fix as the detached
+# opencode servers).
+systemd-run --collect --unit "bks-fc-clone$IDX" \
+  bash -c "exec ip netns exec '$NS' unshare -m bash -c \"mount --bind '$DISK' '$POOL/golden.ext4' && exec '$FC' --api-sock '$API'\" > '$LOG' 2>&1"
+for i in $(seq 1 80); do [ -S "$API" ] && break; sleep 0.1; done
+[ -S "$API" ] || { echo "firecracker api socket never appeared" >&2; destroy; exit 1; }
 
 LOAD=$(curl -s --unix-socket "$API" -X PUT http://x/snapshot/load -H 'Content-Type: application/json' \
   -d "{\"snapshot_path\":\"$POOL/golden.vmstate\",\"mem_backend\":{\"backend_type\":\"File\",\"backend_path\":\"$POOL/golden.mem\"},\"resume_vm\":true}")
