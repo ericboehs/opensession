@@ -821,8 +821,8 @@ interface PrInfo {
 // (worktree.ts REPOS), so a config override of either repo's GitHub target
 // flows through.
 const PR_REPO_LIMITS = [
-	{ id: "tella-fusion", openLimit: 500, recentLimit: 200 },
-	{ id: "backstage", openLimit: 100, recentLimit: 100 },
+	{ id: "tella-fusion", openLimit: 500, recentLimit: 1000 },
+	{ id: "backstage", openLimit: 100, recentLimit: 500 },
 ] as const;
 function prRepos() {
 	return PR_REPO_LIMITS.flatMap((limits) => {

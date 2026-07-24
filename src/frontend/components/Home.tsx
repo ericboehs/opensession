@@ -148,6 +148,53 @@ function StateIcon({ state }: { state: WorktreeRow["state"] }) {
   return <IconPullRequest size={20} />;
 }
 
+export function buildWorktreeRows(recentPrs: RecentPr[], sessions: UnifiedSession[]): WorktreeRow[] {
+  const byPr = new Map<string, WorktreeRow>();
+  for (const pr of recentPrs) {
+    byPr.set(pr.url, {
+      key: pr.url,
+      title: pr.title,
+      repo: pr.repo,
+      branch: pr.branch,
+      url: pr.url,
+      state: pr.state,
+      number: pr.number,
+      additions: pr.additions,
+      deletions: pr.deletions,
+      updatedAt: pr.updatedAt,
+      projectId: null,
+      archived: false,
+      person: pr.person,
+      author: pr.author,
+    });
+  }
+  for (const session of sessions) {
+    for (const row of worktreesForSession(session)) {
+      const existing = byPr.get(row.key);
+      byPr.set(row.key, {
+        ...existing,
+        ...row,
+        // GitHub is authoritative; session enrichment can lag behind a merge.
+        state: existing?.state ?? row.state,
+        // Archiving a workspace should not remove its shipped PR from history.
+        archived: existing ? false : row.archived,
+        person: row.person || existing?.person || null,
+        author: existing?.author || row.author,
+        additions: row.additions ?? existing?.additions,
+        deletions: row.deletions ?? existing?.deletions,
+        updatedAt:
+          existing && new Date(existing.updatedAt) > new Date(row.updatedAt)
+            ? existing.updatedAt
+            : row.updatedAt,
+      });
+    }
+  }
+
+  return [...byPr.values()].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
+}
+
 export function Home({ sessions, projects, onSelect, onNewSession }: Props) {
   const currentUser = useCurrentUser();
   const [query, setQuery] = useState("");
@@ -168,48 +215,7 @@ export function Home({ sessions, projects, onSelect, onNewSession }: Props) {
     };
   }, []);
 
-  const allWorktrees = useMemo(() => {
-    const byPr = new Map<string, WorktreeRow>();
-    for (const pr of recentPrs) {
-      byPr.set(pr.url, {
-        key: pr.url,
-        title: pr.title,
-        repo: pr.repo,
-        branch: pr.branch,
-        url: pr.url,
-        state: pr.state,
-        number: pr.number,
-        additions: pr.additions,
-        deletions: pr.deletions,
-        updatedAt: pr.updatedAt,
-        projectId: null,
-        archived: false,
-        person: pr.person,
-        author: pr.author,
-      });
-    }
-    for (const session of sessions) {
-      for (const row of worktreesForSession(session)) {
-        const existing = byPr.get(row.key);
-        byPr.set(row.key, {
-          ...existing,
-          ...row,
-          person: row.person || existing?.person || null,
-          author: existing?.author || row.author,
-          additions: row.additions ?? existing?.additions,
-          deletions: row.deletions ?? existing?.deletions,
-          updatedAt:
-            existing && new Date(existing.updatedAt) > new Date(row.updatedAt)
-              ? existing.updatedAt
-              : row.updatedAt,
-        });
-      }
-    }
-
-    return [...byPr.values()].sort(
-      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-    );
-  }, [recentPrs, sessions]);
+  const allWorktrees = useMemo(() => buildWorktreeRows(recentPrs, sessions), [recentPrs, sessions]);
 
   const worktrees = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -228,13 +234,22 @@ export function Home({ sessions, projects, onSelect, onNewSession }: Props) {
       });
   }, [allWorktrees, person, projectId, query, showArchived]);
 
-  const groups = useMemo(() => {
-    const grouped = new Map<string, WorktreeRow[]>();
-    for (const row of worktrees) {
-      const label = dateGroup(row.updatedAt);
-      grouped.set(label, [...(grouped.get(label) || []), row]);
-    }
-    return [...grouped.entries()];
+  const sections = useMemo(() => {
+    const definitions: Array<{ state: WorktreeRow["state"]; label: string }> = [
+      { state: "OPEN", label: "Open" },
+      { state: "MERGED", label: "Merged" },
+      { state: "CLOSED", label: "Closed" },
+    ];
+    return definitions.flatMap((definition) => {
+      const rows = worktrees.filter((row) => row.state === definition.state);
+      if (!rows.length) return [];
+      const groups = new Map<string, WorktreeRow[]>();
+      for (const row of rows) {
+        const label = dateGroup(row.updatedAt);
+        groups.set(label, [...(groups.get(label) || []), row]);
+      }
+      return [{ ...definition, rows, groups: [...groups.entries()] }];
+    });
   }, [worktrees]);
 
   const projectOptions = useMemo(() => {
@@ -351,7 +366,7 @@ export function Home({ sessions, projects, onSelect, onNewSession }: Props) {
           </button>
         </div>
 
-        {groups.length === 0 ? (
+        {sections.length === 0 ? (
           <div className="px-2 py-16 text-center">
             <div className="text-sm font-medium text-fg">
               {query ? "No matching worktrees" : "No pull request worktrees yet"}
@@ -361,64 +376,72 @@ export function Home({ sessions, projects, onSelect, onNewSession }: Props) {
             </div>
           </div>
         ) : (
-          <div className="pt-6">
-            {groups.map(([label, rows]) => (
-              <section key={label} className="mb-7">
-                <div className="mb-1.5 flex items-baseline gap-2 px-2 text-[13px] font-medium text-dim">
-                  <span>{label}</span>
-                  <span className="text-faint">{rows.length}</span>
+          <div className="pt-7">
+            {sections.map((section) => (
+              <section key={section.state} className="mb-10">
+                <div className="mb-4 flex items-baseline gap-2 px-2 text-[15px] font-semibold text-fg">
+                  <span>{section.label}</span>
+                  <span className="text-[12px] font-medium text-faint">{section.rows.length}</span>
                 </div>
-                <div>
-                  {rows.map((row) => (
-                    <button
-                      key={row.key}
-                      className="group grid w-full grid-cols-[22px_24px_minmax(0,1fr)_130px_44px] items-center gap-2 rounded-lg border-0 bg-transparent px-2 py-2.5 text-left text-dim hover:bg-hover hover:text-fg max-[720px]:grid-cols-[22px_24px_minmax(0,1fr)_40px]"
-                      onClick={() =>
-                        row.session ? onSelect(row.session) : row.url && window.open(row.url, "_blank", "noopener")
-                      }
-                      title={`${row.repo} · ${row.branch}`}
-                    >
-                      <span
-                        className={
-                          row.state === "MERGED"
-                            ? "text-green"
-                            : row.state === "CLOSED"
-                              ? "text-faint"
-                              : "text-accent"
-                        }
-                      >
-                        <StateIcon state={row.state} />
-                      </span>
-                      <span className="flex h-5 w-5 items-center justify-center rounded-sm bg-accent-soft text-[9px] font-bold uppercase text-accent">
-                        {row.repo.slice(0, 2)}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="flex min-w-0 items-baseline gap-2">
-                          <span className="truncate text-[14px] text-dim group-hover:text-fg">{row.title}</span>
-                          {row.number && <span className="shrink-0 text-[11.5px] text-faint">#{row.number}</span>}
-                        </span>
-                        <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-faint">
-                          <span className="truncate font-mono">{row.branch}</span>
-                          {person === "all" && row.person && (
-                            <>
-                              <span aria-hidden>·</span>
-                              <span className="shrink-0 font-sans">{personLabel(row.person)}</span>
-                            </>
-                          )}
-                        </span>
-                      </span>
-                      <span className="justify-self-end font-mono text-[12px] max-[720px]:hidden">
-                        {row.additions !== undefined && (
-                          <span className="text-green">+{compactDiff(row.additions)}</span>
-                        )}
-                        {row.deletions !== undefined && (
-                          <span className="ml-2 text-red">-{compactDiff(row.deletions)}</span>
-                        )}
-                      </span>
-                      <span className="justify-self-end text-[12px] text-faint">{compactAge(row.updatedAt)}</span>
-                    </button>
-                  ))}
-                </div>
+                {section.groups.map(([label, rows]) => (
+                  <div key={label} className="mb-5">
+                    <div className="mb-1.5 flex items-baseline gap-2 px-2 text-[12px] font-medium text-dim">
+                      <span>{label}</span>
+                      <span className="text-faint">{rows.length}</span>
+                    </div>
+                    <div>
+                      {rows.map((row) => (
+                        <button
+                          key={row.key}
+                          className="group grid w-full grid-cols-[22px_24px_minmax(0,1fr)_130px_44px] items-center gap-2 rounded-lg border-0 bg-transparent px-2 py-2.5 text-left text-dim hover:bg-hover hover:text-fg max-[720px]:grid-cols-[22px_24px_minmax(0,1fr)_40px]"
+                          onClick={() =>
+                            row.session ? onSelect(row.session) : row.url && window.open(row.url, "_blank", "noopener")
+                          }
+                          title={`${row.repo} · ${row.branch}`}
+                        >
+                          <span
+                            className={
+                              row.state === "MERGED"
+                                ? "text-green"
+                                : row.state === "CLOSED"
+                                  ? "text-faint"
+                                  : "text-accent"
+                            }
+                          >
+                            <StateIcon state={row.state} />
+                          </span>
+                          <span className="flex h-5 w-5 items-center justify-center rounded-sm bg-accent-soft text-[9px] font-bold uppercase text-accent">
+                            {row.repo.slice(0, 2)}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="flex min-w-0 items-baseline gap-2">
+                              <span className="truncate text-[14px] text-dim group-hover:text-fg">{row.title}</span>
+                              {row.number && <span className="shrink-0 text-[11.5px] text-faint">#{row.number}</span>}
+                            </span>
+                            <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-faint">
+                              <span className="truncate font-mono">{row.branch}</span>
+                              {person === "all" && row.person && (
+                                <>
+                                  <span aria-hidden>·</span>
+                                  <span className="shrink-0 font-sans">{personLabel(row.person)}</span>
+                                </>
+                              )}
+                            </span>
+                          </span>
+                          <span className="justify-self-end font-mono text-[12px] max-[720px]:hidden">
+                            {row.additions !== undefined && (
+                              <span className="text-green">+{compactDiff(row.additions)}</span>
+                            )}
+                            {row.deletions !== undefined && (
+                              <span className="ml-2 text-red">-{compactDiff(row.deletions)}</span>
+                            )}
+                          </span>
+                          <span className="justify-self-end text-[12px] text-faint">{compactAge(row.updatedAt)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </section>
             ))}
           </div>
