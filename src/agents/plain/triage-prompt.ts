@@ -2,16 +2,28 @@
  * Plain ticket triage prompt — code-seeded (single source of truth in git).
  * Edit here, then update the live automation because seeding is create-if-absent.
  */
-export const TRIAGE_PROMPT = `A new Plain support ticket event is attached. Work the ticket proactively, not just as a triage summary.
+export const TRIAGE_PROMPT = `A new Plain support ticket event is attached. Work the ticket proactively, not just as a triage summary. This prompt is self-contained: do not read the support skill; everything you need is here.
 
-1. Read \`.agents/skills/support/SKILL.md\` first and follow it, EXCEPT its “keep Plain quiet” notes policy: this automation always writes one full internal note ending in a draft reply (see “Internal note + draft reply” below). Fetch the full Plain thread before drawing conclusions. Never send a customer reply, assign the thread, snooze it, mark it done, or otherwise change its status. Keep raw investigation detail out of Plain notes; the note format below defines what belongs.
-2. Investigate the customer’s actual request using production evidence and the codebase. Do not expand the scope based on inferred needs. Prove the root cause before proposing or implementing a fix.
+1. Fetch the full Plain thread before drawing conclusions. Never send a customer reply, assign the thread, snooze it, mark it done, or otherwise change its status. Keep raw investigation detail out of Plain notes; the note format below defines what belongs.
+2. Investigate the customer's actual request using production evidence and the codebase. Do not expand the scope based on inferred needs. Prove the root cause before proposing or implementing a fix.
 3. If the root cause is in \`tella-fusion\` and a small, well-scoped fix can be made safely, implement it in this code-mode session. Prefer the smallest correct change, add focused regression coverage, run the required package checks, commit, push, and open a PR. Tella is private, so no extra publishing confirmation is needed. Never merge the PR.
-4. Create or reuse a Linear issue only when useful for tracking. Link the Plain thread to it. If a PR fixes the issue, link the PR in Linear and move the issue to the appropriate active/review state when possible. Do not stop at filing an issue when the verified fix is straightforward.
+4. Search Linear for the same underlying bug or request and link the Plain thread to the single best matching issue. Create a new issue only when useful for tracking. If a PR fixes the issue, link the PR in Linear and move the issue to the appropriate active/review state when possible. Do not stop at filing an issue when the verified fix is straightforward.
 5. If the issue requires a product decision, migration, risky remediation, unavailable credentials, or broad architectural work, do not guess. Record the verified evidence in the note and create/reuse a narrowly scoped Linear issue instead.
-6. In the final session response, state the root cause, what was fixed, verification run, PR/Linear links, and anything still requiring a human decision. If no code change was justified, explain why.
+6. Apply 1-2 existing Plain labels that best describe the ticket: list label types first, do not re-add existing labels, skip when none fit.
+7. In the final session response, state the root cause, what was fixed, verification run, PR/Linear links, and anything still requiring a human decision. If no code change was justified, explain why.
 
-Default posture: solve obvious verified product bugs end-to-end. “Investigated and filed” is not completion when the session can safely implement and validate the fix.
+Default posture: solve obvious verified product bugs end-to-end. "Investigated and filed" is not completion when the session can safely implement and validate the fix.
+
+## Investigation order
+
+1. For a specific user, video, recording, upload, or export, start with the high-level TellaInternalSupportMCP investigation tools (lookup_user_by_email, lookup_story_by_slug, investigate_*). Establish what happened in production before theorizing, and verify customer claims against the data.
+2. Use the tella-fusion codebase, recent PRs, docs, and Grafana logs when the support tools do not answer the question. For user-dependent behavior, check flags with \`.agents/skills/check-user-flags\`.
+3. Useful helpers in the repo: \`.agents/skills/support/scripts/plain-api.sh thread timeline th_ID --first 50\` (full conversation), \`... thread list --customer c_ID --status all\` (prior threads), \`... customer search "name"\`. Reference docs: \`.agents/skills/support/references/product-knowledge.md\`, response templates in \`support-automation/references/common-responses/\`.
+4. Delegate only genuinely broad, independent searches to subagents. Keep root-cause judgment and the note on the main run.
+
+## Billing
+
+Stripe is read-only here: never execute Stripe writes. On subscriptions, \`quantity\` = seats and \`billing_reason\` = charge type; a "duplicate charge" complaint is usually a seat addition, so verify before proposing any refund. For a clear-cut recent duplicate/accidental charge or an explicit cancellation/refund request, verify the subscription and charge, then put a "Proposed refund/cancellation (needs approval)" block in the note with customer, sub_ID, charge/payment-intent ID + amount + date, the exact action, and why it is clear-cut. If eligibility is ambiguous, old, disputed, or policy-dependent, flag it for human judgment instead.
 
 ## Internal note + draft reply (required)
 
@@ -35,5 +47,4 @@ Use this shape:
 **Draft reply:**
 > <complete customer-ready reply, normally 2-4 short paragraphs; favor brevity but include every instruction or caveat the customer needs>
 
-Prefix every draft line with ">", including blank lines. Lead with the answer or next step. Use friendly plain language, no internal jargon, no em dashes, and no claims that an unperformed action already happened. Verify customer-facing UI names, prices, limits, and feature availability against code or data. If uncertain, say what was checked and what to try next. Write the note and draft in English; state the customer’s language only when it is not English.
-`;
+Prefix every draft line with ">", including blank lines. Lead with the answer or next step. Use friendly plain language, no internal jargon, no em dashes, and no claims that an unperformed action already happened. Verify customer-facing UI names, prices, limits, and feature availability against code or data. If uncertain, say what was checked and what to try next. Write the note and draft in English; state the customer's language only when it is not English.`;
