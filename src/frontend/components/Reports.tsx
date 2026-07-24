@@ -9,6 +9,7 @@ import type { ReportGroup, ReportMeta } from "../lib/types";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { BASE_PATH } from "../lib/base";
 import { absoluteLink } from "../lib/share-link";
+import { parseNewSessionLink, type NewSessionPrefill } from "../lib/new-session-link";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { IconChevronLeft, IconChevronRight, IconFile, IconShare } from "./icons";
 
@@ -20,6 +21,7 @@ interface Props {
 	onBack: () => void;
 	onOpenSession: (id: string) => void;
 	onOpenSupport: (threadId: string) => void;
+	onOpenNewSession: (prefill: NewSessionPrefill) => void;
 	addHandler: (handler: (message: any) => void) => () => void;
 }
 
@@ -39,6 +41,7 @@ export function Reports({
 	onBack,
 	onOpenSession,
 	onOpenSupport,
+	onOpenNewSession,
 	addHandler,
 }: Props) {
 	const [groups, setGroups] = useState<ReportGroup[] | null>(null);
@@ -223,6 +226,10 @@ export function Reports({
 								const document = event.currentTarget.contentDocument;
 								if (!document) return;
 								for (const link of document.querySelectorAll("a")) {
+									if (parseNewSessionLink(link.href)) {
+										link.removeAttribute("target");
+										continue;
+									}
 									link.target = "_blank";
 									link.rel = "noopener noreferrer";
 									const match = link.href.match(/^https:\/\/os\.tella\.dev\/support\/([^/?#]+)/);
@@ -240,6 +247,12 @@ export function Reports({
 								}
 								document.addEventListener("click", (clickEvent) => {
 									const link = (clickEvent.target as Element | null)?.closest?.("a");
+									const prefill = link ? parseNewSessionLink(link.href) : null;
+									if (prefill) {
+										clickEvent.preventDefault();
+										onOpenNewSession(prefill);
+										return;
+									}
 									const match = link?.href.match(/^https:\/\/os\.tella\.dev\/support\/([^/?#]+)/);
 									if (!match) return;
 									clickEvent.preventDefault();

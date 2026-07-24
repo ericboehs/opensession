@@ -89,6 +89,7 @@ import {
 	SessionReportsPanel,
 	useSessionReports,
 } from "./SessionReportsPanel";
+import type { NewSessionPrefill } from "../lib/new-session-link";
 import type { WorkflowRunSnapshot } from "../../server/workflow-types";
 import { PreviewButton } from "./PreviewButton";
 import { StagingLink } from "./StagingLink";
@@ -213,6 +214,7 @@ interface Props {
 	workerSessions?: RelatedSession[];
 	/** Navigate to another session (used by the relationship chips). */
 	onOpenSession?: (id: string) => void;
+	onOpenNewSession: (prefill: NewSessionPrefill) => void;
 	/** Mirror live run state into the app-level session list for sidebar rows. */
 	onRunningChange?: (id: string, isRunning: boolean) => void;
 	/** Mirror a reviewer pick / sign-off into the app-level session list so the
@@ -470,6 +472,7 @@ export function SessionViewer({
 	parentSession,
 	workerSessions,
 	onOpenSession,
+	onOpenNewSession,
 	onRunningChange,
 	onReviewChange,
 	showReview = false,
@@ -4114,6 +4117,7 @@ export function SessionViewer({
 								refresh={refreshAssets}
 								selectedPath={selectedAssetPath}
 								showTree={false}
+								onOpenNewSession={onOpenNewSession}
 							/>
 						</div>
 					) : showReview && hasWorkspace ? (
@@ -4755,7 +4759,10 @@ export function SessionViewer({
 									onOpenSubagent={openSubagent}
 								/>
 							) : panelTab === "reports" ? (
-								<SessionReportsPanel reports={sessionReports} />
+								<SessionReportsPanel
+									reports={sessionReports}
+									onOpenNewSession={onOpenNewSession}
+								/>
 							) : (panelTab === "plain" || !hasWorkspace) && hasPlain ? (
 								<PlainThreadPanel
 									sessionId={session.id}

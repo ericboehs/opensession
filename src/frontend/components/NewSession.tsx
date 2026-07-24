@@ -25,6 +25,7 @@ interface Props {
   connected: boolean;
   /** Prefill the prompt (e.g. from the Home "New session" box). */
   prefillPrompt?: string;
+  forceMode?: "ask" | "code";
   /** When starting a chat inside a Project (folder), the chat joins this project… */
   projectId?: string;
   /** …and defaults to the project's shared repo + worktree (a sibling's branch). */
@@ -123,10 +124,10 @@ function slugifyBranch(text: string): string {
   return slug || "new-session";
 }
 
-export function NewSession({ onBack, send, addHandler, connected, prefillPrompt, projectId, forceRepo, forceBranch, onCreateStarted }: Props) {
+export function NewSession({ onBack, send, addHandler, connected, prefillPrompt, forceMode, projectId, forceRepo, forceBranch, onCreateStarted }: Props) {
   const auth = useAuthStatus();
   const [prefill] = useState(readPrefill);
-  const [mode, setMode] = useState<"ask" | "code">(prefill.mode);
+  const [mode, setMode] = useState<"ask" | "code">(forceMode || prefill.mode);
   // In a Project, default to the folder's shared repo; else the prefill/filter repo.
   const [repo, setRepo] = useState(forceRepo || prefill.repo);
   const [repos, setRepos] = useState(CLOUD_REPOS);

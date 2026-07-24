@@ -22,6 +22,7 @@ import {
 	type SessionAssetFile,
 } from "../lib/api";
 import type { WSServerMessage } from "../lib/types";
+import { parseNewSessionLink, type NewSessionPrefill } from "../lib/new-session-link";
 import { MarkdownBody } from "./MarkdownBody";
 
 /** Lives in SessionViewer (not the panel) so the tab button can show/hide on
@@ -129,6 +130,7 @@ export function AssetsPanel({
 	refresh,
 	selectedPath = null,
 	showTree = true,
+	onOpenNewSession,
 }: {
 	sessionId: string;
 	files: SessionAssetFile[];
@@ -139,6 +141,7 @@ export function AssetsPanel({
 	/** Show the built-in file tree. false in the main-tab preview, where the
 	 *  Info-panel assets list is the navigator instead. */
 	showTree?: boolean;
+	onOpenNewSession: (prefill: NewSessionPrefill) => void;
 }) {
 	const [selected, setSelected] = useState<string | null>(selectedPath);
 	// Follow the controlled selection when the list opens a new asset.
@@ -276,6 +279,17 @@ export function AssetsPanel({
 								title={file.path}
 								src={rawUrl}
 								sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-modals allow-downloads"
+								onLoad={(event) => {
+									const document = event.currentTarget.contentDocument;
+									if (!document) return;
+									document.addEventListener("click", (clickEvent) => {
+										const link = (clickEvent.target as Element | null)?.closest?.("a");
+										const prefill = link ? parseNewSessionLink(link.href) : null;
+										if (!prefill) return;
+										clickEvent.preventDefault();
+										onOpenNewSession(prefill);
+									});
+								}}
 								className="h-full w-full border-0 bg-white"
 							/>
 						) : kind === "pdf" ? (

@@ -5,6 +5,7 @@ import {
 	reportRawUrl,
 } from "../lib/api";
 import type { ReportMeta, WSServerMessage } from "../lib/types";
+import { parseNewSessionLink, type NewSessionPrefill } from "../lib/new-session-link";
 
 export function useSessionReports(
 	sessionId: string,
@@ -48,7 +49,13 @@ function reportKey(report: ReportMeta): string {
 	return `${report.automationId}/${report.id}`;
 }
 
-export function SessionReportsPanel({ reports }: { reports: ReportMeta[] }) {
+export function SessionReportsPanel({
+	reports,
+	onOpenNewSession,
+}: {
+	reports: ReportMeta[];
+	onOpenNewSession: (prefill: NewSessionPrefill) => void;
+}) {
 	const [selectedKey, setSelectedKey] = useState<string | null>(null);
 	const selected =
 		reports.find((report) => reportKey(report) === selectedKey) ||
@@ -116,9 +123,20 @@ export function SessionReportsPanel({ reports }: { reports: ReportMeta[] }) {
 					const document = event.currentTarget.contentDocument;
 					if (!document) return;
 					for (const link of document.querySelectorAll("a")) {
+						if (parseNewSessionLink(link.href)) {
+							link.removeAttribute("target");
+							continue;
+						}
 						link.target = "_blank";
 						link.rel = "noopener noreferrer";
 					}
+					document.addEventListener("click", (clickEvent) => {
+						const link = (clickEvent.target as Element | null)?.closest?.("a");
+						const prefill = link ? parseNewSessionLink(link.href) : null;
+						if (!prefill) return;
+						clickEvent.preventDefault();
+						onOpenNewSession(prefill);
+					});
 				}}
 				className="min-h-0 flex-1 border-0 bg-white"
 			/>

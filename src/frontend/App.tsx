@@ -8,6 +8,7 @@ import { ToastHost, toast } from "./ui/toast";
 import { suppressLayoutAnimations } from "./ui/motion";
 import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
+import type { NewSessionPrefill } from "./lib/new-session-link";
 import { SessionSearch } from "./components/SessionSearch";
 import { Home } from "./components/Home";
 import { CatchUpDeck } from "./components/CatchUpDeck";
@@ -717,6 +718,7 @@ function App() {
 		projectId?: string;
 		repo?: string;
 		branch?: string;
+		mode?: "ask" | "code";
 	}>(() =>
 		route.view === "new" ? { open: true, prompt: route.prompt } : { open: false },
 	);
@@ -724,6 +726,9 @@ function App() {
 	paletteOpenRef.current = palette.open;
 	const openPalette = React.useCallback((prompt?: string) => {
 		setPalette({ open: true, prompt });
+	}, []);
+	const openPrefilledSession = React.useCallback((prefill: NewSessionPrefill) => {
+		setPalette({ open: true, ...prefill });
 	}, []);
 
 	// A "new tab" while a session is open is a *new chat in that same session*, not
@@ -2048,6 +2053,7 @@ function App() {
 								onBack={() => navigate({ view: "reports" }, { replace: true })}
 								onOpenSession={(id) => navigate({ view: "session", id })}
 								onOpenSupport={(threadId) => navigate({ view: "support", threadId })}
+								onOpenNewSession={openPrefilledSession}
 								addHandler={addHandler}
 							/>
 						) : route.view === "analytics" ? (
@@ -2213,6 +2219,7 @@ function App() {
 											isRunning: s.isRunning,
 										}))}
 									onOpenSession={(id) => navigate({ view: "session", id })}
+									onOpenNewSession={openPrefilledSession}
 									onRunningChange={handleSessionRunningChange}
 									onReviewChange={(id, req) =>
 										patch(id, { reviewRequest: req ?? undefined })
@@ -2372,6 +2379,7 @@ function App() {
 						projectId={palette.projectId}
 						forceRepo={palette.repo}
 						forceBranch={palette.branch}
+						forceMode={palette.mode}
 						onCreateStarted={(draft) => {
 							pendingCreateDraftRef.current = {
 								...draft,
