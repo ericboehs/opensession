@@ -1705,6 +1705,41 @@ export function resumePoolSyncIfNeeded(worktreeDir: string): void {
 
 // ── Scheduler + status ───────────────────────────────────────────────────────
 
+/**
+ * Reap microvm leftovers nothing tracks anymore: live bks-fc-clone scopes,
+ * netns, COW disks and Caddy routes whose index no repo's state knows.
+ * Crash-safe cleanup — spawn/destroy failures at any step can strand these.
+ */
+async function gcMicrovmOrphans(): Promise<void> {
+  const known = new Set<number>();
+  for (const rid of Object.keys(configuredRepos())) {
+    for (const c of Object.values(readState(rid).containers)) {
+      if (c.mvmIdx != null) known.add(c.mvmIdx);
+    }
+  }
+  const units = await $`systemctl list-units --plain --no-legend 'bks-fc-clone*'`.quiet().nothrow().text();
+  for (const m of units.matchAll(/bks-fc-clone(\d+)/g)) {
+    const idx = parseInt(m[1], 10);
+    if (!known.has(idx)) {
+      console.log(`[preview-pool] gc: reaping orphaned clone ${idx}`);
+      await sudoRun(["bash", `${MVM_SCRIPTS}/clone.sh`, "destroy", String(idx), MVM_STORE]).catch(() => {});
+      await fetch(`http://localhost:2019/config/apps/http/servers/preview_${MVM_HTTPS_BASE + idx}`, { method: "DELETE" }).catch(() => {});
+    }
+  }
+  // Disks/netns without a live scope (partial destroys). clone.sh destroy is
+  // idempotent and cleans all three.
+  const disks = await $`ls /opt/firecracker/store 2>/dev/null`.quiet().nothrow().text();
+  for (const m of disks.matchAll(/clone(\d+)\.ext4/g)) {
+    const idx = parseInt(m[1], 10);
+    if (known.has(idx)) continue;
+    const live = await $`systemctl is-active --quiet bks-fc-clone${idx}`.quiet().nothrow();
+    if (live.exitCode !== 0) {
+      console.log(`[preview-pool] gc: sweeping dead clone ${idx} leftovers`);
+      await sudoRun(["bash", `${MVM_SCRIPTS}/clone.sh`, "destroy", String(idx), MVM_STORE]).catch(() => {});
+    }
+  }
+}
+
 /** Run one reconcile pass now (golden freshness + container top-up). */
 export function previewPoolSweepNow(): Promise<void> {
   return sweepPool();
@@ -1729,6 +1764,9 @@ async function sweepPool(): Promise<void> {
         );
       }
       await ensurePool(repo).catch((e) => console.warn(`[preview-pool] ensure ${repo.id} failed:`, e));
+      if (cfg.backend === "microvm") {
+        await gcMicrovmOrphans().catch((e) => console.warn("[preview-pool] microvm gc failed:", e));
+      }
       // Keep live warm containers' short-lived creds fresh.
       for (const c of Object.values(readState(repo.id).containers)) {
         if (c.state === "ready") await refreshContainerCreds(c).catch(() => {});
