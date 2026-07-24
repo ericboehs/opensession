@@ -15112,6 +15112,41 @@ html.wco .settings-sidenav {
 .sidebar-ws-action.is-on {
 	color: var(--accent);
 }
+/* Archived rows carry no swipe gesture (that's a live-row affordance), so their
+   unarchive/pin pair is the only way back from the band — keep it visible on
+   touch, where .sidebar-ws-actions is otherwise hover-only. Three classes so it
+   outranks the mobile blocks' `.sidebar-ws-row:hover .sidebar-ws-actions`
+   display:none, which sticky first-tap hover would otherwise apply. */
+@media (hover: none) {
+	.sidebar-ws-row.sidebar-archived-row .sidebar-ws-actions,
+	.sidebar-ws-row.sidebar-archived-row:hover .sidebar-ws-actions {
+		display: inline-flex;
+		/* Resting, not hover-revealed: the opaque plate that keeps a title from
+		   bleeding through would read as a chip on every row. Drop it and reserve
+		   the space in the title instead, so it ellipsizes before the icons. */
+		background: none;
+		box-shadow: none;
+	}
+	.sidebar-ws-row.sidebar-archived-row .sidebar-item-title {
+		padding-right: 72px;
+	}
+}
+/* Support rows (bare .sidebar-item, two-line) borrow the same cluster for their
+   "mark done" button, so a ticket finishes with the same gesture a workspace
+   archives with. Hover-gated exactly like the workspace rows above: on touch the
+   sticky first-tap :hover would flash the button on a row whose tap means "open
+   the ticket". The shared .sidebar-item:hover .sidebar-item-meta padding already
+   steps the meta line clear of it. */
+@media (hover: hover) {
+	.sidebar-item:hover > .sidebar-ws-actions {
+		display: inline-flex;
+	}
+}
+/* Affirmative tint — this completes a ticket rather than filing it away. Equal
+   specificity to .sidebar-ws-action:hover, so it must stay below it to win. */
+.sidebar-ws-action--done:hover {
+	color: var(--green);
+}
 
 /* Compact last-activity time (now only on Support rows — workspace rows show
    a time only while a run is live, via the ticker below). Full time in the

@@ -2228,6 +2228,31 @@ function App() {
 								dropStalePins(chats);
 								refresh();
 							}}
+							onUnarchiveWorkspace={async (chats) => {
+								// The inverse of onArchiveWorkspace: the archive registry is
+								// per-chat, so a row comes back by unarchiving every member.
+								const reasons = new Map(
+									chats.map((c) => [c.id, c.archivedReason]),
+								);
+								for (const chat of chats) {
+									patch(chat.id, { archived: false, archivedReason: undefined });
+								}
+								try {
+									await Promise.all(
+										chats.map((c) => archiveSessionApi(c.id, false)),
+									);
+								} catch (e) {
+									console.error("Unarchive workspace failed:", e);
+									for (const chat of chats) {
+										patch(chat.id, {
+											archived: true,
+											archivedReason: reasons.get(chat.id),
+										});
+									}
+									return;
+								}
+								refresh();
+							}}
 							onRename={async (s, title) => {
 								try {
 									await renameSessionApi(s.id, title);

@@ -50,6 +50,7 @@ import { shortTime, elapsedClock } from "../lib/time";
 import {
 	IconChevronDown,
 	IconArchive,
+	IconUnarchive,
 	IconBell,
 	IconFilter,
 	IconArrowDown,
@@ -369,6 +370,12 @@ interface Props {
 		chats: UnifiedSession[],
 		next: UnifiedSession | null,
 	) => void;
+	/**
+	 * Bring every chat of an archived row back (the Archived band's unarchive
+	 * icon) — the exact inverse of `onArchiveWorkspace`, minus the "what opens
+	 * next" dance: nothing is closing, so nothing needs replacing.
+	 */
+	onUnarchiveWorkspace: (chats: UnifiedSession[]) => void;
 	/** Rename a session (double-click its title); empty title resets it. */
 	onRename: (session: UnifiedSession, title: string) => void;
 	/**
@@ -983,6 +990,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	catchUpActive,
 	onArchive,
 	onArchiveWorkspace,
+	onUnarchiveWorkspace,
 	onRename,
 	onSetStatus,
 	teamViewing = [],
@@ -2561,6 +2569,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return rows;
 	}, [sessions, projects, currentUser, filter.repo]);
 
+	// Bring an archived row back. `pin` is the one-gesture escalation: unarchive
+	// AND drop it in Pinned, so a row you're resurrecting to work on lands at the
+	// top of the sidebar instead of wherever its derived lane puts it. The pin key
+	// matches workspacePinState's (workspace key, or the solo chat's id), which is
+	// exactly what `archivedRows` keys rows by.
+	function unarchiveRow(row: { key: string; chats: UnifiedSession[] }, pin: boolean) {
+		onUnarchiveWorkspace(row.chats);
+		if (pin && !pins.includes(row.key)) setPins(togglePin(row.key));
+	}
+
 	// Archived: a collapsible group like the status lanes (T3's "Settled" —
 	// visible at the bottom of the same list so archiving feels cheap, not like
 	// a one-way door). Shows the most recent rows inline; "More…" opens the
@@ -2602,7 +2620,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								archivedRows.slice(0, ARCHIVED_INLINE_MAX).map((r) => (
 									<button
 										key={r.key}
-										className="sidebar-item sidebar-ws-row"
+										className="sidebar-item sidebar-ws-row sidebar-archived-row"
 										onClick={() => onSelect(r.chats[0])}
 										aria-label={r.name}
 									>
@@ -2620,6 +2638,61 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 												{shortTime(r.lastActivity)}
 											</span>
 										)}
+										{/* Hover actions, mirroring a live row's pin + archive pair:
+										    here they bring the row back, with pin as the one-gesture
+										    "unarchive AND put it where I'll see it". */}
+										<span className="sidebar-ws-actions">
+											<Tooltip label="Unarchive and pin">
+												<span
+													role="button"
+													tabIndex={0}
+													className="sidebar-ws-action"
+													aria-label={
+														r.chats.length > 1
+															? `Unarchive workspace (${r.chats.length} chats) and pin`
+															: "Unarchive and pin"
+													}
+													onClick={(e) => {
+														e.stopPropagation();
+														unarchiveRow(r, true);
+													}}
+													onKeyDown={(e) => {
+														if (e.key === "Enter" || e.key === " ") {
+															e.stopPropagation();
+															unarchiveRow(r, true);
+														}
+													}}
+												>
+													<IconPin size={21} />
+												</span>
+											</Tooltip>
+											<Tooltip
+												label={
+													r.chats.length > 1
+														? `Unarchive workspace (${r.chats.length} chats)`
+														: "Unarchive"
+												}
+											>
+												<span
+													role="button"
+													tabIndex={0}
+													className="sidebar-ws-action"
+													aria-label="Unarchive"
+													onClick={(e) => {
+														e.stopPropagation();
+														unarchiveRow(r, false);
+													}}
+													onKeyDown={(e) => {
+														if (e.key === "Enter" || e.key === " ") {
+															e.stopPropagation();
+															unarchiveRow(r, false);
+														}
+													}}
+												>
+													<IconUnarchive size={21} />
+												</span>
+											</Tooltip>
+										</span>
 									</button>
 								))}
 							{open && (

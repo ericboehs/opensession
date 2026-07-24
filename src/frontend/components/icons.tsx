@@ -747,6 +747,18 @@ export function IconArchive(p: IconProps) {
   );
 }
 
+// The archive crate with its contents lifting back out — the exact mirror of
+// IconArchive, whose pull slot becomes an up arrow.
+export function IconUnarchive(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="4" y="4.75" width="16" height="4" rx="1" />
+      <path {...stroke} d="M5.5 8.75V17.25C5.5 18.3546 6.39543 19.25 7.5 19.25H16.5C17.6046 19.25 18.5 18.3546 18.5 17.25V8.75" />
+      <path {...stroke} d="M12 16.25V11.75M9.75 14L12 11.75L14.25 14" />
+    </Svg>
+  );
+}
+
 // Octicon-style git-pull-request, redrawn to this set's 24×24 stroke grammar.
 export function IconPullRequest(p: IconProps) {
   return (
