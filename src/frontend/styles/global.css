@@ -195,6 +195,14 @@ body {
 	   Nothing below this should set 400/450 — bold accents stay 600/700. */
 	font-weight: 500;
 	-webkit-font-smoothing: antialiased;
+	/* Every size in this sheet is a hand-picked px value, but WebKit's default
+	   text autosizing (-webkit-text-size-adjust: auto) re-scales them per block
+	   from that block's width — so on iPhone the sidebar's rows came out at
+	   inconsistent, larger-than-authored sizes (and grew again in landscape).
+	   Preflight normally pins this to 100%; we deliberately don't ship it (see
+	   styles/tailwind.css), so it has to be set here. */
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
 }
 
 /* Form controls don't inherit font-weight — the UA stylesheet pins them to
