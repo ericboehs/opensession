@@ -1763,6 +1763,25 @@ export function peekOpencodeServer(key: string): OpencodeServerEntry | undefined
   return servers.get(key);
 }
 
+/** Content hash of our local plugin files, read once at module init. The
+ *  server config only carries their PATHS, so without this an edited plugin
+ *  never reaches a warm server: it neither hot-reloads (opencode loads
+ *  plugins at boot) nor drains as a config change, and a busy shared server
+ *  can carry stale plugin code for days. Folding the content into the config
+ *  identity makes the first ensure after a restart drain/respawn through the
+ *  normal "config changed" path. */
+const LOCAL_PLUGIN_CONTENT_HASH = (() => {
+  try {
+    let acc = "";
+    for (const p of [SESSION_TAG_PLUGIN_PATH, ARG_COERCE_PLUGIN_PATH]) {
+      acc += Bun.hash(readFileSync(p, "utf8")).toString(16) + "\n";
+    }
+    return Bun.hash(acc).toString(16);
+  } catch {
+    return "unreadable";
+  }
+})();
+
 export function opencodeServerConfigHash(
   config: Record<string, unknown>,
   cwd: string,
@@ -1776,7 +1795,15 @@ export function opencodeServerConfigHash(
         "http://127.0.0.1:<meridian-port>",
       )
     : serializedConfig;
-  return Bun.hash(identityConfig + "\n" + cwd + "\n" + JSON.stringify(identityEnv)).toString(16);
+  return Bun.hash(
+    identityConfig +
+      "\n" +
+      cwd +
+      "\n" +
+      JSON.stringify(identityEnv) +
+      "\n" +
+      LOCAL_PLUGIN_CONTENT_HASH,
+  ).toString(16);
 }
 
 export async function ensureOpencodeServer(

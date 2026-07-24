@@ -181,7 +181,23 @@ export async function dispatchRunRpc(path: string, body: any): Promise<RunRpcDis
   const ocSession = String(body?.ocSession || "");
   if (ocSession) {
     const oc = ocSessions.get(ocSession);
-    if (oc && timingSafeEqStr(oc.token, token)) ctx = { sessionId: oc.sessionId, user: oc.user };
+    if (oc && timingSafeEqStr(oc.token, token)) {
+      ctx = { sessionId: oc.sessionId, user: oc.user };
+    } else {
+      // A tagged call we can't resolve proceeds under the token's own ctx —
+      // on a shared server that is whichever run registered last, i.e.
+      // possibly the WRONG session (2026-07-24: a task-subagent's untagged
+      // ancestry parented spawned sessions onto an unrelated workspace).
+      // The session-tag plugin now resolves subagent ids to their root, so
+      // hits here are unexpected — make them visible instead of silent.
+      audit({
+        msg: "run_rpc_oc_session_miss",
+        oc_session: ocSession,
+        fallback_session_id: ctx.sessionId,
+        server: String(body?.server || ""),
+        stale: !!oc,
+      });
+    }
   }
 
   const builder: InteractiveMcpBuilder | undefined = g.__runRpcMcpBuilder;
