@@ -185,10 +185,10 @@ export const DIAL_ORACLE_AGENTS: Record<
   },
   "oracle-sol": {
     model: "openai/gpt-5.6-sol",
-    variant: "high",
+    variant: "xhigh",
     label: "GPT-5.6 Sol",
     description:
-      "Oracle: senior-engineer second opinion on GPT-5.6 Sol at high reasoning — " +
+      "Oracle: senior-engineer second opinion on GPT-5.6 Sol at extra-high reasoning — " +
       "plan review, architecture decisions, deep debugging, reviewing significant work. " +
       "Read-only advisor.",
   },
@@ -236,7 +236,7 @@ export const DIAL_PRESETS: DialPreset[] = [
   {
     id: "dial/ultra",
     label: "Dial · Ultra",
-    description: "The most capable combo for hard, open-ended tasks — Fable 5 high with a Sol-high oracle",
+    description: "The most capable combo for hard, open-ended tasks — Fable 5 high with a Sol-xhigh oracle",
     model: "claude-fable-5",
     effort: "high",
     oracleAgent: "oracle-sol",
@@ -252,7 +252,7 @@ export const DIAL_PRESETS: DialPreset[] = [
   {
     id: "dial/medium",
     label: "Dial · Medium",
-    description: "Balanced depth and speed for everyday work — Sol-high with a Sol-high oracle",
+    description: "Balanced depth and speed for everyday work — Sol-high with a Sol-xhigh oracle",
     model: "gpt-5.6-sol",
     effort: "high",
     oracleAgent: "oracle-sol",
@@ -260,7 +260,7 @@ export const DIAL_PRESETS: DialPreset[] = [
   {
     id: "dial/low",
     label: "Dial · Low",
-    description: "Fast edits and small tasks — Luna-high with a Sol-high oracle",
+    description: "Fast edits and small tasks — Luna-high with a Sol-xhigh oracle",
     model: "gpt-5.6-luna",
     effort: "high",
     oracleAgent: "oracle-sol",

@@ -249,7 +249,7 @@ describe("The Dial", () => {
         oracleAgent: "oracle-sol",
       },
     ]);
-    expect(DIAL_ORACLE_AGENTS["oracle-sol"]?.variant).toBe("high");
+    expect(DIAL_ORACLE_AGENTS["oracle-sol"]?.variant).toBe("xhigh");
     expect(DIAL_ORACLE_AGENTS["oracle-fable"]?.variant).toBe("high");
   });
 
