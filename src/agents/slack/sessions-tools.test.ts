@@ -6,6 +6,7 @@ import {
 	spawnTaskImpl,
 	taskStateOf,
 	taskStatusImpl,
+	workerReportPayload,
 	MAX_SPAWN_DEPTH,
 	type SpawnTaskDeps,
 	type SessionsToolContext,
@@ -24,6 +25,21 @@ describe("buildChildSessionPrompt", () => {
 		expect(prompt).toContain("worker session delegated by another Michael session");
 		expect(prompt).toContain("report back to the parent/orchestrator session `bks-parent`");
 		expect(prompt).toContain("send_to_session");
+	});
+
+	it("asks for judgement and dead ends, not the file list the server computes", () => {
+		const prompt = buildChildSessionPrompt({
+			prompt: "Fix the flaky test.",
+			parentSessionId: "bks-parent",
+			reportBack: true,
+		});
+
+		expect(prompt).toContain("appended to your report automatically");
+		expect(prompt).toContain("do not re-list");
+		expect(prompt).toContain("did NOT work");
+		// The old prompt asked the model to enumerate facts it would only be
+		// paraphrasing — that job moved to handoff-evidence.ts.
+		expect(prompt).not.toContain("produce a concise result with files changed");
 	});
 
 	it("omits report-back instructions for standalone sessions", () => {
@@ -266,5 +282,73 @@ describe("task_status / cancel_task", () => {
 		const h = makeHarness();
 		expect(cancelTaskImpl({ taskId: "bks-test-task" }, h.deps)).toContain("Cancelled");
 		expect(h.cancelled).toEqual(["bks-test-task"]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Worker → parent handoff
+// ---------------------------------------------------------------------------
+
+describe("workerReportPayload", () => {
+	const ctx = { createdBy: "Michiel", currentSessionId: "bks-child" };
+	const deps = {
+		parentOf: (id: string) => (id === "bks-child" ? "bks-parent" : undefined),
+		evidence: async () => "— evidence —\nfiles changed: 1 file(s)",
+		stampReported: () => {},
+	};
+
+	it("staples the server's evidence onto a report to the parent", async () => {
+		const out = await workerReportPayload("bks-parent", "Done; the fix holds.", ctx, deps);
+		expect(out.content).toContain("Done; the fix holds.");
+		expect(out.content).toContain("files changed: 1 file(s)");
+	});
+
+	it("attributes the report to the worker, not to the human it inherited", async () => {
+		// "[Michiel] ..." reads to the parent model like a human instruction.
+		const out = await workerReportPayload("bks-parent", "Done.", ctx, deps);
+		expect(out.user).toBe("worker bks-child");
+	});
+
+	it("records the report so the failure beacon stays quiet", async () => {
+		const stamped: string[] = [];
+		await workerReportPayload("bks-parent", "Done.", ctx, {
+			...deps,
+			stampReported: (id) => stamped.push(id),
+		});
+		expect(stamped).toEqual(["bks-child"]);
+	});
+
+	it("leaves messages to any other session untouched", async () => {
+		const out = await workerReportPayload("bks-someone-else", "ping", ctx, deps);
+		expect(out).toEqual({ content: "ping", user: "Michiel" });
+	});
+
+	it("leaves a non-worker session's messages untouched", async () => {
+		const out = await workerReportPayload(
+			"bks-parent",
+			"ping",
+			{ createdBy: "Michiel", currentSessionId: "bks-root" },
+			deps,
+		);
+		expect(out).toEqual({ content: "ping", user: "Michiel" });
+	});
+
+	it("still delivers the prose when evidence can't be computed", async () => {
+		const out = await workerReportPayload("bks-parent", "Done.", ctx, {
+			...deps,
+			evidence: async () => {
+				throw new Error("git blew up");
+			},
+		});
+		expect(out.content).toBe("Done.");
+		expect(out.user).toBe("Michiel");
+	});
+
+	it("caps the appended block so a handoff can't refill the parent's context", async () => {
+		const out = await workerReportPayload("bks-parent", "Done.", ctx, {
+			...deps,
+			evidence: async () => "x".repeat(20_000),
+		});
+		expect(out.content.length).toBeLessThan(4200);
 	});
 });

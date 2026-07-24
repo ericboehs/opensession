@@ -290,6 +290,13 @@ export function recordRunOutcome(
 		runErrors.set(id, entry);
 		if (session?.source === "backstage")
 			touchBackstageSession(id, { lastRunError: entry });
+		// A worker that dies can't report back, and its parent is usually idle
+		// (spawn_task returns immediately), so nothing polls either — the server
+		// says it instead. Fire-and-forget, dynamic import to keep this module
+		// free of the delivery/git graph. No-ops for anything without a parent.
+		void import("./handoff-evidence")
+			.then((m) => m.notifyParentOfFailedRun(id, entry.message))
+			.catch(() => {});
 	} else {
 		// Only rewrite the session file when there's actually a flag to clear
 		// (the in-memory map, or one persisted by a previous process).

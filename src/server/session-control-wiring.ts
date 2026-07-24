@@ -211,6 +211,7 @@ registerSessionControl({
 		images: imageUrls,
 		mcpServers,
 		parentSessionId,
+		reportBack,
 		user,
 		sandbox,
 	}) => {
@@ -338,6 +339,10 @@ registerSessionControl({
 					repo: repo.id,
 					...(projectId ? { projectId } : {}),
 					...(parentSessionId ? { parentSessionId } : {}),
+					// Persisted so the failure beacon (handoff-evidence.ts) can tell
+					// a worker that owes its parent a report from a child session
+					// that was explicitly told not to report (e.g. the PR chat).
+					...(parentSessionId && reportBack ? { reportBack: true } : {}),
 					createdBy: user || personaName(),
 					createdAt: new Date().toISOString(),
 					title,

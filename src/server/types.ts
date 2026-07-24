@@ -364,6 +364,16 @@ export interface BackstageSessionFile {
   /** spawn_task hop count from a human-created session (loop guard; see
    *  UnifiedSession.spawnDepth). Stamped by opensession-sessions' spawn_task. */
   spawnDepth?: number;
+  /** This session was opened as a worker that owes its parent a report
+   *  (spawn_task, or create_session without reportBack:false). */
+  reportBack?: boolean;
+  /** When this worker last reported back to its parent (send_to_session to
+   *  parentSessionId). Suppresses the failure beacon: a worker that already
+   *  said its piece doesn't need the server saying it again. */
+  lastReportToParentAt?: string;
+  /** When the server last told this worker's parent that a run died here
+   *  (handoff-evidence beacon) — throttles repeats. */
+  parentNotifiedAt?: string;
   automation?: string; // name of the automation that created this session
   automationId?: string; // id of that automation — lets a Slack thread reply "retrigger" re-fire it
   /** The triggering event payload of the automation run that created this

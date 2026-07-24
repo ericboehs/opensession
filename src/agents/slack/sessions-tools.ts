@@ -119,7 +119,9 @@ function fmtTranscriptTail(entries: TranscriptEntry[]): string {
               ? `tool:${e.toolName || "?"}`
               : e.type;
       const body = (e.content || "").replace(/\s+/g, " ").slice(0, 280);
-      return `• ${who}: ${body}`;
+      // An errored tool call rendering identically to a successful one is
+      // actively misleading in a status view.
+      return `• ${who}${e.isError ? " ✗" : ""}: ${body}`;
     })
     .join("\n");
 }
@@ -131,14 +133,87 @@ export function buildChildSessionPrompt(input: {
 }): string {
   const parts = [
     input.prompt.trim(),
-    "You are a worker session delegated by another Michael session. Keep the work narrow: execute the requested investigation/implementation, run relevant checks when practical, and produce a concise result with files changed, commands run, findings, and any blockers. Do not broaden scope or make product/taste decisions unless explicitly asked.",
+    "You are a worker session delegated by another Michael session. Keep the work narrow: execute the requested investigation/implementation, run relevant checks when practical, and do not broaden scope or make product/taste decisions unless explicitly asked.",
   ];
   if (input.reportBack && input.parentSessionId) {
+    // The facts (files changed, commands run, tool failures, PR, usage) are
+    // appended to the report mechanically by handoff-evidence.ts, so the model
+    // is asked for the part a server cannot compute — judgement, and the dead
+    // ends a summary always drops first.
     parts.push(
-      `When finished, report back to the parent/orchestrator session \`${input.parentSessionId}\` using the opensession-sessions send_to_session tool. Send a concise handoff with: outcome, important files/links, tests/checks run, and any follow-up needed.`
+      `When finished — as your LAST action, after any commit/PR — report back to the parent/orchestrator session \`${input.parentSessionId}\` with the opensession-sessions send_to_session tool. A factual evidence block (files changed, commands run, tool failures, PR, usage) is appended to your report automatically: do not re-list those. Write what the server cannot compute: whether the result meets the acceptance criteria and how confident you are, what you tried that did NOT work and why you abandoned it, assumptions you made, remaining uncertainty, and follow-ups needed.`
     );
   }
   return parts.join("\n\n");
+}
+
+/** Hard ceiling on the appended evidence block — a handoff must inform the
+ *  parent, not refill its context window. */
+const EVIDENCE_MAX_CHARS = 4000;
+
+/**
+ * A worker reporting to its parent gets the server's facts stapled to its
+ * prose, and is attributed as a worker rather than as the human whose name it
+ * inherited (a report arriving as "[Michiel] …" reads to the parent model like
+ * a human instruction, which it is not).
+ *
+ * The evidence is snapshotted HERE, at send time, not inside deliverToSession:
+ * a queued message that gets requeued must redeliver what the worker actually
+ * sent, not a diff recomputed minutes later.
+ */
+export async function workerReportPayload(
+  targetId: string,
+  message: string,
+  ctx: Pick<SessionsToolContext, "createdBy" | "currentSessionId">,
+  deps?: {
+    parentOf?: (id: string) => string | undefined;
+    evidence?: (id: string) => Promise<string | null>;
+    stampReported?: (id: string) => void;
+  },
+): Promise<{ content: string; user: string }> {
+  const me = ctx.currentSessionId;
+  const fallback = { content: message, user: ctx.createdBy };
+  if (!me || me === targetId) return fallback;
+  try {
+    const parentOf =
+      deps?.parentOf ??
+      ((id: string) => {
+        try {
+          return getSessionControl().getSession(id)?.parentSessionId;
+        } catch {
+          return undefined;
+        }
+      });
+    if (parentOf(me) !== targetId) return fallback;
+
+    const evidence =
+      deps?.evidence ??
+      (async (id: string) => {
+        const { collectHandoffEvidence, formatHandoffEvidence } = await import(
+          "../../server/handoff-evidence"
+        );
+        const ev = await collectHandoffEvidence(id);
+        return ev ? formatHandoffEvidence(ev) : null;
+      });
+    const stamp =
+      deps?.stampReported ??
+      ((id: string) => {
+        void import("../../server/session-cache")
+          .then(({ touchBackstageSession }) =>
+            touchBackstageSession(id, { lastReportToParentAt: new Date().toISOString() }),
+          )
+          .catch(() => {});
+      });
+
+    const block = await evidence(me);
+    stamp(me);
+    return {
+      content: block ? `${message}\n\n${block.slice(0, EVIDENCE_MAX_CHARS)}` : message,
+      user: `worker ${me}`,
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -359,21 +434,22 @@ export async function taskStatusImpl(
       `*Waiting on:* ${questionHeaders(s.pendingQuestion.questions)} — answer with answer_session_question (questionId \`${s.pendingQuestion.questionId}\`).`,
     );
   }
-  if (s.prUrl) parts.push(`*PR:* ${s.prState || ""} ${s.prUrl}`.trim());
-  // Diff stat — host-side worktrees only (a volume-mode sandbox workspace has
-  // no host dir; skip rather than wake its container for a status read).
-  if (s.mode === "code" && s.worktreeDir && existsSync(s.worktreeDir)) {
-    try {
-      const [{ getSessionDiff }, { getRepo }] = await Promise.all([
-        import("../../server/git-diff"),
-        import("../../server/worktree"),
-      ]);
-      const diff = await getSessionDiff(s.worktreeDir, getRepo(s.repo).defaultBranch);
-      if (diff.files.length) {
-        parts.push(`*Diff:* ${diff.files.length} file(s) changed, +${diff.totalAdditions}/-${diff.totalDeletions}`);
-      }
-    } catch {}
-  }
+  // The facts, computed rather than summarized: diff (labelled when the
+  // worktree is shared with the parent), PR, tool-reported failures, commands,
+  // usage. Same block the child's report-back carries, so a poll and a handoff
+  // agree instead of telling two different stories.
+  let evidenced = false;
+  try {
+    const { collectHandoffEvidence, formatHandoffEvidence } = await import(
+      "../../server/handoff-evidence"
+    );
+    const ev = await collectHandoffEvidence(args.taskId);
+    if (ev) {
+      parts.push(formatHandoffEvidence(ev, { title: "*Evidence* (server-computed):" }));
+      evidenced = true;
+    }
+  } catch {}
+  if (!evidenced && s.prUrl) parts.push(`*PR:* ${s.prState || ""} ${s.prUrl}`.trim());
   const tail = deps.control.transcriptTail(args.taskId, args.transcript_lines ?? 12);
   parts.push(`*Recent transcript:*\n${fmtTranscriptTail(tail)}`);
   return parts.join("\n");
@@ -483,11 +559,10 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
         },
         async (args: { id: string; message: string }) => {
           if (!args.message?.trim()) return text("Nothing to send (empty message).");
-          const res = await getSessionControl().deliverToSession(
-            args.id,
-            args.message,
-            ctx.createdBy
-          );
+          // Reporting to my own parent → prose + server-computed evidence,
+          // attributed as a worker. Any other target is delivered as-is.
+          const { content, user } = await workerReportPayload(args.id, args.message, ctx);
+          const res = await getSessionControl().deliverToSession(args.id, content, user);
           return text(res.message);
         }
       ),

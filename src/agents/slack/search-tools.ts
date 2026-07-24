@@ -1,7 +1,13 @@
 /**
  * opensession-search — in-process MCP server over the session history index
  * (src/server/session-index.ts): distilled records of past sessions, searched
- * lexically (FTS5 bm25) with recency decay. Read-only, one tool.
+ * lexically (FTS5 bm25) with recency decay. Read-only.
+ *
+ * Two tools, because the index is a VIEW and the transcript is the truth:
+ * search_history finds candidate sessions from their distilled records, and
+ * read_history (transcript-excerpt.ts) expands a hit back into the real
+ * entries around the match — the tool calls, commands and errors the
+ * distillation dropped. A search result you act on should be read first.
  *
  * INTERACTIVE RUNS ONLY. Past-session records can contain customer and
  * internal material, so this must never reach automation runs processing
@@ -13,6 +19,7 @@
 import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
 import { searchSessionHistory, searchIndex } from "../../server/session-index";
+import { transcriptExcerpt, formatExcerpt } from "../../server/transcript-excerpt";
 
 function text(s: string) {
 	return { content: [{ type: "text" as const, text: s }] };
@@ -22,7 +29,7 @@ export function createSearchMcpServer() {
 	const tools = [
 		tool(
 			"search_history",
-			"Search past OpenSession sessions (distilled question/resolution records, lexical match + recency-weighted). Use BEFORE re-deriving something that has likely been solved here before: a bug that looks familiar, an error string, 'how did we fix/decide X', which session touched a file or subsystem. Exact tokens work best — error fragments, file names, function names, flag names. Results include the session id; read the full story with opensession-sessions get_session.",
+			"Search past OpenSession sessions (distilled question/resolution records, lexical match + recency-weighted). Use BEFORE re-deriving something that has likely been solved here before: a bug that looks familiar, an error string, 'how did we fix/decide X', which session touched a file or subsystem. Exact tokens work best — error fragments, file names, function names, flag names. Results are distilled records, not the transcript: take the session id of anything you'd act on and expand it with read_history.",
 			{
 				query: z
 					.string()
@@ -63,11 +70,61 @@ export function createSearchMcpServer() {
 						return parts.join("\n");
 					});
 					lines.push(
-						"\nFor the full transcript of a hit, use opensession-sessions get_session with the session id.",
+						"\nThese are DISTILLED records — an LLM's one-paragraph view of a session, which is lossy and can be wrong. Before relying on one, expand it with read_history (same query, the session id) to read the actual transcript around the match.",
 					);
 					return text(lines.join("\n"));
 				} catch (e: any) {
 					return text(`Search failed: ${e?.message || String(e)}`);
+				}
+			},
+		),
+		tool(
+			"read_history",
+			"Expand a past session into its REAL transcript — the source of truth behind a search_history hit. Give it the session id and (usually) the same query: it finds where those terms actually occur and returns windows of real entries around each match, including the tool calls and commands the distilled record dropped. Every line is tagged with its seq, so you can page outward with around_seq. Use this whenever a hit looks relevant enough to act on: the record is a paraphrase, this is what happened.",
+			{
+				session: z
+					.string()
+					.describe("Session id from a search_history hit (the `session:` prefix is optional)."),
+				query: z
+					.string()
+					.optional()
+					.describe(
+						"Terms to locate inside the transcript — usually the same ones you searched with. Omit to read the end of the session.",
+					),
+				around_seq: z
+					.number()
+					.optional()
+					.describe(
+						"Read around this seq instead of searching — how you page before/after a window you already saw.",
+					),
+				limit: z.number().optional().describe("Entries per window (default 12, max 60)."),
+				windows: z
+					.number()
+					.optional()
+					.describe("How many separate match windows to return (default 3, max 8)."),
+			},
+			async (args: {
+				session: string;
+				query?: string;
+				around_seq?: number;
+				limit?: number;
+				windows?: number;
+			}) => {
+				try {
+					const id = args.session.trim().replace(/^session:/, "");
+					if (!id) return text("Need a session id (from a search_history hit).");
+					const ex = await transcriptExcerpt(id, {
+						query: args.query,
+						aroundSeq: args.around_seq,
+						limit: args.limit,
+						windows: args.windows,
+					});
+					const head = `Transcript of \`${id}\`${
+						args.query ? ` around "${args.query}"` : args.around_seq ? ` around seq ${args.around_seq}` : " (tail)"
+					}${ex.matched === 0 && args.query ? " — no entry carried those terms, showing the tail instead" : ""}`;
+					return text(`${head}\n\n${formatExcerpt(ex)}`);
+				} catch (e: any) {
+					return text(`Read failed: ${e?.message || String(e)}`);
 				}
 			},
 		),
