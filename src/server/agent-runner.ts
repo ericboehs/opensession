@@ -738,7 +738,7 @@ export function resumeInterruptedRuns(
         if (run.bksSessionId)
           transitionRunState(run.bksSessionId, "resume_reprompt", { run_key: run.runKey });
         for await (const event of runAgent({
-          prompt: RESUME_CONTINUATION_PROMPT,
+          prompt: resumeContinuationPrompt(run.prompt),
           sessionId: run.claudeSessionId,
           cwd: run.cwd,
           mode: run.mode,
@@ -785,3 +785,22 @@ export const RESUME_CONTINUATION_PROMPT =
   `This session was interrupted by a ${personaName()} service restart mid-run. ` +
   "Review what you had already done, pick up where you left off, and finish the task. " +
   "If the work was actually complete, just post the final summary/answer.";
+
+/** RESUME_CONTINUATION_PROMPT anchored to the interrupted turn's original
+ *  prompt. A resume can land in a fresh engine session with no history (e.g.
+ *  reattach failed and the re-prompt rotated to another account's server) —
+ *  without an anchor the model reconstructs its task from repository state
+ *  and can guess wrong (2026-07-24: an amnesiac ask session found its shared
+ *  checkout on a teammate's PR branch and re-did that PR's review). */
+export function resumeContinuationPrompt(originalPrompt?: string | null): string {
+  const p = (originalPrompt || "").trim();
+  if (!p) return RESUME_CONTINUATION_PROMPT;
+  const clamped = p.length > 2000 ? `${p.slice(0, 2000)}…` : p;
+  return (
+    `${RESUME_CONTINUATION_PROMPT}\n\n` +
+    `For context, the prompt that started the interrupted turn was:\n` +
+    `"""\n${clamped}\n"""\n` +
+    "If you no longer see the earlier conversation, treat that prompt as the task " +
+    "definition — do not infer the task from repository or checkout state."
+  );
+}

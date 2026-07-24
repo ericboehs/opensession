@@ -42,7 +42,7 @@ import { startTranscriptWatch } from "./transcript-watch";
 import { type BackstageSessionFile, type SessionUsage } from "./types";
 import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
 import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
-import { createWorktree, createWorktreeForExistingBranch, getRepo, listWorktrees, repoForPath, resolveUniqueBranch, worktreeHeadBranch, worktreePathFor } from "./worktree";
+import { createWorktree, createWorktreeForExistingBranch, ensureAskCheckout, getRepo, listWorktrees, repoForPath, resolveUniqueBranch, worktreeHeadBranch, worktreePathFor } from "./worktree";
 import { BOOT_ID, allClients, b64decode, b64encode, broadcastToNote, broadcastToSession, joinNote, joinSession, leaveNote, leaveSession, preparingWorkspaces } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
 import { userMatchesAny } from "./shared/user-mappings";
@@ -1344,8 +1344,12 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							needsWorktree = true;
 						}
 					} else if (isAsk) {
-						// Ask sessions run read-only on the main checkout — no worktree
-						wtPath = repo.repo;
+						// Ask sessions read the repo's pinned ask checkout (default
+						// branch, detached) — never the mutable main checkout, whose
+						// parked branch is a false context clue. Instant once the
+						// checkout exists; only the first-ever create pays a worktree
+						// add (ensureAskCheckout).
+						wtPath = await ensureAskCheckout(repo.id);
 					} else if (repo.sharedCheckout) {
 						// Backstage: code sessions edit the live main checkout on the
 						// default branch (hot-reloads in the running server). No worktree.

@@ -223,6 +223,65 @@ export async function listWorktrees(repoId?: string): Promise<WorktreeInfo[]> {
   }
 }
 
+/**
+ * Stable, pinned checkout for ask-mode (read-only) sessions.
+ *
+ * Ask sessions used to run in the repo's live main checkout, but that tree's
+ * branch is whatever the last flow left checked out — a resumed ask session
+ * that had lost its history found tella-fusion parked on a teammate's PR
+ * branch and adopted that PR's review as its own task (2026-07-24). Every
+ * non-shared-checkout repo instead gets one `<wtPrefix>-ask-checkout`
+ * worktree, detached at origin/<defaultBranch>, that all its ask sessions
+ * share (they carry no Write/Edit and a read-only bash allowlist, so
+ * concurrent readers are safe). Shared-checkout repos (backstage) keep the
+ * live main checkout — self-hosting sessions must read the running code.
+ *
+ * The tree is re-pinned to origin/<defaultBranch> in the background at most
+ * once per ASK_REFRESH_MS so it tracks the default branch instead of
+ * drifting; only the first-ever create pays the worktree-add. Detached HEAD
+ * means listWorktrees() (branch-keyed) never offers it to code sessions.
+ * Falls back to the main checkout if the worktree can't be created, so a git
+ * hiccup degrades to the old behavior instead of failing the session.
+ */
+const askCheckoutRefreshedAt = new Map<string, number>();
+const ASK_REFRESH_MS = 5 * 60_000;
+export async function ensureAskCheckout(repoId?: string): Promise<string> {
+  const repo = getRepo(repoId);
+  if (repo.sharedCheckout) return repo.repo;
+  const dir = `${worktreesDir()}/${repo.wtPrefix}-ask-checkout`;
+  if (existsSync(dir)) {
+    const last = askCheckoutRefreshedAt.get(repo.id) || 0;
+    if (Date.now() - last > ASK_REFRESH_MS) {
+      askCheckoutRefreshedAt.set(repo.id, Date.now());
+      void withGitLock(async () => {
+        await $`git -C ${dir} fetch origin ${repo.defaultBranch} --quiet`.quiet().nothrow();
+        // Detached tree with no writers: hard-pin to the fresh default tip.
+        await $`git -C ${dir} reset --hard origin/${repo.defaultBranch}`.quiet().nothrow();
+      });
+    }
+    return dir;
+  }
+  return withGitLock(async () => {
+    if (existsSync(dir)) return dir; // lost the create race to a sibling call
+    if (isLocalProfile()) mkdirSync(worktreesDir(), { recursive: true });
+    await $`git -C ${repo.repo} fetch origin ${repo.defaultBranch} --quiet`.nothrow();
+    await $`git -C ${repo.repo} worktree prune`.quiet().nothrow();
+    const add =
+      await $`git -C ${repo.repo} worktree add --detach ${dir} origin/${repo.defaultBranch}`
+        .quiet()
+        .nothrow();
+    if (add.exitCode !== 0 || !existsSync(dir)) {
+      console.error(
+        `[worktree] ask-checkout create failed for ${repo.id}: ${add.stderr.toString().trim()}`,
+      );
+      return repo.repo;
+    }
+    askCheckoutRefreshedAt.set(repo.id, Date.now());
+    void installWorktreeDeps(repo, dir, "ask-checkout");
+    return dir;
+  });
+}
+
 export async function removeWorktree(branch: string, repoId?: string): Promise<void> {
   const repo = getRepo(repoId);
   try {

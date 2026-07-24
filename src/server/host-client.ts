@@ -27,7 +27,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "fs";
 import {
   runAgent,
-  RESUME_CONTINUATION_PROMPT,
+  resumeContinuationPrompt,
   type RunAgentOpts,
   type StreamEvent,
 } from "./agent-runner";
@@ -676,7 +676,7 @@ export class HostHandle {
     const spec: RunHostSpec = {
       ...this.spec,
       hostId,
-      prompt: RESUME_CONTINUATION_PROMPT,
+      prompt: resumeContinuationPrompt(this.spec.prompt),
       engineSessionId: engineId,
       images: undefined,
       forkSession: undefined,

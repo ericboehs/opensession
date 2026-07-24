@@ -28,7 +28,7 @@ import { rebuildIndex } from "./slack-links";
 import { handleSlashCommand } from "./slash-commands";
 import { type BackstageSessionFile, type SessionUsage, type UnifiedSession } from "./types";
 import { type Workspace, createWorkspace, getWorkspace } from "./workspaces";
-import { createWorktree, getRepo, listWorktrees, repoForPath, worktreeHeadBranch } from "./worktree";
+import { createWorktree, ensureAskCheckout, getRepo, listWorktrees, repoForPath, worktreeHeadBranch } from "./worktree";
 import { broadcastToAll, broadcastToSession } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
 import { existsSync, watch } from "fs";
@@ -231,7 +231,9 @@ registerSessionControl({
 		let wtPath: string;
 		let sessionBranch = branch || "";
 		if (isAsk) {
-			wtPath = repo.repo;
+			// Read-only sessions get the repo's pinned ask checkout (default
+			// branch), never the mutable main checkout — see ensureAskCheckout.
+			wtPath = await ensureAskCheckout(repo.id);
 		} else {
 			// Same workspace ⇒ same worktree: a code child joining the parent's
 			// workspace shares its worktree/branch instead of creating a fresh one.

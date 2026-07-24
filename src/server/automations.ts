@@ -13,7 +13,7 @@ import { getAccountById } from "./claude-accounts";
 import { runAgent } from "./agent-runner";
 import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from "./models";
 import { readOpencodeBridgeConfig } from "./opencode-config";
-import { createWorktree, getRepo, listWorktrees, REPOS, worktreeHeadBranch } from "./worktree";
+import { createWorktree, ensureAskCheckout, getRepo, listWorktrees, REPOS, worktreeHeadBranch } from "./worktree";
 import { engineSessionPatch } from "./sessions";
 import { updateSessionFile } from "./session-cache";
 import type { BackstageSessionFile } from "./types";
@@ -744,12 +744,13 @@ export async function runAutomation(
   const bksId = options?.bksSessionId || `bks-${randomUUIDv7()}`;
 
   try {
-    // The automation's repo (default tella-fusion). Ask mode reads the main
-    // checkout; code mode gets an isolated worktree — `isolated` matters for
+    // The automation's repo (default tella-fusion). Ask mode reads the repo's
+    // pinned ask checkout (default branch — never the mutable main checkout);
+    // code mode gets an isolated worktree — `isolated` matters for
     // shared-checkout repos (backstage), where an unattended run must never
     // work in the live checkout: it ships a PR and a human merges.
     const repo = getRepo(automation.repo);
-    let cwd = repo.repo;
+    let cwd = "";
     let branch = "";
     if (automation.mode === "code") {
       branch = `auto-${slugify(automation.name)}-${startedAt
@@ -760,6 +761,8 @@ export async function runAutomation(
       cwd =
         worktrees.find((w) => w.branch === branch)?.path ||
         (await createWorktree(branch, repo.id, { isolated: true }));
+    } else {
+      cwd = await ensureAskCheckout(repo.id);
     }
 
     recordRunStart(automation.id, {
