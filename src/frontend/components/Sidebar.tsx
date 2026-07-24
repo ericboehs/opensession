@@ -1911,12 +1911,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				(focus === "everyone" ||
 					(focus === "unassigned"
 						? r.status === "pending"
-						: // Ownerless rows (automation runs have no startedBy) exist in
-							// wsRows only because a lane pinned them — YOUR per-user lane
-							// shows them in your personal lenses; a legacy global one
-							// surfaces only under Everyone.
+						: // A row YOU lane-pinned belongs in your own lens no matter who
+							// owns it — lanes are per-user triage, so filing a teammate's
+							// PR workspace into your Backlog must show it in YOUR Backlog.
+							// Ownerless rows (automation runs with no startedBy) ride the
+							// same rule under any personal lens; a legacy global override
+							// still surfaces only under Everyone.
 							r.owner === focus ||
-							(r.owner === "" && r.chats.some((c) => getLane(c.id))))) &&
+							((r.owner === "" || focus === currentUser.toLowerCase()) &&
+								r.chats.some((c) => getLane(c.id))))) &&
 				!reviewBandKeys.has(r.key) &&
 				!activeSnoozeKeys.has(r.key),
 		);
