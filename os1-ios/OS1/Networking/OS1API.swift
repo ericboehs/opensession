@@ -8,6 +8,7 @@ enum OS1API {
         case notConfigured
         case badURL
         case http(Int)
+        case server(String)
 
         var errorDescription: String? {
             switch self {
@@ -17,6 +18,7 @@ enum OS1API {
                 code == 401
                     ? "Not signed in (401) — check your token in Settings."
                     : "Server returned HTTP \(code)."
+            case .server(let message): message
             }
         }
     }
@@ -41,6 +43,60 @@ enum OS1API {
         struct Health: Decodable { let ok: Bool? }
         let health: Health = try await get("/api/health", authorized: false)
         return health.ok ?? true
+    }
+
+    // MARK: - Session creation
+
+    private struct ServerErrorBody: Decodable { let error: String? }
+
+    struct RepoInfo: Decodable, Identifiable, Hashable {
+        let id: String
+        let ghRepo: String?
+        let defaultBranch: String?
+        let sharedCheckout: Bool?
+    }
+
+    /// Repos a new session can target.
+    static func repos() async throws -> [RepoInfo] {
+        struct ReposResponse: Decodable { let repos: [RepoInfo] }
+        let response: ReposResponse = try await get("/api/repos")
+        return response.repos
+    }
+
+    /// Create a session; returns the new session id. Code mode gets a
+    /// server-suggested branch; the opening run starts immediately.
+    static func createSession(prompt: String, repo: String, mode: String) async throws -> String {
+        struct CreateResponse: Decodable { let id: String }
+        var body: [String: Any] = ["prompt": prompt, "mode": mode]
+        if !repo.isEmpty { body["repo"] = repo }
+        let user = ServerConfig.shared.userName
+        if !user.isEmpty { body["user"] = user }
+        let response: CreateResponse = try await post("/api/sessions", body: body)
+        return response.id
+    }
+
+    private static func post<T: Decodable>(
+        _ path: String,
+        body: [String: Any]
+    ) async throws -> T {
+        let config = ServerConfig.shared
+        guard let base = config.baseURL else { throw APIError.notConfigured }
+        guard config.isConfigured else { throw APIError.notConfigured }
+        guard let url = URL(string: base.absoluteString + path) else { throw APIError.badURL }
+
+        var request = config.authorizedRequest(url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            if let serverError = try? JSONDecoder().decode(ServerErrorBody.self, from: data),
+               let message = serverError.error {
+                throw APIError.server(message)
+            }
+            throw APIError.http(http.statusCode)
+        }
+        return try JSONDecoder().decode(T.self, from: data)
     }
 
     private static func get<T: Decodable>(

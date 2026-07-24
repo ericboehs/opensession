@@ -18,6 +18,8 @@ import { editPrReviewers } from "../pr-info";
 import { promptQueues, requeueSteerReceipts, stoppedSessions } from "../queue-state";
 import { markPrReviewNotified } from "../pr-review-notifications";
 import { getReviewRequest, setReviewAccepted, setReviewRequest } from "../review-requests";
+import { getSessionControl } from "../session-control";
+import { suggestBranchName } from "../suggest-branch";
 import { transitionRunState } from "../run-state";
 import { findSession, getCachedSessions, invalidateSessionsCache, runErrors } from "../session-cache";
 import { resolvePrTarget } from "../session-repos";
@@ -79,6 +81,52 @@ export async function handleSessionsRoutes(
 	ctx: RouteContext,
 ): Promise<Response | undefined> {
 	const { req, url, path, publicPrefix } = ctx;
+
+	// Create a session. REST shape for the native iOS/macOS apps (prompting is
+	// WS-only, but creation routes through the same SessionControl path the
+	// opensession-sessions MCP tools use — worktree, branch, opening run and
+	// all). The web UI keeps its richer create_session WS message.
+	if (path === "/backstage/api/sessions" && req.method === "POST") {
+		const body = (await req.json().catch(() => null)) as {
+			prompt?: unknown;
+			repo?: unknown;
+			mode?: unknown;
+			model?: unknown;
+			branch?: unknown;
+			user?: unknown;
+		} | null;
+		const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
+		if (!prompt) {
+			return Response.json({ error: "prompt required" }, { status: 400 });
+		}
+		const mode = body?.mode === "code" ? ("code" as const) : ("ask" as const);
+		let branch = typeof body?.branch === "string" ? body.branch.trim() : "";
+		if (mode === "code" && !branch) {
+			branch =
+				(await suggestBranchName(prompt).catch(() => null)) ||
+				`session-${Date.now().toString(36)}`;
+		}
+		try {
+			const { id } = await getSessionControl().createSession({
+				prompt,
+				mode,
+				...(mode === "code" ? { branch } : {}),
+				...(typeof body?.repo === "string" && body.repo
+					? { repo: body.repo }
+					: {}),
+				...(typeof body?.model === "string" && body.model
+					? { model: body.model }
+					: {}),
+				user: requestUser(ctx, body?.user),
+			});
+			return Response.json({ id });
+		} catch (e) {
+			return Response.json(
+				{ error: e instanceof Error ? e.message : String(e) },
+				{ status: 400 },
+			);
+		}
+	}
 
 	// List sessions
 	if (path === "/backstage/api/sessions" && req.method === "GET") {

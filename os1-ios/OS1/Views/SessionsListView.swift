@@ -32,6 +32,7 @@ struct SessionsListView: View {
     @State private var showSettings = false
     @State private var path = NavigationPath()
     @State private var searchText = ""
+    @State private var showNewSession = false
 
     @AppStorage("os1.list.groupBy") private var groupByRaw = GroupBy.status.rawValue
     @AppStorage("os1.list.repo") private var repoFilter = "all"
@@ -74,6 +75,13 @@ struct SessionsListView: View {
                     }
                     ToolbarItem(placement: .topTrailingCompat) {
                         Button {
+                            showNewSession = true
+                        } label: {
+                            Image(systemName: "square.and.pencil")
+                        }
+                    }
+                    ToolbarItem(placement: .topTrailingCompat) {
+                        Button {
                             showSettings = true
                         } label: {
                             Image(systemName: "gearshape")
@@ -96,6 +104,9 @@ struct SessionsListView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
+        .sheet(isPresented: $showNewSession) {
+            NewSessionView { id in openCreatedSession(id) }
+        }
         .safeAreaInset(edge: .bottom) {
             errorBanner
         }
@@ -111,6 +122,13 @@ struct SessionsListView: View {
                     }
                     ToolbarItem(placement: .topTrailingCompat) {
                         Button {
+                            showNewSession = true
+                        } label: {
+                            Image(systemName: "square.and.pencil")
+                        }
+                    }
+                    ToolbarItem(placement: .topTrailingCompat) {
+                        Button {
                             showSettings = true
                         } label: {
                             Image(systemName: "gearshape")
@@ -119,6 +137,9 @@ struct SessionsListView: View {
                 }
                 .sheet(isPresented: $showSettings) {
                     SettingsView()
+                }
+                .sheet(isPresented: $showNewSession) {
+                    NewSessionView { id in openCreatedSession(id) }
                 }
                 .safeAreaInset(edge: .bottom) {
                     errorBanner
@@ -162,6 +183,29 @@ struct SessionsListView: View {
         #else
         if path.isEmpty { path.append(session) }
         #endif
+    }
+
+    /// After a create, poll the list until the new session appears, then open
+    /// it (sidebar selection on Mac, push on iOS). The server persists the
+    /// session file asynchronously after returning the id — usually a few
+    /// seconds, up to ~15s when the engine boot is slow.
+    private func openCreatedSession(_ id: String) {
+        Task {
+            for _ in 0..<30 {
+                await viewModel.refresh()
+                if viewModel.sessions.contains(where: { $0.id == id }) {
+                    #if os(macOS)
+                    selectedSessionID = id
+                    #else
+                    if let session = viewModel.sessions.first(where: { $0.id == id }) {
+                        path.append(session)
+                    }
+                    #endif
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
     }
 
     // ── Filtering / grouping ──────────────────────────────────────────────
