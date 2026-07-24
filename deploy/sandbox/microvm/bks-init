@@ -31,6 +31,11 @@ setpriv --reuid 1000 --regid 1000 --init-groups \
   env HOME=/home/ubuntu USER=ubuntu LOGNAME=ubuntu PATH="$PATH" \
   python3 /opt/bks/control.py > /var/log/bks-agent.log 2>&1 &
 
+# Root agent on :8081 for host-management ops the ubuntu agent can't do —
+# above all `date -s` after a snapshot restore (the guest wakes at
+# snapshot-time; AWS SigV4 rejects >5min skew, so claims resync first).
+env BKS_CONTROL_PORT=8081 python3 /opt/bks/control.py > /var/log/bks-root-agent.log 2>&1 &
+
 # Dev server, detached from any console (stdin closed: next dev exits on
 # stdin EOF — same lesson as the Daytona backend).
 setpriv --reuid 1000 --regid 1000 --init-groups \

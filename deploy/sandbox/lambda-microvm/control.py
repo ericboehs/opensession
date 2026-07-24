@@ -132,4 +132,6 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(500, {"error": str(error)[:1000]})
 
 
-ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+ThreadingHTTPServer(
+    ("0.0.0.0", int(os.environ.get("BKS_CONTROL_PORT", "8080"))), Handler
+).serve_forever()
