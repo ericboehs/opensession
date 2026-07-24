@@ -38,6 +38,8 @@ struct SessionsListView: View {
     /// seeds the conversation view so it renders instantly instead of waiting
     /// for the server to persist the session.
     @State private var optimisticSeeds: [String: SessionViewModel.OptimisticSeed] = [:]
+    /// Surfaced when a background session create fails after the sheet closed.
+    @State private var createError: String?
 
     struct NewSessionRequest: Identifiable {
         let id = UUID()
@@ -56,6 +58,10 @@ struct SessionsListView: View {
 
     #if os(macOS)
     @State private var selectedSessionID: String?
+    #else
+    /// Temp id of the pending session pushed onto the stack, so the resolved
+    /// real session can swap in place (and a failed create can pop it).
+    @State private var pushedPendingId: String?
     #endif
 
     var body: some View {
@@ -68,6 +74,17 @@ struct SessionsListView: View {
             }
             .onChange(of: viewModel.hasLoaded) {
                 autoOpenFromEnvironment()
+            }
+            .alert(
+                "Couldn't start session",
+                isPresented: Binding(
+                    get: { createError != nil },
+                    set: { if !$0 { createError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(createError ?? "")
             }
     }
 
@@ -117,6 +134,8 @@ struct SessionsListView: View {
         .sheet(item: $newSessionRequest) { request in
             NewSessionView(initialRepo: request.repo) { session, seed in
                 openOptimistic(session, seed: seed)
+            } onResolved: { tempId, result in
+                resolveCreate(tempId: tempId, result: result)
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -153,6 +172,8 @@ struct SessionsListView: View {
                 .sheet(item: $newSessionRequest) { request in
                     NewSessionView(initialRepo: request.repo) { session, seed in
                         openOptimistic(session, seed: seed)
+                    } onResolved: { tempId, result in
+                        resolveCreate(tempId: tempId, result: result)
                     }
                 }
                 .safeAreaInset(edge: .bottom) {
@@ -199,11 +220,10 @@ struct SessionsListView: View {
         #endif
     }
 
-    /// After a create, render and open the session immediately: an optimistic
-    /// row joins the list (replaced when the server's own row appears) and the
-    /// conversation view seeds from the prompt — no polling wait. The server
-    /// persists the session file asynchronously after returning the id; the
-    /// session view quietly retries its watch until the file exists.
+    /// The moment Start is tapped: an optimistic row (temporary `pending-` id)
+    /// joins the list and the conversation view opens seeded from the prompt —
+    /// no waiting on the server. `resolveCreate` swaps in the real id (or
+    /// rolls back) when the background create finishes.
     private func openOptimistic(
         _ session: Session, seed: SessionViewModel.OptimisticSeed
     ) {
@@ -212,8 +232,50 @@ struct SessionsListView: View {
         #if os(macOS)
         selectedSessionID = session.id
         #else
+        pushedPendingId = session.id
         path.append(session)
         #endif
+    }
+
+    /// The background create finished: move the pending row (and the open
+    /// conversation) onto the server's real id, or roll the pending row back
+    /// and surface the error.
+    private func resolveCreate(tempId: String, result: Result<String, Error>) {
+        switch result {
+        case .success(let id):
+            viewModel.resolveOptimistic(tempId: tempId, realId: id)
+            if let seed = optimisticSeeds.removeValue(forKey: tempId) {
+                optimisticSeeds[id] = seed
+            }
+            #if os(macOS)
+            if selectedSessionID == tempId { selectedSessionID = id }
+            #else
+            if pushedPendingId == tempId, !path.isEmpty,
+               let session = viewModel.sessions.first(where: { $0.id == id }) {
+                // Swap the pending push for the real session without a
+                // visible pop/push double transition.
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    path.removeLast()
+                    path.append(session)
+                }
+            }
+            pushedPendingId = nil
+            #endif
+        case .failure(let error):
+            viewModel.removeOptimistic(tempId)
+            optimisticSeeds[tempId] = nil
+            #if os(macOS)
+            if selectedSessionID == tempId { selectedSessionID = nil }
+            #else
+            if pushedPendingId == tempId, !path.isEmpty {
+                path.removeLast()
+            }
+            pushedPendingId = nil
+            #endif
+            createError = error.localizedDescription
+        }
     }
 
     // ── Filtering / grouping ──────────────────────────────────────────────
@@ -390,8 +452,9 @@ struct SessionsListView: View {
                         Text("\(group.sessions.count)")
                             .foregroundStyle(.tertiary)
                         if groupBy == .repo {
-                            Spacer()
-                            // New session directly in this repo.
+                            // New session directly in this repo — inline next
+                            // to the name rather than pushed flush against
+                            // the panel's far edge.
                             Button {
                                 newSessionRequest = NewSessionRequest(
                                     repo: group.title == "no repo" ? nil : group.title

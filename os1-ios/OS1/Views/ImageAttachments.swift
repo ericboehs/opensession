@@ -1,5 +1,10 @@
 import SwiftUI
 import PhotosUI
+import CoreTransferable
+import UniformTypeIdentifiers
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Paperclip button that appends picked images to a binding. iOS picks from
 /// the photo library (PhotosPicker); macOS opens the file panel — the natural
@@ -146,3 +151,105 @@ struct DataImage: View {
             }
     }
 }
+
+// ── Pasting images ────────────────────────────────────────────────────────
+
+#if os(macOS)
+extension View {
+    /// Cmd+V of a copied screenshot/image drops it into the attachments.
+    /// Scoped to image content: the handler only claims the Paste command
+    /// when the pasteboard's content matches, so text pastes keep flowing
+    /// to the focused text view untouched.
+    func pastesImages(
+        into images: Binding<[AttachedImage]>, maxCount: Int = 6
+    ) -> some View {
+        onPasteCommand(of: [.image]) { providers in
+            Task { @MainActor in
+                for provider in providers {
+                    guard images.wrappedValue.count < maxCount,
+                          let data = await provider.imageDataRepresentation(),
+                          let image = AttachedImage(rawData: data)
+                    else { continue }
+                    images.wrappedValue.append(image)
+                }
+            }
+        }
+    }
+}
+
+extension NSItemProvider {
+    /// Raw bytes of the first image flavor this provider carries.
+    func imageDataRepresentation() async -> Data? {
+        let type = registeredTypeIdentifiers.first {
+            UTType($0)?.conforms(to: .image) == true
+        }
+        guard let type else { return nil }
+        return await withCheckedContinuation { continuation in
+            _ = loadDataRepresentation(forTypeIdentifier: type) { data, _ in
+                continuation.resume(returning: data)
+            }
+        }
+    }
+}
+#else
+extension View {
+    /// iOS text fields can't intercept paste; the PasteImagesButton next to
+    /// the field covers it. No-op so call sites stay platform-free.
+    func pastesImages(
+        into images: Binding<[AttachedImage]>, maxCount: Int = 6
+    ) -> some View {
+        self
+    }
+}
+
+/// Wire form for the system PasteButton: any image flavor, imported as bytes.
+struct PastedImage: Transferable {
+    let data: Data
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: .image) { PastedImage(data: $0) }
+    }
+}
+
+/// System paste button that appears next to the composer whenever the
+/// pasteboard holds an image — the sanctioned way to read it without the
+/// paste-permission prompt. (UIKit text fields ignore image pastes, so
+/// without this a copied screenshot has no way in.)
+struct PasteImagesButton: View {
+    @Binding var images: [AttachedImage]
+    var maxCount: Int = 6
+
+    @State private var pasteboardHasImages = UIPasteboard.general.hasImages
+
+    var body: some View {
+        Group {
+            if pasteboardHasImages {
+                PasteButton(payloadType: PastedImage.self) { payloads in
+                    Task { @MainActor in
+                        for payload in payloads {
+                            guard images.count < maxCount,
+                                  let image = AttachedImage(rawData: payload.data)
+                            else { continue }
+                            images.append(image)
+                        }
+                    }
+                }
+                .labelStyle(.iconOnly)
+                .controlSize(.small)
+            }
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)
+        ) { _ in
+            pasteboardHasImages = UIPasteboard.general.hasImages
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: UIApplication.willEnterForegroundNotification
+            )
+        ) { _ in
+            pasteboardHasImages = UIPasteboard.general.hasImages
+        }
+    }
+}
+#endif

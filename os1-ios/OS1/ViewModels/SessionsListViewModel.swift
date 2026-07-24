@@ -22,6 +22,32 @@ final class SessionsListViewModel {
         sessions = mergeOptimistic(into: sessions)
     }
 
+    /// The background create resolved: move a pending row onto the server's
+    /// real id (still in the optimistic overlay until polling returns the
+    /// server's own row for it).
+    func resolveOptimistic(tempId: String, realId: String) {
+        guard let entry = optimistic.removeValue(forKey: tempId) else { return }
+        let old = entry.session
+        let real = Session.optimistic(
+            id: realId,
+            title: old.title ?? "",
+            repo: old.repo ?? "",
+            mode: old.mode ?? "code",
+            model: old.model,
+            effort: old.effort,
+            fastMode: old.fastMode ?? false,
+            startedBy: old.startedBy ?? ""
+        )
+        optimistic[realId] = (real, entry.added)
+        sessions = sessions.map { $0.id == tempId ? real : $0 }
+    }
+
+    /// Roll back a pending row whose create failed.
+    func removeOptimistic(_ id: String) {
+        optimistic.removeValue(forKey: id)
+        sessions.removeAll { $0.id == id }
+    }
+
     private func mergeOptimistic(into list: [Session]) -> [Session] {
         guard !optimistic.isEmpty else { return list }
         let serverIds = Set(list.map(\.id))

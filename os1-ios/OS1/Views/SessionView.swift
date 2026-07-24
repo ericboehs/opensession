@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 struct SessionView: View {
     @State private var viewModel: SessionViewModel
@@ -15,6 +18,11 @@ struct SessionView: View {
 
     /// Model/effort catalog for the toolbar picker; fetched on first open.
     @State private var catalog: ModelCatalog?
+
+    #if os(macOS)
+    /// Local key monitor that turns Shift+Return into a newline insert.
+    @State private var shiftReturnMonitor: Any?
+    #endif
 
     init(session: Session, seed: SessionViewModel.OptimisticSeed? = nil) {
         _viewModel = State(initialValue: SessionViewModel(session: session, seed: seed))
@@ -96,10 +104,16 @@ struct SessionView: View {
         }
         .task {
             viewModel.start()
+            #if os(macOS)
+            installShiftReturnMonitor()
+            #endif
             catalog = try? await OS1API.models()
         }
         .onDisappear {
             viewModel.stop()
+            #if os(macOS)
+            removeShiftReturnMonitor()
+            #endif
         }
         .onChange(of: scenePhase) { _, phase in
             // Backgrounding leaves the socket half-open more often than not;
@@ -297,6 +311,10 @@ struct SessionView: View {
         HStack(alignment: .bottom, spacing: 8) {
             AttachImagesButton(images: $viewModel.attachedImages)
                 .padding(.bottom, 3)
+            #if os(iOS)
+            PasteImagesButton(images: $viewModel.attachedImages)
+                .padding(.bottom, 3)
+            #endif
             TextField(
                 viewModel.isRunning ? "Message — queues for after this run" : "Message",
                 text: $viewModel.draft,
@@ -307,9 +325,12 @@ struct SessionView: View {
             .padding(.leading, 6)
             .padding(.vertical, 7)
             .focused($inputFocused)
-            // Mac: Return sends (Option-Return inserts a newline); on iOS
-            // the software keyboard's return key just wraps, as before.
+            // Mac: Return sends; Shift/Option-Return insert a newline. On
+            // iOS the software keyboard's return key just wraps, as before.
             .onSubmit { viewModel.sendDraft() }
+            // A copied screenshot pastes straight into the attachments
+            // (Cmd+V); text pastes flow through to the field untouched.
+            .pastesImages(into: $viewModel.attachedImages)
 
             Button {
                 viewModel.sendDraft()
@@ -342,6 +363,39 @@ struct SessionView: View {
                 .strokeBorder(.separator, lineWidth: 1)
         )
     }
+
+    #if os(macOS)
+    /// Shift+Return inserts a newline while plain Return sends: a local key
+    /// monitor routes it to the focused field editor as
+    /// `insertNewlineIgnoringFieldEditor` (the same path Option+Return takes
+    /// natively), so the break lands at the cursor.
+    private func installShiftReturnMonitor() {
+        guard shiftReturnMonitor == nil else { return }
+        shiftReturnMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            MainActor.assumeIsolated {
+                let mods = event.modifierFlags
+                    .intersection(.deviceIndependentFlagsMask)
+                    .subtracting(.capsLock)
+                guard inputFocused,
+                      event.keyCode == 36 || event.keyCode == 76,
+                      mods == .shift
+                else { return event }
+                NSApp.sendAction(
+                    #selector(NSTextView.insertNewlineIgnoringFieldEditor(_:)),
+                    to: nil, from: nil
+                )
+                return nil
+            }
+        }
+    }
+
+    private func removeShiftReturnMonitor() {
+        if let monitor = shiftReturnMonitor {
+            NSEvent.removeMonitor(monitor)
+            shiftReturnMonitor = nil
+        }
+    }
+    #endif
 
     // MARK: - Queue chips
 

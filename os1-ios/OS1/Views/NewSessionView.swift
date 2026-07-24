@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Compose a new session: a full-height prompt editor over a compact chip row
 /// for repo / mode / model / effort / fast mode, plus image attachments —
-/// the web palette's essentials in a native shape.
+/// the web palette's essentials in a native shape. Screenshots paste straight
+/// into the attachments (Cmd+V on the Mac; the paste button on iOS).
 ///
 /// The prompt lives in a plain `TextEditor` inside a custom layout (not a
 /// grouped Form): Form re-diffs every row on each keystroke, which is what
@@ -13,9 +14,14 @@ struct NewSessionView: View {
     /// Preset repo (the per-repo "+" in the sessions list); nil = remembered.
     var initialRepo: String?
 
-    /// Called after the server returns the new id, with an optimistic session
-    /// row plus the prompt/images to seed the conversation view instantly.
+    /// Called the moment Start is tapped, with an optimistic session row
+    /// (temporary `pending-` id) plus the prompt/images to seed the
+    /// conversation view instantly.
     let onCreated: (Session, SessionViewModel.OptimisticSeed) -> Void
+
+    /// Called when the background create finishes: the temp id and either
+    /// the server's real session id or the error to surface.
+    let onResolved: (String, Result<String, Error>) -> Void
 
     @State private var prompt = ""
     @State private var mode = "code"
@@ -26,8 +32,6 @@ struct NewSessionView: View {
     @State private var effort = ""
     @State private var fastMode = false
     @State private var images: [AttachedImage] = []
-    @State private var creating = false
-    @State private var error: String?
     @FocusState private var promptFocused: Bool
 
     /// The universal "+" reopens on whatever repo was used last.
@@ -46,14 +50,6 @@ struct NewSessionView: View {
                 }
                 Divider()
                 controls
-                if let error {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 10)
-                }
             }
             .navigationTitle("New session")
             .inlineTitleBarCompat()
@@ -62,19 +58,15 @@ struct NewSessionView: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(creating ? "Starting…" : "Start") {
-                        Task { await create() }
-                    }
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(
-                        creating
-                            || (prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                && images.isEmpty)
-                    )
+                    Button("Start") { create() }
+                        .keyboardShortcut(.return, modifiers: .command)
+                        .disabled(
+                            prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                && images.isEmpty
+                        )
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .disabled(creating)
                 }
             }
             .task { await load() }
@@ -91,16 +83,31 @@ struct NewSessionView: View {
                 .padding(.horizontal, 11)
                 .padding(.top, 8)
                 .focused($promptFocused)
+                // Cmd+V with a copied screenshot attaches it; text pastes
+                // flow through to the editor untouched.
+                .pastesImages(into: $images)
             if prompt.isEmpty {
                 Text("What should this session do?")
                     .font(.body)
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 16)
-                    .padding(.top, 16)
+                    .padding(.top, placeholderTopPadding)
                     .allowsHitTesting(false)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Lines the placeholder up with the editor's real text origin: the outer
+    /// padding plus the platform text view's own insets. UITextView adds an
+    /// 8pt top container inset (8 outer + 8 = 16); NSTextView adds none.
+    /// Horizontally both add 5pt fragment padding (11 outer + 5 = 16).
+    private var placeholderTopPadding: CGFloat {
+        #if os(macOS)
+        8
+        #else
+        16
+        #endif
     }
 
     // ── Chip row ──────────────────────────────────────────────────────────
@@ -121,6 +128,9 @@ struct NewSessionView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 AttachImagesButton(images: $images)
+                #if os(iOS)
+                PasteImagesButton(images: $images)
+                #endif
                 repoChip
                 modeChip
                 Spacer(minLength: 0)
@@ -324,40 +334,44 @@ struct NewSessionView: View {
         }
     }
 
-    private func create() async {
-        creating = true
-        error = nil
+    /// Optimistic create: the sheet closes immediately and the conversation
+    /// opens seeded with the prompt under a temporary id, while the real
+    /// create (worktree prep — seconds) runs in the background. The list
+    /// swaps the temp id for the server's when it resolves.
+    private func create() {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let imageURLs = images.map(\.dataURL)
-        do {
-            let id = try await OS1API.createSession(
-                prompt: text,
-                repo: repo,
-                mode: mode,
-                model: model.isEmpty ? nil : model,
-                effort: effort.isEmpty ? nil : effort,
-                fastMode: fastMode,
-                images: imageURLs
-            )
-            lastRepo = repo
-            let optimistic = Session.optimistic(
-                id: id,
-                title: String((text.components(separatedBy: "\n").first ?? text).prefix(80)),
-                repo: repo,
-                mode: mode,
-                model: model.isEmpty ? nil : model,
-                effort: effort.isEmpty ? nil : effort,
-                fastMode: fastMode,
-                startedBy: ServerConfig.shared.userName
-            )
-            dismiss()
-            onCreated(
-                optimistic,
-                SessionViewModel.OptimisticSeed(prompt: text, images: imageURLs)
-            )
-        } catch {
-            self.error = error.localizedDescription
-            creating = false
+        lastRepo = repo
+        let pending = Session.optimistic(
+            id: "pending-\(UUID().uuidString)",
+            title: String((text.components(separatedBy: "\n").first ?? text).prefix(80)),
+            repo: repo,
+            mode: mode,
+            model: model.isEmpty ? nil : model,
+            effort: effort.isEmpty ? nil : effort,
+            fastMode: fastMode,
+            startedBy: ServerConfig.shared.userName
+        )
+        dismiss()
+        onCreated(
+            pending,
+            SessionViewModel.OptimisticSeed(prompt: text, images: imageURLs)
+        )
+        Task {
+            do {
+                let id = try await OS1API.createSession(
+                    prompt: text,
+                    repo: repo,
+                    mode: mode,
+                    model: model.isEmpty ? nil : model,
+                    effort: effort.isEmpty ? nil : effort,
+                    fastMode: fastMode,
+                    images: imageURLs
+                )
+                onResolved(pending.id, .success(id))
+            } catch {
+                onResolved(pending.id, .failure(error))
+            }
         }
     }
 }
