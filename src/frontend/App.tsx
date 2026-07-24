@@ -742,15 +742,19 @@ function App() {
 	// unrepresentable; the two show-flags derive from it. Reset to chat whenever
 	// the open session changes.
 	const [activeViewTab, setActiveViewTab] = useState<
-		"review" | "staging" | "assets" | null
+		"review" | "staging" | "assets" | "preview" | null
 	>(null);
 	const reviewActive = activeViewTab === "review";
 	const stagingActive = activeViewTab === "staging";
 	const assetsActive = activeViewTab === "assets";
+	const previewLiveActive = activeViewTab === "preview";
 	// Sessions whose Review / Staging view-tab is present in the strip; empty by
 	// default (a tab is added when its pane is first opened).
 	const [reviewOpen, setReviewOpen] = useState<Set<string>>(() => new Set());
 	const [stagingOpen, setStagingOpen] = useState<Set<string>>(() => new Set());
+	// Sessions whose local-dev Preview view-tab is open (full-width iframe of
+	// the running dev server — sibling of Staging, which shows the PR deploy).
+	const [previewTabOpen, setPreviewTabOpen] = useState<Set<string>>(() => new Set());
 	const [assetsOpen, setAssetsOpen] = useState<Set<string>>(() => new Set());
 	// Bumped when the per-workspace tab order changes (a drag-drop commit, or a
 	// storage push from another tab) so the strip re-derives `projectChats` in
@@ -1151,10 +1155,24 @@ function App() {
 					},
 				]
 			: [];
-	// Review leftmost, then Staging, then Assets.
+	// The local-dev Preview view-tab (live dev server iframe) — opened from
+	// the header Preview button. Present once opened for this session.
+	const previewViewTabs: ViewTab[] =
+		currentSession && previewTabOpen.has(currentSession.id)
+			? [
+					{
+						id: `preview:${currentSession.id}`,
+						label: "Preview",
+						active: previewLiveActive,
+						dotClass: null,
+					},
+				]
+			: [];
+	// Review leftmost, then Staging, then Preview, then Assets.
 	const viewTabs: ViewTab[] = [
 		...reviewViewTabs,
 		...stagingViewTabs,
+		...previewViewTabs,
 		...assetsViewTabs,
 	];
 	// Foreground/dismiss the Review view-tab; onOpenReview re-adds a dismissed
@@ -1192,6 +1210,30 @@ function App() {
 			return new Set(prev).add(id);
 		});
 		setActiveViewTab("staging");
+	}
+	// Open/foreground this session's local-dev Preview view-tab (the header
+	// Preview button routes here instead of window.open — the Mac shell was
+	// turning those into stray Electron windows).
+	function openPreviewTab() {
+		if (!currentSession) return;
+		const id = currentSession.id;
+		setPreviewTabOpen((prev) => {
+			if (prev.has(id)) return prev;
+			return new Set(prev).add(id);
+		});
+		setActiveViewTab("preview");
+	}
+	function closePreviewTab() {
+		if (currentSession) {
+			const id = currentSession.id;
+			setPreviewTabOpen((prev) => {
+				if (!prev.has(id)) return prev;
+				const next = new Set(prev);
+				next.delete(id);
+				return next;
+			});
+		}
+		if (previewLiveActive) setActiveViewTab(null);
 	}
 	function closeStagingTab() {
 		if (currentSession) {
@@ -2007,7 +2049,9 @@ function App() {
 										? "staging"
 										: id.startsWith("assets:")
 											? "assets"
-											: "review",
+											: id.startsWith("preview:")
+												? "preview"
+												: "review",
 								)
 							}
 							onCloseView={(id) =>
@@ -2015,7 +2059,9 @@ function App() {
 									? closeStagingTab()
 									: id.startsWith("assets:")
 										? closeAssetsTab()
-										: closeReviewTab()
+										: id.startsWith("preview:")
+											? closePreviewTab()
+											: closeReviewTab()
 							}
 							onNewChat={handleNewChat}
 							onRename={async (id, title) => {
@@ -2191,9 +2237,12 @@ function App() {
 									showReview={reviewActive}
 									showStaging={stagingActive}
 									showAssets={assetsActive}
+									showPreviewTab={previewLiveActive}
 									onOpenReview={openReview}
 									onOpenStaging={openStaging}
 									onCloseStaging={closeStagingTab}
+									onOpenPreviewTab={openPreviewTab}
+									onClosePreviewTab={closePreviewTab}
 									onOpenAssets={openAssets}
 									onCloseAssets={closeAssetsTab}
 									onOpenWorkspace={() => setActiveViewTab(null)}

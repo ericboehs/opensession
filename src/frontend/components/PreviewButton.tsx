@@ -46,9 +46,15 @@ export function PreviewButton({
   session,
   onAttachImage,
   onStatusChange,
+  onOpenTab,
   variant = "bar",
 }: {
   session: UnifiedSession;
+  /** Open the in-app Preview view-tab instead of a new window/interstitial —
+   *  the default wherever App provides it (the Mac shell turned window.opens
+   *  into stray Electron windows). The interstitial flow stays for contexts
+   *  without a tab (phones, PreviewWait deep links). */
+  onOpenTab?: () => void;
   /** When set, the snapshot modal offers "Attach to chat" (stages the PNG as a
    *  composer image, like a paste). */
   onAttachImage?: (dataUrl: string) => void;
@@ -139,6 +145,12 @@ export function PreviewButton({
     (session.previewPath ? `?path=${encodeURIComponent(session.previewPath)}` : "");
 
   async function start() {
+    // In-app tab flow: opening the tab both starts the preview (the pane
+    // kicks the claim) and shows its progress — no popup, no interstitial.
+    if (onOpenTab) {
+      onOpenTab();
+      return;
+    }
     // Poll lag can leave a Start affordance up when the server is already
     // running — nothing to wait for, open the app directly. (Out-of-scope
     // origin, so installed PWAs hand this to a normal browser context.)

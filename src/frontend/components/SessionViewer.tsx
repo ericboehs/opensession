@@ -92,6 +92,7 @@ import {
 import type { NewSessionPrefill } from "../lib/new-session-link";
 import type { WorkflowRunSnapshot } from "../../server/workflow-types";
 import { PreviewButton } from "./PreviewButton";
+import { PreviewPane } from "./PreviewPane";
 import { StagingLink } from "./StagingLink";
 import { WorkspaceInfo } from "./WorkspaceInfo";
 import { SpinOffMenu } from "./SpinOffMenu";
@@ -249,6 +250,12 @@ interface Props {
 	onOpenAssets?: () => void;
 	/** Close this session's Assets view-tab (its last asset was deleted). */
 	onCloseAssets?: () => void;
+	/** Foregrounded full-width local-dev Preview view-tab (App state). */
+	showPreviewTab?: boolean;
+	/** Open/foreground the Preview view-tab (header Preview button). */
+	onOpenPreviewTab?: () => void;
+	/** Close the Preview view-tab (its Stop button / tab close). */
+	onClosePreviewTab?: () => void;
 	/** Return from a view-tab (Review/Staging/Assets) to this workspace's active chat. */
 	onOpenWorkspace?: () => void;
 }
@@ -481,6 +488,9 @@ export function SessionViewer({
 	onOpenStaging,
 	onCloseStaging,
 	showAssets = false,
+	showPreviewTab = false,
+	onOpenPreviewTab,
+	onClosePreviewTab,
 	onOpenAssets,
 	onCloseAssets,
 	onOpenWorkspace,
@@ -539,7 +549,7 @@ export function SessionViewer({
 	// A full-width view-tab (Review, Staging, or Assets) takes over the chat
 	// column, so the chat DOM isn't mounted while any is up — the scroll /
 	// history / scroll-restore effects below must bail in all cases.
-	const chatHidden = showReview || showStaging || showAssets;
+	const chatHidden = showReview || showStaging || showAssets || showPreviewTab;
 	const [cachedTranscript] = useState(() => peekCachedTranscriptView(session.id));
 	const transcriptViewStore = useMemo(
 		() =>
@@ -3695,6 +3705,7 @@ export function SessionViewer({
 							session={session}
 							onAttachImage={(img) => setImages((prev) => [...prev, img])}
 							onStatusChange={setPreviewStatus}
+							onOpenTab={onOpenPreviewTab}
 							variant="header"
 						/>
 					)}
@@ -4008,7 +4019,15 @@ export function SessionViewer({
 
 			<div className="viewer-split">
 				<div className="viewer-chat">
-					{showStaging && stagingUrl ? (
+					{showPreviewTab ? (
+						<div className="viewer-review-main">
+							<PreviewPane
+								session={session}
+								status={previewStatus}
+								onClose={() => onClosePreviewTab?.()}
+							/>
+						</div>
+					) : showStaging && stagingUrl ? (
 						staging?.embeddable ? (
 							// This deploy opts into being framed by os.tella.dev (its CSP
 							// frame-ancestors names us — the tella-fusion preview change),
@@ -4535,6 +4554,7 @@ export function SessionViewer({
 											setImages((prev) => [...prev, img])
 										}
 										onStatusChange={setPreviewStatus}
+										onOpenTab={onOpenPreviewTab}
 									/>
 									<StagingLink session={session} />
 								</div>
