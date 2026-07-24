@@ -1835,6 +1835,18 @@ body:is(.resizing-sidebar, .resizing-panel) {
 .sidebar-pin-list.is-drag-active .sidebar-pin-entry > * {
 	pointer-events: none;
 }
+/* Drag-into-lane: while a Pinned row is mid-drag the status lanes below act
+   as drop targets — the one under the pointer wears a pill + accent ring, and
+   lanes that only materialized for the drag (they were empty) sit dimmed. */
+.sidebar-status-group.is-lane-empty {
+	opacity: 0.55;
+}
+.sidebar-status-group.is-lane-drop-hover {
+	opacity: 1;
+	background: var(--bg-hover);
+	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
+	box-shadow: inset 0 0 0 1px var(--accent, #6b8afd);
+}
 
 /* Keep the active lane visible beneath its section title while the sidebar's
    single scroll surface moves. Each sticky button remains inside its own

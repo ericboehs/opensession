@@ -23,7 +23,13 @@ import { loadOverview, overviewCache } from "../lib/workspace-overview";
 import { openLightbox } from "./MediaLightbox";
 import { useCurrentUser, TEAM } from "./UserPicker";
 import { getLane, getLanes, onLanesChanged } from "../lib/lanes";
-import { getPins, onPinsChanged, togglePin, reorderPins } from "../lib/pins";
+import {
+	getPins,
+	onPinsChanged,
+	togglePin,
+	reorderPins,
+	unpin,
+} from "../lib/pins";
 import {
 	clearSnooze,
 	formatRemaining,
@@ -1007,6 +1013,60 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const pinOrderPending = useRef<string[] | null>(null);
 	const [pinDragKey, setPinDragKey] = useState<string | null>(null);
 	const pinJustDragged = useRef(false);
+	// Drag-into-lane: while a Pinned row is mid-drag, the status lanes below
+	// double as drop targets (per-repo lanes only for the row's own repo).
+	// pinDragMeta carries the dragged entry's chats/repo/pin keys; laneDropHover
+	// marks the lane under the pointer. Both keep a ref twin so the drag-end
+	// commit never reads a stale closure mid-batch.
+	type PinDragMeta = {
+		repo: string | null;
+		chats: UnifiedSession[];
+		pinKeys: string[];
+	};
+	type LaneDropTarget = { gkey: string; lane: MineStatus };
+	const [pinDragMeta, setPinDragMeta] = useState<PinDragMeta | null>(null);
+	const pinDragMetaRef = useRef<PinDragMeta | null>(null);
+	const [laneDropHover, setLaneDropHover] = useState<LaneDropTarget | null>(
+		null,
+	);
+	const laneDropHoverRef = useRef<LaneDropTarget | null>(null);
+
+	// Hit-test the pointer against the lane drop targets below the Pinned band
+	// (they carry data-lane-* attributes while a drag is live). Geometric rect
+	// checks instead of elementFromPoint — the dragged row itself rides under
+	// the pointer and would swallow the hit.
+	function updateLaneDropHover(clientX: number, clientY: number) {
+		const meta = pinDragMetaRef.current;
+		let next: LaneDropTarget | null = null;
+		if (meta && meta.chats.length > 0) {
+			const targets =
+				sidebarScrollRef.current?.querySelectorAll<HTMLElement>(
+					"[data-lane-drop]",
+				) ?? [];
+			for (const el of targets) {
+				const r = el.getBoundingClientRect();
+				const inside =
+					clientX >= r.left &&
+					clientX <= r.right &&
+					clientY >= r.top &&
+					clientY <= r.bottom;
+				if (!inside) continue;
+				// Per-repo lanes only take rows of their own repo; the global
+				// lanes (no data-lane-repo) take anything.
+				const laneRepo = el.dataset.laneRepo || "";
+				if (laneRepo && laneRepo !== meta.repo) continue;
+				next = {
+					gkey: el.dataset.laneDrop!,
+					lane: el.dataset.laneStatus as MineStatus,
+				};
+				break;
+			}
+		}
+		if (laneDropHoverRef.current?.gkey !== next?.gkey) {
+			laneDropHoverRef.current = next;
+			setLaneDropHover(next);
+		}
+	}
 	const [recents, setRecents] = useState<string[]>(getRecents);
 	// Per-session last-read marks, driving the unread dot. Kept in sync via the
 	// same event the viewer fires when it marks a session read.
@@ -1832,9 +1892,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			.sort((a, b) => rowIdx(a) - rowIdx(b));
 	}, [wsRows, pins, reviewBandKeys, activeSnoozeKeys]);
 	const focusWsRows = useMemo(() => {
-		const pinSet = new Set(pins);
 		const focus =
 			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
+		// Pinned rows are NOT excluded here: Pinned is quick access, not a
+		// status, so a pinned in-progress session still shows under In
+		// progress and Add-to-backlog on a pinned row still lands it in
+		// Backlog (with auto-pin-new on, hiding pinned rows emptied the lanes).
 		return wsRows.filter(
 			(r) =>
 				(focus === "everyone" ||
@@ -1847,13 +1910,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							r.owner === focus ||
 							(r.owner === "" && r.chats.some((c) => getLane(c.id))))) &&
 				!reviewBandKeys.has(r.key) &&
-				!activeSnoozeKeys.has(r.key) &&
-				!pinSet.has(r.key) &&
-				!r.chats.some((c) => pinSet.has(c.id)),
+				!activeSnoozeKeys.has(r.key),
 		);
 	}, [
 		wsRows,
-		pins,
 		filter.person,
 		currentUser,
 		reviewBandKeys,
@@ -1865,15 +1925,20 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// status lanes) — archiveWorkspaceWithNext walks this to pick the row that
 	// should open when the active workspace is archived away.
 	const wsRowOrder = useMemo(
-		() => [
-			...needsReviewRows,
-			...awaitingReviewRows,
-			...pinnedWsRows,
-			...MINE_STATUS_META.flatMap((meta) =>
-				focusWsRows.filter((r) => r.status === meta.key),
-			),
-			...snoozedWsRows,
-		],
+		() => {
+			// Pinned rows appear in the Pinned band AND their status lane —
+			// dedupe by key so the archive-next walk sees each row once.
+			const seen = new Set<string>();
+			return [
+				...needsReviewRows,
+				...awaitingReviewRows,
+				...pinnedWsRows,
+				...MINE_STATUS_META.flatMap((meta) =>
+					focusWsRows.filter((r) => r.status === meta.key),
+				),
+				...snoozedWsRows,
+			].filter((r) => (seen.has(r.key) ? false : (seen.add(r.key), true)));
+		},
 		[
 			needsReviewRows,
 			awaitingReviewRows,
@@ -3055,14 +3120,35 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// of workspace rows. `ns` keeps each repo's lane collapse state independent.
 	// `snoozedRows` (when given) render as a Snoozed group slotted just above
 	// the final Backlog lane — the quiet zone, per the T3-style snooze design.
-	function renderStatusLanes(rows: WsRow[], ns = "", snoozedRows?: WsRow[]) {
+	function renderStatusLanes(
+		rows: WsRow[],
+		ns = "",
+		snoozedRows?: WsRow[],
+		laneRepo?: string,
+	) {
+		// While an eligible Pinned row is mid-drag these lanes double as drop
+		// targets: per-repo lanes only for the row's own repo, and empty lanes
+		// materialize (dimmed) so every status can take the drop.
+		const dropEligible =
+			!!pinDragMeta &&
+			pinDragMeta.chats.length > 0 &&
+			(!laneRepo || laneRepo === pinDragMeta.repo);
 		const lanes = MINE_STATUS_META.map((meta) => {
 			const items = rows.filter((r) => r.status === meta.key);
-			if (items.length === 0) return null;
+			if (items.length === 0 && !dropEligible) return null;
 			const gkey = `${ns}status:${meta.key}`;
 			const open = isOpen(gkey);
+			const dropHover = dropEligible && laneDropHover?.gkey === gkey;
 			return (
-				<div className="sidebar-status-group" key={gkey}>
+				<div
+					className={`sidebar-status-group${
+						dropEligible && items.length === 0 ? " is-lane-empty" : ""
+					}${dropHover ? " is-lane-drop-hover" : ""}`}
+					key={gkey}
+					data-lane-drop={dropEligible ? gkey : undefined}
+					data-lane-status={dropEligible ? meta.key : undefined}
+					data-lane-repo={dropEligible && laneRepo ? laneRepo : undefined}
+				>
 					<button
 						// Layout, padding and type all come from .sidebar-group-header —
 						// utilities here would out-specify its phone overrides and leave
@@ -3228,7 +3314,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						{open && (
 							<div className="sidebar-repo-lanes">
 								{withLanes
-									? renderStatusLanes(rows, `repo:${repo}::`, snoozedRows)
+									? renderStatusLanes(rows, `repo:${repo}::`, snoozedRows, repo)
 									: ordered.map(renderWsRow)}
 							</div>
 						)}
@@ -3786,6 +3872,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					type PinEntry = {
 						key: string;
 						pinKeys: string[];
+						/** Lane-drop payload: the sessions a lane drop re-lanes (empty
+						    = not droppable, e.g. notes) + the entry's repo for the
+						    same-repo rule under per-repo lanes. */
+						repo: string | null;
+						chats: UnifiedSession[];
 						node: React.ReactNode;
 					};
 					const pinIdx = new Map(pins.map((p, i) => [p, i] as const));
@@ -3796,6 +3887,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							pinKeys: [row.key, ...row.chats.map((c) => c.id)].filter((k) =>
 								pinIdx.has(k),
 							),
+							repo: wsRowRepo(row),
+							chats: row.chats,
 							node: renderWsRow(row),
 						});
 					}
@@ -3811,6 +3904,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							pinKeys: [s.id, ...(s.aliasIds ?? [])].filter((k) =>
 								pinIdx.has(k),
 							),
+							repo: sessionRepo(s),
+							chats: [s],
 							node: (
 								<SidebarItem
 									session={s}
@@ -3839,6 +3934,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						entries.push({
 							key: `note:${n.id}`,
 							pinKeys: [`note:${n.id}`],
+							repo: null,
+							chats: [],
 							node: (
 								<button
 									className={`sidebar-item ${n.id === activeNoteId ? "sidebar-item-selected" : ""}`}
@@ -3875,7 +3972,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					// Whole-row y-drag would fight touch scrolling and the swipe
 					// gestures, so drag reorder is desktop-only; the order itself is
 					// per-user server state, so a desktop reorder shows up on the phone.
-					const canDragPins = !isPhone && entries.length > 1;
+					// (>0, not >1: even a lone pinned row can be dragged into a lane.)
+					const canDragPins = !isPhone && entries.length > 0;
 					const commitPinReorder = () => {
 						setPinDragKey(null);
 						pinJustDragged.current = true;
@@ -3884,6 +3982,23 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						setTimeout(() => {
 							pinJustDragged.current = false;
 						}, 0);
+						// A drop onto a status lane wins over the reorder: lane-pin the
+						// row's chats there and unpin it — dragging OUT of Pinned reads
+						// as a move, unlike right-click Set-status which keeps the pin
+						// (the row shows in both the Pinned band and its lane).
+						const laneDrop = laneDropHoverRef.current;
+						const dragMeta = pinDragMetaRef.current;
+						pinDragMetaRef.current = null;
+						setPinDragMeta(null);
+						laneDropHoverRef.current = null;
+						setLaneDropHover(null);
+						if (laneDrop && dragMeta && dragMeta.chats.length > 0) {
+							pinOrderPending.current = null;
+							setPinOrderDraft(null);
+							setPins(unpin(dragMeta.pinKeys));
+							onSetStatus(dragMeta.chats, laneDrop.lane);
+							return;
+						}
 						const orderKeys = pinOrderPending.current;
 						pinOrderPending.current = null;
 						setPinOrderDraft(null);
@@ -3941,7 +4056,22 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 											value={e.key}
 											dragListener={canDragPins}
 											transition={{ duration: 0 }}
-											onDragStart={() => setPinDragKey(e.key)}
+											onDragStart={() => {
+												setPinDragKey(e.key);
+												const meta = {
+													repo: e.repo,
+													chats: e.chats,
+													pinKeys: e.pinKeys,
+												};
+												pinDragMetaRef.current = meta;
+												setPinDragMeta(meta);
+											}}
+											onDrag={(
+												ev: MouseEvent | TouchEvent | PointerEvent,
+											) => {
+												if ("clientX" in ev)
+													updateLaneDropHover(ev.clientX, ev.clientY);
+											}}
 											onDragEnd={commitPinReorder}
 											whileDrag={{ scale: 1.01 }}
 											className={`sidebar-pin-entry${pinDragKey === e.key ? " is-reordering" : ""}`}
