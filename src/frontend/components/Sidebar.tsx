@@ -69,6 +69,7 @@ import { PixelSpinner } from "./PixelSpinner";
 import {
 	readHiddenSidebarTools,
 	setSidebarToolVisible,
+	hideAllSidebarTools,
 	onSidebarToolsChanged,
 	type SidebarToolId,
 } from "../lib/sidebar-tools";
@@ -2738,6 +2739,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 										</Menu.CheckboxItem>
 									))}
 								</Menu.Group>
+								<Menu.Separator />
+								<Menu.Item onClick={hideAllSidebarTools}>
+									Hide tools from sidebar
+								</Menu.Item>
 							</Menu.Popup>
 						</Menu.Root>
 					</div>
