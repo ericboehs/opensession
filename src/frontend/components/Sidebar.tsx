@@ -40,7 +40,13 @@ import {
 } from "../lib/snoozes";
 import { Reorder } from "motion/react";
 import { getRecents, onRecentsChanged } from "../lib/recents";
-import { getReads, isUnread, markUnread, onReadsChanged } from "../lib/reads";
+import {
+	getReads,
+	isUnread,
+	markRead,
+	markUnread,
+	onReadsChanged,
+} from "../lib/reads";
 import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { providerFromUrl } from "../lib/provider";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
@@ -3718,16 +3724,29 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							: null;
 
 					const entries: CtxEntry[] = [];
+					// Offer the move you can actually make: a row with unread
+					// activity reads, an already-read one goes back to unread.
+					const rowUnread = menuRow?.unread ?? false;
 					if (chats.length > 0)
 						entries.push({
 							kind: "item",
 							icon: <IconMail size={20} />,
-							label: "Mark as unread",
-							onClick: () => chats.forEach((c) => markUnread(c.id)),
+							label: rowUnread ? "Mark as read" : "Mark as unread",
+							onClick: () =>
+								chats.forEach((c) =>
+									rowUnread
+										? markRead(c.id, c.lastActivity)
+										: markUnread(c.id),
+								),
 						});
 					// One-tap triage: the most common lane move gets its own row
-					// (the full picker stays in the Set-status flyout below).
-					if (chats.length > 0)
+					// (the full picker stays in the Set-status flyout below). A row
+					// that already sits in Backlog on its own has nothing to add —
+					// only a manual pin there is worth offering to undo.
+					if (
+						chats.length > 0 &&
+						(menuRow?.status !== "pending" || sharedManual === "pending")
+					)
 						entries.push({
 							kind: "item",
 							icon: <IconInbox size={20} />,
@@ -4676,9 +4695,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									startChatRename(row.chats[0]);
 								}
 							}}
-							onMarkUnread={
+							unread={row.unread}
+							onToggleRead={
 								row.chats.length > 0
-									? () => row.chats.forEach((c) => markUnread(c.id))
+									? () =>
+											row.chats.forEach((c) =>
+												row.unread
+													? markRead(c.id, c.lastActivity)
+													: markUnread(c.id),
+											)
 									: null
 							}
 							onCopyLink={
@@ -5511,8 +5536,12 @@ function SidebarItem({
 						{
 							kind: "item",
 							icon: <IconMail size={20} />,
-							label: "Mark as unread",
-							onClick: () => markUnread(session.id),
+							// Offer the move you can actually make, not both directions.
+							label: unread ? "Mark as read" : "Mark as unread",
+							onClick: () =>
+								unread
+									? markRead(session.id, session.lastActivity)
+									: markUnread(session.id),
 						},
 						{
 							kind: "item",
@@ -5525,21 +5554,28 @@ function SidebarItem({
 						...(onSetStatus
 							? [
 									// One-tap triage: pull the run into your Backlog (lanes
-									// are per-user — it moves only in YOUR sidebar).
-									{
-										kind: "item",
-										icon: <IconInbox size={20} />,
-										label:
-											pinnedLane(session) === "pending"
-												? "Remove from backlog"
-												: "Add to backlog",
-										onClick: () =>
-											onSetStatus(
-												pinnedLane(session) === "pending"
-													? null
-													: "pending",
-											),
-									} as const,
+									// are per-user — it moves only in YOUR sidebar). A run
+									// already resting in Backlog on its own has nothing to
+									// add; only a manual pin there is worth undoing.
+									...(mineStatus(session) !== "pending" ||
+									pinnedLane(session) === "pending"
+										? [
+												{
+													kind: "item",
+													icon: <IconInbox size={20} />,
+													label:
+														pinnedLane(session) === "pending"
+															? "Remove from backlog"
+															: "Add to backlog",
+													onClick: () =>
+														onSetStatus(
+															pinnedLane(session) === "pending"
+																? null
+																: "pending",
+														),
+												} as const,
+											]
+										: []),
 									{
 										kind: "status",
 										current: pinnedLane(session) ?? null,
@@ -6463,7 +6499,8 @@ function WsMobileSheet({
 	onSnooze,
 	onOpen,
 	onRename,
-	onMarkUnread,
+	unread,
+	onToggleRead,
 	onCopyLink,
 	onDelete,
 }: {
@@ -6480,8 +6517,10 @@ function WsMobileSheet({
 	onSnooze: (until: string | null) => void;
 	onOpen: (chat: UnifiedSession) => void;
 	onRename: () => void;
-	/** Mark every chat in the row unread; null for chatless rows. */
-	onMarkUnread: (() => void) | null;
+	/** Whether the row has unread activity — picks the read/unread direction. */
+	unread: boolean;
+	/** Flip every chat in the row read or unread; null for chatless rows. */
+	onToggleRead: (() => void) | null;
 	/** Copy a link to the row's first chat; null for chatless rows. */
 	onCopyLink: (() => void) | null;
 	onDelete: (() => void) | null;
@@ -6604,13 +6643,13 @@ function WsMobileSheet({
 						Open PR{prChat.prNumber != null ? ` #${prChat.prNumber}` : ""}
 					</button>
 				)}
-				{onMarkUnread && (
+				{onToggleRead && (
 					<button
 						className="mobile-sheet-item"
-						onClick={closing(onMarkUnread)}
+						onClick={closing(onToggleRead)}
 					>
 						<IconMail size={22} />
-						Mark as unread
+						{unread ? "Mark as read" : "Mark as unread"}
 					</button>
 				)}
 				<button className="mobile-sheet-item" onClick={closing(onTogglePin)}>
