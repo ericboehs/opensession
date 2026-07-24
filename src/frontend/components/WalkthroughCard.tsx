@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import type { SessionWalkthrough } from "../lib/types";
 import { renderMarkdown } from "../lib/markdown";
 import { relativeTime } from "../lib/api";
 import { cn } from "../ui/cn";
+import { openLightbox, type LightboxItem } from "./MediaLightbox";
 
 /** Stream server-side media (staged under the uploads dir) through the
  *  existing scoped media route — same URL shape MessageBubble uses. */
@@ -27,7 +28,28 @@ export function WalkthroughCard({
 		() => renderMarkdown(walkthrough.summary),
 		[walkthrough.summary],
 	);
-	const [lightbox, setLightbox] = useState<string | null>(null);
+	// Every still in the card, flattened in render order, so clicking one opens
+	// the shared media lightbox (Escape/arrows/pinch-zoom/download) browsing
+	// before→after across all the pairs.
+	const gallery = useMemo(() => {
+		const items: LightboxItem[] = [];
+		const at = new Map<string, number>();
+		(walkthrough.shots || []).forEach((shot, i) => {
+			for (const side of ["before", "after"] as const) {
+				const path = shot[side];
+				if (!path) continue;
+				at.set(`${i}:${side}`, items.length);
+				items.push({
+					kind: "image",
+					src: mediaUrl(path),
+					chatTitle: [shot.caption, side === "before" ? "Before" : "After"]
+						.filter(Boolean)
+						.join(" — "),
+				});
+			}
+		});
+		return { items, at };
+	}, [walkthrough.shots]);
 	const chat = variant === "chat";
 
 	return (
@@ -97,7 +119,12 @@ export function WalkthroughCard({
 											src={mediaUrl(shot[side]!)}
 											alt={`${shot.caption || "change"} — ${side}`}
 											loading="lazy"
-											onClick={() => setLightbox(shot[side]!)}
+											onClick={() =>
+												openLightbox(
+													gallery.items,
+													gallery.at.get(`${i}:${side}`) ?? 0,
+												)
+											}
 										/>
 									</figure>
 								),
@@ -105,18 +132,6 @@ export function WalkthroughCard({
 					</div>
 				</div>
 			))}
-			{lightbox && (
-				<div
-					className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 p-8"
-					onClick={() => setLightbox(null)}
-				>
-					<img
-						className="max-h-full max-w-full rounded-md shadow-lg"
-						src={mediaUrl(lightbox)}
-						alt="walkthrough screenshot"
-					/>
-				</div>
-			)}
 		</div>
 	);
 }
