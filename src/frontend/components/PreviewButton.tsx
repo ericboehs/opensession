@@ -407,6 +407,14 @@ export function PreviewButton({
                 if (e.metaKey || e.ctrlKey) {
                   e.preventDefault();
                   copy(url, { toast: "Preview link copied" });
+                  return;
+                }
+                // In-app tab everywhere it exists — the tab's toolbar owns
+                // the break-out; a bare anchor here opened the browser and
+                // made the button feel random (tab sometimes, window others).
+                if (onOpenTab) {
+                  e.preventDefault();
+                  onOpenTab();
                 }
               }}
             >
@@ -478,6 +486,12 @@ export function PreviewButton({
           target="_blank"
           rel="noopener"
           title={`Open the webapp — ${url}`}
+          onClick={(e) => {
+            if (onOpenTab && !e.metaKey && !e.ctrlKey) {
+              e.preventDefault();
+              onOpenTab();
+            }
+          }}
         >
           <IconPlay size={15} className="opacity-90" />
           Preview

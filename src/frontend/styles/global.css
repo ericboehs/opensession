@@ -1519,6 +1519,12 @@ body:is(.resizing-sidebar, .resizing-panel) {
 .sidebar-repo-lanes .sidebar-item {
 	padding-left: 24px;
 }
+/* A workspace is one level below its status lane, so take one more 14px step.
+   Without this more-specific rule the two selectors above collapse onto the
+   same padding and status headers look like peers of their own rows. */
+.sidebar-repo-lanes .sidebar-status-group .sidebar-item {
+	padding-left: 38px;
+}
 
 /* The same nesting cue for the status-grouping (and Pinned / review) view:
    workspace rows step in one gentle 14px inset under their band header (the
@@ -2064,6 +2070,9 @@ body:is(.resizing-sidebar, .resizing-panel) {
 		padding-left: 6px;
 	}
 	.sidebar-repo-lanes .sidebar-item {
+		padding-left: 6px;
+	}
+	.sidebar-repo-lanes .sidebar-status-group .sidebar-item {
 		padding-left: 6px;
 	}
 }
