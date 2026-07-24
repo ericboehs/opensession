@@ -1,6 +1,6 @@
 import { AGENT_NAME } from "../lib/brand";
 import React, { useEffect, useMemo, useState } from "react";
-import type { UnifiedSession } from "../lib/types";
+import type { UnifiedSession, WSServerMessage } from "../lib/types";
 import { relativeTime } from "../lib/api";
 import { PrPanel } from "./PrPanel";
 import { providerFromUrl, avatarUrl } from "../lib/provider";
@@ -12,6 +12,7 @@ interface Props {
   onOpenSession: (id: string) => void;
   onAddToInput: (id: string, text: string) => void;
   send?: (msg: any) => void;
+  addHandler?: (handler: (msg: WSServerMessage) => void) => () => void;
 }
 
 type FilterKey = "review" | "open" | "merged" | "closed" | "all";
@@ -151,6 +152,7 @@ export function Reviews({
   onOpenSession,
   onAddToInput,
   send,
+  addHandler,
 }: Props) {
   const [filter, setFilter] = useState<FilterKey>("review");
   const [query, setQuery] = useState("");
@@ -270,6 +272,9 @@ export function Reviews({
             split
             reviewCanvas
             send={send}
+            addHandler={addHandler}
+            sessions={sessions}
+            onOpenSessionById={onOpenSession}
             walkthrough={selected.walkthrough}
           />
         </div>

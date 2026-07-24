@@ -2373,6 +2373,8 @@ function App() {
 								branch={route.branch}
 								sessions={sessions}
 								onOpenSession={(id) => navigate({ view: "session", id })}
+								send={send}
+								addHandler={addHandler}
 							/>
 						) : route.view === "reports" ? (
 							<Reports
@@ -2437,6 +2439,7 @@ function App() {
 								onOpenSession={(id) => navigate({ view: "session", id })}
 								onAddToInput={addToSessionInput}
 								send={send}
+								addHandler={addHandler}
 							/>
 						) : route.view === "archived" ? (
 							<Archived

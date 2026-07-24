@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import type { UnifiedSession } from "../lib/types";
+import type { UnifiedSession, WSServerMessage } from "../lib/types";
 import { PrPanel } from "./PrPanel";
 
 interface Props {
@@ -7,6 +7,8 @@ interface Props {
 	branch: string;
 	sessions: UnifiedSession[];
 	onOpenSession: (id: string) => void;
+	send?: (msg: any) => void;
+	addHandler?: (handler: (msg: WSServerMessage) => void) => () => void;
 }
 
 /**
@@ -14,7 +16,14 @@ interface Props {
  * session uses the normal session APIs; an unclaimed PR uses the repo+branch
  * preview APIs, but both render the exact same review surface.
  */
-export function PrQueuePreview({ repo, branch, sessions, onOpenSession }: Props) {
+export function PrQueuePreview({
+	repo,
+	branch,
+	sessions,
+	onOpenSession,
+	send,
+	addHandler,
+}: Props) {
 	const session = useMemo(
 		() =>
 			[...sessions]
@@ -34,6 +43,10 @@ export function PrQueuePreview({ repo, branch, sessions, onOpenSession }: Props)
 				sessionId={session?.id || ""}
 				previewTarget={session ? undefined : { repo, branch }}
 				reviewCanvas
+				send={send}
+				addHandler={addHandler}
+				sessions={sessions}
+				onOpenSessionById={onOpenSession}
 				onOpenSession={
 					session ? () => onOpenSession(session.id) : undefined
 				}

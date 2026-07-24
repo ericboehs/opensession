@@ -13,9 +13,9 @@ import {
 	fetchPrPreviewDiff,
 	fetchPrPreviewDiffGroups,
 	fetchPrPreviewGuide,
-	relativeTime,
 	type ModelOption,
 } from "../lib/api";
+import { PrSessionsList, prRelatedSessions } from "./PrSessions";
 import { IconX } from "./icons";
 import {
 	CheckRow,
@@ -29,7 +29,6 @@ import { Composer } from "./Composer";
 import { useCurrentUser } from "./UserPicker";
 import { renderMarkdown } from "../lib/markdown";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
-import { chatPath } from "../lib/share-link";
 
 interface Props {
 	/** Repo id (e.g. "tella-fusion") + the PR's head branch — the preview's key. */
@@ -325,36 +324,14 @@ export function PrPreview({
 		[repo, pr?.baseRefName, pr?.headRefName],
 	);
 
-	// Sessions related to this PR: primarily via the server-enriched `prs` refs
-	// (primary + attached + linked), with primary-branch/number fallbacks for
-	// sessions the enrichment hasn't reached. Matching also uses the loaded PR's
-	// number and head branch, so /pr/<repo>/<number> URLs (gh resolves either a
-	// branch or a number) link the same sessions as branch URLs.
-	const relatedSessions = useMemo(() => {
-		const num = pr?.number;
-		const head = pr?.headRefName;
-		const refMatch = (r: { repo: string; branch?: string; number?: number }) =>
-			r.repo === repo &&
-			((num != null && r.number === num) ||
-				r.branch === branch ||
-				(!!head && r.branch === head));
-		const matched = sessions.filter((s) => {
-			if (s.sideChatOf) return false;
-			if ((s.prs || []).some(refMatch)) return true;
-			if ((s.linkedPrs || []).some(refMatch)) return true;
-			const sRepo = s.repo || "tella-fusion";
-			if (sRepo === repo && (s.branch === branch || (!!head && s.branch === head)))
-				return true;
-			if (num != null && sRepo === repo && s.prNumber === num) return true;
-			return (s.attachedRepos || []).some(
-				(a) => a.repo === repo && (a.branch === branch || (!!head && a.branch === head)),
-			);
-		});
-		return matched.sort((a, b) => {
-			if (a.isRunning !== b.isRunning) return a.isRunning ? -1 : 1;
-			return (b.lastActivity || "").localeCompare(a.lastActivity || "");
-		});
-	}, [sessions, repo, branch, pr?.number, pr?.headRefName]);
+	// Sessions related to this PR (shared matcher — also used by PrPanel).
+	// Matching uses the loaded PR's number and head branch, so
+	// /pr/<repo>/<number> URLs (gh resolves either a branch or a number) link
+	// the same sessions as branch URLs.
+	const relatedSessions = useMemo(
+		() => prRelatedSessions(sessions, repo, branch, pr),
+		[sessions, repo, branch, pr?.number, pr?.headRefName],
+	);
 
 	const stateClass = pr
 		? pr.state === "MERGED"
@@ -524,42 +501,13 @@ export function PrPreview({
 									{relatedSessions.length > 0 && (
 										<div className="pr-body">
 											<div className="pr-checks-title">Sessions</div>
-											<div className="flex flex-col">
-												{relatedSessions.map((s) => (
-													<a
-														key={s.id}
-														href={chatPath(s)}
-														onClick={(e) => {
-															// Plain click navigates in-app; modified clicks
-															// keep native new-tab behavior.
-															if (e.metaKey || e.ctrlKey || e.shiftKey) return;
-															e.preventDefault();
-															onOpenSession(s.id);
-														}}
-														className="flex items-center gap-2 px-2 py-1.5 -mx-2 rounded-md text-[13px] text-fg no-underline hover:bg-surface"
-													>
-														<span
-															className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-																s.isRunning ? "bg-green animate-pulse" : "bg-line"
-															}`}
-														/>
-														<span className="truncate">{s.title}</span>
-														{s.archived && (
-															<span className="text-faint text-[11px] shrink-0">
-																archived
-															</span>
-														)}
-														{s.startedBy && (
-															<span className="text-faint text-[12px] shrink-0">
-																{s.startedBy}
-															</span>
-														)}
-														<span className="text-faint text-[12px] shrink-0 ml-auto">
-															{relativeTime(s.lastActivity)}
-														</span>
-													</a>
-												))}
-											</div>
+											<PrSessionsList
+												sessions={relatedSessions}
+												repo={repo}
+												branch={branch}
+												pr={pr}
+												onOpenSession={onOpenSession}
+											/>
 										</div>
 									)}
 

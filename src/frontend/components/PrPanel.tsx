@@ -9,7 +9,10 @@ import type {
   PrFile,
   PrReviewer,
   SessionWalkthrough,
+  UnifiedSession,
+  WSServerMessage,
 } from "../lib/types";
+import { PrSessionsList, prRelatedSessions } from "./PrSessions";
 import { WalkthroughCard } from "./WalkthroughCard";
 import {
   API_BASE,
@@ -85,6 +88,16 @@ interface Props {
   reviewCanvas?: boolean;
   /** Session-less PR target; uses the same canvas with repo+branch APIs. */
   previewTarget?: { repo: string; branch: string };
+  /**
+   * Live sessions list. When provided, the panel surfaces every session
+   * linked to the shown PR (matched by repo + head branch / number) and — with
+   * `send` — offers starting a new session on the PR's head branch.
+   */
+  sessions?: UnifiedSession[];
+  /** Navigate to a session picked from the linked-sessions list. */
+  onOpenSessionById?: (id: string) => void;
+  /** WS handler hook — resets the new-session form on server errors. */
+  addHandler?: (handler: (msg: WSServerMessage) => void) => () => void;
 }
 
 interface PrDiffData {
@@ -251,6 +264,9 @@ export function PrPanel({
   walkthrough,
   reviewCanvas,
   previewTarget,
+  sessions,
+  onOpenSessionById,
+  addHandler,
 }: Props) {
   // Local copy of the linked-PR list so link/unlink applies instantly; the
   // sessions list catches up on its next refresh.
@@ -323,6 +339,7 @@ export function PrPanel({
   const [closeError, setCloseError] = useState<string | null>(null);
   const [mergeAfterReview, setMergeAfterReview] = useState(reviewCanvas === true);
   const [checksOpen, setChecksOpen] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const [allFilesOpen, setAllFilesOpen] = useState(false);
   const [diffView, setDiffView] = useState<
     "guide" | "diff" | "checks" | "conversation" | "commits"
@@ -778,6 +795,17 @@ export function PrPanel({
   // Tab bar across the top: one tab per PR (primary repo, attached repos,
   // linked PRs) plus the link affordance. With a single target the bar
   // disappears and "Link PR" moves into the actions row instead.
+  // Sessions linked to the shown PR — only when the caller wires the list.
+  // Matched against the ACTIVE target (linked PRs carry their own branch; the
+  // primary/attached branch resolves through the loaded PR's headRefName).
+  const relatedSessions = useMemo(
+    () =>
+      sessions && active
+        ? prRelatedSessions(sessions, active.repo, active.branch, pr)
+        : [],
+    [sessions, active?.repo, active?.branch, pr?.number, pr?.headRefName],
+  );
+
   const showBar = targets.length > 1;
   const switcher = showBar ? (
     <div className="pr-repo-tabs">
@@ -938,6 +966,15 @@ export function PrPanel({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2 max-[760px]:hidden">
+            {sessions && (
+              <button
+                className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs font-medium text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+                onClick={() => setSessionsOpen(true)}
+                title="Sessions linked to this PR"
+              >
+                Sessions{relatedSessions.length > 0 ? ` · ${relatedSessions.length}` : ""}
+              </button>
+            )}
             {pr.staging?.url && (
               <a
                 className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs font-medium text-dim no-underline hover:border-line-strong hover:bg-hover hover:text-fg"
@@ -992,6 +1029,44 @@ export function PrPanel({
             )}
           </div>
         </header>
+
+        {sessionsOpen && (
+          <>
+            <button
+              className="absolute inset-0 z-20 cursor-default border-0 bg-black/25"
+              aria-label="Close sessions"
+              onClick={() => setSessionsOpen(false)}
+            />
+            <div className="absolute right-5 top-[92px] z-30 w-[460px] max-w-[calc(100%-40px)] rounded-md border border-line-strong bg-panel p-4 shadow-[0_24px_70px_rgba(0,0,0,0.45)]">
+              <div className="mb-2 flex items-center">
+                <span className="text-sm font-semibold text-fg">
+                  Sessions on this PR
+                </span>
+                <button
+                  className="ml-auto border-0 bg-transparent text-lg text-faint hover:text-fg"
+                  onClick={() => setSessionsOpen(false)}
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <PrSessionsList
+                sessions={relatedSessions}
+                repo={active?.repo || ""}
+                branch={active?.branch}
+                pr={pr}
+                currentSessionId={sessionId || undefined}
+                onOpenSession={(id) => {
+                  setSessionsOpen(false);
+                  onOpenSessionById?.(id);
+                }}
+                send={send}
+                addHandler={addHandler}
+                compose
+              />
+            </div>
+          </>
+        )}
 
         <div className="flex h-[52px] shrink-0 items-end gap-1 overflow-x-auto border-b border-line px-6 max-[720px]:px-2" role="tablist">
           {([
@@ -1414,6 +1489,23 @@ export function PrPanel({
               onRefresh={load}
             />
           </PrCard>
+
+          {/* Sessions card — every session linked to this PR + start a new one. */}
+          {sessions && (
+            <PrCard title="Sessions">
+              <PrSessionsList
+                sessions={relatedSessions}
+                repo={active?.repo || ""}
+                branch={active?.branch}
+                pr={pr}
+                currentSessionId={sessionId || undefined}
+                onOpenSession={onOpenSessionById}
+                send={send}
+                addHandler={addHandler}
+                compose
+              />
+            </PrCard>
+          )}
 
           {/* Reviewers card */}
           {reviewers.length > 0 && (

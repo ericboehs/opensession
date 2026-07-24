@@ -144,6 +144,10 @@ export function WorkspacePane({
 					sessionId={reviewSession?.id || ""}
 					previewTarget={reviewSession ? undefined : reviewTarget}
 					reviewCanvas
+					send={send}
+					addHandler={addHandler}
+					sessions={sessions}
+					onOpenSessionById={onOpenSession}
 					onOpenSession={
 						reviewSession ? () => onOpenSession(reviewSession.id) : undefined
 					}

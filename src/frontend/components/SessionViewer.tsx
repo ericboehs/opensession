@@ -4193,6 +4193,9 @@ export function SessionViewer({
 								<PrPanel
 									sessionId={session.id}
 									send={send}
+									addHandler={addHandler}
+									sessions={allSessions || workspaceChats || []}
+									onOpenSessionById={onOpenSession}
 									reviewCanvas
 									onOpenSession={onOpenWorkspace}
 									onAddToInput={(text) =>
