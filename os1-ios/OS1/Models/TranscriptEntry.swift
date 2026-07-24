@@ -81,8 +81,8 @@ struct TranscriptEntry: Identifiable, Decodable, Equatable {
     var agentId: String?
     var contentClamped: Bool?
     var contentLength: Int?
-    /// Image attachments on user messages: `data:` URLs (or server-side
-    /// `os-blob:` refs for big transcripts — those aren't rendered here).
+    /// Image attachments on conversation messages: `data:` URLs or bounded
+    /// transcript `os-blob:` references resolved through the image endpoint.
     var images: [String]?
 
     var text: String { content ?? "" }

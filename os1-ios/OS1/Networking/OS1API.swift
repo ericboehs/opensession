@@ -38,6 +38,31 @@ enum OS1API {
         return response.content
     }
 
+    /// Resolve an image from a bounded transcript entry. Large inline images
+    /// arrive over the wire as `os-blob:<entry>/<index>` and are served as
+    /// authenticated bytes by the transcript-image route.
+    static func conversationImage(source: String, sessionId: String) async throws -> Data {
+        if source.hasPrefix("os-blob:"),
+           let slash = source.lastIndex(of: "/"),
+           let index = Int(source[source.index(after: slash)...]) {
+            let entryId = String(source[source.index(source.startIndex, offsetBy: 8)..<slash])
+            return try await getData(
+                "/api/sessions/\(sessionId)/transcript-image/\(entryId)/\(index)"
+            )
+        }
+
+        guard let url = URL(string: source) else { throw APIError.badURL }
+        let config = ServerConfig.shared
+        let base = config.baseURL
+        let sameOrigin = url.scheme == base?.scheme
+            && url.host == base?.host
+            && url.port == base?.port
+        let request = sameOrigin
+            ? config.authorizedRequest(url)
+            : URLRequest(url: url)
+        return try await responseData(for: request)
+    }
+
     /// Archive (or unarchive) a session. Archiving an in-flight session also
     /// stops its run server-side.
     static func setArchived(sessionId: String, archived: Bool) async throws {
@@ -141,5 +166,21 @@ enum OS1API {
             throw APIError.http(http.statusCode)
         }
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private static func getData(_ path: String) async throws -> Data {
+        let config = ServerConfig.shared
+        guard let base = config.baseURL else { throw APIError.notConfigured }
+        guard config.isConfigured else { throw APIError.notConfigured }
+        guard let url = URL(string: base.absoluteString + path) else { throw APIError.badURL }
+        return try await responseData(for: config.authorizedRequest(url))
+    }
+
+    private static func responseData(for request: URLRequest) async throws -> Data {
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw APIError.http(http.statusCode)
+        }
+        return data
     }
 }

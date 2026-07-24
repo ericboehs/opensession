@@ -119,11 +119,15 @@ struct DataImage: View {
     }
 
     init?(dataURL: String) {
+        guard let data = Self.decode(dataURL: dataURL) else { return nil }
+        self.data = data
+    }
+
+    static func decode(dataURL: String) -> Data? {
         guard let comma = dataURL.range(of: ";base64,"),
-              dataURL.hasPrefix("data:image/"),
-              let decoded = Data(base64Encoded: String(dataURL[comma.upperBound...]))
+              dataURL.hasPrefix("data:image/")
         else { return nil }
-        self.data = decoded
+        return Data(base64Encoded: String(dataURL[comma.upperBound...]))
     }
 
     var body: some View {
@@ -151,6 +155,152 @@ struct DataImage: View {
             }
     }
 }
+
+/// A sent conversation image that opens into the familiar full-screen iOS
+/// viewer. Composer thumbnails deliberately stay non-expandable because their
+/// primary interaction is removing the attachment before sending.
+struct ExpandableDataImage: View {
+    let data: Data
+
+    #if os(iOS)
+    @State private var previewPresented = false
+    #endif
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init?(dataURL: String) {
+        guard let data = DataImage.decode(dataURL: dataURL) else { return nil }
+        self.data = data
+    }
+
+    var body: some View {
+        #if os(iOS)
+        Button {
+            previewPresented = true
+        } label: {
+            DataImage(data: data)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open image")
+        .accessibilityHint("Shows the image full screen")
+        .fullScreenCover(isPresented: $previewPresented) {
+            FullScreenImagePreview(data: data)
+        }
+        #else
+        DataImage(data: data)
+        #endif
+    }
+}
+
+/// Lazily resolves either an inline data URL, a bounded transcript blob, or a
+/// remote image before handing it to the full-screen-capable renderer.
+struct ConversationImage: View {
+    let source: String
+    let sessionId: String
+
+    @State private var data: Data?
+    @State private var failed = false
+
+    init(source: String, sessionId: String) {
+        self.source = source
+        self.sessionId = sessionId
+        _data = State(initialValue: DataImage.decode(dataURL: source))
+    }
+
+    var body: some View {
+        Group {
+            if let data {
+                ExpandableDataImage(data: data)
+            } else {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.fill.tertiary)
+                    .overlay {
+                        if failed {
+                            Image(systemName: "photo.badge.exclamationmark")
+                                .foregroundStyle(.tertiary)
+                        } else {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+            }
+        }
+        .task(id: source) {
+            guard data == nil else { return }
+            do {
+                data = try await OS1API.conversationImage(source: source, sessionId: sessionId)
+            } catch {
+                failed = true
+            }
+        }
+    }
+}
+
+#if os(iOS)
+private struct FullScreenImagePreview: View {
+    let data: Data
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var dragOffset: CGSize = .zero
+
+    private var dismissalProgress: CGFloat {
+        min(abs(dragOffset.height) / 280, 1)
+    }
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black
+                .opacity(1 - dismissalProgress * 0.55)
+                .ignoresSafeArea()
+
+            if let image = UIImage(data: data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .offset(x: dragOffset.width * 0.08, y: dragOffset.height)
+                    .scaleEffect(1 - dismissalProgress * 0.08)
+                    .padding(.horizontal, 8)
+            }
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(.black.opacity(0.55), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close image")
+            .padding(16)
+        }
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 5)
+                .onChanged { value in
+                    guard abs(value.translation.height) > abs(value.translation.width) else {
+                        return
+                    }
+                    dragOffset = value.translation
+                }
+                .onEnded { value in
+                    let projected = value.predictedEndTranslation.height
+                    if abs(value.translation.height) > 100 || abs(projected) > 220 {
+                        dismiss()
+                    } else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            dragOffset = .zero
+                        }
+                    }
+                }
+        )
+        .statusBarHidden()
+    }
+}
+#endif
 
 // ── Pasting images ────────────────────────────────────────────────────────
 
