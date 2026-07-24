@@ -311,18 +311,26 @@ async function createWorktree(
   try {
     // Async: a wt new-slack can run for many seconds (fetch + worktree add +
     // env seed) and used to block the whole event loop via spawnSync.
-    const result = await runCommand(
-      [
-        "/home/ubuntu/bin/wt",
-        "new-slack",
-        branch,
-        `--user=${userId}`,
-        `--message=${(message || "").substring(0, 500)}`,
-      ],
-      // A cold worktree is a 16k-file checkout + full bun install; 120s
-      // killed one mid-install on 2026-07-24 ("exited with code null").
-      { timeoutMs: 300000 }
-    );
+    const cmd = [
+      "/home/ubuntu/bin/wt",
+      "new-slack",
+      branch,
+      `--user=${userId}`,
+      `--message=${(message || "").substring(0, 500)}`,
+    ];
+    // A cold worktree is a 16k-file checkout + full bun install; 120s
+    // killed one mid-install on 2026-07-24 ("exited with code null").
+    let result = await runCommand(cmd, { timeoutMs: 300000 });
+
+    if (result.status !== 0) {
+      // One retry: wt new-slack is resumable — a valid checkout left by a
+      // killed first attempt skips straight to the remaining setup steps,
+      // and a broken one is cleared and recreated.
+      console.warn(
+        `[slack] wt new-slack failed for ${branch} (status ${result.status}) — retrying once`
+      );
+      result = await runCommand(cmd, { timeoutMs: 300000 });
+    }
 
     if (result.status !== 0) {
       const stderr =
