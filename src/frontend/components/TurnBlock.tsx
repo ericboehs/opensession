@@ -166,7 +166,7 @@ export const TurnBlock = React.memo(function TurnBlock({
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-[13px] text-dim hover:bg-hover"
+        className="mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-[15.5px] text-dim hover:bg-hover"
       >
         <span
           className={cn(
@@ -187,18 +187,18 @@ export const TurnBlock = React.memo(function TurnBlock({
           </span>
         )}
         {duration && !live && (
-          <span className="flex-shrink-0 text-faint">{duration}</span>
+          <span className="flex-shrink-0 text-[14px] text-faint">{duration}</span>
         )}
         {countsLabel && (
-          <span className="flex-shrink-0 text-faint">· {countsLabel}</span>
+          <span className="flex-shrink-0 text-[14px] text-faint">· {countsLabel}</span>
         )}
         {failures > 0 && !live && (
-          <span className="flex-shrink-0 text-[11.5px] text-red/80">
+          <span className="flex-shrink-0 text-[13px] text-red/80">
             · {failures} failed
           </span>
         )}
         {live && !expanded && lastTool && (
-          <span className="min-w-0 truncate font-mono text-[11.5px] text-faint">
+          <span className="min-w-0 truncate font-mono text-[14px] text-faint">
             {toolDisplayName(lastTool.toolName)}:{" "}
             {toolSummary(
               lastTool.toolName || "Tool",
