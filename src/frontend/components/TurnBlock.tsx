@@ -166,7 +166,7 @@ export const TurnBlock = React.memo(function TurnBlock({
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-[12.5px] text-dim hover:bg-hover"
+        className="mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-[13px] text-dim hover:bg-hover"
       >
         <span
           className={cn(
@@ -198,7 +198,7 @@ export const TurnBlock = React.memo(function TurnBlock({
           </span>
         )}
         {live && !expanded && lastTool && (
-          <span className="min-w-0 truncate font-mono text-[11px] text-faint">
+          <span className="min-w-0 truncate font-mono text-[11.5px] text-faint">
             {toolDisplayName(lastTool.toolName)}:{" "}
             {toolSummary(
               lastTool.toolName || "Tool",

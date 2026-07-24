@@ -61,7 +61,7 @@
 	--cs: round;
 	/* Chat column width — messages, work blocks, composer, ask cards all share
 	   it so the conversation reads as one column. */
-	--chat-col: 740px;
+	--chat-col: 780px;
 	/* Header height grows by the iOS status-bar inset when installed as a PWA
      (black-translucent draws the webview under the clock/notch) */
 	--header-h: calc(52px + env(safe-area-inset-top, 0px));
@@ -8168,7 +8168,7 @@ a.workspace-info-check-row {
 
 .msg-body {
 	line-height: 1.65;
-	font-size: 15px;
+	font-size: 15.5px;
 	word-break: break-word;
 	/* Flex column so WebKit doesn't band-paint the gaps between paragraphs
 	   to the full column width (same reason as .viewer-messages / .msg). */
