@@ -424,7 +424,10 @@ async function poolRestartDev(c: PoolContainer): Promise<void> {
  *  couple of minutes after passing the ready gate). */
 async function launchDaytonaDev(c: PoolContainer): Promise<void> {
   const env = `WEBAPP_PORT=${CONTAINER_PORT} BACKSTAGE_BOOT_MODE=snapshot-restore${c.previewUrl ? ` PREVIEW_URL=${c.previewUrl}` : ""}`;
-  const script = `export PATH="/usr/bin:$HOME/.bun/bin:$HOME/.local/bin:$PATH" && ${BOOT_PREP} && ${env} bash .opensession/start.sh > /tmp/boot.log 2>&1`;
+  // stdin MUST be detached: next dev exits cleanly on stdin EOF (its
+  // keyboard-shortcut listener), and the process session's pipe closing
+  // produced exactly that — "next dev exited with code 0" crash-loops.
+  const script = `export PATH="/usr/bin:$HOME/.bun/bin:$HOME/.local/bin:$PATH" && ${BOOT_PREP} && ${env} bash .opensession/start.sh < /dev/null > /tmp/boot.log 2>&1`;
   const b64 = Buffer.from(script, "utf-8").toString("base64");
   const sbx = await daytonaSbx(c.name);
   const sid = `bks-preview-dev-${Date.now().toString(36)}`;
