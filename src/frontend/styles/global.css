@@ -12296,17 +12296,18 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   repeating the title in the top bar, plus a "+" that's hover-revealed and
 	   so mostly invisible on touch anyway. Hide the strip until the workspace
 	   actually has a second chat to switch between. */
-	.session-tabs:not(
-			:has(
-					.session-tabs-scroll
-						> .session-tab:not(.session-tab-new):not(.session-tab-history)
-						~ .session-tab:not(.session-tab-new):not(.session-tab-history)
-				)
+	/* The strip is worth its phone chrome when it offers a real switch: any
+	   view tab (Conversation/Review — chat tabs live nested in the reorder
+	   group, so view tabs are the only direct-child .session-tab elements), or
+	   2+ chats (adjacent .session-tab-reorder wrappers). A lone chat with no
+	   view tabs keeps the strip hidden as before. */
+	.session-tabs:not(:has(.session-tab-view)):not(
+			:has(.session-tab-reorder ~ .session-tab-reorder)
 		) {
 		display: none;
 	}
 
-	/* When the strip DOES show (2+ chats), the phone top bar is a fixed
+	/* When the strip DOES show (a view tab or 2+ chats), the phone top bar is a fixed
 	   transparent overlay (.app-header-overlay) whose Back/title/⋯ pills float
 	   over the pane — so the strip drops to a SOLID bar docked directly under
 	   those pills. Pulled out of flow and pinned at the header's bottom edge, it
@@ -12330,11 +12331,8 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	/* Tell the transcript how much extra top room the docked bar takes so the
 	   first row starts just below it (see .viewer-messages). Only set when a
 	   multi-chat strip is actually shown. */
-	.detail-pane:has(
-			.session-tabs-scroll
-				> .session-tab:not(.session-tab-new):not(.session-tab-history)
-				~ .session-tab:not(.session-tab-new):not(.session-tab-history)
-		) {
+	.detail-pane:has(.session-tab-view),
+	.detail-pane:has(.session-tab-reorder ~ .session-tab-reorder) {
 		/* Tab bar drops 6px below the header (see .session-tabs `top`) for a
 		   little air between the two rows, so the transcript clears both. */
 		--strip-clearance: 52px;
@@ -12345,11 +12343,8 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   looks broken. The header is a sibling of the pane, so key it off the
 	   nearest common ancestor. min-height pins the fill flush to the bar's top
 	   edge (var(--header-h)) even when the pills are a hair shorter. */
-	.app:has(
-			.session-tabs-scroll
-				> .session-tab:not(.session-tab-new):not(.session-tab-history)
-				~ .session-tab:not(.session-tab-new):not(.session-tab-history)
-		) .app-header-overlay {
+	.app:has(.session-tab-view) .app-header-overlay,
+	.app:has(.session-tab-reorder ~ .session-tab-reorder) .app-header-overlay {
 		background: var(--bg);
 		min-height: calc(var(--header-h) + 6px);
 	}
@@ -12357,11 +12352,8 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   transcript — so drop their white-bubble fill, border and shadow. The Back
 	   chevron, the title and the ⋯ read as flat bar controls instead of white
 	   chips on a white bar. (Single-chat keeps the floating bubbles.) */
-	.app:has(
-			.session-tabs-scroll
-				> .session-tab:not(.session-tab-new):not(.session-tab-history)
-				~ .session-tab:not(.session-tab-new):not(.session-tab-history)
-		) .app-header-overlay :is(.mobile-back, .app-header-title, .btn-viewer-overflow) {
+	.app:has(.session-tab-view) .app-header-overlay :is(.mobile-back, .app-header-title, .btn-viewer-overflow),
+	.app:has(.session-tab-reorder ~ .session-tab-reorder) .app-header-overlay :is(.mobile-back, .app-header-title, .btn-viewer-overflow) {
 		background: transparent;
 		border-color: transparent;
 		box-shadow: none;
