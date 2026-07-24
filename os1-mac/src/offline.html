@@ -33,6 +33,19 @@
         color: #9b9492;
         margin: 0 0 20px;
       }
+      code {
+        display: block;
+        margin: 16px 0 20px;
+        padding: 12px;
+        border: 1px solid #302b2c;
+        border-radius: 6px;
+        background: #151112;
+        color: #d7d0ce;
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        text-align: left;
+        user-select: text;
+        -webkit-user-select: text;
+      }
       button {
         background: #e8e4e2;
         color: #0b0809;
@@ -48,27 +61,69 @@
         font-size: 13px;
         color: #6f6866;
       }
+      #log {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #6f6866;
+        user-select: text;
+        -webkit-user-select: text;
+      }
     </style>
   </head>
   <body>
     <main>
-      <h1>Can’t reach OS¹</h1>
-      <p>
+      <h1 id="title">Can’t reach OS¹</h1>
+      <p id="message">
         os.tella.dev is only available on the tailnet — check that Tailscale is
         running and connected, then retry.
       </p>
-      <button onclick="retry()">Retry</button>
+      <code id="command" hidden></code>
+      <button id="retry" onclick="retry()">Retry</button>
       <div id="status"></div>
+      <div id="log"></div>
     </main>
     <script>
-      const APP_URL =
-        new URLSearchParams(location.search).get("url") ||
-        "https://os.tella.dev/";
+      const params = new URLSearchParams(location.search);
+      const APP_URL = params.get("url") || "https://os.tella.dev/";
+      const mode = params.get("mode") || "offline";
+      const detail = params.get("detail") || "";
+      const logFile = params.get("logFile") || "";
+      const title = document.getElementById("title");
+      const message = document.getElementById("message");
+      const command = document.getElementById("command");
+      const retryButton = document.getElementById("retry");
+      const status = document.getElementById("status");
+      const log = document.getElementById("log");
+
+      if (mode === "starting") {
+        title.textContent = "Starting local server…";
+        message.textContent =
+          detail || "OS¹ will open here as soon as the local server is ready.";
+        retryButton.hidden = true;
+        status.textContent = "Checking the local server…";
+      } else if (mode === "missing") {
+        title.textContent = "Local server not installed";
+        message.textContent = detail;
+        command.hidden = false;
+        command.textContent =
+          "git clone https://github.com/tellahq/backstage ~/os1/server && cd ~/os1/server && bun install";
+        retryButton.hidden = true;
+      } else if (mode === "error") {
+        title.textContent = "Local server can’t start";
+        message.textContent = detail;
+        retryButton.hidden = true;
+      } else if (mode === "local-offline") {
+        title.textContent = "Local server unavailable";
+        message.textContent = "OS¹ will reconnect after the local server restarts.";
+        retryButton.hidden = true;
+      }
+      if (logFile) log.textContent = "Server log: " + logFile;
+
       let attempt = 0;
       async function probe() {
+        if (mode !== "offline") return;
         attempt++;
-        document.getElementById("status").textContent =
-          "Retrying automatically… (attempt " + attempt + ")";
+        status.textContent = "Retrying automatically… (attempt " + attempt + ")";
         try {
           await fetch(APP_URL, { method: "HEAD", mode: "no-cors" });
           location.href = APP_URL;

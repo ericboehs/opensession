@@ -1,6 +1,6 @@
-// OS¹ desktop — thin shell around https://os.tella.dev.
-// The frontend ships from the server (bun --hot), so this app rarely changes:
-// it only owns the window, navigation policy, notifications, badge and deep links.
+// OS¹ desktop — thin shell around the cloud or a supervised local server.
+// The frontend ships from the server, so this app only owns the window,
+// navigation policy, local process lifecycle, notifications, badge and links.
 const {
   app,
   BrowserWindow,
@@ -16,6 +16,7 @@ const {
 const path = require("node:path");
 const fs = require("node:fs");
 const { execFile } = require("node:child_process");
+const { LocalServerSupervisor } = require("./local-server.js");
 
 // AppKit can show its persistent-window crash-recovery prompt before Electron
 // finishes launching. On macOS 26 that modal can trap the browser process and
@@ -28,16 +29,49 @@ if (process.platform === "darwin") {
 // OS1_URL is a dev-only escape hatch for pointing the shell at a local
 // OpenSession checkout (`bun --hot run opensession.ts`, then
 // `OS1_URL=http://127.0.0.1:3850 bun start`) to iterate on frontend changes
-// before they merge. Production builds always hit the hardcoded default.
-const APP_URL = process.env.OS1_URL || "https://os.tella.dev/";
-const APP_ORIGIN = new URL(APP_URL).origin;
+// before they merge. Persisted local mode takes precedence over this URL.
+const CLOUD_URL = "https://os.tella.dev/";
+const CLOUD_ORIGIN = new URL(CLOUD_URL).origin;
+let APP_URL = process.env.OS1_URL || CLOUD_URL;
+let APP_ORIGIN = new URL(APP_URL).origin;
 // github.com stays in-window for the OAuth redirect flow (authorize → callback).
-const IN_WINDOW_ORIGINS = [APP_ORIGIN, "https://github.com"];
+let IN_WINDOW_ORIGINS = [APP_ORIGIN, "https://github.com"];
 
 const stateFile = () => path.join(app.getPath("userData"), "window-state.json");
+const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
 
 let win = null;
 let quitting = false;
+let appReady = false;
+let pendingDeepLink = null;
+let shellSettings = {};
+let localMode = false;
+let localSupervisor = null;
+let localPageLoaded = false;
+let localRecoveryTimer = null;
+
+function loadShellSettings() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(settingsFile(), "utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveShellSettings(next) {
+  const file = settingsFile();
+  const temporary = `${file}.tmp`;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(temporary, file);
+}
+
+function setAppUrl(url) {
+  APP_URL = url;
+  APP_ORIGIN = new URL(url).origin;
+  IN_WINDOW_ORIGINS = [APP_ORIGIN, "https://github.com"];
+}
 
 // ---- Auto-update ------------------------------------------------------------
 // Electron's built-in Squirrel.Mac updater against the OpenSession server's
@@ -111,7 +145,7 @@ function initAutoUpdate() {
   if (!app.isPackaged || process.platform !== "darwin") return;
   try {
     autoUpdater.setFeedURL({
-      url: `${APP_ORIGIN}/api/os1-mac/update?version=${encodeURIComponent(app.getVersion())}`,
+      url: `${CLOUD_ORIGIN}/api/os1-mac/update?version=${encodeURIComponent(app.getVersion())}`,
       serverType: "json",
     });
   } catch (err) {
@@ -233,9 +267,20 @@ function deepLinkToUrl(raw) {
   try {
     const u = new URL(raw);
     if (u.protocol === "os1:") {
-      return APP_ORIGIN + "/" + (u.host || "") + u.pathname + u.search;
+      const target = new URL(APP_URL);
+      target.pathname = "/" + (u.host || "") + u.pathname;
+      target.search = u.search;
+      target.hash = u.hash;
+      return target.toString();
     }
     if (u.origin === APP_ORIGIN) return raw;
+    if (localMode && u.origin === CLOUD_ORIGIN) {
+      const target = new URL(APP_URL);
+      target.pathname = u.pathname;
+      target.search = u.search;
+      target.hash = u.hash;
+      return target.toString();
+    }
   } catch {}
   return null;
 }
@@ -243,20 +288,70 @@ function deepLinkToUrl(raw) {
 function openDeepLink(raw) {
   const url = deepLinkToUrl(raw);
   if (!url) return;
+  if (!appReady || (localMode && localSupervisor?.state !== "ready")) {
+    pendingDeepLink = raw;
+    return;
+  }
   showWindow();
   win?.loadURL(url);
 }
 
 function showWindow() {
   if (!win || win.isDestroyed()) {
-    createWindow();
+    if (appReady) createWindow();
   } else {
     win.show();
     win.focus();
   }
 }
 
-function createWindow() {
+function showStatusPage(mode, detail = "", logFile = "") {
+  if (!win || win.isDestroyed()) return;
+  win.loadFile(path.join(__dirname, "offline.html"), {
+    query: { detail, logFile, mode, url: APP_URL },
+  });
+}
+
+function scheduleLocalRecovery() {
+  if (localRecoveryTimer || quitting || !localSupervisor?.prepared) return;
+  localRecoveryTimer = setTimeout(async () => {
+    localRecoveryTimer = null;
+    if (quitting || !win || win.isDestroyed()) return;
+    try {
+      const response = await fetch(new URL("api/health", APP_URL), {
+        signal: AbortSignal.timeout(1_500),
+      });
+      const body = response.ok ? await response.json() : null;
+      if (body?.ok) {
+        localPageLoaded = true;
+        win.loadURL(pendingDeepLink ? deepLinkToUrl(pendingDeepLink) : APP_URL);
+        pendingDeepLink = null;
+        return;
+      }
+    } catch {}
+    scheduleLocalRecovery();
+  }, 1_000);
+  localRecoveryTimer.unref();
+}
+
+function handleLocalServerState({ state, detail, logFile }) {
+  if (state === "ready") {
+    if (localRecoveryTimer) clearTimeout(localRecoveryTimer);
+    localRecoveryTimer = null;
+    const showingStatus = win?.webContents.getURL().startsWith("file:");
+    if (win && !win.isDestroyed() && (!localPageLoaded || showingStatus || pendingDeepLink)) {
+      localPageLoaded = true;
+      win.loadURL(pendingDeepLink ? deepLinkToUrl(pendingDeepLink) : APP_URL);
+      pendingDeepLink = null;
+    }
+    return;
+  }
+  if (!localPageLoaded && (state === "starting" || state === "backoff")) {
+    showStatusPage("starting", detail, logFile);
+  }
+}
+
+function createWindow(initialStatus = null) {
   const state = loadWindowState();
   win = new BrowserWindow({
     ...state,
@@ -354,21 +449,34 @@ function createWindow() {
     Menu.buildFromTemplate(items).popup({ window: win });
   });
 
-  // Tailnet-only server: show a local retry page instead of Chromium's error.
+  // Show a themed recovery page instead of Chromium's network error.
   win.webContents.on("did-fail-load", (_e, code, _desc, _url, isMainFrame) => {
     if (!isMainFrame || code === -3 /* ERR_ABORTED */) return;
-    win.loadFile(path.join(__dirname, "offline.html"), {
-      query: { url: APP_URL },
-    });
+    showStatusPage(
+      localMode ? (localPageLoaded ? "local-offline" : "starting") : "offline",
+      "",
+      localSupervisor?.logFile,
+    );
+    if (localMode) scheduleLocalRecovery();
   });
 
   // Belt-and-braces: if the renderer ever dies, come back instead of showing
   // a dead window.
   win.webContents.on("render-process-gone", (_e, details) => {
-    if (details.reason !== "clean-exit") win.loadURL(APP_URL);
+    if (details.reason === "clean-exit") return;
+    if (localMode && localSupervisor?.state !== "ready") {
+      showStatusPage("starting", "Waiting for the local server to restart…", localSupervisor.logFile);
+      scheduleLocalRecovery();
+    } else {
+      win.loadURL(APP_URL);
+    }
   });
 
-  win.loadURL(APP_URL);
+  if (initialStatus) showStatusPage(initialStatus.mode, initialStatus.detail, initialStatus.logFile);
+  else if (localMode && localSupervisor?.state !== "ready") {
+    showStatusPage("starting", "Waiting for the local server to start…", localSupervisor.logFile);
+    scheduleLocalRecovery();
+  } else win.loadURL(APP_URL);
 }
 
 // Electron's default menu, plus "Check for Updates…" in the app menu — the
@@ -382,6 +490,20 @@ function buildAppMenu() {
         submenu: [
           { role: "about" },
           { label: "Check for Updates…", click: checkForUpdatesFromMenu },
+          {
+            label: "Use Local Sessions",
+            type: "checkbox",
+            checked: localMode,
+            enabled: process.env.OS1_LOCAL !== "1",
+            click: (item) => {
+              shellSettings = { ...shellSettings, localMode: item.checked };
+              saveShellSettings(shellSettings);
+              localSupervisor?.stop();
+              quitting = true;
+              app.relaunch();
+              app.quit();
+            },
+          },
           { type: "separator" },
           { role: "services" },
           { type: "separator" },
@@ -406,6 +528,35 @@ app.whenReady().then(async () => {
   // electron-builder; only the development runtime needs this explicit PNG.
   if (process.platform === "darwin" && !app.isPackaged) {
     app.dock.setIcon(path.join(__dirname, "../build/icon-512.png"));
+  }
+
+  shellSettings = loadShellSettings();
+  localMode = process.env.OS1_LOCAL === "1" || shellSettings.localMode === true;
+  let initialStatus = null;
+  if (localMode) {
+    localSupervisor = new LocalServerSupervisor({
+      config: shellSettings,
+      resourcesPath: process.resourcesPath,
+      userDataDir: app.getPath("userData"),
+      onState: handleLocalServerState,
+    });
+    try {
+      const prepared = await localSupervisor.prepare();
+      setAppUrl(prepared.url);
+      initialStatus = {
+        mode: "starting",
+        detail: `Starting local server on port ${prepared.port}…`,
+        logFile: localSupervisor.logFile,
+      };
+    } catch (error) {
+      localSupervisor.setState("error", error.message);
+      const missingServer = String(error.message).startsWith("OpenSession server source is missing");
+      initialStatus = {
+        mode: missingServer ? "missing" : "error",
+        detail: error.message,
+        logFile: localSupervisor.logFile,
+      };
+    }
   }
 
   // The web app's service worker only exists for Web Push, app-shell caching
@@ -450,7 +601,15 @@ app.whenReady().then(async () => {
 
   buildAppMenu();
 
-  createWindow();
+  appReady = true;
+  createWindow(initialStatus);
+
+  if (localMode && localSupervisor?.prepared) localSupervisor.start();
+  else if (pendingDeepLink && !localMode) {
+    const deepLink = pendingDeepLink;
+    pendingDeepLink = null;
+    openDeepLink(deepLink);
+  }
 
   initAutoUpdate();
 
@@ -473,6 +632,9 @@ app.on("continue-activity", (e, _type, _userInfo, details) => {
 
 app.on("before-quit", () => {
   quitting = true;
+  if (localRecoveryTimer) clearTimeout(localRecoveryTimer);
+  localRecoveryTimer = null;
+  localSupervisor?.stop();
   saveWindowState();
 });
 
