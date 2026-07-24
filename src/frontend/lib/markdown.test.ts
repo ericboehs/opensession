@@ -36,6 +36,31 @@ describe("renderMarkdown session links", () => {
     const html = renderMarkdown("The bks-abbreviation is fine here.");
     expect(html).not.toContain("session-link");
   });
+
+  it("renders an OS1 session URL as an in-app session link (no new tab)", () => {
+    const html = renderMarkdown(
+      "See [this Michael session](https://os.tella.dev/session/bks-019f9608-ab20-7000-b98e-4de52d5fe436).",
+    );
+    expect(html).toContain('class="session-link"');
+    expect(html).toContain(
+      'data-session-id="bks-019f9608-ab20-7000-b98e-4de52d5fe436"',
+    );
+    expect(html).toContain(">this Michael session</a>");
+    expect(html).not.toContain("target=");
+  });
+
+  it("keeps other internal OS1 links same-tab without a chip", () => {
+    const html = renderMarkdown(
+      "Open [automations](https://os.tella.dev/automations).",
+    );
+    expect(html).not.toContain("target=");
+    expect(html).not.toContain("session-link");
+  });
+
+  it("still opens external links in a new tab", () => {
+    const html = renderMarkdown("See [GitHub](https://github.com/tella/x).");
+    expect(html).toContain('target="_blank"');
+  });
 });
 
 describe("renderMarkdown strikethrough (double-tilde only)", () => {

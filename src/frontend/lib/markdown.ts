@@ -2,7 +2,9 @@ import { Marked } from "marked";
 
 // Dedicated marked instance for session messages so this config doesn't leak
 // into other markdown (wiki, etc.). Two customisations:
-//  - every link opens in a new tab (target=_blank + safe rel)
+//  - external links open in a new tab (target=_blank + safe rel); links into
+//    OS1 itself navigate in place — session/chat URLs become session-link
+//    chips handled client-side, other internal paths load in the same tab
 //  - images/videos render inline, capped in size; clicks open the media
 //    lightbox (see MediaLightbox.tsx)
 const md = new Marked({ async: false, breaks: true });
@@ -32,6 +34,34 @@ function sessionLink(id: string): string {
     `<a class="session-link" data-session-id="${attr(id)}" role="button" ` +
     `tabindex="0" title="Open session ${attr(id)}">${attr(id)}</a>`
   );
+}
+
+// Links into OS1 itself must not open a new window — it's the same app. Known
+// public hosts cover links pasted as absolute URLs viewed from another origin
+// (e.g. the ts.net entry); same-origin covers everything else, prefix included
+// (stripBasePath-style legacy /opensession + /backstage forms).
+const INTERNAL_HOSTS = new Set(["os.tella.dev"]);
+
+function internalHref(href: string | null | undefined): {
+  sessionId?: string;
+} | null {
+  if (!href) return null;
+  const loc =
+    typeof location !== "undefined" ? location.href : "https://os.tella.dev/";
+  let url: URL;
+  try {
+    url = new URL(String(href), loc);
+  } catch {
+    return null;
+  }
+  const sameOrigin =
+    typeof location !== "undefined" && url.origin === location.origin;
+  if (!sameOrigin && !INTERNAL_HOSTS.has(url.hostname)) return null;
+  const path = url.pathname.replace(/^\/(?:opensession|backstage)(?=\/)/, "");
+  const m =
+    path.match(/^\/session\/(bks-[a-z0-9][a-z0-9-]{5,})\/?$/i) ??
+    path.match(/^\/workspace\/[^/]+\/chat\/(bks-[a-z0-9][a-z0-9-]{5,})\/?$/i);
+  return { sessionId: m ? decodeURIComponent(m[1]) : undefined };
 }
 
 md.use({
@@ -67,6 +97,17 @@ md.use({
     link(token: any) {
       const text = this.parser.parseInline(token.tokens);
       const title = token.title ? ` title="${attr(token.title)}"` : "";
+      const internal = internalHref(token.href);
+      if (internal) {
+        // Same app: navigate in place. Session/chat URLs get the session-link
+        // chip + data-session-id so the delegated handler (SessionViewer)
+        // navigates client-side; href stays for middle/cmd-click and for
+        // surfaces without the handler (full-page load, same tab).
+        const chip = internal.sessionId
+          ? ` class="session-link" data-session-id="${attr(internal.sessionId)}"`
+          : "";
+        return `<a href="${attr(token.href)}"${title}${chip}>${text}</a>`;
+      }
       return `<a href="${attr(token.href)}"${title} target="_blank" rel="noopener noreferrer">${text}</a>`;
     },
     codespan(token: any) {

@@ -2417,6 +2417,10 @@ export function SessionViewer({
 			) as HTMLElement | null;
 			const id = el?.dataset.sessionId;
 			if (!id || !onOpenSession) return;
+			// Modified clicks on href-carrying chips (markdown links to session
+			// URLs) keep native browser behavior (open in new tab, etc.).
+			if ((e.metaKey || e.ctrlKey || e.shiftKey) && el?.getAttribute("href"))
+				return;
 			e.preventDefault();
 			onOpenSession(id);
 		},
