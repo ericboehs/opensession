@@ -99,6 +99,19 @@ enum OS1API {
         )
     }
 
+    struct AuthStatus: Decodable {
+        let authenticated: Bool?
+        let login: String?
+        let name: String?
+    }
+
+    /// Signed-in identity for the current bearer token. Used to backfill
+    /// `githubLogin` on devices whose token predates the app storing the
+    /// login at sign-in time (the avatar needs it).
+    static func authStatus() async throws -> AuthStatus {
+        try await get("/api/auth/status")
+    }
+
     /// Unauthenticated liveness probe; also carries the server bootId.
     static func health() async throws -> Bool {
         struct Health: Decodable { let ok: Bool? }
