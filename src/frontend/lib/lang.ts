@@ -48,8 +48,10 @@ export function langForGrep(input: unknown): string | null {
   const inp = input as Record<string, unknown>;
   const fromPath = langForFile(inp.path);
   if (fromPath) return fromPath;
-  if (typeof inp.glob === "string") {
-    const ext = inp.glob.match(/\.(\w+)$/)?.[1]?.toLowerCase();
+  // `glob` is the Claude-SDK key, `include` opencode's — same "*.res" shape.
+  const glob = typeof inp.glob === "string" ? inp.glob : inp.include;
+  if (typeof glob === "string") {
+    const ext = glob.match(/\.(\w+)$/)?.[1]?.toLowerCase();
     if (ext && LANG_BY_EXT[ext]) return LANG_BY_EXT[ext];
   }
   if (typeof inp.type === "string" && LANG_BY_EXT[inp.type]) return LANG_BY_EXT[inp.type];

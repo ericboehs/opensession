@@ -1,6 +1,6 @@
 import type { TranscriptEntry } from "../lib/types";
 import { resolveEntryImageSrc } from "../lib/osBlob";
-import { toolDisplayName, toolSummary } from "./ToolCallBlock";
+import { canonicalToolName, toolDisplayName, toolSummary } from "./ToolCallBlock";
 
 export interface ToolEvidence {
 	entry: TranscriptEntry;
@@ -48,12 +48,13 @@ export function ToolEvidencePanel({
 					{summary}
 				</p>
 				<div className="mt-3 flex gap-2">
-					{["Edit", "Write", "FileChange"].includes(name) && onOpenChanges ? (
+					{["Edit", "Write", "FileChange"].includes(canonicalToolName(name)) &&
+					onOpenChanges ? (
 						<button className="evidence-action" onClick={onOpenChanges}>
 							Open changes
 						</button>
 					) : null}
-					{name === "Bash" && onOpenTerminal ? (
+					{canonicalToolName(name) === "Bash" && onOpenTerminal ? (
 						<button className="evidence-action" onClick={onOpenTerminal}>
 							Open terminal
 						</button>

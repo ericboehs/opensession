@@ -3,9 +3,11 @@ import type { TranscriptEntry } from "../lib/types";
 import {
   ToolCallBlock,
   ToolGlyph,
+  canonicalToolName,
   toolFamily,
   toolDisplayName,
   toolSummary,
+  useToolPathRoots,
 } from "./ToolCallBlock";
 import { ClampedBody } from "./MessageBubble";
 import { resolveEntryImageSrc } from "../lib/osBlob";
@@ -50,6 +52,7 @@ export const TurnBlock = React.memo(function TurnBlock({
   onOpenEvidence,
   sessionId,
 }: Props) {
+  const pathRoots = useToolPathRoots();
   const tools = items.filter((it) => it.type === "tool_use");
   const messages = items.filter((it) => it.type === "assistant");
 
@@ -111,13 +114,18 @@ export const TurnBlock = React.memo(function TurnBlock({
   for (const tool of tools) {
     if (!tool.toolInput || typeof tool.toolInput !== "object") continue;
     const input = tool.toolInput as Record<string, unknown>;
-    const direct =
+    const filePath =
       typeof input.file_path === "string"
         ? input.file_path
-        : typeof input.path === "string" &&
-            ["Edit", "Write", "Read", "FileChange"].includes(tool.toolName || "")
-          ? input.path
+        : typeof input.filePath === "string"
+          ? input.filePath
           : null;
+    const direct =
+      filePath ??
+      (typeof input.path === "string" &&
+      ["Edit", "Write", "Read", "FileChange"].includes(canonicalToolName(tool.toolName))
+        ? input.path
+        : null);
     if (direct) touchedPaths.add(direct);
     if (Array.isArray(input.changes)) {
       for (const change of input.changes) {
@@ -211,7 +219,8 @@ export const TurnBlock = React.memo(function TurnBlock({
             {toolSummary(
               lastTool.toolName || "Tool",
               lastTool.toolInput,
-              lastTool.content
+              lastTool.content,
+              pathRoots
             )}
           </span>
         )}

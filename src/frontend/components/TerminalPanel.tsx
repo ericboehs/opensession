@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { TranscriptEntry, WSServerMessage } from "../lib/types";
+import { canonicalToolName } from "./ToolCallBlock";
 
 /**
  * The old single Terminal panel, split into two side-panel tabs (SessionViewer):
@@ -28,7 +29,7 @@ export function CommandsPanel({ entries }: { entries: TranscriptEntry[] }) {
   }
 
   const commands = entries.filter(
-    (e) => e.type === "tool_use" && e.toolName === "Bash"
+    (e) => e.type === "tool_use" && canonicalToolName(e.toolName) === "Bash"
   );
 
   useEffect(() => {
@@ -45,7 +46,9 @@ export function CommandsPanel({ entries }: { entries: TranscriptEntry[] }) {
   return (
     <div className="terminal" ref={scrollRef}>
       {commands.map((cmd) => {
-        const input = cmd.toolInput as { command?: string; description?: string } | undefined;
+        // opencode calls it `cmd`, the Claude SDK `command`.
+        const raw = cmd.toolInput as { command?: string; cmd?: string } | undefined;
+        const input = { command: raw?.command || raw?.cmd };
         const result = cmd.toolUseId ? toolResults.get(cmd.toolUseId) : undefined;
         return (
           <div key={cmd.id} className="terminal-entry">

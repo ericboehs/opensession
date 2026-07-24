@@ -12,6 +12,7 @@ import {
   IconSparkle,
 } from "./icons";
 import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
+import { canonicalToolName } from "./ToolCallBlock";
 
 /** One change a tool made to a file: old text removed, new text added.
  * Writes have old: "" (the whole content is an addition). */
@@ -307,33 +308,48 @@ export function touchedFilesFromTool(entry: TranscriptEntry): TouchedFile[] {
   const lines = (v: unknown) =>
     typeof v === "string" && v.length > 0 ? v.split("\n").length : 0;
   const str = (v: unknown) => (typeof v === "string" ? v : "");
-  switch (entry.toolName) {
-    case "Edit":
-      if (typeof inp.file_path !== "string") return [];
-      return [{
-        path: inp.file_path,
-        additions: lines(inp.new_string),
-        deletions: lines(inp.old_string),
-        edits: [{ old: str(inp.old_string), new: str(inp.new_string) }],
-      }];
-    case "MultiEdit": {
-      if (typeof inp.file_path !== "string" || !Array.isArray(inp.edits)) return [];
-      let additions = 0;
-      let deletions = 0;
-      const edits: FileEdit[] = [];
-      for (const e of inp.edits) {
-        if (!e || typeof e !== "object") continue;
-        const ee = e as Record<string, unknown>;
-        additions += lines(ee.new_string);
-        deletions += lines(ee.old_string);
-        edits.push({ old: str(ee.old_string), new: str(ee.new_string) });
+  // Engines disagree on casing: opencode writes `filePath`/`oldString`, the
+  // Claude SDK `file_path`/`old_string`.
+  const key = (...names: string[]) => {
+    for (const n of names) if (typeof inp[n] === "string" && inp[n]) return inp[n] as string;
+    return "";
+  };
+  const filePath = key("file_path", "filePath");
+  switch (canonicalToolName(entry.toolName)) {
+    case "Edit": {
+      // MultiEdit: several hunks against one file.
+      if (filePath && Array.isArray(inp.edits)) {
+        let additions = 0;
+        let deletions = 0;
+        const edits: FileEdit[] = [];
+        for (const e of inp.edits) {
+          if (!e || typeof e !== "object") continue;
+          const ee = e as Record<string, unknown>;
+          const oldStr = str(ee.old_string ?? ee.oldString);
+          const newStr = str(ee.new_string ?? ee.newString);
+          additions += lines(newStr);
+          deletions += lines(oldStr);
+          edits.push({ old: oldStr, new: newStr });
+        }
+        return [{ path: filePath, additions, deletions, edits }];
       }
-      return [{ path: inp.file_path, additions, deletions, edits }];
+      if (filePath) {
+        const oldStr = key("old_string", "oldString");
+        const newStr = key("new_string", "newString");
+        return [{
+          path: filePath,
+          additions: lines(newStr),
+          deletions: lines(oldStr),
+          edits: [{ old: oldStr, new: newStr }],
+        }];
+      }
+      // codex's apply_patch names its files inside the patch body.
+      return mergeTouchedFiles(patchTouchedFiles(key("patchText", "patch")));
     }
     case "Write":
-      if (typeof inp.file_path !== "string") return [];
+      if (!filePath) return [];
       return [{
-        path: inp.file_path,
+        path: filePath,
         additions: lines(inp.content),
         deletions: 0,
         edits: [{ old: "", new: str(inp.content) }],
@@ -373,6 +389,28 @@ export function collectTouchedFiles(items: TranscriptEntry[]): TouchedFile[] {
       return touchedFilesFromTool(it);
     })
   );
+}
+
+/**
+ * Files (and ± line counts) from a codex-style patch body: "*** Update File:
+ * src/x.ts" headers followed by +/- lines, as apply_patch sends them.
+ */
+function patchTouchedFiles(patch: string): TouchedFile[] {
+  if (!patch) return [];
+  const files: TouchedFile[] = [];
+  let current: TouchedFile | null = null;
+  for (const line of patch.split("\n")) {
+    const header = line.match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/);
+    if (header) {
+      current = { path: header[1].trim(), additions: 0, deletions: 0, edits: [] };
+      files.push(current);
+      continue;
+    }
+    if (!current || line.startsWith("***")) continue;
+    if (line.startsWith("+")) current.additions++;
+    else if (line.startsWith("-")) current.deletions++;
+  }
+  return files;
 }
 
 function mergeTouchedFiles(files: TouchedFile[]): TouchedFile[] {

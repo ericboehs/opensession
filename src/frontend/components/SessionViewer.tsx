@@ -31,6 +31,7 @@ import {
 	orderTranscriptEntries,
 } from "../lib/transcript-state";
 import { TranscriptBlocks } from "./TranscriptBlocks";
+import { ToolPathRootsProvider } from "./ToolCallBlock";
 import { MarkdownBody } from "./MarkdownBody";
 import {
 	ToolEvidencePanel,
@@ -531,6 +532,19 @@ export function SessionViewer({
 			primary: false,
 		})),
 	];
+	// Worktree roots for the transcript's tool rows: paths inside them render
+	// repo-relative instead of as a long absolute path (see tidyPath).
+	const toolPathRoots = useMemo(
+		() =>
+			[
+				{ dir: session.worktreeDir || "" },
+				...(session.attachedRepos || []).map((repo) => ({
+					dir: repo.dir,
+					label: repo.repo,
+				})),
+			].filter((root) => Boolean(root.dir)),
+		[session.worktreeDir, session.attachedRepos],
+	);
 	const githubReviewRepos =
 		localMode && session.local && Array.isArray(localRepos)
 			? reviewRepos.filter(
@@ -4315,6 +4329,7 @@ export function SessionViewer({
 										id="transcript"
 										onRender={onTranscriptRender}
 									>
+									<ToolPathRootsProvider value={toolPathRoots}>
 										<TranscriptBlocks
 											entries={entries}
 											live={isBusy}
@@ -4333,6 +4348,7 @@ export function SessionViewer({
 													: session.startedBy || undefined
 											}
 										/>
+									</ToolPathRootsProvider>
 									</React.Profiler>
 								</>
 							)}

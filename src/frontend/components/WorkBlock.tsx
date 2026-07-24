@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import type { TranscriptEntry } from "../lib/types";
-import { ToolCallBlock, toolDisplayName, toolSummary } from "./ToolCallBlock";
+import { ToolCallBlock, toolDisplayName, toolSummary, useToolPathRoots } from "./ToolCallBlock";
 import { IconChevronDown } from "./icons";
 import { cn } from "../ui/cn";
 
@@ -28,6 +28,7 @@ export const WorkBlock = React.memo(function WorkBlock({
   live,
   onOpenSubagent,
 }: Props) {
+  const pathRoots = useToolPathRoots();
   // If any tool in the block returned media (image or video), keep the block
   // open so the screenshot/recording stays visible after the run finishes
   // (otherwise the user has to expand "Worked" then the tool to see what the
@@ -76,7 +77,7 @@ export const WorkBlock = React.memo(function WorkBlock({
         {!expanded && last && (
           <span className="min-w-0 truncate font-mono text-[11px] text-faint">
             {toolDisplayName(last.toolName)}:{" "}
-            {toolSummary(last.toolName || "Tool", last.toolInput, last.content)}
+            {toolSummary(last.toolName || "Tool", last.toolInput, last.content, pathRoots)}
           </span>
         )}
         {live && (

@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useState } from "react";
+import React, { Suspense, createContext, lazy, useContext, useEffect, useState } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { langForFile, langForGrep } from "../lib/lang";
 import { resolveEntryImageSrc } from "../lib/osBlob";
@@ -55,11 +55,80 @@ interface Props {
   sessionId?: string;
 }
 
-/** Split "mcp__linear__list_issues" into { server: "linear", tool: "list_issues" }. */
+/**
+ * The session's worktree roots, so absolute paths in tool rows can render
+ * repo-relative ("src/server/chat.ts", not "~/projects/tella-backstage/src/
+ * server/chat.ts"). Attached repos carry their project id as a label and keep
+ * a "<project>:" prefix, the same form @-mentions use. Context rather than a
+ * prop so the preview rows inside TurnBlock/WorkBlock get it for free.
+ */
+export type PathRoot = { dir: string; label?: string };
+const PathRootsContext = createContext<readonly PathRoot[]>([]);
+export const ToolPathRootsProvider = PathRootsContext.Provider;
+export function useToolPathRoots(): readonly PathRoot[] {
+  return useContext(PathRootsContext);
+}
+
+/**
+ * Engine tool ids → the canonical names the renderers below key on. opencode
+ * (the engine every current run uses) emits lowercase ids with camelCase input
+ * keys; Claude-SDK transcripts from before the migration use "Read" and
+ * "file_path"; codex has its own pair. Canonicalizing here means one set of
+ * summaries, icons and detail renderers covers all three.
+ */
+const TOOL_ALIASES: Record<string, string> = {
+  read: "Read",
+  view_image: "Read",
+  write: "Write",
+  edit: "Edit",
+  multiedit: "Edit",
+  patch: "Edit",
+  apply_patch: "Edit",
+  bash: "Bash",
+  shell: "Bash",
+  exec_command: "Bash",
+  grep: "Grep",
+  glob: "Glob",
+  list: "Glob",
+  webfetch: "WebFetch",
+  websearch: "WebSearch",
+  task: "Task",
+  skill: "Skill",
+  todowrite: "TodoWrite",
+  todoread: "TodoWrite",
+  update_plan: "TodoWrite",
+};
+
+/** Engine-native tools that contain an underscore but are not MCP calls. */
+const NATIVE_TOOLS = new Set([
+  "invalid",
+  "oracle",
+  "exit_plan_mode",
+  "notebook_edit",
+  "web_search",
+  "web_fetch",
+  "str_replace_editor",
+]);
+
+/** The name the renderers key on. Display still uses the raw engine id. */
+export function canonicalToolName(name?: string): string {
+  if (!name) return "Tool";
+  return TOOL_ALIASES[name] ?? name;
+}
+
+/**
+ * "mcp__linear__list_issues" (Claude SDK) or "linear_list_issues" (opencode's
+ * flattened form) → { server: "linear", tool: "list_issues" }. Native tools are
+ * excluded by name first, so "apply_patch" doesn't read as an "apply" server.
+ */
 export function parseMcpTool(name: string): { server: string; tool: string } | null {
   const parts = name.split("__");
-  if (parts[0] !== "mcp" || parts.length < 3) return null;
-  return { server: parts[1], tool: parts.slice(2).join("__") };
+  if (parts[0] === "mcp" && parts.length >= 3) {
+    return { server: parts[1], tool: parts.slice(2).join("__") };
+  }
+  if (TOOL_ALIASES[name] || NATIVE_TOOLS.has(name)) return null;
+  const flat = name.match(/^([A-Za-z][A-Za-z0-9-]*)_(.+)$/);
+  return flat ? { server: flat[1], tool: flat[2] } : null;
 }
 
 /** "mcp__linear__list_issues" → "linear · list_issues", else the tool name. */
@@ -69,32 +138,58 @@ export function toolDisplayName(name?: string): string {
   return mcp ? `${mcp.server} · ${mcp.tool}` : name;
 }
 
+/** First non-empty string among `keys` — engines disagree on the spelling. */
+function pickStr(inp: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const v = inp[key];
+    if (typeof v === "string" && v) return v;
+  }
+  return "";
+}
+
+const filePathOf = (inp: Record<string, unknown>) => pickStr(inp, "file_path", "filePath");
+const commandOf = (inp: Record<string, unknown>) => pickStr(inp, "command", "cmd");
+
+/** Internal plumbing that shouldn't show up in a summary or the input JSON. */
+const HIDDEN_INPUT_KEYS = new Set(["__bks_oc_session"]);
+
 /** One-line human summary of a tool call (also used for collapsed previews). */
-export function toolSummary(toolName: string, input: unknown, fallback: string): string {
+export function toolSummary(
+  toolName: string,
+  input: unknown,
+  fallback: string,
+  roots: readonly PathRoot[] = []
+): string {
   if (!input || typeof input !== "object") return fallback;
   const inp = input as Record<string, unknown>;
 
-  switch (toolName) {
+  switch (canonicalToolName(toolName)) {
     case "Read":
     case "Edit":
-    case "Write":
-      return tidyPath((inp.file_path as string) || fallback);
+    case "Write": {
+      const path = filePathOf(inp);
+      // codex's apply_patch names its files inside the patch body instead.
+      return path ? tidyPath(path, roots) : patchFilesSummary(inp, roots) || fallback;
+    }
     case "FileChange":
-      return fileChangeSummary(inp) || fallback;
+      return fileChangeSummary(inp, roots) || fallback;
     case "Bash":
-      return truncate(((inp.command as string) || fallback).replace(/\s*\n\s*/g, " ⏎ "), 160);
+      return truncate((commandOf(inp) || fallback).replace(/\s*\n\s*/g, " ⏎ "), 160);
     case "Grep":
-      return `/${inp.pattern || ""}/ ${tidyPath((inp.path as string) || "")}`;
+      return `/${inp.pattern || ""}/ ${tidyPath(pickStr(inp, "path"), roots)}`.trim();
     case "Glob":
-      return `${inp.pattern || ""} ${tidyPath((inp.path as string) || "")}`;
+      return (
+        [inp.pattern, tidyPath(pickStr(inp, "path"), roots)].filter(Boolean).join(" ") || fallback
+      );
     case "Task":
     case "Agent":
-    case "task": // opencode's in-session task tool (same input shape)
       return [inp.subagent_type, inp.description].filter(Boolean).join(": ") || fallback;
     case "Workflow":
       return (inp.name as string) || (inp.description as string) || "orchestration script";
     case "Skill":
-      return (inp.skill as string) || fallback;
+      return pickStr(inp, "skill", "name") || fallback;
+    case "TodoWrite":
+      return todoSummary(inp) || fallback;
     case "WebFetch":
     case "WebSearch":
       return (inp.url as string) || (inp.query as string) || fallback;
@@ -107,9 +202,36 @@ export function toolSummary(toolName: string, input: unknown, fallback: string):
   }
 }
 
+/** "3/7 done" plus whatever the run is on right now. */
+function todoSummary(inp: Record<string, unknown>): string {
+  const list = Array.isArray(inp.todos) ? inp.todos : Array.isArray(inp.plan) ? inp.plan : null;
+  if (!list) return "";
+  const items = list.filter(
+    (t): t is Record<string, unknown> => Boolean(t) && typeof t === "object"
+  );
+  if (items.length === 0) return "";
+  const active = items.find((t) => t.status === "in_progress");
+  const done = items.filter((t) => t.status === "completed").length;
+  return [pickStr(active || {}, "content", "step", "activeForm"), `${done}/${items.length} done`]
+    .filter(Boolean)
+    .join("  ·  ");
+}
+
+/** Files touched by a codex-style patch body ("*** Update File: src/x.ts"). */
+function patchFilesSummary(inp: Record<string, unknown>, roots: readonly PathRoot[]): string {
+  const text = pickStr(inp, "patchText", "patch");
+  if (!text) return "";
+  const files = [...text.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) =>
+    tidyPath(m[1].trim(), roots)
+  );
+  if (files.length === 0) return "";
+  const shown = files.slice(0, 3).join("  ·  ");
+  return files.length > 3 ? `${shown}  ·  +${files.length - 3}` : shown;
+}
+
 function compactInput(inp: Record<string, unknown>): string {
   const parts = Object.entries(inp)
-    .filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .filter(([k, v]) => !HIDDEN_INPUT_KEYS.has(k) && v !== undefined && v !== null && v !== "")
     .slice(0, 4)
     .map(([k, v]) => {
       const s = typeof v === "string" ? v : JSON.stringify(v);
@@ -118,14 +240,14 @@ function compactInput(inp: Record<string, unknown>): string {
   return parts.join("  ·  ");
 }
 
-function fileChangeSummary(inp: Record<string, unknown>): string {
+function fileChangeSummary(inp: Record<string, unknown>, roots: readonly PathRoot[]): string {
   if (!Array.isArray(inp.changes)) return "";
   return inp.changes
     .map((change) => {
       if (typeof change === "string") return change;
       if (!change || typeof change !== "object") return "";
       const c = change as Record<string, unknown>;
-      const path = typeof c.path === "string" ? tidyPath(c.path) : "";
+      const path = typeof c.path === "string" ? tidyPath(c.path, roots) : "";
       return [c.kind, path].filter(Boolean).join(" ");
     })
     .filter(Boolean)
@@ -156,7 +278,7 @@ const FAMILY_STYLES: Record<FamilyKey, { chip: string; edge: string }> = {
 
 export function toolFamily(toolName: string): FamilyKey {
   if (parseMcpTool(toolName)) return "mcp";
-  switch (toolName) {
+  switch (canonicalToolName(toolName)) {
     case "Bash":
     case "BashOutput":
       return "run";
@@ -205,7 +327,7 @@ export function ToolGlyph({ toolName, size = 20 }: { toolName: string; size?: nu
     case "skill":
       return <IconBook size={size} />;
     default:
-      switch (toolName) {
+      switch (canonicalToolName(toolName)) {
         case "EnterWorktree":
         case "ExitWorktree":
           return <IconBranches size={size} />;
@@ -221,8 +343,21 @@ export function ToolGlyph({ toolName, size = 20 }: { toolName: string; size?: nu
   }
 }
 
-/** Shorten absolute paths for display: $HOME prefix → "~". */
-function tidyPath(p: string): string {
+/**
+ * Shorten a path for display: inside one of the session's worktrees it renders
+ * repo-relative (an attached repo keeps a "<project>:" prefix so it stays
+ * unambiguous); anything outside them just collapses $HOME to "~".
+ */
+function tidyPath(p: string, roots: readonly PathRoot[] = []): string {
+  if (!p) return "";
+  for (const root of roots) {
+    if (!root.dir) continue;
+    if (p === root.dir) return root.label ? `${root.label}:.` : ".";
+    if (p.startsWith(`${root.dir}/`)) {
+      const rel = p.slice(root.dir.length + 1);
+      return root.label ? `${root.label}:${rel}` : rel;
+    }
+  }
   return p.replace(/^\/home\/[^/]+\//, "~/");
 }
 
@@ -257,19 +392,21 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
     if (hasMedia) setExpanded(true);
   }, [hasMedia]);
   const toolName = entry.toolName || "Tool";
+  const canonical = canonicalToolName(toolName);
+  const roots = useToolPathRoots();
   const mcp = parseMcpTool(toolName);
-  const summary = toolSummary(toolName, entry.toolInput, entry.content);
-  const isFileTool = toolName === "Read" || toolName === "Edit" || toolName === "Write";
+  const summary = toolSummary(toolName, entry.toolInput, entry.content, roots);
+  const isFileTool = canonical === "Read" || canonical === "Edit" || canonical === "Write";
   const duration = stepDuration(entry, result);
   const failed = Boolean(result?.isError);
   const family = FAMILY_STYLES[toolFamily(toolName)];
-  const inputNode = expanded ? toolInputNode(toolName, entry.toolInput) : null;
+  const inputNode = expanded ? toolInputNode(canonical, entry.toolInput) : null;
 
   // A Task/Agent call whose sub-agent transcript we can open in the sidebar.
   // Claude-SDK results carry a structured agentId; opencode's task tool only
   // embeds the child session id in the result text (<task id="ses_…">) — the
   // subagent route accepts either.
-  const isAgent = toolName === "Task" || toolName === "Agent" || toolName === "task";
+  const isAgent = canonical === "Task" || canonical === "Agent";
   const agentId =
     result?.agentId ??
     (isAgent
@@ -390,7 +527,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
               <div className={cn("px-1.5 pb-1.5", failed && "[&_.tool-pre]:text-red/75")}>
                 {result.content && (
                   <div className="tool-code-surface">
-                    {renderResultContent(toolName, entry.toolInput, result.content)}
+                    {renderResultContent(canonical, entry.toolInput, result.content)}
                   </div>
                 )}
                 {result.images && result.images.length > 0 && (
@@ -452,16 +589,26 @@ function toolInputNode(toolName: string, input: unknown): React.ReactNode | null
     );
   }
 
-  if (toolName === "Edit" && typeof inp.old_string === "string" && typeof inp.new_string === "string") {
-    const diff = [
-      ...(inp.old_string as string).split("\n").map((l) => `-${l}`),
-      ...(inp.new_string as string).split("\n").map((l) => `+${l}`),
-    ].join("\n");
-    return (
-      <div className="tool-code-surface">
-        <CodeHighlight code={truncate(diff, 4000)} lang="diff" />
-      </div>
-    );
+  if (toolName === "Edit") {
+    // A patch body is already a diff; an old/new string pair becomes one.
+    const patch = pickStr(inp, "patchText", "patch");
+    const oldStr = pickStr(inp, "old_string", "oldString");
+    const newStr = pickStr(inp, "new_string", "newString");
+    const diff =
+      patch ||
+      (oldStr || newStr
+        ? [
+            ...oldStr.split("\n").map((l) => `-${l}`),
+            ...newStr.split("\n").map((l) => `+${l}`),
+          ].join("\n")
+        : "");
+    if (diff) {
+      return (
+        <div className="tool-code-surface">
+          <CodeHighlight code={truncate(diff, 4000)} lang="diff" />
+        </div>
+      );
+    }
   }
 
   if (toolName === "Write" && typeof inp.content === "string") {
@@ -469,7 +616,7 @@ function toolInputNode(toolName: string, input: unknown): React.ReactNode | null
       <div className="tool-code-surface">
         <CodeHighlight
           code={truncate(inp.content, 4000)}
-          lang={langForFile(inp.file_path as string) || "markdown"}
+          lang={langForFile(filePathOf(inp)) || "markdown"}
         />
       </div>
     );
@@ -478,7 +625,9 @@ function toolInputNode(toolName: string, input: unknown): React.ReactNode | null
   // Read's input is fully covered by the row summary (plus offset/limit when
   // present — only show those).
   if (toolName === "Read") {
-    const extras = Object.entries(inp).filter(([k]) => k !== "file_path");
+    const extras = Object.entries(inp).filter(
+      ([k]) => k !== "file_path" && k !== "filePath" && !HIDDEN_INPUT_KEYS.has(k)
+    );
     if (extras.length === 0) return null;
     return (
       <pre className="tool-pre tool-code-surface">
@@ -502,7 +651,7 @@ function renderResultContent(toolName: string, input: unknown, content: string) 
   const text = truncate(content, 2000);
   const lang =
     toolName === "Read"
-      ? langForFile((input as any)?.file_path)
+      ? langForFile(filePathOf((input || {}) as Record<string, unknown>))
       : toolName === "Grep"
         ? langForGrep(input)
         : null;
@@ -523,22 +672,30 @@ function renderResultContent(toolName: string, input: unknown, content: string) 
 function bashCommand(input: unknown): string | null {
   if (!input || typeof input !== "object") return null;
   const inp = input as Record<string, unknown>;
-  if (typeof inp.command !== "string") return null;
+  const command = commandOf(inp);
+  if (!command) return null;
 
   const comments: string[] = [];
   if (typeof inp.description === "string" && inp.description) {
     comments.push(`# ${inp.description}`);
   }
   for (const [key, value] of Object.entries(inp)) {
-    if (key === "command" || key === "description") continue;
+    if (key === "command" || key === "cmd" || key === "description") continue;
+    if (HIDDEN_INPUT_KEYS.has(key)) continue;
     comments.push(`# ${key}: ${JSON.stringify(value)}`);
   }
-  return [...comments, inp.command].join("\n");
+  return [...comments, command].join("\n");
 }
 
 function formatInput(input: unknown): string {
   if (!input) return "";
   if (typeof input === "string") return input;
+  if (typeof input === "object" && !Array.isArray(input)) {
+    const visible = Object.fromEntries(
+      Object.entries(input as Record<string, unknown>).filter(([k]) => !HIDDEN_INPUT_KEYS.has(k))
+    );
+    return JSON.stringify(visible, null, 2);
+  }
   return JSON.stringify(input, null, 2);
 }
 
