@@ -322,9 +322,12 @@ function isDaytona(c: PoolContainer): boolean {
 const MVM_DIR = "/opt/firecracker";
 const MVM_STORE = `${MVM_DIR}/store`;
 const MVM_SCRIPTS = `${process.cwd()}/deploy/sandbox/microvm`;
-/** Caddy https port band for microvm previews (outside the 9100-9999 webapp
- *  band so host previews can never collide). */
-const MVM_HTTPS_BASE = 10100;
+/** Caddy https port band for microvm previews: 9001-9063 — BELOW the
+ *  9100-9999 host-preview band (no collision) and inside the 9xxx range the
+ *  tailnet ACL demonstrably passes (ports >9999 hang from member devices
+ *  while loopback works — every 101xx preview URL was unreachable from
+ *  Michiel's browser, 2026-07-24). */
+const MVM_HTTPS_BASE = 9000;
 
 function isMicrovm(c: PoolContainer): boolean {
   return c.backend === "microvm";
