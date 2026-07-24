@@ -55,7 +55,7 @@ import { sandboxConfig } from "./sandbox/config";
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-export type PreviewPoolBackend = "docker" | "daytona";
+export type PreviewPoolBackend = "docker" | "daytona" | "microvm";
 
 export interface PreviewPoolRepoConfig {
   enabled: boolean;
@@ -113,7 +113,7 @@ export function previewPoolConfig(repoId: string): PreviewPoolRepoConfig {
     const r = raw?.repos?.[repoId] ?? {};
     return {
       enabled: r.enabled === true,
-      backend: r.backend === "daytona" ? "daytona" : "docker",
+      backend: r.backend === "daytona" || r.backend === "microvm" ? r.backend : "docker",
       running: clampInt(r.running, 0, 4, DEFAULTS.running),
       paused: clampInt(r.paused, 0, 8, DEFAULTS.paused),
       cpus: clampInt(r.cpus, 1, 16, DEFAULTS.cpus),
@@ -170,8 +170,11 @@ interface PoolContainer {
   /** Published loopback port (docker). 0 for remote backends — they carry
    *  `previewUrl` instead. */
   hostPort: number;
-  /** The backend's own public preview origin (daytona getPreviewLink). */
+  /** The backend's own public preview origin (daytona getPreviewLink, or the
+   *  microvm backend's per-clone Caddy route). */
   previewUrl?: string;
+  /** Microvm clone index (netns/veth/disk namespace, see clone.sh). */
+  mvmIdx?: number;
   /** origin/<default> sha the workspace was reset to at boot. */
   bootSha: string;
   /** Commit the workspace tree is currently converged to (defaults to
@@ -306,12 +309,152 @@ function isDaytona(c: PoolContainer): boolean {
   return c.backend === "daytona";
 }
 
+// ── Microvm backend plumbing ─────────────────────────────────────────────────
+// Firecracker clones restored from the golden memory snapshot (verified on
+// this r8i: reflink disk 5ms, snapshot load+resume 18ms, page 200 in ~2s).
+// Each clone runs in a private netns (clone.sh) — host reaches the guest at
+// 10.200.<idx>.2 (3300 dev, 8080 agent, 8081 root agent). No warm members
+// are needed: claims restore on demand, so running/paused can be 0.
+
+const MVM_DIR = "/opt/firecracker";
+const MVM_STORE = `${MVM_DIR}/store`;
+const MVM_SCRIPTS = `${process.cwd()}/deploy/sandbox/microvm`;
+/** Caddy https port band for microvm previews (outside the 9100-9999 webapp
+ *  band so host previews can never collide). */
+const MVM_HTTPS_BASE = 10100;
+
+function isMicrovm(c: PoolContainer): boolean {
+  return c.backend === "microvm";
+}
+
+function mvmIp(c: PoolContainer): string {
+  return `10.200.${c.mvmIdx}.2`;
+}
+
+async function mvmAgent(
+  c: PoolContainer,
+  body: { command: string; timeoutMs?: number },
+  root = false,
+): Promise<{ ok: boolean; out: string }> {
+  try {
+    const res = await fetch(`http://${mvmIp(c)}:${root ? 8081 : 8080}/exec`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout((body.timeoutMs ?? 60_000) + 5_000),
+    });
+    const r = (await res.json()) as { exitCode?: number; stdout?: string; stderr?: string };
+    return { ok: (r.exitCode ?? 1) === 0, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() };
+  } catch (e) {
+    return { ok: false, out: String((e as Error)?.message || e) };
+  }
+}
+
+function mvmGoldenReady(): boolean {
+  return existsSync(`${MVM_STORE}/golden.vmstate`) && existsSync(`${MVM_STORE}/golden.mem`);
+}
+
+async function sudoRun(args: string[], timeoutMs = 120_000): Promise<{ ok: boolean; out: string }> {
+  const proc = Bun.spawn(["sudo", "-n", ...args], { stdout: "pipe", stderr: "pipe" });
+  const killer = setTimeout(() => proc.kill(9), timeoutMs);
+  const [out, err, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  clearTimeout(killer);
+  return { ok: code === 0, out: (out + err).trim() };
+}
+
+/** Restore a clone from the golden snapshot and expose it via Caddy. */
+async function spawnMicrovmClone(repo: Repo): Promise<PoolContainer | null> {
+  if (!mvmGoldenReady()) {
+    console.warn(`[preview-pool] ${repo.id}: no microvm golden snapshot — run the refresh (POST /preview-pool/${repo.id}/refresh)`);
+    return null;
+  }
+  // Free index across all repos (netns space is host-global).
+  const used = new Set<number>();
+  for (const rid of Object.keys(configuredRepos())) {
+    for (const cc of Object.values(readState(rid).containers)) {
+      if (cc.mvmIdx != null) used.add(cc.mvmIdx);
+    }
+  }
+  let idx = 1;
+  while (used.has(idx) && idx < 64) idx++;
+  if (idx >= 64) {
+    console.warn("[preview-pool] microvm: no free clone index");
+    return null;
+  }
+  const name = `mvm${idx}-${repo.id}`;
+  const c: PoolContainer = {
+    name,
+    repoId: repo.id,
+    backend: "microvm",
+    state: "warming",
+    hostPort: 0,
+    mvmIdx: idx,
+    bootSha: "",
+    createdAt: new Date().toISOString(),
+  };
+  patchContainer(repo.id, name, c);
+  const r = await sudoRun(["bash", `${MVM_SCRIPTS}/clone.sh`, "create", String(idx), MVM_STORE], 180_000);
+  if (!r.ok) {
+    console.warn(`[preview-pool] microvm clone ${idx} failed: ${r.out.slice(-400)}`);
+    patchContainer(repo.id, name, null);
+    await sudoRun(["bash", `${MVM_SCRIPTS}/clone.sh`, "destroy", String(idx), MVM_STORE]).catch(() => {});
+    return null;
+  }
+  // Fresh creds (the snapshot's are stale) + a background poke so the app
+  // re-establishes its dead pooled TCP connections before the user's click.
+  await refreshContainerCreds(c).catch(() => {});
+  void fetch(`http://${mvmIp(c)}:3300/api/session`, {
+    headers: { Host: `localhost:${CONTAINER_PORT}` },
+    signal: AbortSignal.timeout(30_000),
+  }).catch(() => {});
+  // Caddy route: the tailnet-cert front, dialing the guest directly with the
+  // Host rewritten to what the app's dev routing expects.
+  const { previewHost } = await import("./preview");
+  const host = await previewHost();
+  const httpsPort = MVM_HTTPS_BASE + idx;
+  const route = {
+    listen: [`:${httpsPort}`],
+    routes: [
+      {
+        match: [{ host: [host] }],
+        handle: [
+          {
+            handler: "reverse_proxy",
+            upstreams: [{ dial: `${mvmIp(c)}:${CONTAINER_PORT}` }],
+            headers: { request: { set: { Host: [`localhost:${CONTAINER_PORT}`] } } },
+          },
+        ],
+        terminal: true,
+      },
+    ],
+  };
+  const path = `http://localhost:2019/config/apps/http/servers/preview_${httpsPort}`;
+  let res = await fetch(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(route) }).catch(() => null);
+  if (res && res.status === 409) {
+    await fetch(path, { method: "DELETE" }).catch(() => {});
+    res = await fetch(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(route) }).catch(() => null);
+  }
+  const bootSha = (await mvmAgent(c, { command: `git -C /home/ubuntu/preview-workspace rev-parse HEAD` })).out.trim();
+  const previewUrl = `https://${host}:${httpsPort}`;
+  patchContainer(repo.id, name, { state: "ready", bootSha, previewUrl });
+  c.state = "ready";
+  c.bootSha = bootSha;
+  c.previewUrl = previewUrl;
+  console.log(`[preview-pool] ${repo.id}: microvm clone ${idx} ready at ${previewUrl} (${bootSha.slice(0, 10)})`);
+  return c;
+}
+
 /** One-shot script in the pool workspace, whichever backend. Never throws. */
 async function poolExec(
   c: PoolContainer,
   script: string,
   timeoutMs = 60_000,
 ): Promise<{ ok: boolean; out: string }> {
+  if (isMicrovm(c)) return mvmAgent(c, { command: script, timeoutMs });
   if (!isDaytona(c)) return dockerExec(c.name, script, timeoutMs);
   try {
     const sbx = await daytonaSbx(c.name);
@@ -334,6 +477,19 @@ async function poolExec(
 }
 
 async function poolWriteFile(c: PoolContainer, path: string, content: string): Promise<boolean> {
+  if (isMicrovm(c)) {
+    try {
+      const res = await fetch(`http://${mvmIp(c)}:8080/files`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, content: Buffer.from(content, "utf-8").toString("base64") }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
   if (!isDaytona(c)) {
     const r = await dockerExec(
       c.name,
@@ -352,6 +508,10 @@ async function poolWriteFile(c: PoolContainer, path: string, content: string): P
 
 /** running/paused/gone in pool terms (daytona "stopped" maps to paused). */
 async function poolRuntimeStatus(c: PoolContainer): Promise<"running" | "paused" | "gone"> {
+  if (isMicrovm(c)) {
+    const r = await $`pgrep -f fc-clone${c.mvmIdx}.sock`.quiet().nothrow();
+    return r.exitCode === 0 ? "running" : "gone";
+  }
   if (!isDaytona(c)) return containerRunning(c.name);
   try {
     const sbx = await daytonaSbx(c.name);
@@ -366,6 +526,13 @@ async function poolRuntimeStatus(c: PoolContainer): Promise<"running" | "paused"
 }
 
 async function poolDestroyRef(c: PoolContainer): Promise<void> {
+  if (isMicrovm(c)) {
+    await sudoRun(["bash", `${MVM_SCRIPTS}/clone.sh`, "destroy", String(c.mvmIdx), MVM_STORE]).catch(() => {});
+    if (c.mvmIdx != null) {
+      await fetch(`http://localhost:2019/config/apps/http/servers/preview_${MVM_HTTPS_BASE + c.mvmIdx}`, { method: "DELETE" }).catch(() => {});
+    }
+    return;
+  }
   if (!isDaytona(c)) {
     await docker(["rm", "-f", c.name]);
     return;
@@ -380,6 +547,9 @@ async function poolDestroyRef(c: PoolContainer): Promise<void> {
 }
 
 async function poolFreeze(c: PoolContainer): Promise<boolean> {
+  if (isMicrovm(c)) {
+    return (await sudoRun(["curl", "-s", "--unix-socket", `${MVM_STORE}/fc-clone${c.mvmIdx}.sock`, "-X", "PATCH", "http://x/vm", "-H", "Content-Type: application/json", "-d", '{"state":"Paused"}'])).ok;
+  }
   if (!isDaytona(c)) return (await docker(["pause", c.name])).ok;
   try {
     const sbx = await daytonaSbx(c.name);
@@ -396,6 +566,9 @@ async function poolFreeze(c: PoolContainer): Promise<boolean> {
  *  warm disk) — callers treat the member as "starting" until the probe is
  *  green. */
 async function poolUnfreeze(c: PoolContainer): Promise<boolean> {
+  if (isMicrovm(c)) {
+    return (await sudoRun(["curl", "-s", "--unix-socket", `${MVM_STORE}/fc-clone${c.mvmIdx}.sock`, "-X", "PATCH", "http://x/vm", "-H", "Content-Type: application/json", "-d", '{"state":"Resumed"}'])).ok;
+  }
   if (!isDaytona(c)) return (await docker(["unpause", c.name])).ok;
   try {
     const sbx = await daytonaSbx(c.name);
@@ -410,6 +583,13 @@ async function poolUnfreeze(c: PoolContainer): Promise<boolean> {
 
 /** Reboot the dev tree for a clean module graph (big-delta claims). */
 async function poolRestartDev(c: PoolContainer): Promise<void> {
+  if (isMicrovm(c)) {
+    await mvmAgent(c, {
+      command: `pkill -TERM -f 'start.sh|dev-services|next dev|concurrently' 2>/dev/null; sleep 3; pkill -KILL -f 'next dev|rescript' 2>/dev/null; cd ${WORKSPACE} && : > /tmp/boot.log && (setpriv --reuid 1000 --regid 1000 --init-groups env HOME=/home/ubuntu USER=ubuntu PATH=/usr/local/sbin:/usr/local/bin:/usr/local/bun/bin:/usr/sbin:/usr/bin:/sbin:/bin WEBAPP_PORT=${CONTAINER_PORT} BACKSTAGE_BOOT_MODE=snapshot-restore bash .opensession/start.sh < /dev/null > /tmp/boot.log 2>&1 &) && echo relaunched`,
+      timeoutMs: 30_000,
+    }, true);
+    return;
+  }
   if (!isDaytona(c)) {
     await docker(["restart", "-t", "5", c.name], 60_000);
     return;
@@ -589,6 +769,9 @@ function poolCodeLive(c: PoolContainer, code: number): boolean {
 
 /** HTTP status for a path on a pool member's app, whichever backend. */
 async function poolHttpCode(c: PoolContainer, path: string, timeoutSec: number): Promise<number> {
+  if (isMicrovm(c)) {
+    return httpCode(`http://${mvmIp(c)}:${CONTAINER_PORT}${path}`, `localhost:${CONTAINER_PORT}`, timeoutSec);
+  }
   if (isDaytona(c)) {
     if (!c.previewUrl) return 0;
     try {
@@ -768,7 +951,33 @@ async function originDefaultSha(repo: Repo): Promise<string | null> {
 export async function refreshGoldenImage(repoId: string, force = false): Promise<void> {
   const existing = busy.get(`golden-${repoId}`);
   if (existing) return existing as Promise<void>;
-  const run = doRefreshGolden(repoId, force).finally(() => busy.delete(`golden-${repoId}`));
+  // The microvm golden derives FROM the docker golden image: refresh the
+  // docker image first (skips when fresh), then run the export→boot→warm→
+  // snapshot pipeline (deploy/sandbox/microvm/refresh-golden.sh, ~15 min).
+  const backend = previewPoolConfig(repoId).backend;
+  const job =
+    backend === "microvm"
+      ? (async () => {
+          await doRefreshGolden(repoId, force);
+          const env = await getAgentAwsEnv();
+          const section = [
+            `aws_access_key_id = ${env.AWS_ACCESS_KEY_ID}`,
+            `aws_secret_access_key = ${env.AWS_SECRET_ACCESS_KEY}`,
+            ...(env.AWS_SESSION_TOKEN ? [`aws_session_token = ${env.AWS_SESSION_TOKEN}`] : []),
+          ];
+          const b64 = Buffer.from(
+            ["[default]", ...section, "", "[tella-dev]", ...section, ""].join("\n"),
+            "utf-8",
+          ).toString("base64");
+          const r = await sudoRun(
+            ["env", `BKS_AWS_B64=${b64}`, "bash", `${MVM_SCRIPTS}/refresh-golden.sh`, repoId, MVM_STORE],
+            30 * 60_000,
+          );
+          if (!r.ok) console.warn(`[preview-pool] ${repoId}: microvm golden refresh failed: ${r.out.slice(-600)}`);
+          else console.log(`[preview-pool] ${repoId}: microvm golden refreshed`);
+        })()
+      : doRefreshGolden(repoId, force);
+  const run = job.finally(() => busy.delete(`golden-${repoId}`));
   busy.set(`golden-${repoId}`, run);
   return run;
 }
@@ -1030,6 +1239,11 @@ async function ensurePool(repo: Repo): Promise<void> {
   if (cfg.backend === "docker" && !(await docker(["image", "inspect", `${goldenImage(repo.id)}:latest`])).ok) {
     return refreshGoldenImage(repo.id);
   }
+  // The microvm backend needs its golden snapshot before anything can spawn.
+  if (cfg.backend === "microvm" && !mvmGoldenReady()) {
+    console.warn(`[preview-pool] ${repo.id}: microvm backend enabled but no golden snapshot — POST /preview-pool/${repo.id}/refresh builds it`);
+    return;
+  }
 
   const fresh = readState(repo.id).containers;
   // A backend switch strands members of the other backend — drain them so
@@ -1065,7 +1279,12 @@ async function ensurePool(repo: Repo): Promise<void> {
   const live = after.filter((c) => c.state !== "claimed").length;
   const deficit = Math.min(cfg.running + cfg.paused - live, 2); // bound load
   if (deficit > 0) {
-    const spawn = cfg.backend === "daytona" ? spawnDaytonaWarm : spawnWarmContainer;
+    const spawn =
+      cfg.backend === "daytona"
+        ? spawnDaytonaWarm
+        : cfg.backend === "microvm"
+          ? async (r: Repo) => void (await spawnMicrovmClone(r))
+          : spawnWarmContainer;
     await Promise.all(Array.from({ length: deficit }, () => spawn(repo)));
   }
   // Freshly-booted extras get frozen by the next tick's excess-ready branch.
@@ -1136,6 +1355,10 @@ export async function claimPoolPreview(repoId: string, worktreeDir: string): Pro
   if (!pick) {
     pick = eligible.find((c) => c.state === "paused");
     if (pick && !(await poolUnfreeze(pick))) pick = undefined;
+  }
+  if (!pick && backend === "microvm") {
+    // Restores are ~2s — create on demand instead of falling back.
+    pick = (await spawnMicrovmClone(configuredRepos()[repoId])) ?? undefined;
   }
   if (!pick) {
     // Nothing warm: kick a replenish and let the caller fall back.
@@ -1260,6 +1483,26 @@ async function doConverge(
       // No stdin streaming to remote sandboxes — un-pushed commits can't be
       // bundled over. Push the branch and re-claim.
       throw new Error(`sha ${head.slice(0, 10)} not fetchable from the remote — push the branch for daytona previews`);
+    }
+    if (!fetched && isMicrovm(c)) {
+      // Ship the bundle through the agent's /files endpoint (base64).
+      const tmp = `/tmp/claim-${Date.now().toString(36)}.bundle`;
+      const b = await $`git -C ${worktreeDir} bundle create ${tmp} HEAD ^${base}`.quiet().nothrow();
+      if (b.exitCode !== 0) throw new Error("bundle create failed");
+      const bytes = readFileSync(tmp);
+      const { unlinkSync } = await import("node:fs");
+      unlinkSync(tmp);
+      if (bytes.length > 30 * 1024 * 1024) throw new Error("bundle too large for the agent channel — push the branch");
+      const up = await fetch(`http://${mvmIp(c)}:8080/files`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "/tmp/claim.bundle", content: bytes.toString("base64") }),
+        signal: AbortSignal.timeout(60_000),
+      }).catch(() => null);
+      if (!up?.ok) throw new Error("bundle upload to microvm agent failed");
+      const f = await poolExec(c, `cd ${WORKSPACE} && git fetch -q /tmp/claim.bundle HEAD && rm -f /tmp/claim.bundle`, 2 * 60_000);
+      if (!f.ok) throw new Error(`bundle fetch failed: ${f.out.slice(-300)}`);
+      fetched = true;
     }
     if (!fetched) {
       // Un-pushed HEAD: stream a bundle of HEAD ^base from the host.

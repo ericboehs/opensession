@@ -1422,6 +1422,7 @@ const POOL_COUNT_OPTIONS = [0, 1, 2, 3].map((n) => ({
 const POOL_BACKEND_OPTIONS = [
 	{ value: "docker", label: "Docker (local)" },
 	{ value: "daytona", label: "Daytona (remote)" },
+	{ value: "microvm", label: "MicroVM (snapshots)" },
 ];
 
 function PreviewPoolPanel() {
@@ -1512,6 +1513,8 @@ function PreviewPoolPanel() {
 							? "Off — previews boot cold on the host."
 							: (entry.config.backend || "docker") === "daytona"
 								? `Daytona sandboxes${poolBits ? ` · ${poolBits}` : " · pool provisioning (first sandbox takes ~10 min)…"}`
+								: (entry.config.backend || "docker") === "microvm"
+									? `Firecracker snapshots — claims restore in ~2s${poolBits ? ` · ${poolBits}` : " · restore-on-demand (no warm members needed)"}`
 								: entry.golden?.sha
 									? `Image at ${entry.golden.sha.slice(0, 10)} · built ${warmAgo(
 											entry.golden.builtAt,
@@ -1537,7 +1540,7 @@ function PreviewPoolPanel() {
 												onChange={(v) =>
 													apply(
 														updatePreviewPool(entry.repoId, {
-															backend: v as "docker" | "daytona",
+															backend: v as "docker" | "daytona" | "microvm",
 														}),
 													)
 												}

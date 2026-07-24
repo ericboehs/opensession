@@ -112,7 +112,7 @@ export async function handlePrefsRoutes(
 				const patch: Record<string, unknown> = {};
 				if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
 				if (typeof body.devAuthBypass === "boolean") patch.devAuthBypass = body.devAuthBypass;
-				if (body.backend === "docker" || body.backend === "daytona") patch.backend = body.backend;
+				if (["docker", "daytona", "microvm"].includes(body.backend)) patch.backend = body.backend;
 				for (const k of ["running", "paused", "cpus", "goldenIntervalHours", "claimIdleMinutes"] as const) {
 					if (typeof body[k] === "number") patch[k] = body[k];
 				}

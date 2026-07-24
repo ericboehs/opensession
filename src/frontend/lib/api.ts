@@ -1754,7 +1754,7 @@ export interface PreviewPoolEntry {
 	repoId: string;
 	config: {
 		enabled: boolean;
-		backend: "docker" | "daytona";
+		backend: "docker" | "daytona" | "microvm";
 		running: number;
 		paused: number;
 		cpus: number;
