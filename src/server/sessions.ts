@@ -871,6 +871,7 @@ try {
     const now = Date.now();
     for (const repo of prRepos()) {
       if (!prCache.data.has(repo.id)) continue;
+      if (parsed.recentLimits?.[repo.id] !== repo.recentLimit) continue;
       const etag = parsed.probeEtags?.[repo.ghRepo];
       if (typeof etag === "string" && etag) probeEtags.set(repo.ghRepo, etag);
       const refreshedAt = parsed.lastFullRefresh?.[repo.id];
@@ -893,6 +894,7 @@ function persistPrCache(data: Map<string, Map<string, PrInfo>>) {
     writeJsonAtomic(PR_CACHE_FILE, {
       version: PR_CACHE_VERSION,
       repos: obj,
+      recentLimits: Object.fromEntries(prRepos().map((repo) => [repo.id, repo.recentLimit])),
       probeEtags: Object.fromEntries(probeEtags),
       lastFullRefresh: Object.fromEntries(lastFullRefresh),
     }, false);
