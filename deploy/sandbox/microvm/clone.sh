@@ -14,7 +14,7 @@
 # golden path (the vmstate references the golden's absolute path).
 # Run as root.
 set -euo pipefail
-CMD="$1"; IDX="$2"; POOL="${3:-/opt/firecracker/pool}"
+CMD="$1"; IDX="$2"; POOL="${3:-/opt/firecracker/store}"
 NS="bksns$IDX"
 VETH_H="bksveth${IDX}h"; VETH_N="bksveth${IDX}n"
 HOST_IP="10.200.$IDX.1"; NS_IP="10.200.$IDX.2"
@@ -77,8 +77,13 @@ ip netns exec "$NS" unshare -m bash -c \
   "mount --bind '$DISK' '$POOL/golden.ext4' && exec '$FC' --api-sock '$API'" > "$LOG" 2>&1 &
 for i in $(seq 1 50); do [ -S "$API" ] && break; sleep 0.1; done
 
-curl -s --unix-socket "$API" -X PUT http://x/snapshot/load -H 'Content-Type: application/json' \
-  -d "{\"snapshot_path\":\"$POOL/golden.vmstate\",\"mem_backend\":{\"backend_type\":\"File\",\"backend_path\":\"$POOL/golden.mem\"},\"resume_vm\":true}"
+LOAD=$(curl -s --unix-socket "$API" -X PUT http://x/snapshot/load -H 'Content-Type: application/json' \
+  -d "{\"snapshot_path\":\"$POOL/golden.vmstate\",\"mem_backend\":{\"backend_type\":\"File\",\"backend_path\":\"$POOL/golden.mem\"},\"resume_vm\":true}")
+if echo "$LOAD" | grep -q fault_message; then
+  echo "SNAPSHOT LOAD FAILED: $LOAD" >&2
+  destroy
+  exit 1
+fi
 
 # clock resync + boot-log truncate via the root agent (SigV4 needs <5min skew)
 NOW=$(date -u +%s)
