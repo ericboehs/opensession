@@ -141,6 +141,8 @@ type StatusChip = {
 
 const INFO_LABEL_CLASS = "text-[12px] font-[650] tracking-[-0.01em] text-faint";
 const INFO_SECTION_CLASS = "grid gap-[5px]";
+const INFO_LIST_CLASS =
+	"grid gap-px overflow-hidden rounded-lg border border-line bg-panel p-1";
 const INFO_MORE_BUTTON_CLASS =
 	"cursor-pointer bg-surface px-[9px] py-[7px] text-left text-[12px] font-semibold text-faint transition-colors hover:bg-hover hover:text-fg";
 
@@ -1390,13 +1392,13 @@ export function WorkspaceInfo({
 	);
 
 	return (
-		<div className="workspace-info-panel grid gap-3 rounded-xl border border-line bg-panel px-3 py-3.5 shadow-[0_1px_0_rgba(255,255,255,0.03)]">
-			<div className="grid gap-2">
-				<div className="workspace-info-title selectable text-[15px] font-semibold leading-[1.25] tracking-[-0.01em] text-fg">
+		<div className="workspace-info-panel flex flex-col gap-4 px-3 pb-[22px] pt-3">
+			<div className="grid gap-1">
+				<div className="workspace-info-title selectable text-[17px] font-[680] leading-[1.2] text-fg">
 					{title}
 				</div>
-				{meta && <div className="text-[12px] text-dim">{meta}</div>}
-				<div className="flex flex-wrap items-center gap-1.5">
+				{meta && <div className="text-[12px] leading-[1.35] text-faint">{meta}</div>}
+				<div className="mt-1.5 flex flex-wrap items-center gap-1.5">
 					{chips.map((chip) =>
 						chip.key === "checks" && pr ? (
 							<ChecksChip
@@ -1460,7 +1462,7 @@ export function WorkspaceInfo({
 				)}
 			</div>
 			{hasBody ? (
-				<div className="grid gap-3">
+				<div className="grid gap-4">
 					{showGit && (
 						<GitStatusRows
 							sessionId={sessionId}
@@ -1489,7 +1491,7 @@ export function WorkspaceInfo({
 									</button>
 								)}
 							</div>
-							<div className="grid gap-0.5">
+							<div className={INFO_LIST_CLASS}>
 								{(commentsExpanded
 									? comments.slice().reverse()
 									: comments.slice(-COMMENT_PREVIEW).reverse()
@@ -1553,7 +1555,7 @@ export function WorkspaceInfo({
 									)}
 								</span>
 							</div>
-							<div className="grid gap-0.5">
+							<div className={INFO_LIST_CLASS}>
 								{changed.slice(0, FILE_PREVIEW).map((f) => (
 									<FileRow
 										key={f.path}
