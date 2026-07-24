@@ -38,5 +38,8 @@ printf 'nameserver 8.8.8.8\n' | sudo tee "$MNT/etc/resolv.conf" >/dev/null
 # next-server at 6.5GB anon in an 8GB guest). bks-init swapons it.
 sudo fallocate -l 4G "$MNT/swapfile" && sudo chmod 600 "$MNT/swapfile" && sudo mkswap -q "$MNT/swapfile"
 
-sudo umount "$MNT"
+# umount can transiently report busy under heavy host load (something
+# scanning the tree) — retry, then detach lazily as the last resort.
+for i in $(seq 1 10); do sudo umount "$MNT" 2>/dev/null && break; sleep 2; done
+mountpoint -q "$MNT" && sudo umount -l "$MNT"
 echo "[build-rootfs] $OUT ready ($(du -h "$OUT" | cut -f1) used, ${SIZE_GB}G apparent)"
