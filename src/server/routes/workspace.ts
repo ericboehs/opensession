@@ -396,6 +396,11 @@ export async function handleWorkspaceRoutes(
 		const sandboxResolved = resolveRequestedSandbox(body.sandbox, repoId);
 		if (!sandboxResolved.ok)
 			return Response.json({ error: sandboxResolved.error }, { status: 400 });
+		// A sibling in a ticket-linked chat/workspace stays linked to the ticket
+		// (conversation tab + ticket→session mapping follow the workspace).
+		const plainThreadId =
+			src.plainThreadId ||
+			(workspaceId ? getWorkspace(workspaceId)?.plainThreadId : undefined);
 		const data: BackstageSessionFile = {
 			id: bksId,
 			claudeSessionId: "",
@@ -403,6 +408,7 @@ export async function handleWorkspaceRoutes(
 			worktreeDir,
 			...(repoId ? { repo: repoId } : {}),
 			...(workspaceId ? { projectId: workspaceId } : {}),
+			...(plainThreadId ? { plainThreadId } : {}),
 			createdBy: requestUser(ctx, body.user) || "Anonymous",
 			createdAt: new Date().toISOString(),
 			lastActivity: new Date().toISOString(),

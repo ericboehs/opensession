@@ -42,6 +42,7 @@ import { startTranscriptWatch } from "./transcript-watch";
 import { type BackstageSessionFile, type SessionUsage } from "./types";
 import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
 import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
+import { resolvePlainWorkspace } from "./workspace-resolve";
 import { createWorktree, createWorktreeForExistingBranch, ensureAskCheckout, getRepo, listWorktrees, repoForPath, resolveUniqueBranch, worktreeHeadBranch, worktreePathFor } from "./worktree";
 import { BOOT_ID, allClients, b64decode, b64encode, broadcastToNote, broadcastToSession, joinNote, joinSession, leaveNote, leaveSession, preparingWorkspaces, revalidateLocalClients } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
@@ -1274,6 +1275,27 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					typeof msg.workspaceId === "string" && msg.workspaceId
 						? getWorkspace(msg.workspaceId)
 						: null;
+				// A ticket-linked create always lands in the ticket's ONE workspace
+				// (adopt-don't-duplicate, workspace-resolve.ts) — even when the
+				// client asked for a fresh workspace, a second workspace for the
+				// same ticket is never right. A createWorkspace name doubles as
+				// the ticket-title hint for a first-time resolve.
+				const msgPlainThreadId =
+					typeof msg.plainThreadId === "string" && msg.plainThreadId
+						? msg.plainThreadId
+						: undefined;
+				if (msgPlainThreadId && !workspace) {
+					try {
+						workspace = resolvePlainWorkspace({
+							threadId: msgPlainThreadId,
+							title:
+								typeof msg.createWorkspace?.name === "string"
+									? msg.createWorkspace.name
+									: undefined,
+							createdBy: user || "Anonymous",
+						}).workspace;
+					} catch {}
+				}
 				// Whether this create made a brand-new workspace (vs. adding a chat
 				// to an existing one) — echoed on session_created so the client can
 				// word its brief pending state accordingly.
@@ -1403,11 +1425,14 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					// later share-mode chats inherit it. Stacked chats keep their own —
 					// except a "stack" in a workspace with no branch yet, which has no
 					// base to stack on and is really the workspace's first worktree.
+					// fromPr is exempt from the shared-checkout exclusion: PR-branch
+					// worktrees are isolated even for shared-checkout repos, so a PR
+					// workspace on e.g. backstage still materializes.
 					if (
 						workspace &&
 						!workspace.worktreeDir &&
 						!isAsk &&
-						!repo.sharedCheckout &&
+						(!repo.sharedCheckout || fromPr) &&
 						(chatMode !== "stack" || !workspace.branch)
 					) {
 						updateWorkspace(workspace.id, {
@@ -1468,13 +1493,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						if (mentionsNote) openingPrompt += `\n\n${mentionsNote}`;
 					}
 					// Session opened from the Support view: link it to its Plain
-					// thread (right-sidebar conversation tab + the sidebar's
-					// ticket→session mapping) and hand the agent the ticket
-					// conversation so the first message is self-contained.
-					const plainThreadId =
-						typeof msg.plainThreadId === "string" && msg.plainThreadId
-							? msg.plainThreadId
-							: undefined;
+					// thread (conversation tab + the sidebar's ticket→session
+					// mapping) and hand the agent the ticket conversation so the
+					// first message is self-contained. A chat created inside a
+					// ticket workspace (tab-strip "+") inherits the thread too.
+					const plainThreadId = msgPlainThreadId || workspace?.plainThreadId;
 					if (plainThreadId) {
 						try {
 							const { getThreadWithMessages, formatThreadContext } =

@@ -16,6 +16,7 @@ import { readOpencodeBridgeConfig } from "./opencode-config";
 import { createWorktree, ensureAskCheckout, getRepo, listWorktrees, REPOS, worktreeHeadBranch } from "./worktree";
 import { engineSessionPatch } from "./sessions";
 import { updateSessionFile } from "./session-cache";
+import { resolvePlainWorkspace } from "./workspace-resolve";
 import type { BackstageSessionFile } from "./types";
 import { stateDir } from "./rename-compat";
 import { linkThreadInIndex, createSlackPostScanner } from "./slack-links";
@@ -846,6 +847,18 @@ export async function runAutomation(
         }
       } catch {}
     }
+    // File ticket-triggered sessions under the ticket's ONE workspace so they
+    // show up as chat tabs there (adopt-don't-duplicate; workspace-resolve.ts).
+    let ticketWorkspaceId: string | undefined;
+    if (plainThreadId) {
+      try {
+        ticketWorkspaceId = resolvePlainWorkspace({
+          threadId: plainThreadId,
+          title: eventTitle,
+          createdBy: `${automation.name} (automation)`,
+        }).workspace.id;
+      } catch {}
+    }
 
     // Automations dispatch on the opencode engine (tier-preserving mapping;
     // see opencodeAutomationModel). The effective model/provider can change
@@ -908,6 +921,7 @@ export async function runAutomation(
             ? { automationEvent: options.eventContext.slice(0, 10_000) }
             : {}),
           ...(plainThreadId ? { plainThreadId } : {}),
+          ...(ticketWorkspaceId ? { projectId: ticketWorkspaceId } : {}),
           ...existing,
           ...(engineSessionId
             ? engineSessionPatch(effectiveProvider, engineSessionId)
