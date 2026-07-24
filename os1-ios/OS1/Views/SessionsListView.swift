@@ -568,6 +568,8 @@ struct SessionRow: View {
                 Spacer()
                 if let date = session.lastActivityDate {
                     Text(date, format: .relative(presentation: .named))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
             }
             .font(.caption)
