@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from "react";
+import React, { useState, Suspense, lazy } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { Menu } from "../ui/menu";
 import { Tooltip } from "../ui/tooltip";
@@ -6,6 +6,7 @@ import { Popover } from "../ui/popover";
 import { cn } from "../ui/cn";
 import {
   IconBranches,
+  IconCheck,
   IconCopy,
   IconDotsHorizontal,
   IconSparkle,
@@ -42,9 +43,9 @@ interface Props {
 
 /**
  * Conductor-style meta row under a turn's final answer: how long the turn
- * took, a more-options menu, and one chip per file the turn edited with its
- * ±line counts. Always visible (no hover reveal — hover-only affordances are
- * unreachable on iOS).
+ * took, copy / more-options actions, and one chip per file the turn edited
+ * with its ±line counts. Always visible (no hover reveal — hover-only
+ * affordances are unreachable on iOS).
  */
 export const TurnFooter = React.memo(function TurnFooter({
   entry,
@@ -52,7 +53,13 @@ export const TurnFooter = React.memo(function TurnFooter({
   files,
   onFork,
 }: Props) {
-  const doCopy = () => copyText(entry.content, () => {});
+  const [copied, setCopied] = useState(false);
+  const doCopy = () => {
+    copyText(entry.content, () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
 
   const duration = formatDuration(durationMs);
   const shown = files.slice(0, MAX_CHIPS);
@@ -63,6 +70,15 @@ export const TurnFooter = React.memo(function TurnFooter({
       {duration && (
         <span className="mr-1.5 text-xs font-medium text-faint">{duration}</span>
       )}
+      <Tooltip label={copied ? "Copied" : "Copy message"}>
+        <button type="button" onClick={doCopy} className={BTN}>
+          {copied ? (
+            <IconCheck size={20} className="text-green" />
+          ) : (
+            <IconCopy size={20} />
+          )}
+        </button>
+      </Tooltip>
       <Menu.Root>
         <Menu.Trigger className={BTN + " data-[popup-open]:bg-hover data-[popup-open]:text-dim"}>
           <IconDotsHorizontal size={20} />
