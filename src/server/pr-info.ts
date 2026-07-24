@@ -98,7 +98,7 @@ export interface PrDetails {
   mergeable: string;
   /** CLEAN | BEHIND | BLOCKED | DIRTY | UNSTABLE | … — merge-box state. */
   mergeStateStatus: string;
-  /** The PR's webapp staging deploy (Vercel preview), when one exists. */
+  /** The PR's webapp preview environment (Vercel preview), when one exists. */
   staging: PrStaging | null;
 }
 
@@ -119,7 +119,7 @@ function parseStaging(comments: Array<{ body?: string }> | undefined): PrStaging
   return null;
 }
 
-// Whether a staging deploy opts into being embedded in the OS1 review iframe:
+// Whether a preview environment opts into being embedded in the OS1 review iframe:
 // true once its response CSP names os.tella.dev in frame-ancestors (the
 // tella-fusion preview change). Probed out-of-band — a plain GET of the deploy,
 // reading the CSP header — and cached, so the PR fetch never blocks on it and a

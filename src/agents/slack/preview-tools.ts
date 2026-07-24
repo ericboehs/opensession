@@ -82,7 +82,7 @@ export function createPreviewMcpServer(ctx: PreviewToolContext) {
   const tools = [
     tool(
       "set_preview_path",
-      "Set the route where this session's change should be tested, so the human's Preview and Staging buttons open directly on that feature instead of the app root. Call this once you know which page exercises your change (e.g. a specific editor route). Pass a root-relative path like `/edit/abc123` or `/settings/tags`; the same path is appended to both the local Preview URL and the PR's Staging deploy. Pass an empty string to clear it.",
+      "Set the route where this session's change should be tested, so the human's local Preview and Preview environment buttons open directly on that feature instead of the app root. Call this once you know which page exercises your change (e.g. a specific editor route). Pass a root-relative path like `/edit/abc123` or `/settings/tags`; the same path is appended to both the local Preview URL and the PR's preview environment. Pass an empty string to clear it.",
       {
         path: z
           .string()
@@ -95,7 +95,7 @@ export function createPreviewMcpServer(ctx: PreviewToolContext) {
         ctx.setPreviewPath(path);
         return text(
           path
-            ? `Preview & Staging buttons will now open ${path}.`
+            ? `Local Preview and Preview environment buttons will now open ${path}.`
             : "Cleared the preview deep link — the buttons open the app root again.",
         );
       },

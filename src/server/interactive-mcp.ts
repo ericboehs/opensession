@@ -146,7 +146,7 @@ export function interactiveMcpServers(
 					}),
 					// Preview lifecycle + deep-link: the agent can start/stop/poll its
 					// own dev-server preview (warm pool claim when available) and
-					// record where the change should be tested so the Preview/Staging
+					// record where the change should be tested so the Preview/Preview environment
 					// buttons open that route directly.
 					"opensession-preview": createPreviewMcpServer({
 						sessionId,

@@ -101,7 +101,7 @@ export function buildSystemPromptParts(opts: {
 				text:
 					"## Deep-link the change for testing\nWhen your change is viewable at a specific route " +
 					"(a settings page, an editor screen, etc.), call opensession-preview's `set_preview_path` with that " +
-					"root-relative path (e.g. `/settings/tags`). It makes the human's Preview and Staging buttons open " +
+					"root-relative path (e.g. `/settings/tags`). It makes the human's local Preview and Preview environment buttons open " +
 					"directly on the feature under test instead of the app root, so they can verify in one click. Update " +
 					"it if the relevant route changes; pass an empty string to clear it.",
 			});

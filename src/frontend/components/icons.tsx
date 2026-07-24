@@ -200,7 +200,7 @@ export function IconArrowDownRight(p: IconProps) {
 }
 
 // ↗ open-in-new / external-link arrow — the icon-set replacement for the raw
-// "↗" glyph on the Preview and Staging links.
+// "↗" glyph on the Preview and Preview environment links.
 export function IconArrowUpRight(p: IconProps) {
   return (
     <Svg {...p}>

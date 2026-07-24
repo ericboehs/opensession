@@ -7,7 +7,7 @@
  * ~/.opensession-github/pending-deploys.json (survives restarts), and when the
  * Deploy workflow (.github/workflows/deploy.yml) completes for that commit the
  * session gets a second message with the outcome. (Pre-merge staging previews
- * are NOT announced here — the session header's Staging button already surfaces
+ * are NOT announced here — the session header's Preview environment button already surfaces
  * the preview URL + Ready state, so a chat notification would just be redundant.)
  */
 import { stateDir } from "../../server/rename-compat";

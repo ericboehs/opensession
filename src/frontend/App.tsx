@@ -748,7 +748,7 @@ function App() {
 	const stagingActive = activeViewTab === "staging";
 	const assetsActive = activeViewTab === "assets";
 	const previewLiveActive = activeViewTab === "preview";
-	// Sessions whose Review / Staging view-tab is present in the strip; empty by
+	// Sessions whose Review / Preview environment view-tab is present in the strip; empty by
 	// default (a tab is added when its pane is first opened).
 	const [reviewOpen, setReviewOpen] = useState<Set<string>>(() => new Set());
 	const [stagingOpen, setStagingOpen] = useState<Set<string>>(() => new Set());
@@ -1093,7 +1093,7 @@ function App() {
 	// see the effect next to closeChat below).
 	const currentSessionRef = useRef<UnifiedSession | null>(null);
 	// Opening a different session always starts on its chat, never a stale
-	// Review/Staging pane.
+	// Review/Preview environment pane.
 	useEffect(() => {
 		setActiveViewTab(null);
 	}, [currentSession?.id]);
@@ -1126,18 +1126,18 @@ function App() {
 					},
 				]
 			: [];
-	// The Staging view-tab (the PR's Vercel preview, full-width) — opened from
-	// the Info panel's Staging button. Present once opened for this session.
+	// The Preview environment view-tab (the PR's Vercel preview, full-width) —
+	// opened from the Info panel button. Present once opened for this session.
 	const stagingViewTabs: ViewTab[] =
 		currentSession && stagingOpen.has(currentSession.id)
 			? [
 					{
 						id: `staging:${currentSession.id}`,
-						label: "Staging",
+						label: "Preview environment",
 						active: stagingActive,
 						dotClass: null,
-						// The Staging tab reads as just a globe (the preview it points at);
-						// "Staging" stays as its tooltip / aria label.
+						// The Preview environment tab reads as just a globe;
+						// "Preview environment" stays as its tooltip / aria label.
 						icon: <IconGlobe size={16} />,
 					},
 				]
@@ -1168,7 +1168,7 @@ function App() {
 					},
 				]
 			: [];
-	// Review leftmost, then Staging, then Preview, then Assets.
+	// Review leftmost, then Preview environment, then Preview, then Assets.
 	const viewTabs: ViewTab[] = [
 		...reviewViewTabs,
 		...stagingViewTabs,
@@ -1197,10 +1197,10 @@ function App() {
 			});
 		}
 		// Only fall back to chat if Review was the foregrounded pane — closing the
-		// Review tab while Staging is active leaves Staging up.
+		// Review tab while the Preview environment is active leaves it up.
 		if (reviewActive) setActiveViewTab(null);
 	}
-	// Open/foreground this session's Staging view-tab (the Info panel's Staging
+	// Open/foreground this session's Preview environment view-tab (the Info panel
 	// button). Adds the tab to the strip if absent.
 	function openStaging() {
 		if (!currentSession) return;

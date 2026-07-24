@@ -257,7 +257,7 @@ export interface UnifiedSession {
 		reviewDecision?: string;
 		checks?: { total: number; passed: number; failed: number; pending: number };
 	}>;
-	/** Route the Preview/Staging buttons deep-link to (agent-set via
+	/** Route the Preview/Preview environment buttons deep-link to (agent-set via
 	 *  opensession-preview); appended to the base URL. Unset = open the app root. */
 	previewPath?: string;
 	/** Agent-published demo walkthrough (video + before/after + writeup),
@@ -483,7 +483,7 @@ export interface PrDetails {
 	mergeable?: string;
 	/** CLEAN | BEHIND | BLOCKED | DIRTY | UNSTABLE | … — merge-box state. */
 	mergeStateStatus?: string;
-	/** The PR's webapp staging deploy (Vercel preview), when one exists.
+	/** The PR's webapp preview environment (Vercel preview), when one exists.
 	 * `embeddable` is true once the deploy's CSP lets os.tella.dev frame it. */
 	staging?: { url: string; status: string; embeddable?: boolean } | null;
 }

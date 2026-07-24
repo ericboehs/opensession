@@ -92,7 +92,7 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
     // comments/reviews (mention.ts also re-checks the author + our hidden markers).
     if (event === "issue_comment" || event === "pull_request_review_comment") {
       // Butler's Vercel preview-table edits (from our bot account) carry no
-      // mention and need no reaction — the session header's Staging button
+      // mention and need no reaction — the session header's Preview environment button
       // already surfaces the preview URL + Ready state, so we don't inject a
       // redundant chat notification. They fall through to the self-trigger guard.
       if (senderIsBot) return;

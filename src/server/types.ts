@@ -333,7 +333,7 @@ export interface BackstageSessionFile {
   attachedRepos?: AttachedRepo[];
   /** PRs manually linked to this session (beyond branch/attached-repo ones). */
   linkedPrs?: LinkedPr[];
-  /** Root-relative route the Preview/Staging buttons deep-link to (set by the
+  /** Root-relative route the Preview/Preview environment buttons deep-link to (set by the
    *  agent via opensession-preview's set_preview_path). Unset = open the app root. */
   previewPath?: string;
   /** Agent-published demo walkthrough (opensession-walkthrough). */

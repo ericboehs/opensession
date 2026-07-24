@@ -17,7 +17,7 @@ const OPEN_CHORD = /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 	: "Ctrl+O";
 
 /**
- * Header link to the PR's staging deploy (the Vercel preview at
+ * Header link to the PR's preview environment (the Vercel preview at
  * https://tella-git-<branch>.tella.dev) so a change can be tested on real
  * infra in one click. The URL comes from the PR details endpoint, which parses
  * tella-butler's preview-table comment — so the link only appears when a
@@ -38,7 +38,7 @@ export function StagingLink({
 	variant = "bar",
 }: {
 	session: UnifiedSession;
-	/** "bar" = the labelled Staging link (right panel's action row); "header" = a
+	/** "bar" = the labelled Preview environment link (right panel's action row); "header" = a
 	 *  single state-colored 🌐 icon (amber while building, green once Ready) for
 	 *  the session header, sized to match the panel-toggle icon beside it. */
 	variant?: "bar" | "header";
@@ -104,7 +104,7 @@ export function StagingLink({
 		if (variant === "header") {
 			return (
 				<Tooltip
-					label="Staging deploy starting… the preview link appears once it's up"
+					label="Preview environment starting… the link appears once it's up"
 					side="bottom"
 					multiline
 				>
@@ -120,10 +120,10 @@ export function StagingLink({
 		return (
 			<span
 				className="staging-link staging-link-pending"
-				title="Staging deploy starting… the preview link appears once it's up"
+				title="Preview environment starting… the link appears once it's up"
 			>
 				{shimmerGlobe(15, "staging-globe")}
-				Staging
+				Preview environment
 			</span>
 		);
 	}
@@ -155,7 +155,7 @@ export function StagingLink({
 		if (building) {
 			e.preventDefault();
 			toast(
-				`Staging deploy is ${staging.status.toLowerCase()} — the link goes live once the first deploy finishes`,
+				`Preview environment is ${staging.status.toLowerCase()} — the link goes live once the first deploy finishes`,
 			);
 		}
 	};
@@ -188,10 +188,10 @@ export function StagingLink({
 		copied
 			? "Link copied"
 			: building
-				? `Staging deploy ${staging.status.toLowerCase()}… ${copyHint}`
+				? `Preview environment ${staging.status.toLowerCase()}… ${copyHint}`
 				: rebuilding
 					? `Redeploying for the latest push — opens the previous deploy until it lands (${OPEN_CHORD}; ${copyHint})`
-					: `Open the staging deploy to test this PR on real infra (${OPEN_CHORD}; ${copyHint})`;
+					: `Open the preview environment to test this PR on real infra (${OPEN_CHORD}; ${copyHint})`;
 
 	if (variant === "header") {
 		return (
@@ -224,7 +224,7 @@ export function StagingLink({
 			title={`${tooltip("⌘-click to copy the link")} — ${href}`}
 		>
 			{globe(15, "staging-globe")}
-			Staging
+			Preview environment
 			<IconArrowUpRight size={15} className="staging-ext" />
 		</a>
 	);

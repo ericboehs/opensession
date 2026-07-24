@@ -5,7 +5,7 @@ import type { UnifiedSession } from "../lib/types";
 import { withPreviewPath } from "../lib/preview-url";
 
 /**
- * Full-width Preview view-tab (a sibling of Review/Staging/Assets): the
+ * Full-width Preview view-tab (a sibling of Review/Preview environment/Assets): the
  * session's dev server embedded in an iframe, with a toolbar to break out to
  * a real browser window, reload, or stop the preview. The app's CSP already
  * allowlists framing from the app origin (frame-ancestors https://os.tella.dev).

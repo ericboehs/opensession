@@ -1330,10 +1330,10 @@ export function WorkspaceInfo({
 						type="button"
 						className="workspace-info-review-btn"
 						onClick={() => onOpenTab?.("staging")}
-						title="Open the staging deploy full-width"
+						title="Open the preview environment full-width"
 					>
 						<IconGlobe />
-						Staging
+						Preview environment
 					</button>
 				)}
 				{pr?.number && repo === "tella-fusion" && (

@@ -3352,7 +3352,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	color: #5eead4;
 	border-color: rgba(13, 148, 136, 0.5);
 }
-/* Staging deploy link — a standalone yellow pill sized to match the Preview
+/* Preview environment link — a standalone yellow pill sized to match the Preview
    button it sits beside in the right panel (same 13px/600, 5px 12px padding,
    6px radius). Its own class (not .session-link) so the markdown session-chip
    rule below can't clobber it into a red mono chip with a stray ::after arrow. */
@@ -3384,7 +3384,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	cursor: default;
 }
 
-/* Spinning ring around the globe while the staging deploy is still building.
+/* Spinning ring around the globe while the preview environment is still building.
    currentColor picks up the amber/green icon tone; the ring sits just outside
    the thin globe circle so it reads as a halo, not a second outline. */
 .staging-globe-wrap {

@@ -233,13 +233,13 @@ interface Props {
 	/** Open/foreground this session's Review view-tab (PR/review triggers). */
 	onOpenReview?: () => void;
 	/**
-	 * Whether the Staging pane (the PR's Vercel preview, full-width) is
-	 * foregrounded — driven by the top tab strip's Staging view-tab (App state).
+	 * Whether the Preview environment pane (the PR's Vercel preview, full-width) is
+	 * foregrounded — driven by the top tab strip's Preview environment view-tab (App state).
 	 */
 	showStaging?: boolean;
-	/** Open/foreground this session's Staging view-tab (the Info panel's Staging button). */
+	/** Open/foreground this session's Preview environment view-tab. */
 	onOpenStaging?: () => void;
-	/** Close this session's Staging view-tab (the deploy vanished, e.g. PR merged). */
+	/** Close this session's Preview environment view-tab (the deploy vanished, e.g. PR merged). */
 	onCloseStaging?: () => void;
 	/**
 	 * Whether the Assets pane (the session's scratch artifacts, full-width) is
@@ -256,7 +256,7 @@ interface Props {
 	onOpenPreviewTab?: () => void;
 	/** Close the Preview view-tab (its Stop button / tab close). */
 	onClosePreviewTab?: () => void;
-	/** Return from a view-tab (Review/Staging/Assets) to this workspace's active chat. */
+	/** Return from a view-tab (Review/Preview environment/Assets) to this workspace's active chat. */
 	onOpenWorkspace?: () => void;
 }
 
@@ -3118,7 +3118,7 @@ export function SessionViewer({
 		return () => window.removeEventListener("keydown", onKeyDown, true);
 	}, [archiving, handleArchive, session.archived]);
 
-	// Staging deploy for the ⌘O chord — mirrors StagingLink's poll (same
+	// Preview environment for the ⌘O chord — mirrors StagingLink's poll (same
 	// relevance gate; the server caches PR details for 30s, so the duplicate
 	// fetch stays cheap). Kept here because StagingLink mounts per layout
 	// variant, so a window listener inside it would register multiple times.
@@ -3133,7 +3133,7 @@ export function SessionViewer({
 	} | null>(null);
 	// True once the PR fetch has resolved at least once for this session — lets us
 	// tell "staging genuinely absent" from "not loaded yet" (the fetch starts null
-	// and fills in async), so the Staging view-tab auto-closes only on the former
+	// and fills in async), so the Preview environment view-tab auto-closes only on the former
 	// rather than flicker-closing during load.
 	const [stagingSettled, setStagingSettled] = useState(false);
 	useEffect(() => {
@@ -3163,7 +3163,7 @@ export function SessionViewer({
 	const stagingUrl = staging
 		? withPreviewPath(staging.url, session.previewPath)
 		: null;
-	// The Staging pane is a top-strip view-tab now (App owns whether it's
+	// The Preview environment pane is a top-strip view-tab now (App owns whether it's
 	// foregrounded). If the deploy vanishes while its tab is open+active — PR
 	// merged/closed, so `stagingRelevant` drops and the fetch settles with no
 	// staging — close the tab rather than leave it pointing at nothing.
@@ -3188,7 +3188,7 @@ export function SessionViewer({
 		}
 	}, [panelTab, previewUrl]);
 
-	// ⌘O opens the PR's staging deploy (the Vercel preview StagingLink's globe
+	// ⌘O opens the PR's preview environment (the Vercel preview StagingLink's globe
 	// points at); ⌘G opens its GitHub PR. Chords without a target (no staging
 	// deploy / no PR) fall through to the browser.
 	useEffect(() => {
@@ -3231,7 +3231,7 @@ export function SessionViewer({
 				// serves the previous deploy until the new one lands.)
 				if (staging.status !== "Ready") {
 					toast(
-						`Staging deploy is ${staging.status.toLowerCase()} — the link goes live once the first deploy finishes`,
+						`Preview environment is ${staging.status.toLowerCase()} — the link goes live once the first deploy finishes`,
 					);
 					return;
 				}
@@ -4043,7 +4043,7 @@ export function SessionViewer({
 									<div className="flex items-center gap-2 border-b border-line bg-panel px-3 py-1.5 text-xs text-dim">
 										<IconGlobe size={14} />
 										<span className="truncate">
-											Staging deploy
+											Preview environment
 											{staging.status !== "Ready"
 												? ` — ${staging.status.toLowerCase()}…`
 												: ""}
@@ -4063,7 +4063,7 @@ export function SessionViewer({
 												href={stagingUrl}
 												target="_blank"
 												rel="noopener"
-												title="Open first-party in a new tab — needed if the frame is blank because you aren't logged in to staging yet"
+												title="Open first-party in a new tab — needed if the frame is blank because you aren't logged in to the preview environment yet"
 												className="inline-flex items-center gap-1 transition-colors hover:text-fg"
 											>
 												Open
@@ -4074,7 +4074,7 @@ export function SessionViewer({
 									<iframe
 										key={stagingUrl}
 										src={stagingUrl}
-										title="Staging deploy"
+										title="Preview environment"
 										className="min-h-0 flex-1 border-0 bg-surface"
 										allow="camera; microphone; display-capture; fullscreen; autoplay; clipboard-write"
 									/>
@@ -4089,7 +4089,7 @@ export function SessionViewer({
 									<IconGlobe size={40} className="text-dim" />
 									<div className="flex flex-col items-center gap-1">
 										<div className="text-base font-medium text-fg">
-											Staging deploy
+											Preview environment
 										</div>
 										<div className="text-xs text-dim">
 											{staging?.status === "Ready"
@@ -4528,7 +4528,7 @@ export function SessionViewer({
 						{/* Phones open this panel as a full-width bottom sheet, so it
 						    carries one clean header row: chevron-back to the chat on the
 						    left (the desktop toggle button is hidden there) and the
-						    labelled Preview/Staging controls on the right — on desktop
+						    labelled Preview/Preview environment controls on the right — on desktop
 						    those live in the session header as state-colored icons. */}
 						{isPhone && (
 							<div className="panel-sheet-head">
@@ -4570,7 +4570,7 @@ export function SessionViewer({
 								onArchive={handleArchive}
 								running={isRunningLive}
 								refreshTick={gitRefreshTick}
-								// Globe (staging deploy) rides inside the strip, left of the
+								// Globe (preview environment) rides inside the strip, left of the
 								// PR chip, so it shares the strip's tone background — it's
 								// pulled out of the header while the panel is open. On phones
 								// the globe stays in the sheet-head row above.
