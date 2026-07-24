@@ -419,75 +419,110 @@ extension NSPasteboard {
         }
     }
 }
-/// Explicit clipboard-paste button, always visible next to the composer.
-/// Clicking reads every image on the pasteboard (multiple paste in one go);
-/// nothing touches the clipboard until the click.
-struct PasteImagesButton: View {
-    @Binding var images: [AttachedImage]
-    var maxCount: Int = 6
-
-    var body: some View {
-        Button {
-            for data in NSPasteboard.general.imageDataRepresentations() {
-                guard images.count < maxCount,
-                      let image = AttachedImage(rawData: data)
-                else { continue }
-                images.append(image)
-            }
-        } label: {
-            Image(systemName: "doc.on.clipboard")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 27, height: 27)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .help("Paste images from clipboard")
-    }
-}
 #else
 extension View {
-    /// iOS text fields can't intercept paste; the PasteImagesButton next to
-    /// the field covers it. No-op so call sites stay platform-free.
+    /// Long-press → Paste on the composer accepts images. SwiftUI text
+    /// fields on iOS reject image pastes outright, so a background probe
+    /// finds the UIKit text input backing the field, gives it a paste
+    /// configuration that accepts images, and a paste delegate that routes
+    /// image flavors into the attachments — text pastes flow through
+    /// untouched. No extra button; the system edit menu is the affordance.
     func pastesImages(
         into images: Binding<[AttachedImage]>, maxCount: Int = 6
     ) -> some View {
-        self
+        background(TextInputPasteAugmenter(images: images, maxCount: maxCount))
     }
 }
 
-/// Wire form for the system PasteButton: any image flavor, imported as bytes.
-struct PastedImage: Transferable {
-    let data: Data
-
-    static var transferRepresentation: some TransferRepresentation {
-        DataRepresentation(importedContentType: .image) { PastedImage(data: $0) }
-    }
-}
-
-/// Always-visible system paste button — the sanctioned explicit way to read
-/// the pasteboard without a permission prompt or any clipboard sniffing on
-/// our side: the system enables/disables it from pasteboard metadata, and
-/// content is only read when the user taps. Handles multiple images in one
-/// paste. (UIKit text fields ignore image pastes, so without this a copied
-/// screenshot has no way in.)
-struct PasteImagesButton: View {
+private struct TextInputPasteAugmenter: UIViewRepresentable {
     @Binding var images: [AttachedImage]
-    var maxCount: Int = 6
+    var maxCount: Int
 
-    var body: some View {
-        PasteButton(payloadType: PastedImage.self) { payloads in
-            Task { @MainActor in
-                for payload in payloads {
-                    guard images.count < maxCount,
-                          let image = AttachedImage(rawData: payload.data)
-                    else { continue }
-                    images.append(image)
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> ProbeView {
+        let view = ProbeView()
+        view.coordinator = context.coordinator
+        return view
+    }
+
+    func updateUIView(_ view: ProbeView, context: Context) {
+        context.coordinator.append = { data in
+            guard images.count < maxCount,
+                  let image = AttachedImage(rawData: data)
+            else { return }
+            images.append(image)
+        }
+        view.coordinator = context.coordinator
+        view.augmentSoon()
+    }
+
+    final class Coordinator: NSObject, UITextPasteDelegate {
+        var append: ((Data) -> Void)?
+
+        func textPasteConfigurationSupporting(
+            _ textPasteConfigurationSupporting: UITextPasteConfigurationSupporting,
+            transform item: UITextPasteItem
+        ) {
+            let provider = item.itemProvider
+            guard let type = provider.registeredTypeIdentifiers.first(where: {
+                UTType($0)?.conforms(to: .image) == true
+            }) else {
+                item.setDefaultResult()
+                return
+            }
+            provider.loadDataRepresentation(forTypeIdentifier: type) { data, _ in
+                guard let data else { return }
+                DispatchQueue.main.async { self.append?(data) }
+            }
+            item.setNoResult()
+        }
+    }
+
+    /// Invisible view that locates the text input near it in the UIKit
+    /// hierarchy and attaches the paste configuration + delegate. Re-runs on
+    /// every update — SwiftUI can recreate the backing view under us.
+    final class ProbeView: UIView {
+        weak var coordinator: Coordinator?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            augmentSoon()
+        }
+
+        func augmentSoon() {
+            DispatchQueue.main.async { [weak self] in self?.augment() }
+        }
+
+        private func augment() {
+            guard let coordinator else { return }
+            // The probe sits as the field's background, so the input is a
+            // close relative — walk a few ancestors, searching each subtree.
+            var scope: UIView? = self
+            for _ in 0..<5 {
+                scope = scope?.superview
+                guard let scope else { return }
+                if let input = Self.findTextInput(in: scope) {
+                    input.pasteConfiguration = UIPasteConfiguration(
+                        forAccepting: UIImage.self
+                    )
+                    input.pasteDelegate = coordinator
+                    return
                 }
             }
         }
-        .labelStyle(.iconOnly)
-        .controlSize(.small)
+
+        private static func findTextInput(
+            in view: UIView
+        ) -> (UIView & UITextPasteConfigurationSupporting)? {
+            if let match = view as? UIView & UITextPasteConfigurationSupporting {
+                return match
+            }
+            for sub in view.subviews {
+                if let match = findTextInput(in: sub) { return match }
+            }
+            return nil
+        }
     }
 }
 #endif

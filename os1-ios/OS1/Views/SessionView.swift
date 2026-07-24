@@ -324,8 +324,6 @@ struct SessionView: View {
         HStack(alignment: .bottom, spacing: 8) {
             AttachImagesButton(images: $viewModel.attachedImages)
                 .padding(.bottom, 3)
-            PasteImagesButton(images: $viewModel.attachedImages)
-                .padding(.bottom, 3)
             TextField(
                 viewModel.isRunning ? "Message — queues for after this run" : "Message",
                 text: $viewModel.draft,
@@ -340,7 +338,8 @@ struct SessionView: View {
             // iOS the software keyboard's return key just wraps, as before.
             .onSubmit { viewModel.sendDraft() }
             // A copied screenshot pastes straight into the attachments
-            // (Cmd+V); text pastes flow through to the field untouched.
+            // (Cmd+V on Mac, long-press Paste on iOS); text pastes flow
+            // through to the field untouched.
             .pastesImages(into: $viewModel.attachedImages)
 
             Button {

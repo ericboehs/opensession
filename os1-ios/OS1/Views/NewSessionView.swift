@@ -3,7 +3,7 @@ import SwiftUI
 /// Compose a new session: a full-height prompt editor over a compact chip row
 /// for repo / mode / model / effort / fast mode, plus image attachments —
 /// the web palette's essentials in a native shape. Screenshots paste straight
-/// into the attachments (Cmd+V on the Mac; the paste button on iOS).
+/// into the attachments (Cmd+V on the Mac; long-press Paste on iOS).
 ///
 /// The prompt lives in a plain `TextEditor` inside a custom layout (not a
 /// grouped Form): Form re-diffs every row on each keystroke, which is what
@@ -128,7 +128,6 @@ struct NewSessionView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 AttachImagesButton(images: $images)
-                PasteImagesButton(images: $images)
                 repoChip
                 modeChip
                 Spacer(minLength: 0)
