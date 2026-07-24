@@ -12366,6 +12366,18 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		border-color: transparent;
 		box-shadow: none;
 	}
+	/* View-tab panes (Review/Conversation/Staging/Assets — .viewer-review-main
+	   in a chat, .workspace-view-main on the chat-less workspace route) fill
+	   the pane from the very top. Unlike the transcript, they don't self-pad
+	   for the fixed header + docked tab bar, so their own top chrome (the PR
+	   header rows, the ticket title) hid underneath it. Push them below the
+	   bar instead; their inner scrollers then clip cleanly at the opaque bar's
+	   bottom edge. --strip-clearance is only set when the docked bar is shown;
+	   the header-h term covers the floating pills when it isn't. */
+	.viewer-review-main,
+	.workspace-view-main {
+		padding-top: calc(var(--header-h) + var(--strip-clearance, 0px));
+	}
 
 	/* Brand logo in the top bar. */
 	.app-brand .app-title-wrap {

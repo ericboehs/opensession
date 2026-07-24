@@ -231,7 +231,7 @@ export function WorkspacePane({
 
 	if (tab === "review" && reviewTarget) {
 		return withPanel(
-			<div className="h-full min-h-0 bg-surface">
+			<div className="workspace-view-main h-full min-h-0 bg-surface">
 				<PrPanel
 					key={`${reviewTarget.repo}:${reviewTarget.branch}`}
 					sessionId={reviewSession?.id || ""}
@@ -252,7 +252,7 @@ export function WorkspacePane({
 
 	if (tab === "conversation" && workspace.plainThreadId) {
 		return withPanel(
-			<div className="flex flex-col h-full min-h-0">
+			<div className="workspace-view-main flex flex-col h-full min-h-0">
 				<ConversationPane
 					threadId={workspace.plainThreadId}
 					onOpenSession={onOpenSession}
@@ -265,7 +265,7 @@ export function WorkspacePane({
 	// Workspace home: normally only reachable chat-less (with chats, App lands
 	// in the first chat) — a composer that starts the workspace's first chat.
 	return withPanel(
-		<div className="flex flex-col h-full min-h-0">
+		<div className="workspace-view-main flex flex-col h-full min-h-0">
 			<div className="flex-1 min-h-0 overflow-y-auto">
 				<div className="w-full max-w-[760px] mx-auto px-5 py-6">
 					<div className="text-fg font-semibold text-[18px]">
