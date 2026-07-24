@@ -4,6 +4,7 @@ import { existsSync } from "fs";
 import {
 	slackIdToFirstName,
 	githubLoginToPersonKey,
+	githubLoginFor,
 } from "./shared/user-mappings";
 import { isArchivedId, getArchiveReason } from "./archive";
 import { getTitleOverride } from "./title-overrides";
@@ -1291,6 +1292,75 @@ export function getRecentPrs(): RecentPrEntry[] {
 		}
 	}
 	return out.sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+}
+
+const personPrCache = new Map<string, { data: RecentPrEntry[]; ts: number }>();
+const PERSON_PR_CACHE_TTL = 10 * 60_000;
+
+/** Complete PR history for one teammate, fetched on demand for Home's person view. */
+export async function getRecentPrsForPerson(person: string): Promise<RecentPrEntry[]> {
+	const key = person.trim().toLowerCase();
+	const cached = personPrCache.get(key);
+	if (cached && Date.now() - cached.ts < PERSON_PR_CACHE_TTL) return cached.data;
+	const login = githubLoginFor(key);
+	if (!login) return [];
+
+	type PersonPr = {
+		headRefName: string;
+		url: string;
+		state: "OPEN" | "MERGED" | "CLOSED";
+		number: number;
+		title: string;
+		isDraft: boolean;
+		additions: number;
+		deletions: number;
+		author?: { login?: string; name?: string };
+		createdAt: string;
+		updatedAt: string;
+		assignees?: Array<{ login?: string }>;
+	};
+	const fields = "headRefName,url,state,number,title,isDraft,additions,deletions,author,createdAt,updatedAt,assignees";
+	const out = new Map(
+		getRecentPrs().filter((pr) => pr.person === key).map((pr) => [pr.url, pr]),
+	);
+	let complete = true;
+	for (const repo of prRepos()) {
+		const prs = await ghJson<PersonPr[]>([
+			"pr", "list", "--repo", repo.ghRepo, "--state", "all",
+			"--search", `author:${login} OR assignee:${login}`,
+			"--limit", "1000", "--json", fields,
+		]);
+		if (!prs) {
+			complete = false;
+			continue;
+		}
+		for (const pr of prs || []) {
+			const author = pr.author?.login || pr.author?.name || "";
+			const assignees = (pr.assignees || []).map((entry) => entry.login || "").filter(Boolean);
+			out.set(pr.url, {
+				repo: repo.id,
+				branch: pr.headRefName,
+				url: pr.url,
+				number: pr.number,
+				title: pr.title,
+				state: pr.state,
+				isDraft: pr.isDraft,
+				reviewDecision: "",
+				author,
+				person: githubLoginToPersonKey(author) ?? assignees.map(githubLoginToPersonKey).find(Boolean) ?? null,
+				createdAt: pr.createdAt,
+				updatedAt: pr.updatedAt,
+				additions: pr.additions,
+				deletions: pr.deletions,
+				checks: { total: 0, passed: 0, failed: 0, pending: 0 },
+				mergeable: "UNKNOWN",
+				reviewRequested: [],
+			});
+		}
+	}
+	const data = [...out.values()].sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+	if (complete) personPrCache.set(key, { data, ts: Date.now() });
+	return data;
 }
 
 export function getOpenPrs(): OpenPrEntry[] {

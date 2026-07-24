@@ -204,6 +204,7 @@ export function Home({ sessions, projects, onSelect, onNewSession }: Props) {
   );
   const [showArchived, setShowArchived] = useState(false);
   const [recentPrs, setRecentPrs] = useState<RecentPr[]>([]);
+  const [personPrs, setPersonPrs] = useState<RecentPr[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -215,7 +216,25 @@ export function Home({ sessions, projects, onSelect, onNewSession }: Props) {
     };
   }, []);
 
-  const allWorktrees = useMemo(() => buildWorktreeRows(recentPrs, sessions), [recentPrs, sessions]);
+  useEffect(() => {
+    if (person === "all") {
+      setPersonPrs([]);
+      return;
+    }
+    let active = true;
+    fetchRecentPrs(person)
+      .then((prs) => active && setPersonPrs(prs))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [person]);
+
+  const allWorktrees = useMemo(() => {
+    const prs = new Map(recentPrs.map((pr) => [pr.url, pr]));
+    for (const pr of personPrs) prs.set(pr.url, pr);
+    return buildWorktreeRows([...prs.values()], sessions);
+  }, [personPrs, recentPrs, sessions]);
 
   const worktrees = useMemo(() => {
     const needle = query.trim().toLowerCase();

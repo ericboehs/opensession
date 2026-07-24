@@ -206,8 +206,9 @@ export interface RecentPr extends OpenPr {
 }
 
 /** Recent PRs across repos, including PRs merged outside OpenSession. */
-export async function fetchRecentPrs(): Promise<RecentPr[]> {
-	const data = await request<{ prs: RecentPr[] }>("/recent-prs", {
+export async function fetchRecentPrs(person?: string): Promise<RecentPr[]> {
+	const suffix = person ? `?person=${encodeURIComponent(person)}` : "";
+	const data = await request<{ prs: RecentPr[] }>(`/recent-prs${suffix}`, {
 		label: "Failed to fetch recent PRs",
 	});
 	return data?.prs || [];
