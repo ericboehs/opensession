@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { WSServerMessage } from "../lib/types";
+import { subscribeFrontendVersion } from "../lib/frontend-version";
 import { Tooltip } from "../ui/tooltip";
 
 interface Props {
@@ -60,6 +61,11 @@ export function UpdatePill({ addHandler, variant = "toast" }: Props) {
       }),
     [addHandler]
   );
+
+  // Backstop for a window that missed the broadcast (an Electron renderer
+  // asleep through the rebuild, a socket that reconnected across it): poll the
+  // build version and nudge. Never forces — same non-blocking nudge as above.
+  useEffect(() => subscribeFrontendVersion(() => setShow(true)), []);
 
   useEffect(() => {
     if (forceAt == null) return;
