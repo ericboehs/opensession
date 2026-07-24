@@ -1406,7 +1406,11 @@ export async function claimPoolPreview(repoId: string, worktreeDir: string): Pro
           .split("\n")
           .filter(Boolean).length
       : 0;
-    if (delta > LIVE_FLIP_MAX_FILES) {
+    // Microvm claims NEVER reboot: the snapshot's live watchers are the
+    // asset — a reboot discards the warm process state and grinds page-cold
+    // under memory pressure (measured: worse than a docker cold boot).
+    // ReScript/Turbopack handle the checkout incrementally instead.
+    if (delta > LIVE_FLIP_MAX_FILES && !isMicrovm(pick)) {
       console.log(
         `[preview-pool] ${pick.name}: ${delta} files changed — rebooting dev server for a clean graph`,
       );
