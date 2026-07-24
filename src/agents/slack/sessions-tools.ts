@@ -530,7 +530,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
             .string()
             .optional()
             .describe("Fallback branch for code mode (required); only used when the worker can't share the parent workspace's worktree (standalone or different repo). Ignored for ask."),
-          model: z.string().optional().describe("Optional model id (e.g. 'claude-opus-4-8')."),
+          model: z.string().optional().describe("Optional model id (e.g. 'claude-opus-5')."),
           mcpServers: z
             .array(z.string())
             .optional()

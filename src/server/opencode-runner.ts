@@ -780,6 +780,12 @@ export function meridianAccountEnv(account: ClaudeAccount, meridianKey: string):
     // Keep non-core schemas out of Anthropic's stable prompt prefix. Meridian
     // makes deferred tools discoverable through the Agent SDK's ToolSearch.
     MERIDIAN_DEFER_TOOL_THRESHOLD: "15",
+    // Meridian collapses every *opus* model id to the SDK's `opus` alias and
+    // pins the concrete version itself (1.51.0 pins claude-opus-4-8, which
+    // predates Opus 5). This env var wins over Meridian's pin, so all opus
+    // requests — including old sessions stored as claude-opus-4-8 — serve
+    // Claude Opus 5 (launched 2026-07-24; same $5/$25 rate card as 4.8).
+    ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5",
   };
 }
 

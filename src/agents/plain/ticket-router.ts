@@ -35,7 +35,7 @@ export interface RouteVerdict {
   reason: string;
 }
 
-export const DEFAULT_BASIC_MODEL = "claude-opus-4-8";
+export const DEFAULT_BASIC_MODEL = "claude-opus-5";
 
 export const DEFAULT_ROUTER_PROMPT = `You are the triage router for Tella's customer support inbox. Tella is a screen recording app for creating and sharing videos.
 

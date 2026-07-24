@@ -318,6 +318,7 @@ function modelIsCodex(id: string, models: ModelOption[]): boolean {
 // models endpoint has loaded.
 const MODEL_NAMES: Record<string, string> = {
 	"claude-fable-5": "Fable",
+	"claude-opus-5": "Opus 5",
 	"claude-opus-4-8": "Opus 4.8",
 	"claude-sonnet-5": "Sonnet",
 	"claude-haiku-4-5-20251001": "Haiku",

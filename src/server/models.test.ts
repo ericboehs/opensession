@@ -334,22 +334,22 @@ describe("fallback graph (nextFallbackModel)", () => {
   // claude ids adapt to bridge state via toOpencodeModel so the assertions hold
   // whether the bridge is on or off.
   const sol = "opencode/openai/gpt-5.6-sol";
-  const opus = toOpencodeModel("claude-opus-4-8")!;
+  const opus = toOpencodeModel("claude-opus-5")!;
   const fable = toOpencodeModel("claude-fable-5")!;
   const sonnet = toOpencodeModel("claude-sonnet-5")!;
 
   it("keeps equal-or-smarter switches automatic, downgrades ask (Michiel's policy)", () => {
     // Fable → Sol: equal tier, automatic.
-    expect(nextFallbackModel(fable, new Set([fable]), "claude-opus-4-8")).toEqual({
+    expect(nextFallbackModel(fable, new Set([fable]), "claude-opus-5")).toEqual({
       id: sol,
       mode: "auto",
     });
     // Fable, Sol gone → Opus: downgrade, ASK.
     expect(
-      nextFallbackModel(fable, new Set([fable, sol]), "claude-opus-4-8")
+      nextFallbackModel(fable, new Set([fable, sol]), "claude-opus-5")
     ).toEqual({ id: opus, mode: "ask" });
     // Opus → Sol: upgrade-ish, automatic.
-    expect(nextFallbackModel(opus, new Set([opus]), "claude-opus-4-8")).toEqual({
+    expect(nextFallbackModel(opus, new Set([opus]), "claude-opus-5")).toEqual({
       id: sol,
       mode: "auto",
     });
@@ -358,18 +358,18 @@ describe("fallback graph (nextFallbackModel)", () => {
       nextFallbackModel(
         opus,
         new Set([opus, sol, "opencode/openai/gpt-5.5"]),
-        "claude-opus-4-8"
+        "claude-opus-5"
       )
     ).toEqual({ id: sonnet, mode: "ask" });
     // Sol → Opus: downgrade, ASK.
-    expect(nextFallbackModel(sol, new Set([sol]), "claude-opus-4-8")).toEqual({
+    expect(nextFallbackModel(sol, new Set([sol]), "claude-opus-5")).toEqual({
       id: opus,
       mode: "ask",
     });
   });
 
   it("never routes back into Fable (scarce weekly-scoped credit pool)", () => {
-    const plan = fallbackPlan("claude-opus-4-8", "claude-opus-4-8");
+    const plan = fallbackPlan("claude-opus-5", "claude-opus-5");
     expect(plan.map((h) => h.id)).not.toContain(fable);
   });
 
@@ -379,7 +379,7 @@ describe("fallback graph (nextFallbackModel)", () => {
   });
 
   it("Fable's plan leads with the automatic Sol hop; the drop to Opus is ask-gated", () => {
-    const plan = fallbackPlan("claude-fable-5", "claude-opus-4-8");
+    const plan = fallbackPlan("claude-fable-5", "claude-opus-5");
     expect(plan.length).toBeGreaterThan(0);
     // First hop off Fable is the equal-tier Sol, taken automatically.
     expect(plan[0]).toEqual({ id: sol, mode: "auto" });
@@ -392,9 +392,9 @@ describe("fallback graph (nextFallbackModel)", () => {
   });
 
   it("tiers Fable/Sol above Opus above Sonnet", () => {
-    expect(fallbackTier("claude-fable-5")).toBeGreaterThan(fallbackTier("claude-opus-4-8"));
-    expect(fallbackTier(sol)).toBeGreaterThan(fallbackTier("claude-opus-4-8"));
-    expect(fallbackTier("claude-opus-4-8")).toBeGreaterThan(fallbackTier("claude-sonnet-5"));
+    expect(fallbackTier("claude-fable-5")).toBeGreaterThan(fallbackTier("claude-opus-5"));
+    expect(fallbackTier(sol)).toBeGreaterThan(fallbackTier("claude-opus-5"));
+    expect(fallbackTier("claude-opus-5")).toBeGreaterThan(fallbackTier("claude-sonnet-5"));
   });
 });
 
@@ -423,7 +423,8 @@ describe("alias table (pinned)", () => {
     expect(resolveModel("gpt")?.id).toBe("gpt-5.6-sol");
     expect(resolveModel("sol")?.id).toBe("gpt-5.6-sol");
     expect(resolveModel("best")?.id).toBe("codex-best-available");
-    expect(resolveModel("opus")?.id).toBe("claude-opus-4-8");
+    expect(resolveModel("opus")?.id).toBe("claude-opus-5");
+    expect(resolveModel("opus4.8")?.id).toBe("claude-opus-4-8");
     expect(resolveModel("fable")?.id).toBe("claude-fable-5");
   });
 });

@@ -87,7 +87,13 @@ export function normalizeModelEffort(
 
 export const KNOWN_MODELS: ModelInfo[] = [
   { id: "claude-fable-5", provider: "claude", label: "Claude Fable 5", aliases: ["fable"] },
-  { id: "claude-opus-4-8", provider: "claude", label: "Claude Opus 4.8", aliases: ["opus"] },
+  { id: "claude-opus-5", provider: "claude", label: "Claude Opus 5", aliases: ["opus", "opus5"] },
+  // Kept resolvable for old sessions' labels/pricing, but the Meridian bridge
+  // collapses every *opus* id to ONE canonical version (the
+  // ANTHROPIC_DEFAULT_OPUS_MODEL pin in meridianAccountEnv, now Opus 5), so a
+  // 4.8 selection is served as Opus 5 — it's out of the picker config for that
+  // reason.
+  { id: "claude-opus-4-8", provider: "claude", label: "Claude Opus 4.8", aliases: ["opus4.8"] },
   { id: "claude-sonnet-5", provider: "claude", label: "Claude Sonnet 5", aliases: ["sonnet", "sonnet5"] },
   { id: "claude-sonnet-4-6", provider: "claude", label: "Claude Sonnet 4.6", aliases: ["sonnet4.6"] },
   { id: "claude-haiku-4-5", provider: "claude", label: "Claude Haiku 4.5", aliases: ["haiku"] },
@@ -104,7 +110,7 @@ export const KNOWN_MODELS: ModelInfo[] = [
 /** Provider/model ids offered when the matching local CLI subscription exists. */
 export const LOCAL_PROFILE_MODELS: ModelInfo[] = [
   { id: "anthropic/claude-sonnet-5", provider: "opencode", label: "Claude Sonnet 5", aliases: [] },
-  { id: "anthropic/claude-opus-4-8", provider: "opencode", label: "Claude Opus 4.8", aliases: [] },
+  { id: "anthropic/claude-opus-5", provider: "opencode", label: "Claude Opus 5", aliases: [] },
   { id: "anthropic/claude-haiku-4-5", provider: "opencode", label: "Claude Haiku 4.5", aliases: [] },
   { id: "openai/gpt-5.6-sol", provider: "opencode", label: "GPT-5.6 Sol", aliases: [] },
   { id: "openai/gpt-5.5", provider: "opencode", label: "GPT-5.5", aliases: [] },
@@ -207,11 +213,11 @@ export const DIAL_ORACLE_AGENTS: Record<
       "Read-only advisor.",
   },
   "oracle-opus": {
-    model: "anthropic/claude-opus-4-8",
+    model: "anthropic/claude-opus-5",
     variant: "high",
-    label: "Claude Opus 4.8",
+    label: "Claude Opus 5",
     description:
-      "Oracle: senior-engineer second opinion on Claude Opus 4.8 — plan review, " +
+      "Oracle: senior-engineer second opinion on Claude Opus 5 — plan review, " +
       "architecture decisions, deep debugging, reviewing significant work. Read-only advisor.",
   },
 };
@@ -556,6 +562,7 @@ const FALLBACK_TIER: Record<string, number> = {
   "gpt-5.6-sol": 3,
   "gpt-5.6-terra": 3,
   "gpt-5.6-luna": 3,
+  "claude-opus-5": 2,
   "claude-opus-4-8": 2,
   "gpt-5.5": 2,
   "claude-sonnet-5": 1,
@@ -577,7 +584,10 @@ const FALLBACK_TIER: Record<string, number> = {
  */
 const FALLBACK_DESTINATIONS = [
   "gpt-5.6-sol",
-  "claude-opus-4-8",
+  // Opus 5 supersedes 4.8 as the Anthropic destination — the bridge serves one
+  // canonical Opus per server (see KNOWN_MODELS note), so listing both would
+  // just walk the same exhausted pool twice.
+  "claude-opus-5",
   "gpt-5.5",
   "claude-sonnet-5",
   "gpt-5.4",
@@ -707,7 +717,7 @@ export function setInteractiveDefaultModel(input: string | null): string {
 export const DEFAULT_FALLBACK_MODEL: string | undefined = (() => {
   const v = (envAlias("OPENSESSION_FALLBACK_MODEL", "MICHAEL_FALLBACK_MODEL") || "").trim().toLowerCase();
   if (v === "none") return undefined;
-  return v || "claude-opus-4-8";
+  return v || "claude-opus-5";
 })();
 
 /**
@@ -1059,6 +1069,7 @@ export interface ModelPricing {
 const PRICING: Record<string, ModelPricing> = {
   // Anthropic rate card ($/1M). Cache read ≈ 0.1× input, cache write ≈ 1.25× input.
   "claude-fable-5": { input: 10, output: 50, cacheRead: 1.0, cacheWrite: 12.5 },
+  "claude-opus-5": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   "claude-opus-4-8": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   "claude-opus-4-7": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
@@ -1073,6 +1084,7 @@ const PRICING: Record<string, ModelPricing> = {
 
 const CONTEXT_WINDOWS: Record<string, number> = {
   "claude-fable-5": 1_000_000,
+  "claude-opus-5": 1_000_000,
   "claude-opus-4-8": 1_000_000,
   "claude-opus-4-7": 1_000_000,
   "claude-sonnet-5": 1_000_000,

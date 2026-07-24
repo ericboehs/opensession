@@ -111,7 +111,7 @@ export function createGoalsMcpServer(ctx: GoalsToolContext) {
             .string()
             .optional()
             .describe("Project id for code mode (default tella-fusion)."),
-          model: z.string().optional().describe("Optional model id (e.g. 'claude-opus-4-8')."),
+          model: z.string().optional().describe("Optional model id (e.g. 'claude-opus-5')."),
           mcpServers: z
             .array(z.string())
             .optional()

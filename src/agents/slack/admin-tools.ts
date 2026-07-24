@@ -172,7 +172,7 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
           model: z
             .string()
             .optional()
-            .describe("Optional model id (e.g. 'claude-opus-4-8', 'gpt-5.5')."),
+            .describe("Optional model id (e.g. 'claude-opus-5', 'gpt-5.5')."),
           accountId: z
             .string()
             .optional()
