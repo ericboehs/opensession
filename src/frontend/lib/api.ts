@@ -508,19 +508,28 @@ export async function fetchSkillMentions(
 
 export interface RepoInfo {
 	id: string;
+	ghRepo?: string;
 	defaultBranch: string;
 	sharedCheckout: boolean;
 	default?: boolean;
 }
 
 export async function fetchRepos(): Promise<RepoInfo[]> {
-	try {
-		const data = await request<{ repos?: RepoInfo[] }>("/repos");
-		return data?.repos ?? [];
-	} catch (e) {
-		console.warn("fetchRepos failed:", e);
-		return [];
-	}
+	const data = await request<{ repos?: RepoInfo[] }>("/repos", {
+		label: "Failed to load repositories",
+	});
+	return data?.repos ?? [];
+}
+
+export async function registerRepoApi(input: {
+	url?: string;
+	path?: string;
+}): Promise<RepoInfo> {
+	return request<RepoInfo>("/repos", {
+		method: "POST",
+		body: input,
+		label: "Failed to add repository",
+	});
 }
 
 // ── Projects (folders that group chats) ──

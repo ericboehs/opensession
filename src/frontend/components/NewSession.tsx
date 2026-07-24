@@ -6,7 +6,7 @@ import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
-import { IconPaperclip, IconChevronDown, IconCheck, IconSliders, IconConnections, IconReturn, IconBox } from "./icons";
+import { IconPaperclip, IconChevronDown, IconCheck, IconSliders, IconConnections, IconReturn, IconBox, IconFolderPlus } from "./icons";
 import type { WSServerMessage } from "../lib/types";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
@@ -15,6 +15,7 @@ import { RepoTile } from "./RepoTile";
 import { ModelEffortSelect } from "./ModelEffortSelect";
 import { Menu } from "../ui/menu";
 import { IconTile, displayName } from "./BrandTile";
+import { AddRepoDialog } from "./AddRepoDialog";
 
 interface Props {
   /** Close the palette (Esc, backdrop click, or after a create without "Create more"). */
@@ -62,6 +63,7 @@ const CLOUD_REPOS = [
 ];
 
 const LAST_REPO_KEY = "opensession-new-session-repo";
+const ADD_REPO_VALUE = "__add_repo__";
 
 function lastSelectedRepo(): string | null {
   try {
@@ -128,6 +130,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   // In a Project, default to the folder's shared repo; else the prefill/filter repo.
   const [repo, setRepo] = useState(forceRepo || prefill.repo);
   const [repos, setRepos] = useState(CLOUD_REPOS);
+  const [addRepoOpen, setAddRepoOpen] = useState(false);
   useEffect(() => {
     if (!auth?.local) return;
     fetchRepos().then((items) => {
@@ -554,12 +557,27 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             className="palette-trigger palette-trigger-strong"
             title="Repository"
             value={repo}
-            options={repos.map((p) => ({
-              value: p.id,
-              label: p.label,
-              icon: <RepoTile name={p.id} />,
-            }))}
+            options={[
+              ...repos.map((p) => ({
+                value: p.id,
+                label: p.label,
+                icon: <RepoTile name={p.id} />,
+              })),
+              ...(auth?.local
+                ? [
+                    {
+                      value: ADD_REPO_VALUE,
+                      label: "Add repo…",
+                      icon: <IconFolderPlus size={20} />,
+                    },
+                  ]
+                : []),
+            ]}
             onChange={(nextRepo) => {
+              if (nextRepo === ADD_REPO_VALUE) {
+                setAddRepoOpen(true);
+                return;
+              }
               setRepo(nextRepo);
               rememberSelectedRepo(nextRepo);
             }}
@@ -597,6 +615,22 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
           </PaletteSelect>
           )}
         </div>
+
+        {auth?.local && (
+          <AddRepoDialog
+            open={addRepoOpen}
+            onOpenChange={setAddRepoOpen}
+            onAdded={(added) => {
+              const next = { id: added.id, label: added.id };
+              setRepos((current) => [
+                ...current.filter((item) => item.id !== added.id),
+                next,
+              ]);
+              setRepo(added.id);
+              rememberSelectedRepo(added.id);
+            }}
+          />
+        )}
 
         {/* Prompt */}
         <div
