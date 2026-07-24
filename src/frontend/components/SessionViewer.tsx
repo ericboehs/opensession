@@ -862,7 +862,7 @@ export function SessionViewer({
 		const right =
 			(e.currentTarget.parentElement as HTMLElement | null)?.getBoundingClientRect()
 				.right ?? window.innerWidth;
-		document.body.classList.add("resizing-x");
+		document.body.classList.add("resizing-panel");
 		// Snap Motion layout morphs while dragging — the composer re-measures on
 		// every step, so springing it reads as funky text (mirrors the sidebar).
 		const restoreMotion = suppressLayoutAnimations();
@@ -875,7 +875,7 @@ export function SessionViewer({
 			setPanelW(w);
 		};
 		const onUp = () => {
-			document.body.classList.remove("resizing-x");
+			document.body.classList.remove("resizing-panel");
 			restoreMotion();
 			window.removeEventListener("mousemove", onMove);
 			window.removeEventListener("mouseup", onUp);

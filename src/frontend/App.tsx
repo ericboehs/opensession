@@ -479,7 +479,7 @@ function App() {
 	sidebarWidthRef.current = sidebarWidth;
 	function startSidebarResize(e: React.MouseEvent) {
 		e.preventDefault();
-		document.body.classList.add("resizing-x");
+		document.body.classList.add("resizing-sidebar");
 		// Snap Motion layout morphs while dragging — the composer + sidebar rows
 		// re-measure on every step, so springing them reads as funky text.
 		const restoreMotion = suppressLayoutAnimations();
@@ -490,7 +490,7 @@ function App() {
 			setSidebarWidth(w);
 		};
 		const onUp = () => {
-			document.body.classList.remove("resizing-x");
+			document.body.classList.remove("resizing-sidebar");
 			restoreMotion();
 			window.removeEventListener("mousemove", onMove);
 			window.removeEventListener("mouseup", onUp);

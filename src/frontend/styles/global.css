@@ -996,11 +996,13 @@ html.wco .app-body.sidebar-collapsed
 	background: transparent;
 	transition: background 0.14s ease;
 }
-.sidebar-resize:hover::after,
-body.resizing-x .sidebar-resize::after {
-	background: var(--accent);
+.sidebar-resize:hover::after {
+	background: var(--border-strong);
 }
-body.resizing-x {
+body.resizing-sidebar .sidebar-resize::after {
+	background: var(--text-faint);
+}
+body:is(.resizing-sidebar, .resizing-panel) {
 	cursor: col-resize;
 	user-select: none;
 }
@@ -4105,9 +4107,11 @@ button.preview-open.starting:not(:disabled):hover .preview-cancel-label {
 	background: transparent;
 	transition: background 0.14s ease;
 }
-.panel-resize:hover::after,
-body.resizing-x .panel-resize::after {
-	background: var(--accent);
+.panel-resize:hover::after {
+	background: var(--border-strong);
+}
+body.resizing-panel .panel-resize::after {
+	background: var(--text-faint);
 }
 
 .panel-tabs {
