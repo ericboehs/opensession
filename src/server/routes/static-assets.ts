@@ -7,9 +7,42 @@
  */
 
 import type { RouteContext } from "./context";
-import { productName } from "../config";
+import { configuredRepos, productName } from "../config";
 import { FRONTEND_DIST, FRONTEND_SRC, frontend } from "../frontend-build";
 import { isLocalProfile } from "../profile";
+
+// GitHub owner avatars for the repo-icon route, fetched once and kept warm for
+// a day. Avatar PNGs are public and served off GitHub's CDN (not the API
+// quota); on a fetch failure we serve the stale copy so tiles don't flicker
+// back to letter swatches when github.com hiccups.
+const avatarCache = new Map<
+	string,
+	{ at: number; bytes: ArrayBuffer; type: string }
+>();
+const AVATAR_TTL_MS = 24 * 60 * 60 * 1000;
+
+async function ownerAvatar(
+	owner: string,
+): Promise<{ bytes: ArrayBuffer; type: string } | null> {
+	const cached = avatarCache.get(owner);
+	if (cached && Date.now() - cached.at < AVATAR_TTL_MS) return cached;
+	try {
+		const res = await fetch(
+			`https://github.com/${encodeURIComponent(owner)}.png?size=128`,
+			{ redirect: "follow", signal: AbortSignal.timeout(5000) },
+		);
+		if (!res.ok) return cached ?? null;
+		const entry = {
+			at: Date.now(),
+			bytes: await res.arrayBuffer(),
+			type: res.headers.get("content-type") || "image/png",
+		};
+		avatarCache.set(owner, entry);
+		return entry;
+	} catch {
+		return cached ?? null;
+	}
+}
 
 export async function handleStaticAssetsRoutes(
 	ctx: RouteContext,
@@ -39,6 +72,37 @@ export async function handleStaticAssetsRoutes(
 				},
 			},
 		);
+	}
+
+	// Per-repo icons for the RepoTile UI: the repo's GitHub org avatar, fetched
+	// server-side and cached; the backstage/opensession repo wears the OS1 mac
+	// app icon (os1-mac/build/icon-512.png, same file as /mac-app-icon.png)
+	// instead of the shared org avatar. Unregistered ids 404 — the client falls
+	// back to its colored letter tile.
+	const repoIcon = path.match(/^\/backstage\/repo-icon\/([\w.-]+)\.png$/);
+	if (repoIcon && req.method === "GET") {
+		const id = repoIcon[1];
+		if (id === "backstage") {
+			return new Response(
+				Bun.file(`${FRONTEND_SRC}/../../os1-mac/build/icon-512.png`),
+				{
+					headers: {
+						"Content-Type": "image/png",
+						"Cache-Control": "public, max-age=3600, must-revalidate",
+					},
+				},
+			);
+		}
+		const owner = configuredRepos()[id]?.ghRepo?.split("/")[0];
+		if (!owner) return new Response("Not found", { status: 404 });
+		const icon = await ownerAvatar(owner);
+		if (!icon) return new Response("Not found", { status: 404 });
+		return new Response(icon.bytes, {
+			headers: {
+				"Content-Type": icon.type,
+				"Cache-Control": "public, max-age=86400",
+			},
+		});
 	}
 
 	// Service worker (Web Push + app-shell cache). Must precede the hashed-asset

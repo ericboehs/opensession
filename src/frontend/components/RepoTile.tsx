@@ -40,11 +40,13 @@ export function repoLabel(id: string): string {
 	return REPO_DISPLAY[id]?.label ?? id;
 }
 
-// A tiny colored letter-tile standing in for a repo's icon (sidebar Repo
-// dropdown, session-header breadcrumb, repo menus). `size` (px) shrinks it for
-// tight spots like the phone header's model line; omitted = the 18px default.
-// `round` makes it a full circle (e.g. the phone title pill, where it sits
-// against the pill's own rounding).
+// A repo's icon tile (sidebar Repo dropdown, session-header breadcrumb, repo
+// menus): the server's /repo-icon/<id>.png — the repo's GitHub org avatar,
+// with backstage wearing the OS1 mac app icon — falling back to the colored
+// letter tile when no icon resolves (unregistered/local repos). `size` (px)
+// shrinks it for tight spots like the phone header's model line; omitted =
+// the 18px default. `round` makes it a full circle (e.g. the phone title
+// pill, where it sits against the pill's own rounding).
 export function RepoTile({
 	name,
 	size,
@@ -54,7 +56,9 @@ export function RepoTile({
 	size?: number;
 	round?: boolean;
 }) {
-	const style: React.CSSProperties = { background: repoColor(name) };
+	// Failure is tracked per name so a tile that switches repo retries the img.
+	const [failedFor, setFailedFor] = React.useState<string | null>(null);
+	const style: React.CSSProperties = {};
 	if (size) {
 		style.width = size;
 		style.height = size;
@@ -63,6 +67,19 @@ export function RepoTile({
 	} else if (round) {
 		style.borderRadius = "50%";
 	}
+	if (failedFor !== name) {
+		return (
+			<span className="repo-tile repo-tile--img" style={style}>
+				<img
+					src={`/repo-icon/${encodeURIComponent(name)}.png`}
+					alt=""
+					loading="lazy"
+					onError={() => setFailedFor(name)}
+				/>
+			</span>
+		);
+	}
+	style.background = repoColor(name);
 	const letter = REPO_DISPLAY[name]?.letter ?? (name[0] || "?").toUpperCase();
 	return (
 		<span className="repo-tile" style={style}>

@@ -1356,6 +1356,18 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	color: #fff;
 	flex-shrink: 0;
 }
+/* Image variant: /repo-icon/<id>.png (GitHub org avatar; the OS1 app icon for
+   the opensession repo). The img fills the tile and inherits its rounding; no
+   colored backing so icons with transparency sit on the surface itself. */
+.repo-tile--img {
+	background: none;
+}
+.repo-tile--img img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	border-radius: inherit;
+}
 
 .sidebar-list {
 	flex: none;
