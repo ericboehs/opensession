@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { chatNeverRan, pickLandingChat } from "./landing-chat";
+import {
+	chatNeverRan,
+	defaultChatWorkspaceView,
+	pickLandingChat,
+} from "./landing-chat";
 import type { UnifiedSession } from "./types";
 
 function chat(over: Partial<UnifiedSession>): UnifiedSession {
@@ -31,6 +35,20 @@ describe("chatNeverRan", () => {
 		expect(
 			chatNeverRan(chat({ lastActivity: "2026-07-02T00:00:00.000Z" })),
 		).toBe(false);
+	});
+});
+
+describe("defaultChatWorkspaceView", () => {
+	test("PR-backed workspace chat links land on Review", () => {
+		expect(defaultChatWorkspaceView({ key: "ghpr-4972" }, false)).toBe(
+			"review",
+		);
+		expect(defaultChatWorkspaceView({ prNumber: 4972 }, false)).toBe("review");
+	});
+
+	test("plain workspaces and dismissed Review tabs land on chat", () => {
+		expect(defaultChatWorkspaceView({ key: "plain-th_123" }, false)).toBeNull();
+		expect(defaultChatWorkspaceView({ key: "ghpr-4972" }, true)).toBeNull();
 	});
 });
 

@@ -1,4 +1,13 @@
-import type { UnifiedSession } from "./types";
+import type { Project, UnifiedSession } from "./types";
+
+export function defaultChatWorkspaceView(
+	workspace: Pick<Project, "key" | "prNumber"> | null | undefined,
+	reviewDismissed: boolean,
+): "review" | null {
+	const prBacked =
+		workspace?.prNumber !== undefined || workspace?.key?.startsWith("ghpr-");
+	return prBacked && !reviewDismissed ? "review" : null;
+}
 
 /**
  * True for an untouched "New chat" shell: never ran a turn (no engine session

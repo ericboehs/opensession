@@ -60,7 +60,10 @@ import {
 	resolveWorkspaceApi,
 	type NoteMeta,
 } from "./lib/api";
-import { pickLandingChat } from "./lib/landing-chat";
+import {
+	defaultChatWorkspaceView,
+	pickLandingChat,
+} from "./lib/landing-chat";
 import type { Project, SupportThread } from "./lib/types";
 import type { ReviewQueueItem } from "./lib/review-queue";
 import { pushRecent } from "./lib/recents";
@@ -1148,13 +1151,20 @@ function App() {
 		? projects.find((p) => p.id === routeWorkspaceId) || null
 		: null;
 	const wsKey = routeWorkspaceId ?? wsKeyFor(currentSession);
-	// Opening a different workspace always starts on its chat, never a stale
-	// Review/Preview environment pane. (Switching chats WITHIN a workspace
-	// resets via onSelect's explicit setActiveViewTab(null) — clicking a chat
-	// tab means "show me the chat".)
+	const wsRecord =
+		routeWorkspace ??
+		(currentSession?.projectId
+			? projects.find((p) => p.id === currentSession.projectId) || null
+			: null);
+	const reviewDismissed = !!wsKey && reviewClosed.has(wsKey);
+	const defaultChatView = defaultChatWorkspaceView(wsRecord, reviewDismissed);
+	// Opening a different workspace starts on its default surface: Review for a
+	// PR-backed workspace, otherwise chat. Switching chats WITHIN a workspace
+	// still resets via onSelect's explicit setActiveViewTab(null) — clicking a
+	// chat tab means "show me the chat".
 	useEffect(() => {
-		setActiveViewTab(null);
-	}, [wsKey]);
+		setActiveViewTab(defaultChatView);
+	}, [wsKey, defaultChatView]);
 	// ...unless we just opened Review for that workspace from the sidebar: once
 	// it lands (this render or the one after navigation), foreground Review and
 	// consume the pulse. Runs after the reset effect above, so it wins.
@@ -1280,11 +1290,6 @@ function App() {
 	// A PR-backed workspace's whole point is its PR, so its Review tab is
 	// default-present (leftmost) however you landed — a sidebar PR row, a chat
 	// deep link, a tab switch — until explicitly dismissed (reviewClosed).
-	const wsRecord =
-		routeWorkspace ??
-		(currentSession?.projectId
-			? projects.find((p) => p.id === currentSession.projectId) || null
-			: null);
 	const prBackedWorkspace =
 		!!wsRecord &&
 		(wsRecord.prNumber !== undefined || !!wsRecord.key?.startsWith("ghpr-"));
