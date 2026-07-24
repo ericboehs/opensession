@@ -6,6 +6,7 @@ import SwiftUI
 /// centered captions.
 struct TranscriptRow: View {
     let item: SessionViewModel.DisplayItem
+    let sessionId: String
     /// True when this user message is the last of its consecutive group —
     /// only that one shows the avatar; the rest reserve the gutter so all
     /// bubbles in the group share a trailing edge.
@@ -36,18 +37,7 @@ struct TranscriptRow: View {
         HStack(alignment: .bottom, spacing: 8) {
             Spacer(minLength: 40)
             VStack(alignment: .trailing, spacing: 6) {
-                // Attached images (data URLs; server-side blob refs for big
-                // transcripts aren't fetched here).
-                let attached = (entry.images ?? []).compactMap { DataImage(dataURL: $0) }
-                if !attached.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(Array(attached.enumerated()), id: \.offset) { _, image in
-                            image
-                                .frame(width: 96, height: 96)
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        }
-                    }
-                }
+                conversationImages(entry)
                 if !entry.text.isEmpty {
                     Text(entry.text)
                         .padding(.horizontal, 14)
@@ -76,10 +66,29 @@ struct TranscriptRow: View {
     /// Assistant text renders plain (no bubble), the shape modern AI chat
     /// apps converge on — only the person's own messages get bubbles.
     private func assistantBubble(_ entry: TranscriptEntry) -> some View {
-        MarkdownBody(entry.text)
-            .padding(.vertical, 2)
-            .padding(.trailing, 24)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 6) {
+            conversationImages(entry)
+            if !entry.text.isEmpty {
+                MarkdownBody(entry.text)
+            }
+        }
+        .padding(.vertical, 2)
+        .padding(.trailing, 24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func conversationImages(_ entry: TranscriptEntry) -> some View {
+        let sources = entry.images ?? []
+        if !sources.isEmpty {
+            HStack(spacing: 6) {
+                ForEach(Array(sources.enumerated()), id: \.offset) { _, source in
+                    ConversationImage(source: source, sessionId: sessionId)
+                        .frame(width: 96, height: 96)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+            }
+        }
     }
 
     private func systemRow(_ entry: TranscriptEntry) -> some View {

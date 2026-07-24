@@ -1,9 +1,35 @@
 import Foundation
 
+private final class SafeImageRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        var redirected = request
+        if let original = task.originalRequest?.url,
+           let target = request.url,
+           (original.scheme != target.scheme
+            || original.host != target.host
+            || original.port != target.port) {
+            redirected.setValue(nil, forHTTPHeaderField: "Authorization")
+        }
+        completionHandler(redirected)
+    }
+}
+
 /// Thin REST client for the OpenSession HTTP API. Prompting is WS-only on the
 /// server, so this covers reads plus the occasional mutation.
 @MainActor
 enum OS1API {
+    private static let imageSession = URLSession(
+        configuration: .default,
+        delegate: SafeImageRedirectDelegate(),
+        delegateQueue: nil
+    )
+
     enum APIError: LocalizedError {
         case notConfigured
         case badURL
@@ -177,7 +203,7 @@ enum OS1API {
     }
 
     private static func responseData(for request: URLRequest) async throws -> Data {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await imageSession.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw APIError.http(http.statusCode)
         }

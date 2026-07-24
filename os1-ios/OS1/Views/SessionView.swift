@@ -42,6 +42,7 @@ struct SessionView: View {
                             ForEach(viewModel.displayItems) { item in
                                 TranscriptRow(
                                     item: item,
+                                    sessionId: viewModel.session.id,
                                     showsUserAvatar: viewModel.avatarItemIds.contains(item.id)
                                 )
                                 .id(item.id)

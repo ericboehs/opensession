@@ -202,6 +202,7 @@ struct ConversationImage: View {
 
     @State private var data: Data?
     @State private var failed = false
+    @State private var retryCount = 0
 
     init(source: String, sessionId: String) {
         self.source = source
@@ -213,22 +214,21 @@ struct ConversationImage: View {
         Group {
             if let data {
                 ExpandableDataImage(data: data)
+            } else if failed {
+                Button {
+                    retryCount += 1
+                } label: {
+                    imagePlaceholder(showingError: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Retry image")
             } else {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(.fill.tertiary)
-                    .overlay {
-                        if failed {
-                            Image(systemName: "photo.badge.exclamationmark")
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                    }
+                imagePlaceholder(showingError: false)
             }
         }
-        .task(id: source) {
+        .task(id: "\(source)#\(retryCount)") {
             guard data == nil else { return }
+            failed = false
             do {
                 data = try await OS1API.conversationImage(source: source, sessionId: sessionId)
             } catch {
@@ -236,14 +236,32 @@ struct ConversationImage: View {
             }
         }
     }
+
+    private func imagePlaceholder(showingError: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(.fill.tertiary)
+            .overlay {
+                if showingError {
+                    Image(systemName: "arrow.clockwise")
+                        .foregroundStyle(.tertiary)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+    }
 }
 
 #if os(iOS)
 private struct FullScreenImagePreview: View {
-    let data: Data
+    private let image: UIImage?
 
     @Environment(\.dismiss) private var dismiss
     @State private var dragOffset: CGSize = .zero
+
+    init(data: Data) {
+        image = UIImage(data: data)
+    }
 
     private var dismissalProgress: CGFloat {
         min(abs(dragOffset.height) / 280, 1)
@@ -255,7 +273,7 @@ private struct FullScreenImagePreview: View {
                 .opacity(1 - dismissalProgress * 0.55)
                 .ignoresSafeArea()
 
-            if let image = UIImage(data: data) {
+            if let image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
