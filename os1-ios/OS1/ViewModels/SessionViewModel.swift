@@ -62,7 +62,9 @@ final class SessionViewModel {
     private var historyRev: String?
     private var historyFirstSeq: Int?
 
-    private var socket: OS1Socket?
+    private var socket: (any SessionSocket)?
+    /// Injection seam for tests; production always builds a real OS1Socket.
+    private let socketFactory: @MainActor () -> any SessionSocket
     private var reconnectTask: Task<Void, Never>?
     /// Foreground liveness probe (see `appDidBecomeActive`).
     private var resyncProbeTask: Task<Void, Never>?
@@ -169,8 +171,13 @@ final class SessionViewModel {
     private var creationRetryTask: Task<Void, Never>?
     private var creationRetriesLeft = 40
 
-    init(session: Session, seed: OptimisticSeed? = nil) {
+    init(
+        session: Session,
+        seed: OptimisticSeed? = nil,
+        socketFactory: @escaping @MainActor () -> any SessionSocket = { OS1Socket() }
+    ) {
         self.session = session
+        self.socketFactory = socketFactory
         self.isRunning = session.isRunning ?? false
         self.queuedCount = session.queuedCount ?? 0
         self.model = session.model ?? ""
@@ -353,7 +360,7 @@ final class SessionViewModel {
     private func connect() {
         connectionState =
             (entries.isEmpty || awaitingCreation) ? .connecting : .reconnecting(nil)
-        let socket = OS1Socket()
+        let socket = socketFactory()
         socket.onEvent = { [weak self] event in self?.handle(event) }
         socket.onClose = { [weak self] reason in self?.scheduleReconnect(reason) }
         self.socket = socket
@@ -567,6 +574,11 @@ final class SessionViewModel {
     /// body evaluation — including each ~8Hz liveText flush mid-stream.
     private(set) var displayItems: [DisplayItem] = []
 
+    /// Ids of user messages that are the LAST of a consecutive user-message
+    /// group — the one that gets the avatar next to it (group-chat style);
+    /// earlier messages in the group just reserve the gutter.
+    private(set) var avatarItemIds: Set<String> = []
+
     private func rebuildDisplayItems() {
         // Durable file-ordered entries first, then the ephemeral live tail.
         var all = entries
@@ -599,6 +611,17 @@ final class SessionViewModel {
             }
         }
         displayItems = items
+
+        var tails: Set<String> = []
+        for (index, item) in items.enumerated() {
+            guard case .entry(let entry) = item, entry.isUser else { continue }
+            if index + 1 < items.count,
+               case .entry(let next) = items[index + 1], next.isUser {
+                continue // a later user message in the same group carries the avatar
+            }
+            tails.insert(item.id)
+        }
+        avatarItemIds = tails
     }
 
     private func upsert(_ incoming: [TranscriptEntry]) {

@@ -1,5 +1,37 @@
 import Foundation
 
+/// The socket surface `SessionViewModel` drives, extracted so tests can
+/// substitute a recording mock for the real WebSocket.
+@MainActor
+protocol SessionSocket: AnyObject {
+    var onEvent: ((ServerEvent) -> Void)? { get set }
+    var onClose: ((String?) -> Void)? { get set }
+    func connect()
+    func disconnect()
+    func watch(sessionId: String)
+    func loadHistory(sessionId: String, beforeOffset: Int, beforeRev: String?)
+    func loadHistory(sessionId: String, beforeSeq: Int)
+    func prompt(
+        sessionId: String, content: String, user: String,
+        images: [String]?, effort: String?, fastMode: Bool?
+    )
+    func steerQueued(sessionId: String, queueId: String)
+    func deleteQueued(sessionId: String, queueId: String)
+    func cancelWatchedRun()
+    func answer(sessionId: String, questionId: String, answers: [String: String]?)
+}
+
+extension SessionSocket {
+    /// Text-only convenience (slash commands and the like) — protocols can't
+    /// carry default arguments, so the concrete method's defaults live here.
+    func prompt(sessionId: String, content: String, user: String) {
+        prompt(
+            sessionId: sessionId, content: content, user: user,
+            images: nil, effort: nil, fastMode: nil
+        )
+    }
+}
+
 /// One WebSocket connection to the OpenSession server (`/ws`), authenticated
 /// with the bearer token on the upgrade request.
 ///
@@ -8,7 +40,7 @@ import Foundation
 /// this exists). Reconnect policy lives in the owner — on failure this class
 /// reports `onClose` once and stops.
 @MainActor
-final class OS1Socket {
+final class OS1Socket: SessionSocket {
     var onEvent: ((ServerEvent) -> Void)?
     var onClose: ((String?) -> Void)?
 

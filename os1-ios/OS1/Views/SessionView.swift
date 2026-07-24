@@ -40,8 +40,11 @@ struct SessionView: View {
                                 historyLoader
                             }
                             ForEach(viewModel.displayItems) { item in
-                                TranscriptRow(item: item)
-                                    .id(item.id)
+                                TranscriptRow(
+                                    item: item,
+                                    showsUserAvatar: viewModel.avatarItemIds.contains(item.id)
+                                )
+                                .id(item.id)
                             }
                             if !viewModel.liveText.isEmpty {
                                 StreamingBubble(text: viewModel.liveText)

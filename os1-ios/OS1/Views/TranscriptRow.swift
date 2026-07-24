@@ -6,6 +6,10 @@ import SwiftUI
 /// centered captions.
 struct TranscriptRow: View {
     let item: SessionViewModel.DisplayItem
+    /// True when this user message is the last of its consecutive group —
+    /// only that one shows the avatar; the rest reserve the gutter so all
+    /// bubbles in the group share a trailing edge.
+    var showsUserAvatar = false
 
     var body: some View {
         switch item {
@@ -26,8 +30,11 @@ struct TranscriptRow: View {
     }
 
     private func userBubble(_ entry: TranscriptEntry) -> some View {
-        HStack {
-            Spacer(minLength: 48)
+        // Avatar bottom-aligned in a trailing gutter, like group chat apps:
+        // it marks the end of a consecutive run of messages from the person,
+        // and non-tail bubbles keep the same gutter so trailing edges align.
+        HStack(alignment: .bottom, spacing: 8) {
+            Spacer(minLength: 40)
             VStack(alignment: .trailing, spacing: 6) {
                 // Attached images (data URLs; server-side blob refs for big
                 // transcripts aren't fetched here).
@@ -55,6 +62,12 @@ struct TranscriptRow: View {
                         )
                         .textSelection(.enabled)
                 }
+            }
+            if showsUserAvatar {
+                UserAvatar(size: 26)
+                    .padding(.bottom, 4)
+            } else {
+                Color.clear.frame(width: 26, height: 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)

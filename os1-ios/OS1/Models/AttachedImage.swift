@@ -15,6 +15,12 @@ struct AttachedImage: Identifiable, Equatable {
         "data:image/jpeg;base64," + jpegData.base64EncodedString()
     }
 
+    /// Direct construction (tests, previews) — bypasses normalization.
+    init(id: String, jpegData: Data) {
+        self.id = id
+        self.jpegData = jpegData
+    }
+
     init?(rawData: Data) {
         guard let jpeg = AttachedImage.normalizedJPEG(from: rawData) else {
             return nil

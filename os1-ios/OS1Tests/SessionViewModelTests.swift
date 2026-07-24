@@ -204,8 +204,7 @@ final class SessionViewModelTests: XCTestCase {
 
     func testQueueUpdate() {
         let viewModel = makeViewModel()
-        // QueueItem is only constructible from the wire (by design), so drive
-        // this one through the raw frame.
+        // Drive this one through the raw frame so it also pins the wire parse.
         let json = #"""
         {"type":"queue_update","sessionId":"bks-1",
          "queued":[{"id":"q1","content":"next","user":"jaap"}],
@@ -235,4 +234,242 @@ final class SessionViewModelTests: XCTestCase {
         viewModel.handle(.notice(""))
         XCTAssertNil(viewModel.notice)
     }
+}
+
+/// `sendDraft` composer semantics: an idle send echoes an optimistic bubble
+/// into the transcript; a send during a run is queued server-side (busyMode
+/// "queue") and must surface as a queue chip, never a thread bubble — the
+/// stranded out-of-order bubble is the bug these pin down.
+@MainActor
+final class SendDraftTests: XCTestCase {
+    private var viewModel: SessionViewModel!
+    private var socket: MockSocket!
+
+    override func setUp() async throws {
+        socket = MockSocket()
+        let mock = socket!
+        viewModel = SessionViewModel(
+            session: Session(id: "bks-1"), socketFactory: { mock }
+        )
+        viewModel.start()
+    }
+
+    private func entry(_ id: String, _ type: String, text: String? = nil) -> TranscriptEntry {
+        TranscriptEntry(id: id, type: type, content: text)
+    }
+
+    private func markRunning() {
+        viewModel.handle(.sessionStatus(sessionId: "bks-1", isRunning: true))
+    }
+
+    // MARK: - Idle sends
+
+    func testIdleSendEchoesOptimisticBubble() {
+        viewModel.draft = "hi there"
+        viewModel.sendDraft()
+        XCTAssertEqual(viewModel.entries.count, 1)
+        XCTAssertEqual(viewModel.entries[0].text, "hi there")
+        XCTAssertTrue(viewModel.entries[0].isUser)
+        XCTAssertEqual(viewModel.displayItems.count, 1)
+        XCTAssertTrue(viewModel.queuedItems.isEmpty, "idle sends must not fabricate a queue chip")
+        XCTAssertEqual(viewModel.queuedCount, 0)
+        XCTAssertEqual(viewModel.draft, "")
+        XCTAssertEqual(socket.prompts.count, 1)
+        XCTAssertEqual(socket.prompts[0].content, "hi there")
+    }
+
+    func testIdleEchoReplacedByServerCopyWithoutDuplication() {
+        viewModel.draft = "hi"
+        viewModel.sendDraft()
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "hi")
+        ]))
+        XCTAssertEqual(viewModel.entries.map(\.id), ["u1"], "optimistic bubble must be replaced, not doubled")
+    }
+
+    func testWhitespaceOnlyDraftIsNotSent() {
+        viewModel.draft = "   \n  "
+        viewModel.sendDraft()
+        XCTAssertTrue(socket.prompts.isEmpty)
+        XCTAssertTrue(viewModel.entries.isEmpty)
+        XCTAssertTrue(viewModel.queuedItems.isEmpty)
+    }
+
+    func testSendWithoutSocketKeepsDraft() {
+        let offline = SessionViewModel(session: Session(id: "bks-1"))
+        offline.draft = "hi"
+        offline.sendDraft()
+        XCTAssertEqual(offline.draft, "hi", "an unsent draft must not be discarded")
+        XCTAssertTrue(offline.entries.isEmpty)
+    }
+
+    // MARK: - Busy sends (the queue-chip path)
+
+    func testBusySendShowsQueueChipNotTranscriptBubble() {
+        markRunning()
+        viewModel.draft = "do this next"
+        viewModel.sendDraft()
+        XCTAssertTrue(viewModel.entries.isEmpty, "a queued send must not enter the transcript")
+        XCTAssertTrue(viewModel.displayItems.isEmpty)
+        XCTAssertEqual(viewModel.queuedItems.count, 1)
+        XCTAssertEqual(viewModel.queuedItems[0].content, "do this next")
+        XCTAssertEqual(viewModel.queuedItems[0].user, ServerConfig.shared.userName)
+        XCTAssertTrue(viewModel.queuedItems[0].id.hasPrefix("local-queued-"))
+        XCTAssertEqual(viewModel.queuedCount, 1)
+        // The frame still goes out — queueing is the server's job.
+        XCTAssertEqual(socket.prompts.count, 1)
+        XCTAssertEqual(socket.prompts[0].content, "do this next")
+    }
+
+    func testTwoBusySendsStackTwoChips() {
+        markRunning()
+        viewModel.draft = "first"
+        viewModel.sendDraft()
+        viewModel.draft = "second"
+        viewModel.sendDraft()
+        XCTAssertEqual(viewModel.queuedItems.map(\.content), ["first", "second"])
+        XCTAssertEqual(viewModel.queuedCount, 2)
+        XCTAssertTrue(viewModel.entries.isEmpty)
+    }
+
+    func testServerQueueUpdateReplacesLocalChip() {
+        markRunning()
+        viewModel.draft = "do this next"
+        viewModel.sendDraft()
+        let json = #"""
+        {"type":"queue_update","sessionId":"bks-1",
+         "queued":[{"id":"q1","content":"do this next","user":"ios"}],
+         "steered":[]}
+        """#
+        viewModel.handle(ServerEvent.parse(Data(json.utf8)))
+        XCTAssertEqual(viewModel.queuedItems.map(\.id), ["q1"], "server copy must replace the local chip, not join it")
+        XCTAssertEqual(viewModel.queuedCount, 1)
+    }
+
+    func testQueuedMessageEntersTranscriptOnlyOnDelivery() {
+        markRunning()
+        viewModel.draft = "do this next"
+        viewModel.sendDraft()
+        // Run finishes, queue delivers: queue empties and the prompt lands as
+        // a durable user entry — the thread shows it exactly once, in order.
+        viewModel.handle(.sessionStatus(sessionId: "bks-1", isRunning: false))
+        let json = #"""
+        {"type":"queue_update","sessionId":"bks-1","queued":[],"steered":[]}
+        """#
+        viewModel.handle(ServerEvent.parse(Data(json.utf8)))
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u9", "user", text: "do this next")
+        ]))
+        XCTAssertTrue(viewModel.queuedItems.isEmpty)
+        XCTAssertEqual(viewModel.queuedCount, 0)
+        XCTAssertEqual(viewModel.entries.map(\.id), ["u9"])
+        XCTAssertEqual(viewModel.displayItems.count, 1)
+    }
+
+    /// The race: the run ended in the gap, the server delivered the prompt
+    /// straight to the engine, and no queue_update ever mentions it — the
+    /// chip must retire when the durable user entry lands.
+    func testBusySendDeliveredImmediatelyRetiresChip() {
+        markRunning()
+        viewModel.draft = "do this next"
+        viewModel.sendDraft()
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "do this next")
+        ]))
+        XCTAssertTrue(viewModel.queuedItems.isEmpty)
+        XCTAssertEqual(viewModel.queuedCount, 0)
+        XCTAssertEqual(viewModel.entries.map(\.id), ["u1"])
+    }
+
+    func testChipRetirementMatchesByContent() {
+        markRunning()
+        viewModel.draft = "mine"
+        viewModel.sendDraft()
+        // Someone else's prompt (web UI, another device) landing must not
+        // retire our chip.
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "someone else's")
+        ]))
+        XCTAssertEqual(viewModel.queuedItems.map(\.content), ["mine"])
+        XCTAssertEqual(viewModel.queuedCount, 1)
+    }
+
+    func testServerChipsAreNeverRetiredByContentMatch() {
+        // A server-issued queue item (real id) with the same text as a landing
+        // user entry must stay — only local optimistic chips retire this way.
+        let json = #"""
+        {"type":"queue_update","sessionId":"bks-1",
+         "queued":[{"id":"q1","content":"repeat me","user":"ios"}],
+         "steered":[]}
+        """#
+        viewModel.handle(ServerEvent.parse(Data(json.utf8)))
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("u1", "user", text: "repeat me")
+        ]))
+        XCTAssertEqual(viewModel.queuedItems.map(\.id), ["q1"])
+    }
+
+    func testBusySendCarriesImagesOnTheWire() {
+        markRunning()
+        viewModel.draft = "with pic"
+        viewModel.attachedImages = [AttachedImage(id: "img1", jpegData: Data([1, 2, 3]))]
+        viewModel.sendDraft()
+        XCTAssertEqual(viewModel.queuedItems.map(\.content), ["with pic"])
+        XCTAssertTrue(viewModel.attachedImages.isEmpty)
+        XCTAssertEqual(socket.prompts.count, 1)
+        XCTAssertEqual(socket.prompts[0].images?.count, 1)
+    }
+
+    func testDeleteQueuedRemovesChipAndSendsFrame() {
+        let json = #"""
+        {"type":"queue_update","sessionId":"bks-1",
+         "queued":[{"id":"q1","content":"next","user":"ios"}],
+         "steered":[]}
+        """#
+        viewModel.handle(ServerEvent.parse(Data(json.utf8)))
+        viewModel.deleteQueued(viewModel.queuedItems[0])
+        XCTAssertTrue(viewModel.queuedItems.isEmpty)
+        XCTAssertEqual(socket.deletedQueueIds, ["q1"])
+    }
+}
+
+/// Records every outgoing frame; never touches the network.
+@MainActor
+private final class MockSocket: SessionSocket {
+    var onEvent: ((ServerEvent) -> Void)?
+    var onClose: ((String?) -> Void)?
+
+    struct PromptCall {
+        let sessionId: String
+        let content: String
+        let user: String
+        let images: [String]?
+        let effort: String?
+        let fastMode: Bool?
+    }
+
+    private(set) var connectCount = 0
+    private(set) var watched: [String] = []
+    private(set) var prompts: [PromptCall] = []
+    private(set) var steeredQueueIds: [String] = []
+    private(set) var deletedQueueIds: [String] = []
+
+    func connect() { connectCount += 1 }
+    func disconnect() {}
+    func watch(sessionId: String) { watched.append(sessionId) }
+    func loadHistory(sessionId: String, beforeOffset: Int, beforeRev: String?) {}
+    func loadHistory(sessionId: String, beforeSeq: Int) {}
+    func prompt(
+        sessionId: String, content: String, user: String,
+        images: [String]?, effort: String?, fastMode: Bool?
+    ) {
+        prompts.append(PromptCall(
+            sessionId: sessionId, content: content, user: user,
+            images: images, effort: effort, fastMode: fastMode
+        ))
+    }
+    func steerQueued(sessionId: String, queueId: String) { steeredQueueIds.append(queueId) }
+    func deleteQueued(sessionId: String, queueId: String) { deletedQueueIds.append(queueId) }
+    func cancelWatchedRun() {}
+    func answer(sessionId: String, questionId: String, answers: [String: String]?) {}
 }
