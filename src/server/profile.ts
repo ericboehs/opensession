@@ -1,12 +1,12 @@
 import { homedir } from "os";
 
 export interface LocalProfileIdentity {
-  login: string;
-  name: string;
+	login: string;
+	name: string;
 }
 
 const g = globalThis as typeof globalThis & {
-  __localProfileIdentity?: LocalProfileIdentity;
+	__localProfileIdentity?: LocalProfileIdentity;
 };
 
 /** The local profile is opt-in; unset and every other value keep cloud behavior. */
@@ -59,7 +59,7 @@ export function setLocalProfileIdentity(identity: LocalProfileIdentity | null): 
 }
 
 export function localProfileLogin(): string {
-  return g.__localProfileIdentity?.login || "";
+	return g.__localProfileIdentity?.login || "";
 }
 
 /** Single-user identity for the loopback-only local server. */

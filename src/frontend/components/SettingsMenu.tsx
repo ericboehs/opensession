@@ -170,12 +170,14 @@ function SettingsSheet({
 											)}
 										</span>
 									</div>
-									{!githubAuth.local && <button
-										className="flex w-full items-center gap-3 border-none bg-transparent px-3.5 py-3 text-left text-[15px] font-medium text-dim active:bg-hover"
-										onClick={() => void signOut()}
-									>
-										Sign out
-									</button>}
+									{!githubAuth.local && (
+										<button
+											className="flex w-full items-center gap-3 border-none bg-transparent px-3.5 py-3 text-left text-[15px] font-medium text-dim active:bg-hover"
+											onClick={() => void signOut()}
+										>
+											Sign out
+										</button>
+									)}
 								</div>
 							) : (
 								<>
