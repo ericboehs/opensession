@@ -38,7 +38,9 @@ export interface EvidenceFailure {
 	tool: string;
 	/** What it was doing: the command, the file path. */
 	what: string;
-	/** Tail of the error text — the end is where the signal is. */
+	/** The error text, head + tail. Compilers and test runners put the verdict
+	 *  at the end; permission/usage errors put it at the start and then dump
+	 *  config. Keeping both ends beats guessing which shape this one is. */
 	errorTail: string;
 	/** The same call was later retried and did not error. */
 	laterPassed: boolean;
@@ -84,7 +86,16 @@ export interface EvidenceDeps {
 const MAX_FILES = 20;
 const MAX_FAILURES = 5;
 const MAX_COMMANDS = 12;
-const ERROR_TAIL = 500;
+const ERROR_HEAD = 200;
+const ERROR_TAIL = 400;
+
+/** Keep both ends of an error: the first line usually says WHAT failed, the
+ *  last usually says the verdict. The middle is where the noise lives. */
+export function clipError(body: string): string {
+	const s = body.replace(/\s+/g, " ").trim();
+	if (s.length <= ERROR_HEAD + ERROR_TAIL) return s;
+	return `${s.slice(0, ERROR_HEAD)} … ${s.slice(-ERROR_TAIL)}`;
+}
 
 async function defaultDeps(): Promise<EvidenceDeps> {
 	const [{ findSession }, { mergedSessionTranscriptAsync }, gitDiff, worktree, fs] =
@@ -179,11 +190,10 @@ export function evidenceFromTranscript(entries: TranscriptEntry[]): {
 			if (subject) laterOk.add(`${tool}::${subject}`);
 			continue;
 		}
-		const body = (e.content || "").replace(/\s+/g, " ").trim();
 		raw.push({
 			tool,
 			what: subject,
-			errorTail: body.length > ERROR_TAIL ? `…${body.slice(-ERROR_TAIL)}` : body,
+			errorTail: clipError(e.content || ""),
 			laterPassed: false,
 			subject,
 		});
@@ -309,10 +319,12 @@ export function formatHandoffEvidence(
 		}
 	}
 
-	if (ev.commands.length) lines.push(`commands run: ${ev.commands.join(", ")}`);
-	lines.push(
-		"(non-zero shell exits are not flagged by every engine — treat 'commands run' as executed, not as passed.)",
-	);
+	if (ev.commands.length) {
+		lines.push(`commands run: ${ev.commands.join(", ")}`);
+		lines.push(
+			"(non-zero shell exits are not flagged by every engine — treat 'commands run' as executed, not as passed.)",
+		);
+	}
 	return lines.join("\n");
 }
 

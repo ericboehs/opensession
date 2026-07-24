@@ -75,14 +75,18 @@ describe("evidenceFromTranscript", () => {
 		expect(failures).toHaveLength(1);
 	});
 
-	it("clips a huge error to its tail — the end is where the signal is", () => {
+	it("keeps both ends of a huge error — what failed, and the verdict", () => {
+		// Seen live: an opencode permission denial names the tool up front and
+		// then dumps the whole permission config, so a tail-only clip showed
+		// nothing but config. A test runner is the opposite shape.
 		const { failures } = evidenceFromTranscript([
 			call("t1", "bash", { command: "bun test" }),
-			result("t1", `${"noise ".repeat(500)}FAILED at the very end`, true),
+			result("t1", `Permission denied for /tmp${" config ".repeat(500)}FAILED at the very end`, true),
 		]);
-		expect(failures[0]!.errorTail.startsWith("…")).toBe(true);
+		expect(failures[0]!.errorTail).toContain("Permission denied for /tmp");
 		expect(failures[0]!.errorTail).toContain("FAILED at the very end");
-		expect(failures[0]!.errorTail.length).toBeLessThan(600);
+		expect(failures[0]!.errorTail).toContain("…");
+		expect(failures[0]!.errorTail.length).toBeLessThan(700);
 	});
 
 	it("lists distinct bash command heads and ignores non-bash tools", () => {
@@ -234,6 +238,16 @@ describe("formatHandoffEvidence", () => {
 
 	it("stays small enough to staple onto a handoff", () => {
 		expect(formatHandoffEvidence(ev).length).toBeLessThan(1500);
+	});
+
+	it("drops the shell-exit caveat when no commands were run", () => {
+		const quiet: HandoffEvidence = {
+			sessionId: "bks-child",
+			state: "done",
+			failures: [],
+			commands: [],
+		};
+		expect(formatHandoffEvidence(quiet)).not.toContain("not as passed");
 	});
 });
 
