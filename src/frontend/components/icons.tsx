@@ -373,6 +373,16 @@ export function IconSearch(p: IconProps) {
   );
 }
 
+export function IconHome(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M4.75 10.25L12 4.75L19.25 10.25" />
+      <path {...stroke} d="M6.25 9.25V18.25H17.75V9.25" />
+      <path {...stroke} d="M9.75 18.25V13.25H14.25V18.25" />
+    </Svg>
+  );
+}
+
 export function IconGlobe(p: IconProps) {
   return (
     <Svg {...p}>

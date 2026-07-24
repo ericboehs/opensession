@@ -58,6 +58,7 @@ import {
 	IconFile,
 	IconDotsHorizontal,
 	IconGlobe,
+	IconHome,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { Menu } from "../ui/menu";
@@ -213,6 +214,10 @@ interface Props {
 	notesActive: boolean;
 	/** Open the shared Notes tool. */
 	onOpenNotes: () => void;
+	/** True while the Home view is open — highlights the Home entry. */
+	homeActive: boolean;
+	/** Open the home worktree index. */
+	onOpenHome: () => void;
 	/** True while the Checks view is open — highlights the Checks entry. */
 	reviewsActive: boolean;
 	/** Open the Checks view (the sidebar's one non-workspace area). */
@@ -773,6 +778,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	activeNoteId,
 	notesActive,
 	onOpenNotes,
+	homeActive,
+	onOpenHome,
 	reviewsActive,
 	onOpenReviews,
 	onOpenAutomation,
@@ -2082,6 +2089,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		title?: string;
 		count?: number;
 	}> = [
+		{
+			id: "home",
+			label: "Home",
+			icon: <IconHome />,
+			active: homeActive,
+			onClick: onOpenHome,
+			title: "Pull request worktrees",
+		},
 		{
 			id: "watercooler",
 			label: "Watercooler",

@@ -1777,6 +1777,8 @@ function App() {
 							activeNoteId={currentNoteId}
 							notesActive={route.view === "notes"}
 							onOpenNotes={() => navigate({ view: "notes", sel: null })}
+							homeActive={route.view === "home"}
+							onOpenHome={() => navigate({ view: "home" })}
 							reviewsActive={route.view === "reviews"}
 							onOpenReviews={() => navigate({ view: "reviews" })}
 							onOpenAutomation={(name) =>
@@ -2279,20 +2281,9 @@ function App() {
 						) : (
 							<Home
 								sessions={sessions}
-								connected={connected}
-								send={send}
-								addHandler={addHandler}
+								projects={projects}
 								onSelect={(s) => navigate({ view: "session", id: s.id })}
-								onNewSession={(prompt) => openPalette(prompt)}
-								onCreateStarted={(draft) => {
-									pendingCreateDraftRef.current = {
-										...draft,
-										startedAt: new Date().toISOString(),
-										user: getCurrentUser(),
-									};
-								}}
-								onOpenReviews={() => navigate({ view: "reviews" })}
-								onOpenSessionId={(id) => navigate({ view: "session", id })}
+								onNewSession={() => openPalette()}
 							/>
 						)}
 					</main>

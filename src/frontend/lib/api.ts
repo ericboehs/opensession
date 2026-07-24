@@ -199,6 +199,20 @@ export async function fetchOpenPrs(): Promise<OpenPr[]> {
 	return data?.prs || [];
 }
 
+export interface RecentPr extends OpenPr {
+	state: "OPEN" | "MERGED" | "CLOSED";
+	additions: number;
+	deletions: number;
+}
+
+/** Recent PRs across repos, including PRs merged outside OpenSession. */
+export async function fetchRecentPrs(): Promise<RecentPr[]> {
+	const data = await request<{ prs: RecentPr[] }>("/recent-prs", {
+		label: "Failed to fetch recent PRs",
+	});
+	return data?.prs || [];
+}
+
 // ── PR Tinder (one-at-a-time triage of open tella-fusion PRs) ───────────────
 
 /** One card in the PR Tinder deck — richer than OpenPr (body, labels, diffstat). */

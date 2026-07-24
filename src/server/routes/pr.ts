@@ -13,7 +13,7 @@ import { closeTinderPr, commentTinderPr, deleteTinderComment, getSeenPrs, labelT
 import { findSession, invalidateSessionsCache } from "../session-cache";
 import { getSessionControl } from "../session-control";
 import { resolvePrTarget } from "../session-repos";
-import { getOpenPrs, markCachedPrClosed } from "../sessions";
+import { getOpenPrs, getRecentPrs, markCachedPrClosed } from "../sessions";
 import { getRepo } from "../worktree";
 import { watch } from "fs";
 import {
@@ -61,6 +61,12 @@ export async function handlePrRoutes(
 	// PRs that have no Backstage session).
 	if (path === "/backstage/api/open-prs" && req.method === "GET") {
 		return Response.json({ prs: getOpenPrs() });
+	}
+
+	// Recent PRs across the covered repos, including merges made without an
+	// OpenSession workspace. Powers the root shipped-worktree index.
+	if (path === "/backstage/api/recent-prs" && req.method === "GET") {
+		return Response.json({ prs: getRecentPrs() });
 	}
 
 	// PR Tinder: the triage deck — every open tella-fusion PR with the

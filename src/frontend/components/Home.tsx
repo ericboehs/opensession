@@ -1,375 +1,428 @@
-import { AGENT_NAME } from "../lib/brand";
-import React, { useEffect, useRef, useState } from "react";
-import type { UnifiedSession, WSServerMessage } from "../lib/types";
-import {
-  fetchModels,
-  fetchFileMentions,
-  fetchSkillMentions,
-  fetchHumanAsks,
-  nudgeHumanAsk,
-  cancelHumanAsk,
-  relativeTime,
-  type ModelOption,
-  type HumanAskView,
-} from "../lib/api";
+import React, { useEffect, useMemo, useState } from "react";
+import type { Project, UnifiedSession } from "../lib/types";
+import { fetchRecentPrs, type RecentPr } from "../lib/api";
+import { Menu } from "../ui/menu";
 import { useCurrentUser } from "./UserPicker";
-import { Composer } from "./Composer";
-import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
+import { UserAvatar } from "./UserAvatar";
+import {
+  IconArchive,
+  IconChevronDown,
+  IconFolder,
+  IconGitMerge,
+  IconPullRequest,
+  IconSearch,
+} from "./icons";
 
 interface Props {
   sessions: UnifiedSession[];
-  connected: boolean;
-  send: (msg: any) => void;
-  addHandler: (handler: (msg: WSServerMessage) => void) => () => void;
+  projects: Project[];
   onSelect: (session: UnifiedSession) => void;
-  onNewSession: (prompt?: string) => void;
-  onCreateStarted?: (draft: {
-    prompt: string;
-    mode: "ask";
-    repo: string;
-    branch: null;
-    model?: string;
-  }) => void;
-  onOpenReviews: () => void;
-  onOpenSessionId?: (id: string) => void;
+  onNewSession: () => void;
 }
 
-const SUGGESTIONS: Array<{ chip: string; color: string; prompt: string }> = [
-  {
-    chip: "tinybird",
-    color: "#27F795",
-    prompt: "How many recordings were created this week vs last week? Break it down by day using Tinybird.",
-  },
-  {
-    chip: "sentry",
-    color: "#a38fd8",
-    prompt: "What are the top unresolved Sentry errors in production right now? Flag anything that started in the last 48 hours.",
-  },
-  {
-    chip: "plain",
-    color: "#5eead4",
-    prompt: "Summarize today's Plain support tickets — any recurring themes or bugs we should look into?",
-  },
-  {
-    chip: "linear",
-    color: "#7b86e8",
-    prompt: "What shipped this week and what's still in progress in Linear? Short digest please.",
-  },
-  {
-    chip: "workos",
-    color: "#9da6ee",
-    prompt: "Any notable new organizations in WorkOS this week? List name, plan and member count.",
-  },
-  {
-    chip: "grafana",
-    color: "#f48f57",
-    prompt: "How healthy is the recording flow right now? Check completion rate, upload failures and encoder errors in Grafana.",
-  },
-  {
-    chip: "grafana",
-    color: "#f48f57",
-    prompt: "Any failed renders or exports in the last 24 hours? Check the render metrics and Temporal worker logs in Grafana.",
-  },
-  {
-    chip: "grafana",
-    color: "#f48f57",
-    prompt: "How is the webapp doing — any 5xx spikes, cold starts or slow routes on tella.tv? Check the Vercel logs in Grafana.",
-  },
-  {
-    chip: "codebase",
-    color: "#e3b341",
-    prompt: "Explain how the video export pipeline works end to end — from clicking Export to the final file.",
-  },
-];
-
-// A rotating handful keeps the start screen calm; at most one per source so a
-// single integration (grafana has three prompts) can't dominate the row.
-function sampleSuggestions(count: number) {
-  const shuffled = [...SUGGESTIONS].sort(() => Math.random() - 0.5);
-  const seen = new Set<string>();
-  const picked = shuffled.filter((s) => !seen.has(s.chip) && seen.add(s.chip) !== undefined);
-  return picked.slice(0, count);
+interface WorktreeRow {
+  key: string;
+  session?: UnifiedSession;
+  title: string;
+  repo: string;
+  branch: string;
+  url?: string;
+  state: "OPEN" | "MERGED" | "CLOSED";
+  number?: number;
+  additions?: number;
+  deletions?: number;
+  updatedAt: string;
+  projectId?: string | null;
+  archived: boolean;
+  person: string | null;
+  author?: string;
 }
 
-function timeGreeting(user: string) {
-  const h = new Date().getHours();
-  const part = h < 6 ? "Up late" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
-  return user !== "Anonymous" ? `${part}, ${user}` : part;
+function cleanTitle(title: string): string {
+  return (
+    title
+      .replace(/^(Review|Auto-fix|Mention|Simplify|Fix)\s*·\s*PR\s*#\d+\s*/i, "")
+      .trim() || title
+  );
 }
 
-/**
- * "Waiting on teammates" — open human asks (questions the agent sent to people
- * over Slack and is still waiting on). Renders nothing when there are none,
- * keeping the home hero calm.
- */
-function HumanAsksCard({ onOpenSessionId }: { onOpenSessionId?: (id: string) => void }) {
-  const [asks, setAsks] = useState<HumanAskView[]>([]);
-  const [busy, setBusy] = useState<string | null>(null);
+function worktreesForSession(session: UnifiedSession): WorktreeRow[] {
+  if (session.sideChatOf || session.desk) return [];
+
+  if (session.prs?.some((pr) => pr.url)) {
+    return session.prs
+      .filter((pr) => pr.url)
+      .map((pr) => {
+        const primary = pr.source === "primary" || pr.url === session.prUrl;
+        return {
+          key: pr.url || `${pr.repo}:${pr.branch}`,
+          session,
+          title: cleanTitle(pr.title || (primary ? session.prTitle : "") || session.title),
+          repo: pr.repo,
+          branch: pr.branch,
+          url: pr.url,
+          state: pr.state || "OPEN",
+          number: pr.number,
+          additions: primary ? session.prAdditions : undefined,
+          deletions: primary ? session.prDeletions : undefined,
+          updatedAt: primary ? session.prUpdatedAt || session.lastActivity : session.lastActivity,
+          projectId: session.projectId,
+          archived: !!session.archived,
+          person: session.startedBy?.toLowerCase() || null,
+          author: primary ? session.prAuthor : undefined,
+        };
+      });
+  }
+
+  if (!session.prUrl) return [];
+  return [
+    {
+      key: session.prUrl,
+      session,
+      title: cleanTitle(session.prTitle || session.title),
+      repo: session.repo || "tella-fusion",
+      branch: session.branch || "",
+      url: session.prUrl,
+      state: session.prState || "OPEN",
+      number: session.prNumber,
+      additions: session.prAdditions,
+      deletions: session.prDeletions,
+      updatedAt: session.prUpdatedAt || session.lastActivity,
+      projectId: session.projectId,
+      archived: !!session.archived,
+      person: session.startedBy?.toLowerCase() || null,
+      author: session.prAuthor,
+    },
+  ];
+}
+
+function dateGroup(value: string): string {
+  const date = new Date(value);
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const then = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const days = Math.max(0, Math.floor((start - then) / 86_400_000));
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  if (days < 35) {
+    const weeks = Math.floor(days / 7);
+    return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
+  }
+  const months = Math.max(
+    1,
+    (now.getFullYear() - date.getFullYear()) * 12 + now.getMonth() - date.getMonth(),
+  );
+  if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
+  const years = Math.floor(months / 12);
+  return `${years} year${years === 1 ? "" : "s"} ago`;
+}
+
+function compactAge(value: string): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 60) return "now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h`;
+  if (seconds < 2_592_000) return `${Math.floor(seconds / 86_400)}d`;
+  if (seconds < 31_536_000) return `${Math.floor(seconds / 2_592_000)}mo`;
+  return `${Math.floor(seconds / 31_536_000)}y`;
+}
+
+function compactDiff(value: number): string {
+  const abs = Math.abs(value);
+  if (abs < 1000) return String(abs);
+  if (abs < 10_000) return `${(abs / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return `${Math.round(abs / 1000)}k`;
+}
+
+function personLabel(person: string): string {
+  return person
+    .split(/[._-]+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function StateIcon({ state }: { state: WorktreeRow["state"] }) {
+  if (state === "MERGED") return <IconGitMerge size={20} />;
+  if (state === "CLOSED") return <IconArchive size={20} />;
+  return <IconPullRequest size={20} />;
+}
+
+export function Home({ sessions, projects, onSelect, onNewSession }: Props) {
+  const currentUser = useCurrentUser();
+  const [query, setQuery] = useState("");
+  const [projectId, setProjectId] = useState("all");
+  const [person, setPerson] = useState(() =>
+    currentUser === "Anonymous" ? "all" : currentUser.toLowerCase(),
+  );
+  const [showArchived, setShowArchived] = useState(false);
+  const [recentPrs, setRecentPrs] = useState<RecentPr[]>([]);
 
   useEffect(() => {
-    let alive = true;
-    const load = () =>
-      fetchHumanAsks()
-        .then((a) => alive && setAsks(a))
-        .catch(() => {});
-    load();
-    const id = setInterval(load, 15000);
+    let active = true;
+    fetchRecentPrs()
+      .then((prs) => active && setRecentPrs(prs))
+      .catch(() => {});
     return () => {
-      alive = false;
-      clearInterval(id);
+      active = false;
     };
   }, []);
 
-  if (asks.length === 0) return null;
-
-  return (
-    <div className="w-full max-w-[640px] mx-auto mt-6 text-left bg-panel border border-line rounded-panel px-4 py-3">
-      <div className="text-dim text-[12px] font-medium tracking-[-0.01em] mb-2">
-        Waiting on teammates
-      </div>
-      <div className="flex flex-col gap-2">
-        {asks.map((a) => (
-          <div key={a.id} className="flex items-baseline gap-2 min-w-0 text-[13px]">
-            <span className="text-fg shrink-0 font-medium">{a.person.name}</span>
-            <span className="text-dim truncate" title={a.question}>
-              {a.question}
-            </span>
-            <span className="text-faint text-[11.5px] shrink-0 ml-auto" title={a.createdAt}>
-              {a.state === "scheduled" ? "queued" : relativeTime(a.deliveredAt || a.createdAt)}
-            </span>
-            {a.state === "delivered" && (
-              <button
-                className="btn-small shrink-0"
-                disabled={busy === a.id}
-                onClick={async () => {
-                  setBusy(a.id);
-                  try {
-                    await nudgeHumanAsk(a.id);
-                  } catch {}
-                  setBusy(null);
-                }}
-                title="Send a friendly reminder in the Slack thread"
-              >
-                Nudge
-              </button>
-            )}
-            <button
-              className="btn-small shrink-0"
-              disabled={busy === a.id}
-              onClick={async () => {
-                setBusy(a.id);
-                try {
-                  await cancelHumanAsk(a.id);
-                  setAsks(asks.filter((x) => x.id !== a.id));
-                } catch {}
-                setBusy(null);
-              }}
-              title="Cancel the ask (the session stops waiting)"
-            >
-              ✕
-            </button>
-            {onOpenSessionId && (
-              <button
-                className="btn-small shrink-0"
-                onClick={() => onOpenSessionId(a.sessionId)}
-                title="Open the session that asked"
-              >
-                →
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export function Home({ sessions, connected, send, addHandler, onSelect, onNewSession, onCreateStarted, onOpenReviews, onOpenSessionId }: Props) {
-  // Seeded from / mirrored into the draft store so wandering off to a chat or
-  // workspace and back doesn't lose a half-typed question.
-  const [question, setQuestion] = useState(() => loadDraft("home").text);
-  useEffect(() => {
-    saveDraft("home", { text: question });
-  }, [question]);
-  const [asking, setAsking] = useState(false);
-  const [askError, setAskError] = useState<string | null>(null);
-  // Mirror of `asking` readable from the (stable) WS handler below.
-  const askingRef = useRef(false);
-  useEffect(() => {
-    askingRef.current = asking;
-  }, [asking]);
-  const askTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const [models, setModels] = useState<ModelOption[]>([]);
-  const [defaultModel, setDefaultModel] = useState("");
-  const [askModel, setAskModel] = useState(""); // "" = default
-  const [suggestions] = useState(() => sampleSuggestions(5));
-  const currentUser = useCurrentUser();
-
-  useEffect(() => {
-    fetchModels()
-      .then((m) => {
-        setModels(m.models);
-        setDefaultModel(m.default);
-      })
-      .catch(() => {});
-  }, []);
-
-  // Success navigates away on session_created (App handles it), so on failure
-  // the `asking` lock would stick forever: reset it on a server error, and as a
-  // last resort on a timeout (e.g. the socket silently dropped the send).
-  useEffect(() => {
-    return addHandler((msg) => {
-      if (msg.type === "error" && askingRef.current) {
-        clearTimeout(askTimer.current);
-        setAsking(false);
-        setAskError(msg.message || "Failed to start the session.");
-      } else if (msg.type === "session_created" && askingRef.current) {
-        // The question was consumed — drop the stored draft so it doesn't
-        // resurface next time Home mounts. (App navigates us away right after.)
-        clearDraft("home");
+  const allWorktrees = useMemo(() => {
+    const byPr = new Map<string, WorktreeRow>();
+    for (const pr of recentPrs) {
+      byPr.set(pr.url, {
+        key: pr.url,
+        title: pr.title,
+        repo: pr.repo,
+        branch: pr.branch,
+        url: pr.url,
+        state: pr.state,
+        number: pr.number,
+        additions: pr.additions,
+        deletions: pr.deletions,
+        updatedAt: pr.updatedAt,
+        projectId: null,
+        archived: false,
+        person: pr.person,
+        author: pr.author,
+      });
+    }
+    for (const session of sessions) {
+      for (const row of worktreesForSession(session)) {
+        const existing = byPr.get(row.key);
+        byPr.set(row.key, {
+          ...existing,
+          ...row,
+          person: row.person || existing?.person || null,
+          author: existing?.author || row.author,
+          additions: row.additions ?? existing?.additions,
+          deletions: row.deletions ?? existing?.deletions,
+          updatedAt:
+            existing && new Date(existing.updatedAt) > new Date(row.updatedAt)
+              ? existing.updatedAt
+              : row.updatedAt,
+        });
       }
-    });
-  }, [addHandler]);
-  useEffect(() => () => clearTimeout(askTimer.current), []);
+    }
 
-  function handleAsk() {
-    const q = question.trim();
-    if (!q || asking || !connected) return;
-    setAsking(true);
-    // Synchronously too — session_created is announced before the worktree even
-    // boots, so it can arrive before the effect mirrors `asking` into the ref,
-    // and the handler above would then skip the draft clear.
-    askingRef.current = true;
-    setAskError(null);
-    clearTimeout(askTimer.current);
-    askTimer.current = setTimeout(() => {
-      if (!askingRef.current) return;
-      setAsking(false);
-      setAskError(`${AGENT_NAME} didn't respond. Check your connection and try again.`);
-    }, 15_000);
-    onCreateStarted?.({
-      prompt: q,
-      mode: "ask",
-      repo: "tella-fusion",
-      branch: null,
-      ...(askModel ? { model: askModel } : {}),
-    });
-    send({
-      type: "create_session",
-      mode: "ask",
-      branch: "",
-      prompt: q,
-      user: currentUser,
-      // Every chat lives in a workspace from birth — the ask box creates one
-      // too, so later sibling chats (+ in the tab strip) link up properly.
-      createWorkspace: {},
-      ...(askModel ? { model: askModel } : {}),
-    });
-    // App navigates into the session on session_created
-  }
+    return [...byPr.values()].sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    );
+  }, [recentPrs, sessions]);
 
-  const isPhone =
-    typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches;
+  const worktrees = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return allWorktrees
+      .filter((row) => {
+        if (!showArchived && row.archived) return false;
+        if (projectId === "standalone" && row.projectId) return false;
+        if (projectId !== "all" && projectId !== "standalone" && row.projectId !== projectId)
+          return false;
+        if (person !== "all" && row.person !== person) return false;
+        if (!needle) return true;
+        return [row.title, row.repo, row.branch, row.author, row.number ? `#${row.number}` : ""]
+          .join(" ")
+          .toLowerCase()
+          .includes(needle);
+      });
+  }, [allWorktrees, person, projectId, query, showArchived]);
 
-  // Ambient status whisper — counts only, no lists; the sidebar has the lists.
-  // Side chats live inside their parent session's panel, never as standalone
-  // sessions on Home — exclude them from every count/list below.
-  const active = sessions.filter(
-    (s) => !s.archived && !s.sideChatOf && !s.desk,
+  const groups = useMemo(() => {
+    const grouped = new Map<string, WorktreeRow[]>();
+    for (const row of worktrees) {
+      const label = dateGroup(row.updatedAt);
+      grouped.set(label, [...(grouped.get(label) || []), row]);
+    }
+    return [...grouped.entries()];
+  }, [worktrees]);
+
+  const projectOptions = useMemo(() => {
+    const represented = new Set(sessions.filter((s) => s.prUrl || s.prs?.some((pr) => pr.url)).map((s) => s.projectId));
+    return projects.filter((project) => represented.has(project.id));
+  }, [projects, sessions]);
+
+  const people = useMemo(
+    () => [...new Set(allWorktrees.map((row) => row.person).filter((value): value is string => !!value))].sort(),
+    [allWorktrees],
   );
-  const running = active.filter((s) => s.isRunning);
-  const waiting = active.filter(
-    (s) => (s.waitingForInput || s.lastRunError) && !s.isRunning,
-  );
-  const openPrs = new Set(
-    active.filter((s) => s.prUrl && s.prState === "OPEN").map((s) => s.prUrl),
-  ).size;
 
   return (
-    <div className="home">
-      <div className="home-inner">
-        <div className="home-hero">
-          <div className="home-hello">{timeGreeting(currentUser)}</div>
-          <div className="home-greeting">What should {AGENT_NAME} work on?</div>
-          <Composer
-            value={question}
-            onChange={setQuestion}
-            onSend={handleAsk}
-            placeholder="Ask about the codebase…"
-            disabled={asking}
-            sendDisabled={asking || !connected || !question.trim()}
-            sendTitle="Ask (Enter)"
-            models={models}
-            defaultModel={defaultModel}
-            model={askModel}
-            onModelChange={setAskModel}
-            modelTitle="Model for this Ask session"
-            mentionFetch={(q) => fetchFileMentions(q)}
-            skillsFetch={(q) => fetchSkillMentions(q)}
-            autoFocus={!isPhone}
-            leftExtra={
-              <button
-                className="btn-task"
-                onClick={() => {
-                  const q = question.trim();
-                  onNewSession(q || undefined);
-                  // The palette takes ownership of the text (it lands in its own
-                  // "new-session" draft via the prefill) — clear it here so it
-                  // doesn't linger on Home and re-prefill the next palette after
-                  // the session is created (Kent's stale-draft report).
-                  if (q) setQuestion("");
-                }}
-                disabled={asking}
-              >
-                {isPhone ? "Code task" : "Start a coding task"}
-              </button>
-            }
-          />
-          {askError && <div className="ask-error">{askError}</div>}
+    <div className="home bg-surface">
+      <div className="mx-auto w-full max-w-[1040px] px-5 pb-16 pt-10 max-[720px]:px-4 max-[720px]:pt-5">
+        <div className="flex items-center justify-between gap-4 px-2">
+          <h1 className="m-0 text-[24px] font-semibold tracking-[-0.025em] text-fg">Home</h1>
+          <button
+            className="rounded-md border-0 bg-fg px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-85"
+            onClick={onNewSession}
+          >
+            Create workspace
+          </button>
+        </div>
 
-          <div className="ask-suggestions">
-            {suggestions.map((s, i) => (
-              <button
-                key={`${s.chip}-${i}`}
-                className="ask-suggestion"
-                onClick={() => setQuestion(s.prompt)}
-                disabled={asking}
-                title={s.prompt}
-              >
-                <span className="ask-suggestion-dot" style={{ backgroundColor: s.color }} />
-                {s.prompt.split("?")[0].split("—")[0].slice(0, 52)}
-                {s.prompt.length > 52 ? "…" : ""}
-              </button>
+        <div className="mt-7 grid grid-cols-[minmax(180px,1fr)_auto_auto_auto] items-center gap-5 border-b border-line px-2 pb-4 max-[860px]:grid-cols-2 max-[720px]:grid-cols-1 max-[720px]:gap-2.5">
+          <label className="flex min-w-0 items-center gap-2 text-faint focus-within:text-dim">
+            <IconSearch size={20} />
+            <input
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[15px] text-fg outline-none placeholder:text-faint"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search"
+              spellCheck={false}
+            />
+          </label>
+
+          <Menu.Root>
+            <Menu.Trigger className="flex min-w-[142px] items-center gap-2 rounded-md border-0 bg-transparent p-1 text-[13.5px] text-dim hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg">
+              {person === "all" ? (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-line text-[10px] font-semibold">
+                  ·
+                </span>
+              ) : (
+                <UserAvatar name={personLabel(person)} size={20} />
+              )}
+              <span className="min-w-0 flex-1 truncate text-left">
+                {person === "all" ? "All people" : personLabel(person)}
+              </span>
+              <IconChevronDown className="shrink-0" size={20} />
+            </Menu.Trigger>
+            <Menu.Popup align="end" sideOffset={6} className="min-w-[250px]">
+              <Menu.RadioGroup value={person} onValueChange={(value) => setPerson(String(value))}>
+                {["all", ...people].map((name) => {
+                  const label = name === "all" ? "All people" : personLabel(name);
+                  return (
+                    <Menu.RadioItem
+                      key={name}
+                      value={name}
+                      closeOnClick
+                      className="gap-2.5 px-2 py-2"
+                    >
+                      {name === "all" ? (
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full border border-line text-[11px] font-semibold">
+                          ·
+                        </span>
+                      ) : (
+                        <UserAvatar name={label} size={24} />
+                      )}
+                      <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
+                      {person === name && (
+                        <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden>
+                          <path
+                            d="M3.5 8.5l3 3 6-7"
+                            stroke="currentColor"
+                            strokeWidth="1.6"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </Menu.RadioItem>
+                  );
+                })}
+              </Menu.RadioGroup>
+            </Menu.Popup>
+          </Menu.Root>
+
+          <label className="relative flex items-center gap-2 text-[13.5px] text-dim hover:text-fg">
+            <IconFolder size={20} />
+            <select
+              className="max-w-[190px] cursor-pointer appearance-none border-0 bg-transparent py-1 pl-0 pr-6 text-inherit outline-none"
+              value={projectId}
+              onChange={(event) => setProjectId(event.target.value)}
+            >
+              <option value="all">In all projects</option>
+              {projectOptions.map((project) => (
+                <option key={project.id} value={project.id}>
+                  In {project.name}
+                </option>
+              ))}
+              <option value="standalone">Standalone</option>
+            </select>
+            <IconChevronDown className="pointer-events-none absolute right-0" size={20} />
+          </label>
+
+          <button
+            className={`flex items-center gap-2 border-0 bg-transparent p-1 text-[13.5px] hover:text-fg ${showArchived ? "text-fg" : "text-dim"}`}
+            onClick={() => setShowArchived((value) => !value)}
+            aria-pressed={showArchived}
+          >
+            <IconArchive size={20} />
+            {showArchived ? "Showing archived" : "Hiding archived"}
+          </button>
+        </div>
+
+        {groups.length === 0 ? (
+          <div className="px-2 py-16 text-center">
+            <div className="text-sm font-medium text-fg">
+              {query ? "No matching worktrees" : "No pull request worktrees yet"}
+            </div>
+            <div className="mt-1 text-[13px] text-faint">
+              {query ? "Try another search or project." : "Workspaces with pull requests will appear here."}
+            </div>
+          </div>
+        ) : (
+          <div className="pt-6">
+            {groups.map(([label, rows]) => (
+              <section key={label} className="mb-7">
+                <div className="mb-1.5 flex items-baseline gap-2 px-2 text-[13px] font-medium text-dim">
+                  <span>{label}</span>
+                  <span className="text-faint">{rows.length}</span>
+                </div>
+                <div>
+                  {rows.map((row) => (
+                    <button
+                      key={row.key}
+                      className="group grid w-full grid-cols-[22px_24px_minmax(0,1fr)_130px_44px] items-center gap-2 rounded-lg border-0 bg-transparent px-2 py-2.5 text-left text-dim hover:bg-hover hover:text-fg max-[720px]:grid-cols-[22px_24px_minmax(0,1fr)_40px]"
+                      onClick={() =>
+                        row.session ? onSelect(row.session) : row.url && window.open(row.url, "_blank", "noopener")
+                      }
+                      title={`${row.repo} · ${row.branch}`}
+                    >
+                      <span
+                        className={
+                          row.state === "MERGED"
+                            ? "text-green"
+                            : row.state === "CLOSED"
+                              ? "text-faint"
+                              : "text-accent"
+                        }
+                      >
+                        <StateIcon state={row.state} />
+                      </span>
+                      <span className="flex h-5 w-5 items-center justify-center rounded-sm bg-accent-soft text-[9px] font-bold uppercase text-accent">
+                        {row.repo.slice(0, 2)}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="flex min-w-0 items-baseline gap-2">
+                          <span className="truncate text-[14px] text-dim group-hover:text-fg">{row.title}</span>
+                          {row.number && <span className="shrink-0 text-[11.5px] text-faint">#{row.number}</span>}
+                        </span>
+                        <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-faint">
+                          <span className="truncate font-mono">{row.branch}</span>
+                          {person === "all" && row.person && (
+                            <>
+                              <span aria-hidden>·</span>
+                              <span className="shrink-0 font-sans">{personLabel(row.person)}</span>
+                            </>
+                          )}
+                        </span>
+                      </span>
+                      <span className="justify-self-end font-mono text-[12px] max-[720px]:hidden">
+                        {row.additions !== undefined && (
+                          <span className="text-green">+{compactDiff(row.additions)}</span>
+                        )}
+                        {row.deletions !== undefined && (
+                          <span className="ml-2 text-red">-{compactDiff(row.deletions)}</span>
+                        )}
+                      </span>
+                      <span className="justify-self-end text-[12px] text-faint">{compactAge(row.updatedAt)}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
-
-          {(running.length > 0 || waiting.length > 0 || openPrs > 0) && (
-            <div className="home-whisper">
-              {running.length > 0 && (
-                <span className="home-whisper-part">
-                  <span className="working-dot" />
-                  {running.length} running
-                </span>
-              )}
-              {waiting.length > 0 && (
-                <button
-                  className="home-whisper-part home-whisper-link"
-                  onClick={() => onSelect(waiting[0])}
-                  title={waiting[0].title}
-                >
-                  {waiting.length} waiting for input
-                </button>
-              )}
-              {openPrs > 0 && (
-                <button className="home-whisper-part home-whisper-link" onClick={onOpenReviews}>
-                  {openPrs} PR{openPrs === 1 ? "" : "s"} to review
-                </button>
-              )}
-            </div>
-          )}
-
-          <HumanAsksCard onOpenSessionId={onOpenSessionId} />
-        </div>
+        )}
       </div>
     </div>
   );

@@ -1246,6 +1246,46 @@ export interface OpenPrEntry {
 	reviewActive: boolean;
 }
 
+export interface RecentPrEntry extends Omit<OpenPrEntry, "reviewActive"> {
+	state: "OPEN" | "MERGED" | "CLOSED";
+	additions: number;
+	deletions: number;
+}
+
+/** The recent repo-wide PR window, including PRs created outside OpenSession. */
+export function getRecentPrs(): RecentPrEntry[] {
+	const out: RecentPrEntry[] = [];
+	for (const [repoId, byBranch] of getPrsByRepo()) {
+		for (const [branch, pr] of byBranch) {
+			out.push({
+				repo: repoId,
+				branch,
+				url: pr.url,
+				number: pr.number,
+				title: pr.title,
+				state: pr.state,
+				isDraft: pr.isDraft,
+				reviewDecision: pr.reviewDecision,
+				author: pr.author,
+				person:
+					githubLoginToPersonKey(pr.author) ??
+					pr.assignees
+						.map((login) => githubLoginToPersonKey(login))
+						.find((person): person is string => !!person) ??
+					null,
+				createdAt: pr.createdAt,
+				updatedAt: pr.updatedAt,
+				additions: pr.additions,
+				deletions: pr.deletions,
+				checks: pr.checks,
+				mergeable: pr.mergeable,
+				reviewRequested: pr.reviewRequested,
+			});
+		}
+	}
+	return out.sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+}
+
 export function getOpenPrs(): OpenPrEntry[] {
 	const out: OpenPrEntry[] = [];
 	for (const [repoId, byBranch] of getPrsByRepo()) {
