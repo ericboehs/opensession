@@ -6,6 +6,7 @@ import { Composer } from "./Composer";
 import { ConversationPane } from "./ConversationPane";
 import { PrPanel } from "./PrPanel";
 import { useCurrentUser } from "./UserPicker";
+import { useIsPhone } from "../hooks/useIsPhone";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 
 interface Props {
@@ -55,6 +56,7 @@ export function WorkspacePane({
 	const [defaultModel, setDefaultModel] = useState("");
 	const [model, setModel] = useState(""); // "" = default
 	const currentUser = useCurrentUser();
+	const isPhone = useIsPhone();
 
 	useEffect(() => {
 		fetchModels()
@@ -136,8 +138,93 @@ export function WorkspacePane({
 		// App navigates into the session on session_created.
 	}
 
+	// The workspace's standing right sidebar: a workspace is a first-class
+	// surface, so it always shows one — even chat-less (Michiel 2026-07-24).
+	// Compact info: identity, linkage (repo/branch/PR/ticket), and its chats.
+	const infoPanel = !isPhone && (
+		<aside className="viewer-panel">
+			<div className="flex-1 min-h-0 overflow-y-auto p-4">
+				<div className="text-fg font-semibold text-[15px] leading-snug">
+					{workspace.name}
+				</div>
+				<div className="text-dim text-[12.5px] mt-2 flex flex-col gap-1.5">
+					{workspace.repo && (
+						<div className="flex items-center gap-2 min-w-0">
+							<span className="text-faint shrink-0">Repo</span>
+							<span className="truncate">{workspace.repo}</span>
+						</div>
+					)}
+					{workspace.branch && (
+						<div className="flex items-center gap-2 min-w-0">
+							<span className="text-faint shrink-0">Branch</span>
+							<span className="font-mono text-[12px] truncate">
+								{workspace.branch}
+							</span>
+						</div>
+					)}
+					{workspace.prNumber !== undefined && (
+						<div className="flex items-center gap-2 min-w-0">
+							<span className="text-faint shrink-0">Pull request</span>
+							<span>#{workspace.prNumber}</span>
+						</div>
+					)}
+					{workspace.plainThreadId && (
+						<div className="flex items-center gap-2 min-w-0">
+							<span className="text-faint shrink-0">Ticket</span>
+							<a
+								className="truncate text-dim hover:text-fg"
+								href={`https://app.plain.com/workspace/w_01J7WXJG68TFDV9RD1C4JE3W6F/thread/${workspace.plainThreadId}/`}
+								target="_blank"
+								rel="noreferrer"
+							>
+								Open in Plain ↗
+							</a>
+						</div>
+					)}
+					<div className="flex items-center gap-2 min-w-0">
+						<span className="text-faint shrink-0">Created</span>
+						<span className="truncate">
+							{new Date(workspace.createdAt).toLocaleDateString()} ·{" "}
+							{workspace.createdBy}
+						</span>
+					</div>
+				</div>
+				<div className="mt-4">
+					<div className="text-faint text-[11.5px] font-semibold uppercase tracking-wide">
+						Chats
+					</div>
+					{chats.length === 0 ? (
+						<div className="text-dim text-[12.5px] mt-1.5">
+							None yet — the composer below starts the first one
+							{workspace.branch ? " on the PR's branch" : ""}.
+						</div>
+					) : (
+						<div className="flex flex-col mt-1.5">
+							{chats.map((c) => (
+								<button
+									key={c.id}
+									className="text-left text-[13px] text-dim hover:text-fg truncate py-1 cursor-pointer bg-transparent border-0 p-0"
+									onClick={() => onOpenSession(c.id)}
+								>
+									{c.title || "Untitled chat"}
+								</button>
+							))}
+						</div>
+					)}
+				</div>
+			</div>
+		</aside>
+	);
+
+	const withPanel = (main: React.ReactNode) => (
+		<div className="flex h-full min-h-0">
+			<div className="flex-1 min-w-0 min-h-0">{main}</div>
+			{infoPanel}
+		</div>
+	);
+
 	if (tab === "review" && reviewTarget) {
-		return (
+		return withPanel(
 			<div className="h-full min-h-0 bg-surface">
 				<PrPanel
 					key={`${reviewTarget.repo}:${reviewTarget.branch}`}
@@ -153,25 +240,25 @@ export function WorkspacePane({
 					}
 					walkthrough={reviewSession?.walkthrough}
 				/>
-			</div>
+			</div>,
 		);
 	}
 
 	if (tab === "conversation" && workspace.plainThreadId) {
-		return (
+		return withPanel(
 			<div className="flex flex-col h-full min-h-0">
 				<ConversationPane
 					threadId={workspace.plainThreadId}
 					onOpenSession={onOpenSession}
 					hideTriage={chats.length > 0}
 				/>
-			</div>
+			</div>,
 		);
 	}
 
 	// Workspace home: normally only reachable chat-less (with chats, App lands
 	// in the first chat) — a composer that starts the workspace's first chat.
-	return (
+	return withPanel(
 		<div className="flex flex-col h-full min-h-0">
 			<div className="flex-1 min-h-0 overflow-y-auto">
 				<div className="w-full max-w-[760px] mx-auto px-5 py-6">
@@ -209,6 +296,6 @@ export function WorkspacePane({
 				/>
 				{startError && <div className="ask-error">{startError}</div>}
 			</div>
-		</div>
+		</div>,
 	);
 }

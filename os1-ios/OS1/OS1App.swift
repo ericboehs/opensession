@@ -46,17 +46,6 @@ struct RootView: View {
                     showSettings = true
                 }
             }
-            .task {
-                // Devices signed in before the app stored the GitHub login
-                // (pre-07-23 builds) hold a valid token but an empty login —
-                // backfill it from the server so the avatar can resolve.
-                guard config.isConfigured, config.githubLogin.isEmpty else { return }
-                if let status = try? await OS1API.authStatus(),
-                   status.authenticated == true,
-                   let login = status.login, !login.isEmpty {
-                    config.githubLogin = login
-                }
-            }
             // Coming back from Safari/GitHub after approving the device code:
             // poll right away so the sign-in lands the moment we're foreground
             // (also revives a poll loop that died with the process).

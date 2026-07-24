@@ -1181,9 +1181,21 @@ function App() {
 					? "review"
 					: null);
 		const key = route.id;
+		// Landing in the workspace's first chat keeps the full session chrome —
+		// including the right sidebar — around the foregrounded pane (wsKey is
+		// unchanged, so the view-tab reset effect doesn't fire). Chat-less
+		// workspaces stay on WorkspacePane, which renders its own info panel.
+		const firstChat = () =>
+			sessionsRef.current
+				.filter(
+					(s) => !s.archived && s.projectId === key && !s.sideChatOf,
+				)
+				.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))[0];
 		if (tab === "review") {
 			setReviewOpen((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
 			setActiveViewTab("review");
+			const first = firstChat();
+			if (first) navigate({ view: "session", id: first.id }, { replace: true });
 		} else if (tab === "conversation") {
 			setConversationClosed((prev) => {
 				if (!prev.has(key)) return prev;
@@ -1192,15 +1204,7 @@ function App() {
 				return next;
 			});
 			setActiveViewTab("conversation");
-			// Land in the workspace's first chat so the full session chrome —
-			// including the right sidebar — rides along; the Conversation pane
-			// stays foregrounded (wsKey is unchanged, so the view-tab reset
-			// effect doesn't fire). A chat-less ticket stays on WorkspacePane.
-			const first = sessionsRef.current
-				.filter(
-					(s) => !s.archived && s.projectId === key && !s.sideChatOf,
-				)
-				.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))[0];
+			const first = firstChat();
 			if (first) navigate({ view: "session", id: first.id }, { replace: true });
 		} else {
 			const first = sessionsRef.current
