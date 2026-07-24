@@ -10,6 +10,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { IconX } from "./icons";
 
 type ShellUpdateState = {
 	state: "idle" | "available" | "downloaded";
@@ -82,10 +83,10 @@ export function DesktopUpdateToast() {
 						<button
 							aria-label="Dismiss"
 							title="Dismiss"
-							className="-mr-1.5 -mt-1 grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-dim hover:text-fg"
+							className="-mr-2 -mt-2 grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-dim hover:text-fg"
 							onClick={() => setDismissedKey(key)}
 						>
-							×
+							<IconX size={20} />
 						</button>
 					</motion.div>
 				)}
