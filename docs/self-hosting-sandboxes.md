@@ -508,3 +508,33 @@ in `deploy/sandbox/lambda-microvm/`.
   ticket text never runs with those mounts.
 - Volume mode removes the host-worktree mount entirely (per-session disk,
   instant cleanup) at the cost of the destroy-deletes-work contract.
+
+## MicroVM preview backend (Firecracker snapshots)
+
+The preview pool's third backend (`backend: "microvm"`, the default since
+2026-07-24) restores Firecracker clones from a golden **memory snapshot** —
+claims serve in ~2-5s with zero warm RAM. Requires KVM (`/dev/kvm`): on AWS
+that means a bare-metal instance or the 8i-generation nested-virt families
+(C8i/M8i/R8i). Assets live in `deploy/sandbox/microvm/`:
+
+- `refresh-golden.sh` — docker-golden → `docker export` → ext4 rootfs
+  (`build-rootfs.sh` injects `bks-init` as PID 1 plus the control.py agents)
+  → boot under Firecracker → warm routes → pause → Full snapshot → kill.
+  The canonical store paths and the tap name/guest IP are **load-bearing**:
+  the vmstate embeds them. The base disk is frozen at pause time — never
+  boot it read-write again.
+- `clone.sh create|destroy <idx>` — per-claim: reflink COW disk (the store
+  MUST be XFS — `/opt/firecracker/store.img` loop-mounted via fstab), a
+  private netns recreating exactly `bkstap0`/172.16.100.2, snapshot load
+  (~18ms), guest clock resync via the root agent (SigV4 tolerates <5min
+  skew). VMs run in transient scopes (`bks-fc-clone<idx>`) so they survive
+  opensession restarts.
+- `bks-host-setup.service` — boot oneshot re-arming the docker/guest IMDS
+  drop rules. Enable it; nothing else needs manual re-arming after reboot.
+
+Host prereqs: `firecracker` + a CI `vmlinux` under /opt/firecracker, the
+service user in the `kvm` group, the XFS store mounted. Known limits: no
+jailer isolation yet (previews run our own code; harden before anything
+multi-tenant), claims need ~8GB free page cache for comfort (the memory
+file is pre-faulted), and un-pushed branches ship to clones via the agent
+/files channel (30MB bundle cap).
