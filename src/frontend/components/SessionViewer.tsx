@@ -502,12 +502,25 @@ export function SessionViewer({
 	}, [localMode, session.local]);
 	const localRepoCapabilityLoading =
 		localMode && session.local && localRepos === undefined;
+	const reviewRepos = [
+		{ repo: session.repo || "tella-fusion", primary: true },
+		...(session.attachedRepos || []).map((repo) => ({
+			repo: repo.repo,
+			primary: false,
+		})),
+	];
+	const githubReviewRepos =
+		localMode && session.local && Array.isArray(localRepos)
+			? reviewRepos.filter(
+					(target) => localRepos.find((repo) => repo.id === target.repo)?.ghRepo,
+				)
+			: reviewRepos;
 	const localRepoHasNoGitHubRemote =
 		localMode &&
 		session.local &&
 		Array.isArray(localRepos) &&
-		!localRepos.find((repo) => repo.id === (session.repo || "tella-fusion"))
-			?.ghRepo;
+		githubReviewRepos.length === 0 &&
+		!session.linkedPrs?.length;
 	const shellTimingRef = useRef({
 		sessionId: session.id,
 		startedAt: performance.now(),
@@ -4129,16 +4142,7 @@ export function SessionViewer({
 											text,
 										}))
 									}
-									repos={[
-										{
-											repo: session.repo || "tella-fusion",
-											primary: true,
-										},
-										...(session.attachedRepos || []).map((r) => ({
-											repo: r.repo,
-											primary: false,
-										})),
-									]}
+									repos={githubReviewRepos}
 									linkedPrs={session.linkedPrs}
 									linkable
 									walkthrough={session.walkthrough}

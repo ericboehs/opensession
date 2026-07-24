@@ -131,17 +131,32 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const [repo, setRepo] = useState(forceRepo || prefill.repo);
   const [repos, setRepos] = useState(CLOUD_REPOS);
   const [addRepoOpen, setAddRepoOpen] = useState(false);
+  const locallyAddedRepos = useRef(new Map<string, { id: string; label: string }>());
+  const localReposLoaded = useRef(false);
   useEffect(() => {
     if (!auth?.local) return;
+    let live = true;
     fetchRepos().then((items) => {
+      if (!live) return;
       const localRepos = items.map((item) => ({ id: item.id, label: item.id }));
+      for (const added of locallyAddedRepos.current.values()) {
+        if (!localRepos.some((item) => item.id === added.id)) localRepos.push(added);
+      }
+      localReposLoaded.current = true;
       setRepos(localRepos);
       setRepo((current) => {
         if (forceRepo && localRepos.some((item) => item.id === forceRepo)) return forceRepo;
         if (localRepos.some((item) => item.id === current)) return current;
         return localRepos.find((item, index) => items[index]?.default)?.id || localRepos[0]?.id || "";
       });
-    }).catch(() => setRepos([]));
+    }).catch(() => {
+      if (!live) return;
+      localReposLoaded.current = true;
+      setRepos([...locallyAddedRepos.current.values()]);
+    });
+    return () => {
+      live = false;
+    };
   }, [auth?.local, forceRepo]);
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   // In a Project, default to a sibling's branch so the new chat reuses its
@@ -622,8 +637,9 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             onOpenChange={setAddRepoOpen}
             onAdded={(added) => {
               const next = { id: added.id, label: added.id };
+              locallyAddedRepos.current.set(added.id, next);
               setRepos((current) => [
-                ...current.filter((item) => item.id !== added.id),
+                ...(localReposLoaded.current ? current : []).filter((item) => item.id !== added.id),
                 next,
               ]);
               setRepo(added.id);

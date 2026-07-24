@@ -372,6 +372,32 @@ describe("local session upgrade", () => {
     expect(pushed).toBe(false);
   });
 
+  test("rejects attached repositories before reserving the transfer", async () => {
+    let reserved = false;
+    const response = await upgradeLocalSession(
+      SESSION_ID,
+      upgradeDeps({
+        findSession: () => ({
+          ...session(),
+          attachedRepos: [
+            {
+              repo: "docs",
+              branch: "feature/local-work",
+              dir: "/worktrees/docs",
+            },
+          ],
+        }),
+        reserve: () => {
+          reserved = true;
+        },
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain("attached repositories");
+    expect(reserved).toBe(false);
+  });
+
   test("rejects dirty worktrees with the file list before pushing", async () => {
     let pushed = false;
     const response = await upgradeLocalSession(

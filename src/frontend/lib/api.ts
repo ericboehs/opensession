@@ -976,6 +976,9 @@ export async function upgradeSessionApi(
 		error?: string;
 		uncommittedFiles?: unknown;
 	} | null;
+	// Import completed even if the local archive marker failed. The returned
+	// destination is authoritative and lets the user continue in cloud.
+	if (body?.id && body.url) return { id: body.id, url: body.url };
 	if (!res.ok) {
 		throw new SessionUpgradeError(
 			body?.error || `Failed to move session: ${res.status}`,
@@ -987,10 +990,7 @@ export async function upgradeSessionApi(
 				: [],
 		);
 	}
-	if (!body?.id || !body.url) {
-		throw new SessionUpgradeError("Cloud upgrade returned an invalid response", 502);
-	}
-	return { id: body.id, url: body.url };
+	throw new SessionUpgradeError("Cloud upgrade returned an invalid response", 502);
 }
 
 export async function fetchDiff(

@@ -461,6 +461,12 @@ export async function upgradeLocalSession(
       409,
     );
   }
+  if (session.attachedRepos?.length || data.attachedRepos?.length) {
+    return errorResponse(
+      "Sessions with attached repositories cannot yet be moved to cloud",
+      409,
+    );
+  }
   if (!beginLocalSessionUpgrade(id)) {
     return errorResponse("Session upgrade is already in progress", 409);
   }

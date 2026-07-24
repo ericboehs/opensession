@@ -37,15 +37,17 @@ export function MoveToCloudDialog({
 		}
 	}
 
+	function changeOpen(next: boolean) {
+		if (moving) return;
+		setError(null);
+		setUncommittedFiles([]);
+		onOpenChange(next);
+	}
+
 	return (
 		<Modal.Root
 			open={open}
-			onOpenChange={(next) => {
-				if (moving) return;
-				setError(null);
-				setUncommittedFiles([]);
-				onOpenChange(next);
-			}}
+			onOpenChange={changeOpen}
 			disablePointerDismissal={moving}
 		>
 			<Modal.Content widthClassName="max-w-[28rem]">
@@ -75,7 +77,7 @@ export function MoveToCloudDialog({
 					<div className="flex-1" />
 					<Button
 						variant="ghost"
-						onClick={() => onOpenChange(false)}
+						onClick={() => changeOpen(false)}
 						disabled={moving}
 					>
 						Cancel
