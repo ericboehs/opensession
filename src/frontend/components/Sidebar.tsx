@@ -2710,11 +2710,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			.map((repo) => {
 				const rows = byRepo.get(repo)!;
 				const urgent = rows.filter((r) => r.status === "needsinput");
-				// Flat mode: needs-input rows first, the rest keep activity order.
-				const ordered = [
-					...urgent,
-					...rows.filter((r) => r.status !== "needsinput"),
-				];
+				// Flat mode: rows keep the status-lane ordering (needs input, then
+				// in progress, review, done, backlog) so a live run never sinks
+				// below idle rows; the sort is stable, so activity order holds
+				// within each bucket.
+				const laneRank = (s: MineStatus) =>
+					MINE_STATUS_META.findIndex((m) => m.key === s);
+				const ordered = [...rows].sort(
+					(a, b) => laneRank(a.status) - laneRank(b.status),
+				);
 				const gkey = `repo:${repo}`;
 				const hasSelected = rows.some((r) =>
 					r.chats.some((c) => c.id === selectedId),
