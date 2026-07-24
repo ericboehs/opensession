@@ -372,8 +372,12 @@ async function spawnMicrovmClone(repo: Repo): Promise<PoolContainer | null> {
     console.warn(`[preview-pool] ${repo.id}: no microvm golden snapshot — run the refresh (POST /preview-pool/${repo.id}/refresh)`);
     return null;
   }
-  // Free index across all repos (netns space is host-global).
-  const used = new Set<number>();
+  // Free index across all repos (netns space is host-global). The reserved
+  // set closes the window between concurrent spawners' state scans — two
+  // spawns picked the same index and the second's destroy-first create
+  // killed the first's live VM (2026-07-24).
+  const reserved = ((globalThis as { __mvmReservedIdx?: Set<number> }).__mvmReservedIdx ??= new Set<number>());
+  const used = new Set<number>(reserved);
   for (const rid of Object.keys(configuredRepos())) {
     for (const cc of Object.values(readState(rid).containers)) {
       if (cc.mvmIdx != null) used.add(cc.mvmIdx);
@@ -385,6 +389,7 @@ async function spawnMicrovmClone(repo: Repo): Promise<PoolContainer | null> {
     console.warn("[preview-pool] microvm: no free clone index");
     return null;
   }
+  reserved.add(idx);
   const name = `mvm${idx}-${repo.id}`;
   const c: PoolContainer = {
     name,
@@ -397,7 +402,9 @@ async function spawnMicrovmClone(repo: Repo): Promise<PoolContainer | null> {
     createdAt: new Date().toISOString(),
   };
   patchContainer(repo.id, name, c);
-  const r = await sudoRun(["bash", `${MVM_SCRIPTS}/clone.sh`, "create", String(idx), MVM_STORE], 180_000);
+  const r = await sudoRun(["bash", `${MVM_SCRIPTS}/clone.sh`, "create", String(idx), MVM_STORE], 180_000).finally(() =>
+    reserved.delete(idx),
+  );
   if (!r.ok) {
     console.warn(`[preview-pool] microvm clone ${idx} failed: ${r.out.slice(-400)}`);
     patchContainer(repo.id, name, null);

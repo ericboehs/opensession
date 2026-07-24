@@ -33,6 +33,13 @@ destroy() {
 if [ "$CMD" = "destroy" ]; then destroy; echo "destroyed clone $IDX"; exit 0; fi
 [ "$CMD" = "create" ] || { echo "usage: clone.sh create|destroy <idx> [pool-dir]"; exit 2; }
 
+# Never destroy-first: a concurrent caller re-using a live index must FAIL,
+# not silently kill the running VM (a claim's VM died mid-converge to a
+# racing sweep spawn before this guard).
+if pgrep -f "fc-clone$IDX.sock" >/dev/null 2>&1; then
+  echo "index $IDX already has a live VM — pick another" >&2
+  exit 3
+fi
 destroy 2>/dev/null || true
 
 # COW disk: reflink when the store supports it (XFS), sparse copy otherwise.
