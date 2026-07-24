@@ -3237,7 +3237,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						/>
 					)}
 					<div className="min-w-0 flex-1" />
-					<div className="sidebar-workspace-actions flex shrink-0 items-center gap-1.5" ref={actionsRef}>
+					<div className="sidebar-workspace-actions" ref={actionsRef}>
 						<Tooltip label="Group, filter & sort">
 						<button
 							ref={filterBtnRef}
