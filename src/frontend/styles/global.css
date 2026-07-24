@@ -8009,6 +8009,73 @@ a.workspace-info-check-row {
 	width: 100%;
 }
 
+/* ── Scroll-aware edge fades ─────────────────────────────── */
+/* Content scrolled past an edge dissolves into the page background, and each
+   fade appears only when there IS content past that edge — driven entirely by
+   a CSS scroll timeline, so there are no JS scroll listeners and no React
+   re-renders. Desktop only: on phones the transcript already fades under the
+   floating header pills via its mask-image, and the composer backdrop handles
+   the bottom on every viewport. Browsers without scroll-driven animations
+   (and the base state) keep opacity 0, so this degrades to today's look; the
+   fades track scroll position rather than animating over time, so they're
+   left active under prefers-reduced-motion. */
+@media (min-width: 721px) {
+	@supports (animation-timeline: scroll()) {
+		.viewer-messages-region {
+			timeline-scope: --viewer-chat-scroll;
+		}
+		.viewer-messages {
+			scroll-timeline: --viewer-chat-scroll y;
+		}
+		.viewer-messages-region::before,
+		.viewer-messages-region::after {
+			content: "";
+			position: absolute;
+			left: 0;
+			right: 0;
+			height: 40px;
+			pointer-events: none;
+			/* Above the transcript's flow content, but below the composer
+			   (.viewer-input, z-index 1, later sibling wins the tie) and the
+			   jump-latest pill (z-index 5). */
+			z-index: 1;
+			opacity: 0;
+			animation-duration: 1ms; /* inert — the scroll timeline drives progress */
+			animation-fill-mode: both;
+			animation-timeline: --viewer-chat-scroll;
+		}
+		.viewer-messages-region::before {
+			top: 0;
+			background: linear-gradient(to bottom, var(--bg), transparent);
+			animation-name: chat-edge-fade-in;
+			/* Fully in after a couple of lines of scroll-back. */
+			animation-range: 0 56px;
+		}
+		.viewer-messages-region::after {
+			bottom: 0;
+			background: linear-gradient(to top, var(--bg), transparent);
+			animation-name: chat-edge-fade-out;
+			animation-range: calc(100% - 56px) 100%;
+		}
+	}
+}
+@keyframes chat-edge-fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+@keyframes chat-edge-fade-out {
+	from {
+		opacity: 1;
+	}
+	to {
+		opacity: 0;
+	}
+}
+
 /* The streaming tail is excluded from anchoring so a glued-to-bottom follow
    isn't fought by the anchor as tokens append. */
 .msg-streaming {
