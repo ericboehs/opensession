@@ -37,6 +37,8 @@ import {
 	IconArchive,
 	IconBell,
 	IconFilter,
+	IconArrowDown,
+	IconArrowUp,
 	IconGear,
 	IconGitMerge,
 	IconCheck,
@@ -190,12 +192,31 @@ const CTX_SEP_STYLE: React.CSSProperties = {
 // the same deterministic hash keeps each teammate's color stable.
 // ── Support band: priority buckets + persisted filter ──
 // Plain priorities are ints 0..3; unset buckets as Normal (Plain's default).
+// Colors follow SupportTinder's priority palette (Urgent red / High yellow),
+// with Normal on blue so the queue reads at a glance; `dot` colors the row
+// circle of tickets that have no linked session (a session's live status
+// still wins the dot).
 const SUPPORT_PRIORITY_GROUPS = [
-	{ p: 0, label: "Urgent" },
-	{ p: 1, label: "High" },
-	{ p: 2, label: "Normal" },
-	{ p: 3, label: "Low" },
+	{ p: 0, label: "Urgent", cls: "text-red", dot: "var(--red)" },
+	{ p: 1, label: "High", cls: "text-yellow", dot: "var(--yellow)" },
+	{ p: 2, label: "Normal", cls: "text-blue", dot: "var(--blue)" },
+	{ p: 3, label: "Low", cls: "text-faint", dot: "var(--text-faint)" },
 ] as const;
+const SUPPORT_PRIORITY_DOT: Record<number, string> = Object.fromEntries(
+	SUPPORT_PRIORITY_GROUPS.map((g) => [g.p, g.dot]),
+);
+
+/** The priority glyph on a Support group header (flame/arrows/dot). */
+function SupportPriorityIcon({ p, cls }: { p: number; cls: string }) {
+	if (p === 0) return <IconFlame size={17} className={`shrink-0 ${cls}`} />;
+	if (p === 1) return <IconArrowUp size={17} className={`shrink-0 ${cls}`} />;
+	if (p === 3) return <IconArrowDown size={17} className={`shrink-0 ${cls}`} />;
+	return (
+		<span className="flex size-[17px] shrink-0 items-center justify-center">
+			<span className="size-[7px] rounded-full bg-blue" />
+		</span>
+	);
+}
 
 interface SupportFilterState {
 	/** "all" | "me" | "unassigned" | "name:<assignee name>" */
@@ -2647,7 +2668,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					style={{
 						backgroundColor: session
 							? STATUS_DOT[mineStatus(session)]
-							: "var(--text-faint)",
+							: SUPPORT_PRIORITY_DOT[t.priority ?? 2] ||
+								"var(--text-faint)",
 					}}
 				/>
 				<span className={cn("min-w-0 truncate text-[14px] leading-[1.35] font-medium", active ? "text-fg" : "text-dim")}>
@@ -3707,10 +3729,18 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 														toggleGroup(`support:prio:${group.p}`)
 													}
 												>
-													<span className="sidebar-group-name">
+													<SupportPriorityIcon
+														p={group.p}
+														cls={group.cls}
+													/>
+													<span
+														className={`sidebar-group-name ${group.p <= 1 ? group.cls : ""}`}
+													>
 														{group.label}
 													</span>
-													<span className="sidebar-group-count">
+													<span
+														className={`sidebar-group-count ${group.cls}`}
+													>
 														{items.length}
 													</span>
 													<IconChevronDown
