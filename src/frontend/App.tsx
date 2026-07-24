@@ -775,6 +775,12 @@ function App() {
 	// present in the strip; empty by default (a tab is added when its pane is
 	// first opened).
 	const [reviewOpen, setReviewOpen] = useState<Set<string>>(() => new Set());
+	// PR-backed workspaces (adopted from a PR — the ghpr ones) show Review by
+	// default even when you land straight in one of their chats; this tracks
+	// their explicit closes, mirroring conversationClosed below.
+	const [reviewClosed, setReviewClosed] = useState<Set<string>>(
+		() => new Set(),
+	);
 	// Conversation is default-PRESENT on any workspace/chat linked to a Plain
 	// thread (unlike Review, which is opened on demand) — so the state tracks
 	// explicit closes, not opens.
@@ -1271,8 +1277,22 @@ function App() {
 		? currentHasWorkspace
 		: !!routeWorkspace &&
 			Boolean(routeWorkspace.branch || routeWorkspace.prNumber !== undefined);
+	// A PR-backed workspace's whole point is its PR, so its Review tab is
+	// default-present (leftmost) however you landed — a sidebar PR row, a chat
+	// deep link, a tab switch — until explicitly dismissed (reviewClosed).
+	const wsRecord =
+		routeWorkspace ??
+		(currentSession?.projectId
+			? projects.find((p) => p.id === currentSession.projectId) || null
+			: null);
+	const prBackedWorkspace =
+		!!wsRecord &&
+		(wsRecord.prNumber !== undefined || !!wsRecord.key?.startsWith("ghpr-"));
 	const reviewViewTabs: ViewTab[] =
-		reviewCapable && wsKey && reviewOpen.has(wsKey)
+		reviewCapable &&
+		wsKey &&
+		(reviewOpen.has(wsKey) ||
+			(prBackedWorkspace && !reviewClosed.has(wsKey)))
 			? [
 					{
 						id: `review:${wsKey}`,
@@ -1361,6 +1381,13 @@ function App() {
 			if (prev.has(key)) return prev;
 			return new Set(prev).add(key);
 		});
+		// Un-dismiss a PR-backed workspace's default-present tab.
+		setReviewClosed((prev) => {
+			if (!prev.has(key)) return prev;
+			const next = new Set(prev);
+			next.delete(key);
+			return next;
+		});
 		setActiveViewTab("review");
 	}
 	function closeReviewTab() {
@@ -1371,6 +1398,12 @@ function App() {
 				const next = new Set(prev);
 				next.delete(key);
 				return next;
+			});
+			// PR-backed workspaces show Review by default — record the dismissal
+			// or the tab pops right back.
+			setReviewClosed((prev) => {
+				if (prev.has(key)) return prev;
+				return new Set(prev).add(key);
 			});
 		}
 		// Only fall back to chat if Review was the foregrounded pane — closing the

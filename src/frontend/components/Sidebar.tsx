@@ -13,6 +13,7 @@ import {
 	relativeTime,
 	fetchOpenPrs,
 	fetchSupportThreads,
+	closePrPreviewApi,
 	PR_CLOSED_EVENT,
 	setPlainThreadStatusApi,
 	type PrClosedDetail,
@@ -51,7 +52,7 @@ import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { providerFromUrl } from "../lib/provider";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
 import { getWsTimePref, onWsTimeChanged } from "../lib/workspace-time";
-import { UserAvatar } from "./UserAvatar";
+import { UserAvatar, githubLoginFor } from "./UserAvatar";
 import { shortTime, elapsedClock } from "../lib/time";
 import {
 	IconChevronDown,
@@ -98,8 +99,11 @@ import {
 } from "./SidebarRowCards";
 import { RepoTile, swatchColor, repoLabel } from "./RepoTile";
 import { useIsPhone } from "../hooks/useIsPhone";
-import { ReviewQueue } from "./ReviewQueue";
-import { reviewRowMatchesPersonFilter } from "../lib/review-queue";
+import { PrRow } from "./PrRow";
+import {
+	buildReviewQueue,
+	reviewRowMatchesPersonFilter,
+} from "../lib/review-queue";
 import { PixelSpinner } from "./PixelSpinner";
 import {
 	readHiddenSidebarTools,
@@ -249,24 +253,31 @@ function SupportPriorityIcon({ p, cls }: { p: number; cls: string }) {
 	);
 }
 
-// A Support row: one TODO Plain ticket, in the Pull-requests band's two-line
-// shape. The dot wears the linked session's status (the ticket's priority when
-// no session exists yet); hovering floats a "mark done" button over the row's
-// right edge and raises the ticket's hover card. Its own component rather than
-// a render helper because the card needs a hook per row.
+// A Support row: one TODO Plain ticket, single-line in the workspace rows'
+// exact shape. The rail dot wears the linked session's status (the ticket's
+// priority when no session exists yet), the right edge shows the last status
+// change; customer/assignee/preview live in the hover card. Hovering floats a
+// "mark done" action over the right edge. Its own component rather than a
+// render helper because the card needs a hook per row.
 function SupportRow({
 	thread: t,
 	session,
 	active,
+	pinned,
+	onTogglePin,
 	onOpen,
 	onMarkDone,
 }: {
 	thread: SupportThread;
 	session: UnifiedSession | null;
 	active: boolean;
+	/** Pinned into the sidebar's Pinned band (per-user, like workspace pins). */
+	pinned: boolean;
+	onTogglePin: () => void;
 	onOpen: () => void;
 	onMarkDone: () => void;
 }) {
+	const isPhone = useIsPhone();
 	const card = useRowHoverCard();
 	const customer = t.customer.name || t.customer.email || "Unknown";
 	const label = t.title || customer;
@@ -281,44 +292,51 @@ function SupportRow({
 				render={
 					<button
 						type="button"
-						className={`sidebar-item sidebar-item--twoline${
+						className={`sidebar-item sidebar-ws-row${
 							active ? " sidebar-item-selected" : ""
 						}`}
 						onClick={onOpen}
+						aria-label={label}
 					/>
 				}
 			>
-				<span className="sidebar-item-top">
-					<span className="sidebar-rail">
-						<span
-							className="size-[7px] rounded-full"
-							style={{ backgroundColor: dot }}
-						/>
+				<span className="sidebar-rail">
+					<span
+						className="size-[7px] rounded-full"
+						style={{ backgroundColor: dot }}
+					/>
+				</span>
+				<span className="sidebar-item-title">{label}</span>
+				{!isPhone && t.statusChangedAt && (
+					<span
+						className="sidebar-ws-time"
+						aria-label={new Date(t.statusChangedAt).toLocaleString()}
+					>
+						{shortTime(t.statusChangedAt)}
 					</span>
-					<span className="sidebar-item-title">{label}</span>
-				</span>
-				<span className="sidebar-item-meta">
-					<span className="truncate text-dim">{customer}</span>
-					{t.assignee && !t.assignee.isBot && (
-						<>
-							<span>·</span>
-							<span className="shrink-0">
-								@{t.assignee.name.split(/\s+/)[0]}
-							</span>
-						</>
-					)}
-					{t.statusChangedAt && (
-						<>
-							<span>·</span>
-							<span className="shrink-0">{shortTime(t.statusChangedAt)}</span>
-						</>
-					)}
-				</span>
-				{/* Hover action: the same pinned, feathered cluster the workspace
-				    rows use for pin/archive, so finishing a ticket reads as the
-				    same gesture as archiving a workspace instead of a stray glyph
-				    in the meta line. The row's own meta keeps its slot beneath. */}
+				)}
+				{/* Hover actions: the same pin + finish pair the workspace rows
+				    wear — pin keeps the ticket in the Pinned band, the check
+				    marks it done in Plain. */}
 				<span className="sidebar-ws-actions">
+					<span
+						role="button"
+						tabIndex={0}
+						className={`sidebar-ws-action${pinned ? " is-on" : ""}`}
+						aria-label={pinned ? "Unpin ticket" : "Pin ticket"}
+						onClick={(e) => {
+							e.stopPropagation();
+							onTogglePin();
+						}}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.stopPropagation();
+								onTogglePin();
+							}
+						}}
+					>
+						<IconPin size={21} fill={pinned ? "currentColor" : "none"} />
+					</span>
 					<Tooltip label="Mark done in Plain">
 						<span
 							role="button"
@@ -550,6 +568,10 @@ type MineStatus =
 // your sidebar, free to follow its live state), or null to drop the entry.
 type LaneChoice = MineStatus | "mine";
 
+// The "review" key renders as "Ready to merge" since the PR-queue dissolution:
+// the lane holds work whose PR is green and mergeable (plus anything manually
+// pinned there). The key stays "review" because per-user lanes and the legacy
+// manualStatus overrides persist it server-side.
 const MINE_STATUS_META: Array<{
 	key: MineStatus;
 	label: string;
@@ -557,9 +579,9 @@ const MINE_STATUS_META: Array<{
 }> = [
 	{ key: "needsinput", label: "Needs input", dotColor: "var(--blue)" },
 	{ key: "inprogress", label: "In progress", dotColor: "var(--yellow)" },
-	{ key: "review", label: "In review", dotColor: "var(--green)" },
-	{ key: "merged", label: "Done", dotColor: "var(--purple)" },
+	{ key: "review", label: "Ready to merge", dotColor: "var(--green)" },
 	{ key: "pending", label: "Backlog", dotColor: "var(--text-faint)" },
+	{ key: "merged", label: "Done", dotColor: "var(--purple)" },
 ];
 
 // ── Right-click context menu (workspace / chat / PR rows) ──────────────────
@@ -905,7 +927,7 @@ function SidebarGroupIcon({
 	if (status === "inprogress")
 		return <IconClock className={className} style={style} />;
 	if (status === "review")
-		return <IconEye className={className} style={style} />;
+		return <IconGitMerge className={className} style={style} />;
 	if (status === "merged")
 		return <IconCheck className={className} style={style} />;
 	return <IconInbox className={className} style={style} />;
@@ -918,7 +940,7 @@ function statusMenuIcon(status: MineStatus, color: string) {
 	if (status === "needsinput")
 		return <IconMessageQuestion size={20} style={style} />;
 	if (status === "inprogress") return <IconClock size={20} style={style} />;
-	if (status === "review") return <IconEye size={20} style={style} />;
+	if (status === "review") return <IconGitMerge size={20} style={style} />;
 	if (status === "merged") return <IconCheck size={20} style={style} />;
 	return <IconInbox size={20} style={style} />;
 }
@@ -1006,6 +1028,23 @@ function wsPrReviewGivenBy(
 	);
 }
 
+// Since the PR-queue dissolution the status lanes carry the PR lifecycle too,
+// but only one promotion: a green, mergeable, non-draft PR parks its idle row
+// in Ready to merge ("review"). Every other open PR — conflicts, failing
+// checks, changes requested, drafts, awaiting review — stays in Backlog with
+// the red/yellow PR glyph carrying the problem, so In progress keeps meaning
+// "a run is live". Returns null to leave the derived lane alone.
+function prLaneForChats(chats: UnifiedSession[]): MineStatus | null {
+	const chat = frontingPrChat(chats);
+	if (!chat || chat.prState !== "OPEN" || chat.prIsDraft) return null;
+	const checks = chat.prChecks;
+	const ready =
+		(!checks || checks.total === 0 || (checks.failed === 0 && checks.pending === 0)) &&
+		chat.prMergeable !== "CONFLICTING" &&
+		chat.prReviewDecision !== "CHANGES_REQUESTED";
+	return ready ? "review" : null;
+}
+
 const EXPANDED_KEY = "opensession-sidebar-expanded";
 
 const DEFAULT_EXPANDED = [
@@ -1041,6 +1080,11 @@ function readExpanded(): Set<string> {
 // choices persist together per browser; the default grouping is repo + status.
 type GroupBy = "status" | "repo" | "repo-status" | "recently";
 type SortBy = "updated" | "created";
+// Session-less PR rows folded into the project lanes: the default shows your
+// own PRs + explicit review requests (the retired PR band's default sources),
+// "all" widens to everyone's open PRs (incl. automation output), "none" hides
+// PR rows entirely.
+type PrsFilter = "default" | "all" | "none";
 const DEFAULT_PROJECT = "tella-fusion";
 const FILTER_KEY = "opensession-sidebar-filter";
 // Bumped when the default grouping changes. Because setFilter persists the
@@ -1059,6 +1103,7 @@ interface FilterState {
 	// person key for a specific teammate.
 	person: string;
 	sort: SortBy;
+	prs: PrsFilter;
 }
 
 function readFilter(): FilterState {
@@ -1081,6 +1126,7 @@ function readFilter(): FilterState {
 					? v.person
 					: "me",
 			sort: v.sort === "created" ? "created" : "updated",
+			prs: v.prs === "all" || v.prs === "none" ? v.prs : "default",
 		};
 	} catch {
 		return {
@@ -1088,6 +1134,7 @@ function readFilter(): FilterState {
 			repo: "all",
 			person: "me",
 			sort: "updated",
+			prs: "default",
 		};
 	}
 }
@@ -1679,11 +1726,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	}
 
 	// Most-urgent-first for the row dot: a blocked question beats everything,
-	// active review beats work-in-progress, merged/pending are quiet states.
+	// a live run beats a ready-to-merge PR, merged/pending are quiet states.
 	const STATUS_PRIORITY: MineStatus[] = [
 		"needsinput",
-		"review",
 		"inprogress",
+		"review",
 		"merged",
 		"pending",
 	];
@@ -1723,11 +1770,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			// parent recovered. Fall back for an unusual child-only workspace.
 			const stateChats = chats.filter((c) => !c.parentSessionId);
 			const statusSources = stateChats.length > 0 ? stateChats : chats;
-			const status =
+			let status =
 				STATUS_PRIORITY.find((st) =>
 					statusSources.some((c) => mineStatus(c) === st),
 				) ||
 				"pending";
+			// An idle row's lane follows its PR lifecycle (ready → Ready to
+			// merge, otherwise-open → In progress). A human-pinned lane wins —
+			// deliberately parking a row in Backlog must stick.
+			if (status === "pending" && !chats.some((c) => pinnedLane(c)))
+				status = prLaneForChats(statusSources) ?? status;
 			return {
 				key,
 				workspace,
@@ -2104,6 +2156,143 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		lanes,
 	]);
 
+	// ── PR rows in the project lanes ────────────────────────────────────────
+	// The retired standalone Pull-requests band dissolved into the project
+	// groups: every open PR classifies into a lane (ready → Ready to merge,
+	// attention → In progress, drafts → Backlog, the rest → In progress).
+	const githubLogin = githubLoginFor(currentUser);
+	const reviewQueueItems = useMemo(
+		() => buildReviewQueue(openPrs || [], sessions, currentUser, githubLogin),
+		[openPrs, sessions, currentUser, githubLogin],
+	);
+	// Session-backed PRs ride their workspace row (which already wears the PR
+	// state); a PR row renders only when no rendered workspace row carries the
+	// same repo+branch. Dedupe is against the rows in view — not all wsRows —
+	// so a teammate's PR outside your person lens can still surface as a PR
+	// row when the PR filter includes it.
+	const prRowItems = useMemo(() => {
+		if (!workspaceDataReady || filter.prs === "none") return [];
+		const q = search.trim().toLowerCase();
+		const covered = new Set<string>();
+		const rowsInView = [
+			...focusWsRows,
+			...pinnedWsRows,
+			...snoozedWsRows,
+			...needsReviewRows,
+			...awaitingReviewRows,
+		];
+		for (const r of rowsInView)
+			for (const c of r.chats) {
+				if (c.branch) covered.add(`${sessionRepo(c)}\n${c.branch}`);
+				for (const ref of [
+					...(c.prs || []),
+					...(c.attachedRepos || []),
+					...(c.linkedPrs || []),
+				])
+					covered.add(`${ref.repo}\n${ref.branch}`);
+			}
+		return reviewQueueItems.filter((item) => {
+			if (covered.has(`${item.pr.repo}\n${item.pr.branch}`)) return false;
+			if (filter.repo !== "all" && item.pr.repo !== filter.repo)
+				return false;
+			if (
+				q &&
+				![item.pr.title, item.pr.branch, item.pr.author].some((v) =>
+					v.toLowerCase().includes(q),
+				)
+			)
+				return false;
+			// The person lens: a specific teammate shows their PRs; the
+			// aggregate Backlog lens has no authored-PR meaning. "Me" and
+			// "Everyone" fall through to the PR-source preset.
+			if (filter.person === "unassigned") return false;
+			if (filter.person !== "me" && filter.person !== "everyone")
+				return item.pr.person === filter.person;
+			if (filter.prs === "all") return true;
+			return item.source === "mine" || item.source === "requested";
+		});
+	}, [
+		reviewQueueItems,
+		workspaceDataReady,
+		focusWsRows,
+		pinnedWsRows,
+		snoozedWsRows,
+		needsReviewRows,
+		awaitingReviewRows,
+		filter.repo,
+		filter.person,
+		filter.prs,
+		search,
+	]);
+
+	// Which lane a PR row files under: ready → Ready to merge, everything else
+	// → Backlog. In progress is reserved for live runs — a PR that needs a
+	// hand signals through its red/yellow glyph and hover card instead.
+	function prItemLane(item: ReviewQueueItem): MineStatus {
+		return item.bucket === "ready" ? "review" : "pending";
+	}
+
+	// Closing a PR from a row's context menu — optimistic spinner per URL; the
+	// PR_CLOSED_EVENT listener above prunes the open-PR list on success.
+	const [closingPrUrls, setClosingPrUrls] = useState<Set<string>>(
+		() => new Set(),
+	);
+	async function closePrRow(item: ReviewQueueItem) {
+		if (!window.confirm(`Close PR #${item.pr.number} without merging it?`))
+			return;
+		setClosingPrUrls((current) => new Set(current).add(item.pr.url));
+		try {
+			await closePrPreviewApi(item.pr.repo, item.pr.branch);
+		} catch (error: any) {
+			onToast?.(error.message || `Failed to close PR #${item.pr.number}.`);
+		} finally {
+			setClosingPrUrls((current) => {
+				const next = new Set(current);
+				next.delete(item.pr.url);
+				return next;
+			});
+		}
+	}
+
+	// A PR row is selected while the open workspace carries its PR.
+	function prRowSelected(item: ReviewQueueItem): boolean {
+		const ws = selectedWorkspaceId
+			? projects.find((p) => p.id === selectedWorkspaceId)
+			: null;
+		return (
+			!!ws &&
+			(ws.repo || DEFAULT_PROJECT) === item.pr.repo &&
+			(ws.prNumber === item.pr.number || ws.branch === item.pr.branch)
+		);
+	}
+
+	function renderPrRow(item: ReviewQueueItem) {
+		const pinKey = `pr:${item.pr.url}`;
+		return (
+			<PrRow
+				key={item.pr.url}
+				item={item}
+				selected={prRowSelected(item)}
+				pinned={pins.includes(pinKey)}
+				onTogglePin={() => setPins(togglePin(pinKey))}
+				onOpen={() => onOpenPrItem(item)}
+				onClose={() => void closePrRow(item)}
+				closing={closingPrUrls.has(item.pr.url)}
+			/>
+		);
+	}
+
+	// GitHub review requests pointed at YOU are a notification, not a lane
+	// item: they get their own band right under Pinned (the same slot the
+	// internal Needs-review band owns above it), and stay out of the project
+	// lanes below.
+	const requestedPrItems = prRowItems.filter(
+		(item) => item.source === "requested",
+	);
+	const lanePrItems = prRowItems.filter(
+		(item) => item.source !== "requested",
+	);
+
 	// Workspace rows in the sidebar's visual order (Pinned band first, then the
 	// status lanes) — archiveWorkspaceWithNext walks this to pick the row that
 	// should open when the active workspace is archived away.
@@ -2137,7 +2326,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		awaitingReviewRows.length === 0 &&
 		pinnedWsRows.length === 0 &&
 		focusWsRows.length === 0 &&
-		snoozedWsRows.length === 0;
+		snoozedWsRows.length === 0 &&
+		prRowItems.length === 0;
 
 	function archiveWorkspaceWithNext(row: WsRow) {
 		// Chatless rows can't be opened, so they're not "next" candidates.
@@ -2531,11 +2721,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		}
 	}
 
-	// Repo and review groups are open by default (grouping is itself
-	// the point), so we track their *collapsed* state under a "collapsed:" key;
-	// every other group is closed by default and tracked directly.
+	// Repo, review, project and support groups are open by default (grouping is
+	// itself the point), so we track their *collapsed* state under a
+	// "collapsed:" key; every other group is closed by default and tracked
+	// directly. This list must match isOpen's — a key toggled here but read
+	// bare there (or vice versa) makes its chevron a no-op.
 	const collapseKey = (key: string) =>
-		key.startsWith("repo:") || key.startsWith("review:")
+		key.startsWith("repo:") ||
+		key.startsWith("review:") ||
+		key.startsWith("project:") ||
+		key.startsWith("support:")
 			? `collapsed:${key}`
 			: key;
 
@@ -2556,7 +2751,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		if (
 			key.startsWith("repo:") ||
 			key.startsWith("review:") ||
-			key.startsWith("support:")
+			key.startsWith("support:") ||
+			key.startsWith("project:")
 		)
 			return !expanded.has(`collapsed:${key}`);
 		return expanded.has(key);
@@ -2565,13 +2761,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// Collapsible bands are open by default, so — like
 	// repo groups — their *collapsed* state is what's persisted. Collapsing one
 	// hides every group within that band. Searching forces them open.
-	const bandOpen = (
-		band: GroupBand | "support" | "pullrequests" | "workspaces",
-	) =>
+	const bandOpen = (band: GroupBand | "workspaces") =>
 		search.trim().length > 0 ? true : !expanded.has(`collapsed:band:${band}`);
 	const toolsOpen = !expanded.has("collapsed:band:tools");
 	const workspacesOpen = bandOpen("workspaces");
-	const supportOpen = bandOpen("support");
 	// Assignee/label/session filter over the Plain queue; free text rides the
 	// sidebar-wide search box (title/customer/preview).
 	const filteredSupportThreads = (() => {
@@ -2611,18 +2804,13 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			);
 		return list;
 	})();
-	const visibleSupportThreads = supportOpen
-		? filteredSupportThreads
-		: filteredSupportThreads.filter(supportThreadActive);
 	const automationsOpen = bandOpen("automations");
 	const visibleAutomationGroups = automationsOpen
 		? groups
 		: groups.filter((group) =>
 				group.items.some((session) => session.id === selectedId),
 			);
-	function toggleBand(
-		band: GroupBand | "support" | "pullrequests" | "tools" | "workspaces",
-	) {
+	function toggleBand(band: GroupBand | "tools" | "workspaces") {
 		const key = `collapsed:band:${band}`;
 		setExpanded((prev) => {
 			const next = new Set(prev);
@@ -2971,15 +3159,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			? (snoozes[row.key] ?? null)
 			: null;
 		const flatRepoGrouping = filter.groupBy === "repo";
-		// Conductor-style right-edge diff stat, only under "Group by: Repo" —
-		// the flat rows there carry status in their glyph, so the resting right
-		// slot shows the row's PR size instead of the idle time (the time badge
-		// drops to hover-reveal while the stat is shown).
-		const diff =
-			!isPhone &&
-			(filter.groupBy === "repo" || filter.groupBy === "repo-status")
-				? wsRowDiff(row)
-				: null;
 		return (
 			<div
 				key={row.key}
@@ -3159,23 +3338,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				    hidden until then, so the ticker owns the resting slot). */}
 				{runStartMs !== null && <RunTicker startMs={runStartMs} />}
 				{snoozeIso && !editing && <SnoozeBadge until={snoozeIso} />}
-				{diff && !editing && (
-					<span
-						className="sidebar-ws-diff"
-						aria-label={`+${diff.add} −${diff.del} lines in PR`}
-					>
-						<span className="sidebar-ws-diff-add">
-							+{compactNum(diff.add)}
-						</span>
-						<span className="sidebar-ws-diff-del">
-							-{compactNum(diff.del)}
-						</span>
-					</span>
-				)}
 				{!isPhone && !snoozeIso && wsTimePref !== "off" && row.lastActivity && (
 					<span
 						className={`sidebar-ws-time${
-							wsTimePref === "hover" || diff ? " sidebar-ws-time--hover" : ""
+							wsTimePref === "hover" ? " sidebar-ws-time--hover" : ""
 						}${runStartMs !== null ? " sidebar-ws-time--running" : ""}`}
 						aria-label={new Date(row.lastActivity).toLocaleString()}
 					>
@@ -3296,15 +3462,18 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return !!session && session.id === selectedId;
 	}
 
-	// A Support row, in the Pull-requests band's two-line shape — see SupportRow
-	// for the markup; this binds it to the sidebar's state and handlers.
+	// A Support row in the workspace rows' shape — see SupportRow for the
+	// markup; this binds it to the sidebar's state and handlers.
 	function renderSupportRow(t: SupportThread) {
+		const pinKey = `support:${t.id}`;
 		return (
 			<SupportRow
-				key={`support:${t.id}`}
+				key={pinKey}
 				thread={t}
 				session={supportSessionByThread.get(t.id) || null}
 				active={supportThreadActive(t)}
+				pinned={pins.includes(pinKey)}
+				onTogglePin={() => setPins(togglePin(pinKey))}
 				onOpen={() => onOpenTicket(t)}
 				onMarkDone={() => markSupportRowDone(t.id)}
 			/>
@@ -3322,31 +3491,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return row.workspace?.repo || row.chats[0]?.repo || DEFAULT_PROJECT;
 	}
 
-	// The row's headline diff size (Conductor-style "+66 −43"): its most
-	// recently active chat's primary PR, preferring open PRs so a live branch
-	// outranks a long-merged predecessor; falls back to the multi-PR refs
-	// (attached/linked repos) when no primary-branch PR carries numbers.
-	function wsRowDiff(row: WsRow): { add: number; del: number } | null {
-		const chats = [...row.chats].sort((a, b) =>
-			(b.lastActivity || "").localeCompare(a.lastActivity || ""),
-		);
-		const primary = (openOnly: boolean) => {
-			for (const c of chats) {
-				if (c.prAdditions == null || c.prDeletions == null) continue;
-				if (openOnly && c.prState !== "OPEN") continue;
-				return { add: c.prAdditions, del: c.prDeletions };
-			}
-			return null;
-		};
-		const fromPrimary = primary(true) || primary(false);
-		if (fromPrimary) return fromPrimary;
-		for (const c of chats)
-			for (const pr of c.prs || [])
-				if (pr.additions != null && pr.deletions != null)
-					return { add: pr.additions, del: pr.deletions };
-		return null;
-	}
-
 	// The Conductor-style status lanes (Needs input / In progress / …) over a set
 	// of workspace rows. `ns` keeps each repo's lane collapse state independent.
 	// `snoozedRows` (when given) render as a Snoozed group slotted just above
@@ -3356,6 +3500,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		ns = "",
 		snoozedRows?: WsRow[],
 		laneRepo?: string,
+		prItems: ReviewQueueItem[] = [],
 	) {
 		// While an eligible Pinned row is mid-drag these lanes double as drop
 		// targets: per-repo lanes only for the row's own repo, and empty lanes
@@ -3366,14 +3511,19 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			(!laneRepo || laneRepo === pinDragMeta.repo);
 		const lanes = MINE_STATUS_META.map((meta) => {
 			const items = rows.filter((r) => r.status === meta.key);
-			if (items.length === 0 && !dropEligible) return null;
+			// Session-less PR rows share the lanes since the PR-band dissolution.
+			const prs = prItems.filter((i) => prItemLane(i) === meta.key);
+			if (items.length === 0 && prs.length === 0 && !dropEligible)
+				return null;
 			const gkey = `${ns}status:${meta.key}`;
 			const open = isOpen(gkey);
 			const dropHover = dropEligible && laneDropHover?.gkey === gkey;
 			return (
 				<div
 					className={`sidebar-status-group${
-						dropEligible && items.length === 0 ? " is-lane-empty" : ""
+						dropEligible && items.length === 0 && prs.length === 0
+							? " is-lane-empty"
+							: ""
 					}${dropHover ? " is-lane-drop-hover" : ""}`}
 					key={gkey}
 					data-lane-drop={dropEligible ? gkey : undefined}
@@ -3390,7 +3540,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						<SidebarGroupIcon status={meta.key} color={meta.dotColor} />
 						<span className="sidebar-group-name">{meta.label}</span>
 						{/* Count rides directly behind the lane name, not pinned right. */}
-						<span className="sidebar-group-count">{items.length}</span>
+						<span className="sidebar-group-count">
+							{items.length + prs.length}
+						</span>
 						<IconChevronDown
 							className="sidebar-group-chevron"
 							size={22}
@@ -3400,6 +3552,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					{items
 						.filter((r) => open || r.chats.some((c) => c.id === selectedId))
 						.map(renderWsRow)}
+					{prs
+						.filter((i) => open || prRowSelected(i))
+						.map(renderPrRow)}
 				</div>
 			);
 		});
@@ -3432,9 +3587,13 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						.map(renderWsRow)}
 				</div>
 			);
-			// MINE_STATUS_META keeps Backlog ("pending") last, so slotting before
-			// the final lane node lands Snoozed just above it.
-			lanes.splice(lanes.length - 1, 0, snoozedNode);
+			// Snoozed slots directly after Backlog ("pending") — the quiet zone
+			// sits with the parked work, ahead of Ready to merge / Done.
+			lanes.splice(
+				MINE_STATUS_META.findIndex((m) => m.key === "pending") + 1,
+				0,
+				snoozedNode,
+			);
 		}
 		return lanes;
 	}
@@ -3466,7 +3625,21 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		if (withLanes)
 			for (const r of snoozedWsRows)
 				bucket(snoozedByRepo, wsRowRepo(r)).push(r);
-		const present = new Set([...byRepo.keys(), ...snoozedByRepo.keys()]);
+		// Session-less PR rows file into their repo's band alongside the
+		// workspace rows (the dissolved Pull-requests band). Review requests
+		// pointed at you are excluded — they ride the notification band under
+		// Pinned instead.
+		const prByRepo = new Map<string, ReviewQueueItem[]>();
+		for (const item of lanePrItems) {
+			const list = prByRepo.get(item.pr.repo) || [];
+			list.push(item);
+			prByRepo.set(item.pr.repo, list);
+		}
+		const present = new Set([
+			...byRepo.keys(),
+			...snoozedByRepo.keys(),
+			...prByRepo.keys(),
+		]);
 		const order = [
 			...repos.filter((r) => present.has(r)),
 			...Array.from(present).filter((r) => !repos.includes(r)),
@@ -3475,6 +3648,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			.map((repo) => {
 				const rows = byRepo.get(repo) || [];
 				const snoozedRows = snoozedByRepo.get(repo) || [];
+				const prs = prByRepo.get(repo) || [];
 				const urgent = rows.filter((r) => r.status === "needsinput");
 				// Flat mode: rows keep the status-lane ordering (needs input, then
 				// in progress, review, done, backlog) so a live run never sinks
@@ -3486,10 +3660,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					(a, b) => laneRank(a.status) - laneRank(b.status),
 				);
 				const gkey = `repo:${repo}`;
-				const hasSelected = [...rows, ...snoozedRows].some((r) =>
-					r.chats.some((c) => c.id === selectedId),
-				);
-				const open = isOpen(gkey) || hasSelected;
+				const open = isOpen(gkey);
+				// A collapsed band still surfaces the selected row(s) so the
+				// open session never hides — without force-opening the band
+				// (which made its chevron a frustrating no-op).
+				const selectedRows = open
+					? []
+					: [...rows, ...snoozedRows].filter((r) =>
+							r.chats.some((c) => c.id === selectedId),
+						);
+				const selectedPrs = open ? [] : prs.filter(prRowSelected);
 				return (
 					<div className="sidebar-repo-group" key={gkey}>
 						<button
@@ -3504,7 +3684,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							<span className="sidebar-group-name">{repoLabel(repo)}</span>
 							{/* Count rides directly behind the repo name, not pinned right. */}
 							<span className="sidebar-group-count">
-								{rows.length + snoozedRows.length}
+								{rows.length + snoozedRows.length + prs.length}
 							</span>
 							{/* Urgent rows must not vanish into a closed band — a collapsed
 							    header wears the count of rows waiting for input. */}
@@ -3542,16 +3722,266 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								<IconPlus size={24} />
 							</span>
 						</button>
-						{open && (
+						{open ? (
 							<div className="sidebar-repo-lanes">
 								{withLanes
-									? renderStatusLanes(rows, `repo:${repo}::`, snoozedRows, repo)
-									: ordered.map(renderWsRow)}
+									? renderStatusLanes(
+											rows,
+											`repo:${repo}::`,
+											snoozedRows,
+											repo,
+											prs,
+										)
+									: [
+											...ordered.map(renderWsRow),
+											// Flat mode has no lane headings: PR rows keep
+											// the lane ordering after the workspace rows.
+											...[...prs]
+												.sort(
+													(a, b) =>
+														laneRank(prItemLane(a)) -
+														laneRank(prItemLane(b)),
+												)
+												.map(renderPrRow),
+										]}
 							</div>
+						) : (
+							(selectedRows.length > 0 || selectedPrs.length > 0) && (
+								<div className="sidebar-repo-lanes">
+									{selectedRows.map(renderWsRow)}
+									{selectedPrs.map(renderPrRow)}
+								</div>
+							)
 						)}
 					</div>
 				);
 			});
+	}
+
+	// ── Plain (support) as a project ────────────────────────────────────────
+	// The Plain TODO queue rendered as a sibling of the repo bands: a project
+	// whose lanes are priorities (Urgent/High/Normal/Low) instead of statuses.
+	// Hidden while a repo filter narrows the list — tickets belong to no repo.
+	const plainThreadsInView =
+		filter.repo === "all" ? filteredSupportThreads : [];
+
+	// The priority lanes, shared by the Plain project band (nested under it)
+	// and the flat "Group by: Status" view (appended after the status lanes).
+	function renderSupportLanes(threads: SupportThread[]) {
+		return SUPPORT_PRIORITY_GROUPS.map((group) => {
+			const items = threads.filter((t) => (t.priority ?? 2) === group.p);
+			if (items.length === 0) return null;
+			const gkey = `support:prio:${group.p}`;
+			const groupIsOpen = isOpen(gkey);
+			return (
+				<div
+					className="sidebar-status-group"
+					key={`support-prio-${group.p}`}
+				>
+					<button
+						className="sidebar-group-header"
+						onClick={() => toggleGroup(gkey)}
+					>
+						<SupportPriorityIcon p={group.p} cls={group.cls} />
+						<span
+							className={`sidebar-group-name ${group.p <= 1 ? group.cls : ""}`}
+						>
+							{group.label}
+						</span>
+						<span className={`sidebar-group-count ${group.cls}`}>
+							{items.length}
+						</span>
+						<IconChevronDown
+							className="sidebar-group-chevron"
+							size={20}
+							style={{
+								transform: groupIsOpen ? "none" : "rotate(-90deg)",
+							}}
+						/>
+					</button>
+					{items
+						.filter((t) => groupIsOpen || supportThreadActive(t))
+						.map(renderSupportRow)}
+				</div>
+			);
+		});
+	}
+
+	// The Plain queue filter (assignee / label / has-session) — rides the
+	// project band's header as a span-rendered menu trigger (the header itself
+	// is a button, so a nested <button> trigger is off the table). Free text
+	// rides the sidebar-wide search box.
+	function plainFilterMenu() {
+		const customFilter =
+			supportFilter.assignee !== "all" ||
+			supportFilter.label !== "all" ||
+			supportFilter.session !== "all";
+		const assigneeNames = [
+			...new Set(
+				(supportThreads || [])
+					.map((t) => t.assignee?.name)
+					.filter((n): n is string => !!n),
+			),
+		].sort();
+		const labelNames = [
+			...new Set(
+				(supportThreads || []).flatMap((t) =>
+					(t.labels || []).map((l) => l.name),
+				),
+			),
+		].sort();
+		const item = (
+			label: string,
+			selected: boolean,
+			onClick: () => void,
+		) => (
+			<Menu.Item key={label} onClick={onClick}>
+				<span className="flex size-4 shrink-0 items-center justify-center">
+					{selected && <IconCheck size={13} />}
+				</span>
+				<span className="truncate">{label}</span>
+			</Menu.Item>
+		);
+		return (
+			<Menu.Root>
+				<Menu.Trigger
+					render={
+						<span
+							role="button"
+							tabIndex={0}
+							aria-label="Filter support tickets"
+							title="Filter support tickets"
+							className={`sidebar-band-action sidebar-filter-btn ml-auto shrink-0${customFilter ? " has-filter" : ""}`}
+							onClick={(e: React.MouseEvent) => e.stopPropagation()}
+						/>
+					}
+				>
+					<IconFilter size={19} />
+				</Menu.Trigger>
+				<Menu.Popup align="end" sideOffset={5} className="min-w-[230px]">
+					<Menu.Group>
+						<Menu.GroupLabel>Assignee</Menu.GroupLabel>
+						{item("Anyone", supportFilter.assignee === "all", () =>
+							setSupportFilter({ assignee: "all" }),
+						)}
+						{item("Me", supportFilter.assignee === "me", () =>
+							setSupportFilter({ assignee: "me" }),
+						)}
+						{item(
+							"Unassigned",
+							supportFilter.assignee === "unassigned",
+							() => setSupportFilter({ assignee: "unassigned" }),
+						)}
+						{assigneeNames.map((name) =>
+							item(
+								name,
+								supportFilter.assignee === `name:${name}`,
+								() => setSupportFilter({ assignee: `name:${name}` }),
+							),
+						)}
+					</Menu.Group>
+					{labelNames.length > 0 && (
+						<>
+							<Menu.Separator />
+							<Menu.Group>
+								<Menu.GroupLabel>Label</Menu.GroupLabel>
+								{item(
+									"All labels",
+									supportFilter.label === "all",
+									() => setSupportFilter({ label: "all" }),
+								)}
+								{labelNames.map((name) =>
+									item(name, supportFilter.label === name, () =>
+										setSupportFilter({ label: name }),
+									),
+								)}
+							</Menu.Group>
+						</>
+					)}
+					<Menu.Separator />
+					<Menu.Group>
+						<Menu.GroupLabel>Session</Menu.GroupLabel>
+						{item("All tickets", supportFilter.session === "all", () =>
+							setSupportFilter({ session: "all" }),
+						)}
+						{item(
+							"Have session",
+							supportFilter.session === "with",
+							() => setSupportFilter({ session: "with" }),
+						)}
+						{item(
+							"No session",
+							supportFilter.session === "without",
+							() => setSupportFilter({ session: "without" }),
+						)}
+					</Menu.Group>
+				</Menu.Popup>
+			</Menu.Root>
+		);
+	}
+
+	// The Plain project band, styled like a repo band: Plain tile + name +
+	// count, an urgent badge while collapsed, the queue filter at the far end,
+	// and the priority lanes (or a flat priority-ordered list) nested under.
+	function renderPlainProject(withLanes: boolean) {
+		if ((supportThreads?.length || 0) === 0 || filter.repo !== "all")
+			return null;
+		const threads = plainThreadsInView;
+		const gkey = "project:plain";
+		const open = isOpen(gkey);
+		// Collapsed band still surfaces the active ticket (same rule as the
+		// repo bands' selected rows) without force-opening the band.
+		const activeThreads = open ? [] : threads.filter(supportThreadActive);
+		const urgentCount = threads.filter(
+			(t) => (t.priority ?? 2) === 0,
+		).length;
+		return (
+			<div className="sidebar-repo-group" key={gkey}>
+				<button
+					className="sidebar-group-header sidebar-repo-head group transition-colors"
+					onClick={() => toggleGroup(gkey)}
+				>
+					<span className="sidebar-rail">
+						<RepoTile name="plain" />
+					</span>
+					<span className="sidebar-group-name">Plain</span>
+					<span className="sidebar-group-count">{threads.length}</span>
+					{/* Urgent tickets must not vanish into a closed band. */}
+					{!open && urgentCount > 0 && (
+						<span
+							className="sidebar-repo-attn"
+							aria-label={`${urgentCount} urgent tickets`}
+						>
+							{urgentCount}
+						</span>
+					)}
+					<IconChevronDown
+						className="sidebar-group-chevron"
+						size={22}
+						style={{ transform: open ? "none" : "rotate(-90deg)" }}
+					/>
+					{plainFilterMenu()}
+				</button>
+				{open ? (
+					<div className="sidebar-repo-lanes">
+						{withLanes
+							? renderSupportLanes(threads)
+							: [...threads]
+									.sort(
+										(a, b) =>
+											(a.priority ?? 2) - (b.priority ?? 2),
+									)
+									.map(renderSupportRow)}
+					</div>
+				) : (
+					activeThreads.length > 0 && (
+						<div className="sidebar-repo-lanes">
+							{activeThreads.map(renderSupportRow)}
+						</div>
+					)
+				)}
+			</div>
+		);
 	}
 
 	return (
@@ -3729,9 +4159,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							className={`sidebar-new-btn sidebar-filter-btn${
 								filterOpen ? " active" : ""
 							}${
-								filter.groupBy !== "status" ||
+								filter.groupBy !== DEFAULT_GROUP_BY ||
 								filter.repo !== "all" ||
-								filter.person !== "me"
+								filter.person !== "me" ||
+								filter.prs !== "default"
 									? " has-filter"
 									: ""
 							}`}
@@ -3785,9 +4216,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					<button
 						ref={mobileFilterBtnRef}
 						className={`mobile-filter-btn${filterOpen ? " active" : ""}${
-							filter.groupBy !== "status" ||
+							filter.groupBy !== DEFAULT_GROUP_BY ||
 							filter.repo !== "all" ||
-							filter.person !== "me"
+							filter.person !== "me" ||
+							filter.prs !== "default"
 								? " has-filter"
 								: ""
 						}`}
@@ -4114,7 +4546,28 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						.filter((e) => e.startsWith("note:"))
 						.map((e) => notes.find((n) => n.id === e.slice(5)))
 						.filter((n): n is { id: string; title: string } => !!n);
-					if (!pinnedRows.length && !pinnedLoose.length && !pinnedNotes.length)
+					// Pinned Plain tickets and PRs — resolved against the live
+					// queues, so a done ticket / closed PR just stops rendering
+					// (its stale pin key is harmless, like an archived chat's).
+					const pinnedTickets = pins
+						.filter((e) => e.startsWith("support:"))
+						.map((e) =>
+							(supportThreads || []).find((t) => t.id === e.slice(8)),
+						)
+						.filter((t): t is SupportThread => !!t);
+					const pinnedPrs = pins
+						.filter((e) => e.startsWith("pr:"))
+						.map((e) =>
+							reviewQueueItems.find((i) => i.pr.url === e.slice(3)),
+						)
+						.filter((i): i is ReviewQueueItem => !!i);
+					if (
+						!pinnedRows.length &&
+						!pinnedLoose.length &&
+						!pinnedNotes.length &&
+						!pinnedTickets.length &&
+						!pinnedPrs.length
+					)
 						return null;
 					const pinnedOpen = isOpen("pinned");
 
@@ -4205,6 +4658,24 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									</span>
 								</button>
 							),
+						});
+					}
+					for (const t of pinnedTickets) {
+						entries.push({
+							key: `support:${t.id}`,
+							pinKeys: [`support:${t.id}`],
+							repo: null,
+							chats: [],
+							node: renderSupportRow(t),
+						});
+					}
+					for (const item of pinnedPrs) {
+						entries.push({
+							key: `pr:${item.pr.url}`,
+							pinKeys: [`pr:${item.pr.url}`],
+							repo: null,
+							chats: [],
+							node: renderPrRow(item),
 						});
 					}
 					const firstIdx = (e: PinEntry) =>
@@ -4349,6 +4820,41 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					);
 				})()}
 
+				{/* ── Review requested: GitHub PRs waiting on YOUR review — a
+				    notification, not a lane item, so it rides directly under
+				    Pinned and above every project. ── */}
+				{requestedPrItems.length > 0 &&
+					(() => {
+						const open = isOpen("review:requested");
+						return (
+							<div className="sidebar-group sidebar-group--review">
+								<button
+									className="sidebar-group-header"
+									onClick={() => toggleGroup("review:requested")}
+								>
+									<IconBell
+										className="sidebar-group-icon"
+										style={{ color: "var(--accent)" }}
+									/>
+									<span className="sidebar-group-name">
+										Review requested
+									</span>
+									<span className="sidebar-group-count">
+										{requestedPrItems.length}
+									</span>
+									<IconChevronDown
+										className="sidebar-group-chevron"
+										size={22}
+										style={{ transform: open ? "none" : "rotate(-90deg)" }}
+									/>
+								</button>
+								{requestedPrItems
+									.filter((item) => open || prRowSelected(item))
+									.map(renderPrRow)}
+							</div>
+						);
+					})()}
+
 				{/* ── Workspaces: status lanes live directly under the Workspaces
 				    header above (which carries the filter, new-workspace and
 				    new-session actions) — no second in-list heading. ── */}
@@ -4365,14 +4871,28 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					    lane (renderRepoGroups), while flat "Repo" — which has no lanes —
 					    renders one global Snoozed group after the bands, and the plain
 					    status mode slots it above Backlog via renderStatusLanes. */}
+					{/* Plain (support tickets) renders as one more project: a band
+					    beside the repos with priority lanes nested under it — or,
+					    in the flat status view, its priority lanes appended after
+					    the status lanes so everything reads as one list. */}
 					{filter.groupBy === "repo" || filter.groupBy === "repo-status"
 						? [
 								...renderRepoGroups(filter.groupBy === "repo-status"),
 								...(filter.groupBy === "repo"
 									? renderStatusLanes([], "", snoozedWsRows)
 									: []),
+								renderPlainProject(filter.groupBy === "repo-status"),
 							]
-						: renderStatusLanes(focusWsRows, "", snoozedWsRows)}
+						: [
+								...renderStatusLanes(
+									focusWsRows,
+									"",
+									snoozedWsRows,
+									undefined,
+									lanePrItems,
+								),
+								...renderSupportLanes(plainThreadsInView),
+							]}
 				</div>
 
 				{archivedBand && (
@@ -4381,207 +4901,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				</div>
 			)}
 			</div>
-
-			{/* Pull requests are an action inbox: personal PRs, direct review
-			    requests and automation output, grouped by what can happen next. */}
-			{workspaceDataReady && openPrs && openPrs.length > 0 && (
-				<ReviewQueue
-					prs={openPrs}
-					sessions={sessions}
-					currentUser={currentUser}
-					open={bandOpen("pullrequests")}
-					onToggle={() => toggleBand("pullrequests")}
-					groupOpen={(bucket) => isOpen(`review:${bucket}`)}
-					onToggleGroup={(bucket) => toggleGroup(`review:${bucket}`)}
-					selectedWorkspace={
-						selectedWorkspaceId
-							? projects.find((p) => p.id === selectedWorkspaceId) || null
-							: null
-					}
-					onOpenItem={onOpenPrItem}
-				/>
-			)}
-
-			{/* ── Support: the Plain TODO queue straight from Plain, grouped by
-			    priority (Urgent/High/Normal/Low; within a bucket newest status
-			    change first, the same ordering as Plain's Todo inbox), with an
-			    assignee/label/session filter. ── */}
-			{(supportThreads?.length || 0) > 0 && (
-				<div className="sidebar-independent-section sidebar-group--band-start">
-					<div className="sidebar-band-label sidebar-sticky-head flex items-center gap-1">
-						<button
-							className="sidebar-band-toggle min-w-0 flex-1"
-							onClick={() => toggleBand("support")}
-							title={supportOpen ? "Collapse support" : "Expand support"}
-						>
-							<span className="sidebar-band-name">Support</span>
-							<span className="sidebar-group-count">
-								{filteredSupportThreads.length}
-							</span>
-							<IconChevronDown
-								className="sidebar-band-chevron"
-								size={18}
-								style={{
-									transform: supportOpen ? "none" : "rotate(-90deg)",
-								}}
-							/>
-						</button>
-						{(() => {
-							const customFilter =
-								supportFilter.assignee !== "all" ||
-								supportFilter.label !== "all" ||
-								supportFilter.session !== "all";
-							const assigneeNames = [
-								...new Set(
-									(supportThreads || [])
-										.map((t) => t.assignee?.name)
-										.filter((n): n is string => !!n),
-								),
-							].sort();
-							const labelNames = [
-								...new Set(
-									(supportThreads || []).flatMap((t) =>
-										(t.labels || []).map((l) => l.name),
-									),
-								),
-							].sort();
-							const item = (
-								label: string,
-								selected: boolean,
-								onClick: () => void,
-							) => (
-								<Menu.Item key={label} onClick={onClick}>
-									<span className="flex size-4 shrink-0 items-center justify-center">
-										{selected && <IconCheck size={13} />}
-									</span>
-									<span className="truncate">{label}</span>
-								</Menu.Item>
-							);
-							return (
-								<Menu.Root>
-									<Menu.Trigger
-										className={`sidebar-band-action sidebar-filter-btn${customFilter ? " has-filter" : ""}`}
-										aria-label="Filter support tickets"
-										title="Filter support tickets"
-									>
-										<IconFilter size={19} />
-									</Menu.Trigger>
-									<Menu.Popup align="end" sideOffset={5} className="min-w-[230px]">
-										<Menu.Group>
-											<Menu.GroupLabel>Assignee</Menu.GroupLabel>
-											{item("Anyone", supportFilter.assignee === "all", () =>
-												setSupportFilter({ assignee: "all" }),
-											)}
-											{item("Me", supportFilter.assignee === "me", () =>
-												setSupportFilter({ assignee: "me" }),
-											)}
-											{item(
-												"Unassigned",
-												supportFilter.assignee === "unassigned",
-												() => setSupportFilter({ assignee: "unassigned" }),
-											)}
-											{assigneeNames.map((name) =>
-												item(
-													name,
-													supportFilter.assignee === `name:${name}`,
-													() =>
-														setSupportFilter({ assignee: `name:${name}` }),
-												),
-											)}
-										</Menu.Group>
-										{labelNames.length > 0 && (
-											<>
-												<Menu.Separator />
-												<Menu.Group>
-													<Menu.GroupLabel>Label</Menu.GroupLabel>
-													{item(
-														"All labels",
-														supportFilter.label === "all",
-														() => setSupportFilter({ label: "all" }),
-													)}
-													{labelNames.map((name) =>
-														item(name, supportFilter.label === name, () =>
-															setSupportFilter({ label: name }),
-														),
-													)}
-												</Menu.Group>
-											</>
-										)}
-										<Menu.Separator />
-										<Menu.Group>
-											<Menu.GroupLabel>Session</Menu.GroupLabel>
-											{item("All tickets", supportFilter.session === "all", () =>
-												setSupportFilter({ session: "all" }),
-											)}
-											{item(
-												"Have session",
-												supportFilter.session === "with",
-												() => setSupportFilter({ session: "with" }),
-											)}
-											{item(
-												"No session",
-												supportFilter.session === "without",
-												() => setSupportFilter({ session: "without" }),
-											)}
-										</Menu.Group>
-									</Menu.Popup>
-								</Menu.Root>
-							);
-						})()}
-					</div>
-					{visibleSupportThreads.length > 0 && (
-						<div className="sidebar-independent-scroll">
-							{supportOpen
-								? SUPPORT_PRIORITY_GROUPS.map((group) => {
-										const items = visibleSupportThreads.filter(
-											(t) => (t.priority ?? 2) === group.p,
-										);
-										if (items.length === 0) return null;
-										const groupIsOpen = isOpen(`support:prio:${group.p}`);
-										return (
-											<div
-												className="sidebar-status-group"
-												key={`support-prio-${group.p}`}
-											>
-												<button
-													className="sidebar-group-header"
-													onClick={() =>
-														toggleGroup(`support:prio:${group.p}`)
-													}
-												>
-													<SupportPriorityIcon
-														p={group.p}
-														cls={group.cls}
-													/>
-													<span
-														className={`sidebar-group-name ${group.p <= 1 ? group.cls : ""}`}
-													>
-														{group.label}
-													</span>
-													<span
-														className={`sidebar-group-count ${group.cls}`}
-													>
-														{items.length}
-													</span>
-													<IconChevronDown
-														className="sidebar-group-chevron"
-														size={20}
-														style={{
-															transform: groupIsOpen
-																? "none"
-																: "rotate(-90deg)",
-														}}
-													/>
-												</button>
-												{groupIsOpen && items.map(renderSupportRow)}
-											</div>
-										);
-									})
-								: visibleSupportThreads.map(renderSupportRow)}
-						</div>
-					)}
-				</div>
-			)}
 
 				{/* ── People: teammates who are looking at a session right now. Click
 				    to follow along (your navigation shadows theirs); click again to
@@ -4948,8 +5267,8 @@ function FilterPopover({
 						value={filter.groupBy}
 						options={[
 							{ value: "status", label: "Status" },
-							{ value: "repo", label: "Repo" },
-							{ value: "repo-status", label: "Repo and status" },
+							{ value: "repo", label: "Project" },
+							{ value: "repo-status", label: "Project and status" },
 						]}
 						onSelect={(v) => onChange({ groupBy: v as GroupBy })}
 					/>
@@ -4968,6 +5287,20 @@ function FilterPopover({
 						value={filter.person}
 						options={personOptions}
 						onSelect={(v) => onChange({ person: v })}
+					/>
+				</div>
+				{/* Session-less PR rows in the project lanes (the dissolved PR
+				    band): whose PRs surface. */}
+				<div className="filter-row">
+					<span className="filter-row-label">Pull requests</span>
+					<MiniSelect
+						value={filter.prs}
+						options={[
+							{ value: "default", label: "Mine + requested" },
+							{ value: "all", label: "Everyone's" },
+							{ value: "none", label: "Hidden" },
+						]}
+						onSelect={(v) => onChange({ prs: v as PrsFilter })}
 					/>
 				</div>
 				<div className="filter-row">

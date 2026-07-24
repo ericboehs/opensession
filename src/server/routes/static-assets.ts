@@ -82,6 +82,16 @@ export async function handleStaticAssetsRoutes(
 	const repoIcon = path.match(/^\/backstage\/repo-icon\/([\w.-]+)\.png$/);
 	if (repoIcon && req.method === "GET") {
 		const id = repoIcon[1];
+		// The sidebar's Plain project band (support tickets) wears the Plain
+		// logo — not a repo, but it rides the same RepoTile pipeline.
+		if (id === "plain") {
+			return new Response(Bun.file(`${FRONTEND_SRC}/plain-icon.png`), {
+				headers: {
+					"Content-Type": "image/png",
+					"Cache-Control": "public, max-age=86400",
+				},
+			});
+		}
 		if (id === "backstage") {
 			return new Response(
 				Bun.file(`${FRONTEND_SRC}/../../os1-mac/build/icon-512.png`),
