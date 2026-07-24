@@ -112,8 +112,10 @@ allowed navigation origin); the device-flow fallback link works too. The
   origin.
 - **Universal links** (plain `https://os.tella.dev/…` links opening the app,
   e.g. from Slack): the server side is done — OpenSession serves
-  `/.well-known/apple-app-site-association` for app ID
-  `6GUXT43C8B.dev.tella.os1` (backstage PR #67). Signed CI builds install the
+  `/.well-known/apple-app-site-association` for app IDs
+  `6GUXT43C8B.dev.tella.os1` (the iOS + Mac App Store pair) and
+  `6GUXT43C8B.dev.tella.os1.shell` (this shell; backstage PR #67). Signed CI
+  builds install the
   Developer ID profile from the `OS1_PROVISIONING_PROFILE_BASE64` repository
   secret and sign the top-level app with `build/entitlements.mac.applinks.plist`;
   the release fails if either the signed entitlement or embedded profile is

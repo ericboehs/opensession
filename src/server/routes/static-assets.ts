@@ -171,7 +171,10 @@ export async function handleStaticAssetsRoutes(
 					apps: [],
 					details: [
 						{
-							appIDs: ["6GUXT43C8B.dev.tella.os1"],
+							appIDs: [
+								"6GUXT43C8B.dev.tella.os1",
+								"6GUXT43C8B.dev.tella.os1.shell",
+							],
 							components: [{ "/": "/*" }],
 						},
 					],

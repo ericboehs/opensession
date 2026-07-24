@@ -1,4 +1,10 @@
-appId: dev.tella.os1
+# NOT dev.tella.os1 — that id belongs to the App Store pair (the iOS app and
+# the native OS1Mac target in os1-ios, one universal-purchase record). Two
+# different Mac apps must never share a bundle id, so the Electron shell has
+# its own. Heads-up for the release after this change: macOS treats the
+# re-identified app as a new signer, so the keychain may re-prompt for the
+# "OS¹ Safe Storage" item (saved sessions survive one "Always Allow").
+appId: dev.tella.os1.shell
 productName: OS¹
 artifactName: OS1-${version}-${arch}.${ext}
 directories:
@@ -30,7 +36,7 @@ mac:
   # entitlement. Keep the normal signer from replacing that nested signature.
   signIgnore: Contents/Resources/opencode$
   # Universal links: once the Developer ID provisioning profile for
-  # dev.tella.os1 exists (README "Universal links"), switch ONLY `entitlements`
+  # dev.tella.os1.shell exists (README "Universal links"), switch ONLY `entitlements`
   # above to build/entitlements.mac.applinks.plist and add:
   # provisioningProfile: build/os1.provisionprofile
   # Leave `entitlementsInherit` on entitlements.mac.plist — the Electron helpers

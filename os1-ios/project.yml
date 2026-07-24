@@ -60,6 +60,9 @@ targets:
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         PRODUCT_NAME: OS1
+        # Same id as the iOS target: one App Store Connect record (universal
+        # purchase) hosts both platforms. The Electron shell (os1-mac) moved
+        # to dev.tella.os1.shell so no two Mac apps share a bundle id.
         PRODUCT_BUNDLE_IDENTIFIER: dev.tella.os1
         DEVELOPMENT_TEAM: 6GUXT43C8B
         CODE_SIGN_STYLE: Automatic
