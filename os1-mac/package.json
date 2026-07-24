@@ -1,8 +1,8 @@
 {
   "name": "os1-mac",
-  "productName": "OS¹",
-  "version": "0.3.4",
-  "description": "macOS desktop app for OS¹ — a thin shell around https://os.tella.dev",
+  "productName": "OS\u00b9",
+  "version": "0.3.5",
+  "description": "macOS desktop app for OS\u00b9 \u2014 a thin shell around https://os.tella.dev",
   "private": true,
   "main": "src/main.js",
   "scripts": {
