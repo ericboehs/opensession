@@ -4724,52 +4724,54 @@ export function SessionViewer({
 									}
 								/>
 							) : panelTab === "info" ? (
-								<WorkspaceInfo
-									sessionId={session.id}
-									workspaceId={session.projectId || null}
-									workspaceName={workspaceName}
-									chats={(workspaceChats?.length ? workspaceChats : [session]).map(
-										(s) => ({
-											id: s.id,
-											title: s.title,
-											createdAt: s.createdAt || "",
-											startedBy: s.startedBy,
-										}),
-									)}
-									repo={
-										hasWorkspace ? session.repo || "tella-fusion" : undefined
-									}
-									prState={hasWorkspace ? session.prState : undefined}
-									sandbox={session.sandbox}
-									reviewRequest={effectiveReview?.req ?? null}
-									reviewRequestSessionId={effectiveReview?.ownerId}
-									reviewAcceptedFromPr={effectiveReview?.acceptedFromPr}
-									onReviewChange={onReviewChange}
-									send={connected ? send : undefined}
-									assets={assetFiles}
-									onOpenAsset={(path) => {
-										setSelectedAssetPath(path);
-										onOpenAssets?.();
-									}}
-									onOpenTab={(tab) =>
-										tab === "pr"
-											? onOpenReview?.()
-											: tab === "staging"
-												? onOpenStaging?.()
-												: tab === "assets"
-													? onOpenAssets?.()
-													: selectPanelTab(tab)
-									}
-									onAddToInput={(text) =>
-										setComposerPrefill((p) => ({
-											seq: (p?.seq ?? 0) + 1,
-											text,
-										}))
-									}
-									onOpenSession={(id) => onOpenSession?.(id)}
-									liveMediaCount={liveMediaCount}
-									liveMedia={liveOverviewMedia}
-								/>
+								<div className="px-2">
+									<WorkspaceInfo
+										sessionId={session.id}
+										workspaceId={session.projectId || null}
+										workspaceName={workspaceName}
+										chats={(workspaceChats?.length ? workspaceChats : [session]).map(
+											(s) => ({
+												id: s.id,
+												title: s.title,
+												createdAt: s.createdAt || "",
+												startedBy: s.startedBy,
+											}),
+										)}
+										repo={
+											hasWorkspace ? session.repo || "tella-fusion" : undefined
+										}
+										prState={hasWorkspace ? session.prState : undefined}
+										sandbox={session.sandbox}
+										reviewRequest={effectiveReview?.req ?? null}
+										reviewRequestSessionId={effectiveReview?.ownerId}
+										reviewAcceptedFromPr={effectiveReview?.acceptedFromPr}
+										onReviewChange={onReviewChange}
+										send={connected ? send : undefined}
+										assets={assetFiles}
+										onOpenAsset={(path) => {
+											setSelectedAssetPath(path);
+											onOpenAssets?.();
+										}}
+										onOpenTab={(tab) =>
+											tab === "pr"
+												? onOpenReview?.()
+												: tab === "staging"
+													? onOpenStaging?.()
+													: tab === "assets"
+														? onOpenAssets?.()
+														: selectPanelTab(tab)
+										}
+										onAddToInput={(text) =>
+											setComposerPrefill((p) => ({
+												seq: (p?.seq ?? 0) + 1,
+												text,
+											}))
+										}
+										onOpenSession={(id) => onOpenSession?.(id)}
+										liveMediaCount={liveMediaCount}
+										liveMedia={liveOverviewMedia}
+									/>
+								</div>
 							) : panelTab === "preview" && previewUrl ? (
 								<iframe
 									className="block h-full min-h-[320px] w-full border-0 bg-white"
