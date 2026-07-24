@@ -130,6 +130,7 @@ import { copySessionTranscript } from "../lib/transcript-copy";
 import { MoveToCloudDialog } from "./MoveToCloudDialog";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
+import { sessionHasWorkspace } from "../lib/session-workspace";
 
 type QueueReceipt = {
 	id?: string;
@@ -797,9 +798,7 @@ export function SessionViewer({
 	// browser), so switching workspaces keeps you on e.g. PR instead of
 	// resetting to Changes — but only if this session actually has that tab.
 	const [panelTab, setPanelTab] = useState<PanelTab>(() => {
-		const workspace =
-			session.mode !== "ask" &&
-			Boolean(session.worktreeDir || session.branch);
+		const workspace = sessionHasWorkspace(session);
 		const stored = localStorage.getItem("opensession-panel-tab");
 		// "workflows" isn't meaningfully restorable (runs seed async, so the tab
 		// starts hidden and the body would flash PrPanel) — it, and any stored
@@ -1285,7 +1284,7 @@ export function SessionViewer({
 	}, [session.id]);
 
 	const isAsk = session.mode === "ask";
-	const hasWorkspace = !isAsk && Boolean(session.worktreeDir || session.branch);
+	const hasWorkspace = sessionHasWorkspace(session);
 	// The Agents tab stays available on any session with a workspace (it shows
 	// an empty state that teaches the feature), so only fall back to Info when
 	// the tab itself is gone — a session that can't run workflows AND has no
@@ -3567,21 +3566,23 @@ export function SessionViewer({
 					{isAsk ? (
 						<>
 							<span className="source-chip source-ask">ask</span>
-							<Tooltip
-								label={
-									promoteError ||
-									"Create a worktree for this chat and switch it to code mode"
-								}
-							>
-								<button
-									type="button"
-									className="flex-none cursor-pointer whitespace-nowrap rounded-md border border-line-strong bg-panel px-2 py-0.5 text-[12px] text-fg hover:border-accent hover:text-accent disabled:cursor-default disabled:opacity-60"
-									onClick={handlePromote}
-									disabled={promoting}
+							{!hasWorkspace && (
+								<Tooltip
+									label={
+										promoteError ||
+										"Create a worktree for this chat and switch it to code mode"
+									}
 								>
-									{promoting ? "Creating worktree…" : "Create worktree"}
-								</button>
-							</Tooltip>
+									<button
+										type="button"
+										className="flex-none cursor-pointer whitespace-nowrap rounded-md border border-line-strong bg-panel px-2 py-0.5 text-[12px] text-fg hover:border-accent hover:text-accent disabled:cursor-default disabled:opacity-60"
+										onClick={handlePromote}
+										disabled={promoting}
+									>
+										{promoting ? "Creating worktree…" : "Create worktree"}
+									</button>
+								</Tooltip>
+							)}
 						</>
 					) : (
 						// "backstage" is the default origin (web UI) — as a chip it's noise,
@@ -3593,7 +3594,7 @@ export function SessionViewer({
 							</span>
 						)
 					)}
-					{session.worktreeDir && !isAsk && (
+					{session.worktreeDir && hasWorkspace && (
 						<RepoBar
 							sessionId={session.id}
 							primaryRepo={session.repo || "tella-fusion"}

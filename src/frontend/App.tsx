@@ -64,6 +64,7 @@ import {
 	defaultChatWorkspaceView,
 	pickLandingChat,
 } from "./lib/landing-chat";
+import { sessionHasWorkspace } from "./lib/session-workspace";
 import type { Project, SupportThread } from "./lib/types";
 import type { ReviewQueueItem } from "./lib/review-queue";
 import { pushRecent } from "./lib/recents";
@@ -1280,7 +1281,7 @@ function App() {
 	// The current code session's Review pane, surfaced as a leftmost view-tab in
 	// the top strip (siblings share the worktree/PR, so one Review tab suffices).
 	const currentHasWorkspace =
-		!!currentSession && Boolean(currentSession.worktreeDir || currentSession.branch);
+		!!currentSession && sessionHasWorkspace(currentSession);
 	// Review renders without a chat too: a chat-less PR-backed workspace
 	// (branch/prNumber on the record) reviews through the preview APIs.
 	const reviewCapable = currentSession
