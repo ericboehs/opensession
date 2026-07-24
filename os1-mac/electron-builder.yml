@@ -16,6 +16,9 @@ files:
 extraResources:
   - from: build/Assets.car
     to: Assets.car
+  - from: build/vendor/opencode
+    to: opencode
+afterPack: scripts/sign-opencode.js
 mac:
   category: public.app-category.developer-tools
   icon: build/icon.icns
@@ -23,6 +26,9 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # The afterPack hook signs this Bun-compiled binary with its dedicated JIT
+  # entitlement. Keep the normal signer from replacing that nested signature.
+  signIgnore: Contents/Resources/opencode$
   # Universal links: once the Developer ID provisioning profile for
   # dev.tella.os1 exists (README "Universal links"), switch ONLY `entitlements`
   # above to build/entitlements.mac.applinks.plist and add:

@@ -1,9 +1,10 @@
 # OS¹ for Mac
 
-A thin Electron shell around [https://os.tella.dev](https://os.tella.dev). The
-frontend ships from the OpenSession server (which hot-reloads continuously), so
-this app rarely needs a release — it only owns the window, navigation policy,
-notifications, dock badge and deep links.
+A thin Electron shell around [https://os.tella.dev](https://os.tella.dev), with
+an opt-in local mode that supervises a local OpenSession server. The frontend
+still ships from the selected server, so this app only owns the window,
+navigation policy, local process lifecycle, notifications, dock badge and deep
+links.
 
 The shell lives in `os1-mac/` inside the Backstage repository so native window
 changes and their frontend counterparts can ship together.
@@ -18,6 +19,35 @@ bun start
 
 Requires being on the tailnet (the server is Tailscale-only); otherwise you get
 the built-in retry screen.
+
+### Local sessions
+
+Choose **OS¹ → Use Local Sessions** and the app relaunches against a supervised
+local server. `OS1_LOCAL=1 bun start` forces the same mode for development. The
+shell does not clone or update server source: install it once with:
+
+```sh
+git clone https://github.com/tellahq/backstage ~/os1/server
+cd ~/os1/server
+bun install
+```
+
+The shell configuration is `settings.json` in Electron's `app.getPath("userData")`
+directory:
+
+```json
+{
+  "localMode": true,
+  "serverDir": "/Users/ada/code/backstage",
+  "cloudToken": "optional-web-session-bearer-token"
+}
+```
+
+All fields are optional. `localMode` defaults to `false`; `serverDir` defaults to
+`~/os1/server` when that directory exists. `cloudToken` falls back to the
+`token` field in `~/.opensession-frontend-dev-token.json`. With no token the
+server remains purely local. Child output is appended to `local-server.log` in
+the same user-data directory.
 
 ### Iterating on the frontend before it ships
 
@@ -44,11 +74,15 @@ empty local state, optionally rsync'd from prod.
 
 ## Architecture
 
-- `src/main.js` — the whole app: a single sandboxed `BrowserWindow` loading
-  `https://os.tella.dev` (remote content, `contextIsolation`, no Node in the
-  renderer). In-window navigation is limited to the app origin plus
+- `src/main.js` — a single sandboxed `BrowserWindow` loading the cloud or active
+  loopback server (`contextIsolation`, no Node in the renderer). In-window
+  navigation is limited to the active app origin plus
   `github.com` (the OAuth redirect flow); everything else opens in the default
   browser. Window close hides to the dock; state persists across launches.
+- `src/local-server.js` — local-mode server resolution and supervision. It picks
+  a free loopback port, starts `bun run opensession.ts`, waits for `/api/health`,
+  restarts crashes with exponential backoff, logs output under user data, and
+  sends SIGTERM on app quit.
 - `src/preload.js` — exposes `window.os1` (`desktop`, `setBadge`, `clearBadge`)
   for the frontend to feature-detect and mirror its app badge to the dock.
 - `src/offline.html` — retry screen for when the tailnet is unreachable.
@@ -72,8 +106,10 @@ allowed navigation origin); the device-flow fallback link works too. The
 
 ## Deep links
 
-- `os1://…` opens the app and maps to `https://os.tella.dev/…`
-  (e.g. `os1://session/abc` → `/session/abc`).
+- `os1://…` opens the app and maps to the active server
+  (e.g. `os1://session/abc` → `/session/abc`). In local mode, incoming
+  `https://os.tella.dev/…` universal links preserve their path on the local
+  origin.
 - **Universal links** (plain `https://os.tella.dev/…` links opening the app,
   e.g. from Slack): the server side is done — OpenSession serves
   `/.well-known/apple-app-site-association` for app ID
@@ -111,7 +147,12 @@ run with artifacts attached to the run. Repository secrets mirror
 Releasing: `git tag v0.1.0 && git push origin v0.1.0`.
 
 Local `bun run dist` produces an unsigned build (signing/notarization are
-skipped with a warning when no identity/credentials are present).
+skipped with a warning when no identity/credentials are present). It first
+downloads pinned OpenCode 1.18.4 into the gitignored `build/vendor/` directory.
+Release builds copy that binary to `Contents/Resources/opencode` and sign it
+with `build/entitlements.opencode.plist`; the workflow verifies the version,
+Developer ID signature, hardened-runtime JIT entitlement, and enclosing app
+signature before notarization.
 
 ## Auto-update
 

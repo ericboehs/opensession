@@ -7,7 +7,8 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --mac",
+    "vendor:opencode": "sh scripts/fetch-opencode.sh",
+    "dist": "bun run vendor:opencode && electron-builder --mac",
     "postinstall": "sh scripts/brand-dev-electron.sh || true"
   },
   "devDependencies": {

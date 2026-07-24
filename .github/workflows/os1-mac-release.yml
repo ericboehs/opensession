@@ -29,6 +29,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Fetch pinned OpenCode binary
+        run: sh scripts/fetch-opencode.sh
+
       - name: Import Developer ID certificate
         uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
         with:
@@ -87,6 +90,21 @@ jobs:
               exit 1
             fi
           done < <(find "$APP/Contents/Frameworks" -name '*.app' -print0)
+
+      - name: Verify bundled OpenCode signing
+        run: |
+          APP='dist/mac-arm64/OS¹.app'
+          OPENCODE="$APP/Contents/Resources/opencode"
+          test -x "$OPENCODE" || { echo '::error::Bundled OpenCode is missing or not executable'; exit 1; }
+          "$OPENCODE" --version | grep -q '1\.18\.4'
+          codesign --verify --strict --verbose=2 "$OPENCODE"
+          codesign -d --entitlements :- "$OPENCODE" > /tmp/os1-opencode-entitlements.plist
+          /usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.allow-jit' /tmp/os1-opencode-entitlements.plist | grep -q true
+          codesign -dv --verbose=4 "$OPENCODE" 2>&1 | grep -q 'Authority=Developer ID Application: Tella HQ Inc.'
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          # First tagged release: also launch the installed app on Apple Silicon,
+          # enable Local Sessions, and confirm opencode runs without a hardened-
+          # runtime/JIT kill. Static codesign checks cannot exercise that path.
 
       - name: Notarize & staple DMG
         run: |
