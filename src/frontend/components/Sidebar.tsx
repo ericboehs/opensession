@@ -1610,8 +1610,18 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// whole workspace row.
 	const filtered = useMemo(() => {
 		let visible = sessions.filter((s) => !s.archived);
-		if (filter.repo !== "all")
-			visible = visible.filter((s) => sessionRepo(s) === filter.repo);
+		if (filter.repo !== "all") {
+			// A workspace can span repos, and a chat's own repo is just the
+			// checkout it runs from — so a chat also matches when its workspace
+			// is the filtered repo. Without this, narrowing to a repo hides the
+			// very workspaces that belong to it.
+			const wsRepo = new Map(projects.map((p) => [p.id, p.repo]));
+			visible = visible.filter(
+				(s) =>
+					sessionRepo(s) === filter.repo ||
+					(!!s.projectId && wsRepo.get(s.projectId) === filter.repo),
+			);
+		}
 		// Only a specific teammate narrows the chats themselves. "me" and
 		// "everyone" keep every chat so workspace rows stay whole (your
 		// workspaces can contain teammates' chats, and pinned rows survive) —
@@ -1636,7 +1646,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				(s.startedBy || "").toLowerCase().includes(q) ||
 				(s.automation || "").toLowerCase().includes(q),
 		);
-	}, [sessions, search, filter.repo, filter.person]);
+	}, [sessions, projects, search, filter.repo, filter.person]);
 
 	// Sort order applied to every group's items: newest activity or newest
 	// creation first. Groups read from this pre-sorted list so ordering is uniform.
@@ -2071,6 +2081,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							// same rule under any personal lens; a legacy global override
 							// still surfaces only under Everyone.
 							r.owner === focus ||
+							// Ownership follows the people in the room, not whoever
+							// opened the door: a PR/ticket workspace is minted by an
+							// automation, so its creator is a bot even when the work
+							// inside is yours. Your own chat in it makes the row yours.
+							r.chats.some(
+								(c) =>
+									!c.automation &&
+									(c.startedBy || "").toLowerCase() === focus,
+							) ||
 							((r.owner === "" || focus === currentUser.toLowerCase()) &&
 								r.chats.some((c) => getLane(c.id))))) &&
 				!reviewBandKeys.has(r.key) &&
@@ -3292,11 +3311,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		);
 	}
 
-	// The repo a workspace row belongs to when grouping by repo — its first
-	// chat's primary repo (chats share a workspace, so they share a repo in
-	// practice); chatless workspace rows fall back to the default repo.
+	// The repo band a workspace row files under. The workspace's own repo wins:
+	// it's what the work is *about*, while a chat's repo is only the checkout it
+	// happens to run from — a PR workspace for shared-infra whose chat runs in a
+	// tella-fusion worktree belongs under shared-infra. A workspace spanning
+	// repos still files under one band (a row in two bands double-counts and
+	// reads as two pieces of work); the repo *filter* honours every repo it
+	// touches, so it stays findable from the others.
 	function wsRowRepo(row: WsRow): string {
-		return row.chats[0] ? sessionRepo(row.chats[0]) : DEFAULT_PROJECT;
+		return row.workspace?.repo || row.chats[0]?.repo || DEFAULT_PROJECT;
 	}
 
 	// The row's headline diff size (Conductor-style "+66 −43"): its most
