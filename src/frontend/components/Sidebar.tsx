@@ -1452,7 +1452,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const byWs = new Map<string, UnifiedSession[]>();
 		const solo: UnifiedSession[] = [];
 		for (const s of filtered) {
-			if (s.automation) continue; // automations render in their own band
+			// Automations render in their own band — EXCEPT runs a human pinned
+			// into a lane (right-click → Set status): those graduate into the
+			// workspace rows so an automation ticket can live in your Backlog.
+			if (s.automation && !s.manualStatus) continue;
 			if (s.sideChatOf) continue; // side chats live in the parent's panel, not the sidebar
 			if (s.desk) continue; // the Desk session lives in the ⌘J overlay, not the sidebar
 			if (s.projectId) {
@@ -1573,6 +1576,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const byAutomation = new Map<string, UnifiedSession[]>();
 		for (const s of sorted) {
 			if (!s.automation) continue;
+			// A run pinned into a lane lives in the workspace rows instead —
+			// don't render it twice.
+			if (s.manualStatus) continue;
 			const list = byAutomation.get(s.automation) || [];
 			list.push(s);
 			byAutomation.set(s.automation, list);
@@ -1816,7 +1822,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				(focus === "everyone" ||
 					(focus === "unassigned"
 						? r.status === "pending"
-						: r.owner === focus)) &&
+						: // Ownerless rows (automation runs have no startedBy) only get
+							// into wsRows when a human pinned them into a lane, so they
+							// show under every personal focus rather than nowhere.
+							r.owner === focus || r.owner === "")) &&
 				!reviewBandKeys.has(r.key) &&
 				!activeSnoozeKeys.has(r.key) &&
 				!pinSet.has(r.key) &&
@@ -2408,39 +2417,142 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// Done …): an icon-led row that sits flush under them. Unlike those, it doesn't
 	// expand inline — it navigates to the archived page, and highlights while that
 	// page is open.
+	// The inline Archived band rows: my archived sessions (same lens as
+	// archivedCount) grouped by workspace, newest activity first. Capped in the
+	// JSX — the "More…" row opens the full archived page for the rest.
+	const archivedRows = useMemo(() => {
+		const user = currentUser.toLowerCase();
+		const mine = sessions.filter(
+			(s) =>
+				s.archived &&
+				!s.automation &&
+				s.startedBy &&
+				s.startedBy.toLowerCase() === user &&
+				(filter.repo === "all" || sessionRepo(s) === filter.repo),
+		);
+		const byWs = new Map<string, UnifiedSession[]>();
+		const rows: Array<{
+			key: string;
+			name: string;
+			chats: UnifiedSession[];
+			lastActivity: string;
+		}> = [];
+		for (const s of mine) {
+			if (s.projectId) {
+				const list = byWs.get(s.projectId) || [];
+				list.push(s);
+				byWs.set(s.projectId, list);
+			} else {
+				rows.push({
+					key: s.id,
+					name: s.title || "Untitled",
+					chats: [s],
+					lastActivity: s.lastActivity || "",
+				});
+			}
+		}
+		for (const [wsId, chats] of byWs) {
+			const ws = projects.find((p) => p.id === wsId) || null;
+			chats.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+			rows.push({
+				key: `workspace:${wsId}`,
+				name: ws?.name || chats[0].title || "Untitled",
+				chats,
+				lastActivity: chats.reduce(
+					(m, c) => (c.lastActivity > m ? c.lastActivity : m),
+					"",
+				),
+			});
+		}
+		rows.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""));
+		return rows;
+	}, [sessions, projects, currentUser, filter.repo]);
+
+	// Archived: a collapsible group like the status lanes (T3's "Settled" —
+	// visible at the bottom of the same list so archiving feels cheap, not like
+	// a one-way door). Shows the most recent rows inline; "More…" opens the
+	// full archived page, which keeps unarchive/bulk actions.
+	const ARCHIVED_INLINE_MAX = 20;
 	const archivedBand =
-		archivedCount > 0 ? (
-			<button
-				className={cn(
-					"mt-[2px] flex w-full cursor-pointer items-center gap-[9px] rounded-md px-[10px] py-1 text-left text-[14px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg",
-					archivedActive && "bg-active text-fg",
-				)}
-				onClick={onOpenArchived}
-				title="View archived sessions"
-			>
-				<span
-					className={cn(
-						"inline-flex shrink-0 items-center text-faint",
-						archivedActive && "text-dim",
-					)}
-				>
-					<svg
-						width="20"
-						height="20"
-						viewBox="0 0 16 16"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="1.4"
-					>
-						<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
-						<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
-						<path d="M6.5 8.5h3" strokeLinecap="round" />
-					</svg>
-				</span>
-				<span className="min-w-0 truncate text-left">Archived</span>
-				<span className="text-[12px] font-medium text-faint">{archivedCount}</span>
-			</button>
-		) : null;
+		archivedCount > 0
+			? (() => {
+					const open = isOpen("archived");
+					return (
+						<div className="sidebar-status-group">
+							<button
+								className="sidebar-group-header flex w-full items-center gap-[9px] rounded-md px-[10px] py-1 text-[14px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg"
+								onClick={() => toggleGroup("archived")}
+							>
+								<span className="inline-flex shrink-0 items-center text-faint">
+									<svg
+										width="20"
+										height="20"
+										viewBox="0 0 16 16"
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="1.4"
+									>
+										<rect x="2.25" y="2.75" width="11.5" height="3" rx="0.6" />
+										<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
+										<path d="M6.5 8.5h3" strokeLinecap="round" />
+									</svg>
+								</span>
+								<span className="sidebar-group-name">Archived</span>
+								<span className="sidebar-group-count">{archivedCount}</span>
+								<IconChevronDown
+									className="sidebar-group-chevron"
+									size={22}
+									style={{ transform: open ? "none" : "rotate(-90deg)" }}
+								/>
+							</button>
+							{open &&
+								archivedRows.slice(0, ARCHIVED_INLINE_MAX).map((r) => (
+									<button
+										key={r.key}
+										className="sidebar-item sidebar-ws-row"
+										onClick={() => onSelect(r.chats[0])}
+										aria-label={r.name}
+									>
+										<span className="sidebar-rail">
+											<span className="sidebar-item-status sidebar-status-idle" />
+										</span>
+										<span
+											className="sidebar-item-title"
+											style={{ color: "var(--text-dim)" }}
+										>
+											{stripPrTitlePrefix(r.name)}
+										</span>
+										{!isPhone && r.lastActivity && (
+											<span className="sidebar-ws-time">
+												{shortTime(r.lastActivity)}
+											</span>
+										)}
+									</button>
+								))}
+							{open && (
+								<button
+									className={cn(
+										"sidebar-item",
+										archivedActive && "sidebar-item-selected",
+									)}
+									onClick={onOpenArchived}
+									title="View all archived sessions"
+								>
+									<span className="sidebar-rail" />
+									<span
+										className="sidebar-item-title"
+										style={{ color: "var(--text-faint)" }}
+									>
+										{archivedCount > ARCHIVED_INLINE_MAX
+											? `More… (${archivedCount - ARCHIVED_INLINE_MAX} older)`
+											: "Open archive page"}
+									</span>
+								</button>
+							)}
+						</div>
+					);
+				})()
+			: null;
 
 	// One sidebar row per workspace: status dot (most urgent chat), name, chat
 	// count, unread dot. Click opens the first chat (or the workspace itself for
@@ -3661,6 +3773,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									pinned={pin.pinned}
 									onTogglePin={pin.toggle}
 									onRename={(title) => onRename(s, title)}
+									onSetStatus={(st) => onSetStatus([s], st)}
 								/>
 							),
 						});
@@ -4191,6 +4304,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 														pinned={pin.pinned}
 														onTogglePin={pin.toggle}
 														onRename={(title) => onRename(s, title)}
+														onSetStatus={(st) => onSetStatus([s], st)}
 													/>
 												);
 											})}
@@ -4247,6 +4361,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							onClose={() => setWsSheet(null)}
 							onArchive={() => archiveWorkspaceWithNext(row)}
 							onSetStatus={(status) => onSetStatus(row.chats, status)}
+							snoozeUntil={
+								activeSnoozeKeys.has(row.key)
+									? (snoozes[row.key] ?? null)
+									: null
+							}
+							onSnooze={(until) =>
+								until ? setSnooze(row.key, until) : clearSnooze(row.key)
+							}
 							onOpen={(chat) => onSelect(chat)}
 							onRename={() => {
 								if (ws) {
@@ -4627,6 +4749,7 @@ function SidebarItem({
 	pinned,
 	onTogglePin,
 	onRename,
+	onSetStatus,
 }: {
 	session: UnifiedSession;
 	localMode: boolean;
@@ -4642,11 +4765,26 @@ function SidebarItem({
 	pinned: boolean;
 	onTogglePin: () => void;
 	onRename: (title: string) => void;
+	/** Pin this session into a sidebar lane (null = back to derived). Present on
+	    automation rows — it's how an automation run graduates into your lanes. */
+	onSetStatus?: (status: MineStatus | null) => void;
 }) {
 	const isPhone = useIsPhone();
 	const waiting = !!session.waitingForInput || runNeedsAttention(session);
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState("");
+	// Desktop right-click menu (mobile long-press opens the action sheet).
+	const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+	useEffect(() => {
+		if (!ctxMenu) return;
+		const close = () => setCtxMenu(null);
+		window.addEventListener("click", close);
+		window.addEventListener("scroll", close, true);
+		return () => {
+			window.removeEventListener("click", close);
+			window.removeEventListener("scroll", close, true);
+		};
+	}, [ctxMenu]);
 
 	// Hover card: after a short dwell, anchor a detail popover to this row's right
 	// edge. Suppressed while renaming (the input owns the interaction).
@@ -4920,7 +5058,13 @@ function SidebarItem({
 				// On touch this is the long-press callout: the action sheet
 				// owns that gesture, so suppress the native text-selection
 				// callout rather than stacking both.
-				if (longPressed.current || pressOrigin.current) e.preventDefault();
+				if (longPressed.current || pressOrigin.current) {
+					e.preventDefault();
+					return;
+				}
+				e.preventDefault();
+				closeHover();
+				setCtxMenu({ x: e.clientX, y: e.clientY });
 			}}
 		>
 			<div className="sidebar-item-top">
@@ -5057,7 +5201,56 @@ function SidebarItem({
 						setEditing(true);
 					}}
 					onArchive={onArchive}
+					onSetStatus={onSetStatus}
 					onClose={() => setSheetOpen(false)}
+				/>
+			)}
+			{ctxMenu && (
+				<SidebarCtxMenu
+					x={ctxMenu.x}
+					y={ctxMenu.y}
+					onClose={() => setCtxMenu(null)}
+					entries={[
+						{
+							kind: "item",
+							icon: <IconMail size={20} />,
+							label: "Mark as unread",
+							onClick: () => markUnread(session.id),
+						},
+						{
+							kind: "item",
+							icon: (
+								<IconPin size={20} fill={pinned ? "currentColor" : "none"} />
+							),
+							label: pinned ? "Unpin" : "Pin",
+							onClick: onTogglePin,
+						},
+						...(onSetStatus
+							? [
+									{
+										kind: "status",
+										current: session.manualStatus ?? null,
+										onPick: onSetStatus,
+									} as const,
+								]
+							: []),
+						{
+							kind: "item",
+							icon: <IconPencil size={20} />,
+							label: "Rename",
+							onClick: () => {
+								setDraft(session.title);
+								setEditing(true);
+							},
+						},
+						{ kind: "sep" },
+						{
+							kind: "item",
+							icon: <IconArchive size={20} />,
+							label: "Archive",
+							onClick: onArchive,
+						},
+					]}
 				/>
 			)}
 		</>
@@ -5071,11 +5264,14 @@ function MobileActionSheet({
 	session,
 	onRename,
 	onArchive,
+	onSetStatus,
 	onClose,
 }: {
 	session: UnifiedSession;
 	onRename: () => void;
 	onArchive: () => void;
+	/** Pin the session into a lane (see SidebarItem) — automation rows only. */
+	onSetStatus?: (status: MineStatus | null) => void;
 	onClose: () => void;
 }) {
 	// Lock the page behind the sheet so a scroll drags the list, not the page.
@@ -5113,6 +5309,64 @@ function MobileActionSheet({
 					</svg>
 					Rename
 				</button>
+				{/* Same lane chips as the workspace sheet — how an automation run
+				    graduates into the workspace lanes (e.g. Backlog) from a phone. */}
+				{onSetStatus && (
+					<div className="px-4 py-2">
+						<div className="mb-1.5 text-[11px] font-semibold text-faint">
+							Move to lane
+						</div>
+						<div className="flex flex-wrap gap-1.5">
+							{MINE_STATUS_META.map((m) => {
+								const on = session.manualStatus === m.key;
+								return (
+									<button
+										key={m.key}
+										type="button"
+										className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-[13px]"
+										style={{
+											borderColor: on ? m.dotColor : "var(--border)",
+											color: on ? "var(--text)" : "var(--text-dim)",
+										}}
+										onClick={() => {
+											onSetStatus(on ? null : m.key);
+											onClose();
+										}}
+									>
+										<span
+											style={{
+												width: 8,
+												height: 8,
+												borderRadius: "50%",
+												background: m.dotColor,
+												flexShrink: 0,
+											}}
+										/>
+										{m.label}
+									</button>
+								);
+							})}
+							<button
+								type="button"
+								className="rounded-md border px-2 py-1 text-[13px]"
+								style={{
+									borderColor: !session.manualStatus
+										? "var(--text-dim)"
+										: "var(--border)",
+									color: !session.manualStatus
+										? "var(--text)"
+										: "var(--text-dim)",
+								}}
+								onClick={() => {
+									onSetStatus(null);
+									onClose();
+								}}
+							>
+								Auto
+							</button>
+						</div>
+					</div>
+				)}
 				<div className="mobile-sheet-sep" />
 				<button
 					className="mobile-sheet-item mobile-sheet-item--danger"
@@ -5854,6 +6108,8 @@ function WsMobileSheet({
 	onClose,
 	onArchive,
 	onSetStatus,
+	snoozeUntil,
+	onSnooze,
 	onOpen,
 	onRename,
 	onMarkUnread,
@@ -5867,6 +6123,10 @@ function WsMobileSheet({
 	onArchive: () => void;
 	/** Pin the workspace into a lane, or clear back to derived with `null`. */
 	onSetStatus: (status: MineStatus | null) => void;
+	/** Active snooze expiry (ISO), or null when not snoozed. */
+	snoozeUntil: string | null;
+	/** Snooze until the given ISO time, or unsnooze with `null`. */
+	onSnooze: (until: string | null) => void;
 	onOpen: (chat: UnifiedSession) => void;
 	onRename: () => void;
 	/** Mark every chat in the row unread; null for chatless rows. */
@@ -6088,6 +6348,53 @@ function WsMobileSheet({
 							</div>
 						);
 					})()}
+				{/* Snooze chips — the mobile stand-in for the right-click Snooze
+				    flyout. Tapping a preset parks the row in the Snoozed section
+				    until the resolved time. */}
+				{row.chats.length > 0 && (
+					<div className="px-4 py-2">
+						<div className="mb-1.5 text-[11px] font-semibold text-faint">
+							{snoozeUntil
+								? `Snoozed — wakes in ${formatRemaining(snoozeUntil)}`
+								: "Snooze"}
+						</div>
+						<div className="flex flex-wrap gap-1.5">
+							{snoozePresets().map((p) => (
+								<button
+									key={p.label}
+									type="button"
+									className="rounded-md border px-2 py-1 text-[13px]"
+									style={{
+										borderColor: "var(--border)",
+										color: "var(--text-dim)",
+									}}
+									onClick={() => {
+										onSnooze(p.until.toISOString());
+										onClose();
+									}}
+								>
+									{p.label}
+								</button>
+							))}
+							{snoozeUntil && (
+								<button
+									type="button"
+									className="rounded-md border px-2 py-1 text-[13px]"
+									style={{
+										borderColor: "var(--text-dim)",
+										color: "var(--text)",
+									}}
+									onClick={() => {
+										onSnooze(null);
+										onClose();
+									}}
+								>
+									Unsnooze
+								</button>
+							)}
+						</div>
+					</div>
+				)}
 				{((row.status !== "merged" && row.chats.length > 0) || onDelete) && (
 					<div className="mobile-sheet-sep" />
 				)}
