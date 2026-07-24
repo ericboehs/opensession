@@ -2776,7 +2776,7 @@ export function SessionViewer({
 												})
 											}
 										>
-											<IconCrosshair size={24} />
+											<IconArrowUp size={24} />
 										</button>
 									</Tooltip>
 								)}
