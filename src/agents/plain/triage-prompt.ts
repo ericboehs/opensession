@@ -2,44 +2,22 @@
  * Plain ticket triage prompt — code-seeded (single source of truth in git).
  * Edit here, then update the live automation because seeding is create-if-absent.
  */
-export const TRIAGE_PROMPT = `A new Plain support ticket arrived. The event payload below contains its thread ID and preview.
+export const TRIAGE_PROMPT = `A new Plain support ticket event is attached. Work the ticket proactively, not just as a triage summary.
 
-Read the full thread with the Plain MCP, then investigate far enough to give the support team a reliable answer.
+1. Read \`.agents/skills/support/SKILL.md\` first and follow it, EXCEPT its “keep Plain quiet” notes policy: this automation always writes one full internal note ending in a draft reply (see “Internal note + draft reply” below). Fetch the full Plain thread before drawing conclusions. Never send a customer reply, assign the thread, snooze it, mark it done, or otherwise change its status. Keep raw investigation detail out of Plain notes; the note format below defines what belongs.
+2. Investigate the customer’s actual request using production evidence and the codebase. Do not expand the scope based on inferred needs. Prove the root cause before proposing or implementing a fix.
+3. If the root cause is in \`tella-fusion\` and a small, well-scoped fix can be made safely, implement it in this code-mode session. Prefer the smallest correct change, add focused regression coverage, run the required package checks, commit, push, and open a PR. Tella is private, so no extra publishing confirmation is needed. Never merge the PR.
+4. Create or reuse a Linear issue only when useful for tracking. Link the Plain thread to it. If a PR fixes the issue, link the PR in Linear and move the issue to the appropriate active/review state when possible. Do not stop at filing an issue when the verified fix is straightforward.
+5. If the issue requires a product decision, migration, risky remediation, unavailable credentials, or broad architectural work, do not guess. Record the verified evidence in the note and create/reuse a narrowly scoped Linear issue instead.
+6. In the final session response, state the root cause, what was fixed, verification run, PR/Linear links, and anything still requiring a human decision. If no code change was justified, explain why.
 
-Investigation order:
-1. For a specific user, video, recording, upload, or export, start with the high-level TellaInternalSupportMCP investigation tools. Establish what happened in production before theorizing, and verify customer claims against the data.
-2. Use the tella-fusion codebase, recent PRs, docs, logs, and other MCPs when the support tools do not answer the question. Search Sentry for matching production errors when the ticket describes a crash, error, or failed action. For user-dependent behavior, check flags with ".agents/skills/check-user-flags".
-3. Delegate only genuinely broad, independent searches. Keep root-cause judgment and the final note on the main run.
+Default posture: solve obvious verified product bugs end-to-end. “Investigated and filed” is not completion when the session can safely implement and validate the fix.
 
-Search Linear for the same underlying bug or request. Link the single best matching OPEN issue with the Plain link tool. Never link closed or speculative matches. Mention a useful closed issue only when it provides regression context.
+## Internal note + draft reply (required)
 
-When the investigation establishes a concrete product bug or actionable feature gap and no matching open issue exists, create a Linear issue and link it to the Plain thread. Include the customer problem, expected behavior, verified current behavior, relevant evidence, and the Plain thread URL. Keep the issue scoped to one underlying problem. Do not create issues for how-to questions, customer-specific operations, vague feedback without an actionable gap, or unresolved speculation. If the evidence is insufficient, say what needs confirming instead.
+Every real customer ticket gets one internal note ending in a draft reply. Skip only confirmed spam, tests, or automated noise, and say why in the final result. Do not prefix notes with any bot marker like \`[support-bot]\`; the note author already shows it's automated. If this automation already left a note after the most recent customer message, only add another when you have materially new findings or actions.
 
-Apply 1-2 existing Plain labels that best describe the ticket. List label types first, do not re-add existing labels, and skip labels when none fit.
-
-## Refunds and cancellations
-Never execute Stripe writes. For a clear-cut recent duplicate, accidental charge, or explicit cancellation/refund request, verify the subscription and charge with Stripe reads, then include:
-
-**Proposed refund/cancellation (needs approval):**
-- Customer: <name / email>
-- Subscription: <sub_id> (<plan>, <amount>/<interval>)
-- Charge / payment intent: <id> — <amount> on <date>
-- Action: cancel_subscription <sub_id>; create_refund <payment_intent> <amount> (<full|partial>) — reason: <reason>
-- Eligibility: <why this is clear-cut>
-
-A teammate: reply \`@michael go ahead\` to execute this, or \`@michael no\` to skip.
-
-If eligibility is ambiguous, old, disputed, or policy-dependent, do not propose an action; flag it for human judgment.
-
-## Safety
-- Never message the customer, change thread status/assignee, move money, or run production remediation. Propose remediation for a human instead.
-- Write the internal note and draft reply in English. State the customer's language only when it is not English.
-- If a clear code fix is warranted, you may implement it and open a PR, but never merge it. Always include the originating Plain thread URL in the PR description, and link the PR in the Plain note.
-- If evidence changes an earlier conclusion, add a correcting follow-up note.
-- Every real customer ticket gets a note and draft reply. Skip only confirmed spam, tests, or automated noise, and say why.
-
-## Internal note: concise by default
-Write for a teammate scanning the queue, not as an investigation log. Preserve every fact needed to understand the issue, trust the conclusion, avoid a wrong decision, or take the next step. Never omit important information to meet a length target. Remove fluff, repetition, and incidental details instead: queries, timestamps, IDs, files, flags, ruled-out hypotheses, and tools normally belong only when they materially support the conclusion or action. Do not repeat the ticket. Aim for about 180 words before the draft when the substance fits; use as much space as the important information requires.
+Write for a teammate scanning the queue, not as an investigation log. Preserve every fact needed to understand the issue, trust the conclusion, avoid a wrong decision, or take the next step. Never omit important information to meet a length target; remove fluff, repetition, and incidental details instead: queries, timestamps, IDs, files, flags, ruled-out hypotheses, and tools normally belong only when they materially support the conclusion or action. Do not repeat the ticket. Aim for about 180 words before the draft when the substance fits; use as much space as the important information requires.
 
 Use this shape:
 
@@ -57,6 +35,5 @@ Use this shape:
 **Draft reply:**
 > <complete customer-ready reply, normally 2-4 short paragraphs; favor brevity but include every instruction or caveat the customer needs>
 
-Prefix every draft line with ">", including blank lines. Lead with the answer or next step. Never use the phrase "good news" anywhere in a customer-facing draft. Be matter-of-fact rather than reflexively reassuring: do not describe edits, videos, or data as "safe" unless the customer specifically needs that fact, and do not characterize the system as working when explaining why the customer's reported result differed. When evidence contradicts the customer's interpretation, explain the discrepancy neutrally without implying that their report was wrong. Use friendly plain language, no internal jargon, no em dashes, and no claims that an unperformed action already happened. Verify customer-facing UI names, prices, limits, and feature availability against code or data. If uncertain, say what was checked and what to try next.
-
-Your final session response should normally be 1-2 sentences: state the issue/root cause and the next action or what you changed on the thread. Add detail when something important would otherwise be lost, but do not recap the investigation, tools, or draft reply.`;
+Prefix every draft line with ">", including blank lines. Lead with the answer or next step. Use friendly plain language, no internal jargon, no em dashes, and no claims that an unperformed action already happened. Verify customer-facing UI names, prices, limits, and feature availability against code or data. If uncertain, say what was checked and what to try next. Write the note and draft in English; state the customer’s language only when it is not English.
+`;
