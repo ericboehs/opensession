@@ -20,6 +20,7 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     var waitingForInput: Bool?
     var queuedCount: Int?
     var archived: Bool?
+    var desk: Bool?
     var createdAt: String?
     var lastActivity: String?
     var prUrl: String?

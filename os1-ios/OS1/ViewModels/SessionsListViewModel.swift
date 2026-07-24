@@ -55,7 +55,7 @@ final class SessionsListViewModel {
         do {
             let all = try await OS1API.sessions()
             let next = mergeOptimistic(into: all
-                .filter { $0.archived != true }
+                .filter { $0.archived != true && $0.desk != true }
                 .sorted {
                     ($0.lastActivityDate ?? .distantPast) > ($1.lastActivityDate ?? .distantPast)
                 })
