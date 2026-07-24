@@ -5,7 +5,7 @@
  * (globalThis-parked, mutated in place) and the debounced rebuild.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, renameSync } from "node:fs";
 import { join, resolve } from "path";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias } from "./rename-compat";
@@ -81,6 +81,24 @@ export async function buildFrontend(): Promise<string> {
 	// Atomic: a mid-write bundle file has shipped corrupt before ("useState is
 	// not defined") — never serve a torn asset.
 	writeFileAtomic(`${FRONTEND_DIST}/${cssName}`, cssSrc);
+
+	// ghostty-web's WASM VT engine (the Shell tab's terminal) rides along too:
+	// the bundled chunk can't resolve the package-relative wasm, so it's copied
+	// out and served at a stable name (static-assets.ts; the shell passes the
+	// explicit path to Ghostty.load, with an xterm.js fallback if this fails).
+	try {
+		const tmp = `${FRONTEND_DIST}/.ghostty-vt.wasm.tmp`;
+		await Bun.write(
+			tmp,
+			Bun.file(`${REPO_ROOT}/node_modules/ghostty-web/dist/ghostty-vt.wasm`),
+		);
+		renameSync(tmp, `${FRONTEND_DIST}/ghostty-vt.wasm`);
+	} catch (e) {
+		console.error(
+			"[frontend] ghostty-vt.wasm copy failed — Shell falls back to xterm.js:",
+			e,
+		);
+	}
 
 	// Tailwind pass (see styles/tailwind.css). Bun can't compile Tailwind, so
 	// the real compiler runs as a subprocess (~50ms); its lightningcss minifier

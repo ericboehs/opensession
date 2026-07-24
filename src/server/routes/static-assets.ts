@@ -68,6 +68,22 @@ export async function handleStaticAssetsRoutes(
 		);
 	}
 
+	// ghostty-web's WASM VT engine (the Shell tab's terminal). buildFrontend
+	// copies it into FRONTEND_DIST; application/wasm keeps
+	// WebAssembly.instantiateStreaming happy. Stable (unhashed) name — the
+	// shell requests a fixed path — so revalidate instead of immutable.
+	if (path === "/backstage/ghostty-vt.wasm") {
+		const wasm = Bun.file(`${FRONTEND_DIST}/ghostty-vt.wasm`);
+		if (await wasm.exists()) {
+			return new Response(wasm, {
+				headers: {
+					"Content-Type": "application/wasm",
+					"Cache-Control": "public, max-age=3600, must-revalidate",
+				},
+			});
+		}
+	}
+
 	// Built SPA assets (prod only). Content-hashed filenames → cache forever.
 	// Served gzipped (computed once, then memoised) since the JS is large.
 	const assetMatch =

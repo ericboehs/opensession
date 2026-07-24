@@ -38,7 +38,7 @@ import {
 } from "./ToolEvidencePanel";
 import { SideChatsPanel } from "./SideChatsPanel";
 import { SubagentPanel, type SubagentRef } from "./SubagentPanel";
-import { TerminalPanel } from "./TerminalPanel";
+import { CommandsPanel, ShellPanel } from "./TerminalPanel";
 import { getCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import {
@@ -252,6 +252,7 @@ type PanelTab =
 	| "preview"
 	| "changes"
 	| "terminal"
+	| "shell"
 	| "pr"
 	| "chat"
 	| "plain"
@@ -711,7 +712,8 @@ export function SessionViewer({
 		const stored = localStorage.getItem("opensession-panel-tab");
 		// "workflows" isn't meaningfully restorable (runs seed async, so the tab
 		// starts hidden and the body would flash PrPanel) — it, and any stored
-		// tab that no longer exists, maps back to Info.
+		// tab that no longer exists, maps back to Info. "shell" is deliberately
+		// not restorable either: restoring it would spawn a PTY on every load.
 		const restorable: PanelTab[] = ["info", "changes", "terminal", "chat", "plain", "sidechats"];
 		const tab: PanelTab | null = restorable.includes(stored as PanelTab)
 			? (stored as PanelTab)
@@ -730,6 +732,16 @@ export function SessionViewer({
 		setPanelTab(tab);
 		localStorage.setItem("opensession-panel-tab", tab);
 	}
+	// The Shell panel stays mounted (hidden) once opened so switching side-panel
+	// tabs doesn't kill its PTYs — this latches on first open, and resets per
+	// session so a new session never inherits another's shells.
+	const [shellOpened, setShellOpened] = useState(false);
+	useEffect(() => {
+		if (panelTab === "shell") setShellOpened(true);
+	}, [panelTab]);
+	useEffect(() => {
+		setShellOpened(false);
+	}, [session.id]);
 	// Main chat-area view: the transcript+composer vs. the full-width PR review
 	// that takes over the whole chat column. Which one shows is now owned by App
 	// (the top tab strip's Review view-tab) and passed in as `showReview`; the
@@ -4524,8 +4536,16 @@ export function SessionViewer({
 									<button
 										className={`panel-tab ${panelTab === "terminal" ? "active" : ""}`}
 										onClick={() => selectPanelTab("terminal")}
+										title="Every Bash command the agent has run"
 									>
-										Terminal
+										Commands
+									</button>
+									<button
+										className={`panel-tab ${panelTab === "shell" ? "active" : ""}`}
+										onClick={() => selectPanelTab("shell")}
+										title="Interactive shell tabs in this session's workspace (inside its sandbox when sandboxed)"
+									>
+										Shell
 									</button>
 									<button
 										className={`panel-tab ${panelTab === "chat" ? "active" : ""}`}
@@ -4676,7 +4696,8 @@ export function SessionViewer({
 								/>
 							) : waitingForWorkspace &&
 							  (panelTab === "changes" ||
-									panelTab === "terminal") ? (
+									panelTab === "terminal" ||
+									panelTab === "shell") ? (
 								// These tabs all read the worktree — hold them behind the
 								// waiting state until the create run finishes preparing it.
 								<WorkspaceWaiting detail="Waiting for the workspace to be ready." />
@@ -4689,12 +4710,7 @@ export function SessionViewer({
 									diff={diffState}
 								/>
 							) : panelTab === "terminal" ? (
-								<TerminalPanel
-									entries={entries}
-									sessionId={session.id}
-									send={send}
-									addHandler={addHandler}
-								/>
+								<CommandsPanel entries={entries} />
 							) : panelTab === "chat" ? (
 								<TeamChat
 									channel={`session:${session.id}`}
@@ -4706,6 +4722,21 @@ export function SessionViewer({
 									onOpenSession={(id) => onOpenSession?.(id)}
 									variant="panel"
 								/>
+							) : null}
+							{/* Shell tabs keep their PTYs alive across side-panel tab
+							    switches: mounted once opened, hidden while another tab
+							    is active. They still die with the panel/socket. */}
+							{hasWorkspace && !waitingForWorkspace && shellOpened ? (
+								<div
+									className={panelTab === "shell" ? "h-full min-h-0" : "hidden"}
+								>
+									<ShellPanel
+										sessionId={session.id}
+										send={send}
+										addHandler={addHandler}
+										visible={panelTab === "shell"}
+									/>
+								</div>
 							) : null}
 						</div>
 					</div>

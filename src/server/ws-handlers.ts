@@ -34,7 +34,7 @@ import { SESSION_EFFORTS, findSession, invalidateSessionsCache, maybePersistEffo
 import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
 import { engineSessionPatch, engineUserTexts, mergedSessionTranscript, mergedSessionTranscriptAsync, v2MirrorFiles, v2TranscriptHasDrift } from "./sessions";
 import { handleSlashCommand } from "./slash-commands";
-import { resizeTerminal, startSessionTerminal, stopTerminal, writeTerminal } from "./terminals";
+import { resizeTerminal, startSessionTerminal, stopAllTerminals, stopTerminal, writeTerminal } from "./terminals";
 import { subscribeTranscript } from "./transcript-bus";
 import { resumeSessionFeed } from "./session-feed";
 import { type SeqEntry, transcriptStore } from "./transcript-store";
@@ -1104,31 +1104,45 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				break;
 			}
 
-			// ── Interactive shell (Shell tab) — one PTY per socket ──
+			// ── Interactive shell (Shell tab) — multiple PTYs per socket, one
+			// per shell tab, keyed by the client's termId ("0" for legacy
+			// clients that predate multi-tab shells). Outbound frames are
+			// tagged with the termId so the client routes them to the right tab.
 			case "term_start": {
+				const termId = typeof msg.termId === "string" ? msg.termId : "0";
 				// Sandbox-aware: docker/daytona sessions get the shell INSIDE
 				// their sandbox; host worktree shell otherwise (terminals.ts).
-				void startSessionTerminal(ws, findSession(msg.sessionId), {
+				void startSessionTerminal(ws, termId, findSession(msg.sessionId), {
 					cols: Number(msg.cols) || undefined,
 					rows: Number(msg.rows) || undefined,
 					send: (m) => {
 						try {
-							ws.send(JSON.stringify(m));
+							ws.send(JSON.stringify({ ...m, termId }));
 						} catch {}
 					},
 				});
 				break;
 			}
 			case "term_input": {
-				if (typeof msg.data === "string") writeTerminal(ws, msg.data);
+				if (typeof msg.data === "string")
+					writeTerminal(
+						ws,
+						typeof msg.termId === "string" ? msg.termId : "0",
+						msg.data,
+					);
 				break;
 			}
 			case "term_resize": {
-				resizeTerminal(ws, Number(msg.cols), Number(msg.rows));
+				resizeTerminal(
+					ws,
+					typeof msg.termId === "string" ? msg.termId : "0",
+					Number(msg.cols),
+					Number(msg.rows),
+				);
 				break;
 			}
 			case "term_stop": {
-				stopTerminal(ws);
+				stopTerminal(ws, typeof msg.termId === "string" ? msg.termId : "0");
 				break;
 			}
 
@@ -1985,7 +1999,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 		releaseTranscriptV2(ws);
 		leaveSession(ws);
 		leaveNote(ws);
-		stopTerminal(ws); // the Shell tab's PTY dies with its socket
+		stopAllTerminals(ws); // the Shell tabs' PTYs die with their socket
 		console.log("WebSocket client disconnected");
 	},
 };

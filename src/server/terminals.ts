@@ -1,11 +1,13 @@
 /**
  * Interactive shell terminals for the session viewer's Shell tab.
  *
- * One shell per WebSocket client. Output streams to the client as base64
- * `term_data` frames; input/resize come back the same way. The shell dies
- * with its socket (or on term_stop), so nothing leaks past a disconnect —
- * and the map lives on globalThis so a hot reload doesn't orphan running
- * shells.
+ * Multiple shells per WebSocket client, keyed by a client-chosen `termId`
+ * (one per shell tab in the UI; legacy clients that never send one all map
+ * to "0"). Output streams to the client as base64 `term_data` frames — the
+ * WS handler tags each frame with its termId; input/resize come back the
+ * same way. A shell dies with its socket (stopAllTerminals), or on its own
+ * term_stop (closing the tab), so nothing leaks past a disconnect — and the
+ * map lives on globalThis so a hot reload doesn't orphan running shells.
  *
  * Sandbox-aware (startSessionTerminal): the shell lands where the session's
  * work actually happens.
@@ -31,6 +33,7 @@
  * Trust model: the web UI is Tailscale- + team-gated and interactive users are
  * already admin-equivalent (sessions run arbitrary Bash via prompts), so a
  * shell — host or in-sandbox — adds convenience, not a new privilege tier.
+ * MAX_TERMINALS_PER_SOCKET only bounds accidental PTY pile-up, not trust.
  * Nothing here is reachable from automation runs.
  *
  * NOTE: reached only through backstage.ts's WS handlers, which do NOT
@@ -49,12 +52,40 @@ interface TermEntry {
 }
 
 const g = globalThis as any;
-const terms: Map<unknown, TermEntry> = (g.__backstageTerminals ??= new Map());
-/** In-flight async starts (ws → generation token): a stop or re-start that
- *  lands while a sandbox target is still resolving cancels the stale one. */
-const pendingStarts: Map<unknown, object> = (g.__backstageTermPending ??= new Map());
+/** ws → termId → live shell. (New globalThis key since the multi-tab change:
+ *  the old __backstageTerminals map was flat ws → entry.) */
+const terms: Map<unknown, Map<string, TermEntry>> = (g.__backstageTerminalsById ??=
+  new Map());
+/** In-flight async starts (ws → termId → generation token): a stop or
+ *  re-start that lands while a sandbox target is still resolving cancels the
+ *  stale one. */
+const pendingStarts: Map<unknown, Map<string, object>> = (g.__backstageTermPendingById ??=
+  new Map());
+
+/** Bound accidental PTY pile-up per client (each shell tab is one PTY). */
+const MAX_TERMINALS_PER_SOCKET = 8;
 
 const HOME = process.env.HOME || "/home/ubuntu";
+
+function setTerm(ws: unknown, termId: string, entry: TermEntry): void {
+  let m = terms.get(ws);
+  if (!m) terms.set(ws, (m = new Map()));
+  m.set(termId, entry);
+}
+
+function deleteTerm(ws: unknown, termId: string): void {
+  const m = terms.get(ws);
+  if (!m) return;
+  m.delete(termId);
+  if (m.size === 0) terms.delete(ws);
+}
+
+function deletePending(ws: unknown, termId: string): void {
+  const m = pendingStarts.get(ws);
+  if (!m) return;
+  m.delete(termId);
+  if (m.size === 0) pendingStarts.delete(ws);
+}
 
 /** The slice of UnifiedSession / the session file the terminal target needs. */
 export interface TerminalSessionInfo {
@@ -212,18 +243,33 @@ async function resolveTarget(
 
 /**
  * Session-aware terminal start (the term_start WS handler's entry): resolves
- * the target (host / docker sandbox / daytona sandbox) and connects the shell.
- * Async because sandbox resolution can take seconds (container wake, remote
- * PTY connect) — a term_stop or another term_start racing in cancels it.
+ * the target (host / docker sandbox / daytona sandbox) and connects the shell
+ * for one (socket, termId) pair. Async because sandbox resolution can take
+ * seconds (container wake, remote PTY connect) — a term_stop or another
+ * term_start for the same termId racing in cancels it.
  */
 export async function startSessionTerminal(
   ws: unknown,
+  termId: string,
   session: TerminalSessionInfo | null | undefined,
   opts: TerminalOpts,
 ): Promise<void> {
-  stopTerminal(ws); // one shell per socket
+  stopTerminal(ws, termId); // one shell per (socket, termId)
+  const open = (terms.get(ws)?.size ?? 0) + (pendingStarts.get(ws)?.size ?? 0);
+  if (open >= MAX_TERMINALS_PER_SOCKET) {
+    opts.send({
+      type: "term_notice",
+      message: `too many open shells (${MAX_TERMINALS_PER_SOCKET}) — close one first`,
+    });
+    opts.send({ type: "term_exit", code: 1 });
+    return;
+  }
   const token = {};
-  pendingStarts.set(ws, token);
+  {
+    let pend = pendingStarts.get(ws);
+    if (!pend) pendingStarts.set(ws, (pend = new Map()));
+    pend.set(termId, token);
+  }
   // A silent hang here (e.g. a sandbox wake that never returns) used to leave
   // the tab dead with zero feedback — say what we're waiting on. NOTE: in a
   // timer-poisoned process (failed --hot reload — see run-ws.ts's tripwire)
@@ -243,7 +289,7 @@ export async function startSessionTerminal(
 
     if (target.kind === "remote") {
       try {
-        await connectRemote(ws, token, target, opts);
+        await connectRemote(ws, termId, token, target, opts);
         return;
       } catch (e: any) {
         // Same fail-open shape as resolveTarget: any connect failure
@@ -264,20 +310,21 @@ export async function startSessionTerminal(
       target.env = { ...target.env, ...(await sharedSshAgentEnv()) };
     } catch {}
   }
-  if (pendingStarts.get(ws) !== token) {
+  if (pendingStarts.get(ws)?.get(termId) !== token) {
     // Stopped or superseded while resolving — release the transport.
     try {
       target.dispose?.();
     } catch {}
     return;
   }
-  pendingStarts.delete(ws);
-  spawnPty(ws, target, opts);
+  deletePending(ws, termId);
+  spawnPty(ws, termId, target, opts);
 }
 
 /** Connect a provider-managed remote PTY (daytona) and register it. */
 async function connectRemote(
   ws: unknown,
+  termId: string,
   token: object,
   target: RemoteTarget,
   opts: TerminalOpts,
@@ -298,8 +345,8 @@ async function connectRemote(
       });
     },
     onExit: (code) => {
-      if (terms.get(ws) === entry) {
-        terms.delete(ws);
+      if (terms.get(ws)?.get(termId) === entry) {
+        deleteTerm(ws, termId);
         try {
           entry.stop();
         } catch {}
@@ -307,36 +354,20 @@ async function connectRemote(
       }
     },
   });
-  if (pendingStarts.get(ws) !== token) {
+  if (pendingStarts.get(ws)?.get(termId) !== token) {
     // Stopped or superseded while connecting — release the remote PTY.
     try {
       await handle.close();
     } catch {}
     return;
   }
-  pendingStarts.delete(ws);
-  terms.set(ws, entry);
+  deletePending(ws, termId);
+  setTerm(ws, termId, entry);
   opts.send({ type: "term_ready", target: target.target, cwd: target.displayCwd });
   if (target.notice) opts.send({ type: "term_notice", message: target.notice });
 }
 
-/** Host-only entry with the pre-sandbox signature. Kept so a hot reload of
- *  this module under an older backstage.ts handler keeps working; new code
- *  should use startSessionTerminal. */
-export function startTerminal(
-  ws: unknown,
-  opts: { cwd: string } & TerminalOpts,
-): void {
-  stopTerminal(ws);
-  const shell = process.env.SHELL || "/bin/zsh";
-  spawnPty(
-    ws,
-    { kind: "spawn", argv: [shell, "-il"], cwd: opts.cwd, target: "host", displayCwd: opts.cwd },
-    opts,
-  );
-}
-
-function spawnPty(ws: unknown, target: SpawnTarget, opts: TerminalOpts): void {
+function spawnPty(ws: unknown, termId: string, target: SpawnTarget, opts: TerminalOpts): void {
   const proc = Bun.spawn(target.argv, {
     cwd: target.cwd,
     env: { ...process.env, TERM: "xterm-256color", ...target.env },
@@ -374,8 +405,8 @@ function spawnPty(ws: unknown, target: SpawnTarget, opts: TerminalOpts): void {
   };
 
   void proc.exited.then((code) => {
-    if (terms.get(ws) === entry) {
-      terms.delete(ws);
+    if (terms.get(ws)?.get(termId) === entry) {
+      deleteTerm(ws, termId);
       try {
         target.dispose?.();
       } catch {}
@@ -383,33 +414,46 @@ function spawnPty(ws: unknown, target: SpawnTarget, opts: TerminalOpts): void {
     }
   });
 
-  terms.set(ws, entry);
+  setTerm(ws, termId, entry);
   opts.send({ type: "term_ready", target: target.target, cwd: target.displayCwd });
   if (target.notice) opts.send({ type: "term_notice", message: target.notice });
 }
 
-export function writeTerminal(ws: unknown, dataB64: string): void {
-  const t = terms.get(ws);
+export function writeTerminal(ws: unknown, termId: string, dataB64: string): void {
+  const t = terms.get(ws)?.get(termId);
   if (!t) return;
   try {
     t.write(Buffer.from(dataB64, "base64"));
   } catch {}
 }
 
-export function resizeTerminal(ws: unknown, cols: number, rows: number): void {
-  const t = terms.get(ws);
+export function resizeTerminal(ws: unknown, termId: string, cols: number, rows: number): void {
+  const t = terms.get(ws)?.get(termId);
   if (!t || !cols || !rows) return;
   try {
     t.resize(clampCols(cols), clampRows(rows));
   } catch {}
 }
 
-export function stopTerminal(ws: unknown): void {
-  pendingStarts.delete(ws); // cancel an in-flight async start
-  const t = terms.get(ws);
+export function stopTerminal(ws: unknown, termId: string): void {
+  deletePending(ws, termId); // cancel an in-flight async start
+  const t = terms.get(ws)?.get(termId);
   if (!t) return;
-  terms.delete(ws);
+  deleteTerm(ws, termId);
   try {
     t.stop();
   } catch {}
+}
+
+/** Socket teardown: every shell (and in-flight start) dies with its client. */
+export function stopAllTerminals(ws: unknown): void {
+  pendingStarts.delete(ws);
+  const m = terms.get(ws);
+  if (!m) return;
+  terms.delete(ws);
+  for (const t of m.values()) {
+    try {
+      t.stop();
+    } catch {}
+  }
 }

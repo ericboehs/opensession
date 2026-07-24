@@ -34,7 +34,8 @@ export interface WSClientData {
 	cloudWatchingSessionId?: string | null;
 	/** Stable virtual-client lane on the one hosted WebSocket connection. */
 	cloudLaneId?: string | null;
-	cloudTerminalActive?: boolean;
+	/** termIds of shell tabs currently proxied to the cloud upstream. */
+	cloudTermIds?: Set<string> | null;
 	/** Hosted-side authorization for the virtual-client multiplex protocol. */
 	cloudProxy?: boolean;
 	cloudProxyLanes?: Map<string, any>;

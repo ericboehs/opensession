@@ -733,12 +733,14 @@ export type WSServerMessage =
 			viewing: Array<{ user: string; sessionId: string }>;
 	  }
 	| { type: "pins_changed"; user: string; pins: string[] }
-	| { type: "term_data"; data: string }
-	| { type: "term_exit"; code?: number }
+	// term_* frames carry the termId of the shell tab (PTY) they belong to;
+	// absent on frames from servers that predate multi-tab shells.
+	| { type: "term_data"; termId?: string; data: string }
+	| { type: "term_exit"; termId?: string; code?: number }
 	// Where the Shell tab's PTY landed (sandboxed sessions run their shell
 	// inside the sandbox) + optional fallback explanation.
-	| { type: "term_ready"; target: "host" | "docker" | "daytona"; cwd?: string }
-	| { type: "term_notice"; message: string }
+	| { type: "term_ready"; termId?: string; target: "host" | "docker" | "daytona"; cwd?: string }
+	| { type: "term_notice"; termId?: string; message: string }
 	| { type: "stream_start"; sessionId: string; by?: string }
 	| { type: "stream_text"; sessionId?: string; text: string }
 	| { type: "stream_tool_use"; sessionId?: string; entry: TranscriptEntry }

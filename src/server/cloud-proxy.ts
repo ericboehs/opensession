@@ -307,9 +307,10 @@ function connectUpstream(): void {
 					}),
 				);
 			}
-			if (client.data.cloudTerminalActive) {
-				client.data.cloudTerminalActive = false;
-				sendClient(client, { type: "term_exit" });
+			if (client.data.cloudTermIds?.size) {
+				for (const termId of client.data.cloudTermIds)
+					sendClient(client, { type: "term_exit", termId });
+				client.data.cloudTermIds = null;
 			}
 		}
 		for (const item of socketState.initialQueue.splice(0)) {
@@ -334,9 +335,10 @@ function connectUpstream(): void {
 		socketState.socket = null;
 		socketState.status = "idle";
 		for (const client of socketState.lanes.values()) {
-			if (client.data.cloudTerminalActive) {
-				client.data.cloudTerminalActive = false;
-				sendClient(client, { type: "term_exit" });
+			if (client.data.cloudTermIds?.size) {
+				for (const termId of client.data.cloudTermIds)
+					sendClient(client, { type: "term_exit", termId });
+				client.data.cloudTermIds = null;
 			}
 		}
 		scheduleReconnect();
@@ -425,13 +427,20 @@ export function routeCloudWebSocketMessage(client: Client, message: any): boolea
 	}
 	if (EXPLICIT_SESSION_MESSAGES.has(message.type) && typeof message.sessionId === "string") {
 		if (localSessionOwnsId(findSession(message.sessionId))) {
-			if (message.type === "term_start" && client.data.cloudTerminalActive) {
-				forwardUpstream(client, { type: "term_stop" });
-				client.data.cloudTerminalActive = false;
+			if (message.type === "term_start") {
+				const termId =
+					typeof message.termId === "string" ? message.termId : "0";
+				if (client.data.cloudTermIds?.has(termId)) {
+					forwardUpstream(client, { type: "term_stop", termId });
+					client.data.cloudTermIds.delete(termId);
+				}
 			}
 			return false;
 		}
-		if (message.type === "term_start") client.data.cloudTerminalActive = true;
+		if (message.type === "term_start") {
+			const termId = typeof message.termId === "string" ? message.termId : "0";
+			(client.data.cloudTermIds ??= new Set()).add(termId);
+		}
 		forwardUpstream(client, message);
 		return true;
 	}
@@ -439,10 +448,13 @@ export function routeCloudWebSocketMessage(client: Client, message: any): boolea
 		(message.type === "term_input" ||
 			message.type === "term_resize" ||
 			message.type === "term_stop") &&
-		client.data.cloudTerminalActive
+		client.data.cloudTermIds?.size
 	) {
 		forwardUpstream(client, message);
-		if (message.type === "term_stop") client.data.cloudTerminalActive = false;
+		if (message.type === "term_stop")
+			client.data.cloudTermIds.delete(
+				typeof message.termId === "string" ? message.termId : "0",
+			);
 		return true;
 	}
 	return false;
@@ -462,7 +474,7 @@ export function cloudWebSocketClientClosed(client: Client): void {
 	socketState.lanes.delete(laneId);
 	client.data.cloudLaneId = null;
 	client.data.cloudWatchingSessionId = null;
-	client.data.cloudTerminalActive = false;
+	client.data.cloudTermIds = null;
 	if (socketState.lanes.size > 0) return;
 	if (socketState.reconnectTimer) clearTimeout(socketState.reconnectTimer);
 	socketState.reconnectTimer = null;
