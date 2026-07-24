@@ -251,6 +251,32 @@ extension NSPasteboard {
         }
     }
 }
+/// Explicit clipboard-paste button, always visible next to the composer.
+/// Clicking reads every image on the pasteboard (multiple paste in one go);
+/// nothing touches the clipboard until the click.
+struct PasteImagesButton: View {
+    @Binding var images: [AttachedImage]
+    var maxCount: Int = 6
+
+    var body: some View {
+        Button {
+            for data in NSPasteboard.general.imageDataRepresentations() {
+                guard images.count < maxCount,
+                      let image = AttachedImage(rawData: data)
+                else { continue }
+                images.append(image)
+            }
+        } label: {
+            Image(systemName: "doc.on.clipboard")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 27, height: 27)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Paste images from clipboard")
+    }
+}
 #else
 extension View {
     /// iOS text fields can't intercept paste; the PasteImagesButton next to
@@ -271,45 +297,29 @@ struct PastedImage: Transferable {
     }
 }
 
-/// System paste button that appears next to the composer whenever the
-/// pasteboard holds an image — the sanctioned way to read it without the
-/// paste-permission prompt. (UIKit text fields ignore image pastes, so
-/// without this a copied screenshot has no way in.)
+/// Always-visible system paste button — the sanctioned explicit way to read
+/// the pasteboard without a permission prompt or any clipboard sniffing on
+/// our side: the system enables/disables it from pasteboard metadata, and
+/// content is only read when the user taps. Handles multiple images in one
+/// paste. (UIKit text fields ignore image pastes, so without this a copied
+/// screenshot has no way in.)
 struct PasteImagesButton: View {
     @Binding var images: [AttachedImage]
     var maxCount: Int = 6
 
-    @State private var pasteboardHasImages = UIPasteboard.general.hasImages
-
     var body: some View {
-        Group {
-            if pasteboardHasImages {
-                PasteButton(payloadType: PastedImage.self) { payloads in
-                    Task { @MainActor in
-                        for payload in payloads {
-                            guard images.count < maxCount,
-                                  let image = AttachedImage(rawData: payload.data)
-                            else { continue }
-                            images.append(image)
-                        }
-                    }
+        PasteButton(payloadType: PastedImage.self) { payloads in
+            Task { @MainActor in
+                for payload in payloads {
+                    guard images.count < maxCount,
+                          let image = AttachedImage(rawData: payload.data)
+                    else { continue }
+                    images.append(image)
                 }
-                .labelStyle(.iconOnly)
-                .controlSize(.small)
             }
         }
-        .onReceive(
-            NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)
-        ) { _ in
-            pasteboardHasImages = UIPasteboard.general.hasImages
-        }
-        .onReceive(
-            NotificationCenter.default.publisher(
-                for: UIApplication.willEnterForegroundNotification
-            )
-        ) { _ in
-            pasteboardHasImages = UIPasteboard.general.hasImages
-        }
+        .labelStyle(.iconOnly)
+        .controlSize(.small)
     }
 }
 #endif

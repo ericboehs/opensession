@@ -128,9 +128,7 @@ struct NewSessionView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 AttachImagesButton(images: $images)
-                #if os(iOS)
                 PasteImagesButton(images: $images)
-                #endif
                 repoChip
                 modeChip
                 Spacer(minLength: 0)

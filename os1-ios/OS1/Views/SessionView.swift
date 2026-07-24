@@ -320,10 +320,8 @@ struct SessionView: View {
         HStack(alignment: .bottom, spacing: 8) {
             AttachImagesButton(images: $viewModel.attachedImages)
                 .padding(.bottom, 3)
-            #if os(iOS)
             PasteImagesButton(images: $viewModel.attachedImages)
                 .padding(.bottom, 3)
-            #endif
             TextField(
                 viewModel.isRunning ? "Message — queues for after this run" : "Message",
                 text: $viewModel.draft,
