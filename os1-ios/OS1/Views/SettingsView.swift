@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -27,10 +26,8 @@ struct SettingsView: View {
             Form {
                 Section("Server") {
                     TextField("https://os.tella.dev", text: $serverURL)
-                        .keyboardType(.URL)
-                        .textContentType(.URL)
+                        .urlFieldCompat()
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
                 }
 
                 Section {
@@ -40,7 +37,7 @@ struct SettingsView: View {
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                             Button {
-                                UIPasteboard.general.string = flow.userCode
+                                copyToPasteboard(flow.userCode)
                                 copiedCode = true
                             } label: {
                                 Text(flow.userCode)
@@ -98,7 +95,7 @@ struct SettingsView: View {
                     }
                     SecureField("Bearer token (or paste one manually)", text: $token)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .noAutocapitalizationCompat()
                 } header: {
                     Text("Auth")
                 } footer: {
@@ -135,7 +132,11 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitleBarCompat()
+            #if os(macOS)
+            .formStyle(.grouped)
+            .frame(minWidth: 520, minHeight: 560)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {

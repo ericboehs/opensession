@@ -40,7 +40,7 @@ struct SessionView: View {
             // when the person scrolls up to read — no yanking them back.
             .defaultScrollAnchor(.bottom)
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
-            .scrollDismissesKeyboard(.interactively)
+            .scrollDismissesKeyboardCompat()
             .onChange(of: viewModel.pendingQuestion) {
                 // A question needs eyes even if they've scrolled away.
                 scrollToBottom(proxy, animated: true)
@@ -53,10 +53,10 @@ struct SessionView: View {
             inputBar
         }
         .navigationTitle(viewModel.session.displayTitle)
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineTitleBarCompat()
         .toolbar {
             if viewModel.isRunning {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topTrailingCompat) {
                     Button {
                         viewModel.cancelRun()
                     } label: {
@@ -151,6 +151,9 @@ struct SessionView: View {
                 .padding(.vertical, 8)
                 .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 18))
                 .focused($inputFocused)
+                // Mac: Return sends (Option-Return inserts a newline); on iOS
+                // the software keyboard's return key just wraps, as before.
+                .onSubmit { viewModel.sendDraft() }
 
                 Button {
                     viewModel.sendDraft()

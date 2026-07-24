@@ -57,10 +57,10 @@ struct SessionsListView: View {
             }
             .navigationTitle("Sessions")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .topLeadingCompat) {
                     filterMenu
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topTrailingCompat) {
                     Button {
                         showSettings = true
                     } label: {
@@ -244,7 +244,7 @@ struct SessionsListView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .insetGroupedListCompat()
         .searchable(text: $searchText, prompt: "Search sessions")
         .overlay {
             if groups.isEmpty {

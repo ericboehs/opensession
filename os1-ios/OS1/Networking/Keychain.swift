@@ -6,13 +6,23 @@ import Security
 enum Keychain {
     private static let service = "dev.tella.os1"
 
-    static func set(_ value: String, for key: String) {
-        let data = Data(value.utf8)
-        let query: [String: Any] = [
+    /// On macOS, generic-password items must opt into the data-protection
+    /// keychain — the legacy file-based keychain rejects kSecAttrAccessible.
+    private static func baseQuery(for key: String) -> [String: Any] {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
         ]
+        #if os(macOS)
+        query[kSecUseDataProtectionKeychain as String] = true
+        #endif
+        return query
+    }
+
+    static func set(_ value: String, for key: String) {
+        let data = Data(value.utf8)
+        let query = baseQuery(for: key)
         let attributes: [String: Any] = [kSecValueData as String: data]
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {
@@ -24,13 +34,9 @@ enum Keychain {
     }
 
     static func get(_ key: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
+        var query = baseQuery(for: key)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: AnyObject?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
               let data = result as? Data
@@ -39,11 +45,6 @@ enum Keychain {
     }
 
     static func delete(_ key: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-        ]
-        SecItemDelete(query as CFDictionary)
+        SecItemDelete(baseQuery(for: key) as CFDictionary)
     }
 }

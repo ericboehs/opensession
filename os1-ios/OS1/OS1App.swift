@@ -6,6 +6,9 @@ struct OS1App: App {
         WindowGroup {
             RootView()
         }
+        #if os(macOS)
+        .defaultSize(width: 920, height: 720)
+        #endif
     }
 }
 
@@ -32,5 +35,8 @@ struct RootView: View {
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { GitHubSignIn.shared.nudge() }
             }
+            #if os(macOS)
+            .frame(minWidth: 520, minHeight: 560)
+            #endif
     }
 }
