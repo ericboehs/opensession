@@ -104,7 +104,11 @@ export function UserGate({ children }: { children: React.ReactNode }) {
         setAuthStatusCache(body);
         if ((body.local || body.required) && body.authenticated && body.name) {
           const user = body.local ? body.name : body.name.split(" ")[0];
-          if (getCurrentUser() !== user) setStoredUser(user);
+          // Always emit the user-change event after authenticated startup. The
+          // per-user sidebar caches hydrate at module load and may have raced
+          // auth/network readiness; selecting the same profile manually fixed
+          // them only because it emitted this event again.
+          setStoredUser(user);
         }
       })
       .catch(() => {});

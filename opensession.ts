@@ -139,7 +139,7 @@ const server: import("bun").Server<WSClientData> = hotServe({
 		// The SPA shell is served at the bare domain root only (os.tella.dev,
 		// 2026-07-10) — no path prefix. Old /opensession + /backstage page URLs
 		// 301 onto the root form in the fetch preamble below.
-		routes: Object.fromEntries(
+		routes: isLocalProfile() ? {} : Object.fromEntries(
 			[
 				"/",
 				"/index.html",

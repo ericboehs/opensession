@@ -4,11 +4,13 @@ import {
 	mergedCloudSessions,
 	isCloudCreateRequest,
 	localSessionOwnsId,
+	proxyCloudFrontendRequest,
 	proxyCloudSessionRequest,
 	proxyCloudTargetRequest,
 	sessionIdFromApiPath,
 	sessionRequestTarget,
 	shouldProxyCloudTargetRequest,
+	shouldProxyCloudFrontendRequest,
 } from "./cloud-proxy";
 import type { UnifiedSession } from "./types";
 
@@ -135,6 +137,146 @@ describe("local cloud session merge", () => {
 });
 
 describe("local cloud request routing", () => {
+	test("proxies only local-profile frontend reads", () => {
+		process.env.OPENSESSION_PROFILE = "local";
+		const request = new Request("http://127.0.0.1:3850/session/bks-1");
+		const ctx = {
+			req: request,
+			path: "/backstage/session/bks-1",
+		};
+		expect(shouldProxyCloudFrontendRequest(ctx)).toBe(true);
+		expect(
+			shouldProxyCloudFrontendRequest({
+				...ctx,
+				path: "/backstage/api/health",
+			}),
+		).toBe(false);
+		expect(
+			shouldProxyCloudFrontendRequest({
+				...ctx,
+				path: "/backstage/ws",
+			}),
+		).toBe(false);
+		expect(
+			shouldProxyCloudFrontendRequest({
+				...ctx,
+				req: new Request(request.url, { method: "POST" }),
+			}),
+		).toBe(false);
+		process.env.OPENSESSION_PROFILE = "cloud";
+		expect(shouldProxyCloudFrontendRequest(ctx)).toBe(false);
+	});
+
+	test("proxies hosted frontend without a token or local credentials", async () => {
+		process.env.OPENSESSION_PROFILE = "local";
+		process.env.OPENSESSION_CLOUD_UPSTREAM = "https://cloud.example/";
+		delete process.env.OPENSESSION_CLOUD_TOKEN;
+		const request = new Request("http://127.0.0.1:3850/session/bks-1?tab=chat", {
+			headers: {
+				accept: "text/html",
+				cookie: "local-session=secret",
+				origin: "http://127.0.0.1:3850",
+			},
+		});
+		let seenUrl = "";
+		let seenHeaders = new Headers();
+		const response = await proxyCloudFrontendRequest(
+			{
+				req: request,
+				url: new URL(request.url),
+				path: "/backstage/session/bks-1",
+				publicPrefix: "",
+			},
+			(async (url: string | URL | Request, init?: RequestInit) => {
+				seenUrl = String(url);
+				seenHeaders = new Headers(init?.headers);
+				return new Response("<html>hosted</html>", {
+					headers: {
+						"content-type": "text/html; charset=utf-8",
+						"content-encoding": "gzip",
+						"set-cookie": "cloud-session=secret",
+					},
+				});
+			}) as unknown as typeof fetch,
+		);
+		expect(seenUrl).toBe("https://cloud.example/session/bks-1?tab=chat");
+		expect(seenHeaders.get("accept")).toBe("text/html");
+		expect(seenHeaders.get("authorization")).toBeNull();
+		expect(seenHeaders.get("cookie")).toBeNull();
+		expect(seenHeaders.get("origin")).toBeNull();
+		expect(response?.headers.get("content-encoding")).toBeNull();
+		expect(response?.headers.get("set-cookie")).toBeNull();
+		expect(response?.headers.get("cache-control")).toBe("no-store");
+		expect(await response?.text()).toBe("<html>hosted</html>");
+	});
+
+	test("preserves hosted asset caching and reports upstream failure", async () => {
+		process.env.OPENSESSION_PROFILE = "local";
+		process.env.OPENSESSION_CLOUD_UPSTREAM = "https://cloud.example";
+		const request = new Request("http://127.0.0.1:3850/App-abc.js");
+		const ctx = {
+			req: request,
+			url: new URL(request.url),
+			path: "/backstage/App-abc.js",
+			publicPrefix: "",
+		};
+		const asset = await proxyCloudFrontendRequest(
+			ctx,
+			(async () =>
+				new Response("js", {
+					headers: { "cache-control": "public, max-age=31536000, immutable" },
+				})) as unknown as typeof fetch,
+		);
+		expect(asset?.headers.get("cache-control")).toBe(
+			"public, max-age=31536000, immutable",
+		);
+		const failed = await proxyCloudFrontendRequest(
+			ctx,
+			(async () => {
+				throw new Error("offline");
+			}) as unknown as typeof fetch,
+		);
+		expect(failed?.status).toBe(502);
+		expect(failed?.headers.get("cache-control")).toBe("no-store");
+	});
+
+	test("keeps hosted redirects on the loopback origin", async () => {
+		process.env.OPENSESSION_PROFILE = "local";
+		process.env.OPENSESSION_CLOUD_UPSTREAM = "https://cloud.example";
+		const request = new Request("http://127.0.0.1:3850/old");
+		const ctx = {
+			req: request,
+			url: new URL(request.url),
+			path: "/backstage/old",
+			publicPrefix: "",
+		};
+		const redirect = await proxyCloudFrontendRequest(
+			ctx,
+			(async () =>
+				new Response(null, {
+					status: 302,
+					headers: {
+						location: "https://cloud.example/new?from=old",
+						"alt-svc": 'h3=":443"',
+					},
+				})) as unknown as typeof fetch,
+		);
+		expect(redirect?.headers.get("location")).toBe("/new?from=old");
+		expect(redirect?.headers.get("alt-svc")).toBeNull();
+		expect(redirect?.headers.get("cache-control")).toBe("no-store");
+
+		const refused = await proxyCloudFrontendRequest(
+			ctx,
+			(async () =>
+				new Response(null, {
+					status: 302,
+					headers: { location: "https://example.com/elsewhere" },
+				})) as unknown as typeof fetch,
+		);
+		expect(refused?.status).toBe(502);
+		expect(refused?.headers.get("location")).toBeNull();
+	});
+
 	test("only marks explicit local-profile creates for the cloud", () => {
 		const message = { type: "create_session", cloud: true };
 		expect(isCloudCreateRequest(message, true)).toBe(true);

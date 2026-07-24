@@ -126,17 +126,20 @@ function slugifyBranch(text: string): string {
 
 export function NewSession({ onBack, send, addHandler, connected, prefillPrompt, forceMode, projectId, forceRepo, forceBranch, onCreateStarted }: Props) {
   const auth = useAuthStatus();
+  const desktopShell =
+    (window as { os1?: { desktop?: boolean } }).os1?.desktop === true ||
+    navigator.userAgent.includes("Electron/");
   const [prefill] = useState(readPrefill);
   const [mode, setMode] = useState<"ask" | "code">(forceMode || prefill.mode);
   // The desktop app's local bridge merges local and hosted sessions. Hosted is
   // deliberately the default; local execution is still experimental and must
   // be selected explicitly for each palette lifetime.
   const [createTarget, setCreateTarget] = useState<"cloud" | "local">(
-    auth?.local ? "cloud" : "local",
+    auth?.local || desktopShell ? "cloud" : "local",
   );
   useEffect(() => {
-    if (auth?.local) setCreateTarget("cloud");
-  }, [auth?.local]);
+    if (auth?.local || desktopShell) setCreateTarget("cloud");
+  }, [auth?.local, desktopShell]);
   // In a Project, default to the folder's shared repo; else the prefill/filter repo.
   const [repo, setRepo] = useState(forceRepo || prefill.repo);
   const [localRepos, setLocalRepos] = useState<typeof CLOUD_REPOS>([]);
@@ -920,7 +923,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               >
                 {creating
                   ? "Creating…"
-                  : auth?.local
+                  : auth?.local || desktopShell
                     ? createTarget === "cloud"
                       ? createMore
                         ? "Create more in cloud"

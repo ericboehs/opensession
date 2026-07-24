@@ -4,7 +4,6 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-const CLOUD_UPSTREAM = "https://os.tella.dev";
 const HEALTH_ATTEMPTS = 40;
 const HEALTH_INTERVAL_MS = 500;
 const MAX_RESTART_BACKOFF_MS = 30_000;
@@ -152,7 +151,6 @@ class LocalServerSupervisor {
     const env = {
       ...process.env,
       HOST: "127.0.0.1",
-      OPENSESSION_CLOUD_UPSTREAM: CLOUD_UPSTREAM,
       OPENSESSION_OPENCODE_BIN: opencodeBin,
       OPENSESSION_PROFILE: "local",
       PORT: String(port),

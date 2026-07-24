@@ -7,7 +7,11 @@
  */
 
 import type { RouteHandler } from "./context";
-import { proxyCloudSessionRequest, proxyCloudTargetRequest } from "../cloud-proxy";
+import {
+	proxyCloudFrontendRequest,
+	proxyCloudSessionRequest,
+	proxyCloudTargetRequest,
+} from "../cloud-proxy";
 import { handleSessionTransferRoutes } from "./session-transfer";
 import { handleAuthRoutes } from "./auth";
 import { handleMediaRoutes } from "./media";
@@ -48,6 +52,9 @@ export const routeHandlers: RouteHandler[] = [
 	// before dispatch in opensession.ts) and must never be shadowed.
 	handleAuthRoutes,
 	handleMediaRoutes,
+	// Local profile only: serve the current hosted shell and assets from the
+	// loopback origin. API and WebSocket paths are excluded by the handler.
+	proxyCloudFrontendRequest,
 	handleStaticAssetsRoutes,
 	handlePlainRoutes,
 	handleSystemRoutes,

@@ -1,10 +1,11 @@
 # OS¹ for Mac
 
 A thin Electron shell around [https://os.tella.dev](https://os.tella.dev), with
-an opt-in local mode that supervises a local OpenSession server. The frontend
-still ships from the selected server, so this app only owns the window,
-navigation policy, local process lifecycle, notifications, dock badge and deep
-links.
+an opt-in local mode that supervises a local OpenSession backend. Both modes use
+the current hosted frontend; in local mode the loopback server proxies that app
+shell so its same-origin API and WebSocket requests stay local. The app only
+owns the window, navigation policy, local process lifecycle, notifications,
+dock badge and deep links.
 
 The shell lives in `os1-mac/` inside the Backstage repository so native window
 changes and their frontend counterparts can ship together.
@@ -46,8 +47,14 @@ directory:
 All fields are optional. `localMode` defaults to `false`; `serverDir` defaults to
 `~/os1/server` when that directory exists. `cloudToken` falls back to the
 `token` field in `~/.opensession-frontend-dev-token.json`. With no token the
-server remains purely local. Child output is appended to `local-server.log` in
-the same user-data directory.
+session backend remains purely local, while the public hosted frontend is still
+proxied without authentication. Child output is appended to `local-server.log`
+in the same user-data directory.
+
+The local checkout supplies backend code only. It never builds or serves its
+frontend; shell documents and assets are proxied from the configured cloud
+upstream (default `https://os.tella.dev`) while the browser origin remains the
+loopback server.
 
 ### Iterating on the frontend before it ships
 

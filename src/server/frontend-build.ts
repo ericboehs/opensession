@@ -12,9 +12,7 @@ import { envAlias } from "./rename-compat";
 import { activeRunRecords } from "./run-journal";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { broadcastToAll } from "./ws-hub";
-// The dev-mode SPA entry: Bun's HTML import (HMR bundle). Prod serves the
-// prebuilt index.html instead.
-import homepage from "../frontend/index.html";
+import { isLocalProfile } from "./profile";
 
 const g = globalThis as any;
 
@@ -36,6 +34,9 @@ export type FrontendBundle = {
 // restart` that would interrupt every in-flight Claude run. `version` changes
 // whenever the entry or CSS hash changes, so clients know to refresh.
 export async function buildFrontend(): Promise<string> {
+	if (isLocalProfile()) {
+		throw new Error("Local profile uses the hosted frontend");
+	}
 	const result = await Bun.build({
 		entrypoints: [`${FRONTEND_SRC}/App.tsx`],
 		outdir: FRONTEND_DIST,
@@ -161,14 +162,16 @@ export async function buildFrontend(): Promise<string> {
 	return version;
 }
 
-if (!IS_DEV && !g.__backstageFrontend) {
+if (!IS_DEV && !isLocalProfile() && !g.__backstageFrontend) {
 	console.log("Building frontend (split + minified)…");
 	await buildFrontend();
 }
 
 export const frontend: FrontendBundle | null = IS_DEV
 	? null
-	: (g.__backstageFrontend as FrontendBundle);
+	: isLocalProfile()
+		? null
+		: (g.__backstageFrontend as FrontendBundle);
 
 export const SPA_HEADERS = {
 	"Content-Type": "text/html; charset=utf-8",
@@ -179,12 +182,16 @@ export const SPA_HEADERS = {
 // SPA entry: the HMR bundle in dev, the prebuilt index.html in prod. Reads
 // `frontend.indexHtml` fresh on each request so an in-process rebuild is served
 // immediately (the object is mutated, not replaced).
+const homepage = IS_DEV && !isLocalProfile()
+	? (await import("../frontend/index.html")).default
+	: null;
+
 export const spaEntry = frontend
 	? () =>
 			new Response(frontend.indexHtml, {
 				headers: SPA_HEADERS,
 			})
-	: homepage;
+	: homepage ?? (() => new Response("Hosted frontend unavailable", { status: 503 }));
 
 function sessionTitle(id: string | undefined): string | undefined {
 	if (!id) return undefined;

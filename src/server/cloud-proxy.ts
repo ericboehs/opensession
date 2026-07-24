@@ -153,6 +153,105 @@ function responseWithoutStaleEncoding(response: Response): Response {
 	});
 }
 
+export function shouldProxyCloudFrontendRequest(
+	ctx: Pick<RouteContext, "path" | "req">,
+): boolean {
+	if (!isLocalProfile() || (ctx.req.method !== "GET" && ctx.req.method !== "HEAD")) {
+		return false;
+	}
+	return !(
+		ctx.path === "/backstage/api" ||
+		ctx.path.startsWith("/backstage/api/") ||
+		ctx.path === "/backstage/ws" ||
+		ctx.path === "/backstage/rpc-ws" ||
+		ctx.path === "/backstage/run-ws" ||
+		ctx.path.startsWith("/backstage/run-ws/")
+	);
+}
+
+function frontendProxyHeaders(source: Headers): Headers {
+	const headers = new Headers();
+	for (const name of [
+		"accept",
+		"accept-language",
+		"accept-encoding",
+		"if-none-match",
+		"if-modified-since",
+		"if-range",
+		"range",
+	]) {
+		const value = source.get(name);
+		if (value) headers.set(name, value);
+	}
+	return headers;
+}
+
+function cloudFrontendResponse(response: Response): Response {
+	const headers = new Headers(response.headers);
+	headers.delete("content-encoding");
+	headers.delete("content-length");
+	headers.delete("set-cookie");
+	for (const name of [
+		"alt-svc",
+		"clear-site-data",
+		"nel",
+		"report-to",
+		"strict-transport-security",
+	]) {
+		headers.delete(name);
+	}
+	const location = headers.get("location");
+	if (location) {
+		const upstream = new URL(configuredCloud().upstream);
+		const target = new URL(location, upstream);
+		if (target.origin !== upstream.origin) {
+			return new Response("Cloud frontend refused a cross-origin redirect", {
+				status: 502,
+				headers: { "Cache-Control": "no-store" },
+			});
+		}
+		headers.set("location", target.pathname + target.search + target.hash);
+		headers.set("cache-control", "no-store");
+	}
+	if (headers.get("content-type")?.includes("text/html")) {
+		headers.set("cache-control", "no-store");
+	}
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers,
+	});
+}
+
+/** Serve the hosted app shell from the loopback origin so its API/WS stay local. */
+export async function proxyCloudFrontendRequest(
+	ctx: RouteContext,
+	fetchImpl: typeof fetch = fetch,
+): Promise<Response | undefined> {
+	if (!shouldProxyCloudFrontendRequest(ctx)) return undefined;
+	try {
+		const response = await fetchImpl(
+			upstreamUrl(ctx.url.pathname + ctx.url.search),
+			{
+				method: ctx.req.method,
+				headers: frontendProxyHeaders(ctx.req.headers),
+				redirect: "manual",
+				signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+			},
+		);
+		return cloudFrontendResponse(response);
+	} catch (error) {
+		console.warn("[cloud-proxy] frontend request failed:", error);
+		return new Response("Cloud OpenSession frontend is unreachable", {
+			status: 502,
+			headers: {
+				"Content-Type": "text/plain; charset=utf-8",
+				"Cache-Control": "no-store",
+			},
+		});
+	}
+}
+
 export async function proxyCloudSessionRequest(
 	ctx: RouteContext,
 	fetchImpl: typeof fetch = fetch,
