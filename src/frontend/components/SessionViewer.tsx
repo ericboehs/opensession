@@ -82,7 +82,6 @@ import { PrPanel } from "./PrPanel";
 import { PrStatusBar } from "./PrStatusBar";
 
 import { TeamChat } from "./TeamChat";
-import { PlainThreadPanel } from "./PlainThreadPanel";
 import { ConversationPane } from "./ConversationPane";
 import { WorkflowPanel } from "./WorkflowPanel";
 import { AssetsPanel, useSessionAssets } from "./AssetsPanel";
@@ -277,7 +276,6 @@ type PanelTab =
 	| "shell"
 	| "pr"
 	| "chat"
-	| "plain"
 	| "sidechats"
 	| "workflows"
 	| "assets"
@@ -793,16 +791,14 @@ export function SessionViewer({
 		// starts hidden and the body would flash PrPanel) — it, and any stored
 		// tab that no longer exists, maps back to Info. "shell" is deliberately
 		// not restorable either: restoring it would spawn a PTY on every load.
-		const restorable: PanelTab[] = ["info", "changes", "terminal", "chat", "plain", "sidechats"];
+		const restorable: PanelTab[] = ["info", "changes", "terminal", "chat", "sidechats"];
 		const tab: PanelTab | null = restorable.includes(stored as PanelTab)
 			? (stored as PanelTab)
 			: stored
 				? "info"
 				: null;
 		if (tab) {
-			const available =
-				tab === "info" ||
-				(tab === "plain" ? Boolean(session.plainThreadId) : workspace);
+			const available = tab === "info" || workspace;
 			if (available) return tab;
 		}
 		return "info";
@@ -3755,10 +3751,8 @@ export function SessionViewer({
 						<Tooltip
 							label={
 								hasWorkspace
-									? "Toggle side panel (changes, terminal, PR, Plain)"
-									: hasPlain
-										? "Toggle Plain conversation panel"
-										: "Toggle side panel (agents)"
+									? "Toggle side panel (changes, terminal, PR)"
+									: "Toggle side panel (agents)"
 							}
 						>
 							<button
@@ -3836,11 +3830,7 @@ export function SessionViewer({
 										>
 											<IconSidebarRight size={20} />
 											<span>
-												{hasWorkspace
-													? "Changes, terminal & PR"
-													: hasPlain
-														? "Plain conversation"
-														: "Agents"}
+												{hasWorkspace ? "Changes, terminal & PR" : "Agents"}
 											</span>
 											<IconChevronRight className="btn-viewer-panelrow-caret" size={18} />
 										</button>
@@ -4696,15 +4686,6 @@ export function SessionViewer({
 									</button>
 								</>
 							)}
-							{hasPlain && (
-								<button
-									className={`panel-tab ${panelTab === "plain" ? "active" : ""}`}
-									onClick={() => selectPanelTab("plain")}
-								>
-									Plain
-									<span className="panel-tab-dot" />
-							</button>
-							)}
 							{/* Shown whenever the session CAN run workflows (it needs a
 							    worktree for the agents' cwd), not only once a run exists —
 							    a tab that only appears after the fact is undiscoverable.
@@ -4833,12 +4814,6 @@ export function SessionViewer({
 								<SessionReportsPanel
 									reports={sessionReports}
 									onOpenNewSession={onOpenNewSession}
-								/>
-							) : (panelTab === "plain" || !hasWorkspace) && hasPlain ? (
-								<PlainThreadPanel
-									sessionId={session.id}
-									threadId={session.plainThreadId!}
-									plainUrl={plainUrl}
 								/>
 							) : waitingForWorkspace &&
 							  (panelTab === "changes" ||

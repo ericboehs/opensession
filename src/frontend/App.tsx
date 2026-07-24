@@ -773,7 +773,10 @@ function App() {
 	// present in the strip; empty by default (a tab is added when its pane is
 	// first opened).
 	const [reviewOpen, setReviewOpen] = useState<Set<string>>(() => new Set());
-	const [conversationOpen, setConversationOpen] = useState<Set<string>>(
+	// Conversation is default-PRESENT on any workspace/chat linked to a Plain
+	// thread (unlike Review, which is opened on demand) — so the state tracks
+	// explicit closes, not opens.
+	const [conversationClosed, setConversationClosed] = useState<Set<string>>(
 		() => new Set(),
 	);
 	const [stagingOpen, setStagingOpen] = useState<Set<string>>(() => new Set());
@@ -1182,10 +1185,23 @@ function App() {
 			setReviewOpen((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
 			setActiveViewTab("review");
 		} else if (tab === "conversation") {
-			setConversationOpen((prev) =>
-				prev.has(key) ? prev : new Set(prev).add(key),
-			);
+			setConversationClosed((prev) => {
+				if (!prev.has(key)) return prev;
+				const next = new Set(prev);
+				next.delete(key);
+				return next;
+			});
 			setActiveViewTab("conversation");
+			// Land in the workspace's first chat so the full session chrome —
+			// including the right sidebar — rides along; the Conversation pane
+			// stays foregrounded (wsKey is unchanged, so the view-tab reset
+			// effect doesn't fire). A chat-less ticket stays on WorkspacePane.
+			const first = sessionsRef.current
+				.filter(
+					(s) => !s.archived && s.projectId === key && !s.sideChatOf,
+				)
+				.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))[0];
+			if (first) navigate({ view: "session", id: first.id }, { replace: true });
 		} else {
 			const first = sessionsRef.current
 				.filter(
@@ -1279,7 +1295,7 @@ function App() {
 	const conversationThreadId =
 		routeWorkspace?.plainThreadId ?? currentSession?.plainThreadId ?? null;
 	const conversationViewTabs: ViewTab[] =
-		conversationThreadId && wsKey && conversationOpen.has(wsKey)
+		conversationThreadId && wsKey && !conversationClosed.has(wsKey)
 			? [
 					{
 						id: `conversation:${wsKey}`,
@@ -1364,25 +1380,25 @@ function App() {
 		// Review tab while the Preview environment is active leaves it up.
 		if (reviewActive) setActiveViewTab(null);
 	}
-	// Open/foreground this workspace's Conversation view-tab (the Plain ticket
-	// thread). Adds the tab to the strip if absent.
+	// Foreground this workspace's Conversation view-tab (the Plain ticket
+	// thread); re-adds a dismissed one.
 	function openConversation() {
 		if (!wsKey) return;
 		const key = wsKey;
-		setConversationOpen((prev) => {
-			if (prev.has(key)) return prev;
-			return new Set(prev).add(key);
+		setConversationClosed((prev) => {
+			if (!prev.has(key)) return prev;
+			const next = new Set(prev);
+			next.delete(key);
+			return next;
 		});
 		setActiveViewTab("conversation");
 	}
 	function closeConversationTab() {
 		if (wsKey) {
 			const key = wsKey;
-			setConversationOpen((prev) => {
-				if (!prev.has(key)) return prev;
-				const next = new Set(prev);
-				next.delete(key);
-				return next;
+			setConversationClosed((prev) => {
+				if (prev.has(key)) return prev;
+				return new Set(prev).add(key);
 			});
 		}
 		if (conversationActive) setActiveViewTab(null);

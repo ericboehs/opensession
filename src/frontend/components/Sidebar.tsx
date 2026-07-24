@@ -39,6 +39,7 @@ import {
 	IconFilter,
 	IconArrowDown,
 	IconArrowUp,
+	IconMinus,
 	IconGear,
 	IconGitMerge,
 	IconCheck,
@@ -206,16 +207,12 @@ const SUPPORT_PRIORITY_DOT: Record<number, string> = Object.fromEntries(
 	SUPPORT_PRIORITY_GROUPS.map((g) => [g.p, g.dot]),
 );
 
-/** The priority glyph on a Support group header (flame/arrows/dot). */
+/** The priority glyph on a Support group header (flame/arrows/dash). */
 function SupportPriorityIcon({ p, cls }: { p: number; cls: string }) {
 	if (p === 0) return <IconFlame size={17} className={`shrink-0 ${cls}`} />;
 	if (p === 1) return <IconArrowUp size={17} className={`shrink-0 ${cls}`} />;
 	if (p === 3) return <IconArrowDown size={17} className={`shrink-0 ${cls}`} />;
-	return (
-		<span className="flex size-[17px] shrink-0 items-center justify-center">
-			<span className="size-[7px] rounded-full bg-blue" />
-		</span>
-	);
+	return <IconMinus size={17} className={`shrink-0 ${cls}`} />;
 }
 
 interface SupportFilterState {
@@ -2647,6 +2644,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return !!session && session.id === selectedId;
 	}
 
+	// A Support row, in the Pull-requests band's two-line shape: title on top
+	// (behind a priority-colored dot — a linked session's live status wins),
+	// customer · assignee · time below; hovering swaps the time for a one-click
+	// "mark done".
 	function renderSupportRow(t: SupportThread) {
 		const session = supportSessionByThread.get(t.id) || null;
 		const active = supportThreadActive(t);
@@ -2655,44 +2656,60 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return (
 			<button
 				key={`support:${t.id}`}
-				className={`sidebar-item group/support flex items-center gap-1.5 min-w-0 ${
-					active ? "sidebar-item-selected" : ""
+				className={`sidebar-item sidebar-item--twoline group/support${
+					active ? " sidebar-item-selected" : ""
 				}`}
 				onClick={() => onOpenTicket(t)}
 				title={`${customer} — ${label}${
 					t.previewText ? `\n${t.previewText.slice(0, 200)}` : ""
 				}`}
 			>
-				<span
-					className="sidebar-group-dot"
-					style={{
-						backgroundColor: session
-							? STATUS_DOT[mineStatus(session)]
-							: SUPPORT_PRIORITY_DOT[t.priority ?? 2] ||
-								"var(--text-faint)",
-					}}
-				/>
-				<span className={cn("min-w-0 truncate text-[14px] leading-[1.35] font-medium", active ? "text-fg" : "text-dim")}>
-					{label}
-				</span>
-				{t.statusChangedAt && (
-					<span
-						className="sidebar-ws-time group-hover/support:hidden"
-						title={new Date(t.statusChangedAt).toLocaleString()}
-					>
-						{shortTime(t.statusChangedAt)}
+				<span className="sidebar-item-top">
+					<span className="flex size-[17px] shrink-0 items-center justify-center">
+						<span
+							className="size-[7px] rounded-full"
+							style={{
+								backgroundColor: session
+									? STATUS_DOT[mineStatus(session)]
+									: SUPPORT_PRIORITY_DOT[t.priority ?? 2] ||
+										"var(--text-faint)",
+							}}
+						/>
 					</span>
-				)}
-				<span
-					role="button"
-					className="sidebar-ws-time hidden group-hover/support:inline cursor-pointer hover:text-green font-semibold"
-					title="Mark done in Plain"
-					onClick={(e) => {
-						e.stopPropagation();
-						markSupportRowDone(t.id);
-					}}
-				>
-					✓
+					<span className="sidebar-item-title">{label}</span>
+				</span>
+				<span className="sidebar-item-meta">
+					<span className="truncate text-dim">{customer}</span>
+					{t.assignee && !t.assignee.isBot && (
+						<>
+							<span>·</span>
+							<span className="shrink-0">
+								@{t.assignee.name.split(/\s+/)[0]}
+							</span>
+						</>
+					)}
+					{t.statusChangedAt && (
+						<>
+							<span>·</span>
+							<span
+								className="shrink-0 group-hover/support:hidden"
+								title={new Date(t.statusChangedAt).toLocaleString()}
+							>
+								{shortTime(t.statusChangedAt)}
+							</span>
+						</>
+					)}
+					<span
+						role="button"
+						className="hidden shrink-0 group-hover/support:inline cursor-pointer hover:text-green font-semibold"
+						title="Mark done in Plain"
+						onClick={(e) => {
+							e.stopPropagation();
+							markSupportRowDone(t.id);
+						}}
+					>
+						✓
+					</span>
 				</span>
 			</button>
 		);
