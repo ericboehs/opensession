@@ -867,6 +867,23 @@ export function SessionViewer({
 		setToolEvidence(null);
 		if (panelTab === "evidence") setPanelTab("info");
 	}, [session.id]);
+	// The agent-published walkthrough, rendered inline in the chat as well as in
+	// the Review tab. Keyed on its contents so the object identity only changes
+	// when the walkthrough actually does — the sessions poll hands back a fresh
+	// session object every tick, and an unstable prop here would re-render the
+	// whole (expensive) transcript each time.
+	const walkthroughKey = session.walkthrough
+		? [
+				session.walkthrough.publishedAt,
+				session.walkthrough.video || "",
+				session.walkthrough.summary.length,
+				session.walkthrough.shots?.length || 0,
+			].join("|")
+		: "";
+	const chatWalkthrough = useMemo(
+		() => session.walkthrough,
+		[walkthroughKey], // eslint-disable-line react-hooks/exhaustive-deps
+	);
 	// Remembered per browser; on phones the panel overlays the chat, so default closed there
 	const [panelOpen, setPanelOpenState] = useState(() => {
 		const stored = localStorage.getItem("opensession-panel-open");
@@ -4334,6 +4351,7 @@ export function SessionViewer({
 											entries={entries}
 											live={isBusy}
 											sessionId={session.id}
+											walkthrough={chatWalkthrough}
 											onFork={canForkSession ? handleFork : undefined}
 											onOpenSubagent={openSubagent}
 											onOpenEvidence={openEvidence}

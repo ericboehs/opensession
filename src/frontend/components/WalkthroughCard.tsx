@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from "react";
 import type { SessionWalkthrough } from "../lib/types";
 import { renderMarkdown } from "../lib/markdown";
+import { relativeTime } from "../lib/api";
+import { cn } from "../ui/cn";
 
 /** Stream server-side media (staged under the uploads dir) through the
  *  existing scoped media route — same URL shape MessageBubble uses. */
@@ -9,29 +11,62 @@ const mediaUrl = (path: string) => `/media?path=${encodeURIComponent(path)}`;
 /**
  * The agent-published walkthrough (opensession-walkthrough): demo video +
  * before/after screenshot pairs + writeup. Rendered at the top of the PR info
- * column in the Review tab — the inline counterpart of the link-only section
+ * column in the Review tab (`panel`), and inline in the chat where the agent
+ * published it (`chat`) — the video plays right there instead of only living
+ * behind a tab. Both are the inline counterpart of the link-only section
  * mirrored into the GitHub PR description.
  */
-export function WalkthroughCard({ walkthrough }: { walkthrough: SessionWalkthrough }) {
+export function WalkthroughCard({
+	walkthrough,
+	variant = "panel",
+}: {
+	walkthrough: SessionWalkthrough;
+	variant?: "panel" | "chat";
+}) {
 	const summaryHtml = useMemo(
 		() => renderMarkdown(walkthrough.summary),
 		[walkthrough.summary],
 	);
 	const [lightbox, setLightbox] = useState<string | null>(null);
+	const chat = variant === "chat";
 
 	return (
-		<div className="mb-3 rounded-lg border border-line bg-panel p-3">
-			<div className="mb-2 text-xs font-semibold uppercase tracking-wide text-dim">
-				Walkthrough
+		<div
+			className={cn(
+				"rounded-lg border border-line bg-panel p-3",
+				chat ? "my-2" : "mb-3",
+			)}
+		>
+			<div className="mb-2 flex items-baseline gap-2">
+				<span className="text-xs font-semibold uppercase tracking-wide text-dim">
+					Walkthrough
+				</span>
+				{chat && walkthrough.publishedAt && (
+					<span className="text-[11px] text-faint">
+						{relativeTime(walkthrough.publishedAt)}
+					</span>
+				)}
 			</div>
 			{walkthrough.video && (
-				<video
-					className="mb-2 w-full rounded-md border border-line bg-black"
-					src={mediaUrl(walkthrough.video)}
-					controls
-					preload="metadata"
-					title={walkthrough.videoTitle || "Demo video"}
-				/>
+				<>
+					<video
+						className={cn(
+							"w-full rounded-md border border-line bg-black",
+							chat ? "max-h-[60vh] object-contain" : "",
+						)}
+						src={mediaUrl(walkthrough.video)}
+						controls
+						preload="metadata"
+						title={walkthrough.videoTitle || "Demo video"}
+					/>
+					{chat && walkthrough.videoTitle ? (
+						<div className="mb-2 mt-1 text-[11px] text-faint">
+							{walkthrough.videoTitle}
+						</div>
+					) : (
+						<div className="mb-2" />
+					)}
+				</>
 			)}
 			<div
 				className="markdown text-[13px]"
@@ -51,7 +86,14 @@ export function WalkthroughCard({ walkthrough }: { walkthrough: SessionWalkthrou
 											{side === "before" ? "Before" : "After"}
 										</figcaption>
 										<img
-											className="w-full cursor-zoom-in rounded-md border border-line"
+											className={cn(
+												"w-full cursor-zoom-in rounded-md border border-line",
+												// In the chat the card sits in the message flow, so
+												// cap the stills (full size lives one click away in
+												// the lightbox) instead of pushing the conversation
+												// down by a screenful per pair.
+												chat && "max-h-52 object-contain object-top",
+											)}
 											src={mediaUrl(shot[side]!)}
 											alt={`${shot.caption || "change"} — ${side}`}
 											loading="lazy"

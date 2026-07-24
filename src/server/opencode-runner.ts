@@ -1323,7 +1323,8 @@ export function buildOpencodeInstructions(input: {
         "writeup (what changed, root cause for fixes, how you verified it). Record media " +
         "first — for tella-fusion webapp changes use the tella-local skill (screenshots and " +
         "screen recordings) — and pass absolute file paths; they are copied to durable " +
-        "storage. It renders in the session's Review tab and is mirrored into the PR " +
+        "storage. It renders inline in the chat where you publish it (video and all) and " +
+        "in the session's Review tab, and is mirrored into the PR " +
         "description; if you publish before the PR exists, call it again after `gh pr create` " +
         "so it lands there too. Skip it for pure refactors, backend-only changes, or trivial " +
         "tweaks — a walkthrough should demonstrate something a human can see."

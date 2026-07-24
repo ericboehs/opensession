@@ -1,9 +1,10 @@
 import React from "react";
-import type { TranscriptEntry } from "../lib/types";
+import type { SessionWalkthrough, TranscriptEntry } from "../lib/types";
 import { MessageBubble } from "./MessageBubble";
 import { TurnBlock } from "./TurnBlock";
 import { TurnFooter, collectTouchedFiles, type TouchedFile } from "./TurnFooter";
 import { VirtualTranscriptBlock } from "./VirtualTranscriptBlock";
+import { WalkthroughCard } from "./WalkthroughCard";
 
 type RenderBlock =
 	| { kind: "entry"; entry: TranscriptEntry }
@@ -13,7 +14,49 @@ type RenderBlock =
 			entry: TranscriptEntry;
 			durationMs: number;
 			files: TouchedFile[];
-	  };
+	  }
+	| { kind: "walkthrough"; walkthrough: SessionWalkthrough };
+
+/** The publish_walkthrough tool call, whatever the engine named it
+ *  ("opensession-walkthrough_publish_walkthrough", "mcp__…__publish_walkthrough"). */
+function isWalkthroughPublish(e: TranscriptEntry): boolean {
+	return (
+		e.type === "tool_use" && /(^|_)publish_walkthrough$/.test(e.toolName || "")
+	);
+}
+
+/**
+ * Where the walkthrough card goes: right after the turn that published it (past
+ * that turn's final answer + footer, so it reads answer → walkthrough), or at
+ * the end when the publishing call isn't in the loaded window — the card should
+ * never be invisible just because history was trimmed.
+ */
+function walkthroughInsertIndex(blocks: RenderBlock[]): number {
+	let at = -1;
+	for (let i = blocks.length - 1; i >= 0; i--) {
+		const b = blocks[i];
+		const has =
+			b.kind === "turn"
+				? b.items.some(isWalkthroughPublish)
+				: b.kind === "entry"
+					? isWalkthroughPublish(b.entry)
+					: false;
+		if (has) {
+			at = i;
+			break;
+		}
+	}
+	if (at === -1) return blocks.length;
+	let i = at + 1;
+	while (
+		i < blocks.length &&
+		(blocks[i].kind === "footer" ||
+			(blocks[i].kind === "entry" &&
+				(blocks[i] as { entry: TranscriptEntry }).entry.type === "assistant"))
+	)
+		i++;
+	return i;
+}
 
 interface Props {
 	entries: TranscriptEntry[];
@@ -28,6 +71,9 @@ interface Props {
 	owner?: string;
 	/** Lets wire-clamped entries' "Show full message" fetch the full content. */
 	sessionId?: string;
+	/** Agent-published walkthrough — rendered inline where it was published.
+	 *  Pass a referentially stable object (see SessionViewer) so the memo holds. */
+	walkthrough?: SessionWalkthrough;
 }
 
 /**
@@ -52,6 +98,7 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 	onOpenEvidence,
 	owner,
 	sessionId,
+	walkthrough,
 }: Props) {
 	// Build tool_use → tool_result map
 	const toolResults = new Map<string, TranscriptEntry>();
@@ -107,15 +154,23 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 	}
 	flushTurn(true);
 
+	if (walkthrough)
+		blocks.splice(walkthroughInsertIndex(blocks), 0, {
+			kind: "walkthrough",
+			walkthrough,
+		});
+
 	return (
 		<>
 			{blocks.map((block, i) => {
 				const key =
 					block.kind === "turn"
 						? block.items[0].id
-						: block.kind === "footer"
-							? `${block.entry.id}:footer`
-							: block.entry.id;
+						: block.kind === "walkthrough"
+							? "walkthrough"
+							: block.kind === "footer"
+								? `${block.entry.id}:footer`
+								: block.entry.id;
 				const anchorId =
 					block.kind === "turn"
 						? `${block.items[block.items.length - 1].id}#turn`
@@ -138,6 +193,8 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 						onOpenEvidence={onOpenEvidence}
 						sessionId={sessionId}
 					/>
+				) : block.kind === "walkthrough" ? (
+					<WalkthroughCard walkthrough={block.walkthrough} variant="chat" />
 				) : block.kind === "footer" ? (
 					<TurnFooter
 						entry={block.entry}

@@ -1,7 +1,8 @@
 /**
  * opensession-walkthrough — publish a Cursor-style PR walkthrough for this
  * session: a short demo video + before/after screenshots + a writeup. Stored
- * on the session (rendered inline in the Review tab) and mirrored into the
+ * on the session (rendered inline in the chat where it was published, and in
+ * the Review tab) and mirrored into the
  * GitHub PR description as a managed section (media as tailnet links there —
  * see src/server/walkthrough.ts for why they can't inline on GitHub).
  *
@@ -27,7 +28,7 @@ export function createWalkthroughMcpServer(ctx: WalkthroughToolContext) {
   const tools = [
     tool(
       "publish_walkthrough",
-      "Publish a walkthrough of this session's change: a demo video, before/after screenshots, and a short writeup. It renders inline in the session's Review tab and is mirrored into the GitHub PR description (managed section — republishing replaces it, so publish again after the PR exists or when the change evolves). Record the video / screenshots first (e.g. the tella-local skill), pass absolute file paths; files are copied to durable storage, so temp paths are fine. Summary: 2-6 sentences of markdown — what changed and how it was verified (root cause for fixes).",
+      "Publish a walkthrough of this session's change: a demo video, before/after screenshots, and a short writeup. It renders inline in the chat (the video plays right where you published it) and in the session's Review tab, and is mirrored into the GitHub PR description (managed section — republishing replaces it, so publish again after the PR exists or when the change evolves). Record the video / screenshots first (e.g. the tella-local skill), pass absolute file paths; files are copied to durable storage, so temp paths are fine. Summary: 2-6 sentences of markdown — what changed and how it was verified (root cause for fixes).",
       {
         summary: z
           .string()
@@ -73,7 +74,7 @@ export function createWalkthroughMcpServer(ctx: WalkthroughToolContext) {
             ctx.by,
           );
           const parts = [
-            `Walkthrough published — it now shows in this session's Review tab (${walkthrough.video ? "video, " : ""}${walkthrough.shots?.length ? `${walkthrough.shots.length} before/after pair(s), ` : ""}writeup).`,
+            `Walkthrough published — it now shows inline in the chat and in this session's Review tab (${walkthrough.video ? "video, " : ""}${walkthrough.shots?.length ? `${walkthrough.shots.length} before/after pair(s), ` : ""}writeup).`,
           ];
           if (pr.mirrored) parts.push(`Mirrored into the PR description: ${pr.url}`);
           else
