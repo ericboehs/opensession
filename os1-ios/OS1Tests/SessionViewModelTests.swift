@@ -19,10 +19,12 @@ final class SessionViewModelTests: XCTestCase {
 
     func testTranscriptInitPopulatesEntries() {
         let viewModel = makeViewModel()
+        XCTAssertTrue(viewModel.isLoadingConversation)
         viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [
             entry("e1", "user", text: "hi"),
             entry("e2", "assistant", text: "hello"),
         ], cursor: .empty))
+        XCTAssertFalse(viewModel.isLoadingConversation)
         XCTAssertEqual(viewModel.entries.map(\.id), ["e1", "e2"])
         XCTAssertEqual(viewModel.displayItems.map(\.id), ["e1", "e2"])
     }
@@ -32,6 +34,7 @@ final class SessionViewModelTests: XCTestCase {
         viewModel.handle(.transcriptInit(sessionId: "bks-other", entries: [entry("x", "user")], cursor: .empty))
         viewModel.handle(.streamStart(sessionId: "bks-other"))
         viewModel.handle(.streamText(sessionId: "bks-other", text: "nope"))
+        XCTAssertTrue(viewModel.isLoadingConversation)
         XCTAssertTrue(viewModel.entries.isEmpty)
         XCTAssertFalse(viewModel.isStreaming)
     }

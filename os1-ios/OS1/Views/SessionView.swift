@@ -19,68 +19,54 @@ struct SessionView: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    if viewModel.canLoadEarlier || viewModel.loadingEarlier {
-                        historyLoader
-                    }
-                    ForEach(viewModel.displayItems) { item in
-                        TranscriptRow(item: item)
-                            .id(item.id)
-                    }
-                    if !viewModel.liveText.isEmpty {
-                        StreamingBubble(text: viewModel.liveText)
-                            .id("live-stream")
-                    }
-                    // One persistent activity row for the whole run instead of
-                    // a spinner-in-a-bubble that popped in and out between
-                    // every landed block and tool call — that churn read as
-                    // flicker.
-                    if viewModel.isRunning || viewModel.isStreaming,
-                        viewModel.pendingQuestion == nil {
-                        RunActivityIndicator()
-                            .id("run-indicator")
-                    }
-                    if let ask = viewModel.pendingQuestion {
-                        AskQuestionCard(ask: ask) { answers in
-                            viewModel.answer(question: ask, answers: answers)
-                        }
-                        .id("ask-\(ask.id)")
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .frame(maxWidth: contentMaxWidth)
-                .frame(maxWidth: .infinity)
-            }
-            // Initial render lands at the bottom, and `.sizeChanges` KEEPS it
-            // pinned there through everything that used to leave the list
-            // stranded mid-scroll: the staged transcript prepending ~100
-            // entries above the first-paint head (which never changed
-            // `last?.id`, so no manual scroll fired), lazy rows settling
-            // their real heights, and streaming growth. The pin releases
-            // when the person scrolls up to read — no yanking them back.
-            .defaultScrollAnchor(.bottom)
-            .defaultScrollAnchor(.bottom, for: .sizeChanges)
-            .scrollDismissesKeyboardCompat()
-            .onChange(of: viewModel.pendingQuestion) {
-                // A question needs eyes even if they've scrolled away.
-                scrollToBottom(proxy, animated: true)
-            }
-            .onChange(of: viewModel.historyPrependSeq) {
-                if viewModel.lastPrependWasRequested {
-                    // Keep the reader where they were: the entry that was at
-                    // the top of the viewport stays there.
-                    if let anchor = prependAnchorId {
-                        proxy.scrollTo(anchor, anchor: .top)
-                    }
+            Group {
+                if viewModel.isLoadingConversation {
+                    conversationLoader
                 } else {
-                    // The staged rest-of-tail prepend right after first paint:
-                    // a large conversation must still open at the bottom (the
-                    // size-change pin alone proved unreliable for big batches).
-                    scrollToBottom(proxy, animated: false)
+                    ScrollView {
+                        LazyVStack(spacing: 10) {
+                            if viewModel.canLoadEarlier || viewModel.loadingEarlier {
+                                historyLoader
+                            }
+                            ForEach(viewModel.displayItems) { item in
+                                TranscriptRow(item: item)
+                                    .id(item.id)
+                            }
+                            if !viewModel.liveText.isEmpty {
+                                StreamingBubble(text: viewModel.liveText)
+                                    .id("live-stream")
+                            }
+                            if let ask = viewModel.pendingQuestion {
+                                AskQuestionCard(ask: ask) { answers in
+                                    viewModel.answer(question: ask, answers: answers)
+                                }
+                                .id("ask-\(ask.id)")
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: contentMaxWidth)
+                        .frame(maxWidth: .infinity)
+                    }
+                    // Initial render lands at the bottom and stays pinned while
+                    // lazy rows settle. The pin releases when the person scrolls
+                    // up to read, so new output does not yank them back.
+                    .defaultScrollAnchor(.bottom)
+                    .defaultScrollAnchor(.bottom, for: .sizeChanges)
+                    .scrollDismissesKeyboardCompat()
+                    .onChange(of: viewModel.pendingQuestion) {
+                        // A question needs eyes even if they've scrolled away.
+                        scrollToBottom(proxy, animated: true)
+                    }
+                    .onChange(of: viewModel.historyPrependSeq) {
+                        // Keep the reader where they were: the entry that was at
+                        // the top of the viewport stays there.
+                        if let anchor = prependAnchorId {
+                            proxy.scrollTo(anchor, anchor: .top)
+                        }
+                        prependAnchorId = nil
+                    }
                 }
-                prependAnchorId = nil
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -113,6 +99,17 @@ struct SessionView: View {
             // resync (and reconnect if dead) the moment we're visible again.
             if phase == .active { viewModel.appDidBecomeActive() }
         }
+    }
+
+    private var conversationLoader: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Loading conversation…")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// Sits above the oldest rendered entry; scrolling it into view pages in
@@ -324,8 +321,6 @@ struct SessionView: View {
             target = "ask-\(viewModel.pendingQuestion!.id)"
         } else if !viewModel.liveText.isEmpty {
             target = "live-stream"
-        } else if viewModel.isRunning || viewModel.isStreaming {
-            target = "run-indicator"
         } else if let last = viewModel.displayItems.last {
             target = last.id
         } else {

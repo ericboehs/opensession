@@ -202,8 +202,7 @@ struct ToolCallRow: View {
 // MARK: - Streaming bubble
 
 /// Assistant text streaming in over `stream_text` frames, before the durable
-/// transcript entry exists. Only rendered with text — run activity without
-/// text shows as `RunActivityIndicator` instead.
+/// transcript entry exists. Only rendered once text is available.
 struct StreamingBubble: View {
     let text: String
 
@@ -219,21 +218,6 @@ struct StreamingBubble: View {
             Spacer(minLength: 48)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-/// Small constant-height activity row shown for the whole run — the stable
-/// "still working" anchor at the bottom of the transcript. A pulsing dot,
-/// mirroring the web viewer's busy row; the elapsed clock lives in the
-/// composer's status caption.
-struct RunActivityIndicator: View {
-    var body: some View {
-        HStack {
-            PulsingDot(color: .green)
-            Spacer()
-        }
-        .padding(.leading, 12)
-        .padding(.vertical, 4)
     }
 }
 

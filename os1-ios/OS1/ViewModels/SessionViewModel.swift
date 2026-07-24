@@ -36,6 +36,7 @@ final class SessionViewModel {
     private(set) var steeredItems: [QueueItem] = []
     private(set) var pendingQuestion: AskQuestion?
     private(set) var connectionState: ConnectionState = .connecting
+    private(set) var isLoadingConversation = true
     private(set) var notice: String?
     var draft = ""
 
@@ -43,10 +44,9 @@ final class SessionViewModel {
     /// Older history exists server-side (transcript_init/history `truncated`).
     private(set) var canLoadEarlier = false
     private(set) var loadingEarlier = false
-    /// Bumped on every history prepend; the view reacts (restores scroll
-    /// position for requested pages, re-pins bottom for the staged init tail).
+    /// Bumped on every history prepend so the view can restore the reader's
+    /// scroll position after a requested page arrives.
     private(set) var historyPrependSeq = 0
-    private(set) var lastPrependWasRequested = false
     private var historyStartOffset: Int?
     private var historyRev: String?
     private var historyFirstSeq: Int?
@@ -298,6 +298,7 @@ final class SessionViewModel {
 
         case .transcriptInit(let id, let newEntries, let cursor) where id == session.id:
             entries = newEntries
+            isLoadingConversation = false
             liveEntries.removeAll()
             localEchoIds.removeAll()
             applyHistoryCursor(cursor)
@@ -323,7 +324,6 @@ final class SessionViewModel {
             let known = Set(entries.map(\.id))
             entries.insert(contentsOf: older.filter { !known.contains($0.id) }, at: 0)
             applyHistoryCursor(cursor)
-            lastPrependWasRequested = loadingEarlier
             loadingEarlier = false
             historyPrependSeq += 1
             rebuildDisplayItems()
