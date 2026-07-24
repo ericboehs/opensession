@@ -160,7 +160,9 @@ downloads pinned OpenCode 1.18.4 into the gitignored `build/vendor/` directory.
 Release builds copy that binary to `Contents/Resources/opencode` and sign it
 with `build/entitlements.opencode.plist`; the workflow verifies the version,
 Developer ID signature, hardened-runtime JIT entitlement, and enclosing app
-signature before notarization.
+signature before notarization. The package keeps only Electron's English locale
+resources because OS¹ is currently English-only; Chromium's unused locale set
+otherwise adds roughly 49 MB to the installed app.
 
 ## Auto-update
 

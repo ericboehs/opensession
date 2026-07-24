@@ -28,6 +28,9 @@ afterPack: scripts/sign-opencode.js
 mac:
   category: public.app-category.developer-tools
   icon: build/icon.icns
+  # OS¹ is currently English-only. Electron otherwise ships every Chromium
+  # localization, which adds roughly 49 MB to the installed app.
+  electronLanguages: [en]
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist

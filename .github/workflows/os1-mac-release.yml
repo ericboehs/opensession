@@ -106,6 +106,19 @@ jobs:
           # enable Local Sessions, and confirm opencode runs without a hardened-
           # runtime/JIT kill. Static codesign checks cannot exercise that path.
 
+      - name: Verify packaged locales and report size
+        run: |
+          APP='dist/mac-arm64/OS¹.app'
+          NON_ENGLISH_LOCALES=$(find "$APP/Contents" -type d -name '*.lproj' ! -name 'en.lproj' -print)
+          if [[ -n "$NON_ENGLISH_LOCALES" ]]; then
+            echo '::error::Non-English Electron locales were packaged:'
+            printf '%s\n' "$NON_ENGLISH_LOCALES"
+            exit 1
+          fi
+          du -sh "$APP"
+          du -sh "$APP/Contents/Frameworks/Electron Framework.framework"
+          du -sh "$APP/Contents/Resources/opencode"
+
       - name: Notarize & staple DMG
         run: |
           xcrun notarytool submit dist/*.dmg --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
