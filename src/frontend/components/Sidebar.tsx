@@ -3073,8 +3073,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 	// A Support row: one TODO Plain ticket. The dot wears the linked session's
 	// status (faint when no session exists yet); click opens the session, or the
-	// session-less ticket preview when there isn't one. Hovering swaps the
-	// timestamp for a one-click "mark done".
+	// session-less ticket preview when there isn't one. Hovering reveals the
+	// one-click "mark done" button at the row's right edge.
 	function supportThreadActive(t: SupportThread) {
 		// The ticket's workspace is open (chat-less route or one of its chats)…
 		if (selectedWorkspaceId) {
@@ -3088,8 +3088,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 	// A Support row, in the Pull-requests band's two-line shape: title on top
 	// (behind a priority-colored dot — a linked session's live status wins),
-	// customer · assignee · time below; hovering swaps the time for a one-click
-	// "mark done".
+	// customer · assignee · time below; hovering floats a "mark done" button
+	// over the row's right edge, in the workspace rows' action-cluster shape.
 	function renderSupportRow(t: SupportThread) {
 		const session = supportSessionByThread.get(t.id) || null;
 		const active = supportThreadActive(t);
@@ -3098,7 +3098,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return (
 			<button
 				key={`support:${t.id}`}
-				className={`sidebar-item sidebar-item--twoline group/support${
+				className={`sidebar-item sidebar-item--twoline${
 					active ? " sidebar-item-selected" : ""
 				}`}
 				onClick={() => onOpenTicket(t)}
@@ -3134,24 +3134,39 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						<>
 							<span>·</span>
 							<span
-								className="shrink-0 group-hover/support:hidden"
+								className="shrink-0"
 								title={new Date(t.statusChangedAt).toLocaleString()}
 							>
 								{shortTime(t.statusChangedAt)}
 							</span>
 						</>
 					)}
-					<span
-						role="button"
-						className="hidden shrink-0 group-hover/support:inline cursor-pointer hover:text-green font-semibold"
-						title="Mark done in Plain"
-						onClick={(e) => {
-							e.stopPropagation();
-							markSupportRowDone(t.id);
-						}}
-					>
-						✓
-					</span>
+				</span>
+				{/* Hover action: the same pinned, feathered cluster the workspace
+				    rows use for pin/archive, so finishing a ticket reads as the
+				    same gesture as archiving a workspace instead of a stray glyph
+				    in the meta line. The row's own meta keeps its slot beneath. */}
+				<span className="sidebar-ws-actions">
+					<Tooltip label="Mark done in Plain">
+						<span
+							role="button"
+							tabIndex={0}
+							className="sidebar-ws-action sidebar-ws-action--done"
+							aria-label="Mark done in Plain"
+							onClick={(e) => {
+								e.stopPropagation();
+								markSupportRowDone(t.id);
+							}}
+							onKeyDown={(e) => {
+								if (e.key === "Enter" || e.key === " ") {
+									e.stopPropagation();
+									markSupportRowDone(t.id);
+								}
+							}}
+						>
+							<IconCheck size={21} />
+						</span>
+					</Tooltip>
 				</span>
 			</button>
 		);

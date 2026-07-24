@@ -1939,6 +1939,12 @@ body:is(.resizing-sidebar, .resizing-panel) {
 .sidebar-item:hover .sidebar-item-meta {
 	padding-right: 58px;
 }
+/* Support rows carry the workspace-style cluster instead — a single button, so
+   they only need to clear ~39px. Hands the difference back to the customer name,
+   which is the first thing to truncate on these rows. */
+.sidebar-item:has(> .sidebar-ws-actions):hover .sidebar-item-meta {
+	padding-right: 46px;
+}
 .sidebar-item-x:hover,
 .sidebar-item-pin:hover,
 .sidebar-item-pin.is-on {
