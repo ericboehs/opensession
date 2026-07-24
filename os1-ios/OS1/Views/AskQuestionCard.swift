@@ -26,24 +26,35 @@ struct AskQuestionCard: View {
                     Button {
                         onAnswer([question.question: option.label])
                     } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(option.label)
-                                .font(.subheadline)
-                            if let description = option.description, !description.isEmpty {
-                                Text(description)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(option.label)
+                                    .font(.subheadline.weight(.medium))
+                                if let description = option.description, !description.isEmpty {
+                                    Text(description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.tertiary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
-                        .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .background(
+                            .background.opacity(0.5),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }
 
                 HStack(spacing: 8) {
-                    TextField("Answer…", text: $freeText, axis: .vertical)
+                    TextField("Or answer in your own words…", text: $freeText, axis: .vertical)
                         .lineLimit(1...3)
                         .textFieldStyle(.roundedBorder)
                     Button("Send") {
@@ -51,16 +62,14 @@ struct AskQuestionCard: View {
                         guard !text.isEmpty else { return }
                         onAnswer([question.question: text])
                     }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
                     .disabled(freeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(.orange.opacity(0.5), lineWidth: 1)
-        )
+        .glassSurface(tint: .orange, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }

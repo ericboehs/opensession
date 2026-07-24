@@ -43,10 +43,16 @@ struct TranscriptRow: View {
                 }
                 if !entry.text.isEmpty {
                     Text(entry.text)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
                         .foregroundStyle(.white)
-                        .background(.tint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .background(
+                            LinearGradient(
+                                colors: [Color.accentColor, Color.accentColor.opacity(0.82)],
+                                startPoint: .top, endPoint: .bottom
+                            ),
+                            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        )
                         .textSelection(.enabled)
                 }
             }
@@ -54,18 +60,13 @@ struct TranscriptRow: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
+    /// Assistant text renders plain (no bubble), the shape modern AI chat
+    /// apps converge on — only the person's own messages get bubbles.
     private func assistantBubble(_ entry: TranscriptEntry) -> some View {
-        HStack {
-            MarkdownBody(entry.text)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    .fill.secondary,
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                )
-            Spacer(minLength: 48)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        MarkdownBody(entry.text)
+            .padding(.vertical, 2)
+            .padding(.trailing, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func systemRow(_ entry: TranscriptEntry) -> some View {
@@ -223,17 +224,10 @@ struct StreamingBubble: View {
     let text: String
 
     var body: some View {
-        HStack {
-            MarkdownBody(text)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    .fill.secondary,
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                )
-            Spacer(minLength: 48)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        MarkdownBody(text)
+            .padding(.vertical, 2)
+            .padding(.trailing, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

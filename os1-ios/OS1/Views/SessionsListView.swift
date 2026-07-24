@@ -195,15 +195,19 @@ struct SessionsListView: View {
         }
     }
 
+    /// Floating glass capsule, matching the session view's banner styling,
+    /// instead of a full-width opaque bar.
     @ViewBuilder
     private var errorBanner: some View {
         if let error = viewModel.error {
             Text(error)
                 .font(.footnote)
-                .foregroundStyle(.white)
-                .padding(8)
-                .frame(maxWidth: .infinity)
-                .background(.red.opacity(0.85))
+                .foregroundStyle(.red)
+                .lineLimit(2)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .glassSurface(in: Capsule())
+                .padding(.bottom, 8)
         }
     }
 
@@ -516,8 +520,8 @@ struct SessionRow: View {
     let session: Session
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 7) {
                 statusDot
                 Text(session.displayTitle)
                     .font(.body.weight(.medium))
@@ -532,11 +536,10 @@ struct SessionRow: View {
                         .lineLimit(1)
                 }
                 if session.prState == "OPEN" {
-                    Text("PR open")
-                        .foregroundStyle(.green)
+                    metaChip("PR open", tint: .green)
                 }
                 if session.queuedCount ?? 0 > 0 {
-                    Text("+\(session.queuedCount!) queued")
+                    metaChip("+\(session.queuedCount!) queued", tint: .secondary)
                 }
                 Spacer()
                 if let date = session.lastActivityDate {
@@ -546,13 +549,23 @@ struct SessionRow: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
     }
 
     private var statusDot: some View {
         // A running session's dot pulses (like the web sidebar) so in-flight
         // work is visible at a glance.
         PulsingDot(color: session.lane.color, active: session.lane == .inProgress)
+    }
+
+    /// Tiny tinted capsule for row badges (PR state, queued count).
+    private func metaChip(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(tint.opacity(0.12), in: Capsule())
     }
 }
 

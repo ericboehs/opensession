@@ -62,6 +62,7 @@ struct SessionView: View {
                     // Initial render lands at the bottom and stays pinned while
                     // lazy rows settle. The pin releases when the person scrolls
                     // up to read, so new output does not yank them back.
+                    .softScrollEdges()
                     .defaultScrollAnchor(.bottom)
                     .defaultScrollAnchor(.bottom, for: .sizeChanges)
                     .scrollDismissesKeyboardCompat()
@@ -171,13 +172,16 @@ struct SessionView: View {
         }
     }
 
+    /// Floating glass capsule under the nav bar, instead of a full-width bar.
     private func bannerText(_ text: String, color: Color) -> some View {
         Text(text)
             .font(.caption)
             .foregroundStyle(color)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .glassSurface(in: Capsule())
+            .padding(.top, 6)
             .frame(maxWidth: .infinity)
-            .background(.bar)
     }
 
     private var inputBar: some View {
@@ -204,6 +208,7 @@ struct SessionView: View {
             if viewModel.isRunning
                 || (viewModel.queuedCount > 0 && viewModel.queuedItems.isEmpty)
                 || viewModel.notice != nil {
+                // Compact glass chip floating above the composer.
                 HStack(spacing: 6) {
                     if viewModel.isRunning {
                         // Pulsing dot + live elapsed clock, like the web
@@ -225,7 +230,9 @@ struct SessionView: View {
                     }
                 }
                 .font(.caption2)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .glassSurface(in: Capsule())
             }
 
             if !viewModel.attachedImages.isEmpty {
@@ -241,7 +248,9 @@ struct SessionView: View {
         .padding(.horizontal, 16)
         .padding(.top, 6)
         .padding(.bottom, 10)
-        .background(.bar)
+        // No bar background: the composer and chips are individual glass
+        // elements floating over the transcript, which scrolls beneath them
+        // through the soft scroll-edge fade.
     }
 
     /// Model / reasoning-effort / fast-mode controls, mirroring the web
@@ -354,14 +363,7 @@ struct SessionView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
-        .background(
-            .fill.tertiary,
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(.separator, lineWidth: 1)
-        )
+        .glassSurface(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     #if os(macOS)
@@ -437,10 +439,7 @@ struct SessionView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(
-                .fill.tertiary,
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-            )
+            .glassSurface(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }
 

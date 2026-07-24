@@ -2,8 +2,8 @@ name: OS1
 options:
   bundleIdPrefix: dev.tella
   deploymentTarget:
-    iOS: "18.0"
-    macOS: "15.0"
+    iOS: "26.0"
+    macOS: "26.0"
   createIntermediateGroups: true
 targets:
   OS1:
