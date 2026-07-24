@@ -209,10 +209,15 @@ const SUPPORT_PRIORITY_DOT: Record<number, string> = Object.fromEntries(
 
 /** The priority glyph on a Support group header (flame/arrows/dash). */
 function SupportPriorityIcon({ p, cls }: { p: number; cls: string }) {
-	if (p === 0) return <IconFlame size={17} className={`shrink-0 ${cls}`} />;
-	if (p === 1) return <IconArrowUp size={17} className={`shrink-0 ${cls}`} />;
-	if (p === 3) return <IconArrowDown size={17} className={`shrink-0 ${cls}`} />;
-	return <IconMinus size={17} className={`shrink-0 ${cls}`} />;
+	const Glyph =
+		p === 0 ? IconFlame : p === 1 ? IconArrowUp : p === 3 ? IconArrowDown : IconMinus;
+	// The rail keeps these narrower glyphs on the same column — and the same
+	// text rail — as the 22px icons the other group headers wear.
+	return (
+		<span className="sidebar-rail">
+			<Glyph size={20} className={cls} />
+		</span>
+	);
 }
 
 interface SupportFilterState {
@@ -2432,10 +2437,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				{/* Flat repo grouping has no lane heading, so its leading mark must carry
 				    the workspace status. Grouped lanes already provide that context and
 				    keep the richer PR lifecycle mark here instead. */}
-				<span
-					className="relative flex shrink-0 items-center justify-center"
-					style={{ width: 22, height: 22 }}
-				>
+				<span className="sidebar-rail">
 					{!flatRepoGrouping && !isPhone && waiting && (
 						<span
 							className="absolute left-[-9px] top-[7px] block size-[7px] rounded-full bg-green"
@@ -2481,11 +2483,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					/>
 				) : (
 					<span
-						className={cn(
-							"min-w-0 truncate text-[14px] leading-[1.35] font-medium",
-							active || row.unread ? "text-fg" : "text-dim",
-							waiting || row.unread ? "font-semibold" : null,
-						)}
+						// Same class as a session row's title, so workspace rows pick up
+						// the shared type scale (incl. the phone bump) and the
+						// selected/waiting/unread emphasis from the row's own classes.
+						className="sidebar-item-title"
 						onDoubleClick={(e) => {
 							e.stopPropagation();
 							if (row.workspace) {
@@ -2669,7 +2670,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				}`}
 			>
 				<span className="sidebar-item-top">
-					<span className="flex size-[17px] shrink-0 items-center justify-center">
+					<span className="sidebar-rail">
 						<span
 							className="size-[7px] rounded-full"
 							style={{
@@ -2762,7 +2763,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			return (
 				<div className="sidebar-status-group" key={gkey}>
 					<button
-						className="sidebar-group-header flex w-full items-center gap-[9px] rounded-md px-[10px] py-1 text-[14px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg"
+						// Layout, padding and type all come from .sidebar-group-header —
+						// utilities here would out-specify its phone overrides and leave
+						// these two headers indented (and smaller) than the rest.
+						className="sidebar-group-header transition-colors"
 						onClick={() => toggleGroup(gkey)}
 					>
 						<SidebarGroupIcon status={meta.key} color={meta.dotColor} />
@@ -2828,10 +2832,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				return (
 					<div className="sidebar-repo-group" key={gkey}>
 						<button
-							className="sidebar-group-header sidebar-repo-head group flex w-full items-center gap-[9px] rounded-md px-[10px] py-1 text-[14px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg"
+							className="sidebar-group-header sidebar-repo-head group transition-colors"
 							onClick={() => toggleGroup(gkey)}
 						>
-							<RepoTile name={repo} />
+							{/* The tile is 18px; the rail holds it on the same column
+							    (and text rail) as every other header's mark. */}
+							<span className="sidebar-rail">
+								<RepoTile name={repo} />
+							</span>
 							<span className="sidebar-group-name">{repoLabel(repo)}</span>
 							{/* Count rides directly behind the repo name, not pinned right. */}
 							<span className="sidebar-group-count">
@@ -3463,8 +3471,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									onClick={() => onOpenNote(n.id)}
 									title={n.title}
 								>
-									<span style={{ marginRight: 6, opacity: 0.9 }}>📝</span>
-									<span className="sidebar-item-title">{n.title}</span>
+									<span className="sidebar-item-top">
+										<span className="sidebar-rail" style={{ opacity: 0.9 }}>
+											📝
+										</span>
+										<span className="sidebar-item-title">{n.title}</span>
+									</span>
 								</button>
 							),
 						});
@@ -3906,12 +3918,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 											className="sidebar-group-header"
 											onClick={() => toggleGroup(group.key)}
 										>
-											{group.dotColor && (
-												<span
-													className="sidebar-group-dot"
-													style={{ backgroundColor: group.dotColor }}
-												/>
-											)}
+											{/* The dot is 7px but the header's leading column is a
+											    rail, so its name lands where every other one does. */}
+											<span className="sidebar-rail">
+												{group.dotColor && (
+													<span
+														className="sidebar-group-dot"
+														style={{ backgroundColor: group.dotColor }}
+													/>
+												)}
+											</span>
 											<span className="sidebar-group-name">{group.label}</span>
 											<IconChevronDown
 												className="sidebar-group-chevron"
@@ -4700,10 +4716,7 @@ function SidebarItem({
 			<div className="sidebar-item-top">
 				{/* Match workspace rows: attention sits before the fixed PR glyph, and
 				    merged PRs keep the glyph itself purple instead of adding metadata. */}
-				<span
-					className="relative flex shrink-0 items-center justify-center"
-					style={{ width: 22, height: 22 }}
-				>
+				<span className="sidebar-rail">
 					{waiting && (
 						<span
 							className="sidebar-workspace-attention"

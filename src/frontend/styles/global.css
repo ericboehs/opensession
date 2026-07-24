@@ -1552,7 +1552,11 @@ body:is(.resizing-sidebar, .resizing-panel) {
 @media (max-width: 720px) {
 	.sidebar-status-group .sidebar-item,
 	.sidebar-group--pinned .sidebar-item,
-	.sidebar-group--review .sidebar-item {
+	.sidebar-group--review .sidebar-item,
+	/* Support and automation bands render their rows loose (ungrouped) when
+	   collapsed to a flat list — without this they'd keep the desktop inset and
+	   sit 4px right of every other row on a phone. */
+	.sidebar-independent-scroll > .sidebar-item {
 		padding-left: 6px;
 	}
 }
@@ -1704,6 +1708,24 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	height: 22px;
 	flex-shrink: 0;
 	opacity: 0.9;
+}
+
+/* The sidebar's leading column. Every row and group header opens with one of
+   these, whatever it holds — a 22px glyph, a 20px one, a 7px status dot, a
+   repo tile — so the marks share a centre line AND the text after them shares
+   a left rail. Before this the slot was whatever its content measured (7 /
+   17 / 20 / 22), which fanned the titles out across seven different left
+   edges in the same list. Wrap shared marks at the call site rather than
+   resizing them: .sidebar-group-dot and RepoTile are also dropdown option
+   icons, where a 22px box would be wrong. */
+.sidebar-rail {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 22px;
+	width: 22px;
+	height: 22px;
 }
 
 .sidebar-group-name {
@@ -2054,19 +2076,14 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	/* Flatten the nesting indent under each status lane — that extra left inset is
 	   a desktop-only affordance; on mobile the rows sit flush under the status, and
 	   their leading column lines up 1:1 with the group header's. The header icon is
-	   a 22px box at 6px padding (center 17px); match it exactly — same 6px padding,
-	   and a 9px gap so the title lands where the header name does. WsStatusMark is
-	   bumped to a 22px slot on phones (in renderWsRow) so the icon/dot centers land
-	   on 17px too, rather than 4px to the right of the status/repo icons above. The
-	   Pinned group carries the same rows (workspace rows + loose chats), so it gets
-	   the identical flattening — its rows align under the Pinned header the same way. */
+	   a .sidebar-rail box at 6px padding (center 17px); match it exactly with the
+	   same 6px padding, and the shared 9px gap carries the title onto the header
+	   name's rail. The Pinned group carries the same rows (workspace rows + loose
+	   chats), so it gets the identical flattening — its rows align under the Pinned
+	   header the same way. */
 	.sidebar-status-group .sidebar-item,
 	.sidebar-group--pinned .sidebar-item {
 		padding-left: 6px;
-	}
-	.sidebar-status-group .sidebar-ws-row,
-	.sidebar-group--pinned .sidebar-ws-row {
-		gap: 9px;
 	}
 	/* Under "Group by: Repo", drop the lane inset entirely on mobile so the
 	   repo head, its status lanes, and the workspace rows all share one left
@@ -2200,7 +2217,9 @@ body:is(.resizing-sidebar, .resizing-panel) {
 .sidebar-item-top {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	/* Same gap as .sidebar-group-header and .sidebar-ws-row: with the shared
+	   .sidebar-rail slot in front, that's what puts every title on one rail. */
+	gap: 9px;
 	min-width: 0;
 }
 
@@ -14983,12 +15002,13 @@ html.wco .settings-sidenav {
 
 /* Workspace rows reuse the session-row look (.sidebar-item base: roomy padding,
    hover background, selected/waiting/unread states), laid out as a single flex
-   line. The .sidebar-item 22px left padding nests them under their group header
-   (whose dot + name start ~22px in). */
+   line — leading .sidebar-rail, then the title, so they sit on the same left
+   rail as session rows and their group header. */
 .sidebar-ws-row {
 	display: flex;
 	align-items: center;
-	gap: 7px;
+	/* Matches .sidebar-item-top / .sidebar-group-header — see .sidebar-rail. */
+	gap: 9px;
 }
 
 /* Workspace row hover actions: pin + archive side by side. Absolutely

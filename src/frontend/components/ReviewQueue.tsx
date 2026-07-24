@@ -109,13 +109,17 @@ function rowStatus(item: ReviewQueueItem): string | null {
 }
 
 function RowIcon({ bucket }: { bucket: ReviewBucket }) {
-	if (bucket === "ready")
-		return <IconGitMerge className="shrink-0 text-green" size={17} />;
+	// Both marks ride the shared sidebar rail, so a merge glyph and a status dot
+	// leave their titles on the same left edge.
 	return (
-		<span className="flex size-[17px] shrink-0 items-center justify-center">
-			<span
-				className={`size-[7px] rounded-full ${bucket === "attention" ? "bg-yellow" : "bg-faint"}`}
-			/>
+		<span className="sidebar-rail">
+			{bucket === "ready" ? (
+				<IconGitMerge className="text-green" size={20} />
+			) : (
+				<span
+					className={`size-[7px] rounded-full ${bucket === "attention" ? "bg-yellow" : "bg-faint"}`}
+				/>
+			)}
 		</span>
 	);
 }
