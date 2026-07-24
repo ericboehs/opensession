@@ -13,10 +13,11 @@ import { makeAskHandler, pendingAsks } from "./asks";
 import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
-import { interactiveFallbackModel, modelLabel, modelPreset, providerFor, resolveModel } from "./models";
+import { SESSION_EFFORTS, type SessionEffort, interactiveFallbackModel, modelLabel, modelPreset, providerFor, resolveModel } from "./models";
 import { promptQueues, recordSteer, requeueSteerReceipts } from "./queue-state";
 import { attachSessionWatchersToEngineTranscript, attachSessionWatchersToTranscript, enqueuePrompt, foldSessionUsage, maybeLaunchSandboxedRun, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
+import { parseImageDataUrls } from "./uploads";
 import { type Sandbox } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox } from "./sandbox/config";
 import { findSession, getCachedSessions, invalidateSessionsCache, recordRunOutcome, touchBackstageSession, updateSessionFile } from "./session-cache";
@@ -205,6 +206,9 @@ registerSessionControl({
 		repo: repoInput,
 		mode,
 		model: modelInput,
+		effort: effortInput,
+		fastMode: fastModeInput,
+		images: imageUrls,
 		mcpServers,
 		parentSessionId,
 		user,
@@ -212,6 +216,17 @@ registerSessionControl({
 	}) => {
 		const isAsk = mode !== "code";
 		const model = modelInput ? resolveModel(String(modelInput))?.id : undefined;
+		// Same validation as the web palette's create_session: unknown efforts
+		// are dropped rather than persisted; images arrive as data URLs.
+		const createEffort =
+			typeof effortInput === "string" &&
+			(SESSION_EFFORTS as readonly string[]).includes(
+				effortInput.trim().toLowerCase(),
+			)
+				? (effortInput.trim().toLowerCase() as SessionEffort)
+				: undefined;
+		const createFastMode = fastModeInput === true;
+		const images = parseImageDataUrls(imageUrls);
 		const parentSession = parentSessionId ? findSession(parentSessionId) : null;
 		// A child session defaults to its parent's repo (not tella-fusion), so
 		// same-workspace workers land in the same checkout family.
@@ -327,6 +342,8 @@ registerSessionControl({
 					createdAt: new Date().toISOString(),
 					title,
 					mode: (isAsk ? "ask" : "code") as "ask" | "code",
+					...(createEffort ? { effort: createEffort } : {}),
+					...(createFastMode ? { fastMode: true } : {}),
 					// Sandbox opt-in: the opening run below and every later prompt
 					// route through maybeLaunchSandboxedRun for this provider.
 					...(sandboxProvider
@@ -379,6 +396,7 @@ registerSessionControl({
 								prompt: openingPrompt,
 								cwd: wtPath,
 								user,
+								images,
 								mcpServers,
 								isAutomationSession: false,
 							})
@@ -406,6 +424,9 @@ registerSessionControl({
 					cwd: wtPath,
 					mode: isAsk ? "ask" : "code",
 					model,
+					effort: createEffort,
+					fastMode: createFastMode || undefined,
+					images,
 					fallbackModel: interactiveFallbackModel(model),
 					mcpServers,
 					reposNote:

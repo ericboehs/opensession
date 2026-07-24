@@ -92,6 +92,9 @@ export async function handleSessionsRoutes(
 			repo?: unknown;
 			mode?: unknown;
 			model?: unknown;
+			effort?: unknown;
+			fastMode?: unknown;
+			images?: unknown;
 			branch?: unknown;
 			user?: unknown;
 		} | null;
@@ -116,6 +119,19 @@ export async function handleSessionsRoutes(
 					: {}),
 				...(typeof body?.model === "string" && body.model
 					? { model: body.model }
+					: {}),
+				...(typeof body?.effort === "string" && body.effort
+					? { effort: body.effort }
+					: {}),
+				...(body?.fastMode === true ? { fastMode: true } : {}),
+				// Image attachments as data URLs (the native apps' create path;
+				// validated/parsed by the wiring's parseImageDataUrls).
+				...(Array.isArray(body?.images) && body.images.length
+					? {
+							images: body.images.filter(
+								(u): u is string => typeof u === "string",
+							),
+						}
 					: {}),
 				user: requestUser(ctx, body?.user),
 			});

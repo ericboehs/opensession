@@ -32,7 +32,17 @@ struct SessionsListView: View {
     @State private var showSettings = false
     @State private var path = NavigationPath()
     @State private var searchText = ""
-    @State private var showNewSession = false
+    /// Non-nil opens the new-session sheet; carries the per-repo "+" preset.
+    @State private var newSessionRequest: NewSessionRequest?
+    /// Opening prompts (and images) of just-created sessions, keyed by id —
+    /// seeds the conversation view so it renders instantly instead of waiting
+    /// for the server to persist the session.
+    @State private var optimisticSeeds: [String: SessionViewModel.OptimisticSeed] = [:]
+
+    struct NewSessionRequest: Identifiable {
+        let id = UUID()
+        var repo: String?
+    }
 
     @AppStorage("os1.list.groupBy") private var groupByRaw = GroupBy.status.rawValue
     @AppStorage("os1.list.repo") private var repoFilter = "all"
@@ -75,7 +85,7 @@ struct SessionsListView: View {
                     }
                     ToolbarItem(placement: .topTrailingCompat) {
                         Button {
-                            showNewSession = true
+                            newSessionRequest = NewSessionRequest()
                         } label: {
                             Image(systemName: "square.and.pencil")
                         }
@@ -91,7 +101,7 @@ struct SessionsListView: View {
         } detail: {
             if let selectedSessionID,
                let session = viewModel.sessions.first(where: { $0.id == selectedSessionID }) {
-                SessionView(session: session)
+                SessionView(session: session, seed: optimisticSeeds[session.id])
                     // Fresh view (and socket) per session, not a reused one.
                     .id(selectedSessionID)
             } else {
@@ -104,8 +114,10 @@ struct SessionsListView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
-        .sheet(isPresented: $showNewSession) {
-            NewSessionView { id in openCreatedSession(id) }
+        .sheet(item: $newSessionRequest) { request in
+            NewSessionView(initialRepo: request.repo) { session, seed in
+                openOptimistic(session, seed: seed)
+            }
         }
         .safeAreaInset(edge: .bottom) {
             errorBanner
@@ -122,7 +134,7 @@ struct SessionsListView: View {
                     }
                     ToolbarItem(placement: .topTrailingCompat) {
                         Button {
-                            showNewSession = true
+                            newSessionRequest = NewSessionRequest()
                         } label: {
                             Image(systemName: "square.and.pencil")
                         }
@@ -138,8 +150,10 @@ struct SessionsListView: View {
                 .sheet(isPresented: $showSettings) {
                     SettingsView()
                 }
-                .sheet(isPresented: $showNewSession) {
-                    NewSessionView { id in openCreatedSession(id) }
+                .sheet(item: $newSessionRequest) { request in
+                    NewSessionView(initialRepo: request.repo) { session, seed in
+                        openOptimistic(session, seed: seed)
+                    }
                 }
                 .safeAreaInset(edge: .bottom) {
                     errorBanner
@@ -185,27 +199,21 @@ struct SessionsListView: View {
         #endif
     }
 
-    /// After a create, poll the list until the new session appears, then open
-    /// it (sidebar selection on Mac, push on iOS). The server persists the
-    /// session file asynchronously after returning the id — usually a few
-    /// seconds, up to ~15s when the engine boot is slow.
-    private func openCreatedSession(_ id: String) {
-        Task {
-            for _ in 0..<30 {
-                await viewModel.refresh()
-                if viewModel.sessions.contains(where: { $0.id == id }) {
-                    #if os(macOS)
-                    selectedSessionID = id
-                    #else
-                    if let session = viewModel.sessions.first(where: { $0.id == id }) {
-                        path.append(session)
-                    }
-                    #endif
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(500))
-            }
-        }
+    /// After a create, render and open the session immediately: an optimistic
+    /// row joins the list (replaced when the server's own row appears) and the
+    /// conversation view seeds from the prompt — no polling wait. The server
+    /// persists the session file asynchronously after returning the id; the
+    /// session view quietly retries its watch until the file exists.
+    private func openOptimistic(
+        _ session: Session, seed: SessionViewModel.OptimisticSeed
+    ) {
+        viewModel.addOptimistic(session)
+        optimisticSeeds[session.id] = seed
+        #if os(macOS)
+        selectedSessionID = session.id
+        #else
+        path.append(session)
+        #endif
     }
 
     // ── Filtering / grouping ──────────────────────────────────────────────
@@ -344,7 +352,7 @@ struct SessionsListView: View {
             await viewModel.refresh()
         }
         .navigationDestination(for: Session.self) { session in
-            SessionView(session: session)
+            SessionView(session: session, seed: optimisticSeeds[session.id])
         }
     }
     #endif
@@ -381,6 +389,19 @@ struct SessionsListView: View {
                         Text(group.title)
                         Text("\(group.sessions.count)")
                             .foregroundStyle(.tertiary)
+                        if groupBy == .repo {
+                            Spacer()
+                            // New session directly in this repo.
+                            Button {
+                                newSessionRequest = NewSessionRequest(
+                                    repo: group.title == "no repo" ? nil : group.title
+                                )
+                            } label: {
+                                Image(systemName: "plus.circle")
+                                    .font(.system(size: 14))
+                            }
+                            .buttonStyle(.borderless)
+                        }
                     }
                 }
             }

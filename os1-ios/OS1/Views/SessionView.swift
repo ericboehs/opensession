@@ -13,8 +13,11 @@ struct SessionView: View {
     /// prepend: the entry that was topmost stays where the reader left it.
     @State private var prependAnchorId: String?
 
-    init(session: Session) {
-        _viewModel = State(initialValue: SessionViewModel(session: session))
+    /// Model/effort catalog for the toolbar picker; fetched on first open.
+    @State private var catalog: ModelCatalog?
+
+    init(session: Session, seed: SessionViewModel.OptimisticSeed? = nil) {
+        _viewModel = State(initialValue: SessionViewModel(session: session, seed: seed))
     }
 
     var body: some View {
@@ -78,6 +81,9 @@ struct SessionView: View {
         .navigationTitle(viewModel.session.displayTitle)
         .inlineTitleBarCompat()
         .toolbar {
+            ToolbarItem(placement: .topTrailingCompat) {
+                modelMenu
+            }
             if viewModel.isRunning {
                 ToolbarItem(placement: .topTrailingCompat) {
                     Button {
@@ -90,6 +96,7 @@ struct SessionView: View {
         }
         .task {
             viewModel.start()
+            catalog = try? await OS1API.models()
         }
         .onDisappear {
             viewModel.stop()
@@ -207,6 +214,12 @@ struct SessionView: View {
                 .padding(.horizontal, 4)
             }
 
+            if !viewModel.attachedImages.isEmpty {
+                AttachedImagesRow(images: viewModel.attachedImages) { image in
+                    viewModel.attachedImages.removeAll { $0.id == image.id }
+                }
+            }
+
             composer
         }
         .frame(maxWidth: contentMaxWidth)
@@ -217,11 +230,73 @@ struct SessionView: View {
         .background(.bar)
     }
 
+    /// Model / reasoning-effort / fast-mode controls, mirroring the web
+    /// composer's pill: effort levels and fast toggle up top, the model list
+    /// behind a submenu. Model switches route through `/model` (persisted +
+    /// noticed); effort/fast ride the next send.
+    private var modelMenu: some View {
+        Menu {
+            let currentModel = viewModel.model.isEmpty
+                ? (catalog?.defaultModel ?? "") : viewModel.model
+            if let option = catalog?.option(for: currentModel),
+               let efforts = option.efforts, !efforts.isEmpty {
+                Section("Reasoning") {
+                    ForEach(efforts, id: \.self) { level in
+                        Button {
+                            viewModel.effort = level
+                        } label: {
+                            if viewModel.effort == level {
+                                Label(EffortLevel.label(level), systemImage: "checkmark")
+                            } else {
+                                Text(EffortLevel.label(level))
+                            }
+                        }
+                    }
+                }
+            }
+            if catalog?.option(for: currentModel)?.fastModeSupported == true {
+                Button {
+                    viewModel.fastMode.toggle()
+                } label: {
+                    if viewModel.fastMode {
+                        Label("Fast mode", systemImage: "checkmark")
+                    } else {
+                        Text("Fast mode")
+                    }
+                }
+            }
+            if let catalog {
+                Menu {
+                    ForEach(catalog.presets + catalog.regular) { option in
+                        Button {
+                            viewModel.changeModel(to: option.id)
+                        } label: {
+                            if option.id == currentModel {
+                                Label(option.displayLabel, systemImage: "checkmark")
+                            } else {
+                                Text(option.displayLabel)
+                            }
+                        }
+                    }
+                } label: {
+                    Label(
+                        "Model — \(catalog.label(for: currentModel))",
+                        systemImage: "cpu"
+                    )
+                }
+            }
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+        }
+    }
+
     /// The message composer: one bordered rounded container holding the
     /// multiline text field and an embedded send button — the shape chat
     /// apps converge on, instead of a floating button next to a pill.
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 8) {
+            AttachImagesButton(images: $viewModel.attachedImages)
+                .padding(.bottom, 3)
             TextField(
                 viewModel.isRunning ? "Message — queues for after this run" : "Message",
                 text: $viewModel.draft,

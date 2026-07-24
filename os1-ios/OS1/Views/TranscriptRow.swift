@@ -28,12 +28,28 @@ struct TranscriptRow: View {
     private func userBubble(_ entry: TranscriptEntry) -> some View {
         HStack {
             Spacer(minLength: 48)
-            Text(entry.text)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .foregroundStyle(.white)
-                .background(.tint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .textSelection(.enabled)
+            VStack(alignment: .trailing, spacing: 6) {
+                // Attached images (data URLs; server-side blob refs for big
+                // transcripts aren't fetched here).
+                let attached = (entry.images ?? []).compactMap { DataImage(dataURL: $0) }
+                if !attached.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(Array(attached.enumerated()), id: \.offset) { _, image in
+                            image
+                                .frame(width: 96, height: 96)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+                    }
+                }
+                if !entry.text.isEmpty {
+                    Text(entry.text)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .foregroundStyle(.white)
+                        .background(.tint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .textSelection(.enabled)
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }

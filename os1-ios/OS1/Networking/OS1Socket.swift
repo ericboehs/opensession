@@ -69,14 +69,27 @@ final class OS1Socket {
         send(["type": "load_history", "sessionId": sessionId, "beforeSeq": beforeSeq])
     }
 
-    func prompt(sessionId: String, content: String, user: String) {
+    func prompt(
+        sessionId: String,
+        content: String,
+        user: String,
+        images: [String]? = nil,
+        effort: String? = nil,
+        fastMode: Bool? = nil
+    ) {
         // busyMode "queue" matches the web composer's default: a send during
         // a run is held as an editable queued message (visible as a chip)
         // until the run completes; steering it sooner is an explicit action.
-        send([
+        var frame: [String: Any] = [
             "type": "prompt", "sessionId": sessionId, "content": content,
             "user": user, "busyMode": "queue",
-        ])
+        ]
+        // Image attachments as data URLs; effort/fastMode ride every send and
+        // persist server-side (the web composer's pill semantics).
+        if let images, !images.isEmpty { frame["images"] = images }
+        if let effort, !effort.isEmpty { frame["effort"] = effort }
+        if let fastMode { frame["fastMode"] = fastMode }
+        send(frame)
     }
 
     /// Deliver a queued message at the run's next turn boundary instead of

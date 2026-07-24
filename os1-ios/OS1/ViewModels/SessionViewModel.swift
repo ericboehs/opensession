@@ -39,6 +39,17 @@ final class SessionViewModel {
     private(set) var isLoadingConversation = true
     private(set) var notice: String?
     var draft = ""
+    /// Images staged in the composer, sent (as data URLs) with the next prompt.
+    var attachedImages: [AttachedImage] = []
+
+    // ── Per-session run settings ──
+    /// Current model id ("" = server default). Changing routes through the
+    /// `/model` slash command, which persists + notices like the web picker.
+    private(set) var model: String
+    /// Reasoning effort; rides every send and persists server-side. "" = unset.
+    var effort: String
+    /// OpenAI fast-mode flag; rides every send like effort.
+    var fastMode: Bool
 
     // ── Earlier-history paging ──
     /// Older history exists server-side (transcript_init/history `truncated`).
@@ -143,12 +154,45 @@ final class SessionViewModel {
         return found
     }
 
-    init(session: Session) {
+    /// Seed for a just-created session: the opening prompt (and images) render
+    /// immediately while the server is still persisting the session file.
+    struct OptimisticSeed {
+        let prompt: String
+        let images: [String]
+    }
+
+    /// True until the first transcript_init lands for a session opened right
+    /// after creation — "Session not found" watch errors are retried quietly
+    /// instead of surfaced (the server persists the file a few seconds after
+    /// returning the id).
+    private var awaitingCreation = false
+    private var creationRetryTask: Task<Void, Never>?
+    private var creationRetriesLeft = 40
+
+    init(session: Session, seed: OptimisticSeed? = nil) {
         self.session = session
         self.isRunning = session.isRunning ?? false
         self.queuedCount = session.queuedCount ?? 0
+        self.model = session.model ?? ""
+        self.effort = session.effort ?? ""
+        self.fastMode = session.fastMode ?? false
         if self.isRunning {
             self.runStartedAt = session.runStartedDate
+        }
+        if let seed {
+            awaitingCreation = true
+            isLoadingConversation = false
+            // Echo semantics: the server's own copy of the opening prompt
+            // replaces this seed when it lands via transcript_append.
+            localEchoIds.insert("optimistic-prompt")
+            entries = [TranscriptEntry(
+                id: "optimistic-prompt",
+                type: "user",
+                content: seed.prompt,
+                timestamp: ISO8601DateFormatter().string(from: .now),
+                images: seed.images.isEmpty ? nil : seed.images
+            )]
+            rebuildDisplayItems()
         }
     }
 
@@ -161,6 +205,7 @@ final class SessionViewModel {
         stopped = true
         reconnectTask?.cancel()
         resyncProbeTask?.cancel()
+        creationRetryTask?.cancel()
         socket?.disconnect()
         socket = nil
     }
@@ -200,24 +245,51 @@ final class SessionViewModel {
     }
 
     var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !attachedImages.isEmpty)
             && connectionState == .connected
     }
 
     func sendDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, let socket else { return }
+        let images = attachedImages.map(\.dataURL)
+        guard !text.isEmpty || !images.isEmpty, let socket else { return }
         draft = ""
+        attachedImages = []
         let localId = "local-\(UUID().uuidString)"
         localEchoIds.insert(localId)
         entries.append(TranscriptEntry(
             id: localId,
             type: "user",
             content: text,
-            timestamp: ISO8601DateFormatter().string(from: .now)
+            timestamp: ISO8601DateFormatter().string(from: .now),
+            images: images.isEmpty ? nil : images
         ))
         rebuildDisplayItems()
-        socket.prompt(sessionId: session.id, content: text, user: ServerConfig.shared.userName)
+        socket.prompt(
+            sessionId: session.id,
+            content: text,
+            user: ServerConfig.shared.userName,
+            images: images.isEmpty ? nil : images,
+            effort: effort.isEmpty ? nil : effort,
+            fastMode: fastMode ? true : nil
+        )
+    }
+
+    /// Switch this session's model via the `/model` slash command — handled
+    /// server-side (persists, notices, broadcasts) without reaching the engine.
+    func changeModel(to id: String) {
+        guard !id.isEmpty, id != model, let socket else { return }
+        model = id
+        // A model family switch invalidates the old effort/fast picks; reset
+        // to server defaults rather than carrying them across.
+        effort = ""
+        fastMode = false
+        socket.prompt(
+            sessionId: session.id,
+            content: "/model \(id)",
+            user: ServerConfig.shared.userName
+        )
     }
 
     func answer(question: AskQuestion, answers: [String: String]?) {
@@ -265,7 +337,8 @@ final class SessionViewModel {
     // MARK: - Socket lifecycle
 
     private func connect() {
-        connectionState = entries.isEmpty ? .connecting : .reconnecting(nil)
+        connectionState =
+            (entries.isEmpty || awaitingCreation) ? .connecting : .reconnecting(nil)
         let socket = OS1Socket()
         socket.onEvent = { [weak self] event in self?.handle(event) }
         socket.onClose = { [weak self] reason in self?.scheduleReconnect(reason) }
@@ -297,6 +370,18 @@ final class SessionViewModel {
             socket?.watch(sessionId: session.id)
 
         case .transcriptInit(let id, let newEntries, let cursor) where id == session.id:
+            creationRetryTask?.cancel()
+            // A fresh session's first init can arrive before the engine wrote
+            // anything — keep the optimistic prompt bubble rather than blanking
+            // the conversation; the real entries land via transcript_append.
+            if awaitingCreation && newEntries.isEmpty && !entries.isEmpty {
+                awaitingCreation = false
+                isLoadingConversation = false
+                applyHistoryCursor(cursor)
+                loadingEarlier = false
+                break
+            }
+            awaitingCreation = false
             entries = newEntries
             isLoadingConversation = false
             liveEntries.removeAll()
@@ -421,6 +506,24 @@ final class SessionViewModel {
 
         case .askResolved(let id, let questionId) where id == session.id:
             if pendingQuestion?.id == questionId { pendingQuestion = nil }
+
+        case .serverError(let message)
+        where awaitingCreation && message == "Session not found":
+            // Freshly created session the server hasn't persisted yet — re-send
+            // the watch until it exists (usually a few seconds, up to ~15s on a
+            // slow engine boot) instead of surfacing an error.
+            creationRetriesLeft -= 1
+            guard creationRetriesLeft > 0 else {
+                awaitingCreation = false
+                notice = "Session is taking unusually long to appear — pull the list to refresh."
+                break
+            }
+            creationRetryTask?.cancel()
+            creationRetryTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1.5))
+                guard let self, !Task.isCancelled, !self.stopped else { return }
+                self.socket?.watch(sessionId: self.session.id)
+            }
 
         case .notice(let message), .serverError(let message):
             notice = message.isEmpty ? nil : message

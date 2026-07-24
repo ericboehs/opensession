@@ -59,6 +59,12 @@ export interface CreateSessionOpts {
   mode?: "ask" | "code";
   /** Optional model id; invalid input falls back to the default. */
   model?: string;
+  /** Reasoning effort persisted on the session and enforced per run. */
+  effort?: string;
+  /** OpenAI fast-mode flag persisted on the session. */
+  fastMode?: boolean;
+  /** Composer image attachments as `data:image/...;base64,` URLs. */
+  images?: string[];
   /** Optional MCP allowlist for the opening run. Empty array means no MCP servers. */
   mcpServers?: string[];
   /** Parent/orchestrator session id when this is a worker sub-session. */

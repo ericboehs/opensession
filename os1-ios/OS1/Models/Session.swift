@@ -11,6 +11,8 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     var branch: String?
     var mode: String?
     var model: String?
+    var effort: String?
+    var fastMode: Bool?
     var isRunning: Bool?
     var runState: String?
     /// Journaled start of the current run — only present while running.
@@ -88,6 +90,42 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
         if let date = formatter.date(from: string) { return date }
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: string)
+    }
+}
+
+extension Session {
+    /// Locally-built placeholder for a session the server just created but
+    /// hasn't persisted to the list yet — rendered (and opened) immediately
+    /// instead of polling until `GET /api/sessions` includes it.
+    static func optimistic(
+        id: String,
+        title: String,
+        repo: String,
+        mode: String,
+        model: String?,
+        effort: String?,
+        fastMode: Bool,
+        startedBy: String
+    ) -> Session {
+        var session = Session(id: id)
+        session.title = title
+        session.source = "backstage"
+        session.repo = repo
+        session.mode = mode
+        session.model = model
+        session.effort = effort
+        session.fastMode = fastMode ? true : nil
+        session.isRunning = true
+        session.runStartedAt = ISO8601DateFormatter().string(from: .now)
+        session.createdAt = session.runStartedAt
+        session.lastActivity = session.runStartedAt
+        session.startedBy = startedBy
+        return session
+    }
+
+    /// Bare session with just an id; every other field starts nil.
+    init(id: String) {
+        self.id = id
     }
 }
 

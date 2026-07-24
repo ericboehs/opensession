@@ -12,6 +12,30 @@ final class SessionsListViewModel {
 
     private var pollTask: Task<Void, Never>?
 
+    /// Just-created sessions rendered before the server's list includes them.
+    /// Dropped once the real row appears (or after a 2-minute safety window).
+    private var optimistic: [String: (session: Session, added: Date)] = [:]
+
+    /// Show a locally-built row for a just-created session immediately.
+    func addOptimistic(_ session: Session) {
+        optimistic[session.id] = (session, Date())
+        sessions = mergeOptimistic(into: sessions)
+    }
+
+    private func mergeOptimistic(into list: [Session]) -> [Session] {
+        guard !optimistic.isEmpty else { return list }
+        let serverIds = Set(list.map(\.id))
+        var extras: [Session] = []
+        for (id, entry) in optimistic {
+            if serverIds.contains(id) || Date().timeIntervalSince(entry.added) > 120 {
+                optimistic.removeValue(forKey: id)
+            } else {
+                extras.append(entry.session)
+            }
+        }
+        return extras.isEmpty ? list : extras + list
+    }
+
     func startPolling() {
         stopPolling()
         pollTask = Task {
@@ -30,11 +54,11 @@ final class SessionsListViewModel {
     func refresh() async {
         do {
             let all = try await OS1API.sessions()
-            let next = all
+            let next = mergeOptimistic(into: all
                 .filter { $0.archived != true }
                 .sorted {
                     ($0.lastActivityDate ?? .distantPast) > ($1.lastActivityDate ?? .distantPast)
-                }
+                })
             // Most 5s polls change nothing — skip the assignment so the whole
             // list doesn't re-diff (grouping, sorting, row rebuilds) for a
             // byte-identical result.

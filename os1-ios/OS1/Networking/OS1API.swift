@@ -63,12 +63,29 @@ enum OS1API {
         return response.repos
     }
 
+    /// Models (and presets) a session can run on, plus the interactive default.
+    static func models() async throws -> ModelCatalog {
+        try await get("/api/models")
+    }
+
     /// Create a session; returns the new session id. Code mode gets a
     /// server-suggested branch; the opening run starts immediately.
-    static func createSession(prompt: String, repo: String, mode: String) async throws -> String {
+    static func createSession(
+        prompt: String,
+        repo: String,
+        mode: String,
+        model: String? = nil,
+        effort: String? = nil,
+        fastMode: Bool = false,
+        images: [String] = []
+    ) async throws -> String {
         struct CreateResponse: Decodable { let id: String }
         var body: [String: Any] = ["prompt": prompt, "mode": mode]
         if !repo.isEmpty { body["repo"] = repo }
+        if let model, !model.isEmpty { body["model"] = model }
+        if let effort, !effort.isEmpty { body["effort"] = effort }
+        if fastMode { body["fastMode"] = true }
+        if !images.isEmpty { body["images"] = images }
         let user = ServerConfig.shared.userName
         if !user.isEmpty { body["user"] = user }
         let response: CreateResponse = try await post("/api/sessions", body: body)

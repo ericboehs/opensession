@@ -54,6 +54,8 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
+        # Image attachments picked via the open panel (fileImporter).
+        com.apple.security.files.user-selected.read-only: true
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
