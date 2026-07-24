@@ -1092,29 +1092,43 @@ function App() {
 	// The open chat, read by the mount-once tab-shortcut handler (⌘⌥C / ⌘W —
 	// see the effect next to closeChat below).
 	const currentSessionRef = useRef<UnifiedSession | null>(null);
-	// Opening a different session always starts on its chat, never a stale
-	// Review/Preview environment pane.
+	// Stable key the view-tab state (Review/Preview/Assets panes) is stored
+	// under: the workspace id, the shared isolated worktree, or the lone chat
+	// id — the same grouping rule as the tab strip (tabOrderKey below), so a
+	// view tab opened in a workspace survives switching between sibling chats.
+	const wsKeyFor = (s: UnifiedSession | null | undefined): string | null =>
+		s
+			? s.projectId ||
+				(s.worktreeDir?.startsWith("/home/ubuntu/worktrees/")
+					? s.worktreeDir
+					: s.id)
+			: null;
+	const wsKey = wsKeyFor(currentSession);
+	// Opening a different workspace always starts on its chat, never a stale
+	// Review/Preview environment pane. (Switching chats WITHIN a workspace
+	// resets via onSelect's explicit setActiveViewTab(null) — clicking a chat
+	// tab means "show me the chat".)
 	useEffect(() => {
 		setActiveViewTab(null);
-	}, [currentSession?.id]);
-	// ...unless we just opened Review for that session from the sidebar: once it
-	// lands (this render or the one after navigation), foreground Review and
+	}, [wsKey]);
+	// ...unless we just opened Review for that workspace from the sidebar: once
+	// it lands (this render or the one after navigation), foreground Review and
 	// consume the pulse. Runs after the reset effect above, so it wins.
 	useEffect(() => {
-		if (pendingReviewOpen && pendingReviewOpen === currentSession?.id) {
+		if (pendingReviewOpen && pendingReviewOpen === wsKey) {
 			setActiveViewTab("review");
 			setPendingReviewOpen(null);
 		}
-	}, [currentSession?.id, pendingReviewOpen]);
+	}, [wsKey, pendingReviewOpen]);
 	// The current code session's Review pane, surfaced as a leftmost view-tab in
 	// the top strip (siblings share the worktree/PR, so one Review tab suffices).
 	const currentHasWorkspace =
 		!!currentSession && Boolean(currentSession.worktreeDir || currentSession.branch);
 	const reviewViewTabs: ViewTab[] =
-		currentSession && currentHasWorkspace && reviewOpen.has(currentSession.id)
+		currentSession && currentHasWorkspace && wsKey && reviewOpen.has(wsKey)
 			? [
 					{
-						id: `review:${currentSession.id}`,
+						id: `review:${wsKey}`,
 						label: "Review",
 						active: reviewActive,
 						dotClass: currentSession.prState
@@ -1129,10 +1143,10 @@ function App() {
 	// The Preview environment view-tab (the PR's Vercel preview, full-width) —
 	// opened from the Info panel button. Present once opened for this session.
 	const stagingViewTabs: ViewTab[] =
-		currentSession && stagingOpen.has(currentSession.id)
+		currentSession && wsKey && stagingOpen.has(wsKey)
 			? [
 					{
-						id: `staging:${currentSession.id}`,
+						id: `staging:${wsKey}`,
 						label: "Preview environment",
 						active: stagingActive,
 						dotClass: null,
@@ -1145,10 +1159,10 @@ function App() {
 	// The Assets view-tab (the session's scratch artifacts, full-width) — opened
 	// from the Info panel's Assets button. Present once opened for this session.
 	const assetsViewTabs: ViewTab[] =
-		currentSession && assetsOpen.has(currentSession.id)
+		currentSession && wsKey && assetsOpen.has(wsKey)
 			? [
 					{
-						id: `assets:${currentSession.id}`,
+						id: `assets:${wsKey}`,
 						label: "Assets",
 						active: assetsActive,
 						dotClass: null,
@@ -1158,10 +1172,10 @@ function App() {
 	// The local-dev Preview view-tab (live dev server iframe) — opened from
 	// the header Preview button. Present once opened for this session.
 	const previewViewTabs: ViewTab[] =
-		currentSession && previewTabOpen.has(currentSession.id)
+		currentSession && wsKey && previewTabOpen.has(wsKey)
 			? [
 					{
-						id: `preview:${currentSession.id}`,
+						id: `preview:${wsKey}`,
 						label: "Preview",
 						active: previewLiveActive,
 						dotClass: null,
@@ -1178,21 +1192,21 @@ function App() {
 	// Foreground/dismiss the Review view-tab; onOpenReview re-adds a dismissed
 	// one (fired by the PR status chip / "open PR" affordances in SessionViewer).
 	function openReview() {
-		if (!currentSession) return;
-		const id = currentSession.id;
+		if (!wsKey) return;
+		const key = wsKey;
 		setReviewOpen((prev) => {
-			if (prev.has(id)) return prev;
-			return new Set(prev).add(id);
+			if (prev.has(key)) return prev;
+			return new Set(prev).add(key);
 		});
 		setActiveViewTab("review");
 	}
 	function closeReviewTab() {
-		if (currentSession) {
-			const id = currentSession.id;
+		if (wsKey) {
+			const key = wsKey;
 			setReviewOpen((prev) => {
-				if (!prev.has(id)) return prev;
+				if (!prev.has(key)) return prev;
 				const next = new Set(prev);
-				next.delete(id);
+				next.delete(key);
 				return next;
 			});
 		}
@@ -1200,83 +1214,84 @@ function App() {
 		// Review tab while the Preview environment is active leaves it up.
 		if (reviewActive) setActiveViewTab(null);
 	}
-	// Open/foreground this session's Preview environment view-tab (the Info panel
-	// button). Adds the tab to the strip if absent.
+	// Open/foreground this workspace's Preview environment view-tab (the Info
+	// panel button). Adds the tab to the strip if absent.
 	function openStaging() {
-		if (!currentSession) return;
-		const id = currentSession.id;
+		if (!wsKey) return;
+		const key = wsKey;
 		setStagingOpen((prev) => {
-			if (prev.has(id)) return prev;
-			return new Set(prev).add(id);
+			if (prev.has(key)) return prev;
+			return new Set(prev).add(key);
 		});
 		setActiveViewTab("staging");
 	}
-	// Open/foreground this session's local-dev Preview view-tab (the header
+	// Open/foreground this workspace's local-dev Preview view-tab (the header
 	// Preview button routes here instead of window.open — the Mac shell was
 	// turning those into stray Electron windows).
 	function openPreviewTab() {
-		if (!currentSession) return;
-		const id = currentSession.id;
+		if (!wsKey) return;
+		const key = wsKey;
 		setPreviewTabOpen((prev) => {
-			if (prev.has(id)) return prev;
-			return new Set(prev).add(id);
+			if (prev.has(key)) return prev;
+			return new Set(prev).add(key);
 		});
 		setActiveViewTab("preview");
 	}
 	function closePreviewTab() {
-		if (currentSession) {
-			const id = currentSession.id;
+		if (wsKey) {
+			const key = wsKey;
 			setPreviewTabOpen((prev) => {
-				if (!prev.has(id)) return prev;
+				if (!prev.has(key)) return prev;
 				const next = new Set(prev);
-				next.delete(id);
+				next.delete(key);
 				return next;
 			});
 		}
 		if (previewLiveActive) setActiveViewTab(null);
 	}
 	function closeStagingTab() {
-		if (currentSession) {
-			const id = currentSession.id;
+		if (wsKey) {
+			const key = wsKey;
 			setStagingOpen((prev) => {
-				if (!prev.has(id)) return prev;
+				if (!prev.has(key)) return prev;
 				const next = new Set(prev);
-				next.delete(id);
+				next.delete(key);
 				return next;
 			});
 		}
 		if (stagingActive) setActiveViewTab(null);
 	}
-	// Open/foreground this session's Assets view-tab (the Info panel's Assets
+	// Open/foreground this workspace's Assets view-tab (the Info panel's Assets
 	// button). Adds the tab to the strip if absent.
 	function openAssets() {
-		if (!currentSession) return;
-		const id = currentSession.id;
+		if (!wsKey) return;
+		const key = wsKey;
 		setAssetsOpen((prev) => {
-			if (prev.has(id)) return prev;
-			return new Set(prev).add(id);
+			if (prev.has(key)) return prev;
+			return new Set(prev).add(key);
 		});
 		setActiveViewTab("assets");
 	}
 	function closeAssetsTab() {
-		if (currentSession) {
-			const id = currentSession.id;
+		if (wsKey) {
+			const key = wsKey;
 			setAssetsOpen((prev) => {
-				if (!prev.has(id)) return prev;
+				if (!prev.has(key)) return prev;
 				const next = new Set(prev);
-				next.delete(id);
+				next.delete(key);
 				return next;
 			});
 		}
 		if (assetsActive) setActiveViewTab(null);
 	}
 	// Open a session's Review tab from the sidebar: select it and foreground its
-	// Review once it lands (pendingReviewOpen survives the session-change reset).
+	// workspace's Review once it lands (pendingReviewOpen survives the
+	// workspace-change reset).
 	const openReviewForSession = React.useCallback((session: UnifiedSession) => {
-		setReviewOpen((prev) =>
-			prev.has(session.id) ? prev : new Set(prev).add(session.id),
-		);
-		setPendingReviewOpen(session.id);
+		const key = wsKeyFor(session);
+		if (!key) return;
+		setReviewOpen((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+		setPendingReviewOpen(key);
 		navigate({ view: "session", id: session.id });
 	}, []);
 	currentSessionRef.current = currentSession;
