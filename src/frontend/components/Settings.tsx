@@ -519,16 +519,9 @@ export function Settings({
 }) {
 	const isPhone = useIsPhone();
 
-	// Esc returns to the app (desktop only — the phone sheet handles Esc itself
-	// so the exit animation plays).
-	useEffect(() => {
-		if (isPhone) return;
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onBack();
-		};
-		document.addEventListener("keydown", onKey);
-		return () => document.removeEventListener("keydown", onKey);
-	}, [onBack, isPhone]);
+	// No page-level Esc handler: Esc belongs to whatever is focused (cancelling
+	// an inline edit, closing a menu), not to the settings page itself — losing
+	// the whole page to a stray Esc is worse than having no keyboard exit.
 
 	// Group the nav entries under their group label (order preserved).
 	const groups: { group: string; items: typeof SECTIONS }[] = [];
