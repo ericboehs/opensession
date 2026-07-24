@@ -7,6 +7,10 @@ import { toast } from "../ui/toast";
 const HEALTH_URL = `${BASE_PATH}/api/health`;
 // Grace before showing anything — most socket blips reconnect within this.
 const PILL_DELAY_MS = 2500;
+// Hot frontend rebuilds reuse the server process, so bootId does not change.
+// Poll the build version separately or long-lived web/Electron windows keep
+// rendering an old bundle until they are manually refreshed.
+const FRONTEND_VERSION_POLL_MS = 15_000;
 // A disconnect older than this whose health probe ALSO fails escalates from
 // the calm pill to the full restart overlay (covers hard crashes).
 const ESCALATE_AFTER_MS = 22_000;
@@ -41,6 +45,7 @@ export function RestartOverlay({ connected, addHandler }: Props) {
   const restartByRef = useRef<string | null>(null);
   restartByRef.current = restartBy;
   const bootId = useRef<string | null>(null);
+  const frontendVersion = useRef<string | null>(null);
   const sawDown = useRef(false);
   // Set when the server explicitly told us it's going down. The old instance
   // stays up and the WebSocket stays open for the whole graceful drain (up to
@@ -72,14 +77,42 @@ export function RestartOverlay({ connected, addHandler }: Props) {
     }
   };
 
+  const handleFrontendVersion = (version: unknown) => {
+    if (typeof version !== "string" || !version) return;
+    if (!frontendVersion.current) {
+      frontendVersion.current = version;
+      return;
+    }
+    if (version !== frontendVersion.current) location.reload();
+  };
+
+  const handleHealth = (data: { bootId?: unknown; frontendVersion?: unknown }) => {
+    handleBootId(data.bootId);
+    handleFrontendVersion(data.frontendVersion);
+  };
+
   // Learn the current instance's bootId up front (also the fallback for
   // servers that don't send the hello frame yet).
   useEffect(() => {
     fetch(HEALTH_URL, { cache: "no-store" })
       .then((r) => r.json())
-      .then((d) => handleBootId(d.bootId))
+      .then(handleHealth)
       .catch(() => {});
   }, []);
+
+  // A frontend-only hot rebuild does not disturb the socket or change bootId.
+  // A lightweight health poll is therefore the only signal an already-open
+  // browser or Electron renderer gets that its content-hashed bundle is stale.
+  useEffect(() => {
+    if (!connected) return;
+    const poll = () =>
+      fetch(HEALTH_URL, { cache: "no-store" })
+        .then((r) => r.json())
+        .then(handleHealth)
+        .catch(() => {});
+    const interval = setInterval(poll, FRONTEND_VERSION_POLL_MS);
+    return () => clearInterval(interval);
+  }, [connected]);
 
   // Server signals: explicit "I'm going down", and the per-connect hello.
   useEffect(
@@ -114,7 +147,7 @@ export function RestartOverlay({ connected, addHandler }: Props) {
         setPhase("ok");
         fetch(HEALTH_URL, { cache: "no-store" })
           .then((r) => r.json())
-          .then((d) => handleBootId(d.bootId))
+          .then(handleHealth)
           .catch(() => {});
       }
       return;
