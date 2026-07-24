@@ -1911,15 +1911,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				(focus === "everyone" ||
 					(focus === "unassigned"
 						? r.status === "pending"
-						: // A row YOU lane-pinned belongs in your own lens no matter who
-							// owns it — lanes are per-user triage, so filing a teammate's
-							// PR workspace into your Backlog must show it in YOUR Backlog.
-							// Ownerless rows (automation runs with no startedBy) ride the
-							// same rule under any personal lens; a legacy global override
-							// still surfaces only under Everyone.
+						: // Ownerless rows (automation runs have no startedBy) exist in
+							// wsRows only because a lane pinned them — YOUR per-user lane
+							// shows them in your personal lenses; a legacy global one
+							// surfaces only under Everyone.
 							r.owner === focus ||
-							((r.owner === "" || focus === currentUser.toLowerCase()) &&
-								r.chats.some((c) => getLane(c.id))))) &&
+							(r.owner === "" && r.chats.some((c) => getLane(c.id))))) &&
 				!reviewBandKeys.has(r.key) &&
 				!activeSnoozeKeys.has(r.key),
 		);
@@ -3507,9 +3504,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								// their icon + label.
 								!isPhone && "items-center",
 								!isPhone &&
-									// Compact rows (Michiel 2026-07-24: the tools were "wayyy
-									// too big"): 13.5px label, 18px glyphs, tight padding — the
-									// utility strip should read lighter than the work lists.
+									// Compact rows: 13.5px label, 18px glyphs, tight padding —
+									// the utility strip reads lighter than the work lists.
+									// Landed in ffd11ffc (2026-07-24). That commit's comment
+									// credited Michiel with "wayyy too big", but no such
+									// request exists in the session record — don't treat the
+									// current numbers as a stated preference.
 									"w-full gap-[9px] rounded-lg bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[3px] text-[13.5px] font-medium text-dim hover:bg-hover hover:text-fg",
 								!isPhone && tool.active && "bg-active text-fg",
 							)}
