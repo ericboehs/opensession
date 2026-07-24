@@ -517,7 +517,11 @@ async function poolWriteFile(c: PoolContainer, path: string, content: string): P
 async function poolRuntimeStatus(c: PoolContainer): Promise<"running" | "paused" | "gone"> {
   if (isMicrovm(c)) {
     const r = await $`pgrep -f fc-clone${c.mvmIdx}.sock`.quiet().nothrow();
-    return r.exitCode === 0 ? "running" : "gone";
+    if (r.exitCode === 0) return "running";
+    // pgrep can hiccup and a false "gone" deletes a live claim (bit us
+    // 2026-07-24) — the agent answering proves the VM is alive.
+    const alive = await mvmAgent(c, { command: "echo alive", timeoutMs: 3000 });
+    return alive.ok ? "running" : "gone";
   }
   if (!isDaytona(c)) return containerRunning(c.name);
   try {
@@ -1209,7 +1213,10 @@ async function ensurePool(repo: Repo): Promise<void> {
   for (const [name, c] of Object.entries(state.containers)) {
     const status = await poolRuntimeStatus(c);
     if (status === "gone") {
-      patchContainer(repo.id, name, null);
+      // Microvm leftovers need their netns/disk/route cleaned, not just the
+      // record dropped.
+      if (isMicrovm(c)) await destroyContainer(repo.id, name);
+      else patchContainer(repo.id, name, null);
       continue;
     }
     if (c.state === "claimed" && c.sessionWorktree && !existsSync(c.sessionWorktree)) {
