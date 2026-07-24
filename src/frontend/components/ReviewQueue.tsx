@@ -18,7 +18,13 @@ import {
 	IconX,
 } from "./icons";
 import { ContextMenu, Menu } from "../ui/menu";
+import { Popover } from "../ui/popover";
 import { Tooltip } from "../ui/tooltip";
+import {
+	PrRowCard,
+	ROW_CARD_CLASS,
+	useRowHoverCard,
+} from "./SidebarRowCards";
 import { providerFromUrl } from "../lib/provider";
 
 const FILTER_KEY = "opensession-review-queue-filter";
@@ -434,15 +440,25 @@ function ReviewRow({
 	closing: boolean;
 }) {
 	const status = rowStatus(item);
+	const card = useRowHoverCard();
 	return (
+		<Popover.Root {...card.rootProps}>
 		<ContextMenu.Root>
 			<ContextMenu.Trigger
 				render={
-					<button
-						type="button"
-						className={`sidebar-item sidebar-item--twoline${selected ? " sidebar-item-selected" : ""}`}
-						onClick={onOpen}
-						title={item.pr.title}
+					// Both triggers ride the same row button: the popover raises the
+					// hover card, the context menu keeps right-click. The card steps
+					// aside when the menu opens so the two never overlap.
+					<Popover.Trigger
+						{...card.triggerProps}
+						render={
+							<button
+								type="button"
+								className={`sidebar-item sidebar-item--twoline${selected ? " sidebar-item-selected" : ""}`}
+								onClick={onOpen}
+								onContextMenu={card.close}
+							/>
+						}
 					/>
 				}
 			>
@@ -492,5 +508,9 @@ function ReviewRow({
 				</ContextMenu.Item>
 			</ContextMenu.Popup>
 		</ContextMenu.Root>
+			<Popover.Popup side="right" align="start" className={ROW_CARD_CLASS}>
+				<PrRowCard item={item} />
+			</Popover.Popup>
+		</Popover.Root>
 	);
 }

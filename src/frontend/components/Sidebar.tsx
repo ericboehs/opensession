@@ -89,7 +89,13 @@ import {
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { Menu } from "../ui/menu";
+import { Popover } from "../ui/popover";
 import { cn } from "../ui/cn";
+import {
+	ROW_CARD_CLASS,
+	SupportRowCard,
+	useRowHoverCard,
+} from "./SidebarRowCards";
 import { RepoTile, swatchColor, repoLabel } from "./RepoTile";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { ReviewQueue } from "./ReviewQueue";
@@ -240,6 +246,105 @@ function SupportPriorityIcon({ p, cls }: { p: number; cls: string }) {
 		<span className="sidebar-rail">
 			<Glyph size={20} className={cls} />
 		</span>
+	);
+}
+
+// A Support row: one TODO Plain ticket, in the Pull-requests band's two-line
+// shape. The dot wears the linked session's status (the ticket's priority when
+// no session exists yet); hovering floats a "mark done" button over the row's
+// right edge and raises the ticket's hover card. Its own component rather than
+// a render helper because the card needs a hook per row.
+function SupportRow({
+	thread: t,
+	session,
+	active,
+	onOpen,
+	onMarkDone,
+}: {
+	thread: SupportThread;
+	session: UnifiedSession | null;
+	active: boolean;
+	onOpen: () => void;
+	onMarkDone: () => void;
+}) {
+	const card = useRowHoverCard();
+	const customer = t.customer.name || t.customer.email || "Unknown";
+	const label = t.title || customer;
+	const dot =
+		(session
+			? MINE_STATUS_META.find((m) => m.key === mineStatus(session))?.dotColor
+			: SUPPORT_PRIORITY_DOT[t.priority ?? 2]) || "var(--text-faint)";
+	return (
+		<Popover.Root {...card.rootProps}>
+			<Popover.Trigger
+				{...card.triggerProps}
+				render={
+					<button
+						type="button"
+						className={`sidebar-item sidebar-item--twoline${
+							active ? " sidebar-item-selected" : ""
+						}`}
+						onClick={onOpen}
+					/>
+				}
+			>
+				<span className="sidebar-item-top">
+					<span className="sidebar-rail">
+						<span
+							className="size-[7px] rounded-full"
+							style={{ backgroundColor: dot }}
+						/>
+					</span>
+					<span className="sidebar-item-title">{label}</span>
+				</span>
+				<span className="sidebar-item-meta">
+					<span className="truncate text-dim">{customer}</span>
+					{t.assignee && !t.assignee.isBot && (
+						<>
+							<span>·</span>
+							<span className="shrink-0">
+								@{t.assignee.name.split(/\s+/)[0]}
+							</span>
+						</>
+					)}
+					{t.statusChangedAt && (
+						<>
+							<span>·</span>
+							<span className="shrink-0">{shortTime(t.statusChangedAt)}</span>
+						</>
+					)}
+				</span>
+				{/* Hover action: the same pinned, feathered cluster the workspace
+				    rows use for pin/archive, so finishing a ticket reads as the
+				    same gesture as archiving a workspace instead of a stray glyph
+				    in the meta line. The row's own meta keeps its slot beneath. */}
+				<span className="sidebar-ws-actions">
+					<Tooltip label="Mark done in Plain">
+						<span
+							role="button"
+							tabIndex={0}
+							className="sidebar-ws-action sidebar-ws-action--done"
+							aria-label="Mark done in Plain"
+							onClick={(e) => {
+								e.stopPropagation();
+								onMarkDone();
+							}}
+							onKeyDown={(e) => {
+								if (e.key === "Enter" || e.key === " ") {
+									e.stopPropagation();
+									onMarkDone();
+								}
+							}}
+						>
+							<IconCheck size={21} />
+						</span>
+					</Tooltip>
+				</span>
+			</Popover.Trigger>
+			<Popover.Popup side="right" align="start" className={ROW_CARD_CLASS}>
+				<SupportRowCard thread={t} session={session} />
+			</Popover.Popup>
+		</Popover.Root>
 	);
 }
 
@@ -3095,89 +3200,18 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return !!session && session.id === selectedId;
 	}
 
-	// A Support row, in the Pull-requests band's two-line shape: title on top
-	// (behind a priority-colored dot — a linked session's live status wins),
-	// customer · assignee · time below; hovering floats a "mark done" button
-	// over the row's right edge, in the workspace rows' action-cluster shape.
+	// A Support row, in the Pull-requests band's two-line shape — see SupportRow
+	// for the markup; this binds it to the sidebar's state and handlers.
 	function renderSupportRow(t: SupportThread) {
-		const session = supportSessionByThread.get(t.id) || null;
-		const active = supportThreadActive(t);
-		const customer = t.customer.name || t.customer.email || "Unknown";
-		const label = t.title || customer;
 		return (
-			<button
+			<SupportRow
 				key={`support:${t.id}`}
-				className={`sidebar-item sidebar-item--twoline${
-					active ? " sidebar-item-selected" : ""
-				}`}
-				onClick={() => onOpenTicket(t)}
-				title={`${customer} — ${label}${
-					t.previewText ? `\n${t.previewText.slice(0, 200)}` : ""
-				}`}
-			>
-				<span className="sidebar-item-top">
-					<span className="sidebar-rail">
-						<span
-							className="size-[7px] rounded-full"
-							style={{
-								backgroundColor: session
-									? STATUS_DOT[mineStatus(session)]
-									: SUPPORT_PRIORITY_DOT[t.priority ?? 2] ||
-										"var(--text-faint)",
-							}}
-						/>
-					</span>
-					<span className="sidebar-item-title">{label}</span>
-				</span>
-				<span className="sidebar-item-meta">
-					<span className="truncate text-dim">{customer}</span>
-					{t.assignee && !t.assignee.isBot && (
-						<>
-							<span>·</span>
-							<span className="shrink-0">
-								@{t.assignee.name.split(/\s+/)[0]}
-							</span>
-						</>
-					)}
-					{t.statusChangedAt && (
-						<>
-							<span>·</span>
-							<span
-								className="shrink-0"
-								title={new Date(t.statusChangedAt).toLocaleString()}
-							>
-								{shortTime(t.statusChangedAt)}
-							</span>
-						</>
-					)}
-				</span>
-				{/* Hover action: the same pinned, feathered cluster the workspace
-				    rows use for pin/archive, so finishing a ticket reads as the
-				    same gesture as archiving a workspace instead of a stray glyph
-				    in the meta line. The row's own meta keeps its slot beneath. */}
-				<span className="sidebar-ws-actions">
-					<Tooltip label="Mark done in Plain">
-						<span
-							role="button"
-							tabIndex={0}
-							className="sidebar-ws-action sidebar-ws-action--done"
-							aria-label="Mark done in Plain"
-							onClick={(e) => {
-								e.stopPropagation();
-								markSupportRowDone(t.id);
-							}}
-							onKeyDown={(e) => {
-								if (e.key === "Enter" || e.key === " ") {
-									e.stopPropagation();
-									markSupportRowDone(t.id);
-								}
-							}}
-						>
-							<IconCheck size={21} />
-						</span>
-					</Tooltip>
-				</span>
-			</button>
+				thread={t}
+				session={supportSessionByThread.get(t.id) || null}
+				active={supportThreadActive(t)}
+				onOpen={() => onOpenTicket(t)}
+				onMarkDone={() => markSupportRowDone(t.id)}
+			/>
 		);
 	}
 
