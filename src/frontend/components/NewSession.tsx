@@ -931,14 +931,10 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               >
                 {creating
                   ? "Creating…"
-                  : auth?.local || desktopShell
-                    ? createTarget === "cloud"
-                      ? createMore
-                        ? "Create more in cloud"
-                        : "Create in cloud"
-                      : createMore
-                        ? "Create more locally"
-                        : "Create locally"
+                  : (auth?.local || desktopShell) && createTarget === "local"
+                    ? createMore
+                      ? "Create more locally"
+                      : "Create locally"
                     : createMore
                       ? "Create more"
                       : "Create"}
@@ -960,7 +956,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                   {auth?.local && (
                     <>
                       {[
-                        { target: "cloud" as const, title: "Create in cloud", desc: "Run on os.tella.dev" },
+                        { target: "cloud" as const, title: "Create", desc: "Run on os.tella.dev" },
                         { target: "local" as const, title: "Create locally", desc: "Experimental - run on this Mac" },
                       ].map((opt) => (
                         <button
