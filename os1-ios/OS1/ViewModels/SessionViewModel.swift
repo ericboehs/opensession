@@ -58,6 +58,8 @@ final class SessionViewModel {
     /// pass each on fast streams.
     private var pendingLiveText = ""
     private var liveFlushTask: Task<Void, Never>?
+    /// Ids for graduated live-text entries (see `graduateLiveText`).
+    private var liveTextSeq = 0
 
     private func appendLiveText(_ text: String) {
         pendingLiveText += text
@@ -80,6 +82,49 @@ final class SessionViewModel {
             liveText += pendingLiveText
             pendingLiveText = ""
         }
+    }
+
+    /// Move the accumulated live text into an ordered ephemeral entry the
+    /// moment a tool call arrives. The text chronologically PRECEDES the tool
+    /// call, but the live bubble renders after everything — leaving it there
+    /// shows the turn in the wrong order until the durable entry lands, and
+    /// the ~1s-later reshuffle reads as flicker. Graduated entries are
+    /// stripped the same way the live bubble is once the durable copy lands.
+    private func graduateLiveText() {
+        flushLiveTextNow()
+        guard !liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        liveTextSeq += 1
+        liveEntries.append(TranscriptEntry(
+            id: "live-text-\(liveTextSeq)",
+            type: "assistant",
+            content: liveText
+        ))
+        liveText = ""
+    }
+
+    /// Strip one landed assistant block from the live bubble and from any
+    /// graduated live-text entries; drops graduated entries that end up empty.
+    /// Returns whether the text was found anywhere.
+    private func stripLanded(_ text: String) -> Bool {
+        var found = false
+        if liveText.contains(text) {
+            liveText = liveText.replacingOccurrences(of: text, with: "")
+            found = true
+        }
+        for index in liveEntries.indices
+        where liveEntries[index].id.hasPrefix("live-text-") {
+            if let content = liveEntries[index].content, content.contains(text) {
+                liveEntries[index].content = content.replacingOccurrences(of: text, with: "")
+                found = true
+            }
+        }
+        liveEntries.removeAll {
+            $0.id.hasPrefix("live-text-")
+                && $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return found
     }
 
     init(session: Session) {
@@ -244,23 +289,25 @@ final class SessionViewModel {
                             && $0.toolUseId == live.toolUseId)
                 }
             }
-            rebuildDisplayItems()
             // A mid-run assistant block that lands as a durable entry must be
-            // stripped from the live bubble (it would render twice otherwise),
-            // and remembered so a stream_text that arrives AFTER the append is
+            // stripped from the live bubble and graduated entries (it would
+            // render twice otherwise). Blocks the strip does NOT find are
+            // remembered so a stream_text that arrives AFTER the append is
             // dropped instead of re-adding the block. Flush the coalescing
             // buffer first so a block split across flushed + pending text
             // still matches.
             flushLiveTextNow()
             for entry in appended where entry.isAssistant && !entry.text.isEmpty {
-                liveText = liveText.replacingOccurrences(of: entry.text, with: "")
-                landedStreamTexts.append(entry.text)
+                if !stripLanded(entry.text) {
+                    landedStreamTexts.append(entry.text)
+                }
             }
             landedStreamTexts = Array(landedStreamTexts.suffix(30))
             if liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 liveText = ""
                 if streamEnded { isStreaming = false }
             }
+            rebuildDisplayItems()
 
         case .streamStart(let id) where id == session.id:
             liveFlushTask?.cancel()
@@ -283,6 +330,7 @@ final class SessionViewModel {
 
         case .streamEntry(let id, let entry) where id == session.id:
             guard !entries.contains(where: { $0.id == entry.id }) else { break }
+            graduateLiveText()
             if let index = liveEntries.firstIndex(where: { $0.id == entry.id }) {
                 liveEntries[index] = entry
             } else {

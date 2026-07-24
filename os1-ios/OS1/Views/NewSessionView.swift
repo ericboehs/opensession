@@ -20,6 +20,25 @@ struct NewSessionView: View {
         NavigationStack {
             Form {
                 Section("Prompt") {
+                    #if os(macOS)
+                    // A vertical-axis TextField inside a grouped macOS Form
+                    // renders as a label/value row with right-aligned text — a
+                    // plain TextEditor is the real multiline prompt box.
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $prompt)
+                            .font(.body)
+                            .scrollContentBackground(.hidden)
+                            .frame(minHeight: 120, maxHeight: 260)
+                            .focused($promptFocused)
+                        if prompt.isEmpty {
+                            Text("What should this session do?")
+                                .font(.body)
+                                .foregroundStyle(.tertiary)
+                                .padding(.leading, 5)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    #else
                     TextField(
                         "What should this session do?",
                         text: $prompt,
@@ -27,6 +46,7 @@ struct NewSessionView: View {
                     )
                     .lineLimit(4...12)
                     .focused($promptFocused)
+                    #endif
                 }
 
                 Section {
@@ -70,6 +90,7 @@ struct NewSessionView: View {
                     Button(creating ? "Starting…" : "Start") {
                         Task { await create() }
                     }
+                    .keyboardShortcut(.return, modifiers: .command)
                     .disabled(
                         creating
                             || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

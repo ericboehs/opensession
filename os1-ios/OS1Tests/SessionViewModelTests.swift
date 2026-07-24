@@ -139,6 +139,41 @@ final class SessionViewModelTests: XCTestCase {
         XCTAssertEqual(orphan.id, "tr-orphan")
     }
 
+    /// A tool call graduates the preceding live text into an ordered
+    /// ephemeral entry, so the turn reads text → tool instead of the text
+    /// dangling in the bottom bubble below the tool row.
+    func testToolCallGraduatesPrecedingLiveText() {
+        let viewModel = makeViewModel()
+        viewModel.handle(.streamStart(sessionId: "bks-1"))
+        viewModel.handle(.streamText(sessionId: "bks-1", text: "Let me check."))
+        viewModel.handle(.streamEntry(sessionId: "bks-1", entry: entry("live-1", "tool_use", toolUseId: "tu-1")))
+        XCTAssertEqual(viewModel.liveText, "", "text must leave the live bubble")
+        XCTAssertEqual(viewModel.displayItems.count, 2)
+        guard case .entry(let graduated) = viewModel.displayItems[0] else {
+            return XCTFail("graduated text should render before the tool call")
+        }
+        XCTAssertEqual(graduated.text, "Let me check.")
+        XCTAssertTrue(graduated.isAssistant)
+        guard case .toolCall = viewModel.displayItems[1] else {
+            return XCTFail("tool call should follow the graduated text")
+        }
+    }
+
+    /// The durable copy of a graduated block replaces it without duplication.
+    func testDurableAppendReplacesGraduatedLiveText() {
+        let viewModel = makeViewModel()
+        viewModel.handle(.streamStart(sessionId: "bks-1"))
+        viewModel.handle(.streamText(sessionId: "bks-1", text: "Let me check."))
+        viewModel.handle(.streamEntry(sessionId: "bks-1", entry: entry("live-1", "tool_use", toolUseId: "tu-1")))
+        viewModel.handle(.transcriptAppend(sessionId: "bks-1", entries: [
+            entry("e1", "assistant", text: "Let me check."),
+            entry("srv-1", "tool_use", toolUseId: "tu-1"),
+        ]))
+        XCTAssertTrue(viewModel.liveEntries.isEmpty, "graduated copy must not linger next to the durable one")
+        XCTAssertEqual(viewModel.entries.map(\.id), ["e1", "srv-1"])
+        XCTAssertEqual(viewModel.displayItems.count, 2)
+    }
+
     func testStreamEntryGraduatesWhenDurableCopyLands() {
         let viewModel = makeViewModel()
         viewModel.handle(.streamStart(sessionId: "bks-1"))

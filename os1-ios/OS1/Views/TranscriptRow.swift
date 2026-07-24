@@ -202,28 +202,36 @@ struct ToolCallRow: View {
 // MARK: - Streaming bubble
 
 /// Assistant text streaming in over `stream_text` frames, before the durable
-/// transcript entry exists.
+/// transcript entry exists. Only rendered with text — run activity without
+/// text shows as `RunActivityIndicator` instead.
 struct StreamingBubble: View {
     let text: String
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                if text.isEmpty {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    MarkdownBody(text)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                .fill.secondary,
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-            )
+            MarkdownBody(text)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    .fill.secondary,
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                )
             Spacer(minLength: 48)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Small constant-height activity row shown for the whole run — the stable
+/// "still working" anchor at the bottom of the transcript.
+struct RunActivityIndicator: View {
+    var body: some View {
+        HStack {
+            ProgressView()
+                .controlSize(.small)
+            Spacer()
+        }
+        .padding(.leading, 12)
+        .padding(.vertical, 2)
     }
 }

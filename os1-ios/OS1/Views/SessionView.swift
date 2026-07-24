@@ -21,9 +21,18 @@ struct SessionView: View {
                         TranscriptRow(item: item)
                             .id(item.id)
                     }
-                    if viewModel.isStreaming || !viewModel.liveText.isEmpty {
+                    if !viewModel.liveText.isEmpty {
                         StreamingBubble(text: viewModel.liveText)
                             .id("live-stream")
+                    }
+                    // One persistent activity row for the whole run instead of
+                    // a spinner-in-a-bubble that popped in and out between
+                    // every landed block and tool call — that churn read as
+                    // flicker.
+                    if viewModel.isRunning || viewModel.isStreaming,
+                        viewModel.pendingQuestion == nil {
+                        RunActivityIndicator()
+                            .id("run-indicator")
                     }
                     if let ask = viewModel.pendingQuestion {
                         AskQuestionCard(ask: ask) { answers in
@@ -262,8 +271,10 @@ struct SessionView: View {
         let target: String
         if viewModel.pendingQuestion != nil {
             target = "ask-\(viewModel.pendingQuestion!.id)"
-        } else if viewModel.isStreaming || !viewModel.liveText.isEmpty {
+        } else if !viewModel.liveText.isEmpty {
             target = "live-stream"
+        } else if viewModel.isRunning || viewModel.isStreaming {
+            target = "run-indicator"
         } else if let last = viewModel.displayItems.last {
             target = last.id
         } else {
