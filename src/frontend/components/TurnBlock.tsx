@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import {
   ToolCallBlock,
@@ -79,7 +79,12 @@ export const TurnBlock = React.memo(function TurnBlock({
     hasMedia || hasFailure || (pref === "auto" ? live : pref === "expanded");
   const [expanded, setExpanded] = useState(defaultExpanded);
 
+  // Once the user has toggled the fold by hand, their choice wins — the
+  // auto-sync below must not reopen/collapse it on later default changes
+  // (settle, failure/media arriving).
+  const userToggledRef = useRef(false);
   useEffect(() => {
+    if (userToggledRef.current) return;
     setExpanded(defaultExpanded);
   }, [defaultExpanded]);
 
@@ -165,7 +170,10 @@ export const TurnBlock = React.memo(function TurnBlock({
     >
       <button
         type="button"
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => {
+          userToggledRef.current = true;
+          setExpanded(!expanded);
+        }}
         className="mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-[14px] leading-5 text-dim hover:bg-hover"
       >
         <span

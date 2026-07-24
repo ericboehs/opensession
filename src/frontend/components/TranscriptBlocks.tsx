@@ -120,7 +120,14 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 					block.kind === "turn"
 						? `${block.items[block.items.length - 1].id}#turn`
 						: key;
-				const isLiveTail = Boolean(live) && i === blocks.length - 1;
+				// While streaming, flushTurn splits trailing assistant text out as
+				// its own block after the fold, so the live turn alternates between
+				// being last and second-to-last as text and tool calls interleave —
+				// a turn fold directly before the tail is still the live turn.
+				const isLiveTail =
+					Boolean(live) &&
+					(i === blocks.length - 1 ||
+						(block.kind === "turn" && i === blocks.length - 2));
 				const content =
 					block.kind === "turn" ? (
 					<TurnBlock
