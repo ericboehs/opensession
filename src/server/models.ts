@@ -166,6 +166,10 @@ export interface DialPreset {
   effort: SessionEffort;
   /** Which DIAL_ORACLE_AGENTS entry backs this tier's oracle. */
   oracleAgent: string;
+  /** Picker section this preset renders under (defaults to "dial"). Lets
+   *  one-off personal combos (group "custom" → "Michiel custom") reuse the
+   *  whole dial mechanism without joining the tier ladder. */
+  group?: string;
 }
 
 /**
@@ -270,6 +274,16 @@ export const DIAL_PRESETS: DialPreset[] = [
     model: "gpt-5.6-luna",
     effort: "high",
     oracleAgent: "oracle-sol",
+  },
+  {
+    id: "dial/opus-fable",
+    label: "Opus 5 + Fable oracle",
+    description:
+      "Michiel's custom combo — Opus 5 at extra-high effort with a Fable 5-high oracle",
+    model: "claude-opus-5",
+    effort: "xhigh",
+    oracleAgent: "oracle-fable",
+    group: "custom",
   },
 ];
 
@@ -509,7 +523,7 @@ export function refreshOpencodePickerModels(): void {
         provider: "opencode",
         label: p.label,
         aliases: [],
-        group: "dial",
+        group: p.group ?? "dial",
         description: p.description,
       });
     }

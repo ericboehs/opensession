@@ -248,6 +248,12 @@ describe("The Dial", () => {
         effort: "high",
         oracleAgent: "oracle-sol",
       },
+      {
+        id: "dial/opus-fable",
+        model: "claude-opus-5",
+        effort: "xhigh",
+        oracleAgent: "oracle-fable",
+      },
     ]);
     expect(DIAL_ORACLE_AGENTS["oracle-sol"]?.variant).toBe("xhigh");
     expect(DIAL_ORACLE_AGENTS["oracle-fable"]?.variant).toBe("high");

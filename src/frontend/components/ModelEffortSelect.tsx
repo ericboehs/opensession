@@ -118,6 +118,7 @@ export function shortModelLabel(id: string, models: ModelOption[]): string {
 /** Friendly names for the upstream providers in the grouped main list. */
 const PROVIDER_LABELS: Record<string, string> = {
 	dial: "The Dial",
+	custom: "Michiel custom",
 	orchestrator: "The Orchestrator",
 	anthropic: "Anthropic",
 	openai: "OpenAI",
@@ -134,7 +135,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 /** Section order in the grouped main list; unlisted providers follow in
  * config order. */
-const PROVIDER_ORDER = ["dial", "orchestrator", "anthropic", "openai", "cerebras", "xai", "meta", "moonshotai"];
+const PROVIDER_ORDER = ["dial", "custom", "orchestrator", "anthropic", "openai", "cerebras", "xai", "meta", "moonshotai"];
 
 /** Preferred display order for the opencode main list (by id tail); anything
  * unlisted keeps its registry/config order after these. */
