@@ -335,7 +335,10 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
           <span
             role="button"
             tabIndex={0}
-            className="flex-shrink-0 rounded border border-line px-1.5 py-px text-[10.5px] text-dim opacity-0 transition-opacity hover:border-line-strong hover:text-fg focus:opacity-100 group-hover:opacity-100"
+            // Hover-only, so it's dead weight on a phone: at opacity-0 it still
+            // took 71px of a 362px row, breaking the summary off a quarter early
+            // — and left an invisible tap target that ate taps meant for the row.
+            className="hidden flex-shrink-0 rounded border border-line px-1.5 py-px text-[10.5px] text-dim opacity-0 transition-opacity hover:border-line-strong hover:text-fg focus:opacity-100 group-hover:opacity-100 min-[721px]:block"
             onClick={(event) => {
               event.stopPropagation();
               onOpenEvidence(entry, result);
