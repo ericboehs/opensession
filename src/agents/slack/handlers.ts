@@ -49,6 +49,7 @@ import {
   gitIdentityFor,
   slackIdToFirstName,
 } from "../../server/shared/user-mappings";
+import { opencodeOneShot } from "../../server/opencode-oneshot";
 import { worktreePathFor } from "../../server/worktree";
 import { sessionForThread } from "../../server/slack-links";
 import { tryGetSessionControl } from "../../server/session-control";
@@ -245,19 +246,50 @@ async function branchExists(branch: string): Promise<boolean> {
   }
 }
 
-async function generateBranchName(text: string): Promise<string> {
-  // Heuristic: take first 2-3 words, lowercased, hyphen-separated, no special chars
-  // Avoids a full Haiku query just for a branch name.
-  const words = text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "") // Remove special chars
-    .split(/\s+/) // Split on whitespace
-    .filter((w) => w.length > 0) // Remove empty strings
-    .slice(0, 3) // Take first 3 words
-    .join("-") // Hyphenate
-    .slice(0, 30); // Max 30 chars
+async function generateBranchName(
+  text: string,
+  context?: string
+): Promise<string> {
+  // The trigger message is often filler ("plz fix") while the real task
+  // lives in the thread context — ask a one-shot for a descriptive name
+  // from both. The worktree creation this feeds takes minutes, so a few
+  // seconds of model call doesn't move the needle.
+  let baseName = "";
+  const source = [context?.trim(), text.trim()]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, 2000);
+  if (source) {
+    const out = await opencodeOneShot(
+      `Name a git branch for this task: 2-4 words, kebab-case, lowercase letters/digits/hyphens only, max 30 chars, describing the actual task (never filler like "plz-fix" or "try-again"). Output ONLY the branch name, nothing else.\n\nTask:\n"""\n${source}\n"""`,
+      { label: "slack-branch-name" }
+    );
+    if (out) {
+      baseName = out
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, "-")
+        .replace(/-{2,}/g, "-")
+        .slice(0, 30)
+        .replace(/^-+|-+$/g, "");
+      // A name that still looks like prose (spaces collapsed away entirely,
+      // or the model chatted) falls through to the heuristic.
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(baseName)) baseName = "";
+    }
+  }
 
-  const baseName = words || "slack-task";
+  if (!baseName) {
+    // Heuristic fallback: first 3 words of the message, kebab-cased.
+    baseName =
+      text
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .split(/\s+/)
+        .filter((w) => w.length > 0)
+        .slice(0, 3)
+        .join("-")
+        .slice(0, 30) || "slack-task";
+  }
 
   // Deduplicate: if branch already exists, append a numeric suffix
   if (!(await branchExists(baseName))) return baseName;
@@ -287,7 +319,9 @@ async function createWorktree(
         `--user=${userId}`,
         `--message=${(message || "").substring(0, 500)}`,
       ],
-      { timeoutMs: 120000 }
+      // A cold worktree is a 16k-file checkout + full bun install; 120s
+      // killed one mid-install on 2026-07-24 ("exited with code null").
+      { timeoutMs: 300000 }
     );
 
     if (result.status !== 0) {
@@ -1563,7 +1597,7 @@ Please help with this request. Start by exploring the codebase to understand wha
   let prompt: string;
 
   try {
-    branch = await generateBranchName(cleanText);
+    branch = await generateBranchName(cleanText, context);
     worktreeDir = await createWorktree(branch, user, cleanText);
 
     const intro = context
