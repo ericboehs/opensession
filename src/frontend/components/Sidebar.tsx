@@ -3092,7 +3092,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			const snoozedNode = (
 				<div className="sidebar-status-group" key={gkey}>
 					<button
-						className="sidebar-group-header flex w-full items-center gap-[9px] rounded-md px-[10px] py-1 text-[14px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg"
+						// Same bare .sidebar-group-header as the lanes above: utilities
+						// here would out-specify its phone/nesting overrides and leave
+						// this one header out of line with the rest.
+						className="sidebar-group-header transition-colors"
 						onClick={() => toggleGroup(gkey)}
 					>
 						<IconMoon
@@ -3129,23 +3132,32 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// row so the open session never hides inside a collapsed repo.
 	function renderRepoGroups(withLanes: boolean) {
 		const byRepo = new Map<string, WsRow[]>();
-		const bucket = (repo: string) => {
-			let b = byRepo.get(repo);
+		const snoozedByRepo = new Map<string, WsRow[]>();
+		const bucket = (map: Map<string, WsRow[]>, repo: string) => {
+			let b = map.get(repo);
 			if (!b) {
 				b = [];
-				byRepo.set(repo, b);
+				map.set(repo, b);
 			}
 			return b;
 		};
-		for (const r of focusWsRows) bucket(wsRowRepo(r)).push(r);
+		for (const r of focusWsRows) bucket(byRepo, wsRowRepo(r)).push(r);
+		// "Repo and status" keeps each repo's snoozed rows in that repo's own
+		// band, as a Snoozed lane beside the other lanes — a global Snoozed
+		// group would strand them away from their repo. Flat "Repo" mode has no
+		// lanes to slot one into, so there they stay in the single global group.
+		if (withLanes)
+			for (const r of snoozedWsRows)
+				bucket(snoozedByRepo, wsRowRepo(r)).push(r);
+		const present = new Set([...byRepo.keys(), ...snoozedByRepo.keys()]);
 		const order = [
-			...repos,
-			...Array.from(byRepo.keys()).filter((r) => !repos.includes(r)),
+			...repos.filter((r) => present.has(r)),
+			...Array.from(present).filter((r) => !repos.includes(r)),
 		];
 		return order
-			.filter((repo) => byRepo.has(repo))
 			.map((repo) => {
-				const rows = byRepo.get(repo)!;
+				const rows = byRepo.get(repo) || [];
+				const snoozedRows = snoozedByRepo.get(repo) || [];
 				const urgent = rows.filter((r) => r.status === "needsinput");
 				// Flat mode: rows keep the status-lane ordering (needs input, then
 				// in progress, review, done, backlog) so a live run never sinks
@@ -3157,7 +3169,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					(a, b) => laneRank(a.status) - laneRank(b.status),
 				);
 				const gkey = `repo:${repo}`;
-				const hasSelected = rows.some((r) =>
+				const hasSelected = [...rows, ...snoozedRows].some((r) =>
 					r.chats.some((c) => c.id === selectedId),
 				);
 				const open = isOpen(gkey) || hasSelected;
@@ -3175,7 +3187,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							<span className="sidebar-group-name">{repoLabel(repo)}</span>
 							{/* Count rides directly behind the repo name, not pinned right. */}
 							<span className="sidebar-group-count">
-								{rows.length}
+								{rows.length + snoozedRows.length}
 							</span>
 							{/* Urgent rows must not vanish into a closed band — a collapsed
 							    header wears the count of rows waiting for input. */}
@@ -3216,7 +3228,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						{open && (
 							<div className="sidebar-repo-lanes">
 								{withLanes
-									? renderStatusLanes(rows, `repo:${repo}::`)
+									? renderStatusLanes(rows, `repo:${repo}::`, snoozedRows)
 									: ordered.map(renderWsRow)}
 							</div>
 						)}
@@ -3963,13 +3975,17 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					    Conductor-style row list; "Repo and status" nests the labeled
 					    status lanes under each repo band instead. Empty lanes/bands
 					    are hidden — only groups with sessions render. */}
-					{/* Repo modes exclude snoozed rows from their bands (they're out of
-					    focusWsRows), so the Snoozed group renders globally after them;
-					    the plain mode slots it above Backlog via renderStatusLanes. */}
+					{/* Snoozed rows sit out of focusWsRows, so each mode places them
+					    itself: "Repo and status" gives every repo band its own Snoozed
+					    lane (renderRepoGroups), while flat "Repo" — which has no lanes —
+					    renders one global Snoozed group after the bands, and the plain
+					    status mode slots it above Backlog via renderStatusLanes. */}
 					{filter.groupBy === "repo" || filter.groupBy === "repo-status"
 						? [
 								...renderRepoGroups(filter.groupBy === "repo-status"),
-								...renderStatusLanes([], "", snoozedWsRows),
+								...(filter.groupBy === "repo"
+									? renderStatusLanes([], "", snoozedWsRows)
+									: []),
 							]
 						: renderStatusLanes(focusWsRows, "", snoozedWsRows)}
 				</div>
