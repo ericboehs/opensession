@@ -6,8 +6,8 @@ import Foundation
 enum ServerEvent {
     case hello(bootId: String)
     case pong
-    case transcriptInit(sessionId: String, entries: [TranscriptEntry])
-    case transcriptHistory(sessionId: String, entries: [TranscriptEntry])
+    case transcriptInit(sessionId: String, entries: [TranscriptEntry], cursor: HistoryCursor)
+    case transcriptHistory(sessionId: String, entries: [TranscriptEntry], cursor: HistoryCursor)
     case transcriptAppend(sessionId: String, entries: [TranscriptEntry])
     case streamStart(sessionId: String)
     case streamText(sessionId: String, text: String)
@@ -32,10 +32,14 @@ enum ServerEvent {
             return .pong
         case "transcript_init":
             guard let id = frame.sessionId else { return .ignored }
-            return .transcriptInit(sessionId: id, entries: frame.entries ?? [])
+            return .transcriptInit(
+                sessionId: id, entries: frame.entries ?? [], cursor: frame.cursor
+            )
         case "transcript_history":
             guard let id = frame.sessionId else { return .ignored }
-            return .transcriptHistory(sessionId: id, entries: frame.entries ?? [])
+            return .transcriptHistory(
+                sessionId: id, entries: frame.entries ?? [], cursor: frame.cursor
+            )
         case "transcript_append":
             guard let id = frame.sessionId else { return .ignored }
             return .transcriptAppend(sessionId: id, entries: frame.entries ?? [])
@@ -85,6 +89,22 @@ enum ServerEvent {
     }
 }
 
+/// Pagination cursor carried by transcript_init / transcript_history frames.
+/// `truncated` means older history exists; paging back sends `load_history`
+/// with `beforeOffset` + `beforeRev` (byte cursor into the mirror file) or
+/// `beforeSeq` when the server serves the seq-mode transcript store.
+struct HistoryCursor: Equatable {
+    var truncated: Bool
+    var startOffset: Int?
+    var rev: String?
+    var firstSeq: Int?
+
+    /// No paging metadata (short transcripts, tests).
+    static let empty = HistoryCursor(
+        truncated: false, startOffset: nil, rev: nil, firstSeq: nil
+    )
+}
+
 /// One message waiting on a busy run — either queued (held until the run
 /// finishes) or steered (delivering at the next turn boundary).
 struct QueueItem: Identifiable, Equatable {
@@ -119,4 +139,17 @@ private struct RawFrame: Decodable {
     let questionId: String?
     let questions: [AskQuestion.Question]?
     let message: String?
+    let truncated: Bool?
+    let startOffset: Int?
+    let rev: String?
+    let firstSeq: Int?
+
+    var cursor: HistoryCursor {
+        HistoryCursor(
+            truncated: truncated ?? false,
+            startOffset: startOffset,
+            rev: rev,
+            firstSeq: firstSeq
+        )
+    }
 }

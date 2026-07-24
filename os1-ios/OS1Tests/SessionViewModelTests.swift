@@ -22,14 +22,14 @@ final class SessionViewModelTests: XCTestCase {
         viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [
             entry("e1", "user", text: "hi"),
             entry("e2", "assistant", text: "hello"),
-        ]))
+        ], cursor: .empty))
         XCTAssertEqual(viewModel.entries.map(\.id), ["e1", "e2"])
         XCTAssertEqual(viewModel.displayItems.map(\.id), ["e1", "e2"])
     }
 
     func testEventsForOtherSessionsAreIgnored() {
         let viewModel = makeViewModel()
-        viewModel.handle(.transcriptInit(sessionId: "bks-other", entries: [entry("x", "user")]))
+        viewModel.handle(.transcriptInit(sessionId: "bks-other", entries: [entry("x", "user")], cursor: .empty))
         viewModel.handle(.streamStart(sessionId: "bks-other"))
         viewModel.handle(.streamText(sessionId: "bks-other", text: "nope"))
         XCTAssertTrue(viewModel.entries.isEmpty)
@@ -84,7 +84,7 @@ final class SessionViewModelTests: XCTestCase {
         viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [
             entry("u1", "user", text: "hi"),
             entry("e1", "assistant", text: "Hello world"),
-        ]))
+        ], cursor: .empty))
         XCTAssertEqual(viewModel.liveText, "", "resynced block would render twice")
         XCTAssertFalse(viewModel.isStreaming)
         XCTAssertEqual(viewModel.entries.map(\.id), ["u1", "e1"])
@@ -97,18 +97,18 @@ final class SessionViewModelTests: XCTestCase {
         // Resync landed only the first block; the tail is still live-only.
         viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [
             entry("e1", "assistant", text: "Hello world.")
-        ]))
+        ], cursor: .empty))
         XCTAssertTrue(viewModel.liveText.contains("And more"))
         XCTAssertFalse(viewModel.liveText.contains("Hello world."))
     }
 
     func testHistoryPrependsWithoutDuplicates() {
         let viewModel = makeViewModel()
-        viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [entry("e2", "user", text: "recent")]))
+        viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [entry("e2", "user", text: "recent")], cursor: .empty))
         viewModel.handle(.transcriptHistory(sessionId: "bks-1", entries: [
             entry("e1", "user", text: "older"),
             entry("e2", "user", text: "recent"),
-        ]))
+        ], cursor: .empty))
         XCTAssertEqual(viewModel.entries.map(\.id), ["e1", "e2"])
     }
 
@@ -126,7 +126,7 @@ final class SessionViewModelTests: XCTestCase {
             entry("e1", "tool_use", toolUseId: "tu-1"),
             entry("tr-tu-1", "tool_result", text: "ok", toolUseId: "tu-1"),
             entry("tr-orphan", "tool_result", text: "lost"),
-        ]))
+        ], cursor: .empty))
         XCTAssertEqual(viewModel.displayItems.count, 2)
         guard case .toolCall(let use, let result) = viewModel.displayItems[0] else {
             return XCTFail("expected merged tool call")

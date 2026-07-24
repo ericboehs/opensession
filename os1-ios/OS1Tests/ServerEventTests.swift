@@ -33,7 +33,7 @@ final class ServerEventTests: XCTestCase {
           {"id":"tr-tu-1","type":"tool_result","toolUseId":"tu-1","content":"ok","isError":false}
         ]}
         """#
-        guard case .transcriptInit(let id, let entries) = parse(json) else {
+        guard case .transcriptInit(let id, let entries, _) = parse(json) else {
             return XCTFail("expected .transcriptInit")
         }
         XCTAssertEqual(id, "bks-1")

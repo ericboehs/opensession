@@ -53,8 +53,20 @@ final class OS1Socket {
         send(["type": "watch", "sessionId": sessionId])
     }
 
-    func loadHistory(sessionId: String, beforeOffset: Int) {
-        send(["type": "load_history", "sessionId": sessionId, "beforeOffset": beforeOffset])
+    /// Page one window of earlier history (arrives as transcript_history).
+    /// `beforeRev` guards against the mirror file rotating under the cursor —
+    /// on mismatch the server re-sends a fresh transcript_init instead.
+    func loadHistory(sessionId: String, beforeOffset: Int, beforeRev: String?) {
+        var frame: [String: Any] = [
+            "type": "load_history", "sessionId": sessionId, "beforeOffset": beforeOffset,
+        ]
+        if let beforeRev { frame["beforeRev"] = beforeRev }
+        send(frame)
+    }
+
+    /// Seq-mode paging for sessions served from the transcript v2 store.
+    func loadHistory(sessionId: String, beforeSeq: Int) {
+        send(["type": "load_history", "sessionId": sessionId, "beforeSeq": beforeSeq])
     }
 
     func prompt(sessionId: String, content: String, user: String) {

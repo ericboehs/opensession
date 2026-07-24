@@ -35,6 +35,18 @@ final class SessionViewModel {
     private(set) var notice: String?
     var draft = ""
 
+    // ── Earlier-history paging ──
+    /// Older history exists server-side (transcript_init/history `truncated`).
+    private(set) var canLoadEarlier = false
+    private(set) var loadingEarlier = false
+    /// Bumped on every history prepend; the view reacts (restores scroll
+    /// position for requested pages, re-pins bottom for the staged init tail).
+    private(set) var historyPrependSeq = 0
+    private(set) var lastPrependWasRequested = false
+    private var historyStartOffset: Int?
+    private var historyRev: String?
+    private var historyFirstSeq: Int?
+
     private var socket: OS1Socket?
     private var reconnectTask: Task<Void, Never>?
     /// Foreground liveness probe (see `appDidBecomeActive`).
@@ -210,6 +222,30 @@ final class SessionViewModel {
         socket?.cancelWatchedRun()
     }
 
+    /// Ask the server for one page of history older than what we hold.
+    func loadEarlier() {
+        guard canLoadEarlier, !loadingEarlier, connectionState == .connected,
+              let socket else { return }
+        if let seq = historyFirstSeq, seq > 1 {
+            loadingEarlier = true
+            socket.loadHistory(sessionId: session.id, beforeSeq: seq)
+        } else if let offset = historyStartOffset, offset > 0 {
+            loadingEarlier = true
+            socket.loadHistory(
+                sessionId: session.id, beforeOffset: offset, beforeRev: historyRev
+            )
+        } else {
+            canLoadEarlier = false
+        }
+    }
+
+    private func applyHistoryCursor(_ cursor: HistoryCursor) {
+        canLoadEarlier = cursor.truncated
+        historyStartOffset = cursor.startOffset
+        if let rev = cursor.rev { historyRev = rev }
+        historyFirstSeq = cursor.firstSeq
+    }
+
     func steerQueued(_ item: QueueItem) {
         socket?.steerQueued(sessionId: session.id, queueId: item.id)
     }
@@ -253,10 +289,13 @@ final class SessionViewModel {
             // Watch after the handshake frame so the send cannot race the upgrade.
             socket?.watch(sessionId: session.id)
 
-        case .transcriptInit(let id, let newEntries) where id == session.id:
+        case .transcriptInit(let id, let newEntries, let cursor) where id == session.id:
             entries = newEntries
             liveEntries.removeAll()
             localEchoIds.removeAll()
+            applyHistoryCursor(cursor)
+            // A rev-mismatch reply to load_history comes back as a fresh init.
+            loadingEarlier = false
             rebuildDisplayItems()
             // A resync init (reconnect, foreground re-watch) can include
             // assistant blocks that are still sitting in the live bubble —
@@ -273,9 +312,13 @@ final class SessionViewModel {
                 }
             }
 
-        case .transcriptHistory(let id, let older) where id == session.id:
+        case .transcriptHistory(let id, let older, let cursor) where id == session.id:
             let known = Set(entries.map(\.id))
             entries.insert(contentsOf: older.filter { !known.contains($0.id) }, at: 0)
+            applyHistoryCursor(cursor)
+            lastPrependWasRequested = loadingEarlier
+            loadingEarlier = false
+            historyPrependSeq += 1
             rebuildDisplayItems()
 
         case .transcriptAppend(let id, let appended) where id == session.id:

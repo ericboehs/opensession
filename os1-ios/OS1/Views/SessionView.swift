@@ -9,6 +9,10 @@ struct SessionView: View {
     /// column (transcript AND composer) and center it, like other chat apps.
     private let contentMaxWidth: CGFloat = 720
 
+    /// Anchor for restoring the scroll position after a requested history
+    /// prepend: the entry that was topmost stays where the reader left it.
+    @State private var prependAnchorId: String?
+
     init(session: Session) {
         _viewModel = State(initialValue: SessionViewModel(session: session))
     }
@@ -17,6 +21,9 @@ struct SessionView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 10) {
+                    if viewModel.canLoadEarlier || viewModel.loadingEarlier {
+                        historyLoader
+                    }
                     ForEach(viewModel.displayItems) { item in
                         TranscriptRow(item: item)
                             .id(item.id)
@@ -60,6 +67,21 @@ struct SessionView: View {
                 // A question needs eyes even if they've scrolled away.
                 scrollToBottom(proxy, animated: true)
             }
+            .onChange(of: viewModel.historyPrependSeq) {
+                if viewModel.lastPrependWasRequested {
+                    // Keep the reader where they were: the entry that was at
+                    // the top of the viewport stays there.
+                    if let anchor = prependAnchorId {
+                        proxy.scrollTo(anchor, anchor: .top)
+                    }
+                } else {
+                    // The staged rest-of-tail prepend right after first paint:
+                    // a large conversation must still open at the bottom (the
+                    // size-change pin alone proved unreliable for big batches).
+                    scrollToBottom(proxy, animated: false)
+                }
+                prependAnchorId = nil
+            }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             statusBanner
@@ -91,6 +113,32 @@ struct SessionView: View {
             // resync (and reconnect if dead) the moment we're visible again.
             if phase == .active { viewModel.appDidBecomeActive() }
         }
+    }
+
+    /// Sits above the oldest rendered entry; scrolling it into view pages in
+    /// the previous window of history (with a button as the manual fallback).
+    private var historyLoader: some View {
+        HStack(spacing: 6) {
+            if viewModel.loadingEarlier {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Loading earlier…")
+            } else {
+                Button("Load earlier history") { requestEarlier() }
+                    .buttonStyle(.borderless)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .onAppear { requestEarlier() }
+    }
+
+    private func requestEarlier() {
+        guard viewModel.canLoadEarlier, !viewModel.loadingEarlier else { return }
+        prependAnchorId = viewModel.displayItems.first?.id
+        viewModel.loadEarlier()
     }
 
     @ViewBuilder
