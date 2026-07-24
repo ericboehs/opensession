@@ -342,9 +342,13 @@ export interface Project {
 	createdBy: string;
 	createdAt: string;
 	order?: number;
+	/** Stable dedupe key on auto-created workspaces (`ghpr-…` / `plain-…`). */
+	key?: string;
 	/** Present on auto-created PR folders. */
 	prNumber?: number;
 	branch?: string;
+	/** For support-ticket workspaces: the Plain thread they're attached to. */
+	plainThreadId?: string;
 }
 
 export interface TranscriptEntry {

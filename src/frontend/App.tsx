@@ -24,6 +24,7 @@ import { Reviews } from "./components/Reviews";
 import { TeamChat } from "./components/TeamChat";
 import { PrQueuePreview } from "./components/PrQueuePreview";
 import { SupportPreview } from "./components/SupportPreview";
+import { WorkspacePane } from "./components/WorkspacePane";
 import { Reports } from "./components/Reports";
 import { Analytics } from "./components/Analytics";
 import { UserGate, getCurrentUser, useAuthStatus } from "./components/UserPicker";
@@ -92,6 +93,10 @@ type Route =
 	| { view: "home" }
 	| { view: "new"; prompt?: string }
 	| { view: "session"; id: string }
+	// The workspace container without a chat selected: its view tabs (Review /
+	// Conversation) and, when it has no chats, the first-chat composer. An
+	// optional tab suffix picks the foregrounded pane on entry.
+	| { view: "workspace"; id: string; tab?: "review" | "conversation" }
 	// Session-less PR preview (a sidebar PR row with no chat yet).
 	| { view: "pr"; repo: string; branch: string }
 	// Session-less support-ticket preview (a Support row with no session yet).
@@ -157,6 +162,17 @@ function parseRoute(pathname: string): Route {
 	);
 	if (wsChatMatch)
 		return { view: "session", id: decodeURIComponent(wsChatMatch[1]) };
+	// The workspace container itself (no chat selected), optionally landing on
+	// a specific view tab: <base>/workspace/<wsId>[/review|/conversation].
+	const wsMatch = pathname.match(
+		/^\/workspace\/([^/]+)(?:\/(review|conversation))?$/,
+	);
+	if (wsMatch)
+		return {
+			view: "workspace",
+			id: decodeURIComponent(wsMatch[1]),
+			tab: wsMatch[2] as "review" | "conversation" | undefined,
+		};
 	const sessionMatch = pathname.match(/^\/session\/(.+)$/);
 	if (sessionMatch)
 		return { view: "session", id: decodeURIComponent(sessionMatch[1]) };
@@ -259,6 +275,8 @@ function routePath(route: Route): string {
 	switch (route.view) {
 		case "session":
 			return `${BASE_PATH}/session/${encodeURIComponent(route.id)}`;
+		case "workspace":
+			return `${BASE_PATH}/workspace/${encodeURIComponent(route.id)}${route.tab ? `/${route.tab}` : ""}`;
 		case "pr":
 			return `${BASE_PATH}/pr/${encodeURIComponent(route.repo)}/${encodeURIComponent(route.branch)}`;
 		case "support":
@@ -770,6 +788,9 @@ function App() {
 	// only opens from within the already-current session, so it needs no such
 	// pending pulse.)
 	const [pendingReviewOpen, setPendingReviewOpen] = useState<string | null>(null);
+	// One-shot guard consumed by the workspace default-pane seeding effect (set
+	// when closing a view tab replaces the workspace URL — see onCloseView).
+	const suppressWsSeedRef = useRef(false);
 
 	// Set for the render right after opening a workspace from the sidebar, so the
 	// session it lands on autofocuses its composer (you picked the workspace to
@@ -1103,7 +1124,12 @@ function App() {
 					? s.worktreeDir
 					: s.id)
 			: null;
-	const wsKey = wsKeyFor(currentSession);
+	// On the chat-less workspace route the key is the route's workspace id.
+	const routeWorkspaceId = route.view === "workspace" ? route.id : null;
+	const routeWorkspace: Project | null = routeWorkspaceId
+		? projects.find((p) => p.id === routeWorkspaceId) || null
+		: null;
+	const wsKey = routeWorkspaceId ?? wsKeyFor(currentSession);
 	// Opening a different workspace always starts on its chat, never a stale
 	// Review/Preview environment pane. (Switching chats WITHIN a workspace
 	// resets via onSelect's explicit setActiveViewTab(null) — clicking a chat
@@ -1120,18 +1146,59 @@ function App() {
 			setPendingReviewOpen(null);
 		}
 	}, [wsKey, pendingReviewOpen]);
+	// Landing on the workspace route: foreground its default pane. An explicit
+	// /review or /conversation suffix wins; a PR-backed workspace defaults to
+	// Review; otherwise land in the first chat when one exists — the workspace
+	// home (first-chat composer) is for empty workspaces. Declared after the
+	// wsKey reset effect above so the default wins the same commit.
+	useEffect(() => {
+		if (route.view !== "workspace" || !projectsLoaded) return;
+		// One-shot: closing the Review tab replaces the URL (dropping /review),
+		// which re-runs this effect — without the suppress it would immediately
+		// re-seed the default pane and reopen the tab just closed.
+		if (suppressWsSeedRef.current) {
+			suppressWsSeedRef.current = false;
+			return;
+		}
+		const p = projects.find((x) => x.id === route.id) || null;
+		const tab =
+			route.tab ??
+			(p && (p.branch || p.prNumber !== undefined) ? "review" : null);
+		if (tab === "review") {
+			const key = route.id;
+			setReviewOpen((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+			setActiveViewTab("review");
+		} else if (tab !== "conversation") {
+			const first = sessionsRef.current
+				.filter(
+					(s) => !s.archived && s.projectId === route.id && !s.sideChatOf,
+				)
+				.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))[0];
+			if (first) navigate({ view: "session", id: first.id }, { replace: true });
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [
+		route.view === "workspace" ? `${route.id}:${route.tab ?? ""}` : null,
+		projectsLoaded,
+	]);
 	// The current code session's Review pane, surfaced as a leftmost view-tab in
 	// the top strip (siblings share the worktree/PR, so one Review tab suffices).
 	const currentHasWorkspace =
 		!!currentSession && Boolean(currentSession.worktreeDir || currentSession.branch);
+	// Review renders without a chat too: a chat-less PR-backed workspace
+	// (branch/prNumber on the record) reviews through the preview APIs.
+	const reviewCapable = currentSession
+		? currentHasWorkspace
+		: !!routeWorkspace &&
+			Boolean(routeWorkspace.branch || routeWorkspace.prNumber !== undefined);
 	const reviewViewTabs: ViewTab[] =
-		currentSession && currentHasWorkspace && wsKey && reviewOpen.has(wsKey)
+		reviewCapable && wsKey && reviewOpen.has(wsKey)
 			? [
 					{
 						id: `review:${wsKey}`,
 						label: "Review",
 						active: reviewActive,
-						dotClass: currentSession.prState
+						dotClass: currentSession?.prState
 							? currentSession.prState === "OPEN" &&
 								currentSession.prMergeable === "CONFLICTING"
 								? "pr-dot-conflict"
@@ -1313,16 +1380,18 @@ function App() {
 	// fall back to grouping by shared isolated worktree, so a bks- sibling made
 	// via + shows up next to its slack source. Failing that, the open chat alone
 	// still gets a strip (one tab + the + button).
-	const activeProjectId = currentSession?.projectId || null;
+	const activeProjectId = routeWorkspaceId ?? (currentSession?.projectId || null);
 
 	// Feed the ⌘⇧C copy-link shortcut: the open chat (workspace-scoped when it
-	// has one), the open PR preview, or nothing linkable.
+	// has one), the open workspace/PR preview, or nothing linkable.
 	copyLinkPathRef.current =
 		route.view === "session" && currentSession
 			? chatPath(currentSession)
-			: route.view === "pr"
-				? prPath(route.repo, route.branch)
-				: null;
+			: route.view === "workspace"
+				? routePath(route)
+				: route.view === "pr"
+					? prPath(route.repo, route.branch)
+					: null;
 
 	// Canonicalize the open chat's URL to /workspace/<wsId>/chat/<chatId> once
 	// its workspace is known (replaceState: same history depth, so Back and the
@@ -1470,7 +1539,20 @@ function App() {
 	// default, or stacks/asks. No engine run until the first prompt.
 	const handleNewChat = async (mode: "share" | "stack" | "ask") => {
 		const src = currentSession || projectChats[0];
-		if (!src) return;
+		if (!src) {
+			// "+" on an empty workspace (chat-less route): no sibling to clone —
+			// open the new-chat palette scoped to it, same as onOpenProject.
+			if (route.view === "workspace") {
+				const p = projects.find((x) => x.id === route.id);
+				setPalette({
+					open: true,
+					projectId: route.id,
+					repo: p?.repo,
+					branch: p?.branch,
+				});
+			}
+			return;
+		}
 		try {
 			await createNewChatFrom(src, mode);
 		} catch (e) {
@@ -1588,7 +1670,9 @@ function App() {
 				? "Archived"
 				: route.view === "new"
 					? "New session"
-					: "";
+					: route.view === "workspace"
+						? routeWorkspace?.name || "Workspace"
+						: "";
 
 	// Mobile top-bar brand: logo only, as the account/settings sheet trigger.
 	// On desktop that menu lives in the footer user row instead, so the top stays
@@ -2058,26 +2142,41 @@ function App() {
 							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
 							onReorderTabs={(ids) => saveTabOrder(tabOrderKey, ids)}
 							viewTabs={viewTabs}
-							onSelectView={(id) =>
-								setActiveViewTab(
-									id.startsWith("staging:")
-										? "staging"
-										: id.startsWith("assets:")
-											? "assets"
-											: id.startsWith("preview:")
-												? "preview"
-												: "review",
-								)
-							}
-							onCloseView={(id) =>
-								id.startsWith("staging:")
-									? closeStagingTab()
+							onSelectView={(id) => {
+								const tab = id.startsWith("staging:")
+									? ("staging" as const)
 									: id.startsWith("assets:")
-										? closeAssetsTab()
+										? ("assets" as const)
 										: id.startsWith("preview:")
-											? closePreviewTab()
-											: closeReviewTab()
-							}
+											? ("preview" as const)
+											: ("review" as const);
+								setActiveViewTab(tab);
+								// On the chat-less workspace route the URL carries the
+								// foregrounded pane (deep-linkable); replace, not push.
+								if (route.view === "workspace" && tab === "review")
+									navigate(
+										{ view: "workspace", id: route.id, tab: "review" },
+										{ replace: true },
+									);
+							}}
+							onCloseView={(id) => {
+								if (id.startsWith("staging:")) closeStagingTab();
+								else if (id.startsWith("assets:")) closeAssetsTab();
+								else if (id.startsWith("preview:")) closePreviewTab();
+								else {
+									closeReviewTab();
+									// Drop the /review suffix; the URL replace re-runs the
+									// seeding effect, so arm its one-shot suppress (a close
+									// with no suffix causes no replace and needs none).
+									if (route.view === "workspace" && route.tab === "review") {
+										suppressWsSeedRef.current = true;
+										navigate(
+											{ view: "workspace", id: route.id },
+											{ replace: true },
+										);
+									}
+								}
+							}}
 							onNewChat={handleNewChat}
 							onRename={async (id, title) => {
 								try {
@@ -2098,7 +2197,25 @@ function App() {
 								refresh();
 							}}
 						/>
-						{route.view === "pr" ? (
+						{route.view === "workspace" ? (
+							routeWorkspace ? (
+								<WorkspacePane
+									key={route.id}
+									workspace={routeWorkspace}
+									chats={projectChats}
+									sessions={sessions}
+									tab={reviewActive ? "review" : null}
+									connected={connected}
+									send={send}
+									addHandler={addHandler}
+									onOpenSession={(id) => navigate({ view: "session", id })}
+								/>
+							) : (
+								<div className="panel-placeholder">
+									{projectsLoaded ? "Workspace not found." : "Loading workspace…"}
+								</div>
+							)
+						) : route.view === "pr" ? (
 							<PrQueuePreview
 								key={`${route.repo}:${route.branch}`}
 								repo={route.repo}
