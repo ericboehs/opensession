@@ -270,7 +270,6 @@ interface Props {
 
 type PanelTab =
 	| "info"
-	| "preview"
 	| "changes"
 	| "terminal"
 	| "shell"
@@ -3195,16 +3194,7 @@ export function SessionViewer({
 		if (showAssets && assetFiles.length === 0) onCloseAssets?.();
 	}, [showAssets, assetFiles.length, onCloseAssets]);
 	const [previewStatus, setPreviewStatus] = useState<PreviewStatus | null>(null);
-	const previewUrl =
-		previewStatus?.running && previewStatus.previewUrl
-			? withPreviewPath(previewStatus.previewUrl, session.previewPath)
-			: null;
 	useEffect(() => setPreviewStatus(null), [session.id]);
-	useEffect(() => {
-		if (panelTab === "preview" && !previewUrl) {
-			setPanelTab("info");
-		}
-	}, [panelTab, previewUrl]);
 
 	// ⌘O opens the PR's preview environment (the Vercel preview StagingLink's globe
 	// points at); ⌘G opens its GitHub PR. Chords without a target (no staging
@@ -4635,14 +4625,6 @@ export function SessionViewer({
 							>
 								Info
 							</button>
-							{previewUrl && (
-								<button
-									className={`panel-tab ${panelTab === "preview" ? "active" : ""}`}
-									onClick={() => selectPanelTab("preview")}
-								>
-									Preview
-								</button>
-							)}
 							{canSideChat && (
 								<button
 									className={`panel-tab ${panelTab === "sidechats" ? "active" : ""}`}
@@ -4783,14 +4765,6 @@ export function SessionViewer({
 										liveMedia={liveOverviewMedia}
 									/>
 								</div>
-							) : panelTab === "preview" && previewUrl ? (
-								<iframe
-									className="block h-full min-h-[320px] w-full border-0 bg-white"
-									src={previewUrl}
-									title="Preview"
-									allow="clipboard-read; clipboard-write; fullscreen"
-									sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-downloads"
-								/>
 							) : panelTab === "sidechats" ? (
 								<SideChatsPanel
 									sessionId={session.id}
