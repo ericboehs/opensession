@@ -128,9 +128,20 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const auth = useAuthStatus();
   const [prefill] = useState(readPrefill);
   const [mode, setMode] = useState<"ask" | "code">(forceMode || prefill.mode);
+  // The desktop app's local bridge merges local and hosted sessions. Hosted is
+  // deliberately the default; local execution is still experimental and must
+  // be selected explicitly for each palette lifetime.
+  const [createTarget, setCreateTarget] = useState<"cloud" | "local">(
+    auth?.local ? "cloud" : "local",
+  );
+  useEffect(() => {
+    if (auth?.local) setCreateTarget("cloud");
+  }, [auth?.local]);
   // In a Project, default to the folder's shared repo; else the prefill/filter repo.
   const [repo, setRepo] = useState(forceRepo || prefill.repo);
-  const [repos, setRepos] = useState(CLOUD_REPOS);
+  const [localRepos, setLocalRepos] = useState<typeof CLOUD_REPOS>([]);
+  const [localDefaultRepo, setLocalDefaultRepo] = useState("");
+  const repos = auth?.local && createTarget === "local" ? localRepos : CLOUD_REPOS;
   const [addRepoOpen, setAddRepoOpen] = useState(false);
   const locallyAddedRepos = useRef(new Map<string, { id: string; label: string }>());
   const localReposLoaded = useRef(false);
@@ -144,21 +155,27 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
         if (!localRepos.some((item) => item.id === added.id)) localRepos.push(added);
       }
       localReposLoaded.current = true;
-      setRepos(localRepos);
-      setRepo((current) => {
-        if (forceRepo && localRepos.some((item) => item.id === forceRepo)) return forceRepo;
-        if (localRepos.some((item) => item.id === current)) return current;
-        return localRepos.find((item, index) => items[index]?.default)?.id || localRepos[0]?.id || "";
-      });
+      setLocalRepos(localRepos);
+      setLocalDefaultRepo(
+        localRepos.find((item, index) => items[index]?.default)?.id || localRepos[0]?.id || "",
+      );
     }).catch(() => {
       if (!live) return;
       localReposLoaded.current = true;
-      setRepos([...locallyAddedRepos.current.values()]);
+      setLocalRepos([...locallyAddedRepos.current.values()]);
     });
     return () => {
       live = false;
     };
-  }, [auth?.local, forceRepo]);
+  }, [auth?.local]);
+  useEffect(() => {
+    if (!auth?.local) return;
+    setRepo((current) => {
+      if (forceRepo && repos.some((item) => item.id === forceRepo)) return forceRepo;
+      if (repos.some((item) => item.id === current)) return current;
+      return createTarget === "local" ? localDefaultRepo : CLOUD_REPOS[0].id;
+    });
+  }, [auth?.local, createTarget, forceRepo, localDefaultRepo, repos]);
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   // In a Project, default to a sibling's branch so the new chat reuses its
   // worktree; the user can still switch to "New branch" to fork a fresh one.
@@ -204,15 +221,6 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   // Keep the palette open after a create to fire off another task. Chosen from
   // the Create split-button's dropdown; the primary button reflects the mode.
   const [createMore, setCreateMore] = useState(false);
-  // The desktop app's local bridge merges local and hosted sessions. Hosted is
-  // deliberately the default; local execution is still experimental and must
-  // be selected explicitly for each palette lifetime.
-  const [createTarget, setCreateTarget] = useState<"cloud" | "local">(
-    auth?.local ? "cloud" : "local",
-  );
-  useEffect(() => {
-    if (auth?.local) setCreateTarget("cloud");
-  }, [auth?.local]);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const createSplitRef = useRef<HTMLDivElement>(null);
   // Phones open on just the prompt — repo/base/model/effort have sensible
@@ -589,7 +597,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 label: p.label,
                 icon: <RepoTile name={p.id} />,
               })),
-              ...(auth?.local
+              ...(auth?.local && createTarget === "local"
                 ? [
                     {
                       value: ADD_REPO_VALUE,
@@ -649,7 +657,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             onAdded={(added) => {
               const next = { id: added.id, label: added.id };
               locallyAddedRepos.current.set(added.id, next);
-              setRepos((current) => [
+              setLocalRepos((current) => [
                 ...(localReposLoaded.current ? current : []).filter((item) => item.id !== added.id),
                 next,
               ]);
