@@ -49,7 +49,9 @@ import {
 import {
 	appendOpencodeTranscript,
 	isOpencodeSessionId,
+	storeAppendUserLineEarly,
 	transcriptLineRunnerNotice,
+	transcriptLineUser,
 } from "./opencode-transcript";
 import { wrapContext, stripContext } from "./prompt-context";
 import { activeRunRecords, type ActiveRunRecord } from "./run-journal";
@@ -1235,6 +1237,22 @@ async function runSessionPromptInner(
 		console.log(`[prompt] ${sessionId}: first claude run (no engine id yet)`);
 	}
 
+	// Durable intake (2026-07-24, bks-019f93ea): persist the user's message to
+	// the transcript store NOW — before the worktree/title/engine-spawn awaits —
+	// so a process death anywhere in the run path can no longer lose it. The
+	// uuid threads through to the runner (promptEntryId), whose own transcript
+	// write upserts this same row (with any context decoration) instead of
+	// duplicating the bubble. Sandbox runs keep their own transcript mirror
+	// with its own ids — skip those to avoid a doubled user line.
+	const promptEntryId = crypto.randomUUID();
+	if (!session.sandbox && content?.trim()) {
+		storeAppendUserLineEarly(
+			sessionId,
+			transcriptLineUser(content, promptEntryId, undefined, images),
+			isOpencodeSessionId(engineSessionId) ? engineSessionId : undefined,
+		);
+	}
+
 	// Cross-provider handoff: the session's model was switched to the other engine
 	// (Fable orchestrator → gpt-5.5 executor, or back) since the last run. The
 	// incoming engine has no memory of the conversation — its thread either never
@@ -1542,6 +1560,7 @@ async function runSessionPromptInner(
 
 	for await (const event of sandboxRun ?? runAgent({
 		prompt,
+		promptEntryId,
 		sessionId: engineSessionId || undefined,
 		cwd,
 		mode: session.mode,

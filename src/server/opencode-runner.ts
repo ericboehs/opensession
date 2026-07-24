@@ -206,6 +206,7 @@ import {
   opencodeTurnLooksCompleted,
   recordBksSessionFor,
   recordOpencodeDbFor,
+  storeAppendUserLineEarly,
   transcriptLineUser,
   transcriptLineRunnerNotice,
   transcriptLineAssistantText,
@@ -2083,6 +2084,11 @@ interface AccountRotation {
 interface TurnTranscriptState {
   promptWrittenTo: string;
   notes: string[];
+  /** The turn's user transcript line, built ONCE (stable uuid) — the early
+   *  intake persist and the per-engine-session write below both use it, so
+   *  the store upserts one row instead of minting duplicate user bubbles
+   *  (also dedupes across rotation retries that start a fresh session). */
+  userLine?: Record<string, unknown>;
 }
 
 /** Runaway backstop only — NOT the real limit. Walk EVERY account before giving
@@ -2255,6 +2261,55 @@ async function* runOpencodeAttempt(
   const registeredKeys = new Set<string>([runKey]);
   if (journal?.bksSessionId) registeredKeys.add(journal.bksSessionId);
   for (const key of registeredKeys) activeOpencodeRuns.set(key, abortController);
+
+  // Durability BEFORE the engine exists (2026-07-24, bks-019f93ea: a restart
+  // killed a create-run during the ~16s server spawn — the opening prompt was
+  // in no journal and no transcript, so the session came back permanently
+  // empty). Two writes close that window: journal the run NOW with the
+  // original prompt (no engine id yet ⇒ boot re-runs it from scratch via
+  // resumeInterruptedRuns; the journalSet after session-create upgrades this
+  // record with the engine id + server key), and persist the user line to the
+  // transcript store under the unified id so the message survives any death.
+  // First attempt only: a rotation retry's record (with engine id) must not
+  // be downgraded back to this early shape. In-process failures still clear
+  // the record via the catch/finally below (reachedTerminal) — only a real
+  // process death leaves it for boot to pick up.
+  if (journal?.bksSessionId && attemptIndex === 0) {
+    turn.userLine ??= transcriptLineUser(
+      prompt,
+      opts.promptEntryId,
+      undefined,
+      opts.images
+    );
+    journalSet({
+      runKey,
+      bksSessionId: journal.bksSessionId,
+      claudeSessionId: opts.sessionId || undefined,
+      prompt,
+      promptEntryId: String(turn.userLine.uuid),
+      cwd,
+      mode,
+      mcpServers,
+      user,
+      deniedTools: opts.deniedTools,
+      confirmTools,
+      aws: !!opts.aws,
+      model,
+      effort: opts.effort,
+      fastMode: opts.fastMode,
+      fallbackModel: opts.fallbackModel,
+      accountId: opts.accountId,
+      accountStrict: opts.accountStrict,
+      usageCredits: opts.usageCredits,
+      kind: journal.kind,
+      startedAt: new Date().toISOString(),
+    });
+    storeAppendUserLineEarly(
+      journal.bksSessionId,
+      turn.userLine,
+      opts.sessionId
+    );
+  }
 
   // Session identity (sticky-account key, legacy per-session server key,
   // instructions-file name). The SHARED-server pool key is computed later,
@@ -3115,9 +3170,16 @@ async function* runOpencodeAttempt(
     // file must get the line too (bks-019f52bd) — so dedup on which session
     // file already has it, not on the attempt number.
     if (turn.promptWrittenTo !== ocSessionId) {
-      appendOpencodeTranscript(ocSessionId, [
-        transcriptLineUser(prompt, undefined, undefined, opts.images),
-      ]);
+      // Reuse the turn's single user line (stable uuid): the early intake
+      // persist above — and a retry's write into a prior session — carry the
+      // same uuid, so the store upserts one row instead of duplicating.
+      turn.userLine ??= transcriptLineUser(
+        prompt,
+        opts.promptEntryId,
+        undefined,
+        opts.images
+      );
+      appendOpencodeTranscript(ocSessionId, [turn.userLine]);
       turn.promptWrittenTo = ocSessionId;
     }
     // Rotation notices queued by failed attempts ("usage limit hit on X;
@@ -3145,6 +3207,7 @@ async function* runOpencodeAttempt(
         // restart, and resume looks the adopted entry up by this key.
         serverKey,
         prompt,
+        promptEntryId: turn.userLine ? String(turn.userLine.uuid) : undefined,
         cwd,
         mode,
         mcpServers,

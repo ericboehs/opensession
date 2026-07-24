@@ -426,6 +426,41 @@ function storeAppendLines(ocSessionId: string, lines: JsonlLine[]): void {
 }
 
 /**
+ * Persist a turn's user line under a KNOWN unified session id BEFORE any
+ * engine session exists (intake-time durability). A run killed while still
+ * starting — account pick, server spawn: the 2026-07-24 restart window that
+ * lost a session's opening prompt entirely — leaves the message durable and
+ * visible this way. The line must carry a stable uuid (the caller threads it
+ * through RunAgentOpts.promptEntryId): the engine-run write later upserts the
+ * same (session, uuid) row in place instead of duplicating the bubble.
+ * `priorOcSessionId` (a resumed session's engine id) feeds the import-first
+ * gate so a never-imported legacy session backfills before this live append;
+ * fresh sessions pass none and are correctly marked live-only. Never throws.
+ */
+export function storeAppendUserLineEarly(
+  unifiedId: string,
+  line: Record<string, unknown>,
+  priorOcSessionId?: string | null
+): void {
+  if (!unifiedId) return;
+  try {
+    const entries = parseJsonlLines([JSON.stringify(line)]);
+    if (!entries.length) return;
+    transcriptStore().appendTranscriptEvents(unifiedId, entries, {
+      ensureImported: priorOcSessionId
+        ? (sid) => importLegacyIntoStore(sid, priorOcSessionId)
+        : undefined,
+    });
+  } catch (e) {
+    warnStoreFailureOnce(
+      unifiedId,
+      `[opencode-transcript] early user-line persist failed for ${unifiedId}`,
+      e
+    );
+  }
+}
+
+/**
  * Where the runner USED to persist a claude-shape JSONL mirror per opencode
  * session, until the 2026-07-23 mirror retirement (design §11). The files
  * that exist are a FROZEN read-only archive: nothing appends to or seeds

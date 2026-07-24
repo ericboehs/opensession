@@ -77,6 +77,13 @@ export interface RunAgentOpts {
   /** Images attached to the opening message. */
   images?: ImageInput[];
   /**
+   * Stable uuid for the prompt's user transcript line. Callers that persist
+   * the user line at intake (run-session) — and boot re-runs of journaled
+   * runs — pass it so the runner's own transcript write upserts the same
+   * entry instead of duplicating the bubble.
+   */
+  promptEntryId?: string;
+  /**
    * Prior-engine transcript entries accompanying a cross-engine handoff (the
    * same entries the handoff note was built from). The opencode runner seeds a
    * freshly-created session's persisted transcript file with them, so the UI
@@ -664,6 +671,7 @@ export function resumeInterruptedRuns(
         try {
           for await (const event of runAgent({
             prompt: run.prompt!,
+            promptEntryId: run.promptEntryId,
             cwd: run.cwd,
             mode: run.mode,
             model: run.model,
