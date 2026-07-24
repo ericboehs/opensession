@@ -297,19 +297,19 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
         </span>
 
         {mcp ? (
-          <span className="flex min-w-0 flex-shrink-0 items-baseline gap-1.5 text-[12.5px]">
-            <span className="rounded bg-purple/15 px-1.5 py-px text-[10px] font-bold tracking-[-0.01em] text-purple">
+          <span className="flex min-w-0 flex-shrink-0 items-baseline gap-1.5 text-[14px] leading-5">
+            <span className="rounded bg-purple/15 px-1.5 py-px text-[12px] leading-4 font-bold tracking-[-0.01em] text-purple">
               {mcp.server}
             </span>
             <span className="font-medium text-fg">{mcp.tool}</span>
           </span>
         ) : (
-          <span className="flex-shrink-0 text-[12.5px] font-medium text-fg">{toolName}</span>
+          <span className="flex-shrink-0 text-[14px] leading-5 font-medium text-fg">{toolName}</span>
         )}
 
         <span
           className={cn(
-            "min-w-0 flex-1 truncate font-mono text-[12px]",
+            "min-w-0 flex-1 truncate font-mono text-[12px] leading-4",
             failed ? "text-red/80" : "text-dim"
           )}
         >

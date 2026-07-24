@@ -8167,8 +8167,8 @@ a.workspace-info-check-row {
 }
 
 .msg-body {
-	line-height: 1.65;
-	font-size: 15.5px;
+	line-height: 24px;
+	font-size: 14px;
 	word-break: break-word;
 	/* Flex column so WebKit doesn't band-paint the gaps between paragraphs
 	   to the full column width (same reason as .viewer-messages / .msg). */
@@ -12419,8 +12419,8 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	}
 
 	.msg-body {
-		font-size: 15.5px;
-		line-height: 1.55;
+		font-size: 14px;
+		line-height: 24px;
 	}
 
 	.diff-patch {
