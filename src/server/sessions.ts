@@ -850,19 +850,24 @@ function closeTombstoneKey(ghRepo: string, number: number): string {
 // sidebar's PR queue silently vanishes (2026-07-22). ts stays 0 so the first
 // access still refreshes immediately; the snapshot only serves as stale data.
 const PR_CACHE_FILE = `${HOME}/.opensession-pr-cache.json`;
+const PR_CACHE_VERSION = 3;
 const probeEtags = new Map<string, string>(); // ghRepo → last seen ETag
 const lastFullRefresh = new Map<string, number>(); // repo id → epoch ms
 try {
   const parsed = JSON.parse(readFileSync(PR_CACHE_FILE, "utf8"));
   const raw: Record<string, Record<string, PrInfo>> =
-    parsed?.version === 2 && parsed?.repos ? parsed.repos : parsed;
+    (parsed?.version === 2 || parsed?.version === PR_CACHE_VERSION) && parsed?.repos
+      ? parsed.repos
+      : parsed;
   prCache.data = new Map(
     Object.entries(raw).map(([repo, byBranch]) => [
       repo,
       new Map(Object.entries(byBranch)),
     ]),
   );
-  if (parsed?.version === 2) {
+  // Version 2 snapshots used smaller history windows. Keep their stale rows
+  // available, but skip refresh timestamps so the expanded window refills now.
+  if (parsed?.version === PR_CACHE_VERSION) {
     const now = Date.now();
     for (const repo of prRepos()) {
       if (!prCache.data.has(repo.id)) continue;
@@ -886,7 +891,7 @@ function persistPrCache(data: Map<string, Map<string, PrInfo>>) {
     const obj: Record<string, Record<string, PrInfo>> = {};
     for (const [repo, byBranch] of data) obj[repo] = Object.fromEntries(byBranch);
     writeJsonAtomic(PR_CACHE_FILE, {
-      version: 2,
+      version: PR_CACHE_VERSION,
       repos: obj,
       probeEtags: Object.fromEntries(probeEtags),
       lastFullRefresh: Object.fromEntries(lastFullRefresh),
