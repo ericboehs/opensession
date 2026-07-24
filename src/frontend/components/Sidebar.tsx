@@ -722,11 +722,12 @@ function readExpanded(): Set<string> {
 }
 
 // ── Grouping / filtering controls (the filter popover) ─────────────────────
-// The sidebar can be organized three ways ("Group by": Status, Repo, or Recently
-// opened), narrowed to a single repo ("Repo") or a single person ("Person"), and
-// ordered by recency of activity or creation ("Sort by"). The choices persist
-// together per browser.
-type GroupBy = "status" | "repo" | "recently";
+// The sidebar can be organized several ways ("Group by": Status, Repo as a
+// flat Conductor-style list, Repo and status with lanes nested per repo, or
+// Recently opened), narrowed to a single repo ("Repo") or a single person
+// ("Person"), and ordered by recency of activity or creation ("Sort by"). The
+// choices persist together per browser.
+type GroupBy = "status" | "repo" | "repo-status" | "recently";
 type SortBy = "updated" | "created";
 const DEFAULT_PROJECT = "tella-fusion";
 const FILTER_KEY = "opensession-sidebar-filter";
@@ -746,7 +747,9 @@ function readFilter(): FilterState {
 		const v = JSON.parse(localStorage.getItem(FILTER_KEY) || "{}");
 		return {
 			groupBy:
-				v.groupBy === "repo" || v.groupBy === "recently"
+				v.groupBy === "repo" ||
+				v.groupBy === "repo-status" ||
+				v.groupBy === "recently"
 					? v.groupBy
 					: "status",
 			repo: typeof v.repo === "string" ? v.repo : "all",
@@ -2247,7 +2250,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		// slot shows the row's PR size instead of the idle time (the time badge
 		// drops to hover-reveal while the stat is shown).
 		const diff =
-			!isPhone && filter.groupBy === "repo" ? wsRowDiff(row) : null;
+			!isPhone &&
+			(filter.groupBy === "repo" || filter.groupBy === "repo-status")
+				? wsRowDiff(row)
+				: null;
 		return (
 			<div
 				key={row.key}
@@ -2676,13 +2682,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		});
 	}
 
-	// "Group by: Repo" — one collapsible band per repo, holding that repo's
-	// status lanes. A collapsed band wears a count of urgent rows it hides.
-	// Repos are ordered by the
-	// sidebar's frequency list (`repos`), with any stragglers appended; a band
-	// is force-open while it holds the selected row so the open session never
-	// hides inside a collapsed repo.
-	function renderRepoGroups() {
+	// The repo bands — one collapsible band per repo, shared by two "Group by"
+	// modes: "Repo" holds a flat Conductor-style row list (status reads from
+	// each row's own glyph, needs-input rows float to the top), while "Repo and
+	// status" (`withLanes`) nests the labeled status lanes under each band. In
+	// both, a collapsed band wears a count of the urgent rows it hides. Repos
+	// are ordered by the sidebar's frequency list (`repos`), with any
+	// stragglers appended; a band is force-open while it holds the selected
+	// row so the open session never hides inside a collapsed repo.
+	function renderRepoGroups(withLanes: boolean) {
 		const byRepo = new Map<string, WsRow[]>();
 		const bucket = (repo: string) => {
 			let b = byRepo.get(repo);
@@ -2702,6 +2710,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			.map((repo) => {
 				const rows = byRepo.get(repo)!;
 				const urgent = rows.filter((r) => r.status === "needsinput");
+				// Flat mode: needs-input rows first, the rest keep activity order.
+				const ordered = [
+					...urgent,
+					...rows.filter((r) => r.status !== "needsinput"),
+				];
 				const gkey = `repo:${repo}`;
 				const hasSelected = rows.some((r) =>
 					r.chats.some((c) => c.id === selectedId),
@@ -2757,7 +2770,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						</button>
 						{open && (
 							<div className="sidebar-repo-lanes">
-								{renderStatusLanes(rows, `repo:${repo}::`)}
+								{withLanes
+									? renderStatusLanes(rows, `repo:${repo}::`)
+									: ordered.map(renderWsRow)}
 							</div>
 						)}
 					</div>
@@ -3447,10 +3462,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					{/* Status groups over the focus person's workspaces. The Person
 					    filter defaults to you; picking a teammate shows all their groups,
 					    "Unassigned" shows every Backlog, and "Everyone" shows all workspaces.
-					    "Group by: Repo" nests those same status lanes under each repo.
-					    Empty lanes/bands are hidden — only groups with sessions render. */}
-					{filter.groupBy === "repo"
-						? renderRepoGroups()
+					    "Group by: Repo" shows one band per repo holding a flat
+					    Conductor-style row list; "Repo and status" nests the labeled
+					    status lanes under each repo band instead. Empty lanes/bands
+					    are hidden — only groups with sessions render. */}
+					{filter.groupBy === "repo" || filter.groupBy === "repo-status"
+						? renderRepoGroups(filter.groupBy === "repo-status")
 						: renderStatusLanes(focusWsRows)}
 				</div>
 
@@ -3849,6 +3866,7 @@ function FilterPopover({
 						options={[
 							{ value: "status", label: "Status" },
 							{ value: "repo", label: "Repo" },
+							{ value: "repo-status", label: "Repo and status" },
 						]}
 						onSelect={(v) => onChange({ groupBy: v as GroupBy })}
 					/>
