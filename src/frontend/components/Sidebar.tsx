@@ -2958,16 +2958,31 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						<button
 							key={tool.id}
 							className={cn(
-								// Compact rows (Michiel 2026-07-24: the tools were "wayyy too
-								// big"): 13.5px label, 18px glyphs, tight vertical padding —
-								// the utility strip should read lighter than the work lists.
-								"sidebar-nav-item group flex w-full items-center gap-[9px] rounded-lg bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[3px] text-left text-[13.5px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg",
-								tool.active && "bg-active text-fg",
+								// The desktop look lives in these utilities and MUST stay
+								// desktop-only: utilities win cascade ties against the phone
+								// card CSS (global.css @media), so an unconditional w-full/
+								// py-* here is exactly the "full-width Home card on mobile"
+								// bug. Phones render the Slack-home style 132px card strip
+								// purely from .sidebar-nav-item's media rules.
+								"sidebar-nav-item group flex items-center text-left transition-colors",
+								!isPhone &&
+									// Compact rows (Michiel 2026-07-24: the tools were "wayyy
+									// too big"): 13.5px label, 18px glyphs, tight padding — the
+									// utility strip should read lighter than the work lists.
+									"w-full gap-[9px] rounded-lg bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[3px] text-[13.5px] font-medium text-dim hover:bg-hover hover:text-fg",
+								!isPhone && tool.active && "bg-active text-fg",
 							)}
 							onClick={tool.onClick}
 							title={tool.title}
 						>
-							<span className={cn("sidebar-nav-icon inline-flex text-faint [&_svg]:size-[18px]", tool.active && "text-dim", !tool.active && "group-hover:text-dim")}>
+							<span
+								className={cn(
+									"sidebar-nav-icon inline-flex",
+									!isPhone && "text-faint [&_svg]:size-[18px]",
+									!isPhone && tool.active && "text-dim",
+									!isPhone && !tool.active && "group-hover:text-dim",
+								)}
+							>
 								{tool.icon}
 							</span>
 							{tool.label}
