@@ -9821,7 +9821,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	outline: none;
 	resize: none;
 	color: var(--text);
-	font-size: 13.5px;
+	font-size: 14px;
 	line-height: 1.55;
 	min-height: 128px;
 	max-height: 320px;

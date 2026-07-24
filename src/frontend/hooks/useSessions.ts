@@ -2,6 +2,24 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { UnifiedSession } from "../lib/types";
 import { fetchSessionsSnapshot } from "../lib/api";
 
+export function reconcilePendingSessionPatches(
+  sessions: UnifiedSession[],
+  pendingPatches: Map<string, Partial<UnifiedSession>>,
+): UnifiedSession[] {
+  return sessions.map((session) => {
+    const pending = pendingPatches.get(session.id);
+    if (!pending) return session;
+    const acknowledged = Object.entries(pending).every(
+      ([key, value]) => session[key as keyof UnifiedSession] === value,
+    );
+    if (acknowledged) {
+      pendingPatches.delete(session.id);
+      return session;
+    }
+    return { ...session, ...pending };
+  });
+}
+
 export function useSessions(pollInterval = 5000) {
   const [sessions, setSessions] = useState<UnifiedSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,19 +37,26 @@ export function useSessions(pollInterval = 5000) {
   // create lands seconds later. Keep these merged into every poll result until
   // the server's own copy shows up (auto-cleared here) or `unstick` drops it.
   const stickyRef = useRef<Map<string, UnifiedSession>>(new Map());
+  // Optimistic changes that must survive an older poll already in flight. Each
+  // entry is removed once a server snapshot contains the same field values.
+  const pendingPatchRef = useRef<Map<string, Partial<UnifiedSession>>>(new Map());
 
   const applyServer = useCallback((parsed: UnifiedSession[]) => {
+    const reconciled = reconcilePendingSessionPatches(
+      parsed,
+      pendingPatchRef.current,
+    );
     if (stickyRef.current.size === 0) {
-      setSessions(parsed);
+      setSessions(reconciled);
       return;
     }
-    const present = new Set(parsed.map((s) => s.id));
+    const present = new Set(reconciled.map((s) => s.id));
     const extras: UnifiedSession[] = [];
     for (const [id, s] of stickyRef.current) {
       if (present.has(id)) stickyRef.current.delete(id);
       else extras.push(s);
     }
-    setSessions(extras.length ? [...parsed, ...extras] : parsed);
+    setSessions(extras.length ? [...reconciled, ...extras] : reconciled);
   }, []);
 
   const poll = useCallback(async () => {
@@ -107,6 +132,12 @@ export function useSessions(pollInterval = 5000) {
 
   const patch = useCallback((id: string, patch: Partial<UnifiedSession>) => {
     lastTextRef.current = null;
+    if ("archived" in patch) {
+      pendingPatchRef.current.set(id, {
+        ...pendingPatchRef.current.get(id),
+        ...patch,
+      });
+    }
     setSessions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, ...patch } : s)),
     );
@@ -115,6 +146,7 @@ export function useSessions(pollInterval = 5000) {
   const remove = useCallback((id: string) => {
     lastTextRef.current = null;
     stickyRef.current.delete(id);
+    pendingPatchRef.current.delete(id);
     setSessions((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
