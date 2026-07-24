@@ -3,7 +3,12 @@
  * `backstage-user` name from the UserPicker — not an auth identity) gets one
  * JSON file `~/.opensession-lanes/<user>.json` of shape
  * `{ lanes: { [sessionId]: lane } }`, where `lane` is one of the sidebar's
- * status-lane keys (needsinput/inprogress/review/merged/pending).
+ * status-lane keys (needsinput/inprogress/review/merged/pending) or "mine".
+ *
+ * An entry means "this session belongs in MY sidebar" — that's what pulls an
+ * automation run or a teammate's workspace out of its own band and into your
+ * lanes. The value then says where it sits: a status key forces that lane,
+ * while "mine" leaves it to follow its live state.
  *
  * Lanes are personal triage, not workspace state: two teammates can each hold
  * the same workspace in their own Backlog, and moving it in your sidebar
@@ -18,13 +23,18 @@ import { stateDir } from "./rename-compat";
 
 const LANES_DIR = stateDir("lanes");
 
-/** Allowed lane keys — mirrors the frontend's MineStatus. */
+/**
+ * Allowed lane keys — the frontend's MineStatus, plus the "mine" sentinel: a
+ * claim with no forced lane, so the row sits in your sidebar and follows its
+ * own live state (In progress while running, Backlog once idle).
+ */
 const ALLOWED = new Set([
 	"needsinput",
 	"inprogress",
 	"review",
 	"merged",
 	"pending",
+	"mine",
 ]);
 
 /** Map a free-form user name to a safe filename; empty/odd input → Anonymous. */

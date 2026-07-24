@@ -1,8 +1,10 @@
 // Per-user sidebar lanes, stored server-side per user (keyed on the
-// UserPicker name) like pins, so they follow you across devices. A lane entry
-// pins a session into a chosen status lane (Backlog, In review, …) in YOUR
-// sidebar only — personal triage, not workspace state, so two teammates can
-// each hold the same workspace in their own Backlog. The legacy global
+// UserPicker name) like pins, so they follow you across devices. An entry
+// claims a session into YOUR sidebar lanes — that's what pulls an automation
+// run or a teammate's workspace out of its own band; the value then either
+// forces a status lane (Backlog, In review, …) or, as "mine", leaves it to
+// follow its live state. Personal triage, not workspace state, so two
+// teammates can each hold the same workspace in their own Backlog. The legacy global
 // `manualStatus` (status-overrides registry, applied server-side) remains as
 // a fallback for entries set before lanes went per-user; the sidebar reads
 // the personal lane first. The public API stays synchronous (an in-memory
@@ -16,7 +18,10 @@ export type Lane =
 	| "inprogress"
 	| "review"
 	| "merged"
-	| "pending";
+	| "pending"
+	/** Claimed into your sidebar with no forced lane — it follows its live
+	    state (In progress while running, Backlog once idle). */
+	| "mine";
 
 const CHANGE_EVENT = "opensession-lanes-changed";
 const USER_CHANGE_EVENT = "opensession-user-changed";

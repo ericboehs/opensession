@@ -493,7 +493,7 @@ interface Props {
 	 * Pin a workspace's chats into a sidebar lane (or clear back to derived with
 	 * `null`). Applies to every chat in the row so the aggregated row lands there.
 	 */
-	onSetStatus: (chats: UnifiedSession[], status: MineStatus | null) => void;
+	onSetStatus: (chats: UnifiedSession[], status: LaneChoice | null) => void;
 	/** Who's viewing what right now (global presence), for the follow rail. */
 	teamViewing?: Array<{ user: string; sessionId: string }>;
 	/** Teammate currently being followed (navigation shadows them). */
@@ -545,6 +545,10 @@ type MineStatus =
 	| "pending"
 	| "review"
 	| "inprogress";
+
+// What a lane control can write: a forced status lane, "mine" (claimed into
+// your sidebar, free to follow its live state), or null to drop the entry.
+type LaneChoice = MineStatus | "mine";
 
 const MINE_STATUS_META: Array<{
 	key: MineStatus;
@@ -927,11 +931,31 @@ function runNeedsAttention(s: UnifiedSession): boolean {
 	return !!s.lastRunError && !s.isRunning;
 }
 
+// Whether this session lives in YOUR sidebar lanes. Your own chats always do;
+// automation runs and teammates' workspaces only once you claim them (the
+// lane entry is the claim — see lib/lanes.ts).
+function isClaimed(s: UnifiedSession): boolean {
+	return !!getLane(s.id) || !!s.manualStatus;
+}
+
 // The effective human-pinned lane for a session: YOUR per-user lane
 // (lib/lanes.ts) first, then the legacy global override as a fallback for
-// entries set before lanes went per-user.
+// entries set before lanes went per-user. A "mine" claim forces nothing — the
+// row keeps following its live state — so it reads as no pin at all.
 function pinnedLane(s: UnifiedSession): MineStatus | undefined {
-	return getLane(s.id) ?? s.manualStatus;
+	const lane = getLane(s.id);
+	if (lane === "mine") return undefined;
+	return lane ?? s.manualStatus;
+}
+
+// A row you started yourself (automation runs are never "yours" — they arrive
+// in the Automations band and need claiming to join your lanes).
+function ownedBy(s: UnifiedSession, user: string): boolean {
+	return (
+		!s.automation &&
+		!!s.startedBy &&
+		s.startedBy.toLowerCase() === user.toLowerCase()
+	);
 }
 
 function mineStatus(s: UnifiedSession): MineStatus {
@@ -1645,12 +1669,13 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const byWs = new Map<string, UnifiedSession[]>();
 		const solo: UnifiedSession[] = [];
 		for (const s of filtered) {
-			// Automations render in their own band — EXCEPT runs YOU pinned into
-			// a lane (right-click → Add to backlog / Set status): those graduate
-			// into the workspace rows so an automation ticket can live in your
-			// Backlog. Lanes are per-user, so a claimed run moves only for the
-			// user who claimed it (legacy global overrides still count for all).
-			if (s.automation && !pinnedLane(s)) continue;
+			// Automations render in their own band — EXCEPT runs YOU claimed
+			// (right-click → Add to my workspaces / Set status): those graduate
+			// into the workspace rows and take part in your lanes like your own
+			// work, sitting in In progress while they run and Backlog once idle.
+			// Lanes are per-user, so a claimed run moves only for the user who
+			// claimed it (legacy global overrides still count for all).
+			if (s.automation && !isClaimed(s)) continue;
 			if (s.sideChatOf) continue; // side chats live in the parent's panel, not the sidebar
 			if (s.desk) continue; // the Desk session lives in the ⌘J overlay, not the sidebar
 			if (s.projectId) {
@@ -1772,9 +1797,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const byAutomation = new Map<string, UnifiedSession[]>();
 		for (const s of sorted) {
 			if (!s.automation) continue;
-			// A run pinned into a lane (yours, or a legacy global override)
-			// lives in the workspace rows instead — don't render it twice.
-			if (pinnedLane(s)) continue;
+			// A run you claimed (or a legacy global override) lives in the
+			// workspace rows instead — don't render it twice.
+			if (isClaimed(s)) continue;
 			const list = byAutomation.get(s.automation) || [];
 			list.push(s);
 			byAutomation.set(s.automation, list);
@@ -3808,26 +3833,22 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 										: markUnread(c.id),
 								),
 						});
-					// One-tap triage: the most common lane move gets its own row
-					// (the full picker stays in the Set-status flyout below). A row
-					// that already sits in Backlog on its own has nothing to add —
-					// only a manual pin there is worth offering to undo.
-					if (
-						chats.length > 0 &&
-						(menuRow?.status !== "pending" || sharedManual === "pending")
-					)
+					// Claim someone else's work — an automation run, a teammate's
+					// workspace — into your own lanes, where it then behaves like
+					// your sessions do (In progress while running, Backlog when
+					// idle). Rows you started are already there, so they don't
+					// offer it; the full lane picker stays in the flyout below.
+					const rowClaimed = chats.some((c) => isClaimed(c));
+					const rowMine = chats.some((c) => ownedBy(c, currentUser));
+					if (chats.length > 0 && (!rowMine || rowClaimed))
 						entries.push({
 							kind: "item",
 							icon: <IconInbox size={20} />,
-							label:
-								sharedManual === "pending"
-									? "Remove from backlog"
-									: "Add to backlog",
+							label: rowClaimed
+								? "Remove from my workspaces"
+								: "Add to my workspaces",
 							onClick: () =>
-								onSetStatus(
-									chats,
-									sharedManual === "pending" ? null : "pending",
-								),
+								onSetStatus(chats, rowClaimed ? null : "mine"),
 						});
 					entries.push({
 						kind: "item",
@@ -4764,6 +4785,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									startChatRename(row.chats[0]);
 								}
 							}}
+							claimed={
+								row.chats.length === 0
+									? null
+									: row.chats.some((c) => isClaimed(c))
+										? true
+										: row.chats.some((c) => ownedBy(c, currentUser))
+											? null
+											: false
+							}
 							unread={row.unread}
 							onToggleRead={
 								row.chats.length > 0
@@ -5158,7 +5188,7 @@ function SidebarItem({
 	onRename: (title: string) => void;
 	/** Pin this session into a sidebar lane (null = back to derived). Present on
 	    automation rows — it's how an automation run graduates into your lanes. */
-	onSetStatus?: (status: MineStatus | null) => void;
+	onSetStatus?: (status: LaneChoice | null) => void;
 }) {
 	const isPhone = useIsPhone();
 	const waiting = !!session.waitingForInput || runNeedsAttention(session);
@@ -5587,6 +5617,7 @@ function SidebarItem({
 			{sheetOpen && (
 				<MobileActionSheet
 					session={session}
+					mine={mine}
 					onRename={() => {
 						setDraft(session.title);
 						setEditing(true);
@@ -5622,26 +5653,21 @@ function SidebarItem({
 						},
 						...(onSetStatus
 							? [
-									// One-tap triage: pull the run into your Backlog (lanes
-									// are per-user — it moves only in YOUR sidebar). A run
-									// already resting in Backlog on its own has nothing to
-									// add; only a manual pin there is worth undoing.
-									...(mineStatus(session) !== "pending" ||
-									pinnedLane(session) === "pending"
+									// Claim this run into your own lanes (per-user — it
+									// moves only in YOUR sidebar), where it then follows
+									// its live state instead of staying parked in the
+									// Automations band. Your own sessions are already
+									// there, so they don't offer it.
+									...(!mine || isClaimed(session)
 										? [
 												{
 													kind: "item",
 													icon: <IconInbox size={20} />,
-													label:
-														pinnedLane(session) === "pending"
-															? "Remove from backlog"
-															: "Add to backlog",
+													label: isClaimed(session)
+														? "Remove from my workspaces"
+														: "Add to my workspaces",
 													onClick: () =>
-														onSetStatus(
-															pinnedLane(session) === "pending"
-																? null
-																: "pending",
-														),
+														onSetStatus(isClaimed(session) ? null : "mine"),
 												} as const,
 											]
 										: []),
@@ -5714,16 +5740,19 @@ function useSheetDismiss(onClose: () => void) {
 // a portal over a dimmed, tap-to-dismiss backdrop.
 function MobileActionSheet({
 	session,
+	mine,
 	onRename,
 	onArchive,
 	onSetStatus,
 	onClose,
 }: {
 	session: UnifiedSession;
+	/** Your own session — it's already in your lanes, so no claim action. */
+	mine: boolean;
 	onRename: () => void;
 	onArchive: () => void;
 	/** Pin the session into a lane (see SidebarItem) — automation rows only. */
-	onSetStatus?: (status: MineStatus | null) => void;
+	onSetStatus?: (status: LaneChoice | null) => void;
 	onClose: () => void;
 }) {
 	const drag = useSheetDismiss(onClose);
@@ -5764,9 +5793,25 @@ function MobileActionSheet({
 					</svg>
 					Rename
 				</button>
-				{/* Same lane chips as the workspace sheet — how an automation run
-				    graduates into the workspace lanes (e.g. Backlog) from a phone.
-				    Lanes are per-user: the move happens in YOUR sidebar only. */}
+				{/* Claim this run into your own lanes, where it follows its live
+				    state — the phone twin of the row's right-click action. */}
+				{onSetStatus && (!mine || isClaimed(session)) && (
+					<button
+						className="mobile-sheet-item"
+						onClick={() => {
+							onSetStatus(isClaimed(session) ? null : "mine");
+							onClose();
+						}}
+					>
+						<IconInbox size={22} />
+						{isClaimed(session)
+							? "Remove from my workspaces"
+							: "Add to my workspaces"}
+					</button>
+				)}
+				{/* Same lane chips as the workspace sheet — forcing a specific lane
+				    for a run from a phone. Lanes are per-user: the move happens in
+				    YOUR sidebar only. */}
 				{onSetStatus && (
 					<div className="px-4 py-2">
 						<div className="mb-1.5 text-[11px] font-semibold text-faint">
@@ -6569,6 +6614,7 @@ function WsMobileSheet({
 	onOpen,
 	onRename,
 	unread,
+	claimed,
 	onToggleRead,
 	onCopyLink,
 	onDelete,
@@ -6579,7 +6625,7 @@ function WsMobileSheet({
 	onClose: () => void;
 	onArchive: () => void;
 	/** Pin the workspace into a lane, or clear back to derived with `null`. */
-	onSetStatus: (status: MineStatus | null) => void;
+	onSetStatus: (status: LaneChoice | null) => void;
 	/** Active snooze expiry (ISO), or null when not snoozed. */
 	snoozeUntil: string | null;
 	/** Snooze until the given ISO time, or unsnooze with `null`. */
@@ -6588,6 +6634,9 @@ function WsMobileSheet({
 	onRename: () => void;
 	/** Whether the row has unread activity — picks the read/unread direction. */
 	unread: boolean;
+	/** In your lanes already (true), claimable (false), or your own row with
+	    nothing to claim (null — the action is hidden). */
+	claimed: boolean | null;
 	/** Flip every chat in the row read or unread; null for chatless rows. */
 	onToggleRead: (() => void) | null;
 	/** Copy a link to the row's first chat; null for chatless rows. */
@@ -6710,6 +6759,17 @@ function WsMobileSheet({
 					>
 						<IconPullRequest size={22} />
 						Open PR{prChat.prNumber != null ? ` #${prChat.prNumber}` : ""}
+					</button>
+				)}
+				{claimed !== null && (
+					<button
+						className="mobile-sheet-item"
+						onClick={closing(() => onSetStatus(claimed ? null : "mine"))}
+					>
+						<IconInbox size={22} />
+						{claimed
+							? "Remove from my workspaces"
+							: "Add to my workspaces"}
 					</button>
 				)}
 				{onToggleRead && (
