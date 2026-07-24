@@ -12,6 +12,7 @@ import {
   MESSAGES,
 } from "./slack-api";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
+import type { SlackFileRef } from "./slack-api";
 
 const SESSION_DIR = `${process.env.HOME}/.slack-sessions`;
 const QUEUE_FILE = `${SESSION_DIR}/message-queue.json`;
@@ -30,6 +31,12 @@ export interface QueuedMessage {
   isNewSession: boolean;
   worktreeDir?: string;
   branch?: string;
+  /**
+   * File attachments on the Slack message (small refs, not bytes — the queue
+   * persists to disk). processMessage downloads the images among them right
+   * before the run and attaches them to the prompt as native image parts.
+   */
+  files?: SlackFileRef[];
 }
 
 export interface SessionQueue {

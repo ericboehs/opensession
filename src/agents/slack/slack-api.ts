@@ -6,8 +6,95 @@
  */
 
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
+import type { ImageInput } from "../../server/run-events";
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
+
+// ---------------------------------------------------------------------------
+// File attachments
+// ---------------------------------------------------------------------------
+
+/**
+ * A file attached to a Slack message. Queued messages carry these small refs
+ * (id/name/url — never the bytes, so the persisted queue stays tiny) and the
+ * actual download happens right before the run starts, so images land in the
+ * opening prompt as native image parts instead of the agent having to fetch
+ * them afterwards.
+ */
+export interface SlackFileRef {
+  id: string;
+  name: string;
+  mimetype: string;
+  /** Authenticated download URL (url_private_download / url_private). */
+  url: string;
+  size: number;
+}
+
+export function slackFileRefs(files: any[] | undefined): SlackFileRef[] {
+  return (files || [])
+    .filter((f: any) => f && (f.url_private_download || f.url_private))
+    .map((f: any) => ({
+      id: String(f.id || ""),
+      name: String(f.name || f.title || "file"),
+      mimetype: String(f.mimetype || ""),
+      url: String(f.url_private_download || f.url_private),
+      size: Number(f.size || 0),
+    }));
+}
+
+// Anthropic caps images at 5MB; stay under it, and bound the total payload.
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_IMAGES_PER_PROMPT = 6;
+
+/**
+ * Download the image attachments among `files` (bot-token auth) and return
+ * them as prompt-ready image parts, plus a prompt note listing every
+ * attachment — including non-images and anything skipped, so the agent knows
+ * what else came with the message.
+ */
+export async function downloadSlackImages(
+  files: SlackFileRef[]
+): Promise<{ images: ImageInput[]; note: string }> {
+  const images: ImageInput[] = [];
+  const lines: string[] = [];
+  for (const f of files) {
+    const isImage = f.mimetype.startsWith("image/");
+    if (!isImage) {
+      lines.push(`- ${f.name} (${f.mimetype || "unknown type"}) — not inlined`);
+      continue;
+    }
+    if (images.length >= MAX_IMAGES_PER_PROMPT) {
+      lines.push(`- ${f.name} (${f.mimetype}) — skipped, image limit reached`);
+      continue;
+    }
+    if (f.size > MAX_IMAGE_BYTES) {
+      lines.push(`- ${f.name} (${f.mimetype}) — skipped, too large to inline`);
+      continue;
+    }
+    try {
+      const resp = await fetchWithTimeout(f.url, {
+        headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const buf = await resp.arrayBuffer();
+      // Slack serves an HTML login page (not the file) when auth fails — a
+      // real image is never text/html.
+      const ct = resp.headers.get("content-type") || "";
+      if (ct.includes("text/html")) throw new Error("auth redirect");
+      if (buf.byteLength > MAX_IMAGE_BYTES) throw new Error("too large");
+      images.push({
+        mediaType: f.mimetype,
+        data: Buffer.from(buf).toString("base64"),
+      });
+      lines.push(`- ${f.name} (${f.mimetype}) — attached below as an image`);
+    } catch (e) {
+      console.warn(`[slack] Failed to download attachment ${f.name}:`, e);
+      lines.push(`- ${f.name} (${f.mimetype}) — download failed`);
+    }
+  }
+  const note = lines.length ? `Attached files:\n${lines.join("\n")}` : "";
+  return { images, note };
+}
 
 // ---------------------------------------------------------------------------
 // Status messages
@@ -248,10 +335,17 @@ export async function openHumanAskModal(
 // Context fetchers
 // ---------------------------------------------------------------------------
 
+export interface ThreadContext {
+  /** Transcript text, one `[user]: text` line per message (files annotated). */
+  text: string;
+  /** File attachments found on the thread's messages, in message order. */
+  files: SlackFileRef[];
+}
+
 export async function fetchThreadContext(
   channel: string,
   threadTs: string
-): Promise<string> {
+): Promise<ThreadContext> {
   const response = await fetchWithTimeout(
     `https://slack.com/api/conversations.replies?channel=${channel}&ts=${threadTs}&limit=20`,
     { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
@@ -260,12 +354,21 @@ export async function fetchThreadContext(
 
   if (!data.ok || !data.messages) {
     console.error("[slack] Failed to fetch thread:", data.error);
-    return "";
+    return { text: "", files: [] };
   }
 
-  return data.messages
-    .map((msg: any) => `[${msg.user || "bot"}]: ${msg.text}`)
+  const files: SlackFileRef[] = [];
+  const text = data.messages
+    .map((msg: any) => {
+      const refs = slackFileRefs(msg.files);
+      files.push(...refs);
+      const fileNote = refs.length
+        ? ` [attached: ${refs.map((f) => f.name).join(", ")}]`
+        : "";
+      return `[${msg.user || "bot"}]: ${msg.text}${fileNote}`;
+    })
     .join("\n\n");
+  return { text, files };
 }
 
 // ---------------------------------------------------------------------------

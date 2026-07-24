@@ -24,8 +24,11 @@ import {
   openSlackModal,
   slackApiCall,
   getChannelKind,
+  slackFileRefs,
+  downloadSlackImages,
   MESSAGES,
 } from "./slack-api";
+import type { SlackFileRef, ThreadContext } from "./slack-api";
 import { SlackStreamer, buildToolStatus, isSilentTool } from "./streamer";
 import { SlackProgress } from "./progress";
 import { createAdminMcpServer } from "./admin-tools";
@@ -53,6 +56,7 @@ import { pinForUser } from "../../server/pins";
 import { getUiPrefs } from "../../server/ui-prefs";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { runAgent, cancelAgentRun } from "../../server/agent-runner";
+import type { ImageInput } from "../../server/run-events";
 import {
   registerSessionMcpServers,
   unregisterSessionMcpServers,
@@ -166,7 +170,7 @@ const adminMcpServersCache = new Map<
 const worktreeExistsCache = new Map<string, { exists: boolean; expiresAt: number }>();
 
 // Cache thread context per channel+threadTs (30s TTL)
-const threadContextCache = new Map<string, { context: string; expiresAt: number }>();
+const threadContextCache = new Map<string, { context: ThreadContext; expiresAt: number }>();
 
 // Cached worktree existence check (TTL 30s) — avoids repeated fs.existsSync calls on every message
 function cachedWorktreeExists(dir: string): boolean {
@@ -178,13 +182,30 @@ function cachedWorktreeExists(dir: string): boolean {
 }
 
 // Cached thread context (TTL 30s) — avoids refetching the same thread multiple times
-async function cachedFetchThreadContext(channel: string, threadTs: string): Promise<string> {
+async function cachedFetchThreadContext(channel: string, threadTs: string): Promise<ThreadContext> {
   const cacheKey = `${channel}:${threadTs}`;
   const cached = threadContextCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.context;
   const context = await fetchThreadContext(channel, threadTs);
   threadContextCache.set(cacheKey, { context, expiresAt: Date.now() + 30000 });
   return context;
+}
+
+/**
+ * Attachments for a queued message: the triggering message's own files first,
+ * then any other files seen in the thread context (deduped by id) — so an
+ * image posted earlier in the thread also reaches the prompt.
+ */
+function mergeFileRefs(
+  own: SlackFileRef[],
+  threadFiles: SlackFileRef[] | undefined
+): SlackFileRef[] | undefined {
+  const seen = new Set(own.map((f) => f.id));
+  const merged = [
+    ...own,
+    ...(threadFiles || []).filter((f) => f.id && !seen.has(f.id)),
+  ];
+  return merged.length ? merged : undefined;
 }
 
 // Save the session and mirror claudeSessionId/lastActivity into the
@@ -897,13 +918,29 @@ export async function processMessage(
   // commands by tool-use id so PR creation can be spotted in the result.
   const bashCommands = new Map<string, string>();
 
+  // Attachments: download the message/thread images now (refs were captured at
+  // event intake) so they reach the engine as native image parts on the opening
+  // prompt, instead of the agent having to fetch them afterwards.
+  let runPrompt = prompt;
+  let images: ImageInput[] | undefined;
+  if (msg.files?.length) {
+    try {
+      const res = await downloadSlackImages(msg.files);
+      if (res.images.length) images = res.images;
+      if (res.note) runPrompt += `\n\n${res.note}`;
+    } catch (e) {
+      console.warn("[slack] Attachment download failed:", e);
+    }
+  }
+
   try {
     // Account rotation (meridian pool, sender-personal-first via `user`) and
     // usage-limit model fallback are runAgent's job now. mcpServers stays
     // unset = all configured servers, gated per-user by filterMcpServers
     // inside the runner.
     for await (const event of runAgent({
-      prompt,
+      prompt: runPrompt,
+      images,
       sessionId: session.claudeSessionId || undefined,
       cwd,
       mode: "code",
@@ -1053,9 +1090,14 @@ export async function processMessage(
 
 export async function handleMessageEvent(event: any): Promise<void> {
   const { channel, user, ts, thread_ts } = event;
-  const text = event.text || "";
+  const files = slackFileRefs(event.files);
+  // An image-only message (no text) is still a real request — the attachment
+  // IS the message.
+  const text =
+    (event.text || "").trim() ||
+    (files.length ? "(no message text — see the attached files)" : "");
 
-  if (!text.trim()) return;
+  if (!text) return;
 
   // Human-in-the-loop: is this a teammate replying to a question Michael DM'd
   // them on behalf of a session? If so, route it back into that session and stop
@@ -1173,6 +1215,7 @@ export async function handleMessageEvent(event: any): Promise<void> {
       userName,
       userId: user,
       isNewSession: false,
+      files: files.length ? files : undefined,
     });
   } else {
     // New session — always create a worktree
@@ -1213,6 +1256,7 @@ I'm now in a worktree (branch: ${branch}) for this task. Please analyze what nee
       isNewSession: true,
       worktreeDir,
       branch,
+      files: files.length ? files : undefined,
     });
   }
 }
@@ -1298,8 +1342,11 @@ async function maybeRetriggerAutomation(
 export async function handleMentionEvent(event: any): Promise<void> {
   const { channel, user, ts, thread_ts } = event;
   const text = event.text || "";
+  const files = slackFileRefs(event.files);
 
-  const cleanText = text.replace(/<@[A-Z0-9]+>/g, "").trim();
+  const cleanText =
+    text.replace(/<@[A-Z0-9]+>/g, "").trim() ||
+    (files.length ? "(no message text — see the attached files)" : "");
 
   if (!cleanText) return;
 
@@ -1403,8 +1450,11 @@ export async function handleMentionEvent(event: any): Promise<void> {
 
     // Fetch thread/channel context
     let context = "";
+    let threadFiles: SlackFileRef[] = [];
     if (thread_ts) {
-      context = await cachedFetchThreadContext(channel, thread_ts);
+      const tc = await cachedFetchThreadContext(channel, thread_ts);
+      context = tc.text;
+      threadFiles = tc.files;
     }
 
     let prompt: string;
@@ -1434,6 +1484,7 @@ Please help with this request. Start by exploring the codebase to understand wha
       isNewSession: !session,
       worktreeDir,
       branch,
+      files: mergeFileRefs(files, threadFiles),
     });
     return;
   }
@@ -1476,8 +1527,11 @@ Please help with this request. Start by exploring the codebase to understand wha
   // conversation, while channel history is mostly other people's unrelated
   // requests and would leak into the session prompt.
   let context = "";
+  let threadFiles: SlackFileRef[] = [];
   if (thread_ts) {
-    context = await cachedFetchThreadContext(channel, thread_ts);
+    const tc = await cachedFetchThreadContext(channel, thread_ts);
+    context = tc.text;
+    threadFiles = tc.files;
   }
 
   // Ask mode: a question/discussion — answer in-thread in the main checkout, no
@@ -1498,6 +1552,7 @@ Please help with this request. Start by exploring the codebase to understand wha
       userId: user,
       isNewSession: !askSession,
       // No worktreeDir → runs conversationally in the main checkout, replies in-thread.
+      files: mergeFileRefs(files, threadFiles),
     });
     return;
   }
@@ -1544,5 +1599,6 @@ I'm now in a worktree (branch: ${branch}) for this task. Please help with this r
     isNewSession: true,
     worktreeDir,
     branch,
+    files: mergeFileRefs(files, threadFiles),
   });
 }
