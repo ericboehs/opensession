@@ -20,6 +20,29 @@ export function reconcilePendingSessionPatches(
   });
 }
 
+export function reconcileCloudOutageSessions(
+  previous: UnifiedSession[],
+  localSnapshot: UnifiedSession[],
+): UnifiedSession[] {
+  const previousCloud = new Map(
+    previous
+      .filter((session) => !session.local)
+      .map((session) => [session.id, session]),
+  );
+  const local = localSnapshot.filter(
+    (session) =>
+      !(session as UnifiedSession & { upgradedTo?: unknown }).upgradedTo ||
+      !previousCloud.has(session.id),
+  );
+  const localIds = new Set(local.map((session) => session.id));
+  const retainedCloud = [...previousCloud.values()].filter(
+    (session) => !localIds.has(session.id),
+  );
+  return [...local, ...retainedCloud].sort((a, b) =>
+    b.lastActivity.localeCompare(a.lastActivity),
+  );
+}
+
 export function useSessions(pollInterval = 5000) {
   const [sessions, setSessions] = useState<UnifiedSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,22 +64,24 @@ export function useSessions(pollInterval = 5000) {
   // entry is removed once a server snapshot contains the same field values.
   const pendingPatchRef = useRef<Map<string, Partial<UnifiedSession>>>(new Map());
 
-  const applyServer = useCallback((parsed: UnifiedSession[]) => {
+  const applyServer = useCallback((parsed: UnifiedSession[], preserveCloud: boolean) => {
     const reconciled = reconcilePendingSessionPatches(
       parsed,
       pendingPatchRef.current,
     );
-    if (stickyRef.current.size === 0) {
-      setSessions(reconciled);
-      return;
-    }
-    const present = new Set(reconciled.map((s) => s.id));
-    const extras: UnifiedSession[] = [];
-    for (const [id, s] of stickyRef.current) {
-      if (present.has(id)) stickyRef.current.delete(id);
-      else extras.push(s);
-    }
-    setSessions(extras.length ? [...reconciled, ...extras] : reconciled);
+    setSessions((previous) => {
+      const next = preserveCloud
+        ? reconcileCloudOutageSessions(previous, reconciled)
+        : reconciled;
+      if (stickyRef.current.size === 0) return next;
+      const present = new Set(next.map((s) => s.id));
+      const extras: UnifiedSession[] = [];
+      for (const [id, s] of stickyRef.current) {
+        if (present.has(id)) stickyRef.current.delete(id);
+        else extras.push(s);
+      }
+      return extras.length ? [...next, ...extras] : next;
+    });
   }, []);
 
   const poll = useCallback(async () => {
@@ -67,7 +92,7 @@ export function useSessions(pollInterval = 5000) {
       setCloudUnreachable(snapshot.cloudUnreachable);
       if (text !== lastTextRef.current) {
         lastTextRef.current = text;
-        applyServer(JSON.parse(text));
+        applyServer(JSON.parse(text), snapshot.cloudUnreachable);
       }
       setLoading(false);
       setError(null);
