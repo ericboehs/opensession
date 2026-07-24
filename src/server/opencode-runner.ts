@@ -1087,6 +1087,12 @@ export function opencodeMcpFromPrebuiltProxies(
 export function buildOpencodeInstructions(input: {
   isAsk: boolean;
   reposNote?: string;
+  /** The session's real working directory — set ONLY for shared-pool runs,
+   *  where opencode's own environment block reports the pool server's neutral
+   *  cwd (SHARED_CWD, "Is a git repository: false") rather than the session's
+   *  `?directory=`. Without this correction models hedge against the wrong cwd
+   *  and prefix every bash call with a redundant `cd <worktree> &&`. */
+  cwd?: string;
   inProcessMcp?: Record<string, unknown>;
   bksSessionId?: string;
   /** Requester attribution for PRs: the turn's raw user label and the resolved
@@ -1166,6 +1172,24 @@ export function buildOpencodeInstructions(input: {
       "turn is what the session UI presents as your answer; mid-turn narration does not " +
       "replace it."
   );
+  // Shared-pool runs only: opencode builds its environment block from the
+  // server process cwd, which for a pool member is the neutral SHARED_CWD —
+  // so the model is told it sits in a non-repo scratch dir while bash actually
+  // runs in the session's `?directory=`. Left uncorrected it defends against
+  // the phantom cwd by prefixing `cd <worktree> &&` onto every single command.
+  if (input.cwd) {
+    parts.push(
+      `## Working directory\nYour Bash tool, file tools, and relative paths all run in ` +
+        `\`${input.cwd}\` — you are already there.\n` +
+        `The engine's own environment block reports a different "primary working directory" ` +
+        `(a neutral scratch path ending in \`/shared-cwd\`, "Is a git repository: false"): ` +
+        `that is the shared engine server's cwd, not this session's, and it does not apply ` +
+        `to your tool calls. Trust this line instead — run \`pwd\` if you want to confirm. ` +
+        `Don't prefix commands with \`cd ${input.cwd} &&\`; it's redundant noise on every ` +
+        `call. Only \`cd\` when you genuinely need a different directory (another repo's ` +
+        `worktree, a subdirectory a tool requires).`
+    );
+  }
   if (input.isAsk) {
     parts.push(
       `You are ${personaName()} in Ask mode: answer questions about the current checkout. ` +
@@ -2820,6 +2844,9 @@ async function* runOpencodeAttempt(
     const instructions = buildOpencodeInstructions({
       isAsk,
       reposNote: opts.reposNote,
+      // Per-session servers boot in `cwd`, so their environment block is
+      // already right; only the pool needs the correction.
+      cwd: shared ? cwd : undefined,
       inProcessMcp: opts.inProcessMcp,
       bksSessionId: journal?.bksSessionId,
       user,

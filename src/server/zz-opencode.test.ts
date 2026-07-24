@@ -318,6 +318,16 @@ describe("buildOpencodeInstructions", () => {
       expect(s).toContain("before creating a fork, pushing a branch, opening a pull request");
     }
   });
+  test("shared-pool runs are told their real cwd; per-session runs aren't", () => {
+    const shared = buildOpencodeInstructions({
+      isAsk: false,
+      cwd: "/home/ubuntu/projects/tella-backstage",
+    });
+    expect(shared).toContain("## Working directory");
+    expect(shared).toContain("`/home/ubuntu/projects/tella-backstage` — you are already there");
+    expect(shared).toContain("cd /home/ubuntu/projects/tella-backstage &&");
+    expect(buildOpencodeInstructions({ isAsk: false })).not.toContain("## Working directory");
+  });
   test("ask mode gets the read-only guardrail", () => {
     const s = buildOpencodeInstructions({ isAsk: true });
     expect(s).toContain("READ-ONLY with respect to the checkout and shell");
