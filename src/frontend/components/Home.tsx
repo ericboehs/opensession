@@ -421,7 +421,7 @@ export function Home({ sessions, projects, onSelect, onNewSession }: Props) {
                           <span
                             className={
                               row.state === "MERGED"
-                                ? "text-green"
+                                ? "text-purple"
                                 : row.state === "CLOSED"
                                   ? "text-faint"
                                   : "text-accent"
