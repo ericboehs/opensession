@@ -1,5 +1,13 @@
 import SwiftUI
 
+#if os(macOS)
+extension Notification.Name {
+    /// Posted by the File > New Session menu command (Cmd+N); the sessions
+    /// list opens its new-session sheet in response.
+    static let os1NewSession = Notification.Name("os1.newSession")
+}
+#endif
+
 @main
 struct OS1App: App {
     var body: some Scene {
@@ -8,6 +16,15 @@ struct OS1App: App {
         }
         #if os(macOS)
         .defaultSize(width: 920, height: 720)
+        .commands {
+            // Cmd+N composes a new session instead of opening a new window.
+            CommandGroup(replacing: .newItem) {
+                Button("New Session") {
+                    NotificationCenter.default.post(name: .os1NewSession, object: nil)
+                }
+                .keyboardShortcut("n", modifiers: .command)
+            }
+        }
         #endif
     }
 }

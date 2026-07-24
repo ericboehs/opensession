@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// Sessions list, mirroring the web sidebar's organization: group by Status
@@ -72,6 +73,12 @@ struct SessionsListView: View {
             .onDisappear {
                 viewModel.stopPolling()
             }
+            #if os(macOS)
+            // File > New Session (Cmd+N) from the app's menu commands.
+            .onReceive(NotificationCenter.default.publisher(for: .os1NewSession)) { _ in
+                newSessionRequest = NewSessionRequest()
+            }
+            #endif
             .onChange(of: viewModel.hasLoaded) {
                 autoOpenFromEnvironment()
             }
