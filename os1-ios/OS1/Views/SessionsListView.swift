@@ -340,9 +340,9 @@ struct SessionsListView: View {
 
             switch sortBy {
             case .updated:
-                ($0.lastActivityDate ?? .distantPast) > ($1.lastActivityDate ?? .distantPast)
+                return ($0.lastActivityDate ?? .distantPast) > ($1.lastActivityDate ?? .distantPast)
             case .created:
-                (Session.parseISO($0.createdAt) ?? .distantPast)
+                return (Session.parseISO($0.createdAt) ?? .distantPast)
                     > (Session.parseISO($1.createdAt) ?? .distantPast)
             }
         }
