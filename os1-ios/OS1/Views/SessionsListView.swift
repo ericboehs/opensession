@@ -2,7 +2,7 @@ import Combine
 import SwiftUI
 
 /// Sessions list, mirroring the web sidebar's organization: group by Status
-/// (Needs input / In progress / In review / Done / Backlog), by Repo, or a
+/// (In progress / Needs input / In review / Done / Backlog), by Repo, or a
 /// flat Recent list — plus a repo filter, updated/created sort, and search.
 /// The grouping/filter choices persist like the web's filter popover does.
 struct SessionsListView: View {
@@ -334,6 +334,10 @@ struct SessionsListView: View {
             }
         }
         return result.sorted {
+            let leftInProgress = $0.lane == .inProgress
+            let rightInProgress = $1.lane == .inProgress
+            if leftInProgress != rightInProgress { return leftInProgress }
+
             switch sortBy {
             case .updated:
                 ($0.lastActivityDate ?? .distantPast) > ($1.lastActivityDate ?? .distantPast)

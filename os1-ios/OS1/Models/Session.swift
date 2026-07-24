@@ -59,11 +59,10 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
         return .idle
     }
 
-    /// The web sidebar's status lanes (Sidebar.tsx MINE_STATUS_META), in its
-    /// display order, derived from the same signals we have: waiting beats
-    /// running beats PR state; everything else is backlog.
+    /// Status lanes in native display order. Running sessions stay above all
+    /// other work; within a session, waiting still takes precedence over running.
     enum Lane: String, CaseIterable {
-        case needsInput, inProgress, inReview, done, backlog
+        case inProgress, needsInput, inReview, done, backlog
 
         var label: String {
             switch self {
