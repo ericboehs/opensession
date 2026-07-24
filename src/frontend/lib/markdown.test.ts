@@ -49,6 +49,26 @@ describe("renderMarkdown session links", () => {
     expect(html).not.toContain("target=");
   });
 
+  it("labels a pasted (auto-linked) chat URL with just the session id", () => {
+    const url =
+      "https://os.tella.dev/workspace/prj-28712580-a369-4d58-996b-f8c23e523ed1/chat/bks-019f9608-ab20-7000-b98e-4de52d5fe436";
+    const html = renderMarkdown(`${url} shows no right sidebar.`);
+    expect(html).toContain(
+      'data-session-id="bks-019f9608-ab20-7000-b98e-4de52d5fe436"',
+    );
+    // the ~90-char URL is the href, never the chip's (nowrap) label
+    expect(html).toContain(">bks-019f9608-ab20-7000-b98e-4de52d5fe436</a>");
+    expect(html).toContain(`href="${url}"`);
+    expect(html).not.toContain(`>${url}</a>`);
+  });
+
+  it("keeps an explicit link label on a session URL", () => {
+    const html = renderMarkdown(
+      "See [the worker](https://os.tella.dev/session/bks-019f9608-ab20-7000-b98e-4de52d5fe436).",
+    );
+    expect(html).toContain(">the worker</a>");
+  });
+
   it("keeps other internal OS1 links same-tab without a chip", () => {
     const html = renderMarkdown(
       "Open [automations](https://os.tella.dev/automations).",

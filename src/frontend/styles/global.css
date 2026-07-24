@@ -8475,6 +8475,19 @@ a.workspace-info-check-row {
 	background: color-mix(in srgb, var(--accent) 18%, transparent);
 	border-color: color-mix(in srgb, var(--accent) 55%, transparent);
 }
+/* A full `bks-<uuid>` chip is wider than a phone-width message bubble, so on
+   narrow screens the nowrap above pushed it past the bubble's edge. Let it
+   fold there; box-decoration-break keeps each fragment a proper chip. Wider
+   viewports keep nowrap — with room to spare, an id splitting across lines at
+   its hyphens reads worse than moving the whole chip down a line. */
+@media (max-width: 560px) {
+	.session-link[data-session-id] {
+		white-space: normal;
+		overflow-wrap: anywhere;
+		-webkit-box-decoration-break: clone;
+		box-decoration-break: clone;
+	}
+}
 
 .markdown ul,
 .markdown ol {

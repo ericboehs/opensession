@@ -42,6 +42,14 @@ function sessionLink(id: string): string {
 // (stripBasePath-style legacy /opensession + /backstage forms).
 const INTERNAL_HOSTS = new Set(["os.tella.dev"]);
 
+// An auto-linked (or <bracketed>) bare URL: marked hands the raw URL over as
+// the link text. Trailing-slash tolerant so `…/chat/bks-x/` still counts.
+function isBareUrlLink(token: any): boolean {
+  const strip = (v: string) => String(v ?? "").replace(/\/+$/, "");
+  const text = strip(token.text);
+  return text.length > 0 && text === strip(token.href);
+}
+
 function internalHref(href: string | null | undefined): {
   sessionId?: string;
 } | null {
@@ -99,6 +107,18 @@ md.use({
       const title = token.title ? ` title="${attr(token.title)}"` : "";
       const internal = internalHref(token.href);
       if (internal) {
+        // A pasted session/chat URL auto-links with the whole ~90-char URL as
+        // its text, which ran straight past the message bubble's edge inside
+        // the nowrap chip. Label it with the session id instead — the same
+        // chip a bare `bks-…` in prose gets.
+        if (internal.sessionId && isBareUrlLink(token)) {
+          return (
+            `<a href="${attr(token.href)}" class="session-link" ` +
+            `data-session-id="${attr(internal.sessionId)}" ` +
+            `title="Open session ${attr(internal.sessionId)}">` +
+            `${attr(internal.sessionId)}</a>`
+          );
+        }
         // Same app: navigate in place. Session/chat URLs get the session-link
         // chip + data-session-id so the delegated handler (SessionViewer)
         // navigates client-side; href stays for middle/cmd-click and for
