@@ -130,8 +130,15 @@ interface Props {
 	onToggleGroup: (bucket: ReviewBucket) => void;
 	selectedPr?: { repo: string; branch: string } | null;
 	selectedReviewId?: string | null;
-	onOpenPr: (repo: string, branch: string) => void;
-	onOpenSessionReview: (sessionId: string) => void;
+	/** The open workspace (route or the open chat's), for row selection —
+	 *  a PR row is selected when that workspace carries its PR. */
+	selectedWorkspace?: {
+		repo?: string;
+		branch?: string;
+		prNumber?: number;
+	} | null;
+	/** Open the PR's workspace (resolve-or-create, Review tab). */
+	onOpenItem: (item: ReviewQueueItem) => void;
 }
 
 export function ReviewQueue({
@@ -144,8 +151,8 @@ export function ReviewQueue({
 	onToggleGroup,
 	selectedPr,
 	selectedReviewId,
-	onOpenPr,
-	onOpenSessionReview,
+	selectedWorkspace,
+	onOpenItem,
 }: Props) {
 	const [filter, setFilterState] = useState<ReviewFilter>(readFilter);
 	const [closingUrls, setClosingUrls] = useState<Set<string>>(() => new Set());
@@ -337,13 +344,14 @@ export function ReviewQueue({
 												(item.sessionId != null &&
 													item.sessionId === selectedReviewId) ||
 												(selectedPr?.repo === item.pr.repo &&
-													selectedPr.branch === item.pr.branch)
+													selectedPr.branch === item.pr.branch) ||
+												(!!selectedWorkspace &&
+													(selectedWorkspace.repo || "tella-fusion") ===
+														item.pr.repo &&
+													(selectedWorkspace.prNumber === item.pr.number ||
+														selectedWorkspace.branch === item.pr.branch))
 											}
-											onOpen={() =>
-												item.sessionId
-													? onOpenSessionReview(item.sessionId)
-													: onOpenPr(item.pr.repo, item.pr.branch)
-											}
+											onOpen={() => onOpenItem(item)}
 											onClose={() => void closePr(item)}
 											closing={closingUrls.has(item.pr.url)}
 										/>

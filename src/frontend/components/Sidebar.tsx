@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import type { UnifiedSession, Project, SupportThread } from "../lib/types";
+import type { ReviewQueueItem } from "../lib/review-queue";
 import {
 	relativeTime,
 	fetchOpenPrs,
@@ -261,21 +262,13 @@ interface Props {
 	homeActive: boolean;
 	/** Open the home worktree index. */
 	onOpenHome: () => void;
-	/** True while the Checks view is open — highlights the Checks entry. */
-	reviewsActive: boolean;
-	/** Open the Checks view (the sidebar's one non-workspace area). */
-	onOpenReviews: () => void;
 	/** Open one automation's settings (list + detail). Called with the
 	    automation's NAME — session rows only carry the name, not the id. */
 	onOpenAutomation: (name: string) => void;
-	/** Open a PR that may not have an OpenSession chat yet. */
-	onOpenPr: (repo: string, branch: string) => void;
-	/** The session-less PR preview currently open, for row highlighting. */
-	selectedPr?: { repo: string; branch: string } | null;
-	/** Session-backed PR currently open in the full review surface. */
-	selectedReviewId?: string | null;
-	/** Open a session-backed PR in the full review surface. */
-	onOpenSessionReview: (sessionId: string) => void;
+	/** Open a PR row's workspace (resolve-or-create, Review tab default). */
+	onOpenPrItem: (item: ReviewQueueItem) => void;
+	/** The open workspace id (route or the open chat's), for row selection. */
+	selectedWorkspaceId?: string | null;
 	/** True while the PR Tinder deck is open — highlights its entry. */
 	prTinderActive: boolean;
 	/** Open PR Tinder (swipe triage of the repo's open PRs). */
@@ -301,10 +294,8 @@ interface Props {
 	onSelect: (session: UnifiedSession) => void;
 	/** Foreground a session's Review view-tab (from a chat row's context menu). */
 	onOpenReview: (session: UnifiedSession) => void;
-	/** Open the session-less ticket preview for a Support row with no session. */
-	onOpenSupportThread: (threadId: string) => void;
-	/** The support preview currently open (highlights its row), or null. */
-	selectedSupportThreadId?: string | null;
+	/** Open a Support ticket's workspace (resolve-or-create, Conversation tab). */
+	onOpenTicket: (t: SupportThread) => void;
 	onNewSession: () => void;
 	/** Start a new session with a repo pre-selected (the repo-band "+" action). */
 	onNewSessionInRepo: (repo: string) => void;
@@ -826,13 +817,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	onOpenNotes,
 	homeActive,
 	onOpenHome,
-	reviewsActive,
-	onOpenReviews,
 	onOpenAutomation,
-	onOpenPr,
-	selectedPr = null,
-	selectedReviewId = null,
-	onOpenSessionReview,
+	onOpenPrItem,
+	selectedWorkspaceId = null,
 	prTinderActive,
 	onOpenPrTinder,
 	supportTinderActive,
@@ -846,8 +833,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	onOpenAnalytics,
 	onSelect,
 	onOpenReview,
-	onOpenSupportThread,
-	selectedSupportThreadId = null,
+	onOpenTicket,
 	onNewSession,
 	onNewSessionInRepo,
 	onOpenProject,
@@ -2162,29 +2148,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		});
 	}
 
-	// Checks-tab badge: distinct open PRs (deduped by URL) where the CURRENT
-	// user has a pending review request — "PRs waiting on you", not every open
-	// PR. Sourced from both the session PRs and the repo-wide open-PR list, so
-	// a teammate's PR with no Backstage session still counts.
-	const openPrCount = useMemo(() => {
-		const me = currentUser.toLowerCase();
-		const urls = new Set<string>();
-		for (const s of sessions) {
-			if (
-				s.prUrl &&
-				s.prState === "OPEN" &&
-				!s.prIsDraft &&
-				!s.archived &&
-				s.prReviewRequested?.includes(me)
-			)
-				urls.add(s.prUrl);
-		}
-		for (const pr of openPrs || []) {
-			if (!pr.isDraft && pr.reviewRequested?.includes(me)) urls.add(pr.url);
-		}
-		return urls.size;
-	}, [sessions, openPrs, currentUser]);
-
 	const tools: Array<{
 		id: SidebarToolId;
 		label: string;
@@ -2219,14 +2182,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			onClick: onOpenCatchUp,
 			title: "Swipe through your unread workspaces",
 			count: catchUpCount,
-		},
-		{
-			id: "reviews",
-			label: "Reviews",
-			icon: <IconEye />,
-			active: reviewsActive,
-			onClick: onOpenReviews,
-			count: openPrCount,
 		},
 		{
 			id: "prtinder",
@@ -2661,10 +2616,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// session-less ticket preview when there isn't one. Hovering swaps the
 	// timestamp for a one-click "mark done".
 	function supportThreadActive(t: SupportThread) {
+		// The ticket's workspace is open (chat-less route or one of its chats)…
+		if (selectedWorkspaceId) {
+			const ws = projects.find((p) => p.id === selectedWorkspaceId);
+			if (ws?.plainThreadId === t.id) return true;
+		}
+		// …or its linked session is the open chat (pre-workspace sessions).
 		const session = supportSessionByThread.get(t.id);
-		return session
-			? session.id === selectedId
-			: selectedSupportThreadId === t.id;
+		return !!session && session.id === selectedId;
 	}
 
 	function renderSupportRow(t: SupportThread) {
@@ -2678,9 +2637,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				className={`sidebar-item group/support flex items-center gap-1.5 min-w-0 ${
 					active ? "sidebar-item-selected" : ""
 				}`}
-				onClick={() =>
-					session ? onSelect(session) : onOpenSupportThread(t.id)
-				}
+				onClick={() => onOpenTicket(t)}
 				title={`${customer} — ${label}${
 					t.previewText ? `\n${t.previewText.slice(0, 200)}` : ""
 				}`}
@@ -3594,10 +3551,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					onToggle={() => toggleBand("pullrequests")}
 					groupOpen={(bucket) => isOpen(`review:${bucket}`)}
 					onToggleGroup={(bucket) => toggleGroup(`review:${bucket}`)}
-					selectedPr={selectedPr}
-					selectedReviewId={selectedReviewId}
-					onOpenPr={onOpenPr}
-					onOpenSessionReview={onOpenSessionReview}
+					selectedWorkspace={
+						selectedWorkspaceId
+							? projects.find((p) => p.id === selectedWorkspaceId) || null
+							: null
+					}
+					onOpenItem={onOpenPrItem}
 				/>
 			)}
 

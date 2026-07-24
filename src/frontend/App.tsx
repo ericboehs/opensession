@@ -57,9 +57,11 @@ import {
 	deleteProjectApi,
 	newChatApi,
 	fetchChatMessagesApi,
+	resolveWorkspaceApi,
 	type NoteMeta,
 } from "./lib/api";
-import type { Project } from "./lib/types";
+import type { Project, SupportThread } from "./lib/types";
+import type { ReviewQueueItem } from "./lib/review-queue";
 import { pushRecent } from "./lib/recents";
 import { markRead } from "./lib/reads";
 import {
@@ -1197,6 +1199,55 @@ function App() {
 		route.view === "workspace" ? `${route.id}:${route.tab ?? ""}` : null,
 		projectsLoaded,
 	]);
+	// Retired standalone pages (2026-07-24): /pr/…, /support/… and /reviews
+	// deep links resolve into the workspace container and redirect (replace).
+	// The old components keep rendering as the in-flight/failure fallback, so
+	// a failed resolve degrades to the previous behavior instead of a dead
+	// link. Bare /reviews goes home — the sidebar bands are the inbox now.
+	useEffect(() => {
+		let stale = false;
+		const toWorkspace = (
+			workspaceId: string,
+			tab: "review" | "conversation",
+		) => {
+			if (stale) return;
+			refreshProjects();
+			navigate({ view: "workspace", id: workspaceId, tab }, { replace: true });
+		};
+		if (route.view === "pr") {
+			resolveWorkspaceApi({ pr: { repo: route.repo, branch: route.branch } })
+				.then(({ workspaceId }) => toWorkspace(workspaceId, "review"))
+				.catch(() => {});
+		} else if (route.view === "support") {
+			resolveWorkspaceApi({ plainThreadId: route.threadId })
+				.then(({ workspaceId }) => toWorkspace(workspaceId, "conversation"))
+				.catch(() => {});
+		} else if (route.view === "reviews") {
+			if (!route.id) {
+				navigate({ view: "home" }, { replace: true });
+			} else {
+				const id = route.id;
+				const s = sessionsRef.current.find(
+					(x) => x.id === id || x.aliasIds?.includes(id),
+				);
+				if (s?.projectId)
+					navigate(
+						{ view: "workspace", id: s.projectId, tab: "review" },
+						{ replace: true },
+					);
+				else if (s?.branch)
+					resolveWorkspaceApi({
+						pr: { repo: s.repo || "tella-fusion", branch: s.branch },
+					})
+						.then(({ workspaceId }) => toWorkspace(workspaceId, "review"))
+						.catch(() => {});
+			}
+		}
+		return () => {
+			stale = true;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [route, loading]);
 	// The current code session's Review pane, surfaced as a leftmost view-tab in
 	// the top strip (siblings share the worktree/PR, so one Review tab suffices).
 	const currentHasWorkspace =
@@ -1406,6 +1457,48 @@ function App() {
 		}
 		if (assetsActive) setActiveViewTab(null);
 	}
+	// Sidebar PR row → the PR's ONE workspace (resolve-or-create server-side,
+	// adopt-don't-duplicate), Review tab foregrounded. Falls back to the legacy
+	// preview routes if the resolve fails, so a click is never dead.
+	const openPrWorkspace = React.useCallback(
+		async (item: ReviewQueueItem) => {
+			try {
+				const { workspaceId } = await resolveWorkspaceApi({
+					pr: {
+						repo: item.pr.repo,
+						number: item.pr.number,
+						branch: item.pr.branch,
+						title: item.pr.title,
+					},
+				});
+				refreshProjects();
+				navigate({ view: "workspace", id: workspaceId, tab: "review" });
+			} catch {
+				if (item.sessionId) navigate({ view: "reviews", id: item.sessionId });
+				else
+					navigate({ view: "pr", repo: item.pr.repo, branch: item.pr.branch });
+			}
+		},
+		[refreshProjects],
+	);
+	// Sidebar Support row → the ticket's ONE workspace, Conversation tab. The
+	// row's title rides along as the workspace-name hint (no Plain round-trip).
+	const openTicketWorkspace = React.useCallback(
+		async (t: SupportThread) => {
+			try {
+				const { workspaceId } = await resolveWorkspaceApi({
+					plainThreadId: t.id,
+					name:
+						t.title || t.customer.name || t.customer.email || undefined,
+				});
+				refreshProjects();
+				navigate({ view: "workspace", id: workspaceId, tab: "conversation" });
+			} catch {
+				navigate({ view: "support", threadId: t.id });
+			}
+		},
+		[refreshProjects],
+	);
 	// Open a session's Review tab from the sidebar: select it and foreground its
 	// workspace's Review once it lands (pendingReviewOpen survives the
 	// workspace-change reset).
@@ -1975,19 +2068,11 @@ function App() {
 							onOpenNotes={() => navigate({ view: "notes", sel: null })}
 							homeActive={route.view === "home"}
 							onOpenHome={() => navigate({ view: "home" })}
-							reviewsActive={route.view === "reviews"}
-							onOpenReviews={() => navigate({ view: "reviews" })}
 							onOpenAutomation={(name) =>
 								navigate({ view: "automations", id: name })
 							}
-							onOpenPr={(repo, branch) => navigate({ view: "pr", repo, branch })}
-							selectedPr={
-								route.view === "pr"
-									? { repo: route.repo, branch: route.branch }
-									: null
-							}
-							selectedReviewId={route.view === "reviews" ? route.id : null}
-							onOpenSessionReview={(id) => navigate({ view: "reviews", id })}
+							onOpenPrItem={openPrWorkspace}
+							selectedWorkspaceId={activeProjectId}
 							prTinderActive={route.view === "prtinder"}
 							onOpenPrTinder={() => navigate({ view: "prtinder" })}
 							supportTinderActive={route.view === "supporttinder"}
@@ -2001,12 +2086,7 @@ function App() {
 							onOpenAnalytics={() => navigate({ view: "analytics" })}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onOpenReview={openReviewForSession}
-							onOpenSupportThread={(threadId) =>
-								navigate({ view: "support", threadId })
-							}
-							selectedSupportThreadId={
-								route.view === "support" ? route.threadId : null
-							}
+							onOpenTicket={openTicketWorkspace}
 							onNewSession={() => openPalette()}
 							onNewSessionInRepo={(repo) =>
 								setPalette({ open: true, repo })

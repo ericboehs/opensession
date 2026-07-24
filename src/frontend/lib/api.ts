@@ -866,6 +866,27 @@ export async function fetchPlainLabelTypesApi(): Promise<PlainLabelType[]> {
  * Start (or reuse) a triage session for a Plain thread — runs the "Plain
  * ticket triage" automation. Slow (~15-60s) when it has to boot a fresh run.
  */
+/**
+ * Resolve-or-create the ONE workspace for a PR or a Plain support ticket
+ * (adopt-don't-duplicate — server-side workspace-resolve.ts). Sidebar PR and
+ * Support rows call this on click, then navigate into the workspace.
+ */
+export async function resolveWorkspaceApi(
+	target:
+		| { pr: { repo: string; number?: number; branch?: string; title?: string } }
+		| { plainThreadId: string; name?: string },
+	user?: string,
+): Promise<{ workspaceId: string; created: boolean }> {
+	return request<{ workspaceId: string; created: boolean }>(
+		"/workspaces/resolve",
+		{
+			method: "POST",
+			body: { ...target, ...(user ? { user } : {}) },
+			label: "Failed to resolve the workspace",
+		},
+	);
+}
+
 export async function startPlainTriageApi(threadId: string): Promise<string> {
 	const body = await request<{ sessionId: string }>(
 		`/plain/triage/${encodeURIComponent(threadId)}`,
