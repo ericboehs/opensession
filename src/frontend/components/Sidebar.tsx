@@ -55,6 +55,7 @@ import {
 	IconChart,
 	IconFile,
 	IconDotsHorizontal,
+	IconGlobe,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { Menu } from "../ui/menu";
@@ -192,6 +193,10 @@ const KNOWN_PEOPLE = new Set([...TEAM, AGENT_NAME].map((n) => n.toLowerCase()));
 
 interface Props {
 	sessions: UnifiedSession[];
+	/** Local-profile-only chrome; false on the hosted app. */
+	localMode: boolean;
+	/** The configured cloud upstream did not answer the latest merged-list poll. */
+	cloudUnreachable: boolean;
 	/** Initial sessions + project metadata have loaded, so dependent queues can render. */
 	workspaceDataReady: boolean;
 	/** Project folders that group chats. */
@@ -756,6 +761,8 @@ function sessionRepo(s: UnifiedSession): string {
 
 export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	sessions,
+	localMode,
+	cloudUnreachable,
 	workspaceDataReady,
 	projects,
 	notes,
@@ -2338,6 +2345,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						{stripPrTitlePrefix(row.name)}
 					</span>
 				)}
+				{localMode && row.chats.some((chat) => chat.local) && !editing && (
+					<span className="shrink-0 rounded-full border border-line px-1.5 py-px text-[9px] font-medium tracking-wide text-faint">
+						local
+					</span>
+				)}
 				{/* A live run always earns its elapsed ticker. The idle "last used"
 				    time is opt-in (Settings → Appearance): revealed on hover by
 				    default, or pinned always. It's shown on hover in every mode —
@@ -2632,6 +2644,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 	return (
 		<div className="sidebar" ref={sidebarScrollRef}>
+			{localMode && cloudUnreachable && (
+				<div
+					className="mx-2 mt-2 flex items-center gap-2 rounded-md border border-line bg-panel px-2.5 py-2 text-[11px] text-dim"
+					role="status"
+					title="Local sessions are still available"
+				>
+					<IconGlobe size={15} className="shrink-0 text-faint" />
+					<span>Cloud temporarily unavailable</span>
+				</div>
+			)}
 			<div className="sidebar-sticky-section sidebar-tools-section">
 			{!isPhone && visibleTools.length > 0 && (
 				<div className="sidebar-band-label sidebar-tools-head sidebar-sticky-head">
@@ -3137,6 +3159,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							node: (
 								<SidebarItem
 									session={s}
+									localMode={localMode}
 									selected={s.id === selectedId}
 									unread={
 										s.id !== selectedId &&
@@ -3499,6 +3522,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 													<SidebarItem
 														key={s.id}
 														session={s}
+														localMode={localMode}
 														selected={s.id === selectedId}
 														unread={
 															s.id !== selectedId &&
@@ -3937,6 +3961,7 @@ const RepoFilterChip = React.forwardRef<
 
 function SidebarItem({
 	session,
+	localMode,
 	selected,
 	unread,
 	mine,
@@ -3947,6 +3972,7 @@ function SidebarItem({
 	onRename,
 }: {
 	session: UnifiedSession;
+	localMode: boolean;
 	selected: boolean;
 	/** New activity since this session was last opened — brightens and bolds the
 	    title, like an unread Slack conversation. */
@@ -4285,6 +4311,11 @@ function SidebarItem({
 						}}
 					>
 						{stripPrTitlePrefix(session.title)}
+					</span>
+				)}
+				{localMode && session.local && !editing && (
+					<span className="shrink-0 rounded-full border border-line px-1.5 py-px text-[9px] font-medium tracking-wide text-faint">
+						local
 					</span>
 				)}
 				{mine && !editing && metaParts.length > 0 && (

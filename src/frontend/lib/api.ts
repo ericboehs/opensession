@@ -953,6 +953,46 @@ export async function deleteSessionApi(
 	});
 }
 
+export class SessionUpgradeError extends ApiError {
+	uncommittedFiles: string[];
+
+	constructor(message: string, status: number, uncommittedFiles: string[] = []) {
+		super(message, status);
+		this.name = "SessionUpgradeError";
+		this.uncommittedFiles = uncommittedFiles;
+	}
+}
+
+export async function upgradeSessionApi(
+	sessionId: string,
+): Promise<{ id: string; url: string }> {
+	const res = await fetch(
+		`${BASE}/sessions/${encodeURIComponent(sessionId)}/upgrade`,
+		{ method: "POST" },
+	);
+	const body = (await res.json().catch(() => null)) as {
+		id?: string;
+		url?: string;
+		error?: string;
+		uncommittedFiles?: unknown;
+	} | null;
+	if (!res.ok) {
+		throw new SessionUpgradeError(
+			body?.error || `Failed to move session: ${res.status}`,
+			res.status,
+			Array.isArray(body?.uncommittedFiles)
+				? body.uncommittedFiles.filter(
+						(file): file is string => typeof file === "string",
+					)
+				: [],
+		);
+	}
+	if (!body?.id || !body.url) {
+		throw new SessionUpgradeError("Cloud upgrade returned an invalid response", 502);
+	}
+	return { id: body.id, url: body.url };
+}
+
 export async function fetchDiff(
 	sessionId: string,
 ): Promise<import("./types").SessionDiffResponse> {

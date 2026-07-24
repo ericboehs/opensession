@@ -49,6 +49,7 @@ import {
 	fetchFileMentions,
 	fetchSkillMentions,
 	fetchSessionSubagents,
+	fetchRepos,
 	promoteChatApi,
 	fetchPr,
 	type WorkspaceMediaItem,
@@ -123,6 +124,7 @@ import { Tooltip } from "../ui/tooltip";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { toast } from "../ui/toast";
 import { copySessionTranscript } from "../lib/transcript-copy";
+import { MoveToCloudDialog } from "./MoveToCloudDialog";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
 
@@ -136,6 +138,8 @@ type QueueReceipt = {
 
 interface Props {
 	session: UnifiedSession;
+	/** True only when auth/status identifies this SPA as the local profile. */
+	localMode: boolean;
 	onBack: () => void;
 	/** Archive through the sidebar so the nearest visible row becomes active. */
 	onArchive?: () => void;
@@ -439,6 +443,7 @@ function pickScrollAnchor(el: HTMLElement): HTMLElement | null {
 
 export function SessionViewer({
 	session,
+	localMode,
 	onBack,
 	onArchive,
 	onArchived,
@@ -477,6 +482,32 @@ export function SessionViewer({
 	onCloseAssets,
 	onOpenWorkspace,
 }: Props) {
+	const [localRepos, setLocalRepos] = useState<
+		Awaited<ReturnType<typeof fetchRepos>> | null | undefined
+	>(() => (localMode && session.local ? undefined : null));
+	useEffect(() => {
+		if (!localMode || !session.local) return;
+		let live = true;
+		setLocalRepos(undefined);
+		fetchRepos()
+			.then((repos) => {
+				if (live) setLocalRepos(repos);
+			})
+			.catch(() => {
+				if (live) setLocalRepos(null);
+			});
+		return () => {
+			live = false;
+		};
+	}, [localMode, session.local]);
+	const localRepoCapabilityLoading =
+		localMode && session.local && localRepos === undefined;
+	const localRepoHasNoGitHubRemote =
+		localMode &&
+		session.local &&
+		Array.isArray(localRepos) &&
+		!localRepos.find((repo) => repo.id === (session.repo || "tella-fusion"))
+			?.ghRepo;
 	const shellTimingRef = useRef({
 		sessionId: session.id,
 		startedAt: performance.now(),
@@ -2835,6 +2866,7 @@ export function SessionViewer({
 	}
 
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+	const [moveToCloudOpen, setMoveToCloudOpen] = useState(false);
 	const [deleting, setDeleting] = useState(false);
 	const [archiving, setArchiving] = useState(false);
 	const [deleteLabel, setDeleteLabel] = useState("");
@@ -3191,6 +3223,13 @@ export function SessionViewer({
 
 	return (
 		<div className="session-viewer">
+			{localMode && session.local && (
+				<MoveToCloudDialog
+					open={moveToCloudOpen}
+					sessionId={session.id}
+					onOpenChange={setMoveToCloudOpen}
+				/>
+			)}
 			{deleting && (
 				<div
 					className="session-delete-overlay"
@@ -3315,6 +3354,17 @@ export function SessionViewer({
 							send={send}
 							connected={connected}
 						/>
+						{localMode && session.local && (
+							<Menu.Item
+								onClick={() => {
+									setOverflowOpen(false);
+									setMoveToCloudOpen(true);
+								}}
+							>
+								<IconGlobe size={20} />
+								<span className="grow">Move to cloud</span>
+							</Menu.Item>
+						)}
 					</>
 				);
 				// Archive is the reversible primary "done with this" action — it sits
@@ -4055,31 +4105,45 @@ export function SessionViewer({
 						</div>
 					) : showReview && hasWorkspace ? (
 						<div className="viewer-review-main">
-							<PrPanel
-								sessionId={session.id}
-								send={send}
-								reviewCanvas
-								onOpenSession={onOpenWorkspace}
-								onAddToInput={(text) =>
-									setComposerPrefill((p) => ({
-										seq: (p?.seq ?? 0) + 1,
-										text,
-									}))
-								}
-								repos={[
-									{
-										repo: session.repo || "tella-fusion",
-										primary: true,
-									},
-									...(session.attachedRepos || []).map((r) => ({
-										repo: r.repo,
-										primary: false,
-									})),
-								]}
-								linkedPrs={session.linkedPrs}
-								linkable
-								walkthrough={session.walkthrough}
-							/>
+							{localRepoCapabilityLoading ? (
+								<div className="flex h-full items-center justify-center text-sm text-faint">
+									Loading repository…
+								</div>
+							) : localRepoHasNoGitHubRemote ? (
+								<div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
+									<IconGlobe size={32} className="text-faint" />
+									<div className="text-sm font-medium text-fg">No GitHub remote</div>
+									<div className="max-w-xs text-xs leading-relaxed text-dim">
+										This repository is not connected to GitHub, so pull request details are unavailable.
+									</div>
+								</div>
+							) : (
+								<PrPanel
+									sessionId={session.id}
+									send={send}
+									reviewCanvas
+									onOpenSession={onOpenWorkspace}
+									onAddToInput={(text) =>
+										setComposerPrefill((p) => ({
+											seq: (p?.seq ?? 0) + 1,
+											text,
+										}))
+									}
+									repos={[
+										{
+											repo: session.repo || "tella-fusion",
+											primary: true,
+										},
+										...(session.attachedRepos || []).map((r) => ({
+											repo: r.repo,
+											primary: false,
+										})),
+									]}
+									linkedPrs={session.linkedPrs}
+									linkable
+									walkthrough={session.walkthrough}
+								/>
+							)}
 						</div>
 					) : (
 					<>

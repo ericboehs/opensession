@@ -25,7 +25,7 @@ import { PrQueuePreview } from "./components/PrQueuePreview";
 import { SupportPreview } from "./components/SupportPreview";
 import { Reports } from "./components/Reports";
 import { Analytics } from "./components/Analytics";
-import { UserGate, getCurrentUser } from "./components/UserPicker";
+import { UserGate, getCurrentUser, useAuthStatus } from "./components/UserPicker";
 import { PreviewWait, matchPreviewWaitRoute } from "./components/PreviewWait";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { TitleBar } from "./components/TitleBar";
@@ -318,6 +318,8 @@ function routePath(route: Route): string {
 function App() {
 	const { sessions, loading, cloudUnreachable, refresh, inject, unstick, patch, remove } =
 		useSessions();
+	const auth = useAuthStatus();
+	const localMode = auth?.local === true;
 	const { connected, send, addHandler } = useWebSocket();
 	const sessionsRef = useRef(sessions);
 	sessionsRef.current = sessions;
@@ -346,9 +348,6 @@ function App() {
 	const showToast = useCallback((message: string) => {
 		toast(message);
 	}, []);
-	useEffect(() => {
-		if (cloudUnreachable) showToast("Cloud sessions are temporarily unreachable");
-	}, [cloudUnreachable, showToast]);
 	// Watercooler unread badge: messages newer than the locally-stored
 	// last-read stamp (own messages never count). Live chat_message events bump
 	// it; having the Watercooler open marks read continuously.
@@ -1759,6 +1758,8 @@ function App() {
 						<Sidebar
 							ref={sidebarRef}
 							sessions={sessions}
+							localMode={localMode}
+							cloudUnreachable={cloudUnreachable}
 							workspaceDataReady={!loading && projectsLoaded}
 							projects={projects}
 							notes={notes.map((n) => ({ id: n.id, title: n.title }))}
@@ -2148,6 +2149,7 @@ function App() {
 								<SessionViewer
 									key={currentSession.id}
 									session={currentSession}
+									localMode={localMode}
 									onBack={goBack}
 									onArchive={() => sidebarRef.current?.archiveSelected()}
 									onArchived={(stoppedRun) => {
