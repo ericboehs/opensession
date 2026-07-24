@@ -2958,13 +2958,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						<button
 							key={tool.id}
 							className={cn(
-								"sidebar-nav-item group flex w-full items-center gap-[11px] rounded-xl bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-1.5 text-left text-[14px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg",
+								// Compact rows (Michiel 2026-07-24: the tools were "wayyy too
+								// big"): 13.5px label, 18px glyphs, tight vertical padding —
+								// the utility strip should read lighter than the work lists.
+								"sidebar-nav-item group flex w-full items-center gap-[9px] rounded-lg bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[3px] text-left text-[13.5px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg",
 								tool.active && "bg-active text-fg",
 							)}
 							onClick={tool.onClick}
 							title={tool.title}
 						>
-							<span className={cn("sidebar-nav-icon inline-flex text-faint", tool.active && "text-dim", !tool.active && "group-hover:text-dim")}>
+							<span className={cn("sidebar-nav-icon inline-flex text-faint [&_svg]:size-[18px]", tool.active && "text-dim", !tool.active && "group-hover:text-dim")}>
 								{tool.icon}
 							</span>
 							{tool.label}
