@@ -413,6 +413,7 @@ function RunCard({
 	>({});
 	const [allLogs, setAllLogs] = useState(false);
 	const [showResult, setShowResult] = useState(false);
+	const [showMcp, setShowMcp] = useState(false);
 
 	// Phase order: meta-seeded titles first, then first-seen agent phases;
 	// agents without a phase render as a leading ungrouped block.
@@ -489,6 +490,16 @@ function RunCard({
 	];
 	if (runningN) meta.push(`${runningN} running`);
 	if (errorN) meta.push(`${errorN} failed`);
+	// Direct mcp.* calls the script made — cheap work that never became an
+	// agent row, so without this the panel understates what the run did.
+	if (run.totals.mcpCalls) {
+		const failed = run.totals.mcpErrors
+			? `, ${run.totals.mcpErrors} failed`
+			: "";
+		meta.push(
+			`${run.totals.mcpCalls} tool call${run.totals.mcpCalls === 1 ? "" : "s"}${failed}`,
+		);
+	}
 	if (run.totals.tokensOut) meta.push(`${fmtTokens(run.totals.tokensOut)} tok`);
 	if (elapsedMs > 0 || run.status === "running")
 		meta.push(fmtDuration(elapsedMs));
@@ -578,6 +589,39 @@ function RunCard({
 							</div>
 						);
 					})}
+				</div>
+			)}
+			{!!run.mcpCalls?.length && (
+				<div className="border-t border-line px-3 py-2">
+					<button
+						className="text-[11px] font-medium text-dim transition-colors hover:text-fg"
+						onClick={() => setShowMcp((v) => !v)}
+					>
+						{showMcp ? "Hide" : "Show"} tool calls
+						{run.totals.mcpCalls && run.totals.mcpCalls > run.mcpCalls.length
+							? ` (last ${run.mcpCalls.length} of ${run.totals.mcpCalls})`
+							: ""}
+					</button>
+					{showMcp && (
+						<div className="mt-1 flex flex-col gap-0.5">
+							{run.mcpCalls.map((c, i) => (
+								<div
+									key={`${c.seq}-${i}`}
+									className="flex items-baseline gap-2 text-xs leading-snug"
+								>
+									<span className={cn("shrink-0", c.ok ? "text-faint" : "text-red")}>
+										{c.ok ? "·" : "✗"}
+									</span>
+									<span className="truncate text-dim">
+										{c.server}.{c.tool}
+									</span>
+									<span className="ml-auto shrink-0 text-[11px] text-faint tabular-nums">
+										{c.cached ? "cached" : `${c.ms}ms`}
+									</span>
+								</div>
+							))}
+						</div>
+					)}
 				</div>
 			)}
 			{run.logs.length > 0 && (

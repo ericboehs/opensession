@@ -1,10 +1,13 @@
 /**
  * opensession-workflows — dynamic workflows: run a model-authored JS script
  * that fans out lightweight agent runs deterministically (map-reduce over a
- * codebase, N-way audits, comparative research). The script executes in a
+ * codebase, N-way audits, comparative research) and calls MCP tools directly.
+ * The script executes in a
  * contained Bun Worker (env-scrubbed, exfil/spawn globals stripped — see
  * workflow-worker.ts; exposure gating is the real boundary); each agent()
- * call becomes a plain opencode run in ask mode (see
+ * call becomes a plain opencode run in ask mode, while mcp.* calls go through
+ * workflow-mcp.ts — a round trip, not a model turn, scoped by the
+ * ctx.mcpAllowlist/deniedTools this server was built with (see
  * src/server/workflow-types.ts for the contract, workflow-runner.ts for
  * orchestration). Interactive sessions, plus automations a HUMAN flagged
  * with `workflows: true` (automations.ts registers the instance per run —
@@ -51,6 +54,13 @@ export interface WorkflowsToolContext {
 	/** Overrides WORKFLOW_DEFAULT_MODEL for agent() calls that name no model.
 	 *  Left unset in production — agents default to Opus, not the session's model. */
 	defaultModel?: () => string | undefined;
+	/** MCP allowlist for the script's mcp.* calls. Omitted (interactive
+	 *  sessions) = every server this user's own runs may see; an automation
+	 *  passes its own least-privilege list so a script can't widen it. */
+	mcpAllowlist?: string[];
+	/** Per-call tool denials for mcp.* (automation runs: Plain customer-facing
+	 *  writes, WorkOS identity mutation). */
+	deniedTools?: Record<string, string>;
 }
 
 function text(s: string) {
@@ -102,10 +112,13 @@ Injected globals:
 - agent(prompt, opts?) → Promise — run one focused agent (ask mode: reads files / runs read-only commands in this session's worktree; its final message is the return value). Resolves to the final text; with opts.schema (a JSON Schema) resolves to the parsed, validated object instead; resolves to null when the agent errored — filter with .filter(Boolean). opts: { label, phase, schema, model }.
 - parallel([...thunks]) → Promise — run zero-arg thunks concurrently and wait for all; a thrown thunk becomes null, never rejects the batch. E.g. await parallel(files.map(f => () => agent("Audit " + f)))
 - pipeline(items, ...stages) → Promise — per-item stage chain with NO barrier between stages (item B can run stage 1 while item A is in stage 2). Each stage gets (prevResult, originalItem, index); a throwing stage drops that item to null and skips its remaining stages.
+- mcp.<server>.<tool>(args) → Promise — call an MCP tool DIRECTLY from the script (no model turn: one round trip). Resolves to the tool's structured result, or its text auto-parsed as JSON when it parses. REJECTS on failure (unlike agent(), which resolves null) — try/catch it, or let parallel() degrade the throw to null. Also: mcp.call(server, tool, args) (same thing, dynamic names), mcp.servers() → string[], mcp.tools(server) → [{name, description, inputSchema}].
 - phase(title) — set the current progress group for subsequent agent calls.
 - log(message) — narrator line in the progress feed.
 - args — your args_json, parsed, verbatim.
 - budget — { total, spent(), remaining() } in output tokens.
+
+AGENT OR TOOL? An agent() is a model turn — use it when the work needs judgement (reading code, summarizing, ranking, deciding). An mcp.* call is a function call — use it whenever you just need DATA from a connected server. Don't spend an agent on "query Prometheus for X" or "fetch that Linear issue": call the tool, filter the rows in the script, and spend agents only on the parts that need thinking. Tool names and argument shapes are the same ones in your own tool list; mcp.servers() / mcp.tools(server) enumerate them at runtime. The surface is exactly what YOUR runs may use (per-user restrictions apply, confirm-gated servers like stripe are never reachable from a script).
 
 __MODEL_LINE__
 
@@ -113,7 +126,8 @@ Rules:
 - Date.now(), argless new Date(), and Math.random() THROW inside scripts (they break resume replay determinism) — pass timestamps/seeds via args.
 - Agents start fresh with ZERO context from this session — make every prompt self-contained (paths, constraints, what to return).
 - Agents are read-only by default (ask mode). Pass opts.write to let one edit code (see below).
-- Limits: ${WORKFLOW_LIMITS.maxConcurrentAgents} agents run concurrently (extras queue), ${WORKFLOW_LIMITS.maxAgents} agent() calls per run lifetime, ${Math.round(WORKFLOW_LIMITS.agentTimeoutMs / 60_000)}min per agent, ${Math.round(WORKFLOW_LIMITS.workflowTimeoutMs / 60_000)}min per workflow.
+- Limits: ${WORKFLOW_LIMITS.maxConcurrentAgents} agents run concurrently (extras queue), ${WORKFLOW_LIMITS.maxAgents} agent() calls per run lifetime, ${Math.round(WORKFLOW_LIMITS.agentTimeoutMs / 60_000)}min per agent, ${Math.round(WORKFLOW_LIMITS.workflowTimeoutMs / 60_000)}min per workflow. mcp.* is cheaper and its own lane: ${WORKFLOW_LIMITS.maxConcurrentMcp} concurrent, ${WORKFLOW_LIMITS.maxMcpCalls} per run, ${Math.round(WORKFLOW_LIMITS.mcpCallTimeoutMs / 1000)}s per call.
+- Both agent() and mcp.* calls are journaled, so resume_workflow REPLAYS them instead of re-firing — a resumed script won't create the same Linear issue twice.
 
 Example (no opts.model set → agents run on the default):
 
@@ -137,6 +151,18 @@ if (!real.length) return "all clean";
 return await agent(
   "Rank these route-audit findings by real-world severity and drop the false positives:\\n" + real.join("\\n"),
   { label: "rank findings" },
+);
+
+Example of mixing tools and agents (data by tool, judgement by agent):
+
+export const meta = { name: "alert-triage" };
+const alerts = await mcp.grafana.list_alert_groups({ state: "new" });
+const issues = await mcp.linear.list_issues({ team: "ENG", state: "started" });
+// Reduce HERE — every row dropped in the script is a model turn not spent.
+const unclaimed = alerts.filter((a) => !issues.some((i) => i.title.includes(a.title)));
+log(unclaimed.length + " unclaimed of " + alerts.length);
+return await parallel(
+  unclaimed.map((a) => () => agent("Assess this alert and say who should own it: " + JSON.stringify(a), { label: a.id })),
 );`;
 
 export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
@@ -193,6 +219,8 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 						cwd,
 						defaultModel: ctx.defaultModel?.() || WORKFLOW_DEFAULT_MODEL,
 						budgetTotal: args.budget_tokens,
+						mcpAllowlist: ctx.mcpAllowlist,
+						deniedTools: ctx.deniedTools,
 					});
 					return text(
 						`Workflow started: ${runId}. Poll workflow_status for progress; it also streams live to this session's Agents panel.`,
@@ -242,6 +270,25 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 					lines.push(
 						`  ${title}: ${countByStatus(agents)}${running.length ? ` — running: ${running.join(", ")}` : ""}`,
 					);
+				}
+				if (run.totals.mcpCalls) {
+					const errs = run.totals.mcpErrors || 0;
+					// Which servers the script actually hit — cheap signal that it's
+					// reaching the right data (and where it's erroring).
+					const byServer = new Map<string, number>();
+					for (const c of run.mcpCalls || [])
+						byServer.set(c.server, (byServer.get(c.server) || 0) + 1);
+					const servers = [...byServer.entries()]
+						.sort((a, b) => b[1] - a[1])
+						.slice(0, 5)
+						.map(([s, n]) => `${s}×${n}`)
+						.join(", ");
+					lines.push(
+						`  tool calls: ${run.totals.mcpCalls}${errs ? `, ${errs} failed` : ""}${servers ? ` — recent: ${servers}` : ""}`,
+					);
+					const failures = (run.mcpCalls || []).filter((c) => !c.ok).slice(-3);
+					for (const f of failures)
+						lines.push(`    ✗ ${f.server}.${f.tool}: ${f.error || "failed"}`);
 				}
 				if (run.error) lines.push(`Error: ${run.error}`);
 				if (run.logs.length) {
@@ -377,6 +424,8 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 						cwd,
 						defaultModel: ctx.defaultModel?.() || WORKFLOW_DEFAULT_MODEL,
 						resumeFromRunId: args.run_id,
+						mcpAllowlist: ctx.mcpAllowlist,
+						deniedTools: ctx.deniedTools,
 					});
 					return text(
 						`Resumed as ${runId} (journal replay from ${args.run_id}). Poll workflow_status; progress streams to the Agents panel.`,

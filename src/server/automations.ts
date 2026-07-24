@@ -568,6 +568,10 @@ export function automationRunMcpForSession(
       sessionId,
       user: `${a.name} (automation)`,
       cwd: () => cwd,
+      // A script's mcp.* surface is the automation's own least-privilege one —
+      // it must never be a way around the allowlist or the denied writes.
+      mcpAllowlist: a.mcpServers,
+      deniedTools: AUTOMATION_DENIED_TOOLS,
     });
   }
   return servers;
@@ -976,6 +980,10 @@ export async function runAutomation(
             sessionId: bksId,
             user: `${automation.name} (automation)`,
             cwd: () => cwd,
+            // Same scoping as the run itself: a workflow script's mcp.* calls
+            // see this automation's allowlist, minus the denied writes.
+            mcpAllowlist: automation.mcpServers,
+            deniedTools: AUTOMATION_DENIED_TOOLS,
           }),
         }
       : undefined;

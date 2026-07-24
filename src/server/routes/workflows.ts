@@ -6,7 +6,10 @@
  */
 
 import type { RouteContext } from "./context";
-import type { WorkflowJournalEntry } from "../workflow-types";
+import {
+	isMcpJournalEntry,
+	type WorkflowJournalEntry,
+} from "../workflow-types";
 import {
 	getWorkflowRun,
 	listWorkflowRunsForSession,
@@ -33,6 +36,15 @@ if (!(globalThis as any).__opensessionWorkflowsBootMarked) {
 	} catch (e) {
 		console.warn("[workflow] boot interrupted-run pass failed:", e);
 	}
+}
+
+/** The journal's agent() records only. mcp.* records live in the same file
+ *  under their own seq space, so every seq-keyed agent lookup goes through
+ *  here — a raw find() can otherwise match an unrelated tool call. */
+function agentJournalEntries(runId: string): WorkflowJournalEntry[] {
+	return readWorkflowJournal(runId).filter(
+		(e): e is WorkflowJournalEntry => !isMcpJournalEntry(e),
+	);
 }
 
 export async function handleWorkflowsRoutes(
@@ -68,9 +80,9 @@ export async function handleWorkflowsRoutes(
 			if (!run)
 				return Response.json({ error: "Workflow not found" }, { status: 404 });
 			const snap = run.agents.find((a) => a.seq === seq);
-			const journal = readWorkflowJournal(runId).find(
-				(e: WorkflowJournalEntry) => e.seq === seq,
-			);
+			// mcp.* records share journal.jsonl and number their own seq space,
+			// so an agent lookup MUST skip them or it can match the wrong record.
+			const journal = agentJournalEntries(runId).find((e) => e.seq === seq);
 			const engineSessionId =
 				snap?.engineSessionId || journal?.outcome.engineSessionId;
 			if (!engineSessionId)
@@ -103,9 +115,7 @@ export async function handleWorkflowsRoutes(
 			const seq = parseInt(m[2], 10);
 			if (!getWorkflowRun(runId))
 				return Response.json({ error: "Workflow not found" }, { status: 404 });
-			const entry = readWorkflowJournal(runId).find(
-				(e: WorkflowJournalEntry) => e.seq === seq,
-			);
+			const entry = agentJournalEntries(runId).find((e) => e.seq === seq);
 			if (!entry)
 				return Response.json(
 					{ error: "No journal entry for that agent (still running?)" },

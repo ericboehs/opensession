@@ -197,6 +197,10 @@ export function interactiveMcpServers(
 					// No defaultModel: agents run on WORKFLOW_DEFAULT_MODEL (Opus), NOT
 					// the session's model — a fan-out shouldn't silently inherit
 					// whatever the orchestrator happens to be on.
+					// No mcpAllowlist/deniedTools either: a script's mcp.* calls get
+					// exactly what this user's own interactive runs get (the
+					// `allowedUsers` gate still applies via createdBy, and
+					// confirm-gated servers are dropped wholesale in workflow-mcp.ts).
 					"opensession-workflows": createWorkflowsMcpServer({
 						sessionId,
 						user: createdBy,

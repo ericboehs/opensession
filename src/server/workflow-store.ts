@@ -3,8 +3,9 @@
  *
  * Disk layout: ~/.opensession-workflows/<runId>/ with
  *   run.json      — WorkflowRunSnapshot (the UI payload)
- *   journal.jsonl — one WorkflowJournalEntry per completed agent() call
- *                   (the resume-replay unit and the UI drill-in detail)
+ *   journal.jsonl — one record per completed agent() call (WorkflowJournalEntry)
+ *                   or mcp.* call (WorkflowMcpJournalEntry, kind:"mcp") — the
+ *                   resume-replay unit and the UI drill-in detail
  *   script.mjs    — the workflow script source, verbatim
  * Tests point OPENSESSION_WORKFLOWS_DIR at a tmp dir.
  *
@@ -21,7 +22,7 @@ import { writeFileAtomic, writeJsonAtomic } from "./shared/atomic-write";
 import { broadcastToSession } from "./ws-hub";
 import {
 	WORKFLOW_LIMITS,
-	type WorkflowJournalEntry,
+	type WorkflowJournalRecord,
 	type WorkflowRunSnapshot,
 } from "./workflow-types";
 
@@ -204,7 +205,7 @@ export function listWorkflowRunsForSession(
 
 export function appendWorkflowJournal(
 	runId: string,
-	entry: WorkflowJournalEntry,
+	entry: WorkflowJournalRecord,
 ): void {
 	mkdirSync(runDir(runId), { recursive: true });
 	appendFileSync(
@@ -215,14 +216,14 @@ export function appendWorkflowJournal(
 
 /** Journal entries in append order; a partial/corrupt trailing line (crash
  *  mid-append) is skipped, not fatal. */
-export function readWorkflowJournal(runId: string): WorkflowJournalEntry[] {
+export function readWorkflowJournal(runId: string): WorkflowJournalRecord[] {
 	const path = `${runDir(runId)}/journal.jsonl`;
 	if (!existsSync(path)) return [];
-	const entries: WorkflowJournalEntry[] = [];
+	const entries: WorkflowJournalRecord[] = [];
 	for (const line of readFileSync(path, "utf-8").split("\n")) {
 		if (!line.trim()) continue;
 		try {
-			entries.push(JSON.parse(line) as WorkflowJournalEntry);
+			entries.push(JSON.parse(line) as WorkflowJournalRecord);
 		} catch {}
 	}
 	return entries;

@@ -4,16 +4,18 @@
  * The parent (workflow-runner.ts) spawns this as a Bun Worker and posts
  * {type:"start", body, args}. The script body executes here as an
  * AsyncFunction whose named parameters ARE the script API (agent/parallel/
- * pipeline/phase/log/args/budget) — top-level `return` works. The worker is
+ * pipeline/merge/mcp/phase/log/args/budget) — top-level `return` works. The
+ * `mcp` global is the tool half of code mode: mcp.<server>.<tool>(args) is a
+ * round trip through the parent's MCP host, not a model turn. The worker is
  * containment, not a hard sandbox (see scrubDangerousGlobals): env and the
  * exfil/spawn globals are stripped before the body runs, and the real trust
  * boundary is exposure — only interactive sessions can start workflows.
- * Every agent() call bridges over postMessage to the parent, which runs it
- * and posts the matching agent_result back.
+ * Every agent() and mcp.* call bridges over postMessage to the parent, which
+ * runs it and posts the matching agent_result / mcp_result back.
  *
  * Determinism: resume replay re-runs the script and answers repeated agent()
- * calls from the journal, so the script must be a pure function of args +
- * agent results. Date.now(), argless `new Date()` and Math.random() are
+ * and mcp.* calls from the journal, so the script must be a pure function of
+ * args + call results. Date.now(), argless `new Date()` and Math.random() are
  * poisoned (throw) to keep it that way; `new Date(ms)` still works.
  *
  * Keep this file dependency-free (type-only imports): it runs on a second
@@ -42,7 +44,13 @@ function post(msg: WorkerToParent): void {
 // ── Bridge state ─────────────────────────────────────────────────────────────
 
 const pendingCalls = new Map<number, (value: unknown) => void>();
+/** mcp.* calls settle with reject-on-error, so they need both handlers. */
+const pendingMcp = new Map<
+	number,
+	{ resolve: (value: unknown) => void; reject: (error: unknown) => void }
+>();
 let callCounter = 0;
+let mcpSeq = 0;
 let currentPhase: string | undefined;
 let budgetTotal: number | null = null;
 let budgetSpent = 0;
@@ -122,6 +130,77 @@ function pipeline(
 		}),
 	);
 }
+
+// ── mcp.* (direct tool calls) ────────────────────────────────────────────────
+
+/** Bridge one MCP tool call. REJECTS on failure (unlike agent(), which
+ *  resolves null): a tool call failing is an exception the script can try/catch,
+ *  and parallel() already degrades a throw to null. */
+function mcpCall(server: unknown, tool: unknown, callArgs?: unknown): Promise<unknown> {
+	const callId = callCounter++;
+	const seq = mcpSeq++;
+	return new Promise((resolve, reject) => {
+		pendingMcp.set(callId, { resolve, reject });
+		post({
+			type: "mcp_call",
+			callId,
+			seq,
+			server: String(server),
+			tool: String(tool),
+			args: callArgs ?? {},
+		});
+	});
+}
+
+/** Discovery (servers/tools) — same bridge, never journaled. */
+function mcpMeta(server?: string): Promise<unknown> {
+	const callId = callCounter++;
+	return new Promise((resolve, reject) => {
+		pendingMcp.set(callId, { resolve, reject });
+		post({ type: "mcp_meta", callId, ...(server ? { server } : {}) });
+	});
+}
+
+/** Property names on `mcp` that are the API itself, not a server. */
+const MCP_RESERVED = new Set(["call", "servers", "tools"]);
+
+/**
+ * `mcp.<server>.<tool>(args)` on top of mcpCall, plus the explicit
+ * mcp.call/servers/tools forms. Both levels are lazy Proxies: no round trip is
+ * made to build them, and unknown names fail at call time with the parent's
+ * "no such server/tool" message rather than a bare `undefined is not a
+ * function`.
+ *
+ * `then` MUST resolve to undefined on both levels — otherwise `await mcp.x`
+ * (or a stray return of one) sees a thenable and hangs.
+ */
+function serverProxy(server: string): Record<string, (a?: unknown) => Promise<unknown>> {
+	return new Proxy({} as Record<string, (a?: unknown) => Promise<unknown>>, {
+		get(_target, prop) {
+			if (typeof prop !== "string" || prop === "then") return undefined;
+			return (toolArgs?: unknown) => mcpCall(server, prop, toolArgs);
+		},
+	});
+}
+
+const mcp: Record<string, unknown> = new Proxy(
+	{
+		/** Explicit form: mcp.call("grafana", "query_prometheus", {...}). */
+		call: (server: unknown, tool: unknown, callArgs?: unknown) =>
+			mcpCall(server, tool, callArgs),
+		/** Server names this workflow may call (no connection made). */
+		servers: () => mcpMeta(),
+		/** Tool catalog for one server: [{ name, description, inputSchema }]. */
+		tools: (server: unknown) => mcpMeta(String(server)),
+	} as Record<string, unknown>,
+	{
+		get(target, prop) {
+			if (typeof prop !== "string" || prop === "then") return undefined;
+			if (MCP_RESERVED.has(prop)) return target[prop];
+			return serverProxy(prop);
+		},
+	},
+);
 
 /** Set the current progress group for subsequent agent calls. */
 function phase(title: unknown): void {
@@ -241,8 +320,8 @@ async function runBody(
 		const AsyncFunction = async function () {}.constructor as new (
 			...params: string[]
 		) => (...values: unknown[]) => Promise<unknown>;
-		const apiNames = ["agent", "parallel", "pipeline", "merge", "phase", "log", "args", "budget"];
-		const apiValues = [agent, parallel, pipeline, merge, phase, log, args, budget];
+		const apiNames = ["agent", "parallel", "pipeline", "merge", "mcp", "phase", "log", "args", "budget"];
+		const apiValues = [agent, parallel, pipeline, merge, mcp, phase, log, args, budget];
 		const fn = new AsyncFunction(...apiNames, ...DANGEROUS_GLOBALS, body);
 		scrubEnv();
 		poisonDeterminismHoles();
@@ -283,5 +362,15 @@ workerGlobal.onmessage = (event: MessageEvent<unknown>) => {
 		if (!resolve) return;
 		pendingCalls.delete(msg.callId);
 		resolve(msg.result);
+		return;
+	}
+	if (msg.type === "mcp_result") {
+		const handlers = pendingMcp.get(msg.callId);
+		if (!handlers) return;
+		pendingMcp.delete(msg.callId);
+		// Reject with a real Error so the script gets a stack and can try/catch;
+		// an uncaught one fails the run with the tool's own message.
+		if (msg.ok) handlers.resolve(msg.value);
+		else handlers.reject(new Error(msg.error || "MCP call failed"));
 	}
 };

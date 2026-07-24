@@ -9,10 +9,16 @@
  * messages stream into the run snapshot (workflow-store.ts broadcasts each
  * change as a workflow_update to the session's watchers).
  *
+ * mcp.* calls take the same route through workflow-mcp.ts (transport +
+ * policy): their own concurrency lane, journaled and replayed like agent
+ * calls, and the host is closed when the run finishes (stdio servers are child
+ * processes).
+ *
  * Resume: startWorkflow({resumeFromRunId}) re-runs the script and answers any
- * agent_call whose (seq, hash-of-prompt+opts) matches the old run's journal
- * instantly from the journal — the script replays deterministically up to the
- * first changed/missing call (which is why the worker poisons Date.now &co).
+ * agent_call or mcp_call whose hash matches the old run's journal instantly
+ * from the journal — the script replays deterministically up to the first
+ * changed/missing call (which is why the worker poisons Date.now &co), and a
+ * tool call that already landed is never re-fired.
  *
  * A workflow failure must never take down the server: every handler is
  * wrapped, failures log with a [workflow] prefix and finalize the run.
@@ -33,6 +39,7 @@ import { repoForPath } from "./worktree";
 import { tryGetSessionControl } from "./session-control";
 import {
 	WORKFLOW_LIMITS,
+	isMcpJournalEntry,
 	type WorkerToParent,
 	type WorkflowAgentOpts,
 	type WorkflowAgentOutcome,
@@ -40,10 +47,12 @@ import {
 	type WorkflowExecCtx,
 	type WorkflowExecutor,
 	type WorkflowJournalEntry,
+	type WorkflowMcpJournalEntry,
 	type WorkflowMergeResult,
 	type WorkflowMeta,
 	type WorkflowRunSnapshot,
 } from "./workflow-types";
+import type { WorkflowMcpHost } from "./workflow-mcp";
 
 /**
  * When a workflow reaches a terminal state, nudge the session that launched it
@@ -294,6 +303,7 @@ export function checkScriptSyntax(body: string): string | null {
 			"parallel",
 			"pipeline",
 			"merge",
+			"mcp",
 			"phase",
 			"log",
 			"args",
@@ -337,6 +347,14 @@ function hashAgentCall(prompt: string, opts: WorkflowAgentOpts): string {
 		.digest("hex");
 }
 
+/** Namespaced so an mcp hash can never collide with an agent hash (they live
+ *  in separate replay maps, but the journal is one file). */
+function hashMcpCall(server: string, tool: string, args: unknown): string {
+	return new Bun.CryptoHasher("sha256")
+		.update(`mcp\u0000${server}\u0000${tool}\u0000${stableStringify(args)}`)
+		.digest("hex");
+}
+
 // ── Start / cancel ───────────────────────────────────────────────────────────
 
 export interface StartWorkflowOpts {
@@ -357,6 +375,14 @@ export interface StartWorkflowOpts {
 	executor?: WorkflowExecutor;
 	/** Replay this run's journal: matching agent calls resolve instantly. */
 	resumeFromRunId?: string;
+	// ── the script's mcp.* surface (see workflow-mcp.ts) ──
+	/** MCP allowlist for the script. Omitted = every server the run's user may
+	 *  see; an automation passes its own least-privilege list. */
+	mcpAllowlist?: string[];
+	/** Per-call tool denials (automation runs). */
+	deniedTools?: Record<string, string>;
+	/** Injected by tests; defaults to the real MCP host. */
+	mcpHost?: WorkflowMcpHost;
 }
 
 /** Validate, persist, spawn the Worker and wire its message loop. Returns
@@ -388,9 +414,21 @@ export function startWorkflow(opts: StartWorkflowOpts): { runId: string } {
 	// Failed outcomes are journaled (audit trail) but never replayed — resume
 	// means "retry what didn't finish", so a transient failure gets a fresh
 	// execution instead of a cached error.
+	//
+	// mcp.* calls replay the same way, in their own map: a resumed script must
+	// NOT re-fire a tool call that already landed (that's what makes resuming a
+	// script that created a Linear issue safe).
 	const replay = new Map<string, WorkflowJournalEntry[]>();
+	const mcpReplay = new Map<string, WorkflowMcpJournalEntry[]>();
 	if (opts.resumeFromRunId) {
 		for (const entry of readWorkflowJournal(opts.resumeFromRunId)) {
+			if (isMcpJournalEntry(entry)) {
+				if (!entry.ok) continue;
+				const queue = mcpReplay.get(entry.hash);
+				if (queue) queue.push(entry);
+				else mcpReplay.set(entry.hash, [entry]);
+				continue;
+			}
 			if (!entry.outcome.ok) continue;
 			const queue = replay.get(entry.hash);
 			if (queue) queue.push(entry);
@@ -408,7 +446,7 @@ export function startWorkflow(opts: StartWorkflowOpts): { runId: string } {
 		cwd: opts.cwd,
 		script,
 	});
-	runWorkflow(runId, opts, body, replay);
+	runWorkflow(runId, opts, body, replay, mcpReplay);
 	return { runId };
 }
 
@@ -424,6 +462,7 @@ function runWorkflow(
 	opts: StartWorkflowOpts,
 	body: string,
 	replay: Map<string, WorkflowJournalEntry[]>,
+	mcpReplay: Map<string, WorkflowMcpJournalEntry[]>,
 ): void {
 	const controller = new AbortController();
 	// Lazy-import the real executor so test paths (which always inject) never
@@ -432,12 +471,35 @@ function runWorkflow(
 		? Promise.resolve(opts.executor)
 		: import("./workflow-execute").then((m) => m.workflowExecutor);
 
+	// The script's mcp.* host, built on first use (a run that never calls a
+	// tool never connects to one) and torn down in finish(). Same lazy-import
+	// reasoning as the executor.
+	let mcpHostPromise: Promise<WorkflowMcpHost> | undefined;
+	function mcpHost(): Promise<WorkflowMcpHost> {
+		if (!mcpHostPromise) {
+			mcpHostPromise = opts.mcpHost
+				? Promise.resolve(opts.mcpHost)
+				: import("./workflow-mcp").then((m) =>
+						m.createWorkflowMcpHost({
+							allowlist: opts.mcpAllowlist,
+							user: opts.user,
+							deniedTools: opts.deniedTools,
+						}),
+					);
+		}
+		return mcpHostPromise;
+	}
+
 	let worker: Worker | undefined;
 	let finished = false;
 	let totalCalls = 0;
 	let totalWriteCalls = 0;
+	let totalMcpCalls = 0;
 	// Calls the worker is still awaiting an agent_result for.
 	const openCalls = new Set<number>();
+	// …and the mcp_result equivalents (settled on cancel so the script's
+	// awaited tool calls reject rather than hanging until termination).
+	const openMcpCalls = new Set<number>();
 
 	// The session's repo + branch, resolved once per run (write agents branch
 	// off it; merge() merges back into it). Explicit opts win — tests pass them.
@@ -481,6 +543,8 @@ function runWorkflow(
 	// Two semaphores: read agents share the big pool, write agents a small one
 	// of their own (each cuts a git worktree — disk + the repo's git lock).
 	// The rest queue FIFO in their own lane.
+	// mcp calls get their own (bigger) lane: they're round trips, not model
+	// turns, and must not queue behind a slow agent fan-out.
 	const pools = {
 		read: { inFlight: 0, max: WORKFLOW_LIMITS.maxConcurrentAgents, waiting: [] as Array<() => void> },
 		write: {
@@ -488,8 +552,14 @@ function runWorkflow(
 			max: WORKFLOW_LIMITS.maxConcurrentWriteAgents,
 			waiting: [] as Array<() => void>,
 		},
+		mcp: {
+			inFlight: 0,
+			max: WORKFLOW_LIMITS.maxConcurrentMcp,
+			waiting: [] as Array<() => void>,
+		},
 	};
-	const acquire = (kind: "read" | "write"): Promise<void> =>
+	type PoolKind = keyof typeof pools;
+	const acquire = (kind: PoolKind): Promise<void> =>
 		new Promise((resolve) => {
 			const pool = pools[kind];
 			if (pool.inFlight < pool.max) {
@@ -502,7 +572,7 @@ function runWorkflow(
 				});
 			}
 		});
-	const release = (kind: "read" | "write"): void => {
+	const release = (kind: PoolKind): void => {
 		const pool = pools[kind];
 		pool.inFlight--;
 		const next = pool.waiting.shift();
@@ -535,6 +605,16 @@ function runWorkflow(
 		try {
 			worker?.terminate();
 		} catch {}
+		// Close MCP clients — a stdio server is a child process, so skipping
+		// this leaks one per server per run. Fire-and-forget: teardown must
+		// never delay or fail finalization.
+		if (mcpHostPromise) {
+			void mcpHostPromise
+				.then((host) => host.close())
+				.catch((e) =>
+					console.warn(`[workflow] ${runId} MCP host teardown failed:`, e),
+				);
+		}
 		// Wake the owning session so it continues on its own instead of waiting
 		// for a human "continue" — the workflow was fire-and-forget from the
 		// turn that launched it, so nothing else re-drives the model when it's
@@ -559,6 +639,13 @@ function runWorkflow(
 		// worker is about to be terminated anyway).
 		for (const callId of [...openCalls]) {
 			postResult(callId, { ok: false, value: null, error: "workflow cancelled" });
+		}
+		for (const callId of [...openMcpCalls]) {
+			postMcpResult(callId, {
+				ok: false,
+				value: null,
+				error: "workflow cancelled",
+			});
 		}
 		finish((s) => {
 			s.status = "cancelled";
@@ -844,6 +931,165 @@ function runWorkflow(
 		postMergeResult(msg.callId, result);
 	}
 
+	// ── mcp.* bridge ───────────────────────────────────────────────────────────
+
+	function postMcpResult(
+		callId: number,
+		result: { ok: boolean; value: unknown; error?: string },
+	): void {
+		if (!openMcpCalls.has(callId)) return;
+		openMcpCalls.delete(callId);
+		try {
+			worker?.postMessage({ type: "mcp_result", callId, ...result });
+		} catch {}
+	}
+
+	/** Record one finished mcp call on the snapshot: running totals plus a
+	 *  capped tail of recent calls (a script may make thousands — the journal,
+	 *  not the snapshot, is the full record). */
+	function recordMcpCall(
+		entry: {
+			seq: number;
+			server: string;
+			tool: string;
+			ok: boolean;
+			ms: number;
+			error?: string;
+			cached?: boolean;
+		},
+	): void {
+		if (finished) return;
+		updateWorkflowRun(runId, (s) => {
+			s.totals.mcpCalls = (s.totals.mcpCalls || 0) + 1;
+			if (!entry.ok) s.totals.mcpErrors = (s.totals.mcpErrors || 0) + 1;
+			const calls = (s.mcpCalls ||= []);
+			calls.push({
+				seq: entry.seq,
+				server: entry.server,
+				tool: entry.tool,
+				ok: entry.ok,
+				ms: entry.ms,
+				...(entry.error ? { error: entry.error.slice(0, 500) } : {}),
+				...(entry.cached ? { cached: true } : {}),
+			});
+			if (calls.length > WORKFLOW_LIMITS.maxMcpSnapshotCalls) {
+				s.mcpCalls = calls.slice(-WORKFLOW_LIMITS.maxMcpSnapshotCalls);
+			}
+		});
+	}
+
+	/** The script's mcp.<server>.<tool>(args): policy-checked, journaled, and
+	 *  replayed from the journal on resume so a resumed run never re-fires a
+	 *  call that already landed. */
+	async function handleMcpCall(
+		msg: Extract<WorkerToParent, { type: "mcp_call" }>,
+	): Promise<void> {
+		openMcpCalls.add(msg.callId);
+		if (++totalMcpCalls > WORKFLOW_LIMITS.maxMcpCalls) {
+			postMcpResult(msg.callId, {
+				ok: false,
+				value: null,
+				error: `mcp call cap reached (${WORKFLOW_LIMITS.maxMcpCalls} per run)`,
+			});
+			return;
+		}
+		const hash = hashMcpCall(msg.server, msg.tool, msg.args);
+
+		// FIFO per hash; only ok outcomes were admitted (a failed call re-runs).
+		const queue = mcpReplay.get(hash);
+		const journaled = queue?.length ? queue.shift() : undefined;
+		if (journaled) {
+			recordMcpCall({
+				seq: msg.seq,
+				server: msg.server,
+				tool: msg.tool,
+				ok: true,
+				ms: 0,
+				cached: true,
+			});
+			try {
+				appendWorkflowJournal(runId, { ...journaled, seq: msg.seq });
+			} catch (e) {
+				console.warn(`[workflow] ${runId} journal append failed:`, e);
+			}
+			postMcpResult(msg.callId, { ok: true, value: journaled.value ?? null });
+			return;
+		}
+
+		await acquire("mcp");
+		const startedAt = new Date().toISOString();
+		const startedMs = Date.now();
+		let ok = false;
+		let value: unknown = null;
+		let error: string | undefined;
+		try {
+			if (finished || controller.signal.aborted) {
+				postMcpResult(msg.callId, {
+					ok: false,
+					value: null,
+					error: "workflow cancelled",
+				});
+				return;
+			}
+			const host = await mcpHost();
+			value = await host.call(msg.server, msg.tool, msg.args);
+			ok = true;
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+		} finally {
+			release("mcp");
+		}
+		const endedAt = new Date().toISOString();
+		if (finished) return;
+		recordMcpCall({
+			seq: msg.seq,
+			server: msg.server,
+			tool: msg.tool,
+			ok,
+			ms: Date.now() - startedMs,
+			error,
+		});
+		try {
+			appendWorkflowJournal(runId, {
+				kind: "mcp",
+				seq: msg.seq,
+				hash,
+				server: msg.server,
+				tool: msg.tool,
+				args: msg.args,
+				ok,
+				...(ok ? { value } : {}),
+				...(error ? { error } : {}),
+				startedAt,
+				endedAt,
+			});
+		} catch (e) {
+			console.warn(`[workflow] ${runId} journal append failed:`, e);
+		}
+		postMcpResult(msg.callId, { ok, value: ok ? value : null, error });
+	}
+
+	/** mcp.servers() / mcp.tools(server) — discovery only, never journaled
+	 *  (it makes no change and its answer is config, not an observation). */
+	async function handleMcpMeta(
+		msg: Extract<WorkerToParent, { type: "mcp_meta" }>,
+	): Promise<void> {
+		openMcpCalls.add(msg.callId);
+		try {
+			const host = await mcpHost();
+			const value = msg.server
+				? await host.tools(msg.server)
+				: host.servers();
+			postMcpResult(msg.callId, { ok: true, value });
+		} catch (e) {
+			postMcpResult(msg.callId, {
+				ok: false,
+				value: null,
+				error: e instanceof Error ? e.message : String(e),
+			});
+		}
+	}
+
 	/** Bound the stored top-level result (it's persisted + broadcast). */
 	function capResult(result: unknown): unknown {
 		try {
@@ -875,6 +1121,26 @@ function runWorkflow(
 						merged: [],
 						conflicts: [],
 						skipped: [],
+						error: e instanceof Error ? e.message : String(e),
+					});
+				});
+				return;
+			case "mcp_call":
+				handleMcpCall(msg).catch((e) => {
+					console.warn(`[workflow] ${runId} mcp call failed:`, e);
+					postMcpResult(msg.callId, {
+						ok: false,
+						value: null,
+						error: e instanceof Error ? e.message : String(e),
+					});
+				});
+				return;
+			case "mcp_meta":
+				handleMcpMeta(msg).catch((e) => {
+					console.warn(`[workflow] ${runId} mcp discovery failed:`, e);
+					postMcpResult(msg.callId, {
+						ok: false,
+						value: null,
 						error: e instanceof Error ? e.message : String(e),
 					});
 				});

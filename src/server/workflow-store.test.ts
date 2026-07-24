@@ -128,7 +128,7 @@ describe("workflow store", () => {
 			join(process.env.OPENSESSION_WORKFLOWS_DIR!, snapshot.runId, "journal.jsonl"),
 			'{"seq":2,"hash":"tru',
 		);
-		const entries = readWorkflowJournal(snapshot.runId);
+		const entries = readWorkflowJournal(snapshot.runId) as WorkflowJournalEntry[];
 		expect(entries.length).toBe(2);
 		expect(entries[0].prompt).toBe("prompt 0");
 		expect(entries[1].outcome.text).toBe("result 1");

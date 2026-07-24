@@ -3,7 +3,9 @@
  *
  * A workflow is a model-authored JS script (Claude Code Workflow-tool style:
  * `export const meta = {...}` + async body using agent()/parallel()/pipeline()/
- * phase()/log()) that fans out lightweight agent runs deterministically. The
+ * phase()/log(), plus direct MCP tool calls) that fans out agent runs
+ * deterministically. Tool calls are code mode at the tool layer rather than
+ * the agent layer: one costs a round trip, not a model turn. The
  * script executes in a contained Bun Worker (src/server/workflow-worker.ts —
  * env-scrubbed and de-fanged, but exposure gating is the real trust boundary);
  * `agent()` calls bridge to the parent process, which executes them as plain
@@ -16,6 +18,7 @@
  *  - workflow-store.ts   — persistence (~/.opensession-workflows) + live registry
  *                          + workflow_update broadcasts
  *  - workflow-execute.ts — the real WorkflowExecutor on runAgent
+ *  - workflow-mcp.ts     — the script's MCP host (transport + policy)
  *  - agents/slack/workflow-tools.ts — the opensession-workflows in-process MCP
  *  - routes/workflows.ts — HTTP reads for the UI
  *  - frontend WorkflowPanel.tsx — renders WorkflowRunSnapshot
@@ -47,6 +50,22 @@ export const WORKFLOW_LIMITS = {
 	maxScriptChars: 256_000,
 	/** Cap on log lines kept in a snapshot. */
 	maxLogLines: 200,
+	// ── mcp.* (direct tool calls from the script) ──
+	/** Concurrent MCP calls per workflow. Higher than the agent pool — these
+	 *  are HTTP/stdio round trips, not model turns — but still bounded so a
+	 *  fan-out can't hammer a third-party API. */
+	maxConcurrentMcp: 16,
+	/** Lifetime mcp.* calls per workflow run. */
+	maxMcpCalls: 2_000,
+	/** Per-call wall clock. */
+	mcpCallTimeoutMs: 60_000,
+	/** Handshake budget for the first call to a server (stdio servers boot a
+	 *  process; HTTP ones may negotiate transports). */
+	mcpConnectTimeoutMs: 30_000,
+	/** Cap on one tool result (journaled AND structured-cloned to the worker). */
+	maxMcpResultChars: 250_000,
+	/** MCP calls kept on the snapshot (newest last) for the UI/status tail. */
+	maxMcpSnapshotCalls: 50,
 } as const;
 
 // ── Script surface ───────────────────────────────────────────────────────────
@@ -227,7 +246,16 @@ export interface WorkflowRunSnapshot {
 	error?: string;
 	startedAt: string;
 	endedAt?: string;
-	totals: { agents: number; tokensIn: number; tokensOut: number };
+	totals: {
+		agents: number;
+		tokensIn: number;
+		tokensOut: number;
+		/** mcp.* calls made by the script (absent on pre-mcp runs). */
+		mcpCalls?: number;
+		mcpErrors?: number;
+	};
+	/** Tail of recent mcp.* calls (capped at maxMcpSnapshotCalls). */
+	mcpCalls?: WorkflowMcpCallSnapshot[];
 	user?: string;
 	cwd: string;
 }
@@ -238,11 +266,57 @@ export interface WorkflowJournalEntry {
 	seq: number;
 	/** Hash of (prompt + canonicalized opts); replay requires seq+hash match. */
 	hash: string;
+	/** Absent on entries written before mcp.* existed — those are all agents. */
+	kind?: "agent";
 	prompt: string;
 	opts: WorkflowAgentOpts;
 	outcome: WorkflowAgentOutcome;
 	startedAt: string;
 	endedAt: string;
+}
+
+/** One completed mcp.* call. Journaled for the same reason agent calls are:
+ *  a resumed run must REPLAY it rather than re-fire it — that's what makes
+ *  resuming a script that created a Linear issue safe. */
+export interface WorkflowMcpJournalEntry {
+	kind: "mcp";
+	seq: number;
+	/** Hash of (server, tool, canonicalized args). */
+	hash: string;
+	server: string;
+	tool: string;
+	args: unknown;
+	ok: boolean;
+	/** The normalized value the script received (capped). */
+	value?: unknown;
+	error?: string;
+	startedAt: string;
+	endedAt: string;
+}
+
+export type WorkflowJournalRecord =
+	| WorkflowJournalEntry
+	| WorkflowMcpJournalEntry;
+
+export function isMcpJournalEntry(
+	entry: WorkflowJournalRecord,
+): entry is WorkflowMcpJournalEntry {
+	return entry.kind === "mcp";
+}
+
+/** A recent mcp.* call, surfaced on the snapshot (capped at
+ *  maxMcpSnapshotCalls) so the UI and workflow_status can show what the script
+ *  is actually touching without journal reads. */
+export interface WorkflowMcpCallSnapshot {
+	seq: number;
+	server: string;
+	tool: string;
+	ok: boolean;
+	/** Wall-clock duration in ms. */
+	ms: number;
+	error?: string;
+	/** True when answered from the journal on a resume. */
+	cached?: boolean;
 }
 
 // ── Worker ⇄ parent message protocol ─────────────────────────────────────────
@@ -260,6 +334,16 @@ export type WorkerToParent =
 			callId: number;
 			items: Array<{ seq: number; branch: string }>;
 	  }
+	| {
+			type: "mcp_call";
+			callId: number;
+			seq: number;
+			server: string;
+			tool: string;
+			args: unknown;
+	  }
+	/** mcp.servers() / mcp.tools(server) — discovery, never journaled. */
+	| { type: "mcp_meta"; callId: number; server?: string }
 	| { type: "phase"; title: string }
 	| { type: "log"; message: string }
 	| { type: "done"; result: unknown }
@@ -278,4 +362,14 @@ export type ParentToWorker =
 			error?: string;
 			tokensOut?: number;
 	  }
-	| { type: "merge_result"; callId: number; result: WorkflowMergeResult };
+	| { type: "merge_result"; callId: number; result: WorkflowMergeResult }
+	/** Answers both mcp_call and mcp_meta. Unlike agent_result, `ok:false`
+	 *  REJECTS the script's promise (a tool call is an exception, not a fuzzy
+	 *  outcome) — parallel() still degrades a throw to null. */
+	| {
+			type: "mcp_result";
+			callId: number;
+			ok: boolean;
+			value: unknown;
+			error?: string;
+	  };

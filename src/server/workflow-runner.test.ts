@@ -12,12 +12,15 @@ import {
 import { getWorkflowRun, readWorkflowJournal } from "./workflow-store";
 import {
 	WORKFLOW_LIMITS,
+	isMcpJournalEntry,
 	type WorkflowAgentOutcome,
 	type WorkflowAgentRequest,
 	type WorkflowExecCtx,
 	type WorkflowExecutor,
+	type WorkflowJournalEntry,
 	type WorkflowRunSnapshot,
 } from "./workflow-types";
+import type { WorkflowMcpHost } from "./workflow-mcp";
 
 const savedEnv = process.env.OPENSESSION_WORKFLOWS_DIR;
 const dirs: string[] = [];
@@ -184,7 +187,7 @@ describe("workflow runner", () => {
 		expect(executor.calls[0].ctx.user).toBe("michiel");
 		expect(executor.calls[0].ctx.defaultModel).toBe("claude-sonnet-5");
 
-		const journal = readWorkflowJournal(runId);
+		const journal = readWorkflowJournal(runId) as WorkflowJournalEntry[];
 		expect(journal.length).toBe(2);
 		expect(journal[0].prompt).toBe("list things");
 		expect(journal[0].outcome.text).toBe("R:list things");
@@ -722,5 +725,242 @@ describe("checkScriptSyntax", () => {
 					'export const meta = { name: "broken" };\nconst r = await parallel([() => agent("hi"',
 			}),
 		).toThrow(/truncated/i);
+	});
+});
+
+// ── mcp.* (direct tool calls from the script) ────────────────────────────────
+
+/** Fake MCP host: records calls, no transport. */
+function fakeMcpHost(
+	call: (server: string, tool: string, args: unknown) => unknown,
+	servers: string[] = ["grafana", "linear"],
+): WorkflowMcpHost & {
+	calls: Array<{ server: string; tool: string; args: unknown }>;
+	isClosed: () => boolean;
+} {
+	const calls: Array<{ server: string; tool: string; args: unknown }> = [];
+	let closed = false;
+	return {
+		calls,
+		isClosed: () => closed,
+		servers: () => servers,
+		async tools(server: string) {
+			return [{ name: `${server}_probe`, description: "probe" }];
+		},
+		async call(server: string, tool: string, args: unknown) {
+			calls.push({ server, tool, args });
+			return call(server, tool, args);
+		},
+		async close() {
+			closed = true;
+		},
+	};
+}
+
+describe("workflow mcp.*", () => {
+	test("mcp.<server>.<tool>(args) reaches the host and resolves its value", async () => {
+		const mcpHost = fakeMcpHost(() => [{ id: 1 }, { id: 2 }]);
+		const { runId } = start({
+			executor: echoExecutor(),
+			mcpHost,
+			script: [
+				'export const meta = { name: "mcp-basic" };',
+				'const rows = await mcp.grafana.query_prometheus({ expr: "up" });',
+				"return rows.length;",
+			].join("\n"),
+		});
+		const snap = await waitForFinished(runId);
+		expect(snap.status).toBe("done");
+		expect(snap.result).toBe(2);
+		expect(mcpHost.calls).toEqual([
+			{ server: "grafana", tool: "query_prometheus", args: { expr: "up" } },
+		]);
+		// No agent was spent on the lookup — that's the whole point.
+		expect(snap.agents.length).toBe(0);
+		expect(snap.totals.mcpCalls).toBe(1);
+	});
+
+	test("a failing tool call REJECTS in the script (and parallel degrades it to null)", async () => {
+		const mcpHost = fakeMcpHost((_s, tool) => {
+			if (tool === "boom") throw new Error("upstream 500");
+			return "fine";
+		});
+		const { runId } = start({
+			executor: echoExecutor(),
+			mcpHost,
+			script: [
+				'export const meta = { name: "mcp-error" };',
+				"const batch = await parallel([",
+				"  () => mcp.grafana.ok({}),",
+				"  () => mcp.grafana.boom({}),",
+				"]);",
+				'let caught = "";',
+				"try { await mcp.grafana.boom({}); } catch (e) { caught = e.message; }",
+				"return { batch, caught };",
+			].join("\n"),
+		});
+		const snap = await waitForFinished(runId);
+		expect(snap.status).toBe("done");
+		const result = snap.result as { batch: unknown[]; caught: string };
+		expect(result.batch).toEqual(["fine", null]);
+		expect(result.caught).toContain("upstream 500");
+		expect(snap.totals.mcpCalls).toBe(3);
+		expect(snap.totals.mcpErrors).toBe(2);
+		const failed = (snap.mcpCalls || []).filter((c) => !c.ok);
+		expect(failed.length).toBe(2);
+		expect(failed[0].tool).toBe("boom");
+	});
+
+	test("calls are journaled as kind:mcp, with args and value", async () => {
+		const mcpHost = fakeMcpHost(() => ({ status: "ok" }));
+		const { runId } = start({
+			executor: echoExecutor(),
+			mcpHost,
+			script: [
+				'export const meta = { name: "mcp-journal" };',
+				'return await mcp.linear.list_issues({ team: "ENG" });',
+			].join("\n"),
+		});
+		await waitForFinished(runId);
+		const entries = readWorkflowJournal(runId).filter(isMcpJournalEntry);
+		expect(entries.length).toBe(1);
+		expect(entries[0].server).toBe("linear");
+		expect(entries[0].tool).toBe("list_issues");
+		expect(entries[0].args).toEqual({ team: "ENG" });
+		expect(entries[0].ok).toBe(true);
+		expect(entries[0].value).toEqual({ status: "ok" });
+		expect(entries[0].hash).toMatch(/^[0-9a-f]{64}$/);
+	});
+
+	test("resume REPLAYS a tool call from the journal instead of re-firing it", async () => {
+		const script = [
+			'export const meta = { name: "mcp-resume" };',
+			'return await mcp.linear.create_issue({ title: "once" });',
+		].join("\n");
+		const first = fakeMcpHost(() => "ISSUE-1");
+		const { runId } = start({ executor: echoExecutor(), mcpHost: first, script });
+		const done = await waitForFinished(runId);
+		expect(done.result).toBe("ISSUE-1");
+
+		// A host that would answer differently — it must never be asked.
+		const second = fakeMcpHost(() => "ISSUE-2");
+		const { runId: resumedId } = start({
+			executor: echoExecutor(),
+			mcpHost: second,
+			script,
+			resumeFromRunId: runId,
+		});
+		const resumed = await waitForFinished(resumedId);
+		expect(resumed.result).toBe("ISSUE-1");
+		expect(second.calls.length).toBe(0);
+		expect((resumed.mcpCalls || [])[0]?.cached).toBe(true);
+		// The replayed record carries into the new run's journal, so resuming
+		// the resumed run replays too.
+		expect(readWorkflowJournal(resumedId).filter(isMcpJournalEntry).length).toBe(1);
+	});
+
+	test("a failed call is NOT replayed — resume retries it", async () => {
+		const script = [
+			'export const meta = { name: "mcp-retry" };',
+			'try { return await mcp.grafana.flaky({}); } catch (e) { return "failed: " + e.message; }',
+		].join("\n");
+		const failing = fakeMcpHost(() => {
+			throw new Error("timeout");
+		});
+		const { runId } = start({ executor: echoExecutor(), mcpHost: failing, script });
+		expect((await waitForFinished(runId)).result).toBe("failed: timeout");
+
+		const healthy = fakeMcpHost(() => "recovered");
+		const { runId: resumedId } = start({
+			executor: echoExecutor(),
+			mcpHost: healthy,
+			script,
+			resumeFromRunId: runId,
+		});
+		expect((await waitForFinished(resumedId)).result).toBe("recovered");
+		expect(healthy.calls.length).toBe(1);
+	});
+
+	test("mcp.servers() and mcp.tools(server) enumerate without journaling", async () => {
+		const mcpHost = fakeMcpHost(() => null, ["grafana", "plain"]);
+		const { runId } = start({
+			executor: echoExecutor(),
+			mcpHost,
+			script: [
+				'export const meta = { name: "mcp-discovery" };',
+				"const servers = await mcp.servers();",
+				"const tools = await mcp.tools(servers[0]);",
+				"return { servers, first: tools[0].name };",
+			].join("\n"),
+		});
+		const snap = await waitForFinished(runId);
+		expect(snap.result).toEqual({
+			servers: ["grafana", "plain"],
+			first: "grafana_probe",
+		});
+		// Discovery is config, not an observation — nothing to replay.
+		expect(readWorkflowJournal(runId).filter(isMcpJournalEntry).length).toBe(0);
+		expect(snap.totals.mcpCalls).toBeUndefined();
+	});
+
+	test("the proxy is thenable-safe: awaiting mcp or a server does not hang", async () => {
+		const mcpHost = fakeMcpHost(() => "ok");
+		const { runId } = start({
+			executor: echoExecutor(),
+			mcpHost,
+			script: [
+				'export const meta = { name: "mcp-thenable" };',
+				"const server = await mcp.grafana;",
+				"return {",
+				"  mcpThen: mcp.then === undefined,",
+				"  serverThen: mcp.grafana.then === undefined,",
+				'  stillCallable: typeof server.query === "function",',
+				"};",
+			].join("\n"),
+		});
+		const snap = await waitForFinished(runId);
+		expect(snap.status).toBe("done");
+		expect(snap.result).toEqual({
+			mcpThen: true,
+			serverThen: true,
+			stillCallable: true,
+		});
+	});
+
+	test("the host is closed when the run finishes (stdio servers are processes)", async () => {
+		const mcpHost = fakeMcpHost(() => "ok");
+		const { runId } = start({
+			executor: echoExecutor(),
+			mcpHost,
+			script: [
+				'export const meta = { name: "mcp-teardown" };',
+				"return await mcp.grafana.ping({});",
+			].join("\n"),
+		});
+		await waitForFinished(runId);
+		await waitUntil(() => mcpHost.isClosed());
+		expect(mcpHost.isClosed()).toBe(true);
+	});
+
+	test("a cancelled workflow settles in-flight tool calls instead of hanging", async () => {
+		const gate = deferred<void>();
+		const mcpHost = fakeMcpHost(() => {
+			// Never resolves until the run is cancelled out from under it.
+			return gate.promise.then(() => "late");
+		});
+		const { runId } = start({
+			executor: echoExecutor(),
+			mcpHost,
+			script: [
+				'export const meta = { name: "mcp-cancel" };',
+				'try { await mcp.grafana.slow({}); return "resolved"; }',
+				'catch (e) { return "rejected"; }',
+			].join("\n"),
+		});
+		await waitUntil(() => mcpHost.calls.length > 0);
+		expect(cancelWorkflow(runId)).toBe(true);
+		const snap = await waitForFinished(runId);
+		expect(snap.status).toBe("cancelled");
+		gate.resolve();
 	});
 });
