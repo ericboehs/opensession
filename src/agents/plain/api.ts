@@ -312,6 +312,8 @@ export interface SupportThreadSummary {
   /** Labels on the thread: id = instance (l_…), typeId = kind (lt_…). */
   labels: { id: string; typeId: string; name: string; icon: string | null }[];
   customer: { name: string | null; email: string | null };
+  /** Plain user the thread is assigned to (bot = MachineUser), or null. */
+  assignee: { id: string; name: string; isBot: boolean } | null;
 }
 
 /**
@@ -335,6 +337,18 @@ export async function listTodoThreads(limit: number = 50): Promise<SupportThread
               iso8601
             }
             priority
+            assignedTo {
+              __typename
+              ... on User {
+                id
+                fullName
+                publicName
+              }
+              ... on MachineUser {
+                id
+                fullName
+              }
+            }
             labels {
               id
               labelType {
@@ -389,6 +403,13 @@ export async function listTodoThreads(limit: number = 50): Promise<SupportThread
         name: n.customer?.fullName || null,
         email: n.customer?.email?.email || null,
       },
+      assignee: n.assignedTo?.id
+        ? {
+            id: n.assignedTo.id,
+            name: n.assignedTo.publicName || n.assignedTo.fullName || "?",
+            isBot: n.assignedTo.__typename === "MachineUser",
+          }
+        : null,
     };
   });
 }

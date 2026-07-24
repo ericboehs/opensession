@@ -61,6 +61,8 @@ export interface Workspace {
   key?: string;
   /** For PR-backed workspaces: the PR number this workspace groups. */
   prNumber?: number;
+  /** For support-ticket workspaces: the Plain thread this workspace is attached to. */
+  plainThreadId?: string;
   /**
    * The workspace's default branch. Present when the workspace owns a worktree
    * (share-mode chats inherit it; stacked chats branch off it) or for PR-backed
@@ -125,6 +127,7 @@ export function createWorkspace(input: {
   createdBy: string;
   key?: string;
   prNumber?: number;
+  plainThreadId?: string;
   branch?: string;
   worktreeDir?: string;
   attachedRepos?: AttachedRepo[];
@@ -142,6 +145,7 @@ export function createWorkspace(input: {
     createdAt: input.createdAt || new Date().toISOString(),
     ...(input.key ? { key: input.key } : {}),
     ...(input.prNumber !== undefined ? { prNumber: input.prNumber } : {}),
+    ...(input.plainThreadId ? { plainThreadId: input.plainThreadId } : {}),
     ...(input.branch ? { branch: input.branch } : {}),
     ...(input.worktreeDir ? { worktreeDir: input.worktreeDir } : {}),
     ...(input.attachedRepos && input.attachedRepos.length
@@ -182,9 +186,47 @@ export function findWorkspaceByKey(key: string): Workspace | null {
  */
 export function findOrCreateWorkspaceByKey(
   key: string,
-  input: { name: string; repo?: string; color?: string; createdBy: string; prNumber?: number; branch?: string },
+  input: {
+    name: string;
+    repo?: string;
+    color?: string;
+    createdBy: string;
+    prNumber?: number;
+    plainThreadId?: string;
+    branch?: string;
+  },
 ): Workspace {
   return findWorkspaceByKey(key) || createWorkspace({ ...input, key });
+}
+
+/**
+ * Stamp identity fields (dedupe key + PR/ticket linkage) onto an adopted
+ * workspace. Deliberately separate from updateWorkspace so identity stays
+ * unreachable through the HTTP PATCH route (which forwards its body into
+ * updateWorkspace). Refuses to re-key an already-keyed workspace — the key is
+ * permanent provenance; resolution falls back to session matching for any
+ * additional PRs a workspace accrues.
+ */
+export function stampWorkspaceIdentity(
+  id: string,
+  patch: { key?: string; prNumber?: number; branch?: string; plainThreadId?: string },
+): Workspace | null {
+  const cur = getWorkspace(id);
+  if (!cur) return null;
+  if (cur.key && patch.key && cur.key !== patch.key) return cur;
+  const next: Workspace = {
+    ...cur,
+    ...(patch.key && !cur.key ? { key: patch.key } : {}),
+    ...(patch.prNumber !== undefined && cur.prNumber === undefined
+      ? { prNumber: patch.prNumber }
+      : {}),
+    ...(patch.branch && !cur.branch ? { branch: patch.branch } : {}),
+    ...(patch.plainThreadId && !cur.plainThreadId
+      ? { plainThreadId: patch.plainThreadId }
+      : {}),
+  };
+  writeJsonAtomic(fileFor(id), next);
+  return next;
 }
 
 /** Merge a partial patch into a workspace. Returns the updated record, or null. */

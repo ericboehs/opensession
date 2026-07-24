@@ -5,7 +5,7 @@
  * the engine conversation across rounds via the deterministic per-PR session file.
  */
 import { envAlias } from "../../server/rename-compat";
-import { existsSync, readFileSync, readdirSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { BACKSTAGE_CHATS_DIR } from "../../server/paths";
 import { updateSessionFile } from "../../server/session-cache";
 import { runAgent } from "../../server/agent-runner";
@@ -13,7 +13,7 @@ import { providerFor, DEFAULT_FALLBACK_MODEL, modelLabel } from "../../server/mo
 import { engineSessionPatch } from "../../server/sessions";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { gitIdentityFor, type GitIdentity } from "../../server/shared/user-mappings";
-import { findOrCreateWorkspaceByKey } from "../../server/workspaces";
+import { resolvePrWorkspace } from "../../server/workspace-resolve";
 import { repoForPath } from "../../server/worktree";
 import { prKey } from "./constants";
 import type { BackstageSessionFile } from "../../server/types";
@@ -23,43 +23,25 @@ const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
 /**
  * All chats for one PR (its review/autofix/simplify/adversarial/mention runs,
  * plus whatever session originally opened the PR) belong in one Project folder.
- * Resolve-or-create it by a stable per-PR key, then pull in any existing session
- * on the same head branch — that catches the originating session, which shares
- * the branch but was created elsewhere. Best-effort: never block a run on this.
+ * Delegates to the shared adopt-don't-duplicate resolver (workspace-resolve.ts)
+ * so the sidebar's PR clicks and these headless runs can never mint diverging
+ * workspaces for the same PR. Best-effort: never block a run on this.
  */
-function projectIdForPr(prNumber: number, branch: string, title: string, cwd: string, ghRepo?: string): string | null {
+async function projectIdForPr(prNumber: number, branch: string, title: string, cwd: string, ghRepo?: string): Promise<string | null> {
   try {
     const repo = repoForPath(cwd).id;
     // opts.title is per-kind ("Review · PR #123 <PR title>"). The folder groups
     // ALL kinds for the PR, so name it PR-level: strip the kind + "PR #n" prefix
     // down to the bare PR title (fall back to the full title if it doesn't match).
     const prTitle = title.replace(/^.*?PR #\d+[:\s-]*/i, "").trim() || title;
-    const project = findOrCreateWorkspaceByKey(`ghpr-${prKey(prNumber, ghRepo)}`, {
-      name: `#${prNumber} ${prTitle}`.trim().slice(0, 120),
-      repo,
-      createdBy: "GitHub (automation)",
-      prNumber,
+    const resolved = await resolvePrWorkspace({
+      repoId: repo,
+      number: prNumber,
       branch,
+      title: prTitle,
+      createdBy: "GitHub (automation)",
     });
-    // Adopt same-branch siblings that aren't already filed under a project.
-    if (branch) {
-      for (const file of readdirSync(SESSIONS_DIR)) {
-        if (!file.endsWith(".json")) continue;
-        try {
-          const p = `${SESSIONS_DIR}/${file}`;
-          const s = JSON.parse(readFileSync(p, "utf-8")) as BackstageSessionFile;
-          if (s.id && s.branch === branch && !s.projectId) {
-            // Serialized field-scoped write (transcript-v2 §6): stamp ONLY
-            // projectId, re-checked against the fresh read inside the mutex so
-            // a concurrent filing wins; every other field survives untouched.
-            void updateSessionFile(file.slice(0, -".json".length), (data) =>
-              data.projectId ? data : { ...data, projectId: project.id }
-            ).catch(() => {});
-          }
-        } catch {}
-      }
-    }
-    return project.id;
+    return resolved?.workspace.id ?? null;
   } catch {
     return null;
   }
@@ -160,7 +142,7 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
   const startedAt = new Date();
 
   // Group this and the PR's other chats under one Project folder.
-  const projectId = projectIdForPr(opts.prNumber, opts.branch, opts.title, opts.cwd, opts.ghRepo);
+  const projectId = await projectIdForPr(opts.prNumber, opts.branch, opts.title, opts.cwd, opts.ghRepo);
 
   const existingSessionFile = readSessionFile(bksId);
   // Engine sessions are scoped to their directory; a session started under a

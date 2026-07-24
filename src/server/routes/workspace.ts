@@ -21,6 +21,7 @@ import { handleSlashCommand } from "../slash-commands";
 import { suggestBranchName } from "../suggest-branch";
 import { type BackstageSessionFile } from "../types";
 import { type Workspace, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace } from "../workspaces";
+import { resolvePlainWorkspace, resolvePrWorkspace } from "../workspace-resolve";
 import { REPOS, createWorktree, getRepo, listWorktrees, repoForPath, worktreeHasWork } from "../worktree";
 import { randomUUIDv7 } from "bun";
 import { copyFileSync, existsSync, mkdirSync } from "fs";
@@ -221,6 +222,47 @@ export async function handleWorkspaceRoutes(
 			createdBy: requestUser(ctx, body.user) || "Anonymous",
 		});
 		return Response.json({ project });
+	}
+
+	// Resolve-or-create the ONE workspace for a PR or a Plain support ticket
+	// (adopt-don't-duplicate — see workspace-resolve.ts). Sidebar PR/ticket
+	// rows call this on click and then navigate to the workspace; the `name`
+	// hint (ticket title) avoids a Plain API round-trip.
+	if (path === "/backstage/api/workspaces/resolve" && req.method === "POST") {
+		const body = (await req.json().catch(() => ({}))) as {
+			pr?: { repo?: string; number?: number; branch?: string; title?: string };
+			plainThreadId?: string;
+			name?: string;
+			user?: string;
+		};
+		const createdBy = requestUser(ctx, body.user) || "Anonymous";
+		if (body.plainThreadId) {
+			const { workspace, created } = resolvePlainWorkspace({
+				threadId: body.plainThreadId,
+				title: body.name,
+				createdBy,
+			});
+			return Response.json({ workspaceId: workspace.id, created });
+		}
+		if (body.pr?.repo && (body.pr.number !== undefined || body.pr.branch)) {
+			const resolved = await resolvePrWorkspace({
+				repoId: body.pr.repo,
+				number: body.pr.number,
+				branch: body.pr.branch,
+				title: body.pr.title,
+				createdBy,
+			});
+			if (!resolved)
+				return Response.json({ error: "PR not found" }, { status: 404 });
+			return Response.json({
+				workspaceId: resolved.workspace.id,
+				created: resolved.created,
+			});
+		}
+		return Response.json(
+			{ error: "pr or plainThreadId required" },
+			{ status: 400 },
+		);
 	}
 
 	const projectMatch = path.match(/^\/backstage\/api\/projects\/(.+)$/);
