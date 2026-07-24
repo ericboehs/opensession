@@ -66,6 +66,14 @@ function cloudEnabled(): boolean {
 	return isLocalProfile() && !!configuredCloud().token;
 }
 
+export function isCloudCreateRequest(message: any, localProfile = isLocalProfile()): boolean {
+	return (
+		localProfile &&
+		message?.type === "create_session" &&
+		message.cloud === true
+	);
+}
+
 function upstreamUrl(path: string): string {
 	const base = configuredCloud().upstream.replace(/\/+$/, "");
 	return `${base}${path}`;
@@ -405,6 +413,18 @@ const EXPLICIT_SESSION_MESSAGES = new Set([
 
 /** Return true when a local-profile UI message belongs to a cloud lane. */
 export function routeCloudWebSocketMessage(client: Client, message: any): boolean {
+	if (isCloudCreateRequest(message)) {
+		if (!cloudEnabled()) {
+			sendClient(client, {
+				type: "error",
+				message: "Cloud OpenSession is not configured",
+			});
+			return true;
+		}
+		const { cloud: _cloud, ...upstreamMessage } = message;
+		forwardUpstream(client, upstreamMessage);
+		return true;
+	}
 	if (!cloudEnabled()) return false;
 	if (message.type === "watch" && typeof message.sessionId === "string") {
 		if (localSessionOwnsId(findSession(message.sessionId))) {

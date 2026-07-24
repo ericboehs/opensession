@@ -204,6 +204,15 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   // Keep the palette open after a create to fire off another task. Chosen from
   // the Create split-button's dropdown; the primary button reflects the mode.
   const [createMore, setCreateMore] = useState(false);
+  // The desktop app's local bridge merges local and hosted sessions. Hosted is
+  // deliberately the default; local execution is still experimental and must
+  // be selected explicitly for each palette lifetime.
+  const [createTarget, setCreateTarget] = useState<"cloud" | "local">(
+    auth?.local ? "cloud" : "local",
+  );
+  useEffect(() => {
+    if (auth?.local) setCreateTarget("cloud");
+  }, [auth?.local]);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const createSplitRef = useRef<HTMLDivElement>(null);
   // Phones open on just the prompt — repo/base/model/effort have sensible
@@ -492,6 +501,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     });
     send({
       type: "create_session",
+      ...(auth?.local && createTarget === "cloud" ? { cloud: true } : {}),
       mode,
       repo,
       ...(projectId
@@ -896,7 +906,19 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 onClick={handleCreate}
                 disabled={!canCreate}
               >
-                {creating ? "Creating…" : createMore ? "Create more" : "Create"}
+                {creating
+                  ? "Creating…"
+                  : auth?.local
+                    ? createTarget === "cloud"
+                      ? createMore
+                        ? "Create more in cloud"
+                        : "Create in cloud"
+                      : createMore
+                        ? "Create more locally"
+                        : "Create locally"
+                    : createMore
+                      ? "Create more"
+                      : "Create"}
                 <IconReturn className="palette-create-kbd" size={20} />
               </button>
               <button
@@ -912,6 +934,37 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               </button>
               {createMenuOpen && (
                 <div className="palette-create-menu" role="menu">
+                  {auth?.local && (
+                    <>
+                      {[
+                        { target: "cloud" as const, title: "Create in cloud", desc: "Run on os.tella.dev" },
+                        { target: "local" as const, title: "Create locally", desc: "Experimental - run on this Mac" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.target}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={createTarget === opt.target}
+                          className={`palette-create-menu-item ${createTarget === opt.target ? "is-active" : ""}`}
+                          onClick={() => {
+                            setCreateTarget(opt.target);
+                            setCreateMenuOpen(false);
+                          }}
+                        >
+                          <IconCheck
+                            className="palette-create-menu-check"
+                            size={22}
+                            style={{ visibility: createTarget === opt.target ? "visible" : "hidden" }}
+                          />
+                          <span className="palette-create-menu-text">
+                            <span className="palette-create-menu-title">{opt.title}</span>
+                            <span className="palette-create-menu-desc">{opt.desc}</span>
+                          </span>
+                        </button>
+                      ))}
+                      <div className="my-1 border-t border-line" />
+                    </>
+                  )}
                   {[
                     { more: false, title: "Create", desc: "Open the new session" },
                     { more: true, title: "Create more", desc: "Stay here to start another" },

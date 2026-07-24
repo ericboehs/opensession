@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
 	mergeSessionLists,
 	mergedCloudSessions,
+	isCloudCreateRequest,
 	localSessionOwnsId,
 	proxyCloudSessionRequest,
 	sessionIdFromApiPath,
@@ -132,6 +133,13 @@ describe("local cloud session merge", () => {
 });
 
 describe("local cloud request routing", () => {
+	test("only marks explicit local-profile creates for the cloud", () => {
+		const message = { type: "create_session", cloud: true };
+		expect(isCloudCreateRequest(message, true)).toBe(true);
+		expect(isCloudCreateRequest(message, false)).toBe(false);
+		expect(isCloudCreateRequest({ type: "create_session" }, true)).toBe(false);
+	});
+
 	test("extracts normalized session API ids only", () => {
 		expect(sessionIdFromApiPath("/backstage/api/sessions/cloud%2Fid/transcript")).toBe("cloud/id");
 		expect(sessionIdFromApiPath("/backstage/api/sessions")).toBeNull();

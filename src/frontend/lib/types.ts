@@ -600,6 +600,8 @@ export type WSClientMessage =
 			branch: string;
 			prompt: string;
 			user: string;
+			/** Local-profile bridge only: create this session on the hosted upstream. */
+			cloud?: boolean;
 			mode?: "ask" | "code";
 			repo?: string;
 			/** Existing workspace (folder) to add this new chat to. */
