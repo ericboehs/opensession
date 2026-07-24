@@ -3402,7 +3402,19 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								// py-* here is exactly the "full-width Home card on mobile"
 								// bug. Phones render the Slack-home style 132px card strip
 								// purely from .sidebar-nav-item's media rules.
-								"sidebar-nav-item group flex items-center text-left transition-colors",
+								"sidebar-nav-item group flex text-left transition-colors",
+								// `active` is what the phone card CSS keys its selected state
+								// off (.sidebar-nav-item.active in global.css's @media block);
+								// the desktop selected look comes from the utilities below.
+								// Dropping it in the Tailwind migration left the phone cards
+								// with no "you are here".
+								tool.active && "active",
+								// Desktop-only for the same reason as the block below: a bare
+								// items-center wins the cascade tie against the phone rule's
+								// align-items:flex-start (media queries add no specificity),
+								// which centers the Slack-home cards instead of left-aligning
+								// their icon + label.
+								!isPhone && "items-center",
 								!isPhone &&
 									// Compact rows (Michiel 2026-07-24: the tools were "wayyy
 									// too big"): 13.5px label, 18px glyphs, tight padding — the
