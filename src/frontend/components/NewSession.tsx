@@ -3,6 +3,7 @@ import { fetchWorktrees, fetchModels, fetchFileMentions, fetchSkillMentions, fet
 import { getCurrentUser, useAuthStatus } from "./UserPicker";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
+import { getDefaultModelPref } from "../lib/default-model-pref";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
@@ -393,9 +394,16 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
       .then((m) => {
         setModels(m.models);
         setDefaultModel(m.default);
-        setModel((current) =>
-          current && !m.models.some((item) => item.id === current) ? "" : current,
-        );
+        setModel((current) => {
+          if (current) {
+            return m.models.some((item) => item.id === current) ? current : "";
+          }
+          // Untouched picker: preselect the user's own default-model pref
+          // (Settings → Composer) when it's set and still selectable; "" (no
+          // preference) keeps the workspace default.
+          const pref = getDefaultModelPref();
+          return pref && m.models.some((item) => item.id === pref) ? pref : "";
+        });
       })
       .catch(() => {});
   }, [cloudTarget]);

@@ -8,6 +8,7 @@ import { PrPanel } from "./PrPanel";
 import { useCurrentUser } from "./UserPicker";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
+import { getDefaultModelPref } from "../lib/default-model-pref";
 
 interface Props {
 	workspace: Project;
@@ -63,6 +64,11 @@ export function WorkspacePane({
 			.then((m) => {
 				setModels(m.models);
 				setDefaultModel(m.default);
+				// Preselect the user's own default-model pref (Settings →
+				// Composer) when set and selectable; "" keeps the workspace default.
+				const pref = getDefaultModelPref();
+				if (pref && m.models.some((item) => item.id === pref))
+					setModel((current) => current || pref);
 			})
 			.catch(() => {});
 	}, []);

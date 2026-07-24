@@ -6,6 +6,7 @@ import { Composer } from "./Composer";
 import { useCurrentUser } from "./UserPicker";
 import { ConversationPane } from "./ConversationPane";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
+import { getDefaultModelPref } from "../lib/default-model-pref";
 
 interface Props {
 	/** The Plain thread id — the preview's key. */
@@ -70,6 +71,11 @@ export function SupportPreview({
 			.then((m) => {
 				setModels(m.models);
 				setDefaultModel(m.default);
+				// Preselect the user's own default-model pref (Settings →
+				// Composer) when set and selectable; "" keeps the workspace default.
+				const pref = getDefaultModelPref();
+				if (pref && m.models.some((item) => item.id === pref))
+					setModel((current) => current || pref);
 			})
 			.catch(() => {});
 	}, []);

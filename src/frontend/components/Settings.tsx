@@ -45,6 +45,11 @@ import {
 	type BusySendPrefs,
 } from "../lib/busy-send-pref";
 import {
+	getDefaultModelPref,
+	setDefaultModelPref,
+	onDefaultModelPrefChanged,
+} from "../lib/default-model-pref";
+import {
 	getVimModePref,
 	setVimModePref,
 	onVimModeChanged,
@@ -76,6 +81,8 @@ import {
 	fetchPapercuts,
 	setPapercutsRepoEnabled,
 	relativeTime,
+	fetchModels,
+	type ModelOption,
 	type WarmTemplateEntry,
 	type MemoryScopeDto,
 	type MemoryEntryDto,
@@ -1885,11 +1892,47 @@ function ComposerPanel() {
 		() => onPinNewWorkspacesChanged(() => setPinNewWs(getPinNewWorkspaces())),
 		[],
 	);
+	// Per-user default model for NEW sessions ("" = no preference — the
+	// workspace default from GET /api/models applies).
+	const [modelPref, setModelPref] = useState<string>(getDefaultModelPref);
+	const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+	useEffect(
+		() => onDefaultModelPrefChanged(() => setModelPref(getDefaultModelPref())),
+		[],
+	);
+	useEffect(() => {
+		fetchModels()
+			.then((m) => setModelOptions(m.models))
+			.catch(() => {});
+	}, []);
 
 	return (
 		<div className="settings-panel">
 			<h1 className="settings-title">Composer</h1>
 			<div className="setting-card">
+				<SettingRow
+					title="Default model"
+					desc="What new sessions you start are preselected to run on. No preference keeps the workspace default. Stored per user, follows you across devices."
+					control={
+						<Select
+							label="Default model"
+							value={
+								modelPref &&
+								modelOptions.some((m) => m.id === modelPref)
+									? modelPref
+									: ""
+							}
+							options={[
+								{ value: "", label: "No preference" },
+								...modelOptions.map((m) => ({
+									value: m.id,
+									label: m.label,
+								})),
+							]}
+							onChange={setDefaultModelPref}
+						/>
+					}
+				/>
 				<SettingRow
 					title="Send messages with"
 					desc={`Choose which key combination sends messages. Use ${
