@@ -24,6 +24,7 @@
    re-theme together. `inline` makes utilities emit var(--bg) directly. */
 @theme inline {
 	/* Surfaces */
+	--color-bg: var(--bg);
 	--color-surface: var(--bg);
 	--color-raised: var(--bg-raised);
 	--color-panel: var(--bg-panel);
