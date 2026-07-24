@@ -11,6 +11,7 @@ import { frontend } from "../frontend-build";
 import { getPins as getUserPins, setPins as setUserPins } from "../pins";
 import { getReads as getUserReads, setReads as setUserReads } from "../reads";
 import { addSessionMemory, describeScope, forgetSessionMemory, listAllMemory, updateMemoryEntry } from "../session-memory";
+import { getSnoozes as getUserSnoozes, setSnoozes as setUserSnoozes } from "../snoozes";
 import { getTabColors as getUserTabColors, setTabColors as setUserTabColors } from "../tab-colors";
 import { getUiPrefs, patchUiPrefs } from "../ui-prefs";
 import { refreshWarmTemplate, setWarmTemplateConfig, warmTemplateStatus } from "../warm-template";
@@ -253,6 +254,32 @@ export async function handlePrefsRoutes(
 			);
 		}
 		return Response.json({ prefs: patchUiPrefs(body.user, body.prefs) });
+	}
+
+	// ── Per-user workspace snoozes ──
+	// Same per-user model as pins: GET reads a user's snooze map; PUT replaces
+	// it wholesale (the frontend sends the full map on every snooze change).
+	if (path === "/backstage/api/snoozes" && req.method === "GET") {
+		const user = url.searchParams.get("user") || "Anonymous";
+		return Response.json({ snoozes: getUserSnoozes(user) });
+	}
+
+	if (path === "/backstage/api/snoozes" && req.method === "PUT") {
+		const body = await req.json().catch(() => null);
+		if (
+			!body ||
+			typeof body.user !== "string" ||
+			typeof body.snoozes !== "object" ||
+			body.snoozes === null
+		) {
+			return Response.json(
+				{ error: "user (string) and snoozes (object) are required" },
+				{ status: 400 },
+			);
+		}
+		return Response.json({
+			snoozes: setUserSnoozes(body.user, body.snoozes),
+		});
 	}
 
 	// ── Per-user session tab colors ──

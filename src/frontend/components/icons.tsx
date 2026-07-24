@@ -675,6 +675,18 @@ export function IconMessageQuestion(p: IconProps) {
   );
 }
 
+/** Crescent moon for snoozed workspaces (quiet-until-later). */
+export function IconMoon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M18.25 15.03C17.3 15.49 16.24 15.75 15.11 15.75C11.13 15.75 7.9 12.52 7.9 8.54C7.9 7.16 8.29 5.87 8.96 4.77C6.48 5.97 4.75 8.52 4.75 11.47C4.75 15.58 8.08 18.9 12.18 18.9C14.79 18.9 17.08 17.56 18.25 15.03Z"
+      />
+    </Svg>
+  );
+}
+
 export function IconBell(p: IconProps) {
   return (
     <Svg {...p}>

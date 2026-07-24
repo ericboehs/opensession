@@ -2218,6 +2218,31 @@ export async function saveUiPrefsApi(
 	return body?.prefs && typeof body.prefs === "object" ? body.prefs : {};
 }
 
+// ── Snoozes (per-user workspace snoozes) ──
+
+export async function fetchSnoozes(
+	user: string,
+): Promise<Record<string, string>> {
+	const body = await request<{ snoozes?: Record<string, string> }>(
+		`/snoozes?user=${encodeURIComponent(user)}`,
+		{ label: "Failed to fetch snoozes" },
+	);
+	return body?.snoozes && typeof body.snoozes === "object" ? body.snoozes : {};
+}
+
+export async function saveSnoozesApi(
+	user: string,
+	snoozes: Record<string, string>,
+): Promise<Record<string, string>> {
+	const body = await request<{ snoozes?: Record<string, string> }>(
+		"/snoozes",
+		{ method: "PUT", body: { user, snoozes }, label: "Failed to save snoozes" },
+	);
+	return body?.snoozes && typeof body.snoozes === "object"
+		? body.snoozes
+		: snoozes;
+}
+
 // ── Tab colors (per-user session tab colors) ──
 
 export async function fetchTabColors(

@@ -23,6 +23,14 @@ import { loadOverview, overviewCache } from "../lib/workspace-overview";
 import { openLightbox } from "./MediaLightbox";
 import { useCurrentUser, TEAM } from "./UserPicker";
 import { getPins, onPinsChanged, togglePin, reorderPins } from "../lib/pins";
+import {
+	clearSnooze,
+	formatRemaining,
+	getSnoozes,
+	onSnoozesChanged,
+	setSnooze,
+	snoozePresets,
+} from "../lib/snoozes";
 import { Reorder } from "motion/react";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import { getReads, isUnread, markUnread, onReadsChanged } from "../lib/reads";
@@ -55,6 +63,7 @@ import {
 	IconPin,
 	IconLink,
 	IconMail,
+	IconMoon,
 	IconStatusRing,
 	IconTrash,
 	IconWatercooler,
@@ -443,6 +452,13 @@ type CtxEntry =
 			kind: "status";
 			current: MineStatus | null;
 			onPick: (status: MineStatus | null) => void;
+	  }
+	| {
+			kind: "snooze";
+			/** Active snooze expiry (ISO), or null when not snoozed. */
+			until: string | null;
+			/** ISO until to snooze, or null to unsnooze. */
+			onPick: (until: string | null) => void;
 	  };
 
 function CtxItem({
@@ -522,7 +538,7 @@ function SidebarCtxMenu({
 	// Flyout state + hover grace so the pointer can
 	// cross the gap between the menu and the panel.
 	const [sub, setSub] = useState<{
-		kind: "status";
+		kind: "status" | "snooze";
 		rect: DOMRect;
 	} | null>(null);
 	const closeT = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -538,6 +554,9 @@ function SidebarCtxMenu({
 
 	const statusEntry = entries.find(
 		(e): e is Extract<CtxEntry, { kind: "status" }> => e.kind === "status",
+	);
+	const snoozeEntry = entries.find(
+		(e): e is Extract<CtxEntry, { kind: "snooze" }> => e.kind === "snooze",
 	);
 	const check = (on: boolean) =>
 		on ? <IconCheck size={20} style={{ color: "var(--text-dim)" }} /> : undefined;
@@ -604,6 +623,48 @@ function SidebarCtxMenu({
 							</button>
 						);
 					}
+					if (entry.kind === "snooze") {
+						return (
+							<button
+								key={i}
+								type="button"
+								style={{
+									...CTX_ITEM_STYLE,
+									display: "flex",
+									alignItems: "center",
+									gap: 11,
+								}}
+								onMouseEnter={(e) => {
+									cancelClose();
+									setSub({
+										kind: "snooze",
+										rect: e.currentTarget.getBoundingClientRect(),
+									});
+								}}
+								onMouseLeave={scheduleClose}
+								onClick={(e) => {
+									cancelClose();
+									setSub({
+										kind: "snooze",
+										rect: e.currentTarget.getBoundingClientRect(),
+									});
+								}}
+							>
+								<span
+									style={{
+										width: 20,
+										display: "inline-flex",
+										justifyContent: "center",
+										flexShrink: 0,
+										color: "var(--text-dim)",
+									}}
+								>
+									<IconMoon size={20} />
+								</span>
+								<span style={{ flex: 1 }}>Snooze</span>
+							</button>
+						);
+					}
 					return (
 						<CtxItem
 							key={i}
@@ -657,6 +718,43 @@ function SidebarCtxMenu({
 							onClose();
 						}}
 					/>
+				</div>
+			)}
+			{sub?.kind === "snooze" && snoozeEntry && (
+				<div
+					className="sidebar-ctx-menu"
+					style={{
+						...CTX_MENU_STYLE,
+						left: subLeft,
+						top: subTop,
+						minWidth: SUB_W,
+					}}
+					onClick={(e) => e.stopPropagation()}
+					onMouseEnter={cancelClose}
+					onMouseLeave={scheduleClose}
+				>
+					{snoozePresets().map((p) => (
+						<CtxItem
+							key={p.label}
+							label={p.label}
+							onClick={() => {
+								snoozeEntry.onPick(p.until.toISOString());
+								onClose();
+							}}
+						/>
+					))}
+					{snoozeEntry.until && (
+						<>
+							<div style={CTX_SEP_STYLE} />
+							<CtxItem
+								label="Unsnooze"
+								onClick={() => {
+									snoozeEntry.onPick(null);
+									onClose();
+								}}
+							/>
+						</>
+					)}
 				</div>
 			)}
 		</>,
@@ -763,6 +861,7 @@ const DEFAULT_EXPANDED = [
 	"status:pending",
 	"status:review",
 	"status:inprogress",
+	"status:snoozed",
 ];
 
 function readExpanded(): Set<string> {
@@ -884,6 +983,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
 	const [hiddenTools, setHiddenTools] = useState(readHiddenSidebarTools);
 	const [pins, setPins] = useState<string[]>(getPins);
+	// Per-user workspace snoozes (row key → ISO until). An overlay like pins:
+	// actively-snoozed rows park in the Snoozed section; the wake sweep below
+	// prunes lapsed entries and marks their rows unread.
+	const [snoozes, setSnoozesState] = useState<Record<string, string>>(
+		getSnoozes,
+	);
 	// Drag-to-reorder in the Pinned band. onReorder fires continuously during a
 	// drag, so the in-flight order lives in local state (pinOrderDraft) and only
 	// commits to the pins store on drop — mirroring the composer queue's pattern.
@@ -1026,6 +1131,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	}, [filter.repo, filter.person]);
 
 	useEffect(() => onPinsChanged(() => setPins(getPins())), []);
+	useEffect(() => onSnoozesChanged(() => setSnoozesState(getSnoozes())), []);
 	useEffect(() => onRecentsChanged(() => setRecents(getRecents())), []);
 	useEffect(() => onReadsChanged(() => setReads(getReads())), []);
 	// Re-render when a composer draft appears/disappears — rows check hasDraft()
@@ -1545,16 +1651,58 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// Rows a teammate flagged for YOUR review (the info panel's Reviewer picker).
 	// Explicit teammate filters stay owner-scoped, while the default "Me" view
 	// also includes cross-owner work that was sent to or requested by you.
-	const reviewScopeRows = useMemo(() => {
-		return wsRows.filter((r) =>
-			reviewRowMatchesPersonFilter(
-				r.owner,
-				r.chats.map((chat) => chat.reviewRequest),
-				filter.person,
-				currentUser,
-			),
+	// ── Snoozed rows ────────────────────────────────────────────────────────
+	// A row with an active snooze leaves every band (review, pinned, status
+	// lanes) and parks in the Snoozed section, soonest wake first. The sweep
+	// below prunes lapsed entries — marking the row's chats unread first, so
+	// the wake surfaces like fresh activity — which re-derives membership.
+	const activeSnoozeKeys = useMemo(() => {
+		const now = Date.now();
+		return new Set(
+			Object.entries(snoozes)
+				.filter(([, until]) => Date.parse(until) > now)
+				.map(([key]) => key),
 		);
-	}, [wsRows, filter.person, currentUser]);
+	}, [snoozes]);
+	const snoozedWsRows = useMemo(
+		() =>
+			wsRows
+				.filter((r) => activeSnoozeKeys.has(r.key))
+				.sort(
+					(a, b) =>
+						Date.parse(snoozes[a.key] || "") -
+						Date.parse(snoozes[b.key] || ""),
+				),
+		[wsRows, activeSnoozeKeys, snoozes],
+	);
+	useEffect(() => {
+		if (Object.keys(snoozes).length === 0) return;
+		const sweep = () => {
+			const now = Date.now();
+			for (const [key, until] of Object.entries(snoozes)) {
+				if (Date.parse(until) > now) continue;
+				const row = wsRows.find((r) => r.key === key);
+				row?.chats.forEach((c) => markUnread(c.id));
+				clearSnooze(key);
+			}
+		};
+		sweep();
+		const t = setInterval(sweep, 30_000);
+		return () => clearInterval(t);
+	}, [snoozes, wsRows]);
+
+	const reviewScopeRows = useMemo(() => {
+		return wsRows.filter(
+			(r) =>
+				!activeSnoozeKeys.has(r.key) &&
+				reviewRowMatchesPersonFilter(
+					r.owner,
+					r.chats.map((chat) => chat.reviewRequest),
+					filter.person,
+					currentUser,
+				),
+		);
+	}, [wsRows, activeSnoozeKeys, filter.person, currentUser]);
 	const needsReviewRows = useMemo(() => {
 		const me = currentUser.toLowerCase();
 		return reviewScopeRows.filter(
@@ -1654,10 +1802,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			.filter(
 				(r) =>
 					!reviewBandKeys.has(r.key) &&
+					!activeSnoozeKeys.has(r.key) &&
 					(pinSet.has(r.key) || r.chats.some((c) => pinSet.has(c.id))),
 			)
 			.sort((a, b) => rowIdx(a) - rowIdx(b));
-	}, [wsRows, pins, reviewBandKeys]);
+	}, [wsRows, pins, reviewBandKeys, activeSnoozeKeys]);
 	const focusWsRows = useMemo(() => {
 		const pinSet = new Set(pins);
 		const focus =
@@ -1669,10 +1818,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						? r.status === "pending"
 						: r.owner === focus)) &&
 				!reviewBandKeys.has(r.key) &&
+				!activeSnoozeKeys.has(r.key) &&
 				!pinSet.has(r.key) &&
 				!r.chats.some((c) => pinSet.has(c.id)),
 		);
-	}, [wsRows, pins, filter.person, currentUser, reviewBandKeys]);
+	}, [wsRows, pins, filter.person, currentUser, reviewBandKeys, activeSnoozeKeys]);
 
 	// Workspace rows in the sidebar's visual order (Pinned band first, then the
 	// status lanes) — archiveWorkspaceWithNext walks this to pick the row that
@@ -1685,12 +1835,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			...MINE_STATUS_META.flatMap((meta) =>
 				focusWsRows.filter((r) => r.status === meta.key),
 			),
+			...snoozedWsRows,
 		],
 		[
 			needsReviewRows,
 			awaitingReviewRows,
 			pinnedWsRows,
 			focusWsRows,
+			snoozedWsRows,
 		],
 	);
 	const hasWorkspaceFilter =
@@ -1699,7 +1851,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		needsReviewRows.length === 0 &&
 		awaitingReviewRows.length === 0 &&
 		pinnedWsRows.length === 0 &&
-		focusWsRows.length === 0;
+		focusWsRows.length === 0 &&
+		snoozedWsRows.length === 0;
 
 	function archiveWorkspaceWithNext(row: WsRow) {
 		// Chatless rows can't be opened, so they're not "next" candidates.
@@ -2324,6 +2477,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const rowPin = workspacePinState(row);
 		const pinned = rowPin.pinned;
 		const toggleRowPin = rowPin.toggle;
+		// Active snooze → the row wears a wake countdown instead of the idle time.
+		const snoozeIso = activeSnoozeKeys.has(row.key)
+			? (snoozes[row.key] ?? null)
+			: null;
 		const flatRepoGrouping = filter.groupBy === "repo";
 		// Conductor-style right-edge diff stat, only under "Group by: Repo" —
 		// the flat rows there carry status in their glyph, so the resting right
@@ -2512,6 +2669,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				    including while a run is live (the --running modifier keeps it
 				    hidden until then, so the ticker owns the resting slot). */}
 				{runStartMs !== null && <RunTicker startMs={runStartMs} />}
+				{snoozeIso && !editing && <SnoozeBadge until={snoozeIso} />}
 				{diff && !editing && (
 					<span
 						className="sidebar-ws-diff"
@@ -2525,7 +2683,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						</span>
 					</span>
 				)}
-				{!isPhone && wsTimePref !== "off" && row.lastActivity && (
+				{!isPhone && !snoozeIso && wsTimePref !== "off" && row.lastActivity && (
 					<span
 						className={`sidebar-ws-time${
 							wsTimePref === "hover" || diff ? " sidebar-ws-time--hover" : ""
@@ -2754,8 +2912,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 	// The Conductor-style status lanes (Needs input / In progress / …) over a set
 	// of workspace rows. `ns` keeps each repo's lane collapse state independent.
-	function renderStatusLanes(rows: WsRow[], ns = "") {
-		return MINE_STATUS_META.map((meta) => {
+	// `snoozedRows` (when given) render as a Snoozed group slotted just above
+	// the final Backlog lane — the quiet zone, per the T3-style snooze design.
+	function renderStatusLanes(rows: WsRow[], ns = "", snoozedRows?: WsRow[]) {
+		const lanes = MINE_STATUS_META.map((meta) => {
 			const items = rows.filter((r) => r.status === meta.key);
 			if (items.length === 0) return null;
 			const gkey = `${ns}status:${meta.key}`;
@@ -2785,6 +2945,37 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				</div>
 			);
 		});
+		if (snoozedRows && snoozedRows.length > 0) {
+			const gkey = `${ns}status:snoozed`;
+			const open = isOpen(gkey);
+			const snoozedNode = (
+				<div className="sidebar-status-group" key={gkey}>
+					<button
+						className="sidebar-group-header flex w-full items-center gap-[9px] rounded-md px-[10px] py-1 text-[14px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg"
+						onClick={() => toggleGroup(gkey)}
+					>
+						<IconMoon
+							className="sidebar-group-icon"
+							style={{ color: "var(--text-dim)" }}
+						/>
+						<span className="sidebar-group-name">Snoozed</span>
+						<span className="sidebar-group-count">{snoozedRows.length}</span>
+						<IconChevronDown
+							className="sidebar-group-chevron"
+							size={22}
+							style={{ transform: open ? "none" : "rotate(-90deg)" }}
+						/>
+					</button>
+					{snoozedRows
+						.filter((r) => open || r.chats.some((c) => c.id === selectedId))
+						.map(renderWsRow)}
+				</div>
+			);
+			// MINE_STATUS_META keeps Backlog ("pending") last, so slotting before
+			// the final lane node lands Snoozed just above it.
+			lanes.splice(lanes.length - 1, 0, snoozedNode);
+		}
+		return lanes;
 	}
 
 	// The repo bands — one collapsible band per repo, shared by two "Group by"
@@ -3205,6 +3396,19 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							// in the chosen lane; "Auto" clears it back to the derived one.
 							onPick: (s) => onSetStatus(chats, s),
 						});
+					if (menuRow && chats.length > 0)
+						entries.push({
+							kind: "snooze",
+							until: activeSnoozeKeys.has(menuRow.key)
+								? (snoozes[menuRow.key] ?? null)
+								: null,
+							// Parks the row in the Snoozed section until the chosen time;
+							// null unsnoozes it back to its derived lane.
+							onPick: (until) =>
+								until
+									? setSnooze(menuRow.key, until)
+									: clearSnooze(menuRow.key),
+						});
 					if (ws)
 						entries.push({
 							kind: "item",
@@ -3601,9 +3805,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					    Conductor-style row list; "Repo and status" nests the labeled
 					    status lanes under each repo band instead. Empty lanes/bands
 					    are hidden — only groups with sessions render. */}
+					{/* Repo modes exclude snoozed rows from their bands (they're out of
+					    focusWsRows), so the Snoozed group renders globally after them;
+					    the plain mode slots it above Backlog via renderStatusLanes. */}
 					{filter.groupBy === "repo" || filter.groupBy === "repo-status"
-						? renderRepoGroups(filter.groupBy === "repo-status")
-						: renderStatusLanes(focusWsRows)}
+						? [
+								...renderRepoGroups(filter.groupBy === "repo-status"),
+								...renderStatusLanes([], "", snoozedWsRows),
+							]
+						: renderStatusLanes(focusWsRows, "", snoozedWsRows)}
 				</div>
 
 				{archivedBand && (
@@ -5173,6 +5383,26 @@ function RunTicker({ startMs }: { startMs: number }) {
 	return (
 		<span className="sidebar-ws-ticker" title="How long this run has been working">
 			{elapsedClock(startMs, now)}
+		</span>
+	);
+}
+
+// Countdown badge for a snoozed row: time until it wakes ("57m", "14h").
+// Isolated 30s ticker (RunTicker-style) so the sidebar doesn't re-render
+// for the countdown.
+function SnoozeBadge({ until }: { until: string }) {
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		const t = setInterval(() => setNow(Date.now()), 30_000);
+		return () => clearInterval(t);
+	}, []);
+	return (
+		<span
+			className="flex shrink-0 items-center gap-1 text-[12px] text-faint"
+			title={`Snoozed until ${new Date(until).toLocaleString()}`}
+		>
+			<IconMoon size={20} />
+			{formatRemaining(until, now)}
 		</span>
 	);
 }
