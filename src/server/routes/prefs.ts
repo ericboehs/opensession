@@ -11,6 +11,7 @@ import { frontend } from "../frontend-build";
 import { getPins as getUserPins, setPins as setUserPins } from "../pins";
 import { getReads as getUserReads, setReads as setUserReads } from "../reads";
 import { addSessionMemory, describeScope, forgetSessionMemory, listAllMemory, updateMemoryEntry } from "../session-memory";
+import { getLanes as getUserLanes, setLanes as setUserLanes } from "../lanes";
 import { getSnoozes as getUserSnoozes, setSnoozes as setUserSnoozes } from "../snoozes";
 import { getTabColors as getUserTabColors, setTabColors as setUserTabColors } from "../tab-colors";
 import { getUiPrefs, patchUiPrefs } from "../ui-prefs";
@@ -254,6 +255,30 @@ export async function handlePrefsRoutes(
 			);
 		}
 		return Response.json({ prefs: patchUiPrefs(body.user, body.prefs) });
+	}
+
+	// ── Per-user sidebar lanes ──
+	// Same per-user model as pins: GET reads a user's lane map; PUT replaces
+	// it wholesale (the frontend sends the full map on every lane change).
+	if (path === "/backstage/api/lanes" && req.method === "GET") {
+		const user = url.searchParams.get("user") || "Anonymous";
+		return Response.json({ lanes: getUserLanes(user) });
+	}
+
+	if (path === "/backstage/api/lanes" && req.method === "PUT") {
+		const body = await req.json().catch(() => null);
+		if (
+			!body ||
+			typeof body.user !== "string" ||
+			typeof body.lanes !== "object" ||
+			body.lanes === null
+		) {
+			return Response.json(
+				{ error: "user (string) and lanes (object) are required" },
+				{ status: 400 },
+			);
+		}
+		return Response.json({ lanes: setUserLanes(body.user, body.lanes) });
 	}
 
 	// ── Per-user workspace snoozes ──

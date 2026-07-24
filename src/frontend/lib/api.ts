@@ -2218,6 +2218,30 @@ export async function saveUiPrefsApi(
 	return body?.prefs && typeof body.prefs === "object" ? body.prefs : {};
 }
 
+// ── Lanes (per-user sidebar status lanes) ──
+
+export async function fetchLanes(
+	user: string,
+): Promise<Record<string, string>> {
+	const body = await request<{ lanes?: Record<string, string> }>(
+		`/lanes?user=${encodeURIComponent(user)}`,
+		{ label: "Failed to fetch lanes" },
+	);
+	return body?.lanes && typeof body.lanes === "object" ? body.lanes : {};
+}
+
+export async function saveLanesApi(
+	user: string,
+	lanes: Record<string, string>,
+): Promise<Record<string, string>> {
+	const body = await request<{ lanes?: Record<string, string> }>("/lanes", {
+		method: "PUT",
+		body: { user, lanes },
+		label: "Failed to save lanes",
+	});
+	return body?.lanes && typeof body.lanes === "object" ? body.lanes : lanes;
+}
+
 // ── Snoozes (per-user workspace snoozes) ──
 
 export async function fetchSnoozes(

@@ -63,6 +63,7 @@ import {
 import type { Project, SupportThread } from "./lib/types";
 import type { ReviewQueueItem } from "./lib/review-queue";
 import { pushRecent } from "./lib/recents";
+import { setLane } from "./lib/lanes";
 import { markRead } from "./lib/reads";
 import {
 	chatPath,
@@ -2235,18 +2236,19 @@ function App() {
 								}
 								refresh();
 							}}
-							onSetStatus={async (chats, status) => {
-								// Optimistically move the row, then persist per chat.
-								for (const c of chats)
-									patch(c.id, { manualStatus: status ?? undefined });
-								try {
-									await Promise.all(
-										chats.map((c) => setSessionStatusApi(c.id, status)),
-									);
-								} catch (e) {
-									console.error("Set status failed:", e);
+							onSetStatus={(chats, status) => {
+								// Lanes are per-user (lib/lanes.ts): setting one moves the
+								// row in YOUR sidebar only, so teammates can hold the same
+								// workspace in their own lanes. Clearing also drops any
+								// legacy global override, so "Auto" releases rows pinned
+								// before lanes went per-user.
+								for (const c of chats) {
+									setLane(c.id, status);
+									if (c.manualStatus) {
+										patch(c.id, { manualStatus: undefined });
+										setSessionStatusApi(c.id, null).catch(() => {});
+									}
 								}
-								refresh();
 							}}
 						/>
 						{/* Desktop: docked toast at the sidebar bottom. On phones the

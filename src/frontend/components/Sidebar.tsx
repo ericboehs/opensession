@@ -22,6 +22,7 @@ import {
 import { loadOverview, overviewCache } from "../lib/workspace-overview";
 import { openLightbox } from "./MediaLightbox";
 import { useCurrentUser, TEAM } from "./UserPicker";
+import { getLane, getLanes, onLanesChanged } from "../lib/lanes";
 import { getPins, onPinsChanged, togglePin, reorderPins } from "../lib/pins";
 import {
 	clearSnooze,
@@ -802,6 +803,13 @@ function runNeedsAttention(s: UnifiedSession): boolean {
 	return !!s.lastRunError && !s.isRunning;
 }
 
+// The effective human-pinned lane for a session: YOUR per-user lane
+// (lib/lanes.ts) first, then the legacy global override as a fallback for
+// entries set before lanes went per-user.
+function pinnedLane(s: UnifiedSession): MineStatus | undefined {
+	return getLane(s.id) ?? s.manualStatus;
+}
+
 function mineStatus(s: UnifiedSession): MineStatus {
 	// A blocked question (or a run that died on an error) needs a human right
 	// now — surface it above everything else, even a manual pin or an open PR, so
@@ -810,7 +818,8 @@ function mineStatus(s: UnifiedSession): MineStatus {
 	// manual pin permanently — it just floats above it while live.
 	if (s.waitingForInput || runNeedsAttention(s)) return "needsinput";
 	// A human-pinned lane wins over the live run state below.
-	if (s.manualStatus) return s.manualStatus;
+	const lane = pinnedLane(s);
+	if (lane) return lane;
 	if (s.isRunning) return "inprogress";
 	// Everything else is idle-but-unfinished. PR lifecycle belongs in the review
 	// UI, not the workspace state shown in the sidebar. Finishing a session is an
@@ -1132,6 +1141,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 	useEffect(() => onPinsChanged(() => setPins(getPins())), []);
 	useEffect(() => onSnoozesChanged(() => setSnoozesState(getSnoozes())), []);
+	// Per-user lanes (lib/lanes.ts). mineStatus/pinnedLane read the lib cache
+	// directly; this state exists to re-render (and re-derive the memos below)
+	// when your lanes change.
+	const [lanes, setLanesState] = useState<Record<string, string>>(getLanes);
+	useEffect(() => onLanesChanged(() => setLanesState(getLanes())), []);
 	useEffect(() => onRecentsChanged(() => setRecents(getRecents())), []);
 	useEffect(() => onReadsChanged(() => setReads(getReads())), []);
 	// Re-render when a composer draft appears/disappears — rows check hasDraft()
@@ -1452,10 +1466,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const byWs = new Map<string, UnifiedSession[]>();
 		const solo: UnifiedSession[] = [];
 		for (const s of filtered) {
-			// Automations render in their own band — EXCEPT runs a human pinned
-			// into a lane (right-click → Set status): those graduate into the
-			// workspace rows so an automation ticket can live in your Backlog.
-			if (s.automation && !s.manualStatus) continue;
+			// Automations render in their own band — EXCEPT runs YOU pinned into
+			// a lane (right-click → Add to backlog / Set status): those graduate
+			// into the workspace rows so an automation ticket can live in your
+			// Backlog. Lanes are per-user, so a claimed run moves only for the
+			// user who claimed it (legacy global overrides still count for all).
+			if (s.automation && !pinnedLane(s)) continue;
 			if (s.sideChatOf) continue; // side chats live in the parent's panel, not the sidebar
 			if (s.desk) continue; // the Desk session lives in the ⌘J overlay, not the sidebar
 			if (s.projectId) {
@@ -1567,7 +1583,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const key = filter.sort === "created" ? "createdAt" : "lastActivity";
 		rows.sort((a, b) => (b[key] || "").localeCompare(a[key] || ""));
 		return rows;
-	}, [filtered, sessions, projects, selectedId, reads, search, filter]);
+		// `lanes` feeds mineStatus/pinnedLane (read via the lib cache).
+	}, [filtered, sessions, projects, selectedId, reads, search, filter, lanes]);
 
 	// Automations keep their own collapsible band, one group per automation —
 	// hundreds of one-shot runs would drown the Workspaces list otherwise.
@@ -1576,9 +1593,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const byAutomation = new Map<string, UnifiedSession[]>();
 		for (const s of sorted) {
 			if (!s.automation) continue;
-			// A run pinned into a lane lives in the workspace rows instead —
-			// don't render it twice.
-			if (s.manualStatus) continue;
+			// A run pinned into a lane (yours, or a legacy global override)
+			// lives in the workspace rows instead — don't render it twice.
+			if (pinnedLane(s)) continue;
 			const list = byAutomation.get(s.automation) || [];
 			list.push(s);
 			byAutomation.set(s.automation, list);
@@ -1593,7 +1610,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			});
 		}
 		return out;
-	}, [sorted]);
+		// `lanes` feeds pinnedLane (read via the lib cache).
+	}, [sorted, lanes]);
 
 	// Sessions in sidebar order (pinned rows first, then each group's items) —
 	// used to hand onArchive the row that should become active when the open
@@ -1822,16 +1840,26 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				(focus === "everyone" ||
 					(focus === "unassigned"
 						? r.status === "pending"
-						: // Ownerless rows (automation runs have no startedBy) only get
-							// into wsRows when a human pinned them into a lane, so they
-							// show under every personal focus rather than nowhere.
-							r.owner === focus || r.owner === "")) &&
+						: // Ownerless rows (automation runs have no startedBy) exist in
+							// wsRows only because a lane pinned them — YOUR per-user lane
+							// shows them in your personal lenses; a legacy global one
+							// surfaces only under Everyone.
+							r.owner === focus ||
+							(r.owner === "" && r.chats.some((c) => getLane(c.id))))) &&
 				!reviewBandKeys.has(r.key) &&
 				!activeSnoozeKeys.has(r.key) &&
 				!pinSet.has(r.key) &&
 				!r.chats.some((c) => pinSet.has(c.id)),
 		);
-	}, [wsRows, pins, filter.person, currentUser, reviewBandKeys, activeSnoozeKeys]);
+	}, [
+		wsRows,
+		pins,
+		filter.person,
+		currentUser,
+		reviewBandKeys,
+		activeSnoozeKeys,
+		lanes,
+	]);
 
 	// Workspace rows in the sidebar's visual order (Pinned band first, then the
 	// status lanes) — archiveWorkspaceWithNext walks this to pick the row that
@@ -3478,11 +3506,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							setPins(togglePin(pinKey));
 						}
 					};
-					const anyManual = chats.some((c) => c.manualStatus);
+					const anyManual = chats.some((c) => pinnedLane(c));
 					const sharedManual =
 						anyManual &&
-						chats.every((c) => c.manualStatus === chats[0].manualStatus)
-							? (chats[0].manualStatus ?? null)
+						chats.every((c) => pinnedLane(c) === pinnedLane(chats[0]))
+							? (pinnedLane(chats[0]) ?? null)
 							: null;
 
 					const entries: CtxEntry[] = [];
@@ -3492,6 +3520,22 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							icon: <IconMail size={20} />,
 							label: "Mark as unread",
 							onClick: () => chats.forEach((c) => markUnread(c.id)),
+						});
+					// One-tap triage: the most common lane move gets its own row
+					// (the full picker stays in the Set-status flyout below).
+					if (chats.length > 0)
+						entries.push({
+							kind: "item",
+							icon: <IconInbox size={20} />,
+							label:
+								sharedManual === "pending"
+									? "Remove from backlog"
+									: "Add to backlog",
+							onClick: () =>
+								onSetStatus(
+									chats,
+									sharedManual === "pending" ? null : "pending",
+								),
 						});
 					entries.push({
 						kind: "item",
@@ -5228,9 +5272,25 @@ function SidebarItem({
 						},
 						...(onSetStatus
 							? [
+									// One-tap triage: pull the run into your Backlog (lanes
+									// are per-user — it moves only in YOUR sidebar).
+									{
+										kind: "item",
+										icon: <IconInbox size={20} />,
+										label:
+											pinnedLane(session) === "pending"
+												? "Remove from backlog"
+												: "Add to backlog",
+										onClick: () =>
+											onSetStatus(
+												pinnedLane(session) === "pending"
+													? null
+													: "pending",
+											),
+									} as const,
 									{
 										kind: "status",
-										current: session.manualStatus ?? null,
+										current: pinnedLane(session) ?? null,
 										onPick: onSetStatus,
 									} as const,
 								]
@@ -5258,6 +5318,40 @@ function SidebarItem({
 	);
 }
 
+// Swipe-down-to-dismiss for the bottom sheets: dragging anywhere on the sheet
+// pulls it down with the finger; past the threshold it closes on release,
+// otherwise it snaps back. A plain tap never moves it, so button taps are
+// unaffected.
+function useSheetDismiss(onClose: () => void) {
+	const [dy, setDy] = useState(0);
+	const startY = useRef<number | null>(null);
+	const end = () => {
+		const passed = dy > 80;
+		startY.current = null;
+		setDy(0);
+		if (passed) onClose();
+	};
+	return {
+		handlers: {
+			onTouchStart: (e: React.TouchEvent) => {
+				startY.current = e.touches[0].clientY;
+			},
+			onTouchMove: (e: React.TouchEvent) => {
+				if (startY.current === null) return;
+				setDy(Math.max(0, e.touches[0].clientY - startY.current));
+			},
+			onTouchEnd: end,
+			onTouchCancel: end,
+		},
+		style: dy
+			? ({
+					transform: `translateY(${dy}px)`,
+					transition: "none",
+				} as React.CSSProperties)
+			: undefined,
+	};
+}
+
 // The bottom sheet raised by long-pressing a session row on touch. It gathers
 // the per-session actions (rename, archive) into thumb-sized rows. Rendered in
 // a portal over a dimmed, tap-to-dismiss backdrop.
@@ -5275,6 +5369,7 @@ function MobileActionSheet({
 	onSetStatus?: (status: MineStatus | null) => void;
 	onClose: () => void;
 }) {
+	const drag = useSheetDismiss(onClose);
 	// Lock the page behind the sheet so a scroll drags the list, not the page.
 	useEffect(() => {
 		const prev = document.body.style.overflow;
@@ -5287,6 +5382,8 @@ function MobileActionSheet({
 		<div className="mobile-action-sheet-backdrop" onClick={onClose}>
 			<div
 				className="mobile-action-sheet"
+				style={drag.style}
+				{...drag.handlers}
 				onClick={(e) => e.stopPropagation()}
 			>
 				<div className="mobile-sheet-grip" />
@@ -5311,7 +5408,8 @@ function MobileActionSheet({
 					Rename
 				</button>
 				{/* Same lane chips as the workspace sheet — how an automation run
-				    graduates into the workspace lanes (e.g. Backlog) from a phone. */}
+				    graduates into the workspace lanes (e.g. Backlog) from a phone.
+				    Lanes are per-user: the move happens in YOUR sidebar only. */}
 				{onSetStatus && (
 					<div className="px-4 py-2">
 						<div className="mb-1.5 text-[11px] font-semibold text-faint">
@@ -5319,7 +5417,7 @@ function MobileActionSheet({
 						</div>
 						<div className="flex flex-wrap gap-1.5">
 							{MINE_STATUS_META.map((m) => {
-								const on = session.manualStatus === m.key;
+								const on = pinnedLane(session) === m.key;
 								return (
 									<button
 										key={m.key}
@@ -5351,10 +5449,10 @@ function MobileActionSheet({
 								type="button"
 								className="rounded-md border px-2 py-1 text-[13px]"
 								style={{
-									borderColor: !session.manualStatus
+									borderColor: !pinnedLane(session)
 										? "var(--text-dim)"
 										: "var(--border)",
-									color: !session.manualStatus
+									color: !pinnedLane(session)
 										? "var(--text)"
 										: "var(--text-dim)",
 								}}
@@ -6138,6 +6236,7 @@ function WsMobileSheet({
 }) {
 	const ov = useWsOverview(row);
 	const { prChat, prReady, prStatusBits } = wsPrInfo(row);
+	const drag = useSheetDismiss(onClose);
 	// Lock the page behind the sheet so a scroll drags the list, not the page.
 	useEffect(() => {
 		const prev = document.body.style.overflow;
@@ -6168,6 +6267,8 @@ function WsMobileSheet({
 		<div className="mobile-action-sheet-backdrop" onClick={onClose}>
 			<div
 				className="mobile-action-sheet"
+				style={drag.style}
+				{...drag.handlers}
 				onClick={(e) => e.stopPropagation()}
 			>
 				<div className="mobile-sheet-grip" />
@@ -6287,13 +6388,13 @@ function WsMobileSheet({
 				    (tap the active one, or Auto, to release it back to the derived lane). */}
 				{row.chats.length > 0 &&
 					(() => {
-						const anyManual = row.chats.some((c) => c.manualStatus);
+						const anyManual = row.chats.some((c) => pinnedLane(c));
 						const sharedManual =
 							anyManual &&
 							row.chats.every(
-								(c) => c.manualStatus === row.chats[0].manualStatus,
+								(c) => pinnedLane(c) === pinnedLane(row.chats[0]),
 							)
-								? (row.chats[0].manualStatus ?? null)
+								? (pinnedLane(row.chats[0]) ?? null)
 								: null;
 						return (
 							<div className="px-4 py-2">
