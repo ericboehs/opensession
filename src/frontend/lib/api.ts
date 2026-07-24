@@ -1256,6 +1256,30 @@ export async function mergePrPreviewApi(
 	});
 }
 
+export async function closePrApi(
+	sessionId: string,
+	repo?: string,
+	branch?: string,
+) {
+	return request<{ ok: true; url?: string }>(
+		`/sessions/${encodeURIComponent(sessionId)}/pr-close`,
+		{
+			method: "POST",
+			body: {
+				...(repo ? { repo } : {}),
+				...(branch ? { branch } : {}),
+			},
+		},
+	);
+}
+
+export async function closePrPreviewApi(repo: string, branch: string) {
+	return request<{ ok: true; url?: string }>("/pr-preview-close", {
+		method: "POST",
+		body: { repo, branch },
+	});
+}
+
 /** GitHub PR agent behaviors (the opensession-* PR labels) fired straight from the
     info panel: review / auto-fix / simplify / adversarial. tella-fusion only. */
 export type PrAgentAction = "review" | "autofix" | "simplify" | "adversarial";

@@ -7,6 +7,7 @@ import type {
 } from "../lib/types";
 import {
 	API_BASE,
+	closePrPreviewApi,
 	fetchModels,
 	fetchPrPreview,
 	fetchPrPreviewDiff,
@@ -15,6 +16,7 @@ import {
 	relativeTime,
 	type ModelOption,
 } from "../lib/api";
+import { IconX } from "./icons";
 import {
 	CheckRow,
 	checkClass,
@@ -88,6 +90,9 @@ export function PrPreview({
 	}, [draftKey, prompt]);
 	const [starting, setStarting] = useState(false);
 	const [startError, setStartError] = useState<string | null>(null);
+	const [closing, setClosing] = useState(false);
+	const [confirmClose, setConfirmClose] = useState(false);
+	const [closeError, setCloseError] = useState<string | null>(null);
 	const startingRef = useRef(false);
 	const startTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 	const [models, setModels] = useState<ModelOption[]>([]);
@@ -257,6 +262,25 @@ export function PrPreview({
 		// App navigates into the session on session_created
 	}
 
+	async function handleClose() {
+		if (!confirmClose) {
+			setConfirmClose(true);
+			setTimeout(() => setConfirmClose(false), 4000);
+			return;
+		}
+		setConfirmClose(false);
+		setClosing(true);
+		setCloseError(null);
+		try {
+			await closePrPreviewApi(repo, branch);
+			await load();
+		} catch (e: any) {
+			setCloseError(e.message || "Failed to close the pull request.");
+		} finally {
+			setClosing(false);
+		}
+	}
+
 	const checkSummary = useMemo(() => {
 		const checks = pr?.checks || [];
 		let passed = 0,
@@ -382,7 +406,20 @@ export function PrPreview({
 								<span className="text-faint text-[12px]">
 									{repo} · {pr.author}
 								</span>
+								{pr.state === "OPEN" && (
+									<button
+										type="button"
+										className={`pr-bar-btn ${confirmClose ? "pr-bar-btn-red" : "pr-bar-btn-secondary"}`}
+										disabled={closing}
+										onClick={handleClose}
+										title="Close this PR without merging it"
+									>
+										{!closing && !confirmClose && <IconX size={16} />}
+										{closing ? "Closing…" : confirmClose ? "Confirm close" : "Close"}
+									</button>
+								)}
 							</div>
+							{closeError && <div className="pr-bar-error mt-2">{closeError}</div>}
 
 							<a className="pr-title" href={pr.url} target="_blank" rel="noopener">
 								{pr.title}

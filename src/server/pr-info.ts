@@ -496,6 +496,41 @@ export async function submitPrReview(
 
 export type MergeMethod = "squash" | "merge" | "rebase";
 
+/** Close an open PR without merging it. Human-triggered from the Reviews UI. */
+export async function closePr(
+  branch: string,
+  repo: string = DEFAULT_REPO(),
+  credential: GithubCredential = serviceGithubCredential,
+): Promise<{ ok: true; url?: string } | { error: string }> {
+  const pr = await getMutationPrMeta(branch, repo, credential);
+  if (!pr) return { error: "No PR found for this branch" };
+  if (pr.state !== "OPEN") return { error: `PR #${pr.number} is ${pr.state.toLowerCase()}, not open` };
+
+  return audited(
+    {
+      context: "reviews",
+      action: "pr_close",
+      args: {
+        branch,
+        number: pr.number,
+        credential: credential.principal,
+      },
+    },
+    async () => {
+      const proc = spawnGh(["pr", "close", String(pr.number), "--repo", repo], credential);
+      const [, err, code] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      if (code !== 0) return { error: (err || "gh pr close failed").slice(0, 300) } as const;
+      cache.delete(cacheKey(repo, branch));
+      diffCache.delete(cacheKey(repo, branch));
+      return { ok: true, url: pr.url } as const;
+    },
+  );
+}
+
 /**
  * Merge a branch's PR via the gh CLI — human-triggered from the Reviews view
  * (Michael never merges on its own; this is a UI affordance for the operator).

@@ -1,5 +1,5 @@
 /**
- * Everything pull-request: open-PR list, PR Tinder, per-session PR details/diff/comment/review/merge, PR agent actions, session-less PR previews.
+ * Everything pull-request: open-PR list, PR Tinder, per-session PR details/diff/comment/review/merge/close, PR agent actions, session-less PR previews.
  *
  * Extracted verbatim from the opensession.ts fetch chain. Every handler
  * returns a Response for a matched route or undefined to fall through to the
@@ -8,7 +8,7 @@
 
 import { requestUser, type RouteContext } from "./context";
 import { personaName } from "../config";
-import { getPrDetails, getPrDiff, mergePr, postPrComment, submitPrReview } from "../pr-info";
+import { closePr, getPrDetails, getPrDiff, mergePr, postPrComment, submitPrReview } from "../pr-info";
 import { closeTinderPr, commentTinderPr, deleteTinderComment, getSeenPrs, labelTinderPr, listTinderLabels, listTinderPrs, markPrSeen, markPrUnseen, reopenTinderPr } from "../pr-tinder";
 import { findSession, invalidateSessionsCache } from "../session-cache";
 import { getSessionControl } from "../session-control";
@@ -459,6 +459,19 @@ export async function handlePrRoutes(
 			);
 		}
 	}
+	if (path === "/backstage/api/pr-preview-close" && req.method === "POST") {
+		const credential = githubMutationCredential(ctx);
+		if (!credential) return githubCredentialRequiredResponse();
+		const body = await req.json().catch(() => ({}));
+		const branch = body?.branch?.trim();
+		if (!branch)
+			return Response.json({ error: "branch required" }, { status: 400 });
+		const repo = getRepo(body?.repo || undefined);
+		const result = await closePr(branch, repo.ghRepo, credential);
+		if ("error" in result) return Response.json(result, { status: 502 });
+		invalidateSessionsCache();
+		return Response.json(result);
+	}
 
 	// Post a comment on the session's PR (inline when path+line present)
 	if (
@@ -606,6 +619,33 @@ export async function handlePrRoutes(
 				{ status: 502 },
 			);
 		}
+	}
+
+	// Close the session's PR without merging it — human-triggered from Reviews.
+	if (
+		path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-close$/) &&
+		req.method === "POST"
+	) {
+		const credential = githubMutationCredential(ctx);
+		if (!credential) return githubCredentialRequiredResponse();
+		const sessionId = decodeURIComponent(
+			path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-close$/)![1],
+		);
+		const session = findSession(sessionId);
+		if (!session)
+			return Response.json({ error: "Session not found" }, { status: 404 });
+
+		const body = await req.json().catch(() => ({}));
+		const target = resolvePrTarget(session, body.repo, body.branch);
+		if (!target)
+			return Response.json(
+				{ error: "No branch/PR for that repo" },
+				{ status: 400 },
+			);
+		const result = await closePr(target.branch, target.ghRepo, credential);
+		if ("error" in result) return Response.json(result, { status: 502 });
+		invalidateSessionsCache();
+		return Response.json(result);
 	}
 
 	// Fire a GitHub PR agent behavior straight from the info panel — the same
