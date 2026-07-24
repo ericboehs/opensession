@@ -158,7 +158,7 @@ export const TurnBlock = React.memo(function TurnBlock({
 
   return (
     <div
-      className="mx-auto mb-3 max-w-[var(--chat-evidence)]"
+      className="mx-auto mb-3 w-full max-w-[var(--chat-evidence)]"
       // Anchor identity for the history scroll hold: the LAST item survives a
       // history page merging older items into this turn (the first doesn't).
       data-eid={lastItem ? `${lastItem.id}#turn` : undefined}
@@ -166,7 +166,7 @@ export const TurnBlock = React.memo(function TurnBlock({
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-[12.5px] text-dim hover:bg-hover"
+        className="mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-[12.5px] text-dim hover:bg-hover"
       >
         <span
           className={cn(
@@ -269,7 +269,10 @@ function TurnMessage({
   sessionId?: string;
 }) {
   return (
-    <div className="my-2 px-1" data-eid={entry.id}>
+    <div
+      className="mx-auto my-2 w-full max-w-[var(--chat-col)] px-1"
+      data-eid={entry.id}
+    >
       <ClampedBody
         className="msg-body msg-body-assistant markdown"
         content={entry.content}

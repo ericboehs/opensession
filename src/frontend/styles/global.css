@@ -8112,6 +8112,10 @@ a.workspace-info-check-row {
 
 .msg {
 	margin-bottom: 18px;
+	/* Live replies are direct children of the scrolling flex column, while
+	   settled replies sit inside transcript-window wrappers. Give both paths
+	   the same full row before applying the shared reading-width cap. */
+	width: 100%;
 	max-width: var(--chat-col);
 	margin-left: auto;
 	margin-right: auto;
