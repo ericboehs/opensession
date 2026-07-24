@@ -10,6 +10,8 @@ import type { UnifiedSession } from "../lib/types";
 import { BASE_PATH } from "../lib/base";
 import { withPreviewPath } from "../lib/preview-url";
 import { Tooltip } from "../ui/tooltip";
+import { Button } from "../ui/button";
+import { cn } from "../ui/cn";
 import { CopyCheck, useCopy } from "../ui/copy";
 import {
   IconArrowUpRight,
@@ -32,6 +34,18 @@ function isPreviewable(session: UnifiedSession): boolean {
 // preview boot mechanism yet).
 const PREVIEW_DOCS_URL =
   "https://github.com/tellahq/backstage/blob/master/deploy/sandbox/README.md#previews-in-sandboxes-phase-4a";
+
+const headerIconBase =
+  "inline-flex cursor-pointer items-center justify-center rounded-[10px] border border-transparent bg-transparent px-[5px] py-[3px] text-faint no-underline";
+
+const splitSegmentBase =
+  "inline-flex items-center justify-center border border-line-strong bg-transparent text-dim";
+
+const spinnerClass =
+  "size-[10px] shrink-0 rounded-full border-[1.5px] border-line-strong border-t-accent animate-[preview-spin_0.7s_linear_infinite]";
+
+const popoverActionClass =
+  "w-full rounded-[5px] border border-[rgba(248,81,73,0.4)] bg-transparent px-2.5 py-[5px] text-xs font-semibold text-red disabled:cursor-default disabled:opacity-45 disabled:hover:bg-transparent hover:bg-[rgba(248,81,73,0.12)]";
 
 /**
  * Header control for a session's local dev server ("Preview"). When the
@@ -230,31 +244,37 @@ export function PreviewButton({
         )}
         <div className="flex items-center gap-2 justify-end">
           {shot && onAttachImage && (
-            <button
-              className="btn-create"
-              style={{ padding: "6px 14px" }}
+            <Button
+              variant="primary"
+              size="sm"
+              className="px-[14px] py-1"
               onClick={() => {
                 onAttachImage(shot);
                 setShot(null);
               }}
             >
               Attach to chat
-            </button>
+            </Button>
           )}
           {shot && (
-            <a className="btn-small" href={shot} download={`preview-${session.id}.png`}>
+            <a
+              className="inline-flex min-h-[26px] items-center justify-center whitespace-nowrap rounded-xs border border-line bg-control px-2.5 text-xs font-[550] text-dim shadow-control transition hover:border-line-strong hover:text-fg active:scale-[0.97]"
+              href={shot}
+              download={`preview-${session.id}.png`}
+            >
               Download
             </a>
           )}
-          <button
-            className="btn-small"
+          <Button
+            variant="default"
+            size="sm"
             onClick={() => {
               setShot(null);
               setShotError(null);
             }}
           >
             Close
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -263,20 +283,27 @@ export function PreviewButton({
   // Shared dev-services popover — the stop/start control and per-service list.
   // In header mode it also carries the snapshot action (there's no caret for it).
   const servicesPopover = open && (
-    <div className="preview-popover">
-      <div className="preview-popover-title">Dev services</div>
+    <div className="absolute right-0 top-[calc(100%+6px)] z-50 min-w-[240px] rounded-[8px] border border-line-strong bg-[var(--bg-elevated,var(--bg-active))] p-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+      <div className="mb-2 text-[11px] font-bold tracking-[-0.01em] text-faint">Dev services</div>
       {status.services.length === 0 ? (
-        <div className="preview-empty">
+        <div className="px-0 py-1 text-xs text-faint">
           {isStarting ? "Starting up…" : "Not started yet"}
         </div>
       ) : (
-        <ul className="preview-services">
+        <ul className="mb-2 flex list-none flex-col gap-[5px] p-0">
           {status.services.map((s) => (
-            <li key={s.key}>
-              <span className={`preview-dot ${s.running ? "" : "off"}`} />
-              <span className="preview-svc-name">{s.name}</span>
-              <span className="preview-svc-port">:{s.port}</span>
-              <span className={`preview-svc-state ${s.running ? "on" : ""}`}>
+            <li key={s.key} className="flex items-center gap-[7px] text-xs text-dim">
+              <span
+                className={cn(
+                  "size-[7px] shrink-0 rounded-full",
+                  s.running
+                    ? "bg-green shadow-[0_0_0_2px_rgba(63,185,80,0.18)]"
+                    : "bg-[var(--text-faint)] shadow-none",
+                )}
+              />
+              <span className="font-semibold">{s.name}</span>
+              <span className="text-faint">:{s.port}</span>
+              <span className={cn("ml-auto text-[11px] text-faint", s.running && "text-green")}>
                 {s.running ? "running" : "stopped"}
               </span>
             </li>
@@ -284,22 +311,22 @@ export function PreviewButton({
         </ul>
       )}
       {running || anyRunning ? (
-        <button className="preview-stop" onClick={stop} disabled={!anyRunning || stopping}>
+        <button className={popoverActionClass} onClick={stop} disabled={!anyRunning || stopping}>
           {stopping ? "Stopping…" : "Stop dev server"}
         </button>
       ) : isStarting ? (
-        <button className="preview-stop" onClick={stop} disabled={stopping}>
+        <button className={popoverActionClass} onClick={stop} disabled={stopping}>
           {stopping ? "Cancelling…" : "Cancel startup"}
         </button>
       ) : bootable ? (
-        <button className="preview-stop" onClick={start}>
+        <button className={popoverActionClass} onClick={start}>
           Start dev server
         </button>
       ) : (
-        <div className="preview-empty">{notBootableHint}.</div>
+        <div className="px-0 py-1 text-xs text-faint">{notBootableHint}.</div>
       )}
       {variant === "header" && running && (
-        <button className="preview-stop preview-snap-row" onClick={snap} disabled={snapping}>
+        <button className={cn(popoverActionClass, "mt-1.5")} onClick={snap} disabled={snapping}>
           {snapping ? "Capturing…" : "Snapshot preview"}
         </button>
       )}
@@ -308,13 +335,13 @@ export function PreviewButton({
           StagingLink. The bar layout gets a dedicated segment instead. */}
       {variant === "header" && running && (
         <button
-          className="preview-stop preview-copy-row"
+          className={cn(popoverActionClass, "mt-1.5")}
           onClick={() => copy(url, { toast: "Preview link copied" })}
         >
           Copy preview link
         </button>
       )}
-      <div className="preview-hint">
+      <div className="mt-1.5 text-center text-[10.5px] text-faint">
         {running || anyRunning ? (
           "Stops this worktree's dev process group only."
         ) : bootable ? (
@@ -342,7 +369,13 @@ export function PreviewButton({
     const menuCaret = (running || anyRunning || isStarting) && (
       <Tooltip label="Dev services — stop the server, snapshot" side="bottom">
         <button
-          className={`viewer-code-icon preview-icon preview-header-caret ${open ? "is-live" : "is-off"}`}
+          className={cn(
+            headerIconBase,
+            "-ml-[3px] px-px py-[3px]",
+            open
+              ? "text-green hover:bg-hover hover:text-green"
+              : "text-faint hover:bg-hover hover:text-dim",
+          )}
           onClick={openMenu}
           aria-expanded={open}
           aria-label="Dev services"
@@ -352,7 +385,7 @@ export function PreviewButton({
       </Tooltip>
     );
     return (
-      <div className="viewer-code-icon-wrap" ref={wrapRef}>
+      <div className="relative inline-flex items-center" ref={wrapRef}>
         {running ? (
           <Tooltip
             label={
@@ -363,7 +396,7 @@ export function PreviewButton({
             side="bottom"
           >
             <a
-              className="viewer-code-icon preview-icon is-live"
+              className={cn(headerIconBase, "text-green hover:bg-hover hover:text-green")}
               href={url}
               target="_blank"
               rel="noopener"
@@ -386,13 +419,16 @@ export function PreviewButton({
             side="bottom"
           >
             <button
-              className="viewer-code-icon preview-icon is-starting"
+              className={cn(headerIconBase, "text-yellow hover:bg-hover hover:text-yellow")}
               onClick={stop}
               onContextMenu={openMenu}
               disabled={stopping}
             >
-              <span className="preview-spinner-wrap">
-                <span className="preview-spinner" aria-hidden="true" />
+              <span className="relative inline-flex items-center justify-center">
+                <span
+                  className="pointer-events-none absolute left-1/2 top-1/2 size-[25px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-transparent border-t-current opacity-90 animate-[preview-spin_0.7s_linear_infinite]"
+                  aria-hidden="true"
+                />
                 <IconPlayOutline size={22} />
               </span>
             </button>
@@ -400,7 +436,10 @@ export function PreviewButton({
         ) : !bootable ? (
           <Tooltip label={`${notBootableHint} — right-click for details`} side="bottom" multiline>
             <button
-              className="viewer-code-icon preview-icon is-off opacity-45 cursor-not-allowed"
+              className={cn(
+                headerIconBase,
+                "cursor-not-allowed text-faint opacity-45 hover:bg-hover hover:text-dim",
+              )}
               onClick={openMenu}
               onContextMenu={openMenu}
               aria-disabled="true"
@@ -411,7 +450,7 @@ export function PreviewButton({
         ) : (
           <Tooltip label="Run — start the dev server (right-click for dev services)" side="bottom">
             <button
-              className="viewer-code-icon preview-icon is-off"
+              className={cn(headerIconBase, "text-faint hover:bg-hover hover:text-dim")}
               onClick={start}
               onContextMenu={openMenu}
             >
@@ -427,49 +466,65 @@ export function PreviewButton({
   }
 
   return (
-    <div className={`preview-wrap ${running ? "running" : ""}`} ref={wrapRef}>
+    <div className="relative inline-flex items-stretch" ref={wrapRef}>
       {running ? (
         <a
-          className="preview-open running"
+          className={cn(
+            splitSegmentBase,
+            "gap-1.5 whitespace-nowrap rounded-l-[7px] px-[11px] py-[5px] text-[13px] font-semibold text-green no-underline",
+            "hover:relative hover:z-[1] hover:border-[rgba(63,185,80,0.5)] hover:bg-[rgba(63,185,80,0.12)] hover:text-green",
+          )}
           href={url}
           target="_blank"
           rel="noopener"
           title={`Open the webapp — ${url}`}
         >
-          <IconPlay size={15} className="preview-play" />
+          <IconPlay size={15} className="opacity-90" />
           Preview
-          <IconArrowUpRight size={15} className="preview-ext" />
+          <IconArrowUpRight size={15} className="-ml-px opacity-80" />
         </a>
       ) : isStarting ? (
         <button
-          className="preview-open starting"
+          className={cn(
+            splitSegmentBase,
+            "group gap-1.5 whitespace-nowrap rounded-l-[7px] px-[11px] py-[5px] text-[13px] font-semibold text-dim",
+            "cursor-pointer hover:relative hover:z-[1] hover:border-[rgba(248,81,73,0.4)] hover:bg-[rgba(248,81,73,0.1)] hover:text-red",
+          )}
           onClick={stop}
           disabled={stopping}
           title="Starting the dev server (first build can take a minute) — click to cancel"
         >
-          <span className="preview-spinner" />
-          <span className="preview-starting-label">
+          <span className={spinnerClass} />
+          <span className="inline group-hover:hidden">
             {stopping ? "Cancelling…" : "Starting…"}
           </span>
-          <span className="preview-cancel-label">Cancel</span>
+          <span className="hidden group-hover:inline">Cancel</span>
         </button>
       ) : !bootable ? (
         <button
-          className="preview-open opacity-45 cursor-not-allowed"
+          className={cn(
+            splitSegmentBase,
+            "gap-1.5 whitespace-nowrap rounded-l-[7px] px-[11px] py-[5px] text-[13px] font-semibold text-dim opacity-45",
+            "cursor-not-allowed",
+          )}
           onClick={() => setOpen((v) => !v)}
           aria-disabled="true"
           title={`${notBootableHint}.`}
         >
-          <IconPlay size={15} className="preview-play" />
+          <IconPlay size={15} className="text-accent" />
           Preview
         </button>
       ) : (
         <button
-          className="preview-open"
+          className={cn(
+            splitSegmentBase,
+            "gap-1.5 whitespace-nowrap rounded-l-[7px] px-[11px] py-[5px] text-[13px] font-semibold text-dim",
+            "cursor-pointer hover:relative hover:z-[1] hover:border-accent hover:bg-accent-soft hover:text-fg",
+          )}
           onClick={start}
           title="Start the dev server and preview this session"
         >
-          <IconPlay size={15} className="preview-play" />
+          <IconPlay size={15} className="text-accent" />
           Preview
         </button>
       )}
@@ -477,7 +532,14 @@ export function PreviewButton({
           exists (server up + Caddy fronting it); before that there's no stable
           URL to hand out, so it sits disabled with a hint. */}
       <button
-        className="preview-caret preview-copy aria-disabled:opacity-45 aria-disabled:cursor-default aria-disabled:hover:text-dim aria-disabled:hover:border-line-strong aria-disabled:hover:bg-transparent"
+        className={cn(
+          splitSegmentBase,
+          "-ml-px px-2 py-1",
+          running
+            ? "text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))] hover:relative hover:z-[1] hover:border-[rgba(63,185,80,0.5)] hover:bg-[rgba(63,185,80,0.12)] hover:text-green"
+            : "hover:relative hover:z-[1] hover:border-accent hover:bg-accent-soft hover:text-accent",
+          "aria-disabled:cursor-default aria-disabled:opacity-45 aria-disabled:hover:border-line-strong aria-disabled:hover:bg-transparent aria-disabled:hover:text-dim",
+        )}
         onClick={() => {
           if (running) copy(url, { toast: "Preview link copied" });
         }}
@@ -488,16 +550,32 @@ export function PreviewButton({
       </button>
       {running && (
         <button
-          className="preview-caret preview-snap"
+          className={cn(
+            splitSegmentBase,
+            "-ml-px px-2 py-1 text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))]",
+            "hover:relative hover:z-[1] hover:border-[rgba(63,185,80,0.5)] hover:bg-[rgba(63,185,80,0.12)] hover:text-green",
+          )}
           onClick={snap}
           disabled={snapping}
           title="Snapshot the preview (headless Chrome screenshot)"
         >
-          {snapping ? <span className="preview-spinner" /> : <IconCamera size={18} />}
+          {snapping ? <span className={spinnerClass} /> : <IconCamera size={18} />}
         </button>
       )}
       <button
-        className={`preview-caret preview-menu ${open ? "active" : ""}`}
+        className={cn(
+          splitSegmentBase,
+          "-ml-px rounded-r-[7px] px-2 py-1",
+          running
+            ? "text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))]"
+            : "text-dim",
+          open || running
+            ? "relative z-[1] border-[rgba(63,185,80,0.5)] bg-[rgba(63,185,80,0.12)] text-green"
+            : "",
+          !running && "hover:relative hover:z-[1] hover:border-accent hover:bg-accent-soft hover:text-accent",
+          running && !open &&
+            "hover:relative hover:z-[1] hover:border-[rgba(63,185,80,0.5)] hover:bg-[rgba(63,185,80,0.12)] hover:text-green",
+        )}
         onClick={() => setOpen((v) => !v)}
         title="Dev server processes"
         aria-expanded={open}

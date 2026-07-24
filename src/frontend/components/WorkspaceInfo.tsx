@@ -24,6 +24,7 @@ import { getCurrentUser, TEAM } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
+import { cn } from "../ui/cn";
 import type {
 	DiffFile,
 	GitStatusInfo,
@@ -55,17 +56,17 @@ import {
 } from "./icons";
 
 /**
- * Workspace info block at the top of the right side panel (the "Info" tab): a
- * dense, at-a-glance catch-all — title + meta, a status row (checks, review,
- * PR state), the opening prompt, the summary, and a compact filmstrip of every
- * screenshot / video from the workspace's chats. Opening it answers "what is
- * this and where does it stand" without switching tabs; Changes / Terminal /
- * Checks are the drill-downs.
- *
- * Loading/caching for the overview lives in lib/workspace-overview (shared with
- * the sidebar's workspace hover card), including the pre-restart transcript
- * fallbacks. The PR is fetched here and refreshed on a slow interval.
- */
+	* Workspace info block at the top of the right side panel (the "Info" tab): a
+	* dense, at-a-glance catch-all — title + meta, a status row (checks, review,
+	* PR state), the opening prompt, the summary, and a compact filmstrip of every
+	* screenshot / video from the workspace's chats. Opening it answers "what is
+	* this and where does it stand" without switching tabs; Changes / Terminal /
+	* Checks are the drill-downs.
+	*
+	* Loading/caching for the overview lives in lib/workspace-overview (shared with
+	* the sidebar's workspace hover card), including the pre-restart transcript
+	* fallbacks. The PR is fetched here and refreshed on a slow interval.
+	*/
 
 type PanelTab = "changes" | "terminal" | "pr" | "staging" | "assets";
 
@@ -90,7 +91,11 @@ interface Props {
 	prState?: string | null;
 	/** The open chat's sandbox opt-in — renders a provider/mode badge in the
 	    status row (from session fields only; no container polling). */
-	sandbox?: { provider: string; sandboxId?: string; workspace?: "bind" | "volume" };
+	sandbox?: {
+		provider: string;
+		sandboxId?: string;
+		workspace?: "bind" | "volume";
+	};
 	/** Pending review request for this workspace — the open chat's, or a sibling
 	    chat's (the request is per-chat but the band groups by workspace). */
 	reviewRequest?: ReviewRequestInfo | null;
@@ -134,8 +139,71 @@ type StatusChip = {
 	icon?: React.ReactNode;
 };
 
+const INFO_LABEL_CLASS = "text-[12px] font-[650] tracking-[-0.01em] text-faint";
+const INFO_SECTION_CLASS = "grid gap-[5px]";
+const INFO_MORE_BUTTON_CLASS =
+	"cursor-pointer bg-surface px-[9px] py-[7px] text-left text-[12px] font-semibold text-faint transition-colors hover:bg-hover hover:text-fg";
+
+function chipToneClass(tone: ChipTone): string {
+	switch (tone) {
+		case "green":
+			return "border-[color:color-mix(in_srgb,var(--green,#16a34a)_26%,transparent)] bg-[color:color-mix(in_srgb,var(--green,#16a34a)_12%,transparent)] text-green hover:border-[color:color-mix(in_srgb,var(--green,#16a34a)_40%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--green,#16a34a)_20%,transparent)]";
+		case "red":
+			return "border-[color:color-mix(in_srgb,var(--red,#dc2626)_26%,transparent)] bg-[color:color-mix(in_srgb,var(--red,#dc2626)_12%,transparent)] text-red hover:border-[color:color-mix(in_srgb,var(--red,#dc2626)_40%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--red,#dc2626)_20%,transparent)]";
+		case "yellow":
+			return "border-[color:color-mix(in_srgb,var(--yellow,#ca8a04)_30%,transparent)] bg-[color:color-mix(in_srgb,var(--yellow,#ca8a04)_14%,transparent)] text-yellow hover:border-[color:color-mix(in_srgb,var(--yellow,#ca8a04)_44%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--yellow,#ca8a04)_22%,transparent)]";
+		case "purple":
+			return "border-[color:color-mix(in_srgb,var(--purple,#7c3aed)_26%,transparent)] bg-[color:color-mix(in_srgb,var(--purple,#7c3aed)_12%,transparent)] text-purple hover:border-[color:color-mix(in_srgb,var(--purple,#7c3aed)_40%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--purple,#7c3aed)_20%,transparent)]";
+		case "muted":
+		default:
+			return "border-line bg-surface text-dim hover:border-line-strong hover:bg-hover hover:text-fg";
+	}
+}
+
+function statusBadgeClass(status: DiffFile["status"]): string {
+	switch (statusClass(status)) {
+		case "added":
+			return "bg-green-soft text-green";
+		case "modified":
+			return "bg-[rgba(210,153,34,0.15)] text-yellow";
+		case "deleted":
+			return "bg-red-soft text-red";
+		case "renamed":
+			return "bg-accent-soft text-accent";
+		default:
+			return "bg-surface text-dim";
+	}
+}
+
+function checkToneClass(kind: CheckVisual): string {
+	switch (kind) {
+		case "success":
+			return "text-green";
+		case "failure":
+			return "text-red";
+		case "pending":
+			return "text-yellow";
+		case "skipped":
+		case "neutral":
+		default:
+			return "text-dim";
+	}
+}
+
+const CHIP_CLASS =
+	"inline-flex cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-lg border px-[11px] py-[5.5px] text-[12.5px] font-semibold leading-[1.35] transition-[background-color,border-color,color] duration-150 has-[>span:first-child]:pl-[9px]";
+const CHIP_ICON_CLASS = "inline-flex items-center opacity-65 [&_svg]:block";
+const GIT_BUTTON_CLASS =
+	"ml-auto inline-flex min-h-7 items-center justify-center gap-1.5 rounded-lg border px-3 py-1 text-[13px] font-[650] leading-none shadow-[var(--control-shadow)] transition-[background-color,border-color,color,filter,transform] duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default disabled:opacity-60 disabled:shadow-none active:scale-[0.98]";
+const GIT_SOLID_BUTTON_CLASS =
+	"border-[color:color-mix(in_srgb,var(--text)_84%,transparent)] bg-fg text-bg hover:brightness-110 active:brightness-[0.98]";
+const GIT_SECONDARY_BUTTON_CLASS =
+	"border-line-strong bg-raised text-fg hover:bg-hover";
+const REVIEW_BUTTON_CLASS =
+	"mt-2.5 flex w-full items-center justify-center gap-[7px] rounded-lg border border-line bg-active px-3 py-[9px] text-[13px] font-semibold text-fg transition-[background,border-color] duration-150 hover:border-faint hover:bg-hover";
+
 /** The check/review/PR-state chips shown in the status row (only the ones that
-    say something are rendered). */
+		say something are rendered). */
 function statusChips(pr: PrDetails | null): StatusChip[] {
 	if (!pr) return [];
 	const chips: StatusChip[] = [];
@@ -143,7 +211,8 @@ function statusChips(pr: PrDetails | null): StatusChip[] {
 		chips.push({ key: "merged", label: "Merged", tone: "purple" });
 	else if (pr.state === "CLOSED")
 		chips.push({ key: "closed", label: "Closed", tone: "muted" });
-	else if (pr.isDraft) chips.push({ key: "draft", label: "Draft", tone: "muted" });
+	else if (pr.isDraft)
+		chips.push({ key: "draft", label: "Draft", tone: "muted" });
 
 	const c = summarizeChecks(pr);
 	if (c.failed > 0)
@@ -188,8 +257,8 @@ function hueFor(name: string): number {
 	return Math.abs(h) % 360;
 }
 /** Flatten a GitHub markdown/HTML comment body into a clean one-glance
-    preview: drop HTML comments/tags, collapse markdown emphasis + headings,
-    turn links into their label, squash whitespace. */
+		preview: drop HTML comments/tags, collapse markdown emphasis + headings,
+		turn links into their label, squash whitespace. */
 function plainComment(body: string): string {
 	return body
 		.replace(/<!--[\s\S]*?-->/g, "") // HTML comments (bot markers)
@@ -209,15 +278,18 @@ function plainComment(body: string): string {
 }
 
 /** Clean a GitHub comment body for markdown rendering: drop bot markers and
-    link-ref noise, and downgrade raw HTML to equivalent markdown (our renderer
-    escapes raw tags for safety, so <h3>/<br>/etc. would otherwise show as
-    literal text) — while KEEPING real markdown structure (headings, lists,
-    tables, code fences, line breaks). */
+		link-ref noise, and downgrade raw HTML to equivalent markdown (our renderer
+		escapes raw tags for safety, so <h3>/<br>/etc. would otherwise show as
+		literal text) — while KEEPING real markdown structure (headings, lists,
+		tables, code fences, line breaks). */
 function cleanCommentMarkdown(body: string): string {
 	return body
 		.replace(/<!--[\s\S]*?-->/g, "") // HTML comments (bot markers)
 		.replace(/^\s*\[[^\]]+\]:\s*\S+.*$/gm, "") // link-ref defs (Vercel [vc]: #…)
-		.replace(/<h([1-6])[^>]*>\s*([\s\S]*?)<\/h\1>/gi, (_m, _n, t) => `\n### ${t.trim()}\n`)
+		.replace(
+			/<h([1-6])[^>]*>\s*([\s\S]*?)<\/h\1>/gi,
+			(_m, _n, t) => `\n### ${t.trim()}\n`,
+		)
 		.replace(/<br\s*\/?>/gi, "\n") // explicit line breaks
 		.replace(/<\/(p|div|li|tr|table|ul|ol|details)>/gi, "\n") // block ends → break
 		.replace(/<[^>]+>/g, "") // remaining tags → keep inner text
@@ -262,8 +334,8 @@ const FILE_PREVIEW = 6;
 const COMMENT_PREVIEW = 3;
 
 /** The author's real GitHub avatar (Greptile, Tella Butler, Vercel, a human…),
-    served at github.com/<login>.png. Falls back to a lettered brand tile if the
-    image 404s or the author isn't a plausible login (e.g. a display name). */
+		served at github.com/<login>.png. Falls back to a lettered brand tile if the
+		image 404s or the author isn't a plausible login (e.g. a display name). */
 function CommentAvatar({ author }: { author: string }) {
 	const login = (author || "").trim();
 	// GitHub usernames/app slugs: alphanumerics with single interior hyphens,
@@ -273,7 +345,7 @@ function CommentAvatar({ author }: { author: string }) {
 	if (canAvatar && !failed) {
 		return (
 			<img
-				className="workspace-info-comment-avatar"
+				className="size-6 shrink-0 rounded-full border border-line object-cover bg-active"
 				src={`https://github.com/${login}.png?size=48`}
 				alt=""
 				aria-hidden
@@ -284,7 +356,7 @@ function CommentAvatar({ author }: { author: string }) {
 	}
 	return (
 		<span
-			className="workspace-info-comment-avatar"
+			className="grid size-6 shrink-0 place-items-center rounded-full border border-line bg-active text-[11px] font-semibold text-white"
 			style={{ background: `hsl(${hueFor(login || "?")} 52% 42%)` }}
 			aria-hidden
 		>
@@ -294,9 +366,9 @@ function CommentAvatar({ author }: { author: string }) {
 }
 
 /** One PR comment as a single dense row: avatar · one-line title · time. The
-    title is the flattened first slice of the body, ellipsised. Hovering floats
-    the full markdown comment in a popover on top (never shifting the list); a
-    hover "Add to chat" drops it into the composer; clicking opens the PR tab. */
+		title is the flattened first slice of the body, ellipsised. Hovering floats
+		the full markdown comment in a popover on top (never shifting the list); a
+		hover "Add to chat" drops it into the composer; clicking opens the PR tab. */
 function CommentCard({
 	comment,
 	pr,
@@ -318,7 +390,7 @@ function CommentCard({
 	const addBtn = onAddToInput && (
 		<button
 			type="button"
-			className="workspace-info-comment-add"
+			className="absolute right-1.5 top-1/2 z-[1] -translate-y-1/2 rounded-md border border-line-strong bg-panel px-2 py-0.5 text-[11px] font-semibold text-dim opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:border-faint hover:bg-hover hover:text-fg"
 			onClick={(e) => {
 				e.stopPropagation();
 				onAddToInput(formatPrCommentPrompt(comment, pr));
@@ -338,7 +410,7 @@ function CommentCard({
 				openOnHover
 				delay={200}
 				closeDelay={90}
-				className="workspace-info-comment"
+				className="group relative flex min-w-0 items-center gap-2 rounded-md px-[7px] py-[5px] text-left transition-colors hover:bg-surface"
 				role="button"
 				tabIndex={0}
 				onClick={() => onOpenTab?.("pr")}
@@ -348,8 +420,10 @@ function CommentCard({
 				aria-label={`Comment by ${comment.author}`}
 			>
 				{avatar}
-				<span className="workspace-info-comment-title">{title}</span>
-				<span className="workspace-info-comment-time">
+				<span className="min-w-0 flex-1 truncate text-[12.5px] font-[550] leading-[1.35] text-fg">
+					{title}
+				</span>
+				<span className="shrink-0 text-[11.5px] text-faint">
 					{relTime(comment.createdAt)}
 				</span>
 				{addBtn}
@@ -358,22 +432,22 @@ function CommentCard({
 				side="left"
 				align="start"
 				sideOffset={10}
-				className="flex max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))] cursor-pointer gap-2 overflow-hidden p-2.5"
+				className="flex max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))] cursor-pointer gap-[9px] overflow-hidden border border-line-strong bg-panel px-3 py-[11px] shadow-[0_12px_40px_-8px_rgba(0,0,0,0.5),0_0_0_1px_var(--border)]"
 			>
 				<div className="contents" onClick={() => onOpenTab?.("pr")}>
 					{avatar}
-					<div className="workspace-info-comment-main flex min-h-0 flex-col">
-						<div className="workspace-info-comment-pop-head">
-							<span className="workspace-info-comment-author">
+					<div className="flex min-h-0 flex-1 flex-col">
+						<div className="mb-1.5 flex min-w-0 items-baseline justify-between gap-2">
+							<span className="min-w-0 truncate text-[11.5px] font-semibold text-faint">
 								{comment.author}
 							</span>
 							{comment.createdAt && (
-								<span className="workspace-info-comment-time">
+								<span className="shrink-0 text-[11.5px] text-faint">
 									{relTime(comment.createdAt)}
 								</span>
 							)}
 						</div>
-						<div className="workspace-info-comment-pop-body">
+					<div className="workspace-info-comment-pop-body mb-[5px] min-h-0 flex-1 overflow-y-auto">
 							<MarkdownBody html={html} className="markdown" />
 						</div>
 					</div>
@@ -384,7 +458,7 @@ function CommentCard({
 }
 
 /** Read-only render options for the hover diff — no line selection, our own
-    header owns the file name, unified view themed to the app appearance. */
+		header owns the file name, unified view themed to the app appearance. */
 const PREVIEW_DIFF_OPTIONS = {
 	diffStyle: "unified" as const,
 	disableFileHeader: true,
@@ -393,12 +467,12 @@ const PREVIEW_DIFF_OPTIONS = {
 };
 
 /**
- * One "file changed" row. Hovering reveals a floated card with the file's actual
- * diff (parsed from the primary repo's patch), mirroring the PR-comment hover in
- * the same panel; clicking still jumps to the full Changes tab. Rows whose file
- * isn't in the parsed patch (binary, or a not-yet-loaded/truncated patch) simply
- * don't open a popover.
- */
+* One "file changed" row. Hovering reveals a floated card with the file's actual
+* diff (parsed from the primary repo's patch), mirroring the PR-comment hover in
+* the same panel; clicking still jumps to the full Changes tab. Rows whose file
+* isn't in the parsed patch (binary, or a not-yet-loaded/truncated patch) simply
+* don't open a popover.
+*/
 function FileRow({
 	file,
 	meta,
@@ -422,15 +496,19 @@ function FileRow({
 		[theme],
 	);
 	const stats = (
-		<span className="diff-file-stats">
-			{file.additions > 0 && <span className="diff-add">+{file.additions}</span>}
-			{file.deletions > 0 && <span className="diff-del">−{file.deletions}</span>}
+		<span className="inline-flex shrink-0 items-center gap-1 font-mono text-[11px] font-semibold">
+			{file.additions > 0 && (
+				<span className="text-green">+{file.additions}</span>
+			)}
+			{file.deletions > 0 && (
+				<span className="text-red">−{file.deletions}</span>
+			)}
 		</span>
 	);
 	const path = (
-		<span className="workspace-info-file-path">
-			{dir && <span className="workspace-info-file-dir">{dir}</span>}
-			<span className="workspace-info-file-base">{base}</span>
+		<span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
+			{dir && <span className="text-dim">{dir}</span>}
+			<span className="text-fg">{base}</span>
 		</span>
 	);
 
@@ -441,11 +519,16 @@ function FileRow({
 				delay={200}
 				closeDelay={90}
 				type="button"
-				className="workspace-info-file"
+				className="flex min-w-0 items-center gap-2 rounded-md px-[7px] py-[5px] text-left transition-colors hover:bg-surface"
 				onClick={() => onOpenTab?.("changes")}
 				aria-label={`${file.path} — open in Changes`}
 			>
-				<span className={`diff-status diff-status-${statusClass(file.status)}`}>
+				<span
+					className={cn(
+						"inline-flex size-[18px] shrink-0 items-center justify-center rounded-[4px] font-mono text-[11px] font-bold",
+						statusBadgeClass(file.status),
+					)}
+				>
 					{STATUS_CHAR[file.status]}
 				</span>
 				{path}
@@ -456,17 +539,17 @@ function FileRow({
 					side="left"
 					align="start"
 					sideOffset={10}
-					className="flex max-h-[min(720px,82vh,var(--available-height))] w-[min(720px,calc(100vw-24px))] cursor-pointer flex-col overflow-hidden px-3 py-2.5"
+					className="flex max-h-[min(720px,82vh,var(--available-height))] w-[min(720px,calc(100vw-24px))] cursor-pointer flex-col overflow-hidden border border-line-strong bg-panel px-3 py-2.5 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.5),0_0_0_1px_var(--border)]"
 				>
 					<div
 						className="flex min-h-0 flex-1 flex-col overflow-hidden"
 						onClick={() => onOpenTab?.("changes")}
 					>
-						<div className="workspace-info-file-pop-head">
+						<div className="mb-2 flex min-w-0 items-baseline justify-between gap-2">
 							{path}
 							{stats}
 						</div>
-						<div className="workspace-info-file-pop-body">
+						<div className="min-h-0 flex-1 overflow-auto text-[12px]">
 							<FileDiff fileDiff={meta} options={options} disableWorkerPool />
 						</div>
 					</div>
@@ -479,12 +562,16 @@ function FileRow({
 type CheckVisual = "success" | "failure" | "pending" | "skipped" | "neutral";
 
 /** Map a PR check's raw status/conclusion to a visual kind + the word shown at
-    the right of its row (GitHub-style: "Succeeded", "Skipped", "Failed"…).
-    CheckRuns report `status` until COMPLETED; StatusContexts (Vercel deploys)
-    leave `status` empty and carry the outcome in `conclusion`. */
+		the right of its row (GitHub-style: "Succeeded", "Skipped", "Failed"…).
+		CheckRuns report `status` until COMPLETED; StatusContexts (Vercel deploys)
+		leave `status` empty and carry the outcome in `conclusion`. */
 function checkStatusMeta(check: PrCheck): { kind: CheckVisual; label: string } {
 	const running = check.status !== "COMPLETED" && check.status !== "";
-	if (running || check.conclusion === "PENDING" || check.conclusion === "EXPECTED")
+	if (
+		running ||
+		check.conclusion === "PENDING" ||
+		check.conclusion === "EXPECTED"
+	)
 		return { kind: "pending", label: running ? "Running" : "Queued" };
 	switch (check.conclusion) {
 		case "SUCCESS":
@@ -509,13 +596,19 @@ function checkStatusMeta(check: PrCheck): { kind: CheckVisual; label: string } {
 }
 
 /** The small leading status glyph — a filled green check / red ✕, a spinner
-    while running, or a dashed ring for skipped/neutral. Color comes from the
-    row's `wi-check-<kind>` class. */
+		while running, or a dashed ring for skipped/neutral. Color comes from the
+		surrounding status tone wrapper. */
 function CheckStatusIcon({ kind }: { kind: CheckVisual }) {
-	if (kind === "pending") return <span className="wi-check-spin" aria-hidden />;
+	if (kind === "pending")
+		return (
+			<span
+				className="m-[1.5px] block size-[13px] rounded-full border-[1.6px] border-current/30 border-t-current animate-spin"
+				aria-hidden
+			/>
+		);
 	if (kind === "success")
 		return (
-			<svg className="wi-check-ico" viewBox="0 0 16 16" aria-hidden>
+			<svg className="block size-4" viewBox="0 0 16 16" aria-hidden>
 				<circle cx="8" cy="8" r="8" fill="currentColor" />
 				<path
 					d="M4.4 8.3l2.3 2.3 4.9-4.9"
@@ -529,7 +622,7 @@ function CheckStatusIcon({ kind }: { kind: CheckVisual }) {
 		);
 	if (kind === "failure")
 		return (
-			<svg className="wi-check-ico" viewBox="0 0 16 16" aria-hidden>
+			<svg className="block size-4" viewBox="0 0 16 16" aria-hidden>
 				<circle cx="8" cy="8" r="8" fill="currentColor" />
 				<path
 					d="M5.4 5.4l5.2 5.2M10.6 5.4l-5.2 5.2"
@@ -541,7 +634,7 @@ function CheckStatusIcon({ kind }: { kind: CheckVisual }) {
 		);
 	// skipped / neutral — a dashed outline ring
 	return (
-		<svg className="wi-check-ico" viewBox="0 0 16 16" aria-hidden>
+		<svg className="block size-4" viewBox="0 0 16 16" aria-hidden>
 			<circle
 				cx="8"
 				cy="8"
@@ -556,8 +649,8 @@ function CheckStatusIcon({ kind }: { kind: CheckVisual }) {
 }
 
 /** The checks status chip in the info panel's status row. Clicking opens the PR
-    tab; hovering floats a GitHub-style overview of every individual check —
-    icon · name · outcome — off to the side of the panel (never covering it). */
+		tab; hovering floats a GitHub-style overview of every individual check —
+		icon · name · outcome — off to the side of the panel (never covering it). */
 function ChecksChip({
 	pr,
 	chip,
@@ -587,10 +680,10 @@ function ChecksChip({
 				delay={200}
 				closeDelay={120}
 				type="button"
-				className={`wi-chip wi-chip-${chip.tone}`}
+				className={cn(CHIP_CLASS, chipToneClass(chip.tone))}
 				onClick={() => onOpenTab?.("pr")}
 			>
-				{chip.icon && <span className="wi-chip-icon">{chip.icon}</span>}
+				{chip.icon && <span className={CHIP_ICON_CLASS}>{chip.icon}</span>}
 				{chip.label}
 			</Popover.Trigger>
 			{checks.length > 0 && (
@@ -600,50 +693,62 @@ function ChecksChip({
 					sideOffset={10}
 					className="flex max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))] flex-col overflow-hidden p-0"
 				>
-					<div className="workspace-info-checks-head">
-							<span className="workspace-info-checks-title">
-								{checks.length} check{checks.length === 1 ? "" : "s"}
-							</span>
-							<span className="workspace-info-checks-summary">
-								{sum.passed > 0 && (
-									<span className="check-success-text">{sum.passed} passed</span>
-								)}
-								{sum.failed > 0 && (
-									<span className="check-failure-text">{sum.failed} failed</span>
-								)}
-								{sum.pending > 0 && (
-									<span className="check-pending-text">{sum.pending} running</span>
-								)}
-							</span>
+					<div className="flex items-baseline justify-between gap-2.5 border-b border-line bg-surface px-3 py-[9px]">
+						<span className="text-[12px] font-semibold text-fg">
+							{checks.length} check{checks.length === 1 ? "" : "s"}
+						</span>
+						<span className="inline-flex gap-2 text-[11.5px] font-semibold">
+							{sum.passed > 0 && (
+								<span className="text-emerald-300">{sum.passed} passed</span>
+							)}
+							{sum.failed > 0 && (
+								<span className="text-rose-300">{sum.failed} failed</span>
+							)}
+							{sum.pending > 0 && (
+								<span className="text-amber-300">{sum.pending} running</span>
+							)}
+						</span>
 					</div>
-					<div className="workspace-info-checks-list">
-							{checks.map((check, i) => {
-								const m = checkStatusMeta(check);
-								const inner = (
-									<>
-										<span className={`wi-check-icon wi-check-${m.kind}`}>
-											<CheckStatusIcon kind={m.kind} />
-										</span>
-										<span className="workspace-info-check-name">{check.name}</span>
-										<span className="workspace-info-check-status">{m.label}</span>
-									</>
-								);
-								return check.url ? (
-									<a
-										key={`${check.name}:${i}`}
-										className="workspace-info-check-row"
-										href={check.url}
-										target="_blank"
-										rel="noopener"
+					<div className="overflow-y-auto p-1">
+						{checks.map((check, i) => {
+							const m = checkStatusMeta(check);
+							const inner = (
+								<>
+									<span
+										className={cn(
+											"inline-flex size-4 shrink-0",
+											checkToneClass(m.kind),
+										)}
 									>
-										{inner}
-									</a>
-								) : (
-									<div key={`${check.name}:${i}`} className="workspace-info-check-row">
-										{inner}
-									</div>
-								);
-							})}
+										<CheckStatusIcon kind={m.kind} />
+									</span>
+									<span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">
+										{check.name}
+									</span>
+									<span className="shrink-0 text-[12px] font-medium text-dim">
+										{m.label}
+									</span>
+								</>
+							);
+							return check.url ? (
+								<a
+									key={`${check.name}:${i}`}
+									className="flex items-center gap-[9px] rounded-md px-2 py-1.5 text-fg no-underline hover:bg-surface"
+									href={check.url}
+									target="_blank"
+									rel="noopener"
+								>
+									{inner}
+								</a>
+							) : (
+								<div
+									key={`${check.name}:${i}`}
+									className="flex items-center gap-[9px] rounded-md px-2 py-1.5 text-fg"
+								>
+									{inner}
+								</div>
+							);
+						})}
 					</div>
 				</Popover.Popup>
 			)}
@@ -652,9 +757,9 @@ function ChecksChip({
 }
 
 /** The GitHub PR agent behaviors, surfaced as one-tap buttons on the info panel.
-    Each maps to a michael-* PR label; hitting the button is equivalent to adding
-    that label on GitHub (or @mentioning the agent on the PR), but without leaving
-    Backstage. tella-fusion PRs only — the agent is repo-scoped. */
+		Each maps to a michael-* PR label; hitting the button is equivalent to adding
+		that label on GitHub (or @mentioning the agent on the PR), but without leaving
+		Backstage. tella-fusion PRs only — the agent is repo-scoped. */
 const PR_AGENT_ACTIONS: Array<{
 	kind: PrAgentAction;
 	label: string;
@@ -728,8 +833,8 @@ function PrAgentActions({
 	}
 
 	return (
-		<div className="workspace-info-agent mt-3">
-			<div className="workspace-info-label">Ask {AGENT_NAME}</div>
+		<div className="mt-3">
+			<div className={INFO_LABEL_CLASS}>Ask {AGENT_NAME}</div>
 			<div className="mt-2 flex flex-wrap gap-1.5">
 				{PR_AGENT_ACTIONS.map((a) => (
 					<button
@@ -780,10 +885,10 @@ function PrAgentActions({
 }
 
 /** The Reviewer picker chip in the status row: pick a teammate to flag this
-    session as "needs review" — it jumps into a Needs-review band at the top of
-    their sidebar and buzzes their registered devices. Re-pick to hand off,
-    "Clear review request" to withdraw. Optimistic; the polled session list
-    confirms (or reverts) on the next refresh. */
+		session as "needs review" — it jumps into a Needs-review band at the top of
+		their sidebar and buzzes their registered devices. Re-pick to hand off,
+		"Clear review request" to withdraw. Optimistic; the polled session list
+		confirms (or reverts) on the next refresh. */
 function ReviewerChip({
 	sessionId,
 	reviewRequest,
@@ -818,7 +923,9 @@ function ReviewerChip({
 		const prev = req;
 		const me = getCurrentUser();
 		// Re-assigning drops any prior sign-off (a fresh reviewer, fresh review).
-		const next = name ? { to: name, by: me, at: new Date().toISOString() } : null;
+		const next = name
+			? { to: name, by: me, at: new Date().toISOString() }
+			: null;
 		setReq(next);
 		onReviewChange?.(owner, next);
 		setSessionReviewerApi(owner, name, me).catch(() => {
@@ -846,9 +953,14 @@ function ReviewerChip({
 	return (
 		<Menu.Root>
 			<Menu.Trigger
-				className={`wi-chip ${
-					accepted ? "wi-chip-green" : req ? "wi-chip-yellow" : "wi-chip-muted"
-				}`}
+				className={cn(
+					CHIP_CLASS,
+					accepted
+						? chipToneClass("green")
+						: req
+							? chipToneClass("yellow")
+							: chipToneClass("muted"),
+				)}
 				title={
 					accepted
 						? `Reviewed by ${accepted.by}`
@@ -859,14 +971,14 @@ function ReviewerChip({
 			>
 				{accepted ? (
 					<UserAvatar name={accepted.by} size={20}>
-						<span className="wi-chip-avatar-check">
+						<span className="absolute -bottom-px -right-px grid size-4 place-items-center rounded-full border border-panel bg-green text-white shadow-[0_0_0_1px_var(--bg-panel)] [&_svg]:size-3">
 							<IconCheck size={12} />
 						</span>
 					</UserAvatar>
 				) : req ? (
 					<UserAvatar name={req.to} size={20} />
 				) : (
-					<span className="wi-chip-icon">
+					<span className={CHIP_ICON_CLASS}>
 						<IconBell size={20} />
 					</span>
 				)}
@@ -915,14 +1027,14 @@ function ReviewerChip({
 }
 
 /**
- * The "Status" section of the info panel: the PR/branch state, plus a row per
- * outstanding git fact — ahead of remote → Push, behind → Update, dirty tree →
- * Commit. This is the Conductor-style status header (see server/git-status.ts),
- * surfaced in the info panel's own idiom (a labelled section, not a bordered
- * card). Push/Update call the git APIs directly; Commit prompts the session
- * (we don't do bare `git commit` — a session-authored commit gets a real
- * message), matching how Create PR / Resolve work in the status strip.
- */
+* The "Status" section of the info panel: the PR/branch state, plus a row per
+* outstanding git fact — ahead of remote → Push, behind → Update, dirty tree →
+* Commit. This is the Conductor-style status header (see server/git-status.ts),
+* surfaced in the info panel's own idiom (a labelled section, not a bordered
+* card). Push/Update call the git APIs directly; Commit prompts the session
+* (we don't do bare `git commit` — a session-authored commit gets a real
+* message), matching how Create PR / Resolve work in the status strip.
+*/
 function GitStatusRows({
 	sessionId,
 	repo,
@@ -983,80 +1095,82 @@ function GitStatusRows({
 	}
 
 	return (
-		<div className="workspace-info-section">
-			<div className="workspace-info-label">Status</div>
-			<div className="wi-git-rows">
+		<div className={INFO_SECTION_CLASS}>
+			<div className={INFO_LABEL_CLASS}>Status</div>
+			<div className="flex flex-col gap-1">
 				{ahead > 0 && (
-						<div className="wi-git-row">
-							<span className="wi-git-dot" />
-							<span className="wi-git-label">
-								{ahead} commit{ahead === 1 ? "" : "s"} ahead of remote
+					<div className="flex items-center gap-2 rounded-md bg-surface px-2.5 py-2 text-[12px] text-fg">
+						<span className="size-1.5 rounded-full bg-green" />
+						<span className="min-w-0 flex-1 text-[12.5px] font-medium text-fg">
+							{ahead} commit{ahead === 1 ? "" : "s"} ahead of remote
+						</span>
+						<button
+							type="button"
+							className={cn(GIT_BUTTON_CLASS, GIT_SOLID_BUTTON_CLASS)}
+							disabled={!!busy}
+							onClick={() => run("push", () => gitPushApi(sessionId, repo))}
+						>
+							<span className="inline-flex size-[18px] shrink-0 items-center justify-center">
+								<IconArrowUp size={18} />
 							</span>
-							<button
-								type="button"
-								className="pr-bar-btn pr-bar-btn-solid wi-git-btn"
-								disabled={!!busy}
-								onClick={() => run("push", () => gitPushApi(sessionId, repo))}
-							>
-								<span className="pr-bar-btn-icon">
-									<IconArrowUp size={18} />
-								</span>
-								<span className="pr-bar-btn-label">
-									{busy === "push" ? "Pushing…" : "Push"}
-								</span>
-							</button>
-						</div>
-					)}
-					{behindCount > 0 && (
-						<div className="wi-git-row">
-							<span className="wi-git-dot" />
-							<span className="wi-git-label">
-								{behindCount} commit{behindCount === 1 ? "" : "s"} behind{" "}
-								{behindWhat}
+							<span className="inline-flex items-center">
+								{busy === "push" ? "Pushing…" : "Push"}
 							</span>
-							<button
-								type="button"
-								className="pr-bar-btn pr-bar-btn-solid wi-git-btn"
-								disabled={!!busy}
-								title={`Fast-forward to origin/${behindWhat === "remote" ? git?.branch || "the upstream" : behindWhat}`}
-								onClick={() =>
-									run("pull", () => gitPullApi(sessionId, repo, behind === 0))
-								}
-							>
-								<span className="pr-bar-btn-icon">
-									<IconArrowDown size={18} />
-								</span>
-								<span className="pr-bar-btn-label">
-									{busy === "pull" ? "Updating…" : "Update"}
-								</span>
-							</button>
-						</div>
-					)}
-					{dirty > 0 && (
-						<div className="wi-git-row">
-							<span className="wi-git-dot" />
-							<span className="wi-git-label">
-								{dirty} uncommitted file{dirty === 1 ? "" : "s"}
+						</button>
+					</div>
+				)}
+				{behindCount > 0 && (
+					<div className="flex items-center gap-2 rounded-md bg-surface px-2.5 py-2 text-[12px] text-fg">
+						<span className="size-1.5 rounded-full bg-purple" />
+						<span className="min-w-0 flex-1 text-[12.5px] font-medium text-fg">
+							{behindCount} commit{behindCount === 1 ? "" : "s"} behind{" "}
+							{behindWhat}
+						</span>
+						<button
+							type="button"
+							className={cn(GIT_BUTTON_CLASS, GIT_SOLID_BUTTON_CLASS)}
+							disabled={!!busy}
+							title={`Fast-forward to origin/${behindWhat === "remote" ? git?.branch || "the upstream" : behindWhat}`}
+							onClick={() =>
+								run("pull", () => gitPullApi(sessionId, repo, behind === 0))
+							}
+						>
+							<span className="inline-flex size-[18px] shrink-0 items-center justify-center">
+								<IconArrowDown size={18} />
 							</span>
-							{send &&
-								(prompted ? (
-									<span className="pr-bar-prompted wi-git-prompted">
-										Asked {AGENT_NAME} ✓
-									</span>
-								) : (
-									<button
-										type="button"
-										className="pr-bar-btn pr-bar-btn-secondary wi-git-btn"
-										onClick={commit}
-										title={`Ask ${AGENT_NAME} to commit the uncommitted changes and push`}
-									>
-										<span className="pr-bar-btn-label">Commit</span>
-									</button>
-								))}
-						</div>
-					)}
-				</div>
-			{error && <div className="wi-git-error">{error}</div>}
+							<span className="inline-flex items-center">
+								{busy === "pull" ? "Updating…" : "Update"}
+							</span>
+						</button>
+					</div>
+				)}
+				{dirty > 0 && (
+					<div className="flex items-center gap-2 rounded-md bg-surface px-2.5 py-2 text-[12px] text-fg">
+						<span className="size-1.5 rounded-full bg-dim" />
+						<span className="min-w-0 flex-1 text-[12.5px] font-medium text-fg">
+							{dirty} uncommitted file{dirty === 1 ? "" : "s"}
+						</span>
+						{send &&
+							(prompted ? (
+								<span className="ml-auto text-[11.5px] font-semibold text-dim">
+									Asked {AGENT_NAME} ✓
+								</span>
+							) : (
+								<button
+									type="button"
+									className={cn(GIT_BUTTON_CLASS, GIT_SECONDARY_BUTTON_CLASS)}
+									onClick={commit}
+									title={`Ask ${AGENT_NAME} to commit the uncommitted changes and push`}
+								>
+									<span className="inline-flex items-center">Commit</span>
+								</button>
+							))}
+					</div>
+				)}
+			</div>
+			{error && (
+				<div className="text-[11.5px] font-medium text-red">{error}</div>
+			)}
 		</div>
 	);
 }
@@ -1251,9 +1365,7 @@ export function WorkspaceInfo({
 		(m, i, all) =>
 			all.findIndex(
 				(x) =>
-					x.kind === m.kind &&
-					x.src === m.src &&
-					x.sessionId === m.sessionId,
+					x.kind === m.kind && x.src === m.src && x.sessionId === m.sessionId,
 			) === i,
 	);
 
@@ -1262,27 +1374,29 @@ export function WorkspaceInfo({
 	// mirrored here; it already lives in the status strip at the top of the panel.
 	const showGit = Boolean(
 		git &&
-			(git.ahead > 0 ||
-				git.behind > 0 ||
-				git.behindBase > 0 ||
-				git.uncommittedFiles > 0),
+		(git.ahead > 0 ||
+			git.behind > 0 ||
+			git.behindBase > 0 ||
+			git.uncommittedFiles > 0),
 	);
 	const hasBody = Boolean(
 		showGit ||
-			chips.length > 0 ||
-			comments.length > 0 ||
-			changed.length > 0 ||
-			(data && data.prompt) ||
-			media.length > 0 ||
-			assets.length > 0,
+		chips.length > 0 ||
+		comments.length > 0 ||
+		changed.length > 0 ||
+		(data && data.prompt) ||
+		media.length > 0 ||
+		assets.length > 0,
 	);
 
 	return (
-		<div className="workspace-info-panel">
-			<div className="workspace-info-head">
-				<div className="workspace-info-title selectable">{title}</div>
-				{meta && <div className="workspace-info-meta">{meta}</div>}
-				<div className="workspace-info-status">
+		<div className="workspace-info-panel grid gap-3 rounded-xl border border-line bg-panel px-3 py-3.5 shadow-[0_1px_0_rgba(255,255,255,0.03)]">
+			<div className="grid gap-2">
+				<div className="workspace-info-title selectable text-[15px] font-semibold leading-[1.25] tracking-[-0.01em] text-fg">
+					{title}
+				</div>
+				{meta && <div className="text-[12px] text-dim">{meta}</div>}
+				<div className="flex flex-wrap items-center gap-1.5">
 					{chips.map((chip) =>
 						chip.key === "checks" && pr ? (
 							<ChecksChip
@@ -1295,11 +1409,11 @@ export function WorkspaceInfo({
 							<button
 								key={chip.key}
 								type="button"
-								className={`wi-chip wi-chip-${chip.tone}`}
+								className={cn(CHIP_CLASS, chipToneClass(chip.tone))}
 								onClick={() => onOpenTab?.("pr")}
 							>
 								{chip.icon && (
-									<span className="wi-chip-icon">{chip.icon}</span>
+									<span className={CHIP_ICON_CLASS}>{chip.icon}</span>
 								)}
 								{chip.label}
 							</button>
@@ -1317,7 +1431,7 @@ export function WorkspaceInfo({
 				{repo && (
 					<button
 						type="button"
-						className="workspace-info-review-btn"
+						className={REVIEW_BUTTON_CLASS}
 						onClick={() => onOpenTab?.("pr")}
 						title="Open the full-width review"
 					>
@@ -1328,7 +1442,7 @@ export function WorkspaceInfo({
 				{prState === "OPEN" && pr?.staging?.url && (
 					<button
 						type="button"
-						className="workspace-info-review-btn"
+						className={REVIEW_BUTTON_CLASS}
 						onClick={() => onOpenTab?.("staging")}
 						title="Open the preview environment full-width"
 					>
@@ -1338,15 +1452,15 @@ export function WorkspaceInfo({
 				)}
 				{pr?.number && repo === "tella-fusion" && (
 					<PrAgentActions
-							sessionId={sessionId}
-							repo={repo}
-							prUrl={pr.url}
-							onOpenSession={onOpenSession}
-						/>
+						sessionId={sessionId}
+						repo={repo}
+						prUrl={pr.url}
+						onOpenSession={onOpenSession}
+					/>
 				)}
 			</div>
 			{hasBody ? (
-				<div className="workspace-info-body">
+				<div className="grid gap-3">
 					{showGit && (
 						<GitStatusRows
 							sessionId={sessionId}
@@ -1357,15 +1471,15 @@ export function WorkspaceInfo({
 						/>
 					)}
 					{comments.length > 0 && (
-						<div className="workspace-info-section">
-							<div className="workspace-info-label workspace-info-comments-label">
+						<div className={INFO_SECTION_CLASS}>
+							<div className="flex items-center justify-between gap-2 text-[12px] font-[650] tracking-[-0.01em] text-faint">
 								<span>
 									{comments.length} PR comment{comments.length === 1 ? "" : "s"}
 								</span>
 								{onAddToInput && (
 									<button
 										type="button"
-										className="workspace-info-fix"
+										className="rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-semibold text-dim transition-colors hover:border-line-strong hover:bg-hover hover:text-fg"
 										onClick={() =>
 											onAddToInput(formatFixCommentsPrompt(comments, pr!))
 										}
@@ -1375,7 +1489,7 @@ export function WorkspaceInfo({
 									</button>
 								)}
 							</div>
-							<div className="workspace-info-comments">
+							<div className="grid gap-0.5">
 								{(commentsExpanded
 									? comments.slice().reverse()
 									: comments.slice(-COMMENT_PREVIEW).reverse()
@@ -1391,7 +1505,7 @@ export function WorkspaceInfo({
 								{comments.length > COMMENT_PREVIEW && (
 									<button
 										type="button"
-										className="workspace-info-more"
+										className={INFO_MORE_BUTTON_CLASS}
 										onClick={() => setCommentsExpanded((v) => !v)}
 									>
 										{commentsExpanded
@@ -1404,7 +1518,7 @@ export function WorkspaceInfo({
 					)}
 					{data?.prompt && (
 						<div
-							className="workspace-info-section cursor-pointer"
+							className={cn(INFO_SECTION_CLASS, "cursor-pointer")}
 							onClick={() => {
 								// Selecting text inside also fires click — don't collapse
 								// the prompt out from under a selection.
@@ -1413,28 +1527,33 @@ export function WorkspaceInfo({
 							}}
 							title={promptExpanded ? "Click to collapse" : "Click to expand"}
 						>
-							<div className="workspace-info-label">Opening prompt</div>
+							<div className={INFO_LABEL_CLASS}>Opening prompt</div>
 							<div
-								className={`workspace-info-text selectable whitespace-pre-wrap ${
-									promptExpanded ? "" : "line-clamp-2"
-								}`}
+								className={cn(
+									"selectable whitespace-pre-wrap text-[12.5px] leading-[1.45] text-dim",
+									promptExpanded ? "" : "line-clamp-2",
+								)}
 							>
 								{data.prompt.content}
 							</div>
 						</div>
 					)}
 					{changed.length > 0 && (
-						<div className="workspace-info-section">
-							<div className="workspace-info-label workspace-info-files-label">
+						<div className={INFO_SECTION_CLASS}>
+							<div className="flex items-center justify-between gap-2 text-[12px] font-[650] tracking-[-0.01em] text-faint">
 								<span>
 									{changed.length} file{changed.length === 1 ? "" : "s"} changed
 								</span>
-								<span className="diff-file-stats">
-									{totalAdd > 0 && <span className="diff-add">+{totalAdd}</span>}
-									{totalDel > 0 && <span className="diff-del">−{totalDel}</span>}
+								<span className="inline-flex shrink-0 items-center gap-1 font-mono text-[11px] font-semibold">
+									{totalAdd > 0 && (
+										<span className="text-green">+{totalAdd}</span>
+									)}
+									{totalDel > 0 && (
+										<span className="text-red">−{totalDel}</span>
+									)}
 								</span>
 							</div>
-							<div className="workspace-info-files">
+							<div className="grid gap-0.5">
 								{changed.slice(0, FILE_PREVIEW).map((f) => (
 									<FileRow
 										key={f.path}
@@ -1447,7 +1566,7 @@ export function WorkspaceInfo({
 								{changed.length > FILE_PREVIEW && (
 									<button
 										type="button"
-										className="workspace-info-more"
+										className={INFO_MORE_BUTTON_CLASS}
 										onClick={() => onOpenTab?.("changes")}
 									>
 										View all {changed.length} files in Changes →
@@ -1457,17 +1576,17 @@ export function WorkspaceInfo({
 						</div>
 					)}
 					{media.length > 0 && (
-						<div className="workspace-info-section">
-							<div className="workspace-info-label">
+						<div className={INFO_SECTION_CLASS}>
+							<div className={INFO_LABEL_CLASS}>
 								{media.length} screenshot{media.length === 1 ? "" : "s"}
 							</div>
-							<div className="workspace-info-media">
+							<div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
 								{media.map((m, i) => (
 									<button
 										key={`${m.sessionId}:${m.at}:${i}`}
 										type="button"
 										onClick={() => openLightbox(media, i)}
-										className="workspace-info-thumb"
+										className="relative aspect-video overflow-hidden rounded-lg border border-line bg-surface transition-colors hover:border-line-strong hover:bg-hover"
 										title={[m.chatTitle, new Date(m.at).toLocaleString()]
 											.filter(Boolean)
 											.join(" · ")}
@@ -1507,8 +1626,8 @@ export function WorkspaceInfo({
 						</div>
 					)}
 					{assets.length > 0 && (
-						<div className="workspace-info-section">
-							<div className="workspace-info-label">
+						<div className={INFO_SECTION_CLASS}>
+							<div className={INFO_LABEL_CLASS}>
 								{assets.length} asset{assets.length === 1 ? "" : "s"}
 							</div>
 							<div className="flex flex-col gap-0.5">
@@ -1521,9 +1640,7 @@ export function WorkspaceInfo({
 										className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-[12px] text-fg hover:bg-hover"
 									>
 										<IconFile size={14} className="shrink-0 text-faint" />
-										<span className="min-w-0 flex-1 truncate">
-											{a.path}
-										</span>
+										<span className="min-w-0 flex-1 truncate">{a.path}</span>
 										<span className="shrink-0 text-[11px] text-faint">
 											{fmtBytes(a.size)}
 										</span>
@@ -1534,15 +1651,15 @@ export function WorkspaceInfo({
 					)}
 				</div>
 			) : (
-				<div className="workspace-info-empty">No overview yet.</div>
+				<div className="text-[12.5px] text-dim">No overview yet.</div>
 			)}
 		</div>
 	);
 }
 
 /** Bundle every surfaced PR comment into one "please fix these" composer prompt
-    — the Fix button next to the comments heading. Bodies are cleaned to plain
-    text and trimmed so the prompt stays readable. */
+		— the Fix button next to the comments heading. Bodies are cleaned to plain
+		text and trimmed so the prompt stays readable. */
 function formatFixCommentsPrompt(
 	comments: Array<{ author: string; body: string; url?: string }>,
 	pr: PrDetails,

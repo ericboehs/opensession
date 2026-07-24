@@ -62,6 +62,7 @@ import {
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { Menu } from "../ui/menu";
+import { cn } from "../ui/cn";
 import { RepoTile, swatchColor, repoLabel } from "./RepoTile";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { ReviewQueue } from "./ReviewQueue";
@@ -2175,13 +2176,19 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const archivedBand =
 		archivedCount > 0 ? (
 			<button
-				className={`sidebar-group-header sidebar-archived-row${
-					archivedActive ? " active" : ""
-				}`}
+				className={cn(
+					"mt-[2px] flex w-full cursor-pointer items-center gap-[9px] rounded-md px-[10px] py-1 text-left text-[14px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg",
+					archivedActive && "bg-active text-fg",
+				)}
 				onClick={onOpenArchived}
 				title="View archived sessions"
 			>
-				<span className="sidebar-archived-icon">
+				<span
+					className={cn(
+						"inline-flex shrink-0 items-center text-faint",
+						archivedActive && "text-dim",
+					)}
+				>
 					<svg
 						width="20"
 						height="20"
@@ -2195,8 +2202,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						<path d="M6.5 8.5h3" strokeLinecap="round" />
 					</svg>
 				</span>
-				<span className="sidebar-group-name">Archived</span>
-				<span className="sidebar-group-count">{archivedCount}</span>
+				<span className="min-w-0 truncate text-left">Archived</span>
+				<span className="text-[12px] font-medium text-faint">{archivedCount}</span>
 			</button>
 		) : null;
 
@@ -2349,7 +2356,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				>
 					{!isPhone && waiting && (
 						<span
-							className="sidebar-workspace-attention"
+							className="absolute left-[-9px] top-[7px] block size-[7px] rounded-full bg-green"
 							aria-label="Needs your attention"
 						/>
 					)}
@@ -2361,7 +2368,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				</span>
 				{editing ? (
 					<input
-						className="sidebar-item-rename"
+						className="min-w-0 flex-1 rounded-md border border-[var(--accent,#6b8afd)] bg-bg px-[3px] text-[14px] font-medium text-inherit outline-none"
 						value={row.workspace ? projectDraft : chatDraft}
 						autoFocus
 						onChange={(e) =>
@@ -2390,7 +2397,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					/>
 				) : (
 					<span
-						className="sidebar-item-title"
+						className={cn(
+							"min-w-0 truncate text-[14px] leading-[1.35] font-medium",
+							active || row.unread ? "text-fg" : "text-dim",
+							waiting || row.unread ? "font-semibold" : null,
+						)}
 						onDoubleClick={(e) => {
 							e.stopPropagation();
 							if (row.workspace) {
@@ -2451,9 +2462,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				)}
 				{isPhone && waiting && (
 					<span
-						className="sidebar-workspace-attention sidebar-workspace-attention--trailing"
+						className="ml-auto flex h-[22px] w-7 shrink-0 items-center justify-center"
 						aria-label="Needs your attention"
-					/>
+					>
+						<span className="block size-[7px] rounded-full bg-green" />
+					</span>
 				)}
 				{/* Hover actions: pin + archive, side by side. */}
 				<span className="sidebar-ws-actions">
@@ -2573,7 +2586,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							: "var(--text-faint)",
 					}}
 				/>
-				<span className="sidebar-item-title">{label}</span>
+				<span className={cn("min-w-0 truncate text-[14px] leading-[1.35] font-medium", active ? "text-fg" : "text-dim")}>
+					{label}
+				</span>
 				{t.statusChangedAt && (
 					<span
 						className="sidebar-ws-time group-hover/support:hidden"
@@ -2640,7 +2655,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			return (
 				<div className="sidebar-status-group" key={gkey}>
 					<button
-						className="sidebar-group-header"
+						className="sidebar-group-header flex w-full items-center gap-[9px] rounded-md px-[10px] py-1 text-[14px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg"
 						onClick={() => toggleGroup(gkey)}
 					>
 						<SidebarGroupIcon status={meta.key} color={meta.dotColor} />
@@ -2701,7 +2716,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				return (
 					<div className="sidebar-repo-group" key={gkey}>
 						<button
-							className="sidebar-group-header sidebar-repo-head"
+							className="sidebar-group-header sidebar-repo-head group flex w-full items-center gap-[9px] rounded-md px-[10px] py-1 text-[14px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg"
 							onClick={() => toggleGroup(gkey)}
 						>
 							<RepoTile name={repo} />
@@ -2730,7 +2745,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							<span
 								role="button"
 								tabIndex={0}
-								className="sidebar-repo-new"
+								className="ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded-md text-faint opacity-100 transition-[opacity,color,background] duration-150 hover:bg-hover hover:text-fg focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
 								title={`New session in ${repo}`}
 								onClick={(e) => {
 									e.stopPropagation();
@@ -2790,7 +2805,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						<Menu.Root>
 							<Menu.Trigger
 								type="button"
-								className="sidebar-band-action invisible mr-1 group-hover:visible data-[popup-open]:visible data-[popup-open]:text-dim"
+								className="invisible mr-1 ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded-[10px] text-dim group-hover:visible hover:bg-hover hover:text-fg data-[popup-open]:visible data-[popup-open]:text-dim"
 								aria-label="Choose toolbar tools"
 								title="Choose toolbar tools"
 							>
@@ -2828,11 +2843,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					{visibleTools.map((tool) => (
 						<button
 							key={tool.id}
-							className={`sidebar-nav-item ${tool.active ? "active" : ""}`}
+							className={cn(
+								"sidebar-nav-item group flex w-full items-center gap-[11px] rounded-xl bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-1.5 text-left text-[14px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg",
+								tool.active && "bg-active text-fg",
+							)}
 							onClick={tool.onClick}
 							title={tool.title}
 						>
-							<span className="sidebar-nav-icon">{tool.icon}</span>
+							<span className={cn("sidebar-nav-icon inline-flex text-faint", tool.active && "text-dim", !tool.active && "group-hover:text-dim")}>
+								{tool.icon}
+							</span>
 							{tool.label}
 							{!!tool.count && (
 								<span className="sidebar-nav-count">{tool.count}</span>
@@ -2845,16 +2865,20 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 			<div className="sidebar-sticky-section">
 			<div
-				className={`sidebar-workspace sidebar-sticky-head${listScrolled ? " sidebar-workspace--scrolled" : ""}`}
+				className={cn(
+					"sidebar-workspace sidebar-sticky-head mt-1 border-b border-transparent px-[16px] pb-0.5 pr-[7px] pt-3 transition-colors",
+					listScrolled && "sidebar-workspace--scrolled",
+					listScrolled && "border-b-line",
+				)}
 			>
-				<div className="sidebar-workspace-head" ref={headRef}>
+				<div className="sidebar-workspace-head flex min-w-0 items-center gap-1.5" ref={headRef}>
 					<button
-						className="sidebar-workspace-toggle"
+						className="sidebar-workspace-toggle flex min-w-0 items-center gap-[5px]"
 						onClick={() => toggleBand("workspaces")}
 						aria-expanded={workspacesOpen}
 						title={workspacesOpen ? "Collapse workspaces" : "Expand workspaces"}
 					>
-						<span className="sidebar-workspace-title" ref={titleRef}>
+						<span className="sidebar-workspace-title shrink-0 text-[12px] font-semibold tracking-[-0.01em] text-faint" ref={titleRef}>
 							{filter.person === "me"
 								? "Workspaces"
 								: filter.person === "unassigned"
@@ -2881,8 +2905,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							variant="inline"
 						/>
 					)}
-					<div className="sidebar-workspace-spacer" />
-					<div className="sidebar-workspace-actions" ref={actionsRef}>
+					<div className="min-w-0 flex-1" />
+					<div className="sidebar-workspace-actions flex shrink-0 items-center gap-1.5" ref={actionsRef}>
 						<Tooltip label="Group, filter & sort">
 						<button
 							ref={filterBtnRef}
@@ -2926,7 +2950,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 				{/* Fallback row: only when the chip doesn't fit inline. */}
 				{filter.repo !== "all" && !repoInline && (
-					<div className="sidebar-repo-row sidebar-workspace-fallback">
+					<div className="sidebar-repo-row sidebar-workspace-fallback mx-4 mb-2 mt-[-2px] flex min-w-0 md:mr-2 md:ml-4">
 						<RepoFilterChip
 							repo={filter.repo}
 							repos={repos}
@@ -3129,7 +3153,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					}}
 				>
 				{workspaceListEmpty && (
-					<div className="sidebar-workspace-empty">
+					<div className="mx-4 my-7 text-center text-[13px] leading-[1.4] text-faint">
 						{hasWorkspaceFilter
 							? "No matching workspaces"
 							: "No workspaces yet"}
@@ -4046,26 +4070,30 @@ const RepoFilterChip = React.forwardRef<
 	return (
 		<span
 			ref={ref}
-			className={`sidebar-repo-chip sidebar-repo-chip--${variant}${
-				open ? " open" : ""
-			}`}
+			className={cn(
+				"sidebar-repo-chip inline-flex min-w-0 max-w-full items-center gap-px rounded-full border border-line bg-panel px-1 py-[3px] text-[13px] leading-[1.15]",
+				variant === "inline" && "shrink-0 max-w-none",
+				variant === "probe" && "pointer-events-none absolute left-[-9999px] top-0 max-w-none invisible",
+				variant === "inline" && "sidebar-repo-chip--inline",
+				variant === "probe" && "sidebar-repo-chip--probe",
+			)}
 			aria-hidden={probe || undefined}
 		>
 			{/* Body opens the repo dropdown; the × clears the filter. */}
 			<button
 				type="button"
 				ref={bodyRef}
-				className="sidebar-repo-chip-open"
+				className="sidebar-repo-chip-open inline-flex min-w-0 items-center gap-[7px] rounded-full px-[3px] py-0.5 hover:bg-hover"
 				title="Switch repo"
 				tabIndex={probe ? -1 : undefined}
 				onClick={probe ? undefined : () => setOpen((o) => !o)}
 			>
 				<RepoTile name={repo} />
-				<span className="sidebar-repo-chip-name">{repoLabel(repo)}</span>
+				<span className="min-w-0 truncate text-dim">{repoLabel(repo)}</span>
 			</button>
 			<button
 				type="button"
-				className="sidebar-repo-chip-x"
+				className="sidebar-repo-chip-x inline-flex size-[19px] shrink-0 items-center justify-center rounded-full text-[14px] leading-none text-faint hover:bg-hover hover:text-fg"
 				title="Clear repo filter"
 				tabIndex={probe ? -1 : undefined}
 				onClick={probe ? undefined : onClear}

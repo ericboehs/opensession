@@ -625,10 +625,16 @@ export function SessionViewer({
 		firstSeq: number | null;
 		lastChangeSeq: number;
 	} | null>(cachedTranscript?.seq ?? null);
-	// No transcript file yet (a fresh chat that hasn't run) → nothing to load;
-	// render the empty chat immediately instead of a "Loading transcript…" flash.
+	// Existing engine-backed sessions can load from the owned transcript store even
+	// when no mirror file exists. Fresh chats have none of these identifiers, so
+	// they still render the empty canvas without flashing a loader.
 	const [loading, setLoading] = useState(
-		!cachedTranscript && !!session.transcriptPath,
+		!cachedTranscript &&
+			!!(
+				session.transcriptPath ||
+				session.claudeSessionId ||
+				session.codexThreadId
+			),
 	);
 	// The initial transcript is the tail only when the file is large; these drive
 	// the "load earlier history" affordance at the top of the conversation.
@@ -642,7 +648,7 @@ export function SessionViewer({
 	const historyStartRef = useRef<number | null>(
 		cachedTranscript?.historyStart ?? null,
 	);
-	// Scroll anchor for "Load earlier history" and the staged-init prepend:
+	// Scroll anchor for "Load earlier history":
 	// older entries prepend above the viewport, so keep the reader on the same
 	// content. See startHistoryHold below — a DOM-element anchor plus a short
 	// rAF hold, because a one-shot scrollTop restore breaks in three ways:
@@ -1634,8 +1640,8 @@ export function SessionViewer({
 						);
 					}
 					// Pagination cursor for "load earlier" (the byte offset the shipped
-					// tail begins at). The rest of a two-stage init and each history
-					// page arrive as transcript_history below. Seq mode pages with
+					// tail begins at). Each history page arrives as transcript_history
+					// below. Seq mode pages with
 					// beforeSeq instead, so the byte cursor stays untouched there.
 					if (!v2 && typeof msg.startOffset === "number") {
 						historyStartRef.current = msg.startOffset;
@@ -1643,8 +1649,8 @@ export function SessionViewer({
 					break;
 				}
 				case "transcript_history": {
-					// Older entries (the bulk of a two-stage init, or one "load
-					// earlier" page): merge by id and re-sort by time — mergeEntries
+					// Older entries from a "load earlier" page: merge by id and re-sort
+					// by time — mergeEntries
 					// appends, which is wrong for content older than what's shown.
 					transcriptViewStore.prepend(msg.entries, msg.v2 === true);
 					setHistoryTruncated(!!msg.truncated);
@@ -3248,7 +3254,7 @@ export function SessionViewer({
 
 
 	return (
-		<div className="session-viewer">
+		<div className="session-viewer relative flex h-full min-h-0 flex-col">
 			{localMode && session.local && (
 				<MoveToCloudDialog
 					open={moveToCloudOpen}
@@ -3258,11 +3264,11 @@ export function SessionViewer({
 			)}
 			{deleting && (
 				<div
-					className="session-delete-overlay"
+					className="session-delete-overlay absolute inset-0 z-30 flex items-center justify-center bg-[color-mix(in_srgb,var(--bg)_72%,transparent)] backdrop-blur-[2px]"
 					role="status"
 					aria-live="polite"
 				>
-					<div className="session-delete-card">
+					<div className="flex flex-col items-center gap-[14px] rounded-xl border border-line bg-panel px-8 py-[26px] shadow-[0_8px_30px_rgba(0,0,0,0.35)]">
 						<div className="restart-spinner" />
 						<span className="session-delete-label">{deleteLabel}</span>
 					</div>
@@ -3531,7 +3537,7 @@ export function SessionViewer({
 							>
 								<button
 									type="button"
-									className="viewer-promote-btn"
+									className="flex-none cursor-pointer whitespace-nowrap rounded-md border border-line-strong bg-panel px-2 py-0.5 text-[12px] text-fg hover:border-accent hover:text-accent disabled:cursor-default disabled:opacity-60"
 									onClick={handlePromote}
 									disabled={promoting}
 								>
@@ -3606,7 +3612,7 @@ export function SessionViewer({
 						>
 							<button
 								type="button"
-								className="viewer-newtab-btn"
+								className="flex-none inline-flex items-center justify-center rounded-md px-1.5 py-1 text-dim transition-colors hover:bg-hover hover:text-fg"
 								onClick={() => onNewChat("share")}
 								aria-label="New tab"
 							>
@@ -4000,13 +4006,16 @@ export function SessionViewer({
 						</span>
 					)}
 					{session.goal && (
-						<span className="session-banner" title="Cleared with /goal clear">
+						<span
+							className="inline-flex max-w-full items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-line bg-panel px-3 py-[3px] text-[12px] text-dim"
+							title="Cleared with /goal clear"
+						>
 							🎯 {session.goal}
 						</span>
 					)}
 					{session.loop && (
 						<span
-							className="session-banner"
+							className="inline-flex max-w-full items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-line bg-panel px-3 py-[3px] text-[12px] text-dim"
 							title={`"${session.loop.prompt}" — stop with /loop stop`}
 						>
 							⟳ every {session.loop.intervalMinutes}m —{" "}
@@ -4017,8 +4026,8 @@ export function SessionViewer({
 				</div>
 			)}
 
-			<div className="viewer-split">
-				<div className="viewer-chat">
+			<div className="viewer-split flex min-h-0 flex-1">
+				<div className="viewer-chat flex min-h-0 min-w-0 flex-1 flex-col [--chat-under:16px]">
 					{showPreviewTab ? (
 						<div className="viewer-review-main">
 							<PreviewPane
@@ -4182,7 +4191,7 @@ export function SessionViewer({
 							onClick={handleMessagesClick}
 						>
 							{loading ? (
-								<div className="loading">Loading transcript…</div>
+								<ConversationLoading />
 							) : waitingForWorkspace ? (
 								// Worktree prep in flight — the first message waits in the
 								// queue flap below and sends the moment this clears.
@@ -4200,7 +4209,7 @@ export function SessionViewer({
 								// the workspace has sibling chats, the canvas offers their
 								// transcripts as attachable context for the first message.
 								session.claudeSessionId || session.codexThreadId ? (
-									<div className="empty">
+									<div className="py-10 text-center text-faint">
 										No transcript available for this session
 									</div>
 								) : !hasLiveConversation && contextChatOptions.length > 0 ? (
@@ -4275,13 +4284,13 @@ export function SessionViewer({
 									</div>
 								) : null
 							) : entries.length === 0 && !hasLiveConversation ? (
-								<div className="empty">Empty transcript</div>
+								<div className="py-10 text-center text-faint">Empty transcript</div>
 							) : (
 								<>
 									{historyTruncated && (
-										<div className="load-history">
+										<div className="flex justify-center [overflow-anchor:none] px-0 pt-1 pb-3.5">
 											<button
-												className="load-history-btn"
+												className="cursor-pointer rounded-full border border-line bg-raised px-3.5 py-[5px] text-[12px] text-dim transition-[background,color] hover:bg-hover hover:text-fg disabled:cursor-default disabled:opacity-60"
 												disabled={loadingHistory}
 												onClick={loadEarlierHistory}
 											>
@@ -4372,33 +4381,43 @@ export function SessionViewer({
 							<div ref={spacerRef} className="turn-spacer" aria-hidden="true" />
 						</div>
 
-						{showScrollToBottom && entries.length > 0 && (
-							<button
-								className={`jump-latest ${newBelow ? "jump-latest-new" : ""}`}
-								onClick={() => scrollToLatest("smooth")}
-								title="Scroll to the bottom"
-							>
-								<span className="jump-latest-arrow">↓</span>
-								{newBelow ? "New messages" : "Scroll to bottom"}
-							</button>
-						)}
-					</div>
-
-					<div className="viewer-input">
-						{noEngine ? (
-							<div className="input-disabled">No engine session to resume</div>
-						) : (
-							<>
-								{forkFrom && (
-									<div className="fork-banner">
-										<span>
-											⑂ Forking a new session from the selected message — type
-											the new direction.
-										</span>
-										<button
-											className="fork-banner-cancel"
-											onClick={() => setForkFrom(null)}
+								{showScrollToBottom && entries.length > 0 && (
+									<button
+										className={`absolute left-1/2 bottom-6 z-[5] inline-flex -translate-x-1/2 cursor-pointer items-center gap-2 rounded-md border bg-raised px-3.5 py-2 text-[13px] font-semibold shadow-[var(--control-shadow)] transition-[background,border-color,color] hover:bg-hover ${
+											newBelow
+												? "border-accent text-accent"
+												: "border-line text-fg hover:border-accent"
+										}`}
+										onClick={() => scrollToLatest("smooth")}
+										title="Scroll to the bottom"
+									>
+										<span
+											className={`text-[14px] leading-none ${newBelow ? "animate-pulse" : ""}`}
 										>
+											↓
+										</span>
+										{newBelow ? "New messages" : "Scroll to bottom"}
+									</button>
+								)}
+							</div>
+
+							<div className="viewer-input">
+								{noEngine ? (
+									<div className="mx-auto max-w-[var(--chat-col)] text-[13px] text-faint">
+										No engine session to resume
+									</div>
+								) : (
+									<>
+										{forkFrom && (
+											<div className="mb-2 flex items-center justify-between gap-3 rounded-[14px] border border-[color-mix(in_srgb,var(--accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-3 py-[7px] text-[12.5px] text-fg">
+												<span>
+													⑂ Forking a new session from the selected message — type
+													the new direction.
+												</span>
+												<button
+													className="cursor-pointer bg-transparent text-[12px] text-dim hover:text-fg"
+													onClick={() => setForkFrom(null)}
+												>
 											Cancel
 										</button>
 									</div>
@@ -4858,6 +4877,19 @@ function WorkspaceWaiting({ detail }: { detail: string }) {
 			<div className="max-w-[340px] text-[13px] font-medium leading-relaxed text-dim">
 				{detail}
 			</div>
+		</div>
+	);
+}
+
+function ConversationLoading() {
+	return (
+		<div
+			className="flex min-h-full w-full flex-col items-center justify-center gap-3 px-6 text-center"
+			role="status"
+			aria-live="polite"
+		>
+			<PixelSpinner className="text-dim" />
+			<div className="text-[13px] font-medium text-dim">Loading conversation</div>
 		</div>
 	);
 }

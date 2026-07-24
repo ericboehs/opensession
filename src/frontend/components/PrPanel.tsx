@@ -818,7 +818,7 @@ export function PrPanel({
 
   if (loading)
     return (
-      <div className="pr-panel">
+      <div className="flex min-h-0 flex-1 flex-col">
         {switcher}
         <div className="panel-placeholder">Loading pull request…</div>
       </div>
@@ -826,7 +826,7 @@ export function PrPanel({
 
   if (loadError && !pr)
     return (
-      <div className="pr-panel">
+      <div className="flex min-h-0 flex-1 flex-col">
         {switcher}
         <div className="panel-placeholder panel-error">
           <div>{loadError}</div>
@@ -846,18 +846,16 @@ export function PrPanel({
 
   if (!pr)
     return (
-      <div
-        className={`pr-panel ${reviewCanvas ? "h-full min-h-0 overflow-y-auto" : ""}`}
-      >
-        {switcher}
-        <div className="pr-panel-info">
-          {walkthrough && <WalkthroughCard walkthrough={walkthrough} />}
-          <PrCard title="Status">
-            <div className="prc-status-row">
-              <span className="prc-state prc-state-muted">
-                <PrStateIcon state="OPEN" />
-                No pull request
-              </span>
+        <div className={`flex min-h-0 flex-1 flex-col ${reviewCanvas ? "h-full overflow-y-auto" : ""}`}>
+          {switcher}
+          <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-4 py-4 sm:px-5">
+            {walkthrough && <WalkthroughCard walkthrough={walkthrough} />}
+            <PrCard title="Status">
+              <div className="flex items-center gap-3 text-xs">
+                <span className="inline-flex items-center gap-1.5 font-medium text-faint">
+                  <PrStateIcon state="OPEN" />
+                  No pull request
+                </span>
             </div>
             <GitStatusRows
               git={git}
@@ -867,12 +865,12 @@ export function PrPanel({
               send={send}
               onRefresh={load}
             />
-          </PrCard>
-          {linkable && !showBar && (
-            <div className="prc-actions">
-              <LinkPrControl sessionId={sessionId} variant="action" onLinked={handleLinked} />
-            </div>
-          )}
+            </PrCard>
+            {linkable && !showBar && (
+              <div className="flex flex-wrap items-center gap-2">
+                <LinkPrControl sessionId={sessionId} variant="action" onLinked={handleLinked} />
+              </div>
+            )}
         </div>
       </div>
     );
@@ -1303,36 +1301,47 @@ export function PrPanel({
   }
 
   return (
-    <div className={`pr-panel ${split ? "pr-panel-split" : ""}`} ref={rootRef}>
+    <div
+      className={`flex min-h-0 flex-1 flex-col ${split ? "lg:grid lg:grid-cols-[minmax(0,760px)_minmax(0,1fr)] lg:items-start lg:gap-6" : ""}`}
+      ref={rootRef}
+    >
       {switcher}
-      <div className="pr-panel-body">
+      <div className="flex min-h-0 flex-1 flex-col lg:contents">
       <SelectionToSession sessionId={sessionId} label={`${provider.changeAbbr} #${pr.number}`} send={send}>
-        <div className="pr-panel-info">
+        <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-4 py-4 sm:px-5 lg:mx-0 lg:max-w-none lg:px-0 lg:py-0">
           {/* Header — title + meta line, Linear-style */}
-          <div className="prc-header">
-            <a className="prc-title" href={pr.url} target="_blank" rel="noopener">
+          <div className="flex flex-col gap-2 rounded-panel border border-line bg-panel px-4 py-4 sm:px-5">
+            <a
+              className="text-[18px] font-semibold leading-tight text-fg no-underline hover:text-accent"
+              href={pr.url}
+              target="_blank"
+              rel="noopener"
+            >
               {pr.title}
             </a>
-            <div className="prc-meta">
-              {pr.author && <span className="prc-meta-author">{pr.author}</span>}
-              <span className="prc-meta-num">#{pr.number}</span>
-              <span className="prc-meta-branches" title={`${pr.baseRefName} ← ${pr.headRefName}`}>
-                <span className="prc-branch">{pr.baseRefName}</span>
-                <span className="prc-branch-arrow">←</span>
-                <span className="prc-branch">{pr.headRefName}</span>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-faint">
+              {pr.author && <span className="font-medium text-dim">{pr.author}</span>}
+              <span>#{pr.number}</span>
+              <span
+                className="inline-flex items-center gap-1 font-mono text-[11px] text-dim"
+                title={`${pr.baseRefName} ← ${pr.headRefName}`}
+              >
+                <span className="rounded-sm border border-line bg-surface px-1.5 py-0.5">{pr.baseRefName}</span>
+                <span className="text-faint">←</span>
+                <span className="rounded-sm border border-line bg-surface px-1.5 py-0.5">{pr.headRefName}</span>
               </span>
-              <span className="prc-meta-diffstat">
-                <span className="prc-add">+{pr.additions}</span>
-                <span className="prc-del">−{pr.deletions}</span>
+              <span className="inline-flex items-center gap-1.5 font-mono text-[11px]">
+                <span className="text-green">+{pr.additions}</span>
+                <span className="text-red">−{pr.deletions}</span>
               </span>
             </div>
           </div>
 
           {/* Compact action row — primary merge, quiet secondaries (Linear-style). */}
-          <div className="prc-actions">
+          <div className="flex flex-wrap items-center gap-2">
             {pr.state === "OPEN" && !pr.isDraft && (
               <button
-                className={`prc-btn prc-btn-primary ${confirmMerge ? "prc-btn-confirm" : ""}`}
+                className={`rounded-sm border px-3 py-2 text-xs font-semibold ${confirmMerge ? "border-green bg-green text-surface hover:border-green hover:bg-green" : "border-fg bg-fg text-surface hover:border-accent hover:bg-accent"}`}
                 onClick={handleMerge}
                 disabled={merging}
                 title={`Squash and merge this ${provider.changeNoun} into its base branch`}
@@ -1340,11 +1349,19 @@ export function PrPanel({
                 {merging ? "Merging…" : confirmMerge ? "Confirm squash & merge?" : "Squash & merge"}
               </button>
             )}
-            <a className="prc-btn" href={pr.url} target="_blank" rel="noopener">
+            <a
+              className="rounded-sm border border-line bg-panel px-3 py-2 text-xs text-dim no-underline hover:border-line-strong hover:bg-hover hover:text-fg"
+              href={pr.url}
+              target="_blank"
+              rel="noopener"
+            >
               Open on {provider.name} ↗
             </a>
             {onOpenSession && (
-              <button className="prc-btn" onClick={onOpenSession}>
+              <button
+                className="rounded-sm border border-line bg-panel px-3 py-2 text-xs text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+                onClick={onOpenSession}
+              >
                 Open workspace →
               </button>
             )}
@@ -1373,13 +1390,19 @@ export function PrPanel({
 
           {/* Status card */}
           <PrCard title="Status">
-            <div className="prc-status-row">
-              <span className={`prc-state prc-state-${status.tone}`}>
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <span
+                className={`inline-flex items-center gap-1.5 font-medium ${status.tone === "green" ? "text-green" : status.tone === "red" ? "text-red" : status.tone === "yellow" ? "text-yellow" : status.tone === "purple" ? "text-accent" : "text-faint"}`}
+              >
                 <PrStateIcon state={pr.state} isDraft={pr.isDraft} />
                 {status.label}
               </span>
               {status.qualifier && (
-                <span className={`prc-badge prc-badge-${status.tone}`}>{status.qualifier}</span>
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${status.tone === "green" ? "border-green/35 bg-green-soft text-green" : status.tone === "red" ? "border-red/35 bg-red-soft text-red" : status.tone === "yellow" ? "border-yellow/35 bg-yellow-soft text-yellow" : "border-line bg-surface text-faint"}`}
+                >
+                  {status.qualifier}
+                </span>
               )}
             </div>
             <GitStatusRows
@@ -1470,9 +1493,9 @@ export function PrPanel({
             <PrCard
               title={`${files.length} file${files.length === 1 ? "" : "s"} changed`}
               headExtra={
-                <span className="prc-meta-diffstat prc-head-diffstat">
-                  <span className="prc-add">+{pr.additions}</span>
-                  <span className="prc-del">−{pr.deletions}</span>
+                <span className="inline-flex items-center gap-1.5 font-mono text-[11px]">
+                  <span className="text-green">+{pr.additions}</span>
+                  <span className="text-red">−{pr.deletions}</span>
                 </span>
               }
             >
@@ -1484,7 +1507,10 @@ export function PrPanel({
                 />
               ))}
               {files.length > 8 && (
-                <button className="prc-show-more" onClick={() => setAllFilesOpen((o) => !o)}>
+                <button
+                  className="mt-1 self-start text-xs font-medium text-accent hover:text-fg"
+                  onClick={() => setAllFilesOpen((o) => !o)}
+                >
                   {allFilesOpen ? "Show fewer" : `Show all ${files.length} files`}
                 </button>
               )}
@@ -1534,7 +1560,7 @@ export function PrPanel({
       </SelectionToSession>
 
       {(diffLoading || diffOutOfDate || diffError) && !diff?.patch && (
-        <div className="pr-panel-diff">
+        <div className="flex min-h-0 flex-1 flex-col border-t border-line lg:border-l lg:border-t-0">
           <div className={`panel-placeholder ${diffError ? "panel-error" : ""}`}>
             {diffError ? (
               <>
@@ -1557,10 +1583,10 @@ export function PrPanel({
         </div>
       )}
       {diff?.patch && (
-        <div className="pr-panel-diff">
-          <div className="pr-diff-section">
-            <div className="pr-diff-head">
-              <div className="pr-diff-tabs" role="tablist">
+        <div className="flex min-h-0 flex-1 flex-col border-t border-line lg:border-l lg:border-t-0">
+          <div className="flex min-h-0 flex-1 flex-col bg-panel">
+            <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-panel/95 px-4 py-3 backdrop-blur sm:px-5">
+              <div className="inline-flex rounded-md border border-line bg-surface p-1" role="tablist">
                 {(
                   [
                     ["diff", "Diff"],
@@ -1571,20 +1597,25 @@ export function PrPanel({
                     key={key}
                     role="tab"
                     aria-selected={diffView === key}
-                    className={`pr-diff-tab ${diffView === key ? "active" : ""}`}
+                    className={`rounded-sm px-2.5 py-1 text-xs font-medium ${diffView === key ? "bg-panel text-fg shadow-sm" : "text-faint hover:text-fg"}`}
                     onClick={() => setDiffView(key)}
                   >
                     {label}
                   </button>
                 ))}
               </div>
-              <div className="pr-checks-title">
+              <div className="text-right text-[11px] text-faint">
                 Review — comments stay pending until you submit
                 {reviewDone &&
                   (reviewDone === "submitted" ? (
-                    <span className="pr-comment-link">review submitted ✓</span>
+                    <span className="ml-2 text-green">review submitted ✓</span>
                   ) : (
-                    <a className="pr-comment-link" href={reviewDone} target="_blank" rel="noopener">
+                    <a
+                      className="ml-2 text-accent no-underline hover:text-fg"
+                      href={reviewDone}
+                      target="_blank"
+                      rel="noopener"
+                    >
                       review submitted ↗
                     </a>
                   ))}
@@ -1592,11 +1623,11 @@ export function PrPanel({
             </div>
             {diffView === "guide" ? (
               guideLoading ? (
-                <div className="pr-guide-status">Writing the review guide…</div>
+                <div className="px-4 py-6 text-sm text-faint sm:px-5">Writing the review guide…</div>
               ) : guideFailed ? (
-                <div className="pr-guide-status">
+                <div className="flex items-center gap-3 px-4 py-6 text-sm text-faint sm:px-5">
                   Couldn't generate a guide for this PR.
-                  <button className="prc-show-more" onClick={() => void loadGuide()}>
+                  <button className="text-xs font-medium text-accent hover:text-fg" onClick={() => void loadGuide()}>
                     Retry
                   </button>
                 </div>
@@ -1638,17 +1669,20 @@ export function PrPanel({
           </div>
 
           {pending.length > 0 && (
-            <div className="pr-review-bar">
-              <div className="pr-review-bar-row">
-                <span className="pr-review-count">
+			<div className="sticky bottom-0 z-20 border-t border-line bg-surface/80 px-4 py-3 backdrop-blur sm:px-5">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-medium text-fg">
                   {pending.length} pending comment{pending.length === 1 ? "" : "s"}
                 </span>
-                <button className="pr-review-toggle" onClick={() => setReviewOpen((o) => !o)}>
+                <button
+                  className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+                  onClick={() => setReviewOpen((o) => !o)}
+                >
                   {reviewOpen ? "Hide" : "Finish review"}
                 </button>
                 {onAddToInput && (
                   <button
-                    className="pr-review-toggle"
+                    className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
                     onClick={() => onAddToInput(formatPendingCommentsPrompt(pending, pr))}
                   >
                     Add to chat
@@ -1657,15 +1691,15 @@ export function PrPanel({
               </div>
 
               {reviewOpen && (
-                <div className="pr-review-form">
+                <div className="mt-3 flex flex-col gap-3">
                   <textarea
-                    className="pr-review-summary"
+                    className="min-h-[84px] w-full resize-y rounded-sm border border-line bg-panel px-3 py-2 text-xs text-fg outline-none focus:border-line-strong"
                     rows={3}
                     placeholder="Overall review summary (optional)…"
                     value={summary}
                     onChange={(e) => setSummary(e.target.value)}
                   />
-                  <div className="pr-review-events">
+                  <div className="flex flex-wrap gap-2">
                     {(
                       [
                         ["COMMENT", "Comment"],
@@ -1675,7 +1709,7 @@ export function PrPanel({
                     ).map(([key, label]) => (
                       <button
                         key={key}
-                        className={`pr-review-event ${reviewEvent === key ? "active" : ""}`}
+                        className={`rounded-sm border px-2.5 py-2 text-[11px] ${reviewEvent === key ? "border-green/45 bg-green-soft text-green" : "border-line bg-panel text-dim hover:border-line-strong hover:text-fg"}`}
                         onClick={() => setReviewEvent(key)}
                       >
                         {label}
@@ -1683,7 +1717,11 @@ export function PrPanel({
                     ))}
                   </div>
                   {reviewError && <div className="diff-comment-error">{reviewError}</div>}
-                  <button className="pr-review-submit" onClick={handleSubmitReview} disabled={submitting}>
+                  <button
+                    className="self-start rounded-sm border border-fg bg-fg px-3 py-2 text-xs font-semibold text-surface hover:border-accent hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={handleSubmitReview}
+                    disabled={submitting}
+                  >
                     {submitting ? "Submitting…" : `Submit review (${pending.length})`}
                   </button>
                 </div>
@@ -1983,7 +2021,11 @@ function LinkPrControl({
   if (!open)
     return (
       <button
-        className={variant === "tab" ? "pr-repo-tab pr-link-add" : "prc-btn"}
+        className={
+          variant === "tab"
+            ? "inline-flex items-center rounded-sm border border-dashed border-line bg-transparent px-2.5 py-1 text-xs text-faint hover:border-line-strong hover:text-fg"
+            : "rounded-sm border border-line bg-panel px-3 py-2 text-xs text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+        }
         onClick={() => setOpen(true)}
         title="Link another PR to this session"
       >
@@ -1993,7 +2035,7 @@ function LinkPrControl({
 
   return (
     <form
-      className="pr-link-form"
+      className="flex w-full max-w-[420px] items-center gap-2"
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
@@ -2001,7 +2043,7 @@ function LinkPrControl({
     >
       <input
         autoFocus
-        className="pr-link-input"
+        className="min-w-0 flex-1 rounded-sm border border-line bg-panel px-3 py-2 text-xs text-fg outline-none placeholder:text-faint focus:border-line-strong"
         placeholder="Paste a GitHub PR URL…"
         value={val}
         onChange={(e) => setVal(e.target.value)}
@@ -2011,7 +2053,7 @@ function LinkPrControl({
       />
       <button
         type="submit"
-        className="pr-link-submit"
+        className="rounded-sm border border-fg bg-fg px-3 py-2 text-xs font-semibold text-surface hover:border-accent hover:bg-accent disabled:cursor-not-allowed disabled:border-line disabled:bg-panel disabled:text-faint"
         disabled={busy || !val.trim()}
       >
         {busy ? "Linking…" : "Link"}
@@ -2031,12 +2073,12 @@ function PrCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="prc-card">
-      <div className="prc-card-head">
-        <span className="prc-card-title">{title}</span>
+    <div className="rounded-panel border border-line bg-panel">
+      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-faint">{title}</span>
         {headExtra}
       </div>
-      <div className="prc-card-body">{children}</div>
+      <div className="flex flex-col gap-2 px-4 py-3 sm:px-5">{children}</div>
     </div>
   );
 }
@@ -2044,17 +2086,28 @@ function PrCard({
 function ReviewerRow({ reviewer, provider }: { reviewer: PrReviewer; provider: Provider }) {
   const src = reviewer.isTeam ? null : avatarUrl(reviewer.login, provider, 40);
   const meta = reviewerStateMeta(reviewer.state);
+  const toneClass =
+    meta.tone === "green"
+      ? "text-green"
+      : meta.tone === "red"
+        ? "text-red"
+        : meta.tone === "yellow"
+          ? "text-yellow"
+          : "text-faint";
   return (
-    <div className="prc-reviewer">
+    <div className="flex items-center gap-3 rounded-sm border border-transparent px-1 py-1.5 hover:border-line hover:bg-hover/50">
       {src ? (
-        <img className="prc-reviewer-avatar" src={src} alt="" loading="lazy" />
+        <img className="size-7 rounded-full object-cover" src={src} alt="" loading="lazy" />
       ) : (
-        <span className="prc-reviewer-avatar prc-reviewer-avatar-fallback" aria-hidden>
+        <span
+          className="inline-flex size-7 items-center justify-center rounded-full border border-line bg-surface text-[11px] font-semibold text-faint"
+          aria-hidden
+        >
           {reviewer.login.slice(0, 1).toUpperCase()}
         </span>
       )}
-      <span className="prc-reviewer-name">{reviewer.login}</span>
-      <span className={`prc-reviewer-state prc-tone-${meta.tone}`} title={meta.label}>
+      <span className="min-w-0 flex-1 truncate text-sm text-fg">{reviewer.login}</span>
+      <span className={`shrink-0 ${toneClass}`} title={meta.label}>
         {meta.icon}
       </span>
     </div>
@@ -2085,19 +2138,19 @@ function FileRow({ file, onClick }: { file: PrFile; onClick?: () => void }) {
   return (
     <button
       type="button"
-      className="prc-file"
+      className="flex w-full items-center gap-3 rounded-sm border border-transparent px-1 py-1.5 text-left hover:border-line hover:bg-hover/50 disabled:cursor-default disabled:hover:border-transparent disabled:hover:bg-transparent"
       onClick={onClick}
       disabled={!onClick}
       title={file.path}
     >
-      <IconFile size={16} className="prc-file-icon" />
-      <span className="prc-file-name">
-        {dir && <span className="prc-file-dir">{dir}</span>}
+      <IconFile size={16} className="shrink-0 text-faint" />
+      <span className="min-w-0 flex-1 truncate text-sm text-fg">
+        {dir && <span className="text-faint">{dir}</span>}
         {base}
       </span>
-      <span className="prc-file-stat">
-        {file.additions > 0 && <span className="prc-add">+{file.additions}</span>}
-        {file.deletions > 0 && <span className="prc-del">−{file.deletions}</span>}
+      <span className="inline-flex shrink-0 items-center gap-1.5 font-mono text-[11px]">
+        {file.additions > 0 && <span className="text-green">+{file.additions}</span>}
+        {file.deletions > 0 && <span className="text-red">−{file.deletions}</span>}
       </span>
     </button>
   );
@@ -2271,7 +2324,7 @@ function GitStatusRows({
       action:
         behind > 0 && send ? (
           <button
-            className="prc-action"
+            className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
             onClick={() =>
               promptSession(
                 "update from " + base,
@@ -2292,7 +2345,7 @@ function GitStatusRows({
       tone: "muted",
       action: send && (
         <button
-          className="prc-action"
+          className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
           onClick={() =>
             promptSession(
               "create a PR",
@@ -2311,7 +2364,11 @@ function GitStatusRows({
       label: `${git.ahead} commit${git.ahead === 1 ? "" : "s"} ahead of remote`,
       tone: "yellow",
       action: (
-        <button className="prc-action" onClick={handlePush} disabled={pushing}>
+        <button
+          className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={handlePush}
+          disabled={pushing}
+        >
           {pushing ? "Pushing…" : "Push"}
         </button>
       ),
@@ -2324,7 +2381,7 @@ function GitStatusRows({
       tone: "yellow",
       action: send && (
         <button
-          className="prc-action"
+          className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
           onClick={() =>
             promptSession("commit the changes", "Commit and push the current work in the worktree.")
           }
@@ -2341,7 +2398,7 @@ function GitStatusRows({
       tone: "red",
       action: send && (
         <button
-          className="prc-action"
+          className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
           onClick={() =>
             promptSession(
               "resolve the conflicts",
@@ -2359,14 +2416,19 @@ function GitStatusRows({
   return (
     <>
       {rows.map((row) => (
-        <div key={row.key} className={`prc-git-row${row.strong ? " prc-git-row-strong" : ""}`}>
-          <span className={`prc-git-dot prc-tone-${row.tone}`} />
-          <span className="prc-git-label">{row.label}</span>
+        <div
+          key={row.key}
+          className={`flex items-center gap-3 rounded-sm px-1 py-1.5 text-xs ${row.strong ? "font-medium text-fg" : "text-dim"}`}
+        >
+          <span
+            className={`size-2 shrink-0 rounded-full ${row.tone === "green" ? "bg-green" : row.tone === "red" ? "bg-red" : row.tone === "yellow" ? "bg-yellow" : "bg-faint"}`}
+          />
+          <span className="min-w-0 flex-1">{row.label}</span>
           {row.action}
         </div>
       ))}
-      {prompted && <div className="prc-git-note">Asked Michael to {prompted} ✓</div>}
-      {error && <div className="prc-git-note prc-git-note-error">{error}</div>}
+      {prompted && <div className="text-[11px] text-faint">Asked Michael to {prompted} ✓</div>}
+      {error && <div className="text-[11px] text-red">{error}</div>}
     </>
   );
 }
