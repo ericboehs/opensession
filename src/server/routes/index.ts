@@ -7,7 +7,7 @@
  */
 
 import type { RouteHandler } from "./context";
-import { proxyCloudSessionRequest } from "../cloud-proxy";
+import { proxyCloudSessionRequest, proxyCloudTargetRequest } from "../cloud-proxy";
 import { handleSessionTransferRoutes } from "./session-transfer";
 import { handleAuthRoutes } from "./auth";
 import { handleMediaRoutes } from "./media";
@@ -53,6 +53,9 @@ export const routeHandlers: RouteHandler[] = [
 	handleSystemRoutes,
 	handleOs1UpdateRoutes,
 	handleSessionTransferRoutes,
+	// Local profile only: the cloud-target New Session palette reads the hosted
+	// model catalog and account pools instead of the reduced local equivalents.
+	proxyCloudTargetRequest,
 	// Local profile only: local ids fall through; every other session id is
 	// forwarded before a local route can turn the ownership miss into a 404.
 	proxyCloudSessionRequest,

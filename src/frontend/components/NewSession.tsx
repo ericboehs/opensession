@@ -207,9 +207,10 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   // meaningful for Anthropic/OpenAI subscription-backed models.
   const [accountId, setAccountId] = useState("");
   const [accounts, setAccounts] = useState<ProviderAccountOption[]>([]);
+  const cloudTarget = auth?.local === true && createTarget === "cloud";
   useEffect(() => {
-    fetchProviderAccounts().then(setAccounts).catch(() => {});
-  }, []);
+    fetchProviderAccounts(cloudTarget).then(setAccounts).catch(() => {});
+  }, [cloudTarget]);
   const effectiveNewModel = model || defaultModel;
   const accountProvider = models.find((item) => item.id === effectiveNewModel)?.accountProvider;
   // A pin belongs to one provider pool. Drop it when the selected model moves
@@ -385,13 +386,16 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   }, [createMenuOpen]);
 
   useEffect(() => {
-    fetchModels()
+    fetchModels(cloudTarget)
       .then((m) => {
         setModels(m.models);
         setDefaultModel(m.default);
+        setModel((current) =>
+          current && !m.models.some((item) => item.id === current) ? "" : current,
+        );
       })
       .catch(() => {});
-  }, []);
+  }, [cloudTarget]);
 
   // Worktrees are per-repo; refetch and reset the selection when it changes.
   // Inside a Project, snap back to the shared sibling branch, not "New branch".

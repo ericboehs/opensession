@@ -1388,11 +1388,11 @@ export async function transcribeClip(audio: Blob): Promise<string> {
 	return typeof data?.text === "string" ? data.text : "";
 }
 
-export async function fetchModels(): Promise<{
+export async function fetchModels(cloud = false): Promise<{
 	models: ModelOption[];
 	default: string;
 }> {
-	return request<{ models: ModelOption[]; default: string }>("/models", {
+	return request<{ models: ModelOption[]; default: string }>(`/models${cloud ? "?cloud=1" : ""}`, {
 		label: "Failed to fetch models",
 	});
 }
@@ -1430,10 +1430,10 @@ export interface ProviderAccountOption {
 	kind?: string;
 }
 
-export async function fetchProviderAccounts(): Promise<ProviderAccountOption[]> {
+export async function fetchProviderAccounts(cloud = false): Promise<ProviderAccountOption[]> {
 	const fetchPool = async (provider: "claude" | "codex", path: string) => {
 		try {
-			const data = await request<{ accounts?: any[] }>(path);
+			const data = await request<{ accounts?: any[] }>(`${path}${cloud ? "?cloud=1" : ""}`);
 			return (data?.accounts ?? []).map((a) => ({
 				id: a.id,
 				name: a.name,

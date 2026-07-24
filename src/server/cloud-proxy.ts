@@ -19,6 +19,11 @@ const CONNECT_TIMEOUT_MS = 8_000;
 const MAX_INITIAL_QUEUE = 100;
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000] as const;
 const COLLECTION_ROUTES = new Set(["search", "archive-old", "import"]);
+const CLOUD_TARGET_GET_ROUTES = new Set([
+	"/backstage/api/models",
+	"/backstage/api/claude-accounts",
+	"/backstage/api/codex-accounts",
+]);
 
 type Client = ServerWebSocket<WSClientData>;
 type Outbound = { laneId: string; payload: string };
@@ -170,6 +175,47 @@ export async function proxyCloudSessionRequest(
 		return responseWithoutStaleEncoding(response);
 	} catch (error) {
 		console.warn("[cloud-proxy] session request failed:", error);
+		return Response.json(
+			{ error: "Cloud OpenSession is unreachable" },
+			{ status: 502 },
+		);
+	}
+}
+
+export function shouldProxyCloudTargetRequest(
+	ctx: Pick<RouteContext, "path" | "req" | "url">,
+): boolean {
+	return (
+		isLocalProfile() &&
+		ctx.req.method === "GET" &&
+		ctx.url.searchParams.get("cloud") === "1" &&
+		CLOUD_TARGET_GET_ROUTES.has(ctx.path)
+	);
+}
+
+/** Read cloud-owned session-creation metadata from a local-profile UI. */
+export async function proxyCloudTargetRequest(
+	ctx: RouteContext,
+	fetchImpl: typeof fetch = fetch,
+): Promise<Response | undefined> {
+	if (!shouldProxyCloudTargetRequest(ctx)) return undefined;
+	if (!cloudEnabled()) {
+		return Response.json(
+			{ error: "Cloud OpenSession is not configured" },
+			{ status: 502 },
+		);
+	}
+	const search = new URLSearchParams(ctx.url.searchParams);
+	search.delete("cloud");
+	const suffix = search.size ? `?${search}` : "";
+	try {
+		const response = await fetchImpl(upstreamUrl(ctx.path + suffix), {
+			headers: proxyHeaders(ctx.req.headers),
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+		});
+		return responseWithoutStaleEncoding(response);
+	} catch (error) {
+		console.warn("[cloud-proxy] target metadata request failed:", error);
 		return Response.json(
 			{ error: "Cloud OpenSession is unreachable" },
 			{ status: 502 },

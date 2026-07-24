@@ -5,8 +5,10 @@ import {
 	isCloudCreateRequest,
 	localSessionOwnsId,
 	proxyCloudSessionRequest,
+	proxyCloudTargetRequest,
 	sessionIdFromApiPath,
 	sessionRequestTarget,
+	shouldProxyCloudTargetRequest,
 } from "./cloud-proxy";
 import type { UnifiedSession } from "./types";
 
@@ -155,6 +157,52 @@ describe("local cloud request routing", () => {
 		expect(sessionRequestTarget(path, false, true)).toBe("cloud");
 		expect(sessionRequestTarget(path, false, false)).toBe("local");
 		expect(sessionRequestTarget("/backstage/api/models", false, true)).toBe("none");
+	});
+
+	test("only proxies allowlisted cloud-target metadata reads", () => {
+		enableCloud();
+		const request = new Request("http://127.0.0.1:3850/api/models?cloud=1");
+		const ctx = {
+			req: request,
+			url: new URL(request.url),
+			path: "/backstage/api/models",
+		};
+		expect(shouldProxyCloudTargetRequest(ctx)).toBe(true);
+		expect(
+			shouldProxyCloudTargetRequest({
+				...ctx,
+				path: "/backstage/api/automations",
+			}),
+		).toBe(false);
+		expect(
+			shouldProxyCloudTargetRequest({
+				...ctx,
+				req: new Request(request.url, { method: "POST" }),
+			}),
+		).toBe(false);
+	});
+
+	test("proxies cloud-target metadata without leaking its routing query", async () => {
+		enableCloud();
+		const request = new Request("http://127.0.0.1:3850/api/models?cloud=1&detail=full");
+		let seenUrl = "";
+		let authorization = "";
+		const response = await proxyCloudTargetRequest(
+			{
+				req: request,
+				url: new URL(request.url),
+				path: "/backstage/api/models",
+				publicPrefix: "",
+			},
+			(async (url: string | URL | Request, init?: RequestInit) => {
+				seenUrl = String(url);
+				authorization = new Headers(init?.headers).get("authorization") || "";
+				return Response.json({ models: [], default: "dial/medium" });
+			}) as unknown as typeof fetch,
+		);
+		expect(seenUrl).toBe("https://cloud.example/backstage/api/models?detail=full");
+		expect(authorization).toBe("Bearer secret-token");
+		expect(await response?.json()).toEqual({ models: [], default: "dial/medium" });
 	});
 
 	test("proxies method, query, body and bearer to the upstream", async () => {
