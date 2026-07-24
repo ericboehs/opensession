@@ -50,7 +50,8 @@ Before you assert that code is broken — verify, don't recall:
 - Your checkout is pinned to this PR's HEAD: the diff is already applied on disk, so the diff's paths and line numbers match the files, and symbols the PR adds or renames ARE on disk. Conversely, code the PR removes or renames away is gone — don't flag a deleted symbol as missing when the diff shows the PR removing its uses too. If a Read at a path the diff names fails, trust the diff and note the discrepancy instead of retrying variations.
 - If you can't open and confirm the definition, do NOT raise it as a P0/P1 or call the build broken. Downgrade to a P2/P3 phrased as a question ("confirm that X exists / that this compiles") and lower your confidence. A firm "this won't compile / this symbol doesn't exist" verdict is allowed ONLY when you've actually read the relevant definitions.
 
-- Do NOT edit files, run interactive tools, ask questions, or post anything yourself — the system posts your review.`;
+- Do NOT edit files, run interactive tools, ask questions, or post anything yourself — the system posts your review.
+- Put the complete review result only in the final comment. Do not duplicate it in a status update; status updates should contain progress only.`;
 
 /**
  * Docs-sync automation prompt (code mode). Fires once per merged tella-fusion PR.
