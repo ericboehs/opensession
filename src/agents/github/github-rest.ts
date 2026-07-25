@@ -432,6 +432,44 @@ export async function resolveAddressedThreads(
   return resolved;
 }
 
+// ── Open-PR listing (reconcile sweep) ────────────────────────
+
+export interface OpenPrSummary {
+  number: number;
+  title: string;
+  headRef: string;
+  headSha: string;
+  draft: boolean;
+  labels: string[];
+  updatedAt: string;
+  /** full_name of the head repo — differs from the base repo on fork PRs. */
+  headRepoFullName: string;
+  authorLogin: string;
+}
+
+/** Open PRs on a repo, most recently updated first (one page — the sweep only
+ *  cares about recent activity). */
+export async function listOpenPrs(ghRepo: string = GITHUB_REPO): Promise<OpenPrSummary[]> {
+  const r = await githubRequest<any[]>(
+    "GET",
+    `/repos/${ghRepo}/pulls?state=open&sort=updated&direction=desc&per_page=50`,
+  );
+  if (!r.ok || !Array.isArray(r.data)) return [];
+  return r.data
+    .filter((pr) => pr && typeof pr.number === "number" && pr.head?.ref)
+    .map((pr) => ({
+      number: pr.number,
+      title: typeof pr.title === "string" ? pr.title : `PR #${pr.number}`,
+      headRef: pr.head.ref,
+      headSha: pr.head.sha || "",
+      draft: !!pr.draft,
+      labels: (pr.labels || []).map((l: any) => l?.name).filter(Boolean),
+      updatedAt: pr.updated_at || "",
+      headRepoFullName: pr.head?.repo?.full_name || "",
+      authorLogin: pr.user?.login || "",
+    }));
+}
+
 // ── Labels ───────────────────────────────────────────────────
 
 /** Remove a label from a PR (action labels are cleared when the action completes). */

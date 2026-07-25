@@ -24,7 +24,7 @@ import {
 } from "./constants";
 import { runReview, type PrRef, type ReviewConfig } from "./review";
 import { clearHandoff, isHandoffActive, maybeHandoffFindings } from "./handoff";
-import { isLockHeld } from "./state";
+import { isLockHeld, updatePrState } from "./state";
 import { DEFAULT_REVIEW_PROMPT } from "./prompts";
 import { SEO_LABEL } from "../loops/seo";
 
@@ -127,6 +127,11 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
       if (labelMatches(label, LABEL_REVIEW)) {
         void fireReview(ref, true);
       } else if (labelMatches(label, LABEL_AUTOFIX)) {
+        // A human re-applying the label is a fresh mandate — reset the sweep's
+        // per-SHA retry budget so it can babysit this new attempt too.
+        updatePrState(pr.number, ref.headRef, (s) => {
+          if (s.reconcile) { s.reconcile.autofixAttempts = 0; s.reconcile.autofixSha = undefined; }
+        }, ghRepo);
         void fireAutoFix(ref, requestedBy);
       } else if (labelMatches(label, LABEL_SIMPLIFY)) {
         void fireSimplify(ref, requestedBy);
@@ -204,7 +209,7 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
   }
 }
 
-async function fireReview(ref: PrRef, _byLabel: boolean): Promise<void> {
+export async function fireReview(ref: PrRef, _byLabel: boolean): Promise<void> {
   const { config } = resolveReviewConfig();
   const result = await runReview(ref, config, onSessionInvalidate).catch((e) => {
     console.error(`[github] runReview failed for PR #${ref.number}:`, e);
@@ -222,8 +227,9 @@ async function fireReview(ref: PrRef, _byLabel: boolean): Promise<void> {
 // continuous pusher is still reviewed within the max-wait cap. If a review is
 // already running at fire time, the debounce re-arms instead of dropping the
 // push (claimLock coalescing would silently skip the new SHA). In-memory: a
-// restart mid-window loses the pending fire — the next push or the victim
-// sweep recovers it. Parked on globalThis so hot reloads don't double-arm.
+// restart mid-window loses the pending fire — the next push or the reconcile
+// sweep (reconcile.ts) recovers it. Parked on globalThis so hot reloads don't
+// double-arm.
 const REVIEW_DEBOUNCE_MS = parseInt(process.env.OPENSESSION_REVIEW_DEBOUNCE_MS || "240000");
 const REVIEW_DEBOUNCE_MAX_WAIT_MS = parseInt(
   process.env.OPENSESSION_REVIEW_DEBOUNCE_MAX_MS || "900000",
@@ -231,6 +237,12 @@ const REVIEW_DEBOUNCE_MAX_WAIT_MS = parseInt(
 type PendingReview = { timer: ReturnType<typeof setTimeout>; firstPushAt: number };
 const pendingReviewDebounce: Map<string, PendingReview> = ((globalThis as any)
   .__githubReviewDebounce ??= new Map());
+
+/** Is a debounced review pending for this PR key? (reconcile.ts probe — a
+ *  pending fire means the webhook path owns this PR's next review.) */
+export function hasPendingDebouncedReview(key: string): boolean {
+  return pendingReviewDebounce.has(key);
+}
 
 function cancelPendingReview(key: string): void {
   const pending = pendingReviewDebounce.get(key);
@@ -259,7 +271,7 @@ function scheduleDebouncedReview(ref: PrRef): void {
   pendingReviewDebounce.set(key, { timer, firstPushAt });
 }
 
-async function fireAutoFix(ref: PrRef, requestedBy: string): Promise<void> {
+export async function fireAutoFix(ref: PrRef, requestedBy: string): Promise<void> {
   const { runAutoFix } = await import("./autofix");
   await runAutoFix(ref, requestedBy, onSessionInvalidate).catch((e) =>
     console.error(`[github] runAutoFix failed for PR #${ref.number}:`, e),

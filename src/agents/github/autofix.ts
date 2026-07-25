@@ -137,6 +137,11 @@ export async function runAutoFix(
 
   const author = authorForLogin(requestedBy);
   let statusCommentId: number | undefined;
+  // Transient exits (engine/pool error, CI never settled, mergeability probe
+  // hung) KEEP the os-auto-fix label so the reconcile sweep retries the loop;
+  // only genuine terminal outcomes (success, closed PR, caps, "agent gave up")
+  // remove it and hand back to humans.
+  let transientExit = false;
   const link = `[📺 open session](${sessionUrl(pr.number, "autofix", pr.ghRepo)})`;
 
   const updateStatus = async (text: string) => {
@@ -210,7 +215,7 @@ export async function runAutoFix(
       }
       iterations++;
       const details = await getPrDetailsFresh(pr.headRef, pr.ghRepo || undefined);
-      if (!details) { outcome = "⚠️ Could not load PR details — stopping."; break; }
+      if (!details) { outcome = "⚠️ Could not load PR details — stopping."; transientExit = true; break; }
       if (details.state !== "OPEN") { outcome = `PR is ${details.state.toLowerCase()} — stopping.`; break; }
 
       const ciBefore = evaluateChecks(details);
@@ -242,7 +247,7 @@ export async function runAutoFix(
       st.autoFix = { active: true, iterations, startedAt, statusCommentId, requestedBy, worktreeDir, lastPushedSha, steer: effectiveSteer };
       writePrState(st);
 
-      if (result.error) { outcome = `⚠️ Stopped — the fix run errored: ${result.error}`; break; }
+      if (result.error) { outcome = `⚠️ Stopped — the fix run errored: ${result.error}`; transientExit = true; break; }
 
       if (!pushedSomething) {
         // Nothing changed this round. The fixer's dispositions (rendered below the
@@ -253,7 +258,7 @@ export async function runAutoFix(
           break;
         }
         const ci = await waitForChecks(pr.headRef, lastPushedSha, CHECK_REGISTRATION_GRACE_MS, pr.ghRepo);
-        if (!ci.settled) { outcome = "⏳ CI didn't settle within the timeout. Handing back to humans."; break; }
+        if (!ci.settled) { outcome = "⏳ CI didn't settle within the timeout."; transientExit = true; break; }
         if (!ci.green) { outcome = `⚠️ CI is still failing (${ci.failing.join(", ")}) and no fixes were pushed. Handing back to humans.`; break; }
         const merge = await waitForMergeability(pr.headRef, lastPushedSha, pr.ghRepo);
         if (merge.state === "conflicting" && iterations < MAX_ITERATIONS) {
@@ -265,7 +270,8 @@ export async function runAutoFix(
           break;
         }
         if (merge.state === "pending") {
-          outcome = "⏳ CI is green, but GitHub did not confirm mergeability for the current head. Handing back to humans.";
+          outcome = "⏳ CI is green, but GitHub did not confirm mergeability for the current head.";
+          transientExit = true;
           break;
         }
         outcome = "✅ Nothing left to fix — CI green, mergeable, and all findings addressed.";
@@ -276,7 +282,7 @@ export async function runAutoFix(
       await updateStatus(`iteration ${iterations}/${MAX_ITERATIONS}: pushed \`${sha7}\`, waiting for CI…`);
       const ci = await waitForChecks(pr.headRef, lastPushedSha, CHECK_REGISTRATION_GRACE_MS, pr.ghRepo);
 
-      if (!ci.settled) { outcome = `⏳ Pushed \`${sha7}\` but CI didn't settle within the timeout. Handing back to humans.`; break; }
+      if (!ci.settled) { outcome = `⏳ Pushed \`${sha7}\` but CI didn't settle within the timeout.`; transientExit = true; break; }
       if (ci.failing.length) {
         if (iterations >= 2) { outcome = `⚠️ CI still failing after ${iterations} attempts (${ci.failing.join(", ")}). Handing back to humans.`; break; }
         continue; // green CI is a prerequisite for the review gate — fix the checks next round
@@ -295,7 +301,8 @@ export async function runAutoFix(
         continue;
       }
       if (merge.state === "pending") {
-        outcome = `⏳ Pushed \`${sha7}\`, but GitHub did not confirm mergeability for that head. Handing back to humans.`;
+        outcome = `⏳ Pushed \`${sha7}\`, but GitHub did not confirm mergeability for that head.`;
+        transientExit = true;
         break;
       }
 
@@ -313,7 +320,8 @@ export async function runAutoFix(
       // success; the earlier registration grace means an empty list is now safe.
       const finalCi = await waitForChecks(pr.headRef, lastPushedSha, 0, pr.ghRepo);
       if (!finalCi.settled) {
-        outcome = `⏳ Review finished, but CI didn't settle for \`${sha7}\`. Handing back to humans.`;
+        outcome = `⏳ Review finished, but CI didn't settle for \`${sha7}\`.`;
+        transientExit = true;
         break;
       }
       if (!finalCi.green) {
@@ -337,7 +345,8 @@ export async function runAutoFix(
         continue;
       }
       if (finalMerge.state === "pending") {
-        outcome = "⏳ Review finished, but GitHub did not confirm mergeability for the current head. Handing back to humans.";
+        outcome = "⏳ Review finished, but GitHub did not confirm mergeability for the current head.";
+        transientExit = true;
         break;
       }
 
@@ -345,7 +354,8 @@ export async function runAutoFix(
         // No verdict (review lock contention / model error) — fall back to the
         // fixer's self-report so a flaky review can't spin the loop forever.
         if (remaining === "none") { outcome = `✅ Auto-fix complete — CI green, findings addressed (\`${sha7}\`); fresh review verdict unavailable.`; break; }
-        outcome = `⚠️ CI green but couldn't get a fresh review verdict and work remains. Handing back to humans.`;
+        outcome = `⚠️ CI green but couldn't get a fresh review verdict and work remains.`;
+        transientExit = true;
         break;
       }
       const conf = typeof review.confidence === "number" ? review.confidence : null;
@@ -362,6 +372,9 @@ export async function runAutoFix(
 
     if (!outcome && iterations >= MAX_ITERATIONS) {
       outcome = `⚠️ Reached the ${MAX_ITERATIONS}-iteration cap. Handing back to humans.`;
+    }
+    if (transientExit) {
+      outcome = `${outcome} Keeping the \`${LABEL_AUTOFIX}\` label — I'll retry automatically.`;
     }
     const dispBlock = lastDisp ? formatDispositions(lastDisp) : "";
     await updateStatus(dispBlock ? `${outcome || "done."}\n\n${dispBlock}` : outcome || "done.");
@@ -392,12 +405,24 @@ export async function runAutoFix(
     }
   } catch (e) {
     console.error(`[github] auto-fix error for PR #${pr.number}:`, e);
+    transientExit = true; // an unexpected throw is infrastructure, not a verdict
     const fin = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
     if (fin.autoFix) { fin.autoFix.active = false; writePrState(fin); }
-    await updateStatus(`⚠️ Auto-fix errored: ${(e as any)?.message || e}`).catch(() => {});
+    await updateStatus(
+      `⚠️ Auto-fix errored: ${(e as any)?.message || e} Keeping the \`${LABEL_AUTOFIX}\` label — I'll retry automatically.`,
+    ).catch(() => {});
   } finally {
-    for (const name of labelAliases(LABEL_AUTOFIX)) {
-      await removeLabel(pr.number, name, pr.ghRepo).catch(() => {});
+    // Terminal outcomes hand back to humans by clearing the label; transient
+    // ones keep it so the reconcile sweep (reconcile.ts) re-fires the loop
+    // (bounded per SHA there — this can't ping-pong forever).
+    if (!transientExit) {
+      for (const name of labelAliases(LABEL_AUTOFIX)) {
+        await removeLabel(pr.number, name, pr.ghRepo).catch(() => {});
+      }
+    } else {
+      console.log(
+        `[github] auto-fix transient exit for PR #${pr.number} — keeping ${LABEL_AUTOFIX} for the reconcile sweep`,
+      );
     }
     releaseLock("code", pr.number, pr.ghRepo);
   }

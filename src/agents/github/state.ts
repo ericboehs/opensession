@@ -52,6 +52,17 @@ export interface GithubPrState {
   /** Review → owning-session fix rounds (handoff.ts); cleared when a review
    *  comes back satisfied or the PR closes. */
   handoff?: HandoffState;
+  /** Reconcile-sweep retry bookkeeping (reconcile.ts). Attempts are per-SHA:
+   *  a new head resets the count, so only a *repeatedly*-failing SHA is given
+   *  up on. A fresh human label re-arms autofix (webhook.ts clears the count). */
+  reconcile?: {
+    /** Head SHA the review attempts below refer to. */
+    reviewSha?: string;
+    reviewAttempts?: number;
+    /** Head SHA the autofix attempts below refer to. */
+    autofixSha?: string;
+    autofixAttempts?: number;
+  };
   /**
    * Set while a one-shot action (review/simplify/adversarial) is in flight; cleared
    * in its finally. If the process is killed mid-run, this persists so the github

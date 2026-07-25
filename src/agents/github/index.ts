@@ -244,6 +244,11 @@ export class GithubAgent implements AgentModule {
     await recoverOneShots();
     await recoverMentions();
     await recoverPendingMentions();
+    // Safety net under all of the above: the webhook path is fire-once, so
+    // work lost AFTER an event was consumed (debounce killed by a restart,
+    // review dead on dry pools, missed delivery) is re-fired by the sweep.
+    const { startReconcileSweep } = await import("./reconcile");
+    startReconcileSweep();
     const { autoEnabled } = resolveReviewConfig();
     console.log(`[github] Agent started — review automation ${autoEnabled ? "ENABLED (all non-draft PRs)" : "disabled (label-only)"}`);
   }
