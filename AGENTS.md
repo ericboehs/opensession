@@ -23,9 +23,9 @@ repo. If every controlled channel fails, stop and report the failure instead of
 escalating to a third-party host. The same rule is injected into every engine
 run via `buildOpencodeInstructions` (opencode-runner.ts).
 
-## The three client apps — resolve which one BEFORE working
+## The four client apps — resolve which one BEFORE working
 
-OS1 has three user-facing clients in this repo, and requests about "the app"
+OS1 has four user-facing clients in this repo, and requests about "the app"
 are ambiguous between them:
 
 - **Web UI** — `src/frontend/` (React, served by the Bun server; also what the
@@ -35,6 +35,10 @@ are ambiguous between them:
 - **Native Swift app** — `os1-ios/` (one SwiftUI codebase, iOS + macOS targets,
   bundle id `dev.tella.os1`). Read `os1-ios/AGENTS.md` before touching it —
   build/verify workflow, release trigger, and performance invariants live there.
+- **Chrome extension** — `os1-chrome/` (MV3 side panel; captures page context —
+  screenshot, element pick with React fiber info — and starts sessions via the
+  REST surface with Bearer auth; loaded unpacked, never the Web Store; see
+  `os1-chrome/README.md`).
 
 Conversation scoping rule: once a conversation is about a specific app, every
 following message is about THAT app unless the user says otherwise — don't

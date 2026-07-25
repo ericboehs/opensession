@@ -207,6 +207,12 @@ export function webAuthToken(req: Request): string | null {
  *    is https://os.tella.dev while we see plain HTTP with that Host).
  */
 export function crossSiteViolation(req: Request): string | null {
+  // Explicit-Authorization requests cannot be CSRF — a browser never attaches
+  // that header on another site's behalf; whoever sent it holds the token.
+  // This is how the Chrome extension (os1-chrome) and other native clients
+  // mutate state: their fetches carry a chrome-extension:// (or app) Origin
+  // that would fail the host check below.
+  if (req.headers.get("authorization")?.startsWith("Bearer ")) return null;
   const fetchSite = req.headers.get("sec-fetch-site");
   if (fetchSite === "cross-site") return "cross-site request";
   if (fetchSite === "same-origin" || fetchSite === "none") return null;
@@ -216,6 +222,14 @@ export function crossSiteViolation(req: Request): string | null {
     // us; absent Origin = non-browser caller.
     return origin === "null" ? "null origin" : null;
   }
+  // Extension pages, pre-token: os1-chrome's device-flow start/poll POSTs
+  // happen before it has a Bearer token. Chrome only lets an extension reach
+  // us at all when it holds host permissions for this host, and the auth
+  // endpoints those calls hit don't act on the cookie — the residual risk
+  // (a cookie-riding mutation from a rogue extension the user installed with
+  // os.tella.dev host access) is inside the trust boundary of this
+  // tailnet-only deployment.
+  if (origin.startsWith("chrome-extension://")) return null;
   let originHost: string;
   try {
     originHost = new URL(origin).host;

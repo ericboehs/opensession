@@ -171,6 +171,50 @@ export async function handleSessionsRoutes(
 		});
 	}
 
+	// Deliver a follow-up prompt to an existing session. REST shape for the
+	// native/extension clients (os1-ios, os1-chrome) — the web UI keeps its
+	// richer WS "prompt" message (images, staged files, steer receipts). Same
+	// semantics as the opensession-sessions MCP send_to_session: steers a busy
+	// run by default, `busy: "queue"` waits behind it, idle starts a fresh turn.
+	{
+		const m = path.match(/^\/backstage\/api\/sessions\/([^/]+)\/prompt$/);
+		if (m && req.method === "POST") {
+			const sessionId = decodeURIComponent(m[1]);
+			const body = (await req.json().catch(() => null)) as {
+				content?: unknown;
+				prompt?: unknown;
+				user?: unknown;
+				busy?: unknown;
+			} | null;
+			const raw =
+				typeof body?.content === "string" && body.content.trim()
+					? body.content
+					: typeof body?.prompt === "string"
+						? body.prompt
+						: "";
+			const content = raw.trim();
+			if (!content) {
+				return Response.json({ error: "content required" }, { status: 400 });
+			}
+			// No findSession pre-check: the 2s session cache can lag a
+			// just-created session, and deliverToSession resolves the id (and
+			// reports unknown ids) itself.
+			const res = await getSessionControl().deliverToSession(
+				sessionId,
+				content,
+				requestUser(ctx, body?.user),
+				body?.busy === "queue" ? { busy: "queue" } : undefined,
+			);
+			if (res.status === "error") {
+				return Response.json(
+					{ ...res, error: res.message },
+					{ status: /no session/i.test(res.message) ? 404 : 400 },
+				);
+			}
+			return Response.json(res);
+		}
+	}
+
 	// Get transcript for a session
 	if (
 		path.match(/^\/backstage\/api\/sessions\/(.+)\/transcript$/) &&
