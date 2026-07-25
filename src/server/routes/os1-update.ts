@@ -12,6 +12,15 @@
  * Both endpoints are exempt from the web-auth gate (opensession.ts fetch
  * preamble): Squirrel carries no cookies, and the origin is tailnet-only, so
  * like /api/health they're open by nature.
+ *
+ * The Chrome extension (os1-chrome/) rides the same machinery: Chrome's
+ * extension updater polls `GET /api/os1-chrome/updates.xml` (Omaha/gupdate
+ * format, the ExtensionInstallForcelist update URL) and installs the signed
+ * .crx from `GET /api/os1-chrome/download/<tag>.crx`, proxied from the
+ * `os1-chrome-v*` GitHub releases that .github/workflows/os1-chrome-release.yml
+ * publishes on every master push touching os1-chrome/. Those releases are
+ * marked prerelease ON PURPOSE: `releases/latest` (the os1-mac feed above)
+ * ignores prereleases, so the two release streams can share the repo.
  */
 
 import { existsSync, mkdirSync, readdirSync, rmSync } from "fs";
@@ -23,6 +32,13 @@ const RELEASE_REPO = "tellahq/backstage";
 const HOME = process.env.HOME || "/home/ubuntu";
 const CACHE_DIR = `${HOME}/.opensession-os1-mac-updates`;
 const LATEST_TTL_MS = 5 * 60 * 1000;
+
+// os1-chrome: stable extension ID derived from the signing key
+// (~/.os1-chrome-key.pem on the VPS, OS1_CHROME_CRX_KEY secret in Actions;
+// the matching public key is pinned in os1-chrome/manifest.json "key").
+const CHROME_EXTENSION_ID = "paoolggkbjkobjblpjgncolaaikcmboe";
+const CHROME_TAG_PREFIX = "os1-chrome-v";
+const CHROME_CACHE_DIR = `${HOME}/.opensession-os1-chrome-updates`;
 
 interface LatestRelease {
 	tag: string; // e.g. "v0.2.0"
@@ -37,6 +53,7 @@ interface LatestRelease {
 
 const g = globalThis as {
 	__os1UpdateLatest?: { at: number; value: LatestRelease | null };
+	__os1ChromeLatest?: { at: number; value: LatestRelease | null };
 	__os1UpdateDownloads?: Map<string, Promise<string | null>>;
 };
 
@@ -91,44 +108,95 @@ async function latestRelease(): Promise<LatestRelease | null> {
 }
 
 /**
- * Fetch the release zip into the disk cache (once — concurrent requests share
+ * Latest published os1-chrome-v* prerelease (memory-cached). Listed (not
+ * `releases/latest`, which excludes prereleases by design) and filtered by tag
+ * prefix so the two release streams sharing this repo never cross.
+ */
+async function chromeLatestRelease(): Promise<LatestRelease | null> {
+	const cached = g.__os1ChromeLatest;
+	if (cached && Date.now() - cached.at < LATEST_TTL_MS) return cached.value;
+	let value: LatestRelease | null = null;
+	try {
+		const raw = await $`gh api repos/${RELEASE_REPO}/releases?per_page=30`
+			.quiet()
+			.text();
+		const rels = JSON.parse(raw) as {
+			tag_name?: string;
+			draft?: boolean;
+			body?: string;
+			published_at?: string;
+			assets?: { name?: string; url?: string }[];
+		}[];
+		// The list is newest-first; take the first os1-chrome release with a
+		// parseable version and a .crx asset.
+		for (const rel of rels) {
+			const tag = rel.tag_name || "";
+			if (!tag.startsWith(CHROME_TAG_PREFIX) || rel.draft) continue;
+			const version = parseVersion(tag.slice(CHROME_TAG_PREFIX.length - 1));
+			const asset = (rel.assets || []).find((a) => /\.crx$/.test(a?.name || ""));
+			if (!version || !asset?.name || !asset?.url) continue;
+			value = {
+				tag,
+				version,
+				notes: (rel.body || "").slice(0, 4000),
+				publishedAt: rel.published_at || new Date().toISOString(),
+				asset: asset.name,
+				assetApiUrl: asset.url,
+			};
+			break;
+		}
+	} catch (err) {
+		const stderr = (err as { stderr?: { toString(): string } })?.stderr?.toString() ?? "";
+		console.warn(`[os1-update] chrome release list failed: ${err} ${stderr}`.trim());
+		value = cached?.value ?? null;
+	}
+	g.__os1ChromeLatest = { at: Date.now(), value };
+	return value;
+}
+
+/**
+ * Fetch the release asset into the disk cache (once — concurrent requests share
  * one download) and return its path, or null on failure.
  */
-async function cachedAssetPath(rel: LatestRelease): Promise<string | null> {
-	const dir = `${CACHE_DIR}/${rel.tag}`;
+async function cachedAssetPath(
+	rel: LatestRelease,
+	cacheDir: string = CACHE_DIR,
+): Promise<string | null> {
+	const dir = `${cacheDir}/${rel.tag}`;
 	const file = `${dir}/${rel.asset}`;
 	if (existsSync(file)) return file;
 	const downloads = (g.__os1UpdateDownloads ??= new Map());
-	let inflight = downloads.get(rel.tag);
+	const inflightKey = `${cacheDir}:${rel.tag}`;
+	let inflight = downloads.get(inflightKey);
 	if (!inflight) {
 		inflight = (async () => {
 			// Download to a temp dir then move into place so a crashed/partial
 			// download never gets served.
-			const tmp = `${CACHE_DIR}/.tmp-${rel.tag}-${Date.now()}`;
+			const tmp = `${cacheDir}/.tmp-${rel.tag}-${Date.now()}`;
 			try {
 				mkdirSync(tmp, { recursive: true });
 				await $`gh api ${rel.assetApiUrl} -H "Accept: application/octet-stream" > ${tmp}/${rel.asset}`.quiet();
-				mkdirSync(CACHE_DIR, { recursive: true });
+				mkdirSync(cacheDir, { recursive: true });
 				rmSync(dir, { recursive: true, force: true });
 				await $`mv ${tmp} ${dir}`.quiet();
 				// Drop caches of older tags — only the latest is ever served.
-				for (const entry of readdirSync(CACHE_DIR)) {
+				for (const entry of readdirSync(cacheDir)) {
 					if (entry !== rel.tag)
-						rmSync(`${CACHE_DIR}/${entry}`, { recursive: true, force: true });
+						rmSync(`${cacheDir}/${entry}`, { recursive: true, force: true });
 				}
 				return existsSync(file) ? file : null;
 			} catch (err) {
 				// Transient failures (e.g. GitHub rate-limit exhaustion) are fine:
-				// Squirrel retries on its next check. Just don't leave debris.
+				// the updater retries on its next check. Just don't leave debris.
 				const stderr = (err as { stderr?: { toString(): string } })?.stderr?.toString() ?? "";
 				console.warn(`[os1-update] release download failed: ${err} ${stderr}`.trim());
 				rmSync(tmp, { recursive: true, force: true });
 				return null;
 			} finally {
-				downloads.delete(rel.tag);
+				downloads.delete(inflightKey);
 			}
 		})();
-		downloads.set(rel.tag, inflight);
+		downloads.set(inflightKey, inflight);
 	}
 	return inflight;
 }
@@ -137,8 +205,53 @@ export async function handleOs1UpdateRoutes(
 	ctx: RouteContext,
 ): Promise<Response | undefined> {
 	const { req, url, path } = ctx;
-	if (!path.startsWith("/backstage/api/os1-mac/")) return undefined;
+	if (
+		!path.startsWith("/backstage/api/os1-mac/") &&
+		!path.startsWith("/backstage/api/os1-chrome/")
+	)
+		return undefined;
 	if (req.method !== "GET") return undefined;
+
+	// Omaha/gupdate feed Chrome's extension updater polls (also the update URL
+	// in ExtensionInstallForcelist). "noupdate" when no release exists yet.
+	if (path === "/backstage/api/os1-chrome/updates.xml") {
+		const rel = await chromeLatestRelease();
+		const base = configuredServer().publicBaseUrl.replace(/\/$/, "");
+		const app = rel
+			? `<app appid='${CHROME_EXTENSION_ID}'><updatecheck codebase='${base}/api/os1-chrome/download/${rel.tag}.crx' version='${rel.version.join(".")}'/></app>`
+			: `<app appid='${CHROME_EXTENSION_ID}'><updatecheck status='noupdate'/></app>`;
+		return new Response(
+			`<?xml version='1.0' encoding='UTF-8'?>\n<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>${app}</gupdate>\n`,
+			{
+				headers: {
+					"Content-Type": "text/xml; charset=utf-8",
+					"Cache-Control": "no-cache",
+				},
+			},
+		);
+	}
+
+	// The signed .crx Chrome installs from.
+	const crx = path.match(
+		/^\/backstage\/api\/os1-chrome\/download\/(os1-chrome-v[\w.-]+)\.crx$/,
+	);
+	if (crx) {
+		const rel = await chromeLatestRelease();
+		if (!rel || rel.tag !== crx[1]) {
+			return Response.json({ error: "Unknown release" }, { status: 404 });
+		}
+		const file = await cachedAssetPath(rel, CHROME_CACHE_DIR);
+		if (!file) {
+			return Response.json({ error: "Release asset unavailable" }, { status: 502 });
+		}
+		return new Response(Bun.file(file), {
+			headers: {
+				"Content-Type": "application/x-chrome-extension",
+				"Content-Disposition": `attachment; filename="${rel.asset}"`,
+				"Cache-Control": "no-cache",
+			},
+		});
+	}
 
 	// Squirrel.Mac static JSON feed. Squirrel compares currentRelease with the
 	// app version itself; unlike the dynamic server mode, this mode cannot use a

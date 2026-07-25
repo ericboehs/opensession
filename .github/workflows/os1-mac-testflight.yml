@@ -19,7 +19,10 @@ on:
   push:
     branches: [master]
     paths:
+      # Build inputs only — docs (AGENTS.md/CLAUDE.md/README.md) land in
+      # os1-ios/ constantly and must not each ship a TestFlight build.
       - "os1-ios/**"
+      - "!os1-ios/**.md"
       - ".github/workflows/os1-mac-testflight.yml"
   workflow_dispatch:
 

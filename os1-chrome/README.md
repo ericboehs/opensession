@@ -24,15 +24,53 @@ surface, not a full OpenSession client. Never distributed via the Web Store.
 - **Right-click → "Send to OpenSession"**: seeds the composer with the page +
   selection.
 
-## Install (unpacked — internal only)
+## Install
 
-1. `chrome://extensions` → enable Developer mode.
-2. "Load unpacked" → select this `os1-chrome/` directory.
-3. Click the toolbar icon → the side panel opens → Settings → **Sign in with
-   GitHub** (device flow; you must be on the configured team and on the
-   Tailscale network — os.tella.dev is tailnet-only).
+**Managed (auto-updating — the normal path).** The extension is force-installed
+via Chrome policy pointing at our self-hosted update feed; Chrome then installs
+it for everyone and auto-updates within ~5 hours of each release (or
+immediately via chrome://extensions → Update).
 
-No build step. Plain JS/HTML/CSS; edit and hit reload on chrome://extensions.
+- Extension ID: `paoolggkbjkobjblpjgncolaaikcmboe` (derived from the signing
+  key; also pinned as `key` in manifest.json so unpacked loads share it)
+- Update URL: `https://os.tella.dev/api/os1-chrome/updates.xml`
+- Google Workspace (whole team): Admin console → Devices → Chrome →
+  Apps & extensions → Users & browsers → pick the org unit → **+** →
+  "Add Chrome app or extension by ID" → switch to **From a custom URL** →
+  paste the ID and update URL → set to **Force install**. Applies to Chrome
+  profiles signed in with a tella.com Google account.
+- Single Mac (no Workspace policy needed):
+
+  ```sh
+  defaults write com.google.Chrome ExtensionInstallForcelist -array-add \
+    "paoolggkbjkobjblpjgncolaaikcmboe;https://os.tella.dev/api/os1-chrome/updates.xml"
+  ```
+
+  then fully restart Chrome (it will show "Managed by your organization").
+
+Machines must be on Tailscale — the update feed is tailnet-only, like
+everything else on os.tella.dev. Off-tailnet, installs/updates just retry
+later; the installed extension keeps working (it can't reach the server
+anyway).
+
+**Unpacked (development).** `chrome://extensions` → Developer mode → "Load
+unpacked" → this `os1-chrome/` directory. No build step; edit and hit reload.
+
+Either way: click the toolbar icon → side panel → Settings → **Sign in with
+GitHub** (device flow; team members only).
+
+## Releases (CI)
+
+`.github/workflows/os1-chrome-release.yml` runs on every master push touching
+`os1-chrome/`: it stamps the version (`<major.minor from manifest>.<commit
+count on os1-chrome/>` — merging IS the deploy, no manual bumps), packs a
+signed .crx with the `OS1_CHROME_CRX_KEY` repo secret (base64 of the RSA pem;
+backup lives at `~/.os1-chrome-key.pem` on the VPS — the key determines the
+extension ID, lose it and every install orphans), and publishes it as a GitHub
+**prerelease** tagged `os1-chrome-v<version>` (prerelease so the os1-mac
+Squirrel feed's `releases/latest` never sees it). The server proxies the feed
+and artifact — `src/server/routes/os1-update.ts` — since Chrome's updater
+can't reach the private GitHub repo.
 
 ## How it talks to the server
 
