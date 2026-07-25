@@ -56,6 +56,16 @@ final class SessionViewModel {
     /// a just-sent message below the fold.
     private(set) var sendSeq = 0
 
+    // ── Pull request ──
+    /// PR details for the session's branch (toolbar chip + PR panel).
+    /// nil until the first fetch lands — the chip falls back to the sessions
+    /// list's prNumber snapshot meanwhile — and stays nil when there's no PR.
+    private(set) var prDetails: PrDetails?
+    /// A fetch failed with nothing loaded — the panel offers a retry instead
+    /// of an endless spinner.
+    private(set) var prLoadFailed = false
+    private var prTask: Task<Void, Never>?
+
     // ── Per-session run settings ──
     /// Current model id ("" = server default). Changing routes through the
     /// `/model` slash command, which persists + notices like the web picker.
@@ -231,6 +241,7 @@ final class SessionViewModel {
     func start() {
         stopped = false
         connect()
+        loadPr()
     }
 
     func stop() {
@@ -239,8 +250,32 @@ final class SessionViewModel {
         resyncProbeTask?.cancel()
         creationRetryTask?.cancel()
         deliveringPruneTask?.cancel()
+        prTask?.cancel()
         socket?.disconnect()
         socket = nil
+    }
+
+    /// Fire-and-forget PR refresh (open, foreground, run end).
+    func loadPr() {
+        prTask?.cancel()
+        prTask = Task { [weak self] in
+            await self?.refreshPr()
+        }
+    }
+
+    /// Awaitable PR refresh for the panel's pull-to-refresh / retry. A failure
+    /// keeps whatever we already have — stale beats blank; only a failure with
+    /// nothing loaded surfaces as prLoadFailed.
+    func refreshPr() async {
+        do {
+            let details = try await OS1API.pr(sessionId: session.id)
+            guard !Task.isCancelled else { return }
+            prDetails = details
+            prLoadFailed = false
+        } catch {
+            guard !Task.isCancelled else { return }
+            prLoadFailed = prDetails == nil
+        }
     }
 
     /// Called when the app returns to the foreground. iOS suspends the socket
@@ -253,6 +288,7 @@ final class SessionViewModel {
     /// down and reconnect immediately.
     func appDidBecomeActive() {
         guard !stopped else { return }
+        loadPr()
         guard connectionState == .connected, let socket else {
             // Not connected (or a pre-suspension connect is stuck mid
             // handshake): skip the backoff and reconnect right now.
@@ -571,6 +607,9 @@ final class SessionViewModel {
                 // liveText is NOT cleared here: the durable entry usually lands
                 // via transcript_append a beat later (1s file watcher) and the
                 // strip there clears it — wiping now blinks the reply out.
+                // A finished run often just opened or pushed to a PR — refresh
+                // the chip/panel (served from the server's PR cache, so cheap).
+                loadPr()
             }
 
         case .queueUpdate(let id, let queued, let steered) where id == session.id:

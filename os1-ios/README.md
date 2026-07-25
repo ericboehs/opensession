@@ -21,6 +21,11 @@ authoritative deployment targets).
   sends `cancel` for the watched session.
 - **AskUserQuestion** — blocking questions render as an inline card with option
   buttons + free-text answer, wired to `answer_question`.
+- **PR chip + panel** — sessions with a pull request show a toolbar chip
+  (number + status dot: merged/closed/draft, or the check rollup while open);
+  tapping it opens a read-only panel with state, review decision, conflicts,
+  every check with its status, and reviewers, via
+  `GET /api/sessions/:id/pr`. Actions (merge/review) stay on the web UI.
 - **Connection care** — client-initiated pings every 20s (the server never
   pings; required against half-open iOS sockets), auto-reconnect with a banner,
   optimistic local echo of your prompts until the server's copy arrives.

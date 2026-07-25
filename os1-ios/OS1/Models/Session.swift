@@ -25,6 +25,7 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     var lastActivity: String?
     var prUrl: String?
     var prState: String?
+    var prNumber: Int?
     var startedBy: String?
     var automation: AutomationFlag?
 

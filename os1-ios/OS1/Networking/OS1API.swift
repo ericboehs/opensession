@@ -89,6 +89,17 @@ enum OS1API {
         return try await responseData(for: request)
     }
 
+    /// PR details for the session's branch, or nil when it has no PR — the
+    /// route answers a bare JSON `null` in that case (a real answer, not an
+    /// error), so probe the raw body before decoding.
+    static func pr(sessionId: String) async throws -> PrDetails? {
+        let data = try await getData("/api/sessions/\(sessionId)/pr")
+        let body = String(decoding: data, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if body.isEmpty || body == "null" { return nil }
+        return try JSONDecoder().decode(PrDetails.self, from: data)
+    }
+
     /// Archive (or unarchive) a session. Archiving an in-flight session also
     /// stops its run server-side.
     static func setArchived(sessionId: String, archived: Bool) async throws {
@@ -97,6 +108,19 @@ enum OS1API {
             "/api/sessions/\(sessionId)/archive",
             body: ["archived": archived]
         )
+    }
+
+    struct AuthStatus: Decodable {
+        let authenticated: Bool?
+        let login: String?
+        let name: String?
+    }
+
+    /// Signed-in identity for the current bearer token. Used to backfill
+    /// `githubLogin` on devices whose token predates the app storing the
+    /// login at sign-in time (the avatar needs it).
+    static func authStatus() async throws -> AuthStatus {
+        try await get("/api/auth/status")
     }
 
     /// Unauthenticated liveness probe; also carries the server bootId.

@@ -27,6 +27,9 @@ struct SessionView: View {
     /// Model/effort catalog for the toolbar picker; fetched on first open.
     @State private var catalog: ModelCatalog?
 
+    /// PR details sheet, opened from the toolbar PR chip.
+    @State private var showPrPanel = false
+
     init(session: Session, seed: SessionViewModel.OptimisticSeed? = nil) {
         _viewModel = State(initialValue: SessionViewModel(session: session, seed: seed))
     }
@@ -133,6 +136,18 @@ struct SessionView: View {
         .navigationTitle(viewModel.session.displayTitle)
         .inlineTitleBarCompat()
         .toolbar {
+            // PR chip: number + status dot. Present as soon as either the
+            // fetched details or the sessions-list snapshot know of a PR.
+            if let prNumber = viewModel.prDetails?.number ?? viewModel.session.prNumber {
+                ToolbarItem(placement: .topTrailingCompat) {
+                    Button {
+                        showPrPanel = true
+                    } label: {
+                        PrChipLabel(number: prNumber, summary: viewModel.prDetails?.summary)
+                    }
+                    .accessibilityLabel("Pull request #\(prNumber)")
+                }
+            }
             ToolbarItem(placement: .topTrailingCompat) {
                 modelMenu
             }
@@ -145,6 +160,9 @@ struct SessionView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showPrPanel) {
+            PrPanelView(viewModel: viewModel)
         }
         .task {
             viewModel.start()
