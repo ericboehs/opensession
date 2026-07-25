@@ -27,6 +27,7 @@ import { audit } from "../../server/audit";
 import { modelLabel } from "../../server/models";
 import { createReviewWorktreeForPrHead } from "../../server/worktree";
 import { inverseReviewModel, authorFamilyFor } from "./model-inversion";
+import { runTestOnBaseCheck, testOnBaseSection, type TestOnBaseResult } from "./test-on-base";
 import {
   loadReviewOptions,
   pathIgnored,
@@ -188,6 +189,22 @@ export async function runReview(
     const summaryOnly = details.changedFiles > reviewOpts.summaryOnlyOverFiles;
     const author = authorFamilyFor(pr);
 
+    // Deterministic test-fails-on-base check, concurrent with the model review
+    // (independent work in a throwaway base worktree; awaited before posting).
+    const testOnBase: Promise<TestOnBaseResult | null> = reviewOpts.testOnBase
+      ? runTestOnBaseCheck({
+          cwd,
+          baseRefName: details.baseRefName,
+          mainCheckout: prRepo?.repo || TELLA_FUSION,
+          sharedCheckout: prRepo?.sharedCheckout,
+          prNumber: pr.number,
+          ghRepo: pr.ghRepo,
+        }).catch((e) => {
+          console.warn(`[github] test-on-base check failed for PR #${pr.number}:`, e);
+          return null;
+        })
+      : Promise.resolve(null);
+
     const base = (config.prompt || "").trim() || DEFAULT_REVIEW_PROMPT;
     const prompt = buildReviewPrompt(base, details, isUpdate, steer, pr.ghRepo, {
       authorFamily: author?.family,
@@ -240,7 +257,8 @@ export async function runReview(
     });
 
     const parsed = parseReviewOutput(result.text);
-    await postReview(pr, details, parsed, result.text, result.error, force, result.model, reviewOpts, summaryOnly);
+    const tob = await testOnBase;
+    await postReview(pr, details, parsed, result.text, result.error, force, result.model, reviewOpts, summaryOnly, testOnBaseSection(tob));
 
     // Record the SHA as reviewed only on a successful run, so a transient failure
     // (model error/timeout) leaves it eligible for retry on the next delivery.
@@ -295,6 +313,7 @@ async function postReview(
   modelUsed?: string,
   opts: ReviewOptions = REVIEW_OPTION_DEFAULTS,
   summaryOnly = false,
+  extraSummary = "",
 ): Promise<void> {
   const state = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
   const shortSha = (pr.headSha || "").slice(0, 7);
@@ -306,6 +325,8 @@ async function postReview(
   if (mermaid && mermaid.length <= 4000) {
     summaryBody += `\n\n<details><summary>📈 Change diagram</summary>\n\n\`\`\`mermaid\n${mermaid}\n\`\`\`\n\n</details>`;
   }
+  // Deterministic checks (test-on-base) append below the model's assessment.
+  summaryBody += extraSummary;
   // Before anything posts, findings pass the repo/config/feedback filter chain:
   // ignored paths, the per-repo severity floor, giant-PR P0/P1-only mode, and
   // the learned feedback filter (recurring-nit suppression — never P0/P1).

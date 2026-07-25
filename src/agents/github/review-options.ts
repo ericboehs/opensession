@@ -24,6 +24,8 @@ export interface ReviewOptions {
   minInlineSeverity: "P0" | "P1" | "P2" | "P3";
   summaryOnlyOverFiles: number;
   skipKeywords: string[];
+  /** Deterministic test-fails-on-base check on new/changed test files. */
+  testOnBase: boolean;
 }
 
 export const REVIEW_OPTION_DEFAULTS: ReviewOptions = {
@@ -31,6 +33,7 @@ export const REVIEW_OPTION_DEFAULTS: ReviewOptions = {
   minInlineSeverity: "P3",
   summaryOnlyOverFiles: 80,
   skipKeywords: ["[skip-review]"],
+  testOnBase: true,
 };
 
 const OPTIONS_FILE = ".os-review.json";
@@ -67,6 +70,7 @@ export function normalizeReviewOptions(raw: any): ReviewOptions {
     skipKeywords: Array.isArray(raw.skipKeywords)
       ? raw.skipKeywords.filter((k: any) => typeof k === "string" && k.trim())
       : d.skipKeywords,
+    testOnBase: typeof raw.testOnBase === "boolean" ? raw.testOnBase : d.testOnBase,
   };
 }
 
