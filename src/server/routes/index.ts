@@ -28,6 +28,7 @@ import { handleLocalReposRoutes } from "./local-repos";
 import { handleAutomationsRoutes } from "./automations";
 import { handleHumanAsksRoutes } from "./human-asks";
 import { handleChatRoutes } from "./chat";
+import { handlePeopleRoutes } from "./people";
 import { handlePrefsRoutes } from "./prefs";
 import { handleSecurityRoutes } from "./security";
 import { handleGoalsRoutes } from "./goals";
@@ -78,6 +79,7 @@ export const routeHandlers: RouteHandler[] = [
 	handleAutomationsRoutes,
 	handleHumanAsksRoutes,
 	handleChatRoutes,
+	handlePeopleRoutes,
 	handlePrefsRoutes,
 	handleSecurityRoutes,
 	handleGoalsRoutes,

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { UserAvatar } from "./UserAvatar";
 import { BASE_PATH } from "../lib/base";
+import { usePeople } from "../lib/people";
 
+/** Fallback roster — prefer usePeople() (GET /api/people) in new code. */
 export const TEAM = ["Michiel", "Jaap", "Kent", "Grant", "Johnny", "John", "Louise"];
 // Rename shim: read the new key first, fall back to the legacy one (existing
 // browsers + tooling that presets it stay signed in); writes go to the new key.
@@ -93,6 +95,7 @@ export async function signOut(): Promise<void> {
  */
 export function UserGate({ children }: { children: React.ReactNode }) {
   const user = useCurrentUser();
+  const roster = usePeople();
   const [auth, setAuth] = useState<AuthStatus | null>(null);
 
   useEffect(() => {
@@ -137,7 +140,7 @@ export function UserGate({ children }: { children: React.ReactNode }) {
       <div className="user-gate-card">
         <h2>Who are you?</h2>
         <div className="user-gate-grid">
-          {TEAM.map((name) => (
+          {roster.map(({ name }) => (
             <button
               key={name}
               className="user-gate-btn"

@@ -16,6 +16,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { stateDir } from "./rename-compat";
+import { teamFirstNames } from "./people";
 
 const CHAT_DIR = stateDir("chat");
 // Attached images live here permanently (unlike the transient session-upload
@@ -143,18 +144,10 @@ function sanitizeReplyTo(raw: unknown): ChatReplyTo | undefined {
 	};
 }
 
-// Mentionable teammates. Keep in sync with TEAM in
-// src/frontend/components/UserPicker.tsx — these picker names are also the
+// Mentionable teammates — derived from the identity config (same roster the
+// frontend fetches via GET /api/people). These picker first names are also the
 // keys push subscriptions are stored under (push.ts matches exact names).
-const CHAT_TEAM = [
-	"Michiel",
-	"Jaap",
-	"Kent",
-	"Grant",
-	"Johnny",
-	"John",
-	"Louise",
-];
+const CHAT_TEAM = teamFirstNames();
 
 /** "watercooler" or "session:<session id>" — anything else is rejected. */
 export function isValidChatChannel(channel: unknown): channel is string {

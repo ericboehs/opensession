@@ -2,10 +2,11 @@ import React, { useEffect, useState } from "react";
 import { cn } from "../ui/cn";
 
 /**
- * GitHub logins for the team (mirrors TEAM_GIT_IDENTITY in
- * src/server/shared/user-mappings.ts). Keyed by lowercased first name — the
- * shape of web user-picker names, presence viewers and `startedBy`, and also
- * the first token of full names coming from Slack ("Kent de Bruin" → "kent").
+ * GitHub logins for the team, keyed by lowercased first name — the shape of
+ * web user-picker names, presence viewers and `startedBy`, and also the first
+ * token of full names coming from Slack ("Kent de Bruin" → "kent"). The
+ * hardcoded entries are the pre-fetch fallback; lib/people.ts merges the
+ * server directory (GET /api/people) over them once it loads.
  */
 const GITHUB_LOGIN: Record<string, string> = {
 	michiel: "happylinks",
@@ -17,6 +18,11 @@ const GITHUB_LOGIN: Record<string, string> = {
 	louise: "louisedesadeleer",
 	thibault: "thiblahute",
 };
+
+/** Merge directory-fetched logins over the fallback map (lib/people.ts). */
+export function registerGithubLogins(entries: Record<string, string>) {
+	Object.assign(GITHUB_LOGIN, entries);
+}
 
 export function githubLoginFor(name?: string | null): string | null {
 	if (!name) return null;
