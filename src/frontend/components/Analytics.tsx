@@ -371,8 +371,18 @@ export function Analytics() {
 		];
 		const turnValues = data.days.map((d) => [d.turns, d.errors]);
 
+		const factorySeries: Series[] = [
+			{ label: "Human-reviewed", color: slot(2) },
+			{ label: "No human review", color: slot(8) },
+		];
+		const factoryByDate = new Map(data.factory.days.map((d) => [d.date, d]));
+		const factoryValues = labels.map((date) => {
+			const d = factoryByDate.get(date);
+			return [d?.reviewed || 0, d?.unreviewed || 0];
+		});
+
 		const maxModelOutput = Math.max(1, ...data.models.map((m) => m.outputTokens));
-		return { labels, kindSeries, kindValues, modelSeries, modelValues, prSeries, prValues, turnSeries, turnValues, maxModelOutput };
+		return { labels, kindSeries, kindValues, modelSeries, modelValues, prSeries, prValues, turnSeries, turnValues, factorySeries, factoryValues, maxModelOutput };
 	}, [data]);
 
 	const dateInput =
@@ -496,6 +506,49 @@ export function Analytics() {
 							</ChartCard>
 							<ChartCard title="Turns per day" subtitle="Completed turns and errored events" series={derived.turnSeries}>
 								<BarChart labels={derived.labels} series={derived.turnSeries} values={derived.turnValues} mode="grouped" />
+							</ChartCard>
+							<ChartCard
+								title="Review coverage on merges"
+								subtitle="Merged PRs per day, split by whether a human reviewed or commented"
+								series={derived.factorySeries}
+							>
+								<BarChart labels={derived.labels} series={derived.factorySeries} values={derived.factoryValues} mode="stacked" formatValue={fmtInt} />
+							</ChartCard>
+							<ChartCard
+								title="Factory health"
+								subtitle="Merged PRs in range: agent (OpenSession sessions) vs everything else"
+							>
+								<table className="w-full border-collapse text-xs">
+									<thead>
+										<tr className="text-left text-[11px] text-faint">
+											<th className="pb-1.5 font-medium">Metric</th>
+											<th className="pb-1.5 text-right font-medium">Agent PRs</th>
+											<th className="pb-1.5 text-right font-medium">Other PRs</th>
+										</tr>
+									</thead>
+									<tbody>
+										{(() => {
+											const { agent, other } = data.factory;
+											const pct = (c: typeof agent) =>
+												c.merged ? `${Math.round((100 * c.humanReviewed) / c.merged)}%` : "–";
+											const rows: Array<[string, string, string]> = [
+												["Merged", fmtInt(agent.merged), fmtInt(other.merged)],
+												["Human-reviewed", pct(agent), pct(other)],
+												["Rework commits after review (avg)", String(agent.avgReworkCommits), String(other.avgReworkCommits)],
+												["Reverts", fmtInt(agent.reverts), fmtInt(other.reverts)],
+												["Median hours to merge", String(agent.medianHoursToMerge), String(other.medianHoursToMerge)],
+												["Avg lines changed", fmtInt(agent.avgLinesChanged), fmtInt(other.avgLinesChanged)],
+											];
+											return rows.map(([label, a, b]) => (
+												<tr key={label} className="border-t border-line">
+													<td className="py-1.5 text-fg">{label}</td>
+													<td className="py-1.5 text-right tabular-nums text-dim">{a}</td>
+													<td className="py-1.5 text-right tabular-nums text-dim">{b}</td>
+												</tr>
+											));
+										})()}
+									</tbody>
+								</table>
 							</ChartCard>
 						</div>
 

@@ -310,6 +310,139 @@ async function fetchRepoPrs(repoId: string, ghRepo: string, fromDate: string): P
 	return prs;
 }
 
+// ── Factory health: review depth on merged PRs ──
+//
+// The lights-off failure mode is invisible in open/merge counts: PRs merging
+// with zero human eyes, growing rework, reverts creeping up. This measures it
+// with a second, merged-only gh query that pulls the heavy per-PR fields
+// (reviews, comments, commits) the cheap list query deliberately skips.
+
+export interface FactoryCohort {
+	merged: number;
+	/** Merged PRs with ≥1 review or comment from a human other than the author. */
+	humanReviewed: number;
+	/** Merged PRs whose title is a revert. */
+	reverts: number;
+	/** Avg commits pushed after the first human review, over reviewed PRs. */
+	avgReworkCommits: number;
+	medianHoursToMerge: number;
+	/** Avg additions+deletions per merged PR. */
+	avgLinesChanged: number;
+}
+
+interface FactoryPr {
+	repo: string;
+	number: number;
+	headRefName: string;
+	title: string;
+	createdAt: string;
+	mergedAt: string;
+	linesChanged: number;
+	humanReviews: number;
+	reworkCommits: number;
+}
+
+/** Review activity by the bot credential (or any app bot) isn't human review. */
+const BOT_LOGINS = new Set(["tella-butler"]);
+function isHumanReviewer(login: unknown, prAuthor: string): boolean {
+	const l = String(login || "");
+	return !!l && l !== prAuthor && !BOT_LOGINS.has(l) && !l.endsWith("[bot]") && !l.startsWith("app/");
+}
+
+const FACTORY_CACHE_TTL_MS = 30 * 60 * 1000;
+const factoryCache = new Map<string, { at: number; prs: FactoryPr[] }>();
+const FACTORY_PR_CAP = 400;
+
+// Custom query instead of `gh pr list --json reviews,commits,comments`: gh's
+// canned query nests commits(100)×authors(100) = ~1M possible nodes per page,
+// over GitHub's 500k cap. We only need dates and logins (~20k nodes per page).
+const FACTORY_QUERY = `query($q: String!, $cursor: String) {
+  search(query: $q, type: ISSUE, first: 100, after: $cursor) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      ... on PullRequest {
+        number title createdAt mergedAt additions deletions headRefName
+        author { login }
+        reviews(first: 50) { nodes { author { login } submittedAt } }
+        comments(first: 50) { nodes { author { login } createdAt } }
+        commits(last: 100) { nodes { commit { committedDate } } }
+      }
+    }
+  }
+}`;
+
+async function fetchRepoFactoryPrs(repoId: string, ghRepo: string, fromDate: string): Promise<FactoryPr[]> {
+	const key = `${ghRepo}:${fromDate}`;
+	const cached = factoryCache.get(key);
+	if (cached && Date.now() - cached.at < FACTORY_CACHE_TTL_MS) return cached.prs;
+	if (ghRateLimited() && cached) return cached.prs;
+
+	const prs: FactoryPr[] = [];
+	const q = `repo:${ghRepo} is:pr is:merged merged:>=${fromDate}`;
+	let cursor = "";
+	try {
+		while (prs.length < FACTORY_PR_CAP) {
+			const args = ["api", "graphql", "-f", `query=${FACTORY_QUERY}`, "-f", `q=${q}`];
+			if (cursor) args.push("-f", `cursor=${cursor}`);
+			const raw = await $`gh ${args}`.quiet().text();
+			const search = JSON.parse(raw)?.data?.search;
+			for (const pr of search?.nodes || []) {
+				if (!pr?.number) continue;
+				const author = String(pr.author?.login || "");
+				const humanEvents: string[] = [];
+				for (const r of pr.reviews?.nodes || []) {
+					if (isHumanReviewer(r?.author?.login, author) && r?.submittedAt) humanEvents.push(String(r.submittedAt));
+				}
+				for (const c of pr.comments?.nodes || []) {
+					if (isHumanReviewer(c?.author?.login, author) && c?.createdAt) humanEvents.push(String(c.createdAt));
+				}
+				const firstReviewAt = humanEvents.sort()[0] || null;
+				const reworkCommits = firstReviewAt
+					? (pr.commits?.nodes || []).filter((c: any) => String(c?.commit?.committedDate || "") > firstReviewAt).length
+					: 0;
+				prs.push({
+					repo: repoId,
+					number: pr.number,
+					headRefName: String(pr.headRefName || ""),
+					title: String(pr.title || ""),
+					createdAt: String(pr.createdAt || ""),
+					mergedAt: String(pr.mergedAt || ""),
+					linesChanged: (Number(pr.additions) || 0) + (Number(pr.deletions) || 0),
+					humanReviews: humanEvents.length,
+					reworkCommits,
+				});
+			}
+			if (!search?.pageInfo?.hasNextPage || !search.pageInfo.endCursor) break;
+			cursor = String(search.pageInfo.endCursor);
+		}
+	} catch (e) {
+		console.error(`[analytics] factory pr fetch failed for ${ghRepo}:`, e);
+		if (isGhRateLimitMsg(String((e as any)?.stderr || e))) noteGhRateLimited("analytics");
+		return cached?.prs ?? [];
+	}
+	factoryCache.set(key, { at: Date.now(), prs });
+	return prs;
+}
+
+function factoryCohort(prs: FactoryPr[]): FactoryCohort {
+	const reviewed = prs.filter((p) => p.humanReviews > 0);
+	const hours = prs
+		.map((p) => (Date.parse(p.mergedAt) - Date.parse(p.createdAt)) / 3_600_000)
+		.filter((h) => Number.isFinite(h) && h >= 0)
+		.sort((a, b) => a - b);
+	const round1 = (n: number) => Math.round(n * 10) / 10;
+	return {
+		merged: prs.length,
+		humanReviewed: reviewed.length,
+		reverts: prs.filter((p) => /^revert\b/i.test(p.title)).length,
+		avgReworkCommits: reviewed.length
+			? round1(reviewed.reduce((sum, p) => sum + p.reworkCommits, 0) / reviewed.length)
+			: 0,
+		medianHoursToMerge: hours.length ? round1(hours[Math.floor(hours.length / 2)]) : 0,
+		avgLinesChanged: prs.length ? Math.round(prs.reduce((sum, p) => sum + p.linesChanged, 0) / prs.length) : 0,
+	};
+}
+
 // ── The composed summary ──
 
 export interface AnalyticsSummary {
@@ -373,6 +506,13 @@ export interface AnalyticsSummary {
 		allMerged: number;
 	}>;
 	prs: AnalyticsPr[];
+	factory: {
+		days: Array<{ date: string; reviewed: number; unreviewed: number }>;
+		/** Merged PRs whose head branch belongs to an OpenSession code session. */
+		agent: FactoryCohort;
+		/** Every other merged PR in range (humans + external bots). */
+		other: FactoryCohort;
+	};
 }
 
 function utcDatesBetween(from: string, to: string): string[] {
@@ -406,11 +546,17 @@ export async function buildAnalytics(from: string, to: string): Promise<Analytic
 	}
 	const repos = configuredRepos();
 	const allPrs: AnalyticsPr[] = [];
+	const allFactoryPrs: FactoryPr[] = [];
 	await Promise.all(
 		[...codeRepos].map(async (repoId) => {
 			const repo = repos[repoId];
 			if (!repo?.ghRepo) return;
-			allPrs.push(...(await fetchRepoPrs(repoId, repo.ghRepo, from)));
+			const [prs, factoryPrs] = await Promise.all([
+				fetchRepoPrs(repoId, repo.ghRepo, from),
+				fetchRepoFactoryPrs(repoId, repo.ghRepo, from),
+			]);
+			allPrs.push(...prs);
+			allFactoryPrs.push(...factoryPrs);
 		}),
 	);
 	for (const pr of allPrs) pr.byOpensession = codeBranches.has(pr.headRefName);
@@ -611,6 +757,18 @@ export async function buildAnalytics(from: string, to: string): Promise<Analytic
 		.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 		.slice(0, 400);
 
+	const factoryInRange = allFactoryPrs.filter((pr) => inRange(pr.mergedAt));
+	const factoryDays = dates.map((date) => {
+		const merged = factoryInRange.filter((pr) => pr.mergedAt.slice(0, 10) === date);
+		const reviewed = merged.filter((pr) => pr.humanReviews > 0).length;
+		return { date, reviewed, unreviewed: merged.length - reviewed };
+	});
+	const factory = {
+		days: factoryDays,
+		agent: factoryCohort(factoryInRange.filter((pr) => codeBranches.has(pr.headRefName))),
+		other: factoryCohort(factoryInRange.filter((pr) => !codeBranches.has(pr.headRefName))),
+	};
+
 	return {
 		from,
 		to,
@@ -621,5 +779,6 @@ export async function buildAnalytics(from: string, to: string): Promise<Analytic
 		automations,
 		repos: [...repoAgg.values()].sort((a, b) => b.allOpened - a.allOpened),
 		prs,
+		factory,
 	};
 }

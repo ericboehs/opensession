@@ -927,6 +927,15 @@ export interface AnalyticsPr {
 	byOpensession: boolean;
 }
 
+export interface AnalyticsFactoryCohort {
+	merged: number;
+	humanReviewed: number;
+	reverts: number;
+	avgReworkCommits: number;
+	medianHoursToMerge: number;
+	avgLinesChanged: number;
+}
+
 export interface AnalyticsSummary {
 	from: string;
 	to: string;
@@ -954,4 +963,9 @@ export interface AnalyticsSummary {
 	automations: AnalyticsAutomation[];
 	repos: AnalyticsRepoPrs[];
 	prs: AnalyticsPr[];
+	factory: {
+		days: Array<{ date: string; reviewed: number; unreviewed: number }>;
+		agent: AnalyticsFactoryCohort;
+		other: AnalyticsFactoryCohort;
+	};
 }
