@@ -15,11 +15,14 @@ struct SessionView: View {
     /// prepend: the entry that was topmost stays where the reader left it.
     @State private var prependAnchorId: String?
 
-    /// Whether the reader is at (or near) the bottom — tracked by a sentinel
-    /// row at the end of the transcript. New AI output only auto-scrolls
-    /// while true; scrolling up to read releases the pin so streams don't
-    /// yank the reader back down.
+    /// Whether the reader is at (or near) the bottom, from live scroll
+    /// geometry. New AI output only auto-scrolls while true; scrolling up to
+    /// read releases the pin so streams don't yank the reader back down.
     @State private var pinnedToBottom = true
+
+    /// How close to the bottom (pt) still counts as pinned — forgiving enough
+    /// to survive keyboard/inset transitions and lazy row settling.
+    private let pinTolerance: CGFloat = 80
 
     /// Model/effort catalog for the toolbar picker; fetched on first open.
     @State private var catalog: ModelCatalog?
@@ -57,14 +60,6 @@ struct SessionView: View {
                                 }
                                 .id("ask-\(ask.id)")
                             }
-                            // Bottom sentinel: realized only while the reader
-                            // is at the bottom, so its appear/disappear tracks
-                            // the pin state read by the onChange handlers below.
-                            Color.clear
-                                .frame(height: 1)
-                                .id("bottom-sentinel")
-                                .onAppear { pinnedToBottom = true }
-                                .onDisappear { pinnedToBottom = false }
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
@@ -78,6 +73,19 @@ struct SessionView: View {
                     .defaultScrollAnchor(.bottom)
                     .defaultScrollAnchor(.bottom, for: .sizeChanges)
                     .scrollDismissesKeyboardCompat()
+                    // Pin state from real scroll geometry: pinned while the
+                    // visible bottom edge is within pinTolerance of the
+                    // content's end. Precise on release (unlike a lazy-stack
+                    // sentinel, whose realization window lags actual
+                    // visibility) and it costs a state write only when the
+                    // Bool flips, not per scroll tick.
+                    .onScrollGeometryChange(for: Bool.self) { geometry in
+                        geometry.contentOffset.y + geometry.containerSize.height
+                            >= geometry.contentSize.height
+                                + geometry.contentInsets.bottom - pinTolerance
+                    } action: { _, isNearBottom in
+                        pinnedToBottom = isNearBottom
+                    }
                     .onChange(of: viewModel.pendingQuestion) {
                         // A question needs eyes even if they've scrolled away.
                         scrollToBottom(proxy, animated: true)

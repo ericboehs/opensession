@@ -5,7 +5,8 @@ dashboard at https://os.tella.dev, on your phone. Not feature complete; this is
 the v0.1 base: sign in with a token, see your sessions live, open one, watch
 the agent stream, send prompts, and answer blocking questions.
 
-Pure SwiftUI, zero dependencies, iOS 17+.
+Pure SwiftUI, zero dependencies, iOS 26+ (see `project.yml` for the
+authoritative deployment targets).
 
 ## Features (v0.1)
 
@@ -46,7 +47,7 @@ xcodegen generate
 open OS1.xcodeproj
 ```
 
-Then run the `OS1` scheme on iOS 17+.
+Then run the `OS1` scheme on iOS 26+.
 
 ## Architecture
 
