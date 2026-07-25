@@ -5,7 +5,6 @@ import AppKit
 
 struct SessionView: View {
     @State private var viewModel: SessionViewModel
-    @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
     /// Full-window-width chat text is unreadable on the Mac; cap the content
@@ -18,11 +17,6 @@ struct SessionView: View {
 
     /// Model/effort catalog for the toolbar picker; fetched on first open.
     @State private var catalog: ModelCatalog?
-
-    #if os(macOS)
-    /// Local key monitor that turns Shift+Return into a newline insert.
-    @State private var shiftReturnMonitor: Any?
-    #endif
 
     init(session: Session, seed: SessionViewModel.OptimisticSeed? = nil) {
         _viewModel = State(initialValue: SessionViewModel(session: session, seed: seed))
@@ -89,7 +83,12 @@ struct SessionView: View {
             statusBanner
         }
         .safeAreaInset(edge: .bottom) {
-            inputBar
+            // A separate view struct on purpose: typing mutates
+            // `viewModel.draft` on every keystroke, and any read of it (or
+            // `canSend`) inside SessionView.body would re-evaluate this whole
+            // body — transcript included — per key. Keep per-keystroke reads
+            // out of SessionView.body.
+            SessionInputBar(viewModel: viewModel, contentMaxWidth: contentMaxWidth)
         }
         .navigationTitle(viewModel.session.displayTitle)
         .inlineTitleBarCompat()
@@ -109,16 +108,10 @@ struct SessionView: View {
         }
         .task {
             viewModel.start()
-            #if os(macOS)
-            installShiftReturnMonitor()
-            #endif
             catalog = try? await OS1API.models()
         }
         .onDisappear {
             viewModel.stop()
-            #if os(macOS)
-            removeShiftReturnMonitor()
-            #endif
         }
         .onChange(of: scenePhase) { _, phase in
             // Backgrounding leaves the socket half-open more often than not;
@@ -188,7 +181,105 @@ struct SessionView: View {
             .frame(maxWidth: .infinity)
     }
 
-    private var inputBar: some View {
+    /// Model / reasoning-effort / fast-mode controls, mirroring the web
+    /// composer's pill: effort levels and fast toggle up top, the model list
+    /// behind a submenu. Model switches route through `/model` (persisted +
+    /// noticed); effort/fast ride the next send.
+    private var modelMenu: some View {
+        Menu {
+            let currentModel = viewModel.model.isEmpty
+                ? (catalog?.defaultModel ?? "") : viewModel.model
+            if let option = catalog?.option(for: currentModel),
+               let efforts = option.efforts, !efforts.isEmpty {
+                Section("Reasoning") {
+                    ForEach(efforts, id: \.self) { level in
+                        Button {
+                            viewModel.effort = level
+                        } label: {
+                            if viewModel.effort == level {
+                                Label(EffortLevel.label(level), systemImage: "checkmark")
+                            } else {
+                                Text(EffortLevel.label(level))
+                            }
+                        }
+                    }
+                }
+            }
+            if catalog?.option(for: currentModel)?.fastModeSupported == true {
+                Button {
+                    viewModel.fastMode.toggle()
+                } label: {
+                    if viewModel.fastMode {
+                        Label("Fast mode", systemImage: "checkmark")
+                    } else {
+                        Text("Fast mode")
+                    }
+                }
+            }
+            if let catalog {
+                Menu {
+                    ForEach(catalog.presets + catalog.regular) { option in
+                        Button {
+                            viewModel.changeModel(to: option.id)
+                        } label: {
+                            if option.id == currentModel {
+                                Label(option.displayLabel, systemImage: "checkmark")
+                            } else {
+                                Text(option.displayLabel)
+                            }
+                        }
+                    }
+                } label: {
+                    Label(
+                        "Model — \(catalog.label(for: currentModel))",
+                        systemImage: "cpu"
+                    )
+                }
+            }
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+        }
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
+        let target: String
+        if viewModel.pendingQuestion != nil {
+            target = "ask-\(viewModel.pendingQuestion!.id)"
+        } else if !viewModel.liveText.isEmpty {
+            target = "live-stream"
+        } else if let last = viewModel.displayItems.last {
+            target = last.id
+        } else {
+            return
+        }
+        if animated {
+            withAnimation(.snappy) { proxy.scrollTo(target, anchor: .bottom) }
+        } else {
+            proxy.scrollTo(target, anchor: .bottom)
+        }
+    }
+}
+
+/// The bottom input area: queue/steer/delivering chips, the run-status chip,
+/// staged images, and the composer. A SEPARATE view struct on purpose — its
+/// body is the only place that reads `viewModel.draft` / `canSend`, so with
+/// @Observable's per-body tracking a keystroke invalidates just this bar.
+/// When these lived as computed properties of SessionView, every keystroke
+/// re-evaluated SessionView.body and re-diffed every visible transcript row
+/// on the main thread — typing visibly hitched on long sessions even with
+/// nothing streaming.
+private struct SessionInputBar: View {
+    @Bindable var viewModel: SessionViewModel
+    /// Matches the transcript column cap so the bar centers with it.
+    let contentMaxWidth: CGFloat
+    @FocusState private var inputFocused: Bool
+
+    #if os(macOS)
+    /// Local key monitor that turns Shift+Return into a newline insert.
+    @State private var shiftReturnMonitor: Any?
+    #endif
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             // Messages waiting on the current run, each visibly either
             // delivering (left the server queue, transcript echo in flight),
@@ -260,66 +351,10 @@ struct SessionView: View {
         // No bar background: the composer and chips are individual glass
         // elements floating over the transcript, which scrolls beneath them
         // through the soft scroll-edge fade.
-    }
-
-    /// Model / reasoning-effort / fast-mode controls, mirroring the web
-    /// composer's pill: effort levels and fast toggle up top, the model list
-    /// behind a submenu. Model switches route through `/model` (persisted +
-    /// noticed); effort/fast ride the next send.
-    private var modelMenu: some View {
-        Menu {
-            let currentModel = viewModel.model.isEmpty
-                ? (catalog?.defaultModel ?? "") : viewModel.model
-            if let option = catalog?.option(for: currentModel),
-               let efforts = option.efforts, !efforts.isEmpty {
-                Section("Reasoning") {
-                    ForEach(efforts, id: \.self) { level in
-                        Button {
-                            viewModel.effort = level
-                        } label: {
-                            if viewModel.effort == level {
-                                Label(EffortLevel.label(level), systemImage: "checkmark")
-                            } else {
-                                Text(EffortLevel.label(level))
-                            }
-                        }
-                    }
-                }
-            }
-            if catalog?.option(for: currentModel)?.fastModeSupported == true {
-                Button {
-                    viewModel.fastMode.toggle()
-                } label: {
-                    if viewModel.fastMode {
-                        Label("Fast mode", systemImage: "checkmark")
-                    } else {
-                        Text("Fast mode")
-                    }
-                }
-            }
-            if let catalog {
-                Menu {
-                    ForEach(catalog.presets + catalog.regular) { option in
-                        Button {
-                            viewModel.changeModel(to: option.id)
-                        } label: {
-                            if option.id == currentModel {
-                                Label(option.displayLabel, systemImage: "checkmark")
-                            } else {
-                                Text(option.displayLabel)
-                            }
-                        }
-                    }
-                } label: {
-                    Label(
-                        "Model — \(catalog.label(for: currentModel))",
-                        systemImage: "cpu"
-                    )
-                }
-            }
-        } label: {
-            Image(systemName: "slider.horizontal.3")
-        }
+        #if os(macOS)
+        .onAppear { installShiftReturnMonitor() }
+        .onDisappear { removeShiftReturnMonitor() }
+        #endif
     }
 
     /// The message composer: one bordered rounded container holding the
@@ -458,24 +493,6 @@ struct SessionView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .glassSurface(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-    }
-
-    private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
-        let target: String
-        if viewModel.pendingQuestion != nil {
-            target = "ask-\(viewModel.pendingQuestion!.id)"
-        } else if !viewModel.liveText.isEmpty {
-            target = "live-stream"
-        } else if let last = viewModel.displayItems.last {
-            target = last.id
-        } else {
-            return
-        }
-        if animated {
-            withAnimation(.snappy) { proxy.scrollTo(target, anchor: .bottom) }
-        } else {
-            proxy.scrollTo(target, anchor: .bottom)
         }
     }
 }
