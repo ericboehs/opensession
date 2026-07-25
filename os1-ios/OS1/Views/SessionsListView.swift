@@ -416,6 +416,14 @@ struct SessionsListView: View {
         .listStyle(.sidebar)
         .searchable(text: $searchText, prompt: "Search sessions")
         .overlay { emptyFilterOverlay }
+        // Delete key archives the selected session — the Mac-native
+        // counterpart to iOS's swipe.
+        .onDeleteCommand {
+            if let selectedSessionID,
+               let session = viewModel.sessions.first(where: { $0.id == selectedSessionID }) {
+                archive(session)
+            }
+        }
     }
     #else
     private var list: some View {
@@ -436,13 +444,19 @@ struct SessionsListView: View {
 
     @ViewBuilder
     private func sessionRow(_ session: Session) -> some View {
+        let canArchive = !session.id.hasPrefix("pending-")
         #if os(macOS)
         // Selection drives the detail column; select by id so rows replaced
         // by polling (fresh struct values every refresh) keep the selection.
-        SessionRow(session: session)
-            .tag(session.id)
-            .swipeActions(edge: .trailing) { archiveButton(session) }
-            .contextMenu { archiveButton(session) }
+        // Archiving is Mac-idiomatic here: hover button on the row, context
+        // menu, and the Delete key — swipe also works but isn't the primary.
+        SessionRow(
+            session: session,
+            onArchive: canArchive ? { archive(session) } : nil
+        )
+        .tag(session.id)
+        .swipeActions(edge: .trailing) { archiveButton(session) }
+        .contextMenu { archiveButton(session) }
         #else
         NavigationLink(value: session) {
             SessionRow(session: session)
@@ -469,7 +483,10 @@ struct SessionsListView: View {
         #if os(macOS)
         if selectedSessionID == session.id { selectedSessionID = nil }
         #endif
-        viewModel.archive(session)
+        // Animate the row's collapse instead of blinking it out.
+        withAnimation(.snappy(duration: 0.28)) {
+            viewModel.archive(session)
+        }
     }
 
     private var listSections: some View {
@@ -553,8 +570,37 @@ extension Session.Lane {
 
 struct SessionRow: View {
     let session: Session
+    /// Mac: hover-revealed archive button (nil hides it).
+    var onArchive: (() -> Void)? = nil
+
+    #if os(macOS)
+    @State private var hovering = false
+    #endif
 
     var body: some View {
+        #if os(macOS)
+        content
+            .onHover { hovering = $0 }
+            .overlay(alignment: .trailing) {
+                if hovering, let onArchive {
+                    Button(action: onArchive) {
+                        Image(systemName: "archivebox")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Archive")
+                    // Sit on an opaque-ish pad so it reads over the meta line.
+                    .padding(4)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 5))
+                }
+            }
+        #else
+        content
+        #endif
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 7) {
                 statusDot
