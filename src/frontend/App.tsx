@@ -55,6 +55,8 @@ import {
 	updateProjectApi,
 	deleteProjectApi,
 	newChatApi,
+	fetchNotificationsApi,
+	fetchSessionNoteActivityApi,
 	resolveWorkspaceApi,
 	type NoteMeta,
 } from "./lib/api";
@@ -63,7 +65,8 @@ import {
 	pickLandingChat,
 } from "./lib/landing-chat";
 import { sessionHasWorkspace } from "./lib/session-workspace";
-import type { Project, SupportThread } from "./lib/types";
+import type { AppNotification, Project, SupportThread } from "./lib/types";
+import { NotificationsBell } from "./components/NotificationsBell";
 import type { ReviewQueueItem } from "./lib/review-queue";
 import { pushRecent } from "./lib/recents";
 import { setLane } from "./lib/lanes";
@@ -386,8 +389,58 @@ function App() {
 		}
 		return parsed;
 	});
-	// App-icon badge count (PWA/Electron). Fed by the notification inbox.
-	const chatUnread = 0;
+	// Notification inbox (the sidebar bell): every push sent to me, mirrored
+	// server-side (push.ts). "Seen" is a client-local timestamp stamp.
+	const [notifItems, setNotifItems] = useState<AppNotification[]>([]);
+	const [notifSeenTs, setNotifSeenTs] = useState<number>(() =>
+		Number(localStorage.getItem("opensession-notif-seen") || 0),
+	);
+	useEffect(() => {
+		fetchNotificationsApi(getCurrentUser())
+			.then(setNotifItems)
+			.catch(() => {});
+	}, []);
+	useEffect(
+		() =>
+			addHandler((msg) => {
+				if (msg.type !== "notification_added") return;
+				if (msg.item.user !== getCurrentUser()) return;
+				setNotifItems((prev) =>
+					prev.some((n) => n.id === msg.item.id)
+						? prev
+						: [msg.item, ...prev],
+				);
+			}),
+		[addHandler],
+	);
+	const notifUnseen = notifItems.filter((n) => n.ts > notifSeenTs).length;
+	// Latest team note per session — the sidebar's unread-note dots.
+	const [noteActivity, setNoteActivity] = useState<
+		Record<string, { lastTs: number; lastUser: string }>
+	>({});
+	useEffect(() => {
+		fetchSessionNoteActivityApi().then(setNoteActivity).catch(() => {});
+	}, []);
+	useEffect(
+		() =>
+			addHandler((msg) => {
+				if (msg.type !== "chat_message" || !msg.channel.startsWith("session:"))
+					return;
+				const id = msg.channel.slice("session:".length);
+				setNoteActivity((prev) => ({
+					...prev,
+					[id]: { lastTs: msg.message.ts, lastUser: msg.message.user },
+				}));
+			}),
+		[addHandler],
+	);
+	const markNotifSeen = useCallback(() => {
+		const now = Date.now();
+		localStorage.setItem("opensession-notif-seen", String(now));
+		setNotifSeenTs(now);
+	}, []);
+	// App-icon badge count (PWA/Electron): unseen notifications.
+	const chatUnread = notifUnseen;
 	// Register the service worker at boot, not just when enabling push: it also
 	// caches the app shell (sw.js), so a cold start on a flaky tailnet paints
 	// the app instead of white-screening.
@@ -2088,6 +2141,20 @@ function App() {
 							onOpenReports={() => navigate({ view: "reports" })}
 							analyticsActive={route.view === "analytics"}
 							onOpenAnalytics={() => navigate({ view: "analytics" })}
+							noteActivity={noteActivity}
+							notifBell={
+								<NotificationsBell
+									items={notifItems}
+									unseen={notifUnseen}
+									onOpened={markNotifSeen}
+									onNavigate={(url) => {
+										const path =
+											url.replace(/^\/(backstage|opensession)(?=\/|$)/, "") ||
+											"/";
+										navigate(parseRoute(path));
+									}}
+								/>
+							}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onOpenReview={openReviewForSession}
 							onOpenTicket={openTicketWorkspace}

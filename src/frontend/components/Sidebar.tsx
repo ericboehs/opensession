@@ -48,6 +48,7 @@ import {
 	markUnread,
 	onReadsChanged,
 } from "../lib/reads";
+import { isNoteUnread, onNoteReadsChanged } from "../lib/note-reads";
 import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { providerFromUrl } from "../lib/provider";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
@@ -453,6 +454,10 @@ interface Props {
 	analyticsActive: boolean;
 	/** Open the Analytics view (sessions/tokens/models/PRs over time). */
 	onOpenAnalytics: () => void;
+	/** The notification bell (rendered by App, next to the filter/new buttons). */
+	notifBell?: React.ReactNode;
+	/** Latest team note per session (unread-note dots on workspace rows). */
+	noteActivity?: Record<string, { lastTs: number; lastUser: string }>;
 	onSelect: (session: UnifiedSession) => void;
 	/** Foreground a session's Review view-tab (from a chat row's context menu). */
 	onOpenReview: (session: UnifiedSession) => void;
@@ -1161,6 +1166,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	onOpenReports,
 	analyticsActive,
 	onOpenAnalytics,
+	notifBell,
+	noteActivity = {},
 	onSelect,
 	onOpenReview,
 	onOpenTicket,
@@ -1266,6 +1273,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// same event the viewer fires when it marks a session read.
 	const [reads, setReads] = useState(getReads);
 	const currentUser = useCurrentUser();
+	const meUser = currentUser;
+	// Note-read stamps live in localStorage; bump to recompute the rows when
+	// the viewer marks a session's notes read.
+	const [noteReadsRev, setNoteReadsRev] = useState(0);
+	useEffect(
+		() => onNoteReadsChanged(() => setNoteReadsRev((r) => r + 1)),
+		[],
+	);
 	useEffect(
 		() => onSidebarToolsChanged(() => setHiddenTools(readHiddenSidebarTools())),
 		[],
@@ -1781,9 +1796,20 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					"",
 				),
 				createdAt: chats[0]?.createdAt || "",
-				unread: chats.some(
-					(c) => c.id !== selectedId && isUnread(c.id, c.lastActivity, reads),
-				),
+				unread:
+					chats.some(
+						(c) =>
+							c.id !== selectedId && isUnread(c.id, c.lastActivity, reads),
+					) ||
+					// Unread team notes (transcript NoteBubbles) light the row too.
+					chats.some((c) => {
+						const a = noteActivity[c.id];
+						return (
+							!!a &&
+							c.id !== selectedId &&
+							isNoteUnread(c.id, a.lastTs, a.lastUser, meUser)
+						);
+					}),
 				running: statusSources.some((c) => c.isRunning),
 				owner: (workspace?.createdBy || chats[0]?.startedBy || "").toLowerCase(),
 			};
@@ -1857,7 +1883,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		rows.sort((a, b) => (b[key] || "").localeCompare(a[key] || ""));
 		return rows;
 		// `lanes` feeds mineStatus/pinnedLane (read via the lib cache).
-	}, [filtered, sessions, projects, selectedId, reads, search, filter, lanes]);
+	}, [filtered, sessions, projects, selectedId, reads, search, filter, lanes, noteActivity, noteReadsRev]);
 
 	// Automations keep their own collapsible band, one group per automation —
 	// hundreds of one-shot runs would drown the Workspaces list otherwise.
@@ -4134,6 +4160,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					)}
 					<div className="min-w-0 flex-1" />
 					<div className="sidebar-workspace-actions" ref={actionsRef}>
+						{notifBell}
 						<Tooltip label="Group, filter & sort">
 						<button
 							ref={filterBtnRef}

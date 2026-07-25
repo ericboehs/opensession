@@ -43,6 +43,7 @@ import { SubagentPanel, type SubagentRef } from "./SubagentPanel";
 import { CommandsPanel, ShellPanel } from "./TerminalPanel";
 import { getCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
+import { peopleMentionMatches } from "../lib/people";
 import {
 	deleteSessionApi,
 	archiveSessionApi,
@@ -4633,7 +4634,10 @@ export function SessionViewer({
 										session.source === "backstage" ? handleSetGoal : undefined
 									}
 									usage={usage}
-									mentionFetch={(q) => fetchFileMentions(q, session.id)}
+									mentionFetch={async (q) => [
+										...peopleMentionMatches(q),
+										...(await fetchFileMentions(q, session.id)),
+									]}
 									skillsFetch={(q) => fetchSkillMentions(q, session.id)}
 									textareaRef={composerRef}
 									sendMenu={

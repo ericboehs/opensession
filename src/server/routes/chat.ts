@@ -27,6 +27,12 @@ export async function handleChatRoutes(
 		return Response.json({ messages: getChatMessages(channel, limit) });
 	}
 
+	// Latest note per session channel — drives the sidebar's unread-note dots.
+	if (path === "/backstage/api/chat/session-activity" && req.method === "GET") {
+		const { sessionNoteActivity } = await import("../../server/chat");
+		return Response.json({ channels: sessionNoteActivity() });
+	}
+
 	// Upload an image for a chat message. Streams the body to permanent
 	// per-image storage (not the transient session-upload staging dir) and
 	// returns its {id,name,mime} ref, which the client attaches to the message.

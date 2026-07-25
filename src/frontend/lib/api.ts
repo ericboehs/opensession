@@ -3,6 +3,7 @@ import type {
 	UnifiedSession,
 	ChatMessage,
 	ChatImage,
+	AppNotification,
 	PlainThread,
 	PlainWorkspaceUser,
 	PlainLabelType,
@@ -969,6 +970,30 @@ export async function uploadChatImageApi(file: File): Promise<ChatImage> {
 /** URL that serves a stored chat image's bytes. */
 export function chatImageUrl(id: string): string {
 	return `${BASE}/chat/image/${id}`;
+}
+
+/** Latest note per session channel (sidebar unread-note dots). */
+export async function fetchSessionNoteActivityApi(): Promise<
+	Record<string, { lastTs: number; lastUser: string }>
+> {
+	const body = await request<{
+		channels?: Array<{ sessionId: string; lastTs: number; lastUser: string }>;
+	}>("/chat/session-activity", { label: "Failed to fetch note activity" });
+	const out: Record<string, { lastTs: number; lastUser: string }> = {};
+	for (const c of body?.channels || [])
+		out[c.sessionId] = { lastTs: c.lastTs, lastUser: c.lastUser };
+	return out;
+}
+
+/** The user's notification inbox (mirror of every push sent to them). */
+export async function fetchNotificationsApi(
+	user: string,
+): Promise<AppNotification[]> {
+	const body = await request<{ items?: AppNotification[] }>(
+		`/notifications?user=${encodeURIComponent(user)}`,
+		{ label: "Failed to fetch notifications" },
+	);
+	return Array.isArray(body?.items) ? body.items : [];
 }
 
 export async function fetchWorktrees(repo?: string) {

@@ -7,6 +7,7 @@ import { getDefaultModelPref } from "../lib/default-model-pref";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
+import { peopleMentionMatches } from "../lib/people";
 import { IconPaperclip, IconChevronDown, IconCheck, IconSliders, IconConnections, IconReturn, IconBox, IconFolderPlus } from "./icons";
 import type { WSServerMessage } from "../lib/types";
 import { VoiceInput } from "./VoiceInput";
@@ -356,7 +357,10 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     value: prompt,
     onChange: setPrompt,
     textareaRef: promptRef,
-    mentionFetch: (q) => fetchFileMentions(q, undefined, repo),
+    mentionFetch: async (q) => [
+      ...peopleMentionMatches(q),
+      ...(await fetchFileMentions(q, undefined, repo)),
+    ],
     skillsFetch: (q) => fetchSkillMentions(q, undefined, repo),
   });
 

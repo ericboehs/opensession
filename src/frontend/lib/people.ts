@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { BASE_PATH } from "./base";
 import { registerGithubLogins } from "../components/UserAvatar";
+import type { FileMention } from "./api";
 
 export interface Person {
 	/** Picker/display first name ("Michiel"). */
@@ -75,6 +76,30 @@ export function ensurePeople(): Promise<void> {
 			inflight = null;
 		});
 	return inflight;
+}
+
+/**
+ * People rows for the composer's @-mention popup. Only offered once a query
+ * is typed (a bare "@" stays the familiar file browser); name matches list
+ * before file results. Inserting yields `@Name`, which the server's mention
+ * scan (chat.ts mentionedUsers) turns into a push for prompts and notes.
+ */
+export function peopleMentionMatches(query: string): FileMention[] {
+	const q = query.trim().toLowerCase();
+	if (!q) return [];
+	return getPeople()
+		.filter(
+			(p) =>
+				p.name.toLowerCase().startsWith(q) ||
+				p.fullName.toLowerCase().startsWith(q),
+		)
+		.slice(0, 3)
+		.map((p) => ({
+			display: p.name,
+			insert: p.name,
+			kind: "person" as const,
+			sub: p.fullName,
+		}));
 }
 
 /** Reactive roster — triggers the fetch on first use. */

@@ -11,6 +11,8 @@ import { type StreamEvent, cancelAgentRun, interruptAndSteerAgentRun, isAgentSes
 import { isLocalSessionUpgradeInProgress } from "./session-transfer-state";
 import { audit } from "./audit";
 import { makeAskHandler, pendingAsks } from "./asks";
+import { mentionedUsers } from "./chat";
+import { sendPushToUser } from "./push";
 import { getAccountById } from "./claude-accounts";
 import { getCodexAccountById } from "./codex-accounts";
 import { startWatching, stopAllWatchesForClient, transcriptRev } from "./file-watcher";
@@ -772,6 +774,27 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					ws.send(JSON.stringify({ type: "notice", message: notice }));
 					invalidateSessionsCache();
 					break;
+				}
+
+				// @People-mentions in a prompt ping the tagged teammates (same
+				// matcher as chat notes: roster from the identity config, never the
+				// sender). Fires at send time on every path — direct, queued, steer.
+				{
+					const promptText = String(content || "");
+					if (promptText.includes("@")) {
+						const preview =
+							promptText.length > 140
+								? `${promptText.slice(0, 139)}…`
+								: promptText;
+						for (const name of mentionedUsers(promptText, String(user || ""))) {
+							void sendPushToUser(name, {
+								title: `${user || "Someone"} mentioned you in ${session.title || "a session"}`,
+								body: preview,
+								url: `/backstage/session/${encodeURIComponent(sessionId)}`,
+								tag: `backstage-mention-${sessionId}`,
+							});
+						}
+					}
 				}
 
 				// Busy sends queue by default, so the user can still delete/edit or

@@ -117,6 +117,63 @@ export interface PushPayload {
   tag?: string;
 }
 
+// ── Notification inbox ──────────────────────────────────────────────────
+// Every sendPushToUser also appends here, so the UI has a durable per-user
+// inbox (the bell in the sidebar) independent of push subscriptions. Bounded;
+// clients track their own "seen up to" stamp locally.
+
+const NOTIF_PATH = `${PUSH_DIR}/notifications.json`;
+const NOTIF_CAP = 500;
+
+export interface NotificationRecord {
+  id: string;
+  /** Recipient (picker first name — same key as push subscriptions). */
+  user: string;
+  title: string;
+  body?: string;
+  url?: string;
+  /** ms epoch */
+  ts: number;
+}
+
+function readNotifications(): NotificationRecord[] {
+  try {
+    if (existsSync(NOTIF_PATH)) {
+      const s = JSON.parse(readFileSync(NOTIF_PATH, "utf-8"));
+      if (Array.isArray(s.items)) return s.items;
+    }
+  } catch {}
+  return [];
+}
+
+function recordNotification(user: string, payload: PushPayload): void {
+  try {
+    const item: NotificationRecord = {
+      id: crypto.randomUUID(),
+      user: user.trim(),
+      title: payload.title,
+      ...(payload.body ? { body: payload.body.slice(0, 300) } : {}),
+      ...(payload.url ? { url: payload.url } : {}),
+      ts: Date.now(),
+    };
+    const items = readNotifications();
+    items.push(item);
+    writeJsonAtomic(NOTIF_PATH, { items: items.slice(-NOTIF_CAP) });
+    // Live-update open clients (they filter by their own user).
+    void import("./ws-hub").then(({ broadcastToAll }) =>
+      broadcastToAll({ type: "notification_added", item }),
+    );
+  } catch {}
+}
+
+/** The user's most recent notifications, newest first. */
+export function listNotifications(user: string, limit = 100): NotificationRecord[] {
+  return readNotifications()
+    .filter((n) => n.user === user)
+    .slice(-Math.max(1, Math.min(limit, NOTIF_CAP)))
+    .reverse();
+}
+
 // Dedupe ledger: pushes that must survive a restart without refiring (a
 // service restart resumes ask-blocked runs, which re-ask the same question —
 // the person already got that buzz). Keyed by caller-chosen fingerprint.
@@ -146,8 +203,6 @@ export async function sendPushToUser(
   payload: PushPayload,
   opts?: { dedupeKey?: string },
 ): Promise<void> {
-  const subs = listPushSubscriptions(user);
-  if (subs.length === 0) return;
   if (opts?.dedupeKey) {
     const sent = readSentDedupe();
     const now = Date.now();
@@ -160,6 +215,11 @@ export async function sendPushToUser(
     sent[opts.dedupeKey] = new Date(now).toISOString();
     writeJsonAtomic(SENT_DEDUPE_PATH, sent);
   }
+  // Every push also lands in the recipient's in-app inbox — including when
+  // they have no push subscription, so nothing notification-worthy is lost.
+  recordNotification(user, payload);
+  const subs = listPushSubscriptions(user);
+  if (subs.length === 0) return;
   ensureVapid();
   const body = JSON.stringify(payload);
   await Promise.all(

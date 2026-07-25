@@ -13,7 +13,7 @@
  * frontend, ignored by mention pushes.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { stateDir } from "./rename-compat";
 import { teamFirstNames } from "./people";
@@ -277,6 +277,31 @@ export function threadUsers(channel: string, threadId: string): string[] {
 		if (m.id === threadId || m.threadId === threadId) names.add(m.user);
 	}
 	return [...names];
+}
+
+/**
+ * Latest note per session channel — the sidebar's unread-note dots. One scan
+ * over the chat dir; files are small and team-scale, so no cache.
+ */
+export function sessionNoteActivity(): Array<{
+	sessionId: string;
+	lastTs: number;
+	lastUser: string;
+}> {
+	const out: Array<{ sessionId: string; lastTs: number; lastUser: string }> = [];
+	try {
+		for (const f of readdirSync(CHAT_DIR)) {
+			// fileFor() writes "session:<id>" as "session_<id>" (unsafe-char
+			// mapping) — recover the id from the filename.
+			if (!f.startsWith("session_") || !f.endsWith(".json")) continue;
+			const sessionId = f.slice("session_".length, -".json".length);
+			const msgs = readAll(`session:${sessionId}`);
+			const last = msgs[msgs.length - 1];
+			if (!last) continue;
+			out.push({ sessionId, lastTs: last.ts, lastUser: last.user });
+		}
+	} catch {}
+	return out;
 }
 
 /**
