@@ -224,9 +224,6 @@ export const TurnBlock = React.memo(function TurnBlock({
             )}
           </span>
         )}
-        {live && (
-          <span className="ml-auto size-[10px] flex-shrink-0 animate-spin rounded-full border-2 border-green-soft border-t-green" />
-        )}
       </button>
 
       {expanded && (

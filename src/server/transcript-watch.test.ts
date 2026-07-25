@@ -16,7 +16,6 @@ function setup() {
   const dir = mkdtempSync(join(tmpdir(), "transcript-watch-"));
   const store = new TranscriptStore(join(dir, "transcripts.db"));
   const frames: any[] = [];
-  const timers: Array<() => void> = [];
   const socket = {
     onSend: null as null | ((frame: any) => void),
     send(payload: string) {
@@ -29,7 +28,7 @@ function setup() {
     store.close();
     rmSync(dir, { recursive: true, force: true });
   });
-  return { store, frames, timers, socket };
+  return { store, frames, socket };
 }
 
 function entry(id: string, content: string): TranscriptEntry {
@@ -51,10 +50,6 @@ function watch(
     store: state.store,
     socket: state.socket,
     subscribe: subscribeTranscript,
-    schedule(fn) {
-      state.timers.push(fn);
-      return state.timers.length;
-    },
     isCurrent: () => true,
     ...(sinceChangeSeq === undefined ? {} : { sinceChangeSeq }),
   });
@@ -136,10 +131,6 @@ describe("race-free transcript watch", () => {
       store: state.store,
       socket: state.socket,
       subscribe: subscribeTranscript,
-      schedule(fn) {
-        state.timers.push(fn);
-        return state.timers.length;
-      },
       isCurrent: () => true,
       formatAppend(frame, event) {
         return event?.feed ? { ...event.feed, event: frame } : frame;
@@ -185,7 +176,7 @@ describe("race-free transcript watch", () => {
     expect(transcriptSubscriberCount(sid)).toBe(0);
   });
 
-  test("authoritative replacement sends a fresh init and cancels old history", async () => {
+  test("authoritative replacement sends a fresh complete init", async () => {
     const state = setup();
     const sid = `bks-reset-${crypto.randomUUID()}`;
     state.store.appendTranscriptEvents(
@@ -194,7 +185,6 @@ describe("race-free transcript watch", () => {
     );
     const handle = watch(state, sid);
     cleanups.push(() => handle.unsubscribe());
-    expect(state.timers).toHaveLength(1);
     state.frames.length = 0;
 
     state.store.replaceTranscriptEvents(sid, [entry("new", "replacement")]);
@@ -204,7 +194,6 @@ describe("race-free transcript watch", () => {
       type: "transcript_init",
       entries: [expect.objectContaining({ id: "new", seq: 1 })],
     });
-    state.timers[0]();
     expect(state.frames).toHaveLength(1);
   });
 
@@ -224,18 +213,28 @@ describe("race-free transcript watch", () => {
     });
   });
 
-  test("large snapshots stage history and cancel it after unwatch", () => {
+  test("large snapshots initialize in one frame", () => {
     const state = setup();
     const sid = `bks-stage-${crypto.randomUUID()}`;
     state.store.appendTranscriptEvents(
       sid,
-      Array.from({ length: 30 }, (_, i) => entry(`e${i}`, String(i)))
+      Array.from({ length: 140 }, (_, i) => entry(`e${i}`, String(i)))
     );
     const handle = watch(state, sid);
-    expect(state.frames[0].entries).toHaveLength(12);
-    expect(state.timers).toHaveLength(1);
+    expect(state.frames).toHaveLength(1);
+    expect(state.frames[0]).toMatchObject({
+      type: "transcript_init",
+      truncated: true,
+      firstSeq: 9,
+      lastSeq: 140,
+    });
+    expect(state.frames[0].entries).toHaveLength(132);
+    expect(state.frames[0].entries[0]).toMatchObject({ id: "e8", seq: 9 });
+    expect(state.frames[0].entries.at(-1)).toMatchObject({
+      id: "e139",
+      seq: 140,
+    });
     handle.unsubscribe();
-    state.timers[0]();
     expect(state.frames).toHaveLength(1);
   });
 });

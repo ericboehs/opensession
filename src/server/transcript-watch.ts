@@ -27,7 +27,6 @@ export interface StartTranscriptWatchOptions {
     sessionId: string,
     wake: (event: TranscriptBusEvent) => void
   ) => () => void;
-  schedule: (fn: () => void, delayMs: number) => unknown;
   isCurrent: () => boolean;
   sinceChangeSeq?: number;
   clampSnapshot?: (entries: SeqEntry[]) => SeqEntry[];
@@ -44,8 +43,7 @@ export interface TranscriptWatchHandle {
 }
 
 const RESUME_LIMIT = 500;
-const FIRST_PAINT_ENTRIES = 12;
-const SNAPSHOT_TAIL_ENTRIES = FIRST_PAINT_ENTRIES + 120;
+const SNAPSHOT_TAIL_ENTRIES = 132;
 
 /**
  * Start a race-free v2 watch. Subscription happens before the durable read,
@@ -60,7 +58,6 @@ export function startTranscriptWatch(
     store,
     socket,
     subscribe,
-    schedule,
     isCurrent,
     clampSnapshot = (entries) => entries,
     formatAppend = (frame) => frame,
@@ -71,46 +68,26 @@ export function startTranscriptWatch(
   let pending = false;
   let resetPending = false;
   let closed = false;
-  let snapshotGeneration = 0;
 
   const send = (frame: Record<string, unknown>) => {
     if (!closed && isCurrent()) socket.send(JSON.stringify(frame));
   };
 
   function sendSnapshot(): void {
-    const generation = ++snapshotGeneration;
     // Capture the mutation baseline before the tail. A write racing the tail
     // read may overlap the snapshot, but the following flush replays it by id.
     cursor = store.getLastChangeSeq(sessionId);
     const tail = store.readTail(sessionId, SNAPSHOT_TAIL_ENTRIES);
-    const head = tail.entries.slice(-FIRST_PAINT_ENTRIES);
-    const rest = tail.entries.slice(0, -FIRST_PAINT_ENTRIES);
     send({
       type: "transcript_init",
       sessionId,
-      entries: clampSnapshot(head),
+      entries: clampSnapshot(tail.entries),
       truncated: tail.firstSeq > 1,
-      firstSeq: head.length ? head[0].seq : 0,
-      lastSeq: head.length ? head[head.length - 1].seq : 0,
+      firstSeq: tail.firstSeq,
+      lastSeq: tail.lastSeq,
       lastChangeSeq: cursor,
       v2: true,
     });
-    if (rest.length) {
-      const payload = JSON.stringify({
-        type: "transcript_history",
-        sessionId,
-        entries: clampSnapshot(rest),
-        firstSeq: rest[0].seq,
-        lastSeq: rest[rest.length - 1].seq,
-        truncated: tail.firstSeq > 1,
-        v2: true,
-      });
-      schedule(() => {
-        if (!closed && generation === snapshotGeneration && isCurrent()) {
-          socket.send(payload);
-        }
-      }, 80);
-    }
   }
 
   const flush = (event?: TranscriptBusEvent) => {
@@ -220,14 +197,12 @@ export function startTranscriptWatch(
       unsubscribe() {
         if (closed) return;
         closed = true;
-        snapshotGeneration++;
         unsubscribeBus();
       },
       changeSeq: () => cursor,
     };
   } catch (error) {
     closed = true;
-    snapshotGeneration++;
     unsubscribeBus();
     throw error;
   }

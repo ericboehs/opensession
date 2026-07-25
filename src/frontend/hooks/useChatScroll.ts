@@ -196,8 +196,8 @@ export function useChatScroll(initialFollowing = true): ChatScroll {
   const anchorToTop = useCallback((target: HTMLElement | null, behavior?: ScrollBehavior) => {
     const el = containerRef.current;
     if (!el || !target) return;
-    // Callers may force "auto" (e.g. the reopen anchor: an instant jump can't
-    // be invalidated by the staged-init prepend landing mid-animation).
+    // Callers may force "auto" when an instant reopen-anchor jump is preferable
+    // to an animation that can be disturbed by transcript layout changes.
     const resolved: ScrollBehavior =
       behavior ?? (COARSE_POINTER ? "auto" : "smooth");
     const instant = resolved !== "smooth";

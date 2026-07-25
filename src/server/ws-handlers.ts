@@ -372,7 +372,6 @@ function serveTranscriptV2(
 			store,
 			socket: ws,
 			subscribe: subscribeTranscript,
-			schedule: (fn, ms) => setTimeout(fn, ms),
 			isCurrent: () =>
 				ws.data?.watchingSessionId === sessionId && !!ws.data?.transcriptV2,
 			...(msg.supportsChangeSeq === true && typeof msg.sinceChangeSeq === "number"
@@ -539,16 +538,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					break;
 				}
 
-				// Send the tail of the transcript for a fast initial render. A large
-				// (multi-MB) transcript would otherwise block the open for seconds;
-				// `truncated` tells the client to offer "load earlier history", which
-				// comes back as a `load_history` message below.
-				//
-				// Two-stage init: ship the last screenful immediately (the spinner
-				// ends as soon as the viewport can fill), then the rest of the tail a
-				// beat later as a `transcript_history` prepend — two small JSON.parses
-				// and a ~12-bubble first render instead of one 40-90 bubble wall.
-				// Both use the tighter INIT wire clamp: the UI eagerly renders only
+				// Send one bounded transcript tail so the loading state transitions to
+				// a complete conversation instead of first painting a screenful and
+				// prepending the rest a beat later. The tighter INIT wire clamp keeps
+				// that snapshot manageable: the UI eagerly renders only
 				// ~6KB of markdown per bubble and fetches the full entry on demand,
 				// so the fat 32KB clamp only bought transfer time (a heavy tail hit
 				// 1.7MB on the wire). `startOffset` is the pagination cursor for
@@ -571,15 +564,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						startOffset = 0;
 					}
 				}
-				const FIRST_PAINT_ENTRIES = 12;
-				const staged = entries.length > FIRST_PAINT_ENTRIES;
-				const head = staged ? entries.slice(-FIRST_PAINT_ENTRIES) : entries;
-				const rest = staged ? entries.slice(0, -FIRST_PAINT_ENTRIES) : [];
 				ws.send(
 					JSON.stringify({
 						type: "transcript_init",
 						sessionId,
-						entries: clampEntriesForWire(head, INIT_WIRE_CLAMP_BYTES),
+						entries: clampEntriesForWire(entries, INIT_WIRE_CLAMP_BYTES),
 						truncated,
 						startOffset,
 						// Resume cursor (see the sinceOffset branch above): where this
@@ -589,22 +578,6 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							: {}),
 					}),
 				);
-				if (rest.length) {
-					// Small delay so the client paints the first screenful before the
-					// bulk arrives; ids dedupe on the client, so overlap is harmless.
-					const restPayload = JSON.stringify({
-						type: "transcript_history",
-						sessionId,
-						entries: clampEntriesForWire(rest, INIT_WIRE_CLAMP_BYTES),
-						truncated,
-						startOffset,
-					});
-					setTimeout(() => {
-						try {
-							if (ws.data?.watchingSessionId === sessionId) ws.send(restPayload);
-						} catch {}
-					}, 80);
-				}
 
 				// Start file watcher from where the tail parse left off — bytes
 				// appended between the parse and the watch would otherwise be lost.
