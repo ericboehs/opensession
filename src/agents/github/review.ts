@@ -23,7 +23,10 @@ import {
   type ReviewInlineComment,
 } from "./github-rest";
 import { defaultRepo } from "../../server/config";
+import { audit } from "../../server/audit";
+import { modelLabel } from "../../server/models";
 import { createReviewWorktreeForPrHead } from "../../server/worktree";
+import { inverseReviewModel } from "./model-inversion";
 import { repoForFullName } from "./constants";
 
 const TELLA_FUSION = defaultRepo().repo;
@@ -168,6 +171,26 @@ export async function runReview(
     const base = (config.prompt || "").trim() || DEFAULT_REVIEW_PROMPT;
     const prompt = buildReviewPrompt(base, details, isUpdate, steer, pr.ghRepo);
 
+    // Model inversion: never review code with the model family that wrote it
+    // (shared blind spots — see model-inversion.ts). Falls back to the
+    // configured model for human-authored PRs.
+    let reviewModel = config.model;
+    const inversion = inverseReviewModel(pr, reviewModel);
+    if (inversion) {
+      reviewModel = inversion.model;
+      console.log(
+        `[github] model inversion for PR #${pr.number}: ${inversion.family}-authored (${inversion.source}) → reviewing with ${reviewModel}`,
+      );
+      audit({
+        msg: "review_model_inversion",
+        pr_number: pr.number,
+        repo: pr.ghRepo || defaultRepo().ghRepo,
+        author_family: inversion.family,
+        review_model: reviewModel,
+        source: inversion.source,
+      });
+    }
+
     console.log(`[github] Reviewing PR #${pr.number} @ ${pr.headSha.slice(0, 7)} (${isUpdate ? "update" : "initial"})`);
     const result = await runGithubAgent({
       prNumber: pr.number,
@@ -176,7 +199,7 @@ export async function runReview(
       prompt,
       cwd,
       mode: "ask",
-      model: config.model,
+      model: reviewModel,
       branch: pr.headRef,
       title: `Review · PR #${pr.number} ${details.title}`.slice(0, 100),
       // Each review is self-contained: it reads the CURRENT full diff from the
@@ -193,7 +216,7 @@ export async function runReview(
     });
 
     const parsed = parseReviewOutput(result.text);
-    await postReview(pr, details, parsed, result.text, result.error, force);
+    await postReview(pr, details, parsed, result.text, result.error, force, result.model);
 
     // Record the SHA as reviewed only on a successful run, so a transient failure
     // (model error/timeout) leaves it eligible for retry on the next delivery.
@@ -245,6 +268,7 @@ async function postReview(
   rawText: string,
   runError?: string,
   force = false,
+  modelUsed?: string,
 ): Promise<void> {
   const state = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
   const shortSha = (pr.headSha || "").slice(0, 7);
@@ -267,7 +291,7 @@ async function postReview(
     "",
     findingCount ? `_${findingCount} inline comment${findingCount === 1 ? "" : "s"} below._` : "",
     tip,
-    `<sub>Reviewed \`${shortSha}\` · earlier reviews collapse above · [open session](${sessionUrl(pr.number, "review", pr.ghRepo)})</sub>`,
+    `<sub>Reviewed \`${shortSha}\`${modelUsed ? ` · ${modelLabel(modelUsed)}` : ""} · earlier reviews collapse above · [open session](${sessionUrl(pr.number, "review", pr.ghRepo)})</sub>`,
   ]
     .filter((l) => l !== "")
     .join("\n");

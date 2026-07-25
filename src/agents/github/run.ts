@@ -134,6 +134,8 @@ export interface GithubRunResult {
   bksId: string;
   text: string;
   error?: string;
+  /** Model that actually drove the run (after any fallback switches). */
+  model?: string;
 }
 
 /** Run one headless turn for a PR behavior; returns the agent's accumulated text. */
@@ -242,5 +244,5 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
   }
 
   persist(engineSessionId);
-  return { bksId, text, error: errorMsg || undefined };
+  return { bksId, text, error: errorMsg || undefined, model: effectiveModel };
 }
