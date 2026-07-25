@@ -45,3 +45,27 @@ export function parseAttribution(content?: string): { name: string; body: string
 export function isGitHubAttribution(name?: string | null): boolean {
   return name === "GitHub" || name === "GitHub (automation)";
 }
+
+/**
+ * Detect a review-handoff delivery (src/agents/github/handoff.ts): an
+ * unsatisfied PR review's findings pushed into the owning session. Arrives as a
+ * GitHub-attributed user turn; the sentinel (kept in sync with
+ * REVIEW_HANDOFF_SENTINEL in src/agents/github/prompts.ts) marks it, with the
+ * pre-sentinel "🔍 This session's PR #…" opener as a fallback so handoffs
+ * delivered before the sentinel shipped render as cards too. Returns the
+ * PR number (for the card header) and the sentinel-stripped body.
+ */
+const REVIEW_HANDOFF_SENTINEL = "<!--os:review-handoff-->";
+const LEGACY_HANDOFF_RE = /^🔍 This session'?s PR #\d+/;
+
+export function parseReviewHandoff(body?: string): { prNumber: number | null; body: string } | null {
+  if (!body) return null;
+  let text = body;
+  if (text.startsWith(REVIEW_HANDOFF_SENTINEL)) {
+    text = text.slice(REVIEW_HANDOFF_SENTINEL.length).replace(/^\n+/, "");
+  } else if (!LEGACY_HANDOFF_RE.test(text)) {
+    return null;
+  }
+  const pr = text.match(/PR #(\d+)/);
+  return { prNumber: pr ? parseInt(pr[1], 10) : null, body: text };
+}

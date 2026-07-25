@@ -2,7 +2,12 @@ import React, { useMemo, useState } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import { renderMarkdown } from "../lib/markdown";
 import { MarkdownBody } from "./MarkdownBody";
-import { parseHumanReply, parseAttribution, isGitHubAttribution } from "../lib/humanReply";
+import {
+	parseHumanReply,
+	parseAttribution,
+	isGitHubAttribution,
+	parseReviewHandoff,
+} from "../lib/humanReply";
 import { useCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
 import { BASE_PATH } from "../lib/base";
@@ -298,6 +303,39 @@ export const MessageBubble = React.memo(function MessageBubble({
 		return parseAttribution(entry.content);
 	}, [entry.type, entry.content, humanReply]);
 	const displayContent = attribution ? attribution.body : entry.content;
+
+	// A review handoff (unsatisfied PR review's findings delivered into this
+	// session) is a long instruction block, not an FYI — render it as a distinct
+	// card with real markdown instead of the tiny centered msg-system pill
+	// (which is right for short "🔀 merged" notices and stays for those).
+	const reviewHandoff = useMemo(
+		() =>
+			entry.type === "user" && attribution && isGitHubAttribution(attribution.name)
+				? parseReviewHandoff(attribution.body)
+				: null,
+		[entry.type, attribution],
+	);
+	if (entry.type === "user" && reviewHandoff) {
+		return (
+			<div className="msg" data-eid={entry.id}>
+				<div className="border border-line rounded-lg bg-panel overflow-hidden">
+					<div className="flex items-center gap-2 px-3.5 py-2 border-b border-line text-xs font-medium text-dim">
+						<span>
+							🔍 Review findings
+							{reviewHandoff.prNumber ? ` · PR #${reviewHandoff.prNumber}` : ""}
+						</span>
+						<MsgTime ts={entry.timestamp} />
+					</div>
+					<ClampedBody
+						className="msg-body markdown px-3.5 py-2.5"
+						content={reviewHandoff.body}
+						entry={entry}
+						sessionId={sessionId}
+					/>
+				</div>
+			</div>
+		);
+	}
 
 	if (entry.type === "user" && attribution && isGitHubAttribution(attribution.name)) {
 		return (

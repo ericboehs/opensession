@@ -77,7 +77,24 @@ export async function maybeHandoffFindings(pr: PrRef, review: ReviewResult | nul
       .filter((s) => !s.id.startsWith("bks-ghpr-"))
       .sort((a, b) => Date.parse(b.lastActivity || "0") - Date.parse(a.lastActivity || "0"));
     const target = owners[0];
-    if (!target) return; // no live owning session — the os-auto-fix label remains the path
+    if (!target) {
+      // No live owning session — the os-auto-fix label remains the path, but
+      // say so on the PR instead of silently stopping (each review posts a
+      // fresh summary comment, so this lands once per review, not per sweep).
+      await appendToSummary(
+        pr,
+        getOrInitPrState(pr.number, pr.headRef, pr.ghRepo),
+        `🔁 Not merge-ready and no live session owns this branch — add the \`os-auto-fix\` label and I'll fix the findings automatically.`,
+      );
+      audit({
+        msg: "review_handoff_no_owner",
+        pr_number: pr.number,
+        repo: repoFull,
+        findings: review.findings,
+        blocking: review.blocking,
+      });
+      return;
+    }
 
     const state = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
     const sha = state.lastReviewedSha || pr.headSha;

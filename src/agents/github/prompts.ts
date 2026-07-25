@@ -225,6 +225,16 @@ End your turn with these three lines (exact keys, one line each) so the loop can
  * arrives mid-session like a teammate's chat message, so it must be
  * self-contained: the session may know nothing about the review machinery.
  */
+/**
+ * Machine-readable marker at the head of every handoff message. The transcript
+ * stores the handoff as a plain `[GitHub]`-attributed user entry with no
+ * metadata channel, so the UI (MessageBubble.tsx, parseReviewHandoff in
+ * humanReply.ts) keys off this sentinel to render a "Review findings" card
+ * instead of a user bubble. Invisible in rendered markdown; keep the literal in
+ * sync with the frontend copy.
+ */
+export const REVIEW_HANDOFF_SENTINEL = "<!--os:review-handoff-->";
+
 export function buildHandoffMessage(opts: {
   prNumber: number;
   title: string;
@@ -248,7 +258,8 @@ export function buildHandoffMessage(opts: {
     : `The findings are on the PR — read them with \`gh pr view ${opts.prNumber} --repo ${opts.repoFull} --comments\` and \`gh api repos/${opts.repoFull}/pulls/${opts.prNumber}/comments\`.`;
   const remaining = opts.cap - opts.round;
 
-  return `🔍 This session's PR #${opts.prNumber} “${opts.title}” (branch \`${opts.headRef}\`) was just reviewed and is not merge-ready yet${verdict ? ` (${verdict})` : ""}. You wrote this code, so the follow-through is yours — this is fix round ${opts.round}/${opts.cap}.
+  return `${REVIEW_HANDOFF_SENTINEL}
+🔍 This session's PR #${opts.prNumber} “${opts.title}” (branch \`${opts.headRef}\`) was just reviewed and is not merge-ready yet${verdict ? ` (${verdict})` : ""}. You wrote this code, so the follow-through is yours — this is fix round ${opts.round}/${opts.cap}.
 
 ${findings}
 
