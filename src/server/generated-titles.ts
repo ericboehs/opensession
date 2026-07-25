@@ -46,12 +46,25 @@ function setGeneratedTitle(id: string, title: string): void {
 
 /** Trim a raw model output into a clean short title, or "" if unusable. */
 function sanitizeTitle(raw: string): string {
-	return raw
+	const line = raw
 		.trim()
 		.split("\n")[0] // first line only
 		.replace(/^["'`]+|["'`]+$/g, "") // surrounding quotes
-		.replace(/[.\s]+$/g, "") // trailing period/space
 		.replace(/\s+/g, " ")
+		.trim();
+	// The model occasionally answers instead of naming ("This isn't a coding
+	// task — it's a question to investigate. The ..."), which the 60-char slice
+	// would bake in as a title. Reject prose — long-winded output, an internal
+	// sentence break, or a first-person/deictic opener no imperative title has —
+	// and keep the derived first-line title instead.
+	if (
+		line.split(" ").length > 9 ||
+		/\.\s/.test(line) ||
+		/^(i|i'm|this|that|there|sorry|it)\b/i.test(line)
+	)
+		return "";
+	return line
+		.replace(/[.\s]+$/g, "") // trailing period/space
 		.slice(0, 60)
 		.trim();
 }
@@ -79,7 +92,7 @@ export async function ensureGeneratedTitle(
 	if (!source) return null;
 
 	const out = await opencodeOneShot(
-		`Summarize this coding task as a short title of 3 to 6 words, phrased as an imperative like a git branch or PR title (e.g. "Add onboarding flow", "Fix layout thumbnails", "Raise timeline playhead"). Sentence case, no trailing punctuation, no quotes, no code. Output ONLY the title, nothing else.\n\nTask:\n"""\n${source}\n"""`,
+		`Summarize this task as a short title of 3 to 6 words, phrased as an imperative like a git branch or PR title (e.g. "Add onboarding flow", "Fix layout thumbnails", "Raise timeline playhead"). Sentence case, no trailing punctuation, no quotes, no code. Always name the task, even when it is a question, an investigation or a discussion rather than a code change — never comment on the task itself. Output ONLY the title, nothing else.\n\nTask:\n"""\n${source}\n"""`,
 		{ user, label: "generated-titles" },
 	);
 	if (!out) return null;

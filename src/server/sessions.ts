@@ -51,6 +51,7 @@ const SKIP_FILES = new Set([
   "prompt-queues.json",
   "active-at-shutdown.json",
   "active-runs.json",
+  "processed-events.json",
 ]);
 
 function resolveSlackUser(userId: string): string {
