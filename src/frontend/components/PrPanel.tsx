@@ -344,6 +344,18 @@ export function PrPanel({
   const [diffView, setDiffView] = useState<
     "guide" | "diff" | "checks" | "conversation" | "commits"
   >(() => "diff");
+  const [diffStyle, setDiffStyle] = useState<"unified" | "split">(() => {
+    const stored = localStorage.getItem("opensession-pr-diff-style");
+    if (stored === "unified" || stored === "split") return stored;
+    // Side-by-side columns don't fit a phone viewport, so phones default to unified.
+    return window.matchMedia("(max-width: 720px)").matches ? "unified" : "split";
+  });
+  const changeDiffStyle = (style: "unified" | "split") => {
+    setDiffStyle(style);
+    try {
+      localStorage.setItem("opensession-pr-diff-style", style);
+    } catch {}
+  };
   const [guide, setGuide] = useState<ReviewGuideData | null>(null);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideFailed, setGuideFailed] = useState(false);
@@ -1113,11 +1125,27 @@ export function PrPanel({
                   Review guide
                 </button>
               </div>
-              <span className="ml-auto text-[11px] text-faint">
-                {pending.length > 0
-                  ? `${pending.length} pending comment${pending.length === 1 ? "" : "s"}`
-                  : "Split diff"}
-              </span>
+              <div className="ml-auto flex items-center gap-3">
+                {pending.length > 0 && (
+                  <span className="text-[11px] text-faint">
+                    {pending.length} pending comment{pending.length === 1 ? "" : "s"}
+                  </span>
+                )}
+                <div className="inline-flex rounded-md border border-line bg-panel p-0.5">
+                  <button
+                    className={`rounded-sm border-0 px-2.5 py-1 text-[11px] ${diffStyle === "unified" ? "bg-active text-fg" : "bg-transparent text-dim hover:text-fg"}`}
+                    onClick={() => changeDiffStyle("unified")}
+                  >
+                    Unified
+                  </button>
+                  <button
+                    className={`rounded-sm border-0 px-2.5 py-1 text-[11px] ${diffStyle === "split" ? "bg-active text-fg" : "bg-transparent text-dim hover:text-fg"}`}
+                    onClick={() => changeDiffStyle("split")}
+                  >
+                    Split
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1170,7 +1198,7 @@ export function PrPanel({
                     </div>
                     <CommentableDiff
                       patch={diff.patch}
-                      diffStyle="split"
+                      diffStyle={diffStyle}
                       defaultExpandedFiles={10}
                       submitLabel="Add comment"
                       placeholder={`Comment on #${diff.number} — added to your pending review…`}
@@ -1225,7 +1253,7 @@ export function PrPanel({
                         {section.patch && (
                           <CommentableDiff
                             patch={section.patch}
-                            diffStyle="split"
+                            diffStyle={diffStyle}
                             defaultExpandedFiles={Math.max(
                               0,
                               10 -
@@ -1252,7 +1280,7 @@ export function PrPanel({
               ) : (
                 <CommentableDiff
                   patch={diff.patch}
-                  diffStyle="split"
+                  diffStyle={diffStyle}
                   defaultExpandedFiles={10}
                   submitLabel="Add comment"
                   placeholder={`Comment on #${diff.number} — added to your pending review…`}
