@@ -30,6 +30,9 @@ struct AttachImagesButton: View {
         ) {
             icon
         }
+        // Plain, like the macOS branch: the default picker button style
+        // tints the paperclip blue instead of leaving it secondary gray.
+        .buttonStyle(.plain)
         .disabled(remaining == 0)
         .onChange(of: pickerItems) {
             guard !pickerItems.isEmpty else { return }

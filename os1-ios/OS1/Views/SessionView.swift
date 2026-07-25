@@ -420,8 +420,11 @@ private struct SessionInputBar: View {
     /// apps converge on, instead of a floating button next to a pill.
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 8) {
+            // 4.5 centers the 27pt buttons on the field's single-line text
+            // (36pt tall: 22pt line + 7pt vertical padding); when the field
+            // grows they stay pinned to the last line via .bottom alignment.
             AttachImagesButton(images: $viewModel.attachedImages)
-                .padding(.bottom, 3)
+                .padding(.bottom, 4.5)
             TextField(
                 viewModel.isRunning ? "Message — queues for after this run" : "Message",
                 text: $viewModel.draft,
@@ -456,7 +459,7 @@ private struct SessionInputBar: View {
             }
             .buttonStyle(.plain)
             .disabled(!viewModel.canSend)
-            .padding(.bottom, 3)
+            .padding(.bottom, 4.5)
             .padding(.trailing, 1)
             .animation(.easeOut(duration: 0.15), value: viewModel.canSend)
         }
