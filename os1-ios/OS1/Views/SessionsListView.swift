@@ -461,23 +461,31 @@ struct SessionsListView: View {
             onArchive: canArchive ? { archive(session) } : nil
         )
         .tag(session.id)
-        .swipeActions(edge: .trailing) { archiveButton(session) }
+        .swipeActions(edge: .trailing) { archiveButton(session, viaSwipe: true) }
         .contextMenu { archiveButton(session) }
         #else
         NavigationLink(value: session) {
             SessionRow(session: session)
         }
-        .swipeActions(edge: .trailing) { archiveButton(session) }
+        .swipeActions(edge: .trailing) { archiveButton(session, viaSwipe: true) }
         #endif
     }
 
     /// Trailing swipe (and Mac context-menu) action. Hidden for optimistic
     /// `pending-` rows — the server doesn't know those ids yet.
+    ///
+    /// The swipe variant is `role: .destructive` and skips our own
+    /// `withAnimation`: the destructive role tells the List the row is going
+    /// away, so a full swipe runs the system's native delete choreography
+    /// (row slides off, neighbors close up). A non-destructive button first
+    /// snaps the cell shut and then our animation re-ran the whole
+    /// inset-grouped section reflow — visibly morphing iOS 26's
+    /// position-dependent corner radii at our curve's pace.
     @ViewBuilder
-    private func archiveButton(_ session: Session) -> some View {
+    private func archiveButton(_ session: Session, viaSwipe: Bool = false) -> some View {
         if !session.id.hasPrefix("pending-") {
-            Button {
-                archive(session)
+            Button(role: viaSwipe ? .destructive : nil) {
+                archive(session, animated: !viaSwipe)
             } label: {
                 Label("Archive", systemImage: "archivebox")
             }
@@ -485,12 +493,19 @@ struct SessionsListView: View {
         }
     }
 
-    private func archive(_ session: Session) {
+    private func archive(_ session: Session, animated: Bool = true) {
         #if os(macOS)
         if selectedSessionID == session.id { selectedSessionID = nil }
         #endif
-        // Animate the row's collapse instead of blinking it out.
-        withAnimation(.snappy(duration: 0.28)) {
+        if animated {
+            // Mac hover button / Delete key / context menu: collapse the row
+            // instead of blinking it out.
+            withAnimation(.snappy(duration: 0.28)) {
+                viewModel.archive(session)
+            }
+        } else {
+            // Swipe path: the List's destructive-role delete animation owns
+            // the removal; wrapping the mutation would fight it.
             viewModel.archive(session)
         }
     }
