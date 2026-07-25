@@ -120,12 +120,14 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=macOS' \
             -archivePath "$RUNNER_TEMP/OS1Mac.xcarchive" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="OS1 Mac App Store" \
-            DEVELOPMENT_TEAM=6GUXT43C8B \
             OTHER_CODE_SIGN_FLAGS="--keychain $OS1_KEYCHAIN" \
             CURRENT_PROJECT_VERSION=${{ steps.build.outputs.number }}
+          # Manual signing (style/identity/profile) lives in project.yml's
+          # Release config, scoped to the app target: command-line settings
+          # apply to every target, and SwiftPM package targets reject
+          # provisioning profiles, failing the archive. The keychain flag
+          # stays here — it's runner-specific and profile-free, so package
+          # targets don't object to it.
 
       - name: Export signed pkg
         run: |

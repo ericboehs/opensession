@@ -36,6 +36,16 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         CURRENT_PROJECT_VERSION: 2
         MARKETING_VERSION: 0.1.0
+      configs:
+        # Release = App Store signing, scoped to the app target only. These
+        # used to ride the CI xcodebuild command line, but command-line
+        # settings apply to EVERY target — and SwiftPM package targets
+        # (SwiftStreamingMarkdown and friends) reject provisioning profiles,
+        # failing the archive. Debug stays Automatic for local dev.
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: OS1 App Store
     # Explicit scheme (replaces Xcode's autocreated one) so `xcodebuild test
     # -scheme OS1` runs the unit bundle; archive stays Release, unchanged.
     scheme:
@@ -84,3 +94,11 @@ targets:
         SWIFT_VERSION: "5.9"
         CURRENT_PROJECT_VERSION: 2
         MARKETING_VERSION: 0.1.0
+      configs:
+        # See the OS1 target: manual App Store signing must be target-scoped,
+        # not passed globally on the CI command line, because SwiftPM package
+        # targets reject provisioning profiles.
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: OS1 Mac App Store
