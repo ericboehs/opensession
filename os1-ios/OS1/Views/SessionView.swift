@@ -68,6 +68,13 @@ struct SessionView: View {
                         // A question needs eyes even if they've scrolled away.
                         scrollToBottom(proxy, animated: true)
                     }
+                    .onChange(of: viewModel.sendSeq) {
+                        // Your own send always lands in view. The bottom
+                        // size-change anchor alone doesn't re-pin once the
+                        // reader has scrolled up (or the keyboard resized the
+                        // viewport), leaving the just-sent bubble below the fold.
+                        scrollToBottom(proxy, animated: true)
+                    }
                     .onChange(of: viewModel.historyPrependSeq) {
                         // Keep the reader where they were: the entry that was at
                         // the top of the viewport stays there.

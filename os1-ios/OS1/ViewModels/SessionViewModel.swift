@@ -50,6 +50,11 @@ final class SessionViewModel {
     var draft = ""
     /// Images staged in the composer, sent (as data URLs) with the next prompt.
     var attachedImages: [AttachedImage] = []
+    /// Bumped on every send so the view can scroll to the bottom: the
+    /// scroll view's bottom size-change anchor doesn't re-pin once the
+    /// reader has scrolled (or the keyboard resized the viewport), leaving
+    /// a just-sent message below the fold.
+    private(set) var sendSeq = 0
 
     // ── Per-session run settings ──
     /// Current model id ("" = server default). Changing routes through the
@@ -316,6 +321,7 @@ final class SessionViewModel {
             effort: effort.isEmpty ? nil : effort,
             fastMode: fastMode ? true : nil
         )
+        sendSeq += 1
     }
 
     /// Switch this session's model via the `/model` slash command — handled
