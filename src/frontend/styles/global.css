@@ -11527,6 +11527,21 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		transform: translateX(100%);
 		transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
 		background: var(--bg);
+		/* How much room the pane's OWN chrome (docked tab strip, transcript and
+		   view-pane top padding) must leave for the top bar. The pane is
+		   `inset: 0` inside .app-body, so it starts wherever the bar leaves off:
+		   under a floating .app-header-overlay (home/session) the bar covers the
+		   pane's first --header-h pixels and pane-relative offsets have to clear
+		   it; on every other route (workspace, wiki, settings…) the bar stays in
+		   flow ABOVE .app-body, so the pane already starts below it and counting
+		   --header-h again would push the strip a full bar-height down the
+		   screen. Note this is only for pane-RELATIVE offsets: position:fixed
+		   chrome inside the pane (.viewer-panel, .panel-overlay, .wiki-nav) is
+		   viewport-relative and keeps using --header-h. */
+		--pane-header-h: var(--header-h);
+	}
+	.app:not(:has(.app-header-overlay)) .detail-pane {
+		--pane-header-h: 0px;
 	}
 	/* Shadow only while the pane is pushed on top — otherwise its left-side shadow
 	   (the pane rests just off the right edge) bleeds back onto the sidebar. */
@@ -12134,16 +12149,21 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		/* --strip-clearance is 0 by default and the docked tab bar's height on a
 		   multi-chat workspace (set on .detail-pane below), so the first row
 		   starts just below the bar rather than under it. */
-		padding: calc(var(--header-h) + var(--strip-clearance, 0px) + 8px) 12px 8px;
+		padding: calc(var(--pane-header-h) + var(--strip-clearance, 0px) + 8px) 12px
+			8px;
 		/* Dissolve the transcript into the header as it scrolls up under the
 		   floating pills; below them the docked tab bar (when shown) is opaque
 		   and clips the rest under its soft shadow. */
 		-webkit-mask-image: linear-gradient(
 			to bottom,
 			transparent 0,
-			#000 var(--header-h)
+			#000 var(--pane-header-h)
 		);
-		mask-image: linear-gradient(to bottom, transparent 0, #000 var(--header-h));
+		mask-image: linear-gradient(
+			to bottom,
+			transparent 0,
+			#000 var(--pane-header-h)
+		);
 	}
 
 	.viewer-input {
@@ -12205,7 +12225,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	}
 	body.chrome-collapsed .session-tabs {
 		/* Its own height + its top offset, so it fully clears the top edge. */
-		transform: translateY(calc(-100% - var(--header-h) - 8px));
+		transform: translateY(calc(-100% - var(--pane-header-h) - 8px));
 	}
 	/* With the header gone, drop the transcript's top fade so the revealed rows
 	   read at full strength instead of dissolving into an absent bar. */
@@ -12383,8 +12403,10 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.session-tabs {
 		position: absolute;
 		/* 6px below the header's bottom edge — the breathing room that makes the
-		   pill row and the tab row read as one integrated bar. */
-		top: calc(var(--header-h) + 6px);
+		   pill row and the tab row read as one integrated bar. (--pane-header-h,
+		   not --header-h: on routes whose bar stays in flow the pane already
+		   starts below it — see .detail-pane.) */
+		top: calc(var(--pane-header-h) + 6px);
 		left: 0;
 		right: 0;
 		z-index: 6;
@@ -12434,7 +12456,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   the header-h term covers the floating pills when it isn't. */
 	.viewer-review-main,
 	.workspace-view-main {
-		padding-top: calc(var(--header-h) + var(--strip-clearance, 0px));
+		padding-top: calc(var(--pane-header-h) + var(--strip-clearance, 0px));
 	}
 
 	/* Brand logo in the top bar. */
