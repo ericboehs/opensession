@@ -60,6 +60,7 @@ import {
 	type PreviewStatus,
 } from "../lib/api";
 import { pollWhileVisible } from "../lib/poll";
+import { useBackSwipe } from "../hooks/useBackSwipe";
 import { prReviewCompletion } from "../lib/review-queue";
 import { Composer } from "./Composer";
 import { ComposerAgents } from "./ComposerAgents";
@@ -3038,6 +3039,33 @@ export function SessionViewer({
 	// The title (repo tile + name) opens a deeper full-screen info page — a
 	// separate surface from the ⋯ quick-actions menu (overflowOpen).
 	const [infoPageOpen, setInfoPageOpen] = useState(false);
+	// Left-edge swipe on phones pops the topmost overlay before the page stack:
+	// the right-panel sheet (workspace/sub-agent) and the info page register as
+	// higher-priority back-swipe layers, so the gesture closes them instead of
+	// popping the whole session back to the sidebar (App's layer, priority 0).
+	const panelPaneRef = useRef({
+		get current() {
+			// Whichever right-panel sheet is mounted (workspace or sub-agent).
+			return document.querySelector<HTMLElement>(".viewer-panel");
+		},
+	}).current;
+	useBackSwipe({
+		active:
+			isPhone && (subagentStack.length > 0 || (panelAvailable && panelOpen)),
+		onBack: () => {
+			setSubagentStack([]);
+			setPanelOpen(false);
+		},
+		paneRef: panelPaneRef,
+		priority: 1,
+	});
+	const infoPageRef = useRef<HTMLDivElement | null>(null);
+	useBackSwipe({
+		active: isPhone && infoPageOpen,
+		onBack: () => setInfoPageOpen(false),
+		paneRef: infoPageRef,
+		priority: 2,
+	});
 	// The mobile top-bar title (rendered by App, outside this component) opens the
 	// same settings menu — it toggles via a window event so it doesn't need a prop
 	// thread through App's render.
@@ -3811,7 +3839,7 @@ export function SessionViewer({
 				const phoneInfoPage =
 					isPhone && infoPageOpen ? (
 						createPortal(
-							<div className="session-info-page">
+							<div className="session-info-page" ref={infoPageRef}>
 								<div className="session-info-topbar">
 									<button
 										className="panel-back"
