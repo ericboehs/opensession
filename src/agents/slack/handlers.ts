@@ -71,6 +71,8 @@ import {
 } from "../../server/run-rpc";
 import { createAskUserMcpServer, type AskUserHandler } from "./ask-tools";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
+import { ensureGeneratedTitle } from "../../server/generated-titles";
+import { invalidateSessionsCache } from "../../server/session-cache";
 import {
   getDefaultModel,
   toOpencodeModel,
@@ -686,6 +688,23 @@ export async function processMessage(
   }
 
   if (createdSession) pinSlackSession(`slack-${sessionKey}`, msg.userId);
+
+  // Auto-name the session from its opening prompt, exactly like a UI-created
+  // chat. Without this a Slack session wears its session key as a title
+  // (scanSlackSessions falls back to `branch`, which for a thread/DM session is
+  // the raw <channel>-<threadTs>), because the two other ensureGeneratedTitle
+  // callers are UI-only: run-session.ts gates on source === "backstage" and
+  // ws-handlers/session-control only fire on create_session.
+  if (createdSession) {
+    void ensureGeneratedTitle(
+      `slack-${sessionKey}`,
+      prompt,
+      msg.userId,
+      session.model,
+    ).then((t) => {
+      if (t) invalidateSessionsCache();
+    });
+  }
 
   // Set up abort controller
   const abortController = new AbortController();
