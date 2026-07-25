@@ -82,7 +82,7 @@ import { ensureGeneratedTitle } from "./generated-titles";
 import { gitIdentityFor } from "./shared/user-mappings";
 import { writeFileAtomic, writeJsonAtomic } from "./shared/atomic-write";
 import { startWatching } from "./file-watcher";
-import { getRepo, repoForPath, reviveWorktree, worktreeHeadBranch } from "./worktree";
+import { ensureAskCheckout, getRepo, isSharedCheckoutDir, repoForPath, reviveWorktree, worktreeHeadBranch } from "./worktree";
 import { createGoalSelfMcpServer } from "../agents/slack/goal-tools";
 import { sendSlackMessage } from "../agents/slack/slack-api";
 import type { RunHostSpec } from "../runner-host/protocol";
@@ -1347,7 +1347,15 @@ async function runSessionPromptInner(
 	// sandbox workspaces are exempt: their dir never exists host-side — the
 	// sandbox provider materializes it in-container, so reviving a host
 	// worktree at the same path would shadow (and fork) the real workspace.
-	let cwd = session.worktreeDir || defaultRepo().repo;
+	// Ask chats can be minted without a worktree (sibling "+ → Ask", legacy
+	// files): resolve them to the pinned ask checkout, never the mutable main
+	// checkout, whose parked branch is a false context clue (ensureAskCheckout —
+	// 82a296a6 covered the create paths but missed this prompt-path fallback).
+	let cwd =
+		session.worktreeDir ||
+		(session.mode === "ask"
+			? await ensureAskCheckout(session.repo)
+			: defaultRepo().repo);
 	if (
 		session.worktreeDir &&
 		!existsSync(session.worktreeDir) &&
@@ -1858,10 +1866,14 @@ async function runSessionPromptInner(
 		// The agent may have switched branches in its worktree during the turn
 		// (e.g. renaming an auto-generated branch before opening a PR). Keep the
 		// record on the actual HEAD so PR lookups, the PR tab, and the review
-		// handoff keep resolving this session.
-		const headBranch = session.branch
-			? worktreeHeadBranch(session.worktreeDir)
-			: null;
+		// handoff keep resolving this session. Shared checkouts (a repo's main
+		// or ask checkout) are exempt: no session owns their HEAD, so syncing
+		// would stamp whatever branch another flow left parked there onto this
+		// session (bks-019f97ec, 2026-07-25).
+		const headBranch =
+			session.branch && !isSharedCheckoutDir(session.worktreeDir)
+				? worktreeHeadBranch(session.worktreeDir)
+				: null;
 		touchBackstageSession(
 			session.id,
 			{

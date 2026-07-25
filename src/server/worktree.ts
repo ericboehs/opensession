@@ -54,6 +54,19 @@ export function repoForPath(p: string): Repo {
   return defaultRepo();
 }
 
+/** Is this dir a shared checkout no single session owns — a repo's live main
+ *  checkout or its pinned ask checkout? Worktree "ownership" is meaningless
+ *  there: the tree is shared by every ask/legacy chat, and its parked branch
+ *  says nothing about the sessions running in it. */
+export function isSharedCheckoutDir(dir: string | null | undefined): boolean {
+  if (!dir) return false;
+  for (const r of Object.values(configuredRepos())) {
+    if (dir === r.repo || dir === `${worktreesDir()}/${r.wtPrefix}-ask-checkout`)
+      return true;
+  }
+  return false;
+}
+
 /** Actual HEAD branch of a checkout/worktree, or null (detached/missing). Sync
  *  + cheap (two tiny file reads, no git subprocess): follows the `.git`
  *  file/dir to its HEAD ref. An agent can switch branches inside its worktree

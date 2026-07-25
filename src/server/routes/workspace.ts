@@ -22,7 +22,7 @@ import { suggestBranchName } from "../suggest-branch";
 import { type BackstageSessionFile } from "../types";
 import { type Workspace, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace } from "../workspaces";
 import { resolvePlainWorkspace, resolvePrWorkspace } from "../workspace-resolve";
-import { REPOS, createWorktree, getRepo, listWorktrees, repoForPath, worktreeHasWork } from "../worktree";
+import { REPOS, createWorktree, createWorktreeForExistingBranch, getRepo, isSharedCheckoutDir, listWorktrees, repoForPath, worktreeHasWork } from "../worktree";
 import { randomUUIDv7 } from "bun";
 import { copyFileSync, existsSync, mkdirSync } from "fs";
 
@@ -339,6 +339,22 @@ export async function handleWorkspaceRoutes(
 		let worktreeDir = src.worktreeDir || "";
 		let mode: "ask" | "code" = src.mode || "code";
 		let repoId = src.repo;
+		// A shared checkout (main or ask) recorded on the source isn't a real
+		// workspace worktree — legacy ask/review chats point at the main
+		// checkout, and copying it hands the sibling whatever branch happens to
+		// be parked in that live tree (bks-019f97ec, 2026-07-25: a "+" chat in a
+		// PR workspace landed on the main checkout's parked branch instead of
+		// the PR's). Treat it as bare so share siblings resolve through the
+		// workspace below. Shared-checkout repos (backstage) are exempt — their
+		// code chats live on the main checkout by design.
+		if (
+			chatMode === "share" &&
+			isSharedCheckoutDir(worktreeDir) &&
+			!repoForPath(worktreeDir).sharedCheckout
+		) {
+			branch = "";
+			worktreeDir = "";
+		}
 		if (chatMode === "ask") {
 			branch = "";
 			worktreeDir = "";
@@ -362,6 +378,17 @@ export async function handleWorkspaceRoutes(
 				worktreeDir = ws.worktreeDir;
 				mode = "code";
 				repoId = repoForPath(ws.worktreeDir).id;
+			} else if (ws?.branch && !getRepo(ws.repo).sharedCheckout) {
+				// A workspace minted chat-less from a PR/ticket knows its branch
+				// but owns no worktree yet: materialize one on that existing
+				// branch so the sibling lands on the PR's code (mirrors
+				// create_session's fromPr path), and stamp it as the workspace's
+				// owned worktree for later siblings.
+				branch = ws.branch;
+				worktreeDir = await createWorktreeForExistingBranch(ws.branch, ws.repo);
+				mode = "code";
+				repoId = getRepo(ws.repo).id;
+				updateWorkspace(ws.id, { worktreeDir });
 			}
 		}
 		// A workspace-less source gets healed here: adopt the workspace that
