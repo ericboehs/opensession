@@ -93,6 +93,38 @@ export function sessionRepoIds(session: UnifiedSession): string[] {
 }
 
 /**
+ * Plan-first gate + vertical-slice discipline for code sessions created with
+ * the "Plan first" toggle. Purely instruction-layer: the approval ride's the
+ * existing ask_user pause (AskCard in the UI, Slack escalation after 4 min),
+ * so a plan gets a human yes/no at the cheapest moment to change course —
+ * before the code exists — and implementation lands as reviewable slices.
+ */
+export function buildPlanFirstNote(session: {
+	mode?: "ask" | "code";
+	planFirst?: boolean;
+}): string | undefined {
+	if (!session.planFirst || session.mode === "ask") return undefined;
+	return [
+		"## Plan first (design gate)",
+		"This session has the plan-first gate ON. Before creating, editing, or committing ANY file, post a short program-design doc as a normal chat message:",
+		"- **Scope** — one paragraph: what's being built, and what's explicitly out of scope.",
+		"- **File-tree diff** — files to add/change/delete, one line each.",
+		"- **Key signatures** — the new/changed types and function signatures that matter.",
+		"- **Call-stack sketch** — for control-flow changes, the call tree (use diff syntax when altering an existing flow).",
+		"- **Slices** — number the work as vertical slices, each independently runnable and demoable (e.g. API-with-mock-data → UI against it → real wiring → persistence). Never horizontal layers (all migrations, then all services, then all UI).",
+		"Then call `ask_user` with exactly one question — \"Approve this plan?\" with options Approve and Revise — and wait. On Revise, update the plan per the notes and ask again. If the question times out or is dismissed, end the turn with the plan posted; do NOT start implementing.",
+		"",
+		"After an explicit Approve, implement slice by slice:",
+		"- Finish a slice completely (code + verify) before touching the next.",
+		"- After each slice, post brief evidence it works: test/build output, a curl transcript, or a screenshot — whatever proves that slice does its job.",
+		"- Commit per slice with a clear message; keep each slice's diff small enough to review in minutes.",
+		"- If implementation reveals the plan was wrong, stop, post the plan delta, and `ask_user` again before continuing.",
+		"",
+		"If a plan was already approved earlier in this conversation, don't re-plan — continue the slice work. Re-run the gate only when the user asks for new work that changes scope. Trivial follow-ups (typo fixes, review feedback on landed slices) skip the gate.",
+	].join("\n");
+}
+
+/**
  * The full per-session system-prompt note for an interactive run: repos/branch
  * discipline (buildReposNote) + the session's repo/user/team memory. Memory
  * failures never block a run — the note just goes out without it.
@@ -106,6 +138,7 @@ export async function buildSessionNote(
 			// The standing Desk session gets its concierge charter first — role
 			// discipline for the summonable overlay (see desk.ts).
 			session.desk ? DESK_NOTE : "",
+			buildPlanFirstNote(session),
 			buildReposNote(session),
 			await memoryNoteFor(user, sessionRepoIds(session)),
 		]

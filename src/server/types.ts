@@ -350,6 +350,10 @@ export interface BackstageSessionFile {
   lastActivity: string;
   title?: string;
   mode?: "ask" | "code";
+  /** Plan-first gate (code mode only): the session must post a program-design
+   *  doc and get it approved via ask_user before writing code, then implement
+   *  in vertical slices with per-slice evidence. See buildPlanFirstNote. */
+  planFirst?: boolean;
   repo?: string; // which repo this chat works in (default "tella-fusion")
   workspaceId?: string | null; // Workspace this chat belongs to (canonical key)
   projectId?: string | null; // legacy alias of workspaceId (dual-read during migration)

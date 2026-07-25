@@ -132,6 +132,9 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     navigator.userAgent.includes("Electron/");
   const [prefill] = useState(readPrefill);
   const [mode, setMode] = useState<"ask" | "code">(forceMode || prefill.mode);
+  // Plan-first gate (code mode): design doc + ask_user approval before any
+  // code, then vertical slices with per-slice evidence. See buildPlanFirstNote.
+  const [planFirst, setPlanFirst] = useState(false);
   // The desktop app's local bridge merges local and hosted sessions. Hosted is
   // deliberately the default; local execution is still experimental and must
   // be selected explicitly for each palette lifetime.
@@ -533,6 +536,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
       branch: mode === "ask" ? "" : branch,
       prompt: prompt.trim(),
       user: getCurrentUser(),
+      ...(mode === "code" && planFirst ? { planFirst: true } : {}),
       ...(model ? { model } : {}),
       effort,
       ...(accountProvider && accountId ? { accountId } : {}),
@@ -841,6 +845,23 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 </div>
               )}
             </div>
+            )}
+            {mode === "code" && (
+              <button
+                type="button"
+                className="palette-pill"
+                style={
+                  planFirst
+                    ? { borderColor: "var(--accent)", color: "var(--accent)" }
+                    : undefined
+                }
+                onClick={() => setPlanFirst((v) => !v)}
+                disabled={creating}
+                title="Plan first — the session posts a program design and asks for approval before writing any code, then implements in reviewable vertical slices"
+                aria-pressed={planFirst}
+              >
+                <span className="palette-pill-label">{planFirst ? "Plan first ✓" : "Plan first"}</span>
+              </button>
             )}
             {/* On phones the run-environment picker hides behind the options
                 toggle with the other advanced controls. */}

@@ -31,7 +31,7 @@ import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { type Sandbox, hasRemoteWorkspace } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox, sandboxConfig, sandboxesEnabled } from "./sandbox/config";
 import { SESSION_EFFORTS, findSession, invalidateSessionsCache, maybePersistEffort, maybePersistFastMode, recordRunOutcome, touchBackstageSession, updateSessionFile } from "./session-cache";
-import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
+import { buildBranchNote, buildPlanFirstNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
 import { engineSessionPatch, engineUserTexts, mergedSessionTranscript, mergedSessionTranscriptAsync, v2MirrorFiles, v2TranscriptHasDrift } from "./sessions";
 import { handleSlashCommand } from "./slash-commands";
 import { resizeTerminal, startSessionTerminal, stopAllTerminals, stopTerminal, writeTerminal } from "./terminals";
@@ -1579,6 +1579,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 								createdAt: new Date().toISOString(),
 								title,
 								mode: (isAsk ? "ask" : "code") as "ask" | "code",
+								...(msg.planFirst === true && !isAsk ? { planFirst: true } : {}),
 								...(createEffort ? { effort: createEffort } : {}),
 								...(createFastMode ? { fastMode: true } : {}),
 								...(createAccountId ? { accountId: createAccountId } : {}),
@@ -1712,6 +1713,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						mcpServers: createMcpServers,
 						reposNote:
 							[
+								buildPlanFirstNote({
+									mode: isAsk ? "ask" : "code",
+									planFirst: msg.planFirst === true,
+								}),
 								buildBranchNote({
 									mode: isAsk ? "ask" : "code",
 									branch: sessionBranch,
