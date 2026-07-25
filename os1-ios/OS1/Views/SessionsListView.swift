@@ -333,19 +333,25 @@ struct SessionsListView: View {
                 return false
             }
         }
-        return result.sorted {
-            let leftInProgress = $0.lane == .inProgress
-            let rightInProgress = $1.lane == .inProgress
-            if leftInProgress != rightInProgress { return leftInProgress }
-
-            switch sortBy {
-            case .updated:
-                return ($0.lastActivityDate ?? .distantPast) > ($1.lastActivityDate ?? .distantPast)
-            case .created:
-                return (Session.parseISO($0.createdAt) ?? .distantPast)
-                    > (Session.parseISO($1.createdAt) ?? .distantPast)
+        // Decorated sort: parse each row's date once, not once per
+        // comparison — this runs on the main thread on every body
+        // evaluation, and the list can be thousands of rows with the
+        // people filter set to "everyone".
+        return result
+            .map { session in
+                (
+                    session: session,
+                    inProgress: session.lane == .inProgress,
+                    date: sortBy == .updated
+                        ? session.lastActivityDate ?? .distantPast
+                        : Session.parseISO(session.createdAt) ?? .distantPast
+                )
             }
-        }
+            .sorted {
+                if $0.inProgress != $1.inProgress { return $0.inProgress }
+                return $0.date > $1.date
+            }
+            .map(\.session)
     }
 
     private struct SessionGroup: Identifiable {

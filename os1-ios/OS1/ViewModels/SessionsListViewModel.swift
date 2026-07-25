@@ -110,11 +110,14 @@ final class SessionsListViewModel {
     func refresh() async {
         do {
             let all = try await OS1API.sessions()
-            let next = mergeOptimistic(into: all
-                .filter { $0.archived != true && $0.desk != true && !isLocallyArchived($0.id) }
-                .sorted {
-                    ($0.lastActivityDate ?? .distantPast) > ($1.lastActivityDate ?? .distantPast)
-                })
+            // Snapshot the main-actor state the filter needs, then do the
+            // heavy pass (thousands of rows) off the main thread — inline it
+            // ran on the main actor every 5s poll and hitched typing.
+            let hiddenIds = Set(Array(locallyArchived.keys).filter { isLocallyArchived($0) })
+            let prepared = await Task.detached(priority: .userInitiated) {
+                Self.prepared(all, hiding: hiddenIds)
+            }.value
+            let next = mergeOptimistic(into: prepared)
             // Most 5s polls change nothing — skip the assignment so the whole
             // list doesn't re-diff (grouping, sorting, row rebuilds) for a
             // byte-identical result.
@@ -125,5 +128,20 @@ final class SessionsListViewModel {
             self.error = error.localizedDescription
         }
         hasLoaded = true
+    }
+
+    /// Drop archived/desk/locally-hidden rows and sort by last activity.
+    /// Decorated sort on purpose: the comparator form re-parsed each row's
+    /// ISO date ~2·log n times, which multiplied into hundreds of
+    /// milliseconds per poll at this list size — parse once per row instead.
+    nonisolated private static func prepared(
+        _ all: [Session],
+        hiding hiddenIds: Set<String>
+    ) -> [Session] {
+        all
+            .filter { $0.archived != true && $0.desk != true && !hiddenIds.contains($0.id) }
+            .map { (session: $0, key: $0.lastActivityDate ?? .distantPast) }
+            .sorted { $0.key > $1.key }
+            .map(\.session)
     }
 }

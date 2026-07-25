@@ -97,7 +97,7 @@ enum OS1API {
         let body = String(decoding: data, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if body.isEmpty || body == "null" { return nil }
-        return try JSONDecoder().decode(PrDetails.self, from: data)
+        return try await decodeDetached(PrDetails.self, from: data)
     }
 
     /// Archive (or unarchive) a session. Archiving an in-flight session also
@@ -177,7 +177,7 @@ enum OS1API {
         return response.id
     }
 
-    private static func post<T: Decodable>(
+    private static func post<T: Decodable & Sendable>(
         _ path: String,
         body: [String: Any]
     ) async throws -> T {
@@ -198,10 +198,10 @@ enum OS1API {
             }
             throw APIError.http(http.statusCode)
         }
-        return try JSONDecoder().decode(T.self, from: data)
+        return try await decodeDetached(T.self, from: data)
     }
 
-    private static func get<T: Decodable>(
+    private static func get<T: Decodable & Sendable>(
         _ path: String,
         authorized: Bool = true
     ) async throws -> T {
@@ -215,7 +215,20 @@ enum OS1API {
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw APIError.http(http.statusCode)
         }
-        return try JSONDecoder().decode(T.self, from: data)
+        return try await decodeDetached(T.self, from: data)
+    }
+
+    /// Decode off the main actor. OS1API is @MainActor, and decoding inline
+    /// parked multi-megabyte payloads on the main thread — `/api/sessions`
+    /// alone is ~4MB / thousands of rows every 5s poll, a visible periodic
+    /// hitch while typing (long transcripts weren't small either).
+    private static func decodeDetached<T: Decodable & Sendable>(
+        _ type: T.Type,
+        from data: Data
+    ) async throws -> T {
+        try await Task.detached(priority: .userInitiated) {
+            try JSONDecoder().decode(T.self, from: data)
+        }.value
     }
 
     private static func getData(_ path: String) async throws -> Data {

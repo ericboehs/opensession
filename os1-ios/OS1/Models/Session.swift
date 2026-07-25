@@ -84,13 +84,23 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
         return .backlog
     }
 
-    static func parseISO(_ string: String?) -> Date? {
-        guard let string else { return nil }
+    /// Shared formatters — NSISO8601DateFormatter is documented thread-safe,
+    /// and allocating one per call was a real cost: this runs inside list
+    /// sort comparators, thousands of times per 5s sessions poll.
+    private static let isoFractional: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: string) { return date }
+        return formatter
+    }()
+    private static let isoPlain: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: string)
+        return formatter
+    }()
+
+    static func parseISO(_ string: String?) -> Date? {
+        guard let string else { return nil }
+        return isoFractional.date(from: string) ?? isoPlain.date(from: string)
     }
 }
 
