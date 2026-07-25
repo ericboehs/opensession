@@ -210,7 +210,9 @@ select, input[type="text"] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-#view-detail { display: flex; }
+/* :not([hidden]) — a bare #view-detail rule would out-specify .view[hidden]
+   and bleed this view's chrome (back bar, follow-up box) into every view. */
+#view-detail:not([hidden]) { display: flex; }
 #transcript {
   flex: 1;
   overflow-y: auto;

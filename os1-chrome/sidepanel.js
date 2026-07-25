@@ -14,6 +14,10 @@ let cfg = { serverUrl: DEFAULT_SERVER, token: "", login: "", name: "" };
 // Captured context for the composer.
 const ctx = {
   page: null, // { url, title }
+  // True when page came from the right-click capture — stops the async
+  // active-tab refresh from clobbering it (the panel itself is the active
+  // "tab" in some flows, which would null the chip right after seeding).
+  pagePinned: false,
   selection: "",
   screenshot: null, // dataUrl
   element: null, // { info, react, shot }
@@ -131,6 +135,7 @@ function renderChips() {
   if (ctx.page) {
     chip(ctx.page.title || ctx.page.url, ctx.page.url, () => {
       ctx.page = null;
+      ctx.pagePinned = false;
       renderChips();
     });
   }
@@ -162,6 +167,7 @@ function renderChips() {
 
 async function refreshPageChip() {
   const tab = await activeTab();
+  if (ctx.pagePinned) return;
   if (tab?.url && /^https?:/.test(tab.url)) {
     ctx.page = { url: tab.url, title: tab.title || "" };
   } else {
@@ -547,7 +553,8 @@ async function loadComposerData() {
     ms.textContent = "";
     const dflt = document.createElement("option");
     dflt.value = "";
-    dflt.textContent = `Model: default${models.default ? ` (${models.default.split("/").pop()})` : ""}`;
+    const dfltLabel = (models.models || []).find((m) => m.id === models.default);
+    dflt.textContent = `Model: default${dfltLabel?.label ? ` (${dfltLabel.label})` : ""}`;
     ms.append(dflt);
     for (const m of models.models || []) {
       const o = document.createElement("option");
@@ -649,6 +656,7 @@ async function applyPendingContext() {
   await chrome.storage.session.remove("pendingContext");
   if (pendingContext.url) {
     ctx.page = { url: pendingContext.url, title: pendingContext.title || "" };
+    ctx.pagePinned = true;
   }
   if (pendingContext.selection) ctx.selection = pendingContext.selection;
   renderChips();
