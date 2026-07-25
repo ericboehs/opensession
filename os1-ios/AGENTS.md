@@ -1,0 +1,84 @@
+# OS1 native app (iOS + macOS, SwiftUI) — agent guide
+
+This directory is the NATIVE Swift client for OS1: one SwiftUI codebase, two
+targets — `OS1` (iOS 26+) and `OS1Mac` (macOS). It is not the web UI
+(`src/frontend/`) and not the Electron desktop shell (`os1-mac/`); see the
+"client apps" section of the root AGENTS.md for how to disambiguate requests.
+`README.md` here is the human-facing overview (features, architecture map,
+WS protocol notes) — keep it updated alongside changes.
+
+## Project setup
+
+- The Xcode project is GENERATED: `project.yml` (XcodeGen) is the source of
+  truth — `OS1.xcodeproj` is not checked in and must never be hand-edited.
+  New/removed Swift files under `OS1/` are picked up by `xcodegen generate`.
+- Deployment targets live in `project.yml` (iOS 26.0; don't trust stale docs).
+- Pure SwiftUI, zero third-party dependencies — keep it that way unless the
+  change has been explicitly discussed.
+- Both targets share the `dev.tella.os1` bundle id (one App Store Connect
+  record, universal purchase). The Electron shell uses `dev.tella.os1.shell`;
+  two Mac apps must never share a bundle id.
+
+## Building and testing (from the Linux VPS)
+
+There is no Xcode on the Linux host. Verify every change on the Mac build node
+over SSH (`ssh tella-mac-node`, Xcode 26.6):
+
+```sh
+rsync -a --delete os1-ios/ tella-mac-node:/tmp/os1-check/os1-ios/
+ssh tella-mac-node '
+  cd /tmp/os1-check/os1-ios && xcodegen generate --quiet
+  xcodebuild -quiet build -project OS1.xcodeproj -scheme OS1 \
+    -destination "generic/platform=iOS Simulator" -derivedDataPath /tmp/os1-check/dd
+  xcodebuild -quiet build -project OS1.xcodeproj -scheme OS1Mac \
+    -destination "platform=macOS" -derivedDataPath /tmp/os1-check/dd CODE_SIGNING_ALLOWED=NO
+  UDID=$(xcrun simctl list devices available | grep iPhone | grep -m1 -oE "[0-9A-F-]{36}")
+  xcodebuild -quiet test -project OS1.xcodeproj -scheme OS1 \
+    -destination "id=$UDID" -derivedDataPath /tmp/os1-check/dd'
+```
+
+- Always build BOTH schemes: `#if os(macOS)` blocks only compile in `OS1Mac`.
+- A Mac-target `errSecInternalComponent` CodeSign failure over SSH is the build
+  box's locked keychain, not a code error — `CODE_SIGNING_ALLOWED=NO` avoids it
+  for compile checks.
+- The Linux host can't catch Swift compile errors; never declare a change done
+  without a real xcodebuild run.
+
+## Releasing
+
+Pushing to `master` with changes under `os1-ios/**` auto-triggers the
+TestFlight workflows (`.github/workflows/os1-ios-testflight.yml` and
+`os1-mac-testflight.yml`). There is no separate release step — treat every
+push as shipping to TestFlight.
+
+## Performance invariants (learned the hard way — don't regress)
+
+- **Observation granularity is per view `body`.** `SessionViewModel` is
+  `@Observable`; any property read inside `SessionView.body` re-evaluates the
+  whole body — transcript included. Per-keystroke state (`draft`, `canSend`,
+  `attachedImages`) is read ONLY inside `SessionInputBar`; keep it that way,
+  and give other hot state the same treatment (own view struct).
+- **Markdown is memoized.** `MarkdownBody` caches both the block parse and the
+  inline `AttributedString(markdown:)` conversions per unique text
+  (`MarkdownParseCache` / `MarkdownInlineCache`) — uncached parsing on the main
+  thread is what made long streams hitch. New render paths must go through the
+  caches.
+- **Stream text is coalesced.** `stream_text` chunks buffer in the view model
+  and flush to `liveText` at ~8Hz; don't bind UI to per-chunk updates.
+- **Scroll pinning is explicit.** `onScrollGeometryChange` tracks
+  "near-bottom"; new output follows only while pinned, sends and pending
+  questions always scroll. Don't rely on `defaultScrollAnchor(... .sizeChanges)`
+  alone — keyboard insets and lazy row settling knock it loose.
+- Decode server frames off the main thread (see `OS1Socket` / `ServerEvent`);
+  the transcript can be large.
+
+## Server coupling
+
+- REST + WS shapes live in `src/server/` (routes, `ws-handlers.ts`,
+  `pr-info.ts` for `PrDetails`). Models here decode a tolerant SUBSET —
+  optionals everywhere, unknown fields ignored — so server additions never
+  break older app builds. Keep new fields optional.
+- The server answers a bare JSON `null` for "no PR" style routes — probe the
+  raw body before decoding (see `OS1API.pr`).
+- Cross-platform shims live in `PlatformCompat.swift`; add new
+  iOS-only/Mac-only API bridging there rather than scattering `#if os(...)`.
