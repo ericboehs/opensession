@@ -36,6 +36,7 @@ What to look for, in priority order:
 
 How to review well:
 - Read the diff AND enough of the surrounding and related code to understand intent and spot inconsistencies (use Read/Grep freely — you have the full checkout, read-only). Call out when the same issue appears in more than one place, or when a change diverges from how the rest of the PR or codebase does it.
+- Blast radius: the worst bugs live OUTSIDE the diff. For each changed function, exported symbol, type, or API response shape, Grep for its callers/consumers and verify the contract didn't silently change for them — a caller that still assumes the old argument order, return shape, nullability, error behavior, or event payload is a P0/P1 even though its file never appears in the diff. Prioritize symbols whose signature, semantics, or serialization changed; skip pure additions nothing consumes yet.
 - Every finding needs a concrete failure scenario (use realistic example values when they make the bug obvious), the consequence, and the smallest credible fix. No vague "consider refactoring."
 - Separate real bugs from things that may be intentional: if something looks wrong but could be deliberate, flag it and ask the author to confirm rather than asserting it's broken.
 - Be high-signal: a few well-justified findings beat a long list of nits. Don't invent issues, don't praise, don't restate what the code does. If it's clean, say so briefly and approve.
@@ -131,6 +132,7 @@ End your turn with EXACTLY ONE fenced \`json\` code block — and nothing after 
   "verdict": "approve | comment | request_changes",
   "confidence": 5,
   "summary_markdown": "Lead with merge-readiness (e.g. \\"Safe to merge\\" or \\"Safe once the P1 below is fixed\\"), then 1-2 sentences on what the PR does, then the key risks. Concise — a few sentences, not an essay.",
+  "diagram": { "type": "sequence | flow | er | class", "mermaid": "valid mermaid source" },
   "findings": [
     {
       "path": "relative/file/path.ts",
@@ -147,11 +149,40 @@ End your turn with EXACTLY ONE fenced \`json\` code block — and nothing after 
 
 Rules:
 - \`confidence\` is 1-5: how safe is this to merge? 5 = safe, 1 = serious problems.
+- \`diagram\` is OPTIONAL — include it ONLY when the change genuinely warrants a picture: a multi-service/API flow (sequence), schema or data-model change (er), class/module hierarchy change (class), or non-trivial control-flow/business-logic change (flow). Omit the field entirely for small or mechanical changes — most reviews should have no diagram. Keep it small (≤25 nodes) and make the mermaid valid.
 - \`severity\` is one of P0 (blocker / data loss / broken build), P1 (important bug), P2 (should fix), P3 (minor / style). Order findings by severity, P0 first.
 - \`path\` + \`line\` must point at a line that appears in THIS PR's diff so the comment anchors. \`side\` is "RIGHT" for added/changed lines (default), "LEFT" for removed lines. For a multi-line \`suggestion\`, \`line\` is the LAST line being replaced.
 - \`suggestion\`: include ONLY when the value is a correct, drop-in replacement for exactly the commented line(s) — it renders as a one-click GitHub suggestion. Omit otherwise.
 - Be high-signal: keep \`findings\` to genuinely useful, actionable items and lean toward fewer, higher-severity ones; mark true nits as P3. Use [] when there's nothing worth an inline comment.
 - Do not wrap the JSON in prose; the fenced json block is the last thing in your message.`;
+
+/**
+ * Author-family checklists (Greptile "rise of the overnight agents", 2026):
+ * agent-authored PRs match human quality overall but with family-specific
+ * failure fingerprints, so the reviewer sweeps the categories the author's
+ * family statistically under-defends. Keyed by the same families as
+ * model-inversion.ts.
+ */
+const AUTHOR_CHECKLISTS: Record<string, string> = {
+  anthropic: `## Author-specific sweep
+
+This PR was authored by a Claude-family agent. Claude-authored code statistically under-defends these categories — explicitly check each one against this diff (they measured 1.5-1.75x elevated rates):
+- Missing tenant/organization scoping and authorization checks on new or changed endpoints, queries, and mutations (IDOR: can user A reach user B's data?).
+- Auth bypass on new routes: is every new surface behind the same auth middleware/gate as its siblings?
+- XSS on new rendering paths: unescaped interpolation into HTML/attributes, dangerouslySetInnerHTML, v-html, raw template injection.
+- Secrets or PII leaking into logs, error messages, or analytics events.`,
+  openai: `## Author-specific sweep
+
+This PR was authored by a GPT/Codex-family agent. That family statistically under-defends these categories — explicitly check each one against this diff:
+- Configuration and environment-variable handling bugs: wrong default, missing var crashing only in prod, config read at import time vs runtime.
+- Secrets or credentials leaking into logs, error output, or committed files.
+- N+1 queries and needless re-computation on hot paths introduced by generated loops.
+- Off-by-one and boundary errors in index/pagination/slicing logic, and regressions of behavior the diff's surroundings previously guaranteed.`,
+};
+
+export function authorChecklist(family?: string | null): string {
+  return (family && AUTHOR_CHECKLISTS[family]) || "";
+}
 
 export function buildReviewPrompt(
   base: string,
@@ -159,6 +190,14 @@ export function buildReviewPrompt(
   isUpdate: boolean,
   steer?: string,
   ghRepo?: string,
+  extras?: {
+    /** Author model family ("anthropic" | "openai") for the targeted sweep. */
+    authorFamily?: string | null;
+    /** Paths the repo excludes from review (.os-review.json ignoreGlobs). */
+    ignoreGlobs?: string[];
+    /** Giant PR: summary + verdict only, no inline findings. */
+    summaryOnly?: boolean;
+  },
 ): string {
   const header = isUpdate
     ? `You previously reviewed PR #${pr.number} ("${pr.title}"). New commits have been pushed. Re-review the CURRENT diff, focusing on what changed since your last review, and produce a fresh full assessment.`
@@ -169,15 +208,27 @@ export function buildReviewPrompt(
 Your checkout is pinned to the PR's HEAD and both refs are fetched. Run
 \`git diff --find-renames origin/${pr.baseRefName}...HEAD\` to inspect the complete PR diff, then use Read/Grep on the checkout for surrounding context. Do not use a working-tree-only \`git diff\`; this checkout is clean.`;
 
+  const ignoreSection = extras?.ignoreGlobs?.length
+    ? `Ignore changes under these paths entirely (generated/vendored — the repo excludes them from review; emit no findings there):\n${extras.ignoreGlobs.map((g) => `- \`${g}\``).join("\n")}`
+    : "";
+  const summaryOnlySection = extras?.summaryOnly
+    ? `This PR is too large for useful inline commentary (${pr.changedFiles} files). Review for the same bar, but return findings ONLY for P0/P1 issues; cover everything else in summary_markdown at the theme level.`
+    : "";
+
   return [
     base.trim(),
     "",
     header,
     `PR: ${pr.url}  ·  base: ${pr.baseRefName} ← head: ${pr.headRefName}  ·  +${pr.additions}/-${pr.deletions} across ${pr.changedFiles} files.`,
     steerBlock(steer),
+    authorChecklist(extras?.authorFamily),
+    ignoreSection,
+    summaryOnlySection,
     diffSection,
     REVIEW_OUTPUT_CONTRACT.replaceAll("<PR_NUMBER>", String(pr.number)),
-  ].join("\n");
+  ]
+    .filter((s) => s !== "")
+    .join("\n");
 }
 
 export function buildAutoFixPrompt(
