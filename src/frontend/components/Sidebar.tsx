@@ -49,6 +49,7 @@ import {
 	onReadsChanged,
 } from "../lib/reads";
 import { isNoteUnread, onNoteReadsChanged } from "../lib/note-reads";
+import { usePeople } from "../lib/people";
 import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { providerFromUrl } from "../lib/provider";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
@@ -1274,6 +1275,33 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const [reads, setReads] = useState(getReads);
 	const currentUser = useCurrentUser();
 	const meUser = currentUser;
+	// Team directory (GET /api/people) — the always-on People band roster.
+	const roster = usePeople();
+	// Per-person latest session + any-running, keyed by lowercased first name —
+	// what a People row shows when the person isn't live right now.
+	const personActivity = useMemo(() => {
+		const m = new Map<
+			string,
+			{ title: string; last: string; running: boolean }
+		>();
+		for (const s of sessions) {
+			if (s.archived || s.sideChatOf || s.automation) continue;
+			const key = (s.startedBy || "").toLowerCase();
+			if (!key) continue;
+			const cur = m.get(key);
+			const running = (cur?.running ?? false) || s.isRunning === true;
+			if (!cur || (s.lastActivity || "") > cur.last) {
+				m.set(key, {
+					title: s.title || "",
+					last: s.lastActivity || "",
+					running,
+				});
+			} else if (running !== cur.running) {
+				m.set(key, { ...cur, running });
+			}
+		}
+		return m;
+	}, [sessions]);
 	// Note-read stamps live in localStorage; bump to recompute the rows when
 	// the viewer marks a session's notes read.
 	const [noteReadsRev, setNoteReadsRev] = useState(0);
@@ -3338,6 +3366,32 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						local
 					</span>
 				)}
+				{/* Teammates currently viewing a chat in this workspace. */}
+				{!editing &&
+					(() => {
+						const viewers = teamViewing.filter(
+							(v) =>
+								v.user.toLowerCase() !== currentUser.toLowerCase() &&
+								row.chats.some((c) => c.id === v.sessionId),
+						);
+						if (!viewers.length) return null;
+						return (
+							<span
+								className="flex shrink-0 items-center -space-x-1.5"
+								aria-label={`Viewing: ${viewers.map((v) => v.user).join(", ")}`}
+							>
+								{viewers.slice(0, 3).map((v) => (
+									<UserAvatar
+										key={v.user}
+										name={v.user}
+										size={16}
+										title={`${v.user} is here`}
+										className="ring-2 ring-[var(--bg)]"
+									/>
+								))}
+							</span>
+						);
+					})()}
 				{/* A live run always earns its elapsed ticker. The idle "last used"
 				    time is opt-in (Settings → Appearance): revealed on hover by
 				    default, or pinned always. It's shown on hover in every mode —
@@ -4115,6 +4169,145 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				</nav>
 			)}
 			</div>
+
+			{/* ── People: the whole team, always on — live viewers first. Click a
+			    person to view their workspace lanes (backlog / in progress); the
+			    follow affordance rides the row only while they're live. ── */}
+			{(() => {
+				const others = roster.filter(
+					(p) => p.name.toLowerCase() !== currentUser.toLowerCase(),
+				);
+				if (others.length === 0) return null;
+				const open = bandOpen("people");
+				const viewingBy = new Map(
+					teamViewing.map((v) => [v.user.toLowerCase(), v.sessionId]),
+				);
+				const titleFor = (id: string) =>
+					sessions.find((s) => s.id === id)?.title || id;
+				const rows = [...others].sort((a, b) => {
+					const aLive = viewingBy.has(a.name.toLowerCase()) ? 0 : 1;
+					const bLive = viewingBy.has(b.name.toLowerCase()) ? 0 : 1;
+					if (aLive !== bLive) return aLive - bLive;
+					const aAct = personActivity.get(a.name.toLowerCase())?.last || "";
+					const bAct = personActivity.get(b.name.toLowerCase())?.last || "";
+					return bAct.localeCompare(aAct);
+				});
+				return (
+					<div className="sidebar-independent-section mt-2">
+						<div className="sidebar-band-label sidebar-sticky-head">
+							<button
+								className="sidebar-band-toggle"
+								onClick={() => toggleBand("people")}
+								title={open ? "Collapse people" : "Expand people"}
+							>
+								<span className="sidebar-band-name">People</span>
+								<span className="sidebar-group-count">{rows.length}</span>
+								<IconChevronDown
+									className="sidebar-band-chevron"
+									size={18}
+									style={{ transform: open ? "none" : "rotate(-90deg)" }}
+								/>
+							</button>
+						</div>
+						{open && (
+							<div className="sidebar-independent-scroll">
+								{rows.map((p) => {
+									const key = p.name.toLowerCase();
+									const liveId = viewingBy.get(key);
+									const act = personActivity.get(key);
+									const selected = filter.person === key;
+									const localTime = p.timezone
+										? new Intl.DateTimeFormat([], {
+												hour: "2-digit",
+												minute: "2-digit",
+												timeZone: p.timezone,
+											}).format(new Date())
+										: null;
+									return (
+										<button
+											key={p.name}
+											className={`flex items-center gap-2 w-full min-w-0 text-left text-[14px] max-[720px]:text-[16px] bg-transparent border-0 cursor-pointer rounded-md px-2 py-2 max-[720px]:py-2.5 hover:bg-hover ${
+												selected ? "bg-active" : ""
+											}`}
+											onClick={() =>
+												setFilter({ person: selected ? "me" : key })
+											}
+											title={[
+												`${p.fullName}${localTime ? ` · ${localTime} local` : ""}`,
+												liveId
+													? `Viewing “${titleFor(liveId)}”`
+													: act?.title
+														? `Last on “${act.title}”`
+														: null,
+												selected
+													? "Click to go back to your workspaces"
+													: "Click to view their workspaces",
+											]
+												.filter(Boolean)
+												.join("\n")}
+										>
+											<span className="relative shrink-0">
+												<UserAvatar
+													name={p.name}
+													size={20}
+													className={liveId ? "ring-2" : ""}
+													style={
+														liveId
+															? ({
+																	"--tw-ring-color": personColor(p.name),
+																} as React.CSSProperties)
+															: undefined
+													}
+												/>
+												{act?.running && (
+													<span
+														className="absolute -bottom-0.5 -right-0.5 block size-[8px] rounded-full bg-green ring-2 ring-[var(--bg)]"
+														aria-label="Has a running session"
+													/>
+												)}
+											</span>
+											<span className="text-fg w-[72px] shrink-0 truncate">
+												{p.name}
+											</span>
+											<span className="text-faint min-w-0 flex-1 truncate">
+												{liveId ? titleFor(liveId) : act?.title || ""}
+											</span>
+											{liveId && (
+												<span
+													role="button"
+													tabIndex={0}
+													className={`ml-auto shrink-0 rounded-md px-1.5 py-0.5 text-[11px] max-[720px]:text-[12px] tracking-[-0.01em] ${
+														followUser === p.name
+															? "text-accent"
+															: "text-faint hover:bg-active hover:text-fg"
+													}`}
+													onClick={(e) => {
+														e.stopPropagation();
+														onToggleFollow?.(p.name);
+													}}
+													onKeyDown={(e) => {
+														if (e.key === "Enter" || e.key === " ") {
+															e.stopPropagation();
+															onToggleFollow?.(p.name);
+														}
+													}}
+													title={
+														followUser === p.name
+															? `Following ${p.name}. Click to stop.`
+															: `Follow ${p.name} — your navigation shadows theirs.`
+													}
+												>
+													{followUser === p.name ? "following" : "follow"}
+												</span>
+											)}
+										</button>
+									);
+								})}
+							</div>
+						)}
+					</div>
+				);
+			})()}
 
 			<div className="sidebar-sticky-section">
 			<div
@@ -4910,78 +5103,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			)}
 			</div>
 
-				{/* ── People: teammates who are looking at a session right now. Click
-				    to follow along (your navigation shadows theirs); click again to
-				    stop. Band hides itself when nobody else is around. ── */}
-				{(() => {
-					const others = teamViewing.filter(
-						(v) =>
-							v.user !== currentUser &&
-							KNOWN_PEOPLE.has(v.user.toLowerCase()),
-					);
-					if (others.length === 0) return null;
-					const titleFor = (id: string) =>
-						sessions.find((s) => s.id === id)?.title || id;
-					const open = bandOpen("people");
-					return (
-						<div className="sidebar-independent-section sidebar-group--band-start">
-							<div className="sidebar-band-label sidebar-sticky-head">
-								<button
-									className="sidebar-band-toggle"
-									onClick={() => toggleBand("people")}
-									title={open ? "Collapse people" : "Expand people"}
-								>
-									<span className="sidebar-band-name">People</span>
-									<span className="sidebar-group-count">{others.length}</span>
-									<IconChevronDown
-										className="sidebar-band-chevron"
-										size={18}
-										style={{ transform: open ? "none" : "rotate(-90deg)" }}
-									/>
-								</button>
-							</div>
-							{open && (
-								<div className="sidebar-independent-scroll">
-									{others.map((v) => (
-										<button
-										key={v.user}
-										className={`flex items-center gap-2 w-full min-w-0 text-left text-[14px] max-[720px]:text-[16px] bg-transparent border-0 cursor-pointer rounded-md px-2 py-2 max-[720px]:py-2.5 hover:bg-hover ${
-											followUser === v.user ? "bg-active" : ""
-										}`}
-										onClick={() => onToggleFollow?.(v.user)}
-										title={
-											followUser === v.user
-												? `Following ${v.user}. Click to stop.`
-												: `${v.user} is viewing “${titleFor(v.sessionId)}.” Click to follow along.`
-										}
-									>
-										<UserAvatar
-											name={v.user}
-											size={20}
-											className="shrink-0 ring-2"
-											style={{ "--tw-ring-color": personColor(v.user) } as React.CSSProperties}
-										/>
-										<span className="text-fg w-[72px] shrink-0 truncate">
-											{v.user}
-										</span>
-										<span className="text-faint min-w-0 flex-1 truncate">
-											{titleFor(v.sessionId)}
-										</span>
-										{followUser === v.user && (
-											<span className="text-accent text-[11px] max-[720px]:text-[12px] tracking-[-0.01em] ml-auto shrink-0">
-												following
-											</span>
-										)}
-										</button>
-									))}
-								</div>
-							)}
-						</div>
-					);
-				})()}
-
-				{/* People browsing lives in the Person filter (funnel icon) — pick a
-				    teammate there to see their status lanes instead of yours. */}
+				{/* The People band lives at the top of the sidebar (above the
+				    workspace header); the Person filter (funnel) is the same lens. */}
 				{/* ── Automations (one collapsible band, one group per automation) ── */}
 				{groups.length > 0 && (
 					<div className="sidebar-independent-section sidebar-group--automations sidebar-group--band-start">
