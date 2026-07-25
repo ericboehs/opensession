@@ -148,6 +148,7 @@ const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"notifications",
 	"composer",
 	"appearance",
+	"personalPrompt",
 	"workspace",
 	"model",
 	"modelProviders",

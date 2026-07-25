@@ -21,6 +21,7 @@ import {
 	sessionMemoryScopes,
 } from "./session-memory";
 import { DESK_NOTE } from "./desk";
+import { personalPromptNoteFor } from "./personal-prompts";
 import { findSession, touchBackstageSession } from "./session-cache";
 import type { AttachedRepo, LinkedPr, UnifiedSession } from "./types";
 
@@ -113,22 +114,27 @@ export async function buildSessionNote(
 	);
 }
 
-/** The repo/user/team memory prompt section for a run (with tool guidance —
- *  callers are interactive paths only). Never throws: a memory failure must
- *  not block a run, the note just goes out without it. */
+/** The per-user prompt sections for a run: the user's personal system prompt
+ *  (Settings → Personal prompt) + repo/user/team memory (with tool guidance —
+ *  callers are interactive paths only; automations pass no user and skip this).
+ *  Never throws: a store failure must not block a run, the note just goes out
+ *  without that piece. */
 export async function memoryNoteFor(
 	user: string | undefined,
 	repos: string[],
 ): Promise<string> {
+	const parts: string[] = [personalPromptNoteFor(user)];
 	try {
-		return await renderSessionMemoryNote(
-			sessionMemoryScopes({ user, repos }),
-			{ tools: true },
+		parts.push(
+			await renderSessionMemoryNote(
+				sessionMemoryScopes({ user, repos }),
+				{ tools: true },
+			),
 		);
 	} catch (e) {
 		console.warn("[memory] failed to render session memory note:", e);
-		return "";
 	}
+	return parts.filter(Boolean).join("\n\n");
 }
 
 /**

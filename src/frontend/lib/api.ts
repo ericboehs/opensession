@@ -1874,6 +1874,26 @@ export async function setPapercutsRepoEnabled(
 	});
 }
 
+// ── Personal system prompt (Settings → Personal prompt) ──
+
+export async function fetchPersonalPrompt(
+	user: string,
+): Promise<{ prompt: string }> {
+	return request(`/personal-prompt?user=${encodeURIComponent(user)}`, {
+		label: "Failed to fetch personal prompt",
+	});
+}
+
+export async function savePersonalPrompt(
+	user: string,
+	prompt: string,
+): Promise<{ prompt: string }> {
+	return request("/personal-prompt", {
+		method: "PUT",
+		body: { user, prompt },
+	});
+}
+
 // ── Memory (Settings → Memory: repo/user/team/channel stores) ──
 
 export interface MemoryEntryDto {

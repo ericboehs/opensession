@@ -80,6 +80,8 @@ import {
 	deleteMemoryEntryApi,
 	fetchPapercuts,
 	setPapercutsRepoEnabled,
+	fetchPersonalPrompt,
+	savePersonalPrompt,
 	relativeTime,
 	fetchModels,
 	type ModelOption,
@@ -126,6 +128,7 @@ export type SettingsSectionKey =
 	| "notifications"
 	| "composer"
 	| "appearance"
+	| "personalPrompt"
 	| "workspace"
 	| "model"
 	| "modelProviders"
@@ -285,6 +288,30 @@ const SECTIONS: {
 			>
 				<circle cx="8" cy="8" r="5.5" />
 				<path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none" />
+			</svg>
+		),
+	},
+	{
+		key: "personalPrompt",
+		label: "Personal prompt",
+		group: "Personal",
+		icon: (
+			<svg
+				width="20"
+				height="20"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<path
+					d="M3 3.5h10M3 6.5h10M3 9.5h6"
+					strokeLinecap="round"
+				/>
+				<path
+					d="M12.9 9.1l-3.4 3.4-.5 1.5 1.5-.5 3.4-3.4a1 1 0 0 0-1-1z"
+					strokeLinejoin="round"
+				/>
 			</svg>
 		),
 	},
@@ -490,6 +517,7 @@ function SectionPanel({
 			{section === "model" && <AccountsPanel />}
 			{section === "modelProviders" && <ModelProvidersPanel />}
 			{section === "connections" && <Connections />}
+			{section === "personalPrompt" && <PersonalPromptPanel />}
 			{section === "memory" && <MemoryPanel />}
 			{section === "warmPreviews" && <WarmPreviewsPanel />}
 			{section === "previewPool" && <PreviewPoolPanel />}
@@ -1236,6 +1264,96 @@ function MemoryScopeCard({
 					</div>
 				</div>
 			)}
+		</div>
+	);
+}
+
+/** Settings → Personal prompt: a per-user standing-instructions block injected
+ * into the system note of every interactive run the user starts (server-side:
+ * personal-prompts.ts via memoryNoteFor). Automations never receive it. */
+function PersonalPromptPanel() {
+	const user = getCurrentUser();
+	const [prompt, setPrompt] = useState<string | null>(null);
+	const [savedPrompt, setSavedPrompt] = useState("");
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		let alive = true;
+		fetchPersonalPrompt(user)
+			.then((r) => {
+				if (!alive) return;
+				setPrompt(r.prompt);
+				setSavedPrompt(r.prompt);
+			})
+			.catch((e) => alive && setError(e.message));
+		return () => {
+			alive = false;
+		};
+	}, [user]);
+
+	async function save() {
+		if (prompt === null || busy) return;
+		setBusy(true);
+		try {
+			const r = await savePersonalPrompt(user, prompt);
+			setPrompt(r.prompt);
+			setSavedPrompt(r.prompt);
+			toast(r.prompt ? "Personal prompt saved" : "Personal prompt cleared", {
+				variant: "success",
+			});
+		} catch (e: any) {
+			toast(e?.message || "Failed to save personal prompt", {
+				variant: "error",
+			});
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	if (prompt === null)
+		return (
+			<div className="settings-panel">
+				<h1 className="settings-title">Personal prompt</h1>
+				<div className="setting-row-desc">{error || "Loading…"}</div>
+			</div>
+		);
+
+	const dirty = prompt !== savedPrompt;
+	return (
+		<div className="settings-panel">
+			<h1 className="settings-title">Personal prompt</h1>
+			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+				Standing instructions added to the system prompt of every session you
+				({user}) start, on top of the built-in ones — tone, preferences, how
+				you like work reported. It follows you across devices and surfaces
+				(same identity as your memory store), and is never given to
+				automations. Leave empty to turn it off.
+			</div>
+			<textarea
+				className="w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-[13px] font-medium text-fg outline-none focus:border-faint"
+				rows={10}
+				placeholder='e.g. "Keep answers short. Prefer tables for comparisons. Always mention which files you touched."'
+				value={prompt}
+				onChange={(e) => setPrompt(e.target.value)}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save();
+				}}
+			/>
+			<div className="mt-2 flex items-center gap-2">
+				<button
+					className="rounded-md bg-fg px-3 py-1 text-[12px] font-medium text-bg disabled:opacity-40"
+					disabled={busy || !dirty}
+					onClick={save}
+				>
+					{busy ? "Saving…" : "Save"}
+				</button>
+				{dirty && !busy && (
+					<span className="text-[12px] font-medium text-faint">
+						Unsaved changes
+					</span>
+				)}
+			</div>
 		</div>
 	);
 }

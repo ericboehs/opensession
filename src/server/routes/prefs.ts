@@ -15,6 +15,7 @@ import { getLanes as getUserLanes, setLanes as setUserLanes } from "../lanes";
 import { getSnoozes as getUserSnoozes, setSnoozes as setUserSnoozes } from "../snoozes";
 import { getTabColors as getUserTabColors, setTabColors as setUserTabColors } from "../tab-colors";
 import { getUiPrefs, patchUiPrefs } from "../ui-prefs";
+import { getPersonalPrompt, setPersonalPrompt } from "../personal-prompts";
 import { refreshWarmTemplate, setWarmTemplateConfig, warmTemplateStatus } from "../warm-template";
 import { previewPoolStatus, refreshGoldenImage, setPreviewPoolConfig } from "../preview-pool";
 import { REPOS } from "../worktree";
@@ -204,6 +205,33 @@ export async function handlePrefsRoutes(
 			);
 		}
 		return Response.json({ pins: setUserPins(body.user, body.pins) });
+	}
+
+	// ── Per-user personal system prompt ──
+	// An extra standing-instructions block injected into every interactive run
+	// the user starts (see personal-prompts.ts). Keyed through the identity
+	// table, so all of a teammate's surfaces share one prompt. GET reads it;
+	// PUT replaces it wholesale (empty string clears).
+	if (path === "/backstage/api/personal-prompt" && req.method === "GET") {
+		const user = url.searchParams.get("user") || "Anonymous";
+		return Response.json({ prompt: getPersonalPrompt(user) });
+	}
+
+	if (path === "/backstage/api/personal-prompt" && req.method === "PUT") {
+		const body = await req.json().catch(() => null);
+		if (
+			!body ||
+			typeof body.user !== "string" ||
+			typeof body.prompt !== "string"
+		) {
+			return Response.json(
+				{ error: "user (string) and prompt (string) are required" },
+				{ status: 400 },
+			);
+		}
+		return Response.json({
+			prompt: setPersonalPrompt(body.user, body.prompt),
+		});
 	}
 
 	// ── Per-user read marks (unread flags) ──
