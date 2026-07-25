@@ -580,7 +580,6 @@ struct SessionRow: View {
     var body: some View {
         #if os(macOS)
         content
-            .onHover { hovering = $0 }
             .overlay(alignment: .trailing) {
                 if hovering, let onArchive {
                     Button(action: onArchive) {
@@ -595,6 +594,10 @@ struct SessionRow: View {
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 5))
                 }
             }
+            // onHover must wrap the overlay, not sit under it: with the button
+            // on top of the hover target, reaching it ended the content's
+            // hover, which unmounted the button under the cursor (flicker).
+            .onHover { hovering = $0 }
         #else
         content
         #endif
