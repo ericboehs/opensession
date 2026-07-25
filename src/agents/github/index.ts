@@ -24,6 +24,7 @@ import {
 import { DEFAULT_REVIEW_PROMPT, DOCS_SYNC_PROMPT } from "./prompts";
 import { setGithubSessionInvalidate, resolveReviewConfig } from "./webhook";
 import { listPrStates, activeCodeLoops, clearPendingMention, updatePrState } from "./state";
+import { feedbackStats } from "./feedback";
 import type { PrRef } from "./review";
 
 /** Crash recovery only makes sense across one restart window — a flag older
@@ -264,6 +265,7 @@ export class GithubAgent implements AgentModule {
       reviewAutomationEnabled: autoEnabled,
       trackedPrs: listPrStates().length,
       activeCodeLoops: activeCodeLoops(),
+      reviewFeedback: feedbackStats(),
     };
   }
 }

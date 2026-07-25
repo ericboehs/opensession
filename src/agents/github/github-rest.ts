@@ -332,6 +332,9 @@ export const FIXED_REPLY_MARKER = "<!-- michael-fixed -->";
 export interface ReviewThreadComment {
   login: string;
   body: string;
+  /** 👍 / 👎 reaction counts (feedback signal for the review filter). */
+  plus?: number;
+  minus?: number;
 }
 
 export interface ReviewThread {
@@ -362,7 +365,7 @@ export async function listReviewThreads(prNumber: number, ghRepo: string = GITHU
           reviewThreads(first:100){
             nodes{
               id isResolved isOutdated path line
-              comments(first:100){ nodes{ author{login} body } }
+              comments(first:100){ nodes{ author{login} body reactionGroups{ content reactors{ totalCount } } } }
             }
           }
         }
@@ -373,10 +376,17 @@ export async function listReviewThreads(prNumber: number, ghRepo: string = GITHU
   const nodes = data?.repository?.pullRequest?.reviewThreads?.nodes;
   if (!Array.isArray(nodes)) return [];
   return nodes.map((t: any) => {
-    const comments = (t.comments?.nodes || []).map((c: any) => ({
-      login: c.author?.login || "",
-      body: typeof c.body === "string" ? c.body : "",
-    }));
+    const comments = (t.comments?.nodes || []).map((c: any) => {
+      const groups: any[] = Array.isArray(c.reactionGroups) ? c.reactionGroups : [];
+      const count = (content: string) =>
+        groups.find((g) => g?.content === content)?.reactors?.totalCount || 0;
+      return {
+        login: c.author?.login || "",
+        body: typeof c.body === "string" ? c.body : "",
+        plus: count("THUMBS_UP"),
+        minus: count("THUMBS_DOWN"),
+      };
+    });
     return {
       id: t.id,
       isResolved: !!t.isResolved,

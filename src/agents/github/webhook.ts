@@ -25,6 +25,7 @@ import {
 import { runReview, type PrRef, type ReviewConfig } from "./review";
 import { clearHandoff, isHandoffActive, maybeHandoffFindings } from "./handoff";
 import { isLockHeld, updatePrState } from "./state";
+import { loadReviewOptions, titleHasSkipKeyword } from "./review-options";
 import { DEFAULT_REVIEW_PROMPT } from "./prompts";
 import { SEO_LABEL } from "../loops/seo";
 
@@ -150,6 +151,21 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
 
     // ── Merge → notify linked sessions + queue seo-sweep PRs + fire docs-sync ──
     if (action === "closed" && pr.merged) {
+      // Feedback learning on every configured repo: final outcome sweep for our
+      // review comments (open+current at merge = the author ignored them), and
+      // — for PRs that look like bug fixes — blame the fixed lines to find
+      // reviewed PRs whose bug we missed (reviewer false negatives).
+      import("./github-rest")
+        .then(async (m) => {
+          const threads = await m.listReviewThreads(pr.number, ghRepo);
+          const { harvestThreadOutcomes } = await import("./feedback");
+          harvestThreadOutcomes(ghRepo, pr.number, threads, /*prClosed*/ true);
+        })
+        .catch((e) => console.warn(`[github] merge feedback sweep failed for #${pr.number}:`, e));
+      import("./missed-bugs")
+        .then((m) => m.analyzeMergedPrForMissedBugs(payload))
+        .catch((e) => console.warn(`[github] missed-bug analysis failed for #${pr.number}:`, e));
+
       if (!isDefaultRepo) return; // docs-sync/SEO/session-notify are default-repo flows
       import("./session-notify")
         .then((m) => m.notifyMergedPrSessions(payload))
@@ -187,6 +203,14 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
     // ── Open / update actions → review when opted in and non-draft ──
     if (REVIEW_ACTIONS.has(action)) {
       if (pr.draft) return; // skip drafts until ready_for_review
+      // Opt-out keyword in the title (per-repo .os-review.json; read from the
+      // repo's main checkout — no PR worktree exists yet). Label-forced and
+      // manual reviews still run; only the automatic path honors it.
+      const skipOpts = loadReviewOptions(eventRepo?.repo || defaultRepo().repo);
+      if (titleHasSkipKeyword(pr.title || "", skipOpts)) {
+        console.log(`[github] PR #${pr.number} title carries a skip keyword — no auto review`);
+        return;
+      }
       // A `synchronize` from the bot is our own push (auto-fix/simplify/mention) —
       // skip it so we don't review our own work mid-loop. But reviewing a PR the bot
       // *opened* (opened/reopened/ready_for_review) is fine: read-only, no push, no loop.

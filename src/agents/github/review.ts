@@ -26,7 +26,19 @@ import { defaultRepo } from "../../server/config";
 import { audit } from "../../server/audit";
 import { modelLabel } from "../../server/models";
 import { createReviewWorktreeForPrHead } from "../../server/worktree";
-import { inverseReviewModel } from "./model-inversion";
+import { inverseReviewModel, authorFamilyFor } from "./model-inversion";
+import {
+  loadReviewOptions,
+  pathIgnored,
+  severityRank,
+  REVIEW_OPTION_DEFAULTS,
+  type ReviewOptions,
+} from "./review-options";
+import {
+  recordPostedFindings,
+  shouldSuppressFinding,
+  harvestThreadOutcomes,
+} from "./feedback";
 import { repoForFullName } from "./constants";
 
 const TELLA_FUSION = defaultRepo().repo;
@@ -59,6 +71,8 @@ interface ReviewOutput {
   verdict?: string;
   confidence?: number;
   summary_markdown?: string;
+  /** Optional mermaid diagram for changes that warrant one (schema/flow). */
+  diagram?: { type?: string; mermaid?: string };
   findings?: Finding[];
 }
 
@@ -168,8 +182,18 @@ export async function runReview(
       return { findings: 0, blocking: 0, error: "Could not prepare the PR review worktree" };
     }
 
+    // Per-repo knobs from the PR-head worktree (.os-review.json), the author's
+    // model family for the targeted sweep, and the giant-PR summary-only mode.
+    const reviewOpts = loadReviewOptions(cwd);
+    const summaryOnly = details.changedFiles > reviewOpts.summaryOnlyOverFiles;
+    const author = authorFamilyFor(pr);
+
     const base = (config.prompt || "").trim() || DEFAULT_REVIEW_PROMPT;
-    const prompt = buildReviewPrompt(base, details, isUpdate, steer, pr.ghRepo);
+    const prompt = buildReviewPrompt(base, details, isUpdate, steer, pr.ghRepo, {
+      authorFamily: author?.family,
+      ignoreGlobs: reviewOpts.ignoreGlobs,
+      summaryOnly,
+    });
 
     // Model inversion: never review code with the model family that wrote it
     // (shared blind spots — see model-inversion.ts). Falls back to the
@@ -216,7 +240,7 @@ export async function runReview(
     });
 
     const parsed = parseReviewOutput(result.text);
-    await postReview(pr, details, parsed, result.text, result.error, force, result.model);
+    await postReview(pr, details, parsed, result.text, result.error, force, result.model, reviewOpts, summaryOnly);
 
     // Record the SHA as reviewed only on a successful run, so a transient failure
     // (model error/timeout) leaves it eligible for retry on the next delivery.
@@ -269,16 +293,47 @@ async function postReview(
   runError?: string,
   force = false,
   modelUsed?: string,
+  opts: ReviewOptions = REVIEW_OPTION_DEFAULTS,
+  summaryOnly = false,
 ): Promise<void> {
   const state = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
   const shortSha = (pr.headSha || "").slice(0, 7);
 
   // Summary comment (single, edited in place).
-  const summaryBody = parsed?.summary_markdown?.trim() || fallbackSummary(rawText, runError);
+  let summaryBody = parsed?.summary_markdown?.trim() || fallbackSummary(rawText, runError);
+  // Optional change diagram (schema/flow PRs) — GitHub renders mermaid natively.
+  const mermaid = parsed?.diagram?.mermaid?.trim();
+  if (mermaid && mermaid.length <= 4000) {
+    summaryBody += `\n\n<details><summary>📈 Change diagram</summary>\n\n\`\`\`mermaid\n${mermaid}\n\`\`\`\n\n</details>`;
+  }
+  // Before anything posts, findings pass the repo/config/feedback filter chain:
+  // ignored paths, the per-repo severity floor, giant-PR P0/P1-only mode, and
+  // the learned feedback filter (recurring-nit suppression — never P0/P1).
+  const allFindings = parsed?.findings || [];
+  let withheld = 0;
+  const findings = allFindings.filter((f) => {
+    if (pathIgnored(f.path, opts)) return withheld++, false;
+    if (severityRank(f.severity) > severityRank(opts.minInlineSeverity)) return withheld++, false;
+    if (summaryOnly && severityRank(f.severity) > 1) return withheld++, false;
+    if (shouldSuppressFinding(pr.ghRepo, { severity: f.severity, title: f.title, body: f.body }))
+      return withheld++, false;
+    return true;
+  });
+  if (withheld > 0) {
+    console.log(`[github] withheld ${withheld} finding(s) on PR #${pr.number} (config/feedback filters)`);
+    audit({
+      msg: "review_findings_withheld",
+      pr_number: pr.number,
+      repo: pr.ghRepo || defaultRepo().ghRepo,
+      withheld,
+      posted: findings.length,
+    });
+  }
+
   const verdict = parsed?.verdict ? ` · **${parsed.verdict.replace(/_/g, " ")}**` : "";
   const confidence =
     typeof parsed?.confidence === "number" ? ` · confidence ${parsed.confidence}/5` : "";
-  const findingCount = parsed?.findings?.length || 0;
+  const findingCount = findings.length;
   // Next-steps footer pointing at the action labels.
   const tip = findingCount
     ? "> 💡 Labels: **`os-auto-fix`** — I fix these and push until CI passes · **`os-adversarial`** — deeper two-pass review · **`os-simplify`** — quality cleanup pass."
@@ -290,6 +345,7 @@ async function postReview(
     summaryBody,
     "",
     findingCount ? `_${findingCount} inline comment${findingCount === 1 ? "" : "s"} below._` : "",
+    withheld ? `<sub>${withheld} low-signal finding${withheld === 1 ? "" : "s"} withheld by repo config / feedback history.</sub>` : "",
     tip,
     `<sub>Reviewed \`${shortSha}\`${modelUsed ? ` · ${modelLabel(modelUsed)}` : ""} · earlier reviews collapse above · [open session](${sessionUrl(pr.number, "review", pr.ghRepo)})</sub>`,
   ]
@@ -317,6 +373,15 @@ async function postReview(
   // (e.g. Dockerfile:96) would otherwise get a fresh duplicate every single push.
   const existingThreads = await listReviewThreads(pr.number, pr.ghRepo).catch(() => []);
 
+  // Learning pass over the threads we already fetched: pick up 👍/👎 reactions
+  // on our comments and mark outdated/resolved ones "addressed" (the author
+  // acted). The "ignored" verdict only lands at PR close (webhook.ts).
+  try {
+    harvestThreadOutcomes(pr.ghRepo, pr.number, existingThreads, false);
+  } catch (e) {
+    console.warn(`[github] feedback harvest failed for PR #${pr.number}:`, e);
+  }
+
   // Anchors (path:line) where we already have an open, still-current bot comment.
   // Skip re-posting these — the existing comment already covers the same spot.
   // `force` (manual "review again") bypasses dedup so an explicit re-review is fresh.
@@ -330,7 +395,6 @@ async function postReview(
   }
 
   // Formal review with inline comments, anchored to the diff.
-  const findings = parsed?.findings || [];
   if (findings.length && pr.headSha) {
     const diff = await getPrDiff(pr.headRef, pr.ghRepo || undefined);
     const commitId = diff?.headRefOid || pr.headSha;
@@ -349,6 +413,15 @@ async function postReview(
     if (inline.length) {
       const ok = await submitReview(pr.number, commitId, `${personaName()} review · \`${shortSha}\``, inline, pr.ghRepo);
       if (!ok) console.warn(`[github] submitReview failed for PR #${pr.number}`);
+      // Remember what we posted so future reactions/outcomes can be joined
+      // back to it (the feedback filter's training data).
+      if (ok) {
+        try {
+          recordPostedFindings(pr.ghRepo, pr.number, fresh);
+        } catch (e) {
+          console.warn(`[github] recording findings failed for PR #${pr.number}:`, e);
+        }
+      }
       if (inline.length < onDiff.length - deduped) {
         console.log(`[github] dropped ${onDiff.length - deduped - inline.length} off-diff finding(s) for PR #${pr.number}`);
       }
@@ -432,6 +505,10 @@ export function parseReviewOutput(text: string): ReviewOutput | null {
         verdict: obj.verdict,
         confidence: typeof obj.confidence === "number" ? obj.confidence : undefined,
         summary_markdown: obj.summary_markdown,
+        diagram:
+          obj.diagram && typeof obj.diagram === "object" && typeof obj.diagram.mermaid === "string"
+            ? { type: typeof obj.diagram.type === "string" ? obj.diagram.type : undefined, mermaid: obj.diagram.mermaid }
+            : undefined,
         findings,
       };
     }

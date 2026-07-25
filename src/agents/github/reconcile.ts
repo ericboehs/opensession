@@ -25,6 +25,7 @@ import { ghRateLimited } from "../../server/github-limit";
 import { listOpenPrs, type OpenPrSummary } from "./github-rest";
 import { LABEL_AUTOFIX, LABEL_REVIEW, labelMatches, prKey } from "./constants";
 import { isLockHeld, readPrState, updatePrState } from "./state";
+import { loadReviewOptions, titleHasSkipKeyword } from "./review-options";
 import type { PrRef } from "./review";
 
 const RECONCILE_MS = parseInt(process.env.OPENSESSION_REVIEW_RECONCILE_MS || String(10 * 60 * 1000));
@@ -55,8 +56,10 @@ export async function reconcileOpenPrs(): Promise<void> {
     if (!repo.ghRepo) continue;
     if (fires >= MAX_FIRES_PER_CYCLE) break;
     const prs = await listOpenPrs(repo.ghRepo).catch(() => [] as OpenPrSummary[]);
+    const repoOpts = loadReviewOptions(repo.repo);
     for (const pr of prs) {
       if (fires >= MAX_FIRES_PER_CYCLE) break;
+      if (titleHasSkipKeyword(pr.title, repoOpts)) continue;
       // The list is updated-desc; past the window means everything after is too.
       const updatedAt = Date.parse(pr.updatedAt || "");
       if (!updatedAt || Date.now() - updatedAt > RECONCILE_WINDOW_MS) break;
