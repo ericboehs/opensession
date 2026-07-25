@@ -5,8 +5,8 @@ dashboard at https://os.tella.dev, on your phone. Not feature complete; this is
 the v0.1 base: sign in with a token, see your sessions live, open one, watch
 the agent stream, send prompts, and answer blocking questions.
 
-Pure SwiftUI, zero dependencies, iOS 26+ (see `project.yml` for the
-authoritative deployment targets).
+Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
+(see `project.yml` for the authoritative deployment targets).
 
 ## Features (v0.1)
 
@@ -14,8 +14,9 @@ authoritative deployment targets).
   status dot (green running / orange needs-input), repo + branch, queued count,
   relative last-activity time, pull to refresh.
 - **Session view** — live transcript over the `/ws` WebSocket: user/assistant
-  bubbles (inline markdown), compact tool-call rows, system events, and
-  token-level streaming via `stream_text` with a cursor bubble.
+  bubbles (streaming CommonMark/GFM with links, tables, and highlighted code
+  blocks), compact tool-call rows, system events, and token-level streaming via
+  `stream_text` with a cursor bubble.
 - **Prompting** — WS `prompt` frames (the server has no REST prompt endpoint).
   Sending while a run is active queues, exactly like the web UI. Stop button
   sends `cancel` for the watched session.
@@ -75,7 +76,7 @@ OS1/
   Views/
     SessionsListView.swift   List + status rows + settings sheet
     SessionView.swift        Transcript, streaming bubble, ask card, input bar
-    TranscriptRow.swift      Per-entry-type rendering + MarkdownText
+    TranscriptRow.swift      Per-entry-type rendering + streaming markdown
     AskQuestionCard.swift    Options + free text answer
     SettingsView.swift       Server/token/name + connection test
 ```
@@ -99,5 +100,5 @@ OS1/
 - Resume cursors (`sinceOffset`/`sinceRev`) for cheap reconnects, and
   `load_history` paging for older transcript
 - Create session, queue management (edit/delete/steer queued prompts)
-- Block-level markdown (code fences) and image attachments
+- Image attachments in assistant markdown
 - Push-style updates for the sessions list, PR status on rows

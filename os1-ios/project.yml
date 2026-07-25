@@ -5,12 +5,21 @@ options:
     iOS: "26.0"
     macOS: "26.0"
   createIntermediateGroups: true
+packages:
+  SwiftStreamingMarkdown:
+    url: https://github.com/microsoft/SwiftStreamingMarkdown
+    # v0.6.0 depends on HighlightSwift by revision, so SwiftPM rejects it
+    # under a stable semver rule. Pin the release tag's commit instead.
+    revision: c7b12f7b3d77caa188fd1fc056d0f7ce305ef5cd
 targets:
   OS1:
     type: application
     platform: iOS
     sources:
       - OS1
+    dependencies:
+      - package: SwiftStreamingMarkdown
+        product: SwiftStreamingMarkdown
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
@@ -49,6 +58,9 @@ targets:
     platform: macOS
     sources:
       - OS1
+    dependencies:
+      - package: SwiftStreamingMarkdown
+        product: SwiftStreamingMarkdown
     entitlements:
       path: OS1Mac.entitlements
       properties:

@@ -82,6 +82,7 @@ jobs:
           UDID=$(xcrun simctl list devices available | grep iPhone | grep -m1 -oE '[0-9A-F-]{36}')
           test -n "$UDID"
           xcodebuild test \
+            -skipMacroValidation \
             -project OS1.xcodeproj \
             -scheme OS1 \
             -destination "id=$UDID" \
@@ -90,6 +91,7 @@ jobs:
       - name: Archive
         run: |
           xcodebuild archive \
+            -skipMacroValidation \
             -project OS1.xcodeproj \
             -scheme OS1 \
             -configuration Release \

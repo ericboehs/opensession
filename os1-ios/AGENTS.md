@@ -13,8 +13,8 @@ WS protocol notes) — keep it updated alongside changes.
   truth — `OS1.xcodeproj` is not checked in and must never be hand-edited.
   New/removed Swift files under `OS1/` are picked up by `xcodegen generate`.
 - Deployment targets live in `project.yml` (iOS 26.0; don't trust stale docs).
-- Pure SwiftUI, zero third-party dependencies — keep it that way unless the
-  change has been explicitly discussed.
+- Pure SwiftUI. SwiftStreamingMarkdown is the deliberate exception to the
+  no-third-party-dependencies default; discuss any additional dependency first.
 - Both targets share the `dev.tella.os1` bundle id (one App Store Connect
   record, universal purchase). The Electron shell uses `dev.tella.os1.shell`;
   two Mac apps must never share a bundle id.
@@ -28,16 +28,18 @@ over SSH (`ssh tella-mac-node`, Xcode 26.6):
 rsync -a --delete os1-ios/ tella-mac-node:/tmp/os1-check/os1-ios/
 ssh tella-mac-node '
   cd /tmp/os1-check/os1-ios && xcodegen generate --quiet
-  xcodebuild -quiet build -project OS1.xcodeproj -scheme OS1 \
+  xcodebuild -quiet build -skipMacroValidation -project OS1.xcodeproj -scheme OS1 \
     -destination "generic/platform=iOS Simulator" -derivedDataPath /tmp/os1-check/dd
-  xcodebuild -quiet build -project OS1.xcodeproj -scheme OS1Mac \
+  xcodebuild -quiet build -skipMacroValidation -project OS1.xcodeproj -scheme OS1Mac \
     -destination "platform=macOS" -derivedDataPath /tmp/os1-check/dd CODE_SIGNING_ALLOWED=NO
   UDID=$(xcrun simctl list devices available | grep iPhone | grep -m1 -oE "[0-9A-F-]{36}")
-  xcodebuild -quiet test -project OS1.xcodeproj -scheme OS1 \
+  xcodebuild -quiet test -skipMacroValidation -project OS1.xcodeproj -scheme OS1 \
     -destination "id=$UDID" -derivedDataPath /tmp/os1-check/dd'
 ```
 
 - Always build BOTH schemes: `#if os(macOS)` blocks only compile in `OS1Mac`.
+- Keep `-skipMacroValidation` on noninteractive builds. SwiftStreamingMarkdown's
+  exact pinned dependency graph includes the Equatable compiler macro.
 - A Mac-target `errSecInternalComponent` CodeSign failure over SSH is the build
   box's locked keychain, not a code error — `CODE_SIGNING_ALLOWED=NO` avoids it
   for compile checks.
@@ -85,11 +87,10 @@ push as shipping to TestFlight.
   whole body — transcript included. Per-keystroke state (`draft`, `canSend`,
   `attachedImages`) is read ONLY inside `SessionInputBar`; keep it that way,
   and give other hot state the same treatment (own view struct).
-- **Markdown is memoized.** `MarkdownBody` caches both the block parse and the
-  inline `AttributedString(markdown:)` conversions per unique text
-  (`MarkdownParseCache` / `MarkdownInlineCache`) — uncached parsing on the main
-  thread is what made long streams hitch. New render paths must go through the
-  caches.
+- **Streaming markdown uses one persistent source.** `StreamingMarkdownBody`
+  feeds coalesced full-text snapshots through one `StreamedMarkdownView` and a
+  newest-only `AsyncStream`; don't recreate the renderer per chunk or bypass
+  the source. Durable rows use the library's async `MarkdownView`.
 - **Stream text is coalesced.** `stream_text` chunks buffer in the view model
   and flush to `liveText` at ~8Hz; don't bind UI to per-chunk updates.
 - **Scroll pinning is explicit.** `onScrollGeometryChange` tracks

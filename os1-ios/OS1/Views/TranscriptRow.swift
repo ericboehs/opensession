@@ -246,7 +246,7 @@ struct StreamingBubble: View {
     let text: String
 
     var body: some View {
-        MarkdownBody(text)
+        StreamingMarkdownBody(text)
             .padding(.vertical, 2)
             .padding(.trailing, 24)
             .frame(maxWidth: .infinity, alignment: .leading)

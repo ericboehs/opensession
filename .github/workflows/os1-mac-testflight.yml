@@ -111,6 +111,7 @@ jobs:
       - name: Archive
         run: |
           xcodebuild archive \
+            -skipMacroValidation \
             -project OS1.xcodeproj \
             -scheme OS1Mac \
             -configuration Release \
