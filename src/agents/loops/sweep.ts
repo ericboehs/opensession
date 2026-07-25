@@ -95,6 +95,27 @@ export const SWEEP_LOOPS: SweepConfig[] = [
       "Protect active and uncertain work: do NOT touch unrelated changes, uncommitted/work-in-progress, generated files, or anything you're not confident is safe to remove — when in doubt, leave it and defer it.\n\n" +
       "Be conservative and incremental: prove ONE low-risk cleanup at a time and make the smallest coherent change rather than a sweeping refactor; a few clearly-safe cleanups per run is plenty. If the build/tests aren't available to verify a change, defer it rather than guessing. Stop when no clearly-safe cleanups remain or progress stalls.",
   },
+  {
+    eventKey: "loop:slop-ratchet-sweep",
+    name: "Slop Ratchet Sweep",
+    label: "slop-ratchet-sweep",
+    titlePrefix: "Slop Ratchet",
+    schedule: "0 17 * * 3", // ~10am PT, Wednesdays (offset from Monday cleanup sweep)
+    mcpServers: [],
+    // Judging code quality is taste work — pin the strongest model.
+    model: "claude-fable-5",
+    task:
+      "This sweep is a maintainability ratchet for agent-authored code — distinct from the Code Cleanup Sweep (which removes dead code and stale files). Your target is LIVE code that works but is degrading the codebase's changeability.\n\n" +
+      "Find the hotspots first: `git log --since='90 days ago' --pretty=format: --name-only | sort | uniq -c | sort -rn | head -30` — the most-churned files are where slop compounds fastest. Pick 1-3 of those hotspots to inspect deeply; ignore generated files, lockfiles, and vendored code.\n\n" +
+      "In each hotspot, look for these specific patterns (in priority order):\n" +
+      "- Blanket try/catch that swallows or generically logs errors the caller should see.\n" +
+      "- Near-duplicate logic that must change in lockstep across files (shotgun surgery) — extract ONE shared path.\n" +
+      "- Defensive checks for states that cannot occur (nullish guards on values the type system already guarantees).\n" +
+      "- Comments that narrate what the next line does rather than stating a constraint.\n" +
+      "- Indirection with a single caller — inline it.\n" +
+      "- Style/naming inconsistent with the surrounding module.\n\n" +
+      "Rules: behavior-preserving refactors ONLY — no feature changes, no API changes visible outside the touched module. One hotspot per PR, small diffs a human can review in minutes. If a refactor can't be verified with the repo's own build/tests, defer it. When a pattern is arguable rather than clearly worse, leave it — this sweep ratchets confidently, it does not impose taste.",
+  },
 ];
 
 /** Seed the sweep loops as automations (create-if-absent; preserves UI edits). */
