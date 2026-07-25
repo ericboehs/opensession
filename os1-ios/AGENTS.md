@@ -44,6 +44,33 @@ ssh tella-mac-node '
 - The Linux host can't catch Swift compile errors; never declare a change done
   without a real xcodebuild run.
 
+## Using the Mac node beyond builds
+
+`tella-mac-node` is a full Mac with a logged-in GUI session — use it whenever
+a task needs real Apple hardware, not just for compiles:
+
+- **Run the actual app.** `ServerConfig` honors `OS1_SERVER` / `OS1_TOKEN`
+  env overrides (nothing persisted), so a built Mac app launches
+  pre-configured straight from SSH. The server is tailnet-only; reverse-tunnel
+  it: `ssh -R 13850:127.0.0.1:3850 tella-mac-node '…'` and launch with
+  `OS1_SERVER=http://127.0.0.1:13850 OS1_TOKEN=<token>
+  <build>/OS1.app/Contents/MacOS/OS1` (tokens:
+  `~/.opensession-web-sessions.json` on the VPS). On the iOS simulator the
+  same overrides inject via `SIMCTL_CHILD_*`.
+- **Profile it.** `sample <pid> 15 -file out.txt` gives per-thread call
+  graphs — enough to see exactly what runs on the main thread; `xctrace
+  record --template "Time Profiler" --attach <pid>` when a full Instruments
+  trace is needed.
+- **Micro-benchmark suspect code.** The model files are plain Foundation:
+  compile them against a `main.swift` harness (`swiftc -O main.swift
+  Session.swift`) and feed real payloads fetched from the live server.
+
+This is how the 2026-07 sessions-poll hitch was found and verified: the old
+formatter-per-parse comparator sort measured ~400ms per poll on the Mac (the
+fixed decorated sort ~50ms), and a `sample` of the running app confirmed the
+main thread idle afterwards. Prefer measuring there over reasoning from
+source alone.
+
 ## Releasing
 
 Pushing to `master` with changes under `os1-ios/**` auto-triggers the
