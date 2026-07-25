@@ -452,6 +452,7 @@ export interface OpenPrSummary {
   draft: boolean;
   labels: string[];
   updatedAt: string;
+  createdAt: string;
   /** full_name of the head repo — differs from the base repo on fork PRs. */
   headRepoFullName: string;
   authorLogin: string;
@@ -475,6 +476,7 @@ export async function listOpenPrs(ghRepo: string = GITHUB_REPO): Promise<OpenPrS
       draft: !!pr.draft,
       labels: (pr.labels || []).map((l: any) => l?.name).filter(Boolean),
       updatedAt: pr.updated_at || "",
+      createdAt: pr.created_at || "",
       headRepoFullName: pr.head?.repo?.full_name || "",
       authorLogin: pr.user?.login || "",
     }));

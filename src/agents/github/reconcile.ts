@@ -118,6 +118,16 @@ export async function reconcileOpenPrs(): Promise<void> {
       const optedIn = autoEnabled || pr.labels.some((l) => labelMatches(l, LABEL_REVIEW));
       if (!optedIn || !pr.headSha) continue;
       if (state?.reviewedShas?.includes(pr.headSha)) continue;
+      // `updated_at` bumps on comments/labels too, so recency alone would walk
+      // the sweep through every old open PR that gets any activity (seen live
+      // 2026-07-25: #4227/#4643 fired off comment bumps). Only two shapes are
+      // genuine drops: we reviewed this PR before and a NEW head appeared (a
+      // push we lost), or the PR itself is newly created (an `opened` event we
+      // missed). Old never-reviewed PRs keep the label-only path.
+      const reviewedBefore = (state?.reviewedShas?.length || 0) > 0;
+      const createdAt = Date.parse(pr.createdAt || "");
+      const createdRecently = createdAt && Date.now() - createdAt <= RECONCILE_WINDOW_MS;
+      if (!reviewedBefore && !createdRecently) continue;
       const attempts = state?.reconcile?.reviewSha === pr.headSha ? state.reconcile.reviewAttempts || 0 : 0;
       if (attempts >= MAX_ATTEMPTS_PER_SHA) continue;
       updatePrState(pr.number, pr.headRef, (s) => {
