@@ -138,8 +138,8 @@ jobs:
     needs: testflight
     if: ${{ !cancelled() && github.event_name == 'push' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 125
+    timeout-minutes: 20
     steps:
       - name: Hold automatic release cooldown
         working-directory: .
-        run: sleep 7200
+        run: sleep 900
