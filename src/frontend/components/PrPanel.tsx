@@ -1080,7 +1080,15 @@ export function PrPanel({
           </>
         )}
 
-        <div className="flex h-[52px] shrink-0 items-end gap-1 overflow-x-auto border-b border-line px-6 max-[720px]:px-2" role="tablist">
+        {/* The row's bottom line is an inset shadow, not a border: the active tab
+            covers it with its own surface-coloured bottom border while sitting
+            flush inside the box, so nothing overflows vertically (a 1px overflow
+            here parks a scrollbar, since global.css opts Chrome out of overlay
+            scrollbars). Horizontal scrollbars are hidden for the same reason. */}
+        <div
+          className="flex h-[52px] shrink-0 items-end gap-1 overflow-x-auto overflow-y-hidden px-6 shadow-[inset_0_-1px_0_var(--border)] [scrollbar-width:none] max-[720px]:px-2 [&::-webkit-scrollbar]:hidden"
+          role="tablist"
+        >
           {([
             ["conversation", "Conversation", comments.length, <IconMessage size={17} />],
             ["commits", "Commits", pr.commits?.length || 0, <CommitIcon />],
@@ -1093,7 +1101,7 @@ export function PrPanel({
                 key={key}
                 role="tab"
                 aria-selected={activeTab}
-                className={`flex h-[43px] shrink-0 items-center gap-2 rounded-t-md border px-4 text-[13px] font-medium ${activeTab ? "relative top-px border-line border-b-surface bg-surface text-fg" : "border-transparent bg-transparent text-dim hover:border-line hover:bg-hover hover:text-fg"}`}
+                className={`flex h-[44px] shrink-0 items-center gap-2 rounded-t-md border px-4 text-[13px] font-medium ${activeTab ? "border-line border-b-surface bg-surface text-fg" : "border-transparent bg-transparent text-dim hover:border-line hover:bg-hover hover:text-fg"}`}
                 onClick={() => setDiffView(key)}
               >
                 {icon}
