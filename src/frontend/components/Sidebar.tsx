@@ -4414,21 +4414,30 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			{isPhone &&
 				headerActionsEl &&
 				createPortal(
-					<button
-						ref={mobileFilterBtnRef}
-						className={`mobile-filter-btn${filterOpen ? " active" : ""}${
-							filter.groupBy !== DEFAULT_GROUP_BY ||
-							filter.repo !== "all" ||
-							filter.person !== "me" ||
-							filter.prs !== "default"
-								? " has-filter"
-								: ""
-						}`}
-						onClick={() => setFilterOpen((o) => !o)}
-						aria-label="Group, filter & sort"
-					>
-						<IconFilter size={22} />
-					</button>,
+					<>
+						{/* The bell rides the top bar too — the header actions cluster
+						    it sits in on desktop is display:none on phones. */}
+						{notifBell && (
+							<span className="mobile-filter-btn" style={{ order: -2 }}>
+								{notifBell}
+							</span>
+						)}
+						<button
+							ref={mobileFilterBtnRef}
+							className={`mobile-filter-btn${filterOpen ? " active" : ""}${
+								filter.groupBy !== DEFAULT_GROUP_BY ||
+								filter.repo !== "all" ||
+								filter.person !== "me" ||
+								filter.prs !== "default"
+									? " has-filter"
+									: ""
+							}`}
+							onClick={() => setFilterOpen((o) => !o)}
+							aria-label="Group, filter & sort"
+						>
+							<IconFilter size={22} />
+						</button>
+					</>,
 					headerActionsEl,
 				)}
 
