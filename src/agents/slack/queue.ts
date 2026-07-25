@@ -31,6 +31,8 @@ export interface QueuedMessage {
   isNewSession: boolean;
   worktreeDir?: string;
   branch?: string;
+  /** Registered repo id the session works in; unset = the default repo. */
+  repoId?: string;
   /**
    * File attachments on the Slack message (small refs, not bytes — the queue
    * persists to disk). processMessage downloads the images among them right

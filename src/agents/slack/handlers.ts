@@ -50,7 +50,14 @@ import {
   slackIdToFirstName,
 } from "../../server/shared/user-mappings";
 import { opencodeOneShot } from "../../server/opencode-oneshot";
-import { worktreePathFor } from "../../server/worktree";
+import {
+  worktreePathFor,
+  getRepo,
+  ensureAskCheckout,
+  reviveWorktree,
+  resolveUniqueBranch,
+  createWorktree as createRepoWorktree,
+} from "../../server/worktree";
 import { sessionForThread } from "../../server/slack-links";
 import { tryGetSessionControl } from "../../server/session-control";
 import { pinForUser } from "../../server/pins";
@@ -660,6 +667,7 @@ export async function processMessage(
       claudeSessionId: null,
       worktreeDir: msg.worktreeDir || null,
       branch: msg.branch || null,
+      repoId: msg.repoId || null,
       mode: msg.worktreeDir ? "worktree" : "conversational",
       createdAt: new Date().toISOString(),
       lastActivity: new Date().toISOString(),
@@ -781,61 +789,68 @@ export async function processMessage(
     progress.setAction("Recreating worktree…");
     await streamer.setStatus("recreating worktree...");
     try {
-      // Async: the fetch + worktree add + rebase chain runs for seconds and
+      // Async: the fetch + worktree add + rebase chain runs for many seconds and
       // used to block the whole event loop via spawnSync.
       const branch = session.branch;
       const wtPath = session.worktreeDir;
 
-      // Prune stale registrations
-      await runCommand(["git", "worktree", "prune"], { cwd: DEFAULT_CWD });
+      // Non-default repos: the generic revive (fetch + worktree add off the
+      // repo's own default branch) covers everything the fusion-specific
+      // steps below do, minus the fusion env-file seeding.
+      if (session.repoId && session.repoId !== getRepo().id) {
+        await reviveWorktree(branch, session.repoId);
+      } else {
+        // Prune stale registrations
+        await runCommand(["git", "worktree", "prune"], { cwd: DEFAULT_CWD });
 
-      // Fetch latest main
-      await runCommand(["git", "fetch", "origin", "main", "--quiet"], {
-        cwd: DEFAULT_CWD,
-        timeoutMs: 30000,
-      });
+        // Fetch latest main
+        await runCommand(["git", "fetch", "origin", "main", "--quiet"], {
+          cwd: DEFAULT_CWD,
+          timeoutMs: 30000,
+        });
 
-      // Create worktree — reuse existing branch or create from main
-      const haveBranch =
-        (
-          await runCommand(
-            ["git", "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
-            { cwd: DEFAULT_CWD }
-          )
-        ).status === 0;
-      const addResult = haveBranch
-        ? await runCommand(["git", "worktree", "add", wtPath, branch], {
-            cwd: DEFAULT_CWD,
-            timeoutMs: 60000,
-          })
-        : await runCommand(
-            ["git", "worktree", "add", "-b", branch, wtPath, "main"],
-            { cwd: DEFAULT_CWD, timeoutMs: 60000 }
+        // Create worktree — reuse existing branch or create from main
+        const haveBranch =
+          (
+            await runCommand(
+              ["git", "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+              { cwd: DEFAULT_CWD }
+            )
+          ).status === 0;
+        const addResult = haveBranch
+          ? await runCommand(["git", "worktree", "add", wtPath, branch], {
+              cwd: DEFAULT_CWD,
+              timeoutMs: 60000,
+            })
+          : await runCommand(
+              ["git", "worktree", "add", "-b", branch, wtPath, "main"],
+              { cwd: DEFAULT_CWD, timeoutMs: 60000 }
+            );
+
+        if (addResult.status !== 0) {
+          throw new Error(
+            `git worktree add failed: ${addResult.stderr?.trim() || addResult.stdout?.trim()}`
           );
+        }
 
-      if (addResult.status !== 0) {
-        throw new Error(
-          `git worktree add failed: ${addResult.stderr?.trim() || addResult.stdout?.trim()}`
-        );
-      }
+        // Rebase on latest main
+        await runCommand(["git", "pull", "origin", "main", "--rebase"], {
+          cwd: wtPath,
+          timeoutMs: 60000,
+        });
 
-      // Rebase on latest main
-      await runCommand(["git", "pull", "origin", "main", "--rebase"], {
-        cwd: wtPath,
-        timeoutMs: 60000,
-      });
-
-      // Copy env files (quick, no bun install — Claude can do that if needed)
-      const envFiles = [
-        [".envrc", ".envrc"],
-        ["packages/core/webapp/.env.local", "packages/core/webapp/.env.local"],
-        ["packages/core/instant/.env", "packages/core/instant/.env"],
-        ["packages/core/temporal/.env", "packages/core/temporal/.env"],
-      ];
-      for (const [src, dst] of envFiles) {
-        try {
-          copyFileSync(`${DEFAULT_CWD}/${src}`, `${wtPath}/${dst}`);
-        } catch {}
+        // Copy env files (quick, no bun install — Claude can do that if needed)
+        const envFiles = [
+          [".envrc", ".envrc"],
+          ["packages/core/webapp/.env.local", "packages/core/webapp/.env.local"],
+          ["packages/core/instant/.env", "packages/core/instant/.env"],
+          ["packages/core/temporal/.env", "packages/core/temporal/.env"],
+        ];
+        for (const [src, dst] of envFiles) {
+          try {
+            copyFileSync(`${DEFAULT_CWD}/${src}`, `${wtPath}/${dst}`);
+          } catch {}
+        }
       }
 
       console.log(`[slack] [revive] Worktree ${branch} recreated`);
@@ -1533,9 +1548,30 @@ Please help with this request. Start by exploring the codebase to understand wha
 
   // Regular (non-worktree) channel mention. A quick Haiku classifier decides the
   // route: an explicit PR action runs directly (no worktree), a question runs
-  // in-thread in the main checkout (no worktree), and a coding task spins up a
-  // worktree as before. Fail-open: a null verdict falls through to the code path.
-  const intent = await classifyMention(cleanText);
+  // in-thread in the repo's checkout (no worktree), and a coding task spins up a
+  // worktree as before — in whichever registered repo the classifier picks
+  // (message + channel name + thread context; unknown → default repo).
+  // Fail-open: a null verdict falls through to the default-repo code path.
+  //
+  // Only thread mentions get surrounding context: a thread is one coherent
+  // conversation, while channel history is mostly other people's unrelated
+  // requests and would leak into the session prompt. Fetched before the
+  // classifier so the repo verdict sees it too (cached, so no extra call).
+  let context = "";
+  let threadFiles: SlackFileRef[] = [];
+  if (thread_ts) {
+    const tc = await cachedFetchThreadContext(channel, thread_ts);
+    context = tc.text;
+    threadFiles = tc.files;
+  }
+  const channelName = channel.startsWith("D")
+    ? null
+    : (await getChannelKind(channel).catch(() => null))?.name || null;
+  const intent = await classifyMention(cleanText, { channelName, context });
+  // The classifier's repo verdict; getRepo(null/undefined) = the default repo.
+  const repo = getRepo(intent?.repo || undefined);
+  const isDefaultRepo = repo.id === getRepo().id;
+  if (!isDefaultRepo) console.log(`[slack] mention routed to repo ${repo.id}`);
 
   if (intent && intent.action !== "none" && intent.prNumber) {
     // Carry the message text as steer so any specific guidance reaches the run.
@@ -1565,48 +1601,64 @@ Please help with this request. Start by exploring the codebase to understand wha
     return;
   }
 
-  // Only thread mentions get surrounding context: a thread is one coherent
-  // conversation, while channel history is mostly other people's unrelated
-  // requests and would leak into the session prompt.
-  let context = "";
-  let threadFiles: SlackFileRef[] = [];
-  if (thread_ts) {
-    const tc = await cachedFetchThreadContext(channel, thread_ts);
-    context = tc.text;
-    threadFiles = tc.files;
-  }
-
-  // Ask mode: a question/discussion — answer in-thread in the main checkout, no
-  // worktree or dedicated channel.
+  // Ask mode: a question/discussion — answer in-thread in the repo's checkout,
+  // no worktree or dedicated channel. Non-default repos run in their pinned
+  // ask checkout (backstage → its live shared checkout).
   if (intent?.mode === "ask") {
     let askSession: SlackSession | undefined =
       activeSessions.get(sessionKey) ?? (await loadSession(sessionKey)) ?? undefined;
     if (askSession) activeSessions.set(sessionKey, askSession);
+    let askCwd: string | undefined;
+    if (!isDefaultRepo && !askSession) {
+      try {
+        askCwd = await ensureAskCheckout(repo.id);
+      } catch (e) {
+        console.warn(`[slack] ask-checkout for ${repo.id} failed (falling back to default):`, e);
+      }
+    }
     const intro = context
       ? `${userName} asked me in a Slack thread (with context):\n\n---\n${context}\n---\n\nTheir question: "${cleanText}"`
       : `${userName} asked me in Slack: "${cleanText}"`;
+    const repoNote = askCwd ? ` I'm in the ${repo.id} repo's checkout for this.` : "";
     enqueueMessage(sessionKey, {
-      prompt: `${intro}\n\nThis is a question/discussion, not a coding task — don't create a branch or change code. Read the codebase as needed for context and answer concisely.`,
+      prompt: `${intro}\n\nThis is a question/discussion, not a coding task — don't create a branch or change code. Read the codebase as needed for context and answer concisely.${repoNote}`,
       channel,
       threadTs,
       messageTs: ts,
       userName,
       userId: user,
       isNewSession: !askSession,
-      // No worktreeDir → runs conversationally in the main checkout, replies in-thread.
+      // No worktreeDir → runs conversationally in the default repo's main
+      // checkout; a non-default repo verdict pins it to that repo's checkout.
+      worktreeDir: askCwd,
+      repoId: askCwd ? repo.id : undefined,
       files: mergeFileRefs(files, threadFiles),
     });
     return;
   }
 
-  // Code mode: a real coding task — spin up a worktree (existing behavior).
+  // Code mode: a real coding task — spin up a worktree. The default repo keeps
+  // the historical `wt new-slack` flow (env seed + branch channel); other repos
+  // use the generic worktree helper (backstage resolves to its live shared
+  // checkout, matching how interactive OpenSession sessions work there).
   let worktreeDir: string | undefined;
   let branch: string | undefined;
   let prompt: string;
 
   try {
-    branch = await generateBranchName(cleanText, context);
-    worktreeDir = await createWorktree(branch, user, cleanText);
+    let where: string;
+    if (isDefaultRepo) {
+      branch = await generateBranchName(cleanText, context);
+      worktreeDir = await createWorktree(branch, user, cleanText);
+      where = `I'm now in a worktree (branch: ${branch}) for this task.`;
+    } else if (repo.sharedCheckout) {
+      worktreeDir = repo.repo;
+      where = `This task is in the ${repo.id} repo — I'm working directly in its live shared checkout on ${repo.defaultBranch} (shared with other sessions: stage only my own files, commit + push directly, never reset or switch branches).`;
+    } else {
+      branch = await resolveUniqueBranch(await generateBranchName(cleanText, context), repo.id);
+      worktreeDir = await createRepoWorktree(branch, repo.id);
+      where = `This task is in the ${repo.id} repo — I'm in a worktree (branch: ${branch}). Commit and open a PR against ${repo.ghRepo} when done.`;
+    }
 
     const intro = context
       ? `${userName} tagged me in a Slack thread with this context:
@@ -1620,7 +1672,7 @@ Their message: "${cleanText}"`
 
     prompt = `${intro}
 
-I'm now in a worktree (branch: ${branch}) for this task. Please help with this request. Start by exploring the codebase to understand the relevant code.`;
+${where} Please help with this request. Start by exploring the codebase to understand the relevant code.`;
   } catch (e) {
     await sendSlackMessage(
       channel,
@@ -1641,6 +1693,7 @@ I'm now in a worktree (branch: ${branch}) for this task. Please help with this r
     isNewSession: true,
     worktreeDir,
     branch,
+    repoId: isDefaultRepo ? undefined : repo.id,
     files: mergeFileRefs(files, threadFiles),
   });
 }

@@ -25,6 +25,9 @@ export interface SlackSession {
   model?: string;
   worktreeDir: string | null;
   branch: string | null;
+  /** Registered repo id this session works in; unset/null = the default repo
+   *  (tella-fusion) — the historical shape, so old session files stay valid. */
+  repoId?: string | null;
   mode: "conversational" | "worktree";
   createdAt: string;
   lastActivity: string;

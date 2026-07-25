@@ -377,7 +377,7 @@ export async function fetchThreadContext(
 
 export async function getChannelInfo(
   channelId: string
-): Promise<{ is_private?: boolean; is_im?: boolean } | null> {
+): Promise<{ is_private?: boolean; is_im?: boolean; name?: string } | null> {
   const data = await slackApiCall("conversations.info", { channel: channelId });
   if (data.ok && data.channel) return data.channel;
   return null;
@@ -385,7 +385,7 @@ export async function getChannelInfo(
 
 const channelKindCache = new Map<
   string,
-  { isDM: boolean; isPrivate: boolean; at: number }
+  { isDM: boolean; isPrivate: boolean; name?: string; at: number }
 >();
 const CHANNEL_KIND_TTL_MS = 60 * 60 * 1000;
 
@@ -396,14 +396,18 @@ const CHANNEL_KIND_TTL_MS = 60 * 60 * 1000;
  */
 export async function getChannelKind(
   channelId: string
-): Promise<{ isDM: boolean; isPrivate: boolean }> {
+): Promise<{ isDM: boolean; isPrivate: boolean; name?: string }> {
   if (channelId.startsWith("D")) return { isDM: true, isPrivate: false };
   const cached = channelKindCache.get(channelId);
   if (cached && Date.now() - cached.at < CHANNEL_KIND_TTL_MS) {
-    return { isDM: cached.isDM, isPrivate: cached.isPrivate };
+    return { isDM: cached.isDM, isPrivate: cached.isPrivate, name: cached.name };
   }
   const info = await getChannelInfo(channelId);
-  const kind = { isDM: !!info?.is_im, isPrivate: !!info?.is_private };
+  const kind = {
+    isDM: !!info?.is_im,
+    isPrivate: !!info?.is_private,
+    name: typeof info?.name === "string" && info.name ? info.name : undefined,
+  };
   channelKindCache.set(channelId, { ...kind, at: Date.now() });
   return kind;
 }
