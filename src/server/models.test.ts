@@ -102,9 +102,15 @@ describe("model efforts", () => {
 
 describe("toOpencodeModel", () => {
   it("maps openai/codex tiers onto the opencode engine unconditionally", () => {
-    expect(toOpencodeModel("gpt-5.5")).toBe("opencode/openai/gpt-5.5");
-    expect(toOpencodeModel("gpt-5.4-mini")).toBe("opencode/openai/gpt-5.4-mini");
+    expect(toOpencodeModel("gpt-5.6-terra")).toBe("opencode/openai/gpt-5.6-terra");
     expect(toOpencodeModel(BEST_AVAILABLE_CODEX_MODEL)).toBe("opencode/openai/gpt-5.6-sol");
+  });
+  it("reroutes retired 272k-window codex models to Sol in every id shape", () => {
+    expect(toOpencodeModel("gpt-5.5")).toBe("opencode/openai/gpt-5.6-sol");
+    expect(toOpencodeModel("gpt-5.4")).toBe("opencode/openai/gpt-5.6-sol");
+    expect(toOpencodeModel("gpt-5.4-mini")).toBe("opencode/openai/gpt-5.6-sol");
+    expect(toOpencodeModel("openai/gpt-5.5")).toBe("opencode/openai/gpt-5.6-sol");
+    expect(toOpencodeModel("opencode/openai/gpt-5.5")).toBe("opencode/openai/gpt-5.6-sol");
   });
   it("passes opencode ids through untouched", () => {
     expect(toOpencodeModel("opencode/anthropic/claude-sonnet-5")).toBe(
@@ -171,9 +177,9 @@ describe("local profile models", () => {
     );
     process.env.HOME = home;
     process.env.OPENSESSION_PROFILE = "local";
-    process.env.OPENSESSION_MODEL = "openai/gpt-5.5";
-    expect(localProfileDefaultModel()).toBe("openai/gpt-5.5");
-    expect(interactiveDefaultModel()).toBe("opencode/openai/gpt-5.5");
+    process.env.OPENSESSION_MODEL = "openai/gpt-5.6-sol";
+    expect(localProfileDefaultModel()).toBe("openai/gpt-5.6-sol");
+    expect(interactiveDefaultModel()).toBe("opencode/openai/gpt-5.6-sol");
     expect(interactiveFallbackModel()).toBeUndefined();
     rmSync(home, { recursive: true, force: true });
   });
@@ -186,7 +192,7 @@ describe("local profile models", () => {
     }));
     process.env.HOME = home;
     process.env.OPENSESSION_PROFILE = "local";
-    process.env.OPENSESSION_MODEL = "openai/gpt-5.5";
+    process.env.OPENSESSION_MODEL = "openai/gpt-5.6-sol";
     expect(() => localProfileDefaultModel()).toThrow("CLI subscription credentials were not found");
     rmSync(home, { recursive: true, force: true });
   });
@@ -322,14 +328,24 @@ describe("The Orchestrator", () => {
     expect(orchestratorWorkerForBridge("no-such-worker", "anthropic")).toBeUndefined();
   });
 
-  it("keeps worker models strictly cheaper tiers than every preset main model", () => {
+  it("keeps every worker strictly cheaper than its preset's main (tier or effort)", () => {
+    // With 5.5/5.4 retired the openai bridge has no cheaper usable model tier —
+    // "cheaper" there means the SAME model at a LOWER effort variant.
+    const effortRank: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, xhigh: 4, max: 5 };
     for (const p of ORCHESTRATOR_PRESETS) {
+      // Workers resolve on the MAIN model's bridge in prod — that's the only
+      // pairing the cheapness invariant is about.
+      const mainProviderID = p.model.startsWith("claude-") ? "anthropic" : "openai";
       for (const name of p.workerAgents) {
-        for (const bridge of ["anthropic", "openai"]) {
-          const b = orchestratorWorkerForBridge(name, bridge)!;
-          // fallbackTier keys off native slugs — strip the bridge prefix.
-          expect(fallbackTier(b.model.split("/").pop())).toBeLessThan(fallbackTier(p.model));
-        }
+        const b = orchestratorWorkerForBridge(name, mainProviderID)!;
+        // fallbackTier keys off native slugs — strip the bridge prefix.
+        const workerTier = fallbackTier(b.model.split("/").pop());
+        const mainTier = fallbackTier(p.model);
+        const cheaper =
+          workerTier < mainTier ||
+          (b.model.split("/").pop() === p.model &&
+            effortRank[b.variant] < effortRank[p.effort]);
+        expect(cheaper).toBe(true);
       }
     }
   });
@@ -359,13 +375,10 @@ describe("fallback graph (nextFallbackModel)", () => {
       id: sol,
       mode: "auto",
     });
-    // Opus, Sol + gpt-5.5 gone → Sonnet: downgrade, ASK.
+    // Opus + Sol gone → Sonnet next (5.5/5.4 are retired, no longer
+    // destinations): downgrade, ASK.
     expect(
-      nextFallbackModel(
-        opus,
-        new Set([opus, sol, "opencode/openai/gpt-5.5"]),
-        "claude-opus-5"
-      )
+      nextFallbackModel(opus, new Set([opus, sol]), "claude-opus-5")
     ).toEqual({ id: sonnet, mode: "ask" });
     // Sol → Opus: downgrade, ASK.
     expect(nextFallbackModel(sol, new Set([sol]), "claude-opus-5")).toEqual({
@@ -442,8 +455,8 @@ describe("resolveConcreteModel", () => {
 
   it("skips codex models marked exhausted", () => {
     markCodexModelExhausted("gpt-5.6-sol");
-    markCodexModelExhausted("gpt-5.5");
 
-    expect(resolveConcreteModel(BEST_AVAILABLE_CODEX_MODEL)).toBe("gpt-5.4");
+    // 5.5/5.4 are retired — spark is the only remaining step-down.
+    expect(resolveConcreteModel(BEST_AVAILABLE_CODEX_MODEL)).toBe("gpt-5.3-codex-spark");
   });
 });

@@ -69,7 +69,7 @@ export function handleSlashCommand(
 			"/loop <interval> <prompt> — re-run a prompt on an interval (e.g. /loop 30m check CI and fix failures)",
 			"/loop stop — stop the loop",
 			"/model — show the session's model and what's available",
-			"/model <name> — switch model (e.g. /model opus, /model gpt-5.5)",
+			"/model <name> — switch model (e.g. /model opus, /model sol)",
 			"/account — show the session's provider account and what's available",
 			"/account <name> — prefer one Claude or Codex account for this conversation",
 			"/account auto — back to automatic (personal-first, shared-pool fallback)",
