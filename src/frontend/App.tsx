@@ -21,7 +21,6 @@ import { Actions } from "./components/Actions";
 import { Notes, type NotesSelection } from "./components/Notes";
 import { Archived } from "./components/Archived";
 import { Reviews } from "./components/Reviews";
-import { TeamChat } from "./components/TeamChat";
 import { PrQueuePreview } from "./components/PrQueuePreview";
 import { SupportPreview } from "./components/SupportPreview";
 import { WorkspacePane } from "./components/WorkspacePane";
@@ -56,7 +55,6 @@ import {
 	updateProjectApi,
 	deleteProjectApi,
 	newChatApi,
-	fetchChatMessagesApi,
 	resolveWorkspaceApi,
 	type NoteMeta,
 } from "./lib/api";
@@ -126,9 +124,7 @@ type Route =
 	| { view: "notes"; sel: NotesSelection }
 	| { view: "settings"; section?: SettingsSectionKey }
 	| { view: "archived" }
-	| { view: "catchup" }
-	// Watercooler — the team-wide native chat room (not Slack).
-	| { view: "watercooler" };
+	| { view: "catchup" };
 
 // Route views that render as a tool section inside the Settings surface.
 const TOOL_VIEWS = [
@@ -247,7 +243,6 @@ function parseRoute(pathname: string): Route {
 	if (pathname === "/catchup") return { view: "catchup" };
 	if (pathname === "/pr-tinder") return { view: "prtinder" };
 	if (pathname === "/support-tinder") return { view: "supporttinder" };
-	if (pathname === "/watercooler") return { view: "watercooler" };
 	const reviewsMatch = pathname.match(/^\/reviews(?:\/(.+))?$/);
 	if (reviewsMatch)
 		return {
@@ -326,8 +321,6 @@ function routePath(route: Route): string {
 			return `${BASE_PATH}/pr-tinder`;
 		case "supporttinder":
 			return `${BASE_PATH}/support-tinder`;
-		case "watercooler":
-			return `${BASE_PATH}/watercooler`;
 		case "reviews":
 			return route.id
 				? `${BASE_PATH}/reviews/${encodeURIComponent(route.id)}`
@@ -376,25 +369,6 @@ function App() {
 	const showToast = useCallback((message: string) => {
 		toast(message);
 	}, []);
-	// Watercooler unread badge: messages newer than the locally-stored
-	// last-read stamp (own messages never count). Live chat_message events bump
-	// it; having the Watercooler open marks read continuously.
-	const [chatUnread, setChatUnread] = useState(0);
-	useEffect(() => {
-		fetchChatMessagesApi("watercooler")
-			.then((msgs) => {
-				const lastRead = Number(
-					localStorage.getItem("opensession-chat-read") ||
-						localStorage.getItem("backstage-chat-read") ||
-						0,
-				);
-				const me = getCurrentUser();
-				setChatUnread(
-					msgs.filter((m) => m.ts > lastRead && m.user !== me).length,
-				);
-			})
-			.catch(() => {});
-	}, []);
 	// iOS evicts standalone PWAs from memory and relaunches them at the manifest
 	// start_url — losing the session you had open. On a cold load
 	// that lands on home, restore the last session so it isn't dropped. This only
@@ -412,28 +386,8 @@ function App() {
 		}
 		return parsed;
 	});
-	// Track Watercooler reads: while it's open, arriving messages are read
-	// immediately; otherwise they bump the sidebar badge.
-	const chatOpenRef = useRef(false);
-	chatOpenRef.current = route.view === "watercooler";
-	useEffect(
-		() =>
-			addHandler((msg) => {
-				if (msg.type !== "chat_message" || msg.channel !== "watercooler")
-					return;
-				if (chatOpenRef.current) {
-					localStorage.setItem("opensession-chat-read", String(msg.message.ts));
-				} else if (msg.message.user !== getCurrentUser()) {
-					setChatUnread((n) => n + 1);
-				}
-			}),
-		[addHandler],
-	);
-	useEffect(() => {
-		if (route.view !== "watercooler") return;
-		localStorage.setItem("opensession-chat-read", String(Date.now()));
-		setChatUnread(0);
-	}, [route.view]);
+	// App-icon badge count (PWA/Electron). Fed by the notification inbox.
+	const chatUnread = 0;
 	// Register the service worker at boot, not just when enabling push: it also
 	// caches the app shell (sw.js), so a cold start on a flaky tailnet paints
 	// the app instead of white-screening.
@@ -2130,9 +2084,6 @@ function App() {
 							onOpenPrTinder={() => navigate({ view: "prtinder" })}
 							supportTinderActive={route.view === "supporttinder"}
 							onOpenSupportTinder={() => navigate({ view: "supporttinder" })}
-							watercoolerActive={route.view === "watercooler"}
-							onOpenWatercooler={() => navigate({ view: "watercooler" })}
-							watercoolerUnread={chatUnread}
 							reportsActive={route.view === "reports"}
 							onOpenReports={() => navigate({ view: "reports" })}
 							analyticsActive={route.view === "analytics"}
@@ -2531,16 +2482,6 @@ function App() {
 						) : route.view === "supporttinder" ? (
 							<SupportTinder
 								onExit={goBack}
-								onOpenSession={(id) => navigate({ view: "session", id })}
-							/>
-						) : route.view === "watercooler" ? (
-							<TeamChat
-								channel="watercooler"
-								user={getCurrentUser()}
-								sessions={sessions}
-								projects={projects}
-								send={send}
-								addHandler={addHandler}
 								onOpenSession={(id) => navigate({ view: "session", id })}
 							/>
 						) : route.view === "catchup" ? (

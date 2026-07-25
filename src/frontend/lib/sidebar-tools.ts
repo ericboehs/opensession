@@ -1,6 +1,5 @@
 export const SIDEBAR_TOOL_IDS = [
 	"home",
-	"watercooler",
 	"catchup",
 	"reviews",
 	"prtinder",

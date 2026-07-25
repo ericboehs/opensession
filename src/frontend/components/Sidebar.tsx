@@ -81,7 +81,6 @@ import {
 	IconMoon,
 	IconStatusRing,
 	IconTrash,
-	IconWatercooler,
 	IconChart,
 	IconFile,
 	IconDotsHorizontal,
@@ -446,12 +445,6 @@ interface Props {
 	supportTinderActive: boolean;
 	/** Open Support Tinder (swipe triage of the Plain Todo queue). */
 	onOpenSupportTinder: () => void;
-	/** True while the Watercooler (team chat) is open — highlights its entry. */
-	watercoolerActive: boolean;
-	/** Open the Watercooler — the team-wide native chat room (not Slack). */
-	onOpenWatercooler: () => void;
-	/** Unread Watercooler messages (badge on its entry). */
-	watercoolerUnread: number;
 	/** True while the recurring Reports surface is open. */
 	reportsActive: boolean;
 	/** Open automation-produced recurring reports. */
@@ -1164,9 +1157,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	onOpenPrTinder,
 	supportTinderActive,
 	onOpenSupportTinder,
-	watercoolerActive,
-	onOpenWatercooler,
-	watercoolerUnread,
 	reportsActive,
 	onOpenReports,
 	analyticsActive,
@@ -2837,15 +2827,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			active: homeActive,
 			onClick: onOpenHome,
 			title: "Pull request worktrees",
-		},
-		{
-			id: "watercooler",
-			label: "Watercooler",
-			icon: <IconWatercooler />,
-			active: watercoolerActive,
-			onClick: onOpenWatercooler,
-			title: "Team chat. @ a teammate to ping them, or a session to link it.",
-			count: watercoolerUnread,
 		},
 		{
 			id: "catchup",
