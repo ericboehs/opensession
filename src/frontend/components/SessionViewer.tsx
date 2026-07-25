@@ -25,6 +25,7 @@ import type {
 	TranscriptEntry,
 	WSServerMessage,
 	AskQuestion,
+	ChatMessage,
 } from "../lib/types";
 import {
 	mergeTranscriptEntries,
@@ -53,6 +54,8 @@ import {
 	fetchRepos,
 	promoteChatApi,
 	fetchPr,
+	fetchChatMessagesApi,
+	postChatMessageApi,
 	type WorkspaceMediaItem,
 	type ModelOption,
 	type ProviderAccountOption,
@@ -83,7 +86,6 @@ import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { PrStatusBar } from "./PrStatusBar";
 
-import { TeamChat } from "./TeamChat";
 import { ConversationPane } from "./ConversationPane";
 import { WorkflowPanel } from "./WorkflowPanel";
 import { AssetsPanel, useSessionAssets } from "./AssetsPanel";
@@ -277,7 +279,6 @@ type PanelTab =
 	| "terminal"
 	| "shell"
 	| "pr"
-	| "chat"
 	| "sidechats"
 	| "workflows"
 	| "assets"
@@ -805,7 +806,7 @@ export function SessionViewer({
 		// starts hidden and the body would flash PrPanel) — it, and any stored
 		// tab that no longer exists, maps back to Info. "shell" is deliberately
 		// not restorable either: restoring it would spawn a PTY on every load.
-		const restorable: PanelTab[] = ["info", "changes", "terminal", "chat", "sidechats"];
+		const restorable: PanelTab[] = ["info", "changes", "terminal", "sidechats"];
 		const tab: PanelTab | null = restorable.includes(stored as PanelTab)
 			? (stored as PanelTab)
 			: stored
@@ -952,6 +953,55 @@ export function SessionViewer({
 		null,
 	);
 	const sessionReports = useSessionReports(session.id, addHandler);
+	// Team notes — the session's chat channel (`session:<id>`), interleaved
+	// into the transcript as NoteBubbles. Human-to-human; the agent never sees
+	// them. Posted from the composer's note mode (⌘N).
+	const [notes, setNotes] = useState<ChatMessage[]>([]);
+	const [noteMode, setNoteMode] = useState(false);
+	useEffect(() => {
+		setNotes([]);
+		setNoteMode(false);
+		let cancelled = false;
+		fetchChatMessagesApi(`session:${session.id}`)
+			.then((msgs) => {
+				if (!cancelled && msgs.length) setNotes(msgs);
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, [session.id]);
+	useEffect(
+		() =>
+			addHandler((msg) => {
+				if (
+					(msg.type !== "chat_message" &&
+						msg.type !== "chat_message_updated") ||
+					msg.channel !== `session:${session.id}`
+				)
+					return;
+				setNotes((prev) => {
+					const i = prev.findIndex((m) => m.id === msg.message.id);
+					if (i >= 0) {
+						const next = [...prev];
+						next[i] = msg.message;
+						return next;
+					}
+					return [...prev, msg.message];
+				});
+			}),
+		[addHandler, session.id],
+	);
+	// Viewing the session marks its notes read (the sidebar unread dot keys off
+	// this stamp).
+	useEffect(() => {
+		if (!notes.length) return;
+		localStorage.setItem(
+			`opensession-note-read:${session.id}`,
+			String(notes[notes.length - 1].ts),
+		);
+		window.dispatchEvent(new Event("opensession-note-read-changed"));
+	}, [notes, session.id]);
 	const panelResizeHandle = (
 		<div
 			className="panel-resize"
@@ -2496,6 +2546,16 @@ export function SessionViewer({
 		const fls = files;
 		if (!text && imgs.length === 0 && fls.length === 0) return false;
 		if (!connected) return false;
+
+		// Note mode: post a team note to the session's chat channel — never a
+		// prompt. The broadcast echoes it back into `notes` for every viewer.
+		if (noteMode) {
+			if (!text) return false;
+			postChatMessageApi(`session:${session.id}`, text, getCurrentUser()).catch(
+				() => toast("Failed to add note"),
+			);
+			return true;
+		}
 
 		const user = getCurrentUser();
 		// Prefer the staged disk path (HTTP upload); fall back to inline dataUrl.
@@ -4385,6 +4445,7 @@ export function SessionViewer({
 											live={isBusy}
 											sessionId={session.id}
 											walkthrough={chatWalkthrough}
+											notes={notes}
 											onFork={canForkSession ? handleFork : undefined}
 											onOpenSubagent={openSubagent}
 											onOpenEvidence={openEvidence}
@@ -4522,11 +4583,15 @@ export function SessionViewer({
 									}
 									disabled={!connected}
 									sendDisabled={(text) =>
-										!text.trim() &&
-										images.length === 0 &&
-										files.length === 0 &&
-										!forkFrom
+										noteMode
+											? !text.trim()
+											: !text.trim() &&
+												images.length === 0 &&
+												files.length === 0 &&
+												!forkFrom
 									}
+									noteMode={noteMode}
+									onNoteModeChange={setNoteMode}
 									busy={isBusy && !forkFrom}
 									onStop={handleCancel}
 									sendTitle={isBusy ? busySendLabel : undefined}
@@ -4728,12 +4793,6 @@ export function SessionViewer({
 									>
 										Shell
 									</button>
-									<button
-										className={`panel-tab ${panelTab === "chat" ? "active" : ""}`}
-										onClick={() => selectPanelTab("chat")}
-									>
-										Chat
-									</button>
 								</>
 							)}
 							{/* Shown whenever the session CAN run workflows (it needs a
@@ -4874,17 +4933,6 @@ export function SessionViewer({
 								/>
 							) : panelTab === "terminal" ? (
 								<CommandsPanel entries={entries} />
-							) : panelTab === "chat" ? (
-								<TeamChat
-									channel={`session:${session.id}`}
-									user={getCurrentUser()}
-									sessions={allSessions || workspaceChats || []}
-									projects={allProjects}
-									send={send}
-									addHandler={addHandler}
-									onOpenSession={(id) => onOpenSession?.(id)}
-									variant="panel"
-								/>
 							) : null}
 							{/* Shell tabs keep their PTYs alive across side-panel tab
 							    switches: mounted once opened, hidden while another tab

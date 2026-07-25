@@ -16,6 +16,7 @@ import {
   IconPaperclip,
   IconAtSign,
   IconCrosshair,
+  IconPencil,
   IconStopSquare,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
@@ -143,6 +144,14 @@ interface Props {
    * "/" is inert.
    */
   skillsFetch?: (query: string) => Promise<FileMention[]>;
+  /**
+   * Note mode (Plain-style internal notes): the send posts a team note the
+   * agent never sees. When `onNoteModeChange` is wired, a Note toggle chip
+   * appears in the toolbar and ⌘/Ctrl+N (while the field is focused) flips
+   * it; the composer tints yellow so the mode is unmistakable.
+   */
+  noteMode?: boolean;
+  onNoteModeChange?: (on: boolean) => void;
 }
 
 /** Set / update / clear the session goal — a centered dialog on the shared
@@ -263,6 +272,8 @@ export function Composer({
   onFilesChange,
   mentionFetch,
   skillsFetch,
+  noteMode,
+  onNoteModeChange,
 }: Props) {
   const internalRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = externalRef ?? internalRef;
@@ -342,8 +353,9 @@ export function Composer({
   const imgs = images || [];
   const fls = files || [];
   // Any attachment affordance (paste/drop/pick + thumbnails) is enabled when the
-  // parent wired up either channel.
-  const canAttach = !!onImagesChange || !!onFilesChange;
+  // parent wired up either channel. Notes are text-only — attachments stay
+  // staged for the next prompt instead of riding a note.
+  const canAttach = !noteMode && (!!onImagesChange || !!onFilesChange);
 
   // Phones get a ChatGPT-style resting state: while the field is empty and
   // unfocused, the composer collapses to a single-row pill ("+ · placeholder ·
@@ -366,8 +378,10 @@ export function Composer({
   const entSteer = busySendPrefs.enter === "steer";
   const modSteer = busySendPrefs.mod === "steer";
   const modifierPicks = sendKey === "enter";
+  // Notes bypass the busy queue/steer machinery entirely — they post
+  // immediately regardless of the run state.
   const steerSend =
-    !!busy && (modifierPicks && sendModifierHeld ? modSteer : entSteer);
+    !noteMode && !!busy && (modifierPicks && sendModifierHeld ? modSteer : entSteer);
 
   // Which toolbar popover is open ("add" menu or "goal" editor). Closed on an
   // outside click or after an action.
@@ -564,6 +578,20 @@ export function Composer({
   function handleKeyDown(e: React.KeyboardEvent) {
     if (mentions.handleKeyDown(e)) return;
     if ((e.nativeEvent as any).isComposing) return;
+    // ⌘/Ctrl+N toggles note mode while the field is focused (Plain's shortcut).
+    // stopPropagation keeps the global ⌘N (new-session palette) from also firing.
+    if (
+      onNoteModeChange &&
+      (e.metaKey || e.ctrlKey) &&
+      !e.shiftKey &&
+      !e.altKey &&
+      e.key.toLowerCase() === "n"
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+      onNoteModeChange(!noteMode);
+      return;
+    }
     // Vim mode gets the key before the send/stop logic: in insert mode it only
     // claims Escape (drop to normal mode — a second, bare Escape in normal mode
     // falls through here to the busy-stop below), and Enter is never consumed,
@@ -628,7 +656,15 @@ export function Composer({
         initial={false}
         animate={{ borderRadius: minimized ? 999 : isPhone ? 28 : 24 }}
         transition={composerMorph}
-        className={`composer ${disabled ? "composer-disabled" : ""} ${minimized ? "composer-min" : ""}`}
+        className={`composer ${disabled ? "composer-disabled" : ""} ${minimized ? "composer-min" : ""} ${noteMode ? "composer-note" : ""}`}
+        style={
+          noteMode
+            ? {
+                borderColor: "color-mix(in srgb, var(--yellow) 45%, transparent)",
+                background: "color-mix(in srgb, var(--yellow) 5%, var(--panel))",
+              }
+            : undefined
+        }
         onDrop={handleDrop}
         onDragOver={(e) => canAttach && e.preventDefault()}
       >
@@ -668,7 +704,13 @@ export function Composer({
             // "Ask <model>" (ChatGPT-style) that fits the single row; the
             // descriptive placeholder returns once it expands.
             placeholder={
-              minimized ? `Ask ${shortModelLabel(effectiveModel, models)}` : placeholder
+              noteMode
+                ? minimized
+                  ? "Note…"
+                  : "Leave a note for the team — the agent won't see it"
+                : minimized
+                  ? `Ask ${shortModelLabel(effectiveModel, models)}`
+                  : placeholder
             }
             value={text}
             onChange={(e) => {
@@ -819,6 +861,40 @@ export function Composer({
             )}
           </AnimatePresence>
 
+          {/* Note-mode toggle (Plain-style internal notes) — also on ⌘N. */}
+          <AnimatePresence initial={false}>
+            {!minimized && onNoteModeChange && (
+              <motion.div
+                key="note"
+                layout="position"
+                {...composerChipMotion}
+                className="composer-pop-wrap"
+              >
+                <Tooltip
+                  label={
+                    noteMode
+                      ? "Note mode — posts to the team; the agent won't see it. ⌘N to switch back."
+                      : "Write a team note instead of prompting the agent (⌘N)"
+                  }
+                >
+                  <button
+                    type="button"
+                    className="palette-icon-btn composer-note-btn"
+                    style={noteMode ? { color: "var(--yellow)" } : undefined}
+                    {...tapProps(() => onNoteModeChange(!noteMode))}
+                    disabled={disabled}
+                    aria-pressed={!!noteMode}
+                  >
+                    <IconPencil size={24} />
+                    {noteMode && (
+                      <span className="composer-goal-label">Note</span>
+                    )}
+                  </button>
+                </Tooltip>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {leftExtra}
           <div className="composer-spacer" />
 
@@ -901,27 +977,29 @@ export function Composer({
             >
               <Tooltip
                 label={
-                  steerSend
-                    ? `Steer — fold into the running turn now, without stopping it${
-                        modifierPicks && entSteer && !modSteer
-                          ? "; hold ⌘/Ctrl to queue"
-                          : ""
-                      }`
-                    : sendTitle ||
-                      (busy
-                        ? `Queue — delivered when the agent fully finishes${
-                            modifierPicks && modSteer
-                              ? "; hold ⌘/Ctrl to steer"
-                              : ""
-                          } (${sendKeyLabel(sendKey)})`
-                        : `Send (${sendKeyLabel(sendKey)})`)
+                  noteMode
+                    ? `Add note (${sendKeyLabel(sendKey)})`
+                    : steerSend
+                      ? `Steer — fold into the running turn now, without stopping it${
+                          modifierPicks && entSteer && !modSteer
+                            ? "; hold ⌘/Ctrl to queue"
+                            : ""
+                        }`
+                      : sendTitle ||
+                        (busy
+                          ? `Queue — delivered when the agent fully finishes${
+                              modifierPicks && modSteer
+                                ? "; hold ⌘/Ctrl to steer"
+                                : ""
+                            } (${sendKeyLabel(sendKey)})`
+                          : `Send (${sendKeyLabel(sendKey)})`)
                 }
               >
                 <button
                   className={`composer-send ${
                     steerSend
                       ? "composer-send-interrupt"
-                      : busy
+                      : busy && !noteMode
                         ? "composer-send-queue-main"
                         : ""
                   }`}
@@ -930,16 +1008,18 @@ export function Composer({
                   )}
                   disabled={disabled || isSendDisabled}
                   aria-label={
-                    steerSend
-                      ? "Steer into the running turn"
-                      : busy
-                        ? "Queue until the current turn finishes"
-                        : "Send message"
+                    noteMode
+                      ? "Add note"
+                      : steerSend
+                        ? "Steer into the running turn"
+                        : busy
+                          ? "Queue until the current turn finishes"
+                          : "Send message"
                   }
                 >
                   {steerSend ? (
                     <IconArrowUp size={24} />
-                  ) : busy ? (
+                  ) : busy && !noteMode ? (
                     <IconReturn size={24} />
                   ) : (
                     <IconArrowUp size={24} />
