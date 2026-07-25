@@ -15,6 +15,12 @@ struct SessionView: View {
     /// prepend: the entry that was topmost stays where the reader left it.
     @State private var prependAnchorId: String?
 
+    /// Whether the reader is at (or near) the bottom — tracked by a sentinel
+    /// row at the end of the transcript. New AI output only auto-scrolls
+    /// while true; scrolling up to read releases the pin so streams don't
+    /// yank the reader back down.
+    @State private var pinnedToBottom = true
+
     /// Model/effort catalog for the toolbar picker; fetched on first open.
     @State private var catalog: ModelCatalog?
 
@@ -51,6 +57,14 @@ struct SessionView: View {
                                 }
                                 .id("ask-\(ask.id)")
                             }
+                            // Bottom sentinel: realized only while the reader
+                            // is at the bottom, so its appear/disappear tracks
+                            // the pin state read by the onChange handlers below.
+                            Color.clear
+                                .frame(height: 1)
+                                .id("bottom-sentinel")
+                                .onAppear { pinnedToBottom = true }
+                                .onDisappear { pinnedToBottom = false }
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
@@ -74,6 +88,17 @@ struct SessionView: View {
                         // reader has scrolled up (or the keyboard resized the
                         // viewport), leaving the just-sent bubble below the fold.
                         scrollToBottom(proxy, animated: true)
+                    }
+                    // The size-change anchor alone doesn't reliably hold the
+                    // bottom while new output arrives (keyboard insets + lazy
+                    // row settling knock it loose), so follow explicitly while
+                    // pinned: new items animated, per-chunk stream growth not
+                    // (an animation every ~120ms flush reads as rubber-banding).
+                    .onChange(of: viewModel.displayItems.count) {
+                        if pinnedToBottom { scrollToBottom(proxy, animated: true) }
+                    }
+                    .onChange(of: viewModel.liveText) {
+                        if pinnedToBottom { scrollToBottom(proxy, animated: false) }
                     }
                     .onChange(of: viewModel.historyPrependSeq) {
                         // Keep the reader where they were: the entry that was at
