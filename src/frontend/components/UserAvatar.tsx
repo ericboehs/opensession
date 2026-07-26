@@ -16,7 +16,6 @@ const GITHUB_LOGIN: Record<string, string> = {
 	johnny: "johnnylinsf",
 	john: "soutar",
 	louise: "louisedesadeleer",
-	thibault: "thiblahute",
 };
 
 /** Merge directory-fetched logins over the fallback map (lib/people.ts). */

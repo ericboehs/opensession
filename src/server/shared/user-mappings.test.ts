@@ -24,7 +24,6 @@ const EXPECTED_GITHUB_TO_SLACK = {
   happylinks: "UT41L6GCC",
   johnnylinsf: "U0866D7PCCU",
   "9ranty": "USU9S2YRF",
-  thiblahute: "U065GD4757C",
   jfrolich: "U08EWERLX8D",
   soutar: "U08CXTV7ML2",
   kentdebruin: "U08S8B3P83X",
@@ -38,14 +37,12 @@ const EXPECTED_LINEAR_EMAIL_TO_GITHUB = {
   "john@tella.com": "soutar",
   "jaap@tella.com": "jfrolich",
   "louise@tella.com": "louisedesadeleer",
-  "tsaunier@igalia.com": "thiblahute",
 };
 
 const EXPECTED_SLACK_ID_TO_NAME = {
   UT41L6GCC: "Michiel Westerbeek",
   U0866D7PCCU: "Johnny Lin",
   USU9S2YRF: "Grant Shaddick",
-  U065GD4757C: "Thibault Saunier",
   U066K2VRDHA: "Andres Gomez",
   U08CXTV7ML2: "John Soutar",
   U08EWERLX8D: "Jaap Frolich",
@@ -69,7 +66,6 @@ const EXPECTED_TEAM_GIT_IDENTITY = [
   { name: "Johnny Lin", email: "67078496+johnnylinsf@users.noreply.github.com", aliases: ["johnny"], slackId: "U0866D7PCCU", github: "johnnylinsf" },
   { name: "John Soutar", email: "john@tella.com", aliases: ["john"], slackId: "U08CXTV7ML2", github: "soutar" },
   { name: "Louise de Sadeleer", email: "54376811+louisedesadeleer@users.noreply.github.com", aliases: ["louise"], slackId: "U08JGAT5KNK", github: "louisedesadeleer" },
-  { name: "Thibault Saunier", email: "tsaunier@igalia.com", aliases: ["thibault"], slackId: "U065GD4757C", github: "thiblahute" },
 ];
 
 // The equivalent config JSON: the same roster expressed as identity.team +
@@ -84,7 +80,6 @@ const EQUIVALENT_TEAM: TeamMember[] = [
   { name: "John Soutar", email: "john@tella.com", aliases: ["john"], slackId: "U08CXTV7ML2", github: "soutar", linearEmails: ["john@tella.com"] },
   // githubToSlack: false — the historical GITHUB_TO_SLACK never listed Louise.
   { name: "Louise de Sadeleer", email: "54376811+louisedesadeleer@users.noreply.github.com", aliases: ["louise"], slackId: "U08JGAT5KNK", github: "louisedesadeleer", linearEmails: ["louise@tella.com"], githubToSlack: false },
-  { name: "Thibault Saunier", email: "tsaunier@igalia.com", aliases: ["thibault"], slackId: "U065GD4757C", github: "thiblahute", linearEmails: ["tsaunier@igalia.com"] },
 ];
 
 const EQUIVALENT_SLACK_NAMES: Record<string, string> = {

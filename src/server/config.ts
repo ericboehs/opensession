@@ -267,9 +267,6 @@ const DEFAULT_TEAM: TeamMember[] = [
   { name: "Johnny Lin", email: "67078496+johnnylinsf@users.noreply.github.com", aliases: ["johnny"], slackId: "U0866D7PCCU", github: "johnnylinsf", linearEmails: ["johnny@tella.tv"], timezone: "America/Los_Angeles" },
   { name: "John Soutar", email: "john@tella.com", aliases: ["john"], slackId: "U08CXTV7ML2", github: "soutar", linearEmails: ["john@tella.com"], timezone: "Europe/London" },
   { name: "Louise de Sadeleer", email: "54376811+louisedesadeleer@users.noreply.github.com", aliases: ["louise"], slackId: "U08JGAT5KNK", github: "louisedesadeleer", linearEmails: ["louise@tella.com"], githubToSlack: false, timezone: "Europe/Lisbon" },
-  // Contractor: identity kept for commit/Slack/Linear attribution only —
-  // hidden from the team directory (People band, pickers, mentions).
-  { name: "Thibault Saunier", email: "tsaunier@igalia.com", aliases: ["thibault"], slackId: "U065GD4757C", github: "thiblahute", linearEmails: ["tsaunier@igalia.com"], directory: false },
 ];
 
 /** Slack ids that resolve to a display name but aren't full team members —
