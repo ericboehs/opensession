@@ -28,6 +28,17 @@ import { useEffect, useRef } from "react";
  *   horizontal scrolling inside diffs/code.
  * - Vertical-dominant (or leftward) moves abort immediately, leaving normal
  *   scrolling alone.
+ *
+ * Stranded gestures. WebKit keeps dispatching a touch's move/end events to the
+ * element the touch STARTED on even after that element leaves the DOM — and a
+ * detached node has no ancestors, so those events never reach these document
+ * listeners. Message bodies render through `dangerouslySetInnerHTML`
+ * (MarkdownBody), so a streaming update replaces every node under the finger:
+ * the drag would then never end and the pane sat frozen on its inline
+ * transform, half-swiped and stuck. Three defences, cheapest first: the
+ * per-gesture listeners are mirrored onto the start target (orphaned events
+ * still land), a stall timer abandons a drag that goes silent, and any fresh
+ * touch heals a pane that somehow still carries a drag transform.
  */
 interface Opts {
   /** This layer is currently showing and may be popped by the swipe. */
@@ -48,6 +59,7 @@ const EDGE = 32; // px from the left that may begin a back drag
 const SLOP = 8; // px of movement before committing to an axis
 const SNAP_MS = 260; // matches the CSS page transition
 const FLICK_VX = 0.35; // px/ms rightward at release that pops even a short drag
+const STALL_MS = 1500; // silence on a committed drag that means the touch is gone
 
 interface Layer {
   seq: number;
@@ -72,6 +84,10 @@ let startTarget: EventTarget | null = null;
 let lastX = 0;
 let lastT = 0;
 let vx = 0; // smoothed horizontal velocity, px/ms (+ = rightward)
+let mirrorTarget: EventTarget | null = null; // node carrying the mirrored listeners
+let lastHandled: TouchEvent | null = null; // dedupes target-phase vs. document
+let stallTimer: ReturnType<typeof setTimeout> | null = null;
+let settleSeq = 0; // so a stale settle can't reset a newer gesture's transform
 
 function topLayer(): Layer | null {
   let best: Layer | null = null;
@@ -105,6 +121,57 @@ function resetPaneStyles(el: HTMLElement | null) {
   el.style.transform = "";
 }
 
+// Mirror the per-gesture listeners onto the node the touch started on, so a
+// touch orphaned by that node's removal still reports its moves and its end.
+// Both copies fire in the ordinary case (target phase, then document), which
+// `lastHandled` collapses back to one.
+function mirrorOn(target: EventTarget | null) {
+  unmirror();
+  if (!target || target === document || target === window) return;
+  mirrorTarget = target;
+  const opts = { passive: false } as const;
+  target.addEventListener("touchmove", onMove as EventListener, opts);
+  target.addEventListener("touchend", onEnd as EventListener);
+  target.addEventListener("touchcancel", onEnd as EventListener);
+}
+
+function unmirror() {
+  if (!mirrorTarget) return;
+  mirrorTarget.removeEventListener("touchmove", onMove as EventListener);
+  mirrorTarget.removeEventListener("touchend", onEnd as EventListener);
+  mirrorTarget.removeEventListener("touchcancel", onEnd as EventListener);
+  mirrorTarget = null;
+}
+
+function clearStall() {
+  if (stallTimer === null) return;
+  clearTimeout(stallTimer);
+  stallTimer = null;
+}
+
+// Re-armed on every move of a committed drag. Firing means the touch stopped
+// reporting altogether — abandon the drag and snap the pane home rather than
+// leaving it frozen mid-swipe. Deliberately never pops: a gesture we lost
+// track of shouldn't navigate.
+function armStall() {
+  clearStall();
+  stallTimer = setTimeout(() => {
+    stallTimer = null;
+    if (!dragging) return;
+    endGestureState();
+    settle(false);
+  }, STALL_MS);
+}
+
+function endGestureState() {
+  candidate = false;
+  dragging = false;
+  startTarget = null;
+  lastHandled = null;
+  unmirror();
+  clearStall();
+}
+
 // Animate the pane to its resting edge, then hand control back to the CSS
 // class so the inline styles don't linger and fight future layout.
 function settle(toBack: boolean) {
@@ -118,11 +185,15 @@ function settle(toBack: boolean) {
     return;
   }
   let finished = false;
+  const seq = ++settleSeq;
   const done = () => {
     if (finished) return;
     finished = true;
-    resetPaneStyles(el);
     el.removeEventListener("transitionend", done);
+    // A gesture that started while this animation was running now owns the
+    // pane's inline transform — clearing it here would yank the pane out from
+    // under the finger. The pop still has to happen either way.
+    if (seq === settleSeq) resetPaneStyles(el);
     if (toBack) onBack();
   };
   el.style.transition = `transform ${SNAP_MS}ms ease`;
@@ -136,6 +207,15 @@ const mq =
 
 function onStart(e: TouchEvent) {
   if (!mq?.matches || e.touches.length !== 1) return;
+  // A single live touch means the previous one is over, however quietly it
+  // went. If it left a drag behind, drop it now so the pane can't stay stuck
+  // past the next tap — a stranded transform outlives its gesture otherwise.
+  if (dragging || candidate) {
+    const stale = pane();
+    endGestureState();
+    resetPaneStyles(stale);
+    handler = null;
+  }
   const t = e.touches[0];
   startX = t.clientX;
   startY = t.clientY;
@@ -153,6 +233,7 @@ function onStart(e: TouchEvent) {
   // re-dispatches a click when the touch turns out to be a plain tap.
   if (candidate && e.cancelable) e.preventDefault();
   if (!candidate) return;
+  mirrorOn(startTarget);
   handler = topLayer();
   const el = pane();
   width = el
@@ -162,6 +243,8 @@ function onStart(e: TouchEvent) {
 
 function onMove(e: TouchEvent) {
   if (!candidate || e.touches.length !== 1) return;
+  if (lastHandled === e) return;
+  lastHandled = e;
   const t = e.touches[0];
   const dx = t.clientX - startX;
   const dy = t.clientY - startY;
@@ -175,8 +258,9 @@ function onMove(e: TouchEvent) {
     // strict dy>dx test killed any thumb arc that dipped a few px first.
     if (dx > 0 && ax >= ay * 0.8) {
       dragging = true;
+      settleSeq++; // this drag now owns the pane; older settles must not reset it
     } else if (dx < -SLOP || ay > ax * 1.4) {
-      candidate = false;
+      endGestureState();
       return;
     } else {
       return;
@@ -184,6 +268,7 @@ function onMove(e: TouchEvent) {
   }
   if (!handler) return; // guard-only: nothing to drag, gesture is swallowed
   e.preventDefault(); // we own this gesture now; stop scrolling
+  armStall();
   const now = performance.now();
   if (now > lastT) {
     // Exponentially smoothed so the release reads intent, not one sample.
@@ -197,11 +282,11 @@ function onMove(e: TouchEvent) {
 
 function onEnd(e: TouchEvent) {
   if (!candidate) return;
+  if (lastHandled === e) return;
+  lastHandled = e;
   const wasDragging = dragging;
   const target = startTarget;
-  candidate = false;
-  dragging = false;
-  startTarget = null;
+  endGestureState();
   const el = pane();
   if (!wasDragging || !el) {
     resetPaneStyles(el);
@@ -275,8 +360,7 @@ export function useBackSwipe({ active, onBack, paneRef, priority = 0 }: Opts) {
       if (handler === layer) {
         resetPaneStyles(paneRef.current);
         handler = null;
-        candidate = false;
-        dragging = false;
+        endGestureState();
       }
       syncListeners();
     };
