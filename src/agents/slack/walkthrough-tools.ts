@@ -20,6 +20,7 @@ import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
 import { publishWalkthrough } from "../../server/walkthrough";
 import {
+  repoIsPrivate,
   spliceImagesIntoMarkdown,
   uploadPrImages,
 } from "../../server/pr-images";
@@ -163,6 +164,16 @@ export function createWalkthroughMcpServer(ctx: WalkthroughToolContext) {
               "Session not found — pass both repo and pr_number so the PR can be targeted explicitly.",
             );
           }
+          // Visibility gate (fail-closed): an image capability URL posted on
+          // a public repo is a public screenshot — camo caches it for every
+          // reader. Refuse rather than publish (PR #78 review P1).
+          const isPrivate = await repoIsPrivate(ghRepo);
+          if (isPrivate !== true)
+            return text(
+              isPrivate === false
+                ? `Refusing: ${ghRepo} is a PUBLIC repository — posting screenshots there publishes them (GitHub's camo proxy caches the capability URL for every reader). Post the comment without images, or have a human attach them deliberately.`
+                : `Refusing: couldn't verify that ${ghRepo} is a private repository — image comments are only posted to confirmed-private repos. Retry, or post the comment without images.`,
+            );
           const uploaded = uploadPrImages(args.images);
           const body = spliceImagesIntoMarkdown(args.comment, uploaded);
           const res = await postPrComment(selector, { body }, ghRepo);

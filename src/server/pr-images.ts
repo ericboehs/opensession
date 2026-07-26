@@ -134,6 +134,40 @@ export function prImageMarkdown(img: UploadedPrImage): string {
   return `![${img.alt}](${img.url})`;
 }
 
+// Capability URLs are unlisted, not access-controlled: once one is posted on
+// a PUBLIC repo, GitHub's camo proxy caches the image and anyone reading the
+// thread sees it — equivalent to publishing the screenshot (PR #78 review
+// P1). The registry contains public tellahq repos (gst-plugins-rs, …), and
+// the tellahq-scoped credential can post to them, so callers MUST gate image
+// comments on visibility. Fail-closed: unknown visibility refuses.
+const repoVisibilityCache = new Map<string, boolean>();
+
+/** True = private, false = public, null = could not determine (treat as
+ *  public / refuse). Cached per ghRepo for the process lifetime. */
+export async function repoIsPrivate(ghRepo: string): Promise<boolean | null> {
+  const cached = repoVisibilityCache.get(ghRepo);
+  if (cached !== undefined) return cached;
+  const token = process.env.GITHUB_API_TOKEN || process.env.GH_TOKEN;
+  if (!token) return null;
+  try {
+    const res = await fetch(`https://api.github.com/repos/${ghRepo}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "opensession",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const data: any = await res.json().catch(() => null);
+    if (typeof data?.private !== "boolean") return null;
+    repoVisibilityCache.set(ghRepo, data.private);
+    return data.private;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Substitute `{{image:N}}` placeholders (1-based) in a markdown body with the
  * uploaded images; any images never referenced are appended at the end so
