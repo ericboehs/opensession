@@ -1283,7 +1283,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const personActivity = useMemo(() => {
 		const m = new Map<
 			string,
-			{ title: string; last: string; running: boolean }
+			{ id: string; title: string; last: string; running: boolean }
 		>();
 		for (const s of sessions) {
 			if (s.archived || s.sideChatOf || s.automation) continue;
@@ -1293,6 +1293,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			const running = (cur?.running ?? false) || s.isRunning === true;
 			if (!cur || (s.lastActivity || "") > cur.last) {
 				m.set(key, {
+					id: s.id,
 					title: s.title || "",
 					last: s.lastActivity || "",
 					running,
@@ -4231,12 +4232,21 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 												selected ? "bg-active" : ""
 											}`}
 											onClick={() => {
-												const next = selected ? "me" : key;
-												setFilter({ person: next });
-												// Phones: the person-filtered lanes live below the
-												// fold, so a tap otherwise looks like a no-op —
-												// bring the "<Name>'s workspaces" header into view.
-												if (isPhone && next !== "me") {
+												// Filter to their lanes AND open the session the row
+												// shows — going back then lands on their workspaces
+												// (the header ✕ is the way back to your own).
+												setFilter({ person: key });
+												const targetId = liveId || act?.id;
+												const target = targetId
+													? sessions.find((s) => s.id === targetId)
+													: undefined;
+												if (target) onSelect(target);
+												// Scroll the sidebar to the "<Name>'s workspaces"
+												// header behind the pushed page, so backing out of
+												// the session shows their lanes (phones hide the
+												// header's resting title, and the lanes sit below
+												// the fold).
+												if (isPhone) {
 													// block:center — the phone top bar overlays the
 													// viewport top and would swallow the header.
 													setTimeout(
@@ -4250,8 +4260,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 												}
 											}}
 											title={
-												selected
-													? "Back to your workspaces"
+												liveId || act?.title
+													? `Open “${liveId ? titleFor(liveId) : act?.title}” · ${p.name}'s workspaces`
 													: `${p.name}'s workspaces`
 											}
 										>
