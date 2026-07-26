@@ -4227,7 +4227,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									return (
 										<button
 											key={p.name}
-											className={`flex items-center gap-2 w-full min-w-0 text-left text-[14px] max-[720px]:text-[16px] bg-transparent border-0 cursor-pointer rounded-md px-2 py-2 max-[720px]:py-2.5 hover:bg-hover ${
+											className={`flex items-center gap-2 w-full min-w-0 text-left bg-transparent border-0 cursor-pointer rounded-md px-2 py-[5px] max-[720px]:py-2 hover:bg-hover ${
 												selected ? "bg-active" : ""
 											}`}
 											onClick={() => {
@@ -4249,45 +4249,40 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 													);
 												}
 											}}
-											title={[
-												`${p.fullName}${localTime ? ` · ${localTime} local` : ""}`,
-												liveId
-													? `Viewing “${titleFor(liveId)}”`
-													: act?.title
-														? `Last on “${act.title}”`
-														: null,
+											title={
 												selected
-													? "Click to go back to your workspaces"
-													: "Click to view their workspaces",
-											]
-												.filter(Boolean)
-												.join("\n")}
+													? "Back to your workspaces"
+													: `${p.name}'s workspaces`
+											}
 										>
-											<span className="relative shrink-0">
-												<UserAvatar
-													name={p.name}
-													size={20}
-													className={liveId ? "ring-2" : ""}
-													style={
-														liveId
-															? ({
-																	"--tw-ring-color": personColor(p.name),
-																} as React.CSSProperties)
-															: undefined
-													}
-												/>
-												{act?.running && (
-													<span
-														className="absolute -bottom-0.5 -right-0.5 block size-[8px] rounded-full bg-green ring-2 ring-[var(--bg)]"
-														aria-label="Has a running session"
+											{/* The name lives on the avatar (tooltip) — the row's
+											    width belongs to the workspace/session title. */}
+											<Tooltip
+												label={`${p.fullName}${localTime ? ` · ${localTime}` : ""}${liveId ? " · viewing now" : ""}`}
+											>
+												<span className="relative shrink-0">
+													<UserAvatar
+														name={p.name}
+														size={22}
+														className={liveId ? "ring-2" : ""}
+														style={
+															liveId
+																? ({
+																		"--tw-ring-color": personColor(p.name),
+																	} as React.CSSProperties)
+																: undefined
+														}
 													/>
-												)}
-											</span>
-											<span className="text-fg w-[72px] shrink-0 truncate">
-												{p.name}
-											</span>
-											<span className="text-faint min-w-0 flex-1 truncate">
-												{liveId ? titleFor(liveId) : act?.title || ""}
+													{act?.running && (
+														<span
+															className="absolute -bottom-0.5 -right-0.5 block size-[8px] rounded-full bg-green ring-2 ring-[var(--bg)]"
+															aria-label="Has a running session"
+														/>
+													)}
+												</span>
+											</Tooltip>
+											<span className="sidebar-item-title flex-1">
+												{liveId ? titleFor(liveId) : act?.title || p.name}
 											</span>
 											{liveId && (
 												<span
