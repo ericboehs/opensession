@@ -98,6 +98,12 @@ export interface TeamMember {
    * out of GitHub-event Slack pings without dropping their other mappings.
    */
   githubToSlack?: boolean;
+  /**
+   * Include in the team directory (GET /api/people: People band, pickers,
+   * @-mention completion + pushes). Default true; set false for identities
+   * kept only for commit/Slack/Linear attribution (e.g. contractors).
+   */
+  directory?: boolean;
 }
 
 export interface IdentitySection {
@@ -261,7 +267,9 @@ const DEFAULT_TEAM: TeamMember[] = [
   { name: "Johnny Lin", email: "67078496+johnnylinsf@users.noreply.github.com", aliases: ["johnny"], slackId: "U0866D7PCCU", github: "johnnylinsf", linearEmails: ["johnny@tella.tv"], timezone: "America/Los_Angeles" },
   { name: "John Soutar", email: "john@tella.com", aliases: ["john"], slackId: "U08CXTV7ML2", github: "soutar", linearEmails: ["john@tella.com"], timezone: "Europe/London" },
   { name: "Louise de Sadeleer", email: "54376811+louisedesadeleer@users.noreply.github.com", aliases: ["louise"], slackId: "U08JGAT5KNK", github: "louisedesadeleer", linearEmails: ["louise@tella.com"], githubToSlack: false, timezone: "Europe/Lisbon" },
-  { name: "Thibault Saunier", email: "tsaunier@igalia.com", aliases: ["thibault"], slackId: "U065GD4757C", github: "thiblahute", linearEmails: ["tsaunier@igalia.com"] },
+  // Contractor: identity kept for commit/Slack/Linear attribution only —
+  // hidden from the team directory (People band, pickers, mentions).
+  { name: "Thibault Saunier", email: "tsaunier@igalia.com", aliases: ["thibault"], slackId: "U065GD4757C", github: "thiblahute", linearEmails: ["tsaunier@igalia.com"], directory: false },
 ];
 
 /** Slack ids that resolve to a display name but aren't full team members —
@@ -331,6 +339,7 @@ function parseTeamMember(v: unknown): TeamMember | undefined {
       github: str(o.github),
       linearEmails: strArray(o.linearEmails),
       githubToSlack: bool(o.githubToSlack),
+      directory: bool(o.directory),
       timezone: str(o.timezone),
     }),
   };

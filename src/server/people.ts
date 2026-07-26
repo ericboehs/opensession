@@ -22,9 +22,12 @@ export interface DirectoryPerson {
 	timezone?: string;
 }
 
-/** The mentionable/pickable team, in config order. */
+/** The mentionable/pickable team, in config order. Members flagged
+ *  `directory: false` (attribution-only identities) are excluded. */
 export function teamDirectory(): DirectoryPerson[] {
-	return configuredIdentity().team.map((m) => ({
+	return configuredIdentity()
+		.team.filter((m) => m.directory !== false)
+		.map((m) => ({
 		name: m.name.split(" ")[0],
 		fullName: m.name,
 		...(m.github ? { github: m.github } : {}),
