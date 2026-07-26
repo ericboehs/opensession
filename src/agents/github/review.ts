@@ -28,6 +28,7 @@ import { modelLabel } from "../../server/models";
 import { createReviewWorktreeForPrHead } from "../../server/worktree";
 import { inverseReviewModel, authorFamilyFor } from "./model-inversion";
 import { runTestOnBaseCheck, testOnBaseSection, type TestOnBaseResult } from "./test-on-base";
+import { runSecretScanCheck, secretScanSection, type SecretScanResult } from "./secret-scan";
 import {
   loadReviewOptions,
   pathIgnored,
@@ -205,6 +206,20 @@ export async function runReview(
         })
       : Promise.resolve(null);
 
+    // Deterministic TruffleHog secret scan on the PR's added lines, also
+    // concurrent with the model review (fails soft when not installed).
+    const secretScan: Promise<SecretScanResult | null> = reviewOpts.secretScan
+      ? runSecretScanCheck({
+          cwd,
+          baseRefName: details.baseRefName,
+          prNumber: pr.number,
+          ghRepo: pr.ghRepo,
+        }).catch((e) => {
+          console.warn(`[github] secret scan failed for PR #${pr.number}:`, e);
+          return null;
+        })
+      : Promise.resolve(null);
+
     const base = (config.prompt || "").trim() || DEFAULT_REVIEW_PROMPT;
     const prompt = buildReviewPrompt(base, details, isUpdate, steer, pr.ghRepo, {
       authorFamily: author?.family,
@@ -258,7 +273,16 @@ export async function runReview(
 
     const parsed = parseReviewOutput(result.text);
     const tob = await testOnBase;
-    await postReview(pr, details, parsed, result.text, result.error, force, result.model, reviewOpts, summaryOnly, testOnBaseSection(tob));
+    const secrets = await secretScan;
+    // A leaked credential blocks regardless of what the model concluded: the
+    // verdict drops to request_changes and confidence caps at 2/5. (Not counted
+    // as a "blocking finding" for the auto-fix gate — rotation is human work a
+    // fixer loop can't do.)
+    if (parsed && secrets?.findings.length) {
+      parsed.verdict = "request_changes";
+      parsed.confidence = Math.min(typeof parsed.confidence === "number" ? parsed.confidence : 2, 2);
+    }
+    await postReview(pr, details, parsed, result.text, result.error, force, result.model, reviewOpts, summaryOnly, testOnBaseSection(tob) + secretScanSection(secrets));
 
     // Record the SHA as reviewed only on a successful run, so a transient failure
     // (model error/timeout) leaves it eligible for retry on the next delivery.

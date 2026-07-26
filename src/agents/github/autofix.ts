@@ -29,6 +29,12 @@ import { defaultRepo } from "../../server/config";
 
 const MAX_ITERATIONS = 5;
 const WALL_CLOCK_MS = 60 * 60 * 1000; // abandon a loop running longer than an hour
+// Scope guard: stop when the PR diff has grown past 2x the size it had when the
+// loop started (plus a flat allowance so small PRs can absorb legitimate fixes).
+// A fixer that doubles the diff isn't converging on the review — it's rewriting
+// the PR, and that's a human decision.
+const SCOPE_GROWTH_FACTOR = 2;
+const SCOPE_GROWTH_FLAT_LINES = 200;
 const CHECK_POLL_MS = 30 * 1000;
 const CHECK_TIMEOUT_MS = 15 * 60 * 1000;
 const CHECK_REGISTRATION_GRACE_MS = 30 * 1000;
@@ -190,6 +196,9 @@ export async function runAutoFix(
     let lastPushedSha = baseSha;
     let outcome = "";
     let lastDisp: Dispositions | null = null;
+    // Diff size (additions+deletions) at loop start; a resumed loop re-baselines
+    // at its resume point, which only ever makes the guard more permissive.
+    let baselineDiffLines: number | null = null;
 
     // Review helpers (dynamic import keeps the module graph acyclic). A fresh
     // review of each pushed SHA is what gates the loop; `lastReviewedSha` lets us
@@ -217,6 +226,14 @@ export async function runAutoFix(
       const details = await getPrDetailsFresh(pr.headRef, pr.ghRepo || undefined);
       if (!details) { outcome = "⚠️ Could not load PR details — stopping."; transientExit = true; break; }
       if (details.state !== "OPEN") { outcome = `PR is ${details.state.toLowerCase()} — stopping.`; break; }
+
+      const diffLines = details.additions + details.deletions;
+      if (baselineDiffLines == null) {
+        baselineDiffLines = diffLines;
+      } else if (diffLines > baselineDiffLines * SCOPE_GROWTH_FACTOR + SCOPE_GROWTH_FLAT_LINES) {
+        outcome = `⚠️ Stopped — the PR diff grew from ${baselineDiffLines} to ${diffLines} changed lines during auto-fix (past the ${SCOPE_GROWTH_FACTOR}x scope guard). The fixes are drifting beyond the PR's original scope; handing back to humans.`;
+        break;
+      }
 
       const ciBefore = evaluateChecks(details);
       const reviewSummary = await fetchReviewFindings(pr.number, pr.ghRepo);

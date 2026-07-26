@@ -8,7 +8,8 @@
  *     "ignoreGlobs": ["**\/*.lock", "generated/**"],   // never review these paths
  *     "minInlineSeverity": "P3",                        // post inline comments at or above this
  *     "summaryOnlyOverFiles": 80,                       // giant PRs get a summary, no inline noise
- *     "skipKeywords": ["[skip-review]"]                 // in the PR title → no auto review
+ *     "skipKeywords": ["[skip-review]"],                // in the PR title → no auto review
+ *     "secretScan": true                                // TruffleHog scan of the PR's added lines
  *   }
  *
  * Auto-review gating (skipKeywords) reads the repo's MAIN checkout copy (the
@@ -26,6 +27,8 @@ export interface ReviewOptions {
   skipKeywords: string[];
   /** Deterministic test-fails-on-base check on new/changed test files. */
   testOnBase: boolean;
+  /** Deterministic TruffleHog secret scan on the PR's added lines. */
+  secretScan: boolean;
 }
 
 export const REVIEW_OPTION_DEFAULTS: ReviewOptions = {
@@ -34,6 +37,7 @@ export const REVIEW_OPTION_DEFAULTS: ReviewOptions = {
   summaryOnlyOverFiles: 80,
   skipKeywords: ["[skip-review]"],
   testOnBase: true,
+  secretScan: true,
 };
 
 const OPTIONS_FILE = ".os-review.json";
@@ -71,6 +75,7 @@ export function normalizeReviewOptions(raw: any): ReviewOptions {
       ? raw.skipKeywords.filter((k: any) => typeof k === "string" && k.trim())
       : d.skipKeywords,
     testOnBase: typeof raw.testOnBase === "boolean" ? raw.testOnBase : d.testOnBase,
+    secretScan: typeof raw.secretScan === "boolean" ? raw.secretScan : d.secretScan,
   };
 }
 
