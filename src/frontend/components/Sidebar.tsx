@@ -62,6 +62,7 @@ import {
 	IconUnarchive,
 	IconBell,
 	IconFilter,
+	IconX,
 	IconArrowDown,
 	IconArrowUp,
 	IconMinus,
@@ -4229,9 +4230,25 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 											className={`flex items-center gap-2 w-full min-w-0 text-left text-[14px] max-[720px]:text-[16px] bg-transparent border-0 cursor-pointer rounded-md px-2 py-2 max-[720px]:py-2.5 hover:bg-hover ${
 												selected ? "bg-active" : ""
 											}`}
-											onClick={() =>
-												setFilter({ person: selected ? "me" : key })
-											}
+											onClick={() => {
+												const next = selected ? "me" : key;
+												setFilter({ person: next });
+												// Phones: the person-filtered lanes live below the
+												// fold, so a tap otherwise looks like a no-op —
+												// bring the "<Name>'s workspaces" header into view.
+												if (isPhone && next !== "me") {
+													// block:center — the phone top bar overlays the
+													// viewport top and would swallow the header.
+													setTimeout(
+														() =>
+															headRef.current?.scrollIntoView({
+																behavior: "smooth",
+																block: "center",
+															}),
+														50,
+													);
+												}
+											}}
 											title={[
 												`${p.fullName}${localTime ? ` · ${localTime} local` : ""}`,
 												liveId
@@ -4324,7 +4341,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						aria-expanded={workspacesOpen}
 						title={workspacesOpen ? "Collapse workspaces" : "Expand workspaces"}
 					>
-						<span className="sidebar-workspace-title shrink-0 text-[12px] font-semibold tracking-[-0.01em] text-faint" ref={titleRef}>
+						<span
+						className={`sidebar-workspace-title shrink-0 text-[12px] font-semibold tracking-[-0.01em] text-faint${
+							// Phones hide the resting "Workspaces" title as redundant; a
+							// person view's title is the feedback, so force it visible.
+							filter.person !== "me" ? " sidebar-workspace-title--person" : ""
+						}`}
+						ref={titleRef}
+					>
 							{filter.person === "me"
 								? "Workspaces"
 								: filter.person === "unassigned"
@@ -4341,6 +4365,18 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							}}
 						/>
 					</button>
+					{/* Person view: an explicit exit back to your own workspaces —
+					    load-bearing on phones, where the funnel lives in the top bar. */}
+					{filter.person !== "me" && (
+						<button
+							className="flex h-[22px] w-[22px] shrink-0 cursor-pointer items-center justify-center rounded-full bg-active text-dim hover:text-fg"
+							onClick={() => setFilter({ person: "me" })}
+							aria-label="Back to your workspaces"
+							title="Back to your workspaces"
+						>
+							<IconX size={14} />
+						</button>
+					)}
 					{/* Repo filter chip, inline behind the title when it fits. */}
 					{filter.repo !== "all" && repoInline && (
 						<RepoFilterChip

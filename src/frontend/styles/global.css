@@ -2095,9 +2095,14 @@ body:is(.resizing-sidebar, .resizing-panel) {
 		display: inline-flex;
 	}
 	/* The sidebar header already reads as the "Workspaces" section on mobile, so
-	   drop the redundant in-header title (its filter/new actions stay). */
+	   drop the redundant in-header title (its filter/new actions stay). Except
+	   in a person view — "<Name>'s workspaces" IS the feedback that tapping a
+	   People row did something, so that variant stays visible. */
 	.sidebar-workspace-title {
 		display: none;
+	}
+	.sidebar-workspace-title.sidebar-workspace-title--person {
+		display: inline-block;
 	}
 	/* Flatten the nesting indent under each status lane — that extra left inset is
 	   a desktop-only affordance; on mobile the rows sit flush under the status, and
