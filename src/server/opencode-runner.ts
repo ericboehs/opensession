@@ -1168,16 +1168,25 @@ export function buildOpencodeInstructions(input: {
       "controlled channel fails, stop and report the failure instead of escalating to a " +
       "third-party host."
   );
-  // Unconditional, every run: a Codex-backed session opened a PR against an
-  // open-source repository without first obtaining the user's permission.
+  // Unconditional, every run. History: a Codex-backed session opened a PR
+  // against an open-source repo; then despite this block, runs opened a public
+  // issue (vercel-labs/deepsec#114, 2026-07-19 — "issue" wasn't listed below)
+  // and a fork+PR (TomGranot/tella-to-youtube#1, 2026-07-21). The gh-guard
+  // PATH shims now hard-block these; this text explains the rule and the
+  // refusal the model will see.
   parts.push(
-    "## Public repositories require confirmation\nNEVER publish changes to an open-source " +
-      "or public repository without explicit user confirmation in the current conversation. " +
-      "A request to investigate, implement, or prepare a change is not permission to publish " +
-      "it. Local edits and commits are allowed, but before creating a fork, pushing a branch, " +
-      "opening a pull request, or otherwise writing to any public/open-source repository, stop " +
-      "and ask the user. This rule overrides bias-to-action and generic commit/push/PR defaults; " +
-      "automatic PR creation applies only to Tella's private repositories."
+    "## Never write to public or third-party GitHub repos\nNEVER write to any GitHub " +
+      "repository outside the tellahq org, and never publish to an open-source or public " +
+      "repository, without explicit user approval in the current conversation. This covers " +
+      "every kind of write: opening or commenting on issues, opening PRs or reviews, creating " +
+      "forks, pushing branches, creating gists or public repos. A request to investigate, " +
+      "implement, or prepare a change is never permission to publish it. Tooling enforces " +
+      "this (gh/git will refuse with a gh-guard error) — if that happens, do not look for " +
+      "another route (raw API calls, tokens, curl); instead describe the proposed upstream " +
+      "issue/PR in your summary or note and let a human post it. Found a bug in a third-party " +
+      "tool? Report it in your note — never on their tracker. This rule overrides " +
+      "bias-to-action and generic commit/push/PR defaults; automatic PR creation applies " +
+      "only to Tella's own repositories."
   );
   // Observed 2026-07-10 (bks-019f4b70): twice in one session the model ended
   // its turn on a plan sentence ("I'll rebase X, then …") with zero tool
@@ -1503,12 +1512,22 @@ export function steerOpencodeRun(id: string, text: string, images?: ImageInput[]
   return true;
 }
 
+/** gh-guard shims (gh + git) front the engine PATH: they block GitHub writes
+ *  to repos outside OPENSESSION_GH_ALLOWED_OWNERS (default tellahq) — public
+ *  issues/forks/PRs from agent runs caused real incidents on 2026-07-19/21
+ *  (vercel-labs/deepsec#114, TomGranot/tella-to-youtube#1) despite the
+ *  prompt-level rule. Kill switch: OPENSESSION_GH_GUARD=0. Denies append to
+ *  ~/.opensession-audit/gh-guard.log. */
+const GH_GUARD_DIR = join(import.meta.dir, "gh-guard");
+const GH_GUARD_ACTIVE = process.env.OPENSESSION_GH_GUARD !== "0";
+
 /** Minimal env for the opencode server process (mirrors codexEnv). Provider
  * auth is bound explicitly before spawn; OpenCode's native auth store is not
  * part of the local-profile contract. Backstage tokens never are. */
 export function opencodeEnv(author?: GitIdentity | null): Record<string, string> {
+  const basePath = process.env.PATH || "/usr/local/bin:/usr/bin:/bin";
   return {
-    PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
+    PATH: GH_GUARD_ACTIVE ? `${GH_GUARD_DIR}:${basePath}` : basePath,
     HOME,
     LANG: process.env.LANG || "en_US.UTF-8",
     ...gitIdentityEnv(author),

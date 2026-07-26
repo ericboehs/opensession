@@ -4,11 +4,23 @@ Default to using Bun instead of Node.js.
 
 NEVER publish changes to an open-source or public repository without explicit
 user confirmation in the current conversation. A request to investigate,
-implement, or prepare a change is not permission to publish it. Local edits and
-commits are allowed, but before creating a fork, pushing a branch, opening a pull
-request, or otherwise writing to any public/open-source repository, stop and ask
-the user. This rule overrides bias-to-action and generic commit/push/PR defaults;
+implement, or prepare a change is not permission to publish it. This covers
+every kind of write — issues and comments included, not just forks/branches/PRs
+(a run opened vercel-labs/deepsec#114 on 2026-07-19 and a fork+PR on a
+third-party repo on 2026-07-21). Local edits and commits are allowed, but
+before writing anything to a public/open-source repository, stop and ask the
+user. This rule overrides bias-to-action and generic commit/push/PR defaults;
 automatic PR creation applies only to Tella's private repositories.
+
+Engine runs are hard-gated since 2026-07-26: `src/server/gh-guard/` (gh + git
+shims, fronted onto PATH by `opencodeEnv` in opencode-runner.ts) blocks
+mutating `gh` commands and `git push` unless the target owner is in
+`OPENSESSION_GH_ALLOWED_OWNERS` (default `tellahq`); `gh repo fork` and gist
+creation are blocked outright, fail-closed on unresolvable targets. Denies log
+to `~/.opensession-audit/gh-guard.log`; kill switch `OPENSESSION_GH_GUARD=0`;
+tests in `src/server/zz-gh-guard.test.ts`. Runner-internal → needs a real
+restart, and warm detached engine servers keep their spawn-time PATH until
+recycled.
 
 ## Data handling — never upload to public hosts
 
