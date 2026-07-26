@@ -208,9 +208,61 @@ export function detectAccountIssues(): Issue[] {
   return [...claudeIssues(), ...codexIssues()];
 }
 
+// The bot's GitHub fine-grained PAT (tellahq-scoped since 2026-07-26, expiry
+// ~yearly) is the credential every gh/PR flow rides; renewal needs a human
+// AND an org approval round-trip, so warn well ahead. Expiry comes from the
+// `github-authentication-token-expiration` header GitHub sets on any
+// authenticated call; a 401 means it's already dead.
+const GITHUB_PAT_WARN_MS = 21 * 24 * 60 * 60 * 1000;
+
+async function githubPatIssues(): Promise<Issue[]> {
+  const token = process.env.GITHUB_API_TOKEN;
+  if (!token) return [];
+  let res: globalThis.Response;
+  try {
+    res = await fetch("https://api.github.com/user", {
+      headers: { Authorization: `Bearer ${token}`, "User-Agent": "opensession" },
+    });
+  } catch {
+    return []; // transient network — never alert
+  }
+  if (res.status === 401) {
+    return [
+      {
+        key: "github:pat:dead",
+        message:
+          "Michael here — the tella-butler GitHub PAT (GITHUB_API_TOKEN) is revoked or " +
+          "expired: every bot gh/PR flow is down. Mint a new fine-grained PAT (resource " +
+          "owner tellahq, All repositories) and get it approved in the org's PAT settings.",
+        notify: FALLBACK_TEAMMATE,
+      },
+    ];
+  }
+  const raw = res.headers.get("github-authentication-token-expiration");
+  if (!raw) return [];
+  // Header format: "2027-07-27 19:19:35 UTC".
+  const expiresAt = Date.parse(raw.replace(" UTC", "Z").replace(" ", "T"));
+  if (!Number.isFinite(expiresAt)) return [];
+  const left = expiresAt - Date.now();
+  if (left > GITHUB_PAT_WARN_MS) return [];
+  const days = Math.max(0, Math.floor(left / 86_400_000));
+  return [
+    {
+      key: "github:pat:expiring",
+      message:
+        `Michael here — the tella-butler GitHub PAT expires in ${days} day(s) ` +
+        `(${new Date(expiresAt).toISOString().slice(0, 10)}). Regenerate it at ` +
+        "github.com/settings/personal-access-tokens (as tella-butler, resource owner " +
+        "tellahq), approve it in the org's PAT settings if asked, then tell Michael to " +
+        "swap it into hosts.yml + the env files.",
+      notify: FALLBACK_TEAMMATE,
+    },
+  ];
+}
+
 /** One sweep: detect, dedupe against state, DM, persist. Exported for tests/manual runs. */
 export async function sweepAccountHealth(): Promise<Issue[]> {
-  const issues = detectAccountIssues();
+  const issues = [...detectAccountIssues(), ...(await githubPatIssues())];
   const state = readState();
   const now = Date.now();
   const live = new Set(issues.map((i) => i.key));
