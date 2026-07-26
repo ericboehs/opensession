@@ -1171,22 +1171,23 @@ export function buildOpencodeInstructions(input: {
   // Unconditional, every run. History: a Codex-backed session opened a PR
   // against an open-source repo; then despite this block, runs opened a public
   // issue (vercel-labs/deepsec#114, 2026-07-19 — "issue" wasn't listed below)
-  // and a fork+PR (TomGranot/tella-to-youtube#1, 2026-07-21). The gh-guard
-  // PATH shims now hard-block these; this text explains the rule and the
-  // refusal the model will see.
+  // and a fork+PR (TomGranot/tella-to-youtube#1, 2026-07-21). Since 2026-07-26
+  // the credentials themselves are scoped to tellahq (fine-grained PAT for the
+  // bot, GitHub App user tokens for teammates), so writes elsewhere fail with
+  // a 403 at GitHub's side; this text explains the rule and that refusal.
   parts.push(
     "## Never write to public or third-party GitHub repos\nNEVER write to any GitHub " +
       "repository outside the tellahq org, and never publish to an open-source or public " +
       "repository, without explicit user approval in the current conversation. This covers " +
       "every kind of write: opening or commenting on issues, opening PRs or reviews, creating " +
       "forks, pushing branches, creating gists or public repos. A request to investigate, " +
-      "implement, or prepare a change is never permission to publish it. Tooling enforces " +
-      "this (gh/git will refuse with a gh-guard error) — if that happens, do not look for " +
-      "another route (raw API calls, tokens, curl); instead describe the proposed upstream " +
-      "issue/PR in your summary or note and let a human post it. Found a bug in a third-party " +
-      "tool? Report it in your note — never on their tracker. This rule overrides " +
-      "bias-to-action and generic commit/push/PR defaults; automatic PR creation applies " +
-      "only to Tella's own repositories."
+      "implement, or prepare a change is never permission to publish it. Credentials are " +
+      "scoped to tellahq, so such writes fail with 403 \"Resource not accessible\" — if that " +
+      "happens, do not look for another route (other tokens, other accounts, curl); instead " +
+      "describe the proposed upstream issue/PR in your summary or note and let a human post " +
+      "it. Found a bug in a third-party tool? Report it in your note — never on their " +
+      "tracker. This rule overrides bias-to-action and generic commit/push/PR defaults; " +
+      "automatic PR creation applies only to Tella's own repositories."
   );
   // Observed 2026-07-10 (bks-019f4b70): twice in one session the model ended
   // its turn on a plan sentence ("I'll rebase X, then …") with zero tool
@@ -1516,22 +1517,21 @@ export function steerOpencodeRun(id: string, text: string, images?: ImageInput[]
   return true;
 }
 
-/** gh-guard shims (gh + git) front the engine PATH: they block GitHub writes
- *  to repos outside OPENSESSION_GH_ALLOWED_OWNERS (default tellahq) — public
- *  issues/forks/PRs from agent runs caused real incidents on 2026-07-19/21
- *  (vercel-labs/deepsec#114, TomGranot/tella-to-youtube#1) despite the
- *  prompt-level rule. Kill switch: OPENSESSION_GH_GUARD=0. Denies append to
- *  ~/.opensession-audit/gh-guard.log. */
-const GH_GUARD_DIR = join(import.meta.dir, "gh-guard");
-const GH_GUARD_ACTIVE = process.env.OPENSESSION_GH_GUARD !== "0";
-
 /** Minimal env for the opencode server process (mirrors codexEnv). Provider
  * auth is bound explicitly before spawn; OpenCode's native auth store is not
- * part of the local-profile contract. Backstage tokens never are. */
+ * part of the local-profile contract. Backstage tokens never are.
+ *
+ * Public-repo containment note (2026-07-26): the gh-guard PATH shims that
+ * used to front this env are gone — GitHub writes outside tellahq are now
+ * blocked by credential scope instead (bot = fine-grained PAT with resource
+ * owner tellahq; per-user = GitHub App user tokens limited to the tellahq
+ * installation). Writes elsewhere fail at GitHub's side with 403 "Resource
+ * not accessible", for every code path including raw API calls the shims
+ * could never see. */
 export function opencodeEnv(author?: GitIdentity | null): Record<string, string> {
   const basePath = process.env.PATH || "/usr/local/bin:/usr/bin:/bin";
   return {
-    PATH: GH_GUARD_ACTIVE ? `${GH_GUARD_DIR}:${basePath}` : basePath,
+    PATH: basePath,
     HOME,
     LANG: process.env.LANG || "en_US.UTF-8",
     ...gitIdentityEnv(author),

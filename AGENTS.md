@@ -12,15 +12,18 @@ before writing anything to a public/open-source repository, stop and ask the
 user. This rule overrides bias-to-action and generic commit/push/PR defaults;
 automatic PR creation applies only to Tella's private repositories.
 
-Engine runs are hard-gated since 2026-07-26: `src/server/gh-guard/` (gh + git
-shims, fronted onto PATH by `opencodeEnv` in opencode-runner.ts) blocks
-mutating `gh` commands and `git push` unless the target owner is in
-`OPENSESSION_GH_ALLOWED_OWNERS` (default `tellahq`); `gh repo fork` and gist
-creation are blocked outright, fail-closed on unresolvable targets. Denies log
-to `~/.opensession-audit/gh-guard.log`; kill switch `OPENSESSION_GH_GUARD=0`;
-tests in `src/server/zz-gh-guard.test.ts`. Runner-internal → needs a real
-restart, and warm detached engine servers keep their spawn-time PATH until
-recycled.
+Enforcement is credential scope since 2026-07-26 (this replaced the earlier
+gh-guard PATH shims, removed the same day): the bot (`tella-butler`) runs on a
+fine-grained PAT with resource owner `tellahq` (no Administration/Secrets, no
+gists, cannot fork or create repos outside the org), and per-user tokens are
+GitHub App user tokens limited to the app's tellahq installation. Any GitHub
+write outside tellahq — issues, PRs, forks, pushes, gists, from ANY code path
+including raw API calls and CLI/tmux sessions — fails at GitHub's side with
+403 "Resource not accessible". The PAT expires 2027-07-27 and lives in
+`~/.config/gh/hosts.yml` + `GITHUB_API_TOKEN` in `~/.slack-agent.env` /
+`~/.opensession.env`. Caveat: `gh auth switch` to another hosts.yml account
+would sidestep the scoping — keep unscoped human logins out of the VPS
+hosts.yml.
 
 ## Data handling — never upload to public hosts
 
@@ -227,7 +230,7 @@ An MCP server in `mcp-config.json` can carry an optional `allowedUsers: string[]
 
 Off by default — with no config the bot-PR + localStorage-name-picker behavior
 is byte-identical. Opting in (`integrations.github: { userPrAuth: true,
-oauthClientId: "<OAuth app client id>" }`; env OPENSESSION_GITHUB_CLIENT_ID
+oauthClientId: "<GitHub App client id>" }`; env OPENSESSION_GITHUB_CLIENT_ID
 wins over the config id) activates BOTH halves at once:
 
 - **PRs as the session owner** (src/server/github-auth.ts): teammates connect
@@ -263,9 +266,16 @@ cookie; the app's registered callback URL must literally be
 `<publicBaseUrl>/api/auth/callback`), and the **device flow** stays as the
 fallback (the "use a device code" link — needed on the iOS PWA, where a
 redirect can return into Safari instead of the PWA, and works without the
-secret). GitHub side: one org OAuth App with "Enable Device Flow" checked and
-the callback URL set. If the org restricts third-party OAuth app access,
-approve the app for the org or `repo`-scoped tokens won't reach org repos.
+secret). GitHub side: one org-owned **GitHub App** (since 2026-07-26; was an
+OAuth App) with "Enable Device Flow" checked, the callback URL set, and
+installed on tellahq → All repositories, installable only on that account.
+GitHub App user tokens are what scopes teammates' tokens to tellahq (see the
+public-repos section): they can't reach public/third-party repos, they expire
+~8h, and github-auth.ts refreshes them via a rotating refresh token (20-min
+ticker parked on globalThis + refresh-on-boot; getters never hand out an
+expired token — runs fall back to the bot credential, web mutations 403 to
+"connect your account"). A refresh rotates the token string, which changes
+the shared-server config hash → drain-respawn at next run start, by design.
 
 ## Self-management tools (Slack + interactive OpenSession sessions)
 

@@ -15,7 +15,7 @@
  *
  * Tokens come from GitHub's OAuth device flow (the same mechanism `gh auth
  * login` uses): start → the person enters a code at github.com/login/device →
- * poll for the access token. The OAuth app must have "Enable Device Flow"
+ * poll for the access token. The app must have "Enable Device Flow"
  * checked; no client secret is involved. Tokens are stored per GitHub login
  * in ~/.opensession-github-auth.json (0600), are never returned by the API,
  * and are injected only as GH_TOKEN/GITHUB_TOKEN into interactive,
@@ -24,6 +24,17 @@
  * as `allowedUsers` MCP servers. The run's user resolves to a GitHub login
  * through the SAME identity table as commit attribution (identity.team in
  * config.json → user-mappings.ts), so the mapping is config, not code.
+ *
+ * Since 2026-07-26 the client id belongs to a GitHub App installed only on
+ * tellahq (not an OAuth app), which is what scopes every user token to the
+ * org: a user-to-server token is limited to the intersection of the user's
+ * access and the app's installation, so it structurally cannot write to
+ * public/third-party repos — the enforcement the gh-guard shims used to
+ * approximate. App tokens expire (~8h) and come with a rotating refresh
+ * token; the refresh ticker below keeps stored tokens fresh so the sync
+ * getters (githubAuthEnv, githubCredentialForLogin) can stay sync. Getters
+ * never hand out an expired token — they fail closed to the bot credential
+ * (runner) or a 403 (web mutation routes).
  */
 
 import { chmodSync, readFileSync } from "fs";
@@ -64,10 +75,25 @@ export interface GithubConnectedAccount {
 
 interface StoredAccount extends GithubConnectedAccount {
   token: string;
+  /** GitHub App user tokens expire (~8h); absent = legacy non-expiring token. */
+  expiresAt?: string;
+  /** Rotates on every refresh — the stored value is always the newest one. */
+  refreshToken?: string;
+  refreshTokenExpiresAt?: string;
 }
 
 interface Store {
   users: Record<string, StoredAccount>; // keyed by lowercased login
+}
+
+/** Refresh when a token is inside this window of its expiry (covers the
+ *  longest turn a run can make plus clock slack). */
+const REFRESH_SKEW_MS = 40 * 60_000;
+
+function tokenUsable(account: StoredAccount): boolean {
+  if (!account.token) return false;
+  if (!account.expiresAt) return true; // legacy non-expiring token
+  return Date.parse(account.expiresAt) > Date.now();
 }
 
 export function githubUserAuthSettings(): GithubUserAuthSettings {
@@ -201,7 +227,7 @@ export async function pollGithubDeviceFlow(
   }
   const token: string | undefined = body.access_token;
   if (!token) return { status: "error", error: "GitHub returned no access token" };
-  return identifyAndStoreToken(token, body.scope, expectedLogin);
+  return identifyAndStoreToken(token, body, expectedLogin);
 }
 
 // ── Server-driven device-flow completion ──
@@ -296,14 +322,40 @@ export function githubDeviceFlowResult(deviceCode: string): DeviceFlowServerStat
   return state;
 }
 
+/** The expiry/refresh fields of a token-endpoint response (GitHub App user
+ *  tokens carry them; classic OAuth app responses don't). */
+interface TokenGrant {
+  access_token?: string;
+  scope?: unknown;
+  expires_in?: number;
+  refresh_token?: string;
+  refresh_token_expires_in?: number;
+}
+
+function grantExpiryFields(body: TokenGrant): Partial<StoredAccount> {
+  const now = Date.now();
+  return {
+    ...(typeof body.expires_in === "number"
+      ? { expiresAt: new Date(now + body.expires_in * 1000).toISOString() }
+      : {}),
+    ...(typeof body.refresh_token === "string" && body.refresh_token
+      ? { refreshToken: body.refresh_token }
+      : {}),
+    ...(typeof body.refresh_token_expires_in === "number"
+      ? { refreshTokenExpiresAt: new Date(now + body.refresh_token_expires_in * 1000).toISOString() }
+      : {}),
+  };
+}
+
 /** Shared tail of both OAuth flows: learn WHO the token belongs to (GET /user
  *  with the token itself — the login is ground truth from GitHub, never
  *  client-supplied) and store it under that login. */
 async function identifyAndStoreToken(
   token: string,
-  scope?: unknown,
+  grant: TokenGrant,
   expectedLogin?: string | null
 ): Promise<DeviceFlowPoll> {
+  const scope = grant.scope;
   const userRes = await fetchWithTimeout("https://api.github.com/user", {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -325,13 +377,95 @@ async function identifyAndStoreToken(
     login,
     token,
     ...(typeof user.name === "string" && user.name ? { name: user.name } : {}),
-    ...(typeof scope === "string" ? { scopes: scope } : {}),
+    ...(typeof scope === "string" && scope ? { scopes: scope } : {}),
     connectedAt: new Date().toISOString(),
+    ...grantExpiryFields(grant),
   };
   writeStore(store);
   audit({ kind: "github_auth_connect", login, scopes: scope });
   return { status: "ok", login, ...(user.name ? { name: user.name } : {}) };
 }
+
+// ── Token refresh (GitHub App user tokens) ───────────────────────────────────
+
+/** Refresh one account's token via the refresh-token grant. GitHub rotates
+ *  the refresh token on every use, so the stored pair is always replaced
+ *  together. Returns false when the account has nothing to refresh or the
+ *  grant is rejected (person must reconnect — getters already fail closed on
+ *  the expired access token). */
+export async function refreshGithubToken(login: string): Promise<boolean> {
+  const { clientId, clientSecret } = githubUserAuthSettings();
+  if (!clientId || !clientSecret) return false;
+  const key = login.toLowerCase();
+  const account = readStore().users[key];
+  if (!account?.refreshToken) return false;
+  if (
+    account.refreshTokenExpiresAt &&
+    Date.parse(account.refreshTokenExpiresAt) <= Date.now()
+  ) {
+    return false;
+  }
+  const res = await fetchWithTimeout("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: "refresh_token",
+      refresh_token: account.refreshToken,
+    }),
+  });
+  const body: TokenGrant & { error?: string; error_description?: string } =
+    (await res.json().catch(() => null)) ?? {};
+  if (body.error || !body.access_token) {
+    audit({
+      kind: "github_auth_refresh_failed",
+      login,
+      error: body.error_description || body.error || `HTTP ${res.status}`,
+    });
+    return false;
+  }
+  // Re-read inside the write to keep the window for clobbering a concurrent
+  // connect as small as possible (single-process, so this is belt only).
+  const store = readStore();
+  const current = store.users[key];
+  if (!current) return false;
+  store.users[key] = { ...current, token: body.access_token, ...grantExpiryFields(body) };
+  writeStore(store);
+  audit({ kind: "github_auth_refresh", login });
+  return true;
+}
+
+/** One sweep: refresh every stored token that expires inside the skew window.
+ *  Kept cheap (no-op for legacy tokens and far-from-expiry ones) so it can
+ *  run on boot and on a short interval. */
+export async function refreshExpiringGithubTokens(): Promise<void> {
+  if (!githubUserAuthActive()) return;
+  for (const account of Object.values(readStore().users)) {
+    if (!account.refreshToken || !account.expiresAt) continue;
+    if (Date.parse(account.expiresAt) - Date.now() > REFRESH_SKEW_MS) continue;
+    try {
+      await refreshGithubToken(account.login);
+    } catch {
+      // transient (GitHub unreachable) — next sweep retries
+    }
+  }
+}
+
+/** Ticker parked on globalThis so bun --hot reloads don't stack intervals.
+ *  20 min cadence + 40 min skew ⇒ a token is always refreshed well before an
+ *  8h expiry; runs one sweep immediately for tokens that expired while the
+ *  server was down (the refresh token lives ~6 months). */
+const REFRESH_TICK_MS = 20 * 60_000;
+function startGithubTokenRefresher(): void {
+  const g = globalThis as any;
+  if (g.__osGithubTokenRefresher) clearInterval(g.__osGithubTokenRefresher);
+  g.__osGithubTokenRefresher = setInterval(() => {
+    void refreshExpiringGithubTokens();
+  }, REFRESH_TICK_MS);
+  void refreshExpiringGithubTokens();
+}
+startGithubTokenRefresher();
 
 // ── Redirect (authorization-code) flow ───────────────────────────────────────
 
@@ -382,7 +516,7 @@ export async function exchangeGithubOauthCode(
   }
   const token: string | undefined = body.access_token;
   if (!token) return { status: "error", error: "GitHub returned no access token" };
-  return identifyAndStoreToken(token, body.scope);
+  return identifyAndStoreToken(token, body);
 }
 
 // ── Store queries ────────────────────────────────────────────────────────────
@@ -413,7 +547,8 @@ export function githubUserLoginForRun(user?: string | null): string | null {
   if (!githubUserAuthActive()) return null;
   const login = githubLoginFor(user);
   if (!login) return null;
-  return readStore().users[login.toLowerCase()] ? login : null;
+  const account = readStore().users[login.toLowerCase()];
+  return account && tokenUsable(account) ? login : null;
 }
 
 /**
@@ -426,9 +561,9 @@ export function githubUserLoginForRun(user?: string | null): string | null {
 export function githubAuthEnv(user?: string | null): Record<string, string> {
   const login = githubUserLoginForRun(user);
   if (!login) return {};
-  const token = readStore().users[login.toLowerCase()]?.token;
-  if (!token) return {};
-  return { GH_TOKEN: token, GITHUB_TOKEN: token };
+  const account = readStore().users[login.toLowerCase()];
+  if (!account || !tokenUsable(account)) return {};
+  return { GH_TOKEN: account.token, GITHUB_TOKEN: account.token };
 }
 
 export interface GithubCredential {
@@ -447,7 +582,7 @@ export const serviceGithubCredential: GithubCredential = {
 export function githubCredentialForLogin(login: string): GithubCredential | null {
   if (!githubUserAuthActive()) return null;
   const account = readStore().users[login.toLowerCase()];
-  if (!account?.token) return null;
+  if (!account?.token || !tokenUsable(account)) return null;
   return {
     kind: "user",
     principal: `user:${account.login.toLowerCase()}`,
