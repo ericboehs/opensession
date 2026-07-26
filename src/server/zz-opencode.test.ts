@@ -106,11 +106,18 @@ describe("opencodeRunPolicy (unattended least-privilege enforcement)", () => {
       opencodeRunPolicy({ journalKind: "prompt", deniedTools: DENIED }).unattended
     ).toBe(true);
   });
-  test("interactive runs keep the fail-closed confirm-server drop", () => {
+  test("interactive runs strip the money-movers but keep the server (reads stay)", () => {
     const p = opencodeRunPolicy({ journalKind: "prompt", confirmTools: STRIPE_CONFIRM_TOOLS });
     expect(p.unattended).toBe(false);
-    expect(p.confirmToolsForServerDrop).toEqual(STRIPE_CONFIRM_TOOLS);
-    expect(p.disables).toEqual({ question: false });
+    expect(p.disables["stripe_create_refund"]).toBe(false);
+    expect(p.disables["stripe_stripe_api_write"]).toBe(false);
+    // Only the confirm tools (and the native question tool) are stripped —
+    // nothing read-shaped.
+    expect(p.disables["stripe_stripe_api_read"]).toBeUndefined();
+    // Interactive wording: ask the human in the session, not the internal note.
+    const note = p.noteGroups.find((g) => g.tools.includes("mcp__stripe__create_refund"))!;
+    expect(note.message).toContain("human in this session");
+    expect(note.message).not.toContain("unattended");
   });
 
   test("all runs strip OpenCode's native question tool in favor of the OpenSession card", () => {
@@ -143,16 +150,20 @@ describe("opencodeRunPolicy (unattended least-privilege enforcement)", () => {
       deniedTools: DENIED,
       confirmTools: STRIPE_CONFIRM_TOOLS,
     });
-    // The whole confirm list is stripped — this run has no server drop.
-    expect(p.confirmToolsForServerDrop).toBeUndefined();
     expect(p.disables["stripe_create_refund"]).toBe(false);
     expect(p.disables["stripe_cancel_subscription"]).toBe(false);
     expect(p.disables["stripe_update_subscription"]).toBe(false);
     expect(p.disables["stripe_stripe_api_execute"]).toBe(false);
     expect(p.disables["stripe_stripe_api_write"]).toBe(false);
-    // Naming-drift guards.
+    // Naming-drift guards — money-movers only.
     expect(p.disables["*_create_refund"]).toBe(false);
     expect(p.disables["create_refund"]).toBe(false);
+    // Server-scoped denies must NOT wildcard-strip same-named tools of OTHER
+    // servers: the Plain reply_to_thread deny used to remove
+    // slack_reply_to_thread from every automation run (2026-07-26).
+    expect(p.disables["*_reply_to_thread"]).toBeUndefined();
+    expect(p.disables["reply_to_thread"]).toBeUndefined();
+    expect(p.disables["plain_reply_to_thread"]).toBe(false);
     // The instructions carry the confirm_unattended-style guidance.
     const stripeNote = p.noteGroups.find((g) =>
       g.tools.includes("mcp__stripe__create_refund")
@@ -215,8 +226,13 @@ describe("automation runs and per-user MCP servers (fail closed)", () => {
 });
 
 describe("opencodeDeniedToolIds", () => {
-  test("mcp names map to exact, wildcard, and bare ids", () => {
-    expect(opencodeDeniedToolIds("mcp__stripe__create_refund")).toEqual([
+  test("mcp names map to the exact server-scoped id by default", () => {
+    expect(opencodeDeniedToolIds("mcp__plain__reply_to_thread")).toEqual([
+      "plain_reply_to_thread",
+    ]);
+  });
+  test("broad (money-mover) names add the wildcard and bare drift-guards", () => {
+    expect(opencodeDeniedToolIds("mcp__stripe__create_refund", { broad: true })).toEqual([
       "stripe_create_refund",
       "*_create_refund",
       "create_refund",
@@ -342,15 +358,18 @@ describe("buildOpencodeInstructions", () => {
     expect(DESK_NOTE).toContain("those refusals are outdated");
     expect(DESK_NOTE).toContain("use the requested Desk tool directly");
   });
-  test("code mode gets the session link, dropped servers are named", () => {
+  test("code mode gets the session link; confirm-tool notes ride deniedToolNotes", () => {
     const s = buildOpencodeInstructions({
       isAsk: false,
       bksSessionId: "abc-123",
-      droppedForConfirm: ["stripe"],
+      deniedToolNotes: opencodeRunPolicy({
+        journalKind: "prompt",
+        confirmTools: STRIPE_CONFIRM_TOOLS,
+      }).noteGroups,
     });
     expect(s).toContain("/session/abc-123");
     expect(s).toContain("Created by [this");
-    expect(s).toContain("stripe");
+    expect(s).toContain("mcp__stripe__create_refund");
     expect(s).toContain("human approval");
   });
   test("a resolved requester gets named + assigned in the PR instruction", () => {
@@ -383,7 +402,7 @@ describe("buildOpencodeInstructions", () => {
         confirmTools: STRIPE_CONFIRM_TOOLS,
       }).noteGroups,
     });
-    expect(s).toContain("unattended least-privilege");
+    expect(s).toContain("Run policy (least-privilege)");
     expect(s).toContain("mcp__stripe__create_refund");
     expect(s).toContain("mcp__plain__reply_to_thread");
     expect(s).toContain("mcp__workos__get_impersonation_url");

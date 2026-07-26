@@ -20,6 +20,7 @@ import { mkdirSync } from "fs";
 import {
   ensureOpencodeServer,
   peekOpencodeServer,
+  releaseOpencodeServer,
   clientFor,
   parseOpencodeModel,
   meridianStackInfo,
@@ -82,7 +83,11 @@ function ensureSerialized(
   const prev = ensureChains.get(key) || Promise.resolve();
   const next = prev
     .catch(() => {})
-    .then(() => ensureOpencodeServer(key, cwd, config, undefined, extraEnv));
+    // shared: a config change (a different sticky account after a rotation)
+    // must DRAIN the old server — in-flight one-shots finish on it — never
+    // kill it under them. Before 2026-07-26 this killed mid-request and one
+    // title-backfill batch lost 74 calls to "socket connection was closed".
+    .then(() => ensureOpencodeServer(key, cwd, config, undefined, extraEnv, { shared: true }));
   ensureChains.set(key, next);
   return next;
 }
@@ -268,8 +273,7 @@ export async function opencodeOneShot(
         });
         return text || null;
       } finally {
-        entry.activeRuns = Math.max(0, entry.activeRuns - 1);
-        entry.lastUsed = Date.now();
+        releaseOpencodeServer(entry);
         if (ocSessionId) void client.session.delete({ path: { id: ocSessionId } }).catch(() => {});
       }
     } catch (e: any) {
