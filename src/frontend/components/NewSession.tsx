@@ -747,7 +747,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                 className={`palette-icon-btn palette-options-btn ${showOptions ? "is-on" : ""}`}
                 onClick={() => setShowOptions((v) => !v)}
                 disabled={creating}
-                aria-label="Repo, branch and model options"
+                aria-label="Advanced options — base branch, plan first, run environment"
                 aria-expanded={showOptions}
               >
                 <IconSliders size={24} />
@@ -850,7 +850,11 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               )}
             </div>
             )}
-            {mode === "code" && (
+            {/* Plan-first is an advanced switch, so on phones it rides behind
+                the options toggle with the other advanced controls — out there
+                in the footer row it crushed itself (and the model pill) down to
+                a single letter. */}
+            {mode === "code" && optionsVisible && (
               <button
                 type="button"
                 className="palette-pill"

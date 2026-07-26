@@ -9838,6 +9838,15 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	flex-shrink: 1;
 	min-width: 34px;
 }
+/* The model/effort pill sits inside a Motion layout box, so the giving-way has
+   to be granted to that WRAPPER: `.composer-toolbar > *` pins every direct
+   child at flex-shrink: 0, which left the pill's own shrink rule above inert —
+   the row stayed wider than the composer and pushed the send button off its
+   right edge (and off-screen) on phones. */
+.composer-toolbar > .palette-select-motion {
+	flex-shrink: 1;
+	min-width: 0;
+}
 .composer-toolbar .palette-effort-icon {
 	flex-shrink: 0;
 }
@@ -15598,15 +15607,22 @@ html.wco .settings-sidenav {
 		border-radius: calc(18px * var(--rf)); corner-shape: var(--cs);
 		padding: 10px 12px 9px;
 	}
+	/* No resting floor on phones: the field hugs one line and grows with the
+	   draft (the tall inviting box is a desktop affordance). A 48px floor left
+	   an empty — or single-line — composer with a band of dead space under the
+	   text, which is most of what read as "weird height" on a phone. */
 	.composer-textarea {
-		min-height: 48px;
+		min-height: 0;
 		max-height: 240px;
 		padding: 2px 0 4px;
 	}
 	.composer-toolbar {
 		margin-top: 6px;
 	}
-	.composer-goal-btn {
+	/* Hide the goal control's WRAPPER, not just the button: a display:none
+	   button left its Motion box in the row as a zero-width flex item that
+	   still cost a full gap — dead space the send button paid for. */
+	.composer-toolbar .composer-pop-wrap:has(.composer-goal-btn) {
 		display: none;
 	}
 	/* The model pill sits next to the + button on phones (DOM keeps it
@@ -15624,6 +15640,19 @@ html.wco .settings-sidenav {
 	.composer-send {
 		width: 40px;
 		height: 40px;
+	}
+
+	/* Opening the advanced options adds two more controls to the palette's
+	   footer, and a phone row can't hold them next to Create without crushing
+	   every pill to a single letter. Let the footer wrap instead: the advanced
+	   controls keep the first line and the model · mic · Create group drops to
+	   its own, right-aligned. Closed (three icons) it still fits on one line. */
+	.palette-footer {
+		flex-wrap: wrap;
+		row-gap: 8px;
+	}
+	.palette-footer-right {
+		margin-left: auto;
 	}
 
 	/* New-session palette: "Create more" is a desktop workflow — the split

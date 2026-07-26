@@ -529,17 +529,24 @@ export function Composer({
     wrap.style.setProperty("mask-image", mask);
   }
 
-  // Auto-grow between a resting floor and the CSS max-height. Phones get a
-  // one-line floor (ChatGPT-style lightweight bar); desktop keeps the tall
-  // inviting field.
+  // Auto-grow to fit the draft. Only a NON-EMPTY draft is measured; an empty
+  // one drops the inline height and takes its size straight from CSS — the
+  // resting floor of the expanded field (min-height per breakpoint), or a
+  // single line in the minimized phone pill (min-height: 0 + rows=1). So the
+  // floor and the cap have exactly one home, the stylesheet, instead of magic
+  // numbers here that had to be kept in sync with it.
+  //
+  // Not measuring an empty draft also takes out the only path by which the
+  // resting pill can come back several lines tall after sending a long message
+  // (seen on the iOS PWA, never reproduced in Chrome): a `scrollHeight` read
+  // that doesn't reflect the just-cleared value gets written straight back onto
+  // the element. With nothing measured there's nothing stale to write.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    // Minimized (resting phone pill) hugs a single line so it centers against
-    // the +/send circles; otherwise a phone one-line floor, desktop a tall field.
-    const floor = minimized ? 0 : isPhone ? 44 : 120;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, floor), 320)}px`;
+    el.style.height = "";
+    // min-/max-height clamp this, so tall drafts scroll internally at the cap.
+    if (text) el.style.height = `${el.scrollHeight}px`;
     // Height (and thus clip state) just changed — re-evaluate the edge fades.
     updateFade(el);
   }, [text, isPhone, minimized]);
