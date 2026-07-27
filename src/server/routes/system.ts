@@ -6,7 +6,7 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
-import { readFileSync, statfsSync } from "node:fs";
+import { readFileSync, readdirSync, statfsSync } from "node:fs";
 import { cpus, loadavg } from "node:os";
 import { type RouteContext, requestUser } from "./context";
 import { activeAgentRunCount } from "../agent-runner";
@@ -51,10 +51,49 @@ function systemStats(): Record<string, unknown> {
 				swapUsedGb: +(((mem.SwapTotal || 0) - (mem.SwapFree || 0)) / 1e9).toFixed(2),
 			},
 			load: { "1m": load1, "5m": load5, "15m": load15, cores: cpus().length },
+			processes: processCensus(),
 		};
 	} catch (e) {
 		return { error: String((e as Error)?.message || e) };
 	}
+}
+
+/** Counts of the process fleets that have historically leaked or ballooned
+ *  (2026-07-27: 664 mcp-proxies / 42GB RSS, 26 orphaned opencode scopes, a
+ *  3-day goldenbuild dev stack). Surfacing them here lets the health-monitor
+ *  automation name the offender in an alert instead of just "high load".
+ *  /proc scan, 60s-cached — RestartOverlay polls this endpoint at 1.5s during
+ *  incidents. */
+let censusCache: { at: number; data: Record<string, number> } | null = null;
+function processCensus(): Record<string, number> {
+	if (censusCache && Date.now() - censusCache.at < 60_000) return censusCache.data;
+	const counts = {
+		opencodeServers: 0,
+		mcpProxies: 0,
+		chrome: 0,
+		nextDev: 0,
+		gitOps: 0,
+		total: 0,
+	};
+	try {
+		for (const pid of readdirSync("/proc")) {
+			if (!/^\d+$/.test(pid)) continue;
+			counts.total++;
+			let cmd = "";
+			try {
+				cmd = readFileSync(`/proc/${pid}/cmdline`, "utf-8").replaceAll("\0", " ");
+			} catch {
+				continue; // process exited mid-scan
+			}
+			if (cmd.includes("opencode serve")) counts.opencodeServers++;
+			else if (cmd.includes("mcp-proxy.")) counts.mcpProxies++;
+			else if (cmd.includes("/chrome") && cmd.includes("--headless")) counts.chrome++;
+			else if (cmd.includes("next dev") || cmd.includes("next-server")) counts.nextDev++;
+			else if (/(^|\/)git(-lfs)? /.test(cmd)) counts.gitOps++;
+		}
+	} catch {}
+	censusCache = { at: Date.now(), data: counts };
+	return counts;
 }
 
 export async function handleSystemRoutes(
