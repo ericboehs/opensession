@@ -4523,8 +4523,8 @@ export async function tryReattachOpencodeRun(
     const server = entry!;
     server.activeRuns++;
     server.lastUsed = Date.now();
-    // takeInterruptedRuns wiped the journal — re-record so a second restart
-    // mid-reattach can reattach again.
+    // Replace the boot sweep's claimed record with a live one (same runKey)
+    // so a second restart mid-reattach can reattach again.
     journalSet({ ...run });
     let rpcTokenRegistered = false;
     let ocSessionRegistered = "";

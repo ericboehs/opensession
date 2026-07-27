@@ -9,7 +9,7 @@
  * session state for on-disk compat with pre-single-engine sessions).
  */
 
-import { takeInterruptedRuns } from "./run-journal";
+import { journalClear, takeInterruptedRuns } from "./run-journal";
 import { transitionRunState } from "./run-state";
 import type { StreamEvent, ImageInput } from "./run-events";
 import {
@@ -591,12 +591,14 @@ export function resumeInterruptedRuns(
     // next PR event; auto-fix loops are resumed by the github agent's startup
     // sweep). Resuming them generically would double-drive an auto-fix loop.
     if (run.kind?.startsWith("github-")) {
+      journalClear(run.runKey);
       continue;
     }
     // Slack runs journal (their bks session id feeds the in-process MCP proxy
     // path), but the Slack queue re-delivers interrupted messages itself — a
     // generic resume would double-drive the turn with no streamer attached.
     if (run.kind?.startsWith("slack")) {
+      journalClear(run.runKey);
       continue;
     }
     // Workflow fan-out agents ("workflow", plus -resume/-rerun suffixes): the
@@ -604,6 +606,7 @@ export function resumeInterruptedRuns(
     // workflow store marks the run interrupted on boot, and replaying a lone
     // child agent without its script would be noise.
     if (run.kind?.startsWith("workflow")) {
+      journalClear(run.runKey);
       continue;
     }
     // Sandboxed runs (docs/sandboxes-plan.md Phases 1+3): the sandbox — and
@@ -634,6 +637,7 @@ export function resumeInterruptedRuns(
             console.warn(
               `[runner] Sandbox ${run.sandboxId} for interrupted run ${run.runKey} is gone — the session's next prompt recreates it`
             );
+            journalClear(run.runKey);
             onResumed?.(run.bksSessionId);
             return;
           }
@@ -658,6 +662,7 @@ export function resumeInterruptedRuns(
         console.warn(
           `[runner] Interrupted run ${run.runKey} (${run.kind || "unknown"}) had no engine session and no saved prompt — cannot resume`
         );
+        journalClear(run.runKey);
         continue;
       }
       if (run.bksSessionId) {
@@ -669,6 +674,11 @@ export function resumeInterruptedRuns(
       );
       void (async () => {
         try {
+          // The re-run journals under its own runKey — drop the claimed
+          // record now (runAgent's intake journalSet is the very next step,
+          // so the unprotected window is one generator start, not the whole
+          // adoption+probe phase the old wipe-on-take left open).
+          journalClear(run.runKey);
           for await (const event of runAgent({
             prompt: run.prompt!,
             promptEntryId: run.promptEntryId,
@@ -745,6 +755,10 @@ export function resumeInterruptedRuns(
         );
         if (run.bksSessionId)
           transitionRunState(run.bksSessionId, "resume_reprompt", { run_key: run.runKey });
+        // The continuation run journals under its own runKey — drop the
+        // claimed record only now, AFTER the reattach probe settled: dying
+        // mid-probe used to lose the run to the wipe-on-take (2026-07-27).
+        journalClear(run.runKey);
         for await (const event of runAgent({
           prompt: resumeContinuationPrompt(run.prompt),
           sessionId: run.claudeSessionId,

@@ -61,6 +61,12 @@ export interface ActiveRunRecord {
   sandboxProvider?: string;
   kind?: string;
   startedAt: string;
+  /** Stamped when a boot sweep hands the record to resumeInterruptedRuns. The
+   *  record stays journaled until its resume outcome re-registers (journalSet)
+   *  or clears it — a restart that kills the sweep mid-reattach leaves the
+   *  claim behind, and the next boot re-takes it (claims from a dead process
+   *  are void). Only ever set on the on-disk copy. */
+  claimedAt?: string;
 }
 
 function readRunJournal(): Record<string, ActiveRunRecord> {
@@ -129,13 +135,36 @@ function isRunActiveInProcess(runKey: string): boolean {
   return false;
 }
 
-/** Drain interrupted runs left by a previous process (clears the journal). */
+// runKeys this process's sweep already handed out, so a second call can't
+// double-resume them. On-disk claims deliberately do NOT block a take — they
+// exist so a DIFFERENT (next) process re-finds runs whose sweep died
+// mid-reattach; only the process that took them must not take them twice.
+const takenRunKeys: Set<string> = ((globalThis as any).__runJournalTakenKeys ??=
+  new Set());
+
+/**
+ * Hand interrupted runs left by a previous process to the boot sweep. Records
+ * are CLAIMED (stamped claimedAt), not cleared: until the resume outcome
+ * re-registers the run (journalSet, same runKey) or clears it (journalClear),
+ * the record survives on disk, so a restart that kills the sweep mid-reattach
+ * (2026-07-27 13:47:45: SIGTERM 18s after boot, 7 taken runs evaporated with
+ * the old wipe-on-take) hands the same runs to the next boot instead of
+ * losing them. Returned records have claimedAt stripped so a reattach's
+ * re-record doesn't persist a stale claim.
+ */
 export function takeInterruptedRuns(): ActiveRunRecord[] {
   const journal = readRunJournal();
   const entries = Object.values(journal).filter(
-    (r) => !isRunActiveInProcess(r.runKey)
+    (r) => !isRunActiveInProcess(r.runKey) && !takenRunKeys.has(r.runKey)
   );
-  if (entries.length > 0) writeRunJournal({});
+  if (entries.length > 0) {
+    const now = new Date().toISOString();
+    for (const r of entries) {
+      takenRunKeys.add(r.runKey);
+      journal[r.runKey] = { ...r, claimedAt: now };
+    }
+    writeRunJournal(journal);
+  }
   for (const r of entries) {
     if (r.bksSessionId)
       transitionRunState(r.bksSessionId, "boot_journal_found", {
@@ -143,5 +172,5 @@ export function takeInterruptedRuns(): ActiveRunRecord[] {
         kind: r.kind,
       });
   }
-  return entries;
+  return entries.map(({ claimedAt: _claimed, ...r }) => r);
 }

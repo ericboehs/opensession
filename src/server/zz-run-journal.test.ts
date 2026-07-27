@@ -52,7 +52,16 @@ describe("run journal", () => {
 		});
 		expect(run.deniedTools).toEqual({ mcp__danger__delete: "No deletes" });
 		expect(run.fallbackModel).toBe("gpt-5.5");
-		expect(mod.activeRunRecords()).toEqual([]);
+		// Returned records carry no claim stamp…
+		expect(run.claimedAt).toBeUndefined();
+		// …but the on-disk record survives as CLAIMED (not wiped) until the
+		// resume outcome re-registers or clears it, so a restart that kills the
+		// sweep mid-reattach hands the run to the next boot instead of losing it.
+		const [claimed] = mod.activeRunRecords();
+		expect(claimed.runKey).toBe("run-1");
+		expect(claimed.claimedAt).toBeTruthy();
+		// The same process never takes an already-claimed run twice.
+		expect(mod.takeInterruptedRuns()).toEqual([]);
 	});
 
 	it("emits recovered run stream events during restart resume", async () => {
