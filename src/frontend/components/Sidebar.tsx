@@ -1224,6 +1224,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		() => onSidebarOrderChanged(() => setSidebarOrder(getSidebarOrder())),
 		[],
 	);
+	// Tools stay at flex order 0, so only these bands move beneath it.
 	const sectionOrder = (section: (typeof sidebarOrder)[number]) =>
 		sidebarOrder.indexOf(section) + 1;
 	const [pins, setPins] = useState<string[]>(getPins);
@@ -4090,7 +4091,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			)}
 			<div
 				className="sidebar-sticky-section sidebar-tools-section"
-				style={{ order: sectionOrder("tools") }}
+				style={{ order: 0 }}
 			>
 			{!isPhone && visibleTools.length > 0 && (
 				<div className="sidebar-band-label sidebar-tools-head sidebar-sticky-head">

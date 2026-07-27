@@ -1,12 +1,11 @@
-// Per-user order for the sidebar's top-level bands. The server-side ui-prefs
-// value follows the user across devices; the user-scoped localStorage entry is
-// the synchronous cache used during startup.
+// Per-user order for the sidebar's reorderable bands. Tools stay fixed at the
+// top; the server-side ui-prefs value follows the user across devices, and the
+// user-scoped localStorage entry is the synchronous cache used during startup.
 
 import { getCurrentUser } from "../components/UserPicker";
 import { fetchUiPrefs, saveUiPrefsApi } from "./api";
 
 export const SIDEBAR_SECTION_IDS = [
-	"tools",
 	"workspaces",
 	"automations",
 	"people",
@@ -15,7 +14,6 @@ export const SIDEBAR_SECTION_IDS = [
 export type SidebarSectionId = (typeof SIDEBAR_SECTION_IDS)[number];
 
 export const SIDEBAR_SECTION_LABELS: Record<SidebarSectionId, string> = {
-	tools: "Tools",
 	workspaces: "Workspaces",
 	automations: "Automations",
 	people: "People",

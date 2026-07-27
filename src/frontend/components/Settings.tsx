@@ -2323,8 +2323,8 @@ function AppearancePanel() {
 					<div className="setting-row-text">
 						<div className="setting-row-title">Section order</div>
 						<div className="setting-row-desc">
-							Choose which sidebar sections appear first. Stored per user and
-							follows you across devices.
+							Reorder the sections below Tools. Stored per user and follows you
+							across devices.
 						</div>
 					</div>
 					<Reorder.Group
