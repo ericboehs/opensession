@@ -4192,7 +4192,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					<div className="sidebar-independent-section mt-2">
 						<div className="sidebar-band-label sidebar-sticky-head">
 							<button
-								className="sidebar-band-toggle"
+								className="sidebar-band-toggle pl-[10px]"
 								onClick={() => toggleBand("people")}
 								title={open ? "Collapse people" : "Expand people"}
 							>
@@ -4222,7 +4222,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									return (
 										<button
 											key={p.name}
-											className={`flex items-center gap-2 w-full min-w-0 text-left border-0 cursor-pointer rounded-md pl-[10px] pr-2 py-[5px] max-[720px]:pl-[6px] max-[720px]:py-2 ${
+											className={`flex items-center gap-[9px] w-full min-w-0 text-left border-0 cursor-pointer rounded-md pl-[10px] pr-2 py-[5px] max-[720px]:gap-[5px] max-[720px]:pl-[10px] max-[720px]:py-2 ${
 												selected
 													? "bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_22%,transparent)]"
 													: "bg-transparent hover:bg-hover"
