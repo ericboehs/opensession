@@ -545,8 +545,25 @@ export function parseReviewOutput(text: string): ReviewOutput | null {
   try {
     const obj = JSON.parse(candidate.trim());
     if (obj && typeof obj === "object") {
+      // Models drift from the contract's exact field names (Sol on PR #5286
+      // returned file/details/summary and a 0-1 confidence) — accept the common
+      // aliases rather than dropping the whole review into the raw-text fallback.
       const findings: Finding[] = Array.isArray(obj.findings)
         ? obj.findings
+            .map((f: any) =>
+              f && typeof f === "object"
+                ? {
+                    ...f,
+                    path: typeof f.path === "string" ? f.path : f.file,
+                    body:
+                      typeof f.body === "string"
+                        ? f.body
+                        : typeof f.details === "string"
+                          ? f.details
+                          : f.description,
+                  }
+                : f,
+            )
             .filter((f: any) => f && typeof f.path === "string" && Number.isFinite(f.line) && typeof f.body === "string")
             .map((f: any) => ({
               path: f.path,
@@ -558,10 +575,20 @@ export function parseReviewOutput(text: string): ReviewOutput | null {
               suggestion: typeof f.suggestion === "string" && f.suggestion.trim() ? f.suggestion : undefined,
             }))
         : [];
+      // Contract confidence is merge-safety on a 1-5 scale. An out-of-range value
+      // (typically a 0-1 self-certainty probability) measures a different quantity
+      // — drop it instead of rendering "0.98/5" or letting a scaled-up fraction
+      // satisfy the ≥4/5 "safe to merge" gates on a request_changes review.
+      const rawConfidence = typeof obj.confidence === "number" ? obj.confidence : undefined;
       return {
         verdict: obj.verdict,
-        confidence: typeof obj.confidence === "number" ? obj.confidence : undefined,
-        summary_markdown: obj.summary_markdown,
+        confidence: rawConfidence !== undefined && rawConfidence >= 1 && rawConfidence <= 5 ? rawConfidence : undefined,
+        summary_markdown:
+          typeof obj.summary_markdown === "string"
+            ? obj.summary_markdown
+            : typeof obj.summary === "string"
+              ? obj.summary
+              : undefined,
         diagram:
           obj.diagram && typeof obj.diagram === "object" && typeof obj.diagram.mermaid === "string"
             ? { type: typeof obj.diagram.type === "string" ? obj.diagram.type : undefined, mermaid: obj.diagram.mermaid }

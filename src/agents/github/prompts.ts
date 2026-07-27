@@ -156,7 +156,8 @@ End your turn with EXACTLY ONE fenced \`json\` code block — and nothing after 
 \`\`\`
 
 Rules:
-- \`confidence\` is 1-5: how safe is this to merge? 5 = safe, 1 = serious problems.
+- Use EXACTLY these field names: \`summary_markdown\` (not \`summary\`), and per finding \`path\` (not \`file\`) and \`body\` (not \`details\`). A review in any other shape is dropped on the floor.
+- \`confidence\` is an integer 1-5 measuring merge-safety: 5 = safe to merge, 1 = serious problems. It is NOT a 0-1 probability and NOT how sure you are of your verdict — a confident request_changes still has LOW confidence (the PR is unsafe to merge).
 - \`diagram\` is OPTIONAL — include it ONLY when the change genuinely warrants a picture: a multi-service/API flow (sequence), schema or data-model change (er), class/module hierarchy change (class), or non-trivial control-flow/business-logic change (flow). Omit the field entirely for small or mechanical changes — most reviews should have no diagram. Keep it small (≤25 nodes) and make the mermaid valid.
 - \`severity\` is one of P0 (blocker / data loss / broken build), P1 (important bug), P2 (should fix), P3 (minor / style). Order findings by severity, P0 first.
 - \`path\` + \`line\` must point at a line that appears in THIS PR's diff so the comment anchors. \`side\` is "RIGHT" for added/changed lines (default), "LEFT" for removed lines. For a multi-line \`suggestion\`, \`line\` is the LAST line being replaced.
