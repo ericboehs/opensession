@@ -6,6 +6,7 @@ import { TurnBlock } from "./TurnBlock";
 import { TurnFooter, collectTouchedFiles, type TouchedFile } from "./TurnFooter";
 import { VirtualTranscriptBlock } from "./VirtualTranscriptBlock";
 import { WalkthroughCard } from "./WalkthroughCard";
+import { walkthroughInsertIndex } from "./walkthrough-placement";
 
 type RenderBlock =
 	| { kind: "entry"; entry: TranscriptEntry }
@@ -18,47 +19,6 @@ type RenderBlock =
 	  }
 	| { kind: "walkthrough"; walkthrough: SessionWalkthrough }
 	| { kind: "note"; note: ChatMessage };
-
-/** The publish_walkthrough tool call, whatever the engine named it
- *  ("opensession-walkthrough_publish_walkthrough", "mcp__…__publish_walkthrough"). */
-function isWalkthroughPublish(e: TranscriptEntry): boolean {
-	return (
-		e.type === "tool_use" && /(^|_)publish_walkthrough$/.test(e.toolName || "")
-	);
-}
-
-/**
- * Where the walkthrough card goes: right after the turn that published it (past
- * that turn's final answer + footer, so it reads answer → walkthrough), or at
- * the end when the publishing call isn't in the loaded window — the card should
- * never be invisible just because history was trimmed.
- */
-function walkthroughInsertIndex(blocks: RenderBlock[]): number {
-	let at = -1;
-	for (let i = blocks.length - 1; i >= 0; i--) {
-		const b = blocks[i];
-		const has =
-			b.kind === "turn"
-				? b.items.some(isWalkthroughPublish)
-				: b.kind === "entry"
-					? isWalkthroughPublish(b.entry)
-					: false;
-		if (has) {
-			at = i;
-			break;
-		}
-	}
-	if (at === -1) return blocks.length;
-	let i = at + 1;
-	while (
-		i < blocks.length &&
-		(blocks[i].kind === "footer" ||
-			(blocks[i].kind === "entry" &&
-				(blocks[i] as { entry: TranscriptEntry }).entry.type === "assistant"))
-	)
-		i++;
-	return i;
-}
 
 interface Props {
 	entries: TranscriptEntry[];
@@ -161,7 +121,7 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 	flushTurn(true);
 
 	if (walkthrough)
-		blocks.splice(walkthroughInsertIndex(blocks), 0, {
+		blocks.splice(walkthroughInsertIndex(blocks, walkthrough.publishedAt), 0, {
 			kind: "walkthrough",
 			walkthrough,
 		});
@@ -178,7 +138,11 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 					: b.kind === "turn"
 						? b.items[b.items.length - 1]
 						: null;
-			return entry ? new Date(entry.timestamp).getTime() : 0;
+			return b.kind === "walkthrough"
+				? new Date(b.walkthrough.publishedAt).getTime()
+				: entry
+					? new Date(entry.timestamp).getTime()
+					: 0;
 		};
 		const sorted = [...notes].sort((a, b) => a.ts - b.ts);
 		let at = 0;
