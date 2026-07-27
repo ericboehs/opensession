@@ -544,12 +544,10 @@ function App() {
 	// workspace vs. a chat added to an existing one.
 	const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
 	const [pendingNewWorkspace, setPendingNewWorkspace] = useState(false);
-	// Who's viewing what, app-wide (from global_presence), + follow mode: when
-	// following a teammate, we navigate wherever they go.
+	// Who's viewing what, app-wide (from global_presence).
 	const [teamViewing, setTeamViewing] = useState<
 		Array<{ user: string; sessionId: string }>
 	>([]);
-	const [followUser, setFollowUser] = useState<string | null>(null);
 	const pendingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
 		undefined,
 	);
@@ -1080,37 +1078,6 @@ function App() {
 			}
 		});
 	}, [addHandler, refresh, refreshProjects, unstick]);
-
-	// Follow mode: whenever the followed teammate's session changes, go along.
-	// Dropping out is explicit (click again) or implicit — navigating anywhere
-	// else yourself (sidebar click, back button) unfollows, so presence updates
-	// can't keep yanking you back to their session. followNavRef marks route
-	// changes made *by* the follow effect so they don't count as leaving.
-	const followNavRef = useRef(false);
-	useEffect(() => {
-		if (!followUser) return;
-		const target = teamViewing.find((v) => v.user === followUser);
-		if (!target) return;
-		if (route.view === "session" && route.id === target.sessionId) return;
-		followNavRef.current = true;
-		navigate({ view: "session", id: target.sessionId });
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [followUser, teamViewing]);
-
-	// Any route change the follow effect didn't make means the user went
-	// somewhere on their own — stop following.
-	useEffect(() => {
-		if (followNavRef.current) {
-			followNavRef.current = false;
-			return;
-		}
-		if (!followUser) return;
-		const target = teamViewing.find((v) => v.user === followUser);
-		if (target && route.view === "session" && route.id === target.sessionId)
-			return;
-		setFollowUser(null);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [route]);
 
 	// Drop the pending flag once we've navigated away from the pending chat (its
 	// fallback timeout clears it otherwise). We deliberately DON'T clear it the
@@ -2118,10 +2085,6 @@ function App() {
 							projects={projects}
 							notes={notes.map((n) => ({ id: n.id, title: n.title }))}
 							teamViewing={teamViewing}
-							followUser={followUser}
-							onToggleFollow={(user) =>
-								setFollowUser(followUser === user ? null : user)
-							}
 							selectedId={currentSession?.id || null}
 							activeNoteId={currentNoteId}
 							notesActive={route.view === "notes"}

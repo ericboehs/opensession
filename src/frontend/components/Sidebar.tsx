@@ -512,12 +512,8 @@ interface Props {
 	 * `null`). Applies to every chat in the row so the aggregated row lands there.
 	 */
 	onSetStatus: (chats: UnifiedSession[], status: LaneChoice | null) => void;
-	/** Who's viewing what right now (global presence), for the follow rail. */
+	/** Who's viewing what right now (global presence), for live People rows. */
 	teamViewing?: Array<{ user: string; sessionId: string }>;
-	/** Teammate currently being followed (navigation shadows them). */
-	followUser?: string | null;
-	/** Toggle following a teammate. */
-	onToggleFollow?: (user: string) => void;
 	/**
 	 * The mobile top-bar's right-side actions slot. On phones the sidebar's
 	 * filter button lives here (next to Search) instead of in the workspace
@@ -1189,8 +1185,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	onRename,
 	onSetStatus,
 	teamViewing = [],
-	followUser = null,
-	onToggleFollow,
 	headerActionsEl = null,
 	onListScrolledChange,
 	onToast,
@@ -4174,8 +4168,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			</div>
 
 			{/* ── People: the whole team, always on — live viewers first. Click a
-			    person to view their workspace lanes (backlog / in progress); the
-			    follow affordance rides the row only while they're live. ── */}
+			    person to view their workspace lanes (backlog / in progress). ── */}
 			{(() => {
 				const others = roster.filter(
 					(p) => p.name.toLowerCase() !== currentUser.toLowerCase(),
@@ -4229,7 +4222,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									return (
 										<button
 											key={p.name}
-											className={`flex items-center gap-2 w-full min-w-0 text-left border-0 cursor-pointer rounded-md px-2 py-[5px] max-[720px]:py-2 ${
+											className={`flex items-center gap-2 w-full min-w-0 text-left border-0 cursor-pointer rounded-md pl-[10px] pr-2 py-[5px] max-[720px]:pl-[6px] max-[720px]:py-2 ${
 												selected
 													? "bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_22%,transparent)]"
 													: "bg-transparent hover:bg-hover"
@@ -4291,7 +4284,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 											>
 												{liveId ? titleFor(liveId) : act?.title || p.name}
 											</span>
-											{selected ? (
+											{selected && (
 												// The undo affordance — the whole row is the target
 												// (second click clears the filter), this just says so.
 												<span
@@ -4300,35 +4293,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 												>
 													<IconX size={14} />
 												</span>
-											) : (
-												liveId && (
-													<span
-														role="button"
-														tabIndex={0}
-														className={`ml-auto shrink-0 rounded-md px-1.5 py-0.5 text-[11px] max-[720px]:text-[12px] tracking-[-0.01em] ${
-															followUser === p.name
-																? "text-accent"
-																: "text-faint hover:bg-active hover:text-fg"
-														}`}
-														onClick={(e) => {
-															e.stopPropagation();
-															onToggleFollow?.(p.name);
-														}}
-														onKeyDown={(e) => {
-															if (e.key === "Enter" || e.key === " ") {
-																e.stopPropagation();
-																onToggleFollow?.(p.name);
-															}
-														}}
-														title={
-															followUser === p.name
-																? `Following ${p.name}. Click to stop.`
-																: `Follow ${p.name} — your navigation shadows theirs.`
-														}
-													>
-														{followUser === p.name ? "following" : "follow"}
-													</span>
-												)
 											)}
 										</button>
 									);
