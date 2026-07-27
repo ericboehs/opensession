@@ -765,8 +765,8 @@ function ReviewerChip({
 * The "Status" section of the info panel: the PR/branch state, plus a row per
 * outstanding git fact — ahead of remote → Push, behind → Update, dirty tree →
 * Commit. This is the Conductor-style status header (see server/git-status.ts),
-* surfaced in the info panel's own idiom (a labelled section, not a bordered
-* card). Push/Update call the git APIs directly; Commit prompts the session
+ * surfaced in the same labelled card treatment as the other info sections.
+ * Push/Update call the git APIs directly; Commit prompts the session
 * (we don't do bare `git commit` — a session-authored commit gets a real
 * message), matching how Create PR / Resolve work in the status strip.
 */
@@ -832,9 +832,9 @@ function GitStatusRows({
 	return (
 		<div className={INFO_SECTION_CLASS}>
 			<div className={INFO_LABEL_CLASS}>Status</div>
-			<div className="flex flex-col gap-1">
+			<div className={INFO_LIST_CLASS}>
 				{ahead > 0 && (
-					<div className="flex items-center gap-2 rounded-md bg-surface px-2.5 py-2 text-[12px] text-fg">
+					<div className="flex items-center gap-2 rounded-md px-2.5 py-2 text-[12px] text-fg">
 						<span className="size-1.5 rounded-full bg-green" />
 						<span className="min-w-0 flex-1 text-[12.5px] font-medium text-fg">
 							{ahead} commit{ahead === 1 ? "" : "s"} ahead of remote
@@ -855,7 +855,7 @@ function GitStatusRows({
 					</div>
 				)}
 				{behindCount > 0 && (
-					<div className="flex items-center gap-2 rounded-md bg-surface px-2.5 py-2 text-[12px] text-fg">
+					<div className="flex items-center gap-2 rounded-md px-2.5 py-2 text-[12px] text-fg">
 						<span className="size-1.5 rounded-full bg-purple" />
 						<span className="min-w-0 flex-1 text-[12.5px] font-medium text-fg">
 							{behindCount} commit{behindCount === 1 ? "" : "s"} behind{" "}
@@ -880,7 +880,7 @@ function GitStatusRows({
 					</div>
 				)}
 				{dirty > 0 && (
-					<div className="flex items-center gap-2 rounded-md bg-surface px-2.5 py-2 text-[12px] text-fg">
+					<div className="flex items-center gap-2 rounded-md px-2.5 py-2 text-[12px] text-fg">
 						<span className="size-1.5 rounded-full bg-dim" />
 						<span className="min-w-0 flex-1 text-[12.5px] font-medium text-fg">
 							{dirty} uncommitted file{dirty === 1 ? "" : "s"}
