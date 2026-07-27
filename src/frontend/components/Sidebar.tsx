@@ -138,8 +138,11 @@ const ARCHIVE_SHORTCUT_KEYS = isChromium
 		? ["⌘", "E"]
 		: ["Ctrl", "E"];
 const PIN_SHORTCUT_KEYS = isApple ? ["⌘", "P"] : ["Ctrl", "P"];
-// Notes rides an Alt-carrying chord: the browser keeps ⌘N/⌘⇧N for itself.
-const NOTES_SHORTCUT_HINT = isApple ? "⌘⌥N" : "Ctrl+Alt+N";
+// Bare N when you aren't typing; the chord (Alt-carrying, since the browser
+// keeps ⌘N/⌘⇧N for itself) still works from inside the composer.
+const NOTES_SHORTCUT_HINT = isApple
+	? "N, or ⌘⌥N while typing"
+	: "N, or Ctrl+Alt+N while typing";
 
 /** ⌘E (primary) or ⌘⇧A (legacy) — the archive-this-chat chord. */
 function isArchiveChord(e: KeyboardEvent): boolean {

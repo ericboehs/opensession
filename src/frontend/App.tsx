@@ -370,6 +370,19 @@ function samePanel(a: Route, b: Route): boolean {
 	return id(a) !== undefined && id(a) === id(b);
 }
 
+// True when the keystroke belongs to whatever the user is typing in — the
+// composer, a rename field, a search box, a CodeMirror note. Bare-letter
+// shortcuts must yield to it, or they eat the letter mid-word.
+function isTypingTarget(target: EventTarget | null): boolean {
+	for (const el of [target as HTMLElement | null, document.activeElement]) {
+		const editable = (el as HTMLElement | null)?.closest?.(
+			"input, textarea, select, [contenteditable='true'], [contenteditable='']",
+		);
+		if (editable) return true;
+	}
+	return false;
+}
+
 function App() {
 	const { sessions, loading, cloudUnreachable, refresh, inject, unstick, patch, remove } =
 		useSessions();
@@ -893,6 +906,8 @@ function App() {
 	// The Desk overlay (⌘J / the floating desk button): todo list + standing
 	// concierge session on top of whatever view is open.
 	const [deskOpen, setDeskOpen] = useState(false);
+	const deskOpenRef = useRef(deskOpen);
+	deskOpenRef.current = deskOpen;
 	// Open-todo count for the Desk FAB badge — refreshed on every todos_changed
 	// broadcast (any surface mutating the list: overlay, agent tools, other tabs).
 	const [todoCount, setTodoCount] = useState(0);
@@ -1013,6 +1028,26 @@ function App() {
 				if (!path) return;
 				e.preventDefault();
 				copyToClipboard(absoluteLink(path), () => showToast("Link copied"));
+				return;
+			}
+			// Bare "n" opens Notes when you aren't typing — the modifier-free
+			// sibling of ⌘⌥N, in the spirit of the PR/support decks' single-key
+			// verbs. e.key (not e.code) so non-QWERTY layouts get their own N.
+			// Shift is tolerated: ⇧N types nothing here either way.
+			if (
+				!e.metaKey &&
+				!e.ctrlKey &&
+				!e.altKey &&
+				!e.defaultPrevented &&
+				e.key.toLowerCase() === "n" &&
+				!isTypingTarget(e.target) &&
+				!searchOpenRef.current &&
+				!paletteOpenRef.current &&
+				!deskOpenRef.current &&
+				!document.querySelector("[role='dialog']")
+			) {
+				e.preventDefault();
+				navigate({ view: "notes", sel: null });
 				return;
 			}
 			if (e.key === "Escape") {
