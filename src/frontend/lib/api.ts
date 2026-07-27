@@ -12,6 +12,7 @@ import type {
 	ReportMeta,
 	Project,
 	AnalyticsSummary,
+	OsReview,
 } from "./types";
 
 const BASE = `${BASE_PATH}/api`;
@@ -192,20 +193,6 @@ export interface OpenPr {
 	reviewActive?: boolean;
 	/** What the last automated review concluded. Absent until one has run. */
 	osReview?: OsReview;
-}
-
-/** The last automated review's verdict, for at-a-glance display. */
-export interface OsReview {
-	/** approve | comment | request_changes. */
-	verdict?: string;
-	/** 1-5: how safe the reviewer thought this was to merge. */
-	confidence?: number;
-	findings: number;
-	/** P0/P1 findings — what would block a merge. */
-	blocking: number;
-	/** The branch has moved on since: this verdict describes older code. */
-	stale: boolean;
-	at: string;
 }
 
 /** Every open PR in the repo, attributed to teammates by GitHub author. */

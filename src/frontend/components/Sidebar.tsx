@@ -98,6 +98,7 @@ import { Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
 import { cn } from "../ui/cn";
 import {
+	osReviewLabel,
 	ROW_CARD_CLASS,
 	SupportRowCard,
 	useRowHoverCard,
@@ -6918,6 +6919,15 @@ function WsOverviewInfo({
 			</div>
 
 			<div className="hovercard-title">{row.name}</div>
+
+			{/* What os-review made of this PR — the question a Ready-to-merge row
+			    raises, answered without opening GitHub. */}
+			{prChat?.prOsReview && (
+				<div className="hovercard-state">
+					<span className="text-faint">OS review </span>
+					{osReviewLabel(prChat.prOsReview)}
+				</div>
+			)}
 
 			{row.status === "needsinput" &&
 				(row.chats.some((c) => c.waitingForInput) ? (

@@ -26,6 +26,24 @@ export interface SessionUsage {
   updatedAt: string;
 }
 
+/**
+ * What the last automated (os-review) run concluded about a PR, as the UI needs
+ * it: the same verdict and 1-5 confidence its PR comment ends with, plus whether
+ * the branch has moved on since. Mirrored in the frontend's types.ts.
+ */
+export interface OsReviewSummary {
+  /** approve | comment | request_changes. */
+  verdict?: string;
+  /** 1-5: how safe the reviewer thought this was to merge. */
+  confidence?: number;
+  findings: number;
+  /** P0/P1 findings — what would block a merge. */
+  blocking: number;
+  /** The branch has moved on since this verdict — it describes older code. */
+  stale: boolean;
+  at: string;
+}
+
 export interface UnifiedSession {
   id: string;
   /** Present and true when a local-profile server owns this session. */
@@ -80,6 +98,8 @@ export interface UnifiedSession {
   prAuthor?: string;
   prUpdatedAt?: string;
   prChecks?: { total: number; passed: number; failed: number; pending: number };
+  /** What the last automated review concluded on this PR. */
+  prOsReview?: OsReviewSummary;
   mode?: "ask" | "code";
   /** Primary repo this chat works in (repo id; default "tella-fusion"). */
   repo?: string;

@@ -4,6 +4,24 @@ import type { WorkflowRunSnapshot } from "../../server/workflow-types";
 
 export type SessionSource = "slack" | "linear" | "backstage" | "cli";
 
+/**
+ * What the last automated (os-review) run concluded about a PR, as the UI needs
+ * it: the same verdict and 1-5 confidence its PR comment ends with, plus whether
+ * the branch has moved on since.
+ */
+export interface OsReview {
+	/** approve | comment | request_changes. */
+	verdict?: string;
+	/** 1-5: how safe the reviewer thought this was to merge. */
+	confidence?: number;
+	findings: number;
+	/** P0/P1 findings — what would block a merge. */
+	blocking: number;
+	/** The branch has moved on since: this verdict describes older code. */
+	stale: boolean;
+	at: string;
+}
+
 /** One message in a session's linked Plain thread (customer support). */
 export interface PlainTimelineEntry {
 	id: string;
@@ -227,6 +245,8 @@ export interface UnifiedSession {
 	prAuthor?: string;
 	prUpdatedAt?: string;
 	prChecks?: { total: number; passed: number; failed: number; pending: number };
+	/** What the last automated review concluded on this PR. */
+	prOsReview?: OsReview;
 	mode?: "ask" | "code";
 	/** Primary repo this chat works in (repo id; default "tella-fusion"). */
 	repo?: string;

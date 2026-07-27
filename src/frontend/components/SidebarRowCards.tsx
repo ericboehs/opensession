@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import type { SupportThread, UnifiedSession } from "../lib/types";
+import type { OsReview, SupportThread, UnifiedSession } from "../lib/types";
 import type { ReviewQueueItem } from "../lib/review-queue";
-import { relativeTime, type OpenPr, type OsReview } from "../lib/api";
+import { relativeTime, type OpenPr } from "../lib/api";
 import { providerFromUrl } from "../lib/provider";
 import { plainThreadUrl } from "./PlainThreadPanel";
 import { IconGitMerge } from "./icons";
@@ -96,7 +96,7 @@ function prettyReview(d: string): string {
  * judgements. Tone follows the verdict; a review the branch has moved past goes
  * faint and says so rather than lending a stale score the same weight.
  */
-function osReviewLabel(review: OsReview): React.ReactNode {
+export function osReviewLabel(review: OsReview): React.ReactNode {
 	const tone =
 		review.verdict === "approve"
 			? "text-green"

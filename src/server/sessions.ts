@@ -36,6 +36,7 @@ import type {
   BackstageSessionFile,
   SessionPrRef,
   TranscriptEntry,
+  OsReviewSummary,
 } from "./types";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -1605,19 +1606,6 @@ export interface OpenPrEntry {
 	osReview?: OsReviewSummary;
 }
 
-/** The last automated review's verdict, as the UI needs it. */
-export interface OsReviewSummary {
-	/** approve | comment | request_changes. */
-	verdict?: string;
-	/** 1-5: how safe the reviewer thought this was to merge. */
-	confidence?: number;
-	findings: number;
-	blocking: number;
-	/** The branch has moved on since this verdict — it describes older code. */
-	stale: boolean;
-	at: string;
-}
-
 export interface RecentPrEntry extends Omit<OpenPrEntry, "reviewActive" | "osReview"> {
 	state: "OPEN" | "MERGED" | "CLOSED";
 	additions: number;
@@ -1863,7 +1851,8 @@ export function getAllSessions(): UnifiedSession[] {
     }
   for (const session of allSessions) {
     if (session.branch) {
-      const pr = prsByRepo.get(session.repo || defaultRepo().id)?.get(session.branch);
+      const sessionRepoId = session.repo || defaultRepo().id;
+      const pr = prsByRepo.get(sessionRepoId)?.get(session.branch);
       if (pr) {
         session.prUrl = pr.url;
         session.prState = pr.state;
@@ -1880,6 +1869,10 @@ export function getAllSessions(): UnifiedSession[] {
         session.prAuthor = pr.author;
         session.prUpdatedAt = pr.updatedAt;
         session.prChecks = pr.checks;
+        session.prOsReview = lastReviewSummary(
+          readPrState(pr.number, configuredRepos()[sessionRepoId]?.ghRepo)?.lastReview,
+          pr.headRefOid,
+        );
       }
     }
 
