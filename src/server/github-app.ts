@@ -66,9 +66,25 @@ export async function githubAppInstallationToken(): Promise<string | null> {
       installationId = installs[0].id;
     }
 
+    // Downscoped at mint: pr-info only reads, so the token carries no write
+    // permission at all — strictly weaker than the bot PAT even if leaked.
     const res = await fetch(
       `https://api.github.com/app/installations/${installationId}/access_tokens`,
-      { method: "POST", headers }
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          permissions: {
+            checks: "read",
+            statuses: "read",
+            actions: "read",
+            pull_requests: "read",
+            contents: "read",
+            issues: "read",
+            metadata: "read",
+          },
+        }),
+      }
     );
     const tok = (await res.json()) as { token?: string; expires_at?: string };
     if (!tok.token) throw new Error(`mint failed: ${JSON.stringify(tok).slice(0, 120)}`);
