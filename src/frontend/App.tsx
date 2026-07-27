@@ -345,6 +345,31 @@ function routePath(route: Route): string {
 	}
 }
 
+// How far the current history entry sits above the sidebar root: 0 is the root
+// itself, N a panel with N entries between it and that root. It lives in
+// `history.state` rather than a ref because the browser hands state back on
+// popstate — so after a Back/Forward we still know where the root is. `null`
+// means no root beneath us at all (cold-loaded straight into a panel), where
+// Back synthesizes home instead of popping.
+type NavState = { d: number } | null;
+function entryDepth(): number | null {
+	const s = history.state as NavState;
+	return s && typeof s.d === "number" ? s.d : null;
+}
+function navState(depth: number | null): NavState {
+	return depth === null ? null : { d: depth };
+}
+
+// Two routes address the same panel when they open the same thing. A tab or
+// query tweak on the page you are already looking at (the workspace's
+// Review↔Conversation tabs, say) refines it rather than opening a new page, so
+// it replaces the entry instead of stacking another one.
+function samePanel(a: Route, b: Route): boolean {
+	if (a.view !== b.view) return false;
+	const id = (r: Route) => ("id" in r ? r.id : undefined);
+	return id(a) !== undefined && id(a) === id(b);
+}
+
 function App() {
 	const { sessions, loading, cloudUnreachable, refresh, inject, unstick, patch, remove } =
 		useSessions();
@@ -386,10 +411,15 @@ function App() {
 	const [route, setRoute] = useState<Route>(() => {
 		const parsed = parseRoute(location.pathname);
 		if (parsed.view === "home") {
+			// Landing on the root: stamp it as the base of the page stack so panels
+			// pushed over it can count their way back down.
+			history.replaceState(navState(0), "", location.pathname);
 			const lastId = localStorage.getItem("opensession-last-session");
 			if (lastId) {
 				const restored: Route = { view: "session", id: lastId };
-				history.replaceState(null, "", routePath(restored));
+				// Push rather than replace: the home entry we actually landed on stays
+				// beneath as the root, so Back returns to it instead of out of the app.
+				history.pushState(navState(1), "", routePath(restored));
 				return restored;
 			}
 		}
@@ -683,38 +713,43 @@ function App() {
 	const sidebarRef = useRef<SidebarHandle>(null);
 	routeRef.current = route;
 	// The mobile layout is an iOS-style navigation stack: the sidebar is the root
-	// (depth 0) and every non-home route is a *single* panel pushed over it
-	// (depth 1). `rootBehind` tracks whether that root sits beneath us in history
-	// so Back can pop (`history.back()`, keeping the browser/OS back button in
-	// sync) instead of pushing yet another entry — the "pages within pages" trap.
-	// Cold-loading straight into a panel (deep link / restored session) has no
-	// root beneath it, so there Back synthesizes a home navigation instead.
-	const rootBehind = useRef(false);
+	// (depth 0) and each panel is pushed over it. Every entry carries its own
+	// depth (see `entryDepth`), so opening one panel from another stacks a real
+	// history entry — that is what makes the titlebar's Back/Forward carets (and
+	// the browser/OS buttons) walk between the sessions you visited — while
+	// `goBack` still returns to the sidebar in a single hop rather than reversing
+	// panel by panel.
 
-	// Navigate the single detail panel. Root→panel pushes one history entry;
-	// panel→panel *replaces* (stays at the same depth, so the stack never nests);
-	// re-navigating to the current URL replaces (no duplicate entries). Going to
-	// the root is done by `goBack` (a pop), not here.
+	// Navigate the detail panel. Opening a different panel pushes an entry;
+	// re-navigating to the panel you are already on (or an explicit
+	// `replace`) rewrites the current entry instead of duplicating it.
 	function navigate(next: Route, opts?: { replace?: boolean }) {
 		const path = routePath(next);
 		const cur = routeRef.current;
 		const toRoot = next.view === "home";
-		const fromRoot = cur.view === "home";
-		const samePath = path === location.pathname;
-		const replace = opts?.replace ?? (samePath || (!toRoot && !fromRoot));
-		if (replace) history.replaceState(null, "", path);
-		else history.pushState(null, "", path);
-		if (!toRoot && fromRoot && !samePath) rootBehind.current = true;
-		if (toRoot) rootBehind.current = false;
+		// Compare on the route, not `location.pathname`: an open chat's URL gets
+		// canonicalized to /workspace/<id>/chat/<id> below, so the raw path no
+		// longer matches the /session/<id> we would build for the same session.
+		const samePath =
+			path === location.pathname ||
+			routePath(cur) === path ||
+			samePanel(cur, next);
+		const replace = opts?.replace ?? samePath;
+		const depth = entryDepth();
+		if (replace) history.replaceState(navState(toRoot ? 0 : depth), "", path);
+		else if (toRoot) history.pushState(navState(0), "", path);
+		else history.pushState(navState(depth === null ? null : depth + 1), "", path);
 		setRoute(next);
 	}
 
-	// Pop the pushed panel back to the sidebar root. If the root is beneath us in
-	// history, a real `history.back()` keeps the browser/OS back button and the
-	// app in lockstep; otherwise (cold-launched into a panel) replace to home so
-	// we never grow the stack.
+	// Pop back to the sidebar root. With the root beneath us, one `history.go`
+	// lands on it directly — keeping the browser/OS back button in lockstep
+	// without walking back through every panel we pushed on the way. Cold-loaded
+	// into a panel there is no root to pop to, so replace to home instead and the
+	// stack never grows.
 	function goBack() {
-		if (rootBehind.current) history.back();
+		const depth = entryDepth();
+		if (depth !== null && depth > 0) history.go(-depth);
 		else navigate({ view: "home" }, { replace: true });
 	}
 
@@ -891,10 +926,9 @@ function App() {
 
 	useEffect(() => {
 		const onPop = () => {
-			const r = parseRoute(location.pathname);
-			// Landing back on the root means nothing is pushed over it anymore.
-			if (r.view === "home") rootBehind.current = false;
-			setRoute(r);
+			// Depth travels with the entry (history.state), so there is nothing to
+			// recompute here — just follow the URL we landed on.
+			setRoute(parseRoute(location.pathname));
 		};
 		window.addEventListener("popstate", onPop);
 		return () => window.removeEventListener("popstate", onPop);
@@ -1593,7 +1627,9 @@ function App() {
 			? `${BASE_PATH}/workspace/${encodeURIComponent(activeProjectId)}/chat/${encodeURIComponent(route.id)}`
 			: `${BASE_PATH}/session/${encodeURIComponent(route.id)}`;
 		if (location.pathname !== canonical)
-			history.replaceState(null, "", canonical);
+			// Carry the entry's state across: dropping it would erase this panel's
+			// depth and strand `goBack` (and the Back caret) on the way home.
+			history.replaceState(history.state, "", canonical);
 	}, [route, currentSession, activeProjectId]);
 	const byCreated = (a: UnifiedSession, b: UnifiedSession) =>
 		(a.createdAt || "").localeCompare(b.createdAt || "");
