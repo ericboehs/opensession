@@ -60,6 +60,7 @@ import { UserAvatar, githubLoginFor } from "./UserAvatar";
 import { shortTime, elapsedClock } from "../lib/time";
 import {
 	IconChevronDown,
+	IconChevronRight,
 	IconArchive,
 	IconUnarchive,
 	IconBell,
@@ -770,6 +771,10 @@ function SidebarCtxMenu({
 									<IconStatusRing size={20} />
 								</span>
 								<span style={{ flex: 1 }}>Set status</span>
+								<IconChevronRight
+									size={16}
+									style={{ color: "var(--text-faint)", flexShrink: 0 }}
+								/>
 							</button>
 						);
 					}
@@ -812,6 +817,10 @@ function SidebarCtxMenu({
 									<IconMoon size={20} />
 								</span>
 								<span style={{ flex: 1 }}>Snooze</span>
+								<IconChevronRight
+									size={16}
+									style={{ color: "var(--text-faint)", flexShrink: 0 }}
+								/>
 							</button>
 						);
 					}
