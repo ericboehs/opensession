@@ -4172,142 +4172,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			)}
 			</div>
 
-			{/* ── People: the whole team, always on — live viewers first. Click a
-			    person to view their workspace lanes (backlog / in progress). ── */}
-			{(() => {
-				const others = roster.filter(
-					(p) => p.name.toLowerCase() !== currentUser.toLowerCase(),
-				);
-				if (others.length === 0) return null;
-				const open = bandOpen("people");
-				const viewingBy = new Map(
-					teamViewing.map((v) => [v.user.toLowerCase(), v.sessionId]),
-				);
-				const titleFor = (id: string) =>
-					sessions.find((s) => s.id === id)?.title || id;
-				const rows = [...others].sort((a, b) => {
-					const aLive = viewingBy.has(a.name.toLowerCase()) ? 0 : 1;
-					const bLive = viewingBy.has(b.name.toLowerCase()) ? 0 : 1;
-					if (aLive !== bLive) return aLive - bLive;
-					const aAct = personActivity.get(a.name.toLowerCase())?.last || "";
-					const bAct = personActivity.get(b.name.toLowerCase())?.last || "";
-					return bAct.localeCompare(aAct);
-				});
-				return (
-					<div className="sidebar-independent-section mt-2">
-						<div className="sidebar-band-label sidebar-sticky-head">
-							<button
-								className="sidebar-band-toggle pl-[10px]"
-								onClick={() => toggleBand("people")}
-								title={open ? "Collapse people" : "Expand people"}
-							>
-								<span className="sidebar-band-name">People</span>
-								<span className="sidebar-group-count">{rows.length}</span>
-								<IconChevronDown
-									className="sidebar-band-chevron"
-									size={18}
-									style={{ transform: open ? "none" : "rotate(-90deg)" }}
-								/>
-							</button>
-						</div>
-						{open && (
-							<div className="sidebar-independent-scroll">
-								{rows.map((p) => {
-									const key = p.name.toLowerCase();
-									const liveId = viewingBy.get(key);
-									const act = personActivity.get(key);
-									const selected = filter.person === key;
-									const localTime = p.timezone
-										? new Intl.DateTimeFormat([], {
-												hour: "2-digit",
-												minute: "2-digit",
-												timeZone: p.timezone,
-											}).format(new Date())
-										: null;
-									return (
-										<button
-											key={p.name}
-											className={`sidebar-people-row flex items-center gap-[9px] w-full min-w-0 text-left border-0 cursor-pointer rounded-md pl-[12px] pr-2 py-[5px] max-[720px]:py-2 ${
-												selected
-													? "bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_22%,transparent)]"
-													: "bg-transparent hover:bg-hover"
-											}`}
-											onClick={() => {
-												// First click: filter to their lanes AND open the
-												// session the row shows — going back lands on their
-												// workspaces. Second click (or the row's ✕): undo
-												// the filter, back to your own.
-												if (selected) {
-													setFilter({ person: "me" });
-													return;
-												}
-												setFilter({ person: key });
-												const targetId = liveId || act?.id;
-												const target = targetId
-													? sessions.find((s) => s.id === targetId)
-													: undefined;
-												if (target) onSelect(target);
-											}}
-											title={
-												selected
-													? "Back to your workspaces"
-													: liveId || act?.title
-														? `Open “${liveId ? titleFor(liveId) : act?.title}” · ${p.name}'s workspaces`
-														: `${p.name}'s workspaces`
-											}
-										>
-											{/* The name lives on the avatar (tooltip) — the row's
-											    width belongs to the workspace/session title. */}
-											<Tooltip
-												label={`${p.fullName}${localTime ? ` · ${localTime}` : ""}${liveId ? " · viewing now" : ""}`}
-											>
-												<span className="relative shrink-0">
-													<UserAvatar name={p.name} size={22}>
-														{liveId && (
-															<span
-																className="pointer-events-none absolute inset-0 rounded-[32%] ring-2 ring-inset"
-																style={
-																	{
-																		"--tw-ring-color": personColor(p.name),
-																	} as React.CSSProperties
-																}
-															/>
-														)}
-													</UserAvatar>
-													{act?.running && (
-														<span
-															className="absolute -bottom-0.5 -right-0.5 block size-[8px] rounded-full bg-green ring-2 ring-[var(--bg)]"
-															aria-label="Has a running session"
-														/>
-													)}
-												</span>
-											</Tooltip>
-											<span
-												className={`sidebar-item-title flex-1${
-													selected ? " !text-fg font-semibold" : ""
-												}`}
-											>
-												{liveId ? titleFor(liveId) : act?.title || p.name}
-											</span>
-											{selected && (
-												// The undo affordance — the whole row is the target
-												// (second click clears the filter), this just says so.
-												<span
-													className="ml-auto flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-dim"
-													aria-hidden="true"
-												>
-													<IconX size={14} />
-												</span>
-											)}
-										</button>
-									);
-								})}
-							</div>
-						)}
-					</div>
-				);
-			})()}
-
 			<div className="sidebar-sticky-section">
 			<div
 				className={cn(
@@ -5111,8 +4975,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			)}
 			</div>
 
-				{/* The People band lives at the top of the sidebar (above the
-				    workspace header); the Person filter (funnel) is the same lens. */}
 				{/* ── Automations (one collapsible band, one group per automation) ── */}
 				{groups.length > 0 && (
 					<div className="sidebar-independent-section sidebar-group--automations sidebar-group--band-start">
@@ -5219,6 +5081,141 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						)}
 					</div>
 				)}
+			{/* ── People: the whole team, always on — live viewers first. Click a
+			    person to view their workspace lanes (backlog / in progress). ── */}
+			{(() => {
+				const others = roster.filter(
+					(p) => p.name.toLowerCase() !== currentUser.toLowerCase(),
+				);
+				if (others.length === 0) return null;
+				const open = bandOpen("people");
+				const viewingBy = new Map(
+					teamViewing.map((v) => [v.user.toLowerCase(), v.sessionId]),
+				);
+				const titleFor = (id: string) =>
+					sessions.find((s) => s.id === id)?.title || id;
+				const rows = [...others].sort((a, b) => {
+					const aLive = viewingBy.has(a.name.toLowerCase()) ? 0 : 1;
+					const bLive = viewingBy.has(b.name.toLowerCase()) ? 0 : 1;
+					if (aLive !== bLive) return aLive - bLive;
+					const aAct = personActivity.get(a.name.toLowerCase())?.last || "";
+					const bAct = personActivity.get(b.name.toLowerCase())?.last || "";
+					return bAct.localeCompare(aAct);
+				});
+				return (
+					<div className="sidebar-independent-section mt-2">
+						<div className="sidebar-band-label sidebar-sticky-head">
+							<button
+								className="sidebar-band-toggle pl-[10px]"
+								onClick={() => toggleBand("people")}
+								title={open ? "Collapse people" : "Expand people"}
+							>
+								<span className="sidebar-band-name">People</span>
+								<span className="sidebar-group-count">{rows.length}</span>
+								<IconChevronDown
+									className="sidebar-band-chevron"
+									size={18}
+									style={{ transform: open ? "none" : "rotate(-90deg)" }}
+								/>
+							</button>
+						</div>
+						{open && (
+							<div className="sidebar-independent-scroll">
+								{rows.map((p) => {
+									const key = p.name.toLowerCase();
+									const liveId = viewingBy.get(key);
+									const act = personActivity.get(key);
+									const selected = filter.person === key;
+									const localTime = p.timezone
+										? new Intl.DateTimeFormat([], {
+												hour: "2-digit",
+												minute: "2-digit",
+												timeZone: p.timezone,
+											}).format(new Date())
+										: null;
+									return (
+										<button
+											key={p.name}
+											className={`sidebar-people-row flex items-center gap-[9px] w-full min-w-0 text-left border-0 cursor-pointer rounded-md pl-[12px] pr-2 py-[5px] max-[720px]:py-2 ${
+												selected
+													? "bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_22%,transparent)]"
+													: "bg-transparent hover:bg-hover"
+											}`}
+											onClick={() => {
+												// First click: filter to their lanes AND open the
+												// session the row shows — going back lands on their
+												// workspaces. Second click (or the row's ✕): undo
+												// the filter, back to your own.
+												if (selected) {
+													setFilter({ person: "me" });
+													return;
+												}
+												setFilter({ person: key });
+												const targetId = liveId || act?.id;
+												const target = targetId
+													? sessions.find((s) => s.id === targetId)
+													: undefined;
+												if (target) onSelect(target);
+											}}
+											title={
+												selected
+													? "Back to your workspaces"
+													: liveId || act?.title
+														? `Open “${liveId ? titleFor(liveId) : act?.title}” · ${p.name}'s workspaces`
+														: `${p.name}'s workspaces`
+											}
+										>
+											{/* The name lives on the avatar (tooltip) — the row's
+											    width belongs to the workspace/session title. */}
+											<Tooltip
+												label={`${p.fullName}${localTime ? ` · ${localTime}` : ""}${liveId ? " · viewing now" : ""}`}
+											>
+												<span className="relative shrink-0">
+													<UserAvatar name={p.name} size={22}>
+														{liveId && (
+															<span
+																className="pointer-events-none absolute inset-0 rounded-[32%] ring-2 ring-inset"
+																style={
+																	{
+																		"--tw-ring-color": personColor(p.name),
+																	} as React.CSSProperties
+																}
+															/>
+														)}
+													</UserAvatar>
+													{act?.running && (
+														<span
+															className="absolute -bottom-0.5 -right-0.5 block size-[8px] rounded-full bg-green ring-2 ring-[var(--bg)]"
+															aria-label="Has a running session"
+														/>
+													)}
+												</span>
+											</Tooltip>
+											<span
+												className={`sidebar-item-title flex-1${
+													selected ? " !text-fg font-semibold" : ""
+												}`}
+											>
+												{liveId ? titleFor(liveId) : act?.title || p.name}
+											</span>
+											{selected && (
+												// The undo affordance — the whole row is the target
+												// (second click clears the filter), this just says so.
+												<span
+													className="ml-auto flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-dim"
+													aria-hidden="true"
+												>
+													<IconX size={14} />
+												</span>
+											)}
+										</button>
+									);
+								})}
+							</div>
+						)}
+					</div>
+				);
+			})()}
 			{wsHover && (
 				<WsHoverCard
 					row={wsHover.row}
