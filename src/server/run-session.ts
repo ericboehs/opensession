@@ -2007,10 +2007,11 @@ export function sessionMentionsNote(
 	// Only the human's visible message counts: fenced <backstage:context> blocks
 	// (attached chat transcripts, handoffs) name sessions as @session:<id> too,
 	// and those must not grow a redundant — and unfenced, so user-visible —
-	// mentions footer.
-	content = stripContext(content);
-	// A side chat that was inlined as a digest above already carries its context;
-	// skip it here so it doesn't ALSO get a pointer footer for the same id.
+	// mentions footer. `|| ""` because a non-string reaching here crashed the
+	// whole process on 2026-07-27 (stripContext passes falsy input through).
+	content = stripContext(content || "");
+	// A chat attached as a digest above already carries its context; skip it here
+	// so it doesn't also get a pointer footer for the same id.
 	const skip = new Set(excludeIds ?? []);
 	const ids = [
 		...new Set(

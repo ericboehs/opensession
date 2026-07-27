@@ -440,6 +440,13 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 			return;
 		}
 
+		// A throw anywhere below used to escape as an unhandled rejection and
+		// kill the whole process (2026-07-27: four crash-restarts from a prompt
+		// message missing `content` — every in-process run died each time). One
+		// malformed or unlucky message must never take down the server, so the
+		// entire dispatch is fenced; the switch body keeps its indentation to
+		// avoid a 1500-line re-indent in the shared checkout.
+		try {
 		// GitHub web sign-in active (web-auth.ts): the upgrade stamped this
 		// socket with the cookie's verified identity — it overrides whatever
 		// name the client claims in any message, so attribution and per-user
@@ -743,9 +750,23 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 			}
 
 			case "prompt": {
-				const { sessionId, content, user } = msg;
+				const { sessionId, user } = msg;
+				// Non-string content (a client bug — e.g. `text` instead of
+				// `content`) used to flow all the way into the run path and crash
+				// the process. Coerce, and reject a send with nothing in it.
+				const content = typeof msg.content === "string" ? msg.content : "";
 				const images = parseImageDataUrls(msg.images);
 				const imageUrls = asDataUrlList(msg.images);
+				if (
+					!content.trim() &&
+					!images?.length &&
+					!(Array.isArray(msg.files) && msg.files.length)
+				) {
+					ws.send(
+						JSON.stringify({ type: "error", message: "Empty prompt (no content/images/files)" }),
+					);
+					return;
+				}
 				const session = findSession(sessionId);
 				if (!session) {
 					ws.send(
@@ -2028,6 +2049,17 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				}
 				break;
 			}
+		}
+		} catch (e) {
+			console.error(`[ws] ${msg?.type || "unknown"} handler failed:`, e);
+			try {
+				ws.send(
+					JSON.stringify({
+						type: "error",
+						message: `Internal error handling "${msg?.type || "message"}" — see server log`,
+					}),
+				);
+			} catch {}
 		}
 	},
 
