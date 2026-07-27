@@ -348,6 +348,52 @@ describe("reconnectSharedInProcessMcp", () => {
       await reconnectSharedInProcessMcp(client as any, ["opensession-notes"])
     ).toEqual(["opensession-notes"]);
   });
+
+  test("fails soft when MCP status never settles", async () => {
+    let signal: AbortSignal | undefined;
+    const client = {
+      mcp: {
+        status: (options: { signal: AbortSignal }) => {
+          signal = options.signal;
+          return new Promise(() => {});
+        },
+        connect: async () => ({ data: true }),
+      },
+    };
+
+    expect(
+      await reconnectSharedInProcessMcp(
+        client as any,
+        ["opensession-notes", "opensession-assets"],
+        {},
+        { timeoutMs: 5 }
+      )
+    ).toEqual(["opensession-notes", "opensession-assets"]);
+    expect(signal?.aborted).toBe(true);
+  });
+
+  test("fails soft when an MCP reconnect never settles", async () => {
+    let signal: AbortSignal | undefined;
+    const client = {
+      mcp: {
+        status: async () => ({ data: { "opensession-notes": { status: "failed" } } }),
+        connect: (options: { signal: AbortSignal }) => {
+          signal = options.signal;
+          return new Promise(() => {});
+        },
+      },
+    };
+
+    expect(
+      await reconnectSharedInProcessMcp(
+        client as any,
+        ["opensession-notes"],
+        {},
+        { timeoutMs: 5 }
+      )
+    ).toEqual(["opensession-notes"]);
+    expect(signal?.aborted).toBe(true);
+  });
 });
 
 describe("buildOpencodeInstructions", () => {

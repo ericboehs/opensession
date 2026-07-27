@@ -2086,17 +2086,41 @@ export async function ensureLocalMeridianReady(
 export async function reconnectSharedInProcessMcp(
   client: Pick<OpencodeClient, "mcp">,
   names: string[],
-  query: { query?: { directory?: string } } = {}
+  query: { query?: { directory?: string } } = {},
+  opts: { timeoutMs?: number } = {}
 ): Promise<string[]> {
   if (!names.length) return [];
 
-  const status = await client.mcp.status(query as any);
+  const timeoutMs = opts.timeoutMs ?? 10_000;
+  const bounded = async <T>(request: (signal: AbortSignal) => Promise<T>): Promise<T | undefined> => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        request(controller.signal),
+        new Promise<undefined>((resolve) => {
+          timer = setTimeout(() => {
+            controller.abort();
+            resolve(undefined);
+          }, timeoutMs);
+        }),
+      ]);
+    } catch {
+      return undefined;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+  const status = await bounded((signal) => client.mcp.status({ ...query, signal } as any));
+  if (!status) return names;
   const current = (status.data || {}) as Record<string, { status?: string }>;
   const disconnected = names.filter((name) => current[name]?.status !== "connected");
   const results = await Promise.all(
     disconnected.map(async (name) => {
-      const result = await client.mcp.connect({ path: { name }, ...query } as any);
-      return result.error ? name : undefined;
+      const result = await bounded((signal) =>
+        client.mcp.connect({ path: { name }, ...query, signal } as any)
+      );
+      return !result || result.error ? name : undefined;
     })
   );
   return results.filter((name): name is string => !!name);
