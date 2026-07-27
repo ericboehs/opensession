@@ -33,6 +33,8 @@ export interface PreviewLifecycleStatus {
   running: boolean;
   starting: boolean;
   previewUrl: string | null;
+  /** Whether a boot path exists for this worktree at all (undefined = unknown). */
+  bootable?: boolean;
 }
 
 function describeStatus(s: PreviewLifecycleStatus): string {
@@ -106,7 +108,18 @@ export function createPreviewMcpServer(ctx: PreviewToolContext) {
       {},
       async () => {
         try {
-          return text(describeStatus(await ctx.start()));
+          const s = await ctx.start();
+          // A start that comes back neither running nor starting FAILED — the
+          // generic "call start_preview" status text here sent agents in a
+          // loop calling start_preview from start_preview (papercut 2026-07-27).
+          if (!s.running && !s.starting) {
+            return text(
+              s.bootable === false
+                ? "Preview can't start: this worktree has no preview boot path (no repo start script or configured preview command). Don't retry start_preview — verify another way (e.g. run the app yourself)."
+                : "Preview didn't start: no warm pool container was available and the host boot didn't kick off (port allocation or boot resolution failed). Check preview_status once; if it's still down, don't loop on start_preview — investigate or verify another way.",
+            );
+          }
+          return text(describeStatus(s));
         } catch (e) {
           return text(`Failed to start the preview: ${(e as Error)?.message || e}`);
         }

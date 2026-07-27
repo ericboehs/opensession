@@ -160,7 +160,12 @@ export function interactiveMcpServers(
 							if (!wt) throw new Error("this session has no worktree to preview");
 							const { startPreview } = await import("./preview");
 							const s = await startPreview(wt);
-							return { running: s.running, starting: s.starting, previewUrl: s.previewUrl };
+							return {
+								running: s.running,
+								starting: s.starting,
+								previewUrl: s.previewUrl,
+								bootable: s.bootable,
+							};
 						},
 						status: async () => {
 							const wt = findSession(sessionId)?.worktreeDir;

@@ -372,6 +372,39 @@ async function sudoRun(args: string[], timeoutMs = 120_000): Promise<{ ok: boole
   return { ok: code === 0, out: (out + err).trim() };
 }
 
+/**
+ * Keep the golden memory snapshot resident in the host page cache. The "18ms
+ * restore" depends entirely on golden.mem (~12GB) being cached: after a few
+ * days of build churn the LRU evicts it and the next claim's prefault re-reads
+ * the whole file from EBS (~2.5 min observed 2026-07-27, ×2 when claims race).
+ * A periodic re-read refreshes the pages' recency; a cached pass costs a few
+ * seconds of memory bandwidth every 15 min. Fire-and-forget, never stacked.
+ */
+const MVM_PREFAULT_EVERY_MS = 15 * 60_000;
+function touchGoldenMem(): void {
+  const t = globalThis as { __mvmPrefaultAt?: number; __mvmPrefaultBusy?: boolean };
+  if (t.__mvmPrefaultBusy || Date.now() - (t.__mvmPrefaultAt ?? 0) < MVM_PREFAULT_EVERY_MS) return;
+  if (!mvmGoldenReady()) return;
+  t.__mvmPrefaultBusy = true;
+  try {
+    const proc = Bun.spawn(["cat", `${MVM_STORE}/golden.mem`, `${MVM_STORE}/golden.vmstate`], {
+      stdout: "ignore",
+      stderr: "ignore",
+      stdin: "ignore",
+    });
+    proc.exited
+      .then(() => {
+        t.__mvmPrefaultAt = Date.now();
+      })
+      .finally(() => {
+        t.__mvmPrefaultBusy = false;
+      });
+    proc.unref();
+  } catch {
+    t.__mvmPrefaultBusy = false;
+  }
+}
+
 /** Restore a clone from the golden snapshot and expose it via Caddy. */
 async function spawnMicrovmClone(repo: Repo): Promise<PoolContainer | null> {
   if (!mvmGoldenReady()) {
@@ -1371,6 +1404,20 @@ export async function poolPreviewLive(worktreeDir: string): Promise<boolean | nu
  * ready — the caller falls back to the host boot path.
  */
 export async function claimPoolPreview(repoId: string, worktreeDir: string): Promise<PoolClaim | null> {
+  // Concurrent claims for one worktree must coalesce: a microvm spawn can take
+  // minutes when golden.mem has to be re-read from EBS, and a second claim
+  // arriving mid-spawn sees no ready container and spawns (then claims) a
+  // SECOND clone for the same worktree (2026-07-27: mvm1+mvm2 both ended up
+  // claimed by one session, the duplicate prefault halving EBS throughput).
+  const key = `claim:${worktreeDir}`;
+  const inFlight = busy.get(key);
+  if (inFlight) return inFlight as Promise<PoolClaim | null>;
+  const run = claimPoolPreviewInner(repoId, worktreeDir).finally(() => busy.delete(key));
+  busy.set(key, run);
+  return run;
+}
+
+async function claimPoolPreviewInner(repoId: string, worktreeDir: string): Promise<PoolClaim | null> {
   const repo = configuredRepos()[repoId];
   if (!repo || !previewPoolEnabled(repoId)) return null;
   const already = poolClaimFor(worktreeDir);
@@ -1778,6 +1825,7 @@ async function sweepPool(): Promise<void> {
       await ensurePool(repo).catch((e) => console.warn(`[preview-pool] ensure ${repo.id} failed:`, e));
       if (cfg.backend === "microvm") {
         await gcMicrovmOrphans().catch((e) => console.warn("[preview-pool] microvm gc failed:", e));
+        touchGoldenMem();
       }
       // Keep live warm containers' short-lived creds fresh.
       for (const c of Object.values(readState(repo.id).containers)) {
