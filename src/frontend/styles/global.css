@@ -5670,6 +5670,127 @@ a.workspace-info-check-row {
 .pr-num-chip-yellow:hover {
 	background: color-mix(in srgb, currentColor 24%, var(--control-surface));
 }
+/* A session that shipped one feature as several PRs: the primary strip keeps
+   its tone band and its action, and the other PRs stack under it as their own
+   quiet rows (repo · number · title · state). Crammed into the primary line as
+   chips they read as noise — a row each stays legible at four PRs. */
+.pr-bar-stack {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.pr-bar-extra {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding-right: 8px;
+	min-height: 30px;
+	border-bottom: 1px solid var(--border);
+	background: var(--topbar-bg);
+}
+.pr-bar-extra:hover {
+	background: var(--bg-hover);
+}
+.pr-bar-extra-main {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	flex: 1;
+	min-width: 0;
+	padding: 4px 12px;
+	background: none;
+	border: none;
+	font-size: 12.5px;
+	text-align: left;
+	cursor: pointer;
+}
+.pr-bar-extra-repo {
+	color: var(--text-dim);
+	font-weight: 600;
+	flex-shrink: 0;
+}
+.pr-bar-extra-num {
+	color: var(--text);
+	font-weight: 650;
+	font-variant-numeric: tabular-nums;
+	flex-shrink: 0;
+}
+/* The title takes what's left and gives it up first — the state on the right is
+   the part you scan for. */
+.pr-bar-extra-title {
+	color: var(--text-faint);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+.pr-bar-extra-state {
+	margin-left: auto;
+	font-weight: 650;
+	white-space: nowrap;
+	flex-shrink: 0;
+}
+.pr-bar-extra-out {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	border-radius: calc(6px * var(--rf));
+	corner-shape: var(--cs);
+	color: var(--text-dim);
+	flex-shrink: 0;
+}
+.pr-bar-extra-out:hover {
+	background: color-mix(in srgb, currentColor 14%, transparent);
+	color: var(--text);
+}
+
+/* The session's other PRs (attached repo / linked / footer-discovered) ride
+   after the primary chip as smaller pills — subordinate to it, but each in its
+   own status tone. Used in the chat header, where there's no room for rows. */
+.pr-sib-chips {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	min-width: 0;
+}
+.pr-bar .pr-sib-chips {
+	margin-left: -2px;
+}
+.pr-num-chip.pr-sib-chip {
+	padding: 2px 6px;
+	min-height: 22px;
+	font-size: 11.5px;
+	font-weight: 600;
+	border-radius: calc(6px * var(--rf));
+	corner-shape: var(--cs);
+	box-shadow: none;
+}
+.pr-bar .pr-num-chip.pr-sib-chip {
+	min-height: 24px;
+	padding: 0 7px;
+	font-size: 12px;
+}
+.pr-sib-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	flex-shrink: 0;
+	background: var(--text-dim);
+}
+.pr-sib-dot-green {
+	background: var(--green);
+}
+.pr-sib-dot-purple {
+	background: var(--purple);
+}
+.pr-sib-dot-red {
+	background: var(--red);
+}
+.pr-sib-dot-yellow {
+	background: var(--yellow);
+}
 /* In the panel's PR strip the chip sits next to the primary action button
    (Merge/Push/…) — size it to the same height so the two read as a matched
    pair, the way .pr-head already does for the header variant. */

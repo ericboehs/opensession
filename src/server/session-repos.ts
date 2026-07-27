@@ -196,8 +196,13 @@ export function resolvePrTarget(
 		const att = (session.attachedRepos || []).find(
 			(r) => r.repo === repoId && r.branch === branch,
 		);
+		// A PR discovered through its attribution footer is one of the session's
+		// own, so its detail/diff/review/merge routes resolve like a linked one.
+		const found = (session.prs || []).find(
+			(r) => r.repo === repoId && r.branch === branch,
+		);
 		const isPrimary = repoId === primaryRepo && branch === session.branch;
-		if (!lp && !att && !isPrimary) return null;
+		if (!lp && !att && !found && !isPrimary) return null;
 		return { ghRepo: getRepo(repoId).ghRepo, branch };
 	}
 	if (!repoId || repoId === primaryRepo) {
@@ -211,7 +216,9 @@ export function resolvePrTarget(
 		(r) => r.repo === repoId,
 	);
 	if (att) return { ghRepo: getRepo(att.repo).ghRepo, branch: att.branch };
-	const lp = (session.linkedPrs || []).find((r) => r.repo === repoId);
+	const lp =
+		(session.linkedPrs || []).find((r) => r.repo === repoId) ||
+		(session.prs || []).find((r) => r.repo === repoId);
 	if (!lp) return null;
 	return { ghRepo: getRepo(lp.repo).ghRepo, branch: lp.branch };
 }

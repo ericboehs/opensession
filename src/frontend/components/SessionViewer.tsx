@@ -541,6 +541,35 @@ export function SessionViewer({
 			primary: false,
 		})),
 	];
+	// PRs the server matched to this session through their body's attribution
+	// footer — opened on a branch the session doesn't own, so they'd otherwise
+	// have no Review tab of their own.
+	const discoveredPrs = useMemo(
+		() =>
+			(session.prs || [])
+				.filter((ref) => ref.source === "discovered")
+				.map((ref) => ({
+					repo: ref.repo,
+					branch: ref.branch,
+					number: ref.number,
+					url: ref.url,
+					title: ref.title,
+				})),
+		[session.prs],
+	);
+	// Which PR the Review tab should open on, set by the PR chips in the
+	// Workspace strip (seq lets the same chip re-focus after a manual switch).
+	const [reviewFocus, setReviewFocus] = useState<
+		{ repo: string; branch?: string; seq: number } | undefined
+	>(undefined);
+	const focusPrInReview = useCallback(
+		(ref?: { repo: string; branch: string }) => {
+			if (ref)
+				setReviewFocus((prev) => ({ ...ref, seq: (prev?.seq ?? 0) + 1 }));
+			onOpenReview?.();
+		},
+		[onOpenReview],
+	);
 	// Worktree roots for the transcript's tool rows: paths inside them render
 	// repo-relative instead of as a long absolute path (see tidyPath).
 	const toolPathRoots = useMemo(
@@ -3931,8 +3960,9 @@ export function SessionViewer({
 							sessionId={session.id}
 							repo={session.repo || undefined}
 							archived={session.archived}
+							prs={session.prs}
 							send={connected ? send : undefined}
-							onOpenPrTab={() => onOpenReview?.()}
+							onOpenPrTab={focusPrInReview}
 							onArchive={handleArchive}
 							variant="header"
 							running={isRunningLive}
@@ -4388,6 +4418,8 @@ export function SessionViewer({
 									}
 									repos={githubReviewRepos}
 									linkedPrs={session.linkedPrs}
+									discoveredPrs={discoveredPrs}
+									focusTarget={reviewFocus}
 									linkable
 									walkthrough={session.walkthrough}
 								/>
@@ -4827,8 +4859,9 @@ export function SessionViewer({
 								sessionId={session.id}
 								repo={session.repo || undefined}
 								archived={session.archived}
+								prs={session.prs}
 								send={connected ? send : undefined}
-								onOpenPrTab={() => onOpenReview?.()}
+								onOpenPrTab={focusPrInReview}
 								onArchive={handleArchive}
 								running={isRunningLive}
 								refreshTick={gitRefreshTick}

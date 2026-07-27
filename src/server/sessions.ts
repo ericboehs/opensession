@@ -836,6 +836,29 @@ interface PrInfo {
   reviewedBy: string[];
   /** Assignee GitHub logins — bot-authored PRs carry the requester here. */
   assignees: string[];
+  /** Session id parsed out of the PR body's attribution footer, when the PR
+   *  was opened from a session (see sessionRefFromPrBody). Open PRs only —
+   *  only that query carries the body. */
+  sessionRef?: string;
+}
+
+/**
+ * The session id out of the attribution footer every session-opened PR carries
+ * ("Started by … in [this Michael session](https://os.tella.dev/session/<id>)",
+ * written by opencode-runner/system-prompt). This is how a session finds the
+ * PRs it opened on branches it doesn't own — a second branch of its own repo,
+ * or a repo it never attached.
+ *
+ * Deliberately anchored on the footer's link text: a body that merely links to
+ * some session in passing must not claim the PR for it.
+ */
+export function sessionRefFromPrBody(
+  body: string | null | undefined,
+): string | undefined {
+  const m = body?.match(
+    /\[this [^\]]*session\]\((?:https?:\/\/[^)\s]+?)?\/session\/([A-Za-z0-9._-]+)/i,
+  );
+  return m?.[1];
 }
 // Repos the bulk PR cache covers — the active dev repos whose PRs the sidebar
 // Open PRs section and Reviews table surface. Fusion carries 200+ open PRs, so
@@ -846,6 +869,11 @@ interface PrInfo {
 const PR_REPO_LIMITS = [
 	{ id: "tella-fusion", openLimit: 500, recentLimit: 1000 },
 	{ id: "backstage", openLimit: 100, recentLimit: 500 },
+	// The desktop repos carry a handful of PRs each, but a session that spans
+	// webapp + mac + windows (one feature, four PRs) needs their state to show
+	// its PRs at all — and the conditional ETag probe makes an idle repo free.
+	{ id: "tella-mac", openLimit: 50, recentLimit: 100 },
+	{ id: "tella-windows", openLimit: 50, recentLimit: 100 },
 ] as const;
 function prRepos() {
 	return PR_REPO_LIMITS.flatMap((limits) => {
@@ -1126,6 +1154,44 @@ function getPrsByRepo(): Map<string, Map<string, PrInfo>> {
   return prCache.data;
 }
 
+/** The bot credential's GitHub account — PRs Michael opens without a per-user
+ *  token are authored by it (mirrors analytics.ts's BOT_LOGINS). */
+const PR_BODY_TRUSTED_BOTS = new Set(["tella-butler"]);
+
+/**
+ * PRs grouped by the session id in their attribution footer, keyed session id →
+ * refs. Only PRs authored by the bot or a teammate count: a PR body is editable
+ * by anyone with write access, and a PR that claims a session becomes actionable
+ * (mergeable) from that session's Review tab, so an unattributable author is not
+ * allowed to attach itself.
+ */
+function prsBySessionRef(
+  prsByRepo: Map<string, Map<string, PrInfo>>,
+): Map<string, Array<{ repo: string; branch: string; pr: PrInfo }>> {
+  const out = new Map<string, Array<{ repo: string; branch: string; pr: PrInfo }>>();
+  for (const [repoId, byBranch] of prsByRepo)
+    for (const [branch, pr] of byBranch) {
+      if (!pr.sessionRef) continue;
+      if (!PR_BODY_TRUSTED_BOTS.has(pr.author) && !githubLoginToPersonKey(pr.author))
+        continue;
+      const list = out.get(pr.sessionRef);
+      if (list) list.push({ repo: repoId, branch, pr });
+      else out.set(pr.sessionRef, [{ repo: repoId, branch, pr }]);
+    }
+  return out;
+}
+
+/** The footer-linked PRs claiming this session, under its id or any alias. */
+function footerPrsFor(
+  bySessionRef: Map<string, Array<{ repo: string; branch: string; pr: PrInfo }>>,
+  session: UnifiedSession,
+): Array<{ repo: string; branch: string; pr: PrInfo }> {
+  const out: Array<{ repo: string; branch: string; pr: PrInfo }> = [];
+  for (const id of [session.id, ...(session.aliasIds || [])])
+    for (const found of bySessionRef.get(id) || []) out.push(found);
+  return out;
+}
+
 async function ghJson<T>(args: string[]): Promise<T | null> {
   if (ghRateLimited()) return null;
   try {
@@ -1179,6 +1245,10 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
       mergeable?: string;
       // Only requested on the open-PR query (see below), absent on recentAll.
       latestReviews?: Array<{ state?: string; author?: { login?: string } }>;
+      // Ditto: the body is only read for its session-attribution footer and is
+      // never cached (toInfo keeps the parsed id, drops the text), so paying
+      // for it across the much larger recent-history window buys nothing.
+      body?: string;
     };
     const FIELDS =
       "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,createdAt,updatedAt,reviewRequests,assignees,mergeable";
@@ -1221,7 +1291,7 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
       }
       const openPrs = await ghJson<BulkPr[]>([
         "pr", "list", "--repo", repo.ghRepo, "--state", "open",
-        "--limit", String(repo.openLimit), "--json", `${FIELDS},latestReviews`,
+        "--limit", String(repo.openLimit), "--json", `${FIELDS},latestReviews,body`,
       ]);
 
       if (!openPrs) {
@@ -1284,6 +1354,7 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
         assignees: (pr.assignees || [])
           .map((a) => a.login)
           .filter((l): l is string => !!l),
+        sessionRef: sessionRefFromPrBody(pr.body),
       });
 
       // Seed with recent closed/merged (newest-first → keep the first per branch),
@@ -1566,6 +1637,30 @@ export function getAllSessions(): UnifiedSession[] {
   // consumers), collect EVERY PR the session spans — attached repos and
   // manually linked PRs — into session.prs for the multi-PR surfaces.
   const prsByRepo = getPrsByRepo();
+  const prsBySession = prsBySessionRef(prsByRepo);
+  // One conversation can hold two session records — a Slack thread writes both
+  // a thread-keyed and a branch-named file, each with its own engine id, so the
+  // alias merge never fuses them — and only one of them is named in the PR
+  // footers. They share a worktree and already show the same primary PR, so a
+  // PR discovered for either is shown on every session working that repo+branch.
+  // Only for non-default branches: on `master` that pair is every Ask session in
+  // the shared checkout.
+  const discoveredByBranch = new Map<
+    string,
+    Array<{ repo: string; branch: string; pr: PrInfo }>
+  >();
+  if (prsBySession.size > 0)
+    for (const session of allSessions) {
+      if (!session.branch) continue;
+      const repoId = session.repo || defaultRepo().id;
+      if (session.branch === configuredRepos()[repoId]?.defaultBranch) continue;
+      const found = footerPrsFor(prsBySession, session);
+      if (!found.length) continue;
+      const key = `${repoId}\x00${session.branch}`;
+      const list = discoveredByBranch.get(key);
+      if (list) list.push(...found);
+      else discoveredByBranch.set(key, [...found]);
+    }
   for (const session of allSessions) {
     if (session.branch) {
       const pr = prsByRepo.get(session.repo || defaultRepo().id)?.get(session.branch);
@@ -1604,6 +1699,24 @@ export function getAllSessions(): UnifiedSession[] {
       targets.push({ repo: att.repo, branch: att.branch, source: "attached" });
     for (const lp of session.linkedPrs || [])
       targets.push({ repo: lp.repo, branch: lp.branch, source: "linked", stored: lp });
+    // PRs that name this session in their attribution footer but sit on a
+    // branch it doesn't own — the "one feature, four PRs" shape, where the
+    // agent opened PRs in repos it never attached (or on a second branch of
+    // its own repo). Matched on alias ids too: the footer of a Slack session's
+    // PR carries the slack-<channel>-<ts> id it was created under.
+    for (const found of [
+      ...footerPrsFor(prsBySession, session),
+      ...(session.branch
+        ? discoveredByBranch.get(
+            `${session.repo || defaultRepo().id}\x00${session.branch}`,
+          ) || []
+        : []),
+    ])
+      targets.push({
+        repo: found.repo,
+        branch: found.branch,
+        source: "discovered",
+      });
 
     const seen = new Set<string>();
     const refs: SessionPrRef[] = [];

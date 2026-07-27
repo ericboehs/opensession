@@ -1001,13 +1001,35 @@ function mineStatus(s: UnifiedSession): MineStatus {
 // the review has landed, so the row leaves the sidebar until another review is
 // requested. Without this a session you sent out sits in "Awaiting review"
 // forever, since the band otherwise only clears on a manual accept.
+// A chat that shipped one feature as several PRs has only landed once they all
+// have: keying off the primary branch's PR alone drops the row into Done with
+// three PRs still open. Single-PR chats keep the exact old behaviour.
+function chatPrMerged(c: UnifiedSession): boolean {
+	const refs = c.prs || [];
+	if (refs.length > 1)
+		return (
+			refs.every((r) => r.state === "MERGED" || r.state === "CLOSED") &&
+			refs.some((r) => r.state === "MERGED")
+		);
+	return c.prState === "MERGED";
+}
+/** Ditto for review: the series is reviewed when nothing is still waiting. */
+function chatPrApproved(c: UnifiedSession): boolean {
+	const refs = c.prs || [];
+	if (refs.length > 1)
+		return refs.every(
+			(r) =>
+				r.state === "MERGED" ||
+				r.state === "CLOSED" ||
+				r.reviewDecision === "APPROVED",
+		);
+	return c.prReviewDecision === "APPROVED";
+}
 function wsPrMerged(r: { chats: UnifiedSession[] }): boolean {
-	return r.chats.some((c) => c.prState === "MERGED");
+	return r.chats.some(chatPrMerged);
 }
 function wsPrApproved(r: { chats: UnifiedSession[] }): boolean {
-	return (
-		!wsPrMerged(r) && r.chats.some((c) => c.prReviewDecision === "APPROVED")
-	);
+	return !wsPrMerged(r) && r.chats.some(chatPrApproved);
 }
 // Has `person` (lowercase person key) already given their review on the row's
 // PR? Their latest submitted review counts whatever the outcome — approve,

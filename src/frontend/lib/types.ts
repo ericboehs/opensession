@@ -255,7 +255,10 @@ export interface UnifiedSession {
 	prs?: Array<{
 		repo: string;
 		branch: string;
-		source: "primary" | "attached" | "linked";
+		/** "discovered" = found through the session link in the PR body's
+		 *  attribution footer (a PR the agent opened on a branch this session
+		 *  doesn't own — another repo, or a second branch of its own). */
+		source: "primary" | "attached" | "linked" | "discovered";
 		url?: string;
 		state?: "OPEN" | "MERGED" | "CLOSED";
 		number?: number;

@@ -286,7 +286,10 @@ export interface LinkedPr {
 export interface SessionPrRef {
   repo: string;
   branch: string;
-  source: "primary" | "attached" | "linked";
+  /** How the session came to own this PR. "discovered" = found via the session
+   *  link in the PR body's attribution footer, for PRs the agent opened on a
+   *  branch the session doesn't own (see sessionRefFromPrBody). */
+  source: "primary" | "attached" | "linked" | "discovered";
   url?: string;
   state?: "OPEN" | "MERGED" | "CLOSED";
   number?: number;

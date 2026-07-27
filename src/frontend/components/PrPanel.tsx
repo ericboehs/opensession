@@ -73,6 +73,19 @@ interface Props {
   repos?: Array<{ repo: string; primary: boolean }>;
   /** PRs manually linked to the session (session.linkedPrs) — extra targets. */
   linkedPrs?: LinkedPrEntry[];
+  /**
+   * PRs the server discovered through the session link in their body footer
+   * (`session.prs` entries with source "discovered") — the PRs this session
+   * opened on branches it doesn't own. Same tabs as a linked PR, minus the
+   * unlink affordance: the link is derived from the PR itself, not stored.
+   */
+  discoveredPrs?: LinkedPrEntry[];
+  /**
+   * Preselect one of the targets — the PR chips in the Workspace strip open the
+   * Review tab on a specific PR. `seq` is bumped per click so clicking the same
+   * chip again re-focuses it after the user has switched tabs by hand.
+   */
+  focusTarget?: { repo: string; branch?: string; seq: number };
   /** Offer the "Link PR" affordance (session Review tab; off in the Reviews drawer). */
   linkable?: boolean;
   /**
@@ -127,7 +140,23 @@ interface PrTarget {
   branch?: string;
   primary?: boolean;
   linked?: boolean;
+  /** Found via the session link in the PR body, not stored on the session. */
+  discovered?: boolean;
   label: string;
+}
+
+/** First target per key wins — a PR reached two ways (linked and discovered,
+ *  or an attached repo whose branch also carries a discovered PR) is one tab. */
+function dedupeTargets(targets: PrTarget[]): PrTarget[] {
+  const seen = new Set<string>();
+  return targets.filter((t) => {
+    // An attached/primary repo tab has no branch of its own (the server
+    // resolves it), so it can't collide with a branch-keyed target.
+    const key = t.branch ? `${t.repo}\u0000${t.branch}` : `repo:${t.repo}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** One narrative section of the AI review guide (mirrors the server shape). */
@@ -259,6 +288,8 @@ export function PrPanel({
   split,
   repos,
   linkedPrs,
+  discoveredPrs,
+  focusTarget,
   linkable,
   send,
   walkthrough,
@@ -273,7 +304,7 @@ export function PrPanel({
   const [linkedLocal, setLinkedLocal] = useState<LinkedPrEntry[] | null>(null);
   const linked = linkedLocal ?? linkedPrs ?? [];
   const targets = useMemo<PrTarget[]>(
-    () => [
+    () => dedupeTargets([
       ...(previewTarget
         ? [
             {
@@ -291,19 +322,41 @@ export function PrPanel({
             label: r.repo,
           }))),
       ...linked.map((lp) => ({
-        key: `${lp.repo} ${lp.branch}`,
+        key: `${lp.repo} ${lp.branch}`,
         repo: lp.repo,
         branch: lp.branch,
         linked: true,
         label: lp.number ? `${lp.repo} #${lp.number}` : `${lp.repo}:${lp.branch}`,
       })),
-    ],
-    [repos, linked, previewTarget?.repo, previewTarget?.branch],
+      // Last, so an explicit link (which owns the unlink affordance) wins the
+      // dedupe over the same PR discovered from its body footer.
+      ...(previewTarget ? [] : discoveredPrs ?? []).map((dp) => ({
+        key: `${dp.repo} ${dp.branch}`,
+        repo: dp.repo,
+        branch: dp.branch,
+        discovered: true,
+        label: dp.number ? `${dp.repo} #${dp.number}` : `${dp.repo}:${dp.branch}`,
+      })),
+    ]),
+    [repos, linked, discoveredPrs, previewTarget?.repo, previewTarget?.branch],
   );
   const [activeKey, setActiveKey] = useState<string | undefined>(
     () => (targets.find((t) => t.primary) ?? targets[0])?.key,
   );
   const active = targets.find((t) => t.key === activeKey) ?? targets[0];
+  // A PR chip in the Workspace strip opened the Review tab on a specific PR.
+  // Keyed on `seq` so re-clicking the same chip re-focuses it, and so a
+  // re-render never fights the user's own tab choice.
+  useEffect(() => {
+    if (!focusTarget) return;
+    const match =
+      targets.find(
+        (t) =>
+          t.repo === focusTarget.repo &&
+          (focusTarget.branch ? t.branch === focusTarget.branch : !t.branch),
+      ) ?? targets.find((t) => t.repo === focusTarget.repo);
+    if (match) setActiveKey(match.key);
+  }, [focusTarget?.seq]);
   const loadTargetKey = previewTarget
     ? `preview:${previewTarget.repo}:${previewTarget.branch}`
     : active?.key || sessionId;
@@ -829,9 +882,11 @@ export function PrPanel({
           title={
             t.linked
               ? `Linked PR — branch ${t.branch}`
-              : t.primary
-                ? "Primary repo"
-                : "Attached repo"
+              : t.discovered
+                ? `PR opened by this session — branch ${t.branch}`
+                : t.primary
+                  ? "Primary repo"
+                  : "Attached repo"
           }
         >
           {t.label}
