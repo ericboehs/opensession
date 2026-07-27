@@ -1155,8 +1155,8 @@ export async function gitPushApi(sessionId: string, repo?: string) {
 	);
 }
 
-/** Fast-forward the session's checkout (`git pull --ff-only`); `fromBase` pulls
- * origin/<default branch> instead of the branch's upstream. */
+/** Update the session checkout. The branch's own upstream is pulled
+ * fast-forward-only; `fromBase` merges origin/<default branch>. */
 export async function gitPullApi(
 	sessionId: string,
 	repo?: string,

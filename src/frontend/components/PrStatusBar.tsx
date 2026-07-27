@@ -682,7 +682,7 @@ export function PrStatusBar({
 						disabled={!!busy}
 						title={
 							headline.key === "behind-base"
-								? `Fast-forward to origin/${git?.baseBranch || "main"}`
+								? `Merge the latest origin/${git?.baseBranch || "main"}`
 								: "Fast-forward to the branch's upstream"
 						}
 						onClick={() =>

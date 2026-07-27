@@ -13,6 +13,7 @@
  */
 import { $ } from "bun";
 import { audited } from "./audit";
+import { personaName } from "./config";
 import type { WorkspaceExec } from "./sandbox/workspace-exec";
 
 /** `git -C <dir> <args>` on the host (Bun $) or through the workspace exec.
@@ -110,12 +111,12 @@ export async function getGitStatus(
 }
 
 /**
- * Fast-forward the worktree — the Pull action in the status header. Plain
- * `git pull --ff-only` from the branch's upstream; with `fromBase` set it pulls
- * origin/<base> instead (a fresh worktree branch behind main has no meaningful
- * upstream delta — catching it up to base IS the pull). --ff-only means it can
- * never mint a merge commit or touch diverged history: anything non-trivial
- * fails loudly for the session to reconcile with judgment.
+ * Update the worktree — the Pull/Update action in the status header. Pulling
+ * the branch's own upstream stays fast-forward-only. Updating from the base
+ * merges origin/<base> locally: a feature branch necessarily diverges from its
+ * base, so `pull --ff-only origin main` could never perform the update the UI
+ * promised. The merge preserves published history and the existing Push action
+ * can publish it without a force-push.
  */
 export async function gitPull(
   dir: string,
@@ -129,22 +130,66 @@ export async function gitPull(
       args: { dir, fromBase: fromBase || null, sandboxed: exec?.sandboxed || undefined },
     },
     async () => {
-      const args = ["git", "-C", dir, "pull", "--ff-only"];
-      if (fromBase) args.push("origin", fromBase);
-      let err: string;
-      let code: number;
-      if (exec) {
-        const r = await exec(args);
-        err = r.stderr;
-        code = r.exitCode;
-      } else {
+      async function run(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+        if (exec) {
+          const r = await exec(args);
+          return { stdout: r.stdout, stderr: r.stderr, code: r.exitCode };
+        }
         const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
-        [err, code] = await Promise.all([
+        const [stdout, stderr, code] = await Promise.all([
+          new Response(proc.stdout).text(),
           new Response(proc.stderr).text(),
           proc.exited,
         ]);
+        return { stdout, stderr, code };
       }
-      if (code !== 0) return { error: (err || "git pull failed").slice(0, 300) } as const;
+
+      if (!fromBase) {
+        const result = await run(["git", "-C", dir, "pull", "--ff-only"]);
+        if (result.code !== 0)
+          return { error: (result.stderr || "git pull failed").trim().slice(0, 300) } as const;
+        return { ok: true } as const;
+      }
+
+      const status = await run(["git", "-C", dir, "status", "--porcelain"]);
+      if (status.code !== 0)
+        return { error: (status.stderr || "Could not inspect the worktree").trim().slice(0, 300) } as const;
+      if (status.stdout.trim())
+        return { error: "Commit or discard the uncommitted changes before updating." } as const;
+
+      const fetch = await run(["git", "-C", dir, "fetch", "origin", fromBase, "--no-tags", "--quiet"]);
+      if (fetch.code !== 0)
+        return { error: (fetch.stderr || `Could not fetch origin/${fromBase}`).trim().slice(0, 300) } as const;
+
+      const merge = await run([
+        "git",
+        "-C",
+        dir,
+        "merge",
+        "--no-edit",
+        "--no-autostash",
+        `origin/${fromBase}`,
+      ]);
+      if (merge.code !== 0) {
+        const mergeState = await run(["git", "-C", dir, "rev-parse", "--verify", "MERGE_HEAD"]);
+        if (mergeState.code === 0) {
+          const abort = await run(["git", "-C", dir, "merge", "--abort"]);
+          if (abort.code !== 0)
+            return {
+              error: `Update failed and Git could not restore the worktree: ${(
+                abort.stderr || merge.stderr || merge.stdout || "unknown error"
+              )
+                .trim()
+                .slice(0, 220)}`,
+            } as const;
+          return {
+            error: `Could not update automatically because this branch conflicts with ${fromBase}. Ask ${personaName()} to resolve the conflicts.`,
+          } as const;
+        }
+        return {
+          error: (merge.stderr || merge.stdout || "Could not update the branch").trim().slice(0, 300),
+        } as const;
+      }
       return { ok: true } as const;
     }
   );

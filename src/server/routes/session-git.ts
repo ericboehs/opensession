@@ -334,10 +334,9 @@ export async function handleSessionGitRoutes(
 		return Response.json(result);
 	}
 
-	// Fast-forward the session's checkout (git pull --ff-only) — the Pull
-	// action in the status header. `body.base` pulls origin/<default branch>
-	// instead of the branch's upstream (fresh worktree branches behind base
-	// have no upstream to pull from). Audited in git-status.ts.
+	// Update the session's checkout — the Pull/Update action in the status
+	// header. `body.base` merges origin/<default branch>; otherwise the branch's
+	// own upstream is pulled fast-forward-only. Audited in git-status.ts.
 	if (
 		path.match(/^\/backstage\/api\/sessions\/(.+)\/git-pull$/) &&
 		req.method === "POST"

@@ -865,7 +865,11 @@ function GitStatusRows({
 							type="button"
 							className={cn(GIT_BUTTON_CLASS, GIT_SOLID_BUTTON_CLASS)}
 							disabled={!!busy}
-							title={`Fast-forward to origin/${behindWhat === "remote" ? git?.branch || "the upstream" : behindWhat}`}
+							title={
+								behindWhat === "remote"
+									? `Fast-forward to ${git?.branch || "the upstream"}`
+									: `Merge the latest origin/${behindWhat}`
+							}
 							onClick={() =>
 								run("pull", () => gitPullApi(sessionId, repo, behind === 0))
 							}
