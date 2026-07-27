@@ -3957,7 +3957,7 @@ body.resizing-panel .panel-resize::after {
 }
 .panel-tab.active {
 	color: var(--text);
-	background: var(--bg-active);
+	background: color-mix(in srgb, var(--bg-active) 28%, var(--bg-raised));
 }
 /* Count suffix on a tab (e.g. "Changes 10") — dimmer than the label, tabular
    so the strip doesn't jitter as the number changes. */
