@@ -10,6 +10,13 @@
  *  - deliver: "now" pings immediately; "when_done" / "on_pr" hold the ping until the
  *    session next goes idle / has opened a PR; { atIso } fires at a scheduled time.
  *
+ * Slack is the *fallback* channel, not always the first one: an async ask aimed
+ * at the person already driving a web session (see shouldAskInUiFirst) is posed
+ * as a question card in that session first, and only DM'd if it goes unanswered
+ * for UI_FIRST_WINDOW_MS — the same "OS1 first, Slack after 4 minutes" shape the
+ * AskUserQuestion path uses (src/server/asks.ts). The card stays live in
+ * parallel once the DM goes out; whoever answers first wins.
+ *
  * This module owns the ask *data* (the map + disk persistence + reply matching +
  * audit). The two things only the main backstage process can do — steer an answer
  * into a live session and broadcast — it reaches through the session-control
@@ -28,6 +35,9 @@ import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias } from "./rename-compat";
 import { audit } from "./audit";
 import { tryGetSessionControl } from "./session-control";
+import { findSession } from "./session-cache";
+import { resolveTeammate } from "./shared/user-mappings";
+import { broadcastToSession } from "./ws-hub";
 import {
   openDirectMessage,
   postSlackBlocks,
@@ -45,6 +55,9 @@ const UI_BASE =
 
 /** How long a "block" ask holds the agent's turn before degrading to async. */
 const BLOCK_TIMEOUT_MS = 20 * 60 * 1000;
+/** How long a UI-first ask stays a card in the session before we fall back to a DM.
+ *  Matches ASK_UI_TIMEOUT_MS in asks.ts so both ask paths escalate on the same beat. */
+const UI_FIRST_WINDOW_MS = 4 * 60 * 1000;
 /** Terminal asks older than this are pruned from the store on load. */
 const TERMINAL_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -72,6 +85,10 @@ export interface HumanAsk {
   options?: string[];
   mode: "block" | "async";
   deliver: DeliverWhen;
+  /** Pose this in the session's UI first and only DM Slack if it goes unanswered. */
+  uiFirst?: boolean;
+  /** When the UI card went up — the clock the Slack fallback runs on (survives restarts). */
+  uiOfferedAt?: string;
   state: HumanAskState;
   /** Set once delivered: the DM channel and the question message's ts (thread root). */
   slack?: { channel: string; rootTs: string };
@@ -95,6 +112,10 @@ const resolvers: Map<string, (answer: string | null) => void> = (g.__humanAskRes
   new Map());
 /** Armed timers for { atIso } deliveries, in-memory only (re-armed on boot). */
 const atTimers: Map<string, ReturnType<typeof setTimeout>> = (g.__humanAskTimers ??= new Map());
+/** Live UI cards for uiFirst asks: the card's retract handle plus the timer that
+ *  falls back to Slack. In-memory only — re-offered from uiOfferedAt on boot. */
+const uiOffers: Map<string, { close: () => void; timer?: ReturnType<typeof setTimeout> }> =
+  (g.__humanAskUiOffers ??= new Map());
 
 // ---------------------------------------------------------------------------
 // Persistence
@@ -137,10 +158,26 @@ export function initHumanAsks(): void {
       console.error("[human-asks] load failed:", e);
     }
   }
-  // Re-arm scheduled time deliveries.
   for (const a of asks.values()) {
-    if (a.state === "scheduled" && typeof a.deliver === "object" && a.deliver.atIso) {
+    if (a.state !== "scheduled") continue;
+    // Re-arm scheduled time deliveries.
+    if (typeof a.deliver === "object" && a.deliver.atIso) {
       armTimer(a);
+      continue;
+    }
+    // A UI-first ask that was mid-window when we went down: its card and its
+    // Slack-fallback timer died with the process. Put the card back for the
+    // remainder (watchers get it again on reconnect), or ping Slack if the
+    // window has run out — either way it can't be stranded by a restart.
+    if (a.uiFirst && a.deliver === "now") {
+      const startedAt = new Date(a.uiOfferedAt || a.createdAt).getTime();
+      const left = UI_FIRST_WINDOW_MS - (Date.now() - startedAt);
+      if (left > 5_000) offerAskInUi(a, left);
+      else if (a.uiOfferedAt) {
+        void deliverAsk(a.id, { skipUi: true }).catch((e) =>
+          console.error("[human-asks] boot escalation failed:", e)
+        );
+      }
     }
   }
 }
@@ -183,6 +220,112 @@ export interface CreateAskInput {
   deliver: DeliverWhen;
 }
 
+/**
+ * True when an ask belongs in the session's own UI before it belongs in Slack:
+ * an async ask, raised by a web-driven session, aimed at the very person driving
+ * that session. They're sitting in front of the session — putting the question
+ * there first is both faster and less noisy than a DM, and Slack still catches
+ * them if they've wandered off. Deliberately narrow: an ask aimed at a third
+ * party ("get John's review") still pings Slack straight away, because John
+ * isn't watching this session and shouldn't wait on a window for our benefit.
+ */
+function shouldAskInUiFirst(input: CreateAskInput): boolean {
+  if (input.mode !== "async") return false; // a blocking ask needs the DM now
+  try {
+    const session = findSession(input.sessionId);
+    // Slack/Linear/CLI-driven sessions: their driver lives in that channel, so
+    // a DM *is* the in-context answer surface.
+    if (session?.source !== "backstage") return false;
+    const owner = resolveTeammate(session.startedBy ?? null);
+    return !!owner && owner.slackId === input.person.slackId;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Pose a uiFirst ask as a question card in its session and arm the Slack
+ * fallback for `windowMs`. The card outlives the fallback on purpose: once the
+ * DM goes out both channels stay open and whoever answers first wins (asks.ts
+ * works the same way).
+ */
+function offerAskInUi(a: HumanAsk, windowMs: number): void {
+  if (uiOffers.has(a.id)) return;
+  if (!a.uiOfferedAt) {
+    a.uiOfferedAt = new Date().toISOString();
+    asks.set(a.id, a);
+    persist();
+  }
+  audit({
+    context: "human_ask",
+    action: "offered_in_ui",
+    ask_id: a.id,
+    session_id: a.sessionId,
+    person: a.person.name,
+  });
+
+  // Claim the slot synchronously — the card itself arrives a tick later (the
+  // dynamic import below breaks the asks.ts ⇄ human-asks.ts cycle), and an
+  // answer or a cancel can land in that gap.
+  const entry: { close: () => void; timer?: ReturnType<typeof setTimeout> } = {
+    close: () => {},
+    timer: setTimeout(() => {
+      const cur = asks.get(a.id);
+      if (!cur || cur.state !== "scheduled") return;
+      const live = uiOffers.get(a.id);
+      if (live) live.timer = undefined; // card stays up; only the fallback fired
+      void deliverAsk(a.id, { skipUi: true }).catch((e) =>
+        console.error(`[human-asks] Slack fallback failed for ${a.id}:`, e)
+      );
+    }, windowMs),
+  };
+  uiOffers.set(a.id, entry);
+
+  void (async () => {
+    try {
+      const { offerAskCard } = await import("./asks");
+      if (asks.get(a.id)?.state !== "scheduled" || uiOffers.get(a.id) !== entry) return;
+      const card = offerAskCard(
+        a.sessionId,
+        [
+          {
+            question: a.context ? `${a.question}\n\n${a.context}` : a.question,
+            header: "Question for you",
+            options: a.options?.map((label) => ({ label })),
+          },
+        ],
+        (answers) => {
+          const answer = answers ? Object.values(answers).filter(Boolean).join("\n") : "";
+          // Dismissed without an answer: the card is gone but the question
+          // isn't — leave the Slack fallback armed rather than stranding it.
+          if (!answer) return;
+          closeUiOffer(a.id, { retract: false }); // the card retracted itself
+          resolveAskFromUI(a.id, answer, a.person.name);
+        }
+      );
+      if (uiOffers.get(a.id) !== entry) {
+        card.close(); // resolved while the card was being built
+        return;
+      }
+      entry.close = card.close;
+    } catch (e) {
+      console.error(`[human-asks] UI offer failed for ${a.id}:`, e);
+    }
+  })();
+}
+
+/** Take down a live UI card (answered elsewhere / cancelled) and disarm its fallback. */
+function closeUiOffer(id: string, opts?: { retract?: boolean }): void {
+  const entry = uiOffers.get(id);
+  if (!entry) return;
+  uiOffers.delete(id);
+  if (entry.timer) clearTimeout(entry.timer);
+  if (opts?.retract === false) return;
+  try {
+    entry.close();
+  } catch {}
+}
+
 /** Register an ask and trigger its delivery if it's due now / arm its timer. */
 export function registerAsk(input: CreateAskInput): HumanAsk {
   const ask: HumanAsk = {
@@ -195,6 +338,7 @@ export function registerAsk(input: CreateAskInput): HumanAsk {
     options: input.options?.length ? input.options : undefined,
     mode: input.mode,
     deliver: input.deliver,
+    uiFirst: shouldAskInUiFirst(input) || undefined,
     state: "scheduled",
     createdAt: new Date().toISOString(),
   };
@@ -209,6 +353,7 @@ export function registerAsk(input: CreateAskInput): HumanAsk {
     person: ask.person.name,
     mode: ask.mode,
     deliver: typeof ask.deliver === "object" ? `at:${ask.deliver.atIso}` : ask.deliver,
+    ui_first: !!ask.uiFirst,
   });
 
   if (ask.deliver === "now") {
@@ -263,10 +408,18 @@ function deliveryBlocks(a: HumanAsk): { fallback: string; blocks: any[] } {
   return { fallback: `${personaName()} needs your input: ${a.question}`, blocks };
 }
 
-/** Open a DM with the teammate and post the question. Marks the ask delivered. */
-export async function deliverAsk(id: string): Promise<boolean> {
+/**
+ * Deliver an ask that has come due. A uiFirst ask goes up as a card in its own
+ * session and returns here later through the fallback timer (skipUi); everything
+ * else opens a DM with the teammate and posts the question straight away.
+ */
+export async function deliverAsk(id: string, opts?: { skipUi?: boolean }): Promise<boolean> {
   const a = asks.get(id);
   if (!a || a.state !== "scheduled") return false;
+  if (a.uiFirst && !opts?.skipUi) {
+    offerAskInUi(a, UI_FIRST_WINDOW_MS);
+    return true;
+  }
   const channel = await openDirectMessage(a.person.slackId);
   if (!channel) {
     console.error(`[human-asks] couldn't open DM with ${a.person.name} (${a.person.slackId})`);
@@ -290,7 +443,18 @@ export async function deliverAsk(id: string): Promise<boolean> {
     session_id: a.sessionId,
     person: a.person.name,
     channel,
+    ui_first: !!a.uiFirst,
   });
+  // Keep the session honest about where the question went. Block asks already
+  // say it on their own card (humans-tools.ts), so they stay quiet here.
+  if (a.mode === "async") {
+    broadcastToSession(a.sessionId, {
+      type: "notice",
+      message: a.uiFirst
+        ? `No answer in ${productName()} — asked **${a.person.name}** on Slack.`
+        : `📨 Asked **${a.person.name}** on Slack — _${shortQ(a)}_`,
+    });
+  }
   return true;
 }
 
@@ -333,7 +497,13 @@ function shortQ(a: HumanAsk): string {
 
 /** Mark an ask answered, audit it, and route the answer (block resolver if the
  *  wait is still live in this process, otherwise steer it into the session). */
-function resolveAsk(a: HumanAsk, answer: string, answeredBy: string): void {
+function resolveAsk(
+  a: HumanAsk,
+  answer: string,
+  answeredBy: string,
+  via: "slack" | "ui" = "slack"
+): void {
+  closeUiOffer(a.id); // whichever channel won, take the card down
   a.state = "answered";
   a.answer = answer;
   a.answeredBy = answeredBy;
@@ -365,9 +535,10 @@ function resolveAsk(a: HumanAsk, answer: string, answeredBy: string): void {
   // Unicode emoji (the Backstage markdown renderer doesn't expand :shortcodes:)
   // and a structured header the web UI keys on to render this as a distinct
   // "human reply" bubble rather than one of the session driver's own messages.
-  const msg = `💬 **${a.person.name}** answered (via Slack) — "${shortQ(a)}":\n\n${answer}`;
+  const who = via === "ui" ? answeredBy || a.person.name : a.person.name;
+  const msg = `💬 **${who}** answered${via === "ui" ? "" : " (via Slack)"} — "${shortQ(a)}":\n\n${answer}`;
   void ctrl
-    .deliverToSession(a.sessionId, msg, a.person.name)
+    .deliverToSession(a.sessionId, msg, who)
     .catch((e) => console.error(`[human-asks] deliver answer to ${a.sessionId} failed:`, e));
 }
 
@@ -423,14 +594,17 @@ export function matchReply(input: {
   return match;
 }
 
-/** Resolve a delivered ask with an answer given in the session UI (the question
- *  card humans-tools offers alongside the Slack DM for block asks). Fires the
- *  live block resolver — the awaiting tool call returns this answer — and posts
- *  a follow-up in the DM thread so the asked teammate isn't left answering a
- *  moot question. Returns true if the ask was still outstanding. */
+/** Resolve an ask with an answer given in the session UI — either the card
+ *  humans-tools puts up alongside the DM for block asks, or a uiFirst card that
+ *  is still inside its pre-Slack window. Fires the live block resolver (the
+ *  awaiting tool call returns this answer) and, when a DM did go out, posts a
+ *  follow-up in that thread so the teammate isn't left answering a moot
+ *  question. Returns true if the ask was still outstanding. */
 export function resolveAskFromUI(askId: string, answer: string, answeredBy: string): boolean {
   const a = asks.get(askId);
-  if (!a || a.state !== "delivered") return false;
+  if (!a) return false;
+  const inUiWindow = a.state === "scheduled" && !!a.uiOfferedAt;
+  if (a.state !== "delivered" && !inUiWindow) return false;
   audit({
     context: "human_ask",
     action: "reply_accepted",
@@ -440,7 +614,7 @@ export function resolveAskFromUI(askId: string, answer: string, answeredBy: stri
     via: "ui",
     answered_by: answeredBy,
   });
-  resolveAsk(a, answer, answeredBy);
+  resolveAsk(a, answer, answeredBy, "ui");
   if (a.slack) {
     void sendSlackMessage(
       a.slack.channel,
@@ -544,6 +718,7 @@ export function cancelAsk(id: string): boolean {
   if (!a || isTerminal(a)) return false;
   a.state = "cancelled";
   asks.set(id, a);
+  closeUiOffer(id);
   const timer = atTimers.get(id);
   if (timer) {
     clearTimeout(timer);

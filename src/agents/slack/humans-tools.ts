@@ -51,7 +51,11 @@ function describeDeliver(d: DeliverWhen): string {
 }
 
 function oneLine(a: HumanAsk): string {
-  const bits = [`\`${a.id}\` → *${a.person.name}*`, a.state, a.mode, describeDeliver(a.deliver)];
+  // A uiFirst ask is "scheduled" right up until the Slack fallback fires, which
+  // reads as "nothing has happened yet" — say where it actually is.
+  const state =
+    a.state === "scheduled" && a.uiOfferedAt ? "live in this session's UI" : a.state;
+  const bits = [`\`${a.id}\` → *${a.person.name}*`, state, a.mode, describeDeliver(a.deliver)];
   if (a.state === "answered" && a.answer) {
     bits.push(`answered: "${a.answer.slice(0, 60)}${a.answer.length > 60 ? "…" : ""}"`);
   }
@@ -99,6 +103,8 @@ export function createHumansMcpServer(ctx: HumansToolContext) {
           "mode:",
           "- 'block' — you NEED the answer to keep going right now. Your turn pauses (up to ~20 min) until they reply, then this tool returns their answer and you continue. The question also shows as a card in the session UI, so whoever is watching can answer (or confirm an out-of-band action, like completing a login you asked for) without waiting on Slack. If nobody replies in time it returns empty and the ask becomes async, so a later reply still resumes the session. Use for 'ask Grant for the copy' when you can't proceed without it.",
           "- 'async' (default) — you DON'T need it right now. Returns immediately so you keep working; when they reply, the answer is delivered into this session as a new message. Use for 'get John's review' etc.",
+          "",
+          "Where an async question lands: if you're asking the person who is driving THIS session, it goes up as a card in the session first and only becomes a Slack DM if nobody answers it there within a few minutes — they're already looking at the session, so that's where the question belongs. Asks aimed at anyone else are DM'd straight away. Either way the reply comes back into this session; you don't have to think about it.",
           "",
           "deliver_when (async only — when the teammate is actually pinged):",
           "- 'now' (default) — ping immediately.",
@@ -213,6 +219,13 @@ export function createHumansMcpServer(ctx: HumansToolContext) {
             }
           }
 
+          if (ask.uiFirst) {
+            return text(
+              `Asked ${person.name} — the question is up in this session, where they're already watching. ` +
+                `\`${ask.id}\` — if nobody answers it here in the next few minutes I'll DM them on Slack. ` +
+                `Either way their reply comes back into this session; keep working.`
+            );
+          }
           return text(
             `Asked ${person.name} (${describeDeliver(deliver)}). \`${ask.id}\` — I'll keep working; their reply will come back into this session as a new message.`
           );
