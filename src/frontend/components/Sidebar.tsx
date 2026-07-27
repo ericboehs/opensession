@@ -2328,9 +2328,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	}
 
 	// GitHub review requests pointed at YOU are a notification, not a lane
-	// item: they get their own band right under Pinned (the same slot the
-	// internal Needs-review band owns above it), and stay out of the project
-	// lanes below.
+	// item: they render in the "Needs review" band at the top, alongside the
+	// internal review requests (both are the same ask of you), and stay out of
+	// the project lanes below.
 	const requestedPrItems = prRowItems.filter(
 		(item) => item.source === "requested",
 	);
@@ -4519,10 +4519,13 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					</div>
 				)}
 
-				{/* ── Needs review: sessions a teammate asked YOU to look at (the info
-				    panel's Reviewer picker). Rides above everything — it's a direct
-				    request, like a blocked question. ── */}
-				{needsReviewRows.length > 0 &&
+				{/* ── Needs review: everything waiting on YOUR review — sessions a
+				    teammate asked you to look at (the info panel's Reviewer picker)
+				    and GitHub PRs that requested you. Both are the same ask, so they
+				    share one band; it rides above everything, like a blocked
+				    question. PRs already covered by a workspace row in view are
+				    filtered out of prRowItems, so nothing appears twice. ── */}
+				{(needsReviewRows.length > 0 || requestedPrItems.length > 0) &&
 					(() => {
 						const open = isOpen("needsreview");
 						return (
@@ -4537,7 +4540,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									/>
 									<span className="sidebar-group-name">Needs review</span>
 									<span className="sidebar-group-count">
-										{needsReviewRows.length}
+										{needsReviewRows.length + requestedPrItems.length}
 									</span>
 									<IconChevronDown
 										className="sidebar-group-chevron"
@@ -4550,6 +4553,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 										(r) => open || r.chats.some((c) => c.id === selectedId),
 									)
 									.map(renderWsRow)}
+								{requestedPrItems
+									.filter((item) => open || prRowSelected(item))
+									.map(renderPrRow)}
 							</div>
 						);
 					})()}
@@ -4892,41 +4898,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						</div>
 					);
 				})()}
-
-				{/* ── Review requested: GitHub PRs waiting on YOUR review — a
-				    notification, not a lane item, so it rides directly under
-				    Pinned and above every project. ── */}
-				{requestedPrItems.length > 0 &&
-					(() => {
-						const open = isOpen("review:requested");
-						return (
-							<div className="sidebar-group sidebar-group--review">
-								<button
-									className="sidebar-group-header"
-									onClick={() => toggleGroup("review:requested")}
-								>
-									<IconBell
-										className="sidebar-group-icon"
-										style={{ color: "var(--accent)" }}
-									/>
-									<span className="sidebar-group-name">
-										Review requested
-									</span>
-									<span className="sidebar-group-count">
-										{requestedPrItems.length}
-									</span>
-									<IconChevronDown
-										className="sidebar-group-chevron"
-										size={22}
-										style={{ transform: open ? "none" : "rotate(-90deg)" }}
-									/>
-								</button>
-								{requestedPrItems
-									.filter((item) => open || prRowSelected(item))
-									.map(renderPrRow)}
-							</div>
-						);
-					})()}
 
 				{/* ── Workspaces: status lanes live directly under the Workspaces
 				    header above (which carries the filter, new-workspace and
