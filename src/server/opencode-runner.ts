@@ -209,6 +209,7 @@ import {
   opencodeTurnLooksCompleted,
   recordBksSessionFor,
   recordOpencodeDbFor,
+  recordedOpencodeDbFor,
   storeAppendUserLineEarly,
   transcriptLineUser,
   transcriptLineRunnerNotice,
@@ -929,6 +930,20 @@ export function pickMeridianAccount(
 const stickyMeridianAccounts: Map<string, string> = (
   (globalThis as any).__stickyMeridianAccounts ??= new Map()
 );
+
+// globalThis does NOT survive a real `systemctl restart`: with the sticky map
+// empty, the next prompt on an existing engine session pool-picks freely, and
+// when it lands on a different account the (account × user) shared server has
+// never seen that session — the runner logs "not found — starting fresh" and
+// the session silently loses its whole engine context (bks-019fa3cd,
+// 2026-07-27). db-map.json persistently records which account-shard DB every
+// engine session lives in, so derive the account from there when the
+// in-memory map has no answer.
+function stickyAccountFromDbMap(ocSessionId: string): string | undefined {
+  if (!ocSessionId) return undefined;
+  const db = recordedOpencodeDbFor(ocSessionId);
+  return db?.match(/\/shared_anthropic-([0-9a-f-]{36})_[^/]+\.db$/)?.[1];
+}
 
 // ── OpenCode config generation ───────────────────────────────────────────────
 
@@ -2615,6 +2630,8 @@ async function* runOpencodeAttempt(
       const bridgeMode = cfg?.enabled ? cfg.bridgeMode : "off";
       if (bridgeMode === "meridian") {
         const stack = meridianStackInfo();
+        const stickySeed = () =>
+          stickyMeridianAccounts.get(sessionKey) ?? stickyAccountFromDbMap(ocSessionId);
         const repick = () => {
           const p = pickMeridianAccount(
             user,
@@ -2622,7 +2639,7 @@ async function* runOpencodeAttempt(
             cfg!.bridgeAccountIds,
             opts.accountId,
             opts.accountStrict,
-            stickyMeridianAccounts.get(sessionKey),
+            stickySeed(),
             meridianPickOut
           );
           return "error" in p ? null : p;
@@ -2634,7 +2651,7 @@ async function* runOpencodeAttempt(
           cfg!.bridgeAccountIds,
           opts.accountId,
           opts.accountStrict,
-          stickyMeridianAccounts.get(sessionKey),
+          stickySeed(),
           meridianPickOut
         );
         if ("error" in picked) {

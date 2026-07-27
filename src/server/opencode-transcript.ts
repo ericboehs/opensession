@@ -106,6 +106,14 @@ export function recordOpencodeDbFor(ocSessionId: string, dbPath: string): void {
   }
 }
 
+/** Map-only lookup (no candidate probing): the DB file an engine session was
+ *  last recorded in, or undefined when the map has no entry. Cheap enough for
+ *  hot paths that only need the recorded answer (e.g. the runner's sticky-
+ *  account fallback), unlike resolveOpencodeDbFor's probe cascade. */
+export function recordedOpencodeDbFor(ocSessionId: string): string | undefined {
+  return ocSessionId ? readDbMap()[ocSessionId] : undefined;
+}
+
 /** Legacy + shard DB files worth probing when the map has no answer:
  *  per-account openai DBs, then recent shard DBs (newest first, capped). */
 function candidateDbPaths(): string[] {
