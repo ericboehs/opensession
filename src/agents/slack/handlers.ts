@@ -36,7 +36,10 @@ import { createGithubMcpServer } from "./github-tools";
 import { createSessionsMcpServer } from "./sessions-tools";
 import { createHumansMcpServer } from "./humans-tools";
 import { createNotesMcpServer } from "./notes-tools";
-import { matchReply as matchHumanAskReply } from "../../server/human-asks";
+import {
+  matchReply as matchHumanAskReply,
+  noteAskThreadReply,
+} from "../../server/human-asks";
 import { triggerPrAction } from "../github/trigger";
 import { classifyMention } from "./mention-intent";
 import { renderMemoryForPrompt, type MemoryContext } from "./memory";
@@ -1243,6 +1246,8 @@ export async function handleMessageEvent(event: any): Promise<void> {
           thread_ts,
           user,
         );
+        if (res.status !== "error")
+          noteAskThreadReply({ channel, threadTs: thread_ts, user });
         // Stale link (session deleted) → fall through to the normal DM flow.
         if (res.status !== "error") return;
         console.warn(

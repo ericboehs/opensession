@@ -451,13 +451,15 @@ export async function deliverAsk(id: string, opts?: { skipUi?: boolean }): Promi
   a.deliveredAt = new Date().toISOString();
   asks.set(id, a);
   persist();
-  // The DM thread now belongs to the asking session, for good. While the ask is
-  // live, matchReply claims replies first (they're an *answer*); once it's moot
-  // — cancelled, answered elsewhere, timed out — this link is what keeps a late
+  // The DM thread now belongs to the asking session. While the ask is live,
+  // matchReply claims replies first (they're an *answer*); once it's moot —
+  // cancelled, answered elsewhere, timed out — this link is what keeps a late
   // reply going back to the session that asked instead of spawning a fresh,
   // context-free one (2026-07-27: an ask was cancelled 3s before Michiel's
   // reply landed, and his answer started a new session that could only say
-  // "Done").
+  // "Done"). The link lives as long as the ask does — terminal asks are pruned
+  // after TERMINAL_RETENTION_MS, and the link goes with them at the next
+  // rebuild.
   linkThreadInIndex(a.sessionId, channel, res.ts);
   audit({
     context: "human_ask",
@@ -572,6 +574,11 @@ function resolveAsk(
  * delivered ask in the channel (teammates often reply without threading in a DM).
  * Returns the matched ask (now answered) or null. This is the one place that
  * deliberately accepts a message from someone other than the trusted user.
+ *
+ * Only *live* asks match. A reply that arrives once the ask is moot is handled
+ * a layer up by the thread→session link deliverAsk registers — but only when
+ * it's threaded: an un-threaded DM after a moot ask is indistinguishable from a
+ * new request and still takes the normal DM path.
  */
 export function matchReply(input: {
   channel: string;
@@ -615,6 +622,35 @@ export function matchReply(input: {
   });
   resolveAsk(match, text, match.person.name);
   return match;
+}
+
+/**
+ * Audit a reply that landed in an ask's DM thread AFTER the ask went moot, and
+ * is therefore routed into the asking session as an ordinary message (the
+ * thread→session branch in handlers.ts) rather than matched here as an answer.
+ * matchReply sits before Slack's allow-list gate on the grounds that every
+ * reply it accepts from a non-trusted teammate is audited; these continuations
+ * ride the same trust, so they get the same paper trail. No-op for threads that
+ * aren't ask threads.
+ */
+export function noteAskThreadReply(input: {
+  channel: string;
+  threadTs: string;
+  user: string;
+}): void {
+  const a = [...asks.values()].find(
+    (x) => x.slack?.channel === input.channel && x.slack.rootTs === input.threadTs
+  );
+  if (!a) return;
+  audit({
+    context: "human_ask",
+    action: "thread_reply_routed",
+    ask_id: a.id,
+    session_id: a.sessionId,
+    ask_state: a.state,
+    person: a.person.name,
+    from_user: input.user,
+  });
 }
 
 /** Resolve an ask with an answer given in the session UI — either the card
@@ -755,7 +791,7 @@ export function cancelAsk(id: string): boolean {
   if (a.slack) {
     void sendSlackMessage(
       a.slack.channel,
-      `:heavy_multiplication_x: _Never mind — ${personaName()} no longer needs an answer to that one._`,
+      `:heavy_multiplication_x: _Never mind — ${personaName()} no longer needs an answer to that one. Reply here anyway if you have something to add and I'll pass it to the session._`,
       a.slack.rootTs
     ).catch(() => {});
   }
