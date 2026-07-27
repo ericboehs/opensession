@@ -6,9 +6,8 @@ HTTP+SSE by `src/server/opencode-runner.ts` (one-shots go through
 `src/server/opencode-oneshot.ts` on a shared tool-less server). Model ids
 look like `opencode/<provider>/<model>`; bare native ids (`claude-sonnet-5`,
 `gpt-5.5`) are mapped onto that form at dispatch (`toOpencodeModel`).
-**Engine/runner code does not hot-reload** — after changing anything here,
-`systemctl restart opensession`
-([install.md](install.md#8-hot-reload-vs-restart)).
+After changing engine/runner code, restart with `systemctl restart opensession`
+([install.md](install.md#8-frontend-rebuilds-vs-restart)).
 
 Binary resolution: `OPENSESSION_OPENCODE_BIN` → `Bun.which("opencode")` → an
 nvm fallback path.

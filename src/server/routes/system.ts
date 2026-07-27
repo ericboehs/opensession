@@ -147,7 +147,7 @@ export async function handleSystemRoutes(
 	}
 
 	// Rebuild the frontend bundle in-process (no restart → live runs untouched).
-	// Drop-in replacement for `systemctl restart backstage` after a frontend/CSS
+	// Drop-in replacement for `systemctl restart opensession` after a frontend/CSS
 	// change. Tailscale + team gated at the network layer like every route here.
 	if (path === "/backstage/api/rebuild-frontend" && req.method === "POST") {
 		if (IS_DEV || !frontend) {

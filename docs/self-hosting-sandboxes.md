@@ -26,8 +26,8 @@ cat > ~/.opensession-sandbox.json <<'EOF'
 { "provider": "docker", "image": "backstage-runner:latest" }
 EOF
 
-# 4. Restart backstage (runner internals don't hot-reload)
-sudo systemctl restart backstage
+# 4. Restart OpenSession to load runner-internal changes
+sudo systemctl restart opensession
 
 # 5. Verify
 bun run deploy/sandbox/verify.ts
@@ -318,13 +318,12 @@ explanatory message instead of silently running against a missing dir.
 
 ## What needs a restart
 
-The config file's *values* are read fresh per run. But everything the
-sandbox path executes is **runner internals**, which `bun --hot` does NOT
-propagate (see CLAUDE.md "Hot reload & restarts"):
+The config file's *values* are read fresh per run. Code changes to the sandbox
+path are **runner internals** and need a service restart:
 
 - First-time enablement, provider/transport code changes, anything under
   `src/server/sandbox/`, `src/runner-host/`, run-ws/rpc-ws → real
-  `systemctl restart backstage`.
+  `systemctl restart opensession`.
 - The publicIngress listener starts once at boot: enabling/disabling it or
   changing `port`/`host` → restart (`publicBaseUrl` value tweaks apply to
   the next launch without one).

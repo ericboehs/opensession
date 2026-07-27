@@ -26,7 +26,7 @@ OpenSession is a self-hosted agent-infrastructure server. One Bun process serves
 ```
                  ┌──────────────────────────────────────────────┐
  Slack ─────────►│                                              │
- Linear webhook ►│  opensession.ts (one Bun process, bun --hot)   │
+ Linear webhook ►│  opensession.ts (one Bun process)              │
  Plain webhook ─►│                                              │
  GitHub webhook ►│  web UI + WS ──► session store ~/.opensession-chats
                  │  agents (slack/linear/plain/github/stripe)   │

@@ -114,10 +114,9 @@ MCP servers are named `opensession-*` (renamed from `michael-*` 2026-07-09;
 `canonicalMcpServerId` in rename-compat normalizes legacy ids from persisted
 runs — keep using the new names at definition sites).
 
-OpenSession runs itself: the live server is `bun --hot` from this main checkout
-(`/home/ubuntu/projects/tella-backstage`), so the fastest way to see a change is
-to **edit the main checkout on `master` directly** — `bun --hot` reloads it live.
-Because of that, opensession code sessions do **not** get their own worktree
+OpenSession runs itself from this main checkout
+(`/home/ubuntu/projects/tella-backstage`). OpenSession code sessions do **not**
+get their own worktree
 (`sharedCheckout` in `src/server/worktree.ts`); they all work in this one shared
 checkout on `master`. That's intentional wild-west iteration. The rules that keep
 it from descending into chaos:
@@ -137,10 +136,11 @@ it from descending into chaos:
 - **Commit + push frequently.** Un-pushed work is the only thing a sync can't
   protect (the deploy is now `merge --ff-only`, never `reset --hard`, so it aborts
   loudly instead of wiping — but push anyway).
-- **Don't `systemctl restart` casually.** Most edits hot-reload. Only runner
-  internals / agent-loop / scheduler changes need a real restart, and a restart
-  drains every session — treat it as a deliberate, announced action. Frontend
-  changes never need it (`kill -USR2 <pid>` or the watcher rebuilds the bundle).
+- **Backend edits need a deliberate `systemctl restart opensession`.** Commit
+  and push first, then restart and verify health. Restarts are graceful and
+  detached engine turns reattach, but they still churn active sessions, so do
+  this once after the backend change rather than after every save. Frontend
+  changes never need it: the in-process watcher rebuilds the bundle live.
 - Want isolation for a risky/breaking change? Make a worktree by hand and run a
   second instance on another `PORT` — but note `OPENSESSION_DEV=1` only swaps the
   frontend build; it does **not** yet disable the Slack/Linear/Stripe loops,
@@ -195,13 +195,15 @@ opportunistically when touched (strangler pattern — never a big-bang rewrite):
 - Audit log: every agent run emits structured JSON events (incident-agent style) to ~/.opensession-audit/audit-YYYY-MM-DD.jsonl via src/server/audit.ts — see deploy/README-audit.md for the event catalog and CloudWatch shipping
 - Internal notes and draft replies (Plain, Linear) are always written in English, regardless of the customer's language — note the customer's language so the team can translate before sending. This applies to agent prompts here (src/agents/plain/prompts.ts) and to automation prompts stored in ~/.opensession-automations/.
 
-## Hot reload & restarts
+## Frontend rebuilds & restarts
 
-The systemd service (opensession.service) runs `bun --hot run opensession.ts`: editing source hot-reloads in-process so WebSocket clients and in-flight runs survive (rather than restarting and dropping every session). One-time setup (agents, schedulers, timers, signal handlers) is guarded behind `globalThis.__backstageBooted`; live state (watchers, pendingAsks, promptQueues, loaded agents, runner active-run maps) is parked on `globalThis`; the `Bun.serve` server is reused, not rebound.
-
-What hot-reloads vs. what needs a real `systemctl restart` — **important, this has bitten us:**
-- **Hot-applies:** HTTP/route + WebSocket handlers, the `SessionControl` registry (re-registered on every reload, so session-control / MCP-injection logic updates), per-message config and prompts read fresh.
-- **Needs a real restart:** long-lived **agent loop code** (Slack/Linear/Stripe event loops — guarded against double-start, so the old code keeps running), and **runner internals** (`opencode-runner.ts` / `agent-runner.ts` / `opencode-oneshot.ts`, e.g. how a run's MCP/tool list is built). `--hot` does NOT propagate a change in a deeply-imported module like runOpencode into the running process even though health/PID look fine. Before declaring a runner-path change live, `systemctl restart` and verify with a real run.
+The systemd service runs `bun run opensession.ts`, intentionally without
+`--hot`. On Bun 1.3.14, an ordinary backend hot reload can permanently kill all
+timers while HTTP keeps serving, leaving sessions stuck until a restart. The
+in-process frontend watcher still rebuilds and broadcasts frontend changes.
+Every backend change, including routes, WebSocket handlers, agent loops, and
+runner internals, needs one deliberate `systemctl restart opensession` after
+the change is committed and pushed.
 
 Restarts are graceful — and since 2026-07-11 they no longer kill in-flight engine turns. `opencode serve` processes spawn via `systemd-run --user --scope` into transient user scopes OUTSIDE the unit's cgroup (`src/server/opencode-detach.ts`; registry at `~/.opensession-opencode-servers.json`), so a restart leaves them — and every turn they're executing — running. SIGTERM stops new intake, drains only the runs a restart would actually kill (bounded by `SHUTDOWN_DRAIN_MS`, default 60s; unit `TimeoutStopSec=80` must stay above it), and exits; with all runs on detached servers the restart is near-instant. On boot, surviving servers are adopted back into the pool (health-checked; stale ones pruned) and journaled runs REATTACH to their live turns (`tryReattachOpencodeRun` — SSE re-pump + transcript gap backfill from opencode's SQLite) instead of being re-prompted; the continuation re-prompt remains the fallback for dead servers. Kill switch: `OPENSESSION_OC_DETACH=0` reverts to direct-child spawns. `KillMode=mixed` stays required (SIGTERM only the bun parent so the drain/journal run). The deployed `/etc/systemd/system/opensession.service` is a **copy** of the repo `opensession.service`, not a symlink — sync with `sudo cp` + `systemctl daemon-reload`.
 
@@ -224,7 +226,11 @@ An MCP server in `mcp-config.json` can carry an optional `allowedUsers: string[]
 - Enforcement is at the runner layer, not the prompt: `filterMcpServers(allowlist, user)` (runner-shared.ts, consumed by `buildOpencodeMcpConfig` in opencode-runner.ts) drops a restricted server the run's user isn't cleared for, and strips the `allowedUsers` field before the config reaches the engine. Both allowlist (per-automation least-privilege) and the per-user gate apply.
 - The `user` is threaded from the run paths (`runSessionPrompt`, both `create_session` paths, goal wakes, the Slack/Linear loops) through `runAgent` → `runOpencode`, and is journaled on the `ActiveRunRecord` so a resume after a restart keeps the same visibility. **Automation runs pass no user**, so a `allowedUsers`-restricted server is invisible to them — untrusted ticket text can never reach `brex`, even if the automation's own `mcpServers` allowlist names it (fail-closed).
 - Manage it from the Connections UI (the Add-MCP form has an "Allowed users" field; each server card has a Restrict/Edit-access button → `PUT /api/connections/mcp/:name` with `{allowedUsers}`), or via opensession-admin (`add_mcp_server`'s `allowedUsers`, and `set_mcp_allowed_users` to change it on an existing server). Backing helpers: `addMcpServer` / `setMcpAllowedUsers` in src/server/connections.ts.
-- **A change to the runner-layer filtering needs a real `systemctl restart`** (runner internals don't hot-reload — see "Hot reload & restarts"). Adding/removing/re-scoping a server in `mcp-config.json` itself is read fresh per run, but until the process runs the new `filterMcpServers`, `allowedUsers` is neither enforced nor stripped — so restart after wiring a restricted server.
+- **A change to the runner-layer filtering needs a real `systemctl restart`**
+  (see "Frontend rebuilds & restarts"). Adding/removing/re-scoping a server in
+  `mcp-config.json` itself is read fresh per run, but until the process runs the
+  new `filterMcpServers`, `allowedUsers` is neither enforced nor stripped — so
+  restart after wiring a restricted server.
 
 ## Per-user GitHub auth + web sign-in (opt-in, config `integrations.github`)
 

@@ -174,7 +174,7 @@ The deployed unit is a **copy, not a symlink** — after editing the repo's
 `opensession.service`, re-`cp` and `daemon-reload` (deploy.sh does this
 automatically). Unit choices worth knowing (comments in the file itself):
 
-- `ExecStart=bun --hot run opensession.ts` — hot reload, see below.
+- `ExecStart=bun run opensession.ts` — stable production runtime, see below.
 - `EnvironmentFile=/home/ubuntu/.opensession.env` — your secrets file.
 - `TimeoutStopSec=140` — must stay above `SHUTDOWN_DRAIN_MS` (120s) plus
   buffer, or systemd SIGKILLs mid-drain.
@@ -187,17 +187,15 @@ automatically). Unit choices worth knowing (comments in the file itself):
 - The unit's `User`, paths, and `PATH=` line assume user `ubuntu` with bun
   in `~/.bun/bin` — adjust for your box.
 
-## 8. Hot reload vs restart
+## 8. Frontend rebuilds vs restart
 
-`bun --hot` means most edits apply in-process without dropping sessions:
-HTTP/WS handlers, per-message prompts and config, the session-control
-registry. **Not** hot-applied: long-lived agent loop code (Slack/Linear/
-Stripe event loops) and **runner internals** (`opencode-runner.ts`,
-`agent-runner.ts`, `opencode-oneshot.ts`, MCP filtering) — those
-keep running old code until a real `systemctl restart opensession`, even
-though health looks fine. Restarts are graceful (drain + journal + resume on
-boot) but still churn every session — treat them as deliberate. Full rules:
-the "Hot reload & restarts" section of [CLAUDE.md](../../CLAUDE.md).
+The production unit intentionally does not use `bun --hot`: failed backend
+reloads on Bun 1.3.14 can permanently stop timer delivery while HTTP remains
+healthy. The in-process frontend watcher still rebuilds frontend edits live.
+All backend changes need `systemctl restart opensession` after commit and push.
+Restarts are graceful: detached engine turns survive and the run journal
+reattaches them on boot, but they still churn active sessions, so restart once
+after the backend change rather than after every save.
 
 ## 9. Next
 

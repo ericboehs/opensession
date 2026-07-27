@@ -1481,7 +1481,21 @@ async function claimPoolPreviewInner(repoId: string, worktreeDir: string): Promi
     }
     await syncWorktreeIntoContainer(repo, worktreeDir, pick);
   } catch (e) {
-    console.warn(`[preview-pool] initial sync into ${pick.name} failed:`, e);
+    console.warn(
+      `[preview-pool] initial sync into ${pick.name} failed — destroying the claim and falling back to a host preview:`,
+      e,
+    );
+    stopSyncLoop(worktreeDir);
+    try {
+      await destroyContainer(repoId, pick.name);
+    } catch (destroyError) {
+      // Do not leave a failed claim discoverable. The orphan sweep cleans any
+      // microvm resources the failed destroy could not remove.
+      patchContainer(repoId, pick.name, null);
+      console.warn(`[preview-pool] cleanup of failed claim ${pick.name} failed:`, destroyError);
+    }
+    void sweepPool().catch(() => {});
+    return null;
   }
   startSyncLoop(repo, worktreeDir, pick);
   void sweepPool().catch(() => {}); // replenish the pool in the background

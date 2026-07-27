@@ -20,8 +20,8 @@ run_as_ubuntu() { runuser -u ubuntu -- "$@"; }
 
 echo "[deploy] fetching origin, fast-forwarding to ${TARGET_SHA}"
 run_as_ubuntu git -C "$REPO_DIR" fetch --prune origin
-# Fast-forward only — never `reset --hard`. The box's checkout is shared, live,
-# and hot-reloading; sessions edit and commit on it directly. A hard reset would
+# Fast-forward only — never `reset --hard`. The box's checkout is shared and
+# sessions edit and commit on it directly. A hard reset would
 # silently delete any uncommitted or un-pushed work mid-flight (it bit us before).
 # ff-only advances cleanly when the box is on master and clean, and ABORTS loudly
 # if the checkout diverged or has local edits — surface that, don't destroy it.

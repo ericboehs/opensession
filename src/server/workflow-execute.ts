@@ -649,9 +649,9 @@ export const workflowExecutor: WorkflowExecutor = {
  *
  * SAFETY (this touches a checkout a human and the live server may be using):
  *  - REFUSES when the session works in a shared-checkout repo's LIVE main
- *    checkout (backstage on master) — merging into the tree `bun --hot` is
- *    serving, and every other session is editing, is exactly the "never reset
- *    or switch the shared tree" trap in CLAUDE.md. The script gets the branch
+ *    checkout (backstage on master) — merging into the tree the server runs
+ *    from, while every other session is editing it, is exactly the "never reset
+ *    or switch the shared tree" trap in AGENTS.md. The script gets the branch
  *    names back and can report them for manual handling.
  *  - REFUSES when the session worktree is dirty — a merge would entangle
  *    somebody's uncommitted work.

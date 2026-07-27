@@ -175,11 +175,10 @@ export interface Repo {
   /** GitHub `owner/name` for PR operations (gh CLI). */
   ghRepo: string;
   // When true, code sessions run directly in the main checkout on the default
-  // branch instead of an isolated worktree. Backstage is self-hosting — the live
-  // server runs `bun --hot` from its main checkout, so editing there is the only
-  // way a change is testable without a second instance. Sessions share one tree
-  // and commit straight to the default branch (see "Backstage dev workflow" in
-  // CLAUDE.md: add → commit → push, never reset/discard the shared repo).
+  // branch instead of an isolated worktree. Backstage is self-hosting from its
+  // main checkout; sessions share one tree and commit straight to the default
+  // branch (see "OpenSession dev workflow" in AGENTS.md: add → commit → push,
+  // never reset/discard the shared repo).
   sharedCheckout?: boolean;
   /** Instance default repo (defaultRepo()); unset built-ins fall back to tella-fusion. */
   default?: boolean;

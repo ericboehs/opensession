@@ -516,11 +516,9 @@ export function dropRunWsConnection(hostId: string): boolean {
 }
 
 // ── Timer-poisoning tripwire ──────────────────────────────────────────────────
-// A FAILED `bun --hot` reload (syntax/reference error from a mid-edit save —
-// e.g. a sweep agent's transient broken state) permanently kills setTimeout/
-// setInterval delivery for this WHOLE process (verified on Bun 1.3.14,
-// 2026-07-09: pending timers never resume AND newly scheduled ones never
-// fire; minimal repro in the commit message). Network IO keeps working, so
+// Bun 1.3.14 can permanently lose setTimeout/setInterval delivery for this
+// WHOLE process (originally reproduced through failed `bun --hot` reloads;
+// the production unit no longer uses --hot). Network IO keeps working, so
 // the process looks healthy while every timer-driven loop — schedulers, idle
 // sweeps, shutdown drain, connect polls, SDK waitUntilStarted polls — is
 // silently dead (that's what stalled bks-019f46e9 / bks-019f4729 and the
@@ -531,9 +529,8 @@ export function dropRunWsConnection(hostId: string): boolean {
 // both stalled sessions reattached mid-turn with nothing lost), so the exit
 // costs seconds of availability, not work.
 //
-// Detection can't use timers, so it rides events that still work: module
-// scope re-runs on every successful reload, and the fetch preamble calls
-// timerPoisonRequestCheck() on every HTTP request. A stale heartbeat stamp
+// Detection can't use timers, so it rides events that still work: the fetch
+// preamble calls timerPoisonRequestCheck() on every HTTP request. A stale stamp
 // alone is only SUSPICION (a long synchronous stall also delays the stamp);
 // confirmation is a zero-delay probe setTimeout — a live-but-delayed timer
 // wheel fires it as soon as the loop frees, a poisoned one never does.
@@ -576,7 +573,7 @@ export function timerPoisonRequestCheck(): void {
 
 function escalateTimerPoison(staleMs: number): void {
   g.__timersPoisonedAt ??= new Date().toISOString();
-  // Restart-loop guard: a syntax error sitting in the tree poisons FRESH boots
+  // Restart-loop guard: a persistent runtime failure can poison FRESH boots
   // too, so unbounded auto-exits would flap forever. Track recent auto-exits
   // in a state file; after 3 in 30 minutes stop exiting and just scream — at
   // that point the tree needs a human (or a fixing agent), not a restart.
@@ -592,9 +589,8 @@ function escalateTimerPoison(staleMs: number): void {
       g.__timerPoisonHalted = true;
       audit({ msg: "timer_poison_halted", staleSeconds: Math.round(staleMs / 1000), recentExits: exits });
       console.error(
-        "[run-ws] TIMERS ARE DEAD and 3 auto-restarts in 30m did not cure it — the checked-out " +
-          "tree likely fails to parse (fresh boots poison too). NOT exiting again; fix the tree " +
-          "(bunx tsc --noEmit), then systemctl restart opensession.",
+        "[run-ws] TIMERS ARE DEAD and 3 auto-restarts in 30m did not cure it. NOT exiting again; " +
+          "inspect the preceding runtime errors, then systemctl restart opensession.",
       );
     }
     return;
@@ -607,7 +603,7 @@ function escalateTimerPoison(staleMs: number): void {
   audit({ msg: "timer_poison_restart", staleSeconds: Math.round(staleMs / 1000), autoExitsLast30m: exits.length });
   console.error(
     `[run-ws] TIMERS ARE DEAD — heartbeat stale ${Math.round(staleMs / 1000)}s and a probe timer never ` +
-      "fired. A failed --hot reload killed setTimeout/setInterval process-wide. Self-restarting: " +
+      "fired. Timer delivery is dead process-wide. Self-restarting: " +
       "exiting now; systemd (Restart=always) boots a clean process, detached engine runs reattach.",
   );
   const poisonExit = g.__poisonExit as (() => void) | undefined;
@@ -622,8 +618,8 @@ function escalateTimerPoison(staleMs: number): void {
   const hb = (g.__timerPoisonHeartbeat ??= { at: Date.now(), armed: false });
   if (hb.armed && Date.now() - hb.at > 15_000) {
     console.error(
-      `[run-ws] timer heartbeat stale ${Math.round((Date.now() - hb.at) / 1000)}s at reload — ` +
-        "probing for --hot timer poisoning (self-restart follows if confirmed).",
+      `[run-ws] timer heartbeat stale ${Math.round((Date.now() - hb.at) / 1000)}s — ` +
+        "probing for timer poisoning (self-restart follows if confirmed).",
     );
     timerPoisonRequestCheck(); // seeds the suspicion + probe; next request confirms
     hb.armed = false; // re-arm below; if timers are actually alive the interval resumes stamping

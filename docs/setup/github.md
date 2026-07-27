@@ -144,8 +144,7 @@ story.
 
    (env `OPENSESSION_GITHUB_CLIENT_ID` / `OPENSESSION_GITHUB_CLIENT_SECRET`
    win over config; secret omitted = device-flow-only sign-in.)
-3. Restart the service — the token injection is runner-internal and does not
-   hot-reload.
+3. Restart the service to load the runner-internal token injection.
 
 What turns on (`src/server/github-auth.ts`, `web-auth.ts`, `routes/auth.ts`):
 

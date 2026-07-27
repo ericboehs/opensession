@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tripwire for the SHARED backstage checkout (~/projects/tella-backstage): it is
-# live + hot-reloading and every session commits on `master` here. A branch
+# live and every session commits on `master` here. A branch
 # SWITCH (git checkout <other>) yanks the working tree out from under the running
 # server and other sessions and orphans their un-pushed commits — the "sessions
 # undoing each other's work" trap. Git has no pre-checkout veto, so this warns

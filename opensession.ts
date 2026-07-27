@@ -197,8 +197,8 @@ const server: import("bun").Server<WSClientData> = hotServe({
 		),
 
 		async fetch(req) {
-			// Timer-poisoning watchdog: a failed --hot reload kills every timer in
-			// the process while HTTP keeps serving. Requests are the one signal
+			// Timer-poisoning watchdog: timer delivery can die process-wide while
+			// HTTP keeps serving. Requests are the one signal
 			// that keeps flowing, so each one runs the O(1) staleness check; a
 			// confirmed poisoning self-restarts the process (run-ws.ts tripwire).
 			timerPoisonRequestCheck();
@@ -760,7 +760,7 @@ if (!g.__backstageBooted) {
 	const gracefulShutdown = async (signal: string) => {
 		if (shuttingDown) return;
 		shuttingDown = true;
-		// With poisoned timers (failed --hot reload — see run-ws.ts tripwire)
+		// With poisoned timers (see run-ws.ts tripwire)
 		// every `await sleep` and Promise.race timeout below would wedge forever
 		// and systemd would SIGKILL us at TimeoutStopSec (observed: an 80s
 		// "restart"). Nothing timer-driven can drain anyway, so skip straight to
@@ -849,8 +849,8 @@ if (!g.__backstageBooted) {
 	};
 	process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"));
 	process.on("SIGINT", () => void gracefulShutdown("SIGINT"));
-	// The run-ws timer-poison tripwire calls this when a failed --hot reload's
-	// timer death is confirmed: same snapshot+exit path as a signal, and the
+	// The run-ws timer-poison tripwire calls this when timer death is confirmed:
+	// same snapshot+exit path as a signal, and the
 	// timersDead branch above keeps it free of timed waits. systemd's
 	// Restart=always then boots a clean process within RestartSec.
 	(globalThis as any).__poisonExit = () => void gracefulShutdown("TIMER_POISON");

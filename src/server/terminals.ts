@@ -272,7 +272,7 @@ export async function startSessionTerminal(
   }
   // A silent hang here (e.g. a sandbox wake that never returns) used to leave
   // the tab dead with zero feedback — say what we're waiting on. NOTE: in a
-  // timer-poisoned process (failed --hot reload — see run-ws.ts's tripwire)
+  // timer-poisoned process (see run-ws.ts's tripwire)
   // this notice can't fire either; the tripwire is the real alarm there.
   const slow = setTimeout(() => {
     try {
