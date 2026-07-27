@@ -13,7 +13,14 @@ import { closeTinderPr, commentTinderPr, deleteTinderComment, getSeenPrs, labelT
 import { findSession, invalidateSessionsCache } from "../session-cache";
 import { getSessionControl } from "../session-control";
 import { resolvePrTarget } from "../session-repos";
-import { getOpenPrs, getRecentPrs, getRecentPrsForPerson, markCachedPrClosed } from "../sessions";
+import {
+	getOpenPrs,
+	getRecentPrs,
+	getRecentPrsForPerson,
+	markCachedPrClosed,
+	markCachedPrReviewed,
+} from "../sessions";
+import { githubLoginToPersonKey } from "../shared/user-mappings";
 import { getRepo } from "../worktree";
 import { watch } from "fs";
 import {
@@ -434,6 +441,11 @@ export async function handlePrRoutes(
 			credential,
 		);
 		if ("error" in result) return Response.json(result, { status: 502 });
+		const credentialLogin = credential.principal.replace(/^user:/, "");
+		const reviewer =
+			githubLoginToPersonKey(credentialLogin) ||
+			user.trim().split(/\s+/)[0]?.toLowerCase();
+		if (reviewer) markCachedPrReviewed(repo.ghRepo, branch, reviewer, event);
 		invalidateSessionsCache();
 		return Response.json(result);
 	}
@@ -582,6 +594,11 @@ export async function handlePrRoutes(
 			credential,
 		);
 		if ("error" in result) return Response.json(result, { status: 502 });
+		const credentialLogin = credential.principal.replace(/^user:/, "");
+		const reviewer =
+			githubLoginToPersonKey(credentialLogin) ||
+			user.trim().split(/\s+/)[0]?.toLowerCase();
+		if (reviewer) markCachedPrReviewed(target.ghRepo, target.branch, reviewer, event);
 		invalidateSessionsCache(); // a review can change reviewDecision in the list
 		return Response.json(result);
 	}

@@ -1270,21 +1270,27 @@ export async function submitPrReviewApi(
 		}>;
 	},
 ) {
-	return request<{ ok: true; url?: string }>(
+	const result = await request<{ ok: true; url?: string }>(
 		`/sessions/${encodeURIComponent(sessionId)}/pr-review`,
 		{ method: "POST", body: payload },
 	);
+	window.dispatchEvent(new Event(PR_REVIEW_SUBMITTED_EVENT));
+	return result;
 }
+
+export const PR_REVIEW_SUBMITTED_EVENT = "opensession:pr-review-submitted";
 
 export async function submitPrPreviewReviewApi(
 	repo: string,
 	branch: string,
 	payload: Parameters<typeof submitPrReviewApi>[1],
 ) {
-	return request<{ ok: true; url?: string }>("/pr-preview-review", {
+	const result = await request<{ ok: true; url?: string }>("/pr-preview-review", {
 		method: "POST",
 		body: { ...payload, repo, branch },
 	});
+	window.dispatchEvent(new Event(PR_REVIEW_SUBMITTED_EVENT));
+	return result;
 }
 
 export async function mergePrApi(

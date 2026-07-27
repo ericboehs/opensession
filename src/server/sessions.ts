@@ -862,9 +862,29 @@ let prRefreshPromise: Promise<Set<string>> | null = null;
 const prCloseState: { generation: number; closed: Map<string, number> } = ((
 	globalThis as any
 ).__opensessionPrCloseState ??= { generation: 0, closed: new Map() });
+type CachedReviewMutation = {
+	generation: number;
+	person: string;
+	event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
+};
+const prReviewState: {
+	generation: number;
+	reviews: Map<string, CachedReviewMutation>;
+} = ((globalThis as any).__opensessionPrReviewState ??= {
+	generation: 0,
+	reviews: new Map(),
+});
 
 function closeTombstoneKey(ghRepo: string, number: number): string {
 	return `${ghRepo}#${number}`;
+}
+
+function reviewMutationKey(
+	ghRepo: string,
+	number: number,
+	person: string,
+): string {
+	return `${ghRepo}#${number}#${person}`;
 }
 
 // The cache is also snapshotted to disk after every successful refresh and
@@ -949,6 +969,56 @@ export function markCachedPrClosed(ghRepo: string, number: number): void {
 		persistPrCache(prCache.data);
 		return;
 	}
+}
+
+/**
+ * Keep the sidebar's repo-wide PR cache coherent after a review submitted in
+ * OS1. The bulk GitHub sweep is intentionally throttled and can otherwise keep
+ * a completed request visible for up to 30 minutes.
+ */
+export function markCachedPrReviewed(
+	ghRepo: string,
+	branch: string,
+	person: string,
+	event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES",
+): void {
+	const reviewer = person.trim().toLowerCase();
+	if (!reviewer) return;
+	const repoId = prRepos().find((repo) => repo.ghRepo === ghRepo)?.id;
+	if (!repoId) return;
+	const byBranch = prCache.data.get(repoId);
+	if (!byBranch) return;
+	const pr = byBranch.get(branch);
+	if (!pr) return;
+	prReviewState.generation++;
+	prReviewState.reviews.set(reviewMutationKey(ghRepo, pr.number, reviewer), {
+		generation: prReviewState.generation,
+		person: reviewer,
+		event,
+	});
+	byBranch.set(branch, applyCachedReview(pr, reviewer, event));
+	prCache.ts = Date.now();
+	persistPrCache(prCache.data);
+}
+
+function applyCachedReview(
+	pr: PrInfo,
+	person: string,
+	event: CachedReviewMutation["event"],
+): PrInfo {
+	return {
+		...pr,
+		reviewDecision:
+			event === "APPROVE"
+				? "APPROVED"
+				: event === "REQUEST_CHANGES"
+					? "CHANGES_REQUESTED"
+					: pr.reviewDecision,
+		reviewRequested: pr.reviewRequested.filter((reviewer) => reviewer !== person),
+		reviewedBy: pr.reviewedBy.includes(person)
+			? pr.reviewedBy
+			: [...pr.reviewedBy, person],
+	};
 }
 
 function applyPrCloseTombstones(
@@ -1085,7 +1155,9 @@ export function refreshPrCache(): Promise<Set<string>> {
 
 async function refreshPrCacheInner(): Promise<Set<string>> {
   const refreshGeneration = prCloseState.generation;
+  const reviewRefreshGeneration = prReviewState.generation;
   const freshRepos = new Set<string>();
+  const reviewAuthoritativeRepos = new Set<string>();
   if (ghRateLimited()) {
     // Rate-limited — keep serving the stale snapshot, don't burn calls.
     prCache.ts = Date.now();
@@ -1159,11 +1231,12 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
         if (stale) next.set(repo.id, stale);
         continue;
       }
-		const recentAll = await ghJson<BulkPr[]>([
-			"pr", "list", "--repo", repo.ghRepo, "--state", "all",
-			"--limit", String(repo.recentLimit), "--json", FIELDS,
-		]);
-			freshRepos.add(repo.id);
+      reviewAuthoritativeRepos.add(repo.id);
+      const recentAll = await ghJson<BulkPr[]>([
+        "pr", "list", "--repo", repo.ghRepo, "--state", "all",
+        "--limit", String(repo.recentLimit), "--json", FIELDS,
+      ]);
+      freshRepos.add(repo.id);
       lastFullRefresh.set(repo.id, Date.now());
 
       const reviewByNumber = new Map<number, string>();
@@ -1233,6 +1306,26 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
     // A close can land while this slow GitHub sweep is in flight. Preserve the
     // mutation over any pre-close OPEN row the sweep already fetched.
     applyPrCloseTombstones(next, refreshGeneration);
+    for (const [key, mutation] of prReviewState.reviews) {
+      const [ghRepo, numberText] = key.split("#");
+      const repoId = prRepos().find((repo) => repo.ghRepo === ghRepo)?.id;
+      if (
+        mutation.generation <= reviewRefreshGeneration &&
+        repoId &&
+        reviewAuthoritativeRepos.has(repoId)
+      ) {
+        prReviewState.reviews.delete(key);
+        continue;
+      }
+      const byBranch = repoId ? next.get(repoId) : undefined;
+      if (!byBranch) continue;
+      const number = Number(numberText);
+      for (const [branch, pr] of byBranch) {
+        if (pr.number !== number) continue;
+        byBranch.set(branch, applyCachedReview(pr, mutation.person, mutation.event));
+        break;
+      }
+    }
     prCache = { data: next, ts: Date.now() };
     if (freshRepos.size) persistPrCache(next);
   } catch (e) {

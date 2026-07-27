@@ -233,4 +233,61 @@ describe("getAllSessions", () => {
 				?.transcriptPath,
 		).toBe(claudePath);
 	});
+
+	it("removes a submitted review from the cached sidebar request immediately", async () => {
+		writeFileSync(
+			join(home, ".opensession-pr-cache.json"),
+			JSON.stringify({
+				version: 3,
+				repos: {
+					backstage: {
+						"review-cache": {
+							url: "https://github.com/tellahq/backstage/pull/123",
+							state: "OPEN",
+							number: 123,
+							title: "Review cache test",
+							isDraft: false,
+							additions: 1,
+							deletions: 0,
+							changedFiles: 1,
+							reviewDecision: "",
+							author: "jfrolich",
+							createdAt: "2026-07-27T09:00:00.000Z",
+							updatedAt: "2026-07-27T09:00:00.000Z",
+							checks: { total: 0, passed: 0, failed: 0, pending: 0 },
+							mergeable: "MERGEABLE",
+							reviewRequested: ["kent"],
+							reviewedBy: [],
+							assignees: [],
+						},
+					},
+				},
+				recentLimits: { backstage: 500 },
+				probeEtags: {},
+				lastFullRefresh: {},
+			}),
+		);
+		writeSession("bks-review-cache", {
+			title: "Review cache test",
+			repo: "backstage",
+			branch: "review-cache",
+			startedBy: "Jaap",
+		});
+
+		const sessionsModule = await import(`./sessions.ts?test=${crypto.randomUUID()}`);
+		sessionsModule.markCachedPrReviewed(
+			"tellahq/backstage",
+			"review-cache",
+			"kent",
+			"COMMENT",
+		);
+
+		expect(sessionsModule.getOpenPrs()[0]?.reviewRequested).toEqual([]);
+		expect(
+			sessionsModule
+				.getAllSessions()
+				.find((session: UnifiedSession) => session.id === "bks-review-cache")
+				?.prReviewedBy,
+		).toEqual(["kent"]);
+	});
 });

@@ -15,6 +15,7 @@ import {
 	fetchSupportThreads,
 	closePrPreviewApi,
 	PR_CLOSED_EVENT,
+	PR_REVIEW_SUBMITTED_EVENT,
 	setPlainThreadStatusApi,
 	type PrClosedDetail,
 	type OpenPr,
@@ -1561,6 +1562,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			);
 		};
 		load();
+		const onReviewSubmitted = () => void load();
+		window.addEventListener(PR_REVIEW_SUBMITTED_EVENT, onReviewSubmitted);
 		// The response is backed by the server's PR cache, but also carries live
 		// OpenSession review state. Poll it often enough that a PR moves in and out
 		// of "Review running" promptly without triggering extra GitHub requests.
@@ -1568,6 +1571,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return () => {
 			alive = false;
 			clearInterval(t);
+			window.removeEventListener(PR_REVIEW_SUBMITTED_EVENT, onReviewSubmitted);
 		};
 	}, []);
 	useEffect(() => {
