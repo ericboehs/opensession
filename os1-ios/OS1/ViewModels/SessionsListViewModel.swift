@@ -31,7 +31,7 @@ final class SessionsListViewModel {
         let real = Session.optimistic(
             id: realId,
             title: old.title ?? "",
-            repo: old.repo ?? "",
+            repo: old.effectiveRepo,
             mode: old.mode ?? "code",
             model: old.model,
             effort: old.effort,

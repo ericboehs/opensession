@@ -292,7 +292,7 @@ struct SessionsListView: View {
     // ── Filtering / grouping ──────────────────────────────────────────────
 
     private var availableRepos: [String] {
-        Array(Set(viewModel.sessions.compactMap(\.repo))).sorted()
+        Array(Set(viewModel.sessions.map(\.effectiveRepo))).sorted()
     }
 
     /// Identity strings that count as "me": display name, its first token
@@ -322,12 +322,12 @@ struct SessionsListView: View {
             result = result.filter(isMine)
         }
         if repoFilter != "all" {
-            result = result.filter { $0.repo == repoFilter }
+            result = result.filter { $0.effectiveRepo == repoFilter }
         }
         let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
         if !query.isEmpty {
             result = result.filter { session in
-                for term in [session.title, session.repo, session.branch, session.id] {
+                for term in [session.title, session.effectiveRepo, session.branch, session.id] {
                     if let term, term.lowercased().contains(query) { return true }
                 }
                 return false
@@ -366,7 +366,7 @@ struct SessionsListView: View {
         case .recent:
             return sessions.isEmpty ? [] : [SessionGroup(id: "recent", title: "", sessions: sessions)]
         case .repo:
-            let byRepo = Dictionary(grouping: sessions) { $0.repo ?? "no repo" }
+            let byRepo = Dictionary(grouping: sessions, by: \.effectiveRepo)
             return byRepo.keys.sorted().map {
                 SessionGroup(id: "repo-\($0)", title: $0, sessions: byRepo[$0]!)
             }
@@ -534,7 +534,7 @@ struct SessionsListView: View {
                             // the panel's far edge.
                             Button {
                                 newSessionRequest = NewSessionRequest(
-                                    repo: group.title == "no repo" ? nil : group.title
+                                    repo: group.title
                                 )
                             } label: {
                                 Image(systemName: "plus.circle")
@@ -633,9 +633,7 @@ struct SessionRow: View {
                     .lineLimit(2)
             }
             HStack(spacing: 6) {
-                if let repo = session.repo {
-                    Text(repo)
-                }
+                Text(session.effectiveRepo)
                 if let branch = session.branch {
                     Text(branch)
                         .lineLimit(1)

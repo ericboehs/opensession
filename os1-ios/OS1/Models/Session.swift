@@ -40,6 +40,13 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
         return id
     }
 
+    /// Older/default-repo sessions omit `repo` on the wire. The server treats
+    /// that absence as its primary repository, which is tella-fusion.
+    var effectiveRepo: String {
+        guard let repo, !repo.isEmpty else { return "tella-fusion" }
+        return repo
+    }
+
     var lastActivityDate: Date? {
         Self.parseISO(lastActivity)
     }
