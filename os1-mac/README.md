@@ -24,8 +24,15 @@ the built-in retry screen.
 ### Local sessions
 
 Choose **OS¹ → Use Local Sessions** and the app relaunches against a supervised
-local server. `OS1_LOCAL=1 bun start` forces the same mode for development. The
-shell does not clone or update server source: install it once with:
+local server. Packaged builds work out of the box: the app bundle ships a
+prebundled server sidecar (`Contents/Resources/server`, built by
+`scripts/build-server-sidecar.ts`) and a pinned Bun runtime
+(`Contents/Resources/bun`), so no checkout, bun install, or PATH setup is
+needed. What local sessions still need from the machine is a model login —
+the Claude Code or Codex CLI credentials the local engine runs on.
+`OS1_LOCAL=1 bun start` forces the same mode for development.
+
+To hack on the server itself, a source checkout overrides the sidecar:
 
 ```sh
 git clone https://github.com/tellahq/backstage ~/os1/server
@@ -43,17 +50,20 @@ directory:
 }
 ```
 
-All fields are optional. `localMode` defaults to `false`; `serverDir` defaults to
-`~/os1/server` when that directory exists. Local mode accepts only the active
+All fields are optional. `localMode` defaults to `false`. The server is
+resolved in order: `serverDir` (a source checkout or a sidecar-shaped
+directory), then the `~/os1/server` checkout when it exists, then the bundled
+sidecar. Local mode accepts only the active
 `opensession_auth` cookie from the Electron cloud session: sign in through cloud
 mode first, then enable local sessions. An expired or revoked session locks the
 local API and WebSocket until cloud sign-in and local mode are restarted. Child
 output is appended to `local-server.log` in the same user-data directory.
 
-The local checkout supplies backend code only. It never builds or serves its
+The local server supplies backend code only. It never builds or serves its
 frontend; shell documents and assets are proxied from the configured cloud
 upstream (default `https://os.tella.dev`) while the browser origin remains the
-loopback server.
+loopback server. The sidecar is frozen at the shell's release (auto-update
+keeps it current); a source checkout tracks whatever you pull.
 
 ### Iterating on the frontend before it ships
 
@@ -85,10 +95,14 @@ empty local state, optionally rsync'd from prod.
   navigation is limited to the active app origin plus
   `github.com` (the OAuth redirect flow); everything else opens in the default
   browser. Window close hides to the dock; state persists across launches.
-- `src/local-server.js` — local-mode server resolution and supervision. It picks
-  a free loopback port, starts `bun run opensession.ts`, waits for `/api/health`,
-  restarts crashes with exponential backoff, logs output under user data, and
-  sends SIGTERM on app quit.
+- `src/local-server.js` — local-mode server resolution and supervision. It
+  resolves which server to run (configured dir → `~/os1/server` checkout →
+  bundled sidecar) and which Bun to run it with (bundled → `~/.bun` → PATH),
+  picks a free loopback port, starts `bun run opensession.ts` (or the
+  sidecar's `opensession.js`, pointing OPENSESSION_MCP_PROXY_ENTRY at its
+  prebundled `mcp-proxy.js`), waits for `/api/health`, restarts crashes with
+  exponential backoff, logs output under user data, and sends SIGTERM on app
+  quit.
 - `src/preload.js` — exposes `window.os1` (`desktop`, `setBadge`, `clearBadge`)
   for the frontend to feature-detect and mirror its app badge to the dock.
 - `src/offline.html` — retry screen for when the tailnet is unreachable.
@@ -156,11 +170,15 @@ Releasing: `git tag v0.1.0 && git push origin v0.1.0`.
 
 Local `bun run dist` produces an unsigned build (signing/notarization are
 skipped with a warning when no identity/credentials are present). It first
-downloads pinned OpenCode 1.18.4 into the gitignored `build/vendor/` directory.
-Release builds copy that binary to `Contents/Resources/opencode` and sign it
-with `build/entitlements.opencode.plist`; the workflow verifies the version,
-Developer ID signature, hardened-runtime JIT entitlement, and enclosing app
-signature before notarization. The package keeps only Electron's English locale
+fills the gitignored `build/vendor/` directory: pinned OpenCode 1.18.4
+(`scripts/fetch-opencode.sh`), pinned Bun 1.3.14 (`scripts/fetch-bun.sh`), and
+the server sidecar (`scripts/build-server-sidecar.ts` — requires `bun install`
+at the repository root first). Release builds copy those into
+`Contents/Resources` (`opencode`, `bun`, `server/`); `scripts/sign-binaries.js`
+signs the two Bun-based CLIs with `build/entitlements.opencode.plist` and every
+Mach-O inside the sidecar's node_modules with plain hardened-runtime
+signatures. The workflow verifies the versions, Developer ID signatures, JIT
+entitlements, sidecar layout, and enclosing app signature before notarization. The package keeps only Electron's English locale
 resources because OS¹ is currently English-only; Chromium's unused locale set
 otherwise adds roughly 49 MB to the installed app.
 

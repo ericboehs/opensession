@@ -35,9 +35,51 @@ function resolveOpencode(resourcesPath, homeDir, envPath) {
   return candidates.find((candidate) => candidate && executable(candidate)) || null;
 }
 
-function resolveBun(homeDir, envPath) {
-  const candidates = [path.join(homeDir, ".bun", "bin", "bun"), resolveOnPath("bun", envPath)];
+function resolveBun(resourcesPath, homeDir, envPath) {
+  const candidates = [
+    path.join(resourcesPath, "bun"),
+    path.join(homeDir, ".bun", "bin", "bun"),
+    resolveOnPath("bun", envPath),
+  ];
   return candidates.find((candidate) => candidate && executable(candidate)) || null;
+}
+
+const SIDECAR_ENTRY = "opensession.js";
+
+function serverSourceAt(dir) {
+  if (fs.existsSync(path.join(dir, "opensession.ts"))) {
+    return { serverDir: dir, entry: "opensession.ts", kind: "source" };
+  }
+  if (fs.existsSync(path.join(dir, SIDECAR_ENTRY))) {
+    return { serverDir: dir, entry: SIDECAR_ENTRY, kind: "sidecar" };
+  }
+  return null;
+}
+
+// Which server to run: an explicit settings.json serverDir (a source checkout
+// or a sidecar-shaped directory), then the conventional ~/os1/server source
+// checkout, then the prebundled sidecar in the app's Resources (built by
+// scripts/build-server-sidecar.ts) — which is what makes Local Sessions work
+// with no checkout, no bun install, and no PATH setup.
+function resolveServerSource(config, resourcesPath, homeDir) {
+  const configuredDir =
+    typeof config.serverDir === "string" && config.serverDir.trim()
+      ? path.resolve(config.serverDir.trim())
+      : null;
+  if (configuredDir) {
+    const configured = serverSourceAt(configuredDir);
+    if (!configured) {
+      throw new Error(`OpenSession server source is missing at ${configuredDir}`);
+    }
+    return configured;
+  }
+  const checkout = serverSourceAt(path.join(homeDir, "os1", "server"));
+  if (checkout) return checkout;
+  const bundled = serverSourceAt(path.join(resourcesPath, "server"));
+  if (bundled) return bundled;
+  throw new Error(
+    `OpenSession server was not found: no checkout at ${path.join(homeDir, "os1", "server")} and no bundled server in this build`,
+  );
 }
 
 function configForCloudSession(config, cloudSession) {
@@ -83,15 +125,7 @@ class LocalServerSupervisor {
   }
 
   async prepare() {
-    const defaultServerDir = path.join(this.homeDir, "os1", "server");
-    const configuredDir =
-      typeof this.config.serverDir === "string" && this.config.serverDir.trim()
-        ? this.config.serverDir.trim()
-        : null;
-    const serverDir = path.resolve(configuredDir || defaultServerDir);
-    if (!fs.existsSync(path.join(serverDir, "opensession.ts"))) {
-      throw new Error(`OpenSession server source is missing at ${serverDir}`);
-    }
+    const source = resolveServerSource(this.config, this.resourcesPath, this.homeDir);
 
     const opencodeBin = resolveOpencode(this.resourcesPath, this.homeDir, process.env.PATH);
     if (!opencodeBin) {
@@ -100,9 +134,9 @@ class LocalServerSupervisor {
       );
     }
 
-    const bunBin = resolveBun(this.homeDir, process.env.PATH);
+    const bunBin = resolveBun(this.resourcesPath, this.homeDir, process.env.PATH);
     if (!bunBin) {
-      throw new Error("Bun was not found at ~/.bun/bin/bun or on PATH");
+      throw new Error("Bun was not found in the app bundle, at ~/.bun/bin/bun, or on PATH");
     }
 
     const port = await pickFreePort();
@@ -121,7 +155,9 @@ class LocalServerSupervisor {
       cloudToken,
       opencodeBin,
       port,
-      serverDir,
+      serverDir: source.serverDir,
+      serverEntry: source.entry,
+      serverKind: source.kind,
       url: `http://127.0.0.1:${port}/`,
     };
     return this.prepared;
@@ -148,7 +184,8 @@ class LocalServerSupervisor {
   spawnServer() {
     if (this.stopping) return;
     const generation = ++this.generation;
-    const { bunBin, cloudToken, opencodeBin, port, serverDir } = this.prepared;
+    const { bunBin, cloudToken, opencodeBin, port, serverDir, serverEntry, serverKind } =
+      this.prepared;
     const env = {
       ...process.env,
       HOST: "127.0.0.1",
@@ -158,14 +195,21 @@ class LocalServerSupervisor {
     };
     if (cloudToken) env.OPENSESSION_CLOUD_TOKEN = cloudToken;
     else delete env.OPENSESSION_CLOUD_TOKEN;
+    // The sidecar is a bundled single file with no src/ tree next to it — the
+    // MCP stdio proxy rides along prebundled and the server is pointed at it.
+    if (serverKind === "sidecar") {
+      env.OPENSESSION_MCP_PROXY_ENTRY = path.join(serverDir, "mcp-proxy.js");
+    } else {
+      delete env.OPENSESSION_MCP_PROXY_ENTRY;
+    }
 
     let logFd;
     try {
       fs.mkdirSync(this.userDataDir, { recursive: true });
       logFd = fs.openSync(this.logFile, "a");
-      this.appendLog(`starting server on port ${port} from ${serverDir}`);
+      this.appendLog(`starting ${serverKind} server on port ${port} from ${serverDir}`);
       this.setState("starting", `Starting local server on port ${port}…`);
-      const child = spawn(bunBin, ["run", "opensession.ts"], {
+      const child = spawn(bunBin, ["run", serverEntry], {
         cwd: serverDir,
         env,
         stdio: ["ignore", logFd, logFd],
@@ -271,4 +315,5 @@ module.exports = {
   resolveBun,
   resolveOpencode,
   resolveOnPath,
+  resolveServerSource,
 };
