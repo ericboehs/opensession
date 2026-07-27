@@ -39,7 +39,7 @@ import {
 	type ToolEvidence,
 } from "./ToolEvidencePanel";
 import { SubagentPanel, type SubagentRef } from "./SubagentPanel";
-import { CommandsPanel, ShellPanel } from "./TerminalPanel";
+import { ShellPanel } from "./TerminalPanel";
 import { getCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { peopleMentionMatches } from "../lib/people";
@@ -276,7 +276,6 @@ interface Props {
 type PanelTab =
 	| "info"
 	| "changes"
-	| "terminal"
 	| "shell"
 	| "pr"
 	| "workflows"
@@ -828,7 +827,7 @@ export function SessionViewer({
 		// starts hidden and the body would flash PrPanel) — it, and any stored
 		// tab that no longer exists, maps back to Info. "shell" is deliberately
 		// not restorable either: restoring it would spawn a PTY on every load.
-		const restorable: PanelTab[] = ["info", "changes", "terminal"];
+		const restorable: PanelTab[] = ["info", "changes"];
 		const tab: PanelTab | null = restorable.includes(stored as PanelTab)
 			? (stored as PanelTab)
 			: stored
@@ -4873,13 +4872,6 @@ export function SessionViewer({
 										) : null}
 									</button>
 									<button
-										className={`panel-tab ${panelTab === "terminal" ? "active" : ""}`}
-										onClick={() => selectPanelTab("terminal")}
-										title="Every Bash command the agent has run"
-									>
-										Commands
-									</button>
-									<button
 										className={`panel-tab ${panelTab === "shell" ? "active" : ""}`}
 										onClick={() => selectPanelTab("shell")}
 										title="Interactive terminal tabs in this session's workspace (inside its sandbox when sandboxed)"
@@ -4931,9 +4923,6 @@ export function SessionViewer({
 									sessionId={session.id}
 									onOpenChanges={
 										hasWorkspace ? () => selectPanelTab("changes") : undefined
-									}
-									onOpenTerminal={
-										hasWorkspace ? () => selectPanelTab("terminal") : undefined
 									}
 								/>
 							) : panelTab === "info" ? (
@@ -5003,9 +4992,7 @@ export function SessionViewer({
 									onOpenNewSession={onOpenNewSession}
 								/>
 							) : waitingForWorkspace &&
-							  (panelTab === "changes" ||
-									panelTab === "terminal" ||
-									panelTab === "shell") ? (
+							  (panelTab === "changes" || panelTab === "shell") ? (
 								// These tabs all read the worktree — hold them behind the
 								// waiting state until the create run finishes preparing it.
 								<WorkspaceWaiting detail="Waiting for the workspace to be ready." />
@@ -5017,8 +5004,6 @@ export function SessionViewer({
 									send={send}
 									diff={diffState}
 								/>
-							) : panelTab === "terminal" ? (
-								<CommandsPanel entries={entries} />
 							) : null}
 							{/* Shell tabs keep their PTYs alive across side-panel tab
 							    switches: mounted once opened, hidden while another tab

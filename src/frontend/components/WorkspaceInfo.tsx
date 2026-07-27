@@ -65,7 +65,7 @@ import {
  * fallbacks. The PR is fetched here and refreshed on a slow interval.
  */
 
-type PanelTab = "changes" | "terminal" | "pr" | "staging" | "assets";
+type PanelTab = "changes" | "pr" | "staging" | "assets";
 
 type ReviewRequestInfo = {
 	to: string;

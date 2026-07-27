@@ -1,11 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
-import type { TranscriptEntry, WSServerMessage } from "../lib/types";
-import { canonicalToolName } from "./ToolCallBlock";
+import type { WSServerMessage } from "../lib/types";
 
 /**
- * The old single Terminal panel, split into two side-panel tabs (SessionViewer):
- * - CommandsPanel: read-only live view of every Bash command the agent has run.
- * - ShellPanel: real interactive terminals over server-side PTYs in the
+ * Interactive terminals over server-side PTYs in the session's worktree:
+ * - ShellPanel provides real interactive terminals without leaving the
  *   session's worktree — poke at the agent's checkout without leaving the
  *   browser. Rendered by Ghostty's VT core (libghostty-vt via WASM,
  *   ghostty-web) with an xterm.js fallback — see loadTerminalEngine.
@@ -18,61 +16,6 @@ import { canonicalToolName } from "./ToolCallBlock";
  *   Daytona PTY — see src/server/terminals.ts); a dim banner says where each
  *   landed.
  */
-
-/** Live terminal view of every Bash command the session has run. */
-export function CommandsPanel({ entries }: { entries: TranscriptEntry[] }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const toolResults = new Map<string, TranscriptEntry>();
-  for (const e of entries) {
-    if (e.type === "tool_result" && e.toolUseId) toolResults.set(e.toolUseId, e);
-  }
-
-  const commands = entries.filter(
-    (e) => e.type === "tool_use" && canonicalToolName(e.toolName) === "Bash"
-  );
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 300;
-    if (nearBottom) el.scrollTop = el.scrollHeight;
-  }, [commands.length]);
-
-  if (commands.length === 0) {
-    return <div className="panel-placeholder">No commands run yet</div>;
-  }
-
-  return (
-    <div className="terminal" ref={scrollRef}>
-      {commands.map((cmd) => {
-        // opencode calls it `cmd`, the Claude SDK `command`.
-        const raw = cmd.toolInput as { command?: string; cmd?: string } | undefined;
-        const input = { command: raw?.command || raw?.cmd };
-        const result = cmd.toolUseId ? toolResults.get(cmd.toolUseId) : undefined;
-        return (
-          <div key={cmd.id} className="terminal-entry">
-            <div className="terminal-cmd">
-              <span className="terminal-prompt">$</span> {input?.command || cmd.content}
-            </div>
-            {result ? (
-              result.content.trim() ? (
-                <pre className="terminal-output">{truncate(result.content, 4000)}</pre>
-              ) : null
-            ) : (
-              <div className="terminal-running">running…</div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function truncate(str: string, max: number): string {
-  if (str.length <= max) return str;
-  return str.slice(0, max) + "\n… (truncated)";
-}
 
 // ── Interactive shell tabs (xterm.js ↔ server PTYs over the session WS) ──
 
