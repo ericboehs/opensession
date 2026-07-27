@@ -64,6 +64,10 @@ import {
 	defaultChatWorkspaceView,
 	pickLandingChat,
 } from "./lib/landing-chat";
+import {
+	getWorkspaceLastChat,
+	saveWorkspaceLastChat,
+} from "./lib/workspace-last-chat";
 import { sessionHasWorkspace } from "./lib/session-workspace";
 import type { AppNotification, Project, SupportThread } from "./lib/types";
 import { NotificationsBell } from "./components/NotificationsBell";
@@ -1279,7 +1283,8 @@ function App() {
 		// including the right sidebar — around the foregrounded pane (wsKey is
 		// unchanged, so the view-tab reset effect doesn't fire). Chat-less
 		// workspaces stay on WorkspacePane, which renders its own info panel.
-		const firstChat = () => pickLandingChat(sessionsRef.current, key);
+		const firstChat = () =>
+			pickLandingChat(sessionsRef.current, key, getWorkspaceLastChat(key));
 		if (tab === "review") {
 			setReviewOpen((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
 			setActiveViewTab("review");
@@ -1673,6 +1678,9 @@ function App() {
 	// mobile page-stack are unaffected). Workspace-less chats keep /session/<id>.
 	useEffect(() => {
 		if (route.view !== "session" || !currentSession) return;
+		// Remember the open chat as its workspace's landing tab, so re-entering
+		// the workspace (sidebar, bare /workspace/<id> URL) returns here.
+		if (activeProjectId) saveWorkspaceLastChat(activeProjectId, route.id);
 		const canonical = activeProjectId
 			? `${BASE_PATH}/workspace/${encodeURIComponent(activeProjectId)}/chat/${encodeURIComponent(route.id)}`
 			: `${BASE_PATH}/session/${encodeURIComponent(route.id)}`;

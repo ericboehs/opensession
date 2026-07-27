@@ -107,6 +107,32 @@ describe("pickLandingChat", () => {
 		const shell = chat({ id: "shell", projectId: prj });
 		expect(pickLandingChat([shell], prj)?.id).toBe("shell");
 	});
+	test("remembered chat wins over the oldest live chat", () => {
+		const a = chat({
+			id: "a",
+			projectId: prj,
+			claudeSessionId: "ses_a",
+			createdAt: "2026-07-01T00:00:00.000Z",
+		});
+		const b = chat({
+			id: "b",
+			projectId: prj,
+			claudeSessionId: "ses_b",
+			createdAt: "2026-07-02T00:00:00.000Z",
+		});
+		expect(pickLandingChat([a, b], prj, "b")?.id).toBe("b");
+	});
+	test("a stale remembered id (archived / other workspace) falls back", () => {
+		const live = chat({ id: "live", projectId: prj, claudeSessionId: "s1" });
+		const gone = chat({
+			id: "gone",
+			projectId: prj,
+			claudeSessionId: "s2",
+			archived: true,
+		});
+		expect(pickLandingChat([live, gone], prj, "gone")?.id).toBe("live");
+		expect(pickLandingChat([live], prj, "elsewhere")?.id).toBe("live");
+	});
 	test("legacy hidden chats and other workspaces are ignored", () => {
 		const side = chat({
 			id: "side",

@@ -33,14 +33,23 @@ export function chatNeverRan(s: UnifiedSession): boolean {
  * the workspace looking alive — falls back to the newest archived
  * conversation so the workspace's history stays reachable. A never-run shell
  * only wins when the workspace has no conversation with content anywhere.
+ *
+ * `preferredId` — the chat last open in this workspace (workspace-last-chat.ts)
+ * — wins outright while it's still a live chat here, so returning to a
+ * workspace lands on the tab it was left on.
  */
 export function pickLandingChat(
 	all: UnifiedSession[],
 	projectId: string,
+	preferredId?: string,
 ): UnifiedSession | undefined {
 	const live = all
 		.filter((s) => !s.archived && s.projectId === projectId && !s.sideChatOf)
 		.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+	const preferred = preferredId
+		? live.find((s) => s.id === preferredId)
+		: undefined;
+	if (preferred) return preferred;
 	const ran = live.find((c) => !chatNeverRan(c));
 	if (ran) return ran;
 	const archived = all
