@@ -58,6 +58,17 @@ export function IconArrowUp(p: IconProps) {
   );
 }
 
+/** Arrow up to a bar — "all the way to the start", vs IconArrowUp's one step. */
+export function IconArrowUpToLine(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M5.75 4.75h12.5" />
+      <path {...stroke} d="M17.25 13.25L12 8.25L6.75 13.25" />
+      <path {...stroke} d="M12 19.25V9.25" />
+    </Svg>
+  );
+}
+
 export function IconArrowDown(p: IconProps) {
   return (
     <Svg {...p}>

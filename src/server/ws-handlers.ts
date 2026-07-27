@@ -616,10 +616,14 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// through to it.
 				if (typeof msg.beforeSeq === "number" && msg.beforeSeq > 0) {
 					try {
+						// "Jump to the start" walks the entire backlog, so it asks for
+						// fatter pages: fewer round trips, and — the real cost — fewer
+						// whole-transcript reconciliations per entry recovered. Capped
+						// because each entry is only clamped to 8KB on the wire.
 						const page = transcriptStore().readBefore(
 							msg.sessionId,
 							Math.floor(msg.beforeSeq),
-							40,
+							Math.min(Math.max(1, Math.floor(msg.limit ?? 40)), 500),
 						);
 						ws.send(
 							JSON.stringify({

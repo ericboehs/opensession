@@ -553,6 +553,9 @@ export type WSClientMessage =
 			/** Transcript v2 seq paging: earliest seq the client holds — the
 			 *  server returns the page just before it. */
 			beforeSeq?: number;
+			/** Entries per page (seq paging only), server-capped. "Jump to the
+			 *  start" walks the whole backlog and asks for fatter pages. */
+			limit?: number;
 	  }
 	| {
 			type: "prompt";

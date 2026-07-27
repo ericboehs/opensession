@@ -111,6 +111,7 @@ import {
 	IconPlus,
 	IconPencil,
 	IconArrowUp,
+	IconArrowUpToLine,
 	IconCrosshair,
 	IconPin,
 	IconPullRequest,
@@ -304,6 +305,14 @@ const HIDDEN_REOPEN_MS = 30_000;
 // late: on the iOS PWA the WebSocket only reconnects after visibility, so what
 // streamed while backgrounded arrives moments after the visibilitychange.
 const RESUME_GROWTH_WINDOW_MS = 8_000;
+// "Jump to the start of the session" walks the backlog a page at a time rather
+// than asking for it in one frame: a multi-thousand-entry transcript would be a
+// tens-of-MB payload and one giant reconciliation. Fat pages keep the number of
+// round trips (and whole-transcript re-renders) in single digits; the ceiling
+// stops a runaway walk on a session nobody should be rendering whole — when it
+// trips, the pill stays put so the reader can keep going deliberately.
+const JUMP_PAGE_ENTRIES = 400;
+const JUMP_MAX_ENTRIES = 4_000;
 
 /** Workspace of the Plain app the tickets live in (for the "jump into Plain" link). */
 const PLAIN_WORKSPACE_ID = "w_01J7WXJG68TFDV9RD1C4JE3W6F";
@@ -674,6 +683,21 @@ export function SessionViewer({
 		cachedTranscript?.historyTruncated ?? false,
 	);
 	const [loadingHistory, setLoadingHistory] = useState(false);
+	// "Jump to the start" — the second segment of the load-earlier control, for
+	// readers who'd otherwise click their way back through a hundred pages. The
+	// walk is driven from the transcript_history handler (each page schedules
+	// the next), so its state lives in a ref; `loaded` enforces the ceiling and
+	// `cursor` catches a backlog that stops receding (a transcript whose
+	// earliest surviving entry isn't seq 1 reports "truncated" forever).
+	const jumpRef = useRef<{
+		sessionId: string;
+		loaded: number;
+		cursor: number | null;
+	} | null>(null);
+	const [jumpingToStart, setJumpingToStart] = useState(false);
+	// Set when the walk lands: the final page's entries render with the commit
+	// that follows, so the scroll itself happens in a layout effect below.
+	const scrollToTopRef = useRef(false);
 	// Byte offset the loaded history begins at — the "load earlier" pagination
 	// cursor (server: parseTranscriptTail/parseTranscriptWindow startOffset).
 	// null = unknown (old server) → load_history falls back to the full resend.
@@ -1160,6 +1184,16 @@ export function SessionViewer({
 		if (h) h.until = Math.max(h.until, performance.now() + 2500);
 	}, [loadingHistory]);
 	useEffect(() => stopHistoryHold, [session.id, stopHistoryHold]);
+	// Switching sessions abandons an in-flight jump-to-start walk (its pages are
+	// session-guarded anyway) — without this the flag would outlive it and keep
+	// the control stuck in its loading state.
+	useEffect(() => {
+		return () => {
+			jumpRef.current = null;
+			scrollToTopRef.current = false;
+			setJumpingToStart(false);
+		};
+	}, [session.id]);
 
 	// Immersive reading on phones (Safari-style): scrolling down through the
 	// transcript slides the top bar, docked tabs and composer off-screen to
@@ -1726,6 +1760,20 @@ export function SessionViewer({
 					setHistoryTruncated(!!msg.truncated);
 					setLoadingHistory(false);
 					setLoading(false);
+					// A jump-to-start walk ends here when the server answers with the
+					// whole transcript — the legacy path's only way to serve a backlog,
+					// and the seq path's fallback when a store read fails. A TRUNCATED
+					// init is a re-snapshot of the tail instead (a reconnect landing
+					// mid-walk), so cancel that quietly rather than parking the reader
+					// at the top of a tail they didn't ask for.
+					if (jumpRef.current?.sessionId === session.id) {
+						if (msg.truncated) {
+							jumpRef.current = null;
+							setJumpingToStart(false);
+						} else {
+							finishJumpToStart();
+						}
+					}
 					if (!shellTimingRef.current.recorded) {
 						shellTimingRef.current.recorded = true;
 						measureChatPerf(
@@ -1748,7 +1796,6 @@ export function SessionViewer({
 					// appends, which is wrong for content older than what's shown.
 					transcriptViewStore.prepend(msg.entries, msg.v2 === true);
 					setHistoryTruncated(!!msg.truncated);
-					setLoadingHistory(false);
 					const seqState = transcriptSeqRef.current;
 					const inSeqMode = seqState?.sessionId === session.id;
 					if (
@@ -1768,6 +1815,30 @@ export function SessionViewer({
 								? msg.startOffset
 								: Math.min(historyStartRef.current, msg.startOffset);
 					}
+					// Jump to the start: this page's cursor is now in place, so ask
+					// for the next one straight from here — leaving loadingHistory
+					// true across the gap. Stop on a whole transcript, an empty page,
+					// a cursor that stopped receding, or the ceiling.
+					const jump = jumpRef.current;
+					if (jump && jump.sessionId === session.id) {
+						jump.loaded += msg.entries.length;
+						const cursor = inSeqMode
+							? seqState.firstSeq
+							: historyStartRef.current;
+						if (
+							msg.truncated &&
+							msg.entries.length > 0 &&
+							cursor !== null &&
+							cursor !== jump.cursor &&
+							jump.loaded < JUMP_MAX_ENTRIES
+						) {
+							jump.cursor = cursor;
+							requestHistoryPage(true);
+							break;
+						}
+						finishJumpToStart();
+					}
+					setLoadingHistory(false);
 					break;
 				}
 				case "transcript_append": {
@@ -2258,6 +2329,16 @@ export function SessionViewer({
 		relayout();
 	}, [entries, queued, visibleSteered, pending, relayout]);
 
+	// The landing half of "jump to the start": the walk's last page arrives with
+	// this commit, so the scroll has to wait for it. After relayout (source order
+	// = effect order) so nothing re-pins the reader afterwards.
+	useLayoutEffect(() => {
+		if (!scrollToTopRef.current) return;
+		scrollToTopRef.current = false;
+		const el = messagesRef.current;
+		if (el) el.scrollTop = 0;
+	}, [entries, messagesRef]);
+
 
 	// Ref mirror keeps rapid clicks from sending duplicate history requests
 	// before React re-renders with the disabled button.
@@ -2265,9 +2346,48 @@ export function SessionViewer({
 	useEffect(() => {
 		loadingHistoryRef.current = loadingHistory;
 	}, [loadingHistory]);
-	const loadEarlierHistory = useCallback(() => {
-		if (!historyTruncated || loadingHistoryRef.current) return;
-		loadingHistoryRef.current = true;
+	// One page request. `whole` is the jump-to-start variant: a fat page in seq
+	// mode, and in legacy mode the deliberately cursor-less request the server
+	// answers with the entire transcript in one transcript_init — byte-window
+	// paging has no cheap way to walk a backlog, and that full resend has always
+	// been its fallback.
+	const requestHistoryPage = useCallback(
+		(whole = false) => {
+			const seqState = transcriptSeqRef.current;
+			if (seqState?.sessionId === session.id) {
+				// Seq mode (transcript v2): page backwards from the earliest seq we
+				// hold. Without a usable cursor the server falls back to a full
+				// legacy resend, same as the legacy no-offset case below.
+				send({
+					type: "load_history",
+					sessionId: session.id,
+					...(seqState.firstSeq !== null && seqState.firstSeq > 1
+						? { beforeSeq: seqState.firstSeq }
+						: {}),
+					...(whole ? { limit: JUMP_PAGE_ENTRIES } : {}),
+				});
+				return;
+			}
+			const cursor = transcriptCursorRef.current;
+			send({
+				type: "load_history",
+				sessionId: session.id,
+				...(!whole &&
+				historyStartRef.current !== null &&
+				historyStartRef.current > 0
+					? {
+							beforeOffset: historyStartRef.current,
+							beforeRev:
+								cursor?.sessionId === session.id ? cursor.rev : undefined,
+						}
+					: {}),
+			});
+		},
+		[send, session.id],
+	);
+	// Shared preamble: stop tracking the live edge, and pin the reader to the
+	// content they're on while the page prepends above it.
+	const beginHistoryLoad = useCallback(() => {
 		leaveLatest();
 		const el = messagesRef.current;
 		if (el) {
@@ -2282,40 +2402,38 @@ export function SessionViewer({
 				});
 		}
 		setLoadingHistory(true);
-		const seqState = transcriptSeqRef.current;
-		if (seqState?.sessionId === session.id) {
-			// Seq mode (transcript v2): page backwards from the earliest seq we
-			// hold. Without a usable cursor the server falls back to a full
-			// legacy resend, same as the legacy no-offset case below.
-			send({
-				type: "load_history",
-				sessionId: session.id,
-				...(seqState.firstSeq !== null && seqState.firstSeq > 1
-					? { beforeSeq: seqState.firstSeq }
-					: {}),
-			});
-			return;
-		}
-		const cursor = transcriptCursorRef.current;
-		send({
-			type: "load_history",
-			sessionId: session.id,
-			...(historyStartRef.current !== null && historyStartRef.current > 0
-				? {
-						beforeOffset: historyStartRef.current,
-						beforeRev:
-							cursor?.sessionId === session.id ? cursor.rev : undefined,
-					}
-				: {}),
-		});
-	}, [
-		historyTruncated,
-		leaveLatest,
-		messagesRef,
-		send,
-		session.id,
-		startHistoryHold,
-	]);
+	}, [leaveLatest, messagesRef, startHistoryHold]);
+	const loadEarlierHistory = useCallback(() => {
+		if (!historyTruncated || loadingHistoryRef.current) return;
+		loadingHistoryRef.current = true;
+		beginHistoryLoad();
+		requestHistoryPage();
+	}, [beginHistoryLoad, historyTruncated, requestHistoryPage]);
+	// The whole backlog, one click: each page's arrival schedules the next (see
+	// the transcript_history handler). `loadingHistory` deliberately stays true
+	// across the gaps, which is what keeps the auto-load sentinel and a second
+	// click from interleaving requests of their own.
+	const jumpToStart = useCallback(() => {
+		if (!historyTruncated || loadingHistoryRef.current) return;
+		loadingHistoryRef.current = true;
+		jumpRef.current = { sessionId: session.id, loaded: 0, cursor: null };
+		setJumpingToStart(true);
+		beginHistoryLoad();
+		requestHistoryPage(true);
+	}, [beginHistoryLoad, historyTruncated, requestHistoryPage, session.id]);
+	// Landing. The hold's whole job is keeping the reader where they were, which
+	// is precisely what we're overriding, so drop it first. scrollTop 0 is the
+	// one position that survives the fresh bubbles' content-visibility estimates
+	// settling — everything that resizes does so below it.
+	const finishJumpToStart = useCallback(() => {
+		if (!jumpRef.current) return;
+		jumpRef.current = null;
+		setJumpingToStart(false);
+		stopHistoryHold();
+		scrollToTopRef.current = true;
+		const el = messagesRef.current;
+		if (el) el.scrollTop = 0;
+	}, [messagesRef, stopHistoryHold]);
 
 	// Auto-load is driven by upward reader intent, never by viewport geometry
 	// alone. That keeps initial hydration and programmatic bottom settling from
@@ -4431,15 +4549,35 @@ export function SessionViewer({
 								<>
 									{historyTruncated && (
 										<div className="flex justify-center [overflow-anchor:none] px-0 pt-1 pb-3.5">
-											<button
-												className="cursor-pointer rounded-full border border-line bg-raised px-3.5 py-[5px] text-[12px] text-dim transition-[background,color] hover:bg-hover hover:text-fg disabled:cursor-default disabled:opacity-60"
-												disabled={loadingHistory}
-												onClick={loadEarlierHistory}
-											>
-												{loadingHistory
-													? "Loading earlier history…"
-													: "↑ Load earlier history"}
-											</button>
+											{/* Segmented: a page at a time, or the whole backlog in
+											    one go for readers who'd otherwise click a hundred
+											    times to reach the first message. */}
+											<div className="flex items-stretch overflow-hidden rounded-full border border-line bg-raised text-[12px] text-dim">
+												<button
+													className="cursor-pointer px-3.5 py-[5px] transition-[background,color] hover:bg-hover hover:text-fg disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
+													disabled={loadingHistory}
+													onClick={loadEarlierHistory}
+												>
+													{jumpingToStart
+														? "Loading full history…"
+														: loadingHistory
+															? "Loading earlier history…"
+															: "↑ Load earlier history"}
+												</button>
+												<span
+													className="w-px shrink-0 self-stretch bg-line"
+													aria-hidden
+												/>
+												<button
+													className="flex cursor-pointer items-center px-2 transition-[background,color] hover:bg-hover hover:text-fg disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
+													disabled={loadingHistory}
+													onClick={jumpToStart}
+													title="Jump to the start of the session"
+													aria-label="Jump to the start of the session"
+												>
+													<IconArrowUpToLine size={20} />
+												</button>
+											</div>
 										</div>
 									)}
 									<React.Profiler
