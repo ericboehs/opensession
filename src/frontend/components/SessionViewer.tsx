@@ -138,6 +138,10 @@ import { MoveToCloudDialog } from "./MoveToCloudDialog";
 import { isPinned, togglePin, onPinsChanged } from "../lib/pins";
 import { useChatScroll } from "../hooks/useChatScroll";
 import { sessionHasWorkspace } from "../lib/session-workspace";
+import {
+	getSessionPanelTab,
+	saveSessionPanelTab,
+} from "../lib/session-panel-tab";
 
 type QueueReceipt = {
 	id?: string;
@@ -848,18 +852,17 @@ export function SessionViewer({
 	// `null` = not editing; a string = the working draft.
 	const [renameDraft, setRenameDraft] = useState<string | null>(null);
 	const [pinned, setPinned] = useState(() => isPinned(session.id));
-	// Default to the Plain tab for a Plain-linked session with no code workspace
-	// (an ask-mode triage): the conversation timeline is the only panel it has.
-	// Otherwise restore the last tab picked in any workspace (remembered per
-	// browser), so switching workspaces keeps you on e.g. PR instead of
-	// resetting to Changes — but only if this session actually has that tab.
+	// Restore this session's own last-picked tab first, so coming back to a
+	// session lands on the tab it was left on; a session never visited on this
+	// device falls back to the last tab picked anywhere (the legacy global
+	// key). Either way a tab only restores when this session actually has it.
+	// "shell" is deliberately never restorable (it would spawn a PTY on every
+	// load) and the global fallback stays info/changes-only.
 	const [panelTab, setPanelTab] = useState<PanelTab>(() => {
 		const workspace = sessionHasWorkspace(session);
+		const remembered = getSessionPanelTab(session.id);
+		if (remembered && (remembered === "info" || workspace)) return remembered;
 		const stored = localStorage.getItem("opensession-panel-tab");
-		// "workflows" isn't meaningfully restorable (runs seed async, so the tab
-		// starts hidden and the body would flash PrPanel) — it, and any stored
-		// tab that no longer exists, maps back to Info. "shell" is deliberately
-		// not restorable either: restoring it would spawn a PTY on every load.
 		const restorable: PanelTab[] = ["info", "changes"];
 		const tab: PanelTab | null = restorable.includes(stored as PanelTab)
 			? (stored as PanelTab)
@@ -875,6 +878,7 @@ export function SessionViewer({
 	function selectPanelTab(tab: PanelTab) {
 		setPanelTab(tab);
 		localStorage.setItem("opensession-panel-tab", tab);
+		saveSessionPanelTab(session.id, tab);
 	}
 	// The Shell panel stays mounted (hidden) once opened so switching side-panel
 	// tabs doesn't kill its PTYs — this latches on first open, and resets per
