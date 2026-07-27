@@ -98,6 +98,7 @@ import { BottomSheet } from "../ui/sheet";
 import { cn } from "../ui/cn";
 import { Reorder, useDragControls } from "motion/react";
 import {
+	IconChevronDown,
 	IconChevronLeft,
 	IconChevronRight,
 	IconPencil,
@@ -819,18 +820,24 @@ function Select<T extends string>({
 	label: string;
 }) {
 	return (
-		<select
-			className="ui-select"
-			aria-label={label}
-			value={value}
-			onChange={(e) => onChange(e.target.value as T)}
-		>
-			{options.map((o) => (
-				<option key={o.value} value={o.value}>
-					{o.label}
-				</option>
-			))}
-		</select>
+		<span className="relative inline-grid">
+			<select
+				className="ui-select appearance-none !pr-9"
+				aria-label={label}
+				value={value}
+				onChange={(e) => onChange(e.target.value as T)}
+			>
+				{options.map((o) => (
+					<option key={o.value} value={o.value}>
+						{o.label}
+					</option>
+				))}
+			</select>
+			<IconChevronDown
+				className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
+				size={20}
+			/>
+		</span>
 	);
 }
 
