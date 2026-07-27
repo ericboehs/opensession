@@ -2666,6 +2666,12 @@ export function SessionViewer({
 				},
 			]);
 		}
+		// Your own send always lands in view. relayout's glue only runs while
+		// `following`, so once the reader has scrolled up into history the
+		// optimistic bubble arrives below the fold with nothing moving — and a
+		// send is unambiguous intent to watch this turn. Instant, not smooth: the
+		// glue that follows sets scrollTop directly and would fight an animation.
+		scrollToLatest("auto");
 		setImages([]);
 		setFiles([]);
 		setContextChats([]);
