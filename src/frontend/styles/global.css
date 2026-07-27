@@ -765,6 +765,9 @@ html.wco .app-body.sidebar-collapsed
 		width: 100%;
 		margin-bottom: 0;
 	}
+	.sidebar-tools-head + .sidebar-nav {
+		margin-top: -8px;
+	}
 	.sidebar-workspace-fallback {
 		margin-right: 8px;
 		margin-left: 16px;
