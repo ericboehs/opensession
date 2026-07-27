@@ -4882,7 +4882,7 @@ export function SessionViewer({
 									<button
 										className={`panel-tab ${panelTab === "shell" ? "active" : ""}`}
 										onClick={() => selectPanelTab("shell")}
-										title="Interactive shell tabs in this session's workspace (inside its sandbox when sandboxed)"
+										title="Interactive terminal tabs in this session's workspace (inside its sandbox when sandboxed)"
 									>
 										Terminal
 									</button>

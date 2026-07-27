@@ -180,7 +180,7 @@ export function ShellPanel({
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex items-center gap-1 px-2 pt-1.5 pb-1 shrink-0 flex-wrap">
+      <div className="flex items-center gap-1 px-3 pt-1.5 pb-1 shrink-0 flex-wrap">
         {tabs.map((t) => (
           <span
             key={t.id}
@@ -189,11 +189,11 @@ export function ShellPanel({
             }`}
             onClick={() => setActiveId(t.id)}
           >
-            Shell {t.n}
+            Terminal {t.n}
             <span
               role="button"
-              aria-label={`Close shell ${t.n}`}
-              title="Close shell (kills its PTY)"
+              aria-label={`Close terminal ${t.n}`}
+              title="Close terminal (kills its PTY)"
               className="opacity-50 hover:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
@@ -208,8 +208,8 @@ export function ShellPanel({
           <button
             className="btn-small"
             onClick={addTab}
-            title="New shell tab"
-            aria-label="New shell tab"
+            title="New terminal tab"
+            aria-label="New terminal tab"
           >
             +
           </button>
@@ -218,7 +218,7 @@ export function ShellPanel({
       {tabs.length === 0 ? (
         <div className="panel-placeholder">
           <button className="btn-small" onClick={addTab}>
-            Open a shell
+            Open a terminal
           </button>
         </div>
       ) : (
@@ -352,7 +352,7 @@ function ShellView({
   return (
     <div
       ref={hostRef}
-      className={`flex-1 min-h-0 px-1.5 pb-1.5 ${visible ? "" : "hidden"}`}
+      className={`flex-1 min-h-0 px-3 pb-1.5 ${visible ? "" : "hidden"}`}
     />
   );
 }
