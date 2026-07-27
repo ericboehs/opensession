@@ -90,6 +90,12 @@ import {
 } from "./lib/pins";
 import { applyTabOrder, saveTabOrder, onTabOrderChanged } from "./lib/tab-order";
 import {
+	getActiveViewTab,
+	getActiveViewTabKeys,
+	saveActiveViewTab,
+	type ActiveViewTab,
+} from "./lib/active-view-tab";
+import {
 	getTabColors,
 	setTabColor,
 	onTabColorsChanged,
@@ -769,13 +775,11 @@ function App() {
 	// open SessionViewer to clear its composer and scroll to the live edge. With no
 	// session open there's nothing to stay in, so it falls back to the palette.
 	const [newChatSeq, setNewChatSeq] = useState(0);
-	// Which non-chat view-tab is foregrounded for the current session — Review,
-	// Staging, or neither (the chat). A single field makes "both open at once"
-	// unrepresentable; the two show-flags derive from it. Reset to chat whenever
-	// the open session changes.
-	const [activeViewTab, setActiveViewTab] = useState<
-		"review" | "conversation" | "staging" | "assets" | "preview" | null
-	>(null);
+	// Which non-chat view-tab is foregrounded. A single field makes "both open
+	// at once" unrepresentable; the show-flags derive from it. The selection is
+	// restored per workspace below rather than leaking across workspaces.
+	const [activeViewTab, setActiveViewTabState] =
+		useState<ActiveViewTab>(null);
 	const reviewActive = activeViewTab === "review";
 	const conversationActive = activeViewTab === "conversation";
 	const stagingActive = activeViewTab === "staging";
@@ -784,7 +788,9 @@ function App() {
 	// Workspaces whose Review / Conversation / Preview environment view-tab is
 	// present in the strip; empty by default (a tab is added when its pane is
 	// first opened).
-	const [reviewOpen, setReviewOpen] = useState<Set<string>>(() => new Set());
+	const [reviewOpen, setReviewOpen] = useState<Set<string>>(
+		() => new Set(getActiveViewTabKeys("review")),
+	);
 	// PR-backed workspaces (adopted from a PR — the ghpr ones) show Review by
 	// default even when you land straight in one of their chats; this tracks
 	// their explicit closes, mirroring conversationClosed below.
@@ -797,11 +803,17 @@ function App() {
 	const [conversationClosed, setConversationClosed] = useState<Set<string>>(
 		() => new Set(),
 	);
-	const [stagingOpen, setStagingOpen] = useState<Set<string>>(() => new Set());
+	const [stagingOpen, setStagingOpen] = useState<Set<string>>(
+		() => new Set(getActiveViewTabKeys("staging")),
+	);
 	// Sessions whose local-dev Preview view-tab is open (full-width iframe of
 	// the running dev server — sibling of Staging, which shows the PR deploy).
-	const [previewTabOpen, setPreviewTabOpen] = useState<Set<string>>(() => new Set());
-	const [assetsOpen, setAssetsOpen] = useState<Set<string>>(() => new Set());
+	const [previewTabOpen, setPreviewTabOpen] = useState<Set<string>>(
+		() => new Set(getActiveViewTabKeys("preview")),
+	);
+	const [assetsOpen, setAssetsOpen] = useState<Set<string>>(
+		() => new Set(getActiveViewTabKeys("assets")),
+	);
 	// Bumped when the per-workspace tab order changes (a drag-drop commit, or a
 	// storage push from another tab) so the strip re-derives `projectChats` in
 	// the new order. The order itself lives in localStorage (lib/tab-order).
@@ -1134,12 +1146,16 @@ function App() {
 			: null);
 	const reviewDismissed = !!wsKey && reviewClosed.has(wsKey);
 	const defaultChatView = defaultChatWorkspaceView(wsRecord, reviewDismissed);
-	// Opening a different workspace starts on its default surface: Review for a
-	// PR-backed workspace, otherwise chat. Switching chats WITHIN a workspace
-	// still resets via onSelect's explicit setActiveViewTab(null) — clicking a
-	// chat tab means "show me the chat".
+	function setActiveViewTab(tab: ActiveViewTab) {
+		setActiveViewTabState(tab);
+		if (wsKey) saveActiveViewTab(wsKey, tab);
+	}
+	// Return each workspace to its last foregrounded tab. A workspace without a
+	// saved selection still starts on its normal default surface. Switching chats
+	// within a workspace records chat as the selection via the tab-strip handler.
 	useEffect(() => {
-		setActiveViewTab(defaultChatView);
+		const remembered = wsKey ? getActiveViewTab(wsKey) : undefined;
+		setActiveViewTabState(remembered === undefined ? defaultChatView : remembered);
 	}, [wsKey, defaultChatView]);
 	// ...unless we just opened Review for that workspace from the sidebar: once
 	// it lands (this render or the one after navigation), foreground Review and
