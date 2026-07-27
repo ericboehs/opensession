@@ -1076,6 +1076,123 @@ function applyPrCloseTombstones(
 	}
 }
 
+/** The cached head branch of an open PR, by number — lets webhook events that
+ *  carry only a PR number (issue_comment on a PR) resolve the branch the
+ *  detail cache is keyed by. */
+export function cachedPrBranchByNumber(
+	ghRepo: string,
+	number: number,
+): string | undefined {
+	const repoId = prRepos().find(
+		(repo) => repo.ghRepo.toLowerCase() === ghRepo.toLowerCase(),
+	)?.id;
+	const byBranch = repoId ? prCache.data.get(repoId) : undefined;
+	if (!byBranch) return undefined;
+	for (const [branch, pr] of byBranch) if (pr.number === number) return branch;
+	return undefined;
+}
+
+// Webhook write-throughs can burst (a push lands synchronize + several check
+// events within seconds) — debounce the disk snapshot instead of rewriting it
+// per delivery. The in-memory cache is always current; the snapshot only
+// matters across restarts.
+let prCachePersistTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePrCachePersist() {
+	if (prCachePersistTimer) return;
+	prCachePersistTimer = setTimeout(() => {
+		prCachePersistTimer = null;
+		persistPrCache(prCache.data);
+	}, 5_000);
+}
+
+/**
+ * Write-through from a GitHub webhook delivery (dispatched by pr-webhook.ts).
+ * A `pull_request` payload carries the full PR object, so the bulk-cache row
+ * is patched/created without spending any GitHub quota; a
+ * `pull_request_review` payload applies the reviewer's verdict through the
+ * same mutation the OS1 review UI uses. Fields the payloads don't carry
+ * (aggregate review data, checks) keep their cached values until the next
+ * bulk sweep. Deliberately does NOT touch prCache.ts: the sweep cadence and
+ * its ETag probe stay the authoritative reconciliation loop.
+ */
+export function applyPrWebhookToBulkCache(
+	ghRepo: string,
+	event: string,
+	payload: any,
+): void {
+	const repoId = prRepos().find(
+		(repo) => repo.ghRepo.toLowerCase() === ghRepo.toLowerCase(),
+	)?.id;
+	if (!repoId) return;
+
+	if (event === "pull_request_review") {
+		const branch: string | undefined = payload?.pull_request?.head?.ref;
+		const person = githubLoginToPersonKey(payload?.review?.user?.login);
+		const state = String(payload?.review?.state || "").toUpperCase();
+		const reviewEvent =
+			state === "APPROVED"
+				? ("APPROVE" as const)
+				: state === "CHANGES_REQUESTED"
+					? ("REQUEST_CHANGES" as const)
+					: state === "COMMENTED"
+						? ("COMMENT" as const)
+						: null;
+		if (branch && person && reviewEvent)
+			markCachedPrReviewed(ghRepo, branch, person, reviewEvent);
+		return;
+	}
+
+	if (event !== "pull_request") return;
+	const pr = payload?.pull_request;
+	const branch: string | undefined = pr?.head?.ref;
+	if (!pr || typeof pr.number !== "number" || !branch) return;
+	let byBranch = prCache.data.get(repoId);
+	if (!byBranch) {
+		byBranch = new Map();
+		prCache.data.set(repoId, byBranch);
+	}
+	const prev = byBranch.get(branch);
+	byBranch.set(branch, {
+		url: pr.html_url || prev?.url || "",
+		state:
+			pr.merged || pr.merged_at
+				? "MERGED"
+				: pr.state === "closed"
+					? "CLOSED"
+					: "OPEN",
+		number: pr.number,
+		title: pr.title || prev?.title || "",
+		isDraft: !!pr.draft,
+		additions: typeof pr.additions === "number" ? pr.additions : prev?.additions || 0,
+		deletions: typeof pr.deletions === "number" ? pr.deletions : prev?.deletions || 0,
+		changedFiles:
+			typeof pr.changed_files === "number" ? pr.changed_files : prev?.changedFiles || 0,
+		reviewDecision: prev?.reviewDecision || "",
+		author: pr.user?.login || prev?.author || "",
+		createdAt: pr.created_at || prev?.createdAt || "",
+		updatedAt: pr.updated_at || new Date().toISOString(),
+		checks: prev?.checks || { total: 0, passed: 0, failed: 0, pending: 0 },
+		// REST payloads carry mergeable as true/false/null (computed async).
+		mergeable:
+			pr.mergeable === true
+				? "MERGEABLE"
+				: pr.mergeable === false
+					? "CONFLICTING"
+					: prev?.mergeable || "UNKNOWN",
+		reviewRequested: Array.isArray(pr.requested_reviewers)
+			? pr.requested_reviewers
+					.map((r: any) => githubLoginToPersonKey(r?.login))
+					.filter((p: string | undefined): p is string => !!p)
+			: prev?.reviewRequested || [],
+		reviewedBy: prev?.reviewedBy || [],
+		assignees: Array.isArray(pr.assignees)
+			? pr.assignees.map((a: any) => a?.login).filter((l: any): l is string => !!l)
+			: prev?.assignees || [],
+		sessionRef: sessionRefFromPrBody(pr.body) ?? prev?.sessionRef,
+	});
+	schedulePrCachePersist();
+}
+
 // Rate-limit backoff is shared across ALL GitHub callers (github-limit.ts):
 // when any caller reports exhaustion, this refresh pauses too and keeps
 // serving its stale (possibly disk-seeded) snapshot until GitHub's reset.

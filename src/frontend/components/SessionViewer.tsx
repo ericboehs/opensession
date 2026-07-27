@@ -1925,6 +1925,15 @@ export function SessionViewer({
 				case "git_pushed":
 					if (msg.sessionId === session.id) setGitRefreshTick((t) => t + 1);
 					break;
+				case "pr_updated":
+					// GitHub webhook activity on this session's branch (primary or an
+					// attached repo's) — refetch the PR status header immediately.
+					if (
+						msg.branch === session.branch ||
+						(session.attachedRepos || []).some((r) => r.branch === msg.branch)
+					)
+						setGitRefreshTick((t) => t + 1);
+					break;
 				case "workspace_status":
 					if (msg.sessionId === session.id)
 						setWorkspacePreparing(!msg.ready);

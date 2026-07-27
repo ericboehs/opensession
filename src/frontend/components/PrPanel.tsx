@@ -527,6 +527,19 @@ export function PrPanel({
     };
   }, [load]);
 
+  // A GitHub webhook reported activity on the shown PR's branch (review, CI,
+  // push, merge) — refetch immediately instead of waiting out the poll above.
+  // The server invalidated its caches before broadcasting, so this reads
+  // fresh data.
+  useEffect(() => {
+    if (!addHandler) return;
+    return addHandler((msg) => {
+      if (msg.type !== "pr_updated") return;
+      const branch = previewTarget?.branch ?? active?.branch;
+      if (branch && msg.branch === branch) void load(true);
+    });
+  }, [addHandler, load, previewTarget?.branch, active?.branch]);
+
   useEffect(() => {
     const files = pr?.files || [];
     if (!diff?.patch || files.length < 3) {

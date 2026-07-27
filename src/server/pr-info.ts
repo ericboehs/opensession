@@ -262,7 +262,10 @@ function spawnGh(args: string[], credential: GithubCredential, stdin?: "pipe") {
   });
 }
 
-function invalidatePrInfo(repo: string, branch: string): void {
+/** Exported for pr-webhook.ts: a GitHub webhook delivery for this branch
+ *  drops the cached details/diff so the next fetch re-reads GitHub instead of
+ *  waiting out the 5-min TTL. */
+export function invalidatePrInfo(repo: string, branch: string): void {
   const key = cacheKey(repo, branch);
   cache.delete(key);
   diffCache.delete(key);

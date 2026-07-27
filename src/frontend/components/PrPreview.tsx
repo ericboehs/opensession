@@ -148,6 +148,21 @@ export function PrPreview({
 		};
 	}, [load]);
 
+	// A GitHub webhook reported activity on this PR's branch — refetch now
+	// (the server invalidated its caches before broadcasting).
+	useEffect(
+		() =>
+			addHandler((msg) => {
+				if (
+					msg.type === "pr_updated" &&
+					msg.repo === repo &&
+					msg.branch === branch
+				)
+					void load();
+			}),
+		[addHandler, repo, branch, load],
+	);
+
 	useEffect(() => {
 		const files = pr?.files || [];
 		if (!diff?.patch || files.length < 3) {

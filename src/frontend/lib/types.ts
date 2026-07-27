@@ -786,6 +786,10 @@ export type WSServerMessage =
 	// A silent server-side auto-push published the session's local commits (repo
 	// id for multi-repo sessions) — the PR status header refetches on this.
 	| { type: "git_pushed"; sessionId: string; repo?: string }
+	// A GitHub webhook reported PR/review/check activity on a branch — PR views
+	// showing that branch refetch immediately instead of waiting out their
+	// poll interval (`repo` is the repo id, e.g. "tella-fusion").
+	| { type: "pr_updated"; repo: string; ghRepo: string; branch: string; number?: number }
 	// The session's scratch assets folder changed (agent wrote/deleted a
 	// file) — the Assets tab refetches its tree on this.
 	| { type: "assets_changed"; sessionId: string }

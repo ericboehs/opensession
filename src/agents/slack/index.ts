@@ -618,6 +618,13 @@ Please address this feedback:
         });
       }
 
+      // Sync the server's PR caches + nudge open tabs (server/pr-webhook.ts)
+      // on every delivery — it filters to PR-carrying events itself, including
+      // ones the github agent doesn't consume (reviews, checks, statuses).
+      import("../../server/pr-webhook")
+        .then((m) => m.handlePrWebhookEvent(event, payload))
+        .catch((e) => console.error("[slack] pr-webhook dispatch failed:", e));
+
       // Forward PR events to the github agent (review / auto-fix / simplify,
       // @mention replies on PR comments, and merge/deploy notifications into
       // linked sessions). Fire-and-forget so a github-module error never breaks
