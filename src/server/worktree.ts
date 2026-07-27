@@ -437,6 +437,31 @@ async function removeLegacySuffixWorktree(
 }
 
 /**
+ * Fetch branches, guaranteeing their `origin/<branch>` refs exist afterwards.
+ *
+ * `git fetch origin <branch>` writes `refs/remotes/origin/<branch>` only when the
+ * remote's configured refspec covers it. A single-branch clone — what
+ * `git clone --branch X` leaves behind, as
+ * `remote.origin.fetch = +refs/heads/X:refs/remotes/origin/X` — updates FETCH_HEAD
+ * and nothing else. The fetch then exits 0 while the `origin/<branch>` the callers
+ * below hand to `worktree add` never appears, so the add dies with
+ * "fatal: invalid reference: origin/<branch>" and EVERY PR review in that repo
+ * fails identically (not transiently — retrying on the next push hits it again).
+ * Explicit refspecs bypass the remote config. Found on tella-windows, cloned
+ * single-branch during node provisioning; `--unshallow` fixes depth, not this.
+ */
+async function fetchBranchesWithTracking(
+  gitDir: string,
+  ...branches: (string | undefined)[]
+): Promise<void> {
+  const specs = [...new Set(branches.filter((b): b is string => !!b))].map(
+    (b) => `+refs/heads/${b}:refs/remotes/origin/${b}`,
+  );
+  if (specs.length === 0) return;
+  await $`git -C ${gitDir} fetch origin ${specs} --quiet`;
+}
+
+/**
  * Worktree checked out to an EXISTING PR head branch (not branched from main),
  * so commits/pushes land back on that PR. Uses a dedicated `-os` path so it
  * never clobbers a human/Slack worktree on the same branch. On reuse, hard-resets
@@ -454,7 +479,7 @@ export async function createWorktreeForPrBranch(headRef: string, repoId?: string
       `${worktreesDir()}/${repo.wtPrefix}-${headRef}-michael`,
       `${headRef}-michael`,
     );
-    await $`git -C ${repo.repo} fetch origin ${headRef} --quiet`;
+    await fetchBranchesWithTracking(repo.repo, headRef);
     if (existsSync(wtPath)) {
       await $`git -C ${wtPath} fetch origin ${headRef} --quiet`.nothrow();
       await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet().nothrow();
@@ -495,7 +520,7 @@ export async function createReviewWorktreeForPrHead(
       `${worktreesDir()}/${repo.wtPrefix}-${headRef}-michael-review`,
       `${headRef}-michael-review`,
     );
-    await $`git -C ${repo.repo} fetch origin ${headRef} ${baseRef || repo.defaultBranch} --quiet`;
+    await fetchBranchesWithTracking(repo.repo, headRef, baseRef || repo.defaultBranch);
     if (existsSync(wtPath)) {
       await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet();
       return wtPath;
