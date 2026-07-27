@@ -1179,6 +1179,21 @@ function sessionRepo(s: UnifiedSession): string {
 	return s.repo || DEFAULT_PROJECT;
 }
 
+// Every `repo\nbranch` key a chat's work can be reached by: its own checkout
+// plus each PR / attached-repo / linked-PR ref it carries. Matching chats to
+// the open-PR list runs through this, so the PR-row dedupe and the live-review
+// lookup below can't drift apart.
+function chatPrKeys(c: UnifiedSession): string[] {
+	const keys = c.branch ? [`${sessionRepo(c)}\n${c.branch}`] : [];
+	for (const ref of [
+		...(c.prs || []),
+		...(c.attachedRepos || []),
+		...(c.linkedPrs || []),
+	])
+		keys.push(`${ref.repo}\n${ref.branch}`);
+	return keys;
+}
+
 
 export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	sessions,
@@ -1784,6 +1799,17 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		);
 	}, [filtered, filter.sort]);
 
+	// PRs with an automated OpenSession review in flight, keyed `repo\nbranch`
+	// — the same signal the PR rows spell out as "Review running". The review
+	// itself runs in a `bks-ghpr-*` chat that lives in the Automations band, so
+	// the workspace lanes below can't see it in their own chats.
+	const activeReviewPrKeys = useMemo(() => {
+		const keys = new Set<string>();
+		for (const pr of openPrs || [])
+			if (pr.reviewActive) keys.add(`${pr.repo}\n${pr.branch}`);
+		return keys;
+	}, [openPrs]);
+
 	// ── Workspace rows ──────────────────────────────────────────────────────
 	// The sidebar's main list is Workspaces (not individual chats): one row per
 	// workspace, plus one implicit row per not-yet-wrapped standalone chat (the
@@ -1858,8 +1884,19 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			// An idle row's lane follows its PR lifecycle (ready → Ready to
 			// merge, otherwise-open → In progress). A human-pinned lane wins —
 			// deliberately parking a row in Backlog must stick.
-			if (status === "pending" && !chats.some((c) => pinnedLane(c)))
-				status = prLaneForChats(statusSources) ?? status;
+			if (status === "pending" && !chats.some((c) => pinnedLane(c))) {
+				const prLane = prLaneForChats(statusSources);
+				// …but a green PR whose automated review is still running isn't
+				// ready for anything yet — that review can still come back
+				// requesting changes. Hold the row in In progress until it lands.
+				status =
+					prLane === "review" &&
+					chats.some((c) =>
+						chatPrKeys(c).some((k) => activeReviewPrKeys.has(k)),
+					)
+						? "inprogress"
+						: (prLane ?? status);
+			}
 			return {
 				key,
 				workspace,
@@ -1937,7 +1974,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		rows.sort((a, b) => (b[key] || "").localeCompare(a[key] || ""));
 		return rows;
 		// `lanes` feeds mineStatus/pinnedLane (read via the lib cache).
-	}, [filtered, sessions, projects, selectedId, reads, search, filter, lanes, noteActivity, noteReadsRev]);
+	}, [filtered, sessions, projects, selectedId, reads, search, filter, lanes, noteActivity, noteReadsRev, activeReviewPrKeys]);
 
 	// Automations keep their own collapsible band, one group per automation —
 	// hundreds of one-shot runs would drown the Workspaces list otherwise.
@@ -2252,15 +2289,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			...awaitingReviewRows,
 		];
 		for (const r of rowsInView)
-			for (const c of r.chats) {
-				if (c.branch) covered.add(`${sessionRepo(c)}\n${c.branch}`);
-				for (const ref of [
-					...(c.prs || []),
-					...(c.attachedRepos || []),
-					...(c.linkedPrs || []),
-				])
-					covered.add(`${ref.repo}\n${ref.branch}`);
-			}
+			for (const c of r.chats) for (const k of chatPrKeys(c)) covered.add(k);
 		return reviewQueueItems.filter((item) => {
 			if (covered.has(`${item.pr.repo}\n${item.pr.branch}`)) return false;
 			if (filter.repo !== "all" && item.pr.repo !== filter.repo)
