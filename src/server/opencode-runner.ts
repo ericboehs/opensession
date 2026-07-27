@@ -3168,6 +3168,13 @@ async function* runOpencodeAttempt(
             ),
           },
           autoshare: false,
+          // Shadow-git snapshots run `git add --all` over the entire worktree
+          // (plus git-lfs re-hashing) at every step-start AND step-finish of
+          // every turn. On multi-GB tella-fusion worktrees with a dozen
+          // concurrent runs that saturated the NVMe (2026-07-27: load 50-85,
+          // 86% iowait, the web UI unreachable). We never use opencode's
+          // undo/revert — worktrees + PRs are the rollback mechanism.
+          snapshot: false,
           plugin: [...(meridianPlugin || []), SESSION_TAG_PLUGIN_PATH, ARG_COERCE_PLUGIN_PATH],
           ...(Object.keys(providerConfig).length ? { provider: providerConfig } : {}),
           // Code mode reads files outside the worktree as a matter of course —
@@ -3209,6 +3216,9 @@ async function* runOpencodeAttempt(
               },
           instructions: [instructionsPath],
           autoshare: false,
+          // Same as the shared config: snapshot tracking is an I/O storm on
+          // big worktrees and we never use opencode's undo/revert.
+          snapshot: false,
           // Same static oracle/worker set as the shared config — a per-run
           // agent section would churn this server's config hash when a
           // session moves on/off a dial or orchestrator preset.
