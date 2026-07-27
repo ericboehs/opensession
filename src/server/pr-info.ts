@@ -754,6 +754,13 @@ function isPermanentPrApiError(msg: string): boolean {
   return /rate limit|authentication|bad credentials|requires authentication|resource not accessible/i.test(msg);
 }
 
+// Fine-grained PATs can't be granted the Checks permission (GitHub App-only),
+// so statusCheckRollup fails with "Resource not accessible by personal access
+// token" under the tellahq-scoped bot PAT. Once seen, skip the field process-
+// wide (checks render empty) instead of failing every PR fetch — the flag
+// resets on restart, so it self-heals when the credential gains the permission.
+let skipStatusCheckRollup = false;
+
 async function fetchPrDetails(
   branch: string,
   repo: string
@@ -766,13 +773,21 @@ async function fetchPrDetails(
     // failures; a genuine "no pull requests found" stays a fast null.
     let raw = "";
     for (let attempt = 1; ; attempt++) {
+      const baseFields =
+        "number,title,url,state,isDraft,baseRefName,headRefName,headRefOid,additions,deletions,changedFiles,reviewDecision,author,body,mergeable,mergeStateStatus,comments,commits,files,latestReviews,reviewRequests";
+      const fields = skipStatusCheckRollup ? baseFields : `${baseFields},statusCheckRollup`;
       try {
-        raw = await $`gh pr view ${branch} --repo ${repo} --json number,title,url,state,isDraft,baseRefName,headRefName,headRefOid,additions,deletions,changedFiles,reviewDecision,author,body,statusCheckRollup,mergeable,mergeStateStatus,comments,commits,files,latestReviews,reviewRequests`
+        raw = await $`gh pr view ${branch} --repo ${repo} --json ${fields}`
           .quiet()
           .text();
         break;
       } catch (e: any) {
         const msg = String(e?.stderr || e?.message || e).slice(0, 300);
+        if (!skipStatusCheckRollup && /resource not accessible/i.test(msg) && /statusCheckRollup/.test(msg)) {
+          skipStatusCheckRollup = true;
+          console.warn(`[pr-info] token can't read statusCheckRollup — dropping checks from PR queries until restart`);
+          continue;
+        }
         if (isNoPrError(msg) || isPermanentPrApiError(msg) || attempt >= 3) throw e;
         console.warn(`[pr-info] gh pr view ${branch} (${repo}) attempt ${attempt} failed, retrying: ${msg}`);
         await new Promise((r) => setTimeout(r, attempt * 2000));
