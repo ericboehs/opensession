@@ -54,7 +54,10 @@ function NoteText({ text }: { text: string }) {
 export function NoteBubble({ note }: { note: ChatMessage }) {
 	return (
 		<div
-			className="note-bubble my-2 rounded-lg border px-3 py-2"
+			// A note is a transcript block like any other, so it takes the same
+			// centered reading column the turns, footers and walkthrough cards use
+			// (mx-auto + --chat-col) instead of spanning the whole pane.
+			className="note-bubble mx-auto my-2 w-full max-w-[var(--chat-col)] rounded-lg border px-3 py-2"
 			style={{
 				borderColor: "color-mix(in srgb, var(--yellow) 32%, transparent)",
 				background: "color-mix(in srgb, var(--yellow) 7%, transparent)",
