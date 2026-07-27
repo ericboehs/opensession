@@ -27,6 +27,11 @@ export interface SessionSubagentSnapshot {
   /** Child engine session id (ses_…) or SDK agentId — the drill-in key.
    *  Missing only for a task call still pending before its child exists. */
   id?: string;
+  /** The spawning task call's tool_use id (opencode part id / SDK toolUseId).
+   *  Matches the transcript entry's toolUseId, so the UI can link a Task row
+   *  to this snapshot — and open the child — while the call is still running
+   *  (the result text that normally carries the child id doesn't exist yet). */
+  toolUseId?: string;
   /** Agent flavor: task subagent_type / opencode agent name / SDK agentType. */
   agentType?: string;
   /** Row label: the task call's description, falling back to the child title. */
@@ -103,13 +108,13 @@ function listOpencodeSubagents(ocSessionId: string): SessionSubagentSnapshot[] {
 
     // The parent's task tool parts carry the live status + the description the
     // model gave each sub-agent; the child session rows carry title/tokens.
-    let parts: Array<{ data: string }> = [];
+    let parts: Array<{ id: string; data: string }> = [];
     try {
       parts = db
         .query(
-          "SELECT data FROM part WHERE session_id = ? AND json_extract(data, '$.tool') = 'task' ORDER BY time_created ASC, id ASC"
+          "SELECT id, data FROM part WHERE session_id = ? AND json_extract(data, '$.tool') = 'task' ORDER BY time_created ASC, id ASC"
         )
-        .all(ocSessionId) as Array<{ data: string }>;
+        .all(ocSessionId) as Array<{ id: string; data: string }>;
     } catch {
       // JSON1 hiccup or malformed rows — fall through to child rows alone.
     }
@@ -142,6 +147,9 @@ function listOpencodeSubagents(ocSessionId: string): SessionSubagentSnapshot[] {
       const model = modelId(state.metadata?.model) ?? modelId(child?.model);
       out.push({
         id: childId,
+        // The part row id IS the transcript's tool_use id (data JSON carries
+        // no id field of its own).
+        toolUseId: p.id,
         agentType:
           (typeof state.input?.subagent_type === "string"
             ? state.input.subagent_type
@@ -204,6 +212,7 @@ export function listSessionSubagents(session: {
     for (const m of listSubagents(session.transcriptPath)) {
       out.push({
         id: m.agentId,
+        toolUseId: m.toolUseId,
         agentType: m.agentType,
         label: m.description || m.agentType || m.agentId,
         status: "done",

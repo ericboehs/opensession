@@ -32,7 +32,11 @@ import {
 	orderTranscriptEntries,
 } from "../lib/transcript-state";
 import { TranscriptBlocks } from "./TranscriptBlocks";
-import { ToolPathRootsProvider } from "./ToolCallBlock";
+import {
+	LiveSubagentsProvider,
+	ToolPathRootsProvider,
+	type LiveSubagent,
+} from "./ToolCallBlock";
 import { MarkdownBody } from "./MarkdownBody";
 import {
 	ToolEvidencePanel,
@@ -1454,7 +1458,14 @@ export function SessionViewer({
 			try {
 				const d = await fetchSessionSubagents(session.id);
 				if (stale) return;
-				setSubagents(d.subagents);
+				// Keep the previous array when nothing changed: downstream memos
+				// (and the LiveSubagents context feeding every ToolCallBlock)
+				// only re-render on real updates, not on every 4s poll tick.
+				setSubagents((prev) =>
+					JSON.stringify(prev) === JSON.stringify(d.subagents)
+						? prev
+						: d.subagents,
+				);
 				if (d.sessionRunning) timer = window.setTimeout(load, 4000);
 			} catch {
 				// Transient (auth refresh, reload) — the next poll or session
@@ -1467,6 +1478,15 @@ export function SessionViewer({
 			if (timer) window.clearTimeout(timer);
 		};
 	}, [session.id, isBusy]);
+	// Task rows learn their child session id from this map while the call is
+	// still running (the result text that normally carries it doesn't exist
+	// yet), enabling the mid-run "Watch ↗" drill-in.
+	const liveSubagents = useMemo(() => {
+		const m = new Map<string, LiveSubagent>();
+		for (const s of subagents)
+			if (s.toolUseId) m.set(s.toolUseId, { id: s.id, status: s.status });
+		return m;
+	}, [subagents]);
 	// Derived, not the raw flag: transcript content or streaming text means the
 	// opening run already started, so the worktree is done — this guards against
 	// a stale sessions poll re-asserting the flag after the workspace_status
@@ -4578,6 +4598,7 @@ export function SessionViewer({
 										onRender={onTranscriptRender}
 									>
 									<ToolPathRootsProvider value={toolPathRoots}>
+									<LiveSubagentsProvider value={liveSubagents}>
 										<TranscriptBlocks
 											entries={entries}
 											live={isBusy}
@@ -4598,6 +4619,7 @@ export function SessionViewer({
 													: session.startedBy || undefined
 											}
 										/>
+									</LiveSubagentsProvider>
 									</ToolPathRootsProvider>
 									</React.Profiler>
 								</>

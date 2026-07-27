@@ -433,6 +433,9 @@ export async function fetchSubagent(
 export interface SessionSubagentSnapshot {
 	/** Drill-in key for fetchSubagent; absent while a spawn is still pending. */
 	id?: string;
+	/** The spawning Task call's tool_use id — links this snapshot to its
+	 *  transcript row so the UI can offer the drill-in mid-run. */
+	toolUseId?: string;
 	agentType?: string;
 	label: string;
 	status: "pending" | "running" | "done" | "error";

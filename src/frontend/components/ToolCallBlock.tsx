@@ -70,6 +70,20 @@ export function useToolPathRoots(): readonly PathRoot[] {
 }
 
 /**
+ * Live sub-agent snapshots keyed by the spawning Task call's tool_use id
+ * (SessionViewer's subagent poll feeds it). A completed Task call carries its
+ * child session id in the result text, but a RUNNING one has no result yet —
+ * this map is how the row learns the child id early enough to offer the
+ * drill-in while the sub-agent is still working. Context rather than a prop so
+ * it skips the memoized TurnBlock/WorkBlock layers.
+ */
+export type LiveSubagent = { id?: string; status: string };
+const LiveSubagentsContext = createContext<ReadonlyMap<string, LiveSubagent>>(
+  new Map()
+);
+export const LiveSubagentsProvider = LiveSubagentsContext.Provider;
+
+/**
  * Engine tool ids → the canonical names the renderers below key on. opencode
  * (the engine every current run uses) emits lowercase ids with camelCase input
  * keys; Claude-SDK transcripts from before the migration use "Read" and
@@ -405,14 +419,23 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
   // A Task/Agent call whose sub-agent transcript we can open in the sidebar.
   // Claude-SDK results carry a structured agentId; opencode's task tool only
   // embeds the child session id in the result text (<task id="ses_…">) — the
-  // subagent route accepts either.
+  // subagent route accepts either. Before the result exists, the live
+  // subagents map (fed by SessionViewer's poll) supplies the child id so a
+  // still-running sub-agent can be watched mid-flight.
   const isAgent = canonical === "Task" || canonical === "Agent";
+  const liveSubs = useContext(LiveSubagentsContext);
+  const liveSub =
+    isAgent && entry.toolUseId ? liveSubs.get(entry.toolUseId) : undefined;
   const agentId =
     result?.agentId ??
     (isAgent
-      ? result?.content?.match(/<task id="(ses_[A-Za-z0-9]+)"/)?.[1]
+      ? (result?.content?.match(/<task id="(ses_[A-Za-z0-9]+)"/)?.[1] ??
+        liveSub?.id)
       : undefined);
   const canOpenSubagent = isAgent && agentId && onOpenSubagent;
+  // No result yet = the sub-agent is still working: surface the drill-in
+  // unconditionally instead of hover-gated, so its progress is one click away.
+  const subagentLive = canOpenSubagent && !result;
 
   return (
     <div className="relative" data-eid={entry.id}>
@@ -457,14 +480,17 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
           <span
             role="button"
             tabIndex={0}
-            className="flex-shrink-0 rounded border border-line px-1.5 py-px text-[10.5px] text-dim opacity-100 transition-opacity hover:border-line-strong hover:text-fg focus:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+            className={cn(
+              "flex-shrink-0 rounded border border-line px-1.5 py-px text-[10.5px] text-dim opacity-100 transition-opacity hover:border-line-strong hover:text-fg focus:opacity-100",
+              !subagentLive && "md:opacity-0 md:group-hover:opacity-100"
+            )}
             onClick={(e) => {
               e.stopPropagation();
               onOpenSubagent!(agentId!, summary);
             }}
             title="Open this sub-agent's conversation"
           >
-            Open ↗
+            {subagentLive ? "Watch ↗" : "Open ↗"}
           </span>
         )}
 
