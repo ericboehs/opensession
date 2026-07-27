@@ -379,9 +379,17 @@ async function sudoRun(args: string[], timeoutMs = 120_000): Promise<{ ok: boole
  * the whole file from EBS (~2.5 min observed 2026-07-27, ×2 when claims race).
  * A periodic re-read refreshes the pages' recency; a cached pass costs a few
  * seconds of memory bandwidth every 15 min. Fire-and-forget, never stacked.
+ *
+ * PAUSED (opt-in via OPENSESSION_MVM_PREFAULT=1) 2026-07-27: on a loaded host
+ * the cold pass grinds EBS for minutes, and the restart-looping server kept
+ * re-starting it from scratch (the throttle lives on globalThis). Michiel
+ * called it off until we fix it properly — a real fix wants the read to
+ * survive restarts (throttle stamp on disk) and to be cheap when cold
+ * (e.g. vmtouch with a rate cap, or pinning only the hot subset).
  */
 const MVM_PREFAULT_EVERY_MS = 15 * 60_000;
 function touchGoldenMem(): void {
+  if (process.env.OPENSESSION_MVM_PREFAULT !== "1") return;
   const t = globalThis as { __mvmPrefaultAt?: number; __mvmPrefaultBusy?: boolean };
   if (t.__mvmPrefaultBusy || Date.now() - (t.__mvmPrefaultAt ?? 0) < MVM_PREFAULT_EVERY_MS) return;
   if (!mvmGoldenReady()) return;
