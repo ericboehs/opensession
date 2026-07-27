@@ -14056,6 +14056,19 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   own margin-bottom. */
 	padding: 12px 16px 0;
 }
+.palette-card.is-plan-mode .palette-body {
+	background-color: color-mix(in srgb, var(--bg-panel) 96%, var(--accent));
+	background-image: repeating-linear-gradient(
+		45deg,
+		color-mix(in srgb, var(--accent) 5%, transparent) 0,
+		color-mix(in srgb, var(--accent) 5%, transparent) 12px,
+		transparent 12px,
+		transparent 24px
+	);
+}
+.palette-card.is-plan-mode .palette-footer {
+	background: color-mix(in srgb, var(--bg-panel) 96%, var(--accent));
+}
 .palette-textarea {
 	width: 100%;
 	min-height: 132px;

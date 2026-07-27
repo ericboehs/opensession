@@ -8,7 +8,17 @@ import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { useFileMentions } from "./useFileMentions";
 import { peopleMentionMatches } from "../lib/people";
-import { IconPaperclip, IconChevronDown, IconCheck, IconSliders, IconConnections, IconReturn, IconBox, IconFolderPlus } from "./icons";
+import {
+  IconPaperclip,
+  IconChevronDown,
+  IconCheck,
+  IconSliders,
+  IconConnections,
+  IconReturn,
+  IconBox,
+  IconFolderPlus,
+  IconMap,
+} from "./icons";
 import type { WSServerMessage } from "../lib/types";
 import { VoiceInput } from "./VoiceInput";
 import { useIsPhone } from "../hooks/useIsPhone";
@@ -18,6 +28,7 @@ import { ModelEffortSelect } from "./ModelEffortSelect";
 import { Menu } from "../ui/menu";
 import { IconTile, displayName } from "./BrandTile";
 import { AddRepoDialog } from "./AddRepoDialog";
+import { Tooltip } from "../ui/tooltip";
 
 interface Props {
   /** Close the palette (Esc, backdrop click, or after a create without "Create more"). */
@@ -605,7 +616,11 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
         if (e.target === e.currentTarget && !creating) onBack();
       }}
     >
-      <div className="palette-card" role="dialog" aria-label="New session">
+      <div
+        className={`palette-card ${planFirst ? "is-plan-mode" : ""}`}
+        role="dialog"
+        aria-label="New session"
+      >
         {/* Header: repo (left) · create-from (right). The repo picker is
             always visible — on phones the create-from picker hides until the
             options toggle in the footer opens it. */}
@@ -850,26 +865,21 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
               )}
             </div>
             )}
-            {/* Plan-first is an advanced switch, so on phones it rides behind
-                the options toggle with the other advanced controls — out there
-                in the footer row it crushed itself (and the model pill) down to
-                a single letter. */}
+            {/* Plan mode is an advanced switch, so on phones it rides behind
+                the options toggle with the other advanced controls. */}
             {mode === "code" && optionsVisible && (
-              <button
-                type="button"
-                className="palette-pill"
-                style={
-                  planFirst
-                    ? { borderColor: "var(--accent)", color: "var(--accent)" }
-                    : undefined
-                }
-                onClick={() => setPlanFirst((v) => !v)}
-                disabled={creating}
-                title="Plan first — the session posts a program design and asks for approval before writing any code, then implements in reviewable vertical slices"
-                aria-pressed={planFirst}
-              >
-                <span className="palette-pill-label">{planFirst ? "Plan first ✓" : "Plan first"}</span>
-              </button>
+              <Tooltip label={planFirst ? "Exit plan mode" : "Enter plan mode"}>
+                <button
+                  type="button"
+                  className={`palette-icon-btn ${planFirst ? "is-on" : ""}`}
+                  onClick={() => setPlanFirst((v) => !v)}
+                  disabled={creating}
+                  aria-label={planFirst ? "Exit plan mode" : "Enter plan mode"}
+                  aria-pressed={planFirst}
+                >
+                  <IconMap size={24} />
+                </button>
+              </Tooltip>
             )}
             {/* On phones the run-environment picker hides behind the options
                 toggle with the other advanced controls. */}
