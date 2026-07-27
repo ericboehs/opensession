@@ -743,11 +743,15 @@ export function prApiErrorMessage(msg: string): string {
   if (/rate limit/i.test(msg)) return GH_RATE_LIMIT_MESSAGE;
   if (/authentication|bad credentials|requires authentication/i.test(msg))
     return "GitHub authentication failed. Check the GitHub connection.";
+  if (/resource not accessible/i.test(msg))
+    return "The GitHub token is missing a permission for this API. Check the PAT's fine-grained permissions.";
   return "GitHub's pull request API is unavailable right now.";
 }
 
 function isPermanentPrApiError(msg: string): boolean {
-  return /rate limit|authentication|bad credentials|requires authentication/i.test(msg);
+  // "Resource not accessible" = the token lacks a permission (e.g. Checks:read
+  // for statusCheckRollup) — retrying only burns GraphQL quota.
+  return /rate limit|authentication|bad credentials|requires authentication|resource not accessible/i.test(msg);
 }
 
 async function fetchPrDetails(
