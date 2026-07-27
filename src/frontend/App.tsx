@@ -2236,19 +2236,16 @@ function App() {
 								setPalette({ open: true, repo })
 							}
 							onOpenProject={(id) => {
-								// Open the workspace's first chat (oldest, matching the tab
-								// strip's order — there's always one post-migration). An empty
-								// workspace opens the new-chat palette scoped to it.
-								const chats = sessions
-									.filter((s) => !s.archived && s.projectId === id)
-									.sort((a, b) =>
-										(a.createdAt || "").localeCompare(b.createdAt || ""),
-									);
-								if (chats.length) {
-									// Picked a workspace to work in — land in its first chat
-									// with the composer focused, ready to type.
+								// Sidebar selection navigates directly to a chat rather than via
+								// /workspace/<id>, so restore the same remembered tab here too.
+								const chat = pickLandingChat(
+									sessions,
+									id,
+									getWorkspaceLastChat(id),
+								);
+								if (chat) {
 									setFocusComposerOnOpen(true);
-									navigate({ view: "session", id: chats[0].id });
+									navigate({ view: "session", id: chat.id });
 								} else {
 									const p = projects.find((x) => x.id === id);
 									// Default the new chat onto the workspace's own branch (share
