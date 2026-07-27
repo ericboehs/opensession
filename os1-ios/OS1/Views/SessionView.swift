@@ -145,7 +145,7 @@ struct SessionView: View {
                     } label: {
                         PrChipLabel(number: prNumber, summary: viewModel.prDetails?.summary)
                     }
-                    .accessibilityLabel("Pull request #\(prNumber)")
+                    .accessibilityLabel(Text(verbatim: "Pull request #\(prNumber)"))
                 }
             }
             ToolbarItem(placement: .topTrailingCompat) {

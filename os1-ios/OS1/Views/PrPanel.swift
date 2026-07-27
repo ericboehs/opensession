@@ -13,7 +13,7 @@ struct PrChipLabel: View {
             Circle()
                 .fill(summary.map { $0.color } ?? Color.secondary)
                 .frame(width: 7, height: 7)
-            Text("#\(number)")
+            Text(verbatim: "#\(number)")
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
         }
