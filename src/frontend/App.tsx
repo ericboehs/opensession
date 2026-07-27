@@ -959,16 +959,31 @@ function App() {
 	// the current view has nothing linkable.
 	const copyLinkPathRef = useRef<string | null>(null);
 
-	// ⌘K toggles the session-search palette; ⌘N the new-session palette; ⌘⇧C
-	// copies a link to the open chat/PR. Esc closes whichever palette is open
-	// (search's own input also handles Esc, but this covers the case where focus
-	// has left it).
+	// ⌘K toggles the session-search palette; ⌘N the new-session palette; ⌘⌥N
+	// opens Notes; ⌘⇧C copies a link to the open chat/PR. Esc closes whichever
+	// palette is open (search's own input also handles Esc, but this covers the
+	// case where focus has left it).
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			const k = e.key.toLowerCase();
 			if ((e.metaKey || e.ctrlKey) && k === "k") {
 				e.preventDefault();
 				setSearchOpen((o) => !o);
+				return;
+			}
+			// ⌘⌥N opens the shared Notes tool. Both plain ⌘N and ⌘⇧N are reserved
+			// by the browser (new window / incognito) and never reach the page, so
+			// Notes takes the Alt-carrying chord. e.code, not e.key: on macOS ⌥N is
+			// a dead key ("˜"). Must stay above the ⌘N branch — on Windows
+			// Ctrl+Alt+N still reports e.key "n" and would open that palette.
+			if (
+				(e.metaKey || e.ctrlKey) &&
+				e.altKey &&
+				!e.shiftKey &&
+				e.code === "KeyN"
+			) {
+				e.preventDefault();
+				navigate({ view: "notes", sel: null });
 				return;
 			}
 			if ((e.metaKey || e.ctrlKey) && k === "n") {

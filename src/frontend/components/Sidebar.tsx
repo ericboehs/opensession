@@ -138,6 +138,8 @@ const ARCHIVE_SHORTCUT_KEYS = isChromium
 		? ["⌘", "E"]
 		: ["Ctrl", "E"];
 const PIN_SHORTCUT_KEYS = isApple ? ["⌘", "P"] : ["Ctrl", "P"];
+// Notes rides an Alt-carrying chord: the browser keeps ⌘N/⌘⇧N for itself.
+const NOTES_SHORTCUT_HINT = isApple ? "⌘⌥N" : "Ctrl+Alt+N";
 
 /** ⌘E (primary) or ⌘⇧A (legacy) — the archive-this-chat chord. */
 function isArchiveChord(e: KeyboardEvent): boolean {
@@ -2949,7 +2951,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			icon: <IconPencil />,
 			active: notesActive,
 			onClick: onOpenNotes,
-			title: "Shared notes and documentation",
+			title: `Shared notes and documentation (${NOTES_SHORTCUT_HINT})`,
 		},
 	];
 	const visibleTools = tools.filter((tool) => !hiddenTools.has(tool.id));
