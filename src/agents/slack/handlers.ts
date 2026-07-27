@@ -687,6 +687,21 @@ export async function processMessage(
     return;
   }
 
+  // A worktree minted upstream for a message that landed in an EXISTING
+  // conversational session must be adopted, not dropped: without this the
+  // branch-named file `wt new-slack` wrote never gets the engine id mirrored
+  // (persistSession keys on session.branch), so it surfaces in the UI as a
+  // dead "No engine session to resume" row — while the run itself executes in
+  // the repo's main checkout (2026-07-25, screen-export-mixed-dims). Never
+  // switch an existing worktree — adopt only when the session has none.
+  if (!createdSession && !session.worktreeDir && msg.worktreeDir) {
+    session.worktreeDir = msg.worktreeDir;
+    session.branch = msg.branch || session.branch;
+    if (msg.repoId) session.repoId = msg.repoId;
+    session.mode = "worktree";
+    await persistSession(session);
+  }
+
   if (createdSession) pinSlackSession(`slack-${sessionKey}`, msg.userId);
 
   // Auto-name the session from its opening prompt, exactly like a UI-created
@@ -1656,10 +1671,35 @@ Please help with this request. Start by exploring the codebase to understand wha
     return;
   }
 
-  // Code mode: a real coding task — spin up a worktree. The default repo keeps
-  // the historical `wt new-slack` flow (env seed + branch channel); other repos
-  // use the generic worktree helper (backstage resolves to its live shared
-  // checkout, matching how interactive OpenSession sessions work there).
+  // Code mode: a real coding task. A thread session that already has a
+  // workspace continues in it — minting another worktree here would orphan it
+  // (nothing links a second branch file to the thread session, so it shows up
+  // in the UI as a dead session). A conversational session falls through: the
+  // worktree created below is adopted onto it by processMessage.
+  const existingCodeSession: SlackSession | undefined =
+    activeSessions.get(sessionKey) ?? (await loadSession(sessionKey)) ?? undefined;
+  if (existingCodeSession) activeSessions.set(sessionKey, existingCodeSession);
+  if (existingCodeSession?.worktreeDir) {
+    const intro = context
+      ? `${userName} tagged me in a Slack thread with this context:\n\n---\n${context}\n---\n\nTheir message: "${cleanText}"`
+      : `${userName} tagged me in a Slack channel with this message: "${cleanText}"`;
+    enqueueMessage(sessionKey, {
+      prompt: `${intro}\n\nPlease help with this request.`,
+      channel,
+      threadTs,
+      messageTs: ts,
+      userName,
+      userId: user,
+      isNewSession: false,
+      files: mergeFileRefs(files, threadFiles),
+    });
+    return;
+  }
+
+  // Spin up a worktree. The default repo keeps the historical `wt new-slack`
+  // flow (env seed + branch channel); other repos use the generic worktree
+  // helper (backstage resolves to its live shared checkout, matching how
+  // interactive OpenSession sessions work there).
   let worktreeDir: string | undefined;
   let branch: string | undefined;
   let prompt: string;
@@ -1709,7 +1749,7 @@ ${where} Please help with this request. Start by exploring the codebase to under
     messageTs: ts,
     userName,
     userId: user,
-    isNewSession: true,
+    isNewSession: !existingCodeSession,
     worktreeDir,
     branch,
     repoId: isDefaultRepo ? undefined : repo.id,
