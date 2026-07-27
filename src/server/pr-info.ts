@@ -775,7 +775,8 @@ async function fetchPrDetails(
     for (let attempt = 1; ; attempt++) {
       const baseFields =
         "number,title,url,state,isDraft,baseRefName,headRefName,headRefOid,additions,deletions,changedFiles,reviewDecision,author,body,mergeable,mergeStateStatus,comments,commits,files,latestReviews,reviewRequests";
-      const fields = skipStatusCheckRollup ? baseFields : `${baseFields},statusCheckRollup`;
+      const includeRollup = !skipStatusCheckRollup;
+      const fields = includeRollup ? `${baseFields},statusCheckRollup` : baseFields;
       try {
         raw = await $`gh pr view ${branch} --repo ${repo} --json ${fields}`
           .quiet()
@@ -783,9 +784,14 @@ async function fetchPrDetails(
         break;
       } catch (e: any) {
         const msg = String(e?.stderr || e?.message || e).slice(0, 300);
-        if (!skipStatusCheckRollup && /resource not accessible/i.test(msg) && /statusCheckRollup/.test(msg)) {
-          skipStatusCheckRollup = true;
-          console.warn(`[pr-info] token can't read statusCheckRollup — dropping checks from PR queries until restart`);
+        // Keyed on THIS call's field list, not the global flag — a concurrent
+        // fetch may trip the flag while our rollup-carrying request is in
+        // flight, and that must not turn our retry into a hard failure.
+        if (includeRollup && /resource not accessible/i.test(msg) && /statusCheckRollup/.test(msg)) {
+          if (!skipStatusCheckRollup) {
+            skipStatusCheckRollup = true;
+            console.warn(`[pr-info] token can't read statusCheckRollup — dropping checks from PR queries until restart`);
+          }
           continue;
         }
         if (isNoPrError(msg) || isPermanentPrApiError(msg) || attempt >= 3) throw e;
