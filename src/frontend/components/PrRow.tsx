@@ -3,7 +3,6 @@ import type { ReviewQueueItem } from "../lib/review-queue";
 import { providerFromUrl } from "../lib/provider";
 import { shortTime } from "../lib/time";
 import {
-	IconArchive,
 	IconArrowUpRight,
 	IconPin,
 	IconPullRequest,
@@ -114,10 +113,11 @@ export function PrRow({
 					{shortTime(item.pr.updatedAt)}
 				</span>
 			)}
-			{/* Hover actions, mirroring the workspace rows' pin + archive pair:
-			    pin keeps the PR in the Pinned band; the trailing action closes
-			    the PR (confirmed upstream) — the closest thing a PR has to
-			    archiving. */}
+			{/* Hover actions in the workspace rows' shape: pin keeps the PR in
+			    the Pinned band; the trailing action closes the PR upstream
+			    (confirmed). It deliberately does NOT wear the archive icon —
+			    this row sits beside workspace rows whose trailing icon archives
+			    locally, and a mis-click here closes someone's PR on GitHub. */}
 			<span className="sidebar-ws-actions">
 				<Tooltip label={pinned ? "Unpin pull request" : "Pin pull request"}>
 					<span
@@ -158,7 +158,7 @@ export function PrRow({
 							}
 						}}
 					>
-						<IconArchive size={21} />
+						<IconX size={21} />
 					</span>
 				</Tooltip>
 			</span>

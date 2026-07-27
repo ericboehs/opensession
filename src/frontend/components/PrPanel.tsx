@@ -1170,11 +1170,6 @@ export function PrPanel({
                   author={pr.author}
                   descriptionHtml={bodyHtml}
                   comments={comments}
-                  canClose={pr.state === "OPEN"}
-                  closing={closing}
-                  confirmClose={confirmClose}
-                  closeError={closeError}
-                  onClose={handleClose}
                 />
               ) : !diff?.patch ? (
                 <div className="py-12 text-center text-sm text-faint">
@@ -1312,8 +1307,11 @@ export function PrPanel({
                     ? `${pending.length} pending comment${pending.length === 1 ? "" : "s"}`
                     : "No pending comments"}
             </div>
-            <div className="mt-0.5 truncate text-[10px] text-faint">
-              Comments are sent together when you finish the review
+            <div
+              className={`mt-0.5 truncate text-[10px] ${closeError ? "text-red" : "text-faint"}`}
+              title={closeError || undefined}
+            >
+              {closeError || "Comments are sent together when you finish the review"}
             </div>
           </div>
           <div className="pointer-events-auto ml-3 flex shrink-0 gap-2">
@@ -1323,6 +1321,24 @@ export function PrPanel({
                 onClick={onOpenSession}
               >
                 Open workspace
+              </button>
+            )}
+            {/* Close lives here rather than at the foot of the Conversation tab:
+                the bar is the one chrome visible from every sub-tab, and burying
+                the only close affordance under a long comment list meant people
+                went to GitHub for it. Two-click confirm, same as merge. */}
+            {pr.state === "OPEN" && (
+              <button
+                className={`rounded-sm border px-3 py-2 text-xs font-semibold ${
+                  confirmClose
+                    ? "border-red bg-red text-surface"
+                    : "border-red/40 bg-transparent text-red hover:border-red hover:bg-red-soft"
+                }`}
+                onClick={handleClose}
+                disabled={closing}
+                title="Close this pull request without merging — the branch and its commits stay available"
+              >
+                {closing ? "Closing…" : confirmClose ? "Confirm close" : "Close"}
               </button>
             )}
             {pr.state === "OPEN" && !pr.isDraft && (
@@ -1993,20 +2009,10 @@ function ConversationView({
   author,
   descriptionHtml,
   comments,
-  canClose,
-  closing,
-  confirmClose,
-  closeError,
-  onClose,
 }: {
   author: string;
   descriptionHtml: string;
   comments: PrComment[];
-  canClose: boolean;
-  closing: boolean;
-  confirmClose: boolean;
-  closeError: string | null;
-  onClose: () => void;
 }) {
   return (
     <div className="mx-auto max-w-[760px]">
@@ -2069,32 +2075,6 @@ function ConversationView({
               </article>
             );
           })}
-        </div>
-      )}
-      {canClose && (
-        <div className="mt-6 flex items-center justify-between gap-4 border-t border-line pt-5">
-          <div className="min-w-0">
-            <div className="text-xs font-medium text-fg">Close this pull request</div>
-            <div className="mt-0.5 text-[11px] text-faint">
-              Close without merging. The branch and its commits will remain available.
-            </div>
-            {closeError && <div className="mt-1 text-[11px] text-red">{closeError}</div>}
-          </div>
-          <button
-            className={`shrink-0 rounded-sm border px-3 py-2 text-xs font-semibold ${
-              confirmClose
-                ? "border-red bg-red text-surface"
-                : "border-red/40 bg-transparent text-red hover:border-red hover:bg-red-soft"
-            }`}
-            onClick={onClose}
-            disabled={closing}
-          >
-            {closing
-              ? "Closing…"
-              : confirmClose
-                ? "Confirm close"
-                : "Close pull request"}
-          </button>
         </div>
       )}
     </div>
