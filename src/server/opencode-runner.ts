@@ -194,12 +194,13 @@ import {
   orchestratorWorkerForBridge,
   opencodeModelLabel,
 } from "./models";
-import { BUN_BIN, MCP_PROXY_ENTRY, rpcSocketPath } from "./run-rpc-protocol";
+import { BUN_BIN, MCP_PROXY_ENTRY, mcpHttpUrl, rpcSocketPath } from "./run-rpc-protocol";
 import {
   registerRunToken,
   unregisterRunToken,
   registerOcSessionContext,
   unregisterOcSessionContext,
+  mcpHttpServerActive,
 } from "./run-rpc";
 import {
   appendOpencodeTranscript,
@@ -1106,6 +1107,47 @@ export function proxyOpencodeMcpConfigs(
     };
   }
   return out;
+}
+
+/** The same in-process servers as `type:"remote"` streamable-HTTP entries
+ *  against run-rpc's loopback listener — zero subprocesses instead of one
+ *  ~64MB bun per server per instance. Same token, same dispatch core, and the
+ *  session-tag plugin's arg injection is transport-agnostic, so shared-server
+ *  routing is unchanged. Sandbox/runner-host runs never reach this (their
+ *  prebuilt stdio proxies pass through above — inside a container
+ *  127.0.0.1 isn't backstage). */
+export function remoteOpencodeMcpConfigs(
+  inProcessMcp: Record<string, unknown> | undefined,
+  rpcToken: string | undefined
+): Record<string, Record<string, unknown>> {
+  if (!inProcessMcp || !rpcToken) return {};
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const name of Object.keys(inProcessMcp)) {
+    out[name] = {
+      type: "remote",
+      url: mcpHttpUrl(name),
+      headers: { authorization: `Bearer ${rpcToken}` },
+      oauth: false,
+      enabled: true,
+      timeout: PROXY_MCP_TIMEOUT_MS,
+    };
+  }
+  return out;
+}
+
+/** Host-local in-process MCP shape chooser. Remote/HTTP is the default; the
+ *  stdio proxy fleet remains as kill switch (OPENSESSION_MCP_REMOTE=0) and as
+ *  automatic fallback when the loopback listener failed to bind. Either
+ *  direction changes the server config hash → shared servers drain-respawn
+ *  onto the new shape gracefully. */
+export function inProcessOpencodeMcpConfigs(
+  inProcessMcp: Record<string, unknown> | undefined,
+  rpcToken: string | undefined
+): Record<string, Record<string, unknown>> {
+  if (process.env.OPENSESSION_MCP_REMOTE !== "0" && mcpHttpServerActive()) {
+    return remoteOpencodeMcpConfigs(inProcessMcp, rpcToken);
+  }
+  return proxyOpencodeMcpConfigs(inProcessMcp, rpcToken);
 }
 
 /** Runner-host context (sandboxed and systemd-hosted runs): `inProcessMcp`
@@ -2173,18 +2215,39 @@ export async function adoptDetachedOpencodeServers(): Promise<number> {
       `[opencode-runner] adopted detached server for ${key} (${newest.unit}, ${newest.url})`
     );
   }
-  // Registry is now pruned to live entries — anything else with our scope
-  // prefix is unreachable and leaks until stopped.
+  reapOrphanedDetachedScopes();
+  ensureScopeReapTicker();
+  return adopted;
+}
+
+/**
+ * Stop alive `opensession-oc-*` scopes the registry doesn't know — they can
+ * never be adopted or reached again (dominant leak: process death between
+ * systemd-run and the registry write). Runs after boot adoption AND hourly
+ * (ticker below): a leak can mint at any time, and an unreaped scope also
+ * pins its worktree against the disk-cleanup cron ("live process" skip).
+ */
+export function reapOrphanedDetachedScopes(): number {
+  if (!opencodeDetachActive()) return 0;
   try {
     const known = new Set(readDetachedRegistry().map((r) => r.unit));
     const reaped = reapUnregisteredScopes(known);
     if (reaped > 0) {
       console.log(`[opencode-runner] reaped ${reaped} unregistered detached scope(s)`);
+      audit({ msg: "opencode_scope_reap", reaped });
     }
+    return reaped;
   } catch (e) {
     console.error("[opencode-runner] scope reap failed:", e);
+    return 0;
   }
-  return adopted;
+}
+
+function ensureScopeReapTicker(): void {
+  if (g.__ocScopeReapTicker) return;
+  const t = setInterval(() => reapOrphanedDetachedScopes(), 60 * 60_000);
+  (t as { unref?: () => void }).unref?.();
+  g.__ocScopeReapTicker = t;
 }
 
 // Runs currently executing on a DETACHED server — these survive a restart
@@ -3092,7 +3155,7 @@ async function* runOpencodeAttempt(
           // via the session-tag plugin + run-rpc ocSession registry.
           mcp: {
             ...externalMcp,
-            ...proxyOpencodeMcpConfigs(
+            ...inProcessOpencodeMcpConfigs(
               Object.fromEntries(SHARED_INPROCESS_SERVERS.map((n) => [n, true])),
               rpcToken
             ),
@@ -3134,7 +3197,7 @@ async function* runOpencodeAttempt(
                 ...externalMcp,
                 ...(prebuiltProxies ??
                   (hasInProcess && journal?.bksSessionId
-                    ? proxyOpencodeMcpConfigs(opts.inProcessMcp, rpcToken)
+                    ? inProcessOpencodeMcpConfigs(opts.inProcessMcp, rpcToken)
                     : {})),
               },
           instructions: [instructionsPath],

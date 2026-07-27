@@ -31,7 +31,7 @@ import { createNotesMcpServer } from "../agents/slack/notes-tools";
 import { papercutsEnabledForRepo } from "./papercuts";
 import { productName } from "./config";
 import { repoForPath, REPOS } from "./worktree";
-import { registerInteractiveMcpBuilder, startRunRpcServer } from "./run-rpc";
+import { registerInteractiveMcpBuilder, startMcpHttpServer, startRunRpcServer } from "./run-rpc";
 import { automationRunMcpForSession, selfImproveMcpForSession } from "./automations";
 import { findSession, touchBackstageSession } from "./session-cache";
 import { attachRepo, linkPr, sessionRepoIds, switchPrimaryRepo } from "./session-repos";
@@ -262,3 +262,4 @@ registerInteractiveMcpBuilder((sessionId, user) => {
 	return servers;
 });
 startRunRpcServer();
+startMcpHttpServer();

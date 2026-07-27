@@ -1854,9 +1854,40 @@ async function sweepPool(): Promise<void> {
         if (c.state === "ready") await refreshContainerCreds(c).catch(() => {});
       }
     }
+    await reapOrphanGoldenbuilds().catch((e) =>
+      console.warn("[preview-pool] goldenbuild reap failed:", e),
+    );
   })().finally(() => busy.delete("sweep"));
   busy.set("sweep", run);
   return run;
+}
+
+/**
+ * Reap orphaned golden-build containers. The build flow removes its container
+ * on success AND failure, but a process death mid-build (restart, crash)
+ * leaves it running `sleep infinity` — often with the warmed dev stack (next
+ * dev/turbopack, rescript watch, esbuild) still alive inside, burning CPU and
+ * RAM indefinitely (2026-07-27: one ran for 3 days). Anything with the
+ * goldenbuild label older than 2h that no in-flight build owns is an orphan;
+ * real builds finish well inside that (setup 15m + boot 5m + commit 15m caps).
+ */
+async function reapOrphanGoldenbuilds(): Promise<void> {
+  const ls = await docker([
+    "ps", "--filter", `label=${POOL_LABEL}=goldenbuild`,
+    "--format", "{{.Names}}\t{{.CreatedAt}}",
+  ]);
+  if (!ls.ok) return;
+  for (const line of ls.out.split("\n")) {
+    const [name, createdAt] = line.split("\t");
+    if (!name?.startsWith("bks-preview-goldenbuild-")) continue;
+    const repoId = name.slice("bks-preview-goldenbuild-".length);
+    if (busy.has(`golden-${repoId}`)) continue;
+    // docker CreatedAt: "2026-07-24 13:20:01 +0000 UTC"
+    const created = Date.parse((createdAt ?? "").replace(" UTC", "").trim());
+    if (!Number.isFinite(created) || Date.now() - created < 2 * 60 * 60_000) continue;
+    console.warn(`[preview-pool] reaping orphaned golden-build container ${name} (created ${createdAt})`);
+    await docker(["rm", "-f", name]);
+  }
 }
 
 export function ensurePreviewPoolScheduler(): void {

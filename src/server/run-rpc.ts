@@ -29,7 +29,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { audit } from "./audit";
 import { canonicalMcpServerId } from "./rename-compat";
-import { rpcSocketPath } from "./run-rpc-protocol";
+import { MCP_HTTP_PORT, rpcSocketPath } from "./run-rpc-protocol";
 
 const g = globalThis as any;
 
@@ -350,6 +350,171 @@ export function startRunRpcServer(): void {
   } catch {}
   console.log(`[run-rpc] listening on ${sock}`);
   startRunRpcSocketHeal();
+}
+
+// ── Streamable-HTTP MCP endpoint (loopback) ──────────────────────────────────
+// Host-local opencode runs consume the in-process opensession-* servers as
+// `type:"remote"` MCP entries against this listener instead of spawning a
+// `bun run mcp-proxy.ts` stdio subprocess per server per instance — which
+// reached 664 processes / ~42GB RSS on 2026-07-27. Sandbox/runner-host runs
+// keep the stdio proxy (inside a container 127.0.0.1 isn't backstage).
+//
+// Deliberately hand-rolled rather than the SDK's HTTP server transport:
+// session routing must pull `__bks_oc_session` out of the raw arguments
+// BEFORE dispatch picks the session's server instance, and long tool calls
+// need SSE heartbeats (Bun's fetch client hard-aborts responses idle >300s —
+// same constraint the unix-socket path solves with whitespace). The method
+// surface opencode's MCP client uses is tiny; everything funnels into the
+// same dispatchRunRpc core (token auth, ocSession refinement, per-session
+// overrides, automation fail-closed builder, audit).
+
+function jsonRpcResult(id: unknown, result: unknown): Record<string, unknown> {
+  return { jsonrpc: "2.0", id: id ?? null, result };
+}
+
+function jsonRpcError(id: unknown, code: number, message: string): Record<string, unknown> {
+  return { jsonrpc: "2.0", id: id ?? null, error: { code, message } };
+}
+
+async function handleMcpHttp(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const m = url.pathname.match(/^\/mcp\/([A-Za-z0-9_-]+)$/);
+  if (!m) return json({ error: "not found" }, 404);
+  const server = canonicalMcpServerId(m[1]);
+  if (req.method !== "POST") {
+    // GET is the client's optional standalone SSE stream probe — a 405 tells
+    // it we don't push server-initiated messages, which is true.
+    return new Response(null, { status: 405, headers: { allow: "POST" } });
+  }
+  const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!token || !tokens.has(token)) {
+    return json({ error: "unauthorized (unknown run token)" }, 401);
+  }
+  let msg: any;
+  try {
+    msg = await req.json();
+  } catch {
+    return json(jsonRpcError(null, -32700, "parse error"), 400);
+  }
+  if (Array.isArray(msg)) {
+    // opencode's client never batches; keep the surface minimal.
+    return json(jsonRpcError(null, -32600, "batching not supported"), 400);
+  }
+  const method = String(msg?.method || "");
+  const id = msg?.id;
+
+  // Notifications (no id) need only acknowledgement.
+  if (id === undefined || id === null) return new Response(null, { status: 202 });
+
+  if (method === "initialize") {
+    return json(
+      jsonRpcResult(id, {
+        protocolVersion: msg?.params?.protocolVersion || "2025-03-26",
+        capabilities: { tools: {} },
+        serverInfo: { name: `opensession-http-${server}`, version: "1.0.0" },
+      }),
+    );
+  }
+  if (method === "ping") return json(jsonRpcResult(id, {}));
+
+  if (method === "tools/list") {
+    const d = await dispatchRunRpc("/mcp/list", { token, server });
+    if (d.kind !== "immediate") return json(jsonRpcError(id, -32603, "unexpected dispatch"), 500);
+    if (d.status !== 200) {
+      return json(jsonRpcError(id, -32000, String((d.body as any)?.error || `status ${d.status}`)));
+    }
+    return json(jsonRpcResult(id, { tools: (d.body as any)?.tools ?? [] }));
+  }
+
+  if (method === "tools/call") {
+    // Session-tag extraction — same semantics as mcp-proxy.ts: the shared-
+    // server plugin injects the opencode session id into the arguments; strip
+    // it (tool schemas don't know it) and pass it as the routing sibling.
+    const args: Record<string, unknown> = { ...(msg?.params?.arguments ?? {}) };
+    const ocSession = args.__bks_oc_session;
+    delete args.__bks_oc_session;
+    const d = await dispatchRunRpc("/mcp/call", {
+      token,
+      server,
+      tool: String(msg?.params?.name || ""),
+      args,
+      ...(typeof ocSession === "string" && ocSession ? { ocSession } : {}),
+    });
+    const toResult = (respBody: Record<string, unknown>): Record<string, unknown> =>
+      respBody.error
+        ? jsonRpcResult(id, {
+            content: [{ type: "text", text: `Tool call failed: ${respBody.error}` }],
+            isError: true,
+          })
+        : jsonRpcResult(id, respBody.result);
+    if (d.kind === "immediate") {
+      return json(
+        d.status === 200
+          ? toResult(d.body)
+          : toResult({ error: (d.body as any)?.error || `status ${d.status}` }),
+      );
+    }
+    // Long call: SSE with comment heartbeats until the dispatch resolves.
+    const enc = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const heartbeat = setInterval(() => {
+          try {
+            controller.enqueue(enc.encode(": hb\n\n"));
+          } catch {}
+        }, 30_000);
+        void d.done.then((respBody) => {
+          clearInterval(heartbeat);
+          try {
+            controller.enqueue(
+              enc.encode(`event: message\ndata: ${JSON.stringify(toResult(respBody))}\n\n`),
+            );
+            controller.close();
+          } catch {}
+        });
+      },
+      cancel() {
+        // Caller went away; the call runs to completion under its own timeout
+        // and dispatchRunRpc's cleanup releases the transports.
+      },
+    });
+    return new Response(stream, {
+      headers: { "content-type": "text/event-stream", "cache-control": "no-store" },
+    });
+  }
+
+  return json(jsonRpcError(id, -32601, `method not supported: ${method}`));
+}
+
+/** Boot the loopback MCP HTTP listener once; handler re-pointed through
+ *  globalThis so hot reloads apply new code without a rebind. Same bun-test
+ *  guard as the unix socket — a suite must never steal the live port. */
+export function startMcpHttpServer(): void {
+  g.__mcpHttpHandler = handleMcpHttp;
+  if (process.env.NODE_ENV === "test" || /\.test\.tsx?$/.test(Bun.main || "")) {
+    return;
+  }
+  if (g.__mcpHttpServer) return;
+  try {
+    g.__mcpHttpServer = Bun.serve({
+      hostname: "127.0.0.1",
+      port: MCP_HTTP_PORT,
+      // Proxied tool calls block for minutes; SSE heartbeats keep the client
+      // side alive, idleTimeout 0 keeps ours from closing under them.
+      idleTimeout: 0,
+      fetch: (req: Request) => (g.__mcpHttpHandler as typeof handleMcpHttp)(req),
+    } as unknown as Parameters<typeof Bun.serve>[0]);
+    console.log(`[run-rpc] MCP HTTP listening on 127.0.0.1:${MCP_HTTP_PORT}`);
+  } catch (e) {
+    // Port taken (a second instance?): config generation falls back to stdio
+    // proxies when the listener isn't up — see remoteOpencodeMcpConfigs.
+    console.error(`[run-rpc] MCP HTTP bind on ${MCP_HTTP_PORT} failed:`, e);
+  }
+}
+
+/** True when the loopback MCP listener is actually bound in this process. */
+export function mcpHttpServerActive(): boolean {
+  return !!g.__mcpHttpServer;
 }
 
 /** True when a connect to the socket PATH is answered. Distinguishes a healthy

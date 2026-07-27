@@ -5,6 +5,8 @@ import {
   opencodeRunPolicy,
   opencodeDeniedToolIds,
   proxyOpencodeMcpConfigs,
+  remoteOpencodeMcpConfigs,
+  inProcessOpencodeMcpConfigs,
   buildOpencodeInstructions,
   reconnectSharedInProcessMcp,
 } from "./opencode-runner";
@@ -283,6 +285,29 @@ describe("proxyOpencodeMcpConfigs", () => {
   });
 });
 
+describe("remoteOpencodeMcpConfigs", () => {
+  test("builds loopback streamable-HTTP entries with bearer header", () => {
+    const out = remoteOpencodeMcpConfigs({ "opensession-sessions": {}, "opensession-ask": {} }, "tok-2");
+    expect(Object.keys(out).sort()).toEqual(["opensession-ask", "opensession-sessions"]);
+    const entry = out["opensession-sessions"] as any;
+    expect(entry.type).toBe("remote");
+    expect(entry.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp\/opensession-sessions$/);
+    expect(entry.headers.authorization).toBe("Bearer tok-2");
+    expect(entry.oauth).toBe(false);
+  });
+  test("empty without token or servers (fail closed)", () => {
+    expect(remoteOpencodeMcpConfigs({ "opensession-admin": {} }, undefined)).toEqual({});
+    expect(remoteOpencodeMcpConfigs(undefined, "tok")).toEqual({});
+  });
+  test("chooser falls back to stdio proxies when the HTTP listener is not bound", () => {
+    // Under bun test the listener never binds (startMcpHttpServer no-ops), so
+    // the chooser must produce the stdio shape — the same fallback a failed
+    // port bind takes in production.
+    const out = inProcessOpencodeMcpConfigs({ "opensession-ask": {} }, "tok-3") as any;
+    expect(out["opensession-ask"].type).toBe("local");
+  });
+});
+
 describe("reconnectSharedInProcessMcp", () => {
   test("reconnects failed or newly-added proxies and leaves connected ones alone", async () => {
     const connected: string[] = [];
@@ -326,12 +351,16 @@ describe("reconnectSharedInProcessMcp", () => {
 });
 
 describe("buildOpencodeInstructions", () => {
-  test("every run requires confirmation before publishing to public repositories", () => {
+  // The public-repo confirmation PROMPT was removed in aa4009d5: enforcement
+  // moved to credential scope (tellahq-only PAT + GitHub App user tokens —
+  // GitHub 403s any outside write server-side), which prompt wording can't
+  // strengthen and doesn't need. The data-handling instruction below remains
+  // prompt-level because no credential boundary can enforce it.
+  test("every run forbids uploads to public file hosts", () => {
     for (const isAsk of [true, false]) {
       const s = buildOpencodeInstructions({ isAsk });
-      expect(s).toContain("Public repositories require confirmation");
-      expect(s).toContain("explicit user confirmation in the current conversation");
-      expect(s).toContain("before creating a fork, pushing a branch, opening a pull request");
+      expect(s).toContain("never upload to public hosts");
+      expect(s).toContain("stop and report the failure");
     }
   });
   test("shared-pool runs are told their real cwd; per-session runs aren't", () => {
