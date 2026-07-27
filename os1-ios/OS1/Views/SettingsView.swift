@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     @State private var serverURL = ServerConfig.shared.baseURLString
     @State private var userName = ServerConfig.shared.userName
@@ -50,7 +51,11 @@ struct SettingsView: View {
                                 .foregroundStyle(.tertiary)
                                 .frame(maxWidth: .infinity)
                             if let url = URL(string: flow.verificationUri) {
-                                Link("Open github.com/login/device", destination: url)
+                                Button("Copy code and open GitHub") {
+                                    copyToPasteboard(flow.userCode)
+                                    copiedCode = true
+                                    openURL(url)
+                                }
                             }
                             HStack(spacing: 8) {
                                 ProgressView()
