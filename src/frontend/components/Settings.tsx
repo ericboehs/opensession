@@ -96,6 +96,7 @@ import { getCurrentUser } from "./UserPicker";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { BottomSheet } from "../ui/sheet";
 import { cn } from "../ui/cn";
+import { Reorder, useDragControls } from "motion/react";
 import {
 	IconChevronLeft,
 	IconChevronRight,
@@ -114,6 +115,13 @@ import {
 	SIDEBAR_TOOL_IDS,
 	SIDEBAR_TOOL_LABELS,
 } from "../lib/sidebar-tools";
+import {
+	getSidebarOrder,
+	onSidebarOrderChanged,
+	setSidebarOrder,
+	SIDEBAR_SECTION_LABELS,
+	type SidebarSectionId,
+} from "../lib/sidebar-order";
 
 // The full-window Settings surface: a left sub-nav + a scrolling body, reached
 // from the "Settings" item in the account menu. Designed to grow — each area is
@@ -2230,6 +2238,17 @@ function AppearancePanel() {
 	const [hiddenSidebarTools, setHiddenSidebarTools] = useState(
 		readHiddenSidebarTools,
 	);
+	const [sidebarOrder, setSidebarOrderState] = useState(getSidebarOrder);
+	const sidebarOrderRef = React.useRef(sidebarOrder);
+	useEffect(
+		() =>
+			onSidebarOrderChanged(() => {
+				const next = getSidebarOrder();
+				sidebarOrderRef.current = next;
+				setSidebarOrderState(next);
+			}),
+		[],
+	);
 	useEffect(
 		() =>
 			onSidebarToolsChanged(() =>
@@ -2293,6 +2312,34 @@ function AppearancePanel() {
 				Sidebar
 			</div>
 			<div className="setting-card">
+				<div className="setting-row flex-col !items-stretch">
+					<div className="setting-row-text">
+						<div className="setting-row-title">Section order</div>
+						<div className="setting-row-desc">
+							Choose which sidebar sections appear first. Stored per user and
+							follows you across devices.
+						</div>
+					</div>
+					<Reorder.Group
+						as="div"
+						axis="y"
+						values={sidebarOrder}
+						onReorder={(next: SidebarSectionId[]) => {
+							sidebarOrderRef.current = next;
+							setSidebarOrderState(next);
+						}}
+						className="mt-2 overflow-hidden rounded-lg border border-line bg-surface"
+					>
+						{sidebarOrder.map((section, index) => (
+							<SidebarOrderRow
+								key={section}
+								section={section}
+								index={index}
+								onCommit={() => setSidebarOrder(sidebarOrderRef.current)}
+							/>
+						))}
+					</Reorder.Group>
+				</div>
 				<SettingRow
 					title="Show last used time"
 					desc="Show when each workspace was last active in the sidebar. A live run always shows its running time regardless."
@@ -2327,5 +2374,49 @@ function AppearancePanel() {
 				))}
 			</div>
 		</div>
+	);
+}
+
+function SidebarOrderRow({
+	section,
+	index,
+	onCommit,
+}: {
+	section: SidebarSectionId;
+	index: number;
+	onCommit: () => void;
+}) {
+	const dragControls = useDragControls();
+	return (
+		<Reorder.Item
+			as="div"
+			value={section}
+			dragListener={false}
+			dragControls={dragControls}
+			onDragEnd={onCommit}
+			className="flex min-h-11 items-center gap-2 border-b border-line bg-surface px-3 last:border-b-0"
+		>
+			<span className="w-5 text-[11px] tabular-nums text-faint">
+				{index + 1}
+			</span>
+			<span className="min-w-0 flex-1 text-[13px] font-medium text-fg">
+				{SIDEBAR_SECTION_LABELS[section]}
+			</span>
+			<button
+				type="button"
+				className="touch-none inline-flex size-9 cursor-grab items-center justify-center rounded-md border-0 bg-transparent text-faint hover:bg-hover hover:text-dim active:cursor-grabbing"
+				onPointerDown={(event) => dragControls.start(event)}
+				aria-label={`Drag to reorder ${SIDEBAR_SECTION_LABELS[section]}`}
+			>
+				<svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
+					<circle cx="6" cy="4" r="1.2" />
+					<circle cx="12" cy="4" r="1.2" />
+					<circle cx="6" cy="9" r="1.2" />
+					<circle cx="12" cy="9" r="1.2" />
+					<circle cx="6" cy="14" r="1.2" />
+					<circle cx="12" cy="14" r="1.2" />
+				</svg>
+			</button>
+		</Reorder.Item>
 	);
 }

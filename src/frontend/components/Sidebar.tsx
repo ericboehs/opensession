@@ -55,6 +55,7 @@ import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { providerFromUrl } from "../lib/provider";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
 import { getWsTimePref, onWsTimeChanged } from "../lib/workspace-time";
+import { getSidebarOrder, onSidebarOrderChanged } from "../lib/sidebar-order";
 import { UserAvatar, githubLoginFor } from "./UserAvatar";
 import { shortTime, elapsedClock } from "../lib/time";
 import {
@@ -1196,6 +1197,13 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// Groups are collapsed by default; the expanded set persists per browser
 	const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
 	const [hiddenTools, setHiddenTools] = useState(readHiddenSidebarTools);
+	const [sidebarOrder, setSidebarOrder] = useState(getSidebarOrder);
+	useEffect(
+		() => onSidebarOrderChanged(() => setSidebarOrder(getSidebarOrder())),
+		[],
+	);
+	const sectionOrder = (section: (typeof sidebarOrder)[number]) =>
+		sidebarOrder.indexOf(section) + 1;
 	const [pins, setPins] = useState<string[]>(getPins);
 	// Per-user workspace snoozes (row key → ISO until). An overlay like pins:
 	// actively-snoozed rows park in the Snoozed section; the wake sweep below
@@ -4058,7 +4066,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					<span>Cloud temporarily unavailable</span>
 				</div>
 			)}
-			<div className="sidebar-sticky-section sidebar-tools-section">
+			<div
+				className="sidebar-sticky-section sidebar-tools-section"
+				style={{ order: sectionOrder("tools") }}
+			>
 			{!isPhone && visibleTools.length > 0 && (
 				<div className="sidebar-band-label sidebar-tools-head sidebar-sticky-head">
 					<div className="group flex min-h-[30px] w-full items-center rounded-md hover:bg-hover hover:text-dim">
@@ -4172,7 +4183,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			)}
 			</div>
 
-			<div className="sidebar-sticky-section">
+			<div
+				className="sidebar-sticky-section"
+				style={{ order: sectionOrder("workspaces") }}
+			>
 			<div
 				className={cn(
 					"sidebar-workspace sidebar-sticky-head mt-1 border-b border-transparent px-[16px] pb-0.5 pr-[7px] pt-3 transition-colors",
@@ -4948,7 +4962,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 				{/* ── Automations (one collapsible band, one group per automation) ── */}
 				{groups.length > 0 && (
-					<div className="sidebar-independent-section sidebar-group--automations sidebar-group--band-start">
+					<div
+						className="sidebar-independent-section sidebar-group--automations mt-2"
+						style={{ order: sectionOrder("automations") }}
+					>
 						<div className="sidebar-band-label sidebar-sticky-head">
 							<button
 								className="sidebar-band-toggle"
@@ -5074,7 +5091,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					return bAct.localeCompare(aAct);
 				});
 				return (
-					<div className="sidebar-independent-section mt-2">
+					<div
+						className="sidebar-independent-section mt-2"
+						style={{ order: sectionOrder("people") }}
+					>
 						<div className="sidebar-band-label sidebar-sticky-head">
 							<button
 								className="sidebar-band-toggle pl-[10px]"

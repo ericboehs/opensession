@@ -774,10 +774,10 @@ html.wco .app-body.sidebar-collapsed
 	}
 }
 @media (max-width: 720px) {
-	/* Preserve the existing phone layout: Tools has no heading there, so its
-	   wrapper must not become an extra flex/scroll layer around the card strip. */
+	/* Tools has no heading on phones, but its wrapper must remain a flex item so
+	   the user's configured section order applies to the card strip too. */
 	.sidebar-tools-section {
-		display: contents;
+		display: block;
 	}
 	.sidebar-workspace-fallback {
 		margin-right: 10px;
