@@ -1,6 +1,6 @@
 import { AGENT_NAME } from "../lib/brand";
 import { BASE_PATH } from "../lib/base";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { parsePatchFiles } from "@pierre/diffs";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
@@ -28,7 +28,6 @@ import { cn } from "../ui/cn";
 import type {
 	DiffFile,
 	GitStatusInfo,
-	PrCheck,
 	PrDetails,
 } from "../lib/types";
 import { formatPrCommentPrompt } from "./PrPanel";
@@ -39,7 +38,6 @@ import {
 	overviewCache,
 	type OverviewChatRef,
 } from "../lib/workspace-overview";
-import { summarizeChecks } from "./PrStatusBar";
 import { openLightbox } from "./MediaLightbox";
 import { SandboxBadge } from "./SandboxBadge";
 import {
@@ -47,26 +45,25 @@ import {
 	IconArrowUp,
 	IconBell,
 	IconCheck,
-	IconClock,
+	IconChevronDown,
 	IconFile,
 	IconGlobe,
 	IconPlay,
 	IconPullRequest,
-	IconX,
+	IconSparkle,
 } from "./icons";
 
 /**
-	* Workspace info block at the top of the right side panel (the "Info" tab): a
-	* dense, at-a-glance catch-all — title + meta, a status row (checks, review,
-	* PR state), the opening prompt, the summary, and a compact filmstrip of every
-	* screenshot / video from the workspace's chats. Opening it answers "what is
-	* this and where does it stand" without switching tabs; Changes / Terminal /
-	* Checks are the drill-downs.
-	*
-	* Loading/caching for the overview lives in lib/workspace-overview (shared with
-	* the sidebar's workspace hover card), including the pre-restart transcript
-	* fallbacks. The PR is fetched here and refreshed on a slow interval.
-	*/
+ * Workspace info block at the top of the right side panel (the "Info" tab): a
+ * dense, at-a-glance catch-all - title + meta, workspace actions, local git
+ * state, PR comments, changed files, and a compact filmstrip of every screenshot
+ * / video from the workspace's chats. PR state belongs to the persistent strip
+ * above the tabs; the transcript remains the source for the opening prompt.
+ *
+ * Loading/caching for the overview lives in lib/workspace-overview (shared with
+ * the sidebar's workspace hover card), including the pre-restart transcript
+ * fallbacks. The PR is fetched here and refreshed on a slow interval.
+ */
 
 type PanelTab = "changes" | "terminal" | "pr" | "staging" | "assets";
 
@@ -129,38 +126,12 @@ interface Props {
 	liveMedia?: WorkspaceMediaItem[];
 }
 
-type ChipTone = "green" | "red" | "yellow" | "purple" | "muted";
-
-type StatusChip = {
-	key: string;
-	label: string;
-	tone: ChipTone;
-	/** Optional leading glyph, pulled from the icon library (never raw unicode). */
-	icon?: React.ReactNode;
-};
-
 const INFO_LABEL_CLASS = "text-[12px] font-[650] tracking-[-0.01em] text-faint";
 const INFO_SECTION_CLASS = "grid gap-[5px]";
 const INFO_LIST_CLASS =
 	"grid gap-px overflow-hidden rounded-lg border border-line bg-panel p-1";
 const INFO_MORE_BUTTON_CLASS =
 	"cursor-pointer bg-surface px-[9px] py-[7px] text-left text-[12px] font-semibold text-faint transition-colors hover:bg-hover hover:text-fg";
-
-function chipToneClass(tone: ChipTone): string {
-	switch (tone) {
-		case "green":
-			return "border-[color:color-mix(in_srgb,var(--green,#16a34a)_26%,transparent)] bg-[color:color-mix(in_srgb,var(--green,#16a34a)_12%,transparent)] text-green hover:border-[color:color-mix(in_srgb,var(--green,#16a34a)_40%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--green,#16a34a)_20%,transparent)]";
-		case "red":
-			return "border-[color:color-mix(in_srgb,var(--red,#dc2626)_26%,transparent)] bg-[color:color-mix(in_srgb,var(--red,#dc2626)_12%,transparent)] text-red hover:border-[color:color-mix(in_srgb,var(--red,#dc2626)_40%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--red,#dc2626)_20%,transparent)]";
-		case "yellow":
-			return "border-[color:color-mix(in_srgb,var(--yellow,#ca8a04)_30%,transparent)] bg-[color:color-mix(in_srgb,var(--yellow,#ca8a04)_14%,transparent)] text-yellow hover:border-[color:color-mix(in_srgb,var(--yellow,#ca8a04)_44%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--yellow,#ca8a04)_22%,transparent)]";
-		case "purple":
-			return "border-[color:color-mix(in_srgb,var(--purple,#7c3aed)_26%,transparent)] bg-[color:color-mix(in_srgb,var(--purple,#7c3aed)_12%,transparent)] text-purple hover:border-[color:color-mix(in_srgb,var(--purple,#7c3aed)_40%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--purple,#7c3aed)_20%,transparent)]";
-		case "muted":
-		default:
-			return "border-line bg-surface text-dim hover:border-line-strong hover:bg-hover hover:text-fg";
-	}
-}
 
 function statusBadgeClass(status: DiffFile["status"]): string {
 	switch (statusClass(status)) {
@@ -177,78 +148,16 @@ function statusBadgeClass(status: DiffFile["status"]): string {
 	}
 }
 
-function checkToneClass(kind: CheckVisual): string {
-	switch (kind) {
-		case "success":
-			return "text-green";
-		case "failure":
-			return "text-red";
-		case "pending":
-			return "text-yellow";
-		case "skipped":
-		case "neutral":
-		default:
-			return "text-dim";
-	}
-}
-
-const CHIP_CLASS =
-	"inline-flex cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-lg border px-[11px] py-[5.5px] text-[12.5px] font-semibold leading-[1.35] transition-[background-color,border-color,color] duration-150 has-[>span:first-child]:pl-[9px]";
-const CHIP_ICON_CLASS = "inline-flex items-center opacity-65 [&_svg]:block";
 const GIT_BUTTON_CLASS =
 	"ml-auto inline-flex min-h-7 items-center justify-center gap-1.5 rounded-lg border px-3 py-1 text-[13px] font-[650] leading-none shadow-[var(--control-shadow)] transition-[background-color,border-color,color,filter,transform] duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default disabled:opacity-60 disabled:shadow-none active:scale-[0.98]";
 const GIT_SOLID_BUTTON_CLASS =
 	"border-[color:color-mix(in_srgb,var(--text)_84%,transparent)] bg-fg text-bg hover:brightness-110 active:brightness-[0.98]";
 const GIT_SECONDARY_BUTTON_CLASS =
 	"border-line-strong bg-raised text-fg hover:bg-hover";
-const REVIEW_BUTTON_CLASS =
-	"mt-2.5 flex w-full items-center justify-center gap-[7px] rounded-lg border border-line bg-active px-3 py-[9px] text-[13px] font-semibold text-fg transition-[background,border-color] duration-150 hover:border-faint hover:bg-hover";
-
-/** The check/review/PR-state chips shown in the status row (only the ones that
-		say something are rendered). */
-function statusChips(pr: PrDetails | null): StatusChip[] {
-	if (!pr) return [];
-	const chips: StatusChip[] = [];
-	if (pr.state === "MERGED")
-		chips.push({ key: "merged", label: "Merged", tone: "purple" });
-	else if (pr.state === "CLOSED")
-		chips.push({ key: "closed", label: "Closed", tone: "muted" });
-	else if (pr.isDraft)
-		chips.push({ key: "draft", label: "Draft", tone: "muted" });
-
-	const c = summarizeChecks(pr);
-	if (c.failed > 0)
-		chips.push({
-			key: "checks",
-			label: `${c.failed} check${c.failed === 1 ? "" : "s"} failing`,
-			tone: "red",
-			icon: <IconX size={20} />,
-		});
-	else if (c.pending > 0)
-		chips.push({
-			key: "checks",
-			label: `${c.pending} check${c.pending === 1 ? "" : "s"} pending`,
-			tone: "yellow",
-			icon: <IconClock size={20} />,
-		});
-	else if (c.passed > 0)
-		chips.push({
-			key: "checks",
-			label: "Checks passing",
-			tone: "green",
-			icon: <IconCheck size={20} />,
-		});
-
-	if (pr.mergeable === "CONFLICTING")
-		chips.push({ key: "conflicts", label: "Merge conflicts", tone: "red" });
-	if (pr.reviewDecision === "CHANGES_REQUESTED")
-		chips.push({ key: "review", label: "Changes requested", tone: "red" });
-	else if (pr.reviewDecision === "APPROVED")
-		chips.push({ key: "review", label: "Approved", tone: "green" });
-	else if (pr.reviewDecision === "REVIEW_REQUIRED")
-		chips.push({ key: "review", label: "Review needed", tone: "yellow" });
-	return chips;
-}
+const ACTION_BUTTON_CLASS =
+	"flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12.5px] font-semibold text-fg outline-none transition-colors hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:opacity-50";
+const ACTION_ICON_CLASS =
+	"inline-flex size-5 shrink-0 items-center justify-center text-faint [&_svg]:block";
 
 function initial(name: string): string {
 	return (name.trim()[0] || "?").toUpperCase();
@@ -561,203 +470,6 @@ function FileRow({
 	);
 }
 
-type CheckVisual = "success" | "failure" | "pending" | "skipped" | "neutral";
-
-/** Map a PR check's raw status/conclusion to a visual kind + the word shown at
-		the right of its row (GitHub-style: "Succeeded", "Skipped", "Failed"…).
-		CheckRuns report `status` until COMPLETED; StatusContexts (Vercel deploys)
-		leave `status` empty and carry the outcome in `conclusion`. */
-function checkStatusMeta(check: PrCheck): { kind: CheckVisual; label: string } {
-	const running = check.status !== "COMPLETED" && check.status !== "";
-	if (
-		running ||
-		check.conclusion === "PENDING" ||
-		check.conclusion === "EXPECTED"
-	)
-		return { kind: "pending", label: running ? "Running" : "Queued" };
-	switch (check.conclusion) {
-		case "SUCCESS":
-			return { kind: "success", label: "Succeeded" };
-		case "FAILURE":
-			return { kind: "failure", label: "Failed" };
-		case "TIMED_OUT":
-			return { kind: "failure", label: "Timed out" };
-		case "ERROR":
-			return { kind: "failure", label: "Error" };
-		case "ACTION_REQUIRED":
-			return { kind: "failure", label: "Action required" };
-		case "CANCELLED":
-			return { kind: "neutral", label: "Cancelled" };
-		case "SKIPPED":
-			return { kind: "skipped", label: "Skipped" };
-		case "NEUTRAL":
-			return { kind: "neutral", label: "Neutral" };
-		default:
-			return { kind: "neutral", label: check.conclusion || "Pending" };
-	}
-}
-
-/** The small leading status glyph — a filled green check / red ✕, a spinner
-		while running, or a dashed ring for skipped/neutral. Color comes from the
-		surrounding status tone wrapper. */
-function CheckStatusIcon({ kind }: { kind: CheckVisual }) {
-	if (kind === "pending")
-		return (
-			<span
-				className="m-[1.5px] block size-[13px] rounded-full border-[1.6px] border-current/30 border-t-current animate-spin"
-				aria-hidden
-			/>
-		);
-	if (kind === "success")
-		return (
-			<svg className="block size-4" viewBox="0 0 16 16" aria-hidden>
-				<circle cx="8" cy="8" r="8" fill="currentColor" />
-				<path
-					d="M4.4 8.3l2.3 2.3 4.9-4.9"
-					fill="none"
-					stroke="#fff"
-					strokeWidth="1.7"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-				/>
-			</svg>
-		);
-	if (kind === "failure")
-		return (
-			<svg className="block size-4" viewBox="0 0 16 16" aria-hidden>
-				<circle cx="8" cy="8" r="8" fill="currentColor" />
-				<path
-					d="M5.4 5.4l5.2 5.2M10.6 5.4l-5.2 5.2"
-					stroke="#fff"
-					strokeWidth="1.7"
-					strokeLinecap="round"
-				/>
-			</svg>
-		);
-	// skipped / neutral — a dashed outline ring
-	return (
-		<svg className="block size-4" viewBox="0 0 16 16" aria-hidden>
-			<circle
-				cx="8"
-				cy="8"
-				r="7"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-				strokeDasharray="2.4 2.2"
-			/>
-		</svg>
-	);
-}
-
-/** The checks status chip in the info panel's status row. Clicking opens the PR
-		tab; hovering floats a GitHub-style overview of every individual check —
-		icon · name · outcome — off to the side of the panel (never covering it). */
-function ChecksChip({
-	pr,
-	chip,
-	onOpenTab,
-}: {
-	pr: PrDetails;
-	chip: StatusChip;
-	onOpenTab?: (tab: PanelTab) => void;
-}) {
-	// Failing first, then running, successes, and skipped/neutral last — the
-	// same triage order the PR panel's expanded list uses.
-	const order: Record<CheckVisual, number> = {
-		failure: 0,
-		pending: 1,
-		success: 2,
-		skipped: 3,
-		neutral: 3,
-	};
-	const checks = [...(pr.checks || [])].sort(
-		(a, b) => order[checkStatusMeta(a).kind] - order[checkStatusMeta(b).kind],
-	);
-	const sum = summarizeChecks(pr);
-	return (
-		<Popover.Root>
-			<Popover.Trigger
-				openOnHover={checks.length > 0}
-				delay={200}
-				closeDelay={120}
-				type="button"
-				className={cn(CHIP_CLASS, chipToneClass(chip.tone))}
-				onClick={() => onOpenTab?.("pr")}
-			>
-				{chip.icon && <span className={CHIP_ICON_CLASS}>{chip.icon}</span>}
-				{chip.label}
-			</Popover.Trigger>
-			{checks.length > 0 && (
-				<Popover.Popup
-					side="left"
-					align="start"
-					sideOffset={10}
-					className="flex max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))] flex-col overflow-hidden p-0"
-				>
-					<div className="flex items-baseline justify-between gap-2.5 border-b border-line bg-surface px-3 py-[9px]">
-						<span className="text-[12px] font-semibold text-fg">
-							{checks.length} check{checks.length === 1 ? "" : "s"}
-						</span>
-						<span className="inline-flex gap-2 text-[11.5px] font-semibold">
-							{sum.passed > 0 && (
-								<span className="text-emerald-300">{sum.passed} passed</span>
-							)}
-							{sum.failed > 0 && (
-								<span className="text-rose-300">{sum.failed} failed</span>
-							)}
-							{sum.pending > 0 && (
-								<span className="text-amber-300">{sum.pending} running</span>
-							)}
-						</span>
-					</div>
-					<div className="overflow-y-auto p-1">
-						{checks.map((check, i) => {
-							const m = checkStatusMeta(check);
-							const inner = (
-								<>
-									<span
-										className={cn(
-											"inline-flex size-4 shrink-0",
-											checkToneClass(m.kind),
-										)}
-									>
-										<CheckStatusIcon kind={m.kind} />
-									</span>
-									<span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">
-										{check.name}
-									</span>
-									<span className="shrink-0 text-[12px] font-medium text-dim">
-										{m.label}
-									</span>
-								</>
-							);
-							return check.url ? (
-								<a
-									key={`${check.name}:${i}`}
-									className="flex items-center gap-[9px] rounded-md px-2 py-1.5 text-fg no-underline hover:bg-surface"
-									href={check.url}
-									target="_blank"
-									rel="noopener"
-								>
-									{inner}
-								</a>
-							) : (
-								<div
-									key={`${check.name}:${i}`}
-									className="flex items-center gap-[9px] rounded-md px-2 py-1.5 text-fg"
-								>
-									{inner}
-								</div>
-							);
-						})}
-					</div>
-				</Popover.Popup>
-			)}
-		</Popover.Root>
-	);
-}
-
 /** The GitHub PR agent behaviors, surfaced as one-tap buttons on the info panel.
 		Each maps to a michael-* PR label; hitting the button is equivalent to adding
 		that label on GitHub (or @mentioning the agent on the PR), but without leaving
@@ -835,24 +547,44 @@ function PrAgentActions({
 	}
 
 	return (
-		<div className="mt-3">
-			<div className={INFO_LABEL_CLASS}>Ask {AGENT_NAME}</div>
-			<div className="mt-2 flex flex-wrap gap-1.5">
-				{PR_AGENT_ACTIONS.map((a) => (
-					<button
-						key={a.kind}
-						type="button"
-						title={a.hint}
-						disabled={busy !== null}
-						onClick={() => run(a)}
-						className="rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-fg transition-colors hover:border-line-strong hover:bg-panel disabled:opacity-50"
-					>
-						{busy === a.kind ? "Starting…" : a.label}
-					</button>
-				))}
-			</div>
+		<div className="contents">
+			<Menu.Root>
+				<Menu.Trigger
+					className={ACTION_BUTTON_CLASS}
+					disabled={busy !== null}
+					title={`Choose a task for ${AGENT_NAME}`}
+				>
+					<span className={ACTION_ICON_CLASS}>
+						<IconSparkle size={18} />
+					</span>
+					<span className="min-w-0 flex-1 truncate">
+						{busy ? "Starting..." : `Ask ${AGENT_NAME}`}
+					</span>
+					<IconChevronDown size={14} className="shrink-0 text-faint" />
+				</Menu.Trigger>
+				<Menu.Popup align="start" sideOffset={6} className="min-w-[300px]">
+					<Menu.Group>
+						<Menu.GroupLabel>Ask {AGENT_NAME} to...</Menu.GroupLabel>
+						{PR_AGENT_ACTIONS.map((a) => (
+							<Menu.Item
+								key={a.kind}
+								disabled={busy !== null}
+								onClick={() => run(a)}
+								className="items-start py-2"
+							>
+								<div className="min-w-0">
+									<div className="font-semibold text-fg">{a.label}</div>
+									<div className="mt-0.5 text-[11.5px] leading-[1.35] text-faint">
+										{a.hint}
+									</div>
+								</div>
+							</Menu.Item>
+						))}
+					</Menu.Group>
+				</Menu.Popup>
+			</Menu.Root>
 			{done && (
-				<div className="mt-1.5 text-[11.5px] font-medium text-dim">
+				<div className="col-span-2 px-2 pb-1 text-[11.5px] font-medium text-dim">
 					Started {done.label.toLowerCase()} — {AGENT_NAME} will post results on{" "}
 					{prUrl ? (
 						<a
@@ -880,13 +612,15 @@ function PrAgentActions({
 				</div>
 			)}
 			{error && (
-				<div className="mt-1.5 text-[11.5px] font-medium text-red">{error}</div>
+				<div className="col-span-2 px-2 pb-1 text-[11.5px] font-medium text-red">
+					{error}
+				</div>
 			)}
 		</div>
 	);
 }
 
-/** The Reviewer picker chip in the status row: pick a teammate to flag this
+/** The reviewer action: pick a teammate to flag this
 		session as "needs review" — it jumps into a Needs-review band at the top of
 		their sidebar and buzzes their registered devices. Re-pick to hand off,
 		"Clear review request" to withdraw. Optimistic; the polled session list
@@ -956,12 +690,8 @@ function ReviewerChip({
 		<Menu.Root>
 			<Menu.Trigger
 				className={cn(
-					CHIP_CLASS,
-					accepted
-						? chipToneClass("green")
-						: req
-							? chipToneClass("yellow")
-							: chipToneClass("muted"),
+					ACTION_BUTTON_CLASS,
+					accepted ? "text-green" : req ? "text-yellow" : "",
 				)}
 				title={
 					accepted
@@ -980,15 +710,18 @@ function ReviewerChip({
 				) : req ? (
 					<UserAvatar name={req.to} size={20} />
 				) : (
-					<span className={CHIP_ICON_CLASS}>
+					<span className={ACTION_ICON_CLASS}>
 						<IconBell size={20} />
 					</span>
 				)}
-				{accepted
-					? `Reviewed by ${accepted.by}`
-					: req
-						? `Review: ${req.to}`
-						: "Request review"}
+				<span className="min-w-0 flex-1 truncate">
+					{accepted
+						? `Reviewed by ${accepted.by}`
+						: req
+							? `Review: ${req.to}`
+							: "Request review"}
+				</span>
+				<IconChevronDown size={14} className="shrink-0 text-faint" />
 			</Menu.Trigger>
 			<Menu.Popup align="start" sideOffset={6} className="min-w-[200px]">
 				{req &&
@@ -1203,7 +936,6 @@ export function WorkspaceInfo({
 	const [data, setData] = useState<WorkspaceOverview | null>(
 		() => overviewCache.get(cacheKey)?.data ?? null,
 	);
-	const [promptExpanded, setPromptExpanded] = useState(false);
 	const [commentsExpanded, setCommentsExpanded] = useState(false);
 	const [pr, setPr] = useState<PrDetails | null>(null);
 	const [files, setFiles] = useState<DiffFile[] | null>(null);
@@ -1222,7 +954,6 @@ export function WorkspaceInfo({
 		let alive = true;
 		const cached = overviewCache.get(cacheKey);
 		setData(cached?.data ?? null);
-		setPromptExpanded(false);
 		setCommentsExpanded(false);
 		// Fresh cache → refresh quietly in the background after a beat (also
 		// debounces the liveMediaCount bumps during a streaming run).
@@ -1337,7 +1068,6 @@ export function WorkspaceInfo({
 		.filter(Boolean)
 		.join(" · ");
 
-	const chips = statusChips(pr);
 	// Clean each body up front and drop the noise: Vercel deploy bots and
 	// anything that reduces to nothing (link-ref markers, pure HTML-comment
 	// bot pings) so no blank/useless cards show.
@@ -1383,10 +1113,8 @@ export function WorkspaceInfo({
 	);
 	const hasBody = Boolean(
 		showGit ||
-		chips.length > 0 ||
 		comments.length > 0 ||
 		changed.length > 0 ||
-		(data && data.prompt) ||
 		media.length > 0 ||
 		assets.length > 0,
 	);
@@ -1398,28 +1126,40 @@ export function WorkspaceInfo({
 					{title}
 				</div>
 				{meta && <div className="text-[12px] leading-[1.35] text-faint">{meta}</div>}
-				<div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-					{chips.map((chip) =>
-						chip.key === "checks" && pr ? (
-							<ChecksChip
-								key={chip.key}
-								pr={pr}
-								chip={chip}
-								onOpenTab={onOpenTab}
-							/>
-						) : (
-							<button
-								key={chip.key}
-								type="button"
-								className={cn(CHIP_CLASS, chipToneClass(chip.tone))}
-								onClick={() => onOpenTab?.("pr")}
-							>
-								{chip.icon && (
-									<span className={CHIP_ICON_CLASS}>{chip.icon}</span>
-								)}
-								{chip.label}
-							</button>
-						),
+				{sandbox && (
+					<div className="mt-1 flex flex-wrap items-center gap-1.5">
+						<SandboxBadge sandbox={sandbox} />
+					</div>
+				)}
+			</div>
+			<div className={INFO_SECTION_CLASS}>
+				<div className={INFO_LABEL_CLASS}>Actions</div>
+				<div className="grid grid-cols-2 gap-0.5 rounded-lg border border-line bg-panel p-1">
+					{repo && (
+						<button
+							type="button"
+							className={ACTION_BUTTON_CLASS}
+							onClick={() => onOpenTab?.("pr")}
+							title="Open the full-width review"
+						>
+							<span className={ACTION_ICON_CLASS}>
+								<IconPullRequest size={18} />
+							</span>
+							<span className="min-w-0 flex-1 truncate">Review changes</span>
+						</button>
+					)}
+					{prState === "OPEN" && pr?.staging?.url && (
+						<button
+							type="button"
+							className={ACTION_BUTTON_CLASS}
+							onClick={() => onOpenTab?.("staging")}
+							title="Open the preview environment"
+						>
+							<span className={ACTION_ICON_CLASS}>
+								<IconGlobe size={18} />
+							</span>
+							<span className="min-w-0 flex-1 truncate">Preview</span>
+						</button>
 					)}
 					<ReviewerChip
 						sessionId={sessionId}
@@ -1428,38 +1168,15 @@ export function WorkspaceInfo({
 						acceptedFromPr={reviewAcceptedFromPr}
 						onReviewChange={onReviewChange}
 					/>
-					<SandboxBadge sandbox={sandbox} />
+					{pr?.number && repo === "tella-fusion" && (
+						<PrAgentActions
+							sessionId={sessionId}
+							repo={repo}
+							prUrl={pr.url}
+							onOpenSession={onOpenSession}
+						/>
+					)}
 				</div>
-				{repo && (
-					<button
-						type="button"
-						className={REVIEW_BUTTON_CLASS}
-						onClick={() => onOpenTab?.("pr")}
-						title="Open the full-width review"
-					>
-						<IconPullRequest />
-						Review changes
-					</button>
-				)}
-				{prState === "OPEN" && pr?.staging?.url && (
-					<button
-						type="button"
-						className={REVIEW_BUTTON_CLASS}
-						onClick={() => onOpenTab?.("staging")}
-						title="Open the preview environment full-width"
-					>
-						<IconGlobe />
-						Preview environment
-					</button>
-				)}
-				{pr?.number && repo === "tella-fusion" && (
-					<PrAgentActions
-						sessionId={sessionId}
-						repo={repo}
-						prUrl={pr.url}
-						onOpenSession={onOpenSession}
-					/>
-				)}
 			</div>
 			{hasBody ? (
 				<div className="grid gap-4">
@@ -1515,28 +1232,6 @@ export function WorkspaceInfo({
 											: `View all ${comments.length} comments`}
 									</button>
 								)}
-							</div>
-						</div>
-					)}
-					{data?.prompt && (
-						<div
-							className={cn(INFO_SECTION_CLASS, "cursor-pointer")}
-							onClick={() => {
-								// Selecting text inside also fires click — don't collapse
-								// the prompt out from under a selection.
-								if (window.getSelection()?.isCollapsed !== false)
-									setPromptExpanded((v) => !v);
-							}}
-							title={promptExpanded ? "Click to collapse" : "Click to expand"}
-						>
-							<div className={INFO_LABEL_CLASS}>Opening prompt</div>
-							<div
-								className={cn(
-									"selectable whitespace-pre-wrap text-[12.5px] leading-[1.45] text-dim",
-									promptExpanded ? "" : "line-clamp-2",
-								)}
-							>
-								{data.prompt.content}
 							</div>
 						</div>
 					)}
