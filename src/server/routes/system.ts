@@ -88,7 +88,10 @@ function processCensus(): Record<string, number> {
 			if (cmd.includes("opencode serve")) counts.opencodeServers++;
 			else if (cmd.includes("mcp-proxy.")) counts.mcpProxies++;
 			else if (cmd.includes("/chrome") && cmd.includes("--headless")) counts.chrome++;
-			else if (cmd.includes("next dev") || cmd.includes("next-server")) counts.nextDev++;
+			// One per dev stack: a `just dev-next` stack spawns ~6 processes whose
+			// cmdline mentions "next dev" (bunx/concurrently/sh/bun/node), so count
+			// only the next-server root or 2 healthy stacks read as 12 "leaks".
+			else if (cmd.startsWith("next-server")) counts.nextDev++;
 			else if (/(^|\/)git(-lfs)? /.test(cmd)) counts.gitOps++;
 		}
 	} catch {}
