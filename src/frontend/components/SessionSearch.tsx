@@ -149,9 +149,10 @@ export function SessionSearch({ sessions, onSelect, onClose }: Props) {
 		};
 	}, [query]);
 
-	// Only live (non-archived) sessions are searchable here.
+	// Only live sessions are searchable. The sideChatOf check is a compatibility
+	// guard for older/cloud servers that may still return removed side-chat rows.
 	const pool = useMemo(
-		() => sessions.filter((s) => !s.archived),
+		() => sessions.filter((s) => !s.archived && !s.sideChatOf),
 		[sessions],
 	);
 

@@ -38,7 +38,6 @@ import {
 	ToolEvidencePanel,
 	type ToolEvidence,
 } from "./ToolEvidencePanel";
-import { SideChatsPanel } from "./SideChatsPanel";
 import { SubagentPanel, type SubagentRef } from "./SubagentPanel";
 import { CommandsPanel, ShellPanel } from "./TerminalPanel";
 import { getCurrentUser } from "./UserPicker";
@@ -120,7 +119,6 @@ import {
 	IconTerminal,
 	IconCopy,
 	IconFile,
-	IconMessage,
 	IconGlobe,
 	IconArrowUpRight,
 } from "./icons";
@@ -281,7 +279,6 @@ type PanelTab =
 	| "terminal"
 	| "shell"
 	| "pr"
-	| "sidechats"
 	| "workflows"
 	| "assets"
 	| "reports"
@@ -831,7 +828,7 @@ export function SessionViewer({
 		// starts hidden and the body would flash PrPanel) — it, and any stored
 		// tab that no longer exists, maps back to Info. "shell" is deliberately
 		// not restorable either: restoring it would spawn a PTY on every load.
-		const restorable: PanelTab[] = ["info", "changes", "terminal", "sidechats"];
+		const restorable: PanelTab[] = ["info", "changes", "terminal"];
 		const tab: PanelTab | null = restorable.includes(stored as PanelTab)
 			? (stored as PanelTab)
 			: stored
@@ -862,10 +859,6 @@ export function SessionViewer({
 	// (the top tab strip's Review view-tab) and passed in as `showReview`; the
 	// open triggers call onOpenReview. Only meaningful on a code session
 	// (hasWorkspace) — App only offers the Review tab there.
-	// Bumped by the ⋯ menu's "New side chat" — tells the SideChatsPanel to
-	// create (and open) a fresh side chat as soon as it shows. The panel calls
-	// onCreateConsumed to reset it to 0, so tab remounts don't re-create.
-	const [sideChatCreateSeq, setSideChatCreateSeq] = useState(0);
 	// Sub-agent sidebar: a breadcrumb stack of opened sub-agents (clicking a Task
 	// call pushes; nested Task calls push further). Non-empty → the right region
 	// shows the sub-agent conversation instead of the Workspace panel.
@@ -1408,11 +1401,6 @@ export function SessionViewer({
 	const plainUrl = session.plainThreadId
 		? plainThreadUrl(session.plainThreadId)
 		: "";
-	// Side chats hang off any normal backstage session (not an automation view,
-	// and not a side chat itself — no nesting). Their tab opens the panel even
-	// for an ask-mode chat with no workspace.
-	const canSideChat =
-		session.source === "backstage" && !session.automation && !session.sideChatOf;
 	// Workflow runs open the panel too: ask-mode sessions without a workspace
 	// or Plain thread still need somewhere to show the Agents tab.
 	const panelAvailable =
@@ -1421,13 +1409,7 @@ export function SessionViewer({
 		workflowRuns.length > 0 ||
 		subagents.length > 0 ||
 		sessionReports.length > 0 ||
-		canSideChat ||
 		Boolean(toolEvidence);
-	// A persisted "sidechats" tab is meaningless on a session that can't have
-	// side chats (automation view / a side chat itself) — fall back to Info.
-	useEffect(() => {
-		if (panelTab === "sidechats" && !canSideChat) setPanelTab("info");
-	}, [panelTab, canSideChat]);
 	useEffect(() => {
 		if (panelTab === "reports" && sessionReports.length === 0)
 			setPanelTab("info");
@@ -2614,7 +2596,7 @@ export function SessionViewer({
 			.filter(
 				(c) =>
 					c.id !== session.id &&
-					// Side chats are recalled via their own @mention, not offered here.
+					// Legacy hidden sessions are not valid workspace context options.
 					!c.sideChatOf &&
 					// Only chats with something to hand over — a transcript or at
 					// least a started engine thread.
@@ -2848,15 +2830,6 @@ export function SessionViewer({
 			setFiles((prev) => [...prev, ...fls]);
 		}
 		setComposerPrefill((p) => ({ seq: (p?.seq ?? 0) + 1, text: q.content }));
-	}
-
-	// Append an @session:<id> token to the main composer (from a side chat's
-	// "Mention in main thread") so the user can pull that chat's context back in.
-	function insertMention(id: string) {
-		setComposerPrefill((p) => ({
-			seq: (p?.seq ?? 0) + 1,
-			text: `@session:${id} `,
-		}));
 	}
 
 	function handleQueueReorder(next: QueueReceipt[]) {
@@ -3560,25 +3533,6 @@ export function SessionViewer({
 						<span className="grow">New chat in workspace</span>
 					</Menu.Item>
 				);
-				// New side chat — spawns a durable side chat (shares the repo, ask
-				// mode, out of the main thread) and opens it in the side panel.
-				// Phone-only like newChatAction above it: on desktop the Side chats
-				// tab is the affordance.
-				const newSideChatAction = isPhone && canSideChat && (
-					<Menu.Item
-						onClick={() => {
-							setOverflowOpen(false);
-							setSubagentStack([]);
-							setPanelOpen(true);
-							selectPanelTab("sidechats");
-							setSideChatCreateSeq((n) => n + 1);
-						}}
-						title="Start a side chat that doesn't interrupt the main conversation"
-					>
-						<IconMessage size={22} />
-						<span className="grow">New side chat</span>
-					</Menu.Item>
-				);
 				// Copy transcript. These normally live on a tab's right-click menu,
 				// but a lone-chat workspace has no tab strip (and phones hide it at
 				// every count), so the only place to grab this chat's full text is the
@@ -3944,7 +3898,6 @@ export function SessionViewer({
 								{isPhone && secondaryActions(true)}
 								{(compactHeader || isPhone) && shareAction(true)}
 								{newChatAction}
-								{newSideChatAction}
 								{transcriptActions}
 								{overflowActions}
 								{archiveAction}
@@ -4906,14 +4859,6 @@ export function SessionViewer({
 							>
 								Info
 							</button>
-							{canSideChat && (
-								<button
-									className={`panel-tab ${panelTab === "sidechats" ? "active" : ""}`}
-									onClick={() => selectPanelTab("sidechats")}
-								>
-									Side chats
-								</button>
-							)}
 							{hasWorkspace && (
 								<>
 									<button
@@ -5040,13 +4985,6 @@ export function SessionViewer({
 										liveMedia={liveOverviewMedia}
 									/>
 								</div>
-							) : panelTab === "sidechats" ? (
-								<SideChatsPanel
-									sessionId={session.id}
-									onMention={insertMention}
-									createSeq={sideChatCreateSeq}
-									onCreateConsumed={() => setSideChatCreateSeq(0)}
-								/>
 							) : panelTab === "workflows" ? (
 								// Before the Plain fallthrough: a Plain-only session's
 								// Agents tab must win over its default timeline panel.

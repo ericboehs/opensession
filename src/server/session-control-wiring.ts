@@ -20,7 +20,7 @@ import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { parseImageDataUrls } from "./uploads";
 import { type Sandbox } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox } from "./sandbox/config";
-import { findSession, getCachedSessions, invalidateSessionsCache, recordRunOutcome, touchBackstageSession, updateSessionFile } from "./session-cache";
+import { findSession, getCachedSessions, invalidateSessionsCache, isLegacySideChat, recordRunOutcome, touchBackstageSession, updateSessionFile } from "./session-cache";
 import { type SessionState, type SessionSummary, registerSessionControl } from "./session-control";
 import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
 import { engineSessionPatch, engineUserTexts, getAllSessions, mergedSessionTranscript } from "./sessions";
@@ -75,16 +75,17 @@ rebuildIndex(getAllSessions());
 // WebSocket handlers use, so a management session steers/answers/creates the
 // exact same way a human does in the web UI. See src/server/session-control.ts.
 registerSessionControl({
-	listSessions: () => getCachedSessions().map(buildSummary),
+	listSessions: () =>
+		getCachedSessions().filter((s) => !isLegacySideChat(s)).map(buildSummary),
 
 	getSession: (id) => {
 		const s = findSession(id);
-		return s ? buildSummary(s) : undefined;
+		return s && !isLegacySideChat(s) ? buildSummary(s) : undefined;
 	},
 
 	transcriptTail: (id, n) => {
 		const s = findSession(id);
-		if (!s) return [];
+		if (!s || isLegacySideChat(s)) return [];
 		// Engine-spanning read (file + opencode store) — same as the transcript
 		// route, so get_session works on opencode/migrated sessions too.
 		return mergedSessionTranscript(s).slice(-Math.max(0, n));
@@ -101,7 +102,7 @@ registerSessionControl({
 
 	deliverToSession: async (id, content, user, opts) => {
 		const session = findSession(id);
-		if (!session)
+		if (!session || isLegacySideChat(session))
 			return { status: "error" as const, message: "No session with that id." };
 		if (session.upgradedTo || isLocalSessionUpgradeInProgress(id)) {
 			return {
@@ -190,7 +191,7 @@ registerSessionControl({
 
 	cancelSession: (id) => {
 		const session = findSession(id);
-		if (!session) return false;
+		if (!session || isLegacySideChat(session)) return false;
 		const cancelled = cancelAgentRun(
 			session.claudeSessionId,
 			session.codexThreadId,

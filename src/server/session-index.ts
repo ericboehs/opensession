@@ -22,7 +22,7 @@
  * __backstageBooted guard, same as goal-runner's ticker.
  */
 
-import { getCachedSessions } from "./session-cache";
+import { getCachedSessions, isLegacySideChat } from "./session-cache";
 import { mergedSessionTranscriptAsync } from "./sessions";
 import { opencodeOneShot } from "./opencode-oneshot";
 import { audit } from "./audit";
@@ -65,11 +65,18 @@ export function searchSessionHistory(
 	const sinceTs = opts.days
 		? Date.now() - opts.days * 86_400_000
 		: undefined;
-	return searchIndex().search(query, {
-		repo: opts.repo,
-		limit: opts.limit,
-		sinceTs,
-	});
+	const hidden = new Set(
+		getCachedSessions()
+			.filter(isLegacySideChat)
+			.map((s) => `session:${s.id}`),
+	);
+	return searchIndex()
+		.search(query, {
+			repo: opts.repo,
+			limit: opts.limit,
+			sinceTs,
+		})
+		.filter((hit) => !hidden.has(hit.id));
 }
 
 // ── Extraction ──────────────────────────────────────────────────────────────
@@ -244,7 +251,11 @@ export async function sweepSessionIndex(): Promise<{
 	try {
 		const store = searchIndex();
 		const state = store.indexState();
-		const sessions = [...getCachedSessions()].sort(
+		const allSessions = [...getCachedSessions()];
+		for (const session of allSessions) {
+			if (isLegacySideChat(session)) store.remove(`session:${session.id}`);
+		}
+		const sessions = allSessions.filter((s) => !isLegacySideChat(s)).sort(
 			(a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""),
 		);
 		const now = Date.now();

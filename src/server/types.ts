@@ -87,8 +87,7 @@ export interface UnifiedSession {
   projectId?: string | null;
   /** Parent/orchestrator session when spawned as a worker sub-session. */
   parentSessionId?: string;
-  /** Set on a side chat — the parent session it was spawned from and
-   *  @-mentions back into. Suppressed from the left sidebar. */
+  /** Legacy removed side-chat record. Kept hidden until its parent is deleted. */
   sideChatOf?: string;
   /** The user's standing Desk (concierge) session — hidden from lists. */
   desk?: boolean;
@@ -359,8 +358,7 @@ export interface BackstageSessionFile {
   projectId?: string | null; // legacy alias of workspaceId (dual-read during migration)
   /** Parent/orchestrator session when this chat was spawned as a visible worker sub-session. */
   parentSessionId?: string;
-  /** Set on a side chat — the parent session it was spawned from and
-   *  @-mentions back into. Suppressed from the left sidebar. */
+  /** Legacy removed side-chat record. Kept hidden until its parent is deleted. */
   sideChatOf?: string;
   /** The user's standing Desk (concierge) session — fixed title, suppressed
    *  from the session lists, opened via the Desk overlay. */

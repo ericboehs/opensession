@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { TodoItem, WSServerMessage } from "../lib/types";
 import { BASE_PATH } from "../lib/base";
 import { getCurrentUser } from "./UserPicker";
-import { SideChatConversation } from "./SideChatConversation";
+import { DeskConversation } from "./DeskConversation";
 import { IconCheck, IconDesk, IconExpand, IconX } from "./icons";
 
 /**
@@ -359,10 +359,8 @@ function DeskBody({
 						{ensureError}
 					</div>
 				) : sessionId ? (
-					<SideChatConversation
-						sideChatId={sessionId}
-						onBack={onClose}
-						hideHeader
+					<DeskConversation
+						sessionId={sessionId}
 						effort="low"
 						hideBefore={clearedAt}
 						placeholder="Ask your Desk…"

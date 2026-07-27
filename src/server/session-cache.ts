@@ -17,6 +17,12 @@ import type { UnifiedSession, BackstageSessionFile } from "./types";
 
 export const SESSIONS_DIR = OPENSESSION_CHATS_DIR;
 
+/** Persisted records from the removed side-chat feature stay internal until
+ * their parent is deleted. They must never reappear in user-facing discovery. */
+export function isLegacySideChat(session: { sideChatOf?: string | null }): boolean {
+	return Boolean(session.sideChatOf);
+}
+
 const g = globalThis as any;
 
 // Cache sessions with short TTL

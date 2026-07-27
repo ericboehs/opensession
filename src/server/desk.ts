@@ -2,7 +2,7 @@
  * Desk — the per-user standing concierge session behind the summonable Desk
  * overlay (⌘J / the floating button). One durable ask-mode session per user
  * (session file flag `desk: true`, fixed title, hidden from the normal
- * session lists like side chats) that the user can open on top of whatever
+ * regular session lists) that the user can open on top of whatever
  * they're doing: manage their todo list (todos.ts), ask quick questions, and
  * delegate real work to worker sessions via the opensession-sessions tools
  * every interactive run carries.

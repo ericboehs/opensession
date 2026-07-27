@@ -21,7 +21,14 @@ import { getReviewRequest, setReviewAccepted, setReviewRequest } from "../review
 import { getSessionControl } from "../session-control";
 import { suggestBranchName } from "../suggest-branch";
 import { transitionRunState } from "../run-state";
-import { findSession, getCachedSessions, invalidateSessionsCache, runErrors } from "../session-cache";
+import {
+	findSession,
+	getCachedSessions,
+	invalidateSessionsCache,
+	isLegacySideChat,
+	runErrors,
+} from "../session-cache";
+import { searchIndex } from "../session-index";
 import { resolvePrTarget } from "../session-repos";
 import { destroySessionSandbox } from "../session-sandbox";
 import {
@@ -150,21 +157,23 @@ export async function handleSessionsRoutes(
 		// objects: whether a run is blocked on a human question (pendingAsks) and
 		// how many prompts are queued behind it. Drives the sidebar/tab "needs
 		// input" highlight without a second round-trip.
-		const enriched = getCachedSessions().map((s) => ({
-			...s,
-			waitingForInput: pendingAsks.has(s.id),
-			queuedCount: promptQueues.get(s.id)?.length || 0,
-			// Worktree still being created by this session's create run — the
-			// viewer shows "Waiting for workspace" and queues sends meanwhile.
-			...(preparingWorkspaces.has(s.id)
-				? { workspacePreparing: true }
-				: {}),
-			// Terminal failure of the last run (credits/limits/API) — persisted
-			// on backstage session files, in-memory for slack/linear sessions.
-			lastRunError: runErrors.get(s.id) || s.lastRunError,
-		}));
+		const enriched = getCachedSessions()
+			.filter((s) => !isLegacySideChat(s))
+			.map((s) => ({
+				...s,
+				waitingForInput: pendingAsks.has(s.id),
+				queuedCount: promptQueues.get(s.id)?.length || 0,
+				// Worktree still being created by this session's create run — the
+				// viewer shows "Waiting for workspace" and queues sends meanwhile.
+				...(preparingWorkspaces.has(s.id)
+					? { workspacePreparing: true }
+					: {}),
+				// Terminal failure of the last run (credits/limits/API) — persisted
+				// on backstage session files, in-memory for slack/linear sessions.
+				lastRunError: runErrors.get(s.id) || s.lastRunError,
+			}));
 		const { sessions, cloudUnreachable } = await mergedCloudSessions(enriched);
-		return Response.json(sessions, {
+		return Response.json(sessions.filter((s) => !isLegacySideChat(s)), {
 			headers: cloudUnreachable
 				? { "X-OpenSession-Cloud-Unreachable": "true" }
 				: undefined,
@@ -366,6 +375,7 @@ export async function handleSessionsRoutes(
 		const byPath = new Map<string, string>(); // transcriptPath → sessionId
 		for (const s of getCachedSessions()) {
 			if (
+				!isLegacySideChat(s) &&
 				s.transcriptPath &&
 				!byPath.has(s.transcriptPath) &&
 				existsSync(s.transcriptPath)
@@ -675,12 +685,14 @@ export async function handleSessionsRoutes(
 				if (existsSync(transcriptDbPath()))
 					transcriptStore().deleteSessionTranscript(id);
 			} catch {}
+			try {
+				searchIndex().remove(`session:${id}`);
+			} catch {}
 		};
 		try {
-			// Cascade-delete this session's side chats — they live only in this
-			// session's panel (suppressed from the sidebar), so orphaning them
-			// leaves unreachable files on disk. Before deleteSession so the parent
-			// is still resolvable to anything that needs it.
+			// Cascade-delete legacy side-chat records with their parent. They remain
+			// hidden after the feature's removal, so orphaning them would leave
+			// unreachable files on disk.
 			for (const child of getAllSessions().filter(
 				(s) => s.sideChatOf === sessionId,
 			)) {

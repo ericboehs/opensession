@@ -107,7 +107,7 @@ describe("pickLandingChat", () => {
 		const shell = chat({ id: "shell", projectId: prj });
 		expect(pickLandingChat([shell], prj)?.id).toBe("shell");
 	});
-	test("side chats and other workspaces are ignored", () => {
+	test("legacy hidden chats and other workspaces are ignored", () => {
 		const side = chat({
 			id: "side",
 			projectId: prj,

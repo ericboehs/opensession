@@ -1407,20 +1407,12 @@ async function runSessionPromptInner(
 	// marks the engine change; the handoff itself is plumbing (see prompt-context).
 	if (switchHandoff) prompt = `${wrapContext(switchHandoff)}\n\n${prompt}`;
 	// Sibling-chat transcripts attached from the fresh-chat "Add chat
-	// transcripts" chips (contextChats), plus @-mentioned SIDE CHATS of this
-	// session (sideChatIdsToInline): inline a bounded digest of each, fenced so
-	// the rendered transcript shows only the human's message. UI/derived fields,
-	// but skip automation sessions anyway (their prompts are untrusted text).
-	// Only side chats of THIS session auto-inline; an unrelated @session mention
-	// keeps its sessionMentionsNote pointer-footer behavior (below).
+	// transcripts" chips: inline a bounded digest of each, fenced so the rendered
+	// transcript shows only the human's message. Skip automation sessions because
+	// their prompts are untrusted text.
 	const inlinedChatIds = new Set<string>();
 	if (!session.automation) {
-		const chatIds = [
-			...new Set([
-				...(contextChats ?? []),
-				...sideChatIdsToInline(prompt, sessionId, findSession),
-			]),
-		];
+		const chatIds = [...new Set(contextChats ?? [])];
 		const attachedSessions = chatIds
 			.filter((id) => id !== sessionId)
 			.map((id) => findSession(id))
@@ -1436,7 +1428,7 @@ async function runSessionPromptInner(
 				id: s.id,
 				title: s.title,
 				model: s.model,
-				// Async: an attached side-chat's transcript can be multi-MB — the
+				// Async: an attached chat's transcript can be multi-MB — the
 				// sync parse held the event loop for the whole read.
 				entries: s.transcriptPath
 					? await parseTranscriptAsync(s.transcriptPath)
@@ -2038,32 +2030,6 @@ export function sessionMentionsNote(
 		`only while it is idle, "/loop stop" to clear it; this works on your own session id too), ` +
 		`answer_session_question, cancel_session.]`
 	);
-}
-
-/**
- * Side-chat recall selection (pure, unit-tested). Scans a prompt for
- * `@session:<id>` mentions and returns the deduped ids that are SIDE CHATS of
- * `sessionId` (i.e. `lookup(id)?.sideChatOf === sessionId`). Only those
- * auto-inline their transcript digest into the main thread's next turn via
- * buildChatContextNote — a plain @session mention of an unrelated session is
- * NOT selected here (it keeps the sessionMentionsNote pointer-footer behavior).
- * Uses the same mention regex as sessionMentionsNote and strips fenced context
- * blocks first so an already-inlined digest doesn't re-select itself. `lookup`
- * is findSession in production; injected for tests.
- */
-export function sideChatIdsToInline(
-	prompt: string,
-	sessionId: string,
-	lookup: (id: string) => { sideChatOf?: string } | null | undefined,
-): string[] {
-	const ids = [
-		...new Set(
-			[...stripContext(prompt).matchAll(/@session:(bks-[0-9a-f-]+)/g)].map(
-				(m) => m[1],
-			),
-		),
-	];
-	return ids.filter((id) => lookup(id)?.sideChatOf === sessionId);
 }
 
 // Loop ticker: fire due session loops (skips busy/archived sessions).

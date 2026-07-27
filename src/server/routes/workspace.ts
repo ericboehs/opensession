@@ -11,7 +11,14 @@ import { searchRepoEntries } from "../file-index";
 import { runSessionPrompt } from "../run-session";
 import { type Sandbox, hasRemoteWorkspace, workspaceExecFor } from "../sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox } from "../sandbox/config";
-import { SESSIONS_DIR, findSession, getCachedSessions, invalidateSessionsCache, touchBackstageSession } from "../session-cache";
+import {
+	SESSIONS_DIR,
+	findSession,
+	getCachedSessions,
+	invalidateSessionsCache,
+	isLegacySideChat,
+	touchBackstageSession,
+} from "../session-cache";
 import { attachRepo, switchPrimaryRepo, workspaceOwningWorktree } from "../session-repos";
 import { getAllSessions, getTranscriptPath } from "../sessions";
 import { writeJsonAtomic } from "../shared/atomic-write";
@@ -117,7 +124,10 @@ export async function handleWorkspaceRoutes(
 		const sessionHits =
 			ql.length >= 2
 				? getCachedSessions()
-						.filter((s) => !s.archived && s.id !== sessionId)
+						.filter(
+							(s) =>
+								!s.archived && !isLegacySideChat(s) && s.id !== sessionId,
+						)
 						.filter(
 							(s) =>
 								(s.title || "").toLowerCase().includes(ql) ||

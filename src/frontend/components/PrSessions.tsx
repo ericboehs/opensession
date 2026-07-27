@@ -9,7 +9,7 @@ import { getCurrentUser } from "./UserPicker";
  * (primary + attached + linked), with primary-branch/number fallbacks for
  * sessions the enrichment hasn't reached. Matching also uses the loaded PR's
  * number and head branch, so number-keyed callers link the same sessions as
- * branch-keyed ones. Side chats are excluded; running sessions sort first,
+ * branch-keyed ones. Legacy hidden chats are excluded; running sessions sort first,
  * then most recent activity.
  */
 export function prRelatedSessions(

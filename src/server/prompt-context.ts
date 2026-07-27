@@ -19,7 +19,7 @@ export const CTX_CLOSE = "</backstage:context>";
 /** Fence a block of injected context so it renders invisibly in the transcript. */
 export function wrapContext(body: string): string {
   // Neutralize any fence sentinels inside the body: a nested
-  // <backstage:context> marker in inlined content (e.g. a side chat's
+  // <backstage:context> marker in inlined content (e.g. an attached chat's
   // transcript that literally contains the string) would otherwise let that
   // content break out of the fence and inject unfenced instructions into the
   // agent — a prompt-injection vector. A sentinel inside a fenced block is

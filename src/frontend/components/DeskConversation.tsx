@@ -6,50 +6,28 @@ import { renderMarkdown } from "../lib/markdown";
 import { fetchFileMentions } from "../lib/api";
 import { TranscriptBlocks } from "./TranscriptBlocks";
 import { useFileMentions } from "./useFileMentions";
-import { IconChevronLeft, IconAtSign, IconArrowUp } from "./icons";
+import { IconArrowUp } from "./icons";
 import { mergeTranscriptEntries } from "../lib/transcript-state";
 
-interface SideChatConversationProps {
-	sideChatId: string;
-	/** Return to the list. */
-	onBack: () => void;
-	/** Insert @session:<id> into the MAIN composer. Omitted by hosts with no
-	 *  main composer (the Desk overlay) — hides the Mention button. */
-	onMention?: (sessionId: string) => void;
-	/** The side chat's title (from the parent panel's list) — header label. */
-	title?: string;
-	/** Host renders its own chrome (the Desk overlay) — skip the header row. */
-	hideHeader?: boolean;
-	/** Replaces the side-chat empty-state copy. */
+interface DeskConversationProps {
+	sessionId: string;
 	emptyState?: React.ReactNode;
-	/** Composer placeholder (default "Ask this side chat…"). */
 	placeholder?: string;
-	/** Reasoning effort sent with each prompt (default "high"). The Desk
-	 *  passes "low" — concierge turns should feel instant. */
 	effort?: string;
-	/** Hide entries at or before this ISO timestamp (the Desk's "Clear"
-	 *  marker). Display-only — the transcript itself is untouched. */
 	hideBefore?: string;
 }
 
 /**
- * Live conversation view for ONE side chat, hosted inside the parent session's
- * right panel. Runs on its OWN useWebSocket() instance (a SECOND socket) so
- * watching the side chat never unwatches the main thread — the WS hub is
- * one-socket-one-session. Reuses TranscriptBlocks so markdown/tool rendering is
- * identical to the main view.
+ * Compact conversation view for the standing Desk session. It owns a separate
+ * socket because the app-wide socket may already be watching a regular session.
  */
-export function SideChatConversation({
-	sideChatId,
-	onBack,
-	onMention,
-	title,
-	hideHeader,
+export function DeskConversation({
+	sessionId,
 	emptyState,
 	placeholder,
 	effort,
 	hideBefore,
-}: SideChatConversationProps) {
+}: DeskConversationProps) {
 	const { connected, send, addHandler } = useWebSocket();
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	const [streamText, setStreamText] = useState("");
@@ -69,12 +47,10 @@ export function SideChatConversation({
 		value: draft,
 		onChange: setDraft,
 		textareaRef,
-		mentionFetch: (q) => fetchFileMentions(q, sideChatId),
+		mentionFetch: (q) => fetchFileMentions(q, sessionId),
 	});
 
-	// Second socket: watch this side chat only, and tear it down on unmount /
-	// id change. transcript_init resets, everything else merges — all gated to
-	// this sideChatId (the hub also tags session-scoped messages).
+	// Watch the Desk only and tear the socket down on unmount / id change.
 	useEffect(() => {
 		if (!connected) return;
 		setEntries([]);
@@ -87,14 +63,14 @@ export function SideChatConversation({
 		// servers ignore the field entirely.
 		send({
 			type: "watch",
-			sessionId: sideChatId,
+			sessionId,
 			user: getCurrentUser(),
 			supportsSeq: true,
 			supportsChangeSeq: true,
 		});
 
 		const unsubscribe = addHandler((msg) => {
-			if ("sessionId" in msg && msg.sessionId && msg.sessionId !== sideChatId)
+			if ("sessionId" in msg && msg.sessionId && msg.sessionId !== sessionId)
 				return;
 			switch (msg.type) {
 				case "transcript_init":
@@ -183,9 +159,9 @@ export function SideChatConversation({
 
 		return () => {
 			unsubscribe();
-			send({ type: "unwatch", sessionId: sideChatId });
+			send({ type: "unwatch", sessionId });
 		};
-	}, [connected, sideChatId, send, addHandler]);
+	}, [connected, sessionId, send, addHandler]);
 
 	// Keep a following reader pinned to the live edge as content lands.
 	useEffect(() => {
@@ -215,7 +191,7 @@ export function SideChatConversation({
 					id: crypto.randomUUID(),
 					type: "system",
 					content:
-						"Slash commands aren't supported in side chats — run them from the main conversation.",
+						"Slash commands aren't supported in the Desk — run them from a session.",
 					timestamp: new Date().toISOString(),
 				},
 			]);
@@ -224,7 +200,7 @@ export function SideChatConversation({
 		}
 		send({
 			type: "prompt",
-			sessionId: sideChatId,
+			sessionId,
 			content,
 			user: getCurrentUser(),
 			effort: effort || "high",
@@ -243,37 +219,6 @@ export function SideChatConversation({
 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
-			{!hideHeader && (
-				<div className="flex items-center gap-2 border-b border-line px-3 py-2">
-					<button
-						className="flex items-center rounded-md p-1 text-dim hover:bg-surface hover:text-fg"
-						onClick={onBack}
-						aria-label="Back to side chats"
-					>
-						<IconChevronLeft size={20} />
-					</button>
-					<span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-fg">
-						{title || "Side chat"}
-					</span>
-					{isRunning && (
-						<span
-							className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-green"
-							title="Running"
-						/>
-					)}
-					{onMention && (
-						<button
-							className="flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-1 text-[12px] font-medium text-dim hover:bg-surface hover:text-fg"
-							onClick={() => onMention(sideChatId)}
-							title="Mention this side chat in the main thread"
-						>
-							<IconAtSign size={20} />
-							Mention
-						</button>
-					)}
-				</div>
-			)}
-
 			<div
 				className="min-h-0 flex-1 overflow-y-auto px-3 py-2"
 				ref={bodyRef}
@@ -281,8 +226,7 @@ export function SideChatConversation({
 			>
 				{!hasContent ? (
 					<div className="mx-auto mt-6 max-w-[320px] text-center text-[13px] font-medium leading-relaxed text-dim">
-						{emptyState ??
-							"Ask this side chat anything — it shares this session's repo but runs read-only, and won't touch your main conversation."}
+						{emptyState ?? "Ask your Desk anything."}
 					</div>
 				) : (
 					<>
@@ -319,7 +263,7 @@ export function SideChatConversation({
 					rows={1}
 					value={draft}
 					placeholder={
-						connected ? placeholder || "Ask this side chat…" : "Not connected"
+						connected ? placeholder || "Ask your Desk…" : "Not connected"
 					}
 					disabled={!connected}
 					onChange={(e) => setDraft(e.target.value)}
