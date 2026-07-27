@@ -2277,6 +2277,82 @@ function orchestratorWorkerAgentConfigs(
   return out;
 }
 
+/**
+ * Subagent stall guard. A task-tool subagent whose provider request hangs with
+ * zero output blocks the parent turn until the wall-clock deadline: the 90s
+ * liveness guard only watches for the turn's FIRST output, and a wedged
+ * Meridian proxy keeps the parent's ESTABLISHED stream flowing while NEW
+ * requests through it hang forever (2026-07-26/27: @oracle-fable reviews stuck
+ * at 0 tokens held three sessions 90+ min each). Child sessions run in the
+ * same directory instance, so their events arrive on the run's subscription —
+ * the guard tracks the session family (parent + task children, transitively)
+ * and fires when a task tool has been open with the WHOLE family silent for
+ * SUBAGENT_STALL_MS. Family-wide silence is the tell: a healthy subagent
+ * streams its own parts, which keep resetting the clock, so long oracle
+ * reviews don't false-positive. Kill switch / tuning:
+ * OPENSESSION_SUBAGENT_STALL_MS (0 disables; floor 2 min).
+ */
+const SUBAGENT_STALL_MS = (() => {
+  const raw = process.env.OPENSESSION_SUBAGENT_STALL_MS;
+  if (raw === "0") return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.max(120_000, n) : 600_000;
+})();
+
+function makeSubagentStallGuard(
+  ocSessionId: string,
+  onStall: (info: { quietMs: number; openTaskIds: string[] }) => void
+) {
+  const childSessions = new Set<string>();
+  const openTasks = new Map<string, number>();
+  let lastFamilyEventAt = Date.now();
+  let timer: ReturnType<typeof setInterval> | undefined;
+  return {
+    /** Call on every SSE event, before any per-handler session filtering. */
+    noteEvent(ev: any) {
+      const p = ev?.properties;
+      if (ev?.type === "session.updated" || ev?.type === "session.created") {
+        const info = p?.info;
+        if (
+          info?.id &&
+          info.parentID &&
+          (info.parentID === ocSessionId || childSessions.has(info.parentID))
+        ) {
+          childSessions.add(info.id);
+        }
+      }
+      const sid = p?.part?.sessionID ?? p?.info?.sessionID ?? p?.sessionID;
+      if (sid && (sid === ocSessionId || childSessions.has(sid))) {
+        lastFamilyEventAt = Date.now();
+      }
+    },
+    /** Call for every parent tool part update (tracks open task tools). */
+    noteTool(part: any) {
+      if (part?.tool !== "task") return;
+      const status = part?.state?.status;
+      if (status === "running") {
+        if (!openTasks.has(part.id)) openTasks.set(part.id, Date.now());
+      } else if (status === "completed" || status === "error") {
+        openTasks.delete(part.id);
+      }
+    },
+    start() {
+      if (!SUBAGENT_STALL_MS || timer) return;
+      timer = setInterval(() => {
+        if (!openTasks.size) return;
+        const quietMs = Date.now() - lastFamilyEventAt;
+        if (quietMs < SUBAGENT_STALL_MS) return;
+        this.stop();
+        onStall({ quietMs, openTaskIds: [...openTasks.keys()] });
+      }, 30_000);
+    },
+    stop() {
+      if (timer) clearInterval(timer);
+      timer = undefined;
+    },
+  };
+}
+
 export async function* runOpencode(
   opts: RunAgentOpts & { allowOpencode?: boolean; forceSharedServer?: boolean },
   model: string
@@ -3373,6 +3449,26 @@ async function* runOpencodeAttempt(
     const startedTools = new Set<string>();
     const finishedTools = new Set<string>();
     let sawFirstOutput = false;
+    const stallGuard = makeSubagentStallGuard(ocSessionId, (info) => {
+      if (idle || runFailure || abortController.signal.aborted) return;
+      // Same recovery lane as the 90s guard: livenessWedged drives the shared
+      // server drain-respawn + one automatic retry that re-prompts the session.
+      livenessWedged = true;
+      runFailure =
+        `opencode task subagent produced no output for ${Math.round(info.quietMs / 60_000)} min ` +
+        `on account "${bridgeAccountLabel}" — the engine bridge wedged mid-turn ` +
+        "(new requests hang while established streams keep flowing); aborting";
+      turnEvent({
+        direction: "out",
+        kind: "subagent_stall",
+        tool_use_id: info.openTaskIds.join(","),
+        quiet_ms: info.quietMs,
+      });
+      engineAbortInFlight = client.session
+        .abort({ path: { id: ocSessionId }, ...q })
+        .catch(() => {});
+      signalDone();
+    });
     const push = (ev: StreamEvent) => {
       sawFirstOutput = true;
       pending.push(ev);
@@ -3569,10 +3665,12 @@ async function* runOpencodeAttempt(
 
     const handleEvent = async (ev: any) => {
       const p = ev?.properties;
+      stallGuard.noteEvent(ev);
       switch (ev?.type) {
         case "message.part.updated": {
           const part = p?.part;
           if (!part || part.sessionID !== ocSessionId) return;
+          if (part.type === "tool") stallGuard.noteTool(part);
           if (part.type === "retry") {
             noteProviderRetry(
               Number(part.attempt) || 0,
@@ -3801,6 +3899,10 @@ async function* runOpencodeAttempt(
           signalDone();
         }, LIVENESS_MS)
       : undefined;
+    // Mid-turn sibling of the guard above: catches a task subagent whose
+    // provider request wedged AFTER the parent stream came up (bridge runs
+    // only, same as LIVENESS_MS — API-key runs don't ride a Meridian proxy).
+    if (bridgeLivenessGuard) stallGuard.start();
 
     let statusPollFailures = 0;
     const statusPoll = setInterval(() => {
@@ -3883,6 +3985,7 @@ async function* runOpencodeAttempt(
       clearInterval(statusPoll);
       clearTimeout(turnDeadline);
       if (livenessTimer) clearTimeout(livenessTimer);
+      stallGuard.stop();
       pumpStopped = true;
       void pump.catch(() => {});
     }
@@ -4542,12 +4645,33 @@ export async function tryReattachOpencodeRun(
         });
       };
 
+      // Same mid-turn task-subagent stall guard as the primary path: a
+      // reattached turn can hang on a wedged subagent request identically. No
+      // rotation machinery here, so a stall ends the turn cleanly (engine
+      // state preserved) instead of retrying.
+      const stallGuard = makeSubagentStallGuard(ocSessionId!, (info) => {
+        if (idle || runFailure) return;
+        runFailure =
+          `opencode task subagent produced no output for ${Math.round(info.quietMs / 60_000)} min ` +
+          "— the engine bridge wedged mid-turn; ending the reattached turn " +
+          "(engine state preserved; send again to continue)";
+        turnEvent({
+          direction: "out",
+          kind: "subagent_stall",
+          tool_use_id: info.openTaskIds.join(","),
+          quiet_ms: info.quietMs,
+        });
+        void client.session.abort({ path: { id: ocSessionId! }, ...q }).catch(() => {});
+        signalDone();
+      });
       const handleEvent = async (ev: any) => {
         const p = ev?.properties;
+        stallGuard.noteEvent(ev);
         switch (ev?.type) {
           case "message.part.updated": {
             const part = p?.part;
             if (!part || part.sessionID !== ocSessionId) return;
+            if (part.type === "tool") stallGuard.noteTool(part);
             if (
               part.type === "text" &&
               !part.synthetic &&
@@ -4748,6 +4872,7 @@ export async function tryReattachOpencodeRun(
             })();
           }, 10_000)
         : undefined;
+      if (busy) stallGuard.start();
 
       try {
         for (;;) {
@@ -4763,6 +4888,7 @@ export async function tryReattachOpencodeRun(
       } finally {
         if (statusPoll) clearInterval(statusPoll);
         if (turnDeadline) clearTimeout(turnDeadline);
+        stallGuard.stop();
         pumpStopped = true;
         void pump.catch(() => {});
       }
