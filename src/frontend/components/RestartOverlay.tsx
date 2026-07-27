@@ -10,6 +10,11 @@ const PILL_DELAY_MS = 2500;
 // A disconnect older than this whose health probe ALSO fails escalates from
 // the calm pill to the full restart overlay (covers hard crashes).
 const ESCALATE_AFTER_MS = 22_000;
+// Failsafe for the explicit-restart pill: restarts are ~1-2s, so if we're
+// connected and healthy this long after the server said it was going down,
+// call it done even without bootId evidence (a null pre-restart bootId used
+// to wedge the old overlay on screen until a manual refresh).
+const EXPLICIT_SETTLE_MS = 20_000;
 
 interface Props {
   connected: boolean;
@@ -26,45 +31,57 @@ interface Props {
  *    /api/health fallback for servers without it) is compared: unchanged →
  *    pure blip, the pill clears silently; changed → it really was a restart —
  *    a brief toast, then business as usual.
- *  - The full-screen overlay appears only on an explicit `server_restarting`
- *    broadcast (graceful drain) or when reconnects have failed for a while
- *    AND health is unreachable (hard crash). It auto-reloads once a *new*
- *    instance answers — detected by a changed bootId, or by health coming
- *    back after having gone unreachable — so clients pick up the new build.
+ *  - An explicit `server_restarting` broadcast (graceful drain) shows the same
+ *    NON-blocking pill — restarts complete in a couple of seconds and Caddy
+ *    parks in-flight requests, so nothing needs to block the composer or
+ *    navigation. It clears on evidence of the new instance (hello / changed
+ *    bootId), or via the settle failsafe. A restart that shipped new frontend
+ *    code is UpdatePill's job (its version-poll backstop covers reconnects),
+ *    so no forced reload here.
+ *  - The full-screen overlay is reserved for hard crashes: reconnects failing
+ *    for a while AND health unreachable. It auto-reloads once the server
+ *    answers again — that page state is suspect anyway.
  */
 export function RestartOverlay({ connected, addHandler }: Props) {
-  const [phase, setPhase] = useState<"ok" | "reconnecting" | "restarting">("ok");
+  const [phase, setPhase] = useState<"ok" | "reconnecting" | "restarting" | "crashed">("ok");
   const [backOnline, setBackOnline] = useState(false);
-  // Who likely caused the restart: `by` on server_restarting (pre-restart
-  // overlay), `restartBy` on the new server's hello (post-restart toast).
+  // Who likely caused the restart: `by` on server_restarting (pill), `restartBy`
+  // on the new server's hello (post-restart toast).
   const [restartBy, setRestartBy] = useState<string | null>(null);
   const restartByRef = useRef<string | null>(null);
   restartByRef.current = restartBy;
   const bootId = useRef<string | null>(null);
   const sawDown = useRef(false);
-  // Set when the server explicitly told us it's going down. The old instance
-  // stays up and the WebSocket stays open for the whole graceful drain (up to
-  // 2 min), so "socket connected + health answering" must NOT be mistaken for
-  // a blip and dismiss the overlay — once we have an explicit signal we keep
-  // it up until a *new* instance answers (bootId change).
+  // Set when the server explicitly told us it's going down; cleared only by
+  // resolveRestart. The old instance's socket can stay open into the drain, so
+  // "connected + health answering" alone must not clear the pill instantly.
   const explicit = useRef(false);
+  const explicitAt = useRef(0);
   const disconnectedAt = useRef<number | null>(null);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
 
-  // Adopt/compare a server-reported bootId. First sighting just records it;
-  // a change outside the overlay flow means the server restarted behind a
-  // blip-looking disconnect — say so briefly, then carry on (the overlay
-  // path reloads instead, to pick up the new frontend bundle).
+  const resolveRestart = () => {
+    explicit.current = false;
+    if (phaseRef.current === "restarting") setPhase("ok");
+    const by = restartByRef.current;
+    toast(`${PRODUCT_NAME} restarted${by ? ` (${by})` : ""}.`);
+  };
+
+  // Adopt/compare a server-reported bootId. First sighting just records it —
+  // unless an explicit restart is pending, where ANY fresh sighting after the
+  // announcement is evidence of the new instance (a never-learned old bootId
+  // must not wedge the pill). A change outside the restart flow means the
+  // server restarted behind a blip-looking disconnect — say so briefly.
   const handleBootId = (id: unknown) => {
     if (typeof id !== "string" || !id) return;
-    if (!bootId.current) {
-      bootId.current = id;
+    const prev = bootId.current;
+    bootId.current = id;
+    if (explicit.current) {
+      if (!prev || id !== prev) resolveRestart();
       return;
     }
-    if (id === bootId.current) return;
-    bootId.current = id;
-    if (phaseRef.current !== "restarting" && !explicit.current) {
+    if (prev && id !== prev) {
       const by = restartByRef.current;
       toast(
         `${PRODUCT_NAME} restarted${by ? ` (${by})` : ""}. Reconnected to the new server.`,
@@ -93,8 +110,11 @@ export function RestartOverlay({ connected, addHandler }: Props) {
       addHandler((msg) => {
         if (msg.type === "server_restarting") {
           explicit.current = true;
+          explicitAt.current = Date.now();
           if (msg.by) setRestartBy(msg.by);
-          setPhase("restarting");
+          if (phaseRef.current === "ok" || phaseRef.current === "reconnecting") {
+            setPhase("restarting");
+          }
         } else if (msg.type === "hello") {
           // Adopt the attribution BEFORE the bootId compare fires the
           // "restarted" toast so the toast can name the culprit — setState
@@ -109,15 +129,14 @@ export function RestartOverlay({ connected, addHandler }: Props) {
     [addHandler]
   );
 
-  // Disconnect tracking: after a short grace, show the calm reconnecting pill
-  // (never the overlay — that needs an explicit signal or a failed health
-  // probe). On reconnect, clear it and settle the blip-vs-restart question
-  // via bootId (hello handles new servers; one health fetch covers old ones).
+  // Disconnect tracking: after a short grace, show the calm reconnecting pill.
+  // On reconnect, clear it and settle the blip-vs-restart question via bootId
+  // (hello handles new servers; one health fetch covers old ones).
   useEffect(() => {
     if (connected) {
       disconnectedAt.current = null;
       if (phaseRef.current === "reconnecting") {
-        setPhase("ok");
+        setPhase(explicit.current ? "restarting" : "ok");
         fetch(HEALTH_URL, { cache: "no-store" })
           .then((r) => r.json())
           .then(handleHealth)
@@ -125,15 +144,15 @@ export function RestartOverlay({ connected, addHandler }: Props) {
       }
       return;
     }
-    if (phase !== "ok") return;
+    if (phase !== "ok" && phase !== "restarting") return;
     disconnectedAt.current ??= Date.now();
-    const t = setTimeout(() => setPhase("reconnecting"), PILL_DELAY_MS);
+    const t = setTimeout(() => setPhase("reconnecting"), phase === "restarting" ? 0 : PILL_DELAY_MS);
     return () => clearTimeout(t);
   }, [connected, phase]);
 
   // Escalation: still disconnected after a while AND health unreachable →
-  // treat as a real (crash) restart. While health answers, the server is up
-  // and only the socket is broken — stay calm and keep retrying.
+  // treat as a hard crash. While health answers, the server is up and only the
+  // socket is broken — stay calm and keep retrying.
   useEffect(() => {
     if (phase !== "reconnecting" || connected) return;
     let cancelled = false;
@@ -146,7 +165,7 @@ export function RestartOverlay({ connected, addHandler }: Props) {
       } catch {
         if (!cancelled) {
           sawDown.current = true;
-          setPhase("restarting");
+          setPhase("crashed");
         }
       }
     }, 3000);
@@ -156,45 +175,49 @@ export function RestartOverlay({ connected, addHandler }: Props) {
     };
   }, [phase, connected]);
 
-  // While restarting, poll health and reload once a fresh instance answers.
+  // Explicit-restart pill: poll health for the new instance's bootId and give
+  // up gracefully once we're connected and settled (see EXPLICIT_SETTLE_MS).
   useEffect(() => {
     if (phase !== "restarting") return;
     let cancelled = false;
-
-    const tick = async () => {
+    const iv = setInterval(async () => {
+      if (cancelled || !explicit.current) return;
+      if (connected && Date.now() - explicitAt.current > EXPLICIT_SETTLE_MS) {
+        resolveRestart();
+        return;
+      }
       try {
         const d = await fetch(HEALTH_URL, { cache: "no-store" }).then((r) => r.json());
-        const changed = bootId.current && d.bootId && d.bootId !== bootId.current;
-        if (!cancelled && (changed || sawDown.current)) {
-          setBackOnline(true);
-          setTimeout(() => location.reload(), 700);
-          return true;
-        }
-        // Server alive, same instance, socket healthy again → it was a blip.
-        // Only dismiss when the overlay was triggered by a disconnect guess,
-        // not by an explicit server_restarting signal — during a graceful
-        // drain the old instance stays up and connected, which would
-        // otherwise look like a blip and hide the overlay for the whole
-        // drain.
-        if (!cancelled && connected && !sawDown.current && !explicit.current) {
-          setPhase("ok");
-          return true;
-        }
-      } catch {
-        sawDown.current = true;
-      }
-      return false;
-    };
-
-    const iv = setInterval(() => void tick(), 1500);
-    void tick();
+        if (!cancelled) handleHealth(d);
+      } catch {}
+    }, 1500);
     return () => {
       cancelled = true;
       clearInterval(iv);
     };
   }, [phase, connected]);
 
-  if (phase === "reconnecting") {
+  // Hard crash: poll health and reload once the server answers again.
+  useEffect(() => {
+    if (phase !== "crashed") return;
+    let cancelled = false;
+    const iv = setInterval(async () => {
+      try {
+        await fetch(HEALTH_URL, { cache: "no-store" }).then((r) => r.json());
+        if (!cancelled) {
+          setBackOnline(true);
+          setTimeout(() => location.reload(), 700);
+        }
+      } catch {}
+    }, 1500);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [phase]);
+
+  if (phase === "reconnecting" || phase === "restarting") {
+    const restarting = phase === "restarting" || explicit.current;
     return (
       <div
         className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+14px)] left-1/2 z-[10000] flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-panel px-3.5 py-2 text-[12px] font-medium text-dim shadow-[0_4px_16px_rgba(0,0,0,0.18)]"
@@ -202,12 +225,14 @@ export function RestartOverlay({ connected, addHandler }: Props) {
         aria-live="polite"
       >
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current opacity-70" />
-        Reconnecting…
+        {restarting
+          ? `${PRODUCT_NAME} is restarting…${restartBy ? ` (${restartBy})` : ""}`
+          : "Reconnecting…"}
       </div>
     );
   }
 
-  if (phase !== "restarting") return null;
+  if (phase !== "crashed") return null;
 
   return (
     <div className="restart-overlay" role="alertdialog" aria-live="assertive">
