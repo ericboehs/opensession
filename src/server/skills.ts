@@ -1,10 +1,12 @@
 // Skill/command index for "/"-skill autocomplete in the composer.
 //
-// Mirrors what a Claude run actually loads via `settingSources: ["user",
-// "project"]` (claude-runner.ts): user-level ~/.claude/skills/*/SKILL.md and
-// ~/.claude/commands/*.md, plus the checkout's .claude/skills and
-// .claude/commands (tella-fusion symlinks .claude/skills -> .agents/skills,
-// which readdir follows). Cached briefly per directory so keystrokes only
+// Mirrors what a run actually loads: user-level ~/.claude/skills and
+// ~/.claude/commands, plus the checkout's .claude/ and .agents/ skills and
+// commands (tella-fusion symlinks .claude/skills -> .agents/skills, which
+// readdir follows; other repos use one or the other). Skills are matched the
+// way the engine globs them — `skills/**\/SKILL.md`, so nested ones count —
+// plus the skills the engine embeds in its binary (SYSTEM_SKILLS), which no
+// directory scan can see. Cached briefly per directory so keystrokes only
 // re-filter in memory.
 
 import { readdirSync, readFileSync, existsSync } from "fs";
@@ -16,9 +18,27 @@ export interface SkillEntry {
   name: string;
   /** One-line description from frontmatter (or first content line). */
   description: string;
-  /** Where it came from: user config, the session's checkout, or backstage itself. */
-  source: "user" | "project" | "builtin";
+  /** Where it came from: the engine itself, user config, the session's checkout, or backstage. */
+  source: "system" | "user" | "project" | "builtin";
 }
+
+/**
+ * Skills the engine embeds in its own binary — real, invocable skills that no
+ * directory scan can find. opencode ships exactly one today; Claude Code's
+ * bundled set (/simplify, /code-review, …) is compiled into *its* binary and is
+ * NOT reachable from an opencode run, so it deliberately isn't listed here —
+ * we carry our own SKILL.md ports of those under ~/.claude/skills instead.
+ * Keep in sync when the engine's embedded set changes (`GET /skill` on a
+ * running opencode server lists them with `source.type === "embedded"`).
+ */
+const SYSTEM_SKILLS: SkillEntry[] = [
+  {
+    name: "customize-opencode",
+    description:
+      "Editing or creating opencode's own configuration — opencode.json(c), .opencode/, agents, skills, plugins, MCP servers, permission rules",
+    source: "system",
+  },
+];
 
 /**
  * Backstage's own slash commands (handled by handleSlashCommand in backstage.ts
@@ -85,20 +105,34 @@ function firstContentLine(text: string): string {
   return "";
 }
 
-function readSkillsDir(dir: string, source: SkillEntry["source"]): SkillEntry[] {
-  const out: SkillEntry[] = [];
+/**
+ * Skills under `dir`, matching the engine's `skills/**\/SKILL.md` glob — so a
+ * SKILL.md nested below its skills root (grouped in a subfolder) is found too,
+ * not just `<dir>/<name>/SKILL.md`. Depth-bounded; skips dot-dirs.
+ */
+function readSkillsDir(
+  dir: string,
+  source: SkillEntry["source"],
+  depth = 4,
+  out: SkillEntry[] = [],
+): SkillEntry[] {
   try {
-    for (const name of readdirSync(dir)) {
-      const md = join(dir, name, "SKILL.md");
-      if (!existsSync(md)) continue;
-      try {
-        const text = readFileSync(md, "utf8");
-        out.push({
-          name: frontmatterField(text, "name") || name,
-          description: frontmatterField(text, "description") || firstContentLine(text),
-          source,
-        });
-      } catch {}
+    for (const name of readdirSync(dir, { withFileTypes: true })) {
+      if (!name.isDirectory() || name.name.startsWith(".")) continue;
+      const sub = join(dir, name.name);
+      const md = join(sub, "SKILL.md");
+      if (existsSync(md)) {
+        try {
+          const text = readFileSync(md, "utf8");
+          out.push({
+            name: frontmatterField(text, "name") || name.name,
+            description: frontmatterField(text, "description") || firstContentLine(text),
+            source,
+          });
+        } catch {}
+        continue; // a skill's own files never hold another skill
+      }
+      if (depth > 1) readSkillsDir(sub, source, depth - 1, out);
     }
   } catch {}
   return out;
@@ -131,10 +165,17 @@ function loadSkills(worktreeDir?: string, includeBuiltins = false): SkillEntry[]
   const user = join(homedir(), ".claude");
   const byName = new Map<string, SkillEntry>();
   const all = [
+    // First so a same-named file skill (which shadows it in the engine too)
+    // wins dedupe and the menu describes what would actually run.
+    ...SYSTEM_SKILLS,
     ...readSkillsDir(join(user, "skills"), "user"),
     ...readCommandsDir(join(user, "commands"), "user"),
     ...(worktreeDir ? readSkillsDir(join(worktreeDir, ".claude", "skills"), "project") : []),
     ...(worktreeDir ? readCommandsDir(join(worktreeDir, ".claude", "commands"), "project") : []),
+    // .agents is the engine's other project root — the same dir as .claude in
+    // repos that symlink the two, a distinct one in repos that don't.
+    ...(worktreeDir ? readSkillsDir(join(worktreeDir, ".agents", "skills"), "project") : []),
+    ...(worktreeDir ? readCommandsDir(join(worktreeDir, ".agents", "commands"), "project") : []),
     // Last so they win dedupe: backstage intercepts these names before any
     // same-named file skill could run, so the menu should describe the builtin.
     // Only for existing-session composers (includeBuiltins) — an opening prompt
