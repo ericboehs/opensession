@@ -40,6 +40,9 @@ const TOKEN_REFRESH_SLACK_MS = 5 * 60 * 1000;
 // When a run hits a limit but the usage endpoint gives no reset time,
 // sideline the account for this long before retrying it.
 const DEFAULT_EXHAUST_MS = 60 * 60 * 1000;
+// Bridge-wedge sideline: much shorter than a usage-limit window — wedges
+// usually clear once the account's proxy respawns.
+const WEDGE_SIDELINE_MS = 5 * 60 * 1000;
 // Treat an account as unusable for new runs at/above this 5-hour utilization.
 const EXHAUSTED_UTILIZATION = 97;
 // Weekly scoped caps (Fable) only sideline an account when fully spent: the
@@ -940,6 +943,33 @@ export function markExhausted(id: string, model?: string): void {
     `[claude-accounts] ${account?.name || id}${model ? ` (${model})` : ""} marked exhausted until ${new Date(until).toISOString()}`
   );
   if (account) void refreshAccountUsage(account);
+}
+
+/**
+ * Briefly sideline an account whose engine bridge wedged (new provider
+ * requests hang while established streams keep flowing). The wedge is
+ * account-scoped — every model through the same bridge hangs — so retries and
+ * other sessions' picks must land elsewhere. Account-level key: no model
+ * scoping. Returns false without touching an existing longer sideline, so the
+ * caller's clearWedge rollback can never shorten a usage-limit sideline.
+ */
+export function markWedged(id: string): boolean {
+  const until = Date.now() + WEDGE_SIDELINE_MS;
+  const existing = exhaustedUntil.get(id);
+  if (existing !== undefined && existing >= until) return false;
+  const account = readStore().find((a) => a.id === id);
+  exhaustedUntil.set(id, until);
+  console.warn(
+    `[claude-accounts] ${account?.name || id} sidelined until ${new Date(until).toISOString()} after a bridge wedge`
+  );
+  return true;
+}
+
+/** Rollback partner of markWedged for the no-alternative case: with no other
+ *  account to rotate to, a same-account respawn retry beats a dry pool. Only
+ *  call after markWedged returned true. */
+export function clearWedge(id: string): void {
+  exhaustedUntil.delete(id);
 }
 
 // ── Dry-pool backpressure ────────────────────────────────────────────────────

@@ -4,8 +4,10 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   __setCodexAccountsPathForTest,
+  clearCodexWedge,
   hrwScore,
   markCodexExhausted,
+  markCodexWedged,
 } from "./codex-accounts";
 import { pickOpenaiAccount } from "./opencode-openai-auth";
 
@@ -83,5 +85,26 @@ describe("pickOpenaiAccount pins", () => {
     const picked = pickOpenaiAccount("gpt-5.5", undefined, "session", {}, "Michiel", "theirs");
     expect("error" in picked).toBe(false);
     if (!("error" in picked)) expect(picked.id).not.toBe("theirs");
+  });
+
+  test("wedge sideline removes the account from picks; clear restores it", () => {
+    expect(markCodexWedged("shared")).toBe(true);
+    const picked = pickOpenaiAccount("gpt-5.5", undefined, "session", {}, undefined, undefined);
+    // "shared" is the only owner-less account, so a user-less pick goes dry.
+    expect("error" in picked).toBe(true);
+    clearCodexWedge("shared");
+    const restored = pickOpenaiAccount("gpt-5.5", undefined, "session", {}, undefined, undefined);
+    expect("error" in restored).toBe(false);
+    if (!("error" in restored)) expect(restored.id).toBe("shared");
+  });
+
+  test("wedge never shortens a usage-limit sideline", () => {
+    markCodexExhausted("shared");
+    // The hour-long exhaustion outlasts the 5-minute wedge window, so the
+    // wedge must refuse (false) and clearCodexWedge — which callers only run
+    // after a true — must not be reachable to un-sideline the account.
+    expect(markCodexWedged("shared")).toBe(false);
+    const picked = pickOpenaiAccount("gpt-5.5", undefined, "session", {}, undefined, undefined);
+    expect("error" in picked).toBe(true);
   });
 });

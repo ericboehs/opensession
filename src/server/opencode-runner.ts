@@ -232,7 +232,12 @@ import {
   opencodeHasNativeOpenaiAuth,
   openaiPromptVariant,
 } from "./opencode-openai-auth";
-import { markCodexExhausted, type CodexAccount } from "./codex-accounts";
+import {
+  markCodexExhausted,
+  markCodexWedged,
+  clearCodexWedge,
+  type CodexAccount,
+} from "./codex-accounts";
 import {
   opencodeTurnTimeoutMs,
   readOpencodeBridgeConfig,
@@ -243,6 +248,8 @@ import {
   getUsableAccountById,
   getAccountById,
   markExhausted,
+  markWedged,
+  clearWedge,
   refreshUsageIfNearLimit,
   registerMeridianQuotaProvider,
   waitForUsableAccount,
@@ -4207,6 +4214,54 @@ async function* runOpencodeAttempt(
             " — no other codex account is currently usable; use /model to switch models.";
         }
       }
+      // A liveness wedge is account-scoped — the bridge proxy hangs every NEW
+      // provider request while established streams keep flowing — so a retry
+      // of ANY model through the same account burns another full 90s timeout
+      // (2026-07-27: one review ate five consecutive wedged attempts, sol AND
+      // the terra fallback, all on one wedged account). Sideline the account
+      // briefly so this run's retry, the fallback tiers after it, and every
+      // OTHER session's pick land elsewhere; rolled back when no alternative
+      // exists for this run — a same-account respawn retry beats a dry pool,
+      // and wedges often clear with a fresh proxy. Deliberately NOT bounded to
+      // attemptIndex 0: a second wedge still marks the account for the rest of
+      // the pool even though this run won't retry again.
+      let wedgeSwitchTo: string | undefined;
+      if (livenessWedged && !isLocalProfile()) {
+        if (pickedOpenai) {
+          const marked = markCodexWedged(pickedOpenai.id);
+          const next = pickOpenaiAccount(
+            parsed.modelID,
+            readOpencodeBridgeConfig()?.openaiAccounts,
+            sessionKey,
+            undefined,
+            user,
+            opts.accountId,
+            opts.accountStrict,
+          );
+          if ("error" in next || next.id === pickedOpenai.id) {
+            if (marked) clearCodexWedge(pickedOpenai.id);
+          } else {
+            wedgeSwitchTo = next.name;
+          }
+        } else if (pickedMeridian) {
+          const marked = markWedged(pickedMeridian.id);
+          const next = pickMeridianAccount(
+            user,
+            parsed.modelID,
+            readOpencodeBridgeConfig()?.bridgeAccountIds,
+            opts.accountId,
+            opts.accountStrict,
+          );
+          if ("error" in next || next.id === pickedMeridian.id) {
+            if (marked) clearWedge(pickedMeridian.id);
+          } else {
+            wedgeSwitchTo = next.name;
+          }
+        }
+        if (wedgeSwitchTo) {
+          turnEvent({ direction: "out", kind: "account_switch", account: wedgeSwitchTo });
+        }
+      }
       // Transient infra failure — recover instead of failing the turn. Covers
       // the silent liveness wedge (the Meridian proxy's first post-boot request
       // works, later ones hang forever) plus server death, network blips, 5xx
@@ -4236,7 +4291,8 @@ async function* runOpencodeAttempt(
         bridgeRunEnd("error", runFailure);
         rotation.rotate = true;
         rotation.note = livenessWedged
-          ? `Engine bridge went silent on account "${bridgeAccountLabel}" — respawned the opencode server and retrying once.`
+          ? `Engine bridge went silent on account "${bridgeAccountLabel}" — respawned the opencode server and retrying once` +
+            (wedgeSwitchTo ? ` on account "${wedgeSwitchTo}".` : ".")
           : `Transient engine error on account "${bridgeAccountLabel}" — retrying once.`;
         return;
       }
