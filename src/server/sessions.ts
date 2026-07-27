@@ -844,8 +844,9 @@ interface PrInfo {
   /** Assignee GitHub logins — bot-authored PRs carry the requester here. */
   assignees: string[];
   /** Session id parsed out of the PR body's attribution footer, when the PR
-   *  was opened from a session (see sessionRefFromPrBody). Open PRs only —
-   *  only that query carries the body. */
+   *  was opened from a session (see sessionRefFromPrBody). Parsed from the
+   *  open-PR query only (only that query carries the body); after the PR
+   *  closes, the refresh carries the ref forward from the previous row. */
   sessionRef?: string;
 }
 
@@ -893,6 +894,9 @@ function prRepos() {
 // repos (multi-repo sessions share branch names) never collides.
 let prCache: { data: Map<string, Map<string, PrInfo>>; ts: number } = { data: new Map(), ts: 0 };
 const PR_CACHE_TTL = 60_000;
+// How long a merged/closed row survives in the bulk cache after the sweep's
+// queries stop returning it (see the carry-forward in refreshPrCacheInner).
+const PR_CARRY_FORWARD_MS = 180 * 24 * 60 * 60 * 1000;
 let prRefreshPromise: Promise<Set<string>> | null = null;
 const prCloseState: { generation: number; closed: Map<string, number> } = ((
 	globalThis as any
@@ -1426,8 +1430,12 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
         continue;
       }
       reviewAuthoritativeRepos.add(repo.id);
+      // sort:updated-desc, not gh's default creation order: a PR created long
+      // ago that merges today must enter this window immediately, or the sweep
+      // drops its row and the session renders as having no PR at all.
       const recentAll = await ghJson<BulkPr[]>([
         "pr", "list", "--repo", repo.ghRepo, "--state", "all",
+        "--search", "sort:updated-desc",
         "--limit", String(repo.recentLimit), "--json", FIELDS,
       ]);
       freshRepos.add(repo.id);
@@ -1495,6 +1503,32 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
       }
       for (const pr of openPrs || []) {
         map.set(pr.headRefName, toInfo(pr));
+      }
+      if (stale) {
+        // Merged/closed rows the queries no longer return still matter: the
+        // recent window is finite, so once a merged PR ages out of it, its
+        // session would flip from "Merged" to "no PR". Non-OPEN states are
+        // terminal (a reopen re-enters the authoritative open query), so carry
+        // them forward, with an update-age cap to bound cache growth. Prior
+        // OPEN rows are deliberately not carried: the open query is
+        // authoritative that they're gone, and just-closed ones arrive via
+        // recentAll (sort:updated) or the webhook write-through.
+        for (const [branch, prev] of stale) {
+          if (map.has(branch) || prev.state === "OPEN") continue;
+          const age = Date.now() - (Date.parse(prev.updatedAt || "") || 0);
+          if (age < PR_CARRY_FORWARD_MS) map.set(branch, prev);
+        }
+        // The PR body (and thus the session-attribution footer) is only
+        // fetched on the open-PR query, so a "discovered" PR would lose its
+        // sessionRef — and unlink from its session — the first sweep after it
+        // merges. Inherit the ref from the previous row of the same PR.
+        for (const [branch, pr] of map) {
+          if (pr.sessionRef) continue;
+          const prev = stale.get(branch);
+          if (prev?.sessionRef && prev.number === pr.number) {
+            map.set(branch, { ...pr, sessionRef: prev.sessionRef });
+          }
+        }
       }
       next.set(repo.id, map);
     }
