@@ -4884,7 +4884,7 @@ export function SessionViewer({
 										onClick={() => selectPanelTab("shell")}
 										title="Interactive shell tabs in this session's workspace (inside its sandbox when sandboxed)"
 									>
-										Shell
+										Terminal
 									</button>
 								</>
 							)}
