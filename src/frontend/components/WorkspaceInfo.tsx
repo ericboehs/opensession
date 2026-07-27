@@ -321,7 +321,7 @@ function CommentCard({
 				openOnHover
 				delay={200}
 				closeDelay={90}
-				className="group relative flex min-w-0 items-center gap-2 rounded-md px-[7px] py-[5px] text-left transition-colors hover:bg-surface"
+				className="group relative flex min-w-0 items-center gap-2 rounded-md px-[7px] py-[5px] text-left transition-colors hover:bg-hover"
 				role="button"
 				tabIndex={0}
 				onClick={() => onOpenTab?.("pr")}
@@ -430,7 +430,7 @@ function FileRow({
 				delay={200}
 				closeDelay={90}
 				type="button"
-				className="flex min-w-0 items-center gap-2 rounded-md px-[7px] py-[5px] text-left transition-colors hover:bg-surface"
+				className="flex min-w-0 items-center gap-2 rounded-md px-[7px] py-[5px] text-left transition-colors hover:bg-hover"
 				onClick={() => onOpenTab?.("changes")}
 				aria-label={`${file.path} — open in Changes`}
 			>
