@@ -11,6 +11,7 @@ import { readFileSync, writeFileSync } from "fs";
 import { audited } from "./audit";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg } from "./github-limit";
 import { serviceGithubCredential, type GithubCredential } from "./github-auth";
+import { githubAppEnv } from "./github-app";
 
 export interface PrCheck {
   name: string;
@@ -756,9 +757,11 @@ function isPermanentPrApiError(msg: string): boolean {
 
 // Fine-grained PATs can't be granted the Checks permission (GitHub App-only),
 // so statusCheckRollup fails with "Resource not accessible by personal access
-// token" under the tellahq-scoped bot PAT. Once seen, skip the field process-
-// wide (checks render empty) instead of failing every PR fetch — the flag
-// resets on restart, so it self-heals when the credential gains the permission.
+// token" under the tellahq-scoped bot PAT. Preferred path: run the PR query
+// on a GitHub App installation token (github-app.ts), which has checks:read.
+// Fallback when no app key is configured: once the error is seen, skip the
+// field process-wide (checks render empty) instead of failing every PR fetch —
+// the flag resets on restart.
 let skipStatusCheckRollup = false;
 
 async function fetchPrDetails(
@@ -772,18 +775,25 @@ async function fetchPrDetails(
     // treating it as "no PR" broke PR actions (PR #4910). Retry transient
     // failures; a genuine "no pull requests found" stays a fast null.
     let raw = "";
+    let appEnv = await githubAppEnv();
     for (let attempt = 1; ; attempt++) {
       const baseFields =
         "number,title,url,state,isDraft,baseRefName,headRefName,headRefOid,additions,deletions,changedFiles,reviewDecision,author,body,mergeable,mergeStateStatus,comments,commits,files,latestReviews,reviewRequests";
-      const includeRollup = !skipStatusCheckRollup;
+      const includeRollup = !!appEnv || !skipStatusCheckRollup;
       const fields = includeRollup ? `${baseFields},statusCheckRollup` : baseFields;
       try {
-        raw = await $`gh pr view ${branch} --repo ${repo} --json ${fields}`
-          .quiet()
-          .text();
+        const cmd = $`gh pr view ${branch} --repo ${repo} --json ${fields}`;
+        raw = await (appEnv ? cmd.env({ ...process.env, ...appEnv }) : cmd).quiet().text();
         break;
       } catch (e: any) {
         const msg = String(e?.stderr || e?.message || e).slice(0, 300);
+        // A minted-but-dead app token (revoked key) must not sink the fetch —
+        // drop to the bot PAT once and re-run the attempt.
+        if (appEnv && /authentication|bad credentials|resource not accessible/i.test(msg)) {
+          console.warn(`[pr-info] app-token gh call failed (${msg.slice(0, 80)}) — falling back to bot credential`);
+          appEnv = null;
+          continue;
+        }
         // Keyed on THIS call's field list, not the global flag — a concurrent
         // fetch may trip the flag while our rollup-carrying request is in
         // flight, and that must not turn our retry into a hard failure.
