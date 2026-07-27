@@ -284,22 +284,34 @@ export async function runReview(
     }
     await postReview(pr, details, parsed, result.text, result.error, force, result.model, reviewOpts, summaryOnly, testOnBaseSection(tob) + secretScanSection(secrets));
 
-    // Record the SHA as reviewed only on a successful run, so a transient failure
-    // (model error/timeout) leaves it eligible for retry on the next delivery.
-    if (!result.error && pr.headSha) {
-      const s = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
-      if (!s.reviewedShas.includes(pr.headSha)) s.reviewedShas.push(pr.headSha);
-      s.lastReviewedSha = pr.headSha;
-      writePrState(s);
-    }
-
-    return {
+    const outcome: ReviewResult = {
       verdict: parsed?.verdict,
       confidence: parsed?.confidence,
       findings: parsed?.findings?.length || 0,
       blocking: reviewBlockingCount(parsed),
       error: result.error,
     };
+
+    // Record the SHA as reviewed only on a successful run, so a transient failure
+    // (model error/timeout) leaves it eligible for retry on the next delivery.
+    if (!result.error && pr.headSha) {
+      const s = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
+      if (!s.reviewedShas.includes(pr.headSha)) s.reviewedShas.push(pr.headSha);
+      s.lastReviewedSha = pr.headSha;
+      // Keep the verdict alongside it so the sidebar can show the score without
+      // reading the PR's comments back off GitHub.
+      s.lastReview = {
+        verdict: outcome.verdict,
+        confidence: outcome.confidence,
+        findings: outcome.findings,
+        blocking: outcome.blocking,
+        sha: pr.headSha,
+        at: new Date().toISOString(),
+      };
+      writePrState(s);
+    }
+
+    return outcome;
   } catch (e) {
     console.error(`[github] review failed for PR #${pr.number}:`, e);
     return null;

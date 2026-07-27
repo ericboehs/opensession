@@ -38,6 +38,22 @@ export interface SimplifyState {
   startedAt: string;
 }
 
+/** What the last completed review concluded, kept so the UI can show the score
+ *  without re-reading the PR's comments. Written only after a successful run,
+ *  so a transient model failure never blanks the previous verdict. */
+export interface LastReviewState {
+  /** approve | comment | request_changes (absent when the model omitted it). */
+  verdict?: string;
+  /** 1-5: how safe this is to merge, per the review contract. */
+  confidence?: number;
+  findings: number;
+  /** P0/P1 findings (request_changes counts as a floor of 1). */
+  blocking: number;
+  /** Head SHA this verdict describes — a later head means the score is stale. */
+  sha: string;
+  at: string;
+}
+
 export interface GithubPrState {
   prNumber: number;
   headRef: string;
@@ -47,6 +63,8 @@ export interface GithubPrState {
   summaryCommentId?: number;
   reviewedShas: string[];
   lastReviewedSha?: string;
+  /** The last review's conclusion (verdict/confidence), for the UI. */
+  lastReview?: LastReviewState;
   autoFix?: AutoFixState;
   simplify?: SimplifyState;
   /** Review → owning-session fix rounds (handoff.ts); cleared when a review

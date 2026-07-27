@@ -24,7 +24,7 @@ import {
   clearTranscriptStoreDegraded,
 } from "./opencode-transcript";
 import { configuredRepos, defaultRepo } from "./config";
-import { isLockHeld, readPrState } from "../agents/github/state";
+import { isLockHeld, readPrState, type LastReviewState } from "../agents/github/state";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg, botGhToken } from "./github-limit";
 import { fetchWithTimeout } from "./shared/fetch-with-timeout";
 import { writeJsonAtomic } from "./shared/atomic-write";
@@ -834,6 +834,9 @@ interface PrInfo {
   createdAt: string;
   updatedAt: string;
   checks: PrChecksSummary;
+  /** Current head SHA, so a stored review verdict can be told apart from one
+   *  the branch has since moved past. Absent on rows from an older snapshot. */
+  headRefOid?: string;
   /** MERGEABLE | CONFLICTING | UNKNOWN — GitHub's async conflict probe. */
   mergeable: string;
   /** Person keys ("kent") of teammates with a pending review request. */
@@ -1359,7 +1362,7 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
   }
   try {
     type BulkPr = {
-      headRefName: string; url: string; state: string; number: number; title: string;
+      headRefName: string; headRefOid?: string; url: string; state: string; number: number; title: string;
       isDraft: boolean; additions: number; deletions: number; changedFiles: number;
       reviewDecision: string; author?: { login?: string; name?: string }; updatedAt: string;
       createdAt: string;
@@ -1379,7 +1382,7 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
       body?: string;
     };
     const FIELDS =
-      "headRefName,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,createdAt,updatedAt,reviewRequests,assignees,mergeable";
+      "headRefName,headRefOid,url,state,number,title,isDraft,additions,deletions,changedFiles,reviewDecision,author,createdAt,updatedAt,reviewRequests,assignees,mergeable";
 
     // A session's branch is matched against open PRs, so we must see EVERY open
     // PR — not just the newest N. Fusion carries 200+ open PRs at a time, so a
@@ -1476,6 +1479,7 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
         // treats zero checks as "no known CI blocker"; the detail pane has the
         // real rollup.
         checks: { total: 0, passed: 0, failed: 0, pending: 0 },
+        headRefOid: pr.headRefOid || undefined,
         mergeable: pr.mergeable || "UNKNOWN",
         // Individual review requests only — team requests ("Infra reviewers")
         // have no login and we can't cheaply resolve their membership.
@@ -1596,9 +1600,25 @@ export interface OpenPrEntry {
 	reviewRequested: string[];
 	/** An automated OpenSession review is still running for this PR. */
 	reviewActive: boolean;
+	/** What the last automated review concluded, so the queue can show the
+	 *  score without opening the PR. Absent until one has run. */
+	osReview?: OsReviewSummary;
 }
 
-export interface RecentPrEntry extends Omit<OpenPrEntry, "reviewActive"> {
+/** The last automated review's verdict, as the UI needs it. */
+export interface OsReviewSummary {
+	/** approve | comment | request_changes. */
+	verdict?: string;
+	/** 1-5: how safe the reviewer thought this was to merge. */
+	confidence?: number;
+	findings: number;
+	blocking: number;
+	/** The branch has moved on since this verdict — it describes older code. */
+	stale: boolean;
+	at: string;
+}
+
+export interface RecentPrEntry extends Omit<OpenPrEntry, "reviewActive" | "osReview"> {
 	state: "OPEN" | "MERGED" | "CLOSED";
 	additions: number;
 	deletions: number;
@@ -1707,6 +1727,27 @@ export async function getRecentPrsForPerson(person: string): Promise<RecentPrEnt
 	return data;
 }
 
+/**
+ * The stored review verdict, marked stale when the PR's head has moved past the
+ * SHA it describes. A head we don't know (older cache snapshot, before
+ * headRefOid was cached) is never called stale — an unwarranted "stale" badge
+ * on a current review is the more misleading of the two errors.
+ */
+function lastReviewSummary(
+	last: LastReviewState | undefined,
+	headRefOid: string | undefined,
+): OsReviewSummary | undefined {
+	if (!last) return undefined;
+	return {
+		verdict: last.verdict,
+		confidence: last.confidence,
+		findings: last.findings,
+		blocking: last.blocking,
+		stale: !!headRefOid && !!last.sha && headRefOid !== last.sha,
+		at: last.at,
+	};
+}
+
 export function getOpenPrs(): OpenPrEntry[] {
 	const out: OpenPrEntry[] = [];
 	for (const [repoId, byBranch] of getPrsByRepo()) {
@@ -1737,6 +1778,7 @@ export function getOpenPrs(): OpenPrEntry[] {
 				reviewActive:
 					reviewState?.activeRun?.kind === "review" ||
 					isLockHeld("review", pr.number, ghRepo),
+				osReview: lastReviewSummary(reviewState?.lastReview, pr.headRefOid),
 			});
 		}
 	}

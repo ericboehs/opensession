@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import type { SupportThread, UnifiedSession } from "../lib/types";
 import type { ReviewQueueItem } from "../lib/review-queue";
-import { relativeTime, type OpenPr } from "../lib/api";
+import { relativeTime, type OpenPr, type OsReview } from "../lib/api";
 import { providerFromUrl } from "../lib/provider";
 import { plainThreadUrl } from "./PlainThreadPanel";
 import { IconGitMerge } from "./icons";
@@ -90,6 +90,39 @@ function prettyReview(d: string): string {
 	return d.toLowerCase().replace(/_/g, " ");
 }
 
+/**
+ * The automated review's verdict, worded exactly as its PR comment words it
+ * ("approve · 4/5"), so the card and the comment can't be read as two different
+ * judgements. Tone follows the verdict; a review the branch has moved past goes
+ * faint and says so rather than lending a stale score the same weight.
+ */
+function osReviewLabel(review: OsReview): React.ReactNode {
+	const tone =
+		review.verdict === "approve"
+			? "text-green"
+			: review.verdict === "request_changes"
+				? "text-red"
+				: "text-dim";
+	const parts = [
+		review.verdict ? review.verdict.replace(/_/g, " ") : "reviewed",
+		typeof review.confidence === "number" ? `${review.confidence}/5` : "",
+		review.blocking > 0 ? `${review.blocking} blocking` : "",
+		review.stale ? "stale" : "",
+	].filter(Boolean);
+	return (
+		<span
+			className={review.stale ? "text-faint" : tone}
+			title={
+				review.stale
+					? `Reviewed ${relativeTime(review.at)}, on a commit this branch has moved past`
+					: `Reviewed ${relativeTime(review.at)}`
+			}
+		>
+			{parts.join(" · ")}
+		</span>
+	);
+}
+
 function checksLabel(checks: OpenPr["checks"]): React.ReactNode {
 	if (!checks || checks.total === 0) return null;
 	if (checks.failed > 0)
@@ -142,6 +175,7 @@ export function PrRowCard({ item }: { item: ReviewQueueItem }) {
 	];
 	if (pr.reviewDecision)
 		rows.push(["Review", prettyReview(pr.reviewDecision)]);
+	if (pr.osReview) rows.push(["OS review", osReviewLabel(pr.osReview)]);
 	const checks = checksLabel(pr.checks);
 	if (checks) rows.push(["Checks", checks]);
 	if (pr.reviewRequested?.length)
