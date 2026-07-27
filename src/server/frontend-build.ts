@@ -5,7 +5,7 @@
  * (globalThis-parked, mutated in place) and the debounced rebuild.
  */
 
-import { readFileSync, renameSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, renameSync, statSync } from "node:fs";
 import { join, resolve } from "path";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias } from "./rename-compat";
@@ -37,6 +37,9 @@ export async function buildFrontend(): Promise<string> {
 	if (isLocalProfile()) {
 		throw new Error("Local profile uses the hosted frontend");
 	}
+	// Stamped before the build so edits landing mid-build hash as "changed" on
+	// the next boot rather than being masked by a post-build stamp.
+	const inputsHash = frontendInputsHash();
 	const result = await Bun.build({
 		entrypoints: [`${FRONTEND_SRC}/App.tsx`],
 		outdir: FRONTEND_DIST,
@@ -156,15 +159,82 @@ export async function buildFrontend(): Promise<string> {
 	store.indexHtml = indexHtml;
 	store.gzip.clear(); // stale gzipped blobs were keyed by the old hashed names
 	store.version = version;
+	try {
+		writeFileAtomic(
+			BUNDLE_META,
+			JSON.stringify({ inputsHash, version, indexHtml, assets: [entryName, cssName, twName].filter(Boolean) }),
+		);
+	} catch {}
 	console.log(
 		`Frontend built: ${result.outputs.length} files → ${FRONTEND_DIST} (v=${version})`,
 	);
 	return version;
 }
 
+// ── Boot-time build skip ─────────────────────────────────────────────────────
+// The bundle only depends on src/frontend/**, bun.lock (vendored xterm css /
+// ghostty wasm / the tailwind compiler all live in node_modules) and the Bun
+// version — verified: no frontend import reaches outside src/frontend. When
+// none of that changed since the last build, boot reuses .frontend-dist
+// instead of paying the ~3.5s rebuild; every restart used to eat it even with
+// zero frontend changes. The in-process watcher still rebuilds on any edit.
+
+const BUNDLE_META = join(FRONTEND_DIST, ".bundle-meta.json");
+
+function frontendInputsHash(): string {
+	const parts: string[] = [`bun:${Bun.version}`];
+	try {
+		const lock = statSync(join(REPO_ROOT, "bun.lock"));
+		parts.push(`lock:${lock.mtimeMs}:${lock.size}`);
+	} catch {}
+	const entries = readdirSync(FRONTEND_SRC, { recursive: true, withFileTypes: true });
+	for (const e of entries) {
+		if (!e.isFile()) continue;
+		const p = join((e as { parentPath?: string }).parentPath ?? String((e as { path?: string }).path ?? FRONTEND_SRC), e.name);
+		try {
+			const s = statSync(p);
+			parts.push(`${p}:${s.mtimeMs}:${s.size}`);
+		} catch {}
+	}
+	parts.sort();
+	return Bun.hash(parts.join("\n")).toString(36);
+}
+
+/** Rehydrate the served bundle from an unchanged .frontend-dist. False on any
+ *  doubt (missing meta, hash drift, missing asset file) → caller rebuilds. */
+function tryReuseFrontendDist(): boolean {
+	try {
+		const meta = JSON.parse(readFileSync(BUNDLE_META, "utf8")) as {
+			inputsHash?: string;
+			version?: string;
+			indexHtml?: string;
+			assets?: string[];
+		};
+		if (!meta.inputsHash || !meta.version || !meta.indexHtml) return false;
+		if (meta.inputsHash !== frontendInputsHash()) return false;
+		for (const a of meta.assets ?? []) {
+			if (!existsSync(join(FRONTEND_DIST, a))) return false;
+		}
+		const store: FrontendBundle = (g.__backstageFrontend ??= {
+			indexHtml: "",
+			gzip: new Map<string, Blob>(),
+			version: "",
+		});
+		store.indexHtml = meta.indexHtml;
+		store.gzip.clear();
+		store.version = meta.version;
+		console.log(`Frontend bundle unchanged — reusing ${FRONTEND_DIST} (v=${meta.version})`);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 if (!IS_DEV && !isLocalProfile() && !g.__backstageFrontend) {
-	console.log("Building frontend (split + minified)…");
-	await buildFrontend();
+	if (!tryReuseFrontendDist()) {
+		console.log("Building frontend (split + minified)…");
+		await buildFrontend();
+	}
 }
 
 export const frontend: FrontendBundle | null = IS_DEV

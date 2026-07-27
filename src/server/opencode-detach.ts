@@ -319,6 +319,45 @@ export interface DetachedSpawn {
 }
 
 /**
+ * Stop `opensession-oc-*` scopes that no registry record points at. An alive
+ * but unregistered scope can never be adopted or reached again — it leaks
+ * (dominant mode: the spawning process died between systemd-run and the
+ * registry write; 2026-07-27 the restart storm left 26 of them holding ~6GB
+ * RSS + swap and pinning worktrees against cleanup). Scopes younger than
+ * `graceMs` are spared — they may belong to an in-flight spawn of this
+ * process that hasn't written its record yet.
+ */
+export function reapUnregisteredScopes(knownUnits: Set<string>, graceMs = 5 * 60_000): number {
+  let listed: string;
+  try {
+    listed = Bun.spawnSync({
+      cmd: [
+        "systemctl", "--user", "list-units", "--plain", "--no-legend",
+        "--type=scope", "opensession-oc-*.scope",
+      ],
+      env: systemdEnv(),
+    }).stdout.toString();
+  } catch {
+    return 0;
+  }
+  let reaped = 0;
+  for (const line of listed.split("\n")) {
+    const unit = line.trim().split(/\s+/)[0]?.replace(/\.scope$/, "");
+    if (!unit || knownUnits.has(unit)) continue;
+    const pid = scopeMainPid(unit);
+    if (pid) {
+      const etimes = Bun.spawnSync({ cmd: ["ps", "-o", "etimes=", "-p", String(pid)] })
+        .stdout.toString().trim();
+      if ((parseInt(etimes) || 0) * 1000 < graceMs) continue;
+    }
+    stopDetachedUnit(unit);
+    reaped++;
+    console.log(`[opencode-detach] reaped unregistered scope ${unit} (pid ${pid ?? "?"})`);
+  }
+  return reaped;
+}
+
+/**
  * Spawn `opencode serve` in its own transient user scope. Throws on any
  * failure (systemd-run error, startup timeout, unreadable scope pid) — the
  * caller falls back to a direct-child spawn.

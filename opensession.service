@@ -20,7 +20,10 @@ Environment="NODE_ENV=production"
 # The app's own frontend watcher still rebuilds frontend edits live.
 ExecStart=/home/ubuntu/.bun/bin/bun run opensession.ts
 Restart=always
-RestartSec=5
+# 1s, not 5s: this pause is pure downtime on every restart (deliberate or
+# crash), and Caddy's lb_try_duration parks requests meanwhile — a crash loop
+# is still rate-limited by the unit's start-rate limiting.
+RestartSec=1
 # Give graceful shutdown time to drain in-flight runs (SHUTDOWN_DRAIN_MS, 60s)
 # before systemd escalates to SIGKILL. Must stay above SHUTDOWN_DRAIN_MS (60s) +
 # a buffer for the rest of shutdown, or systemd kills the process mid-drain.

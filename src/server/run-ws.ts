@@ -44,6 +44,7 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { cpus, loadavg } from "node:os";
 import { audit } from "./audit";
 import { dispatchRunRpc, timingSafeEqStr } from "./run-rpc";
 import type { HostConnection, HostConnectionHandlers, HostConnector } from "./host-client";
@@ -537,6 +538,16 @@ export function dropRunWsConnection(hostId: string): boolean {
 
 const POISON_STALE_MS = 20_000; // heartbeat stamps every 5s; 20s = 4 missed beats
 const POISON_CONFIRM_MS = 3_000; // suspicion age before a silent probe convicts
+// Host-wide starvation override: when the box itself is drowning (loadavg way
+// past core count — IO storms, swap thrash), the event loop stalls for 30s+
+// with timers ALIVE, and the probe protocol above still convicts (2026-07-27:
+// six false-positive self-restarts in 100 minutes, each reboot's IO making the
+// next stall more likely). A restart cannot cure starvation, only worsen it —
+// so under extreme load we hold conviction until the heartbeat has been stale
+// for STARVATION_HOLD_MS (true poisoning survives that; a starved-but-alive
+// loop stamps the heartbeat long before it).
+const STARVATION_LOAD_PER_CORE = 2;
+const STARVATION_HOLD_MS = 300_000;
 
 /**
  * Per-request timer-poisoning check (called from the Bun.serve fetch preamble
@@ -572,6 +583,30 @@ export function timerPoisonRequestCheck(): void {
 }
 
 function escalateTimerPoison(staleMs: number): void {
+  const load1 = loadavg()[0];
+  const cores = cpus().length || 1;
+  if (load1 > cores * STARVATION_LOAD_PER_CORE && staleMs < STARVATION_HOLD_MS) {
+    const lastLog = (g.__timerPoisonStarvedLogAt as number | undefined) ?? 0;
+    if (Date.now() - lastLog > 60_000) {
+      g.__timerPoisonStarvedLogAt = Date.now();
+      audit({
+        msg: "timer_poison_deferred_starved",
+        staleSeconds: Math.round(staleMs / 1000),
+        load1: Math.round(load1),
+        cores,
+      });
+      console.error(
+        `[run-ws] timer heartbeat stale ${Math.round(staleMs / 1000)}s but host load is ` +
+          `${load1.toFixed(0)} on ${cores} cores — treating as starvation, not poisoning. ` +
+          `Holding self-restart unless staleness reaches ${STARVATION_HOLD_MS / 1000}s.`,
+      );
+    }
+    // Drop the suspicion so the next sighting re-probes with a fresh timer —
+    // a starved loop that frees up clears itself instead of convicting on a
+    // minutes-old probe.
+    g.__timerPoisonSuspicion = undefined;
+    return;
+  }
   g.__timersPoisonedAt ??= new Date().toISOString();
   // Restart-loop guard: a persistent runtime failure can poison FRESH boots
   // too, so unbounded auto-exits would flap forever. Track recent auto-exits

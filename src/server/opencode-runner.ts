@@ -153,6 +153,7 @@ import {
   readDetachedRegistry,
   removeDetachedRecord,
   spawnDetachedOpencodeServer,
+  reapUnregisteredScopes,
   stopDetachedUnit,
   upsertDetachedRecord,
   type ServerProcHandle,
@@ -374,7 +375,13 @@ export function shardDbPathForKey(key: string): string {
   return `${SHARD_DB_DIR}/${safe}.db`;
 }
 
-const SERVER_START_TIMEOUT_MS = 30_000;
+// 90s, not 30s: under heavy host IO/swap pressure a healthy `opencode serve`
+// can genuinely take >30s to answer. A premature timeout is worse than a slow
+// start — the detached path falls back to a DIRECT child (dies with the next
+// restart, MCP children and all) and abandons a scope that often comes alive
+// moments later (see reapUnregisteredScopes). Broken spawns still fail fast
+// via the exit-code check.
+const SERVER_START_TIMEOUT_MS = 90_000;
 const IDLE_KILL_MS = 30 * 60 * 1000;
 /** Shared servers are the always-warm pool — kept alive far longer than the
  *  per-session 30-min kill (they serve every eligible interactive session on
@@ -1068,7 +1075,11 @@ export function proxyOpencodeMcpConfigs(
   for (const name of Object.keys(inProcessMcp)) {
     out[name] = {
       type: "local",
-      command: [BUN_BIN, "run", MCP_PROXY_ENTRY],
+      // --smol: the proxy is a pure stdio↔RPC pipe; Bun's low-memory heap
+      // profile roughly halves its RSS, and hundreds of these run at once
+      // (16 opensession-* servers × every session instance — 664 processes /
+      // 42GB RSS on 2026-07-27).
+      command: [BUN_BIN, "--smol", "run", MCP_PROXY_ENTRY],
       environment: {
         BKS_RPC_SOCKET: rpcSocketPath(OPENSESSION_CHATS_DIR),
         BKS_RPC_TOKEN: rpcToken,
@@ -2146,6 +2157,17 @@ export async function adoptDetachedOpencodeServers(): Promise<number> {
     console.log(
       `[opencode-runner] adopted detached server for ${key} (${newest.unit}, ${newest.url})`
     );
+  }
+  // Registry is now pruned to live entries — anything else with our scope
+  // prefix is unreachable and leaks until stopped.
+  try {
+    const known = new Set(readDetachedRegistry().map((r) => r.unit));
+    const reaped = reapUnregisteredScopes(known);
+    if (reaped > 0) {
+      console.log(`[opencode-runner] reaped ${reaped} unregistered detached scope(s)`);
+    }
+  } catch (e) {
+    console.error("[opencode-runner] scope reap failed:", e);
   }
   return adopted;
 }
