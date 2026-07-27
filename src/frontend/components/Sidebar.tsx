@@ -1889,39 +1889,18 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				mkRow(`workspace:${wsId}`, ws, ws?.name || chats[0].title, chats),
 			);
 		}
-		// Truly chatless workspaces still get a row — clicking opens the scoped New
-		// palette. A workspace whose chats are all *automation* runs is NOT chatless
-		// (those render in the Automations band), and neither is one whose chats
-		// are all *archived* (archiving a workspace must not resurrect it as an
-		// empty row) — so both get no row here. Chat-less PR/ticket workspaces
-		// (ghpr-/plain- keys, minted by a sidebar click or agent run) are also
-		// excluded: they live under Pull requests / Support until a chat joins.
-		if (!search && filter.repo === "all") {
-			const hasAnyChat = new Set(
-				sessions.filter((s) => s.projectId).map((s) => s.projectId),
-			);
-			for (const p of projects) {
-				if (p.key?.startsWith("ghpr-") || p.key?.startsWith("plain-"))
-					continue;
-				if (!byWs.has(p.id) && !hasAnyChat.has(p.id))
-					rows.push({
-						key: `workspace:${p.id}`,
-						workspace: p,
-						name: p.name,
-						chats: [],
-						status: "pending",
-						lastActivity: p.createdAt,
-						createdAt: p.createdAt,
-						unread: false,
-						running: false,
-						owner: (p.createdBy || "").toLowerCase(),
-					});
-			}
-		}
-		// Workspace-less chats (slack/linear sources + their bks- siblings) group
-		// by shared isolated worktree — the SAME rule the tab strip uses — so the
-		// sidebar and tabs always agree on what belongs together. Chats with no
-		// isolated worktree stay solo rows.
+		// A workspace with no chats gets NO row. Workspaces are minted with their
+		// first chat (or by the PR/ticket resolvers, which park them under Pull
+		// requests / Support until a chat joins), so a chatless one is a leftover —
+		// its chats were archived or deleted — not a place to start work.
+		//
+		// Automation runs are the one chat kind that lives outside a workspace: a
+		// workspace per run would bury every real one, so they render in the
+		// Automations band instead. A *claimed* run is pulled into this list, and
+		// groups by shared isolated worktree — the SAME rule the tab strip uses —
+		// so the sidebar and tabs agree on what belongs together. Every other chat
+		// carries a workspace (server-side invariant: see chat-workspace.ts), so
+		// these fallback rows stay empty in practice.
 		const byWorktree = new Map<string, UnifiedSession[]>();
 		const loose: UnifiedSession[] = [];
 		for (const s of solo) {

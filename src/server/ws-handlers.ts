@@ -44,6 +44,7 @@ import { startTranscriptWatch } from "./transcript-watch";
 import { type BackstageSessionFile, type SessionUsage } from "./types";
 import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
 import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
+import { ownedWorktree } from "./chat-workspace";
 import { resolvePlainWorkspace } from "./workspace-resolve";
 import { createWorktree, createWorktreeForExistingBranch, ensureAskCheckout, getRepo, listWorktrees, repoForPath, resolveUniqueBranch, worktreeHeadBranch, worktreePathFor } from "./worktree";
 import { BOOT_ID, allClients, b64decode, b64encode, broadcastToNote, broadcastToSession, joinNote, joinSession, leaveNote, leaveSession, preparingWorkspaces, revalidateLocalClients } from "./ws-hub";
@@ -1477,6 +1478,29 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 					const bksId = `bks-${randomUUIDv7()}`;
 					const title = prompt.trim().split("\n")[0].slice(0, 80);
+					// Every chat lives in a workspace (chat-workspace.ts). A create
+					// that resolved none — no picker choice, no fork parent, no
+					// explicit id — mints its own here rather than surfacing as an
+					// orphan the read-side sweep has to adopt a moment later: only a
+					// workspace minted on this path can be auto-named from the
+					// generated title below.
+					let mintedForChat = false;
+					if (
+						!workspace &&
+						!forkSource?.projectId &&
+						!(typeof msg.projectId === "string" && msg.projectId)
+					) {
+						workspace = createWorkspace({
+							name: title || "Workspace",
+							repo: repo.id,
+							createdBy: user || "Anonymous",
+							...(sessionBranch ? { branch: sessionBranch } : {}),
+							// Only an isolated worktree is owned — a shared main/ask
+							// checkout is used by every other chat there too.
+							...(ownedWorktree(wtPath) ? { worktreeDir: wtPath } : {}),
+						});
+						mintedForChat = true;
+					}
 					// Replace the raw first-line title with a short summary in the
 					// background; next sessions poll (≤5s) picks it up. An
 					// auto-created workspace is named ONCE from the same generated
@@ -1485,10 +1509,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					// Only a workspace minted by THIS create gets auto-named — an
 					// adopted pre-existing workspace keeps its own name.
 					const wsAutoNamed =
-						createdWorkspaceNow &&
-						!!workspace &&
-						!!msg.createWorkspace &&
-						!msg.createWorkspace.name;
+						mintedForChat ||
+						(createdWorkspaceNow &&
+							!!workspace &&
+							!!msg.createWorkspace &&
+							!msg.createWorkspace.name);
 					const wsToName = workspace;
 					void ensureGeneratedTitle(bksId, prompt, user, model).then((t) => {
 						if (!t) return;

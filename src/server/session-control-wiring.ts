@@ -29,6 +29,7 @@ import { rebuildIndex } from "./slack-links";
 import { handleSlashCommand } from "./slash-commands";
 import { type BackstageSessionFile, type SessionUsage, type UnifiedSession } from "./types";
 import { type Workspace, createWorkspace, getWorkspace } from "./workspaces";
+import { ownedWorktree } from "./chat-workspace";
 import { createWorktree, ensureAskCheckout, getRepo, listWorktrees, repoForPath, worktreeHeadBranch } from "./worktree";
 import { broadcastToAll, broadcastToSession } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
@@ -282,21 +283,29 @@ registerSessionControl({
 		let projectId = parentSession?.projectId || null;
 		if (!projectId) {
 			// Adopt the workspace that already owns the (parent's or this child's)
-			// worktree before minting a duplicate one over it; only a workspace-less
-			// backstage parent on an unowned worktree gets wrapped in a fresh one.
+			// worktree before minting a duplicate one over it. Failing that, mint —
+			// every chat lives in a workspace (chat-workspace.ts), so a parentless
+			// child, or one hanging off a workspace-less slack/linear chat, gets
+			// wrapped here instead of surfacing as an orphan for the read-side
+			// sweep to adopt. The parent's identity seeds the name when there is
+			// one: the pair is one piece of work.
 			const owned =
 				workspaceOwningWorktree(parentSession?.worktreeDir) ??
 				workspaceOwningWorktree(wtPath);
 			if (owned) projectId = owned.id;
-			else if (parentSession?.source === "backstage") {
+			else {
+				const branchForWs = parentSession?.branch || sessionBranch;
+				// Only an isolated worktree is owned — never a shared main/ask
+				// checkout, which every other chat there uses too.
+				const dir =
+					ownedWorktree(parentSession?.worktreeDir) ?? ownedWorktree(wtPath);
 				const ws = createWorkspace({
-					name: parentSession.title || parentSession.branch || "Workspace",
-					repo: parentSession.repo,
-					createdBy: user || parentSession.startedBy || "Anonymous",
-					...(parentSession.branch ? { branch: parentSession.branch } : {}),
-					...(parentSession.worktreeDir
-						? { worktreeDir: parentSession.worktreeDir }
-						: {}),
+					name:
+						parentSession?.title || parentSession?.branch || title || "Workspace",
+					repo: parentSession?.repo || repo.id,
+					createdBy: user || parentSession?.startedBy || "Anonymous",
+					...(branchForWs ? { branch: branchForWs } : {}),
+					...(dir ? { worktreeDir: dir } : {}),
 				});
 				projectId = ws.id;
 			}

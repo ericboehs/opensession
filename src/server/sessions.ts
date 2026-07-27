@@ -11,6 +11,7 @@ import { getTitleOverride } from "./title-overrides";
 import { getStatusOverride } from "./status-overrides";
 import { getReviewRequest } from "./review-requests";
 import { getGeneratedTitle } from "./generated-titles";
+import { ensureChatWorkspaces } from "./chat-workspace";
 import { findCodexRollout } from "./codex-accounts";
 import { providerFor } from "./models";
 import { parseTranscript, parseTranscriptAsync } from "./jsonl-parser";
@@ -582,6 +583,12 @@ function overlaySidecarExtras(session: UnifiedSession): UnifiedSession {
   if (data.linkedPrs?.length) session.linkedPrs = data.linkedPrs;
   if (data.attachedRepos?.length) session.attachedRepos = data.attachedRepos;
   if (data.previewPath) session.previewPath = data.previewPath;
+  // The workspace this chat is filed under. Slack/Linear session files are
+  // read-only, so for those sources the link lives here in the sidecar (written
+  // by chat-workspace.ts) rather than in the session file itself.
+  const workspaceId =
+    (data as { workspaceId?: string | null }).workspaceId ?? data.projectId;
+  if (workspaceId) session.projectId = workspaceId;
   return session;
 }
 
@@ -1803,6 +1810,12 @@ export function getAllSessions(): UnifiedSession[] {
       session.aliasIds?.map((a) => getReviewRequest(a)).find(Boolean);
     if (review) session.reviewRequest = review;
   }
+
+  // Every chat belongs to exactly one workspace (chat-workspace.ts). File any
+  // that surfaced without one — in memory now, on disk right after — so the
+  // sidebar only ever has workspace rows to render. Runs after the title
+  // registries above so a minted workspace takes the chat's final name.
+  ensureChatWorkspaces(allSessions);
 
   // Sort by lastActivity descending
   allSessions.sort(
