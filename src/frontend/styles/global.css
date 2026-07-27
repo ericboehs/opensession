@@ -14827,7 +14827,8 @@ html.wco .settings-sidenav {
 	flex-shrink: 0;
 	padding: 0;
 	border: none;
-	border-radius: calc(11px * var(--rf)); corner-shape: var(--cs);
+	border-radius: 999px;
+	corner-shape: round;
 	background: var(--bg-active);
 	position: relative;
 	cursor: pointer;
