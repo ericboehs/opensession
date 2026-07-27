@@ -131,7 +131,7 @@ const INFO_SECTION_CLASS = "grid gap-[5px]";
 const INFO_LIST_CLASS =
 	"grid gap-px overflow-hidden rounded-lg border border-line bg-panel p-1";
 const INFO_MORE_BUTTON_CLASS =
-	"cursor-pointer bg-surface px-[9px] py-[7px] text-left text-[12px] font-semibold text-faint transition-colors hover:bg-hover hover:text-fg";
+	"cursor-pointer bg-panel px-[9px] py-[7px] text-left text-[12px] font-semibold text-faint transition-colors hover:bg-hover hover:text-fg";
 
 function statusBadgeClass(status: DiffFile["status"]): string {
 	switch (statusClass(status)) {
