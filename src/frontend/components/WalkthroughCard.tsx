@@ -56,7 +56,10 @@ export function WalkthroughCard({
 		<div
 			className={cn(
 				"rounded-lg border border-line bg-panel p-3",
-				chat ? "my-2" : "mb-3",
+				// In the chat the card is a transcript block like any other, so it
+				// takes the same centered reading column the turns and footers use
+				// (mx-auto + --chat-col) instead of spanning the whole pane.
+				chat ? "mx-auto my-2 w-full max-w-[var(--chat-col)]" : "mb-3",
 			)}
 		>
 			<div className="mb-2 flex items-baseline gap-2">
