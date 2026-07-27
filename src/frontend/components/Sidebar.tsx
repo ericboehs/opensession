@@ -4222,7 +4222,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									return (
 										<button
 											key={p.name}
-											className={`flex items-center gap-[9px] w-full min-w-0 text-left border-0 cursor-pointer rounded-md pl-[12px] pr-2 py-[5px] max-[720px]:gap-[5px] max-[720px]:py-2 ${
+											className={`sidebar-people-row flex items-center gap-[9px] w-full min-w-0 text-left border-0 cursor-pointer rounded-md pl-[12px] pr-2 py-[5px] max-[720px]:gap-[5px] max-[720px]:py-2 ${
 												selected
 													? "bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_22%,transparent)]"
 													: "bg-transparent hover:bg-hover"

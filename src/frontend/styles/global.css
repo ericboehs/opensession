@@ -1560,7 +1560,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	   collapsed to a flat list — without this they'd keep the desktop inset and
 	   sit 4px right of every other row on a phone. */
 	.sidebar-independent-scroll > .sidebar-item {
-		padding-left: 6px;
+		padding-left: 10px;
 	}
 }
 
@@ -2104,16 +2104,11 @@ body:is(.resizing-sidebar, .resizing-panel) {
 		display: none;
 	}
 	/* Flatten the nesting indent under each status lane — that extra left inset is
-	   a desktop-only affordance; on mobile the rows sit flush under the status, and
-	   their leading column lines up 1:1 with the group header's. The header icon is
-	   a .sidebar-rail box at 6px padding (center 17px); match it exactly with the
-	   same 6px padding, and the shared 9px gap carries the title onto the header
-	   name's rail. The Pinned group carries the same rows (workspace rows + loose
-	   chats), so it gets the identical flattening — its rows align under the Pinned
-	   header the same way. */
+	   a desktop-only affordance. Mobile rows use the same 10px inner inset as their
+	   group headers, so both the leading marks and titles share one rail. */
 	.sidebar-status-group .sidebar-item,
 	.sidebar-group--pinned .sidebar-item {
-		padding-left: 6px;
+		padding-left: 10px;
 	}
 	/* Under "Group by: Repo", drop the lane inset entirely on mobile so the
 	   repo head, its status lanes, and the workspace rows all share one left
@@ -2122,13 +2117,13 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	   the grouping. (These out-specificity the base mobile header/item
 	   padding rules, so restate their values.) */
 	.sidebar-repo-lanes .sidebar-group-header {
-		padding-left: 6px;
+		padding-left: 10px;
 	}
 	.sidebar-repo-lanes .sidebar-item {
-		padding-left: 6px;
+		padding-left: 10px;
 	}
 	.sidebar-repo-lanes .sidebar-status-group .sidebar-item {
-		padding-left: 6px;
+		padding-left: 10px;
 	}
 }
 /* On touch, the full action set (Rename / Move / Archive) is still reached by
@@ -12724,17 +12719,26 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.sidebar-list {
 		flex: none;
 		overflow-y: visible;
-		/* The floating top bar uses a 12px right inset (.app-header-overlay),
-		   not the sidebar's desktop 18px (10px here + 8px on .sidebar-item), so
-		   the trailing times/counts landed 6px short of the header's
-		   filter/search icons. Drop the list's right padding to 4px (4 + 8 = 12)
-		   so the whole right column sits flush under those icons — the
-		   "trailing times flush-right under the header buttons" the base
-		   .sidebar-list rule is after. */
-		padding-right: 4px;
+		/* Match the tool strip and page chrome: every list band's row surface begins
+		   and ends on the same 16px mobile gutter. */
+		padding-right: 16px;
+		padding-left: 16px;
 	}
 	.sidebar-independent-section {
-		margin-right: 4px;
+		margin-right: 16px;
+		margin-left: 16px;
+	}
+	/* Once the outer surfaces share a gutter, use one symmetric inner inset for
+	   every row family too. This keeps People, workspace/status, pinned, repo,
+	   support, and automation marks and trailing metadata on common rails. */
+	.sidebar-list .sidebar-group-header,
+	.sidebar-list .sidebar-item,
+	.sidebar-independent-section .sidebar-band-toggle,
+	.sidebar-independent-section .sidebar-group-header,
+	.sidebar-independent-section .sidebar-item,
+	.sidebar-independent-section .sidebar-people-row {
+		padding-right: 10px;
+		padding-left: 10px;
 	}
 
 	/* One horizontally-scrollable line of tap cards (Slack-home style) rather
