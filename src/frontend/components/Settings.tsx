@@ -107,6 +107,13 @@ import {
 import { toast } from "../ui/toast";
 import { Tooltip } from "../ui/tooltip";
 import { AGENT_NAME, PRODUCT_NAME } from "../lib/brand";
+import {
+	onSidebarToolsChanged,
+	readHiddenSidebarTools,
+	setSidebarToolVisible,
+	SIDEBAR_TOOL_IDS,
+	SIDEBAR_TOOL_LABELS,
+} from "../lib/sidebar-tools";
 
 // The full-window Settings surface: a left sub-nav + a scrolling body, reached
 // from the "Settings" item in the account menu. Designed to grow — each area is
@@ -2220,6 +2227,16 @@ function AppearancePanel() {
 	useEffect(() => onThemeChanged(() => setPref(getThemePref())), []);
 	const [wsTime, setWsTime] = useState<WsTimePref>(getWsTimePref);
 	useEffect(() => onWsTimeChanged(() => setWsTime(getWsTimePref())), []);
+	const [hiddenSidebarTools, setHiddenSidebarTools] = useState(
+		readHiddenSidebarTools,
+	);
+	useEffect(
+		() =>
+			onSidebarToolsChanged(() =>
+				setHiddenSidebarTools(readHiddenSidebarTools()),
+			),
+		[],
+	);
 	const [turnActivity, setTurnActivity] =
 		useState<TurnActivityPref>(getTurnActivityPref);
 	useEffect(
@@ -2292,6 +2309,22 @@ function AppearancePanel() {
 						/>
 					}
 				/>
+				{SIDEBAR_TOOL_IDS.map((toolId) => (
+					<SettingRow
+						key={toolId}
+						title={SIDEBAR_TOOL_LABELS[toolId]}
+						desc="Show this tool in the sidebar."
+						control={
+							<Toggle
+								label={`Show ${SIDEBAR_TOOL_LABELS[toolId]} in sidebar`}
+								checked={!hiddenSidebarTools.has(toolId)}
+								onChange={(visible) =>
+									setSidebarToolVisible(toolId, visible)
+								}
+							/>
+						}
+					/>
+				))}
 			</div>
 		</div>
 	);

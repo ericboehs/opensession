@@ -1,7 +1,6 @@
 export const SIDEBAR_TOOL_IDS = [
 	"home",
 	"catchup",
-	"reviews",
 	"prtinder",
 	"supporttinder",
 	"reports",
@@ -10,6 +9,16 @@ export const SIDEBAR_TOOL_IDS = [
 ] as const;
 
 export type SidebarToolId = (typeof SIDEBAR_TOOL_IDS)[number];
+
+export const SIDEBAR_TOOL_LABELS: Record<SidebarToolId, string> = {
+	home: "Home",
+	catchup: "Catch up",
+	prtinder: "PR Tinder",
+	supporttinder: "Support Tinder",
+	reports: "Reports",
+	analytics: "Analytics",
+	notes: "Notes",
+};
 
 const HIDDEN_TOOLS_KEY = "opensession-sidebar-hidden-tools";
 const TOOLS_CHANGED_EVENT = "opensession-sidebar-tools-changed";

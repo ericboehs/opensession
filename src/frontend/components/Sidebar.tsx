@@ -112,6 +112,7 @@ import {
 	setSidebarToolVisible,
 	hideAllSidebarTools,
 	onSidebarToolsChanged,
+	SIDEBAR_TOOL_LABELS,
 	type SidebarToolId,
 } from "../lib/sidebar-tools";
 
@@ -2872,7 +2873,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	}> = [
 		{
 			id: "home",
-			label: "Home",
+			label: SIDEBAR_TOOL_LABELS.home,
 			icon: <IconHome />,
 			active: homeActive,
 			onClick: onOpenHome,
@@ -2880,7 +2881,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		},
 		{
 			id: "catchup",
-			label: "Catch up",
+			label: SIDEBAR_TOOL_LABELS.catchup,
 			icon: <IconStack />,
 			active: catchUpActive,
 			onClick: onOpenCatchUp,
@@ -2889,7 +2890,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		},
 		{
 			id: "prtinder",
-			label: "PR Tinder",
+			label: SIDEBAR_TOOL_LABELS.prtinder,
 			icon: <IconFlame />,
 			active: prTinderActive,
 			onClick: onOpenPrTinder,
@@ -2897,7 +2898,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		},
 		{
 			id: "supporttinder",
-			label: "Support Tinder",
+			label: SIDEBAR_TOOL_LABELS.supporttinder,
 			icon: <IconInbox />,
 			active: supportTinderActive,
 			onClick: onOpenSupportTinder,
@@ -2905,7 +2906,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		},
 		{
 			id: "reports",
-			label: "Reports",
+			label: SIDEBAR_TOOL_LABELS.reports,
 			icon: <IconFile />,
 			active: reportsActive,
 			onClick: onOpenReports,
@@ -2913,7 +2914,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		},
 		{
 			id: "analytics",
-			label: "Analytics",
+			label: SIDEBAR_TOOL_LABELS.analytics,
 			icon: <IconChart />,
 			active: analyticsActive,
 			onClick: onOpenAnalytics,
@@ -2921,7 +2922,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		},
 		{
 			id: "notes",
-			label: "Notes",
+			label: SIDEBAR_TOOL_LABELS.notes,
 			icon: <IconPencil />,
 			active: notesActive,
 			onClick: onOpenNotes,
