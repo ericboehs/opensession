@@ -37,6 +37,7 @@ import { audit } from "./audit";
 import { tryGetSessionControl } from "./session-control";
 import { findSession } from "./session-cache";
 import { resolveTeammate } from "./shared/user-mappings";
+import { linkThreadInIndex } from "./slack-links";
 import { broadcastToSession } from "./ws-hub";
 import {
   openDirectMessage,
@@ -158,6 +159,7 @@ export function initHumanAsks(): void {
       console.error("[human-asks] load failed:", e);
     }
   }
+  relinkAskThreads();
   for (const a of asks.values()) {
     if (a.state !== "scheduled") continue;
     // Re-arm scheduled time deliveries.
@@ -179,6 +181,19 @@ export function initHumanAsks(): void {
         );
       }
     }
+  }
+}
+
+/**
+ * Re-assert every delivered ask's DM thread → session link in the slack-links
+ * index. The ask store, not the session file, is the source of truth for these
+ * links (an ask's session is often a Slack/Linear one whose file we never
+ * write), so they have to be replayed whenever that index is (re)built — on
+ * boot, and again after any rebuildIndex() that clears it.
+ */
+export function relinkAskThreads(): void {
+  for (const a of asks.values()) {
+    if (a.slack) linkThreadInIndex(a.sessionId, a.slack.channel, a.slack.rootTs);
   }
 }
 
@@ -436,6 +451,14 @@ export async function deliverAsk(id: string, opts?: { skipUi?: boolean }): Promi
   a.deliveredAt = new Date().toISOString();
   asks.set(id, a);
   persist();
+  // The DM thread now belongs to the asking session, for good. While the ask is
+  // live, matchReply claims replies first (they're an *answer*); once it's moot
+  // — cancelled, answered elsewhere, timed out — this link is what keeps a late
+  // reply going back to the session that asked instead of spawning a fresh,
+  // context-free one (2026-07-27: an ask was cancelled 3s before Michiel's
+  // reply landed, and his answer started a new session that could only say
+  // "Done").
+  linkThreadInIndex(a.sessionId, channel, res.ts);
   audit({
     context: "human_ask",
     action: "delivered",

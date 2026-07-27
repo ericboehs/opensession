@@ -11,7 +11,7 @@ import { personaName } from "./config";
 import { type StreamEvent, cancelAgentRun, isAgentSessionBusy, runAgent, steerAgentRun } from "./agent-runner";
 import { makeAskHandler, pendingAsks } from "./asks";
 import { ensureGeneratedTitle } from "./generated-titles";
-import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
+import { onSessionIdle as onHumanAsksSessionIdle, relinkAskThreads } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
 import { SESSION_EFFORTS, type SessionEffort, interactiveFallbackModel, modelLabel, modelPreset, providerFor, resolveModel } from "./models";
 import { promptQueues, recordSteer, requeueSteerReceipts } from "./queue-state";
@@ -71,6 +71,9 @@ function buildSummary(s: UnifiedSession): SessionSummary {
 // Wire the Slack thread index (thread replies → owning session). Re-run on
 // every hot reload (cheap) so the index stays fresh.
 rebuildIndex(getAllSessions());
+// rebuildIndex() clears the index, so replay the links the session files don't
+// hold: a human-ask DM thread belongs to the session that raised the ask.
+relinkAskThreads();
 
 // Wires the MCP's tools into the same in-process state and helpers the
 // WebSocket handlers use, so a management session steers/answers/creates the
