@@ -4262,18 +4262,18 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 												label={`${p.fullName}${localTime ? ` · ${localTime}` : ""}${liveId ? " · viewing now" : ""}`}
 											>
 												<span className="relative shrink-0">
-													<UserAvatar
-														name={p.name}
-														size={22}
-														className={liveId ? "ring-2" : ""}
-														style={
-															liveId
-																? ({
+													<UserAvatar name={p.name} size={22}>
+														{liveId && (
+															<span
+																className="pointer-events-none absolute inset-0 rounded-[32%] ring-2 ring-inset"
+																style={
+																	{
 																		"--tw-ring-color": personColor(p.name),
-																	} as React.CSSProperties)
-																: undefined
-														}
-													/>
+																	} as React.CSSProperties
+																}
+															/>
+														)}
+													</UserAvatar>
 													{act?.running && (
 														<span
 															className="absolute -bottom-0.5 -right-0.5 block size-[8px] rounded-full bg-green ring-2 ring-[var(--bg)]"
