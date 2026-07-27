@@ -4140,7 +4140,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								// their icon + label.
 								!isPhone && "items-center",
 								!isPhone &&
-									// Compact rows: 13.5px label, 18px glyphs, tight padding —
+									// Compact rows: 13.5px labels and tight padding, with glyphs
+									// matching the sidebar's standard 22px leading rail.
 									// the utility strip reads lighter than the work lists.
 									// Landed in ffd11ffc (2026-07-24). That commit's comment
 									// credited Michiel with "wayyy too big", but no such
@@ -4155,7 +4156,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							<span
 								className={cn(
 									"sidebar-nav-icon inline-flex",
-									!isPhone && "text-faint [&_svg]:size-[18px]",
+									!isPhone && "text-faint [&_svg]:size-[22px]",
 									!isPhone && tool.active && "text-dim",
 									!isPhone && !tool.active && "group-hover:text-dim",
 								)}
