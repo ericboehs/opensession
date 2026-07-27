@@ -12719,14 +12719,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.sidebar-list {
 		flex: none;
 		overflow-y: visible;
-		/* Match the tool strip and page chrome: every list band's row surface begins
-		   and ends on the same 16px mobile gutter. */
-		padding-right: 16px;
-		padding-left: 16px;
+		/* Let row surfaces breathe past their content rail while keeping the content
+		   aligned with the tool cards' 16px edge (12px outer + 4px inner below). */
+		padding-right: 12px;
+		padding-left: 12px;
 	}
 	.sidebar-independent-section {
-		margin-right: 16px;
-		margin-left: 16px;
+		margin-right: 12px;
+		margin-left: 12px;
 	}
 	/* Once the outer surfaces share a gutter, use one symmetric inner inset for
 	   every row family too. This keeps People, workspace/status, pinned, repo,
@@ -12737,8 +12737,8 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.sidebar-independent-section .sidebar-group-header,
 	.sidebar-independent-section .sidebar-item,
 	.sidebar-independent-section .sidebar-people-row {
-		padding-right: 10px;
-		padding-left: 10px;
+		padding-right: 4px;
+		padding-left: 4px;
 	}
 
 	/* One horizontally-scrollable line of tap cards (Slack-home style) rather
