@@ -216,6 +216,10 @@ export async function opencodeOneShot(
       const config: Record<string, unknown> = {
         mcp: {},
         autoshare: false,
+        // Shadow-git snapshots are disabled fleet-wide (see opencode-runner.ts
+        // — they saturated the disk 2026-07-27); a tool-less one-shot has
+        // nothing to snapshot anyway.
+        snapshot: false,
         // Tool-less by construction (belt) + deny-all permissions (suspenders):
         // a one-shot is a pure text transform, never an agent.
         tools: { "*": false },
