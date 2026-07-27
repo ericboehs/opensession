@@ -4926,7 +4926,7 @@ export function SessionViewer({
 									}
 								/>
 							) : panelTab === "info" ? (
-								<div className="px-2">
+								<div className="px-1">
 									<WorkspaceInfo
 										sessionId={session.id}
 										workspaceId={session.projectId || null}
