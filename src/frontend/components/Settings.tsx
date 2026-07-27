@@ -96,7 +96,7 @@ import { getCurrentUser } from "./UserPicker";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { BottomSheet } from "../ui/sheet";
 import { cn } from "../ui/cn";
-import { Reorder, useDragControls } from "motion/react";
+import { Reorder } from "motion/react";
 import {
 	IconChevronDown,
 	IconChevronLeft,
@@ -2335,7 +2335,7 @@ function AppearancePanel() {
 							sidebarOrderRef.current = next;
 							setSidebarOrderState(next);
 						}}
-						className="mt-2 overflow-hidden rounded-lg border border-line bg-surface"
+						className="mt-2 rounded-lg border border-line bg-surface"
 					>
 						{sidebarOrder.map((section, index) => (
 							<SidebarOrderRow
@@ -2393,15 +2393,18 @@ function SidebarOrderRow({
 	index: number;
 	onCommit: () => void;
 }) {
-	const dragControls = useDragControls();
 	return (
 		<Reorder.Item
 			as="div"
 			value={section}
-			dragListener={false}
-			dragControls={dragControls}
 			onDragEnd={onCommit}
-			className="flex min-h-11 items-center gap-2 border-b border-line bg-surface px-3 last:border-b-0"
+			whileDrag={{
+				scale: 1.015,
+				zIndex: 3,
+				borderRadius: "calc(8px * var(--rf))",
+				boxShadow: "0 8px 24px rgba(0, 0, 0, 0.24)",
+			}}
+			className="relative flex min-h-11 touch-none cursor-grab select-none items-center gap-2 border-b border-line bg-surface px-3 first:rounded-t-lg last:rounded-b-lg last:border-b-0 active:cursor-grabbing"
 		>
 			<span className="w-5 text-[11px] tabular-nums text-faint">
 				{index + 1}
@@ -2409,11 +2412,9 @@ function SidebarOrderRow({
 			<span className="min-w-0 flex-1 text-[13px] font-medium text-fg">
 				{SIDEBAR_SECTION_LABELS[section]}
 			</span>
-			<button
-				type="button"
-				className="touch-none inline-flex size-9 cursor-grab items-center justify-center rounded-md border-0 bg-transparent text-faint hover:bg-hover hover:text-dim active:cursor-grabbing"
-				onPointerDown={(event) => dragControls.start(event)}
-				aria-label={`Drag to reorder ${SIDEBAR_SECTION_LABELS[section]}`}
+			<span
+				className="inline-flex size-9 items-center justify-center text-faint"
+				aria-hidden="true"
 			>
 				<svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
 					<circle cx="6" cy="4" r="1.2" />
@@ -2423,7 +2424,7 @@ function SidebarOrderRow({
 					<circle cx="6" cy="14" r="1.2" />
 					<circle cx="12" cy="14" r="1.2" />
 				</svg>
-			</button>
+			</span>
 		</Reorder.Item>
 	);
 }
