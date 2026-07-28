@@ -28,6 +28,28 @@ extension ToolbarItemPlacement {
 }
 
 extension View {
+    /// The web client defaults to its warm dark palette. Match that on iOS,
+    /// while leaving the desktop app free to follow the Mac's appearance.
+    @ViewBuilder
+    func webColorSchemeCompat() -> some View {
+        #if os(iOS)
+        preferredColorScheme(.dark)
+        #else
+        self
+        #endif
+    }
+
+    /// Warm transcript surfaces on iOS; retain SwiftUI's hierarchical fill on
+    /// macOS so the desktop app continues to follow the system appearance.
+    @ViewBuilder
+    func transcriptPanelCompat<S: Shape>(in shape: S) -> some View {
+        #if os(iOS)
+        background(OS1VisualStyle.panel, in: shape)
+        #else
+        background(.fill.tertiary, in: shape)
+        #endif
+    }
+
     /// Inline nav-bar title on iOS; titles are inline by nature on macOS.
     @ViewBuilder
     func inlineTitleBarCompat() -> some View {

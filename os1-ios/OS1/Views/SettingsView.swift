@@ -136,6 +136,10 @@ struct SettingsView: View {
                     }
                 }
             }
+            #if os(iOS)
+            .scrollContentBackground(.hidden)
+            .background(OS1VisualStyle.background)
+            #endif
             .navigationTitle("Settings")
             .inlineTitleBarCompat()
             #if os(macOS)

@@ -38,6 +38,8 @@ struct RootView: View {
     var body: some View {
         SessionsListView()
             .tint(OS1VisualStyle.accent)
+            .background(OS1VisualStyle.background.ignoresSafeArea())
+            .webColorSchemeCompat()
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }

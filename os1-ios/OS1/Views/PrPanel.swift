@@ -80,6 +80,10 @@ struct PrPanelView: View {
                 reviewersSection(pr)
             }
             .insetGroupedListCompat()
+            #if os(iOS)
+            .scrollContentBackground(.hidden)
+            .background(OS1VisualStyle.background)
+            #endif
             .refreshable { await viewModel.refreshPr() }
         } else if viewModel.prLoadFailed {
             ContentUnavailableView {

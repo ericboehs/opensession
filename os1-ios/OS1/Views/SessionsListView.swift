@@ -437,6 +437,8 @@ struct SessionsListView: View {
             listSections
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(OS1VisualStyle.background)
         .listSectionSpacing(10)
         .contentMargins(.top, 4, for: .scrollContent)
         .searchable(text: $searchText, prompt: "Search sessions")
@@ -537,9 +539,19 @@ struct SessionsListView: View {
                             RepoTile(name: group.title)
                         }
                         Text(groupBy == .repo ? RepoTile.label(for: group.title) : group.title)
+                            #if os(iOS)
+                            .font(.subheadline.weight(.semibold))
+                            #else
                             .font(.caption.weight(.semibold))
+                            #endif
+                            .foregroundStyle(OS1VisualStyle.textDim)
                         Text("\(group.sessions.count)")
-                            .foregroundStyle(.tertiary)
+                            #if os(iOS)
+                            .font(.footnote.weight(.medium))
+                            #else
+                            .font(.caption)
+                            #endif
+                            .foregroundStyle(OS1VisualStyle.textDim)
                         if groupBy == .repo {
                             // New session directly in this repo — inline next
                             // to the name rather than pushed flush against
@@ -594,17 +606,18 @@ extension Session.Lane {
     /// Dot colors matching the web sidebar's lane dots.
     var color: Color {
         switch self {
-        case .needsInput: .blue
-        case .inProgress: .yellow
-        case .inReview: .green
-        case .done: .purple
-        case .backlog: .secondary.opacity(0.4)
+        case .needsInput: OS1VisualStyle.blue
+        case .inProgress: OS1VisualStyle.yellow
+        case .inReview: OS1VisualStyle.green
+        case .done: OS1VisualStyle.purple
+        case .backlog: OS1VisualStyle.textFaint.opacity(0.7)
         }
     }
 }
 
 struct SessionRow: View {
     let session: Session
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// Mac: hover-revealed archive button (nil hides it).
     var onArchive: (() -> Void)? = nil
 
@@ -643,11 +656,15 @@ struct SessionRow: View {
             statusMark
                 .frame(width: 22, height: 22)
             Text(rowTitle)
+                #if os(iOS)
+                .font(.body.weight(.medium))
+                #else
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
+                #endif
+                .foregroundStyle(OS1VisualStyle.textDim)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if session.lane == .inProgress {
+            if session.lane == .inProgress && showsElapsedTime {
                 WorkspaceRunElapsedLabel(since: session.runStartedDate)
             }
         }
@@ -663,23 +680,31 @@ struct SessionRow: View {
         )
     }
 
+    private var showsElapsedTime: Bool {
+        #if os(iOS)
+        !dynamicTypeSize.isAccessibilitySize
+        #else
+        true
+        #endif
+    }
+
     @ViewBuilder
     private var statusMark: some View {
         if session.lane == .needsInput {
-            PulsingDot(color: .blue)
+            PulsingDot(color: OS1VisualStyle.blue)
         } else if session.lane == .inProgress {
-            PulsingDot(color: .yellow)
+            PulsingDot(color: OS1VisualStyle.yellow)
         } else if session.prState == "MERGED" {
             Image(systemName: "arrow.triangle.merge")
-                .foregroundStyle(.purple)
+                .foregroundStyle(OS1VisualStyle.purple)
         } else if session.prState == "OPEN" {
             Image(systemName: "arrow.triangle.pull")
-                .foregroundStyle(.green)
+                .foregroundStyle(OS1VisualStyle.green)
         } else if session.prState == "CLOSED" {
             Image(systemName: "arrow.triangle.pull")
-                .foregroundStyle(.red)
+                .foregroundStyle(OS1VisualStyle.red)
         } else {
-            PulsingDot(color: .secondary.opacity(0.35), active: false)
+            PulsingDot(color: OS1VisualStyle.textFaint, active: false)
         }
     }
 }
@@ -699,8 +724,12 @@ private struct WorkspaceRunElapsedLabel: View {
                 Text("Running")
             }
         }
+        #if os(iOS)
+        .font(.footnote.weight(.medium).monospacedDigit())
+        #else
         .font(.caption.monospacedDigit())
-        .foregroundStyle(.yellow)
+        #endif
+        .foregroundStyle(OS1VisualStyle.yellow)
         .fixedSize(horizontal: true, vertical: false)
     }
 

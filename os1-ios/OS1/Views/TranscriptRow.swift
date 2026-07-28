@@ -32,16 +32,16 @@ struct TranscriptRow: View {
                 conversationImages(entry)
                 if !entry.text.isEmpty {
                     Text(entry.text)
+                        .font(.body)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
-                        .foregroundStyle(.primary)
-                        .background(
-                            .fill.tertiary,
+                        .foregroundStyle(OS1VisualStyle.text)
+                        .transcriptPanelCompat(
                             in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                         )
                         .overlay {
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(.secondary.opacity(0.14), lineWidth: 0.5)
+                                .stroke(OS1VisualStyle.border, lineWidth: 0.5)
                         }
                         .textSelection(.enabled)
                 }
@@ -80,8 +80,12 @@ struct TranscriptRow: View {
 
     private func systemRow(_ entry: TranscriptEntry) -> some View {
         Text(entry.text)
+            #if os(iOS)
+            .font(.footnote)
+            #else
             .font(.caption2)
-            .foregroundStyle(.tertiary)
+            #endif
+            .foregroundStyle(OS1VisualStyle.textDim)
             .lineLimit(3)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.horizontal, 24)
@@ -124,7 +128,7 @@ struct ToolCallRow: View {
         HStack(spacing: 6) {
             Image(systemName: expanded ? "chevron.down" : "chevron.right")
                 .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(OS1VisualStyle.textFaint)
             Image(systemName: "wrench.and.screwdriver")
                 .font(.caption2)
             Text(title)
@@ -139,8 +143,12 @@ struct ToolCallRow: View {
                     .foregroundStyle(.orange)
             }
         }
+        #if os(iOS)
+        .font(.subheadline)
+        #else
         .font(.caption)
-        .foregroundStyle(.secondary)
+        #endif
+        .foregroundStyle(OS1VisualStyle.textDim)
         .contentShape(Rectangle())
     }
 
@@ -209,18 +217,28 @@ struct ToolCallRow: View {
     private func codeBox(label: String, text: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
+                #if os(iOS)
+                .font(.footnote.weight(.semibold))
+                #else
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.tertiary)
+                #endif
+                .foregroundStyle(OS1VisualStyle.textDim)
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(text)
+                    #if os(iOS)
+                    .font(.system(.footnote, design: .monospaced))
+                    #else
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    #endif
+                    .foregroundStyle(OS1VisualStyle.textDim)
                     .textSelection(.enabled)
                     .lineLimit(24)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(8)
-            .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .transcriptPanelCompat(
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
         }
     }
 }

@@ -51,6 +51,7 @@ struct NewSessionView: View {
                 Divider()
                 controls
             }
+            .background(OS1VisualStyle.background)
             .navigationTitle("New session")
             .inlineTitleBarCompat()
             #if os(macOS)

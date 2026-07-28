@@ -7,6 +7,7 @@ struct SessionView: View {
     @State private var viewModel: SessionViewModel
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// Full-window-width chat text is unreadable on the Mac; cap the content
     /// column (transcript AND composer) and center it, like other chat apps.
@@ -131,6 +132,7 @@ struct SessionView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             statusBanner
         }
+        .background(OS1VisualStyle.background.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) {
             // A separate view struct on purpose: typing mutates
             // `viewModel.draft` on every keystroke, and any read of it (or
@@ -279,21 +281,23 @@ struct SessionView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 5) {
                         Text(viewModel.session.displayTitle)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(OS1VisualStyle.text)
                             .lineLimit(1)
                         if viewModel.isRunning {
                             PulsingDot(color: .green, size: 6)
                         }
                     }
-                    Text(headerSubtitle)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Text(headerSubtitle)
+                            .font(.footnote)
+                            .foregroundStyle(OS1VisualStyle.textDim)
+                            .lineLimit(1)
+                    }
                 }
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(OS1VisualStyle.textFaint)
             }
             .frame(maxWidth: 230, alignment: .leading)
             .contentShape(Rectangle())
