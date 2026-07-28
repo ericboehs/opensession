@@ -141,7 +141,7 @@ jobs:
 
       - name: Generate Xcode project
         run: |
-          echo "Compilation cache exact hit: ${{ steps.compilation-cache.outputs.cache-hit }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Compilation cache restored: ${{ steps.compilation-cache.outputs.cache-matched-key || 'none' }}" >> "$GITHUB_STEP_SUMMARY"
           xcodegen generate
 
       - name: Archive
