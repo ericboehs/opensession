@@ -39,7 +39,7 @@ import { envAlias } from "./src/server/rename-compat";
 import { recordRecoveredRunEvent, restorePromptQueues, resumeDrainedSessions, snapshotActiveSessions } from "./src/server/run-session";
 import { handleSandboxWsUpgrade, timerPoisonRequestCheck } from "./src/server/run-ws";
 import { type Sandbox } from "./src/server/sandbox";
-import { findSession, invalidateSessionsCache } from "./src/server/session-cache";
+import { findSession, invalidateSessionsCache, recordRunOutcome } from "./src/server/session-cache";
 import { getSessionControl } from "./src/server/session-control";
 import { buildReposNote } from "./src/server/session-repos";
 import { destroySessionSandbox } from "./src/server/session-sandbox";
@@ -651,7 +651,18 @@ if (!g.__backstageBooted) {
 			}
 		}
 		const resumedIds = resumeInterruptedRuns(
-			() => {
+			(bksSessionId, terminalEvent) => {
+				if (bksSessionId && terminalEvent) {
+					recordRunOutcome(
+						bksSessionId,
+						terminalEvent.type === "error" ||
+							terminalEvent.usageLimitExhausted
+							? terminalEvent.content ||
+								terminalEvent.result ||
+								"Recovered run failed"
+							: null,
+					);
+				}
 				invalidateSessionsCache();
 			},
 			// Re-attach the AskUserQuestion handler so a run that was blocked on an

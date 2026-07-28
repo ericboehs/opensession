@@ -615,6 +615,21 @@ export function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent
 		return;
 	}
 
+	if (event.type === "done" || event.type === "error") {
+		if (event.type === "done") clearSteerReceipts(bksSessionId);
+		broadcastToSession(bksSessionId, {
+			type: "stream_done",
+			sessionId: bksSessionId,
+		});
+		broadcastToSession(bksSessionId, {
+			type: "session_status",
+			sessionId: bksSessionId,
+			isRunning: false,
+		});
+		onHumanAsksSessionIdle(bksSessionId);
+		if (event.type === "error") return;
+	}
+
 	if (event.type !== "init" && event.type !== "done") return;
 	const engineSessionId = event.sessionId || "";
 	const model = event.model || session.model;

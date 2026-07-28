@@ -577,7 +577,10 @@ type AskHandler = NonNullable<RunAgentOpts["onAskUser"]>;
  * that is deliberately not serialized into the restart journal.
  */
 export function resumeInterruptedRuns(
-  onResumed?: (bksSessionId?: string) => void,
+  onResumed?: (
+    bksSessionId?: string,
+    terminalEvent?: StreamEvent,
+  ) => void,
   askHandlerFor?: (bksSessionId: string) => AskHandler | undefined,
   inProcessMcpFor?: (bksSessionId: string, user?: string) => Record<string, unknown> | undefined,
   reposNoteFor?: (bksSessionId: string) => string | undefined,
@@ -644,7 +647,7 @@ export function resumeInterruptedRuns(
           for await (const event of events) {
             if (run.bksSessionId) onEvent?.(run.bksSessionId, event);
             if (event.type === "done" || event.type === "error") {
-              onResumed?.(run.bksSessionId);
+              onResumed?.(run.bksSessionId, event);
             }
           }
         } catch (e) {
@@ -705,7 +708,7 @@ export function resumeInterruptedRuns(
           })) {
             if (run.bksSessionId) onEvent?.(run.bksSessionId, event);
             if (event.type === "done" || event.type === "error") {
-              onResumed?.(run.bksSessionId);
+              onResumed?.(run.bksSessionId, event);
             }
           }
         } catch (e) {
@@ -717,6 +720,7 @@ export function resumeInterruptedRuns(
     if (run.bksSessionId) resumed.push(run.bksSessionId);
     void (async () => {
       try {
+        let repairingMalformedReattach = false;
         // First choice: REATTACH — the run's detached `opencode serve`
         // survived the restart and the turn may still be executing. The
         // adopted-pool lookup + session probe live in tryReattachOpencodeRun;
@@ -742,25 +746,36 @@ export function resumeInterruptedRuns(
               `[runner] Reattached ${run.kind || "run"} ${run.bksSessionId || run.runKey} to its live engine turn (server ${run.serverKey})`
             );
             for await (const event of reattached) {
+              if (recoveredResultNeedsContinuation(event)) {
+                repairingMalformedReattach = true;
+                console.warn(
+                  `[runner] Reattached turn ${run.runKey} ended on echoed tool output — continuing once for a real final answer`
+                );
+                continue;
+              }
               if (run.bksSessionId) onEvent?.(run.bksSessionId, event);
               if (event.type === "done" || event.type === "error") {
-                onResumed?.(run.bksSessionId);
+                onResumed?.(run.bksSessionId, event);
               }
             }
-            return;
+            if (!repairingMalformedReattach) return;
           }
         }
         console.log(
-          `[runner] Resuming interrupted ${run.kind || "run"} ${run.bksSessionId || run.runKey} (started ${run.startedAt}, model ${run.model || "default"})`
+          repairingMalformedReattach
+            ? `[runner] Repairing malformed recovered result for ${run.bksSessionId || run.runKey}`
+            : `[runner] Resuming interrupted ${run.kind || "run"} ${run.bksSessionId || run.runKey} (started ${run.startedAt}, model ${run.model || "default"})`
         );
-        if (run.bksSessionId)
+        if (run.bksSessionId && !repairingMalformedReattach)
           transitionRunState(run.bksSessionId, "resume_reprompt", { run_key: run.runKey });
         // The continuation run journals under its own runKey — drop the
         // claimed record only now, AFTER the reattach probe settled: dying
         // mid-probe used to lose the run to the wipe-on-take (2026-07-27).
         journalClear(run.runKey);
         for await (const event of runAgent({
-          prompt: resumeContinuationPrompt(run.prompt),
+          prompt: repairingMalformedReattach
+            ? malformedRecoveryContinuationPrompt(run.prompt)
+            : resumeContinuationPrompt(run.prompt),
           sessionId: run.claudeSessionId,
           cwd: run.cwd,
           mode: run.mode,
@@ -785,7 +800,7 @@ export function resumeInterruptedRuns(
         })) {
           if (run.bksSessionId) onEvent?.(run.bksSessionId, event);
           if (event.type === "done" || event.type === "error") {
-            onResumed?.(run.bksSessionId);
+            onResumed?.(run.bksSessionId, event);
           }
         }
       } catch (e) {
@@ -808,6 +823,21 @@ export const RESUME_CONTINUATION_PROMPT =
   "Review what you had already done, pick up where you left off, and finish the task. " +
   "If the work was actually complete, just post the final summary/answer.";
 
+/**
+ * Meridian can very occasionally close a post-restart turn with its internal
+ * tool-result envelope as assistant text (the observed shape starts
+ * `[your bash …]:`) and still report a successful `finish: stop`. Accepting
+ * that as the final answer strands completed research without a conclusion.
+ * Keep this deliberately narrow: only recovered `done` events with that
+ * unmistakable envelope get one repair continuation.
+ */
+export function recoveredResultNeedsContinuation(event: StreamEvent): boolean {
+  if (event.type !== "done") return false;
+  return /^\s*\[your (?:bash|read|write|edit|grep|glob|task|webfetch|websearch)\b[^\]]*\]:/i.test(
+    event.result || "",
+  );
+}
+
 /** RESUME_CONTINUATION_PROMPT anchored to the interrupted turn's original
  *  prompt. A resume can land in a fresh engine session with no history (e.g.
  *  reattach failed and the re-prompt rotated to another account's server) —
@@ -824,5 +854,18 @@ export function resumeContinuationPrompt(originalPrompt?: string | null): string
     `"""\n${clamped}\n"""\n` +
     "If you no longer see the earlier conversation, treat that prompt as the task " +
     "definition — do not infer the task from repository or checkout state."
+  );
+}
+
+function malformedRecoveryContinuationPrompt(originalPrompt?: string | null): string {
+  const p = (originalPrompt || "").trim();
+  const clamped = p.length > 2000 ? `${p.slice(0, 2000)}…` : p;
+  return (
+    "Your reattached turn ended by echoing raw tool output instead of giving the user a final answer. " +
+    "Review the work already completed in this session, finish anything still needed, and provide the actual concise answer or handoff now. " +
+    "Do not merely repeat the last tool output." +
+    (clamped
+      ? `\n\nThe prompt that started the interrupted turn was:\n"""\n${clamped}\n"""`
+      : "")
   );
 }

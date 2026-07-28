@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import * as mod from "./run-journal";
 import * as agent from "./agent-runner";
+import type { StreamEvent } from "./run-events";
 
 // __setActiveRunsPathForTest repoints the LIVE ACTIVE_RUNS_PATH binding, so
 // agent-runner.ts's own (already-cached, possibly earlier-imported-with-the-
@@ -76,9 +77,13 @@ describe("run journal", () => {
 			startedAt: "2026-07-02T00:00:00.000Z",
 		});
 
+		let resolveTerminal!: (value: { id?: string; event?: StreamEvent }) => void;
+		const terminal = new Promise<{ id?: string; event?: StreamEvent }>((resolve) => {
+			resolveTerminal = resolve;
+		});
 		const observed = new Promise<{ id: string; event: unknown }>((resolve) => {
 			const resumed = agent.resumeInterruptedRuns(
-				undefined,
+				(id, event) => resolveTerminal({ id, event }),
 				undefined,
 				undefined,
 				undefined,
@@ -103,5 +108,33 @@ describe("run journal", () => {
 				usageLimitExhausted: true,
 			},
 		});
+		await expect(terminal).resolves.toMatchObject({
+			id: "bks-2",
+			event: {
+				type: "done",
+				usageLimitExhausted: true,
+			},
+		});
+	});
+
+	it("recognizes malformed recovered tool-output envelopes without matching real answers", () => {
+		expect(
+			agent.recoveredResultNeedsContinuation({
+				type: "done",
+				sessionId: "engine-1",
+				result: '[your bash cd /tmp && ffmpeg ...]:\n=== raw ssim output ===',
+				provider: "opencode",
+				model: "opencode/anthropic/claude-opus-5",
+			}),
+		).toBe(true);
+		expect(
+			agent.recoveredResultNeedsContinuation({
+				type: "done",
+				sessionId: "engine-1",
+				result: "The proxy GOP is 60 frames, or two seconds at 30fps.",
+				provider: "opencode",
+				model: "opencode/anthropic/claude-opus-5",
+			}),
+		).toBe(false);
 	});
 });
