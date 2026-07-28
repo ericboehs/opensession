@@ -113,7 +113,7 @@ export interface UnifiedSession {
   prChecks?: { total: number; passed: number; failed: number; pending: number };
   /** What the last automated review concluded on this PR. */
   prOsReview?: OsReviewSummary;
-  mode?: "ask" | "code";
+  mode?: "ask" | "code" | "scratch";
   /** Primary repo this chat works in (registered repo id). */
   repo?: string;
   /** Optional Project (folder) this chat belongs to; null/undefined = standalone. */
@@ -394,7 +394,7 @@ export interface BackstageSessionFile {
   createdAt: string;
   lastActivity: string;
   title?: string;
-  mode?: "ask" | "code";
+  mode?: "ask" | "code" | "scratch";
   /** Plan-first gate (code mode only): the session must post a program-design
    *  doc and get it approved via ask_user before writing code, then implement
    *  in vertical slices with per-slice evidence. See buildPlanFirstNote. */

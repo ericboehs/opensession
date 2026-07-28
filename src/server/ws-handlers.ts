@@ -46,7 +46,7 @@ import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUr
 import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
 import { ownedWorktree } from "./chat-workspace";
 import { resolvePlainWorkspace } from "./workspace-resolve";
-import { createWorktree, createWorktreeForExistingBranch, ensureAskCheckout, getRepo, listWorktrees, repoForPath, resolveUniqueBranch, worktreeHeadBranch, worktreePathFor } from "./worktree";
+import { createWorktree, createWorktreeForExistingBranch, ensureAskCheckout, ensureScratchDir, getRepo, listWorktrees, repoForPath, resolveUniqueBranch, worktreeHeadBranch, worktreePathFor } from "./worktree";
 import { BOOT_ID, allClients, b64decode, b64encode, broadcastToNote, broadcastToSession, joinNote, joinSession, leaveNote, leaveSession, preparingWorkspaces, revalidateLocalClients } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
 import { userMatchesAny } from "./shared/user-mappings";
@@ -1217,8 +1217,14 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					!!forkSource.claudeSessionId;
 				const needsForkHandoff = !!forkSource && !canFork;
 
+				// Scratch: repo-less sessions for feed-item workspaces (Tella videos —
+				// docs/feeds-design.md). Full write + bash in a per-workspace scratch
+				// dir, MCP tools as usual; no repo, branch, or PR flow.
+				const isScratch = forkSource
+					? forkSource.mode === "scratch"
+					: mode === "scratch";
 				const isAsk = forkSource
-					? forkSource.mode !== "code"
+					? !isScratch && forkSource.mode !== "code"
 					: mode === "ask";
 				// Optional model pick from the UI; invalid input falls back to default.
 				// A fork inherits the source's model. No pick = stamp the interactive
@@ -1398,6 +1404,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							wtPath = worktreePathFor(branch, repo.id, { isolated: true });
 							needsWorktree = true;
 						}
+					} else if (isScratch) {
+						// Scratch sessions run in a plain per-workspace scratch dir
+						// (shared by the workspace's chats so downloads persist across
+						// them) — never a repo checkout (docs/feeds-design.md).
+						wtPath = ensureScratchDir(workspace?.id || randomUUIDv7());
 					} else if (isAsk) {
 						// Ask sessions read the repo's pinned ask checkout (default
 						// branch, detached) — never the mutable main checkout, whose
@@ -1454,6 +1465,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						workspace &&
 						!workspace.worktreeDir &&
 						!isAsk &&
+						!isScratch &&
 						(!repo.sharedCheckout || fromPr) &&
 						(chatMode !== "stack" || !workspace.branch)
 					) {
@@ -1468,7 +1480,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						? forkSource.branch || ""
 						: fromPr
 							? branch
-							: isAsk
+							: isAsk || isScratch
 								? ""
 								: repo.sharedCheckout
 									? repo.defaultBranch
@@ -1543,6 +1555,46 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					// mapping) and hand the agent the ticket conversation so the
 					// first message is self-contained. A chat created inside a
 					// ticket workspace (tab-strip "+") inherits the thread too.
+					// A chat created inside a feed-item workspace (Tella video, …)
+					// inherits the workspace's externalRefs — that's what keeps the
+					// Video tab on its chats and joins the sidebar feed row to the
+					// session — and gets the item named in its opening context.
+					const inheritedRefs = workspace?.externalRefs;
+					if (inheritedRefs?.length) {
+						const lines = inheritedRefs
+							.map(
+								(r) =>
+									`- ${r.kind} ${r.id}${r.title ? ` — "${r.title}"` : ""}${r.url ? ` (${r.url})` : ""}`,
+							)
+							.join("\n");
+						openingPrompt += `\n\n${wrapContext(
+							`This chat belongs to a workspace linked to external object(s):\n${lines}${
+								isScratch
+									? "\n\nYour working directory is a scratch space (not a git repo) — download media, run ffmpeg, write files there freely. Use the available MCP tools for the linked service when the task concerns the object itself."
+									: ""
+							}`,
+						)}`;
+						// Tella refs get the video itself in the opening context
+						// (metadata + chapters + transcript excerpt), like Plain
+						// creates get the ticket conversation.
+						for (const r of inheritedRefs.filter((x) => x.kind === "tella")) {
+							try {
+								const { getVideo, formatVideoContext } = await import(
+									"../agents/tella/api"
+								);
+								const video = await getVideo(r.id);
+								if (video)
+									openingPrompt += `\n\n${wrapContext(
+										`Tella video context for ${r.id}:\n\n${formatVideoContext(video)}`,
+									)}`;
+							} catch (e) {
+								console.error(
+									`[create_session] Tella video lookup failed for ${r.id}:`,
+									e,
+								);
+							}
+						}
+					}
 					const plainThreadId = msgPlainThreadId || workspace?.plainThreadId;
 					if (plainThreadId) {
 						try {
@@ -1609,7 +1661,9 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 								claudeSessionId: "",
 								branch: sessionBranch,
 								worktreeDir: wtPath,
-								repo: repoForPath(wtPath).id,
+								// Scratch sessions are repo-less: wtPath is a plain
+								// scratch dir repoForPath would throw on.
+								...(isScratch ? {} : { repo: repoForPath(wtPath).id }),
 								...(workspace
 									? { projectId: workspace.id }
 									: forkSource?.projectId
@@ -1624,12 +1678,18 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 									: {}),
 								createdAt: new Date().toISOString(),
 								title,
-								mode: (isAsk ? "ask" : "code") as "ask" | "code",
+								mode: (isScratch ? "scratch" : isAsk ? "ask" : "code") as
+									| "ask"
+									| "code"
+									| "scratch",
 								...(msg.planFirst === true && !isAsk ? { planFirst: true } : {}),
 								...(createEffort ? { effort: createEffort } : {}),
 								...(createFastMode ? { fastMode: true } : {}),
 								...(createAccountId ? { accountId: createAccountId } : {}),
 								...(plainThreadId ? { plainThreadId } : {}),
+								...(inheritedRefs?.length
+									? { externalRefs: inheritedRefs }
+									: {}),
 								...(createMcpServers && createMcpServers.length ? { mcpServers: createMcpServers } : {}),
 								...(createSandboxProvider
 									? {

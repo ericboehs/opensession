@@ -56,7 +56,7 @@ export interface CreateSessionOpts {
   /** Registered repo id to run in. Defaults to tella-fusion. */
   repo?: string;
   /** "ask" (default) runs read-only on the main checkout; "code" gets a worktree. */
-  mode?: "ask" | "code";
+  mode?: "ask" | "code" | "scratch";
   /** Optional model id; invalid input falls back to the default. */
   model?: string;
   /** Reasoning effort persisted on the session and enforced per run. */

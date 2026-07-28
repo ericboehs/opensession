@@ -58,7 +58,7 @@ export async function handleSessionGitRoutes(
 			{
 				repo:
 					session.repo ||
-					(session.worktreeDir
+					(session.worktreeDir && session.mode !== "scratch"
 						? repoForPath(session.worktreeDir).id
 						: defaultRepo().id),
 				dir: session.worktreeDir,
@@ -121,7 +121,7 @@ export async function handleSessionGitRoutes(
 		};
 		const repoIds = [
 			session.repo ||
-				(session.worktreeDir ? repoForPath(session.worktreeDir).id : defaultRepo().id),
+				(session.worktreeDir && session.mode !== "scratch" ? repoForPath(session.worktreeDir).id : defaultRepo().id),
 			...(session.attachedRepos || []).map((repo) => repo.repo),
 		];
 		if (!body.repo || !repoIds.includes(body.repo))
@@ -159,7 +159,7 @@ export async function handleSessionGitRoutes(
 		// Resolve the worktree dir for the targeted repo (primary or attached).
 		const primaryRepo =
 			session.repo ||
-			(session.worktreeDir
+			(session.worktreeDir && session.mode !== "scratch"
 				? repoForPath(session.worktreeDir).id
 				: defaultRepo().id);
 		let dir: string | null = null;
@@ -217,7 +217,7 @@ export async function handleSessionGitRoutes(
 		const repoId = url.searchParams.get("repo");
 		const primaryRepo =
 			session.repo ||
-			(session.worktreeDir
+			(session.worktreeDir && session.mode !== "scratch"
 				? repoForPath(session.worktreeDir).id
 				: defaultRepo().id);
 		const isPrimary = !repoId || repoId === primaryRepo;
@@ -257,7 +257,7 @@ export async function handleSessionGitRoutes(
 		const repoId = url.searchParams.get("repo");
 		const primaryRepo =
 			session.repo ||
-			(session.worktreeDir
+			(session.worktreeDir && session.mode !== "scratch"
 				? repoForPath(session.worktreeDir).id
 				: defaultRepo().id);
 		const isPrimary = !repoId || repoId === primaryRepo;
@@ -314,7 +314,7 @@ export async function handleSessionGitRoutes(
 		const repoId = typeof body?.repo === "string" ? body.repo : null;
 		const primaryRepo =
 			session.repo ||
-			(session.worktreeDir
+			(session.worktreeDir && session.mode !== "scratch"
 				? repoForPath(session.worktreeDir).id
 				: defaultRepo().id);
 		const isPrimary = !repoId || repoId === primaryRepo;
@@ -352,7 +352,7 @@ export async function handleSessionGitRoutes(
 		const repoId = typeof body?.repo === "string" ? body.repo : null;
 		const primaryRepo =
 			session.repo ||
-			(session.worktreeDir
+			(session.worktreeDir && session.mode !== "scratch"
 				? repoForPath(session.worktreeDir).id
 				: defaultRepo().id);
 		const isPrimary = !repoId || repoId === primaryRepo;

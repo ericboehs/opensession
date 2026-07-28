@@ -36,7 +36,7 @@ export interface SessionRepoContext {
 
 type SessionRepoCarrier = Pick<
 	UnifiedSession,
-	"repo" | "worktreeDir" | "branch" | "attachedRepos"
+	"repo" | "worktreeDir" | "branch" | "attachedRepos" | "mode"
 >;
 
 /**
@@ -56,7 +56,7 @@ export function resolveSessionRepoContext(
 ): SessionRepoContext | null {
 	const primaryRepo =
 		session.repo ||
-		(session.worktreeDir
+		(session.worktreeDir && session.mode !== "scratch"
 			? repoForPath(session.worktreeDir).id
 			: defaultRepo().id);
 	const contexts: SessionRepoContext[] = [
@@ -99,7 +99,7 @@ export function resolveSessionRepoContext(
  * one per workspace (tella-fusion PRs #4529–#4531).
  */
 export function buildBranchNote(session: {
-	mode?: "ask" | "code";
+	mode?: "ask" | "code" | "scratch";
 	branch?: string | null;
 	worktreeDir?: string | null;
 }): string | undefined {
@@ -131,7 +131,7 @@ export function buildReposNote(session: UnifiedSession): string | undefined {
 	if (!attached.length) return branchNote;
 	const primaryRepo =
 		session.repo ||
-		(session.worktreeDir
+		(session.worktreeDir && session.mode !== "scratch"
 			? repoForPath(session.worktreeDir).id
 			: defaultRepo().id);
 	const lines = [
@@ -151,7 +151,7 @@ export function buildReposNote(session: UnifiedSession): string | undefined {
 export function sessionRepoIds(session: UnifiedSession): string[] {
 	const primary =
 		session.repo ||
-		(session.worktreeDir
+		(session.worktreeDir && session.mode !== "scratch"
 			? repoForPath(session.worktreeDir).id
 			: defaultRepo().id);
 	return [primary, ...(session.attachedRepos || []).map((r) => r.repo)];
@@ -165,7 +165,7 @@ export function sessionRepoIds(session: UnifiedSession): string[] {
  * before the code exists — and implementation lands as reviewable slices.
  */
 export function buildPlanFirstNote(session: {
-	mode?: "ask" | "code";
+	mode?: "ask" | "code" | "scratch";
 	planFirst?: boolean;
 }): string | undefined {
 	if (!session.planFirst || session.mode === "ask") return undefined;
@@ -249,7 +249,7 @@ export function resolvePrTarget(
 	const primaryBranch = sessionPrBranch(session);
 	const primaryRepo =
 		session.repo ||
-		(session.worktreeDir
+		(session.worktreeDir && session.mode !== "scratch"
 			? repoForPath(session.worktreeDir).id
 			: defaultRepo().id);
 	// Explicit repo+branch — a linked PR, which may live on a different branch
@@ -492,7 +492,7 @@ export async function linkPr(
 
 	const primaryRepo =
 		session.repo ||
-		(session.worktreeDir ? repoForPath(session.worktreeDir).id : defaultRepo().id);
+		(session.worktreeDir && session.mode !== "scratch" ? repoForPath(session.worktreeDir).id : defaultRepo().id);
 	if (repoId === primaryRepo && branch === session.branch)
 		throw new Error("That's this session's own PR — it's already shown");
 	if (

@@ -52,7 +52,7 @@ export interface TransferSessionSubset {
   createdBy?: string;
   createdAt?: string;
   lastActivity?: string;
-  mode?: "ask" | "code";
+  mode?: "ask" | "code" | "scratch";
   model?: string;
   effort?: string;
   fastMode?: boolean;

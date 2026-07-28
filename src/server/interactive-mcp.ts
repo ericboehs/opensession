@@ -45,7 +45,7 @@ import { createRemoteWorkspaceMcpServer } from "./sandbox/workspace-mcp";
 function sessionRepoId(sessionId: string): string | undefined {
 	const s = findSession(sessionId);
 	if (!s) return undefined;
-	return s.repo || (s.worktreeDir ? repoForPath(s.worktreeDir).id : undefined);
+	return s.repo || (s.worktreeDir && s.mode !== "scratch" ? repoForPath(s.worktreeDir).id : undefined);
 }
 
 /** The papercuts server for a session, or {} when its repo opted out
@@ -120,7 +120,7 @@ export function interactiveMcpServers(
 							return {
 								primaryRepo:
 									s.repo ||
-									(s.worktreeDir
+									(s.worktreeDir && s.mode !== "scratch"
 										? repoForPath(s.worktreeDir).id
 										: defaultRepo().id),
 								branch: s.branch,

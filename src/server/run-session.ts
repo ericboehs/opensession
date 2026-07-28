@@ -87,7 +87,7 @@ import { ensureGeneratedTitle } from "./generated-titles";
 import { gitIdentityFor } from "./shared/user-mappings";
 import { writeFileAtomic, writeJsonAtomic } from "./shared/atomic-write";
 import { startWatching } from "./file-watcher";
-import { ensureAskCheckout, getRepo, isSharedCheckoutDir, repoForPath, reviveWorktree, worktreeHeadBranch } from "./worktree";
+import { ensureAskCheckout, ensureScratchDir, getRepo, isSharedCheckoutDir, repoForPath, reviveWorktree, worktreeHeadBranch } from "./worktree";
 import { createGoalSelfMcpServer } from "../agents/slack/goal-tools";
 import { sendSlackMessage } from "../agents/slack/slack-api";
 import type { RunHostSpec } from "../runner-host/protocol";
@@ -944,6 +944,9 @@ export function foldSessionUsage(
  * refetch the instant the push lands.
  */
 export async function autoPushSessionBranches(session: UnifiedSession): Promise<void> {
+	// Scratch sessions are repo-less (worktreeDir is a plain scratch dir that
+	// repoForPath would throw on) and never have branches to push.
+	if (session.mode === "scratch") return;
 	const targets: Array<{ dir: string; branch: string; repoId: string }> = [];
 	const primaryRepoId =
 		session.repo ||
@@ -1435,10 +1438,16 @@ async function runSessionPromptInner(
 	// 82a296a6 covered the create paths but missed this prompt-path fallback).
 	let cwd =
 		session.worktreeDir ||
-		(session.mode === "ask"
-			? await ensureAskCheckout(session.repo)
-			: defaultRepo().repo);
-	if (
+		(session.mode === "scratch"
+			? ensureScratchDir(session.projectId || session.id)
+			: session.mode === "ask"
+				? await ensureAskCheckout(session.repo)
+				: defaultRepo().repo);
+	if (session.mode === "scratch") {
+		// Scratch dirs are plain directories (no repo to revive) — just make
+		// sure the dir exists after cleanups/moves.
+		if (!existsSync(cwd)) mkdirSync(cwd, { recursive: true });
+	} else if (
 		session.worktreeDir &&
 		!existsSync(session.worktreeDir) &&
 		!hasRemoteWorkspace(session)

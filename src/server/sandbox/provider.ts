@@ -46,7 +46,7 @@ export interface SandboxSessionSpec {
   repo?: string;
   /** Branch for code-mode worktrees. Required unless ask/sharedCheckout/cwd. */
   branch?: string;
-  mode?: "ask" | "code";
+  mode?: "ask" | "code" | "scratch";
   /**
    * Already-resolved workspace dir (an existing session's `worktreeDir`).
    * When set, providers reuse it (reviving a cleaned-up worktree from

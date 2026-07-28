@@ -22,7 +22,7 @@ import {
 import { attachRepo, switchPrimaryRepo, workspaceOwningWorktree } from "../session-repos";
 import { getAllSessions, getTranscriptPath } from "../sessions";
 import { writeJsonAtomic } from "../shared/atomic-write";
-import { configuredIdentity } from "../config";
+import { configuredIdentity, defaultRepo } from "../config";
 import { searchSkills } from "../skills";
 import { handleSlashCommand } from "../slash-commands";
 import { suggestBranchName } from "../suggest-branch";
@@ -64,7 +64,11 @@ export async function handleWorkspaceRoutes(
 			(existsSync(session.worktreeDir) || hasRemoteWorkspace(session))
 		) {
 			repos.push({
-				repo: session.repo || repoForPath(session.worktreeDir).id,
+				repo:
+					session.repo ||
+					(session.mode === "scratch"
+						? defaultRepo().id
+						: repoForPath(session.worktreeDir).id),
 				dir: session.worktreeDir,
 				primary: true,
 			});
@@ -364,8 +368,12 @@ export async function handleWorkspaceRoutes(
 		const bksId = `bks-${randomUUIDv7()}`;
 		let branch = src.branch || "";
 		let worktreeDir = src.worktreeDir || "";
-		let mode: "ask" | "code" = src.mode || "code";
+		let mode: "ask" | "code" | "scratch" = src.mode || "code";
 		let repoId = src.repo;
+		// Scratch siblings stay scratch: same repo-less scratch dir (shared
+		// downloads), no branch/repo — and the repoForPath probes below must
+		// not run on a scratch dir (they'd throw).
+		const srcScratch = src.mode === "scratch";
 		// A shared checkout (main or ask) recorded on the source isn't a real
 		// workspace worktree — legacy ask/review chats point at the main
 		// checkout, and copying it hands the sibling whatever branch happens to
@@ -375,6 +383,7 @@ export async function handleWorkspaceRoutes(
 		// workspace below. Shared-checkout repos (backstage) are exempt — their
 		// code chats live on the main checkout by design.
 		if (
+			!srcScratch &&
 			chatMode === "share" &&
 			isSharedCheckoutDir(worktreeDir) &&
 			!repoForPath(worktreeDir).sharedCheckout
@@ -382,7 +391,11 @@ export async function handleWorkspaceRoutes(
 			branch = "";
 			worktreeDir = "";
 		}
-		if (chatMode === "ask") {
+		if (srcScratch && chatMode !== "ask") {
+			branch = "";
+			mode = "scratch";
+			repoId = undefined;
+		} else if (chatMode === "ask") {
 			branch = "";
 			worktreeDir = "";
 			mode = "ask";
@@ -455,6 +468,11 @@ export async function handleWorkspaceRoutes(
 		const plainThreadId =
 			src.plainThreadId ||
 			(workspaceId ? getWorkspace(workspaceId)?.plainThreadId : undefined);
+		// Feed-item linkage follows the workspace the same way (Video tab +
+		// sidebar feed-row → session join — docs/feeds-design.md).
+		const siblingRefs =
+			src.externalRefs ||
+			(workspaceId ? getWorkspace(workspaceId)?.externalRefs : undefined);
 		const data: BackstageSessionFile = {
 			id: bksId,
 			claudeSessionId: "",
@@ -463,6 +481,7 @@ export async function handleWorkspaceRoutes(
 			...(repoId ? { repo: repoId } : {}),
 			...(workspaceId ? { projectId: workspaceId } : {}),
 			...(plainThreadId ? { plainThreadId } : {}),
+			...(siblingRefs?.length ? { externalRefs: siblingRefs } : {}),
 			createdBy: requestUser(ctx, body.user) || "Anonymous",
 			createdAt: new Date().toISOString(),
 			lastActivity: new Date().toISOString(),

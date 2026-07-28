@@ -38,7 +38,7 @@ export interface ActiveRunRecord {
   prompt?: string; // original prompt — lets a run interrupted before it got an engine session be re-run from scratch (safe: no session id ⇒ no model output ⇒ no side effects yet)
   promptEntryId?: string; // uuid of the prompt's user transcript line — a boot re-run reuses it so the store upserts instead of duplicating the bubble
   cwd: string;
-  mode?: "ask" | "code";
+  mode?: "ask" | "code" | "scratch";
   mcpServers?: string[]; // per-run MCP allowlist, preserved across resume
   user?: string; // per-run user, preserved across resume (gates per-user MCP servers)
   deniedTools?: Record<string, string>; // per-run tool denials, preserved across resume

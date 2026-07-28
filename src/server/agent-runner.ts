@@ -53,7 +53,7 @@ export interface RunAgentOpts {
   /** Engine session id to resume (claude session id or codex thread id). */
   sessionId?: string;
   cwd: string;
-  mode?: "ask" | "code";
+  mode?: "ask" | "code" | "scratch";
   /** Model id; decides the backend. Omitted = default Claude model. */
   model?: string;
   /** OpenCode reasoning variant for this run; unset = the model default. */

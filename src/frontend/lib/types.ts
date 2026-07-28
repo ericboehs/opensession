@@ -277,7 +277,7 @@ export interface UnifiedSession {
 	prChecks?: { total: number; passed: number; failed: number; pending: number };
 	/** What the last automated review concluded on this PR. */
 	prOsReview?: OsReview;
-	mode?: "ask" | "code";
+	mode?: "ask" | "code" | "scratch";
 	/** Primary repo this chat works in (registered repo id). */
 	repo?: string;
 	/** Optional Project (folder) this chat belongs to; null/undefined = standalone. */
@@ -678,7 +678,7 @@ export type WSClientMessage =
 			user: string;
 			/** Local-profile bridge only: create this session on the hosted upstream. */
 			cloud?: boolean;
-			mode?: "ask" | "code";
+			mode?: "ask" | "code" | "scratch";
 			repo?: string;
 			/** Existing workspace (folder) to add this new chat to. */
 			projectId?: string;

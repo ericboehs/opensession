@@ -1486,10 +1486,19 @@ function App() {
 			: [];
 	// The Video view-tab: the web panel of the workspace's (or open chat's)
 	// feed-item ExternalRef — e.g. the Tella video embed (docs/feeds-design.md).
+	// On a chat route routeWorkspace is null, so fall back to the open chat's
+	// workspace record — otherwise the tab vanishes as soon as a chat exists.
+	const videoWorkspace =
+		routeWorkspace ??
+		(currentSession?.projectId
+			? projects.find((p) => p.id === currentSession.projectId) ?? null
+			: null);
 	const videoRef =
-		(routeWorkspace?.externalRefs ?? currentSession?.externalRefs ?? []).find(
-			(r) => refWebPanel(r),
-		) ?? null;
+		(
+			videoWorkspace?.externalRefs ??
+			currentSession?.externalRefs ??
+			[]
+		).find((r) => refWebPanel(r)) ?? null;
 	const videoPanel = videoRef ? refWebPanel(videoRef) : null;
 	const videoViewTabs: ViewTab[] =
 		videoPanel && wsKey && !videoClosed.has(wsKey)

@@ -5,6 +5,7 @@ import type { UnifiedSession } from "./types";
 import { stopPreview } from "./preview";
 import { configuredPaths, configuredRepos, defaultRepo, type Repo } from "./config";
 import { isLocalProfile } from "./profile";
+import { stateDir } from "./rename-compat";
 
 // The Repo type + registry defaults live in config.ts now. Re-exported so existing
 // `import { type Repo } from "./worktree"` call sites keep working.
@@ -185,6 +186,21 @@ export async function listWorktrees(repoId?: string): Promise<WorktreeInfo[]> {
     console.error("Failed to list worktrees:", e);
     return [];
   }
+}
+
+/**
+ * Repo-less scratch directory for "scratch" sessions (feed-item workspaces —
+ * docs/feeds-design.md): media/MCP work like downloading a Tella video and
+ * running ffmpeg, with full write access but no repo, branch, or PR flow.
+ * Keyed by workspace id so a workspace's sibling chats share downloads
+ * (falls back to the session id for workspace-less creates). Never a git
+ * repo — repo-derivation call sites must treat scratch sessions as repoless.
+ */
+export function ensureScratchDir(key: string): string {
+  const safe = key.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80) || "scratch";
+  const dir = `${stateDir("scratch")}/${safe}`;
+  mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 /**

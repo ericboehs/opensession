@@ -1226,6 +1226,8 @@ export function opencodeMcpFromPrebuiltProxies(
  *  wording. */
 export function buildOpencodeInstructions(input: {
   isAsk: boolean;
+  /** Repo-less scratch session (feed-item workspaces — docs/feeds-design.md). */
+  isScratch?: boolean;
   reposNote?: string;
   /** The session's real working directory — set ONLY for shared-pool runs,
    *  where opencode's own environment block reports the pool server's neutral
@@ -1358,6 +1360,17 @@ export function buildOpencodeInstructions(input: {
         `worktree, a subdirectory a tool requires).`
     );
   }
+  if (input.isScratch) {
+    parts.push(
+      `You are ${personaName()} in Scratch mode: your working directory is a plain ` +
+        "scratch space, NOT a git repository or code checkout. There is no repo, branch, " +
+        "or PR flow here — never try to commit, push, or open PRs from this directory. " +
+        "You CAN write files, download media, and run shell tools (ffmpeg, curl, etc.) " +
+        "freely in this directory, and you should lean on the available MCP tools when " +
+        "the task concerns the external object this workspace is linked to (e.g. a Tella " +
+        "video: fetch its details/transcript via the API or MCP rather than guessing)."
+    );
+  }
   if (input.isAsk) {
     parts.push(
       `You are ${personaName()} in Ask mode: answer questions about the current checkout. ` +
@@ -1434,7 +1447,7 @@ export function buildOpencodeInstructions(input: {
     );
   }
   if (input.reposNote) parts.push(input.reposNote);
-  if (!input.isAsk && input.bksSessionId) {
+  if (!input.isAsk && !input.isScratch && input.bksSessionId) {
     const link = `${UI_BASE}/session/${input.bksSessionId}`;
     const requester = input.author?.name || null;
     const login = githubLoginFor(input.user || input.author?.name);
@@ -2642,6 +2655,10 @@ async function* runOpencodeAttempt(
 ): AsyncGenerator<StreamEvent> {
   const { prompt, cwd, mode, mcpServers, confirmTools, journal, user, author } = opts;
   const isAsk = mode === "ask";
+  // Scratch: repo-less sessions (feed-item workspaces — docs/feeds-design.md).
+  // Code-mode permissions (write/edit/bash allowed), but no repo/branch/PR
+  // flow, so the PR-attribution instructions are withheld below.
+  const isScratch = mode === "scratch";
 
   // The Dial / The Orchestrator: `model` arrived here already mapped to the
   // preset's concrete MAIN model (toOpencodeModel), but opts.model still
@@ -3210,6 +3227,7 @@ async function* runOpencodeAttempt(
     // opencode's own system prompt, not replace it.
     const instructions = buildOpencodeInstructions({
       isAsk,
+      isScratch,
       reposNote: opts.reposNote,
       // Per-session servers boot in `cwd`, so their environment block is
       // already right; only the pool needs the correction.

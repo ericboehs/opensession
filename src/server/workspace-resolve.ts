@@ -263,9 +263,10 @@ export function resolveExternalWorkspace(input: {
     return { workspace: stamped, created: false };
   }
 
+  // Deliberately repo-less: feed-item workspaces start their chats in
+  // scratch mode (repo-less scratch dir), not in a repo checkout.
   const workspace = createWorkspace({
     name: (ref.title || "").trim().slice(0, 120) || `${ref.kind} ${ref.id}`,
-    repo: getRepo().id,
     createdBy: input.createdBy,
     key,
     externalRefs: [ref],

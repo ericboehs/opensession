@@ -79,7 +79,7 @@ export interface HostedRunOpts {
   /** Engine session id to resume (claude session id / codex thread id). */
   sessionId?: string;
   cwd: string;
-  mode?: "ask" | "code";
+  mode?: "ask" | "code" | "scratch";
   model?: string;
   images?: ImageInput[];
   forkSession?: boolean;
