@@ -374,25 +374,33 @@ export function buildOpenaiRemoteSeedUpload(
  *  keeping genuine wedges bounded; opencode still retries on expiry. */
 const OPENAI_HEADER_TIMEOUT_MS = 60_000;
 
-/** Real context windows of the ChatGPT-Codex backend, which are MUCH smaller
- *  than the API models' models.dev entries (gpt-5.6: 1.05M context / 922k
- *  input). opencode's autocompact arms at `limit.input - reserved`, so with
- *  models.dev numbers it waited for ~902k tokens while the subscription
- *  backend rejected at its own wall — bks-019f8642 died 2026-07-22 with
- *  "Input exceeds context window of this model" at ~244k total tokens, which
- *  is exactly 372k - 128k max-output (the backend requires input + max output
- *  to fit the window). Numbers below are the codex CLI's baked-in catalog
- *  (`context_window` per slug); `input` is context minus the 128k output
- *  ceiling so autocompact fires ~20k before the real wall. Models not listed
- *  (unknown/new slugs) keep models.dev limits — add them here when they join
- *  the pool.
+/** Real context windows of the ChatGPT-Codex backend, which are smaller than
+ *  the API models' models.dev entries (gpt-5.6: 1.05M context / 922k input).
+ *
+ *  Important: `limit.input` is the actual accepted INPUT ceiling, not
+ *  `context - limit.output`. OpenCode 1.17.15 caps each request's output at
+ *  32k unless explicitly overridden, and the backend dynamically fits output
+ *  into the remaining window. An isolated live probe on 2026-07-28 using the
+ *  same ChatGPT OAuth + OpenCode path accepted 367,394 input tokens and
+ *  rejected a ~372k request with `context_length_exceeded`. The previous
+ *  `input = 372k - 128k` declaration therefore made autocompact fire at ~224k
+ *  for no backend reason. Declaring the measured 372k input ceiling retains
+ *  OpenCode's own 20k reserve, so it compacts around 352k instead.
+ *
+ *  Retired pre-5.6 slugs keep their conservative old limits; dispatch reroutes
+ *  them before use (RETIRED_CODEX_REROUTE in models.ts). Models not listed
+ *  (unknown/new slugs) keep models.dev limits — probe them before adding them.
  */
 const CODEX_BACKEND_LIMITS: Record<string, { context: number; input: number; output: number }> = (() => {
-  const lim = (context: number) => ({ context, input: context - 128_000, output: 128_000 });
+  const lim = (context: number, input = context - 128_000) => ({
+    context,
+    input,
+    output: 128_000,
+  });
   return {
-    "gpt-5.6-sol": lim(372_000),
-    "gpt-5.6-terra": lim(372_000),
-    "gpt-5.6-luna": lim(372_000),
+    "gpt-5.6-sol": lim(372_000, 372_000),
+    "gpt-5.6-terra": lim(372_000, 372_000),
+    "gpt-5.6-luna": lim(372_000, 372_000),
     "gpt-5.5": lim(272_000),
     "gpt-5.4": lim(272_000),
     "gpt-5.4-mini": lim(272_000),

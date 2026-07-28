@@ -107,6 +107,21 @@ describe("bindOpenaiAccount", () => {
     if (!isBinding(bound)) return;
     expect(bound.mechanism).toBe("oauth-subscription");
     const models = (bound.providerOverride!.openai as any).models;
+    // The ChatGPT backend accepts input up to the measured 372k context wall;
+    // OpenCode subtracts its own 20k safety reserve when arming autocompact.
+    for (const model of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+      expect(models[model].limit).toEqual({
+        context: 372_000,
+        input: 372_000,
+        output: 128_000,
+      });
+    }
+    // Retired 5.5 remains conservative (and is rerouted before dispatch).
+    expect(models["gpt-5.5"].limit).toEqual({
+      context: 272_000,
+      input: 144_000,
+      output: 128_000,
+    });
     expect(models["gpt-5.5"].variants["high-fast"]).toEqual({
       reasoningEffort: "high",
       serviceTier: "priority",
