@@ -486,7 +486,7 @@ struct AuditLogSettingsView: View {
         do {
             let result = try await SettingsAPI.audit(
                 date: selectedDate.isEmpty ? nil : selectedDate,
-                search: search.isEmpty ? nil : search,
+                query: search.isEmpty ? nil : search,
                 type: selectedType.isEmpty ? nil : selectedType,
                 includeAll: includeTools,
                 offset: offset,
@@ -561,11 +561,13 @@ private struct CodexDeviceLoginView: View {
                         }
                     }
                 } else {
-                    Section("Account") {
+                    Section {
                         TextField("Account name", text: $name)
                             .autocorrectionDisabled()
                             .noAutocapitalizationCompat()
                         Toggle("Shared pool account", isOn: $shared)
+                    } header: {
+                        Text("Account")
                     } footer: {
                         Text("A device code lets you sign in without opening a shell on the server.")
                     }
