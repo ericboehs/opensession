@@ -80,11 +80,27 @@ bash (ffmpeg, curl, downloads), MCP tools — in a per-WORKSPACE scratch dir
 externalRefs, and Tella refs get metadata + chapters + transcript excerpt
 injected (`formatVideoContext`, agents/tella/api.ts). Every
 `session.repo || repoForPath(worktreeDir)` site is scratch-guarded
-(repoForPath throws on non-repo paths). Known follow-ups: NewSession palette
-has no scratch option yet; opensession-sessions MCP create_session + HTTP
-POST /api/sessions still coerce to ask/code; RepoBar/breadcrumb + sidebar
-band mislabel repo-less sessions under the default repo (cosmetic); scratch
-dirs have no cleanup policy yet (tie to workspace archive later).
+(repoForPath throws on non-repo paths).
+
+Round 2 (dddfa657 + fcf1c1a9, same day): NewSession palette has a
+"Scratch — no repo" option; SessionControl/HTTP/MCP creates support scratch;
+scratch breadcrumb shows the feed tile; sidebar files repo-less feed
+workspaces under their feed kind; deleteWorkspace removes the scratch dir +
+once-per-boot orphan sweep (14d grace). **MCP least privilege**: descriptors
+declare `mcpServers` (tella → ["tella"]); feed-workspace sessions get that
+as their allowlist at every create path, at prompt time (covers pre-existing
+files), and on the opening run — a video chat sees NO external MCP servers
+until a "tella" server exists in mcp-config (unknown names are skipped;
+empty-list can't express "none", run-session normalizes it to "all").
+Context injection likewise fires on the FIRST prompt of prompt-less creates
+(tab-strip "+" siblings) via externalRefsOpeningContext (feeds.ts).
+
+Still open: Tella MCP mount (OAuth 2.1 — needs an interactive browser flow);
+tella-fusion PR #5332 (frame-ancestors carve-out for /video/:id/view+edit;
+once merged+deployed, switch FeedWebPane's refWebPanel to prefer the edit
+page over the embed — note Safari/3p-cookie caveat in the PR); scoped
+sessions run on per-session opencode servers (allowlist ⇒ not
+shared-pool-eligible) — acceptable, same as automations.
 
 ## Contract sketch
 
