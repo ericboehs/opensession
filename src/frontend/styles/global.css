@@ -842,7 +842,7 @@ html.wco .app-body.sidebar-collapsed
 	border: 1px solid var(--border);
 	border-radius: calc(var(--workspace-shell-radius) * var(--rf));
 	corner-shape: var(--cs);
-	box-shadow: 0 1px 3px -1px rgba(0, 0, 0, 0.12);
+	box-shadow: -2px 1px 5px -1px rgba(0, 0, 0, 0.1);
 }
 html[data-platform="mac"] .workspace-shell {
 	--workspace-shell-radius: 12px;
