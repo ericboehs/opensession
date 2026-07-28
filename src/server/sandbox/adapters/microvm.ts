@@ -171,6 +171,34 @@ function driverFor(idx: number): RemoteDriver {
   };
 }
 
+const TRANSIENT_CONTROL_ERROR =
+  /socket connection was closed|connection reset|econnreset|fetch\(\) failed|fetch failed/i;
+
+/**
+ * A restored Firecracker guest can drop its first control connection while
+ * the snapshot-frozen network stack settles after the clock repair. Bootstrap
+ * commands are deliberately idempotent, so retry only this provisioning
+ * driver—not the Sandbox handle used for arbitrary agent execute calls.
+ */
+export function microvmBootstrapDriver(driver: RemoteDriver): RemoteDriver {
+  return {
+    ...driver,
+    async exec(command: string, opts?: RemoteExecOpts) {
+      let result = await driver.exec(command, opts);
+      for (let attempt = 1; attempt < 3; attempt++) {
+        const detail = `${result.stderr}\n${result.stdout}`;
+        if (result.exitCode === 0 || !TRANSIENT_CONTROL_ERROR.test(detail)) {
+          return result;
+        }
+        await Bun.sleep(attempt * 250);
+        await driver.ensureStarted().catch(() => {});
+        result = await driver.exec(command, opts);
+      }
+      return result;
+    },
+  };
+}
+
 async function destroyClone(idx: number, storeDir: string): Promise<void> {
   const result = await run(
     ["sudo", "-n", "bash", `${SCRIPTS}/clone.sh`, "destroy", String(idx), storeDir],
@@ -276,7 +304,10 @@ export class MicrovmProvider implements SandboxProvider {
       // clone.sh repairs the snapshot-frozen clock through the root control
       // port before it returns. Doing it again here can sever an in-flight
       // keep-alive socket when the guest clock jumps.
-      await bootstrapRemoteWorkspaceRuntime(driver, "microvm");
+      await bootstrapRemoteWorkspaceRuntime(
+        microvmBootstrapDriver(driver),
+        "microvm",
+      );
       await setupRemoteWorkspace(
         driver,
         cwd,
