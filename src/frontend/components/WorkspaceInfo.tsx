@@ -994,12 +994,14 @@ function GitStatusRows({
 	sessionId,
 	repo,
 	git,
+	prState,
 	send,
 	onReload,
 }: {
 	sessionId: string;
 	repo?: string;
 	git: GitStatusInfo | null;
+	prState?: string | null;
 	send?: (msg: any) => void;
 	onReload: () => void;
 }) {
@@ -1013,9 +1015,10 @@ function GitStatusRows({
 	const dirty = git?.uncommittedFiles ?? 0;
 
 	// Behind counts fold together — a stale upstream reads "behind remote", a
-	// fresh branch behind its base reads "behind <base>". PR state is omitted
-	// here: it already lives in the status strip at the top of the panel.
-	const behindCount = behind > 0 ? behind : behindBase;
+	// fresh branch behind its base reads "behind <base>". A merged branch is
+	// terminal, so stale checkout drift must not offer an Update action.
+	const behindCount =
+		prState === "MERGED" ? 0 : behind > 0 ? behind : behindBase;
 	const behindWhat = behind > 0 ? "remote" : git?.baseBranch || "main";
 
 	const hasRows = ahead > 0 || behindCount > 0 || dirty > 0;
@@ -1331,8 +1334,7 @@ export function WorkspaceInfo({
 	const showGit = Boolean(
 		git &&
 		(git.ahead > 0 ||
-			git.behind > 0 ||
-			git.behindBase > 0 ||
+			(prState !== "MERGED" && (git.behind > 0 || git.behindBase > 0)) ||
 			git.uncommittedFiles > 0),
 	);
 	const hasBody = Boolean(
@@ -1410,6 +1412,7 @@ export function WorkspaceInfo({
 							sessionId={sessionId}
 							repo={repo}
 							git={git}
+							prState={prState}
 							send={send}
 							onReload={reloadGit}
 						/>
