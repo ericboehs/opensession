@@ -31,7 +31,7 @@
  *    back to a direct cp -al from the template, exactly the old behavior.
  *
  * Config (Settings → Warm previews): `<chats>/warm-templates/config.json`
- *   { "repos": { "tella-fusion": { "enabled": true, "intervalHours": 6 } } }
+ *   { "repos": { "app": { "enabled": true, "intervalHours": 6 } } }
  * State per repo: `<chats>/warm-templates/<repoId>.state.json` (+ the
  * manifest at `<repoId>.manifest`, only rewritten on a SUCCESSFUL refresh so
  * a failed refresh keeps seeding from the last good one).

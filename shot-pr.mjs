@@ -25,7 +25,9 @@ await new Promise((r) => (ws.onopen = r));
 await send("Page.enable");
 await send("Runtime.enable");
 await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: false });
-await send("Page.addScriptToEvaluateOnNewDocument", { source: `localStorage.setItem('backstage-user','Michiel');` });
+await send("Page.addScriptToEvaluateOnNewDocument", {
+  source: `localStorage.setItem('opensession-user',${JSON.stringify(process.env.OPENSESSION_SCREENSHOT_USER || "Local User")});`,
+});
 await send("Page.navigate", { url: `http://127.0.0.1:3850/backstage/session/${id}` });
 await new Promise((r) => setTimeout(r, 9000));
 // Open the workspace panel (click the panel toggle) if not already open.

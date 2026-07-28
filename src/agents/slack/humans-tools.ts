@@ -32,6 +32,7 @@ import {
   isAwsHumanAuthRequest,
 } from "../../server/aws-creds";
 import { resolveTeammate } from "../../server/shared/user-mappings";
+import { configuredIdentity, personaName } from "../../server/config";
 import { parseWhen } from "./parse-when";
 
 export interface HumansToolContext {
@@ -97,7 +98,7 @@ export function createHumansMcpServer(ctx: HumansToolContext) {
       tool(
         "ask_human",
         [
-          "Ask a teammate a question over Slack and fold their answer back into this session — the 'human in the loop' tool. Michael DMs them (as Michael), and when they reply it comes back to you.",
+          `Ask a teammate a question over Slack and fold their answer back into this session — the 'human in the loop' tool. ${personaName()} DMs them as the configured assistant, and when they reply it comes back to you.`,
           "",
           "person: who to ask — a first name ('grant', 'john'), full name, or Slack id.",
           "question: what you need from them. Be specific and self-contained.",
@@ -152,8 +153,12 @@ export function createHumansMcpServer(ctx: HumansToolContext) {
           }
           const person = resolveTeammate(args.person);
           if (!person) {
+            const examples = configuredIdentity().team
+              .slice(0, 4)
+              .map((member) => member.aliases?.[0] || member.name)
+              .join(", ");
             return text(
-              `I don't know who "${args.person}" is — give me a teammate's first name (grant, john, johnny, jaap, kent, louise, thibault, michiel) or their Slack id.`
+              `I don't know who "${args.person}" is — give me a configured teammate name${examples ? ` (for example: ${examples})` : ""} or their Slack id.`
             );
           }
 

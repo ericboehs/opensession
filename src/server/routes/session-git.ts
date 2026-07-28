@@ -14,6 +14,7 @@ import { imageContentType, imageHeaders } from "../image-mime";
 import { hasRemoteWorkspace, workspaceExecFor } from "../sandbox";
 import { findSession } from "../session-cache";
 import { getRepo, repoForPath } from "../worktree";
+import { defaultRepo } from "../config";
 import { $ } from "bun";
 import { existsSync } from "fs";
 import { resolve } from "path";
@@ -59,7 +60,7 @@ export async function handleSessionGitRoutes(
 					session.repo ||
 					(session.worktreeDir
 						? repoForPath(session.worktreeDir).id
-						: "tella-fusion"),
+						: defaultRepo().id),
 				dir: session.worktreeDir,
 				primary: true,
 			},
@@ -120,7 +121,7 @@ export async function handleSessionGitRoutes(
 		};
 		const repoIds = [
 			session.repo ||
-				(session.worktreeDir ? repoForPath(session.worktreeDir).id : "tella-fusion"),
+				(session.worktreeDir ? repoForPath(session.worktreeDir).id : defaultRepo().id),
 			...(session.attachedRepos || []).map((repo) => repo.repo),
 		];
 		if (!body.repo || !repoIds.includes(body.repo))
@@ -160,7 +161,7 @@ export async function handleSessionGitRoutes(
 			session.repo ||
 			(session.worktreeDir
 				? repoForPath(session.worktreeDir).id
-				: "tella-fusion");
+				: defaultRepo().id);
 		let dir: string | null = null;
 		let repoId = primaryRepo;
 		if (!body.repo || body.repo === primaryRepo) {
@@ -218,7 +219,7 @@ export async function handleSessionGitRoutes(
 			session.repo ||
 			(session.worktreeDir
 				? repoForPath(session.worktreeDir).id
-				: "tella-fusion");
+				: defaultRepo().id);
 		const isPrimary = !repoId || repoId === primaryRepo;
 		const dir = isPrimary
 			? session.worktreeDir
@@ -258,7 +259,7 @@ export async function handleSessionGitRoutes(
 			session.repo ||
 			(session.worktreeDir
 				? repoForPath(session.worktreeDir).id
-				: "tella-fusion");
+				: defaultRepo().id);
 		const isPrimary = !repoId || repoId === primaryRepo;
 		const dir = isPrimary
 			? session.worktreeDir
@@ -315,7 +316,7 @@ export async function handleSessionGitRoutes(
 			session.repo ||
 			(session.worktreeDir
 				? repoForPath(session.worktreeDir).id
-				: "tella-fusion");
+				: defaultRepo().id);
 		const isPrimary = !repoId || repoId === primaryRepo;
 		const dir = isPrimary
 			? session.worktreeDir
@@ -353,7 +354,7 @@ export async function handleSessionGitRoutes(
 			session.repo ||
 			(session.worktreeDir
 				? repoForPath(session.worktreeDir).id
-				: "tella-fusion");
+				: defaultRepo().id);
 		const isPrimary = !repoId || repoId === primaryRepo;
 		const dir = isPrimary
 			? session.worktreeDir

@@ -65,13 +65,24 @@ function enableFeature(): void {
   writeFileSync(
     path,
     JSON.stringify({
+      identity: {
+        team: [
+          {
+            name: "Alice Example",
+            github: "alice",
+            slackId: "U_ALICE",
+            email: "alice@example.com",
+            aliases: ["Alice"],
+          },
+        ],
+      },
       integrations: { github: { userPrAuth: true, oauthClientId: "test-client-id" } },
     }),
   );
   process.env.OPENSESSION_CONFIG = path;
 }
 
-function seedToken(login = "happylinks", token = "gho_test123"): void {
+function seedToken(login = "alice", token = "gho_test123"): void {
   writeFileSync(
     process.env.OPENSESSION_GITHUB_AUTH_STORE!,
     JSON.stringify({
@@ -122,10 +133,10 @@ describe("token lookups + runner env", () => {
   test("resolves the session user through the identity table", () => {
     enableFeature();
     seedToken();
-    // Default roster: Michiel ⇒ github happylinks, by picker name / slack id /
-    // linear email alike (same table as commit attribution).
-    for (const ref of ["Michiel", "UT41L6GCC", "michiel@tella.tv", "happylinks"]) {
-      expect(githubUserLoginForRun(ref)).toBe("happylinks");
+    // Configured aliases, Slack ids, email addresses, and GitHub logins all
+    // resolve through the same identity table as commit attribution.
+    for (const ref of ["Alice", "U_ALICE", "alice@example.com", "alice"]) {
+      expect(githubUserLoginForRun(ref)).toBe("alice");
       expect(githubAuthEnv(ref)).toEqual({
         GH_TOKEN: "gho_test123",
         GITHUB_TOKEN: "gho_test123",
@@ -135,38 +146,38 @@ describe("token lookups + runner env", () => {
 
   test("empty when the feature is off, the user is unknown, or not connected", () => {
     seedToken();
-    expect(githubAuthEnv("Michiel")).toEqual({}); // feature off
+    expect(githubAuthEnv("Alice")).toEqual({}); // feature off
     enableFeature();
     expect(githubAuthEnv("Some Randomer")).toEqual({}); // unknown user
     expect(githubAuthEnv(null)).toEqual({});
-    expect(githubAuthEnv("Kent")).toEqual({}); // known, never connected
-    expect(githubUserLoginForRun("Kent")).toBeNull();
+    expect(githubAuthEnv("Bob")).toEqual({}); // unknown, never connected
+    expect(githubUserLoginForRun("Bob")).toBeNull();
   });
 
   test("connectedGithubAccounts never exposes tokens", () => {
     seedToken();
     const accounts = connectedGithubAccounts();
     expect(accounts).toHaveLength(1);
-    expect(accounts[0].login).toBe("happylinks");
+    expect(accounts[0].login).toBe("alice");
     expect((accounts[0] as any).token).toBeUndefined();
   });
 
   test("builds a credential only for the exact connected login", () => {
     enableFeature();
-    seedToken("HappyLinks");
-    expect(githubCredentialForLogin("happylinks")).toEqual({
+    seedToken("Alice");
+    expect(githubCredentialForLogin("alice")).toEqual({
       kind: "user",
-      principal: "user:happylinks",
+      principal: "user:alice",
       env: { GH_TOKEN: "gho_test123", GITHUB_TOKEN: "gho_test123" },
     });
-    expect(githubCredentialForLogin("9ranty")).toBeNull();
+    expect(githubCredentialForLogin("bob")).toBeNull();
   });
 
   test("rejects a device-flow login that differs from the signed-in user", () => {
-    expect(validateGithubTokenLogin("happylinks", "HappyLinks")).toEqual({ ok: true });
-    expect(validateGithubTokenLogin("9ranty", "happylinks")).toEqual({
+    expect(validateGithubTokenLogin("alice", "Alice")).toEqual({ ok: true });
+    expect(validateGithubTokenLogin("bob", "alice")).toEqual({
       ok: false,
-      error: "GitHub authorized @9ranty, but the signed-in user is @happylinks",
+      error: "GitHub authorized @bob, but the signed-in user is @alice",
     });
   });
 
@@ -177,8 +188,10 @@ describe("token lookups + runner env", () => {
 
 describe("web sign-in resolution", () => {
   test("team gate: only configured github logins may sign in", () => {
-    expect(teamMemberForLogin("happylinks")?.name).toBe("Michiel Westerbeek");
-    expect(teamMemberForLogin("HappyLinks")?.name).toBe("Michiel Westerbeek");
+    expect(teamMemberForLogin("alice")).toBeNull();
+    enableFeature();
+    expect(teamMemberForLogin("alice")?.name).toBe("Alice Example");
+    expect(teamMemberForLogin("Alice")?.name).toBe("Alice Example");
     expect(teamMemberForLogin("some-rando")).toBeNull();
   });
 
@@ -190,8 +203,8 @@ describe("web sign-in resolution", () => {
         sessions: [
           {
             token: "tok-abc",
-            login: "happylinks",
-            name: "Michiel Westerbeek",
+            login: "alice",
+            name: "Alice Example",
             createdAt: now,
             lastSeenAt: now,
           },
@@ -201,11 +214,11 @@ describe("web sign-in resolution", () => {
     const byCookie = resolveWebAuth(
       new Request("http://x/", { headers: { cookie: "foo=1; opensession_auth=tok-abc" } }),
     );
-    expect(byCookie).toEqual({ login: "happylinks", name: "Michiel Westerbeek" });
+    expect(byCookie).toEqual({ login: "alice", name: "Alice Example" });
     const byBearer = resolveWebAuth(
       new Request("http://x/", { headers: { authorization: "Bearer tok-abc" } }),
     );
-    expect(byBearer?.login).toBe("happylinks");
+    expect(byBearer?.login).toBe("alice");
     expect(resolveWebAuth(new Request("http://x/"))).toBeNull();
     expect(
       resolveWebAuth(new Request("http://x/", { headers: { cookie: "opensession_auth=wrong" } })),

@@ -35,7 +35,7 @@ struct NewSessionView: View {
     @FocusState private var promptFocused: Bool
 
     /// The universal "+" reopens on whatever repo was used last.
-    @AppStorage("os1.newSession.repo") private var lastRepo = "tella-fusion"
+    @AppStorage("os1.newSession.repo") private var lastRepo = ""
     @AppStorage("os1.composer.defaultModel") private var preferredModel = ""
 
     var body: some View {
@@ -305,7 +305,7 @@ struct NewSessionView: View {
         async let modelsFetch = OS1API.models()
         repos = (try? await reposFetch) ?? []
         if !repos.isEmpty, !repos.contains(where: { $0.id == repo }) {
-            repo = repos[0].id
+            repo = repos.first(where: { $0.isDefault == true })?.id ?? repos[0].id
         }
         if let fetched = try? await modelsFetch {
             catalog = fetched

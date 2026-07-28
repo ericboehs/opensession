@@ -11,7 +11,7 @@ import { copyFileSync, existsSync } from "fs";
 import { runCommand } from "../../server/run-command";
 
 import { markdownToSlack } from "../../server/shared/markdown";
-import { productName } from "../../server/config";
+import { configuredServer, defaultRepo, personaName, productName } from "../../server/config";
 import { SLACK_SYSTEM_PROMPT_APPEND } from "./prompts";
 import {
   sendSlackMessage,
@@ -315,49 +315,17 @@ async function generateBranchName(
 
 async function createWorktree(
   branch: string,
-  userId: string,
-  message: string
+  _userId: string,
+  _message: string
 ): Promise<string> {
-  const worktreeDir = worktreePathFor(branch);
-
   try {
-    // Async: a wt new-slack can run for many seconds (fetch + worktree add +
-    // env seed) and used to block the whole event loop via spawnSync.
-    const cmd = [
-      "/home/ubuntu/bin/wt",
-      "new-slack",
-      branch,
-      `--user=${userId}`,
-      `--message=${(message || "").substring(0, 500)}`,
-    ];
-    // A cold worktree is a 16k-file checkout + full bun install; 120s
-    // killed one mid-install on 2026-07-24 ("exited with code null").
-    let result = await runCommand(cmd, { timeoutMs: 300000 });
-
-    if (result.status !== 0) {
-      // One retry: wt new-slack is resumable — a valid checkout left by a
-      // killed first attempt skips straight to the remaining setup steps,
-      // and a broken one is cleared and recreated.
-      console.warn(
-        `[slack] wt new-slack failed for ${branch} (status ${result.status}) — retrying once`
-      );
-      result = await runCommand(cmd, { timeoutMs: 300000 });
-    }
-
-    if (result.status !== 0) {
-      const stderr =
-        result.stderr?.trim() || result.stdout?.trim() || "unknown error";
-      throw new Error(
-        `wt new-slack exited with code ${result.status}: ${stderr}`
-      );
-    }
+    const worktreeDir = await createRepoWorktree(branch, defaultRepo().id);
     console.log(`[slack] Created worktree: ${branch}`);
+    return worktreeDir;
   } catch (e) {
     console.error(`[slack] Failed to create worktree ${branch}:`, e);
     throw e;
   }
-
-  return worktreeDir;
 }
 
 // ---------------------------------------------------------------------------
@@ -742,7 +710,7 @@ export async function processMessage(
   // Post a status message with the live Backstage session link and a Stop
   // button, so the run can be followed/cancelled even if Slack's assistant DM
   // disables the input field while we're working.
-  const backstageUrl = `https://os.tella.dev/session/slack-${encodeURIComponent(sessionKey)}`;
+  const backstageUrl = `${configuredServer().publicBaseUrl}/session/slack-${encodeURIComponent(sessionKey)}`;
   const backstageButton = {
     type: "button",
     text: { type: "plain_text", text: `:desktop_computer: Open in ${productName()}`, emoji: true },
@@ -976,17 +944,17 @@ export async function processMessage(
     "one-time task at a future time; it posts back to this thread by default and can DM/act via its MCPs), " +
     "and MCP connections (list/add/remove_mcp_server). When a user asks you to remember something, " +
     "set up a recurring job, schedule a reminder or future task, or connect a tool, use these tools rather than just describing how." +
-    "\n\n## GitHub PR actions\nWhen asked to review, auto-fix, simplify, or adversarially review a tella-fusion PR " +
+    `\n\n## GitHub PR actions\nWhen asked to review, auto-fix, simplify, or adversarially review a ${defaultRepo().label} PR ` +
     "(e.g. \"review PR 4296\", \"auto-fix PR 4296\", \"adversarial review PR 4296\"), use the opensession-github MCP tools " +
     "(review_pr / auto_fix_pr / simplify_pr / adversarial_review_pr) — they run the same actions as the PR labels and " +
     "post the results on the PR. Pass the PR number; the tool starts it and reports back, so just relay what it says." +
-    "\n\n## Managing other sessions\nYou can see and steer every other Backstage session via the opensession-sessions MCP tools. " +
+    `\n\n## Managing other sessions\nYou can see and steer every other ${productName()} session via the opensession-sessions MCP tools. ` +
     "Use list_sessions (filter 'waiting' to find sessions blocked on a question, 'active' for what's running) and get_session " +
     "to inspect state and transcripts. For trusted users: answer_session_question unblocks a session paused on a question, " +
     "send_to_session messages/redirects a running or idle session, cancel_session stops a run, and create_session spins up a new " +
     "ask- or code-mode session. When asked things like \"what's still running?\", \"what's waiting on me?\", or \"tell session X to …\", " +
     "use these tools. Combine with the gh CLI (Bash) for deeper PR status (CI checks, review state) beyond the PR link list_sessions already shows." +
-    "\n\n## Human in the loop\nYou can pull a teammate into the loop via the opensession-humans MCP: ask_human DMs them (as you, Michael) and folds their reply back into this session. " +
+    `\n\n## Human in the loop\nYou can pull a teammate into the loop via the opensession-humans MCP: ask_human DMs them (as you, ${personaName()}) and folds their reply back into this session. ` +
     "Use mode 'block' when you can't continue without the answer (your turn pauses until they reply — e.g. \"ask Grant for the copy\"), or 'async' (default) to keep working while you wait. " +
     "For async, deliver_when controls timing: 'now', 'when_done' (when this session next goes idle), 'on_pr' (once a PR is open — best for \"ask John for a review when done\"), or 'at_time' with a natural-language at_time. " +
     "Pass `options` for one-tap button choices, and `context` to attach background (the copy slot, a diff, a screen). Use list_pending_asks / cancel_ask to manage outstanding ones. " +
@@ -1363,7 +1331,7 @@ I'm now in a worktree (branch: ${branch}) for this task. Please analyze what nee
 
 const UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-  "https://os.tella.dev";
+  configuredServer().publicBaseUrl;
 
 /**
  * Slack card for a triggered PR action. While running: Open-in-Backstage + Stop.
@@ -1701,10 +1669,8 @@ Please help with this request. Start by exploring the codebase to understand wha
     return;
   }
 
-  // Spin up a worktree. The default repo keeps the historical `wt new-slack`
-  // flow (env seed + branch channel); other repos use the generic worktree
-  // helper (backstage resolves to its live shared checkout, matching how
-  // interactive OpenSession sessions work there).
+  // Spin up a worktree. Every registered repo uses the generic worktree
+  // helper; shared-checkout repos resolve to their live checkout.
   let worktreeDir: string | undefined;
   let branch: string | undefined;
   let prompt: string;

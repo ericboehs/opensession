@@ -25,16 +25,11 @@ import {
 
 // Any worktree session gets the control; whether a repo can actually boot a
 // preview comes back on the status itself (`bootable` — repo-committed
-// .opensession/start.sh → configured previewCommand → tella-local fallback).
+// .opensession/start.sh → configured previewCommand).
 // Repos with no mechanism show a disabled button explaining what to add.
 function isPreviewable(session: UnifiedSession): boolean {
   return !!session.worktreeDir;
 }
-
-// Where the boot-script contract is documented (shown when a repo has no
-// preview boot mechanism yet).
-const PREVIEW_DOCS_URL =
-  "https://github.com/tellahq/backstage/blob/master/deploy/sandbox/README.md#previews-in-sandboxes-phase-4a";
 
 const headerIconBase =
   "inline-flex cursor-pointer items-center justify-center rounded-[10px] border border-transparent bg-transparent px-[5px] py-[3px] text-faint no-underline";
@@ -347,9 +342,7 @@ export function PreviewButton({
         ) : bootable ? (
           "Runs the repo's preview boot script in this worktree (first build ~1 min)."
         ) : (
-          <a href={PREVIEW_DOCS_URL} target="_blank" rel="noopener">
-            Boot-script contract docs
-          </a>
+          "Add .opensession/start.sh or configure previewCommand."
         )}
       </div>
     </div>

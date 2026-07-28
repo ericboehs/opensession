@@ -1,12 +1,13 @@
 /**
- * Fail-CLOSED classifier: does an internal @michael note explicitly approve
- * executing a refund/cancellation that Michael previously PROPOSED in the thread?
+ * Fail-CLOSED classifier: does an internal agent mention explicitly approve
+ * executing a refund/cancellation that the agent previously PROPOSED?
  *
  * This is the gate in front of real customer money, so it is the inverse of the
  * router: any error, ambiguity, or unparseable output returns {approve:false}.
  * A no-tools Haiku call — it only reads, never acts.
  */
 import { opencodeOneShot } from "../../server/opencode-oneshot";
+import { personaCompany, personaName } from "../../server/config";
 
 const MODEL = process.env.PLAIN_REFUND_INTENT_MODEL || "claude-haiku-4-5";
 
@@ -15,10 +16,10 @@ export interface RefundApproval {
   reason: string;
 }
 
-const SYSTEM_PROMPT = `You guard real customer money for Tella's support tool. Decide ONE thing: is the support agent's note an EXPLICIT approval to EXECUTE a refund or cancellation that Michael already PROPOSED earlier in this same thread?
+const SYSTEM_PROMPT = `You guard real customer money for ${personaCompany()}'s support tool. Decide ONE thing: is the support agent's note an EXPLICIT approval to EXECUTE a refund or cancellation that ${personaName()} already PROPOSED earlier in this same thread?
 
 Answer approve=true ONLY if BOTH are clearly true:
-1. The thread context contains a clear Michael "Proposed refund/cancellation (needs approval)" block (a specific subscription/charge and amount).
+1. The thread context contains a clear ${personaName()} "Proposed refund/cancellation (needs approval)" block (a specific subscription/charge and amount).
 2. The agent's note unambiguously approves executing THAT action — e.g. "go ahead", "do it", "yes refund them", "approved, proceed", "send the refund".
 
 Answer approve=false for everything else: no proposal present, a decline ("no", "don't", "hold off"), a question, a request to change the amount, a draft-reply confirmation, or anything ambiguous. When in any doubt, answer false — a wrong "true" moves money that shouldn't move.
@@ -34,7 +35,7 @@ export async function classifyRefundApproval(
   try {
     const resultText = await opencodeOneShot(
       `Agent's note (the approval to evaluate):\n${request.slice(0, 2000)}\n\n` +
-        `Thread context (look for a Michael refund/cancellation proposal):\n${threadContext.slice(0, 12000)}`,
+        `Thread context (look for a ${personaName()} refund/cancellation proposal):\n${threadContext.slice(0, 12000)}`,
       { system: SYSTEM_PROMPT, model: MODEL, label: "refund-intent" },
     );
     if (!resultText) return deny;

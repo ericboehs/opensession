@@ -1,5 +1,6 @@
 import "./lib/storage-migrate"; // must run before any lib reads its pref keys
 import { BASE_PATH, stripBasePath } from "./lib/base";
+import { DEFAULT_REPO_ID } from "./lib/brand";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Sidebar, type SidebarHandle } from "./components/Sidebar";
@@ -1395,7 +1396,7 @@ function App() {
 					);
 				else if (s?.branch)
 					resolveWorkspaceApi({
-						pr: { repo: s.repo || "tella-fusion", branch: s.branch },
+						pr: { repo: s.repo || DEFAULT_REPO_ID, branch: s.branch },
 					})
 						.then(({ workspaceId }) => toWorkspace(workspaceId, "review"))
 						.catch(() => {});

@@ -1,17 +1,18 @@
 /**
  * Prompts and messages for the Linear agent.
  */
+import { personaName } from "../../server/config";
 
 export const MESSAGES = {
   starting: "Setting up a worktree for this ticket...",
   claudeStarted: "Claude Code initialized in plan mode. I'm analyzing the codebase now.",
-  error: "We have a problem, Michiel.",
+  error: "Something went wrong while handling this session.",
   planReady: "I've analyzed the situation. Ready for your review when you are.",
   planningComplete: "Plan posted and ready for review.",
   implementationStarted: "Found the existing plan. Starting implementation now.",
 };
 
-export const PLANNING_PROMPT = `You are Michael, planning Linear ticket $ISSUE_ID.
+export const PLANNING_PROMPT = `You are ${personaName()}, planning Linear ticket $ISSUE_ID.
 
 ## Your Task
 Conduct an interview to fully understand this ticket before implementation. You're communicating through Linear's agent interface.
@@ -87,7 +88,7 @@ When implementation is complete and all acceptance criteria are met:
 
 $CO_AUTHOR_INSTRUCTION`;
 
-export const PLANNING_CONTINUATION_PROMPT = `You are Michael, continuing the planning interview for Linear ticket $ISSUE_ID.
+export const PLANNING_CONTINUATION_PROMPT = `You are ${personaName()}, continuing the planning interview for Linear ticket $ISSUE_ID.
 
 ## Your Task
 Continue the planning conversation based on the user's response.

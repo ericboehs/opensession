@@ -7,12 +7,12 @@
  *                       memory writes to: a fact taught in a public channel is
  *                       known in every session, and vice versa.
  *   - user-<slackId> -> the SAME store as that person's Slack DM memory
- *                       (resolved through the identity table, so "michiel" /
- *                       "michael@tella.com" / UT41L6GCC all land on one store).
+ *                       (resolved through the identity table, so aliases,
+ *                       emails, and Slack ids all land on one store).
  *                       Users who don't resolve to a teammate get an isolated
  *                       `user-<normalized>` store instead.
- *   - repo-<id>      -> new: per registered repo (PROJECTS ids, e.g.
- *                       repo-tella-fusion). Operational facts about a codebase
+ *   - repo-<id>      -> new: per registered repo (PROJECTS ids). Operational
+ *                       facts about a codebase
  *                       that don't belong in checked-in docs: gotchas, env
  *                       quirks, "don't touch X until Y ships".
  *
@@ -33,16 +33,17 @@ import {
   type MemoryEntry,
 } from "../agents/slack/memory";
 import { resolveTeammate, SLACK_ID_TO_NAME } from "./shared/user-mappings";
+import { personaName } from "./config";
 
 // "channel" never appears in a session's scopes — it exists so the Settings
 // Memory page can list/maintain Slack channel stores alongside the rest.
 export type MemoryScopeKind = "repo" | "user" | "team" | "channel";
 
 export interface MemoryScope {
-  /** Store file key under MEMORY_DIR, e.g. "repo-tella-fusion", "workspace". */
+  /** Store file key under MEMORY_DIR, e.g. "repo-app", "workspace". */
   key: string;
   kind: MemoryScopeKind;
-  /** Human label for prompts/tool output, e.g. "tella-fusion", "Michiel". */
+  /** Human label for prompts/tool output, e.g. "app", "Alice". */
   label: string;
 }
 
@@ -221,7 +222,7 @@ export async function renderSessionMemoryNote(
       "",
       "Manage memory with the opensession-memory tools: `store_memory` saves a fact " +
         "(scope `repo` = this session's repo, `user` = whoever is prompting, `team` = " +
-        "shared workspace-wide, including Michael in Slack), `forget_memory` removes one by id, " +
+        `shared workspace-wide, including ${personaName()} in Slack), \`forget_memory\` removes one by id, ` +
         "`list_memory` shows everything. Store only durable, non-obvious facts worth every " +
         "future session knowing (operational gotchas, decisions, preferences) — never " +
         "conversation state, and never anything already in the repo's docs. When the user " +

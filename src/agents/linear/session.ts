@@ -4,12 +4,18 @@
 import { envAlias } from "../../server/rename-compat";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { runAgent, cancelAgentRun } from "../../server/agent-runner";
-import { productName } from "../../server/config";
+import {
+  configuredServer,
+  defaultRepo,
+  personaName,
+  productName,
+} from "../../server/config";
 import { getDefaultModel, toOpencodeModel } from "../../server/models";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
-import { worktreePathFor } from "../../server/worktree";
-import { runCommand } from "../../server/run-command";
-import { spawn } from "child_process";
+import {
+  createWorktree as createRepoWorktree,
+  removeWorktree,
+} from "../../server/worktree";
 import { unlinkSync } from "fs";
 import { gitIdentityFor, gitIdentityEnv } from "../../server/shared/user-mappings";
 import { createAgentActivity } from "./api";
@@ -71,7 +77,7 @@ export function formatConversationHistory(
 ): string {
   if (conversation.length === 0) return "";
   return conversation
-    .map((msg) => `**${msg.role === "michael" ? "Michael" : "User"}:** ${msg.content}`)
+    .map((msg) => `**${msg.role === "michael" ? personaName() : "User"}:** ${msg.content}`)
     .join("\n\n");
 }
 
@@ -122,31 +128,12 @@ export function generateBranchName(title: string, issueIdentifier?: string): str
 
 export async function createWorktree(
   branch: string,
-  ticketId: string,
-  title: string,
-  description: string,
-  url: string
+  _ticketId: string,
+  _title: string,
+  _description: string,
+  _url: string
 ): Promise<string> {
-  const worktreeDir = worktreePathFor(branch);
-
-  // Async: a wt new-linear can run for many seconds (fetch + worktree add +
-  // env seed) and used to block the whole event loop via spawnSync.
-  const result = await runCommand(
-    [
-      "/home/ubuntu/bin/wt",
-      "new-linear",
-      branch,
-      `--ticket-id=${ticketId}`,
-      `--title=${title}`,
-      `--description=${description}`,
-      `--url=${url}`,
-    ],
-    { inheritStdio: true, timeoutMs: 120000 }
-  );
-
-  if (result.status !== 0) {
-    throw new Error(`wt new-linear exited with code ${result.status}`);
-  }
+  const worktreeDir = await createRepoWorktree(branch, defaultRepo().id);
   console.log(`[linear] Created worktree: ${branch}`);
   return worktreeDir;
 }
@@ -243,19 +230,19 @@ export function deleteSessionFile(branch: string): void {
 }
 
 export function deleteWorktree(branch: string): void {
-  spawn("/home/ubuntu/bin/wt", ["delete", branch], { stdio: "inherit" });
+  void removeWorktree(branch, defaultRepo().id);
   console.log(`[linear] Deleted worktree: ${branch}`);
 }
 
 // --- Action activity streaming ---
 
-/** Base URL of the Michael web UI, linked from Linear sessions. */
-export const MICHAEL_UI_BASE =
+/** Base URL of the OpenSession web UI, linked from Linear sessions. */
+export const OPENSESSION_UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-  "https://os.tella.dev";
+  configuredServer().publicBaseUrl;
 
-export function michaelSessionUrl(branch: string): string {
-  return `${MICHAEL_UI_BASE}/session/${encodeURIComponent(`linear-${branch}`)}`;
+export function opensessionSessionUrl(branch: string): string {
+  return `${OPENSESSION_UI_BASE}/session/${encodeURIComponent(`linear-${branch}`)}`;
 }
 
 /** Compact action row for a tool call: { action: "Read", parameter: "src/foo.ts" }. */

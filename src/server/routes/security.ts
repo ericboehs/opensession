@@ -63,13 +63,12 @@ export async function handleSecurityRoutes(
 				? body.recurrence
 				: null;
 
-		// Recurring scans become automations (single source of scheduling
-		// truth — they show up on the Security page's Recurring list and in
-		// Automations). Code-mode automations run tella-fusion worktrees only.
+		// Recurring scans become repo-scoped automations (single source of
+		// scheduling truth).
 		if (recurrence) {
-			if (repos.length !== 1 || repos[0] !== "tella-fusion")
+			if (repos.length !== 1)
 				return Response.json(
-					{ error: "Recurring scans support a single repo (tella-fusion) for now" },
+					{ error: "Recurring scans support one repository at a time" },
 					{ status: 400 },
 				);
 			const result = createAutomation({
@@ -77,6 +76,7 @@ export async function handleSecurityRoutes(
 				prompt: buildScanPrompt(getRepo(repos[0]), profile, instructions),
 				schedule: recurrence === "daily" ? "0 13 * * *" : "0 8 * * 0",
 				mode: "code",
+				repo: repos[0],
 				createdBy,
 				mcpServers: [],
 			});
@@ -85,13 +85,12 @@ export async function handleSecurityRoutes(
 			return Response.json({ automation: result });
 		}
 
-		// Interactive: one collaborative session that tailors the threat
-		// model with the user before scanning. Registry sessions run
-		// tella-fusion worktrees, so single-repo tella-fusion only.
+		// Interactive: one repo-scoped collaborative session that tailors the
+		// threat model with the user before scanning.
 		if (body.interactive) {
-			if (repos.length !== 1 || repos[0] !== "tella-fusion")
+			if (repos.length !== 1)
 				return Response.json(
-					{ error: "Interactive scans support a single repo (tella-fusion) for now" },
+					{ error: "Interactive scans support one repository at a time" },
 					{ status: 400 },
 				);
 			const branch = `deepsec-interactive-${new Date()
@@ -102,6 +101,7 @@ export async function handleSecurityRoutes(
 				prompt: buildInteractivePrompt(getRepo(repos[0]), profile, instructions),
 				branch,
 				mode: "code",
+				repo: repos[0],
 				user: createdBy,
 			});
 			const scan = createScanRecord({

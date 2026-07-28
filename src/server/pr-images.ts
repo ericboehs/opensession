@@ -38,6 +38,7 @@ import { existsSync, mkdirSync, copyFileSync, statSync } from "fs";
 import { basename } from "path";
 import { randomBytes } from "crypto";
 import { UPLOADS_DIR } from "./uploads";
+import { configuredIntegration, configuredServer } from "./config";
 
 const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 const CONTENT_TYPES: Record<string, string> = {
@@ -52,12 +53,16 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /** Public origin the webhook server is reachable on (Caddy vhost). */
 const PUBLIC_BASE =
-  process.env.OPENSESSION_PR_IMAGES_BASE || "https://michael.tella.dev";
+  process.env.OPENSESSION_PR_IMAGES_BASE ||
+  (typeof configuredIntegration("media").publicBaseUrl === "string"
+    ? configuredIntegration("media").publicBaseUrl as string
+    : configuredServer().publicBaseUrl);
 
 const PR_IMAGES_DIR = `${UPLOADS_DIR}/pr-images`;
+const HOME = process.env.HOME || "";
 
 export interface PrImageInput {
-  /** Absolute local path to the image (under /tmp or /home/ubuntu). */
+  /** Absolute local path to the image (under /tmp or this process's home). */
   path: string;
   /** Alt/caption text for the rendered image. */
   alt?: string;
@@ -81,7 +86,7 @@ function readablePath(p: string): boolean {
   return (
     p.startsWith("/") &&
     !p.includes("..") &&
-    (p.startsWith("/tmp/") || p.startsWith("/home/ubuntu/"))
+    (p.startsWith("/tmp/") || (!!HOME && p.startsWith(`${HOME}/`)))
   );
 }
 
@@ -106,7 +111,7 @@ export function uploadPrImages(images: PrImageInput[]): UploadedPrImage[] {
   for (const img of images) {
     const p = (img.path || "").trim();
     if (!readablePath(p))
-      throw new Error(`image path must be absolute under /tmp or /home/ubuntu: ${p}`);
+      throw new Error(`image path must be absolute under /tmp or ${HOME || "the service home"}: ${p}`);
     if (!IMAGE_EXTS.has(ext(p)))
       throw new Error(`image must be one of ${[...IMAGE_EXTS].join(" ")}: ${p}`);
     if (!existsSync(p)) throw new Error(`image file not found: ${p}`);

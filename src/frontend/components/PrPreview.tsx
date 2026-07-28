@@ -18,6 +18,7 @@ import {
 import { PrSessionsList, prRelatedSessions } from "./PrSessions";
 import { IconX } from "./icons";
 import { pollWhileVisible, PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
+import { AGENT_NAME } from "../lib/brand";
 import {
 	CheckRow,
 	checkClass,
@@ -32,7 +33,7 @@ import { renderMarkdown } from "../lib/markdown";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 
 interface Props {
-	/** Repo id (e.g. "tella-fusion") + the PR's head branch — the preview's key. */
+	/** Registered repo id + the PR's head branch — the preview's key. */
 	repo: string;
 	branch: string;
 	connected: boolean;
@@ -259,7 +260,7 @@ export function PrPreview({
 			if (!startingRef.current) return;
 			startingRef.current = false;
 			setStarting(false);
-			setStartError("Michael didn't respond. Check your connection and try again.");
+			setStartError(`${AGENT_NAME} didn't respond. Check your connection and try again.`);
 		}, 15_000);
 		send({
 			type: "create_session",

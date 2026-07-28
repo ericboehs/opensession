@@ -4,7 +4,7 @@ import Security
 /// Minimal keychain wrapper for the auth token. Generic-password items,
 /// scoped to this app, no sharing.
 enum Keychain {
-    private static let service = "dev.tella.os1"
+    private static let service = Bundle.main.bundleIdentifier ?? "dev.opensession.os1"
 
     /// On macOS, generic-password items must opt into the data-protection
     /// keychain — the legacy file-based keychain rejects kSecAttrAccessible.

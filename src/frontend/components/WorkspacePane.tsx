@@ -94,7 +94,7 @@ export function WorkspacePane({
 	// the newest session that carries it (session PR APIs) or the repo+branch
 	// preview APIs when none does — the PrQueuePreview pattern, workspace-scoped.
 	const reviewTarget = workspace.branch
-		? { repo: workspace.repo || "tella-fusion", branch: workspace.branch }
+		? { repo: workspace.repo || "repository", branch: workspace.branch }
 		: null;
 	const reviewSession = useMemo(() => {
 		if (!reviewTarget) return null;
@@ -102,7 +102,7 @@ export function WorkspacePane({
 			[...sessions]
 				.filter(
 					(s) =>
-						(s.repo || "tella-fusion") === reviewTarget.repo &&
+						(s.repo || "repository") === reviewTarget.repo &&
 						s.branch === reviewTarget.branch,
 				)
 				.sort((a, b) =>

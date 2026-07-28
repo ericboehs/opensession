@@ -18,14 +18,37 @@
  *   `backstage-user`, `/backstage/` routes, `bks-` prefixes) stay literal.
  */
 
-export const PRODUCT_NAME = "OS¹";
+type InstanceBrand = {
+	productName?: string;
+	productMark?: string;
+	personaName?: string;
+	publicBaseUrl?: string;
+	githubBotLogins?: string[];
+	defaultRepoId?: string;
+};
+
+const INSTANCE: InstanceBrand =
+	typeof window === "undefined"
+		? {}
+		: ((window as typeof window & {
+				__OPENSESSION_INSTANCE__?: InstanceBrand;
+			}).__OPENSESSION_INSTANCE__ || {});
+
+export const PRODUCT_NAME = INSTANCE.productName || "OpenSession";
 
 /** Short brand monogram for visual brand-mark contexts (logo chip, favicon,
  *  loading screen) — never in code identifiers, package names, or CLI/env. */
-export const PRODUCT_MARK = "OS";
+export const PRODUCT_MARK = INSTANCE.productMark || "OS";
 
 /** The agent's display name (server: personaName(), config persona.name). */
-export const AGENT_NAME = "Michael";
+export const AGENT_NAME = INSTANCE.personaName || "Assistant";
+export const PUBLIC_BASE_URL =
+	INSTANCE.publicBaseUrl ||
+	(typeof location === "undefined" ? "http://127.0.0.1:3850" : location.origin);
+export const GITHUB_BOT_LOGINS = new Set(
+	(INSTANCE.githubBotLogins || []).map((login) => login.toLowerCase()),
+);
+export const DEFAULT_REPO_ID = INSTANCE.defaultRepoId || "opensession";
 
 /** Default document.title when no view-specific title applies. */
 export const DEFAULT_DOC_TITLE = PRODUCT_NAME;

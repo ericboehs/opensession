@@ -2,6 +2,7 @@
  * Linear agent webhook handlers for AgentSession and Issue events.
  */
 import { linearEmailToGithubUsername } from "../../server/shared/user-mappings";
+import { personaName } from "../../server/config";
 import { worktreePathFor } from "../../server/worktree";
 import {
   createAgentActivity,
@@ -33,7 +34,7 @@ import {
   formatConversationHistory,
   generateBranchName,
   loadSessionInfo,
-  michaelSessionUrl,
+  opensessionSessionUrl,
   runAgentHeadless,
   saveSessionInfo,
   type ActiveSession,
@@ -282,7 +283,7 @@ export async function handleAgentSession(
         getValidToken(organizationId, tokens).then((t) => {
           if (t) {
             updateAgentSession(t, agentSession.id, {
-              addedExternalUrls: [{ url: michaelSessionUrl(branch), label: "Open in Michael" }],
+              addedExternalUrls: [{ url: opensessionSessionUrl(branch), label: `Open in ${personaName()}` }],
             }).catch(() => {});
           }
         }).catch(() => {});
@@ -642,7 +643,7 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
 
       // Link the Linear session to the Michael web UI session viewer
       updateAgentSession(accessToken, agentSession.id, {
-        addedExternalUrls: [{ url: michaelSessionUrl(branch), label: "Open in Michael" }],
+        addedExternalUrls: [{ url: opensessionSessionUrl(branch), label: `Open in ${personaName()}` }],
       }).catch(() => {});
 
       const greeting = GREETING_PROMPT

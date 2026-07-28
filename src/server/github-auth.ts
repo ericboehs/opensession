@@ -25,9 +25,8 @@
  * through the SAME identity table as commit attribution (identity.team in
  * config.json → user-mappings.ts), so the mapping is config, not code.
  *
- * Since 2026-07-26 the client id belongs to a GitHub App installed only on
- * tellahq (not an OAuth app), which is what scopes every user token to the
- * org: a user-to-server token is limited to the intersection of the user's
+ * With a GitHub App installed only on the configured organization, each user
+ * token is limited to the intersection of the user's
  * access and the app's installation, so it structurally cannot write to
  * public/third-party repos — the enforcement the gh-guard shims used to
  * approximate. App tokens expire (~8h) and come with a rotating refresh
@@ -39,10 +38,9 @@
 
 import { chmodSync, readFileSync } from "fs";
 import { audit } from "./audit";
-import { getConfig } from "./config";
+import { configuredIdentity, getConfig } from "./config";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { fetchWithTimeout } from "./shared/fetch-with-timeout";
-import { githubLoginFor } from "./shared/user-mappings";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 
@@ -545,7 +543,21 @@ export function removeGithubAccount(login: string): boolean {
  */
 export function githubUserLoginForRun(user?: string | null): string | null {
   if (!githubUserAuthActive()) return null;
-  const login = githubLoginFor(user);
+  const key = user?.trim().replace(/\s*\([^)]*\)\s*$/, "").replace(/^@/, "").toLowerCase();
+  if (!key) return null;
+  const member = configuredIdentity().team.find((candidate) => {
+    const aliases = candidate.aliases?.map((alias) => alias.toLowerCase()) ?? [];
+    return (
+      candidate.github?.toLowerCase() === key ||
+      candidate.slackId?.toLowerCase() === key ||
+      candidate.email?.toLowerCase() === key ||
+      candidate.linearEmails?.some((email) => email.toLowerCase() === key) ||
+      candidate.name.toLowerCase() === key ||
+      candidate.name.split(" ")[0]?.toLowerCase() === key ||
+      aliases.includes(key)
+    );
+  });
+  const login = member?.github ?? null;
   if (!login) return null;
   const account = readStore().users[login.toLowerCase()];
   return account && tokenUsable(account) ? login : null;

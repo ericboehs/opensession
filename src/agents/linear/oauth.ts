@@ -3,10 +3,22 @@
  */
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
+import {
+  configuredIntegration,
+  configuredServer,
+  personaName,
+} from "../../server/config";
 
 const LINEAR_CLIENT_ID = process.env.LINEAR_CLIENT_ID || "";
 const LINEAR_CLIENT_SECRET = process.env.LINEAR_CLIENT_SECRET || "";
 const TOKENS_FILE = `${process.env.HOME}/.linear-agent-tokens.json`;
+
+function redirectUri(): string {
+  const configured = configuredIntegration("linear").oauthRedirectUrl;
+  return typeof configured === "string" && configured.trim()
+    ? configured.trim()
+    : `${configuredServer().publicBaseUrl.replace(/\/+$/, "")}/oauth/callback`;
+}
 
 export interface LinearTokens {
   [orgId: string]: {
@@ -89,7 +101,7 @@ export async function getValidToken(orgId: string, tokens: LinearTokens): Promis
 export function handleAuthorize(): Response {
   const params = new URLSearchParams({
     client_id: LINEAR_CLIENT_ID,
-    redirect_uri: `https://michael.tella.dev/oauth/callback`,
+    redirect_uri: redirectUri(),
     response_type: "code",
     scope: "app:assignable read write",
     actor: "app",
@@ -110,7 +122,7 @@ export async function handleCallback(url: URL, tokens: LinearTokens): Promise<Re
       client_id: LINEAR_CLIENT_ID,
       client_secret: LINEAR_CLIENT_SECRET,
       code,
-      redirect_uri: `https://michael.tella.dev/oauth/callback`,
+      redirect_uri: redirectUri(),
       grant_type: "authorization_code",
     }),
   });
@@ -137,7 +149,7 @@ export async function handleCallback(url: URL, tokens: LinearTokens): Promise<Re
       };
       await saveTokens(tokens);
       return new Response(
-        `<html><body><h1>Michael authorized for ${orgName}!</h1><p>I'm ready to receive assignments, Michiel.</p></body></html>`,
+        `<html><body><h1>${personaName()} authorized for ${orgName}!</h1><p>I'm ready to receive assignments.</p></body></html>`,
         { headers: { "Content-Type": "text/html" } }
       );
     }

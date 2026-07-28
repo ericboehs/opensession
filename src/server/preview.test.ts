@@ -3,12 +3,12 @@ import { resolvePreviewBoot } from "./preview";
 
 // The resolver is the ONE bring-up chain shared by host and sandbox previews:
 // repo-committed .opensession/start.sh (.backstage/ pre-rename fallback) →
-// configured previewCommand → tella-local fallback (tella-fusion only).
+// configured previewCommand.
 // `exists` abstracts host-fs vs in-container checks, so these tests drive it
 // with plain sets of paths.
 
-const WT = "/home/ubuntu/worktrees/tella-fusion-some-branch";
-const ENSURE_UP = "/home/ubuntu/.claude/skills/tella-local/ensure-up.sh";
+const WT = "/srv/worktrees/widget-some-branch";
+const PREVIEW_COMMAND = "/srv/opensession/bin/start-widget-preview";
 
 function existsIn(paths: string[]) {
   return (p: string) => paths.includes(p);
@@ -18,8 +18,8 @@ describe("resolvePreviewBoot", () => {
   test("repo-committed .opensession/start.sh wins over previewCommand", async () => {
     const boot = await resolvePreviewBoot(
       WT,
-      { id: "tella-fusion", previewCommand: ENSURE_UP },
-      existsIn([`${WT}/.opensession/start.sh`, ENSURE_UP]),
+      { id: "widget", previewCommand: PREVIEW_COMMAND },
+      existsIn([`${WT}/.opensession/start.sh`, PREVIEW_COMMAND]),
     );
     expect(boot).toEqual({
       kind: "repo-script",
@@ -31,7 +31,7 @@ describe("resolvePreviewBoot", () => {
   test("start.sh resolution picks up the sibling setup.sh one-shot hook", async () => {
     const boot = await resolvePreviewBoot(
       WT,
-      { id: "tella-fusion" },
+      { id: "widget" },
       existsIn([`${WT}/.opensession/start.sh`, `${WT}/.opensession/setup.sh`]),
     );
     expect(boot?.kind).toBe("repo-script");
@@ -41,39 +41,29 @@ describe("resolvePreviewBoot", () => {
   test("previewCommand runs with the worktree as $1", async () => {
     const boot = await resolvePreviewBoot(
       WT,
-      { id: "tella-fusion", previewCommand: ENSURE_UP },
-      existsIn([ENSURE_UP]),
+      { id: "widget", previewCommand: PREVIEW_COMMAND },
+      existsIn([PREVIEW_COMMAND]),
     );
-    expect(boot).toEqual({ kind: "preview-command", cmd: `${ENSURE_UP} ${WT}` });
+    expect(boot).toEqual({ kind: "preview-command", cmd: `${PREVIEW_COMMAND} ${WT}` });
   });
 
   test("non-absolute previewCommand is trusted without an existence check", async () => {
     const boot = await resolvePreviewBoot(
-      "/home/ubuntu/worktrees/gitops-some-branch",
-      { id: "gitops", previewCommand: "npm run dev --" },
+      "/srv/worktrees/docs-some-branch",
+      { id: "docs", previewCommand: "npm run dev --" },
       existsIn([]),
     );
     expect(boot).toEqual({
       kind: "preview-command",
-      cmd: "npm run dev -- /home/ubuntu/worktrees/gitops-some-branch",
+      cmd: "npm run dev -- /srv/worktrees/docs-some-branch",
     });
   });
 
-  test("missing absolute previewCommand falls through to tella-local (tella-fusion)", async () => {
+  test("missing absolute previewCommand leaves the repo unbootable", async () => {
     const boot = await resolvePreviewBoot(
       WT,
-      { id: "tella-fusion", previewCommand: "/nonexistent/bring-up.sh" },
-      existsIn([ENSURE_UP]),
-    );
-    expect(boot?.kind).toBe("tella-local");
-    expect(boot?.cmd).toBe(`bash ${ENSURE_UP} ${WT}`);
-  });
-
-  test("tella-local fallback is tella-fusion-only", async () => {
-    const boot = await resolvePreviewBoot(
-      "/home/ubuntu/worktrees/gitops-some-branch",
-      { id: "gitops" },
-      existsIn([ENSURE_UP]),
+      { id: "widget", previewCommand: "/nonexistent/bring-up.sh" },
+      existsIn([PREVIEW_COMMAND]),
     );
     expect(boot).toBeNull();
   });
@@ -81,7 +71,7 @@ describe("resolvePreviewBoot", () => {
   test(".backstage/ (pre-rename) still resolves, .opensession/ wins when both exist", async () => {
     const legacy = await resolvePreviewBoot(
       WT,
-      { id: "tella-fusion" },
+      { id: "widget" },
       existsIn([`${WT}/.backstage/start.sh`, `${WT}/.backstage/setup.sh`]),
     );
     expect(legacy?.cmd).toBe(`bash ${WT}/.backstage/start.sh`);
@@ -89,7 +79,7 @@ describe("resolvePreviewBoot", () => {
 
     const both = await resolvePreviewBoot(
       WT,
-      { id: "tella-fusion" },
+      { id: "widget" },
       // Only .backstage/ carries a setup.sh — the sibling must come from the
       // SAME dir as the resolved start.sh, so it stays undefined here.
       existsIn([
@@ -103,7 +93,7 @@ describe("resolvePreviewBoot", () => {
   });
 
   test("no mechanism at all resolves to null (UI: disabled Start)", async () => {
-    const boot = await resolvePreviewBoot(WT, { id: "tella-fusion" }, existsIn([]));
+    const boot = await resolvePreviewBoot(WT, { id: "widget" }, existsIn([]));
     expect(boot).toBeNull();
   });
 });

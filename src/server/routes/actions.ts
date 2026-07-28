@@ -8,6 +8,7 @@
 
 import { requestUser, type RouteContext } from "./context";
 import { createAction, deleteAction, getAction, introspectScript, listActions, runAction } from "../actions";
+import { defaultRepo } from "../config";
 import { invalidateSessionsCache } from "../session-cache";
 
 export async function handleActionsRoutes(
@@ -39,7 +40,7 @@ export async function handleActionsRoutes(
 			scriptPath?: string;
 		};
 		const result = introspectScript(
-			body.repo || "tella-fusion",
+			body.repo || defaultRepo().id,
 			String(body.scriptPath || ""),
 		);
 		if ("error" in result) return Response.json(result, { status: 400 });

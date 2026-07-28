@@ -143,8 +143,15 @@ enum OS1API {
     struct RepoInfo: Decodable, Identifiable, Hashable {
         let id: String
         let ghRepo: String?
+        let label: String?
         let defaultBranch: String?
         let sharedCheckout: Bool?
+        let isDefault: Bool?
+
+        private enum CodingKeys: String, CodingKey {
+            case id, ghRepo, label, defaultBranch, sharedCheckout
+            case isDefault = "default"
+        }
     }
 
     /// Repos a new session can target.

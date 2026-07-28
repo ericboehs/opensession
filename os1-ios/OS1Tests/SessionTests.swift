@@ -9,7 +9,7 @@ final class SessionTests: XCTestCase {
         )
 
         XCTAssertNil(session.repo)
-        XCTAssertEqual(session.effectiveRepo, "tella-fusion")
+        XCTAssertEqual(session.effectiveRepo, "opensession")
     }
 
     func testExplicitRepoIsPreserved() throws {

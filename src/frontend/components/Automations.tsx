@@ -19,7 +19,7 @@ import {
   type AutomationDraft,
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
-import { AGENT_NAME, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { AGENT_NAME, PUBLIC_BASE_URL, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 
 interface AutomationRun {
   at: string;
@@ -86,8 +86,6 @@ const EVENT_OPTIONS: Array<{ key: string; label: string }> = [
   { key: "stripe:charge.dispute.created", label: "Stripe — dispute (chargeback) created" },
   { key: "github:pr_merged", label: "GitHub — PR merged" },
 ];
-
-const WEBHOOK_BASE = "https://michael.tella.dev";
 
 /** Claude and Codex accounts for provider-aware automation pins. */
 function useProviderAccounts(): ProviderAccountOption[] {
@@ -708,7 +706,7 @@ function RunLedger({
 /** Secret webhook URL as a Configuration-grid value: truncated URL + copy. */
 function WebhookUrl({ id, secret }: { id: string; secret: string }) {
   const [copied, setCopied] = useState(false);
-  const url = `${WEBHOOK_BASE}/automations/${id}/${secret}`;
+  const url = `${PUBLIC_BASE_URL}/automations/${id}/${secret}`;
 
   return (
     <span className="flex items-center gap-2 min-w-0">

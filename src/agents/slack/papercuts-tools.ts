@@ -49,7 +49,7 @@ export function createPapercutsMcpServer(ctx: PapercutsToolContext) {
           .string()
           .optional()
           .describe(
-            "Repo id the friction belongs to (e.g. 'tella-fusion', 'backstage'). Defaults to this session's repo; pass explicitly when it concerns an attached repo or the tooling of a different one."
+            "Registered repo id the friction belongs to. Defaults to this session's repo; pass explicitly when it concerns an attached repo or the tooling of a different one."
           ),
       },
       async (args: { message: string; repo?: string }) => {

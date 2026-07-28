@@ -17,7 +17,12 @@
  * user via `isAdmin`, matching opensession-admin.
  */
 import { audit } from "../../server/audit";
-import { productName } from "../../server/config";
+import {
+  configuredServer,
+  defaultRepo,
+  personaName,
+  productName,
+} from "../../server/config";
 import { envAlias } from "../../server/rename-compat";
 import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
@@ -134,7 +139,7 @@ export function buildChildSessionPrompt(input: {
 }): string {
   const parts = [
     input.prompt.trim(),
-    "You are a worker session delegated by another Michael session. Keep the work narrow: execute the requested investigation/implementation, run relevant checks when practical, and do not broaden scope or make product/taste decisions unless explicitly asked.",
+    `You are a worker session delegated by another ${personaName()} session. Keep the work narrow: execute the requested investigation/implementation, run relevant checks when practical, and do not broaden scope or make product/taste decisions unless explicitly asked.`,
   ];
   if (input.reportBack && input.parentSessionId) {
     // The facts (files changed, commands run, tool failures, PR, usage) are
@@ -410,7 +415,7 @@ export async function spawnTaskImpl(
   );
   const base =
     envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-    "https://os.tella.dev";
+    configuredServer().publicBaseUrl;
   return { ok: true, taskId: id, url: `${base}/session/${id}` };
 }
 
@@ -592,13 +597,13 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
       ),
       tool(
         "create_session",
-        `Spin up a visible ${productName()} session and start it on a prompt. Use this as the sub-session primitive: Claude/Fable can create Codex workers, Codex can create Claude workers, and either can report back to this parent session. mode 'ask' (default) runs read-only on the selected repo checkout; mode 'code' can edit files / open PRs (never merges). A worker targeting one of the parent's repos shares that exact primary or attached worktree, so reviewers see current/uncommitted work; pass repo explicitly for attached-repo tasks. \`branch\` is only used when there is nothing to share — a standalone worker, or a worker targeting a repo the parent does not carry. Repo defaults to the parent session's repo (tella-fusion when standalone); pass repo to override, for example repo: 'backstage'. Pass model 'gpt-5.5'/'codex' for a Codex worker or a Claude model id for a Claude worker. For workers that only need filesystem/code access, pass mcpServers: [] to avoid unrelated MCP startup cost/failures. When called from a session, the worker defaults to the same workspace and is instructed to report back here; set standalone true or reportBack false to opt out.`,
+        `Spin up a visible ${productName()} session and start it on a prompt. Use this as the sub-session primitive: workers can delegate focused tasks and report back to this parent session. mode 'ask' (default) runs read-only on the selected repo checkout; mode 'code' can edit files / open PRs (never merges). A worker targeting one of the parent's repos shares that exact primary or attached worktree, so reviewers see current/uncommitted work; pass repo explicitly for attached-repo tasks. \`branch\` is only used when there is nothing to share — a standalone worker, or a worker targeting a repo the parent does not carry. Repo defaults to the parent session's repo (${defaultRepo().id} when standalone); pass another registered repo id to override. For workers that only need filesystem/code access, pass mcpServers: [] to avoid unrelated MCP startup cost/failures. When called from a session, the worker defaults to the same workspace and is instructed to report back here; set standalone true or reportBack false to opt out.`,
         {
           prompt: z.string().describe("The task/prompt to start the session on."),
           repo: z
             .string()
             .optional()
-            .describe("Registered repo id to run in, e.g. 'tella-fusion' or 'backstage'. Defaults to tella-fusion."),
+            .describe(`Registered repo id to run in. Defaults to ${defaultRepo().id}.`),
           mode: z
             .enum(["ask", "code"])
             .optional()
@@ -722,7 +727,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
             : " Not available from automation sessions."),
         {
           prompt: z.string().describe("Self-contained task prompt: scope, relevant files, constraints, acceptance criteria, and what to report."),
-          repo: z.string().optional().describe("Registered repo id, e.g. 'tella-fusion' or 'backstage'. Defaults to this session's repo."),
+          repo: z.string().optional().describe("Registered repo id. Defaults to this session's repo."),
           branch: z.string().optional().describe("Branch for code mode when the child can't share this session's worktree (standalone or different repo)."),
           model: z.string().optional().describe("Optional model id (e.g. 'gpt-5.5' for a Codex worker, or a Claude model id)."),
           mode: z.enum(["ask", "code"]).optional().describe("'code' (default) can edit files / open PRs; 'ask' is read-only."),

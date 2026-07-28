@@ -7,7 +7,7 @@
  * disabled review automation, recovering interrupted auto-fix loops on restart,
  * health, and a secret-gated manual trigger for testing.
  */
-import { personaName } from "../../server/config";
+import { configuredIntegration, defaultRepo, personaName } from "../../server/config";
 import type { AgentModule } from "../types";
 import {
   listAutomations,
@@ -21,7 +21,7 @@ import {
   PR_MERGED_EVENT_KEY,
   DOCS_SYNC_AUTOMATION_NAME,
 } from "./constants";
-import { DEFAULT_REVIEW_PROMPT, DOCS_SYNC_PROMPT } from "./prompts";
+import { DEFAULT_REVIEW_PROMPT } from "./prompts";
 import { setGithubSessionInvalidate, resolveReviewConfig } from "./webhook";
 import { listPrStates, activeCodeLoops, clearPendingMention, updatePrState } from "./state";
 import { feedbackStats } from "./feedback";
@@ -82,13 +82,16 @@ function ensureReviewAutomation(): void {
  * Automations UI.
  */
 function ensureDocsSyncAutomation(): void {
+  const prompt = configuredIntegration("github").docsSyncPrompt;
+  if (typeof prompt !== "string" || !prompt.trim()) return;
   const existing = listAutomations().find((a) => a.eventKey === PR_MERGED_EVENT_KEY);
   if (existing) return;
   const created = createAutomation({
     name: DOCS_SYNC_AUTOMATION_NAME,
-    prompt: DOCS_SYNC_PROMPT,
+    prompt: prompt.trim(),
     schedule: "",
     mode: "code",
+    repo: defaultRepo().id,
     createdBy: `${personaName()} (github agent)`,
     eventKey: PR_MERGED_EVENT_KEY,
   });

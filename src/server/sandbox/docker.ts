@@ -125,7 +125,8 @@ import { registerRunWsHost, unregisterRunWsHost, runWsConnector } from "../run-w
 import { getTranscriptPath } from "../sessions";
 import { listCodexAccounts } from "../codex-accounts";
 import { OPENCODE_TRANSCRIPTS_DIR } from "../opencode-transcript";
-import { dropSandboxPreviewRoutes, tellaLocalSkillDir } from "../preview";
+import { dropSandboxPreviewRoutes, externalPreviewCommandDirs } from "../preview";
+import { configuredPaths } from "../config";
 import { REPOS, getRepo, worktreePathFor, type Repo } from "../worktree";
 import { LocalProvider } from "./local";
 import {
@@ -622,7 +623,7 @@ async function createContainer(
   roIfExists(`${HOME}/.config/gh`, "gh config");
   roIfExists(
     envAlias("OPENSESSION_MCP_CONFIG", "BACKSTAGE_MCP_CONFIG") ||
-      `${HOME}/projects/tella-backstage/mcp-config.json`,
+      configuredPaths().mcpConfig,
     "mcp-config.json",
   );
   roIfExists(
@@ -659,11 +660,11 @@ async function createContainer(
       stateDir("opencode.json");
     if (existsSync(src)) mounts.push(...vol(src, `${HOME}/.backstage-opencode.json`, true));
   }
-  // The tella-local skill (ensure-up.sh + CDP helpers) at its identical host
-  // path, read-only — the Preview button's default bring-up for tella-fusion
-  // must work inside sandboxes (both bind and volume mode). Mounted over the
-  // ~/.claude volume like the transcript dir (more-specific mounts win).
-  roIfExists(tellaLocalSkillDir(), "tella-local skill");
+  // External preview commands at identical paths, read-only. Repo-owned
+  // lifecycle scripts already arrive with the workspace.
+  for (const dir of externalPreviewCommandDirs()) {
+    roIfExists(dir, `preview command directory ${dir}`);
+  }
 
   // Preview ports: publish each container port on a random LOOPBACK host
   // port (Caddy fronts them with the tailnet HTTPS origin — see preview.ts;

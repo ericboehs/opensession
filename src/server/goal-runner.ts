@@ -13,7 +13,7 @@ import {
 } from "../agents/slack/humans-tools";
 import { createGoalSelfMcpServer } from "../agents/slack/goal-tools";
 import { runAgent, isAgentSessionBusy } from "./agent-runner";
-import { defaultRepo } from "./config";
+import { defaultRepo, personaName } from "./config";
 import { isLocalProfile } from "./profile";
 import { getGoal, listGoals, saveGoal, type Goal } from "./goals";
 import { DEFAULT_FALLBACK_MODEL, providerFor } from "./models";
@@ -66,7 +66,7 @@ function buildGoalWakePrompt(goal: Goal, wake: number, cwd: string): string {
 			`- Append what you learned/did this wake (concrete numbers, PR URLs, decisions) to the ledger via the opensession-goal-self \`append_ledger\` tool.\n` +
 			`- Decide what happens next with opensession-goal-self: \`set_next_wake\` (e.g. "in 7 days" after shipping, so metrics can actually move before you re-measure), or \`mark_paused\` if you're blocked on a human decision, or \`mark_done\`/\`mark_failed\` when the mission is settled. If you set none, you'll be woken again in ~24h by default.\n` +
 			`- Keep \`update_phase\` current so progress is visible at a glance.`,
-		`Human gates: to get sign-off or a decision from a teammate, use the opensession-humans \`ask_human\` tool — it DMs them as Michael and folds their reply back into this session. Do NOT email or impersonate anyone.`,
+		`Human gates: to get sign-off or a decision from a teammate, use the opensession-humans \`ask_human\` tool — it DMs them as ${personaName()} and folds their reply back into this session. Do NOT email or impersonate anyone.`,
 	];
 	if (goal.mode === "code") {
 		const repo = getRepo(goal.repo);

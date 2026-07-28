@@ -171,7 +171,7 @@ export interface DialPreset {
   /** Which DIAL_ORACLE_AGENTS entry backs this tier's oracle. */
   oracleAgent: string;
   /** Picker section this preset renders under (defaults to "dial"). Lets
-   *  one-off personal combos (group "custom" → "Michiel custom") reuse the
+   * one-off personal combos (group "custom") reuse the
    *  whole dial mechanism without joining the tier ladder. */
   group?: string;
 }
@@ -283,7 +283,7 @@ export const DIAL_PRESETS: DialPreset[] = [
     id: "dial/opus-fable",
     label: "Opus 5 + Fable oracle",
     description:
-      "Michiel's custom combo — Opus 5 at extra-high effort with a Fable 5-high oracle",
+      "Custom combo — Opus 5 at extra-high effort with a Fable 5-high oracle",
     model: "claude-opus-5",
     effort: "xhigh",
     oracleAgent: "oracle-fable",

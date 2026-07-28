@@ -1,5 +1,5 @@
 /**
- * Read-only wiki over the tella-fusion knowledge base (docs/).
+ * Read-only wiki over the default repository's knowledge base (docs/).
  * Tree + file + naive full-text search. Paths are validated to stay
  * inside the docs root.
  */
@@ -7,7 +7,7 @@ import { readdirSync, readFileSync, statSync, existsSync, realpathSync } from "f
 import { join, resolve, relative } from "path";
 import { defaultRepo } from "./config";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = process.env.HOME || "";
 const docsRoot = () => `${defaultRepo().repo}/docs`;
 
 export interface WikiNode {

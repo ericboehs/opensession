@@ -875,7 +875,7 @@ export function opencodeToolResultImages(part: PartData): string[] {
         ? values.file_path
         : "";
   if (
-    (!path.startsWith("/tmp/") && !path.startsWith("/home/ubuntu/")) ||
+    (!path.startsWith("/tmp/") && !path.startsWith(`${HOME}/`)) ||
     path.includes("..") ||
     !LOCAL_IMAGE_PATH_RE.test(path)
   ) {

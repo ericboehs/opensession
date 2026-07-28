@@ -18,7 +18,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { $ } from "bun";
 import { stateDir } from "./rename-compat";
 import { OPENSESSION_CHATS_DIR } from "./paths";
-import { configuredRepos, defaultRepo } from "./config";
+import { configuredRepos, defaultRepo, githubBotLogins } from "./config";
 import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "./github-limit";
 import { readFeedback } from "../agents/github/feedback";
 import type { FeedbackRecord } from "../agents/github/feedback-gates";
@@ -410,7 +410,7 @@ interface FactoryPr {
 }
 
 /** Review activity by the bot credential (or any app bot) isn't human review. */
-const BOT_LOGINS = new Set(["tella-butler"]);
+const BOT_LOGINS = new Set(githubBotLogins());
 function isHumanReviewer(login: unknown, prAuthor: string): boolean {
 	const l = String(login || "");
 	return !!l && l !== prAuthor && !BOT_LOGINS.has(l) && !l.endsWith("[bot]") && !l.startsWith("app/");
@@ -764,7 +764,7 @@ export async function buildAnalytics(from: string, to: string): Promise<Analytic
 	};
 	const allSessions = new Set<string>();
 
-	// People arrive as free-text createdBy strings ("Michiel" vs "michiel") —
+	// People arrive as free-text createdBy strings with inconsistent casing —
 	// merge case variants, preferring a variant that carries real capitals.
 	const personDisplay = new Map<string, string>();
 	const personKey = (name: string): string => {

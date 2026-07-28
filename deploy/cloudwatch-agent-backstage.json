@@ -7,8 +7,8 @@
       "files": {
         "collect_list": [
           {
-            "file_path": "/home/ubuntu/.backstage-audit/audit-*.jsonl",
-            "log_group_name": "/tella/backstage/prod",
+            "file_path": "/var/lib/opensession/audit/audit-*.jsonl",
+            "log_group_name": "/opensession/prod",
             "log_stream_name": "{instance_id}",
             "timestamp_format": "%Y-%m-%dT%H:%M:%S",
             "retention_in_days": 400

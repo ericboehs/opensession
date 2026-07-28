@@ -343,7 +343,7 @@ function NewScanModal({
   onStarted: (sessionId?: string) => void;
 }) {
   const [scope, setScope] = useState<"single" | "all">("single");
-  const [repo, setRepo] = useState(repos.includes("tella-fusion") ? "tella-fusion" : repos[0] || "");
+  const [repo, setRepo] = useState(repos[0] || "");
   const [profileId, setProfileId] = useState("");
   const [instructions, setInstructions] = useState("");
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly">("none");
@@ -351,9 +351,9 @@ function NewScanModal({
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const singleFusion = scope === "single" && repo === "tella-fusion";
-  const canRecur = singleFusion && !interactive;
-  const canInteractive = singleFusion && recurrence === "none";
+  const singleRepo = scope === "single" && !!repo;
+  const canRecur = singleRepo && !interactive;
+  const canInteractive = singleRepo && recurrence === "none";
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -468,9 +468,9 @@ function NewScanModal({
             <option value="daily">Daily</option>
             <option value="weekly">Weekly</option>
           </select>
-          {!singleFusion && (
+          {!singleRepo && (
             <span className="text-faint text-[11.5px] mt-1">
-              Recurring and interactive scans support single-repo tella-fusion for now.
+              Recurring and interactive scans support one repository at a time.
             </span>
           )}
         </label>

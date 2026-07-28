@@ -5,6 +5,7 @@ import { CommentableDiff, type CommentTarget } from "./CommentableDiff";
 import { getCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
 import { PixelSpinner } from "./PixelSpinner";
+import { AGENT_NAME } from "../lib/brand";
 
 interface Props {
   sessionId: string;
@@ -138,7 +139,7 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
   }
 
   async function handleComment(repo: string, target: CommentTarget, text: string) {
-    if (!canSend) throw new Error("Michael is busy. Wait for the current run to finish.");
+    if (!canSend) throw new Error(`${AGENT_NAME} is busy. Wait for the current run to finish.`);
     const lines =
       target.startLine === target.endLine
         ? `line ${target.startLine}`
@@ -210,10 +211,10 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
               : undefined
           }
           groupsLoading={groupsLoading}
-          submitLabel="Send to Michael"
-          placeholder={`Leave feedback on these lines. Michael picks it up in this session…`}
+          submitLabel={`Send to ${AGENT_NAME}`}
+          placeholder={`Leave feedback on these lines. ${AGENT_NAME} picks it up in this session…`}
           disabled={!canSend}
-          disabledHint="Michael is working. You can send feedback once the current run finishes."
+          disabledHint={`${AGENT_NAME} is working. You can send feedback once the current run finishes.`}
           onSubmit={(target, text) => handleComment(cur.repo, target, text)}
           // Discarding edits the worktree — withhold it while the agent is running
           // to avoid racing its writes.

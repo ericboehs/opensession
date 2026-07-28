@@ -39,6 +39,7 @@ import {
   type MemoryEntry,
 } from "./memory";
 import { parseWhen } from "./parse-when";
+import { personaName } from "../../server/config";
 
 export interface AdminToolContext extends MemoryContext {
   /** Display name credited as the author of memories/automations. */
@@ -127,7 +128,7 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
       // ---------------------------------------------------------------------
       tool(
         "list_automations",
-        "List all of Michael's automations (routines): scheduled, event- and webhook-triggered jobs.",
+        `List all of ${personaName()}'s automations (routines): scheduled, event- and webhook-triggered jobs.`,
         {},
         async () => {
           const all = listAutomations();
@@ -300,14 +301,14 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
       ),
       tool(
         "schedule_once",
-        "Schedule a ONE-OFF run at a future time, after which it auto-deletes — use for 'remind me about this next week', 'run this again in a week', or any one-time scheduled task. `when` is a natural time expression ('next Tuesday 9am', 'in a week', 'tomorrow morning', 'in 3 hours') — just pass the user's phrasing through; it's resolved to an exact instant for you. `prompt` is what you (Michael) should do when it fires, written to yourself — it runs as a normal Michael session, so it can post to a channel, DM someone via the Slack MCP, or carry out a task. By default, when this is invoked from a Slack thread, the run is told to post its reminder back into that thread; set replyInThread:false to suppress (e.g. when the prompt should DM someone else instead). Omit mcpServers to give the run the full toolset; pass it to restrict (least-privilege).",
+        `Schedule a ONE-OFF run at a future time, after which it auto-deletes — use for 'remind me about this next week', 'run this again in a week', or any one-time scheduled task. \`when\` is a natural time expression ('next Tuesday 9am', 'in a week', 'tomorrow morning', 'in 3 hours') — just pass the user's phrasing through; it's resolved to an exact instant for you. \`prompt\` is what ${personaName()} should do when it fires, written to yourself — it runs as a normal assistant session, so it can post to a channel, DM someone via the Slack MCP, or carry out a task. By default, when this is invoked from a Slack thread, the run is told to post its reminder back into that thread; set replyInThread:false to suppress (e.g. when the prompt should DM someone else instead). Omit mcpServers to give the run the full toolset; pass it to restrict (least-privilege).`,
         {
           when: z
             .string()
             .describe("When to fire, in natural language — e.g. 'next Tuesday 9am', 'in a week', 'tomorrow at 14:00', 'in 3 hours'. Pass the user's wording; it's resolved to an exact UTC instant."),
           prompt: z
             .string()
-            .describe("What to do when it fires, addressed to yourself (e.g. 'Remind Michiel to review the Q3 deck' or 'DM Johnny the latest MRR figure')."),
+            .describe("What to do when it fires, addressed to yourself (e.g. 'Remind Alice to review the Q3 deck' or 'DM Bob the latest report')."),
           name: z.string().optional().describe("Short label; defaults to a snippet of the prompt."),
           mode: z
             .enum(["ask", "code"])
@@ -349,7 +350,7 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
             prompt +=
               `\n\nDeliver this by posting to Slack channel \`${ctx.channel}\` in thread \`${ctx.threadTs}\` ` +
               "via the Slack MCP `conversations_add_message` (content_type text/markdown). Open with \"⏰ \", " +
-              "say it's you, Michael, and keep it concise.";
+              `say it's you, ${personaName()}, and keep it concise.`;
             // Make sure the run can reach Slack even if the caller restricted servers.
             if (mcpServers) mcpServers = Array.from(new Set([...mcpServers, "slack"]));
           }
@@ -376,7 +377,7 @@ export function createAdminMcpServer(ctx: AdminToolContext) {
       // ---------------------------------------------------------------------
       tool(
         "list_mcp_servers",
-        "List the configured MCP servers (connections) Michael can use.",
+        `List the configured MCP servers (connections) ${personaName()} can use.`,
         {},
         async () => {
           const cfg = readMcpConfig().mcpServers || {};

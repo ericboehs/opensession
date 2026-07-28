@@ -17,7 +17,7 @@ interface Props {
 /**
  * Spin a new session off the current transcript:
  *  - build:     ask → code handoff with conversation context (Devin's "spin-off")
- *  - learnings: code session that feeds durable learnings back into tella-fusion docs as a PR
+ *  - learnings: code session that feeds durable learnings back into the repo's docs as a PR
  *  - analyze:   ask session reviewing what went well/wrong + better prompt
  */
 export function SpinOffMenu({ session, entries, send, connected }: Props) {
@@ -129,7 +129,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
           )}
           <Menu.Item closeOnClick={false} onClick={() => pick("learnings")} className={itemCls}>
             <span className="text-[13px] font-semibold text-fg">Capture learnings → docs PR</span>
-            <span className="text-[11.5px] leading-[1.4] text-faint">{AGENT_NAME} adds what was learned here to tella-fusion docs</span>
+            <span className="text-[11.5px] leading-[1.4] text-faint">{AGENT_NAME} adds what was learned here to {session.repo || "the repository"} docs</span>
           </Menu.Item>
           <Menu.Item closeOnClick={false} onClick={() => pick("analyze")} className={itemCls}>
             <span className="text-[13px] font-semibold text-fg">Analyze session</span>

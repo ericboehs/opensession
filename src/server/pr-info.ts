@@ -5,7 +5,7 @@
  * data; and wired into the shared rate-limit gate (github-limit.ts) so a
  * throttled quota serves stale snapshots instead of errors.
  */
-import { defaultRepo } from "./config";
+import { configuredIntegration, configuredServer, defaultRepo } from "./config";
 import { $ } from "bun";
 import { readFileSync, writeFileSync } from "fs";
 import { audited } from "./audit";
@@ -173,26 +173,32 @@ export function reconcilePrDetails(
   return details;
 }
 
-/**
- * tella-butler maintains one "tella-vercel-preview" table comment per fusion PR
- * (add-pr-comment replaces it in place as the deploy progresses); the `tella`
- * row is the webapp preview — the URL a human opens to test the PR on staging.
- * PRs that don't touch the webapp never get the comment → null.
- */
 function parseStaging(comments: Array<{ body?: string }> | undefined): PrStaging | null {
+  const github = configuredIntegration("github");
+  const marker =
+    typeof github.previewCommentMarker === "string"
+      ? github.previewCommentMarker
+      : "";
+  const service =
+    typeof github.previewTableService === "string"
+      ? github.previewTableService
+      : "";
+  if (!marker || !service) return null;
+  const escapedService = service.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const row = new RegExp(
+    `^\\|\\s*${escapedService}\\s*\\|\\s*([^|]+?)\\s*\\|\\s*\\[[^\\]]*\\]\\((https?:\\/\\/[^)\\s]+)\\)`,
+    "m",
+  );
   for (const c of comments || []) {
-    if (!c.body?.includes("add-pr-comment:tella-vercel-preview")) continue;
-    const m = c.body.match(
-      /^\|\s*tella\s*\|\s*([^|]+?)\s*\|\s*\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/m
-    );
+    if (!c.body?.includes(marker)) continue;
+    const m = c.body.match(row);
     if (m) return { status: m[1], url: m[2], embeddable: embeddableFor(m[2]) };
   }
   return null;
 }
 
-// Whether a preview environment opts into being embedded in the OS1 review iframe:
-// true once its response CSP names os.tella.dev in frame-ancestors (the
-// tella-fusion preview change). Probed out-of-band — a plain GET of the deploy,
+// Whether a preview environment opts into being embedded in the review iframe.
+// Probed out-of-band — a plain GET of the deploy,
 // reading the CSP header — and cached, so the PR fetch never blocks on it and a
 // deploy that predates the fusion change simply reads back false (the UI then
 // shows the launch panel, exactly as before). Best-effort: any failure → false.
@@ -211,7 +217,9 @@ async function probeEmbeddable(url: string): Promise<void> {
       signal: AbortSignal.timeout(5000),
     });
     const csp = res.headers.get("content-security-policy") || "";
-    const ok = /frame-ancestors[^;]*\bos\.tella\.dev\b/i.test(csp);
+    const uiHost = new URL(configuredServer().publicBaseUrl).hostname;
+    const escaped = uiHost.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const ok = new RegExp(`frame-ancestors[^;]*\\b${escaped}\\b`, "i").test(csp);
     embedCache.set(url, { ok, ts: Date.now() });
   } catch {
     embedCache.set(url, { ok: false, ts: Date.now() });

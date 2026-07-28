@@ -33,10 +33,19 @@ import {
 } from "./github-rest";
 import { PR_EVENT_KEY } from "./constants";
 import { classifyPrActionIntent } from "../slack/mention-intent";
+import { configuredIntegration, personaName } from "../../server/config";
 
-// Handles that mean "Michael". @michael isn't a real GitHub user (renders as
-// plain text) but people type it; tella-butler is the bot's actual handle.
-const MENTION_HANDLES = (process.env.GITHUB_MENTION_HANDLES || "michael,tella-butler")
+const configuredMentionHandles = configuredIntegration("github").mentionHandles;
+const defaultMentionHandles = [
+  personaName().toLowerCase().replace(/[^a-z0-9-]/g, ""),
+  BOT_LOGIN,
+].filter(Boolean).join(",");
+const MENTION_HANDLES = (
+  process.env.GITHUB_MENTION_HANDLES ||
+  (Array.isArray(configuredMentionHandles)
+    ? configuredMentionHandles.filter((value): value is string => typeof value === "string").join(",")
+    : defaultMentionHandles)
+)
   .split(",")
   .map((h) => h.trim().replace(/^@/, "").toLowerCase())
   .filter(Boolean);

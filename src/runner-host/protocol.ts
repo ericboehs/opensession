@@ -22,6 +22,7 @@
  * there the transcript is NOT host-visible, so a flaky link would otherwise
  * lose mid-run events for good.
  */
+import { fileURLToPath } from "url";
 
 import type { StreamEvent, ImageInput } from "../server/run-events";
 import type { GitIdentity } from "../server/shared/user-mappings";
@@ -189,8 +190,6 @@ export function ndjsonReader(
   };
 }
 
-const HOME = process.env.HOME || "/home/ubuntu";
-
 /** Root of all run-host dirs: one subdir per host with spec/meta/journal/sock/log. */
 export function runHostsDir(chatsDir: string): string {
   return `${chatsDir}/run-hosts`;
@@ -208,7 +207,7 @@ export function rpcSocketPath(chatsDir: string): string {
 }
 
 /** Absolute paths of the host/proxy entrypoints and the bun binary, for spawning. */
-export const BUN_BIN = `${HOME}/.bun/bin/bun`;
-export const REPO_ROOT = `${HOME}/projects/tella-backstage`;
+export const BUN_BIN = Bun.which("bun") || process.execPath;
+export const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url)).replace(/\/$/, "");
 export const HOST_ENTRY = `${REPO_ROOT}/src/runner-host/host.ts`;
 export const MCP_PROXY_ENTRY = `${REPO_ROOT}/src/runner-host/mcp-proxy.ts`;

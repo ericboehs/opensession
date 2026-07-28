@@ -6,6 +6,7 @@
  */
 
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
+import { personaName } from "../../server/config";
 import type { ImageInput } from "../../server/run-events";
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
@@ -526,7 +527,7 @@ export async function fetchChannelHistory(
       out.push({
         ts: m.ts,
         userId: null,
-        userName: m.username || "Michael",
+        userName: m.username || personaName(),
         avatarUrl: m.icons?.image_72 || m.icons?.image_48,
         text: prettifyMentions(m.text),
         isBot: true,

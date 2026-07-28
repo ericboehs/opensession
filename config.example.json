@@ -1,95 +1,136 @@
 {
-  "_readme": [
-    "OpenSession instance config. Copy to ~/.opensession/config.json (or point OPENSESSION_CONFIG at it).",
-    "Every field is optional: a missing/invalid file (or any missing key) falls back to the built-in defaults, which are the values shown here.",
-    "Precedence per key: env var -> config.json -> built-in default. Env overrides: HOST, PORT, WEBHOOK_PORT, OPENSESSION_UI_BASE (publicBaseUrl), PREVIEW_HOST, OPENSESSION_CLAUDE_BIN, OPENSESSION_OPENCODE_BIN, OPENSESSION_WORKTREES_DIR, OPENSESSION_MCP_CONFIG, OPENSESSION_TELLA_FUSION (repos.tella-fusion.repo), OPENSESSION_CLOUD_UPSTREAM, OPENSESSION_CLOUD_TOKEN.",
-    "repos: an entry whose id matches a built-in overrides just the fields it sets; a new id (needs at least `repo`) adds a repo. `default: true` marks the repo sessions target when none is specified (falls back to tella-fusion). `previewCommand` is the dev-server bring-up script; `depsInstall` is a shell command run in a fresh worktree to install dependencies (unset = built-in behavior).",
-    "identity.team derives commit attribution, per-user MCP gating, and human-ask routing. Omit `identity` entirely to keep the built-in roster; an empty team disables those features (they no-op). `linearEmails` are the person's Linear account emails; `githubToSlack: false` keeps someone out of GitHub-event Slack pings. `identity.slackNames` adds Slack id -> display name entries for bots/legacy ids that aren't full team members.",
-    "The `integrations` and `policy` sections are parsed but NOT applied yet (upcoming portability batches), with one exception: integrations.github.userPrAuth + oauthClientId ARE applied — they opt in per-user GitHub auth (interactive sessions open PRs as the session owner's own account via a device-flow token, connected in the Connections UI; see src/server/github-auth.ts). The OAuth app behind oauthClientId needs Device Flow enabled.",
-    "persona.name IS applied: it is the agent's name as rendered to users and models (system prompts, Slack greetings, confirm cards, health payloads). Protocol identifiers (michael-* MCP server ids, MICHAEL_* env vars, ===MICHAEL-SUMMARY=== markers) are NOT affected. persona.company/persona.product are parsed but not yet wired.",
-    "branding.productName/productMark name the platform itself in user-facing copy (page titles, headers; mark = short monogram for the logo chip). Protocol ids (bks-/prj- prefixes, michael-* MCP server ids, repo ids) are NOT affected."
+  "_comments": [
+    "Copy to ~/.opensession/config.json or point OPENSESSION_CONFIG at it.",
+    "Environment variables override config values. Repositories are authoritative: when `repos` is present, only those entries are registered.",
+    "The zero-config hosted default registers this OpenSession checkout as a shared `opensession` repo. Set `repos` for real team projects.",
+    "External integrations and instance seed routines are opt-in (`enabled: true`)."
   ],
   "server": {
     "host": "127.0.0.1",
     "port": 3850,
     "webhookPort": 3848,
-    "publicBaseUrl": "https://michael.taila5d766.ts.net/opensession",
-    "previewHost": "michael.taila5d766.ts.net",
+    "publicBaseUrl": "https://sessions.example.com",
+    "previewHost": "preview.example.com",
     "caddyAdmin": "http://localhost:2019"
   },
   "paths": {
-    "claudeBin": "/home/ubuntu/.local/bin/claude",
-    "opencodeBin": null,
-    "worktreesDir": "/home/ubuntu/worktrees",
-    "wtScript": "/home/ubuntu/bin/wt",
-    "mcpConfig": "/home/ubuntu/projects/tella-backstage/mcp-config.json"
+    "claudeBin": "claude",
+    "opencodeBin": "opencode",
+    "worktreesDir": "/srv/opensession/worktrees",
+    "mcpConfig": "/srv/opensession/mcp-config.json"
   },
   "cloud": {
-    "upstream": "https://os.tella.dev",
-    "token": "<web-session bearer>"
-  },
-  "repos": {
-    "tella-fusion": {
-      "repo": "/home/ubuntu/projects/tella-fusion",
-      "wtPrefix": "tella-fusion",
-      "defaultBranch": "main",
-      "ghRepo": "tellahq/tella-fusion",
-      "default": true,
-      "previewCommand": "/home/ubuntu/.claude/skills/tella-local/ensure-up.sh",
-      "depsInstall": "cd packages/core/webapp && bun install"
-    },
-    "backstage": {
-      "repo": "/home/ubuntu/projects/tella-backstage",
-      "wtPrefix": "backstage",
-      "defaultBranch": "master",
-      "ghRepo": "tellahq/backstage",
-      "sharedCheckout": true
-    }
-  },
-  "identity": {
-    "team": [
-      {
-        "name": "Michiel Westerbeek",
-        "email": "happylinks@gmail.com",
-        "aliases": ["michiel"],
-        "slackId": "UT41L6GCC",
-        "github": "happylinks",
-        "linearEmails": ["michiel@tella.tv"]
-      }
-    ],
-    "slackNames": {
-      "U0A7T08405R": "Michael"
-    }
-  },
-  "integrations": {
-    "slack": { "enabled": true, "docsChannel": "C09BAFFK8F8", "chatChannel": "C01ED50A2KG" },
-    "linear": { "enabled": true, "team": "TELLA", "oauthRedirect": "https://michael.tella.dev/oauth/callback" },
-    "plain": { "enabled": true, "seedAutomations": true },
-    "github": {
-      "enabled": true,
-      "docsSyncChannel": "C09BAFFK8F8",
-      "userPrAuth": false,
-      "oauthClientId": null,
-      "oauthClientSecret": null
-    },
-    "stripe": { "enabled": true },
-    "grafana": {
-      "enabled": false,
-      "lokiService": "temporal-rust-worker",
-      "failureChannels": { "export": "C093YC3TX8E", "upload": "C0AKPJ65BQA" }
-    }
-  },
-  "policy": {
-    "stripeConfirmTools": null,
-    "automationDeniedTools": null
-  },
-  "persona": {
-    "name": "Michael",
-    "company": "Tella",
-    "product": "a screen-recording product"
+    "upstream": "https://sessions.example.com",
+    "token": "optional-local-client-bearer-token"
   },
   "branding": {
     "productName": "OpenSession",
     "productMark": "OS"
+  },
+  "persona": {
+    "name": "Assistant",
+    "company": "Acme",
+    "product": "Acme Widget"
+  },
+  "repos": {
+    "widget": {
+      "label": "Widget",
+      "description": "Acme's main product application and API.",
+      "repo": "/srv/repos/widget",
+      "wtPrefix": "widget",
+      "defaultBranch": "main",
+      "ghRepo": "acme/widget",
+      "default": true,
+      "worktreeSetup": "git submodule update --init --depth 1",
+      "depsInstall": "bun install",
+      "previewCommand": "/srv/opensession/bin/start-widget-preview",
+      "warmCachePaths": ["dist/generated-client.js"],
+      "previewAwsProfile": "widget-dev",
+      "deploymentTracking": true,
+      "securityInstructions": "Read SECURITY.md before triaging findings; run bun test for changed packages.",
+      "prCacheOpenLimit": 100,
+      "prCacheRecentLimit": 500
+    },
+    "opensession": {
+      "label": "OpenSession",
+      "description": "This OpenSession installation.",
+      "repo": "/srv/opensession",
+      "wtPrefix": "opensession",
+      "defaultBranch": "main",
+      "ghRepo": "acme/opensession",
+      "sharedCheckout": true
+    }
+  },
+  "identity": {
+    "defaultTimezone": "UTC",
+    "team": [
+      {
+        "name": "Alice Example",
+        "email": "alice@example.com",
+        "aliases": ["alice"],
+        "slackId": "U012345",
+        "github": "alice",
+        "linearEmails": ["alice@example.com"],
+        "timezone": "UTC"
+      }
+    ],
+    "slackNames": {}
+  },
+  "policy": {
+    "githubWriteOwners": ["acme"],
+    "githubBotLogins": ["acme-automation"]
+  },
+  "integrations": {
+    "github": {
+      "enabled": false,
+      "userPrAuth": false,
+      "oauthClientId": "",
+      "mentionHandles": ["assistant", "acme-automation"],
+      "previewEnvironment": "Preview"
+    },
+    "slack": {"enabled": false},
+    "linear": {
+      "enabled": false,
+      "oauthRedirectUrl": "https://sessions.example.com/oauth/callback"
+    },
+    "plain": {
+      "enabled": false,
+      "mentionHandle": "assistant",
+      "linearTeamKey": "WIDGET"
+    },
+    "stripe": {"enabled": false},
+    "grafana": {"enabled": false},
+    "accountHealth": {
+      "notifyUser": "Alice",
+      "slackChannel": "D012345"
+    },
+    "seeds": {
+      "enabled": false,
+      "actions": [
+        {
+          "id": "act-seed-maintenance",
+          "name": "Run maintenance",
+          "kind": "repo",
+          "repo": "widget",
+          "scriptPath": "scripts/maintenance.ts",
+          "inputs": [],
+          "confirm": true
+        }
+      ],
+      "automations": [
+        {
+          "name": "Weekly dependency review",
+          "prompt": "Review dependency updates in the configured repository. Report actionable upgrades and open a focused PR only when the repository policy permits it.",
+          "schedule": "0 9 * * 1",
+          "mode": "code",
+          "repo": "widget",
+          "eventKey": "seed:weekly-dependency-review",
+          "mcpServers": []
+        }
+      ]
+    },
+    "accountHealth": {
+      "notifyUser": "alice"
+    }
   }
 }

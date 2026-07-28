@@ -80,7 +80,7 @@ function worktreesForSession(session: UnifiedSession): WorktreeRow[] {
       key: session.prUrl,
       session,
       title: cleanTitle(session.prTitle || session.title),
-      repo: session.repo || "tella-fusion",
+      repo: session.repo || "repository",
       branch: session.branch || "",
       url: session.prUrl,
       state: session.prState || "OPEN",

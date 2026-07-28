@@ -548,7 +548,7 @@ export function SessionViewer({
 	const localRepoCapabilityLoading =
 		localMode && session.local && localRepos === undefined;
 	const reviewRepos = [
-		{ repo: session.repo || "tella-fusion", primary: true },
+		{ repo: session.repo || "repository", primary: true },
 		...(session.attachedRepos || []).map((repo) => ({
 			repo: repo.repo,
 			primary: false,
@@ -781,7 +781,7 @@ export function SessionViewer({
 	const [gitRefreshTick, setGitRefreshTick] = useState(0);
 	const sessionPrTargetsRef = useRef<Set<string>>(new Set());
 	sessionPrTargetsRef.current = new Set([
-		`${session.repo || "tella-fusion"}\0${session.branch}`,
+		`${session.repo || "repository"}\0${session.branch}`,
 		...(session.attachedRepos || []).map((r) => `${r.repo}\0${r.branch}`),
 		...(session.prs || []).map((r) => `${r.repo}\0${r.branch}`),
 	]);
@@ -3479,8 +3479,7 @@ export function SessionViewer({
 	// variant, so a window listener inside it would register multiple times.
 	const stagingRelevant =
 		!!session.prUrl &&
-		session.prState === "OPEN" &&
-		(session.repo ?? "tella-fusion") === "tella-fusion";
+		session.prState === "OPEN";
 	const [staging, setStaging] = useState<{
 		url: string;
 		status: string;
@@ -3899,7 +3898,7 @@ export function SessionViewer({
 					{session.worktreeDir && hasWorkspace && (
 						<RepoBar
 							sessionId={session.id}
-							primaryRepo={session.repo || "tella-fusion"}
+							primaryRepo={session.repo || "repository"}
 							branch={session.branch}
 							initialAttached={session.attachedRepos || []}
 						/>
@@ -4147,13 +4146,13 @@ export function SessionViewer({
 									</div>
 								</div>
 								<div className="session-info-hero">
-									<RepoTile name={session.repo || "tella-fusion"} size={40} />
+									<RepoTile name={session.repo || "repository"} size={40} />
 									<div className="session-info-name" ref={infoHeroNameRef}>
 										{workspaceName || session.title}
 									</div>
 									<div className="session-info-sub">
 										{[
-											session.repo || "tella-fusion",
+											session.repo || "repository",
 											models.length > 0
 												? metadataModelLabel(effectiveModel, models)
 												: null,
@@ -4185,7 +4184,7 @@ export function SessionViewer({
 										{hasWorkspace && (
 											<RepoBar
 												sessionId={session.id}
-												primaryRepo={session.repo || "tella-fusion"}
+												primaryRepo={session.repo || "repository"}
 												branch={session.branch}
 												initialAttached={session.attachedRepos || []}
 												variant="menu-row"
@@ -4214,7 +4213,7 @@ export function SessionViewer({
 													startedBy: s.startedBy,
 												}),
 											)}
-											repo={hasWorkspace ? session.repo || "tella-fusion" : undefined}
+											repo={hasWorkspace ? session.repo || "repository" : undefined}
 											prState={hasWorkspace ? session.prState : undefined}
 											refreshTick={gitRefreshTick}
 											sandbox={session.sandbox}
@@ -4353,7 +4352,7 @@ export function SessionViewer({
 				headerRepoEl &&
 				hasWorkspace &&
 				createPortal(
-					<RepoTile name={session.repo || "tella-fusion"} size={18} round />,
+					<RepoTile name={session.repo || "repository"} size={18} round />,
 					headerRepoEl,
 				)}
 
@@ -5171,7 +5170,7 @@ export function SessionViewer({
 											}),
 										)}
 										repo={
-											hasWorkspace ? session.repo || "tella-fusion" : undefined
+											hasWorkspace ? session.repo || "repository" : undefined
 										}
 										prState={hasWorkspace ? session.prState : undefined}
 										refreshTick={gitRefreshTick}

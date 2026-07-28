@@ -874,7 +874,7 @@ function PushRow() {
 			desc={
 				error ||
 				(state === "unsupported"
-					? "Push needs the HTTPS origin (os.tella.dev). It isn't available on plain http."
+					? "Push needs an HTTPS origin. It isn't available on plain http."
 					: state === "denied"
 						? "Notifications are blocked for this site. Allow them in your browser to enable push."
 						: "Buzz this device when a session needs your input, even with the app closed. It's per device, so enable it on your phone too.")

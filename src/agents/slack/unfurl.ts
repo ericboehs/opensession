@@ -12,17 +12,18 @@
 import { slackApiCall } from "./slack-api";
 import { findSession } from "../../server/session-cache";
 import type { UnifiedSession } from "../../server/types";
+import { configuredServer } from "../../server/config";
 
 const UI_BASE =
   process.env.OPENSESSION_UI_BASE ||
   process.env.MICHAEL_UI_BASE ||
-  "https://os.tella.dev";
+  configuredServer().publicBaseUrl;
 
 function uiHost(): string {
   try {
     return new URL(UI_BASE).host;
   } catch {
-    return "os.tella.dev";
+    return new URL(configuredServer().publicBaseUrl).hostname;
   }
 }
 

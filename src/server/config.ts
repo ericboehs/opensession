@@ -1,27 +1,26 @@
 /**
- * Backstage instance configuration (docs/portability-audit.md).
+ * OpenSession instance configuration.
  *
  * Single `~/.opensession/config.json` (dual-read fallback to `~/.backstage/
  * config.json`; path overridable via OPENSESSION_CONFIG, or the deprecated
  * BACKSTAGE_CONFIG),
  * read fresh per call with the sandbox/config.ts pattern: tolerant parse,
- * missing/invalid file → built-in defaults. The built-in defaults are today's
- * Tella values, so a host with no config file behaves byte-identically.
+ * missing/invalid file → portable built-in defaults.
  *
  * Precedence per key: existing env var → config.json → built-in default.
  *
- * Sections `server`, `paths`, `repos`, `identity`, `persona.name` (personaName())
- * and `branding` (productName()/productMark()) are consumed today;
- * `integrations`, `policy`, and the rest of `persona` are parsed and typed but
- * not yet wired (next batches of the portability workstream). See
- * config.example.json at the repo root for the full schema.
+ * Sections `server`, `paths`, `repos`, `identity`, `persona`, `branding`,
+ * `policy`, and integration-specific settings are consumed by their owning
+ * modules. See config.example.json at the repo root for the full schema.
  */
 
 import { readFileSync, statSync } from "fs";
+import { resolve as resolvePath } from "path";
 import { envAlias, statePath } from "./rename-compat";
 import { isLocalProfile, localProfileRoot } from "./profile";
 
 const HOME = process.env.HOME || "/home/ubuntu";
+const OPENSESSION_ROOT = resolvePath(import.meta.dir, "../..");
 
 export function configPath(): string {
   return (
@@ -39,7 +38,7 @@ export interface ServerSection {
   host?: string;
   port?: number;
   webhookPort?: number;
-  /** Public web-UI base, e.g. "https://os.tella.dev". */
+  /** Public web-UI base, e.g. "https://opensession.example.com". */
   publicBaseUrl?: string;
   /** Host previews are served from (Caddy-fronted). */
   previewHost?: string;
@@ -51,8 +50,6 @@ export interface PathsSection {
   claudeBin?: string;
   opencodeBin?: string;
   worktreesDir?: string;
-  /** The tella-fusion `wt` worktree helper script. */
-  wtScript?: string;
   mcpConfig?: string;
 }
 
@@ -66,6 +63,10 @@ export interface CloudSection {
 /** A `repos` entry in config.json — partial; merged over the built-in repo
  *  with the same id, or (with at least `repo`) adds a new one. */
 export interface RepoSection {
+  /** Human-readable label; defaults to the repo id. */
+  label?: string;
+  /** Short routing hint shown to the Slack intent classifier. */
+  description?: string;
   repo?: string;
   wtPrefix?: string;
   defaultBranch?: string;
@@ -74,7 +75,21 @@ export interface RepoSection {
   /** Marks this repo as the instance default (see defaultRepo()). */
   default?: boolean;
   previewCommand?: string;
+  /** One-time setup command run in a fresh worktree before depsInstall. */
+  worktreeSetup?: string;
   depsInstall?: string;
+  /** Include this repo in the bulk PR cache (true by default when ghRepo exists). */
+  prCache?: boolean;
+  prCacheOpenLimit?: number;
+  prCacheRecentLimit?: number;
+  /** Repo-relative files worth retaining in warm preview snapshots. */
+  warmCachePaths?: string[];
+  /** Optional AWS profile name a preview expects in addition to `default`. */
+  previewAwsProfile?: string;
+  /** Track the deployment workflow after a PR is merged. */
+  deploymentTracking?: boolean;
+  /** Repo-specific threat-model/build notes appended to security scan prompts. */
+  securityInstructions?: string;
 }
 
 export interface TeamMember {
@@ -82,7 +97,7 @@ export interface TeamMember {
   name: string;
   /** Git author/committer email for commit attribution. */
   email?: string;
-  /** Picker names / short aliases (lowercase), e.g. ["michiel"]. */
+  /** Picker names / short aliases (lowercase), e.g. ["alice"]. */
   aliases?: string[];
   slackId?: string;
   /** GitHub login. */
@@ -90,7 +105,7 @@ export interface TeamMember {
   /** Emails their Linear account uses (may differ from the git email). */
   linearEmails?: string[];
   /** IANA timezone, e.g. "Europe/Amsterdam" — used wherever we compute
-   *  local times for a person (todo reminders). Unset = Europe/Amsterdam. */
+   * local times for a person (todo reminders). */
   timezone?: string;
   /**
    * Include in the GitHub→Slack notification map (GITHUB_TO_SLACK). Default
@@ -108,24 +123,29 @@ export interface TeamMember {
 
 export interface IdentitySection {
   team?: TeamMember[];
+  /** IANA timezone used when a team member has no explicit timezone. */
+  defaultTimezone?: string;
   /** Extra Slack id → display name entries (bots, legacy workspace ids) that
    *  aren't full team members. */
   slackNames?: Record<string, string>;
 }
 
-/** Parsed but not yet consumed — batch "integration fail-closed gating". */
+/** Integration-owned settings. Each module validates the keys it consumes. */
 export interface IntegrationsSection {
   [integration: string]: unknown;
 }
 
-/** Parsed but not yet consumed — optional policy overrides. */
+/** Optional policy overrides. */
 export interface PolicySection {
   stripeConfirmTools?: string[];
   automationDeniedTools?: string[];
+  /** GitHub owners the agent may write to without per-conversation approval. */
+  githubWriteOwners?: string[];
+  /** Bot accounts trusted to attach PRs to sessions via attribution footers. */
+  githubBotLogins?: string[];
 }
 
-/** Persona copy in prompt builders. `name` is consumed (personaName());
- *  `company`/`product` are parsed but not yet wired (persona batch 2). */
+/** Persona copy in prompt builders. */
 export interface PersonaSection {
   name?: string;
   company?: string;
@@ -169,6 +189,8 @@ export interface BackstageConfig {
 // chat and belongs to one of these repos.
 export interface Repo {
   id: string;
+  label: string;
+  description?: string;
   repo: string;
   wtPrefix: string;
   defaultBranch: string;
@@ -180,15 +202,21 @@ export interface Repo {
   // branch (see "OpenSession dev workflow" in AGENTS.md: add → commit → push,
   // never reset/discard the shared repo).
   sharedCheckout?: boolean;
-  /** Instance default repo (defaultRepo()); unset built-ins fall back to tella-fusion. */
+  /** Instance default repo (defaultRepo()). */
   default?: boolean;
-  /** Dev-server bring-up command for previews. Carried on the type for the
-   *  preview layer to consume; not read anywhere yet. */
+  /** Dev-server bring-up command for previews. */
   previewCommand?: string;
+  worktreeSetup?: string;
   /** Shell command (run with cwd = the fresh worktree) that installs deps.
-   *  Unset = worktree.ts's built-in behavior (tella-fusion webapp install /
-   *  root `bun install` when a package.json exists). */
+   *  Unset = `bun install` at the repo root when package.json exists. */
   depsInstall?: string;
+  prCache?: boolean;
+  prCacheOpenLimit?: number;
+  prCacheRecentLimit?: number;
+  warmCachePaths?: string[];
+  previewAwsProfile?: string;
+  deploymentTracking?: boolean;
+  securityInstructions?: string;
 }
 
 export interface ResolvedServer {
@@ -204,7 +232,6 @@ export interface ResolvedPaths {
   claudeBin: string;
   opencodeBin: string | null;
   worktreesDir: string;
-  wtScript: string;
   mcpConfig: string;
 }
 
@@ -216,72 +243,28 @@ export interface ResolvedCloud {
 export interface ResolvedIdentity {
   team: TeamMember[];
   slackNames: Record<string, string>;
+  defaultTimezone: string;
 }
 
 // ---------------------------------------------------------------------------
-// Built-in Tella defaults (behavior with no config file must equal these)
+// Portable defaults
 // ---------------------------------------------------------------------------
 
 function builtinRepos(): Record<string, Repo> {
   return {
-    "tella-fusion": {
-      id: "tella-fusion",
-      repo: "/home/ubuntu/projects/tella-fusion",
-      wtPrefix: "tella-fusion",
+    opensession: {
+      id: "opensession",
+      label: "OpenSession",
+      description: "The OpenSession server, web UI, agents, and client apps.",
+      repo: OPENSESSION_ROOT,
+      wtPrefix: "opensession",
       defaultBranch: "main",
-      ghRepo: "tellahq/tella-fusion",
-      previewCommand: "/home/ubuntu/.claude/skills/tella-local/ensure-up.sh",
-    },
-    backstage: {
-      id: "backstage",
-      repo: "/home/ubuntu/projects/tella-backstage",
-      wtPrefix: "backstage",
-      defaultBranch: "master",
-      ghRepo: "tellahq/backstage",
+      ghRepo: "",
       sharedCheckout: true,
+      default: true,
     },
-    // Infra / GitOps / desktop / media repos — normal worktree + PR flow (none self-host).
-    gitops: { id: "gitops", repo: "/home/ubuntu/projects/gitops", wtPrefix: "gitops", defaultBranch: "main", ghRepo: "tellahq/gitops" },
-    infra: { id: "infra", repo: "/home/ubuntu/projects/infra", wtPrefix: "infra", defaultBranch: "main", ghRepo: "tellahq/infra" },
-    "shared-infra": { id: "shared-infra", repo: "/home/ubuntu/projects/shared-infra", wtPrefix: "shared-infra", defaultBranch: "main", ghRepo: "tellahq/shared-infra" },
-    "tella-mac": { id: "tella-mac", repo: "/home/ubuntu/projects/tella-mac", wtPrefix: "tella-mac", defaultBranch: "main", ghRepo: "tellahq/tella-mac" },
-    "tella-windows": { id: "tella-windows", repo: "/home/ubuntu/projects/tella-windows", wtPrefix: "tella-windows", defaultBranch: "main", ghRepo: "tellahq/tella-windows" },
-    gstreamer: { id: "gstreamer", repo: "/home/ubuntu/projects/gstreamer", wtPrefix: "gstreamer", defaultBranch: "tla_main", ghRepo: "tellahq/gstreamer" },
-    "gst-plugins-rs": { id: "gst-plugins-rs", repo: "/home/ubuntu/projects/gst-plugins-rs", wtPrefix: "gst-plugins-rs", defaultBranch: "tla_main", ghRepo: "tellahq/gst-plugins-rs" },
   };
 }
-
-/**
- * Tella's roster, expressed as the identity config that derives today's
- * user-mappings tables exactly (user-mappings.test.ts pins that equality).
- * `githubToSlack: false` on Louise mirrors the historical GITHUB_TO_SLACK
- * table, which never listed her — keep it that way so converting the table to
- * config changes zero behavior.
- */
-const DEFAULT_TEAM: TeamMember[] = [
-  { name: "Michiel Westerbeek", email: "happylinks@gmail.com", aliases: ["michiel"], slackId: "UT41L6GCC", github: "happylinks", linearEmails: ["michiel@tella.tv"], timezone: "Europe/Amsterdam" },
-  { name: "Jaap Frolich", email: "jfrolich@gmail.com", aliases: ["jaap"], slackId: "U08EWERLX8D", github: "jfrolich", linearEmails: ["jaap@tella.com"], timezone: "Europe/Amsterdam" },
-  { name: "Kent de Bruin", email: "52224550+kentdebruin@users.noreply.github.com", aliases: ["kent"], slackId: "U08S8B3P83X", github: "kentdebruin", linearEmails: ["kent@tella.com"], timezone: "Europe/Amsterdam" },
-  { name: "Grant Shaddick", email: "grant@tella.com", aliases: ["grant"], slackId: "USU9S2YRF", github: "9ranty", linearEmails: ["grant@tella.tv"], timezone: "Europe/Amsterdam" },
-  { name: "Johnny Lin", email: "67078496+johnnylinsf@users.noreply.github.com", aliases: ["johnny"], slackId: "U0866D7PCCU", github: "johnnylinsf", linearEmails: ["johnny@tella.tv"], timezone: "America/Los_Angeles" },
-  { name: "John Soutar", email: "john@tella.com", aliases: ["john"], slackId: "U08CXTV7ML2", github: "soutar", linearEmails: ["john@tella.com"], timezone: "Europe/London" },
-  { name: "Louise de Sadeleer", email: "54376811+louisedesadeleer@users.noreply.github.com", aliases: ["louise"], slackId: "U08JGAT5KNK", github: "louisedesadeleer", linearEmails: ["louise@tella.com"], githubToSlack: false, timezone: "Europe/Lisbon" },
-];
-
-/** Slack ids that resolve to a display name but aren't full team members —
- *  bots, contractors, and legacy-workspace ids. */
-const DEFAULT_SLACK_NAMES: Record<string, string> = {
-  U066K2VRDHA: "Andres Gomez",
-  U0A3CERFC57: "Connor",
-  U0A3PB2MJET: "Ankita Kulkarni",
-  U0A7T08405R: "Michael",
-  U03EACNTLA1: "Linear",
-  // Legacy workspace ids
-  U01D3KX3ATW: "Johnny",
-  U01E8UE6L15: "Louise",
-  U084XSXRQNB: "Kent",
-  U086HCZURPM: "Grant",
-};
 
 // ---------------------------------------------------------------------------
 // Loader
@@ -311,6 +294,8 @@ function parseRepoSection(v: unknown): RepoSection | undefined {
   const o = obj(v);
   if (!o) return undefined;
   return defined({
+    label: str(o.label),
+    description: str(o.description),
     repo: str(o.repo),
     wtPrefix: str(o.wtPrefix),
     defaultBranch: str(o.defaultBranch),
@@ -318,7 +303,15 @@ function parseRepoSection(v: unknown): RepoSection | undefined {
     sharedCheckout: bool(o.sharedCheckout),
     default: bool(o.default),
     previewCommand: str(o.previewCommand),
+    worktreeSetup: str(o.worktreeSetup),
     depsInstall: str(o.depsInstall),
+    prCache: bool(o.prCache),
+    prCacheOpenLimit: num(o.prCacheOpenLimit),
+    prCacheRecentLimit: num(o.prCacheRecentLimit),
+    warmCachePaths: strArray(o.warmCachePaths),
+    previewAwsProfile: str(o.previewAwsProfile),
+    deploymentTracking: bool(o.deploymentTracking),
+    securityInstructions: str(o.securityInstructions),
   });
 }
 
@@ -365,7 +358,6 @@ function parseConfig(text: string): BackstageConfig {
         claudeBin: str(paths.claudeBin),
         opencodeBin: str(paths.opencodeBin),
         worktreesDir: str(paths.worktreesDir),
-        wtScript: str(paths.wtScript),
         mcpConfig: str(paths.mcpConfig),
       });
     }
@@ -391,6 +383,7 @@ function parseConfig(text: string): BackstageConfig {
     const identity = obj(raw.identity);
     if (identity) {
       const section: IdentitySection = {};
+      section.defaultTimezone = str(identity.defaultTimezone);
       if (Array.isArray(identity.team)) {
         section.team = identity.team
           .map(parseTeamMember)
@@ -405,7 +398,6 @@ function parseConfig(text: string): BackstageConfig {
       cfg.identity = section;
     }
 
-    // Not consumed yet — carried through so the next batches have the data.
     const integrations = obj(raw.integrations);
     if (integrations) cfg.integrations = integrations;
     const policy = obj(raw.policy);
@@ -413,6 +405,8 @@ function parseConfig(text: string): BackstageConfig {
       cfg.policy = defined({
         stripeConfirmTools: strArray(policy.stripeConfirmTools),
         automationDeniedTools: strArray(policy.automationDeniedTools),
+        githubWriteOwners: strArray(policy.githubWriteOwners),
+        githubBotLogins: strArray(policy.githubBotLogins),
       });
     }
     const persona = obj(raw.persona);
@@ -460,7 +454,7 @@ export function getConfig(): BackstageConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Typed getters (env var → config.json → built-in Tella default)
+// Typed getters (env var → config.json → portable default)
 // ---------------------------------------------------------------------------
 
 export function configuredServer(): ResolvedServer {
@@ -472,13 +466,11 @@ export function configuredServer(): ResolvedServer {
     host: process.env.HOST || s.host || "127.0.0.1",
     port,
     webhookPort: Number.isFinite(envWebhookPort) ? envWebhookPort : s.webhookPort ?? 3848,
-    // Canonical UI origin (os.tella.dev, 2026-07-10): the app serves at the
-    // bare domain root, no path prefix. Old prefixed links 301 there.
     publicBaseUrl:
       envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
       s.publicBaseUrl ||
-      (isLocalProfile() ? `http://127.0.0.1:${port}` : "https://os.tella.dev"),
-    previewHost: process.env.PREVIEW_HOST || s.previewHost || "michael.taila5d766.ts.net",
+      `http://127.0.0.1:${port}`,
+    previewHost: process.env.PREVIEW_HOST || s.previewHost || "127.0.0.1",
     caddyAdmin: s.caddyAdmin || "http://localhost:2019",
   };
 }
@@ -490,11 +482,17 @@ export function configuredPaths(): ResolvedPaths {
     claudeBin:
       envAlias("OPENSESSION_CLAUDE_BIN", "BACKSTAGE_CLAUDE_BIN") ||
       p.claudeBin ||
-      (isLocalProfile() ? Bun.which("claude") || "claude" : "/home/ubuntu/.local/bin/claude"),
+      Bun.which("claude") ||
+      "claude",
     opencodeBin: envAlias("OPENSESSION_OPENCODE_BIN", "BACKSTAGE_OPENCODE_BIN") || p.opencodeBin || null,
-    worktreesDir: envAlias("OPENSESSION_WORKTREES_DIR", "BACKSTAGE_WORKTREES_DIR") || p.worktreesDir || (isLocalProfile() ? `${localRoot}/worktrees` : "/home/ubuntu/worktrees"),
-    wtScript: p.wtScript || "/home/ubuntu/bin/wt",
-    mcpConfig: envAlias("OPENSESSION_MCP_CONFIG", "BACKSTAGE_MCP_CONFIG") || p.mcpConfig || (isLocalProfile() ? `${localRoot}/mcp-config.json` : `${HOME}/projects/tella-backstage/mcp-config.json`),
+    worktreesDir:
+      envAlias("OPENSESSION_WORKTREES_DIR", "BACKSTAGE_WORKTREES_DIR") ||
+      p.worktreesDir ||
+      (isLocalProfile() ? `${localRoot}/worktrees` : `${HOME}/.opensession/worktrees`),
+    mcpConfig:
+      envAlias("OPENSESSION_MCP_CONFIG", "BACKSTAGE_MCP_CONFIG") ||
+      p.mcpConfig ||
+      (isLocalProfile() ? `${localRoot}/mcp-config.json` : `${OPENSESSION_ROOT}/mcp-config.json`),
   };
 }
 
@@ -504,7 +502,7 @@ export function configuredCloud(): ResolvedCloud {
     upstream:
       process.env.OPENSESSION_CLOUD_UPSTREAM?.trim() ||
       cloud.upstream?.trim() ||
-      "https://os.tella.dev",
+      configuredServer().publicBaseUrl,
     token:
       process.env.OPENSESSION_CLOUD_TOKEN?.trim() ||
       cloud.token?.trim() ||
@@ -513,15 +511,13 @@ export function configuredCloud(): ResolvedCloud {
 }
 
 /**
- * The repo registry: config `repos` merged over the built-in Tella map.
- * A config entry with a built-in id overrides just the fields it sets; a new
- * id (with at least `repo`) adds a repo. OPENSESSION_TELLA_FUSION (or the
- * deprecated BACKSTAGE_TELLA_FUSION) keeps env precedence over both for the
- * tella-fusion checkout path.
+ * The repo registry. An explicit `repos` object is authoritative; without one,
+ * a source checkout gets a portable self-repo so a first run is useful.
  */
 export function configuredRepos(): Record<string, Repo> {
-  const merged = isLocalProfile() ? {} : builtinRepos();
-  for (const [id, entry] of Object.entries(getConfig().repos || {})) {
+  const configured = getConfig().repos;
+  const merged = (configured || isLocalProfile()) ? {} : builtinRepos();
+  for (const [id, entry] of Object.entries(configured || {})) {
     const base = merged[id];
     if (base) {
       merged[id] = { ...base, ...entry, id };
@@ -529,33 +525,37 @@ export function configuredRepos(): Record<string, Repo> {
       if (!entry.repo) continue; // a new repo needs a checkout path
       merged[id] = {
         id,
+        label: entry.label || id,
         repo: entry.repo,
         wtPrefix: entry.wtPrefix || id,
         defaultBranch: entry.defaultBranch || "main",
         ghRepo: entry.ghRepo || "",
         ...defined({
+          description: entry.description,
           sharedCheckout: entry.sharedCheckout,
           default: entry.default,
           previewCommand: entry.previewCommand,
+          worktreeSetup: entry.worktreeSetup,
           depsInstall: entry.depsInstall,
+          prCache: entry.prCache,
+          prCacheOpenLimit: entry.prCacheOpenLimit,
+          prCacheRecentLimit: entry.prCacheRecentLimit,
+          warmCachePaths: entry.warmCachePaths,
+          previewAwsProfile: entry.previewAwsProfile,
+          deploymentTracking: entry.deploymentTracking,
+          securityInstructions: entry.securityInstructions,
         }),
       };
     }
   }
-  const envTellaFusion = envAlias("OPENSESSION_TELLA_FUSION", "BACKSTAGE_TELLA_FUSION");
-  if (envTellaFusion && merged["tella-fusion"]) {
-    merged["tella-fusion"] = { ...merged["tella-fusion"], repo: envTellaFusion };
-  }
   return merged;
 }
 
-/** The instance's default repo: the entry flagged `default: true` in config,
- *  falling back to tella-fusion (always present via the built-ins). */
+/** The instance's default repo: the entry flagged `default: true`, then first. */
 export function defaultRepo(): Repo {
   const repos = configuredRepos();
   const repo = (
     Object.values(repos).find((r) => r.default) ||
-    repos["tella-fusion"] ||
     Object.values(repos)[0]
   );
   if (!repo) throw new Error("No repositories are registered");
@@ -569,7 +569,7 @@ export function defaultRepo(): Repo {
  * markers stay literal (renaming those breaks running sessions).
  */
 export function personaName(): string {
-  return getConfig().persona?.name || "Michael";
+  return getConfig().persona?.name || "Assistant";
 }
 
 /**
@@ -589,14 +589,59 @@ export function productMark(): string {
 }
 
 /**
- * Identity roster for user-mappings.ts. No `identity` section = Tella's
- * built-in roster (behavior-identical); an `identity` section present but
- * with an empty/absent team = genuinely empty tables (attribution/gating
- * become no-ops, by design).
+ * Identity roster for user-mappings.ts. Missing/empty identity means no
+ * instance-specific attribution or per-user integration access.
  */
 export function configuredIdentity(): ResolvedIdentity {
   const id = getConfig().identity;
-  if (!id && isLocalProfile()) return { team: [], slackNames: {} };
-  if (!id) return { team: DEFAULT_TEAM, slackNames: DEFAULT_SLACK_NAMES };
-  return { team: id.team ?? [], slackNames: id.slackNames ?? {} };
+  if (!id) return { team: [], slackNames: {}, defaultTimezone: "UTC" };
+  return {
+    team: id.team ?? [],
+    slackNames: id.slackNames ?? {},
+    defaultTimezone: id.defaultTimezone ?? "UTC",
+  };
+}
+
+export function personaCompany(): string {
+  return getConfig().persona?.company || "your organization";
+}
+
+export function personaProduct(): string {
+  return getConfig().persona?.product || "your product";
+}
+
+/** Owners represented by registered GitHub repos unless policy narrows them. */
+export function githubWriteOwners(): string[] {
+  const configured = getConfig().policy?.githubWriteOwners;
+  if (configured) return [...new Set(configured.map((owner) => owner.toLowerCase()))];
+  return [
+    ...new Set(
+      Object.values(configuredRepos())
+        .map((repo) => repo.ghRepo.split("/")[0]?.toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+export function githubBotLogins(): string[] {
+  const env = process.env.GITHUB_BOT_LOGIN?.trim();
+  return [
+    ...new Set(
+      [
+        ...(getConfig().policy?.githubBotLogins || []),
+        ...(env ? [env] : []),
+      ].map((login) => login.toLowerCase()),
+    ),
+  ];
+}
+
+/** Tolerant access for integration-specific modules. Integration schemas can
+ * evolve independently without making the core loader reject unknown keys. */
+export function configuredIntegration(
+  name: string,
+): Record<string, unknown> {
+  const value = getConfig().integrations?.[name];
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }

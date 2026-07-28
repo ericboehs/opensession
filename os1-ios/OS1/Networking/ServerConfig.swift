@@ -49,15 +49,18 @@ final class ServerConfig {
         // OS1_SERVER / OS1_TOKEN env overrides exist for dev runs on the
         // simulator (SIMCTL_CHILD_* injection); they are not persisted.
         let env = ProcessInfo.processInfo.environment
+        let bundledDefault =
+            Bundle.main.object(forInfoDictionaryKey: "OS1DefaultServerURL") as? String
         baseURLString = env["OS1_SERVER"]
             ?? UserDefaults.standard.string(forKey: Self.urlDefaultsKey)
-            ?? "https://os.tella.dev"
+            ?? bundledDefault
+            ?? "http://127.0.0.1:3850"
         userName = UserDefaults.standard.string(forKey: Self.userNameDefaultsKey) ?? "ios"
         githubLogin = UserDefaults.standard.string(forKey: Self.githubLoginDefaultsKey) ?? ""
         token = env["OS1_TOKEN"] ?? Keychain.get(Self.tokenKeychainKey) ?? ""
     }
 
-    /// Base URL without a trailing slash, e.g. `https://os.tella.dev`.
+    /// Base URL without a trailing slash, e.g. `https://sessions.example.com`.
     var baseURL: URL? {
         var trimmed = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }

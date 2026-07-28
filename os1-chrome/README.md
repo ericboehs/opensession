@@ -1,7 +1,7 @@
 # OpenSession for Chrome (os1-chrome)
 
-Internal Chrome extension (MV3) — a side panel that captures context from the
-page you're looking at (tella-fusion webapp, localhost dev, anywhere) and kicks
+Chrome extension (MV3) — a side panel that captures context from the
+page you're looking at and kicks
 off OpenSession agent sessions with it. In the spirit of Claude for Chrome and
 Ramp's Inspect extension, but deliberately small: it's a **capture + dispatch**
 surface, not a full OpenSession client. Never distributed via the Web Store.
@@ -15,8 +15,7 @@ surface, not a full OpenSession client. Never distributed via the Web Store.
     text, aria/testid, a cropped screenshot of it, and — via a MAIN-world React
     fiber walk — the React component stack (with `file:line` sources on dev
     builds that carry `_debugSource`) plus the nearest component's props.
-  - Repo (guessed from the page: tella.tv/localhost → tella-fusion,
-    os.tella.dev → backstage), ask/code mode, model picker.
+  - Repository (loaded from the connected server), ask/code mode, model picker.
 - **Sessions**: recent sessions with live state (running / needs input /
   queued), click through to a transcript view.
 - **Session detail**: transcript tail (polled), follow-up prompts (steer/queue
@@ -26,10 +25,10 @@ surface, not a full OpenSession client. Never distributed via the Web Store.
 
 ## Install
 
-**Managed (auto-updating — the normal path).** The extension is force-installed
-via Chrome policy pointing at our self-hosted update feed; Chrome then installs
-it for everyone and auto-updates within ~5 hours of each release (or
-immediately via chrome://extensions → Update).
+**Managed.** A deployment may force-install the extension through Chrome policy
+and point it at its own OpenSession update feed. `deployment.json` supplies the
+default server; `manifest.json` deliberately contains no organization-specific
+update URL.
 
 - Extension ID: `paoolggkbjkobjblpjgncolaaikcmboe` (derived from the signing
   key; also pinned as `key` in manifest.json so unpacked loads share it)
@@ -91,9 +90,10 @@ see `crossSiteViolation` in `src/server/web-auth.ts`.
 
 ## Files
 
-- `manifest.json` — MV3; host permissions for os.tella.dev (API) and
-  tella.tv/tella.dev/localhost (capture); `activeTab` covers everything else
-  when invoked from the toolbar.
+- `manifest.json` — MV3; loopback host access is built in, and the extension
+  requests access to the team server selected in Settings. `activeTab` covers
+  page capture when invoked from the toolbar.
+- `deployment.json` — distribution-owned default OpenSession server.
 - `background.js` — tiny service worker: opens the panel on icon click, owns
   the context-menu entry.
 - `sidepanel.html/css/js` — the whole client. No frameworks.

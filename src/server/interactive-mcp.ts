@@ -29,7 +29,7 @@ import { createAssetsMcpServer } from "../agents/slack/assets-tools";
 import { createWorkflowsMcpServer } from "../agents/slack/workflow-tools";
 import { createNotesMcpServer } from "../agents/slack/notes-tools";
 import { papercutsEnabledForRepo } from "./papercuts";
-import { productName } from "./config";
+import { defaultRepo, productName } from "./config";
 import { repoForPath, REPOS } from "./worktree";
 import { registerInteractiveMcpBuilder, startMcpHttpServer, startRunRpcServer } from "./run-rpc";
 import { automationRunMcpForSession, selfImproveMcpForSession } from "./automations";
@@ -122,7 +122,7 @@ export function interactiveMcpServers(
 									s.repo ||
 									(s.worktreeDir
 										? repoForPath(s.worktreeDir).id
-										: "tella-fusion"),
+										: defaultRepo().id),
 								branch: s.branch,
 								worktreeDir: s.worktreeDir,
 								attached: s.attachedRepos || [],

@@ -17,7 +17,6 @@ export const BRANDS: Record<string, { bg: string; fg?: string }> = {
   incident: { bg: "#f25533" },
   ahrefs: { bg: "#ff6b00" },
   circle: { bg: "#6c47ff" },
-  tellainternalsupportmcp: { bg: "#111827" },
 };
 
 /** Pretty display names for the handful that don't title-case cleanly. */
@@ -25,7 +24,6 @@ const DISPLAY_NAMES: Record<string, string> = {
   workos: "WorkOS",
   github: "GitHub",
   "grafana-poller": "Grafana Poller",
-  tellainternalsupportmcp: "Tella Support",
   incident: "incident.io",
 };
 

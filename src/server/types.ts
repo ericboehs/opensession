@@ -101,7 +101,7 @@ export interface UnifiedSession {
   /** What the last automated review concluded on this PR. */
   prOsReview?: OsReviewSummary;
   mode?: "ask" | "code";
-  /** Primary repo this chat works in (repo id; default "tella-fusion"). */
+  /** Primary repo this chat works in (registered repo id). */
   repo?: string;
   /** Optional Project (folder) this chat belongs to; null/undefined = standalone. */
   projectId?: string | null;
@@ -382,7 +382,7 @@ export interface BackstageSessionFile {
    *  doc and get it approved via ask_user before writing code, then implement
    *  in vertical slices with per-slice evidence. See buildPlanFirstNote. */
   planFirst?: boolean;
-  repo?: string; // which repo this chat works in (default "tella-fusion")
+  repo?: string; // which registered repo this chat works in
   workspaceId?: string | null; // Workspace this chat belongs to (canonical key)
   projectId?: string | null; // legacy alias of workspaceId (dual-read during migration)
   /** Parent/orchestrator session when this chat was spawned as a visible worker sub-session. */

@@ -18,6 +18,7 @@
 
 import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
+import { personaName } from "../../server/config";
 import {
   addSessionMemory,
   forgetSessionMemory,
@@ -51,7 +52,7 @@ export function createMemoryMcpServer(ctx: MemoryToolContext) {
         "Scopes: 'repo' (default) = facts about this session's codebase (gotchas, operational " +
         "quirks, decisions — things that don't belong in checked-in docs); 'user' = facts about " +
         "the person prompting (preferences, context); 'team' = workspace-wide facts everyone " +
-        "(including Michael in Slack) should know. Store only durable, non-obvious facts — never " +
+        `(including ${personaName()} in Slack) should know. Store only durable, non-obvious facts — never ` +
         "conversation state, never things already in the repo's docs.",
       {
         text: z.string().describe("The fact to remember, one self-contained sentence or two."),

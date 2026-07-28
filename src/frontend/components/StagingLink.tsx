@@ -56,12 +56,10 @@ export function StagingLink({
 	const [deployPending, setDeployPending] = useState(false);
 	const { copied, copy } = useCopy();
 
-	// Only fusion PRs get butler previews, and a merged/closed PR's alias no
-	// longer points at this change — the link is a pre-merge testing affordance.
-	const relevant =
-		!!session.prUrl &&
-		session.prState === "OPEN" &&
-		(session.repo ?? "tella-fusion") === "tella-fusion";
+	// A merged/closed PR's alias no longer points at this change — the link is a
+	// pre-merge testing affordance. Repos without deployment metadata simply
+	// return no staging URL.
+	const relevant = !!session.prUrl && session.prState === "OPEN";
 
 	useEffect(() => {
 		if (!relevant) {

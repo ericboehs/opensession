@@ -27,6 +27,7 @@
 import { Database } from "bun:sqlite";
 import { execSync } from "child_process";
 import { appendFileSync, existsSync, readdirSync, statSync, unlinkSync } from "fs";
+import { configuredIntegration, personaName } from "../src/server/config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const DRY = process.argv.includes("--dry-run");
@@ -37,7 +38,10 @@ const AUDIT_DIR = `${HOME}/.opensession-audit`;
 const SHARD_RETENTION_DAYS = 14;
 const SIZE_ALERT_BYTES = 2 * 1024 ** 3; // post-GC alert threshold
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN || "";
-const SLACK_DM = "D0A82UW4CCC"; // Michiel
+const configuredAlertChannel = configuredIntegration("accountHealth").slackChannel;
+const SLACK_CHANNEL =
+  process.env.OPENSESSION_DB_GC_SLACK_CHANNEL ||
+  (typeof configuredAlertChannel === "string" ? configuredAlertChannel : "");
 
 function log(msg: string): void {
   console.log(`${new Date().toISOString()} ${msg}`);
@@ -179,12 +183,15 @@ function gcShards(): number {
 }
 
 async function slackWarn(text: string): Promise<void> {
-  if (!SLACK_TOKEN) return;
+  if (!SLACK_TOKEN || !SLACK_CHANNEL) return;
   try {
     await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: { Authorization: `Bearer ${SLACK_TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ channel: SLACK_DM, text: `It's Michael (opencode-db-gc): ${text}` }),
+      body: JSON.stringify({
+        channel: SLACK_CHANNEL,
+        text: `It's ${personaName()} (opencode-db-gc): ${text}`,
+      }),
     });
   } catch {}
 }

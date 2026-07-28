@@ -4,21 +4,12 @@ import { cn } from "../ui/cn";
 /**
  * GitHub logins for the team, keyed by lowercased first name — the shape of
  * web user-picker names, presence viewers and `startedBy`, and also the first
- * token of full names coming from Slack ("Kent de Bruin" → "kent"). The
- * hardcoded entries are the pre-fetch fallback; lib/people.ts merges the
- * server directory (GET /api/people) over them once it loads.
+ * token of full names coming from chat integrations. lib/people.ts populates
+ * the map from the server directory (GET /api/people).
  */
-const GITHUB_LOGIN: Record<string, string> = {
-	michiel: "happylinks",
-	jaap: "jfrolich",
-	kent: "kentdebruin",
-	grant: "9ranty",
-	johnny: "johnnylinsf",
-	john: "soutar",
-	louise: "louisedesadeleer",
-};
+const GITHUB_LOGIN: Record<string, string> = {};
 
-/** Merge directory-fetched logins over the fallback map (lib/people.ts). */
+/** Merge directory-fetched logins into the map (lib/people.ts). */
 export function registerGithubLogins(entries: Record<string, string>) {
 	Object.assign(GITHUB_LOGIN, entries);
 }

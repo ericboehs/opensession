@@ -17,6 +17,7 @@ import { resolvePrWorkspace } from "../../server/workspace-resolve";
 import { repoForPath } from "../../server/worktree";
 import { prKey } from "./constants";
 import type { BackstageSessionFile } from "../../server/types";
+import { configuredServer } from "../../server/config";
 
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
 
@@ -62,7 +63,7 @@ export function bksIdFor(prNumber: number, kind: GithubRunKind, ghRepo?: string)
 
 const UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-  "https://os.tella.dev";
+  configuredServer().publicBaseUrl;
 
 /** Backstage UI link to any session id (also used for handoff "open session" links). */
 export function uiSessionUrl(sessionId: string): string {

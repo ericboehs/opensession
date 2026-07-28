@@ -28,6 +28,7 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        INFOPLIST_KEY_OS1DefaultServerURL: https://os.tella.dev
         PRODUCT_BUNDLE_IDENTIFIER: dev.tella.os1
         DEVELOPMENT_TEAM: 6GUXT43C8B
         CODE_SIGN_STYLE: Automatic
@@ -82,6 +83,7 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        INFOPLIST_KEY_OS1DefaultServerURL: https://os.tella.dev
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         PRODUCT_NAME: OS1
         # Same id as the iOS target: one App Store Connect record (universal

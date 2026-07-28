@@ -13,8 +13,8 @@ and GitHub agents, driving coding sessions through the OpenCode engine
 ## Quickstart
 
 ```sh
-git clone https://github.com/tellahq/backstage.git tella-backstage
-cd tella-backstage
+git clone <your-opensession-repository-url> opensession
+cd opensession
 bun install
 bun run opensession.ts
 ```
@@ -27,10 +27,10 @@ Then read the real setup guide — secrets, accounts, integrations, systemd:
 - [docs/self-hosting-sandboxes.md](docs/self-hosting-sandboxes.md) — isolated
   Docker/Daytona/E2B/Box/Modal/AWS Lambda MicroVM execution for sessions
 
-Portability status: parts of the codebase still carry Tella-specific literals
-(repo registry defaults, Slack channel IDs, Linear OAuth redirect). What is
-config today vs. what still needs a code edit is called out per page in the
-setup docs.
+Repositories, identity, branding, public URLs, integration enablement,
+deployment policy, client endpoints, action seeds, and automation seeds are
+instance configuration. The source defaults to a local, single-repository
+OpenSession install.
 
 ## macOS app
 

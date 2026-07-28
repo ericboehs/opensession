@@ -4,7 +4,7 @@
  * `~/.opensession-sandbox.json` (dual-read fallback to `~/.backstage-sandbox.json`)
  * picks the provider, e.g.
  *   {"provider": "docker", "image": "backstage-runner:latest",
- *    "idleStopMinutes": 30, "perRepo": {"tella-fusion": {"provider": "docker"}}}
+ *    "idleStopMinutes": 30, "perRepo": {"app": {"provider": "docker"}}}
  *
  * Read fresh on every call (same pattern as codexTransport() reading
  * ~/.opensession-codex-transport.json) so a config flip applies to the next run
@@ -107,7 +107,7 @@ export interface SandboxPublicIngressConfig {
   port: number;
   /** Bind host (default "127.0.0.1" — a reverse proxy/tunnel fronts it). */
   host: string;
-  /** The base URL remote sandboxes dial, e.g. "wss://michael.tella.dev"
+  /** The base URL remote sandboxes dial, e.g. "wss://sessions.example.com"
    *  (http(s) is normalized to ws(s)). When set, remote-provider launches use
    *  it as their callback base instead of callbackBaseUrl. */
   publicBaseUrl?: string;

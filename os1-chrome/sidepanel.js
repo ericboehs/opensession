@@ -8,8 +8,8 @@ const $ = (id) => document.getElementById(id);
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-const DEFAULT_SERVER = "https://os.tella.dev";
-let cfg = { serverUrl: DEFAULT_SERVER, token: "", login: "", name: "" };
+let defaultServer = "http://127.0.0.1:3850";
+let cfg = { serverUrl: defaultServer, token: "", login: "", name: "" };
 
 // Captured context for the composer.
 const ctx = {
@@ -177,18 +177,7 @@ async function refreshPageChip() {
   guessRepo();
 }
 
-function guessRepo() {
-  if (!ctx.page) return;
-  const sel = $("sel-repo");
-  if (!sel.options.length) return;
-  let want = null;
-  try {
-    const host = new URL(ctx.page.url).host;
-    if (host === "os.tella.dev") want = "backstage";
-    else if (/tella\.(tv|dev)$|localhost|127\.0\.0\.1/.test(host)) want = "tella-fusion";
-  } catch {}
-  if (want && [...sel.options].some((o) => o.value === want)) sel.value = want;
-}
+function guessRepo() {}
 
 // ── Composer: captures ───────────────────────────────────────────────────────
 
@@ -543,12 +532,13 @@ async function loadComposerData() {
     for (const r of repos.repos || []) {
       const o = document.createElement("option");
       o.value = r.id;
-      o.textContent = r.id;
+      o.textContent = r.label || r.id;
       rs.append(o);
     }
-    rs.value = [...rs.options].some((o) => o.value === "tella-fusion")
-      ? "tella-fusion"
-      : rs.options[0]?.value || "";
+    rs.value =
+      (repos.repos || []).find((repo) => repo.default)?.id ||
+      rs.options[0]?.value ||
+      "";
     const ms = $("sel-model");
     ms.textContent = "";
     const dflt = document.createElement("option");
@@ -668,8 +658,12 @@ async function applyPendingContext() {
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 async function init() {
+  try {
+    const deployment = await fetch(chrome.runtime.getURL("deployment.json")).then((res) => res.json());
+    if (deployment?.defaultServer) defaultServer = deployment.defaultServer;
+  } catch {}
   const stored = await chrome.storage.local.get("cfg");
-  if (stored.cfg) cfg = { ...cfg, ...stored.cfg };
+  cfg = { ...cfg, serverUrl: defaultServer, ...(stored.cfg || {}) };
   $("in-server").value = cfg.serverUrl;
 
   $("tab-new").addEventListener("click", () => showView("new"));
@@ -683,8 +677,19 @@ async function init() {
   $("btn-signin").addEventListener("click", startSignIn);
   $("btn-signout").addEventListener("click", signOut);
   $("in-server").addEventListener("change", async () => {
-    cfg.serverUrl = $("in-server").value.trim() || DEFAULT_SERVER;
+    cfg.serverUrl = $("in-server").value.trim() || defaultServer;
     $("in-server").value = cfg.serverUrl;
+    try {
+      const origin = new URL(cfg.serverUrl).origin + "/*";
+      const granted = await chrome.permissions.request({ origins: [origin] });
+      if (!granted) {
+        toast("settings-status", "Permission to connect to this server was declined.", true);
+        return;
+      }
+    } catch {
+      toast("settings-status", "Enter a valid http(s) server URL.", true);
+      return;
+    }
     await chrome.storage.local.set({ cfg });
   });
   $("prompt").addEventListener("keydown", (e) => {

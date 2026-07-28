@@ -530,14 +530,16 @@ export async function fetchSkillMentions(
 
 export interface RepoInfo {
 	id: string;
+	label?: string;
+	description?: string;
 	ghRepo?: string;
 	defaultBranch: string;
 	sharedCheckout: boolean;
 	default?: boolean;
 }
 
-export async function fetchRepos(): Promise<RepoInfo[]> {
-	const data = await request<{ repos?: RepoInfo[] }>("/repos", {
+export async function fetchRepos(cloud = false): Promise<RepoInfo[]> {
+	const data = await request<{ repos?: RepoInfo[] }>(`/repos${cloud ? "?cloud=1" : ""}`, {
 		label: "Failed to load repositories",
 	});
 	return data?.repos ?? [];

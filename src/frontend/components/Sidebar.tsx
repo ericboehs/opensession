@@ -1,4 +1,4 @@
-import { AGENT_NAME } from "../lib/brand";
+import { AGENT_NAME, DEFAULT_REPO_ID } from "../lib/brand";
 import React, {
 	useState,
 	useMemo,
@@ -1101,7 +1101,7 @@ type SortBy = "updated" | "created";
 // "all" widens to everyone's open PRs (incl. automation output), "none" hides
 // PR rows entirely.
 type PrsFilter = "default" | "all" | "none";
-const DEFAULT_PROJECT = "tella-fusion";
+const DEFAULT_PROJECT = DEFAULT_REPO_ID;
 const FILTER_KEY = "opensession-sidebar-filter";
 // Bumped when the default grouping changes. Because setFilter persists the
 // whole state, a stored "status" from before v2 is ambiguous — most people got
@@ -6475,7 +6475,7 @@ function SessionHoverCard({
 	if (s.model) rows.push(["Model", s.model]);
 	if (s.mode) rows.push(["Mode", s.mode]);
 
-	const repoName = repoLabel(s.repo || "tella-fusion");
+	const repoName = repoLabel(s.repo || DEFAULT_REPO_ID);
 	const extra = s.attachedRepos?.length || 0;
 	rows.push(["Repo", extra ? `${repoName} +${extra} more` : repoName]);
 	if (s.branch)
@@ -6922,7 +6922,7 @@ function WsOverviewInfo({
 		<>
 			<div className="hovercard-head">
 				<span className="hovercard-branch">
-					{branch || row.chats[0]?.repo || "tella-fusion"}
+					{branch || row.chats[0]?.repo || DEFAULT_REPO_ID}
 				</span>
 				{prChat?.prAdditions != null && prChat?.prDeletions != null && (
 					<span className="hovercard-diff">

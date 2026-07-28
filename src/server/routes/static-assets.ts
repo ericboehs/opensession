@@ -7,7 +7,7 @@
  */
 
 import type { RouteContext } from "./context";
-import { configuredRepos, productName } from "../config";
+import { configuredIntegration, configuredRepos, productName } from "../config";
 import { FRONTEND_DIST, FRONTEND_SRC, frontend } from "../frontend-build";
 import { isLocalProfile } from "../profile";
 
@@ -244,16 +244,17 @@ export async function handleStaticAssetsRoutes(
 		path === "/backstage/.well-known/apple-app-site-association" ||
 		path === "/backstage/apple-app-site-association"
 	) {
+		const configuredIds = configuredIntegration("clients").appleAppIds;
+		const appIDs = Array.isArray(configuredIds)
+			? configuredIds.filter((id): id is string => typeof id === "string")
+			: [];
 		return Response.json(
 			{
 				applinks: {
 					apps: [],
 					details: [
 						{
-							appIDs: [
-								"6GUXT43C8B.dev.tella.os1",
-								"6GUXT43C8B.dev.tella.os1.shell",
-							],
+							appIDs,
 							components: [{ "/": "/*" }],
 						},
 					],

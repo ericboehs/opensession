@@ -19,8 +19,13 @@
  */
 
 import { mkdirSync, renameSync, writeFileSync } from "fs";
+import { configuredIntegration } from "./config";
 
-const REGION = process.env.AGENT_AWS_REGION || "us-east-2"; // tella prod (tella-app-prod)
+const configuredRegion = configuredIntegration("aws").region;
+const REGION =
+  process.env.AGENT_AWS_REGION ||
+  process.env.AWS_REGION ||
+  (typeof configuredRegion === "string" ? configuredRegion : "us-east-1");
 
 export const AWS_HUMAN_AUTH_DENIAL =
   "AWS device login is not a human gate in OpenSession. Do not run `aws login` or " +

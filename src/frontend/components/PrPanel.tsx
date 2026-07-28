@@ -43,6 +43,7 @@ import { SelectionToSession } from "./SelectionToSession";
 import { getCurrentUser } from "./UserPicker";
 import { githubLoginFor } from "./UserAvatar";
 import { renderMarkdown, renderPrCommentMarkdown } from "../lib/markdown";
+import { GITHUB_BOT_LOGINS } from "../lib/brand";
 import { providerFromUrl, avatarUrl, type Provider } from "../lib/provider";
 import { pollWhileVisible, PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
 import {
@@ -1014,7 +1015,7 @@ export function PrPanel({
       (reviewer) => reviewer.login.toLowerCase() === currentLogin,
     );
     const needsReview =
-      (pr.author.toLowerCase() === "tella-butler" &&
+      (GITHUB_BOT_LOGINS.has(pr.author.toLowerCase()) &&
         pr.reviewDecision !== "APPROVED") ||
       myReview?.state === "PENDING";
     const canMergeAfterReview =

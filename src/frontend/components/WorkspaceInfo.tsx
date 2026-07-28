@@ -1406,7 +1406,7 @@ export function WorkspaceInfo({
 						acceptedFromPr={reviewAcceptedFromPr}
 						onReviewChange={onReviewChange}
 					/>
-					{pr?.number && repo === "tella-fusion" && (
+					{pr?.number && (
 						<PrAgentActions
 							sessionId={sessionId}
 							repo={repo}

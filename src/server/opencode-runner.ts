@@ -136,7 +136,7 @@
  * permission asks.
  */
 
-import { personaName, productName } from "./config";
+import { configuredServer, githubWriteOwners, personaName, productName } from "./config";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import type { Subprocess } from "bun";
@@ -259,7 +259,7 @@ import {
 const HOME = process.env.HOME || "/home/ubuntu";
 const UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-  "https://os.tella.dev";
+  configuredServer().publicBaseUrl;
 
 /** Last resort when PATH has no opencode (systemd's trimmed env): scan the
  *  nvm installs, newest node first, instead of hardcoding one node version —
@@ -1067,15 +1067,6 @@ const ASK_EXTERNAL_DIR_PERMISSIONS: Record<string, "allow" | "deny"> = {
   // those nested paths, so allow the whole subtree (deny catch-all is first,
   // last-match-wins). It's a throwaway scratch dir, no security surface.
   "/tmp/opencode/**": "allow",
-  // SEO loop state (pending.jsonl / learnings.md): the SEO Validation
-  // automation runs in ask mode but its whole job is reading and appending
-  // these box-local files (see src/agents/loops/seo.ts). The shell tool also
-  // routes command arg paths through this permission, so this covers both the
-  // Read tool and bash cat/append. Nothing sensitive lives here. Both the
-  // canonical dir and the legacy ~/.backstage-seo symlink spelling are
-  // allowed — opencode matches the path as written, without resolving links.
-  [`${stateDir("seo")}/**`]: "allow",
-  [`${process.env.HOME || "/home/ubuntu"}/.backstage-seo/**`]: "allow",
 };
 
 /**
@@ -1300,26 +1291,23 @@ export function buildOpencodeInstructions(input: {
       "or reuse the host's personal AWS SSO profiles, and do not try to work around the failure " +
       "with another login path."
   );
-  // Unconditional, every run. History: a Codex-backed session opened a PR
-  // against an open-source repo; then despite this block, runs opened a public
-  // issue (vercel-labs/deepsec#114, 2026-07-19 — "issue" wasn't listed below)
-  // and a fork+PR (TomGranot/tella-to-youtube#1, 2026-07-21). Since 2026-07-26
-  // the credentials themselves are scoped to tellahq (fine-grained PAT for the
-  // bot, GitHub App user tokens for teammates), so writes elsewhere fail with
-  // a 403 at GitHub's side; this text explains the rule and that refusal.
+  const writeOwners = githubWriteOwners();
+  const firstParty =
+    writeOwners.length > 0
+      ? `the configured GitHub owner${writeOwners.length === 1 ? "" : "s"} ${writeOwners.map((owner) => `\`${owner}\``).join(", ")}`
+      : "a registered first-party GitHub repository";
   parts.push(
     "## Never write to public or third-party GitHub repos\nNEVER write to any GitHub " +
-      "repository outside the tellahq org, and never publish to an open-source or public " +
+      `repository outside ${firstParty}, and never publish to an open-source or public ` +
       "repository, without explicit user approval in the current conversation. This covers " +
       "every kind of write: opening or commenting on issues, opening PRs or reviews, creating " +
       "forks, pushing branches, creating gists or public repos. A request to investigate, " +
-      "implement, or prepare a change is never permission to publish it. Credentials are " +
-      "scoped to tellahq, so such writes fail with 403 \"Resource not accessible\" — if that " +
-      "happens, do not look for another route (other tokens, other accounts, curl); instead " +
+      "implement, or prepare a change is never permission to publish it. If credentials reject " +
+      "the write, do not look for another route (other tokens, other accounts, curl); instead " +
       "describe the proposed upstream issue/PR in your summary or note and let a human post " +
       "it. Found a bug in a third-party tool? Report it in your note — never on their " +
       "tracker. This rule overrides bias-to-action and generic commit/push/PR defaults; " +
-      "automatic PR creation applies only to Tella's own repositories."
+      "automatic PR creation applies only to registered first-party repositories."
   );
   parts.push(
     "## GitHub checks authentication\nThe ambient GitHub PAT or user token cannot read " +
@@ -1501,13 +1489,13 @@ export function buildOpencodeInstructions(input: {
         "`publish_walkthrough`: a short demo screen-recording of the change working, " +
         "before/after screenshots when the change is visual, and a 2-6 sentence markdown " +
         "writeup (what changed, root cause for fixes, how you verified it). Record media " +
-        "first — for tella-fusion webapp changes use the tella-local skill (screenshots and " +
-        "screen recordings) — and pass absolute file paths; they are copied to durable " +
+        "first and pass absolute file paths; they are copied to durable " +
         "storage. It renders inline in the chat where you publish it (video and all) and " +
         "in the session's Review tab, and is mirrored into the PR " +
         "description; if you publish before the PR exists, call it again after `gh pr create` " +
-        "so it lands there too. Skip it for pure refactors, backend-only changes, or trivial " +
-        "tweaks — a walkthrough should demonstrate something a human can see. When a " +
+        "so it lands there too. Use the repository's own preview lifecycle or configured " +
+        "preview command to capture the change. Skip it for pure refactors, backend-only " +
+        "changes, or trivial tweaks — a walkthrough should demonstrate something a human can see. When a " +
         "screenshot belongs in the PR conversation itself (review evidence, a visual bug " +
         "report), use `comment_on_pr_with_images` instead: it serves the images from our " +
         "own public host so they render inline in the PR comment for the team — never " +

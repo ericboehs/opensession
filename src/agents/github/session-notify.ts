@@ -15,6 +15,7 @@ import { existsSync, readFileSync } from "fs";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { tryGetSessionControl, type SessionControl, type SessionSummary } from "../../server/session-control";
 import { REPOS, worktreeHeadBranch } from "../../server/worktree";
+import { defaultRepo } from "../../server/config";
 
 const PENDING_PATH = `${stateDir("github")}/pending-deploys.json`;
 const DEPLOY_WORKFLOW_PATH = ".github/workflows/deploy.yml";
@@ -59,7 +60,7 @@ export function projectIdForRepo(fullName: string): string | null {
 export function matchSessions(control: SessionControl, projectId: string, branch: string): SessionSummary[] {
   return control.listSessions().filter((s) => {
     if (s.state === "archived") return false;
-    if ((s.repo || "tella-fusion") === projectId) {
+    if ((s.repo || defaultRepo().id) === projectId) {
       if (s.branch === branch) return true;
       // The agent may have switched branches inside its worktree (automations
       // renaming their auto-generated branch before opening the PR) while the
@@ -101,9 +102,11 @@ export async function notifyMergedPrSessions(payload: any): Promise<void> {
   const title: string = pr.title || `PR #${prNumber}`;
   const mergedBy: string = pr.merged_by?.login || payload?.sender?.login || "someone";
   const base: string = pr.base?.ref || "main";
-  // Deploy tracking only exists for tella-fusion's deploy.yml (runs on every push
-  // to main, one run per merge commit — no cancel-concurrency, so sha match is exact).
-  const trackDeploy = projectId === "tella-fusion" && base === "main" && !!pr.merge_commit_sha;
+  const repo = REPOS[projectId];
+  const trackDeploy =
+    repo?.deploymentTracking === true &&
+    base === repo.defaultBranch &&
+    !!pr.merge_commit_sha;
 
   const message =
     `🔀 This session's PR #${prNumber} “${title}” (branch \`${headRef}\`) was just merged into ${base} by ${mergedBy}.` +

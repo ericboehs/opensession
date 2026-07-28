@@ -947,7 +947,7 @@ export async function autoPushSessionBranches(session: UnifiedSession): Promise<
 	const targets: Array<{ dir: string; branch: string; repoId: string }> = [];
 	const primaryRepoId =
 		session.repo ||
-		(session.worktreeDir ? repoForPath(session.worktreeDir).id : "tella-fusion");
+		(session.worktreeDir ? repoForPath(session.worktreeDir).id : defaultRepo().id);
 	if (session.worktreeDir && session.branch)
 		targets.push({
 			dir: session.worktreeDir,

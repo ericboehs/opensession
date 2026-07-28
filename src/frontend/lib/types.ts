@@ -148,7 +148,7 @@ export interface ChatReplyTo {
 
 export interface ChatMessage {
 	id: string;
-	/** Sender's self-selected backstage-user display name ("Michiel"). */
+	/** Sender's self-selected display name. */
 	user: string;
 	text: string;
 	/** Attached images (absent/empty on text-only messages). */
@@ -248,7 +248,7 @@ export interface UnifiedSession {
 	/** What the last automated review concluded on this PR. */
 	prOsReview?: OsReview;
 	mode?: "ask" | "code";
-	/** Primary repo this chat works in (repo id; default "tella-fusion"). */
+	/** Primary repo this chat works in (registered repo id). */
 	repo?: string;
 	/** Optional Project (folder) this chat belongs to; null/undefined = standalone. */
 	projectId?: string | null;
@@ -808,7 +808,7 @@ export type WSServerMessage =
 	| { type: "git_pushed"; sessionId: string; repo?: string }
 	// A GitHub webhook reported PR/review/check activity on a branch — PR views
 	// showing that branch refetch immediately instead of waiting out their
-	// poll interval (`repo` is the repo id, e.g. "tella-fusion").
+	// poll interval (`repo` is a registered repo id).
 	| { type: "pr_updated"; repo: string; ghRepo: string; branch: string; number?: number }
 	// The session's scratch assets folder changed (agent wrote/deleted a
 	// file) — the Assets tab refetches its tree on this.

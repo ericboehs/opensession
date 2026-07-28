@@ -8,7 +8,7 @@
  *
  * Also carries `comment_on_pr_with_images`: post a PR comment whose
  * screenshots RENDER inline on GitHub — images are staged to durable storage
- * and served from unguessable public URLs on michael.tella.dev, which
+ * and served from unguessable URLs on the configured public origin, which
  * GitHub's camo proxy can fetch (see src/server/pr-images.ts for the
  * mechanism and the alternatives that don't work).
  *
@@ -28,6 +28,7 @@ import { postPrComment } from "../../server/pr-info";
 import { findSession } from "../../server/session-cache";
 import { resolvePrTarget } from "../../server/session-repos";
 import { REPOS } from "../../server/worktree";
+import { configuredServer } from "../../server/config";
 
 export interface WalkthroughToolContext {
   sessionId: string;
@@ -43,7 +44,7 @@ export function createWalkthroughMcpServer(ctx: WalkthroughToolContext) {
   const tools = [
     tool(
       "publish_walkthrough",
-      "Publish a walkthrough of this session's change: a demo video, before/after screenshots, and a short writeup. It renders inline in the chat (the video plays right where you published it) and in the session's Review tab, and is mirrored into the GitHub PR description (managed section — republishing replaces it, so publish again after the PR exists or when the change evolves). Record the video / screenshots first (e.g. the tella-local skill), pass absolute file paths; files are copied to durable storage, so temp paths are fine. Summary: 2-6 sentences of markdown — what changed and how it was verified (root cause for fixes).",
+      "Publish a walkthrough of this session's change: a demo video, before/after screenshots, and a short writeup. It renders inline in the chat and Review tab, and is mirrored into the GitHub PR description. Record the media first using the repository's own preview/capture workflow and pass absolute file paths; files are copied to durable storage, so temp paths are fine. Summary: 2-6 sentences of markdown describing what changed and how it was verified.",
       {
         summary: z
           .string()
@@ -104,7 +105,7 @@ export function createWalkthroughMcpServer(ctx: WalkthroughToolContext) {
     ),
     tool(
       "comment_on_pr_with_images",
-      "Post a comment on this session's PR (or an explicit PR) with screenshots that RENDER INLINE on GitHub. Images are copied to durable storage and served from unguessable public URLs on michael.tella.dev (our own infra — never a third-party host, never a commit on any branch); GitHub's camo proxy fetches them so they render everywhere, private repos included. The URLs are capability links: anyone holding one can fetch the image, so don't attach anything that must stay strictly repo-member-only. Place images in the markdown with {{image:1}}, {{image:2}}, … (1-based); images you don't reference are appended at the end. Use it when a picture belongs in the PR conversation — review evidence, visual bug reports, before/after context for reviewers.",
+      `Post a comment on this session's PR (or an explicit PR) with screenshots that RENDER INLINE on GitHub. Images are copied to durable storage and served from unguessable URLs on ${configuredServer().publicBaseUrl} (our own infrastructure, never a third-party host or repository commit); GitHub's camo proxy fetches them so they render everywhere, private repos included. The URLs are capability links: anyone holding one can fetch the image, so don't attach anything that must stay strictly repo-member-only. Place images in the markdown with {{image:1}}, {{image:2}}, … (1-based); images you don't reference are appended at the end.`,
       {
         comment: z
           .string()
@@ -116,7 +117,7 @@ export function createWalkthroughMcpServer(ctx: WalkthroughToolContext) {
             z.object({
               path: z
                 .string()
-                .describe("Absolute path to the image (png/jpg/jpeg/webp/gif) under /tmp or /home/ubuntu."),
+                .describe("Absolute path to the image (png/jpg/jpeg/webp/gif) under /tmp or the current user's home directory."),
               alt: z.string().optional().describe("Alt/caption text for the image."),
             }),
           )
@@ -126,7 +127,7 @@ export function createWalkthroughMcpServer(ctx: WalkthroughToolContext) {
           .string()
           .optional()
           .describe(
-            "Project id (e.g. tella-fusion, backstage, tella-mac) when the PR isn't on the session's primary repo — attached and linked repos resolve too.",
+            "Registered project id when the PR isn't on the session's primary repo; attached and linked repos resolve too.",
           ),
         pr_number: z
           .number()
@@ -182,7 +183,7 @@ export function createWalkthroughMcpServer(ctx: WalkthroughToolContext) {
               `Posting the comment failed: ${res.error}. The ${uploaded.length} image(s) WERE staged and their URLs can be reused: ${uploaded.map((u) => u.url).join(" ")}`,
             );
           return text(
-            `Comment posted${res.url ? `: ${res.url}` : ""} — ${uploaded.length} image(s) attached (served from michael.tella.dev; they render inline via GitHub's image proxy).`,
+            `Comment posted${res.url ? `: ${res.url}` : ""} — ${uploaded.length} image(s) attached from ${configuredServer().publicBaseUrl}; they render inline via GitHub's image proxy.`,
           );
         } catch (e: any) {
           return text(`comment_on_pr_with_images failed: ${e?.message || String(e)}`);

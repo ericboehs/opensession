@@ -19,7 +19,7 @@ import {
   GITHUB_REPO,
   activeSessions,
 } from "./state";
-import { worktreePathFor } from "../../server/worktree";
+import { removeWorktree, worktreePathFor } from "../../server/worktree";
 import { defaultRepo } from "../../server/config";
 import { runCommand } from "../../server/run-command";
 import { statSync } from "fs";
@@ -292,19 +292,8 @@ export async function cleanupWorktrees(): Promise<void> {
         );
       }
 
-      // Clean up via wt delete (sessions can be revived — worktree gets
-      // recreated). Async: a wt delete takes ~10s and used to block the
-      // whole event loop via spawnSync.
-      const del = await runCommand(["/home/ubuntu/bin/wt", "delete", branch], {
-        timeoutMs: 30000,
-      });
-      if (del.status === 0) {
-        console.log(`[slack] [cleanup] Deleted worktree: ${branch}`);
-      } else {
-        console.warn(
-          `[slack] [cleanup] Failed to delete ${branch}: ${del.stderr}`
-        );
-      }
+      await removeWorktree(branch, defaultRepo().id);
+      console.log(`[slack] [cleanup] Deleted worktree: ${branch}`);
     }
   } catch (e) {
     console.error("[slack] [cleanup] Worktree cleanup error:", e);

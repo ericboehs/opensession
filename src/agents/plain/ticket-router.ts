@@ -24,6 +24,7 @@ import { existsSync, readFileSync } from "fs";
 import { opencodeOneShot } from "../../server/opencode-oneshot";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { resolveModel } from "../../server/models";
+import { personaCompany, personaProduct } from "../../server/config";
 
 const ROUTER_MODEL = process.env.PLAIN_SPAM_CHECK_MODEL || "claude-haiku-4-5";
 const CONFIG_PATH = stateDir("plain-router.json");
@@ -37,7 +38,7 @@ export interface RouteVerdict {
 
 export const DEFAULT_BASIC_MODEL = "claude-opus-5";
 
-export const DEFAULT_ROUTER_PROMPT = `You are the triage router for Tella's customer support inbox. Tella is a screen recording app for creating and sharing videos.
+export const DEFAULT_ROUTER_PROMPT = `You are the triage router for ${personaCompany()}'s customer support inbox for ${personaProduct()}.
 
 Classify each ticket into exactly one route:
 

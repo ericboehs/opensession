@@ -20,7 +20,6 @@ import {
 // path+mtime) and points BACKSTAGE_CONFIG at it.
 const ENV_KEYS = [
   "BACKSTAGE_CONFIG",
-  "BACKSTAGE_TELLA_FUSION",
   "BACKSTAGE_WORKTREES_DIR",
   "BACKSTAGE_CLAUDE_BIN",
   "BACKSTAGE_OPENCODE_BIN",
@@ -54,47 +53,31 @@ afterEach(() => {
 });
 
 describe("config loader", () => {
-  test("no file → built-in Tella defaults", () => {
+  test("no file → portable self-repo defaults", () => {
     withConfig(null); // path exists as a dir entry that was never written
     for (const k of ENV_KEYS.slice(1)) delete process.env[k];
 
     expect(getConfig()).toEqual({});
 
     const repos = configuredRepos();
-    expect(Object.keys(repos).sort()).toEqual([
-      "backstage",
-      "gitops",
-      "gst-plugins-rs",
-      "gstreamer",
-      "infra",
-      "shared-infra",
-      "tella-fusion",
-      "tella-mac",
-      "tella-windows",
-    ]);
-    expect(repos["tella-fusion"]).toMatchObject({
-      id: "tella-fusion",
-      repo: "/home/ubuntu/projects/tella-fusion",
-      wtPrefix: "tella-fusion",
+    expect(Object.keys(repos)).toEqual(["opensession"]);
+    expect(repos.opensession).toMatchObject({
+      id: "opensession",
+      label: "OpenSession",
+      wtPrefix: "opensession",
       defaultBranch: "main",
-      ghRepo: "tellahq/tella-fusion",
-    });
-    expect(repos["backstage"]).toMatchObject({
-      repo: "/home/ubuntu/projects/tella-backstage",
-      defaultBranch: "master",
-      ghRepo: "tellahq/backstage",
+      ghRepo: "",
       sharedCheckout: true,
+      default: true,
     });
-    expect(defaultRepo().id).toBe("tella-fusion");
+    expect(defaultRepo().id).toBe("opensession");
 
     const paths = configuredPaths();
-    expect(paths.claudeBin).toBe("/home/ubuntu/.local/bin/claude");
-    expect(paths.worktreesDir).toBe("/home/ubuntu/worktrees");
-    expect(paths.wtScript).toBe("/home/ubuntu/bin/wt");
+    expect(paths.claudeBin).toBe(Bun.which("claude") || "claude");
+    expect(paths.worktreesDir).toBe(`${process.env.HOME}/.opensession/worktrees`);
 
     const identity = configuredIdentity();
-    expect(identity.team.length).toBe(8);
-    expect(identity.slackNames["U0A7T08405R"]).toBe("Michael");
+    expect(identity).toEqual({ team: [], slackNames: {}, defaultTimezone: "UTC" });
 
     expect(configuredServer().caddyAdmin).toBe("http://localhost:2019");
   });
@@ -112,10 +95,14 @@ describe("config loader", () => {
     expect(configuredPaths().worktreesDir).toBe(`${process.env.HOME}/os1/worktrees`);
     expect(configuredPaths().claudeBin).toBe(Bun.which("claude") || "claude");
     expect(configPath()).toBe(`${process.env.HOME}/os1/config.json`);
-    expect(configuredIdentity()).toEqual({ team: [], slackNames: {} });
+    expect(configuredIdentity()).toEqual({
+      team: [],
+      slackNames: {},
+      defaultTimezone: "UTC",
+    });
     expect(() => defaultRepo()).toThrow("No repositories are registered");
 		expect(configuredCloud()).toEqual({
-			upstream: "https://os.tella.dev",
+			upstream: "http://127.0.0.1:3850",
 			token: null,
 		});
   });
@@ -141,38 +128,41 @@ describe("config loader", () => {
 		});
 	});
 
-  test("partial file → merges over defaults", () => {
+  test("repos section is authoritative and applies id-derived defaults", () => {
     withConfig(
       JSON.stringify({
         paths: { worktreesDir: "/srv/worktrees" },
         repos: {
-          "tella-fusion": { ghRepo: "acme/fusion-fork", depsInstall: "bun install" },
-          "acme-app": { repo: "/srv/acme-app", default: true },
+          "acme-app": {
+            repo: "/srv/acme-app",
+            default: true,
+            label: "Acme App",
+            deploymentTracking: true,
+            warmCachePaths: ["dist/client.js"],
+            previewAwsProfile: "acme-dev",
+            securityInstructions: "Read SECURITY.md.",
+          },
         },
       }),
     );
     for (const k of ENV_KEYS.slice(1)) delete process.env[k];
 
     const repos = configuredRepos();
-    // Overridden fields apply; untouched fields keep their built-in values.
-    expect(repos["tella-fusion"].ghRepo).toBe("acme/fusion-fork");
-    expect(repos["tella-fusion"].depsInstall).toBe("bun install");
-    expect(repos["tella-fusion"].repo).toBe("/home/ubuntu/projects/tella-fusion");
-    expect(repos["tella-fusion"].defaultBranch).toBe("main");
-    // New repo gets id-derived defaults.
     expect(repos["acme-app"]).toEqual({
       id: "acme-app",
+      label: "Acme App",
       repo: "/srv/acme-app",
       wtPrefix: "acme-app",
       defaultBranch: "main",
       ghRepo: "",
       default: true,
+      deploymentTracking: true,
+      warmCachePaths: ["dist/client.js"],
+      previewAwsProfile: "acme-dev",
+      securityInstructions: "Read SECURITY.md.",
     });
-    // Built-ins survive untouched.
-    expect(repos["gitops"].ghRepo).toBe("tellahq/gitops");
-    // The default flag wins over the tella-fusion fallback.
+    expect(repos.opensession).toBeUndefined();
     expect(defaultRepo().id).toBe("acme-app");
-    // Config path beats the built-in default.
     expect(configuredPaths().worktreesDir).toBe("/srv/worktrees");
   });
 
@@ -185,9 +175,8 @@ describe("config loader", () => {
     withConfig("{ this is not json");
     for (const k of ENV_KEYS.slice(1)) delete process.env[k];
     expect(getConfig()).toEqual({});
-    expect(configuredRepos()["tella-fusion"].repo).toBe("/home/ubuntu/projects/tella-fusion");
-    expect(defaultRepo().id).toBe("tella-fusion");
-    expect(configuredIdentity().team.length).toBe(8);
+    expect(defaultRepo().id).toBe("opensession");
+    expect(configuredIdentity().team).toEqual([]);
   });
 
   test("non-object JSON → defaults", () => {
@@ -199,22 +188,20 @@ describe("config loader", () => {
     withConfig(
       JSON.stringify({
         paths: { worktreesDir: "/from-config/worktrees", claudeBin: "/from-config/claude" },
-        repos: { "tella-fusion": { repo: "/from-config/tella-fusion" } },
+        repos: { app: { repo: "/from-config/app" } },
       }),
     );
     process.env.BACKSTAGE_WORKTREES_DIR = "/from-env/worktrees";
     process.env.BACKSTAGE_CLAUDE_BIN = "/from-env/claude";
-    process.env.BACKSTAGE_TELLA_FUSION = "/from-env/tella-fusion";
 
     expect(configuredPaths().worktreesDir).toBe("/from-env/worktrees");
     expect(configuredPaths().claudeBin).toBe("/from-env/claude");
-    expect(configuredRepos()["tella-fusion"].repo).toBe("/from-env/tella-fusion");
+    expect(configuredRepos().app.repo).toBe("/from-config/app");
 
     // …and the config value applies once the env var is gone.
     delete process.env.BACKSTAGE_WORKTREES_DIR;
-    delete process.env.BACKSTAGE_TELLA_FUSION;
     expect(configuredPaths().worktreesDir).toBe("/from-config/worktrees");
-    expect(configuredRepos()["tella-fusion"].repo).toBe("/from-config/tella-fusion");
+    expect(configuredRepos().app.repo).toBe("/from-config/app");
   });
 
   test("identity: section present with empty team → empty tables, no throws", () => {
@@ -226,7 +213,7 @@ describe("config loader", () => {
 
   test("persona/branding: defaults with no config file", () => {
     withConfig(null);
-    expect(personaName()).toBe("Michael");
+    expect(personaName()).toBe("Assistant");
     expect(productName()).toBe("OpenSession");
     expect(productMark()).toBe("OpenSession");
   });
@@ -248,7 +235,7 @@ describe("config loader", () => {
     expect(productMark()).toBe("OpenSession");
     // Empty/whitespace strings are treated as unset, not honored.
     withConfig(JSON.stringify({ persona: { name: "  " }, branding: { productName: "" } }));
-    expect(personaName()).toBe("Michael");
+    expect(personaName()).toBe("Assistant");
     expect(productName()).toBe("OpenSession");
   });
 

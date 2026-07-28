@@ -6,9 +6,7 @@ import { stopPreview } from "./preview";
 import { configuredPaths, configuredRepos, defaultRepo, type Repo } from "./config";
 import { isLocalProfile } from "./profile";
 
-// The Repo type + registry defaults live in config.ts now (the registry is
-// config-driven: `repos` in ~/.opensession/config.json merges over the built-in
-// Tella map — see docs/portability-audit.md). Re-exported so existing
+// The Repo type + registry defaults live in config.ts now. Re-exported so existing
 // `import { type Repo } from "./worktree"` call sites keep working.
 export type { Repo } from "./config";
 
@@ -41,8 +39,7 @@ export function getRepo(id?: string): Repo {
   if (!id) return defaultRepo();
   const repo = configuredRepos()[id];
   if (repo) return repo;
-  if (isLocalProfile()) throw new Error(`Unknown repo "${id}"`);
-  return defaultRepo();
+  throw new Error(`Unknown repo "${id}"`);
 }
 
 /** Infer the repo that owns a checkout/worktree path. */
@@ -50,8 +47,7 @@ export function repoForPath(p: string): Repo {
   for (const r of Object.values(configuredRepos())) {
     if (p === r.repo || p.startsWith(`${worktreesDir()}/${r.wtPrefix}-`)) return r;
   }
-  if (isLocalProfile()) throw new Error(`No registered repo owns path "${p}"`);
-  return defaultRepo();
+  throw new Error(`No registered repo owns path "${p}"`);
 }
 
 /** Is this dir a shared checkout no single session owns — a repo's live main
@@ -108,34 +104,10 @@ export interface WorktreeInfo {
 }
 
 /**
- * Seed the webapp's gitignored `.env.local` from the main checkout into a fresh
- * worktree. It carries the WorkOS/AWS config AND the dev-auth bypass
- * (DEV_AUTH_*), so a session can run `just dev` and browser/CDP-test the webapp
- * fully authenticated — no WorkOS login, no per-worktree `vercel env pull`.
- * Best-effort and idempotent: only copies when the source exists and the
- * destination doesn't.
- */
-async function seedWebappEnv(webappDir: string): Promise<void> {
-  const tellaFusionMain = configuredRepos()["tella-fusion"]?.repo;
-  if (!tellaFusionMain) return;
-  const src = `${tellaFusionMain}/packages/core/webapp/.env.local`;
-  const dest = `${webappDir}/.env.local`;
-  try {
-    if (existsSync(src) && !existsSync(dest)) {
-      await Bun.write(dest, Bun.file(src));
-      console.log(`[worktree] seeded .env.local into ${webappDir}`);
-    }
-  } catch (e) {
-    console.warn(`[worktree] failed to seed .env.local into ${webappDir}:`, e);
-  }
-}
-
-/**
  * Best-effort dependency install in a fresh worktree — sessions can always run
- * `bun install` themselves. Honors the repo's configured `depsInstall` command
- * (run with cwd = the worktree); unset = the historical behavior: tella-fusion
- * installs (and seeds dev-auth env) under packages/core/webapp, other repos
- * install from the repo root when a package.json exists.
+ * `bun install` themselves. A repo-owned `.opensession/setup.sh` (or legacy
+ * `.backstage/setup.sh`) is preferred; `worktreeSetup` is the instance-level
+ * fallback. `depsInstall` then overrides the generic root package install.
  *
  * Interactive create paths fire this WITHOUT awaiting (a tella-fusion webapp
  * `bun install` is ~20-25s — it was the bulk of the "Waiting for workspace"
@@ -167,42 +139,21 @@ async function seedAndInstallWorktree(
 
 export async function installWorktreeDeps(repo: Repo, wtPath: string, branchLabel: string): Promise<void> {
   try {
-    if (repo.id === "tella-fusion") {
-      await seedWebappEnv(`${wtPath}/packages/core/webapp`);
-      // .envrc is gitignored (it derives gst.env at direnv time), so fresh
-      // worktrees lack it and `direnv exec . just dev` starts with a broken
-      // env. Seed it from the main checkout, same as .env.local.
-      try {
-        if (
-          !(await Bun.file(`${wtPath}/.envrc`).exists()) &&
-          (await Bun.file(`${repo.repo}/.envrc`).exists())
-        ) {
-          await Bun.write(`${wtPath}/.envrc`, Bun.file(`${repo.repo}/.envrc`));
-        }
-      } catch (e) {
-        console.warn(`[worktree] .envrc seed failed for ${branchLabel} (continuing):`, e);
-      }
-      // The static codec crates (x264-static, fdk-aac-static) build from
-      // submodule sources; a fresh worktree has those dirs empty, so cargo
-      // builds can't validate. Shallow + best-effort.
-      try {
-        await $`git -C ${wtPath} submodule update --init --depth 1`.quiet();
-      } catch (e) {
-        console.warn(`[worktree] submodule init failed for ${branchLabel} (continuing):`, e);
-      }
+    const repoSetup = ["opensession", "backstage"]
+      .map((dir) => `${wtPath}/.${dir}/setup.sh`)
+      .find((path) => existsSync(path));
+    if (repoSetup) {
+      await $`bash ${repoSetup}`.cwd(wtPath).quiet();
+    } else if (repo.worktreeSetup) {
+      await $`sh -c ${repo.worktreeSetup}`.cwd(wtPath).quiet();
     }
     if (repo.depsInstall) {
       await $`sh -c ${repo.depsInstall}`.cwd(wtPath).quiet();
-    } else if (repo.id === "tella-fusion") {
-      const webappDir = `${wtPath}/packages/core/webapp`;
-      if (await Bun.file(`${webappDir}/package.json`).exists()) {
-        await $`cd ${webappDir} && bun install`.quiet();
-      }
     } else if (await Bun.file(`${wtPath}/package.json`).exists()) {
-      await $`cd ${wtPath} && bun install`.quiet();
+      await $`bun install`.cwd(wtPath).quiet();
     }
   } catch (e) {
-    console.warn(`[worktree] bun install failed for ${branchLabel} (continuing):`, e);
+    console.warn(`[worktree] setup failed for ${branchLabel} (continuing):`, e);
   }
 }
 
@@ -303,14 +254,7 @@ export async function removeWorktree(branch: string, repoId?: string): Promise<v
     // PGID from .ports/dev-pgid (written by ensure-up.sh) so it works even
     // after a backstage restart or when the server was started by an agent.
     try { await stopPreview(wtPath); } catch {}
-    // Use the wt delete script for tella-fusion when available, otherwise plain
-    // git worktree remove (the wt script is tella-fusion-specific).
-    const wtScript = configuredPaths().wtScript;
-    if (repo.id === "tella-fusion" && (await Bun.file(wtScript).exists())) {
-      await $`${wtScript} delete ${branch}`.quiet();
-    } else {
-      await $`git -C ${repo.repo} worktree remove ${wtPath} --force`.quiet();
-    }
+    await $`git -C ${repo.repo} worktree remove ${wtPath} --force`.quiet();
   } catch (e) {
     console.error(`Failed to remove worktree for ${branch}:`, e);
     // Don't throw — session deletion should still succeed
@@ -789,9 +733,8 @@ export async function createWorktree(
   });
 
   // Best-effort warm-template seed + dep install — sessions can always run
-  // `bun install` themselves. tella-fusion's deps + dev-auth env live under
-  // the webapp; other repos (e.g. backstage) install from the repo root.
-  // Config `depsInstall` overrides. Backgrounded (not awaited): the opening
+  // `bun install` themselves. Config `worktreeSetup` / `depsInstall` overrides.
+  // Backgrounded (not awaited): the opening
   // turn shouldn't wait ~20s on a webapp bun install it usually doesn't need.
   void seedAndInstallWorktree(repo, wtPath, branch);
 

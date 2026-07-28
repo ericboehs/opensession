@@ -2,10 +2,8 @@
  * Consolidated user/email/ID mappings across GitHub, Slack, and Linear.
  *
  * The tables are DERIVED from `configuredIdentity()` (identity.team +
- * identity.slackNames in ~/.backstage/config.json; built-in default = Tella's
- * roster — see config.ts). Derivation happens once at module load; with no
- * config file the derived tables are exactly the historical literals
- * (user-mappings.test.ts pins that equality). An empty configured team means
+ * identity.slackNames in ~/.opensession/config.json). Derivation happens once
+ * at module load. An empty configured team means
  * empty tables: attribution/gating/ask-routing become no-ops, never throws.
  */
 import { configuredIdentity, type TeamMember } from "../config";
@@ -95,7 +93,7 @@ export function slackIdToFirstName(id: string): string | null {
  * Resolve a teammate reference — a Slack user id, a first name / alias, a full
  * name, or a GitHub login — to their Slack id + display name, for the
  * human-in-the-loop asks (src/server/human-asks.ts). Reuses the same identity
- * table as commit attribution so "ask Grant" / "grant" / "9ranty" / a raw U-id
+ * table as commit attribution so a name / alias / GitHub login / raw U-id
  * all land on the same person. Returns null for unknown references.
  */
 export function resolveTeammate(ref?: string | null): { slackId: string; name: string } | null {
@@ -184,8 +182,7 @@ export function githubLoginFor(ref?: string | null): string | null {
  * Ground-truth git identities — the exact (name, email) each teammate's
  * commits already use, so GitHub attributes commits we author on their behalf
  * to the right account (`noreply` addresses where the person commits with
- * one). Derived from the configured roster; the built-in default was mined
- * from tella-fusion commit history.
+ * one). Derived from the configured roster.
  *
  * `aliases` covers the web user-picker first names (UserPicker TEAM) and is matched
  * case-insensitively; `slackId`/`github` let us resolve Slack senders and Linear
@@ -239,19 +236,19 @@ export function gitIdentityFor(user?: string | null): GitIdentity | null {
 /**
  * Does `user` resolve to one of the identities in `allowed`? Used to gate
  * per-user MCP servers (mcp-config.json `allowedUsers`): both sides are run
- * through the same identity table as commit attribution, so a config listing
- * "Grant" matches a run whose user is "grant" / "9ranty" / "grant@tella.com" /
+ * through the same identity table as commit attribution, so a configured name
+ * matches a run whose user is an alias / GitHub login / email /
  * their Slack id. Falls back to a case-insensitive raw-string match so an
  * arbitrary label that doesn't map to a known teammate still works if it's an
  * exact match. Returns false for an anonymous/unknown user against a non-empty
  * list (fail-closed: unidentified callers don't get restricted servers).
  */
 /** IANA timezone for a teammate ref (name/alias/Slack id/email/login),
- *  falling back to Europe/Amsterdam — the team's home base. */
+ * falling back to the instance's configured timezone and then UTC. */
 export function timezoneForUser(ref?: string | null): string {
   const id = gitIdentityFor(ref);
   const member = id ? identity.team.find((m) => m.name === id.name) : undefined;
-  return member?.timezone || "Europe/Amsterdam";
+  return member?.timezone || identity.defaultTimezone;
 }
 
 export function userMatchesAny(

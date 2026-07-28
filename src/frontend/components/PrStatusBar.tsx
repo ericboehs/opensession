@@ -139,11 +139,11 @@ export function refTone(ref: SessionPrRef): PrHeadline["tone"] {
 /**
  * Chip text. A PR in the session's own repo is just its number; one in another
  * repo carries a short repo hint, because a bare "#72" next to "#5253" gives no
- * clue it's the mac app. The `tella-` prefix is dropped — every repo has it.
+ * clue which repository it belongs to.
  */
 function refChipText(ref: SessionPrRef, primaryRepo?: string): string {
 	if (!primaryRepo || ref.repo === primaryRepo) return `#${ref.number}`;
-	return `${ref.repo.replace(/^tella-/, "")} #${ref.number}`;
+	return `${ref.repo} #${ref.number}`;
 }
 
 /** The one-word state a ref-only PR can honestly claim (no detail fetch). */

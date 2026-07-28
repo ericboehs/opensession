@@ -27,7 +27,6 @@ import { clearHandoff, isHandoffActive, maybeHandoffFindings } from "./handoff";
 import { isLockHeld, updatePrState } from "./state";
 import { loadReviewOptions, titleHasSkipKeyword } from "./review-options";
 import { DEFAULT_REVIEW_PROMPT } from "./prompts";
-import { SEO_LABEL } from "../loops/seo";
 
 let onSessionInvalidate: (() => void) | undefined;
 export function setGithubSessionInvalidate(cb: () => void): void {
@@ -149,7 +148,7 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
       clearHandoff(pr.number, ghRepo);
     }
 
-    // ── Merge → notify linked sessions + queue seo-sweep PRs + fire docs-sync ──
+    // ── Merge → notify linked sessions + fire configured docs-sync ──
     if (action === "closed" && pr.merged) {
       // Feedback learning on every configured repo: final outcome sweep for our
       // review comments (open+current at merge = the author ignored them), and
@@ -171,15 +170,10 @@ export async function handleGithubPrEvent(event: string, payload: any): Promise<
       import("./session-notify")
         .then((m) => m.notifyMergedPrSessions(payload))
         .catch((e) => console.error("[github] notifyMergedPrSessions failed:", e));
-      if ((pr.labels || []).some((l) => l.name === SEO_LABEL)) {
-        const { recordMergedSeoPr } = await import("../loops/seo");
-        recordMergedSeoPr(pr.number, pr.merged_at || new Date().toISOString());
-      }
       // Docs-sync: review the merged PR for user-facing changes and update the
       // Mintlify docs. Skip only the docs-sync automation's OWN PRs (they land on
       // `auto-docs-sync-*` branches) so it can never loop on itself. Do NOT skip by
-      // author: tella-butler authors most real feature PRs (co-recording, camera
-      // backgrounds, onboarding, …), and those are exactly the merges that need docs.
+      // author: agent-authored feature PRs may also contain user-facing changes.
       const headRef = pr.head?.ref || "";
       if (headRef.startsWith(DOCS_SYNC_BRANCH_PREFIX)) {
         // A docs-sync PR itself was merged — don't re-fire docs-sync (loop), but

@@ -2,9 +2,12 @@
   "name": "os1-mac",
   "productName": "OS¹",
   "version": "0.3.6",
-  "description": "macOS desktop app for OS¹ — a thin shell around https://os.tella.dev",
+  "description": "macOS desktop shell for an OpenSession server",
   "private": true,
   "main": "src/main.js",
+  "opensession": {
+    "defaultServer": "https://os.tella.dev/"
+  },
   "scripts": {
     "start": "electron .",
     "vendor:opencode": "sh scripts/fetch-opencode.sh",

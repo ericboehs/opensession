@@ -1,13 +1,11 @@
 /**
- * Plain Agent Module — handles Plain webhook events for @michael mentions.
+ * Plain Agent Module — handles Plain webhook events for the configured mention.
  */
 import type { AgentModule } from "../types";
 import { verifyPlainSignature } from "../../server/shared/signature";
 import { handleWebhook, activeSessions, pendingConfirmations } from "./handlers";
 import type { PlainWebhookPayload } from "./handlers";
-import { ensureTriageAutomation } from "./triage-automation";
-import { ensureTopIssuesRollup } from "./top-issues-automation";
-import { ensureSupportDigestAutomation } from "./support-digest-automation";
+import { configuredIntegration } from "../../server/config";
 
 const PLAIN_WEBHOOK_SECRET = process.env.PLAIN_WEBHOOK_SECRET || "";
 
@@ -42,10 +40,8 @@ export class PlainAgent implements AgentModule {
   }
 
   async startup(): Promise<void> {
-    // Seed the triage automation (code-seeded; create-if-absent preserves UI edits)
-    ensureTriageAutomation();
-    ensureTopIssuesRollup();
-    ensureSupportDigestAutomation();
+    if (configuredIntegration("seeds").enabled === true) {
+    }
 
     // Start confirmation cleanup timer
     cleanupInterval = setInterval(() => {

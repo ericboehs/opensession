@@ -25,6 +25,7 @@ import { DESK_NOTE } from "./desk";
 import { personalPromptNoteFor } from "./personal-prompts";
 import { findSession, touchBackstageSession } from "./session-cache";
 import type { AttachedRepo, LinkedPr, UnifiedSession } from "./types";
+import { defaultRepo } from "./config";
 
 export interface SessionRepoContext {
 	repo: string;
@@ -57,7 +58,7 @@ export function resolveSessionRepoContext(
 		session.repo ||
 		(session.worktreeDir
 			? repoForPath(session.worktreeDir).id
-			: "tella-fusion");
+			: defaultRepo().id);
 	const contexts: SessionRepoContext[] = [
 		...(session.worktreeDir
 			? [{
@@ -132,7 +133,7 @@ export function buildReposNote(session: UnifiedSession): string | undefined {
 		session.repo ||
 		(session.worktreeDir
 			? repoForPath(session.worktreeDir).id
-			: "tella-fusion");
+			: defaultRepo().id);
 	const lines = [
 		"## Repos in this session",
 		"This session spans multiple repos. Each is an isolated git worktree — `cd` into the right one to read or edit its files, and commit/push/open PRs in each repo independently (don't edit another repo's shared main checkout).",
@@ -152,7 +153,7 @@ export function sessionRepoIds(session: UnifiedSession): string[] {
 		session.repo ||
 		(session.worktreeDir
 			? repoForPath(session.worktreeDir).id
-			: "tella-fusion");
+			: defaultRepo().id);
 	return [primary, ...(session.attachedRepos || []).map((r) => r.repo)];
 }
 
@@ -250,7 +251,7 @@ export function resolvePrTarget(
 		session.repo ||
 		(session.worktreeDir
 			? repoForPath(session.worktreeDir).id
-			: "tella-fusion");
+			: defaultRepo().id);
 	// Explicit repo+branch — a linked PR, which may live on a different branch
 	// of the primary repo. Only pairs the session actually lists resolve, so
 	// the PR routes can't be pointed at an arbitrary branch.
@@ -491,7 +492,7 @@ export async function linkPr(
 
 	const primaryRepo =
 		session.repo ||
-		(session.worktreeDir ? repoForPath(session.worktreeDir).id : "tella-fusion");
+		(session.worktreeDir ? repoForPath(session.worktreeDir).id : defaultRepo().id);
 	if (repoId === primaryRepo && branch === session.branch)
 		throw new Error("That's this session's own PR — it's already shown");
 	if (

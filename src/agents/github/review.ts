@@ -53,7 +53,7 @@ import {
 import { learnedRulesSection } from "./learned-rules";
 import { repoForFullName } from "./constants";
 
-const TELLA_FUSION = defaultRepo().repo;
+const DEFAULT_REPO_DIR = defaultRepo().repo;
 
 export interface PrRef {
   number: number;
@@ -180,7 +180,7 @@ export async function runReview(
     // Pin a read-only worktree to the PR head so the files the agent Reads are
     // the exact tree the local git diff describes. Without that guarantee, fail
     // the run instead of reviewing a stale shared checkout.
-    let cwd = prRepo?.repo || TELLA_FUSION;
+    let cwd = prRepo?.repo || DEFAULT_REPO_DIR;
     try {
       cwd = await createReviewWorktreeForPrHead(pr.headRef, prRepo?.id, details.baseRefName);
     } catch (e) {
@@ -206,7 +206,7 @@ export async function runReview(
       ? runTestOnBaseCheck({
           cwd,
           baseRefName: details.baseRefName,
-          mainCheckout: prRepo?.repo || TELLA_FUSION,
+          mainCheckout: prRepo?.repo || DEFAULT_REPO_DIR,
           sharedCheckout: prRepo?.sharedCheckout,
           prNumber: pr.number,
           ghRepo: pr.ghRepo,

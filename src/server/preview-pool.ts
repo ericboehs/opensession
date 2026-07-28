@@ -25,8 +25,8 @@
  * Hard-won boot lessons encoded here (2026-07-23 experiment):
  *  - `.ports.conf` must be COMPLETE before start.sh runs — a partial file
  *    leaves sibling services with empty ports and concurrently kills the boot.
- *  - The app resolves AWS creds via the `tella-dev` PROFILE (.envrc sets
- *    AWS_PROFILE, which makes the SDK v3 default chain SKIP env credentials),
+ *  - Some apps resolve AWS creds through a configured named profile
+ *    (AWS_PROFILE makes the SDK v3 default chain skip environment credentials),
  *    and start.sh's own profile-baking is gated on the aws CLI the runner
  *    image deliberately lacks — so we write ~/.aws/credentials in-container
  *    ourselves, and refresh it on claim/sweep (the vended creds are
@@ -244,13 +244,9 @@ function goldenImage(repoId: string): string {
  * actually render — the golden build refuses to commit without them (their
  * absence only surfaces later as module-not-found crashes on page compile).
  */
-const PROVISION_MARKERS: Record<string, string[]> = {
-  "tella-fusion": [
-    "packages/core/webapp/src/bindings/wasm-bindings/tella_wasm_bindings.js",
-    "packages/core/render_engine/render_engine.wasm",
-    "packages/core/render_engine/media_worker.wasm",
-  ],
-};
+function provisionMarkers(repoId: string): string[] {
+  return configuredRepos()[repoId]?.warmCachePaths ?? [];
+}
 
 // ── Docker helpers ───────────────────────────────────────────────────────────
 
@@ -726,10 +722,8 @@ function fullPortsConf(): string {
 
 /**
  * Write the AWS profile file inside a running container (see module doc).
- * Both sections matter: `[tella-dev]` serves the booted app (.envrc sets
- * AWS_PROFILE=tella-dev via direnv), `[default]` serves docker-exec'd steps
- * like setup.sh's WASM S3 install, which run WITHOUT AWS_PROFILE — the
- * first golden build shipped without WASM because only tella-dev existed.
+ * The default section supports provisioning steps; any named profiles declared
+ * by registered repos support applications that set AWS_PROFILE themselves.
  */
 async function refreshContainerCreds(target: string | PoolContainer): Promise<boolean> {
   const env = await getAgentAwsEnv();
@@ -739,9 +733,27 @@ async function refreshContainerCreds(target: string | PoolContainer): Promise<bo
     `aws_secret_access_key = ${env.AWS_SECRET_ACCESS_KEY}`,
     ...(env.AWS_SESSION_TOKEN ? [`aws_session_token = ${env.AWS_SESSION_TOKEN}`] : []),
   ];
-  const lines = ["[default]", ...section, "", "[tella-dev]", ...section, ""].join("\n");
+  const profiles = [
+    ...new Set(
+      Object.values(configuredRepos())
+        .map((repo) => repo.previewAwsProfile)
+        .filter((value): value is string => !!value),
+    ),
+  ];
+  const lines = [
+    "[default]",
+    ...section,
+    "",
+    ...profiles.flatMap((profile) => [`[${profile}]`, ...section, ""]),
+  ].join("\n");
   const region = env.AWS_REGION || "us-east-2";
-  const script = `mkdir -p ~/.aws && cat > ~/.aws/credentials <<'BKSEOF'\n${lines}\nBKSEOF\nprintf '[default]\\nregion = %s\\n[profile tella-dev]\\nregion = %s\\n' "${region}" "${region}" > ~/.aws/config && chmod 600 ~/.aws/credentials`;
+  const configLines = [
+    "[default]",
+    `region = ${region}`,
+    ...profiles.flatMap((profile) => ["", `[profile ${profile}]`, `region = ${region}`]),
+    "",
+  ].join("\\n");
+  const script = `mkdir -p ~/.aws && cat > ~/.aws/credentials <<'BKSEOF'\n${lines}\nBKSEOF\nprintf '%b' '${configLines}' > ~/.aws/config && chmod 600 ~/.aws/credentials`;
   const r =
     typeof target === "string"
       ? await dockerExec(target, script)
@@ -996,7 +1008,7 @@ async function spawnDaytonaWarm(repo: Repo): Promise<void> {
       20 * 60_000,
     );
     if (setup.out.includes("ERROR:")) return void (await fail(`setup.sh: ${setup.out.slice(-400)}`));
-    for (const marker of PROVISION_MARKERS[repo.id] ?? []) {
+    for (const marker of provisionMarkers(repo.id)) {
       const chk = await poolExec(c, `test -e ${WORKSPACE}/${marker}`);
       if (!chk.ok) {
         return void (await fail(
@@ -1046,12 +1058,36 @@ export async function refreshGoldenImage(repoId: string, force = false): Promise
             `aws_secret_access_key = ${env.AWS_SECRET_ACCESS_KEY}`,
             ...(env.AWS_SESSION_TOKEN ? [`aws_session_token = ${env.AWS_SESSION_TOKEN}`] : []),
           ];
+          const profile = configuredRepos()[repoId]?.previewAwsProfile;
           const b64 = Buffer.from(
-            ["[default]", ...section, "", "[tella-dev]", ...section, ""].join("\n"),
+            [
+              "[default]",
+              ...section,
+              "",
+              ...(profile ? [`[${profile}]`, ...section, ""] : []),
+            ].join("\n"),
+            "utf-8",
+          ).toString("base64");
+          const region = env.AWS_REGION || "us-east-1";
+          const configB64 = Buffer.from(
+            [
+              "[default]",
+              `region = ${region}`,
+              ...(profile ? ["", `[profile ${profile}]`, `region = ${region}`] : []),
+              "",
+            ].join("\n"),
             "utf-8",
           ).toString("base64");
           const r = await sudoRun(
-            ["env", `BKS_AWS_B64=${b64}`, "bash", `${MVM_SCRIPTS}/refresh-golden.sh`, repoId, MVM_STORE],
+            [
+              "env",
+              `BKS_AWS_B64=${b64}`,
+              `BKS_AWS_CONFIG_B64=${configB64}`,
+              "bash",
+              `${MVM_SCRIPTS}/refresh-golden.sh`,
+              repoId,
+              MVM_STORE,
+            ],
             30 * 60_000,
           );
           if (!r.ok) console.warn(`[preview-pool] ${repoId}: microvm golden refresh failed: ${r.out.slice(-600)}`);
@@ -1139,7 +1175,7 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
     // setup.sh treats a failed WASM install as a non-fatal WARN, but a golden
     // without these artifacts boots into module-not-found crashes on first
     // page compile — verify hard instead of shipping a degraded image.
-    for (const marker of PROVISION_MARKERS[repoId] ?? []) {
+    for (const marker of provisionMarkers(repoId)) {
       const chk = await dockerExec(name, `test -e ${WORKSPACE}/${marker}`);
       if (!chk.ok) {
         return void (await fail(`provisioning incomplete: ${marker} missing after setup.sh (S3 WASM install failed? ${setup.out.slice(-300)})`));
@@ -1244,8 +1280,8 @@ async function spawnWarmContainer(repo: Repo): Promise<void> {
     "-e", `WEBAPP_PORT=${CONTAINER_PORT}`,
     "-e", "BACKSTAGE_BOOT_MODE=snapshot-restore",
     "-e", `PREVIEW_URL=${previewUrl}`,
-    // No AWS_* env: the app resolves creds via the tella-dev PROFILE (env is
-    // skipped when AWS_PROFILE is set) — refreshContainerCreds writes it.
+    // No AWS_* env: apps may resolve credentials via their configured profile;
+    // refreshContainerCreds writes both default and named sections.
     "-w", WORKSPACE,
     `${goldenImage(repo.id)}:latest`,
     "bash", "-c",

@@ -14,6 +14,7 @@
  */
 import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
+import { personaName } from "../../server/config";
 import {
   listGoals,
   getGoal,
@@ -43,7 +44,7 @@ export function createGoalsMcpServer(ctx: GoalsToolContext) {
   const tools: any[] = [
     tool(
       "list_goals",
-      "List Michael's long-running goals (persistent, self-pacing missions): status, phase, next wake, and last run. Use to see what's in flight before creating a new one.",
+      `List ${personaName()}'s long-running goals (persistent, self-pacing missions): status, phase, next wake, and last run. Use to see what's in flight before creating a new one.`,
       {},
       async () => {
         const all = listGoals();
@@ -97,7 +98,7 @@ export function createGoalsMcpServer(ctx: GoalsToolContext) {
     tools.push(
       tool(
         "create_goal",
-        "Create a long-running goal: a persistent, self-pacing mission Michael pursues over days/weeks, remembering its own progress across wakes. Give a thorough `mission` prompt (the full brief — objective, strategy, operating loop, hard rules). Pick mode 'ask' for research/measurement only, or 'code' if it must edit files and open PRs (gets a persistent worktree). It wakes itself on its own cadence; set firstWakeAt to delay the first wake, minWakeMinutes as a cadence floor, and maxWakes as a safety cap.",
+        `Create a long-running goal: a persistent, self-pacing mission ${personaName()} pursues over days/weeks, remembering its own progress across wakes. Give a thorough \`mission\` prompt (the full brief — objective, strategy, operating loop, hard rules). Pick mode 'ask' for research/measurement only, or 'code' if it must edit files and open PRs (gets a persistent worktree). It wakes itself on its own cadence; set firstWakeAt to delay the first wake, minWakeMinutes as a cadence floor, and maxWakes as a safety cap.`,
         {
           name: z.string().describe("Short display name."),
           mission: z
@@ -110,7 +111,7 @@ export function createGoalsMcpServer(ctx: GoalsToolContext) {
           repo: z
             .string()
             .optional()
-            .describe("Project id for code mode (default tella-fusion)."),
+            .describe("Registered project id for code mode (defaults to the instance's primary repo)."),
           model: z.string().optional().describe("Optional model id (e.g. 'claude-opus-5')."),
           mcpServers: z
             .array(z.string())

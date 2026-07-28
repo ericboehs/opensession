@@ -4,18 +4,19 @@ import { existsSync } from "fs";
 import type { TranscriptEntry } from "./types";
 import { SLACK_ID_TO_NAME } from "./shared/user-mappings";
 import { stripContext } from "./prompt-context";
+import { configuredIntegration } from "./config";
 
 const SLACK_USERS = SLACK_ID_TO_NAME;
 
-const SLACK_CHANNELS: Record<string, string> = {
-  C0AFQ7PV057: "michael-tinker",
-  C01ED50A2KG: "chat",
-  C0A77HH0XPT: "design-polish",
-  C047JD2KX8B: "engineering",
-  C099PSZ8D5M: "michael-log",
-};
-
-const SLACK_WORKSPACE = "tella-team";
+const slackConfig = configuredIntegration("slack");
+const SLACK_CHANNELS: Record<string, string> =
+  slackConfig.channelNames &&
+  typeof slackConfig.channelNames === "object" &&
+  !Array.isArray(slackConfig.channelNames)
+    ? (slackConfig.channelNames as Record<string, string>)
+    : {};
+const SLACK_WORKSPACE =
+  typeof slackConfig.workspaceId === "string" ? slackConfig.workspaceId : "";
 
 function resolveSlackIds(text: string): string {
   // Replace <@USERID> with **Name**
@@ -31,7 +32,9 @@ function resolveSlackIds(text: string): string {
   // Replace <#CHANNELID|name> or <#CHANNELID> channel references
   text = text.replace(/<#(C[A-Z0-9]+)(?:\|([^>]+))?>/g, (_match, id, name) => {
     const channelName = name || SLACK_CHANNELS[id] || id;
-    return `[#${channelName}](https://app.slack.com/client/T8VB51YAR/${id})`;
+    return SLACK_WORKSPACE
+      ? `[#${channelName}](https://app.slack.com/client/${SLACK_WORKSPACE}/${id})`
+      : `#${channelName}`;
   });
   // Ensure --- separators have blank lines around them (prevents setext heading)
   text = text.replace(/([^\n])\n---(\n)/g, "$1\n\n---$2");

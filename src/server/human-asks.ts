@@ -44,15 +44,13 @@ import {
   postSlackBlocks,
   sendSlackMessage,
 } from "../agents/slack/slack-api";
-import { personaName, productName } from "./config";
+import { configuredServer, personaName, productName } from "./config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 const STORE = `${OPENSESSION_CHATS_DIR}/human-asks.json`;
 const UI_BASE =
-  // Default stays on /backstage until the operator flips OPENSESSION_UI_BASE in
-  // the restart window (the alias path keeps old links working forever).
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-  "https://os.tella.dev";
+  configuredServer().publicBaseUrl;
 
 /** How long a "block" ask holds the agent's turn before degrading to async. */
 const BLOCK_TIMEOUT_MS = 20 * 60 * 1000;

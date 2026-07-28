@@ -51,7 +51,7 @@ export interface ChatReplyTo {
 
 export interface ChatMessage {
 	id: string;
-	/** Sender's self-selected backstage-user display name ("Michiel"). */
+	/** Sender's self-selected display name. */
 	user: string;
 	text: string;
 	/** Attached images (may be empty/absent). */

@@ -11,7 +11,7 @@
 import { configuredIdentity } from "./config";
 
 export interface DirectoryPerson {
-	/** Picker/display first name ("Michiel") — the value presence viewers,
+	/** Picker/display first name — the value presence viewers,
 	 *  push-subscription keys and `startedBy` use. */
 	name: string;
 	/** Full display name from the identity roster. */

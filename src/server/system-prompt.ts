@@ -7,7 +7,7 @@
 // "Michael"); the `opensession-*` MCP server ids referenced in the text are
 // protocol identifiers and stay literal regardless of the persona name.
 
-import { personaName, productName } from "./config";
+import { defaultRepo, personaName, productName } from "./config";
 import { gitIdentityFor, githubLoginFor } from "./shared/user-mappings";
 
 export type SystemPromptPart = { title: string; text: string };
@@ -87,7 +87,7 @@ export function buildSystemPromptParts(opts: {
 				`session, the worker is linked in the same ${productName()} workspace and instructed to report back here. ` +
 				"For workers that only need filesystem/code access, keep `mcpServers: []` so " +
 				"unrelated external MCP startup does not slow or block them. Set `repo` to the " +
-				"registered repo id the worker should inspect or edit, such as `backstage` or `tella-fusion`. Use ask mode for " +
+				`registered repo id the worker should inspect or edit, such as \`${defaultRepo().id}\`. Use ask mode for ` +
 				"read-only investigation and code mode with a branch for implementation. Give the worker a self-contained prompt with scope, repo/path, " +
 				"acceptance criteria, and what to report back. Keep the final judgment with this orchestrator: " +
 				"inspect the worker's summary/diff/results, rerun or escalate if the output is not good enough, " +

@@ -589,7 +589,7 @@ function ClaudeAccountsSection() {
 				The usage pool for Claude session runs — each run picks the least-used usable account.
 				A personal account is used first by its owner's runs and never by anyone else's;
 				automations only use the shared pool. For usage bars, setup-tokens need a matching
-				OAuth snapshot such as <code>/home/ubuntu/.claude/accounts/tella-dev/credentials.json</code>.
+				OAuth snapshot such as <code>~/.claude/accounts/team/credentials.json</code>.
 				If that snapshot expires and cannot refresh, log into that account with <code>claude</code>
 				or <code>claude-plan auth</code> again and update the path.
 			</div>
@@ -808,7 +808,7 @@ function AddClaudeAccountForm({ onClose, onAdded }: { onClose: () => void; onAdd
 			<div className="automation-form-row">
 				<label>
 					Name
-					<input value={name} onChange={(e) => setName(e.target.value)} placeholder="tella-dev" />
+					<input value={name} onChange={(e) => setName(e.target.value)} placeholder="team" />
 				</label>
 				<label>
 					Token
@@ -837,7 +837,7 @@ function AddClaudeAccountForm({ onClose, onAdded }: { onClose: () => void; onAdd
 						className="mono-input"
 						value={credentialsPath}
 						onChange={(e) => setCredentialsPath(e.target.value)}
-						placeholder="/home/ubuntu/.claude/accounts/tella-dev/credentials.json"
+						placeholder="~/.claude/accounts/team/credentials.json"
 					/>
 				</label>
 			</div>
@@ -978,7 +978,7 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 					<input
 						value={name}
 						onChange={(e) => setName(e.target.value)}
-						placeholder="tella-dev"
+						placeholder="team"
 						disabled={!!login}
 					/>
 				</label>
@@ -1002,7 +1002,7 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 							type={kind === "api_key" ? "password" : "text"}
 							value={value}
 							onChange={(e) => setValue(e.target.value)}
-							placeholder={kind === "api_key" ? "sk-…" : "/home/ubuntu/.codex-accounts/tella-dev"}
+							placeholder={kind === "api_key" ? "sk-…" : "~/.codex-accounts/team"}
 						/>
 					</label>
 				)}

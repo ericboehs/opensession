@@ -1,4 +1,4 @@
-import { defaultRepo } from "./config";
+import { defaultRepo, personaProduct } from "./config";
 import { isLocalProfile } from "./profile";
 /**
  * Automation templates: a data-driven gallery of starting points for common
@@ -82,7 +82,7 @@ Write the rollup in English regardless of ticket language. Rank themes by ticket
 
 Sources: merged PRs in ${defaultRepo().ghRepo} from the last 7 days (gh CLI) and Linear issues completed this week. Ignore internal-only changes (refactors, CI, tooling) unless they have visible impact (performance, reliability).
 
-Write it as a short marketing-friendly changelog: features first, then improvements, then fixes. One line each, written for Tella users (screen-recording creators), not engineers. Flag anything you're unsure is user-visible.`,
+Write it as a short marketing-friendly changelog: features first, then improvements, then fixes. One line each, written for ${personaProduct()} users, not engineers. Flag anything you're unsure is user-visible.`,
   },
   {
     id: "stale-pr-nudge",

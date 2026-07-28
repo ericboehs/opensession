@@ -3,8 +3,11 @@ import { UserAvatar } from "./UserAvatar";
 import { BASE_PATH } from "../lib/base";
 import { usePeople } from "../lib/people";
 
-/** Fallback roster — prefer usePeople() (GET /api/people) in new code. */
-export const TEAM = ["Michiel", "Jaap", "Kent", "Grant", "Johnny", "John", "Louise"];
+/**
+ * Mutable compatibility view for older consumers. `usePeople()` owns the
+ * roster and updates this array in place after GET /api/people resolves.
+ */
+export const TEAM: string[] = [];
 // Rename shim: read the new key first, fall back to the legacy one (existing
 // browsers + tooling that presets it stay signed in); writes go to the new key.
 const KEY = "opensession-user";
@@ -96,6 +99,7 @@ export async function signOut(): Promise<void> {
 export function UserGate({ children }: { children: React.ReactNode }) {
   const user = useCurrentUser();
   const roster = usePeople();
+  TEAM.splice(0, TEAM.length, ...roster.map(({ name }) => name));
   const [auth, setAuth] = useState<AuthStatus | null>(null);
 
   useEffect(() => {
@@ -140,16 +144,26 @@ export function UserGate({ children }: { children: React.ReactNode }) {
       <div className="user-gate-card">
         <h2>Who are you?</h2>
         <div className="user-gate-grid">
-          {roster.map(({ name }) => (
+          {roster.length ? (
+            roster.map(({ name }) => (
+              <button
+                key={name}
+                className="user-gate-btn"
+                onClick={() => setStoredUser(name)}
+              >
+                <UserAvatar name={name} size={36} />
+                {name}
+              </button>
+            ))
+          ) : (
             <button
-              key={name}
               className="user-gate-btn"
-              onClick={() => setStoredUser(name)}
+              onClick={() => setStoredUser("Local User")}
             >
-              <UserAvatar name={name} size={36} />
-              {name}
+              <UserAvatar name="Local User" size={36} />
+              Continue locally
             </button>
-          ))}
+          )}
         </div>
       </div>
     </div>

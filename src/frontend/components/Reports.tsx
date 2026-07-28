@@ -34,6 +34,18 @@ function formatDate(value: string, detailed = false): string {
 	}).format(date);
 }
 
+function supportIdFromHref(href: string | undefined): string | null {
+	if (!href) return null;
+	try {
+		const url = new URL(href, location.href);
+		if (url.origin !== location.origin) return null;
+		const match = url.pathname.match(/^\/(?:opensession\/|backstage\/)?support\/([^/?#]+)/);
+		return match ? decodeURIComponent(match[1]) : null;
+	} catch {
+		return null;
+	}
+}
+
 export function Reports({
 	selectedAutomationId,
 	selectedReportId,
@@ -232,18 +244,7 @@ export function Reports({
 									}
 									link.target = "_blank";
 									link.rel = "noopener noreferrer";
-									const match = link.href.match(/^https:\/\/os\.tella\.dev\/support\/([^/?#]+)/);
-									if (!match) continue;
-									if (link.textContent?.trim() === "(session)") {
-										link.removeAttribute("target");
-										continue;
-									}
-									const sessionLink = link.cloneNode(false) as HTMLAnchorElement;
-									sessionLink.textContent = "(session)";
-									sessionLink.href = link.href;
-									sessionLink.removeAttribute("target");
-									link.href = `https://app.plain.com/workspace/w_01J7WXJG68TFDV9RD1C4JE3W6F/thread/${match[1]}/`;
-									link.after(" ", sessionLink);
+									if (supportIdFromHref(link.href)) link.removeAttribute("target");
 								}
 								document.addEventListener("click", (clickEvent) => {
 									const link = (clickEvent.target as Element | null)?.closest?.("a");
@@ -253,10 +254,10 @@ export function Reports({
 										onOpenNewSession(prefill);
 										return;
 									}
-									const match = link?.href.match(/^https:\/\/os\.tella\.dev\/support\/([^/?#]+)/);
-									if (!match) return;
+									const supportId = supportIdFromHref(link?.href);
+									if (!supportId) return;
 									clickEvent.preventDefault();
-									onOpenSupport(decodeURIComponent(match[1]));
+									onOpenSupport(supportId);
 								});
 							}}
 							className="min-h-0 flex-1 border-0 bg-white"

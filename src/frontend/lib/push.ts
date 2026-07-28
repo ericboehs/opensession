@@ -6,7 +6,7 @@
  */
 
 import { BASE_PATH } from "./base";
-import { PRODUCT_NAME } from "./brand";
+import { PRODUCT_NAME, PUBLIC_BASE_URL } from "./brand";
 
 export type PushState = "unsupported" | "denied" | "off" | "on";
 
@@ -64,7 +64,7 @@ export async function enablePush(user: string): Promise<void> {
     throw new Error(
       window.isSecureContext
         ? "This browser doesn't support Web Push."
-        : `Push needs the HTTPS origin. Open ${PRODUCT_NAME} at os.tella.dev.`,
+        : `Push needs an HTTPS origin. Open ${PRODUCT_NAME} at ${PUBLIC_BASE_URL}.`,
     );
   }
   const permission = await Notification.requestPermission();

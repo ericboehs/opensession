@@ -162,7 +162,7 @@ describe("buildReviewQueue", () => {
 		const auto = pr({
 			number: 2,
 			branch: "automation",
-			author: "tella-butler",
+			author: "opensession-bot",
 		});
 		const [item] = buildReviewQueue(
 			[auto],
@@ -179,7 +179,7 @@ describe("buildReviewQueue", () => {
 		const botPr = pr({
 			number: 9,
 			branch: "human-session",
-			author: "tella-butler",
+			author: "opensession-bot",
 			person: null,
 		});
 		const [item] = buildReviewQueue(

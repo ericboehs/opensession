@@ -23,6 +23,7 @@ const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000] as const;
 const COLLECTION_ROUTES = new Set(["search", "archive-old", "import"]);
 const CLOUD_TARGET_GET_ROUTES = new Set([
 	"/backstage/api/models",
+	"/backstage/api/repos",
 	"/backstage/api/claude-accounts",
 	"/backstage/api/codex-accounts",
 ]);

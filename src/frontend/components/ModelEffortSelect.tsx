@@ -118,7 +118,7 @@ export function shortModelLabel(id: string, models: ModelOption[]): string {
 /** Friendly names for the upstream providers in the grouped main list. */
 const PROVIDER_LABELS: Record<string, string> = {
 	dial: "The Dial",
-	custom: "Michiel custom",
+	custom: "Custom",
 	orchestrator: "The Orchestrator",
 	anthropic: "Anthropic",
 	openai: "OpenAI",

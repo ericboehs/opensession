@@ -1,5 +1,6 @@
 import type { UnifiedSession } from "./types";
 import type { OpenPr } from "./api";
+import { GITHUB_BOT_LOGINS } from "./brand";
 
 export type ReviewBucket = "ready" | "attention" | "waiting";
 export type ReviewSource = "mine" | "requested" | "automation" | "other";
@@ -54,7 +55,7 @@ export function prReviewCompletion(
 }
 
 function sessionRepo(session: UnifiedSession): string {
-	return session.repo || "tella-fusion";
+	return session.repo || "repository";
 }
 
 function sessionMatchesPr(
@@ -154,7 +155,11 @@ export function buildReviewQueue(
 			(session) =>
 				!session.archived && sessionMatchesPr(session, pr, true),
 		);
-		const automation = pr.author.toLowerCase() === "tella-butler";
+		const author = pr.author.toLowerCase();
+		const automation =
+			GITHUB_BOT_LOGINS.has(author) ||
+			author.endsWith("-bot") ||
+			author.endsWith("[bot]");
 		const requested = (pr.reviewRequested || []).some(
 			(person) => person.toLowerCase() === me,
 		);

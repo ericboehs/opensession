@@ -62,19 +62,11 @@ interface Worktree {
   path: string;
 }
 
-// Repos a session can run against. tella-fusion is the default.
-// Keep in sync with the built-in repos in src/server/config.ts.
-const CLOUD_REPOS = [
-  { id: "tella-fusion", label: "tella-fusion" },
-  { id: "backstage", label: "opensession" },
-  { id: "gitops", label: "gitops" },
-  { id: "infra", label: "infra" },
-  { id: "shared-infra", label: "shared-infra" },
-  { id: "tella-mac", label: "tella-mac" },
-  { id: "tella-windows", label: "tella-windows" },
-  { id: "gstreamer", label: "gstreamer" },
-  { id: "gst-plugins-rs", label: "gst-plugins-rs" },
-];
+interface RepoOption {
+  id: string;
+  label: string;
+  default?: boolean;
+}
 
 const LAST_REPO_KEY = "opensession-new-session-repo";
 const ADD_REPO_VALUE = "__add_repo__";
@@ -95,13 +87,11 @@ function rememberSelectedRepo(repo: string) {
 
 // The repo the sidebar is currently filtered to (persisted by Sidebar.tsx under
 // this key). When set to a real repo, a new session should default to it so
-// creating from a repo-filtered view lands on that repo — not always tella-fusion.
+// creating from a repo-filtered view lands on that repo.
 function filteredRepo(): string | null {
   try {
     const v = JSON.parse(localStorage.getItem("opensession-sidebar-filter") || "{}");
-    return typeof v.repo === "string" && CLOUD_REPOS.some((p) => p.id === v.repo)
-      ? v.repo
-      : null;
+    return typeof v.repo === "string" ? v.repo : null;
   } catch {
     return null;
   }
@@ -112,11 +102,9 @@ function readPrefill() {
   const params = new URLSearchParams(location.search);
   // An explicit ?repo= wins (legacy ?project= still honored); otherwise keep
   // the user's last picker choice across closes/reloads, then use the sidebar
-  // filter or tella-fusion for first-time visitors.
+  // filter. The configured default is applied once `/repos` resolves.
   const repoParam = params.get("repo") ?? params.get("project");
-  const repo = CLOUD_REPOS.some((p) => p.id === repoParam)
-    ? repoParam!
-    : lastSelectedRepo() || filteredRepo() || "tella-fusion";
+  const repo = repoParam || lastSelectedRepo() || filteredRepo() || "";
   return {
     mode: params.get("mode") === "ask" ? ("ask" as const) : ("code" as const),
     prompt: params.get("prompt") || "",
@@ -156,45 +144,49 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   useEffect(() => {
     if (auth?.local || desktopShell) setCreateTarget("cloud");
   }, [auth?.local, desktopShell]);
+  const cloudTarget = auth?.local === true && createTarget === "cloud";
   // In a Project, default to the folder's shared repo; else the prefill/filter repo.
   const [repo, setRepo] = useState(forceRepo || prefill.repo);
-  const [localRepos, setLocalRepos] = useState<typeof CLOUD_REPOS>([]);
-  const [localDefaultRepo, setLocalDefaultRepo] = useState("");
-  const repos = auth?.local && createTarget === "local" ? localRepos : CLOUD_REPOS;
+  const [repos, setRepos] = useState<RepoOption[]>([]);
+  const [configuredDefaultRepo, setConfiguredDefaultRepo] = useState("");
   const [addRepoOpen, setAddRepoOpen] = useState(false);
   const locallyAddedRepos = useRef(new Map<string, { id: string; label: string }>());
   const localReposLoaded = useRef(false);
   useEffect(() => {
-    if (!auth?.local) return;
     let live = true;
-    fetchRepos().then((items) => {
+    fetchRepos(cloudTarget).then((items) => {
       if (!live) return;
-      const localRepos = items.map((item) => ({ id: item.id, label: item.id }));
-      for (const added of locallyAddedRepos.current.values()) {
-        if (!localRepos.some((item) => item.id === added.id)) localRepos.push(added);
+      const options: RepoOption[] = items.map((item) => ({
+        id: item.id,
+        label: item.label || item.id,
+        default: item.default,
+      }));
+      if (!cloudTarget) {
+        for (const added of locallyAddedRepos.current.values()) {
+          if (!options.some((item) => item.id === added.id)) options.push(added);
+        }
       }
       localReposLoaded.current = true;
-      setLocalRepos(localRepos);
-      setLocalDefaultRepo(
-        localRepos.find((item, index) => items[index]?.default)?.id || localRepos[0]?.id || "",
+      setRepos(options);
+      setConfiguredDefaultRepo(
+        options.find((item) => item.default)?.id || options[0]?.id || "",
       );
     }).catch(() => {
       if (!live) return;
       localReposLoaded.current = true;
-      setLocalRepos([...locallyAddedRepos.current.values()]);
+      setRepos(cloudTarget ? [] : [...locallyAddedRepos.current.values()]);
     });
     return () => {
       live = false;
     };
-  }, [auth?.local]);
+  }, [cloudTarget]);
   useEffect(() => {
-    if (!auth?.local) return;
     setRepo((current) => {
       if (forceRepo && repos.some((item) => item.id === forceRepo)) return forceRepo;
       if (repos.some((item) => item.id === current)) return current;
-      return createTarget === "local" ? localDefaultRepo : CLOUD_REPOS[0].id;
+      return configuredDefaultRepo;
     });
-  }, [auth?.local, createTarget, forceRepo, localDefaultRepo, repos]);
+  }, [configuredDefaultRepo, forceRepo, repos]);
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   // In a Project, default to a sibling's branch so the new chat reuses its
   // worktree; the user can still switch to "New branch" to fork a fresh one.
@@ -226,7 +218,6 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   // meaningful for Anthropic/OpenAI subscription-backed models.
   const [accountId, setAccountId] = useState("");
   const [accounts, setAccounts] = useState<ProviderAccountOption[]>([]);
-  const cloudTarget = auth?.local === true && createTarget === "cloud";
   useEffect(() => {
     fetchProviderAccounts(cloudTarget).then(setAccounts).catch(() => {});
   }, [cloudTarget]);
@@ -700,7 +691,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             onAdded={(added) => {
               const next = { id: added.id, label: added.id };
               locallyAddedRepos.current.set(added.id, next);
-              setLocalRepos((current) => [
+              setRepos((current) => [
                 ...(localReposLoaded.current ? current : []).filter((item) => item.id !== added.id),
                 next,
               ]);
@@ -1009,7 +1000,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                   {auth?.local && (
                     <>
                       {[
-                        { target: "cloud" as const, title: "Create", desc: "Run on os.tella.dev" },
+                        { target: "cloud" as const, title: "Create", desc: "Run on the hosted instance" },
                         { target: "local" as const, title: "Create locally", desc: "Experimental - run on this Mac" },
                       ].map((opt) => (
                         <button

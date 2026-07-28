@@ -5,8 +5,8 @@
  * without running a local backend or syncing state files.
  *
  *   bun scripts/frontend-dev.ts          # http://127.0.0.1:3851
- *   OS1_LOGIN=<github-login> ...         # whose identity to use (default jfrolich)
- *   OS1_UPSTREAM=https://... ...         # backend (default https://os.tella.dev)
+ *   OS1_LOGIN=<github-login> ...         # whose identity to use
+ *   OS1_UPSTREAM=https://... ...         # backend (default local :3850)
  *
  * Auth: production requires the GitHub-sign-in session. The proxy attaches
  * YOUR web-session Bearer token (the same tokens curl/CDP callers use — see
@@ -34,10 +34,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import spaEntry from "../src/frontend/index.html";
 
-const UPSTREAM = process.env.OS1_UPSTREAM || "https://os.tella.dev";
+const UPSTREAM = process.env.OS1_UPSTREAM || "http://127.0.0.1:3850";
 const WS_UPSTREAM = UPSTREAM.replace(/^http/, "ws") + "/ws";
-const LOGIN = process.env.OS1_LOGIN || "jfrolich";
-const SSH_HOST = process.env.OS1_SSH_HOST || "ubuntu@os.tella.dev";
+const LOGIN = process.env.OS1_LOGIN || process.env.USER || "developer";
+const SSH_HOST = process.env.OS1_SSH_HOST || "";
 const PORT = Number(process.env.PORT || 3851);
 const TOKEN_CACHE = join(homedir(), ".opensession-frontend-dev-token.json");
 
@@ -53,6 +53,8 @@ async function tokenValid(candidate: string): Promise<boolean> {
 }
 
 async function loadToken(): Promise<string> {
+	if (process.env.OS1_TOKEN) return process.env.OS1_TOKEN;
+	if (!SSH_HOST && UPSTREAM.startsWith("http://127.0.0.1")) return "";
 	try {
 		const cached = JSON.parse(readFileSync(TOKEN_CACHE, "utf8"));
 		if (
@@ -73,6 +75,7 @@ async function loadToken(): Promise<string> {
 }
 
 function fetchTokenViaSsh(): string {
+	if (!SSH_HOST) throw new Error("Set OS1_SSH_HOST or OS1_TOKEN for an authenticated upstream");
 	const proc = Bun.spawnSync([
 		"ssh",
 		"-o",

@@ -29,7 +29,7 @@ export function prRelatedSessions(
 		if (s.sideChatOf) return false;
 		if ((s.prs || []).some(refMatch)) return true;
 		if ((s.linkedPrs || []).some(refMatch)) return true;
-		const sRepo = s.repo || "tella-fusion";
+		const sRepo = s.repo || "repository";
 		if (
 			sRepo === repo &&
 			((!!branch && s.branch === branch) || (!!head && s.branch === head))

@@ -39,7 +39,7 @@ export function createSearchMcpServer() {
 				repo: z
 					.string()
 					.optional()
-					.describe("Only sessions whose primary repo is this id (e.g. 'backstage', 'tella-fusion')."),
+					.describe("Only sessions whose primary repo is this registered id."),
 				days: z
 					.number()
 					.optional()

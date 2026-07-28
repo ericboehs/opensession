@@ -30,6 +30,13 @@ import { resolveTeammate } from "./shared/user-mappings";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { openDirectMessage, sendSlackMessage } from "../agents/slack/slack-api";
 import { audit } from "./audit";
+import {
+  configuredIdentity,
+  configuredIntegration,
+  githubBotLogins,
+  githubWriteOwners,
+  personaName,
+} from "./config";
 
 const STATE_PATH = stateDir("account-health.json");
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
@@ -38,13 +45,18 @@ const FIRST_SWEEP_DELAY_MS = 10 * 60 * 1000;
 const REALERT_MS = 24 * 60 * 60 * 1000;
 const CLAUDE_REFRESH_WARN_MS = 7 * 24 * 60 * 60 * 1000;
 const CODEX_ACCESS_WARN_MS = 24 * 60 * 60 * 1000;
-// Every alert falls back to Michiel when an owner can't be resolved.
-const FALLBACK_TEAMMATE = "Michiel";
+const configuredHealthOwner = configuredIntegration("accountHealth").notifyUser;
+// Pool-wide alerts go to the configured owner, then the first directory entry.
+const FALLBACK_TEAMMATE =
+  (typeof configuredHealthOwner === "string" ? configuredHealthOwner : "") ||
+  configuredIdentity().team[0]?.aliases?.[0] ||
+  configuredIdentity().team[0]?.name ||
+  "";
 
 interface Issue {
   /** Stable dedupe key: pool:accountId:kind. */
   key: string;
-  /** Slack-DM body (already prefixed as Michael). */
+  /** Slack-DM body (already prefixed with the configured persona). */
   message: string;
   /** Teammate ref to DM (name/alias/Slack id); pool issues use the fallback. */
   notify: string;
@@ -97,7 +109,7 @@ function claudeIssues(): Issue[] {
     if (a.usage?.errorStatus === 401) {
       issues.push({
         key: `claude:${a.id}:revoked`,
-        message: `It's Michael — ${label} has a revoked/invalid token (401 from Anthropic). Runs on it will fail. ${relogin}`,
+        message: `It's ${personaName()} — ${label} has a revoked/invalid token (401 from Anthropic). Runs on it will fail. ${relogin}`,
         notify: who,
       });
       continue;
@@ -105,7 +117,7 @@ function claudeIssues(): Issue[] {
     if (err.includes("Couldn't read OAuth credentials")) {
       issues.push({
         key: `claude:${a.id}:creds-missing`,
-        message: `It's Michael — ${label} points at an OAuth credentials file I can't read (${a.credentialsPath}). Usage tracking is blind for it. ${relogin}`,
+        message: `It's ${personaName()} — ${label} points at an OAuth credentials file I can't read (${a.credentialsPath}). Usage tracking is blind for it. ${relogin}`,
         notify: who,
       });
       continue;
@@ -113,7 +125,7 @@ function claudeIssues(): Issue[] {
     if (err.includes("expired and refresh failed")) {
       issues.push({
         key: `claude:${a.id}:creds-expired`,
-        message: `It's Michael — ${label}: its OAuth credentials expired and the refresh failed. ${relogin}`,
+        message: `It's ${personaName()} — ${label}: its OAuth credentials expired and the refresh failed. ${relogin}`,
         notify: who,
       });
       continue;
@@ -128,13 +140,13 @@ function claudeIssues(): Issue[] {
           if (left <= 0) {
             issues.push({
               key: `claude:${a.id}:refresh-expired`,
-              message: `It's Michael — ${label}: its OAuth refresh token has expired; the next access-token refresh will fail. ${relogin}`,
+              message: `It's ${personaName()} — ${label}: its OAuth refresh token has expired; the next access-token refresh will fail. ${relogin}`,
               notify: who,
             });
           } else if (left < CLAUDE_REFRESH_WARN_MS) {
             issues.push({
               key: `claude:${a.id}:refresh-expiring`,
-              message: `It's Michael — heads-up: ${label}'s OAuth refresh token expires in ${days(left)}. ${relogin}`,
+              message: `It's ${personaName()} — heads-up: ${label}'s OAuth refresh token expires in ${days(left)}. ${relogin}`,
               notify: who,
             });
           }
@@ -157,7 +169,7 @@ function codexIssues(): Issue[] {
     if (!existsSync(authPath)) {
       issues.push({
         key: `codex:${a.id}:auth-missing`,
-        message: `It's Michael — codex account "${a.name}" has no auth.json at ${authPath}; OpenAI-model runs on it will fail. ${fix}`,
+        message: `It's ${personaName()} — codex account "${a.name}" has no auth.json at ${authPath}; OpenAI-model runs on it will fail. ${fix}`,
         notify: FALLBACK_TEAMMATE,
       });
       continue;
@@ -168,7 +180,7 @@ function codexIssues(): Issue[] {
     } catch {
       issues.push({
         key: `codex:${a.id}:auth-unreadable`,
-        message: `It's Michael — codex account "${a.name}": ${authPath} isn't valid JSON; OpenAI-model runs on it will fail. ${fix}`,
+        message: `It's ${personaName()} — codex account "${a.name}": ${authPath} isn't valid JSON; OpenAI-model runs on it will fail. ${fix}`,
         notify: FALLBACK_TEAMMATE,
       });
       continue;
@@ -180,13 +192,13 @@ function codexIssues(): Issue[] {
     if (left <= 0) {
       issues.push({
         key: `codex:${a.id}:access-expired`,
-        message: `It's Michael — codex account "${a.name}"'s ChatGPT access token is expired, so OpenAI-model runs (and the Fable→Sol fallback) fail on it. ${fix}`,
+        message: `It's ${personaName()} — codex account "${a.name}"'s ChatGPT access token is expired, so OpenAI-model runs (and the Fable→Sol fallback) fail on it. ${fix}`,
         notify: FALLBACK_TEAMMATE,
       });
     } else if (left < CODEX_ACCESS_WARN_MS) {
       issues.push({
         key: `codex:${a.id}:access-expiring`,
-        message: `It's Michael — heads-up: codex account "${a.name}"'s ChatGPT access token expires in ${days(left)} and only refreshes when a codex turn runs. ${fix}`,
+        message: `It's ${personaName()} — heads-up: codex account "${a.name}"'s ChatGPT access token expires in ${days(left)} and only refreshes when a codex turn runs. ${fix}`,
         notify: FALLBACK_TEAMMATE,
       });
     }
@@ -208,8 +220,8 @@ export function detectAccountIssues(): Issue[] {
   return [...claudeIssues(), ...codexIssues()];
 }
 
-// The bot's GitHub fine-grained PAT (tellahq-scoped since 2026-07-26, expiry
-// ~yearly) is the credential every gh/PR flow rides; renewal needs a human
+// The bot's GitHub fine-grained PAT is the credential every gh/PR flow rides;
+// renewal needs a human
 // AND an org approval round-trip, so warn well ahead. Expiry comes from the
 // `github-authentication-token-expiration` header GitHub sets on any
 // authenticated call; a 401 means it's already dead.
@@ -227,13 +239,16 @@ async function githubPatIssues(): Promise<Issue[]> {
     return []; // transient network — never alert
   }
   if (res.status === 401) {
+    const agent = personaName();
+    const bot = githubBotLogins()[0] || "configured bot";
+    const owner = githubWriteOwners()[0] || "configured repository owner";
     return [
       {
         key: "github:pat:dead",
         message:
-          "Michael here — the tella-butler GitHub PAT (GITHUB_API_TOKEN) is revoked or " +
+          `${agent} here — the ${bot} GitHub PAT (GITHUB_API_TOKEN) is revoked or ` +
           "expired: every bot gh/PR flow is down. Mint a new fine-grained PAT (resource " +
-          "owner tellahq, All repositories) and get it approved in the org's PAT settings.",
+          `owner ${owner}, with access to the required repositories) and get it approved if needed.`,
         notify: FALLBACK_TEAMMATE,
       },
     ];
@@ -246,15 +261,17 @@ async function githubPatIssues(): Promise<Issue[]> {
   const left = expiresAt - Date.now();
   if (left > GITHUB_PAT_WARN_MS) return [];
   const days = Math.max(0, Math.floor(left / 86_400_000));
+  const agent = personaName();
+  const bot = githubBotLogins()[0] || "configured bot";
+  const owner = githubWriteOwners()[0] || "configured repository owner";
   return [
     {
       key: "github:pat:expiring",
       message:
-        `Michael here — the tella-butler GitHub PAT expires in ${days} day(s) ` +
+        `${agent} here — the ${bot} GitHub PAT expires in ${days} day(s) ` +
         `(${new Date(expiresAt).toISOString().slice(0, 10)}). Regenerate it at ` +
-        "github.com/settings/personal-access-tokens (as tella-butler, resource owner " +
-        "tellahq), approve it in the org's PAT settings if asked, then tell Michael to " +
-        "swap it into hosts.yml + the env files.",
+        `github.com/settings/personal-access-tokens (resource owner ${owner}), approve it ` +
+        `if asked, then tell ${agent} to swap it into the configured credential stores.`,
       notify: FALLBACK_TEAMMATE,
     },
   ];

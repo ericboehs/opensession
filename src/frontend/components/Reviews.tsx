@@ -232,7 +232,7 @@ export function Reviews({
 
   // Only label rows with their repo when the list actually spans repos.
   const multiRepo = useMemo(
-    () => new Set(prSessions.map((s) => s.repo || "tella-fusion")).size > 1,
+    () => new Set(prSessions.map((s) => s.repo || "repository")).size > 1,
     [prSessions],
   );
 
@@ -376,7 +376,7 @@ export function Reviews({
                     </span>
                     <span className="rv-sub-line">
                       {multiRepo && (
-                        <span className="rv-repo">{s.repo || "tella-fusion"}</span>
+                        <span className="rv-repo">{s.repo || "repository"}</span>
                       )}
                       {s.branch && (
                         <span className="rv-branch">

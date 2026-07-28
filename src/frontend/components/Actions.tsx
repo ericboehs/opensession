@@ -5,6 +5,7 @@ import {
   deleteActionApi,
   runActionApi,
   introspectActionApi,
+  fetchRepos,
   relativeTime,
   type Action,
   type ActionInput,
@@ -122,7 +123,7 @@ export function Actions({ onOpenSession, selectedId, onSelect }: Props) {
         <div className="automations-empty">
           <p>No actions yet.</p>
           <p className="automations-empty-sub">
-            Register a script from a repo (e.g. packages/scripts/make_michiel_editor.sh).
+            Register a script from a repo (e.g. scripts/run-maintenance.sh).
           </p>
         </div>
       ) : (
@@ -380,16 +381,34 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [kind, setKind] = useState<"repo" | "mcp">("repo");
-  const [repo] = useState("tella-fusion");
+  const [repo, setRepo] = useState("");
+  const [repos, setRepos] = useState<Array<{ id: string; label: string }>>([]);
   const [scriptPath, setScriptPath] = useState("");
   const [argMode, setArgMode] = useState<"positional" | "env">("positional");
-  const [mcpServer, setMcpServer] = useState("TellaInternalSupportMCP");
+  const [mcpServer, setMcpServer] = useState("");
   const [toolName, setToolName] = useState("");
   const [confirmFlag, setConfirmFlag] = useState(true);
   const [inputs, setInputs] = useState<ActionInput[]>([]);
   const [saving, setSaving] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchRepos()
+      .then((items) => {
+        const options = items.map((item) => ({
+          id: item.id,
+          label: item.label || item.id,
+        }));
+        setRepos(options);
+        setRepo((current) =>
+          options.some((item) => item.id === current)
+            ? current
+            : items.find((item) => item.default)?.id || options[0]?.id || "",
+        );
+      })
+      .catch((e) => setError(e.message || String(e)));
+  }, []);
 
   async function detect() {
     if (!scriptPath.trim()) return;
@@ -444,7 +463,7 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
 
       <label>
         Name
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Make Michiel editor" />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Run maintenance task" />
       </label>
 
       <label>
@@ -452,7 +471,7 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
         <input
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Grant a user EDITOR access to a story"
+          placeholder="Describe what this action does"
         />
       </label>
 
@@ -468,8 +487,10 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
         <div className="automation-form-row">
           <label>
             Repo
-            <select value={repo} disabled>
-              <option value="tella-fusion">tella-fusion</option>
+            <select value={repo} onChange={(e) => setRepo(e.target.value)}>
+              {repos.map((item) => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
             </select>
           </label>
           <label style={{ flex: 2 }}>
@@ -478,7 +499,7 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
               className="mono-input"
               value={scriptPath}
               onChange={(e) => setScriptPath(e.target.value)}
-              placeholder="packages/scripts/make_michiel_editor.sh"
+              placeholder="scripts/maintenance.ts"
               onBlur={detect}
             />
           </label>
@@ -498,7 +519,7 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
               className="mono-input"
               value={mcpServer}
               onChange={(e) => setMcpServer(e.target.value)}
-              placeholder="TellaInternalSupportMCP"
+              placeholder="support"
             />
           </label>
           <label style={{ flex: 2 }}>
@@ -507,7 +528,7 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
               className="mono-input"
               value={toolName}
               onChange={(e) => setToolName(e.target.value)}
-              placeholder="grant_story_editor"
+              placeholder="tool_name"
             />
           </label>
         </div>
@@ -605,7 +626,7 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
           disabled={
             saving ||
             !name.trim() ||
-            (kind === "repo" ? !scriptPath.trim() : !mcpServer.trim() || !toolName.trim())
+            (kind === "repo" ? !repo || !scriptPath.trim() : !mcpServer.trim() || !toolName.trim())
           }
         >
           {saving ? "Saving…" : "Create action"}

@@ -98,8 +98,8 @@ function titleFromMarkdown(md: string, fallback: string): string {
 // ── Doc lifecycle ─────────────────────────────────────────────────────────
 /**
  * Return the live Y.Doc for a note, loading it from disk on first access:
- * prefer the binary `.ydoc`; otherwise seed the Y.Text from an existing `.md`
- * (so a hand-dropped MICHIEL.md becomes a collaborative note); otherwise empty.
+ * prefer the binary `.ydoc`; otherwise seed the Y.Text from an existing `.md`;
+ * otherwise empty.
  */
 export function getNoteDoc(id: string): Y.Doc {
 	let doc = noteDocs.get(id);
@@ -335,8 +335,8 @@ export function seedIfEmpty(): void {
 		.getText(TEXT_FIELD)
 		.insert(
 			0,
-			"# MICHIEL.md\n\nShared notes & todos. Edit live together, @-tag sessions, and prompt Haiku to update a note from the bar below.\n\n## Todo\n\n- [ ] \n",
+			"# NOTES.md\n\nShared notes & todos. Edit live together, @-tag sessions, and ask the assistant to update a note from the bar below.\n\n## Todo\n\n- [ ] \n",
 		);
-	noteDocs.set("MICHIEL", doc);
-	persistNow("MICHIEL");
+	noteDocs.set("NOTES", doc);
+	persistNow("NOTES");
 }

@@ -7,14 +7,14 @@
  * Auth: the same `GITHUB_API_TOKEN` PAT the Slack agent uses (Bearer).
  */
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
-import { defaultRepo, personaName } from "../../server/config";
+import { defaultRepo, githubBotLogins, personaName } from "../../server/config";
 import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "../../server/github-limit";
 
 const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
 /** The PR agent's target — the instance's default repo (config-driven). */
 export const GITHUB_REPO = defaultRepo().ghRepo;
 /** The bot account our token posts as — used to recognise our own comments/events. */
-export const BOT_LOGIN = process.env.GITHUB_BOT_LOGIN || "tella-butler";
+export const BOT_LOGIN = githubBotLogins()[0] || "";
 /**
  * Hidden markers the agent stamps on the comments it posts (one per
  * behavior). New comments carry the os-* form; comments written before the

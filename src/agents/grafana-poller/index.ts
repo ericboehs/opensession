@@ -15,31 +15,24 @@
  *
  * Because the automation list is re-read every tick, adding a NEW failure-signal
  * investigator is pure data — create an automation with a `grafanaPoll` config
- * via the API; no code change, no restart. The two built-in investigators
- * (export, upload) are seeded from the repo on startup so their playbooks stay
- * version-controlled.
+ * via the API or `integrations.seeds.automations`; no code change or restart.
  *
  * Investigation only — the runs never retry/recover; they open a PR only when
  * highly confident, else discuss in the card thread.
  */
-import { personaName } from "../../server/config";
+import { configuredServer, productName } from "../../server/config";
 import { envAlias, stateDir } from "../../server/rename-compat";
 import { randomUUIDv7 } from "bun";
 import { mkdirSync, readFileSync, existsSync, unlinkSync } from "fs";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
-import { productName } from "../../server/config";
 import type { AgentModule } from "../types";
 import {
   listAutomations,
-  createAutomation,
-  saveAutomation,
   runAutomation,
   type Automation,
   type GrafanaPollConfig,
 } from "../../server/automations";
 import { postSlackBlocks, updateSlackBlocks } from "../slack/slack-api";
-import { EXPORT_EVENT_KEY, EXPORT_AUTOMATION_NAME, EXPORT_INVESTIGATION_PROMPT } from "../export/prompt";
-import { UPLOAD_EVENT_KEY, UPLOAD_AUTOMATION_NAME, UPLOAD_INVESTIGATION_PROMPT } from "../upload/prompt";
 
 const DEDUP_ROOT = stateDir("grafana-poll");
 
@@ -49,7 +42,7 @@ const LOKI_DATASOURCE_UID = process.env.LOKI_DATASOURCE_UID || "loki";
 
 const UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
-  "https://os.tella.dev";
+  configuredServer().publicBaseUrl;
 
 const DEFAULT_LOOKBACK = "20m";
 const DEFAULT_POLL_MINUTES = 15;
@@ -58,78 +51,6 @@ const DEFAULT_NAMESPACE = "prod";
 
 // How often the engine wakes to check whether any automation is due to poll.
 const TICK_MS = 60 * 1000;
-
-// ── Built-in investigators, seeded from the repo ─────────────
-
-interface Seed {
-  eventKey: string;
-  name: string;
-  prompt: string;
-  grafanaPoll: GrafanaPollConfig;
-}
-
-const LOKI = (workflowType: string, sumBy: string) =>
-  `sum by (${sumBy}) (count_over_time({service_name="temporal-rust-worker", detected_level="error"} | workflow_type="${workflowType}" |= "workflow_failure" [$LOOKBACK]))`;
-
-const SEEDS: Seed[] = [
-  {
-    eventKey: EXPORT_EVENT_KEY,
-    name: EXPORT_AUTOMATION_NAME,
-    prompt: EXPORT_INVESTIGATION_PROMPT,
-    grafanaPoll: {
-      lokiQuery: LOKI("export", "story_id, story_name, workflow_id, run_id, namespace"),
-      dedupLabel: "story_id",
-      slackChannel: process.env.SLACK_EXPORT_FAILURE_CHANNEL || "C093YC3TX8E",
-      cardTitle: "export failure",
-    },
-  },
-  {
-    eventKey: UPLOAD_EVENT_KEY,
-    name: UPLOAD_AUTOMATION_NAME,
-    prompt: UPLOAD_INVESTIGATION_PROMPT,
-    grafanaPoll: {
-      lokiQuery: LOKI("process_streaming_upload", "streaming_upload_id, user_email, workflow_id, run_id, namespace"),
-      dedupLabel: "streaming_upload_id",
-      slackChannel: process.env.SLACK_UPLOAD_FAILURE_CHANNEL || "C0AKPJ65BQA",
-      cardTitle: "upload processing failure",
-    },
-  },
-];
-
-/** Create the built-in investigators if absent, else keep prompt + poll config in sync. */
-function ensureSeeds(): void {
-  for (const seed of SEEDS) {
-    const existing = listAutomations().find((a) => a.eventKey === seed.eventKey);
-    if (existing) {
-      const drifted =
-        existing.prompt !== seed.prompt ||
-        JSON.stringify(existing.grafanaPoll) !== JSON.stringify(seed.grafanaPoll);
-      if (drifted) {
-        saveAutomation({ ...existing, prompt: seed.prompt, grafanaPoll: seed.grafanaPoll });
-        console.log(`[grafana-poller] Synced seed "${seed.name}" (${existing.id})`);
-      }
-      continue;
-    }
-    const created = createAutomation({
-      name: seed.name,
-      prompt: seed.prompt,
-      schedule: "",
-      mode: "code",
-      createdBy: `${personaName()} (grafana poller)`,
-      eventKey: seed.eventKey,
-      mcpServers: ["TellaInternalSupportMCP", "slack", "grafana"],
-      grafanaPoll: seed.grafanaPoll,
-      // Investigations are research — never let them fall back to the
-      // model-less automation default (sonnet); Michiel 2026-07-22.
-      model: "claude-fable-5",
-    });
-    if ("error" in created) {
-      console.error(`[grafana-poller] Failed to seed "${seed.name}":`, created.error);
-    } else {
-      console.log(`[grafana-poller] Seeded "${seed.name}" (${created.id})`);
-    }
-  }
-}
 
 // ── Loki ─────────────────────────────────────────────────────
 
@@ -493,7 +414,6 @@ export class GrafanaPollerAgent implements AgentModule {
       );
       return;
     }
-    ensureSeeds();
 
     this.timer = setInterval(() => {
       const now = Date.now();

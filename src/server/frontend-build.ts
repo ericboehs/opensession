@@ -13,6 +13,7 @@ import { activeRunRecords } from "./run-journal";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { broadcastToAll } from "./ws-hub";
 import { isLocalProfile } from "./profile";
+import { configuredServer, defaultRepo, githubBotLogins, personaName, productMark, productName } from "./config";
 
 const g = globalThis as any;
 
@@ -138,6 +139,26 @@ export async function buildFrontend(): Promise<string> {
 	}
 
 	let indexHtml = await Bun.file(`${FRONTEND_SRC}/index.html`).text();
+	const instance = JSON.stringify({
+		productName: productName(),
+		productMark: productMark(),
+		personaName: personaName(),
+		publicBaseUrl: configuredServer().publicBaseUrl,
+		githubBotLogins: githubBotLogins(),
+		defaultRepoId: defaultRepo().id,
+	}).replace(/</g, "\\u003c");
+	const htmlProductName = productName()
+		.replaceAll("&", "&amp;")
+		.replaceAll('"', "&quot;")
+		.replaceAll("<", "&lt;")
+		.replaceAll(">", "&gt;");
+	indexHtml = indexHtml.replace(
+		"window.__OPENSESSION_INSTANCE__ = window.__OPENSESSION_INSTANCE__ || {};",
+		`window.__OPENSESSION_INSTANCE__ = ${instance};`,
+	);
+	indexHtml = indexHtml
+		.replaceAll("<title>OpenSession</title>", `<title>${htmlProductName}</title>`)
+		.replaceAll('content="OpenSession"', `content="${htmlProductName}"`);
 	indexHtml = indexHtml.replace(
 		'<script type="module" src="./App.tsx"></script>',
 		`<script type="module" crossorigin src="/${entryName}"></script>`,
@@ -182,7 +203,10 @@ export async function buildFrontend(): Promise<string> {
 const BUNDLE_META = join(FRONTEND_DIST, ".bundle-meta.json");
 
 function frontendInputsHash(): string {
-	const parts: string[] = [`bun:${Bun.version}`];
+	const parts: string[] = [
+		`bun:${Bun.version}`,
+		`instance:${productName()}:${productMark()}:${personaName()}:${configuredServer().publicBaseUrl}:${githubBotLogins().join(",")}:${defaultRepo().id}`,
+	];
 	try {
 		const lock = statSync(join(REPO_ROOT, "bun.lock"));
 		parts.push(`lock:${lock.mtimeMs}:${lock.size}`);

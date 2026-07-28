@@ -41,7 +41,7 @@ import { shortTime, elapsedClock } from "../lib/time";
  * activity doesn't reshuffle the cards out from under you as you go.
  */
 
-const DEFAULT_REPO = "tella-fusion";
+const DEFAULT_REPO = "repository";
 const SWIPE_DISTANCE = 110; // px of drag past which a release commits
 const SWIPE_VELOCITY = 520; // px/s flick that commits regardless of distance
 

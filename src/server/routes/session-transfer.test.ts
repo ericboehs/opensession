@@ -14,6 +14,7 @@ const SESSION_ID = "bks-019f8a5b-c122-7000-aebd-3cf01eb664ca";
 function repo(id = "local-repo", ghRepo = "acme/widget"): Repo {
   return {
     id,
+    label: id,
     repo: `/repos/${id}`,
     wtPrefix: id,
     defaultBranch: "main",

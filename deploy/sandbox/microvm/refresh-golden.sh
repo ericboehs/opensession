@@ -55,7 +55,7 @@ done
 
 if [ -n "${BKS_AWS_B64:-}" ]; then
   curl -s -m 10 -X POST "http://$GIP:8080/exec" -H 'Content-Type: application/json' \
-    -d "{\"command\":\"echo $BKS_AWS_B64 | base64 -d > ~/.aws/credentials && printf '[default]\\nregion = us-east-2\\n[profile tella-dev]\\nregion = us-east-2\\n' > ~/.aws/config\",\"timeoutMs\":8000}" >/dev/null
+    -d "{\"command\":\"mkdir -p ~/.aws && echo $BKS_AWS_B64 | base64 -d > ~/.aws/credentials && echo ${BKS_AWS_CONFIG_B64:-} | base64 -d > ~/.aws/config && chmod 600 ~/.aws/credentials\",\"timeoutMs\":8000}" >/dev/null
   log "creds seeded"
 fi
 

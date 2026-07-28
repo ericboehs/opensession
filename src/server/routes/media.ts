@@ -8,6 +8,7 @@
 
 import type { RouteContext } from "./context";
 import { isWithinUploads } from "../uploads";
+const HOME = process.env.HOME || "";
 
 export async function handleMediaRoutes(
 	ctx: RouteContext,
@@ -17,7 +18,7 @@ export async function handleMediaRoutes(
 	// Stream a local media file referenced by a `BACKSTAGE_VIDEO:` marker in a
 	// tool's output, so the session viewer can play it inline (tools can't return
 	// video blocks the way Read returns images). Path-scoped: absolute path under
-	// /tmp or /home/ubuntu, no traversal, known media extension. Range-enabled
+	// /tmp or the service user's home, no traversal, known media extension. Range-enabled
 	// so the <video> scrubber can seek.
 	if (path === "/backstage/media" && req.method === "GET") {
 		const mediaPath = url.searchParams.get("path") || "";
@@ -34,7 +35,7 @@ export async function handleMediaRoutes(
 		const ext = mediaPath.slice(mediaPath.lastIndexOf(".")).toLowerCase();
 		const scoped =
 			mediaPath.startsWith("/tmp/") ||
-			mediaPath.startsWith("/home/ubuntu/");
+			(!!HOME && mediaPath.startsWith(`${HOME}/`));
 		// Non-media extensions are servable ONLY from the composer-uploads dir
 		// (as a download) — anything wider would make this a read-any-file-on-
 		// the-box endpoint (tokens live in dotfiles and json configs).

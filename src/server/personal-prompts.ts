@@ -8,7 +8,7 @@
  * Storage mirrors the pins.ts flat-file pattern (one JSON file per user under
  * ~/.opensession-personal-prompts), but keyed through the SAME identity
  * resolution as user memory (session-memory.ts userScope): a teammate's
- * "michiel" / "michael@tella.com" / UT41L6GCC / web login all land on one
+ * an alias / email / Slack id / web login all land on one
  * `user-<slackId>` file, so the prompt follows the person across surfaces.
  */
 

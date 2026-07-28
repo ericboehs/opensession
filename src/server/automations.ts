@@ -28,6 +28,7 @@ import { registerSessionMcpServers, unregisterSessionMcpServers } from "./run-rp
 import { createSessionsMcpServer } from "../agents/slack/sessions-tools";
 import { createSelfImproveMcpServer } from "../agents/slack/self-improve-tools";
 import { audit } from "./audit";
+import { configuredIntegration, personaName } from "./config";
 
 const AUTOMATIONS_DIR = stateDir("automations");
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
@@ -395,6 +396,45 @@ export function createAutomation(input: {
   return a;
 }
 
+/** Create deployment-provided automations once. Source ships no company-
+ * specific routines; instances opt in with `integrations.seeds.automations`. */
+export function ensureConfiguredAutomations(): void {
+  const raw = configuredIntegration("seeds").automations;
+  if (!Array.isArray(raw)) return;
+  for (const candidate of raw) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const value = candidate as Record<string, unknown>;
+    const name = typeof value.name === "string" ? value.name.trim() : "";
+    const prompt = typeof value.prompt === "string" ? value.prompt.trim() : "";
+    const eventKey = typeof value.eventKey === "string" ? value.eventKey.trim() : "";
+    if (!name || !prompt) continue;
+    if (
+      listAutomations().some(
+        (automation) =>
+          (eventKey && automation.eventKey === eventKey) ||
+          (!eventKey && automation.name === name),
+      )
+    ) continue;
+    const result = createAutomation({
+      ...(value as any),
+      name,
+      prompt,
+      eventKey: eventKey || undefined,
+      schedule: typeof value.schedule === "string" ? value.schedule : "",
+      mode: value.mode === "code" ? "code" : "ask",
+      createdBy:
+        typeof value.createdBy === "string"
+          ? value.createdBy
+          : `${personaName()} (config seed)`,
+    });
+    if ("error" in result) {
+      console.warn(`[automations] Config seed "${name}" skipped: ${result.error}`);
+    } else {
+      console.log(`[automations] Seeded configured automation "${name}"`);
+    }
+  }
+}
+
 export function updateAutomation(
   id: string,
   patch: Partial<Pick<Automation, "name" | "prompt" | "schedule" | "runOnceAt" | "mode" | "enabled" | "eventKey" | "mcpServers" | "repo" | "selfImprove" | "workflows" | "model" | "fallbackModel" | "accountId" | "accountStrict" | "usageCredits" | "sandbox" | "grafanaPoll" | "slackWatch">>
@@ -752,7 +792,7 @@ export async function runAutomation(
   const bksId = options?.bksSessionId || `bks-${randomUUIDv7()}`;
 
   try {
-    // The automation's repo (default tella-fusion). Ask mode reads the repo's
+    // The automation's repo (instance default when omitted). Ask mode reads the repo's
     // pinned ask checkout (default branch — never the mutable main checkout);
     // code mode gets an isolated worktree — `isolated` matters for
     // shared-checkout repos (backstage), where an unattended run must never

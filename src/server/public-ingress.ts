@@ -30,7 +30,7 @@
  *
  * Config (~/.backstage-sandbox.json → sandbox/config.ts publicIngress block):
  *   {"publicIngress": {"enabled": true, "port": 3860,
- *                      "publicBaseUrl": "wss://michael.tella.dev"}}
+ *                      "publicBaseUrl": "wss://sessions.example.com"}}
  * The listener binds 127.0.0.1 by default — front it with a TLS terminator
  * (Caddy path routes / cloudflared tunnel); publicBaseUrl is what remote
  * launches embed as BKS_RUN_WS_URL/BKS_RPC_WS_URL (config.ts

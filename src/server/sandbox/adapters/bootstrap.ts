@@ -660,12 +660,11 @@ export async function warmRemoteWorkspace(
     return true;
   }
   // Deps: same convention as worktree.ts's installWorktreeDeps, expressed
-  // in-sandbox (config depsInstall → tella-fusion webapp install → root
-  // install when a package.json exists).
+  // in-sandbox (config depsInstall → root install when package.json exists).
   const bunEnv = `HOME=${REMOTE_HOME} PATH=${shellQuoteWord(REMOTE_PATH)}`;
   const deps = repo.depsInstall
     ? `cd ${shellQuoteWord(dir)} && ${bunEnv} sh -c ${shellQuoteWord(repo.depsInstall)}`
-    : `cd ${shellQuoteWord(dir)} && ${bunEnv} sh -c 'if [ -f packages/core/webapp/package.json ]; then cd packages/core/webapp && ${REMOTE_BUN} install; elif [ -f package.json ]; then ${REMOTE_BUN} install; fi'`;
+    : `cd ${shellQuoteWord(dir)} && ${bunEnv} sh -c 'if [ -f package.json ]; then ${REMOTE_BUN} install; fi'`;
   log("installing deps…");
   const r = await driver.exec(deps, { timeoutMs: 900_000 });
   if (r.exitCode !== 0) {

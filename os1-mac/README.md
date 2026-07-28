@@ -1,6 +1,6 @@
 # OS¹ for Mac
 
-A thin Electron shell around [https://os.tella.dev](https://os.tella.dev), with
+A thin Electron shell around a configured OpenSession server, with
 an opt-in local mode that supervises a local OpenSession backend. Both modes use
 the current hosted frontend; in local mode the loopback server proxies that app
 shell so its same-origin API and WebSocket requests stay local. The app only
@@ -18,8 +18,8 @@ bun install
 bun start
 ```
 
-Requires being on the tailnet (the server is Tailscale-only); otherwise you get
-the built-in retry screen.
+Requires network access to the configured server; otherwise you get the
+built-in retry screen.
 
 ### Local sessions
 
@@ -86,7 +86,8 @@ refreshes within ~3s). ⚠️ Writes are real — prompts/steers/archives hit
 production. For a fully isolated sandbox instead, run the whole server locally
 (`mkdir -p ~/.opensession-chats && bun --hot run opensession.ts`, port 3850) —
 empty local state, optionally rsync'd from prod.
-`OS1_URL` is dev-only — packaged builds always load https://os.tella.dev.
+`OS1_URL` overrides the server for a run. Distributions set
+`opensession.defaultServer` in `package.json` (or `OS1_CLOUD_URL`).
 
 ## Architecture
 

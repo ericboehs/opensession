@@ -133,7 +133,7 @@ struct SettingsView: View {
     private var connectionForm: some View {
         Form {
             Section("Server") {
-                TextField("https://os.tella.dev", text: $serverURL)
+                TextField("https://sessions.example.com", text: $serverURL)
                     .urlFieldCompat()
                     .autocorrectionDisabled()
             }

@@ -9,6 +9,7 @@
 import type { RouteContext } from "./context";
 import { sendSlackMessage } from "../../agents/slack/slack-api";
 import { cancelAsk } from "../human-asks";
+import { personaName } from "../config";
 
 export async function handleHumanAsksRoutes(
 	ctx: RouteContext,
@@ -42,7 +43,7 @@ export async function handleHumanAsksRoutes(
 		);
 		await sendSlackMessage(
 			ask.slack.channel,
-			`It's Michael — friendly nudge, still waiting on this one 🙏`,
+			`It's ${personaName()} — friendly nudge, still waiting on this one 🙏`,
 			ask.slack.rootTs,
 		);
 		return Response.json({ ok: true });

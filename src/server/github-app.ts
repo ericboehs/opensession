@@ -22,6 +22,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { githubUserAuthSettings } from "./github-auth";
+import { configuredIntegration } from "./config";
 
 const KEY_PATH =
   process.env.OPENSESSION_GITHUB_APP_KEY || join(homedir(), ".opensession-github-app.pem");
@@ -58,12 +59,33 @@ export async function githubAppInstallationToken(): Promise<string | null> {
     const jwt = appJwt(clientId, key);
     const headers = { Authorization: `Bearer ${jwt}`, Accept: "application/vnd.github+json" };
 
-    let installationId = cached?.installationId;
+    const githubConfig = configuredIntegration("github");
+    const configuredInstallationId =
+      typeof githubConfig.installationId === "number"
+        ? githubConfig.installationId
+        : undefined;
+    let installationId = configuredInstallationId || cached?.installationId;
     if (!installationId) {
       const res = await fetch("https://api.github.com/app/installations", { headers });
-      const installs = (await res.json()) as Array<{ id: number }>;
+      const installs = (await res.json()) as Array<{ id: number; account?: { login?: string } }>;
       if (!Array.isArray(installs) || !installs.length) throw new Error("no installations");
-      installationId = installs[0].id;
+      const owner =
+        typeof githubConfig.installationOwner === "string"
+          ? githubConfig.installationOwner.toLowerCase()
+          : "";
+      const selected = owner
+        ? installs.find((installation) => installation.account?.login?.toLowerCase() === owner)
+        : installs.length === 1
+          ? installs[0]
+          : undefined;
+      if (!selected) {
+        throw new Error(
+          owner
+            ? `no GitHub App installation for ${owner}`
+            : "multiple GitHub App installations; configure integrations.github.installationOwner",
+        );
+      }
+      installationId = selected.id;
     }
 
     // Downscoped at mint: pr-info only reads, so the token carries no write

@@ -17,6 +17,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { execFile } = require("node:child_process");
 const { configForCloudSession, LocalServerSupervisor } = require("./local-server.js");
+const packageConfig = require("../package.json").opensession || {};
 
 // AppKit can show its persistent-window crash-recovery prompt before Electron
 // finishes launching. On macOS 26 that modal can trap the browser process and
@@ -26,11 +27,12 @@ if (process.platform === "darwin") {
   systemPreferences.setUserDefault("ApplePersistenceIgnoreState", "boolean", true);
 }
 
-// OS1_URL is a dev-only escape hatch for pointing the shell at a local
-// OpenSession checkout (`bun --hot run opensession.ts`, then
-// `OS1_URL=http://127.0.0.1:3850 bun start`) to iterate on frontend changes
-// before they merge. Persisted local mode takes precedence over this URL.
-const CLOUD_URL = "https://os.tella.dev/";
+// OS1_URL selects the hosted instance. Distributors can set OS1_CLOUD_URL;
+// the portable fallback is a locally running OpenSession server.
+const CLOUD_URL =
+  process.env.OS1_CLOUD_URL ||
+  packageConfig.defaultServer ||
+  "http://127.0.0.1:3850/";
 const CLOUD_ORIGIN = new URL(CLOUD_URL).origin;
 let APP_URL = process.env.OS1_URL || CLOUD_URL;
 let APP_ORIGIN = new URL(APP_URL).origin;
@@ -262,7 +264,7 @@ function openExternal(url) {
   shell.openExternal(url);
 }
 
-// os1://session/abc → https://os.tella.dev/session/abc; https app links pass through.
+// os1://session/abc → <configured instance>/session/abc; app links pass through.
 function deepLinkToUrl(raw) {
   try {
     const u = new URL(raw);
@@ -625,7 +627,7 @@ app.on("open-url", (e, url) => {
   openDeepLink(url);
 });
 
-// Universal links (https://os.tella.dev/… clicked in Slack etc.) arrive here
+// Universal links for the configured instance arrive here
 // once the associated-domains entitlement + AASA are in place — see README.
 app.on("continue-activity", (e, _type, _userInfo, details) => {
   if (details?.webpageURL) {

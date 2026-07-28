@@ -12,6 +12,7 @@
 import { opencodeOneShot } from "./opencode-oneshot";
 import { parseCron } from "./cron";
 import { readMcpConfig } from "./connections";
+import { defaultRepo, personaCompany, personaProduct } from "./config";
 
 const DRAFT_MODEL = process.env.DRAFT_AUTOMATION_MODEL || "claude-haiku-4-5";
 
@@ -34,7 +35,7 @@ export interface AutomationDraft {
 }
 
 function systemPrompt(mcpNames: string[]): string {
-  return `You draft configs for "automations": scheduled or event-triggered agent runs at Tella (a screen-recording product). The agent is Claude Code with repo access (tella-fusion, the main repo) and the gh CLI.
+  return `You draft configs for "automations": scheduled or event-triggered agent runs at ${personaCompany()} for ${personaProduct()}. The agent has access to the configured repository (${defaultRepo().id}) and the gh CLI.
 
 Given a description of what the automation should do, reply with ONLY a JSON object:
 {"name": "...", "prompt": "...", "schedule": "...", "mode": "ask"|"code", "mcpServers": [...], "eventKey": "..."|null}

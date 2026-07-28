@@ -10,8 +10,10 @@ import {
   resumeGoalApi,
   pauseGoalApi,
   fetchModels,
+  fetchRepos,
   relativeTime,
   type ModelOption,
+  type RepoInfo,
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
@@ -493,7 +495,8 @@ function GoalForm({
   const [name, setName] = useState(initial?.name || "");
   const [mission, setMission] = useState(initial?.mission || "");
   const [mode, setMode] = useState<"ask" | "code">(initial?.mode || "ask");
-  const [repo, setRepo] = useState(initial?.repo || "tella-fusion");
+  const [repo, setRepo] = useState(initial?.repo || "");
+  const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [model, setModel] = useState(initial?.model || "");
   const [fallbackModel, setFallbackModel] = useState(initial?.fallbackModel || "");
   const [mcpServers, setMcpServers] = useState((initial?.mcpServers || []).join(", "));
@@ -505,10 +508,17 @@ function GoalForm({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchModels()
-      .then((m) => {
+    Promise.all([fetchModels(), fetchRepos()])
+      .then(([m, repoItems]) => {
         setModels(m.models);
         setDefaultModel(m.default);
+        setRepos(repoItems);
+        setRepo((current) =>
+          current ||
+          repoItems.find((item) => item.default)?.id ||
+          repoItems[0]?.id ||
+          "",
+        );
       })
       .catch(() => {});
   }, []);
@@ -582,12 +592,13 @@ function GoalForm({
 
         <label>
           Repo (code mode)
-          <input
-            value={repo}
-            onChange={(e) => setRepo(e.target.value)}
-            placeholder="tella-fusion"
-            className="mono-input"
-          />
+          <select value={repo} onChange={(e) => setRepo(e.target.value)}>
+            {repos.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label || item.id}
+              </option>
+            ))}
+          </select>
         </label>
 
         <label>

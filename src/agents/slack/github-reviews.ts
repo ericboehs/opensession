@@ -15,6 +15,7 @@ import { sendSlackMessage, postSlackBlocks } from "./slack-api";
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import { GITHUB_REPO } from "./state";
 import { ghRateLimited, noteGhRateLimited } from "../../server/github-limit";
+import { configuredIntegration } from "../../server/config";
 
 const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
@@ -69,8 +70,11 @@ export async function pollForVercelPreview(
       if (!pr?.head?.sha) continue;
 
       // Find deployment for this commit
+      const configuredEnvironment = configuredIntegration("github").previewEnvironment;
+      const previewEnvironment =
+        typeof configuredEnvironment === "string" ? configuredEnvironment : "Preview";
       const deployments = await githubApi(
-        `/repos/${GITHUB_REPO}/deployments?ref=${pr.head.sha}&environment=${encodeURIComponent("Preview \u2013 tella")}&per_page=1`
+        `/repos/${GITHUB_REPO}/deployments?ref=${pr.head.sha}&environment=${encodeURIComponent(previewEnvironment)}&per_page=1`
       );
       if (!deployments?.[0]?.id) continue;
 

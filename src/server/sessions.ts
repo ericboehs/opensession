@@ -23,7 +23,7 @@ import {
   isTranscriptStoreDegraded,
   clearTranscriptStoreDegraded,
 } from "./opencode-transcript";
-import { configuredRepos, defaultRepo } from "./config";
+import { configuredRepos, defaultRepo, githubBotLogins } from "./config";
 import { sessionPrBranch } from "./session-pr-target";
 import { isLockHeld, readPrState, type LastReviewState } from "../agents/github/state";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg, botGhToken } from "./github-limit";
@@ -463,10 +463,9 @@ function findTranscriptPath(
     const path = getTranscriptPath(worktreeDir, sessionId);
     if (existsSync(path)) return path;
   }
-  // Fallback: check common CWD paths the agents use
+  // Fallback for old runs started directly from the user's home directory.
   const fallbacks = [
-    `${CLAUDE_PROJECTS_DIR}/-home-ubuntu-projects-tella-fusion/${sessionId}.jsonl`,
-    `${CLAUDE_PROJECTS_DIR}/-home-ubuntu/${sessionId}.jsonl`,
+    `${CLAUDE_PROJECTS_DIR}/${(process.env.HOME || "").replaceAll("/", "-")}/${sessionId}.jsonl`,
   ];
   for (const path of fallbacks) {
     if (existsSync(path)) return path;
@@ -663,7 +662,7 @@ function scanLinearSessions(): UnifiedSession[] {
       data.participants?.[0]?.name ||
       data.lastActiveUser?.name ||
       null;
-    // Clean up email-style names (e.g. "john@tella.com" → "John")
+    // Clean up email-style names (e.g. "john@example.com" → "John")
     const startedBy = rawName?.includes("@")
       ? rawName.split("@")[0].charAt(0).toUpperCase() + rawName.split("@")[0].slice(1)
       : rawName;
@@ -873,26 +872,15 @@ export function sessionRefFromPrBody(
   );
   return m?.[1];
 }
-// Repos the bulk PR cache covers — the active dev repos whose PRs the sidebar
-// Open PRs section and Reviews table surface. Fusion carries 200+ open PRs, so
-// limits are per-repo. Repos not listed here fall back to session-derived PR
-// info only. The ghRepo target resolves through the config-driven registry
-// (worktree.ts REPOS), so a config override of either repo's GitHub target
-// flows through.
-const PR_REPO_LIMITS = [
-	{ id: "tella-fusion", openLimit: 500, recentLimit: 1000 },
-	{ id: "backstage", openLimit: 100, recentLimit: 500 },
-	// The desktop repos carry a handful of PRs each, but a session that spans
-	// webapp + mac + windows (one feature, four PRs) needs their state to show
-	// its PRs at all — and the conditional ETag probe makes an idle repo free.
-	{ id: "tella-mac", openLimit: 50, recentLimit: 100 },
-	{ id: "tella-windows", openLimit: 50, recentLimit: 100 },
-] as const;
 function prRepos() {
-	return PR_REPO_LIMITS.flatMap((limits) => {
-		const repo = configuredRepos()[limits.id];
-		return repo?.ghRepo ? [{ ...limits, ghRepo: repo.ghRepo }] : [];
-	});
+	return Object.values(configuredRepos())
+		.filter((repo) => repo.ghRepo && repo.prCache !== false)
+		.map((repo) => ({
+			id: repo.id,
+			ghRepo: repo.ghRepo,
+			openLimit: repo.prCacheOpenLimit ?? 100,
+			recentLimit: repo.prCacheRecentLimit ?? 500,
+		}));
 }
 
 // repo id → branch → PR info. Keyed per repo so the same branch name in two
@@ -1289,8 +1277,6 @@ function getPrsByRepo(): Map<string, Map<string, PrInfo>> {
 
 /** The bot credential's GitHub account — PRs Michael opens without a per-user
  *  token are authored by it (mirrors analytics.ts's BOT_LOGINS). */
-const PR_BODY_TRUSTED_BOTS = new Set(["tella-butler"]);
-
 /**
  * PRs grouped by the session id in their attribution footer, keyed session id →
  * refs. Only PRs authored by the bot or a teammate count: a PR body is editable
@@ -1305,7 +1291,7 @@ function prsBySessionRef(
   for (const [repoId, byBranch] of prsByRepo)
     for (const [branch, pr] of byBranch) {
       if (!pr.sessionRef) continue;
-      if (!PR_BODY_TRUSTED_BOTS.has(pr.author) && !githubLoginToPersonKey(pr.author))
+      if (!githubBotLogins().includes(pr.author.toLowerCase()) && !githubLoginToPersonKey(pr.author))
         continue;
       const list = out.get(pr.sessionRef);
       if (list) list.push({ repo: repoId, branch, pr });
@@ -1574,7 +1560,7 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
  * Every open PR across the covered repos (prRepos() — from the same batched
  * cache the session enrichment uses), each attributed to a teammate when its
  * GitHub author maps to one via the identity table. Bot-authored PRs
- * (tella-butler — the ones Michael opens from sessions) fall back to the
+ * (opened by the configured agent account) fall back to the
  * first teammate assignee (sessions instruct the agent to `--assignee` the
  * requester); with neither, `person` is null and the frontend attributes
  * through the session that opened them. Powers the sidebar's Open PRs

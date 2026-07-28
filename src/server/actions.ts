@@ -2,7 +2,7 @@
  * Actions: a quick way to run a registered repo script behind a form.
  *
  * An Action = (1) an input form + (2) a way to execute a script. v1 registers
- * existing scripts that live in a repo (e.g. packages/scripts/make_michiel_editor.sh)
+ * existing scripts that live in a repo (e.g. scripts/run-maintenance.sh)
  * and maps the form fields to the script's arguments. A run is NOT a bespoke
  * output panel — it spins up a real backstage session on a fast/cheap model
  * (Haiku) that executes the command and reports the output, so it shows up in
@@ -22,7 +22,7 @@ import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from ".
 import { engineSessionPatch } from "./sessions";
 import { updateSessionFile } from "./session-cache";
 import type { BackstageSessionFile } from "./types";
-import { defaultRepo } from "./config";
+import { configuredIntegration, configuredRepos, defaultRepo } from "./config";
 import { stateDir } from "./rename-compat";
 
 const ACTIONS_DIR = stateDir("actions");
@@ -61,11 +61,11 @@ export interface Action {
   kind?: "repo" | "mcp";
   /** repo: the repo the script lives in. v1: always the default repo (repoPathFor). */
   repo?: string;
-  /** repo: script path relative to the repo root, e.g. "packages/scripts/make_michiel_editor.sh". */
+  /** repo: script path relative to the repo root, e.g. "scripts/run-maintenance.sh". */
   scriptPath?: string;
   /** repo: how input values reach the script. positional = bash x a b; env = A=a B=b bash x. */
   argMode?: "positional" | "env";
-  /** mcp: the MCP server to enable for the run, e.g. "TellaInternalSupportMCP". */
+  /** mcp: the MCP server to enable for the run, e.g. "support". */
   mcpServer?: string;
   /** mcp: the tool to call on that server, e.g. "grant_story_editor". */
   toolName?: string;
@@ -131,11 +131,8 @@ export function deleteAction(id: string): boolean {
 
 // ── Validation + creation ────────────────────────────────────
 
-/** Repos an action's script can live in, mapped to their checkout path.
- *  v1: only the instance's default repo (config-driven; tella-fusion by default). */
 function repoPathFor(repo: string): string | undefined {
-  const def = defaultRepo();
-  return repo === def.id ? def.repo : undefined;
+  return configuredRepos()[repo]?.repo;
 }
 
 function sanitizeInputs(raw: unknown): ActionInput[] | { error: string } {
@@ -321,7 +318,7 @@ function buildRunPrompt(action: Action, command: string): string {
 
 /**
  * Fire an action run. Creates a real backstage session (fast model, code mode,
- * tella-fusion main checkout) that executes the script and reports the output.
+ * default repository checkout) that executes the script and reports the output.
  * Returns the new session id immediately; the run streams via the session's
  * transcript like any other session. Mirrors the automations runner.
  */
@@ -497,80 +494,35 @@ export function introspectScript(
   return { inputs: [], argMode: "positional" };
 }
 
-// ── Code-seeded actions ──────────────────────────────────────
+// ── Config-seeded actions ──────────────────────────────────────
 
 /**
- * Allowlisted grantees, mirroring the support MCP's editor-grant-allowlist.ts.
- * The support service enforces the real allowlist server-side; this only
- * populates the dropdown. (Keep in sync, but a stale entry just gets refused.)
- */
-const EDITOR_GRANTEES = ["michiel", "john", "johnny", "kent", "jaap", "louise", "grant"];
-
-/**
- * The make-editor capability now lives in the support MCP as `grant_story_editor`
- * (its own scoped prod IAM + audit + allowlist) — not the old make_*_editor.sh
- * scripts, which only worked from a laptop with tella-admin creds. So we seed one
- * MCP-backed action and delete the obsolete shell seeds. Create-if-absent for the
- * MCP action so UI edits are preserved.
+ * Seed actions are deployment data, not application code. Define them as full
+ * Action-shaped objects under `integrations.seeds.actions`; create-if-absent
+ * preserves any edits made later through the UI.
  */
 export function ensureSeedActions() {
   ensureDir();
-
-  // Drop the earlier shell-script seeds (wrong layer: sandboxed read-only creds).
-  for (const a of listActions()) {
-    if (a.seeded && a.id.startsWith("act-seed-make-") && a.id.endsWith("-editor")) {
-      deleteAction(a.id);
-      console.log(`[actions] Removed obsolete shell seed "${a.name}"`);
-    }
-  }
-
-  const grantId = "act-seed-grant-story-editor";
-  if (!getAction(grantId)) {
+  const raw = configuredIntegration("seeds").actions;
+  if (!Array.isArray(raw)) return;
+  for (const candidate of raw) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const value = candidate as Partial<Action>;
+    if (
+      typeof value.id !== "string" ||
+      typeof value.name !== "string" ||
+      (value.kind !== "repo" && value.kind !== "mcp")
+    ) continue;
+    if (getAction(value.id)) continue;
     const action: Action = {
-      id: grantId,
-      name: "Grant story editor",
-      description:
-        "Grant an allowlisted Tella teammate EDITOR access to a story (via the support MCP " +
-        "grant_story_editor tool — scoped prod IAM + audit). Grants in prod only.",
-      kind: "mcp",
-      mcpServer: "TellaInternalSupportMCP",
-      toolName: "grant_story_editor",
-      inputs: [
-        {
-          name: "storyId",
-          label: "Story ID",
-          type: "text",
-          required: true,
-          hint: "The story id (vid_…), without the STORY# prefix.",
-        },
-        {
-          name: "grantee",
-          label: "Teammate",
-          type: "select",
-          required: true,
-          options: EDITOR_GRANTEES,
-        },
-        {
-          name: "requestedBy",
-          label: "Requested by (your email)",
-          type: "text",
-          required: true,
-          hint: "Recorded verbatim in the audit log — use your real email.",
-        },
-        {
-          name: "reason",
-          label: "Reason",
-          type: "text",
-          required: true,
-          hint: "Ticket link + a one-line justification.",
-        },
-      ],
-      confirm: true,
+      ...(value as Action),
       seeded: true,
-      createdBy: "seed",
-      createdAt: new Date().toISOString(),
+      createdBy: value.createdBy || "config",
+      createdAt: value.createdAt || new Date().toISOString(),
+      inputs: Array.isArray(value.inputs) ? value.inputs : [],
+      confirm: value.confirm !== false,
     };
     saveAction(action);
-    console.log(`[actions] Seeded "${action.name}"`);
+    console.log(`[actions] Seeded configured action "${action.name}"`);
   }
 }

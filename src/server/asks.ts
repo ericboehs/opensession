@@ -228,7 +228,7 @@ export function makeAskHandler(sessionId: string) {
 						await sendPushToUser(
 							s.startedBy,
 							{
-								title: "Michael needs input",
+								title: `${personaName()} needs input`,
 								body: `${s.title || sessionId} — ${questions[0]?.question || "a question is waiting"}`.slice(0, 180),
 								url: `/backstage/session/${encodeURIComponent(sessionId)}`,
 								tag: `ask-${sessionId}`,

@@ -29,7 +29,7 @@ export function PrQueuePreview({
 			[...sessions]
 				.filter(
 					(item) =>
-						(item.repo || "tella-fusion") === repo && item.branch === branch,
+						item.repo === repo && item.branch === branch,
 				)
 				.sort((a, b) =>
 					(b.lastActivity || "").localeCompare(a.lastActivity || ""),

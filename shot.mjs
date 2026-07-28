@@ -54,7 +54,7 @@ await send("Emulation.setDeviceMetricsOverride", {
   mobile: true,
 });
 await send("Page.addScriptToEvaluateOnNewDocument", {
-  source: `localStorage.setItem('backstage-user','Michiel');`,
+  source: `localStorage.setItem('opensession-user',${JSON.stringify(process.env.OPENSESSION_SCREENSHOT_USER || "Local User")});`,
 });
 await send("Page.navigate", { url: `http://127.0.0.1:3850${path}` });
 await new Promise((r) => setTimeout(r, 9000));

@@ -1,8 +1,7 @@
 /**
  * Local dev-server ("preview") status + control for a session's worktree.
  *
- * A tella-fusion worktree that has run `just dev` (e.g. via the tella-local
- * skill) writes its allocated ports to `<worktree>/.ports.conf`:
+ * A repository preview writes its allocated ports to `<worktree>/.ports.conf`:
  *
  *   WEBAPP_PORT=3300
  *   INSTANT_PORT=5968
@@ -15,14 +14,13 @@
  * HTTPS port on the tailnet host via Caddy (which already holds the ts.net
  * cert), reverse-proxying to the webapp's port. The session's worktree must
  * have been started with `ALLOWED_DEV_ORIGINS=<host>` so Next dev hydrates over
- * that origin (the tella-local ensure-up.sh seeds it). The preview URL is then
+ * that origin. The preview URL is then
  * `https://<host>:<httpsPort>`.
  *
  * The bring-up itself is repo-generic: resolvePreviewBoot picks a committed
  * `.opensession/start.sh` from the target repo first (`.backstage/` pre-rename
- * fallback), then the repo's configured
- * `previewCommand`, then the legacy tella-local script (tella-fusion only) —
- * one chain shared by host and sandboxed previews.
+ * fallback), then the repo's configured `previewCommand` — one chain shared by
+ * host and sandboxed previews.
  */
 import { $ } from "bun";
 import {
@@ -46,7 +44,7 @@ import {
 } from "./sandbox/preview-ports";
 import type { Sandbox } from "./sandbox/provider";
 import { shellQuoteWord } from "./sandbox/adapters/bootstrap";
-import type { Repo } from "./config";
+import { configuredRepos, configuredServer, type Repo } from "./config";
 import { repoForPath } from "./worktree";
 import {
   claimPoolPreview,
@@ -78,37 +76,37 @@ export interface PreviewStatus {
   /** HTTPS preview URL (Caddy-fronted) when the webapp is up, else null. */
   previewUrl: string | null;
   /** Whether a bring-up mechanism exists for this worktree's repo (repo
-   *  `.opensession/start.sh` → config `previewCommand` → tella-local fallback).
+   *  `.opensession/start.sh` → config `previewCommand`).
    *  False = the Start button can't do anything; the UI shows what to add. */
   bootable: boolean;
   services: PreviewService[];
 }
 
-// The tella-local skill's idempotent bring-up script. Overridable for testing.
-const ENSURE_UP =
-  process.env.TELLA_LOCAL_ENSURE_UP ||
-  "/home/ubuntu/.claude/skills/tella-local/ensure-up.sh";
-
-/** Directory of the tella-local skill (ensure-up.sh + CDP helpers) — the
- *  docker provider mounts it read-only at the identical path so the Preview
- *  button's bring-up works inside sandboxes too. */
-export function tellaLocalSkillDir(): string {
-  return dirname(ENSURE_UP);
+/** Absolute instance preview-command directories that sandbox providers need
+ *  to mount read-only at the same path. */
+export function externalPreviewCommandDirs(): string[] {
+  return [
+    ...new Set(
+      Object.values(configuredRepos())
+        .map((repo) => repo.previewCommand?.trim().split(/\s+/)[0])
+        .filter((command): command is string => !!command?.startsWith("/"))
+        .map(dirname),
+    ),
+  ];
 }
 
 // ── Bring-up resolution (ONE chain, shared by host + sandbox previews) ────────
 // The boot command should live IN the target repo, not in backstage: a
 // committed `.opensession/start.sh` (with `.backstage/` as the pre-rename
 // fallback, matching docker.ts's workspace-setup hook) beats instance config
-// (`previewCommand` on the repos registry entry), which beats the legacy
-// tella-local script — the tella-fusion-specific fallback that predates the
-// lifecycle convention. Docs: deploy/sandbox/README.md "Previews in sandboxes".
+// (`previewCommand` on the repos registry entry). Docs:
+// deploy/sandbox/README.md "Previews in sandboxes".
 
 // Repo lifecycle dirs, in precedence order.
 const LIFECYCLE_DIRS = [".opensession", ".backstage"] as const;
 
 export interface PreviewBoot {
-  kind: "repo-script" | "preview-command" | "tella-local";
+  kind: "repo-script" | "preview-command";
   /** `sh -c`-ready command; every path component passes assertSafePath. */
   cmd: string;
   /** `setup.sh` next to the resolved start.sh when present — the one-shot
@@ -156,9 +154,6 @@ export async function resolvePreviewBoot(
         `[preview] previewCommand ${repo.previewCommand} (repo ${repo.id}) not present here — trying the fallback chain`,
       );
     }
-  }
-  if (repo.id === "tella-fusion" && (await exists(ENSURE_UP))) {
-    return { kind: "tella-local", cmd: `bash ${ENSURE_UP} ${assertSafePath(worktreeDir)}` };
   }
   return null;
 }
@@ -254,7 +249,7 @@ async function pgidOf(pid: number): Promise<number | null> {
 // ts.net hostname. We add one reverse-proxy server per running webapp, on a
 // deterministic high port, so each session gets its own secure origin.
 
-const CADDY_ADMIN = "http://localhost:2019";
+const caddyAdmin = () => configuredServer().caddyAdmin.replace(/\/+$/, "");
 const g = globalThis as unknown as {
   __previewRoutes?: Map<number, number>;
   __previewHost?: string;
@@ -272,7 +267,7 @@ export async function previewHost(): Promise<string> {
       host = (JSON.parse(raw)?.Self?.DNSName || "").replace(/\.$/, "");
     } catch {}
   }
-  if (!host) host = "michael.taila5d766.ts.net";
+  if (!host) host = configuredServer().previewHost;
   g.__previewHost = host;
   return host;
 }
@@ -297,7 +292,7 @@ async function ensurePreviewRoute(httpsPort: number, webappPort: number, host: s
       },
     ],
   };
-  const path = `${CADDY_ADMIN}/config/apps/http/servers/preview_${httpsPort}`;
+  const path = `${caddyAdmin()}/config/apps/http/servers/preview_${httpsPort}`;
   const put = () =>
     fetch(path, {
       method: "PUT",
@@ -324,7 +319,7 @@ async function ensurePreviewRoute(httpsPort: number, webappPort: number, host: s
 async function removePreviewRoute(httpsPort: number): Promise<void> {
   if (!previewRoutes.has(httpsPort)) return;
   try {
-    await fetch(`${CADDY_ADMIN}/config/apps/http/servers/preview_${httpsPort}`, { method: "DELETE" });
+    await fetch(`${caddyAdmin()}/config/apps/http/servers/preview_${httpsPort}`, { method: "DELETE" });
   } catch {}
   previewRoutes.delete(httpsPort);
 }
@@ -877,9 +872,7 @@ async function writeSandboxTunnelsEnv(
  *     BACKSTAGE_BOOT_MODE in its env. Command resolution (lifecycle
  *     convention): `<worktree>/.opensession/start.sh` (or pre-rename
  *     `.backstage/`) when present, else the
- *     repo's configured `previewCommand` (tella-fusion's is the tella-local
- *     ensure-up.sh, mounted ro into every sandbox), else the tella-local
- *     script if the image carries it.
+ *     repo's configured `previewCommand`.
  */
 export async function startSandboxPreview(
   sandbox: Sandbox,
@@ -924,7 +917,7 @@ export async function startSandboxPreview(
   }
 
   // 2. Resolve the bring-up command — the same chain as host previews
-  //    (repo .opensession/start.sh → previewCommand → tella-local), with
+  //    (repo .opensession/start.sh → previewCommand), with
   //    existence checked in-container.
   const boot = await resolvePreviewBoot(
     worktreeDir,
@@ -933,7 +926,7 @@ export async function startSandboxPreview(
   );
   if (!boot) {
     console.warn(
-      `[preview] ${sandbox.id}: no .opensession/start.sh, no usable repo previewCommand, no tella-local fallback in the sandbox — cannot start`,
+      `[preview] ${sandbox.id}: no .opensession/start.sh or usable repo previewCommand in the sandbox — cannot start`,
     );
     return status;
   }
@@ -1007,7 +1000,7 @@ export async function dropSandboxPreviewRoutes(sandboxId: string): Promise<void>
     // right after a restart may miss the cache, so delete unconditionally.
     previewRoutes.delete(httpsPort);
     try {
-      await fetch(`${CADDY_ADMIN}/config/apps/http/servers/preview_${httpsPort}`, {
+      await fetch(`${caddyAdmin()}/config/apps/http/servers/preview_${httpsPort}`, {
         method: "DELETE",
       });
     } catch {}

@@ -410,7 +410,7 @@ export function Notes({
 						</p>
 						<p className="wiki-welcome-hint">
 							The <b>Docs</b> section below is the read-only knowledge base from{" "}
-							<code>tella-fusion/docs</code>.
+							<code>the default repository's docs</code>.
 						</p>
 					</div>
 				)}

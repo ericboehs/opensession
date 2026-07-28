@@ -28,7 +28,7 @@ interface Props {
 	onClose: () => void;
 }
 
-const DEFAULT_PROJECT = "tella-fusion";
+const DEFAULT_PROJECT = "repository";
 
 function sessionRepo(s: UnifiedSession): string {
 	return s.repo || DEFAULT_PROJECT;

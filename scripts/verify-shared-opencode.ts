@@ -69,7 +69,7 @@ const run = (cwd: string, prompt: string, mode?: "ask" | "code") =>
         prompt,
         cwd,
         mode: mode || "code",
-        user: "michiel",
+        user: process.env.OPENSESSION_VERIFY_USER || "Local User",
         allowOpencode: true,
         forceSharedServer: true,
       } as any,

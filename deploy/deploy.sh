@@ -11,21 +11,23 @@
 # Usage: deploy.sh <git-sha>   (defaults to origin/master)
 set -euo pipefail
 
-REPO_DIR=/home/ubuntu/projects/tella-backstage
-HEALTH_URL=http://127.0.0.1:3850/opensession/api/health
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="${OPENSESSION_REPO_DIR:-$(dirname "$SCRIPT_DIR")}"
+HEALTH_URL="${OPENSESSION_HEALTH_URL:-http://127.0.0.1:3850/api/health}"
+SERVICE_USER="${OPENSESSION_SERVICE_USER:-$(stat -c '%U' "$REPO_DIR")}"
 TARGET_SHA="${1:-origin/master}"
 MAX_DRAIN_WAIT="${MAX_DRAIN_WAIT:-480}"   # wait up to 8 min for idle before forcing the restart
 
-run_as_ubuntu() { runuser -u ubuntu -- "$@"; }
+run_as_service_user() { runuser -u "$SERVICE_USER" -- "$@"; }
 
 echo "[deploy] fetching origin, fast-forwarding to ${TARGET_SHA}"
-run_as_ubuntu git -C "$REPO_DIR" fetch --prune origin
+run_as_service_user git -C "$REPO_DIR" fetch --prune origin
 # Fast-forward only — never `reset --hard`. The box's checkout is shared and
 # sessions edit and commit on it directly. A hard reset would
 # silently delete any uncommitted or un-pushed work mid-flight (it bit us before).
 # ff-only advances cleanly when the box is on master and clean, and ABORTS loudly
 # if the checkout diverged or has local edits — surface that, don't destroy it.
-if ! run_as_ubuntu git -C "$REPO_DIR" merge --ff-only "$TARGET_SHA"; then
+if ! run_as_service_user git -C "$REPO_DIR" merge --ff-only "$TARGET_SHA"; then
   echo "[deploy] ERROR: cannot fast-forward to ${TARGET_SHA}." >&2
   echo "[deploy] The checkout has local commits or uncommitted changes. On the box:" >&2
   echo "[deploy]   cd $REPO_DIR && git status   # then commit+push, or stash, then re-run the deploy" >&2
@@ -35,13 +37,13 @@ fi
 # (Re)install the shared-checkout tripwire hook: warns loudly if this live
 # checkout ever gets switched off master (branch work must use a worktree).
 if [ -f "$REPO_DIR/deploy/git-hooks/post-checkout" ]; then
-  run_as_ubuntu install -m 755 "$REPO_DIR/deploy/git-hooks/post-checkout" "$REPO_DIR/.git/hooks/post-checkout"
+  run_as_service_user install -m 755 "$REPO_DIR/deploy/git-hooks/post-checkout" "$REPO_DIR/.git/hooks/post-checkout"
 fi
 
 # Install deps only when the lockfile/manifest actually changed (fast path otherwise).
-if ! run_as_ubuntu git -C "$REPO_DIR" diff --quiet 'HEAD@{1}' HEAD -- bun.lock package.json 2>/dev/null; then
+if ! run_as_service_user git -C "$REPO_DIR" diff --quiet 'HEAD@{1}' HEAD -- bun.lock package.json 2>/dev/null; then
   echo "[deploy] deps changed — bun install --frozen-lockfile"
-  run_as_ubuntu bash -lc "cd '$REPO_DIR' && bun install --frozen-lockfile"
+  run_as_service_user bash -lc "cd '$REPO_DIR' && bun install --frozen-lockfile"
 fi
 
 # The deployed unit is a COPY of the repo's opensession.service (not a symlink) —

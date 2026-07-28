@@ -372,7 +372,7 @@ private extension View {
 
 private struct ActionEditorView: View {
     let save: ([String: Any]) async -> String?; @Environment(\.dismiss) private var dismiss
-    @State private var name = ""; @State private var description = ""; @State private var kind = "repo"; @State private var repo = "tella-fusion"; @State private var scriptPath = ""; @State private var argMode = "positional"; @State private var mcpServer = ""; @State private var toolName = ""; @State private var model = ""; @State private var confirm = true; @State private var inputs: [ActionInputDraft] = []; @State private var saving = false; @State private var error: String?
+    @State private var name = ""; @State private var description = ""; @State private var kind = "repo"; @State private var repo = ""; @State private var scriptPath = ""; @State private var argMode = "positional"; @State private var mcpServer = ""; @State private var toolName = ""; @State private var model = ""; @State private var confirm = true; @State private var inputs: [ActionInputDraft] = []; @State private var saving = false; @State private var error: String?
     var body: some View {
         Form {
             Section("Action") { TextField("Name", text: $name); TextField("Description (optional)", text: $description); Picker("Type", selection: $kind) { Text("Repository script").tag("repo"); Text("MCP tool").tag("mcp") }.pickerStyle(.segmented) }
@@ -394,6 +394,12 @@ private struct ActionEditorView: View {
             if let error { Section { Text(error).foregroundStyle(.red) } }
         }
         .navigationTitle("New Action")
+        .task {
+            if repo.isEmpty {
+                let repos = (try? await OS1API.repos()) ?? []
+                repo = repos.first(where: { $0.isDefault == true })?.id ?? repos.first?.id ?? ""
+            }
+        }
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button(saving ? "Saving…" : "Save") { Task { await submit() } }.disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (kind == "repo" ? scriptPath.isEmpty : mcpServer.isEmpty || toolName.isEmpty)) } }
     }
     private func submit() async { saving = true; defer { saving = false }; let encodedInputs: [[String: Any]] = inputs.filter { !$0.name.trimmingCharacters(in: .whitespaces).isEmpty }.map { ["name": $0.name, "label": $0.label.isEmpty ? $0.name : $0.label, "type": $0.type, "required": $0.required] }; let body: [String: Any] = ["name": name, "description": description, "kind": kind, "repo": repo, "scriptPath": scriptPath, "argMode": argMode, "mcpServer": mcpServer, "toolName": toolName, "model": model, "confirm": confirm, "createdBy": ServerConfig.shared.userName, "inputs": encodedInputs]; if let message = await save(body) { error = message } else { dismiss() } }
@@ -457,6 +463,7 @@ private struct SecurityScanEditorView: View {
     let state: SecurityState; let save: ([String: Any]) async throws -> SecurityScanResult; @Environment(\.dismiss) private var dismiss
     @State private var selectedRepos: Set<String> = []; @State private var profileId = ""; @State private var instructions = ""; @State private var recurrence = "once"; @State private var interactive = false; @State private var saving = false; @State private var error: String?
     private var repos: [SecurityRepo] { (state.repos ?? []).filter { $0.id != nil } }; private var profiles: [SecurityProfile] { (state.profiles ?? []).filter { $0.id != nil } }
+    private var primaryRepo: String? { repos.first?.id }
     var body: some View {
         Form {
             Section("Repositories") {
@@ -466,7 +473,7 @@ private struct SecurityScanEditorView: View {
                 ForEach(repos, id: \.id) { repo in
                     if let id = repo.id {
                         Toggle(id, isOn: repoSelection(id))
-                            .disabled((recurrence != "once" || interactive) && id != "tella-fusion")
+                            .disabled((recurrence != "once" || interactive) && id != primaryRepo)
                     }
                 }
             }
@@ -477,8 +484,8 @@ private struct SecurityScanEditorView: View {
         }
         .navigationTitle("New Security Scan")
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button(saving ? "Starting…" : "Start") { Task { await submit() } }.disabled(saving || selectedRepos.isEmpty) } }
-        .onChange(of: recurrence) { _, value in if value != "once" { interactive = false; selectedRepos = ["tella-fusion"] } }
-        .onChange(of: interactive) { _, value in if value { recurrence = "once"; selectedRepos = ["tella-fusion"] } }
+        .onChange(of: recurrence) { _, value in if value != "once" { interactive = false; selectedRepos = Set(primaryRepo.map { [$0] } ?? []) } }
+        .onChange(of: interactive) { _, value in if value { recurrence = "once"; selectedRepos = Set(primaryRepo.map { [$0] } ?? []) } }
     }
     private func repoSelection(_ id: String) -> Binding<Bool> {
         Binding(

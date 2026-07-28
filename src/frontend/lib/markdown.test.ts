@@ -39,19 +39,19 @@ describe("renderMarkdown session links", () => {
 
   it("renders an OS1 session URL as an in-app session link (no new tab)", () => {
     const html = renderMarkdown(
-      "See [this Michael session](https://os.tella.dev/session/bks-019f9608-ab20-7000-b98e-4de52d5fe436).",
+      "See [this session](http://127.0.0.1:3850/session/bks-019f9608-ab20-7000-b98e-4de52d5fe436).",
     );
     expect(html).toContain('class="session-link"');
     expect(html).toContain(
       'data-session-id="bks-019f9608-ab20-7000-b98e-4de52d5fe436"',
     );
-    expect(html).toContain(">this Michael session</a>");
+    expect(html).toContain(">this session</a>");
     expect(html).not.toContain("target=");
   });
 
   it("labels a pasted (auto-linked) chat URL with just the session id", () => {
     const url =
-      "https://os.tella.dev/workspace/prj-28712580-a369-4d58-996b-f8c23e523ed1/chat/bks-019f9608-ab20-7000-b98e-4de52d5fe436";
+      "http://127.0.0.1:3850/workspace/prj-28712580-a369-4d58-996b-f8c23e523ed1/chat/bks-019f9608-ab20-7000-b98e-4de52d5fe436";
     const html = renderMarkdown(`${url} shows no right sidebar.`);
     expect(html).toContain(
       'data-session-id="bks-019f9608-ab20-7000-b98e-4de52d5fe436"',
@@ -64,14 +64,14 @@ describe("renderMarkdown session links", () => {
 
   it("keeps an explicit link label on a session URL", () => {
     const html = renderMarkdown(
-      "See [the worker](https://os.tella.dev/session/bks-019f9608-ab20-7000-b98e-4de52d5fe436).",
+      "See [the worker](http://127.0.0.1:3850/session/bks-019f9608-ab20-7000-b98e-4de52d5fe436).",
     );
     expect(html).toContain(">the worker</a>");
   });
 
   it("keeps other internal OS1 links same-tab without a chip", () => {
     const html = renderMarkdown(
-      "Open [automations](https://os.tella.dev/automations).",
+      "Open [automations](http://127.0.0.1:3850/automations).",
     );
     expect(html).not.toContain("target=");
     expect(html).not.toContain("session-link");

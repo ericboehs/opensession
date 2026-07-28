@@ -95,24 +95,28 @@ and branding. Copy [`config.example.json`](../../config.example.json) to
 `~/.opensession/config.json` and edit. Every field is optional; precedence per
 key is env var → config.json → built-in default (`src/server/config.ts`).
 The file is re-read on change — no restart for config edits.
+See [instance configuration](../instance-configuration.md) for the portability
+boundaries and the client-distribution settings.
 
-The two sections a non-Tella install must set:
+The two sections a team install normally sets:
 
 - `repos` — your git repos (checkout path, `defaultBranch`, `ghRepo`
   owner/name for the `gh` CLI, `default: true` on the main one, optional
-  `depsInstall`/`previewCommand`). **Caveat:** the built-in defaults are
-  Tella's seven repos, and with *no* config the instance assumes
-  `tella-fusion` exists; a number of agent code paths still hardcode
-  Tella repo paths/names beyond this registry — see
-  [portability-audit §1a-1c](../portability-audit.md).
+  `depsInstall`/`previewCommand`, preview cache markers, deployment tracking,
+  and security-scan guidance). When `repos` is present it is authoritative.
+  With no config, a source checkout registers itself as the shared
+  `opensession` repo.
 - `identity.team` — your people (name, email, aliases, `slackId`, `github`,
   `linearEmails`). Drives commit attribution, per-user MCP `allowedUsers`
-  gating, and human-ask routing. Omitting `identity` entirely keeps Tella's
-  built-in roster; an empty team makes those features no-op.
+  gating, and human-ask routing. Omitting it leaves the roster empty and makes
+  identity-dependent features no-op.
 
-The `integrations` and `policy` sections are parsed but **not applied yet**
-(upcoming portability batches — the example file says the same).
-`persona.name` and `branding.productName`/`productMark` are applied.
+Integrations are opt-in with `integrations.<name>.enabled`. The optional
+`integrations.seeds` section can create deployment-owned actions and
+automations without putting company playbooks in application source.
+`policy`, `persona`, and `branding` are applied at runtime; frontend branding,
+the default repo id, public URL, and GitHub bot identities are injected into
+the SPA bootstrap.
 
 ## 4. Engine accounts
 

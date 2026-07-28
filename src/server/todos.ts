@@ -20,6 +20,7 @@ import { writeJsonAtomic } from "./shared/atomic-write";
 import { resolveTeammate } from "./shared/user-mappings";
 import { broadcastToAll } from "./ws-hub";
 import { openDirectMessage, sendSlackMessage } from "../agents/slack/slack-api";
+import { personaName } from "./config";
 
 const TODOS_DIR = stateDir("todos");
 const TODOS_PATH = `${TODOS_DIR}/todos.json`;
@@ -233,7 +234,7 @@ async function sweepReminders(): Promise<void> {
 				if (channel)
 					await sendSlackMessage(
 						channel,
-						`It's Michael — reminder from your Desk: ${t.text}`,
+						`It's ${personaName()} — reminder from your Desk: ${t.text}`,
 					);
 			}
 		} catch (e) {

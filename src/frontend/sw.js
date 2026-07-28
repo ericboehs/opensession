@@ -138,7 +138,7 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch {}
-  const title = data.title || "Michael";
+  const title = data.title || "OpenSession";
   event.waitUntil(
     self.registration
       .showNotification(title, {

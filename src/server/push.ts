@@ -1,8 +1,7 @@
 /**
  * Web Push: phone/desktop notifications that work with the app closed —
  * unlike lib/notify.ts's tab-bound Notification API. Requires the app to be
- * opened over a secure origin (https://os.tella.dev); the plain
- * http://michael:3850 origin has no service workers, so no push there.
+ * opened over a secure origin; plain HTTP origins have no service workers.
  *
  * VAPID keys are generated once and persisted; subscriptions are stored per
  * user (a person can have several devices). Dead subscriptions (404/410 from
@@ -13,6 +12,7 @@ import { mkdirSync, readFileSync, existsSync } from "fs";
 import webpush from "web-push";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { stateDir } from "./rename-compat";
+import { configuredIntegration } from "./config";
 
 const PUSH_DIR = stateDir("push");
 const VAPID_PATH = `${PUSH_DIR}/vapid.json`;
@@ -46,7 +46,14 @@ function ensureVapid(): void {
     console.log("[push] generated VAPID keypair");
   }
   if (!configured) {
-    webpush.setVapidDetails("mailto:michael@tella.dev", vapid!.publicKey, vapid!.privateKey);
+    const subject = configuredIntegration("push").vapidSubject;
+    webpush.setVapidDetails(
+      typeof subject === "string" && subject.trim()
+        ? subject.trim()
+        : "mailto:admin@example.com",
+      vapid!.publicKey,
+      vapid!.privateKey,
+    );
     configured = true;
   }
 }

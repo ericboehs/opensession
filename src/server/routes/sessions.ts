@@ -55,6 +55,7 @@ import {
 	githubCredentialRequiredResponse,
 	githubMutationCredential,
 } from "./github-credential";
+import { defaultRepo } from "../config";
 
 /**
  * List which of `files` contain `query` (case-insensitive, literal) via
@@ -161,6 +162,7 @@ export async function handleSessionsRoutes(
 			.filter((s) => !isLegacySideChat(s))
 			.map((s) => ({
 				...s,
+				repo: s.repo || defaultRepo().id,
 				waitingForInput: pendingAsks.has(s.id),
 				queuedCount: promptQueues.get(s.id)?.length || 0,
 				// Worktree still being created by this session's create run — the

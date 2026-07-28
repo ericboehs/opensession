@@ -7,7 +7,7 @@
  */
 
 import { requestUser, type RouteContext } from "./context";
-import { personaName } from "../config";
+import { defaultRepo, personaName } from "../config";
 import {
 	cachedPrDetailsForSession,
 	closePr,
@@ -214,7 +214,7 @@ export async function handlePrRoutes(
 		);
 		if (!target) return Response.json(null);
 		const repoId =
-			url.searchParams.get("repo") || session.repo || "tella-fusion";
+			url.searchParams.get("repo") || session.repo || defaultRepo().id;
 		const fallback = cachedPrDetailsForSession(session, repoId, target.branch);
 		return prApiResponse(
 			async () =>
@@ -761,7 +761,7 @@ export async function handlePrRoutes(
 			].join("\n");
 			const { id } = await getSessionControl().createSession({
 				prompt,
-				repo: session.repo || "tella-fusion",
+				repo: session.repo || defaultRepo().id,
 				mode: "code",
 				branch: target.branch,
 				parentSessionId: session.id,

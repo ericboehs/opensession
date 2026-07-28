@@ -254,7 +254,7 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
             `${modelLabel(currentModel)} also failed with a transient engine error — ` +
             `${consecutiveTransient} models in a row failed the same way, so this looks like ` +
             `an infrastructure problem (engine bridge, MCP socket, or network), not a model ` +
-            `or usage issue. Stopping the fallback walk; retry in a minute or ping Michael. ` +
+            `or usage issue. Stopping the fallback walk; retry in a minute or ping ${personaName()}. ` +
             `Last error: ${failure.content || "unknown"}`,
           provider: providerFor(currentModel),
           model: currentModel,

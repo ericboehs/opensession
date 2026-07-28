@@ -4,6 +4,7 @@
 import { PlainClient } from "@team-plain/typescript-sdk";
 import { loadTokens, getValidToken } from "../linear/oauth";
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
+import { configuredIntegration } from "../../server/config";
 
 const PLAIN_API_KEY = process.env.PLAIN_API_KEY || "";
 const LINEAR_API_KEY = process.env.LINEAR_API_KEY || "";
@@ -942,7 +943,11 @@ export async function createLinearIssue(
   }
 
   try {
-    const resolvedTeamId = await resolveLinearTeamId(auth, teamId || "TELLA");
+    const configuredTeam = configuredIntegration("plain").linearTeamKey;
+    const resolvedTeamId = await resolveLinearTeamId(
+      auth,
+      teamId || (typeof configuredTeam === "string" ? configuredTeam : ""),
+    );
     if (!resolvedTeamId) return null;
 
     const response = await fetchWithTimeout("https://api.linear.app/graphql", {

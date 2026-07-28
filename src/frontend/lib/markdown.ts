@@ -1,4 +1,5 @@
 import { Marked } from "marked";
+import { PUBLIC_BASE_URL } from "./brand";
 
 // Dedicated marked instance for session messages so this config doesn't leak
 // into other markdown (wiki, etc.). Two customisations:
@@ -40,7 +41,18 @@ function sessionLink(id: string): string {
 // public hosts cover links pasted as absolute URLs viewed from another origin
 // (e.g. the ts.net entry); same-origin covers everything else, prefix included
 // (stripBasePath-style legacy /opensession + /backstage forms).
-const INTERNAL_HOSTS = new Set(["os.tella.dev"]);
+const INTERNAL_HOSTS = new Set(
+  [
+    typeof location === "undefined" ? "" : location.hostname,
+    (() => {
+      try {
+        return new URL(PUBLIC_BASE_URL).hostname;
+      } catch {
+        return "";
+      }
+    })(),
+  ].filter(Boolean),
+);
 
 // An auto-linked (or <bracketed>) bare URL: marked hands the raw URL over as
 // the link text. Trailing-slash tolerant so `…/chat/bks-x/` still counts.
@@ -55,7 +67,7 @@ function internalHref(href: string | null | undefined): {
 } | null {
   if (!href) return null;
   const loc =
-    typeof location !== "undefined" ? location.href : "https://os.tella.dev/";
+    typeof location !== "undefined" ? location.href : "http://127.0.0.1:3850/";
   let url: URL;
   try {
     url = new URL(String(href), loc);

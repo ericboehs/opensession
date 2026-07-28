@@ -203,9 +203,12 @@ export async function handleWorkspaceRoutes(
 		return Response.json({
 			repos: Object.values(REPOS).map((p) => ({
 				id: p.id,
+				label: p.label,
+				description: p.description,
 				ghRepo: p.ghRepo,
 				defaultBranch: p.defaultBranch,
 				sharedCheckout: !!p.sharedCheckout,
+				default: !!p.default,
 			})),
 		});
 	}

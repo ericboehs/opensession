@@ -8,7 +8,7 @@
  * Created per interactive Slack message in handlers.ts and added to the Claude
  * run's mcpServers (in-process SDK MCP, like opensession-admin — Claude path only).
  */
-import { defaultRepo } from "../../server/config";
+import { defaultRepo, personaName } from "../../server/config";
 import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
 import { parsePrNumber, triggerPrAction, type PrActionKind } from "../github/trigger";
@@ -63,25 +63,25 @@ export function createGithubMcpServer(ctx: GithubToolContext) {
   const tools = [
     tool(
       "review_pr",
-      "Run Michael's automated code review on a tella-fusion PR and post it on the PR: a single pinned summary comment (verdict + confidence) plus inline findings with severity. Use when asked to 'review PR <n>'. Read-only — makes no code changes.",
+      `Run ${personaName()}'s automated code review on a ${defaultRepo().label} PR and post it on the PR: a single pinned summary comment (verdict + confidence) plus inline findings with severity. Use when asked to 'review PR <n>'. Read-only — makes no code changes.`,
       prArg,
       async ({ pr }: { pr: number | string }) => run("review", pr),
     ),
     tool(
       "auto_fix_pr",
-      "Trigger Michael's auto-fix on a tella-fusion PR: resolve merge conflicts, address review findings and failing CI, push fixes to the PR branch, and loop until CI is green (bounded, never merges). Use when asked to 'auto-fix PR <n>'. Commits are attributed to you.",
+      `Trigger ${personaName()}'s auto-fix on a ${defaultRepo().label} PR: resolve merge conflicts, address review findings and failing CI, push fixes to the PR branch, and loop until CI is green (bounded, never merges). Use when asked to 'auto-fix PR <n>'. Commits are attributed to you.`,
       prArg,
       async ({ pr }: { pr: number | string }) => run("autofix", pr),
     ),
     tool(
       "simplify_pr",
-      "Run Michael's /simplify pass on a tella-fusion PR (quality cleanup — reuse, simplification, efficiency), push it, then re-review. Use when asked to 'simplify PR <n>'. Commits are attributed to you.",
+      `Run ${personaName()}'s /simplify pass on a ${defaultRepo().label} PR (quality cleanup — reuse, simplification, efficiency), push it, then re-review. Use when asked to 'simplify PR <n>'. Commits are attributed to you.`,
       prArg,
       async ({ pr }: { pr: number | string }) => run("simplify", pr),
     ),
     tool(
       "adversarial_review_pr",
-      "Run Michael's adversarial code review on a tella-fusion PR (two independent hostile review passes, adjudicated), implement the accepted findings, push, and post a summary. Deeper than a normal review. Use when asked to 'adversarial review PR <n>' or for a rigorous/second-opinion review. Commits are attributed to you.",
+      `Run ${personaName()}'s adversarial code review on a ${defaultRepo().label} PR (two independent hostile review passes, adjudicated), implement the accepted findings, push, and post a summary. Deeper than a normal review. Use when asked to 'adversarial review PR <n>' or for a rigorous/second-opinion review. Commits are attributed to you.`,
       prArg,
       async ({ pr }: { pr: number | string }) => run("adversarial", pr),
     ),

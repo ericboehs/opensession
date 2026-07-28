@@ -16,6 +16,7 @@ import { buildSystemPromptParts } from "../system-prompt";
 import { MAX_AUDIO_BYTES, transcribeAudio } from "../transcribe";
 import { isLocalProfile } from "../profile";
 import { supportsOpenaiFastMode } from "../opencode-openai-auth";
+import { configuredServer } from "../config";
 
 export async function handleModelsRoutes(
 	ctx: RouteContext,
@@ -106,7 +107,7 @@ export async function handleModelsRoutes(
 				isAsk,
 				sessionLink: isAsk
 					? undefined
-					: `${envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") || "https://os.tella.dev"}/session/<this-session>`,
+					: `${envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") || configuredServer().publicBaseUrl}/session/<this-session>`,
 				user: url.searchParams.get("user") || undefined,
 				interactiveTools: true,
 			}),

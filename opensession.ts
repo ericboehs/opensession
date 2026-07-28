@@ -14,9 +14,10 @@ import { startAccountHealthMonitor } from "./src/server/account-health";
 import { startTodoReminderTicker } from "./src/server/todos";
 import { kickTranscriptBackfillOnce } from "./src/server/transcript-backfill";
 import { makeAskHandler } from "./src/server/asks";
-import { getWebhookRoutes, setEventSessionCallback, startScheduler } from "./src/server/automations";
+import { ensureConfiguredAutomations, getWebhookRoutes, setEventSessionCallback, startScheduler } from "./src/server/automations";
 import { startUsagePoller } from "./src/server/claude-accounts";
 import { FRONTEND_SRC, IS_DEV, SPA_HEADERS, frontend, scheduleFrontendRebuild, sharedCheckoutEditors, spaEntry } from "./src/server/frontend-build";
+import { configuredIntegration } from "./src/server/config";
 import { initHumanAsks } from "./src/server/human-asks";
 import { interactiveMcpServers } from "./src/server/interactive-mcp";
 import { OPENSESSION_CHATS_DIR } from "./src/server/paths";
@@ -418,8 +419,14 @@ console.log(`Backstage running at http://${HOST}:${PORT}/backstage/`);
 
 async function loadAgents(): Promise<AgentModule[]> {
 	const agents: AgentModule[] = [];
+	const enabled = (name: string, envName: string) => {
+		const env = process.env[envName];
+		return env == null
+			? configuredIntegration(name).enabled === true
+			: env === "true";
+	};
 
-	if (process.env.ENABLE_PLAIN_AGENT !== "false") {
+	if (enabled("plain", "ENABLE_PLAIN_AGENT")) {
 		try {
 			const { PlainAgent } = await import("./src/agents/plain/index");
 			agents.push(new PlainAgent());
@@ -429,7 +436,7 @@ async function loadAgents(): Promise<AgentModule[]> {
 		}
 	}
 
-	if (process.env.ENABLE_LINEAR_AGENT !== "false") {
+	if (enabled("linear", "ENABLE_LINEAR_AGENT")) {
 		try {
 			const { LinearAgent } = await import("./src/agents/linear/index");
 			agents.push(new LinearAgent());
@@ -439,7 +446,7 @@ async function loadAgents(): Promise<AgentModule[]> {
 		}
 	}
 
-	if (process.env.ENABLE_SLACK_AGENT !== "false") {
+	if (enabled("slack", "ENABLE_SLACK_AGENT")) {
 		try {
 			const { SlackAgent } = await import("./src/agents/slack/index");
 			agents.push(new SlackAgent());
@@ -452,7 +459,7 @@ async function loadAgents(): Promise<AgentModule[]> {
 	// Gated on the signing secret: without it every webhook fails verification, so
 	// there's no point exposing the route. Set STRIPE_WEBHOOK_SECRET to activate.
 	if (
-		process.env.ENABLE_STRIPE_AGENT !== "false" &&
+		enabled("stripe", "ENABLE_STRIPE_AGENT") &&
 		process.env.STRIPE_WEBHOOK_SECRET
 	) {
 		try {
@@ -467,7 +474,7 @@ async function loadAgents(): Promise<AgentModule[]> {
 	// Generic Grafana poller: drives every automation that carries a `grafanaPoll`
 	// config (export failures, upload-processing failures, and any future signal
 	// added as data). Gated on Grafana creds (the agent no-ops without them).
-	if (process.env.ENABLE_GRAFANA_POLLER !== "false") {
+	if (enabled("grafana", "ENABLE_GRAFANA_POLLER")) {
 		try {
 			const { GrafanaPollerAgent } = await import(
 				"./src/agents/grafana-poller/index"
@@ -485,10 +492,10 @@ async function loadAgents(): Promise<AgentModule[]> {
 		}
 	}
 
-	// GitHub PR agent: review / auto-fix / simplify on tella-fusion PRs. Receives
+	// GitHub PR agent: review / auto-fix / simplify on configured repos. Receives
 	// PR events forwarded from the Slack agent's /github/webhook; owns lifecycle
 	// (seeds the disabled review automation, recovers interrupted fix loops).
-	if (process.env.ENABLE_GITHUB_AGENT !== "false") {
+	if (enabled("github", "ENABLE_GITHUB_AGENT")) {
 		try {
 			const { GithubAgent } = await import("./src/agents/github/index");
 			agents.push(
@@ -544,33 +551,15 @@ if (!g.__backstageBooted) {
 	const webhookServer = startWebhookServer(agents, webhookRoutes);
 	void webhookServer;
 
-	// Seed the make_*_editor.sh action family (create-if-absent, UI edits preserved).
-	try {
-		ensureSeedActions();
-	} catch (e) {
-		console.error("[actions] Failed to seed actions:", e);
-	}
-
-	// Seed cron-scheduled "sweep" loops (Production Error Sweep, …) as automations
-	// before the scheduler starts. Create-if-absent, so UI edits are preserved.
-	try {
-		const { ensureSweepLoops } = await import("./src/agents/loops/sweep");
-		ensureSweepLoops();
-		const { ensureMonitors } = await import("./src/agents/loops/monitor");
-		ensureMonitors();
-		const { ensureSeoLoops } = await import("./src/agents/loops/seo");
-		ensureSeoLoops();
-		const { ensureStalePrMonitor } = await import(
-			"./src/agents/loops/stale-prs"
-		);
-		ensureStalePrMonitor();
-		const { ensureCronJobs } = await import("./src/agents/loops/cron-jobs");
-		ensureCronJobs();
-	} catch (e) {
-		console.error(
-			"[loops] Failed to seed sweep/monitor/seo/stale-pr/cron loops:",
-			e,
-		);
+	// Optional instance seed pack. Generic installations start empty; existing
+	// records and anything created through the UI are unaffected.
+	if (configuredIntegration("seeds").enabled === true) {
+		try {
+			ensureSeedActions();
+			ensureConfiguredAutomations();
+		} catch (e) {
+			console.error("[seeds] Failed to seed instance actions/automations:", e);
+		}
 	}
 
 	// Cron-scheduled automations + internal event bus (agents → automations)

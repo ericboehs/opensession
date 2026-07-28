@@ -50,7 +50,6 @@ const MCP_BLURBS: Record<string, string> = {
   ahrefs: "SEO, keywords & backlink data",
   github: "Repos, issues & pull requests",
   circle: "Community & support workspace",
-  tellainternalsupportmcp: "Tella's internal support investigation tools",
 };
 
 const AGENT_BLURBS: Record<string, string> = {
@@ -128,7 +127,7 @@ export function Connections() {
   async function handleRestrict(s: McpConnection) {
     const current = (s.allowedUsers || []).join(", ");
     const answer = prompt(
-      `Restrict "${s.name}" to these people (comma-separated names, e.g. "Michiel, Grant").\n` +
+      `Restrict "${s.name}" to these people (comma-separated configured names, e.g. "Alice, Bob").\n` +
         `Leave blank to make it available to everyone.`,
       current,
     );
@@ -771,7 +770,7 @@ function AddMcpForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => 
         <input
           value={allowedUsers}
           onChange={(e) => setAllowedUsers(e.target.value)}
-          placeholder="Michiel, Grant"
+          placeholder="Alice, Bob"
         />
       </label>
 

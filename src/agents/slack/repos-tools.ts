@@ -87,7 +87,7 @@ export function createReposMcpServer(ctx: ReposToolContext) {
       {
         repo: z
           .string()
-          .describe("Repo id to attach (e.g. 'gitops', 'infra', 'tella-mac', 'tella-windows', 'gstreamer'). See list_repos."),
+          .describe("Registered repo id to attach. See list_repos."),
         branch: z
           .string()
           .optional()
@@ -110,11 +110,11 @@ export function createReposMcpServer(ctx: ReposToolContext) {
     ),
     tool(
       "switch_repo",
-      "Switch this session's PRIMARY repo — use when you realize the session was created against the wrong repo (e.g. the task is about tella-fusion but you're in backstage). Only works while the session is fresh (no uncommitted changes, no commits beyond base), so no work is ever stranded; if you've already done work, attach_repo instead. On success, cd into the returned worktree immediately — your current cwd still points at the old repo for the rest of this turn.",
+      "Switch this session's PRIMARY repo when it was created against the wrong registered repository. Only works while the session is fresh (no uncommitted changes, no commits beyond base), so no work is ever stranded; if you've already done work, attach_repo instead. On success, cd into the returned worktree immediately — your current cwd still points at the old repo for the rest of this turn.",
       {
         repo: z
           .string()
-          .describe("Repo id to switch to (e.g. 'tella-fusion', 'gitops', 'infra'). See list_repos."),
+          .describe("Registered repo id to switch to. See list_repos."),
       },
       async (args: { repo: string }) => {
         try {
@@ -140,7 +140,7 @@ export function createReposMcpServer(ctx: ReposToolContext) {
         repo: z
           .string()
           .optional()
-          .describe("Repo id (e.g. 'tella-fusion', 'gitops') when not passing a URL."),
+          .describe("Registered repo id when not passing a URL."),
         number: z.number().optional().describe("PR number in that repo."),
         branch: z.string().optional().describe("PR head branch, as an alternative to the number."),
       },

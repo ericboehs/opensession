@@ -12717,7 +12717,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.app-brand .app-title {
 		order: 1;
 	}
-	.app-brand > button[aria-label="Michael menu"],
+	.app-brand > button[aria-label="Account menu"],
 	.app-brand > button[aria-label="Settings"] {
 		position: relative;
 		z-index: 1;

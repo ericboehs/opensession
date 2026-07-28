@@ -36,6 +36,7 @@ const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 
 const START_MARKER = "<!-- opensession:walkthrough -->";
 const END_MARKER = "<!-- /opensession:walkthrough -->";
+const HOME = process.env.HOME || "";
 
 export interface WalkthroughInput {
   summary: string;
@@ -49,12 +50,12 @@ function ext(p: string): string {
 }
 
 /** Same path scoping as the /backstage/media route: absolute, no traversal,
- *  under /tmp or /home/ubuntu — the places agents can actually write. */
+ *  under /tmp or the service user's home — the places agents can write. */
 function readablePath(p: string): boolean {
   return (
     p.startsWith("/") &&
     !p.includes("..") &&
-    (p.startsWith("/tmp/") || p.startsWith("/home/ubuntu/"))
+    (p.startsWith("/tmp/") || (!!HOME && p.startsWith(`${HOME}/`)))
   );
 }
 
@@ -69,7 +70,7 @@ function stageMedia(
   const allowed = kind === "video" ? VIDEO_EXTS : IMAGE_EXTS;
   if (!readablePath(p))
     throw new Error(
-      `${kind} path must be absolute under /tmp or /home/ubuntu: ${p}`,
+      `${kind} path must be absolute under /tmp or ${HOME || "the service home"}: ${p}`,
     );
   if (!allowed.has(ext(p)))
     throw new Error(
@@ -155,7 +156,7 @@ export function walkthroughPrSection(w: SessionWalkthrough): string {
     lines.push("");
   }
   lines.push(
-    "<sub>Media links open on os.tella.dev (tailnet). Published from the session's Review tab, where they play inline.</sub>",
+    `<sub>Media links open on ${configuredServer().publicBaseUrl}. Published from the session's Review tab, where they play inline.</sub>`,
   );
   return lines.join("\n");
 }

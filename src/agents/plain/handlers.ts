@@ -16,11 +16,24 @@ import { getDefaultModel, toOpencodeModel } from "../../server/models";
 import { runAgent } from "../../server/agent-runner";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { classifyRefundApproval } from "./refund-intent";
-import { worktreePathFor } from "../../server/worktree";
-import { defaultRepo, productName } from "../../server/config";
-import { runCommand } from "../../server/run-command";
+import { createWorktree as createRepoWorktree } from "../../server/worktree";
+import {
+  configuredIntegration,
+  defaultRepo,
+  personaName,
+  productName,
+} from "../../server/config";
 
-const TELLA_FUSION_DIR = defaultRepo().repo;
+const DEFAULT_REPO_DIR = defaultRepo().repo;
+const configuredMention = configuredIntegration("plain").mentionHandle;
+const PLAIN_MENTION =
+  typeof configuredMention === "string" && configuredMention.trim()
+    ? `@${configuredMention.trim().replace(/^@/, "")}`
+    : `@${personaName().toLowerCase().replace(/\s+/g, "-")}`;
+const PLAIN_MENTION_RE = new RegExp(
+  PLAIN_MENTION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+  "gi",
+);
 
 // --- State ---
 
@@ -95,13 +108,13 @@ export interface PlainWebhookPayload {
 /** Deny message for the money-moving Stripe tools on unattended Plain runs —
  *  stripped from the tool list at the engine layer (opencodeRunPolicy). */
 const MONEY_TOOLS_DENY_MSG =
-  "Money-moving Stripe actions (refunds/cancellations) can't run from a normal @michael note. " +
-  "They must be proposed by triage and then approved with an explicit '@michael go ahead' on that proposal. " +
+  `Money-moving Stripe actions (refunds/cancellations) can't run from a normal ${PLAIN_MENTION} note. ` +
+  `They must be proposed by triage and then approved with an explicit '${PLAIN_MENTION} go ahead' on that proposal. ` +
   "Describe the proposed action instead.";
 
 async function runWorkTurn(
   prompt: string,
-  cwd: string = TELLA_FUSION_DIR,
+  cwd: string = DEFAULT_REPO_DIR,
   resumeSessionId?: string,
   // Money-moving Stripe tools (refunds/cancellations) are denied unless this is
   // the approved "@michael go ahead" execution path. Closes the gap where any
@@ -156,42 +169,28 @@ async function runWorkTurn(
 
 // --- Worktree creation ---
 
-async function createWorktree(branch: string, ticketId: string, title: string, description: string): Promise<string> {
-  const worktreeDir = worktreePathFor(branch);
-
-  // Async: a wt new-linear can run for many seconds (fetch + worktree add +
-  // env seed) and used to block the whole event loop via spawnSync.
-  const result = await runCommand(
-    [
-      "/home/ubuntu/bin/wt",
-      "new-linear",
-      branch,
-      `--ticket-id=${ticketId}`,
-      `--title=${title}`,
-      `--description=${description}`,
-      `--url=`,
-    ],
-    { inheritStdio: true, timeoutMs: 120000 }
-  );
-
-  if (result.status !== 0) {
-    throw new Error(`wt new-linear exited with code ${result.status}`);
-  }
+async function createWorktree(
+  branch: string,
+  _ticketId: string,
+  _title: string,
+  _description: string,
+): Promise<string> {
+  const worktreeDir = await createRepoWorktree(branch, defaultRepo().id);
   console.log(`[plain] Created worktree: ${branch}`);
   return worktreeDir;
 }
 
 // --- Handlers ---
 
-async function handleMichaelMention(
+async function handleAgentMention(
   threadId: string,
   customerId: string,
   noteText: string,
   thread: any
 ): Promise<void> {
-  console.log(`[plain] Processing @michael mention in thread ${threadId}`);
+  console.log(`[plain] Processing ${PLAIN_MENTION} mention in thread ${threadId}`);
 
-  const request = noteText.replace(/@michael/gi, "").trim();
+  const request = noteText.replace(PLAIN_MENTION_RE, "").trim();
 
   // Check for confirmation of pending actions
   const pending = pendingConfirmations.get(threadId);
@@ -235,7 +234,7 @@ async function handleMichaelMention(
     try {
       const { result } = await runWorkTurn(
         buildRefundExecutionPrompt(request, threadContext),
-        TELLA_FUSION_DIR,
+        DEFAULT_REPO_DIR,
         undefined,
         /*allowMoneyTools*/ true
       );
@@ -256,8 +255,8 @@ async function handleMichaelMention(
         await postNote(
           threadId,
           customerId,
-          `**Draft reply for customer:**\n\n${draft}\n\n---\n\n@michael yes - to send this reply`,
-          `**Draft reply for customer:**\n\n${draft}\n\n---\n\n*@michael yes* - to send this reply`
+          `**Draft reply for customer:**\n\n${draft}\n\n---\n\n${PLAIN_MENTION} yes - to send this reply`,
+          `**Draft reply for customer:**\n\n${draft}\n\n---\n\n*${PLAIN_MENTION} yes* - to send this reply`
         );
       } else {
         await postNote(threadId, customerId, result);
@@ -295,8 +294,8 @@ async function handleMichaelMention(
         await postNote(
           threadId,
           customerId,
-          `**Draft reply for customer:**\n\n${draft}\n\n---\n\n@michael yes - to send this reply`,
-          `**Draft reply for customer:**\n\n${draft}\n\n---\n\n*@michael yes* - to send this reply`
+          `**Draft reply for customer:**\n\n${draft}\n\n---\n\n${PLAIN_MENTION} yes - to send this reply`,
+          `**Draft reply for customer:**\n\n${draft}\n\n---\n\n*${PLAIN_MENTION} yes* - to send this reply`
         );
         return;
       }
@@ -310,8 +309,8 @@ async function handleMichaelMention(
         await postNote(
           threadId,
           customerId,
-          `**Code work suggested:**\n\n${codeDescription}\n\n---\n\n@michael start worktree - to begin working on this`,
-          `**Code work suggested:**\n\n${codeDescription}\n\n---\n\n*@michael start worktree* - to begin working on this`
+          `**Code work suggested:**\n\n${codeDescription}\n\n---\n\n${PLAIN_MENTION} start worktree - to begin working on this`,
+          `**Code work suggested:**\n\n${codeDescription}\n\n---\n\n*${PLAIN_MENTION} start worktree* - to begin working on this`
         );
         return;
       }
@@ -373,8 +372,8 @@ async function handleMichaelMention(
           await postNote(
             threadId,
             customerId,
-            `Started worktree for code work.\n\nBranch: ${branchName}\nLinear: ${issue.identifier} (${issue.url})\nDirectory: ${worktreeDir}\n\n@michael work on <description> - to have me work on something in this worktree`,
-            `Started worktree for code work.\n\n- **Branch:** \`${branchName}\`\n- **Linear:** [${issue.identifier}](${issue.url})\n- **Directory:** \`${worktreeDir}\`\n\n*@michael work on \\<description\\>* - to have me work on something in this worktree`
+            `Started worktree for code work.\n\nBranch: ${branchName}\nLinear: ${issue.identifier} (${issue.url})\nDirectory: ${worktreeDir}\n\n${PLAIN_MENTION} work on <description> - to have me work on something in this worktree`,
+            `Started worktree for code work.\n\n- **Branch:** \`${branchName}\`\n- **Linear:** [${issue.identifier}](${issue.url})\n- **Directory:** \`${worktreeDir}\`\n\n*${PLAIN_MENTION} work on \\<description\\>* - to have me work on something in this worktree`
           );
         } else {
           await postNote(threadId, customerId, "Failed to create Linear issue for worktree. Check Linear auth (OAuth token store / LINEAR_API_KEY) in the backstage logs.");
@@ -403,7 +402,7 @@ async function handleMichaelMention(
           `Completed work.\n\n${workResult.substring(0, 1500)}${workResult.length > 1500 ? "..." : ""}`
         );
       } else {
-        await postNote(threadId, customerId, "No active worktree for this thread. Use '@michael start worktree' first.");
+        await postNote(threadId, customerId, `No active worktree for this thread. Use '${PLAIN_MENTION} start worktree' first.`);
       }
       return;
     }
@@ -411,12 +410,12 @@ async function handleMichaelMention(
     // Default: post Claude's response as a note
     await postNote(threadId, customerId, result);
   } catch (e) {
-    console.error("[plain] Error handling @michael mention:", e);
+    console.error(`[plain] Error handling ${PLAIN_MENTION} mention:`, e);
     await postNote(threadId, customerId, `Error processing request: ${e}`);
   }
 }
 
-export async function processMichaelMention(
+export async function processAgentMention(
   threadId: string,
   noteId: string,
   noteText: string
@@ -440,9 +439,9 @@ export async function processMichaelMention(
       return;
     }
 
-    await handleMichaelMention(threadId, customerId, noteText, thread);
+    await handleAgentMention(threadId, customerId, noteText, thread);
   } catch (e) {
-    console.error(`[plain] Error processing @michael mention:`, e);
+    console.error(`[plain] Error processing ${PLAIN_MENTION} mention:`, e);
   }
 }
 
@@ -550,8 +549,8 @@ async function gateAndFireThreadCreated(payload: PlainWebhookPayload): Promise<v
       await postNote(
         thread.id,
         thread.customer.id,
-        `Auto-triage skipped — this ticket looks like spam.\n\nReason: ${verdict.reason}\n\nIf this is a real ticket, mention @michael or run the triage automation manually from ${productName()}.`,
-        `**Auto-triage skipped — this ticket looks like spam.**\n\nReason: ${verdict.reason}\n\n*If this is a real ticket, mention @michael or run the triage automation manually from ${productName()}.*`
+        `Auto-triage skipped — this ticket looks like spam.\n\nReason: ${verdict.reason}\n\nIf this is a real ticket, mention ${PLAIN_MENTION} or run the triage automation manually from ${productName()}.`,
+        `**Auto-triage skipped — this ticket looks like spam.**\n\nReason: ${verdict.reason}\n\n*If this is a real ticket, mention ${PLAIN_MENTION} or run the triage automation manually from ${productName()}.*`
       );
     }
     return;
@@ -618,16 +617,17 @@ export async function handleWebhook(payload: PlainWebhookPayload): Promise<Respo
     const note = payload.payload.note;
     const noteText = note.text || note.markdown || "";
 
-    if (noteText.toLowerCase().includes("@michael")) {
+    if (PLAIN_MENTION_RE.test(noteText)) {
+      PLAIN_MENTION_RE.lastIndex = 0;
       // SECURITY: Only respond to notes from support agents (user), not customers or bots
       const actorType = note.createdBy?.actorType;
       if (actorType !== "user") {
-        console.log(`[plain] Ignoring @michael mention from non-user actor: ${actorType}`);
+        console.log(`[plain] Ignoring ${PLAIN_MENTION} mention from non-user actor: ${actorType}`);
         return Response.json({ ok: true });
       }
 
-      processMichaelMention(thread.id, note.id, noteText).catch((e) =>
-        console.error("[plain] Error processing @michael mention:", e)
+      processAgentMention(thread.id, note.id, noteText).catch((e) =>
+        console.error(`[plain] Error processing ${PLAIN_MENTION} mention:`, e)
       );
     }
 

@@ -1,9 +1,8 @@
 /**
  * Frontend team directory — fetched once from GET /api/people (derived
- * server-side from the identity config) and cached module-wide. Starts from
- * the historical hardcoded roster so everything renders correctly before (or
- * without) the fetch, then upgrades in place: the fetched logins are merged
- * into UserAvatar's login map and subscribers re-render via `usePeople()`.
+ * server-side from the identity config) and cached module-wide. The portable
+ * default is empty; fetched logins are merged into UserAvatar's login map and
+ * subscribers re-render via `usePeople()`.
  */
 
 import { useEffect, useState } from "react";
@@ -12,26 +11,15 @@ import { registerGithubLogins } from "../components/UserAvatar";
 import type { FileMention } from "./api";
 
 export interface Person {
-	/** Picker/display first name ("Michiel"). */
+	/** Picker/display first name. */
 	name: string;
 	fullName: string;
 	github?: string;
 	timezone?: string;
 }
 
-// Fallback mirror of the built-in roster (kept minimal — the fetch replaces it).
-const DEFAULT_PEOPLE: Person[] = [
-	{ name: "Michiel", fullName: "Michiel Westerbeek", github: "happylinks" },
-	{ name: "Jaap", fullName: "Jaap Frolich", github: "jfrolich" },
-	{ name: "Kent", fullName: "Kent de Bruin", github: "kentdebruin" },
-	{ name: "Grant", fullName: "Grant Shaddick", github: "9ranty" },
-	{ name: "Johnny", fullName: "Johnny Lin", github: "johnnylinsf" },
-	{ name: "John", fullName: "John Soutar", github: "soutar" },
-	{ name: "Louise", fullName: "Louise de Sadeleer", github: "louisedesadeleer" },
-];
-
 const CHANGE_EVENT = "opensession-people-changed";
-let people: Person[] = DEFAULT_PEOPLE;
+let people: Person[] = [];
 let fetched = false;
 
 /** Current roster, synchronously (fallback until the fetch lands). */
@@ -58,8 +46,8 @@ export function ensurePeople(): Promise<void> {
 	inflight = fetch(`${BASE_PATH}/api/people`)
 		.then((r) => (r.ok ? r.json() : null))
 		.then((body: { people?: Person[] } | null) => {
-			const list = body?.people?.filter((p) => p && typeof p.name === "string");
-			if (!list?.length) return;
+			const list =
+				body?.people?.filter((p) => p && typeof p.name === "string") ?? [];
 			people = list;
 			fetched = true;
 			registerGithubLogins(

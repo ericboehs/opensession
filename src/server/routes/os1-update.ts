@@ -26,9 +26,11 @@
 import { existsSync, mkdirSync, readdirSync, rmSync } from "fs";
 import { $ } from "bun";
 import type { RouteContext } from "./context";
-import { configuredServer } from "../config";
+import { configuredIntegration, configuredServer } from "../config";
 
-const RELEASE_REPO = "tellahq/backstage";
+const updates = () => configuredIntegration("updates");
+const releaseRepo = () =>
+	typeof updates().releaseRepo === "string" ? updates().releaseRepo as string : "";
 const HOME = process.env.HOME || "/home/ubuntu";
 const CACHE_DIR = `${HOME}/.opensession-os1-mac-updates`;
 const LATEST_TTL_MS = 5 * 60 * 1000;
@@ -36,7 +38,10 @@ const LATEST_TTL_MS = 5 * 60 * 1000;
 // os1-chrome: stable extension ID derived from the signing key
 // (~/.os1-chrome-key.pem on the VPS, OS1_CHROME_CRX_KEY secret in Actions;
 // the matching public key is pinned in os1-chrome/manifest.json "key").
-const CHROME_EXTENSION_ID = "paoolggkbjkobjblpjgncolaaikcmboe";
+const chromeExtensionId = () =>
+	typeof updates().chromeExtensionId === "string"
+		? updates().chromeExtensionId as string
+		: "";
 const CHROME_TAG_PREFIX = "os1-chrome-v";
 const CHROME_CACHE_DIR = `${HOME}/.opensession-os1-chrome-updates`;
 
@@ -74,7 +79,9 @@ async function latestRelease(): Promise<LatestRelease | null> {
 		// REST on purpose (not `gh release view`/`download`, which go through
 		// GraphQL): the two API pools are metered separately, and pr-info's gh
 		// traffic periodically exhausts GraphQL while core stays healthy.
-		const raw = await $`gh api repos/${RELEASE_REPO}/releases/latest`
+		const repo = releaseRepo();
+		if (!repo) return null;
+		const raw = await $`gh api repos/${repo}/releases/latest`
 			.quiet()
 			.text();
 		const rel = JSON.parse(raw) as {
@@ -117,7 +124,9 @@ async function chromeLatestRelease(): Promise<LatestRelease | null> {
 	if (cached && Date.now() - cached.at < LATEST_TTL_MS) return cached.value;
 	let value: LatestRelease | null = null;
 	try {
-		const raw = await $`gh api repos/${RELEASE_REPO}/releases?per_page=30`
+		const repo = releaseRepo();
+		if (!repo) return null;
+		const raw = await $`gh api repos/${repo}/releases?per_page=30`
 			.quiet()
 			.text();
 		const rels = JSON.parse(raw) as {
@@ -218,8 +227,8 @@ export async function handleOs1UpdateRoutes(
 		const rel = await chromeLatestRelease();
 		const base = configuredServer().publicBaseUrl.replace(/\/$/, "");
 		const app = rel
-			? `<app appid='${CHROME_EXTENSION_ID}'><updatecheck codebase='${base}/api/os1-chrome/download/${rel.tag}.crx' version='${rel.version.join(".")}'/></app>`
-			: `<app appid='${CHROME_EXTENSION_ID}'><updatecheck status='noupdate'/></app>`;
+			? `<app appid='${chromeExtensionId()}'><updatecheck codebase='${base}/api/os1-chrome/download/${rel.tag}.crx' version='${rel.version.join(".")}'/></app>`
+			: `<app appid='${chromeExtensionId()}'><updatecheck status='noupdate'/></app>`;
 		return new Response(
 			`<?xml version='1.0' encoding='UTF-8'?>\n<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>${app}</gupdate>\n`,
 			{

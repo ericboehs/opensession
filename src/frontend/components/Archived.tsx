@@ -10,7 +10,7 @@ interface Props {
   onChanged: () => void;
 }
 
-const DEFAULT_PROJECT = "tella-fusion";
+const DEFAULT_PROJECT = "repository";
 // Same key the sidebar persists its group/repo/sort choices under, so the
 // archived page opens with the repo filter the sidebar is already showing.
 const SIDEBAR_FILTER_KEY = "opensession-sidebar-filter";
