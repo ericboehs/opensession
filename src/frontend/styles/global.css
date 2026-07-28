@@ -9401,7 +9401,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	border: 1px solid var(--border);
 	border-bottom: none;
 	border-radius: calc(16px * var(--rf)) calc(16px * var(--rf)) 0 0; corner-shape: var(--cs);
-	background: var(--bg-panel);
+	background: color-mix(in srgb, var(--bg-panel) 70%, var(--control-surface));
 }
 .composer-queue-title {
 	color: var(--text-faint);
