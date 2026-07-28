@@ -12060,6 +12060,9 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		min-height: 46px;
 		padding: 8px 10px;
 	}
+	.session-info-status .pr-bar-muted {
+		background: transparent;
+	}
 	.session-info-status .pr-bar:last-child,
 	.session-info-status .pr-bar-extra:last-child {
 		border-bottom: none;
