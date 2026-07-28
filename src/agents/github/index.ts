@@ -250,6 +250,10 @@ export class GithubAgent implements AgentModule {
     // review dead on dry pools, missed delivery) is re-fired by the sweep.
     const { startReconcileSweep } = await import("./reconcile");
     startReconcileSweep();
+    // Cross-PR learning: periodically re-distill the per-repo learned review
+    // rules from the feedback store's outcome signals.
+    const { armLearnedRulesDistiller } = await import("./learned-rules");
+    armLearnedRulesDistiller();
     const { autoEnabled } = resolveReviewConfig();
     console.log(`[github] Agent started — review automation ${autoEnabled ? "ENABLED (all non-draft PRs)" : "disabled (label-only)"}`);
   }

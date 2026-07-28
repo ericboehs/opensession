@@ -40,7 +40,17 @@ import {
   recordPostedFindings,
   shouldSuppressFinding,
   harvestThreadOutcomes,
+  harvestReplySignals,
+  readFeedback,
 } from "./feedback";
+import {
+  prIntentSection,
+  prDiscussionSection,
+  classifyPriorFindings,
+  openHumanThreadLines,
+  priorReviewSection,
+} from "./review-context";
+import { learnedRulesSection } from "./learned-rules";
 import { repoForFullName } from "./constants";
 
 const TELLA_FUSION = defaultRepo().repo;
@@ -220,11 +230,36 @@ export async function runReview(
         })
       : Promise.resolve(null);
 
+    // Continuity context — the "same reviewer returning" inputs: the PR's
+    // stated intent and human conversation on every round; on re-reviews, a
+    // digest of our prior findings joined with live thread state so round N+1
+    // converges instead of re-deriving the PR from scratch. Learned rules are
+    // the cross-PR channel (learned-rules.ts). All best-effort: a failed
+    // thread fetch degrades to the old stateless prompt, never blocks the run.
+    const preThreads = isUpdate
+      ? await listReviewThreads(pr.number, pr.ghRepo).catch(() => [])
+      : [];
+    const priorReview = isUpdate
+      ? priorReviewSection({
+          lastReview: state.lastReview,
+          priorFindings: classifyPriorFindings(readFeedback(pr.ghRepo), pr.number, preThreads, BOT_LOGIN),
+          humanThreadLines: openHumanThreadLines(preThreads, BOT_LOGIN),
+        })
+      : "";
+
     const base = (config.prompt || "").trim() || DEFAULT_REVIEW_PROMPT;
     const prompt = buildReviewPrompt(base, details, isUpdate, steer, pr.ghRepo, {
       authorFamily: author?.family,
       ignoreGlobs: reviewOpts.ignoreGlobs,
       summaryOnly,
+      intent: prIntentSection(details),
+      discussion: prDiscussionSection(details, BOT_LOGIN, REVIEW_MARKER),
+      priorReview,
+      learnedRules: learnedRulesSection(pr.ghRepo),
+      lastReviewedSha:
+        isUpdate && state.lastReviewedSha && state.lastReviewedSha !== pr.headSha
+          ? state.lastReviewedSha
+          : undefined,
     });
 
     // Model inversion: never review code with the model family that wrote it
@@ -438,6 +473,11 @@ async function postReview(
   } catch (e) {
     console.warn(`[github] feedback harvest failed for PR #${pr.number}:`, e);
   }
+  // Classify new human replies in our threads ("intentional" vs "good catch")
+  // into replySignal — async model call, fire-and-forget.
+  void harvestReplySignals(pr.ghRepo, pr.number, existingThreads).catch((e) =>
+    console.warn(`[github] reply-signal harvest failed for PR #${pr.number}:`, e),
+  );
 
   // Anchors (path:line) where we already have an open, still-current bot comment.
   // Skip re-posting these — the existing comment already covers the same spot.

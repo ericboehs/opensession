@@ -70,6 +70,35 @@ describe("review diff context", () => {
   });
 });
 
+describe("review continuity sections", () => {
+  test("threads intent, learned rules, prior review, and discussion into the prompt", () => {
+    const prompt = buildReviewPrompt("Review carefully.", pr(), true, undefined, undefined, {
+      intent: "## What this PR says it does\n\nShip the widget.",
+      discussion: "## PR conversation so far\n\n- @alice: \"ignore the flaky test\"",
+      priorReview: "## Your previous review of this PR\n\n- [still open] P2 `a.ts` — Thing",
+      learnedRules: "## Learned calibration for this repo\n\n- (calibration) Skip X.",
+      lastReviewedSha: "deadbeefcafe1234",
+    });
+
+    expect(prompt).toContain("Ship the widget.");
+    expect(prompt).toContain("ignore the flaky test");
+    expect(prompt).toContain("[still open] P2 `a.ts`");
+    expect(prompt).toContain("(calibration) Skip X.");
+    expect(prompt).toContain("git diff --find-renames deadbeefcafe..HEAD");
+    expect(prompt).toContain("converge instead of starting over");
+    // Sections precede the diff instructions so the model reads context first.
+    expect(prompt.indexOf("Ship the widget.")).toBeLessThan(prompt.indexOf("git diff --find-renames origin/main...HEAD"));
+  });
+
+  test("omits every continuity section when extras are absent (first review)", () => {
+    const prompt = buildReviewPrompt("Review carefully.", pr(), false);
+
+    expect(prompt).not.toContain("Your previous review");
+    expect(prompt).not.toContain("Learned calibration");
+    expect(prompt).not.toContain("You last reviewed");
+  });
+});
+
 describe("auto-fix scope governor", () => {
   test("fix prompt classifies findings and forbids scope growth", () => {
     const prompt = buildAutoFixPrompt(pr(), "", [], 1);

@@ -206,16 +206,31 @@ export function buildReviewPrompt(
     ignoreGlobs?: string[];
     /** Giant PR: summary + verdict only, no inline findings. */
     summaryOnly?: boolean;
+    /** PR-intent section (review-context.ts prIntentSection). */
+    intent?: string;
+    /** Human PR conversation section (review-context.ts prDiscussionSection). */
+    discussion?: string;
+    /** Re-review digest of our prior findings (review-context.ts priorReviewSection). */
+    priorReview?: string;
+    /** Per-repo learned calibration (learned-rules.ts learnedRulesSection). */
+    learnedRules?: string;
+    /** Head SHA of our last completed review, when it differs from the current
+     *  head — enables the "what changed since your review" delta hint. */
+    lastReviewedSha?: string;
   },
 ): string {
   const header = isUpdate
-    ? `You previously reviewed PR #${pr.number} ("${pr.title}"). New commits have been pushed. Re-review the CURRENT diff, focusing on what changed since your last review, and produce a fresh full assessment.`
+    ? `You previously reviewed PR #${pr.number} ("${pr.title}"). New commits have been pushed. Re-review the CURRENT diff — your verdict must still cover the whole PR — using your previous review's digest below to converge instead of starting over.`
     : `Review PR #${pr.number} ("${pr.title}") on ${ghRepo || defaultRepo().ghRepo}.`;
+
+  const deltaHint = extras?.lastReviewedSha
+    ? `\n\nYou last reviewed \`${extras.lastReviewedSha.slice(0, 12)}\`. Run \`git diff --find-renames ${extras.lastReviewedSha.slice(0, 12)}..HEAD\` to see exactly what changed since then — put your freshest scrutiny there, then confirm the full diff still holds together as a whole. If that commit is unknown to git (force-push rewrote it), fall back to reviewing the full diff.`
+    : "";
 
   const diffSection = `## The diff
 
 Your checkout is pinned to the PR's HEAD and both refs are fetched. Run
-\`git diff --find-renames origin/${pr.baseRefName}...HEAD\` to inspect the complete PR diff, then use Read/Grep on the checkout for surrounding context. Do not use a working-tree-only \`git diff\`; this checkout is clean.`;
+\`git diff --find-renames origin/${pr.baseRefName}...HEAD\` to inspect the complete PR diff, then use Read/Grep on the checkout for surrounding context. Do not use a working-tree-only \`git diff\`; this checkout is clean.${deltaHint}`;
 
   const ignoreSection = extras?.ignoreGlobs?.length
     ? `Ignore changes under these paths entirely (generated/vendored — the repo excludes them from review; emit no findings there):\n${extras.ignoreGlobs.map((g) => `- \`${g}\``).join("\n")}`
@@ -229,8 +244,12 @@ Your checkout is pinned to the PR's HEAD and both refs are fetched. Run
     "",
     header,
     `PR: ${pr.url}  ·  base: ${pr.baseRefName} ← head: ${pr.headRefName}  ·  +${pr.additions}/-${pr.deletions} across ${pr.changedFiles} files.`,
+    extras?.intent || "",
     steerBlock(steer),
     authorChecklist(extras?.authorFamily),
+    extras?.learnedRules || "",
+    extras?.priorReview || "",
+    extras?.discussion || "",
     ignoreSection,
     summaryOnlySection,
     diffSection,
@@ -258,6 +277,8 @@ export function buildPreflightReviewPrompt(
     ignoreGlobs?: string[];
     /** Optional focus from the authoring session. */
     focus?: string;
+    /** Per-repo learned calibration (learned-rules.ts learnedRulesSection). */
+    learnedRules?: string;
   },
 ): string {
   const header = `Pre-flight review: the changes on branch \`${opts.branch}\` of ${opts.ghRepo} are about to be opened as a pull request. Review them NOW, before the PR exists, so the author can fix problems first. Hold them to exactly the same bar as a PR review.`;
@@ -285,6 +306,7 @@ Review the union of both, then use Read/Grep on the checkout for surrounding con
     `Base: ${opts.baseBranch} ← branch: ${opts.branch}.`,
     steerBlock(opts.focus),
     authorChecklist(opts.authorFamily),
+    opts.learnedRules || "",
     ignoreSection,
     diffSection,
     REVIEW_OUTPUT_CONTRACT,

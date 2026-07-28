@@ -24,6 +24,7 @@ import { engineSessionPatch } from "../../server/sessions";
 import { resolveReviewConfig } from "./webhook";
 import { preflightReviewerFor } from "./model-inversion";
 import { buildPreflightReviewPrompt, DEFAULT_REVIEW_PROMPT } from "./prompts";
+import { learnedRulesSection } from "./learned-rules";
 import { parseReviewOutput, type Finding } from "./review";
 import { loadReviewOptions, pathIgnored } from "./review-options";
 import { uiSessionUrl } from "./run";
@@ -88,6 +89,7 @@ async function runPreflightReviewInner(opts: PreflightOpts): Promise<PreflightRe
     authorFamily: reviewer.authorFamily,
     ignoreGlobs: reviewOpts.ignoreGlobs,
     focus: opts.focus,
+    learnedRules: learnedRulesSection(repo.ghRepo),
   });
 
   // Visible session file so the run shows up in the UI, grouped under the

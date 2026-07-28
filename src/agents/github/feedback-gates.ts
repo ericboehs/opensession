@@ -29,6 +29,12 @@ export interface FeedbackRecord {
   outcome?: "addressed" | "ignored";
   /** A bug we missed: recorded when a later fix-PR blames a reviewed PR. */
   falseNegative?: boolean;
+  /** Model-classified tone of human replies in the finding's thread:
+   *  dismissive = the author pushed back ("intentional", "not a bug");
+   *  positive = they valued it ("good catch"). Set by harvestReplySignals. */
+  replySignal?: "positive" | "dismissive";
+  /** How many human replies were classified so far (re-classify only on new ones). */
+  repliesSeen?: number;
 }
 
 const TOKEN_RE = /[a-z0-9_]{3,}/g;
@@ -59,16 +65,21 @@ export function similarity(a: string, b: string): number {
   return inter / (ta.size + tb.size - inter);
 }
 
-/** The reader pushed back: explicit 👎, or silently ignored with no 👍. */
+/** The reader pushed back: an explicit dismissive reply or 👎, or silently
+ *  ignored with no 👍. Words beat reactions beat silence. */
 export function isNegativeSignal(r: FeedbackRecord): boolean {
+  if (r.replySignal === "dismissive") return true;
+  if (r.replySignal === "positive") return false;
   const plus = r.plus || 0;
   const minus = r.minus || 0;
   if (minus > plus) return true;
   return r.outcome === "ignored" && plus === 0;
 }
 
-/** The reader valued it: explicit 👍, or acted on it. */
+/** The reader valued it: an explicit positive reply or 👍, or acted on it. */
 export function isPositiveSignal(r: FeedbackRecord): boolean {
+  if (r.replySignal === "positive") return true;
+  if (r.replySignal === "dismissive") return false;
   const plus = r.plus || 0;
   const minus = r.minus || 0;
   if (plus > 0 && plus >= minus) return true;
