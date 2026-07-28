@@ -26,6 +26,69 @@ import { personalPromptNoteFor } from "./personal-prompts";
 import { findSession, touchBackstageSession } from "./session-cache";
 import type { AttachedRepo, LinkedPr, UnifiedSession } from "./types";
 
+export interface SessionRepoContext {
+	repo: string;
+	dir: string;
+	branch?: string;
+	primary: boolean;
+}
+
+type SessionRepoCarrier = Pick<
+	UnifiedSession,
+	"repo" | "worktreeDir" | "branch" | "attachedRepos"
+>;
+
+/**
+ * Resolve a repo worktree carried by a session.
+ *
+ * Child sessions and workflow agents used to inherit only `worktreeDir`, which
+ * is the primary repo. That made an attached-repo review start in the primary
+ * checkout and then hit ask-mode's external-directory deny when its prompt
+ * referenced the attached worktree. An explicit repo wins; otherwise a prompt
+ * that names exactly one carried worktree selects it; ambiguous/no hint keeps
+ * the primary for backwards compatibility.
+ */
+export function resolveSessionRepoContext(
+	session: SessionRepoCarrier,
+	repoId?: string,
+	hint?: string,
+): SessionRepoContext | null {
+	const primaryRepo =
+		session.repo ||
+		(session.worktreeDir
+			? repoForPath(session.worktreeDir).id
+			: "tella-fusion");
+	const contexts: SessionRepoContext[] = [
+		...(session.worktreeDir
+			? [{
+					repo: primaryRepo,
+					dir: session.worktreeDir,
+					...(session.branch ? { branch: session.branch } : {}),
+					primary: true,
+				}]
+			: []),
+		...(session.attachedRepos || []).map((attached) => ({
+			repo: attached.repo,
+			dir: attached.dir,
+			branch: attached.branch,
+			primary: false,
+		})),
+	];
+
+	if (repoId) return contexts.find((context) => context.repo === repoId) || null;
+
+	if (hint) {
+		const mentioned = contexts.filter(
+			(context) =>
+				hint.includes(context.dir) ||
+				hint.includes(`@${context.repo}:`),
+		);
+		if (mentioned.length === 1) return mentioned[0];
+	}
+
+	return contexts.find((context) => context.primary) || null;
+}
+
 /**
  * Branch discipline for interactive code sessions in isolated worktrees. Chats
  * in one workspace share a single worktree + branch, so each agent must treat

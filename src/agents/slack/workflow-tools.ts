@@ -49,8 +49,11 @@ export const WORKFLOW_DEFAULT_MODEL = "claude-opus-5";
 export interface WorkflowsToolContext {
 	sessionId: string;
 	user?: string;
-	/** Resolved lazily per call — the session's worktree can change mid-run. */
-	cwd: () => string | undefined;
+	/** Resolved lazily per call — repos can attach or switch mid-run. */
+	workspace: (
+		repo?: string,
+		hint?: string,
+	) => { cwd: string; repo?: string; baseBranch?: string } | undefined;
 	/** Overrides WORKFLOW_DEFAULT_MODEL for agent() calls that name no model.
 	 *  Left unset in production — agents default to Opus, not the session's model. */
 	defaultModel?: () => string | undefined;
@@ -188,11 +191,18 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 					.describe(
 						"Optional output-token budget the script can consult via `budget` (advisory: spent()/remaining()).",
 					),
+				repo: z
+					.string()
+					.optional()
+					.describe(
+						"Repo context for every workflow agent. Pass this when auditing an attached repo so agents start in that exact worktree and can see current/uncommitted changes.",
+					),
 			},
 			async (args: {
 				script: string;
 				args_json?: string;
 				budget_tokens?: number;
+				repo?: string;
 			}) => {
 				let parsedArgs: unknown;
 				if (args.args_json !== undefined) {
@@ -204,10 +214,12 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 						);
 					}
 				}
-				const cwd = ctx.cwd();
-				if (!cwd) {
+				const workspace = ctx.workspace(args.repo, args.script);
+				if (!workspace) {
 					return text(
-						"This session has no worktree — workflow agents need a working directory. Attach a repo first (opensession-repos attach_repo).",
+						args.repo
+							? `Repo "${args.repo}" is not attached to this session — attach it first (opensession-repos attach_repo), or choose one of the session's repos.`
+							: "This session has no worktree — workflow agents need a working directory. Attach a repo first (opensession-repos attach_repo).",
 					);
 				}
 				try {
@@ -216,7 +228,9 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 						args: parsedArgs,
 						sessionId: ctx.sessionId,
 						user: ctx.user,
-						cwd,
+						cwd: workspace.cwd,
+						repo: workspace.repo,
+						baseBranch: workspace.baseBranch,
 						defaultModel: ctx.defaultModel?.() || WORKFLOW_DEFAULT_MODEL,
 						budgetTotal: args.budget_tokens,
 						mcpAllowlist: ctx.mcpAllowlist,
@@ -387,11 +401,18 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 					.describe(
 						"JSON string for the script's `args`. Omit to run with no args — note agent() calls whose prompts derive from args only replay when the prompts come out identical.",
 					),
+				repo: z
+					.string()
+					.optional()
+					.describe(
+						"Repo context for the resumed workflow. Omit to reuse the original run's cwd.",
+					),
 			},
 			async (args: {
 				run_id: string;
 				script?: string;
 				args_json?: string;
+				repo?: string;
 			}) => {
 				const old = getWorkflowRun(args.run_id);
 				if (!old) return text(`No workflow run ${args.run_id}.`);
@@ -414,14 +435,23 @@ export function createWorkflowsMcpServer(ctx: WorkflowsToolContext) {
 						);
 					}
 				}
-				const cwd = ctx.cwd() || old.cwd;
+				// New runs persist cwd but older snapshots do not carry repo id.
+				// Re-resolve the old cwd as a hint so an attached-repo workflow
+				// resumes with the correct repo/base branch for write agents too.
+				const workspace = args.repo
+					? ctx.workspace(args.repo, script)
+					: ctx.workspace(undefined, old.cwd);
+				if (args.repo && !workspace)
+					return text(`Repo "${args.repo}" is not attached to this session.`);
 				try {
 					const { runId } = startWorkflow({
 						script,
 						args: parsedArgs,
 						sessionId: ctx.sessionId,
 						user: ctx.user,
-						cwd,
+						cwd: workspace?.cwd || old.cwd,
+						repo: workspace?.repo,
+						baseBranch: workspace?.baseBranch,
 						defaultModel: ctx.defaultModel?.() || WORKFLOW_DEFAULT_MODEL,
 						resumeFromRunId: args.run_id,
 						mcpAllowlist: ctx.mcpAllowlist,

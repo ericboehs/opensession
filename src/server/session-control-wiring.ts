@@ -22,7 +22,7 @@ import { type Sandbox } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox } from "./sandbox/config";
 import { findSession, getCachedSessions, invalidateSessionsCache, isLegacySideChat, recordRunOutcome, touchBackstageSession, updateSessionFile } from "./session-cache";
 import { type SessionState, type SessionSummary, registerSessionControl } from "./session-control";
-import { buildBranchNote, memoryNoteFor, workspaceOwningWorktree } from "./session-repos";
+import { buildBranchNote, memoryNoteFor, resolveSessionRepoContext, workspaceOwningWorktree } from "./session-repos";
 import { engineSessionPatch, engineUserTexts, getAllSessions, mergedSessionTranscript } from "./sessions";
 import { isLocalSessionUpgradeInProgress } from "./session-transfer-state";
 import { rebuildIndex } from "./slack-links";
@@ -234,9 +234,14 @@ registerSessionControl({
 		const createFastMode = fastModeInput === true;
 		const images = parseImageDataUrls(imageUrls);
 		const parentSession = parentSessionId ? findSession(parentSessionId) : null;
-		// A child session defaults to its parent's repo (not tella-fusion), so
-		// same-workspace workers land in the same checkout family.
-		const repo = getRepo(repoInput || parentSession?.repo);
+		// A child defaults to the parent's primary repo, but an explicit repo —
+		// or a prompt that names exactly one attached worktree — inherits that
+		// exact repo context. This is load-bearing for reviewers of in-progress
+		// attached-repo work: a fresh ask checkout cannot see those changes.
+		const parentRepoContext = parentSession
+			? resolveSessionRepoContext(parentSession, repoInput, prompt)
+			: null;
+		const repo = getRepo(repoInput || parentRepoContext?.repo || parentSession?.repo);
 		// Sandbox opt-in: true = config default provider, or an explicit
 		// provider id validated against the config — an unconfigured pick fails
 		// the create loudly instead of silently running on the host.
@@ -251,17 +256,35 @@ registerSessionControl({
 
 		let wtPath: string;
 		let sessionBranch = branch || "";
+		const sharedParentContext =
+			parentSession &&
+			parentSession.mode !== "ask" &&
+			parentRepoContext?.repo === repo.id &&
+			existsSync(parentRepoContext.dir)
+				? parentRepoContext
+				: null;
 		if (isAsk) {
-			// Read-only sessions get the repo's pinned ask checkout (default
-			// branch), never the mutable main checkout — see ensureAskCheckout.
-			wtPath = await ensureAskCheckout(repo.id);
+			// A child reviewer shares the selected parent worktree read-only so
+			// it sees uncommitted/current-branch work. Standalone ask sessions
+			// keep using the pinned default-branch checkout.
+			if (sharedParentContext) {
+				wtPath = sharedParentContext.dir;
+				sessionBranch = sharedParentContext.branch || sessionBranch;
+			} else {
+				wtPath = await ensureAskCheckout(repo.id);
+			}
 		} else {
 			// Same workspace ⇒ same worktree: a code child joining the parent's
 			// workspace shares its worktree/branch instead of creating a fresh one.
 			// Only when the repo matches — a child explicitly targeting another
 			// repo still gets its own isolated worktree there.
 			const shared =
-				parentWorkspace?.worktreeDir &&
+				sharedParentContext
+					? {
+							dir: sharedParentContext.dir,
+							branch: sharedParentContext.branch,
+						}
+					: parentWorkspace?.worktreeDir &&
 				repoForPath(parentWorkspace.worktreeDir).id === repo.id &&
 				existsSync(parentWorkspace.worktreeDir)
 					? { dir: parentWorkspace.worktreeDir, branch: parentWorkspace.branch }
@@ -275,6 +298,11 @@ registerSessionControl({
 				wtPath = shared.dir;
 				sessionBranch = shared.branch || sessionBranch;
 			} else {
+				if (!sessionBranch.trim()) {
+					throw new Error(
+						"Code-mode child needs a branch because the selected parent repo has no sharable worktree.",
+					);
+				}
 				const worktrees = await listWorktrees(repo.id);
 				wtPath = worktrees.find((w) => w.branch === branch)?.path || "";
 				if (!wtPath) wtPath = await createWorktree(branch!, repo.id);

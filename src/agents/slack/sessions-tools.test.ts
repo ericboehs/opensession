@@ -240,6 +240,38 @@ describe("spawnTaskImpl", () => {
 		const r3 = await spawnTaskImpl({ prompt: "x", branch: "task/foo" }, ctx(parent), h.deps);
 		expect(r3.ok).toBe(true);
 	});
+
+	it("allows a branchless code task to share an attached parent repo", async () => {
+		const h = makeHarness();
+		const parent = `bks-test-parent-${++uniq}`;
+		h.sessions.set(parent, {
+			id: parent,
+			mode: "code",
+			worktreeDir: "/home/ubuntu/projects/tella-backstage",
+			repo: "backstage",
+			attachedRepos: [
+				{
+					repo: "tella-fusion",
+					dir: "/home/ubuntu/worktrees/tella-fusion-task",
+					branch: "task",
+				},
+			],
+		});
+
+		const explicit = await spawnTaskImpl(
+			{ prompt: "Review the implementation.", repo: "tella-fusion" },
+			ctx(parent),
+			h.deps,
+		);
+		expect(explicit.ok).toBe(true);
+
+		const inferred = await spawnTaskImpl(
+			{ prompt: "Review /home/ubuntu/worktrees/tella-fusion-task." },
+			ctx(parent),
+			h.deps,
+		);
+		expect(inferred.ok).toBe(true);
+	});
 });
 
 describe("task_status / cancel_task", () => {

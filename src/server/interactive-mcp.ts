@@ -34,7 +34,7 @@ import { repoForPath, REPOS } from "./worktree";
 import { registerInteractiveMcpBuilder, startMcpHttpServer, startRunRpcServer } from "./run-rpc";
 import { automationRunMcpForSession, selfImproveMcpForSession } from "./automations";
 import { findSession, touchBackstageSession } from "./session-cache";
-import { attachRepo, linkPr, sessionRepoIds, switchPrimaryRepo } from "./session-repos";
+import { attachRepo, linkPr, resolveSessionRepoContext, sessionRepoIds, switchPrimaryRepo } from "./session-repos";
 import { makeAskHandler } from "./asks";
 
 /** The session's primary repo id, for the papercuts toggle (undefined =
@@ -209,7 +209,17 @@ export function interactiveMcpServers(
 					"opensession-workflows": createWorkflowsMcpServer({
 						sessionId,
 						user: createdBy,
-						cwd: () => findSession(sessionId)?.worktreeDir || undefined,
+						workspace: (repo, hint) => {
+							const session = findSession(sessionId);
+							if (!session) return undefined;
+							const context = resolveSessionRepoContext(session, repo, hint);
+							if (!context) return undefined;
+							return {
+								cwd: context.dir,
+								repo: context.repo,
+								baseBranch: context.branch,
+							};
+						},
 					}),
 					// Per-session scratch assets (previewed in the Assets tab).
 					// Works in Ask mode — writes land outside the checkout.

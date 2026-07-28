@@ -567,7 +567,10 @@ export function automationRunMcpForSession(
     servers["opensession-workflows"] = createWorkflowsMcpServer({
       sessionId,
       user: `${a.name} (automation)`,
-      cwd: () => cwd,
+      workspace: (requestedRepo) =>
+        !requestedRepo || requestedRepo === a.repo
+          ? { cwd, repo: a.repo }
+          : undefined,
       // A script's mcp.* surface is the automation's own least-privilege one —
       // it must never be a way around the allowlist or the denied writes.
       mcpAllowlist: a.mcpServers,
@@ -979,7 +982,10 @@ export async function runAutomation(
           "opensession-workflows": createWorkflowsMcpServer({
             sessionId: bksId,
             user: `${automation.name} (automation)`,
-            cwd: () => cwd,
+            workspace: (requestedRepo) =>
+              !requestedRepo || requestedRepo === repo.id
+                ? { cwd, repo: repo.id }
+                : undefined,
             // Same scoping as the run itself: a workflow script's mcp.* calls
             // see this automation's allowlist, minus the denied writes.
             mcpAllowlist: automation.mcpServers,
