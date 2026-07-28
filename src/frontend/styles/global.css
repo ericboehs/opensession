@@ -12531,9 +12531,8 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   soft shadow lift the opaque bar over the transcript scrolling beneath. */
 	.session-tabs {
 		position: absolute;
-		/* Dock flush to the header so the scrolling transcript cannot show through
-		   a seam between the two rows. (--pane-header-h, not --header-h: on routes
-		   whose bar stays in flow the pane already
+		/* Dock to the header. (--pane-header-h, not --header-h: on routes whose bar
+		   stays in flow the pane already
 		   starts below it — see .detail-pane.) */
 		top: var(--pane-header-h);
 		left: 0;
@@ -12544,6 +12543,13 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		background: var(--bg);
 		border-bottom: 1px solid var(--border);
 		box-shadow: 0 6px 12px -8px rgba(0, 0, 0, 0.22);
+	}
+	/* Mobile Safari can rasterize two composited layers that merely touch with a
+	   hairline seam. Overlap the chat header by 2px and add those 2px back as top
+	   padding, keeping the tabs and the bar's bottom edge in their original place. */
+	.app:has(.app-header-overlay) .session-tabs {
+		top: calc(var(--pane-header-h) - 2px);
+		padding-top: 7px;
 	}
 	/* Tell the transcript how much extra top room the docked bar takes so the
 	   first row starts just below it (see .viewer-messages). Only set when a
