@@ -24,7 +24,7 @@ import { useIsPhone } from "../hooks/useIsPhone";
  * button starts a new chat in this workspace sharing its worktree;
  * right-clicking + offers the other modes (stacked worktree / ask).
  */
-/** A non-chat pane (Review, …) surfaced as a leftmost tab in the strip. */
+/** A non-chat pane (Review, …) surfaced after the chat tabs in the strip. */
 export type ViewTab = {
 	/** Stable id, e.g. `review:<sessionId>`. */
 	id: string;
@@ -48,6 +48,8 @@ interface Props {
 	archived: UnifiedSession[];
 	/** Session id of the active tab. */
 	activeId: string | null;
+	/** Main chat id. This tab stays first while sibling chats are reordered. */
+	mainId: string | null;
 	/** Map of session id → swatch key for colored tabs. */
 	colors: Record<string, string>;
 	onSelect: (session: UnifiedSession) => void;
@@ -58,8 +60,8 @@ interface Props {
 	 */
 	onReorderTabs: (orderedIds: string[]) => void;
 	/**
-	 * Non-chat "view" tabs (currently just Review) pinned to the LEFT of the
-	 * chat tabs. Each is bound to a session; selecting one foregrounds that
+	 * Non-chat "view" tabs (Review, Preview, …) shown after the chat tabs.
+	 * Each is bound to a session; selecting one foregrounds that
 	 * pane, its × dismisses it. Generalized so more panes (diff, terminal, …)
 	 * can drop in later.
 	 */
@@ -97,6 +99,7 @@ export function SessionTabs({
 	tabs,
 	archived,
 	activeId,
+	mainId,
 	colors,
 	onSelect,
 	onSetColor,
@@ -132,6 +135,13 @@ export function SessionTabs({
 	const [orderDraft, setOrderDraft] = useState<string[] | null>(null);
 	const justDragged = useRef(false);
 	const canReorder = !isPhone && tabs.length > 1;
+	const keepMainFirst = React.useCallback(
+		(ids: string[]) =>
+			mainId && ids.includes(mainId)
+				? [mainId, ...ids.filter((id) => id !== mainId)]
+				: ids,
+		[mainId],
+	);
 
 	// Render order: the in-flight drag draft when dragging, else the parent's
 	// (already persisted) order. Any tab absent from the draft is appended so a
@@ -182,7 +192,7 @@ export function SessionTabs({
 	// One chat and no view tabs → no strip. The lone workspace's "+ New tab"
 	// button lives next to the session title in the header instead. But once a
 	// non-chat pane (Review) is open, the strip appears so it has somewhere to
-	// live — a lone code chat then reads as [Review][chat].
+	// live — a lone code chat then reads as [chat][Review].
 	if (tabs.length <= 1 && viewTabs.length === 0) return null;
 
 	// New-tab "+" — plain-click shares the workspace worktree; right-click offers
@@ -243,45 +253,12 @@ export function SessionTabs({
 	return (
 		<div className="session-tabs" role="tablist">
 			<div className="session-tabs-scroll">
-				{/* Non-chat panes (Review, …) ride at the FRONT of the strip. */}
-				{viewTabs.map((v) => (
-					<div
-						key={v.id}
-						role="tab"
-						aria-selected={v.active}
-						aria-label={v.icon ? v.label : undefined}
-						className={`session-tab session-tab-view ${v.icon ? "session-tab-view-icon" : ""} ${v.active ? "session-tab-active" : ""}`}
-						onClick={() => onSelectView(v.id)}
-						title={v.label}
-					>
-						{v.dotClass && <span className={`panel-tab-dot ${v.dotClass}`} />}
-						{v.icon ? (
-							<span className="session-tab-vicon" aria-hidden="true">
-								{v.icon}
-							</span>
-						) : (
-							<span className="session-tab-title">{v.label}</span>
-						)}
-						<button
-							type="button"
-							className="session-tab-close"
-							aria-label={`Close ${v.label}`}
-							title={`Close ${v.label}`}
-							onClick={(e) => {
-								e.stopPropagation();
-								onCloseView(v.id);
-							}}
-						>
-							×
-						</button>
-					</div>
-				))}
 				<Reorder.Group
 					as="div"
 					axis="x"
 					className="session-tabs-chatgroup"
 					values={orderedTabs.map((s) => s.id)}
-					onReorder={(ids: string[]) => setOrderDraft(ids)}
+					onReorder={(ids: string[]) => setOrderDraft(keepMainFirst(ids))}
 				>
 				{orderedTabs.map((session) => {
 					const key = session.id;
@@ -292,7 +269,9 @@ export function SessionTabs({
 							as="div"
 							key={key}
 							value={key}
-							dragListener={canReorder && editKey !== key}
+							dragListener={
+								canReorder && editKey !== key && key !== mainId
+							}
 							transition={{ duration: 0 }}
 							onDragEnd={commitReorder}
 							whileDrag={{ scale: 1.02, zIndex: 3 }}
@@ -450,6 +429,40 @@ export function SessionTabs({
 						);
 					})}
 				</Reorder.Group>
+				{/* Non-chat panes (Review, …) ride at the END of the strip: the main
+				    chat leads, sibling chats follow, panes close the row. */}
+				{viewTabs.map((v) => (
+					<div
+						key={v.id}
+						role="tab"
+						aria-selected={v.active}
+						aria-label={v.icon ? v.label : undefined}
+						className={`session-tab session-tab-view ${v.icon ? "session-tab-view-icon" : ""} ${v.active ? "session-tab-active" : ""}`}
+						onClick={() => onSelectView(v.id)}
+						title={v.label}
+					>
+						{v.dotClass && <span className={`panel-tab-dot ${v.dotClass}`} />}
+						{v.icon ? (
+							<span className="session-tab-vicon" aria-hidden="true">
+								{v.icon}
+							</span>
+						) : (
+							<span className="session-tab-title">{v.label}</span>
+						)}
+						<button
+							type="button"
+							className="session-tab-close"
+							aria-label={`Close ${v.label}`}
+							title={`Close ${v.label}`}
+							onClick={(e) => {
+								e.stopPropagation();
+								onCloseView(v.id);
+							}}
+						>
+							×
+						</button>
+					</div>
+				))}
 					{/* Phone: the +/history controls scroll WITH the tabs so the strip
 					    uses the full width — nothing pinned eating horizontal room. */}
 					{isPhone && newTabButton}

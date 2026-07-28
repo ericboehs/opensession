@@ -62,6 +62,8 @@ import {
 } from "./lib/api";
 import {
 	defaultChatWorkspaceView,
+	mainChat,
+	pinMainChatFirst,
 	pickLandingChat,
 } from "./lib/landing-chat";
 import {
@@ -1233,7 +1235,19 @@ function App() {
 			? projects.find((p) => p.id === currentSession.projectId) || null
 			: null);
 	const reviewDismissed = !!wsKey && reviewClosed.has(wsKey);
-	const defaultChatView = defaultChatWorkspaceView(wsRecord, reviewDismissed);
+	// Review only leads for a chat-less PR workspace; with chats, the main/last
+	// chat is the landing surface and Review sits at the end of the strip.
+	const wsHasLiveChat =
+		!!currentSession ||
+		(!!wsKey &&
+			sessions.some(
+				(s) => !s.archived && !s.sideChatOf && s.projectId === wsKey,
+			));
+	const defaultChatView = defaultChatWorkspaceView(
+		wsRecord,
+		reviewDismissed,
+		wsHasLiveChat,
+	);
 	function setActiveViewTab(tab: ActiveViewTab) {
 		setActiveViewTabState(tab);
 		if (wsKey) saveActiveViewTab(wsKey, tab);
@@ -1255,10 +1269,10 @@ function App() {
 		}
 	}, [wsKey, pendingReviewOpen]);
 	// Landing on the workspace route: foreground its default pane. An explicit
-	// /review or /conversation suffix wins; a PR-backed workspace defaults to
-	// Review; otherwise land in the first chat when one exists — the workspace
-	// home (first-chat composer) is for empty workspaces. Declared after the
-	// wsKey reset effect above so the default wins the same commit.
+	// /review or /conversation suffix wins; otherwise land in the remembered
+	// chat (or the main chat on first visit). A chat-less PR workspace still
+	// opens Review. Declared after the wsKey reset effect above so the landing
+	// choice wins the same commit.
 	useEffect(() => {
 		if (route.view !== "workspace" || !projectsLoaded) return;
 		// One-shot: closing the Review tab replaces the URL (dropping /review),
@@ -1270,14 +1284,10 @@ function App() {
 		}
 		const p = projects.find((x) => x.id === route.id) || null;
 		// Default pane by workspace shape: ticket workspaces open on the
-		// Conversation, PR-backed ones on Review, plain ones in their first chat.
-		const tab =
-			route.tab ??
-			(p?.plainThreadId
-				? "conversation"
-				: p && (p.branch || p.prNumber !== undefined)
-					? "review"
-					: null);
+		// Conversation; everything else — PR-backed included — lands in its
+		// main/last-open chat. A PR workspace only defaults to Review when it
+		// has no chat to land in (the else branch below).
+		const tab = route.tab ?? (p?.plainThreadId ? "conversation" : null);
 		const key = route.id;
 		// Landing in the workspace's first chat keeps the full session chrome —
 		// including the right sidebar — around the foregrounded pane (wsKey is
@@ -1302,7 +1312,19 @@ function App() {
 			if (first) navigate({ view: "session", id: first.id }, { replace: true });
 		} else {
 			const first = firstChat();
-			if (first) navigate({ view: "session", id: first.id }, { replace: true });
+			if (first) {
+				// A bare workspace navigation means "open this workspace's chat",
+				// even if Review was the last non-chat pane foregrounded here.
+				setActiveViewTab(null);
+				navigate({ view: "session", id: first.id }, { replace: true });
+			} else if (p && (p.branch || p.prNumber !== undefined)) {
+				// Chat-less PR/branch workspace: Review is the only meaningful
+				// surface, so foreground it like an explicit /review landing.
+				setReviewOpen((prev) =>
+					prev.has(key) ? prev : new Set(prev).add(key),
+				);
+				setActiveViewTab("review");
+			}
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [
@@ -1590,8 +1612,10 @@ function App() {
 		if (assetsActive) setActiveViewTab(null);
 	}
 	// Sidebar PR row → the PR's ONE workspace (resolve-or-create server-side,
-	// adopt-don't-duplicate), Review tab foregrounded. Falls back to the legacy
-	// preview routes if the resolve fails, so a click is never dead.
+	// adopt-don't-duplicate), landing in its main/last-open chat (Review only
+	// leads when the workspace has no chats — the workspace-landing effect
+	// decides). Falls back to the legacy preview routes if the resolve fails,
+	// so a click is never dead.
 	const openPrWorkspace = React.useCallback(
 		async (item: ReviewQueueItem) => {
 			try {
@@ -1604,7 +1628,7 @@ function App() {
 					},
 				});
 				refreshProjects();
-				navigate({ view: "workspace", id: workspaceId, tab: "review" });
+				navigate({ view: "workspace", id: workspaceId });
 			} catch {
 				if (item.sessionId) navigate({ view: "reviews", id: item.sessionId });
 				else
@@ -1728,13 +1752,17 @@ function App() {
 	const projectChats: UnifiedSession[] = (() => {
 		if (!tabOrderKey || naturalChats.length < 2) return naturalChats;
 		const byId = new Map(naturalChats.map((s) => [s.id, s] as const));
-		return applyTabOrder(
-			tabOrderKey,
-			naturalChats.map((s) => s.id),
+		return pinMainChatFirst(
+			naturalChats,
+			applyTabOrder(
+				tabOrderKey,
+				naturalChats.map((s) => s.id),
+			),
 		)
 			.map((id) => byId.get(id))
 			.filter((s): s is UnifiedSession => !!s);
 	})();
+	const mainChatId = mainChat(naturalChats)?.id ?? null;
 	// The strip's history menu: archived (closed) chats of the same workspace,
 	// newest activity first. The open chat is excluded — if it's archived it
 	// already holds a live tab via liveTab().
@@ -2244,6 +2272,10 @@ function App() {
 									getWorkspaceLastChat(id),
 								);
 								if (chat) {
+									// Workspace rows always foreground the remembered chat, not
+									// a previously selected Review/Preview pane.
+									saveActiveViewTab(id, null);
+									setActiveViewTabState(null);
 									setFocusComposerOnOpen(true);
 									navigate({ view: "session", id: chat.id });
 								} else {
@@ -2436,6 +2468,7 @@ function App() {
 							tabs={projectChats}
 							archived={archivedChats}
 							activeId={activeViewTab ? null : currentSession?.id || null}
+							mainId={mainChatId}
 							colors={tabColors}
 							onSelect={(s) => {
 								setActiveViewTab(null);

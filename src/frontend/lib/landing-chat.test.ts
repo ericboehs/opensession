@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
 	chatNeverRan,
 	defaultChatWorkspaceView,
+	mainChat,
+	pinMainChatFirst,
 	pickLandingChat,
 } from "./landing-chat";
 import type { UnifiedSession } from "./types";
@@ -39,16 +41,63 @@ describe("chatNeverRan", () => {
 });
 
 describe("defaultChatWorkspaceView", () => {
-	test("PR-backed workspace chat links land on Review", () => {
-		expect(defaultChatWorkspaceView({ key: "ghpr-4972" }, false)).toBe(
+	test("chat-less PR-backed workspaces land on Review", () => {
+		expect(defaultChatWorkspaceView({ key: "ghpr-4972" }, false, false)).toBe(
 			"review",
 		);
-		expect(defaultChatWorkspaceView({ prNumber: 4972 }, false)).toBe("review");
+		expect(defaultChatWorkspaceView({ prNumber: 4972 }, false, false)).toBe(
+			"review",
+		);
 	});
 
-	test("plain workspaces and dismissed Review tabs land on chat", () => {
-		expect(defaultChatWorkspaceView({ key: "plain-th_123" }, false)).toBeNull();
-		expect(defaultChatWorkspaceView({ key: "ghpr-4972" }, true)).toBeNull();
+	test("PR workspaces with chats, plain workspaces, and dismissed Review tabs land on chat", () => {
+		expect(
+			defaultChatWorkspaceView({ key: "ghpr-4972" }, false, true),
+		).toBeNull();
+		expect(
+			defaultChatWorkspaceView({ key: "plain-th_123" }, false, false),
+		).toBeNull();
+		expect(
+			defaultChatWorkspaceView({ key: "ghpr-4972" }, true, false),
+		).toBeNull();
+	});
+});
+
+describe("mainChat", () => {
+	test("prefers the oldest human chat that actually ran", () => {
+		const review = chat({
+			id: "bks-ghpr-42-review",
+			projectId: "prj-1",
+			automation: "github-pr-review",
+			claudeSessionId: "review-run",
+			createdAt: "2026-07-01T00:00:00.000Z",
+		});
+		const shell = chat({
+			id: "shell",
+			projectId: "prj-1",
+			createdAt: "2026-07-02T00:00:00.000Z",
+			lastActivity: "2026-07-02T00:00:00.000Z",
+		});
+		const human = chat({
+			id: "human",
+			projectId: "prj-1",
+			claudeSessionId: "human-run",
+			createdAt: "2026-07-03T00:00:00.000Z",
+		});
+		expect(mainChat([review, shell, human])?.id).toBe("human");
+	});
+
+	test("pins the main chat ahead of a persisted sibling order", () => {
+		const main = chat({ id: "main", claudeSessionId: "main-run" });
+		const sibling = chat({
+			id: "sibling",
+			claudeSessionId: "sibling-run",
+			createdAt: "2026-07-02T00:00:00.000Z",
+		});
+		expect(pinMainChatFirst([main, sibling], ["sibling", "main"])).toEqual([
+			"main",
+			"sibling",
+		]);
 	});
 });
 
