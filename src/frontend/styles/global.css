@@ -11924,8 +11924,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		flex-direction: column;
 		gap: 2px;
 		background: var(--bg);
-		padding: env(safe-area-inset-top, 0px) 0
-			max(16px, env(safe-area-inset-bottom, 0px));
+		padding: 0 0 max(16px, env(safe-area-inset-bottom, 0px));
 		overflow-y: auto;
 		overscroll-behavior: contain;
 		animation: session-info-in 0.22s cubic-bezier(0.32, 0.72, 0, 1);
@@ -11941,9 +11940,52 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		}
 	}
 	.session-info-topbar {
+		position: sticky;
+		top: 0;
+		z-index: 4;
 		display: flex;
 		align-items: center;
-		padding: 6px 8px 0;
+		min-height: calc(env(safe-area-inset-top, 0px) + 52px);
+		padding: env(safe-area-inset-top, 0px) 8px 0;
+		border-bottom: 1px solid transparent;
+		background: transparent;
+		transition: background-color 0.18s ease, border-color 0.18s ease;
+	}
+	.session-info-topbar-scrolled {
+		border-bottom-color: var(--border);
+		background: color-mix(in srgb, var(--bg) 92%, transparent);
+		-webkit-backdrop-filter: blur(18px) saturate(1.35);
+		backdrop-filter: blur(18px) saturate(1.35);
+	}
+	.session-info-topbar .panel-back {
+		position: relative;
+		z-index: 1;
+		margin: 0;
+	}
+	.session-info-topbar-title {
+		position: absolute;
+		left: 56px;
+		right: 56px;
+		bottom: 0;
+		height: 52px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 15px;
+		font-weight: 650;
+		letter-spacing: -0.01em;
+		color: var(--text);
+		opacity: 0;
+		transform: translateY(5px);
+		pointer-events: none;
+		transition: opacity 0.18s ease, transform 0.18s ease;
+	}
+	.session-info-topbar-scrolled .session-info-topbar-title {
+		opacity: 1;
+		transform: translateY(0);
 	}
 	.session-info-hero {
 		display: flex;
@@ -11969,6 +12011,29 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		font-size: 13px;
 		font-weight: 500;
 		color: var(--text-dim);
+	}
+	.session-info-status {
+		margin: 0 12px 8px;
+		overflow: hidden;
+		border: 1px solid var(--border);
+		border-radius: calc(12px * var(--rf));
+		corner-shape: var(--cs);
+	}
+	.session-info-status .pr-bar:last-child,
+	.session-info-status .pr-bar-extra:last-child {
+		border-bottom: none;
+	}
+	.session-info-tabs {
+		margin: 0 0 2px;
+		padding: 4px 12px 8px;
+		border-bottom: 1px solid var(--border);
+		background: var(--bg);
+	}
+	.session-info-content {
+		min-height: 320px;
+	}
+	.session-info-content > .diff-panel {
+		min-height: 420px;
 	}
 
 	/* Static, full-width settings list on the session info page. */
@@ -12008,6 +12073,13 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		color: var(--text);
 		border-color: transparent;
 		background: var(--bg-hover);
+	}
+	.session-info-preview-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 36px;
+		padding: 3px 6px;
 	}
 
 	/* The workspace overview (Info-tab content) embedded below the actions:

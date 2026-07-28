@@ -113,7 +113,6 @@ import {
 	IconArchive,
 	IconCheck,
 	IconChevronDown,
-	IconChevronRight,
 	IconPlus,
 	IconPencil,
 	IconArrowUp,
@@ -909,6 +908,11 @@ export function SessionViewer({
 	// shows the sub-agent conversation instead of the Workspace panel.
 	const [subagentStack, setSubagentStack] = useState<SubagentRef[]>([]);
 	const [toolEvidence, setToolEvidence] = useState<ToolEvidence | null>(null);
+	// Phones fold the desktop Workspace panel into the title-opened detail page.
+	// Keeping this state near panelOpen lets the shared diff poll serve either
+	// surface without mounting a second copy of the data hook.
+	const [infoPageOpen, setInfoPageOpen] = useState(false);
+	const [infoPageScrolled, setInfoPageScrolled] = useState(false);
 	// Stable identity so the memoized TranscriptBlocks bails out on unrelated
 	// re-renders (e.g. toggling the workspace panel) instead of re-rendering the
 	// whole transcript.
@@ -923,7 +927,11 @@ export function SessionViewer({
 		(entry: TranscriptEntry, result?: TranscriptEntry) => {
 			setToolEvidence({ entry, result });
 			setPanelTab("evidence");
-			setPanelOpen(true);
+			if (window.matchMedia("(max-width: 720px)").matches) {
+				setInfoPageOpen(true);
+			} else {
+				setPanelOpen(true);
+			}
 		},
 		[],
 	);
@@ -1509,9 +1517,11 @@ export function SessionViewer({
 
 	// Live worktree diff, shared between the Changes-tab file-count badge and the
 	// DiffPanel (passed in as `diff=` below so they poll once, not twice). Parked
-	// unless the panel is open on a code session.
+	// unless either workspace surface is open on a code session.
 	const diffState = useSessionDiff(session.id, {
-		enabled: hasWorkspace && panelOpen,
+		enabled:
+			hasWorkspace &&
+			(panelOpen || (infoPageOpen && panelTab === "changes")),
 		isRunning: isBusy,
 	});
 	const changesFileCount = React.useMemo(
@@ -3230,7 +3240,7 @@ export function SessionViewer({
 				subagents={anySubagentRunning ? subagents : undefined}
 				onOpenPanel={() => {
 					selectPanelTab("workflows");
-					setPanelOpen(true);
+					setInfoPageOpen(true);
 				}}
 			/>
 		) : null;
@@ -3261,11 +3271,8 @@ export function SessionViewer({
 	}, [composerPrefillExternal, onComposerPrefillConsumed, isPhone]);
 
 	const [overflowOpen, setOverflowOpen] = useState(false);
-	// The title (repo tile + name) opens a deeper full-screen info page — a
-	// separate surface from the ⋯ quick-actions menu (overflowOpen).
-	const [infoPageOpen, setInfoPageOpen] = useState(false);
 	// Left-edge swipe on phones pops the topmost overlay before the page stack:
-	// the right-panel sheet (workspace/sub-agent) and the info page register as
+	// the sub-agent sheet and the info page register as
 	// higher-priority back-swipe layers, so the gesture closes them instead of
 	// popping the whole session back to the sidebar (App's layer, priority 0).
 	const panelPaneRef = useRef({
@@ -3276,7 +3283,7 @@ export function SessionViewer({
 	}).current;
 	useBackSwipe({
 		active:
-			isPhone && (subagentStack.length > 0 || (panelAvailable && panelOpen)),
+			isPhone && subagentStack.length > 0,
 		onBack: () => {
 			setSubagentStack([]);
 			setPanelOpen(false);
@@ -3285,21 +3292,64 @@ export function SessionViewer({
 		priority: 1,
 	});
 	const infoPageRef = useRef<HTMLDivElement | null>(null);
+	const infoHeroNameRef = useRef<HTMLDivElement | null>(null);
 	useBackSwipe({
 		active: isPhone && infoPageOpen,
 		onBack: () => setInfoPageOpen(false),
 		paneRef: infoPageRef,
 		priority: 2,
 	});
+	useEffect(() => {
+		if (!infoPageOpen) {
+			setInfoPageScrolled(false);
+			if (isPhone) setShellOpened(false);
+			return;
+		}
+		const root = infoPageRef.current;
+		const title = infoHeroNameRef.current;
+		if (!root || !title) return;
+		const topbar = root.querySelector<HTMLElement>(".session-info-topbar");
+		const topInset = Math.ceil(topbar?.getBoundingClientRect().height || 52);
+		const observer = new IntersectionObserver(
+			([entry]) => setInfoPageScrolled(!entry.isIntersecting),
+			{
+				root,
+				rootMargin: `-${topInset}px 0px 0px`,
+				threshold: 0,
+			},
+		);
+		observer.observe(title);
+		return () => observer.disconnect();
+	}, [infoPageOpen, isPhone]);
+	useEffect(() => {
+		if (!infoPageOpen) return;
+		const app = document.querySelector<HTMLElement>(".app");
+		app?.setAttribute("inert", "");
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") setInfoPageOpen(false);
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => {
+			window.removeEventListener("keydown", onKeyDown);
+			app?.removeAttribute("inert");
+		};
+	}, [infoPageOpen]);
 	// The mobile top-bar title (rendered by App, outside this component) opens the
 	// same settings menu — it toggles via a window event so it doesn't need a prop
 	// thread through App's render.
 	useEffect(() => {
-		const toggle = () => setInfoPageOpen((o) => !o);
+		const toggle = () =>
+			setInfoPageOpen((open) => {
+				if (!open) {
+					setPanelTab("info");
+					setInfoPageScrolled(false);
+				}
+				return !open;
+			});
 		window.addEventListener("backstage:toggle-session-settings", toggle);
 		return () =>
 			window.removeEventListener("backstage:toggle-session-settings", toggle);
-	}, []);
+	}, [session.id]);
 	// Closing the menu disarms a half-finished delete confirm — reopening it
 	// later shouldn't present the destructive choices without a fresh click.
 	useEffect(() => {
@@ -4049,12 +4099,23 @@ export function SessionViewer({
 				const phoneInfoPage =
 					isPhone && infoPageOpen ? (
 						createPortal(
-							<div className="session-info-page" ref={infoPageRef}>
-								<div className="session-info-topbar">
+							<div
+								className="session-info-page"
+								ref={infoPageRef}
+								role="dialog"
+								aria-modal="true"
+								aria-label="Workspace details"
+							>
+								<div
+									className={`session-info-topbar${
+										infoPageScrolled ? " session-info-topbar-scrolled" : ""
+									}`}
+								>
 									<button
 										className="panel-back"
 										onClick={() => setInfoPageOpen(false)}
 										aria-label="Back to chat"
+										autoFocus
 									>
 										<svg width="11" height="18" viewBox="0 0 11 18" fill="none">
 											<path
@@ -4066,10 +4127,13 @@ export function SessionViewer({
 											/>
 										</svg>
 									</button>
+									<div className="session-info-topbar-title">
+										{workspaceName || session.title}
+									</div>
 								</div>
 								<div className="session-info-hero">
 									<RepoTile name={session.repo || "tella-fusion"} size={40} />
-									<div className="session-info-name">
+									<div className="session-info-name" ref={infoHeroNameRef}>
 										{workspaceName || session.title}
 									</div>
 									<div className="session-info-sub">
@@ -4083,104 +4147,289 @@ export function SessionViewer({
 										.join("  ·  ")}
 									</div>
 								</div>
-								<div className="session-info-list">
-									{panelAvailable && (
-										<button
-											className="btn-viewer-panelrow"
-											onClick={() => {
+								{hasWorkspace && (
+									<div className="session-info-status">
+										<PrStatusBar
+											sessionId={session.id}
+											repo={session.repo || undefined}
+											archived={session.archived}
+											prs={session.prs}
+											send={connected ? send : undefined}
+											onOpenPrTab={(ref) => {
 												setInfoPageOpen(false);
-												setSubagentStack([]);
-												setPanelOpen(true);
+												focusPrInReview(ref);
 											}}
+											onArchive={handleArchive}
+											running={isRunningLive}
+											refreshTick={gitRefreshTick}
+										/>
+									</div>
+								)}
+								<div
+									className="panel-tabs session-info-tabs"
+									role="tablist"
+									aria-label="Workspace details"
+									onKeyDown={(event) => {
+										if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+											return;
+										const tabs = Array.from(
+											event.currentTarget.querySelectorAll<HTMLButtonElement>(
+												'[role="tab"]',
+											),
+										);
+										const current = tabs.indexOf(document.activeElement as HTMLButtonElement);
+										if (current < 0 || tabs.length === 0) return;
+										event.preventDefault();
+										const next =
+											event.key === "Home"
+												? 0
+												: event.key === "End"
+													? tabs.length - 1
+													: (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) %
+														tabs.length;
+										tabs[next]?.focus();
+										tabs[next]?.click();
+									}}
+								>
+									{toolEvidence && (
+										<button
+											className={`panel-tab ${panelTab === "evidence" ? "active" : ""}`}
+											onClick={() => selectPanelTab("evidence")}
+											role="tab"
+											aria-selected={panelTab === "evidence"}
+											tabIndex={panelTab === "evidence" ? 0 : -1}
 										>
-											<IconSidebarRight size={20} />
-											<span>
-												{hasWorkspace ? "Changes, terminal & PR" : "Agents"}
-											</span>
-											<IconChevronRight className="btn-viewer-panelrow-caret" size={18} />
+											Evidence
 										</button>
 									)}
+									<button
+										className={`panel-tab ${panelTab === "info" ? "active" : ""}`}
+										onClick={() => selectPanelTab("info")}
+										role="tab"
+										aria-selected={panelTab === "info"}
+										tabIndex={panelTab === "info" ? 0 : -1}
+									>
+										Info
+									</button>
 									{hasWorkspace && (
-										<RepoBar
-											sessionId={session.id}
-											primaryRepo={session.repo || "tella-fusion"}
-											branch={session.branch}
-											initialAttached={session.attachedRepos || []}
-											variant="menu-row"
-										/>
+										<>
+											<button
+												className={`panel-tab ${panelTab === "changes" ? "active" : ""}`}
+												onClick={() => selectPanelTab("changes")}
+												role="tab"
+												aria-selected={panelTab === "changes"}
+												tabIndex={panelTab === "changes" ? 0 : -1}
+											>
+												Changes
+												{changesFileCount ? (
+													<span className="panel-tab-count">{changesFileCount}</span>
+												) : null}
+											</button>
+											<button
+												className={`panel-tab ${panelTab === "shell" ? "active" : ""}`}
+												onClick={() => selectPanelTab("shell")}
+												role="tab"
+												aria-selected={panelTab === "shell"}
+												tabIndex={panelTab === "shell" ? 0 : -1}
+											>
+												Terminal
+											</button>
+										</>
 									)}
-									{session.source === "backstage" && models.length > 0 && (
-										<ModelMenuRow
-											models={models}
-											model={model}
-											defaultModel={defaultModel}
-											onChange={handleModelChange}
-											prettyLabel={prettyModel}
-										/>
+									{(hasWorkspace || workflowRuns.length > 0 || subagents.length > 0) && (
+										<button
+											className={`panel-tab ${panelTab === "workflows" ? "active" : ""}`}
+											onClick={() => selectPanelTab("workflows")}
+											role="tab"
+											aria-selected={panelTab === "workflows"}
+											tabIndex={panelTab === "workflows" ? 0 : -1}
+										>
+											Agents
+											{workflowRuns.some((run) => run.status === "running") ||
+											subagents.some((agent) => agent.status === "running") ? (
+												<span className="panel-tab-dot animate-pulse bg-green" />
+											) : workflowRuns.length + subagents.length > 0 ? (
+												<span className="panel-tab-count">
+													{workflowRuns.length + subagents.length}
+												</span>
+											) : null}
+										</button>
+									)}
+									{sessionReports.length > 0 && (
+										<button
+											className={`panel-tab ${panelTab === "reports" ? "active" : ""}`}
+											onClick={() => selectPanelTab("reports")}
+											role="tab"
+											aria-selected={panelTab === "reports"}
+											tabIndex={panelTab === "reports" ? 0 : -1}
+										>
+											Reports
+											<span className="panel-tab-count">{sessionReports.length}</span>
+										</button>
 									)}
 								</div>
-								<div className="session-info-overview">
-									<WorkspaceInfo
-										sessionId={session.id}
-										workspaceId={session.projectId || null}
-										workspaceName={workspaceName}
-										chats={(workspaceChats?.length ? workspaceChats : [session]).map(
-											(s) => ({
-												id: s.id,
-												title: s.title,
-												createdAt: s.createdAt || "",
-												startedBy: s.startedBy,
-											}),
-										)}
-										repo={hasWorkspace ? session.repo || "tella-fusion" : undefined}
-										prState={hasWorkspace ? session.prState : undefined}
-										refreshTick={gitRefreshTick}
-										sandbox={session.sandbox}
-										reviewRequest={effectiveReview?.req ?? null}
-										reviewRequestSessionId={effectiveReview?.ownerId}
-										reviewAcceptedFromPr={effectiveReview?.acceptedFromPr}
-										onReviewChange={onReviewChange}
-										send={connected ? send : undefined}
-										assets={assetFiles}
-										onOpenAsset={(path) => {
-											setInfoPageOpen(false);
-											setSelectedAssetPath(path);
-											onOpenAssets?.();
-										}}
-										onOpenTab={(tab) => {
-											setInfoPageOpen(false);
-											setSubagentStack([]);
-											// Review + Staging are full-width view-tabs (App state),
-											// not right-panel tabs — route them out.
-											if (tab === "pr") {
-												onOpenReview?.();
-												return;
+								<div
+									className="session-info-content"
+									role="tabpanel"
+									aria-label={`${panelTab === "workflows" ? "Agents" : panelTab} details`}
+								>
+									{panelTab === "evidence" && toolEvidence ? (
+										<ToolEvidencePanel
+											evidence={toolEvidence}
+											sessionId={session.id}
+											onOpenChanges={
+												hasWorkspace ? () => selectPanelTab("changes") : undefined
 											}
-											if (tab === "staging") {
-												onOpenStaging?.();
-												return;
-											}
-											if (tab === "assets") {
-												onOpenAssets?.();
-												return;
-											}
-											selectPanelTab(tab);
-											setPanelOpen(true);
-										}}
-										onAddToInput={(text) => {
-											setInfoPageOpen(false);
-											setComposerPrefill((prev) => ({
-												seq: (prev?.seq ?? 0) + 1,
-												text,
-											}));
-										}}
-										onOpenSession={(id) => {
-											setInfoPageOpen(false);
-											onOpenSession?.(id);
-										}}
-										liveMediaCount={liveMediaCount}
-										liveMedia={liveOverviewMedia}
-									/>
+										/>
+									) : panelTab === "info" ? (
+										<>
+											<div className="session-info-list">
+												<div className="session-info-preview-actions">
+													<PreviewButton
+														session={session}
+														onAttachImage={(img) =>
+															setImages((prev) => [...prev, img])
+														}
+														onStatusChange={setPreviewStatus}
+														onOpenTab={
+															onOpenPreviewTab
+																? () => {
+																	setInfoPageOpen(false);
+																	onOpenPreviewTab();
+																}
+																: undefined
+														}
+													/>
+													<StagingLink
+														session={session}
+														refreshTick={gitRefreshTick}
+													/>
+												</div>
+												{hasWorkspace && (
+													<RepoBar
+														sessionId={session.id}
+														primaryRepo={session.repo || "tella-fusion"}
+														branch={session.branch}
+														initialAttached={session.attachedRepos || []}
+														variant="menu-row"
+													/>
+												)}
+												{session.source === "backstage" && models.length > 0 && (
+													<ModelMenuRow
+														models={models}
+														model={model}
+														defaultModel={defaultModel}
+														onChange={handleModelChange}
+														prettyLabel={prettyModel}
+													/>
+												)}
+											</div>
+											<div className="session-info-overview">
+												<WorkspaceInfo
+													sessionId={session.id}
+													workspaceId={session.projectId || null}
+													workspaceName={workspaceName}
+													chats={(workspaceChats?.length ? workspaceChats : [session]).map(
+														(s) => ({
+															id: s.id,
+															title: s.title,
+															createdAt: s.createdAt || "",
+															startedBy: s.startedBy,
+														}),
+													)}
+													repo={hasWorkspace ? session.repo || "tella-fusion" : undefined}
+													prState={hasWorkspace ? session.prState : undefined}
+													refreshTick={gitRefreshTick}
+													sandbox={session.sandbox}
+													reviewRequest={effectiveReview?.req ?? null}
+													reviewRequestSessionId={effectiveReview?.ownerId}
+													reviewAcceptedFromPr={effectiveReview?.acceptedFromPr}
+													onReviewChange={onReviewChange}
+													send={connected ? send : undefined}
+													assets={assetFiles}
+													onOpenAsset={(path) => {
+														setInfoPageOpen(false);
+														setSelectedAssetPath(path);
+														onOpenAssets?.();
+													}}
+													onOpenTab={(tab) => {
+														setSubagentStack([]);
+														if (tab === "changes") {
+															selectPanelTab("changes");
+															return;
+														}
+														// Review, Staging and Assets are full-width App views.
+														if (tab === "pr") {
+															setInfoPageOpen(false);
+															onOpenReview?.();
+															return;
+														}
+														if (tab === "staging") {
+															setInfoPageOpen(false);
+															onOpenStaging?.();
+															return;
+														}
+														if (tab === "assets") {
+															setInfoPageOpen(false);
+															onOpenAssets?.();
+															return;
+														}
+														selectPanelTab(tab);
+													}}
+													onAddToInput={(text) => {
+														setInfoPageOpen(false);
+														setComposerPrefill((prev) => ({
+															seq: (prev?.seq ?? 0) + 1,
+															text,
+														}));
+													}}
+													onOpenSession={(id) => {
+														setInfoPageOpen(false);
+														onOpenSession?.(id);
+													}}
+													liveMediaCount={liveMediaCount}
+													liveMedia={liveOverviewMedia}
+												/>
+											</div>
+										</>
+									) : waitingForWorkspace &&
+									  (panelTab === "changes" || panelTab === "shell") ? (
+										<WorkspaceWaiting detail="Waiting for the workspace to be ready." />
+									) : panelTab === "changes" ? (
+										<DiffPanel
+											sessionId={session.id}
+											isRunning={isBusy}
+											canSend={connected && !isBusy && !noEngine}
+											send={send}
+											diff={diffState}
+										/>
+									) : panelTab === "workflows" ? (
+										<WorkflowPanel
+											sessionId={session.id}
+											runs={workflowRuns}
+											onCancel={cancelWorkflowRun}
+											subagents={subagents}
+											onOpenSubagent={(agentId, label) => {
+												setInfoPageOpen(false);
+												openSubagent(agentId, label);
+											}}
+										/>
+									) : panelTab === "reports" ? (
+										<SessionReportsPanel
+											reports={sessionReports}
+											onOpenNewSession={onOpenNewSession}
+										/>
+									) : null}
+									{hasWorkspace && !waitingForWorkspace && shellOpened ? (
+										<div className={panelTab === "shell" ? "h-full min-h-[420px]" : "hidden"}>
+											<ShellPanel
+												sessionId={session.id}
+												send={send}
+												addHandler={addHandler}
+												visible={panelTab === "shell"}
+											/>
+										</div>
+									) : null}
 								</div>
 							</div>,
 							document.body,
@@ -4842,7 +5091,8 @@ export function SessionViewer({
 				{(() => {
 				const rightRegion = (
 					<>
-				{(subagentStack.length > 0 || (panelAvailable && panelOpen)) && (
+				{(subagentStack.length > 0 ||
+					(!isPhone && panelAvailable && panelOpen)) && (
 					<div
 						className="panel-overlay"
 						onClick={() =>
@@ -4862,7 +5112,7 @@ export function SessionViewer({
 						style={panelStyle}
 						resizeHandle={panelResizeHandle}
 					/>
-				) : panelAvailable && panelOpen ? (
+				) : !isPhone && panelAvailable && panelOpen ? (
 					<div className="viewer-panel" style={panelStyle}>
 						{panelResizeHandle}
 						{/* Phones open this panel as a full-width bottom sheet, so it
