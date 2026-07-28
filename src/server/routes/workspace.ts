@@ -28,7 +28,7 @@ import { handleSlashCommand } from "../slash-commands";
 import { suggestBranchName } from "../suggest-branch";
 import { type BackstageSessionFile } from "../types";
 import { type Workspace, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace } from "../workspaces";
-import { resolvePlainWorkspace, resolvePrWorkspace } from "../workspace-resolve";
+import { resolveExternalWorkspace, resolvePlainWorkspace, resolvePrWorkspace } from "../workspace-resolve";
 import { REPOS, createWorktree, createWorktreeForExistingBranch, getRepo, isSharedCheckoutDir, listWorktrees, repoForPath, worktreeHasWork } from "../worktree";
 import { randomUUIDv7 } from "bun";
 import { copyFileSync, existsSync, mkdirSync } from "fs";
@@ -245,10 +245,24 @@ export async function handleWorkspaceRoutes(
 		const body = (await req.json().catch(() => ({}))) as {
 			pr?: { repo?: string; number?: number; branch?: string; title?: string };
 			plainThreadId?: string;
+			/** Generic feed-item linkage (docs/feeds-design.md). */
+			externalRef?: { kind?: string; id?: string; url?: string; title?: string };
 			name?: string;
 			user?: string;
 		};
 		const createdBy = requestUser(ctx, body.user) || "Anonymous";
+		if (body.externalRef?.kind && body.externalRef?.id) {
+			const { workspace, created } = resolveExternalWorkspace({
+				ref: {
+					kind: body.externalRef.kind,
+					id: body.externalRef.id,
+					...(body.externalRef.url ? { url: body.externalRef.url } : {}),
+					title: body.name || body.externalRef.title,
+				},
+				createdBy,
+			});
+			return Response.json({ workspaceId: workspace.id, created });
+		}
 		if (body.plainThreadId) {
 			const { workspace, created } = resolvePlainWorkspace({
 				threadId: body.plainThreadId,
@@ -273,7 +287,7 @@ export async function handleWorkspaceRoutes(
 			});
 		}
 		return Response.json(
-			{ error: "pr or plainThreadId required" },
+			{ error: "pr, plainThreadId or externalRef required" },
 			{ status: 400 },
 		);
 	}

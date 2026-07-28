@@ -757,6 +757,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       upgradedTo: data.upgradedTo,
       importedFrom: data.importedFrom,
       plainThreadId: data.plainThreadId,
+      externalRefs: data.externalRefs,
       model: data.model,
       effort: data.effort,
       fastMode: data.fastMode,

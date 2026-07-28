@@ -24,7 +24,7 @@ import {
 } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { randomUUID } from "crypto";
-import type { AttachedRepo } from "./types";
+import type { AttachedRepo, ExternalRef } from "./types";
 import { stateDir } from "./rename-compat";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -63,6 +63,8 @@ export interface Workspace {
   prNumber?: number;
   /** For support-ticket workspaces: the Plain thread this workspace is attached to. */
   plainThreadId?: string;
+  /** Generic feed-item linkage (Tella videos, …) — docs/feeds-design.md. */
+  externalRefs?: ExternalRef[];
   /**
    * The workspace's default branch. Present when the workspace owns a worktree
    * (share-mode chats inherit it; stacked chats branch off it) or for PR-backed
@@ -128,6 +130,7 @@ export function createWorkspace(input: {
   key?: string;
   prNumber?: number;
   plainThreadId?: string;
+  externalRefs?: ExternalRef[];
   branch?: string;
   worktreeDir?: string;
   attachedRepos?: AttachedRepo[];
@@ -146,6 +149,9 @@ export function createWorkspace(input: {
     ...(input.key ? { key: input.key } : {}),
     ...(input.prNumber !== undefined ? { prNumber: input.prNumber } : {}),
     ...(input.plainThreadId ? { plainThreadId: input.plainThreadId } : {}),
+    ...(input.externalRefs && input.externalRefs.length
+      ? { externalRefs: input.externalRefs }
+      : {}),
     ...(input.branch ? { branch: input.branch } : {}),
     ...(input.worktreeDir ? { worktreeDir: input.worktreeDir } : {}),
     ...(input.attachedRepos && input.attachedRepos.length
@@ -209,11 +215,26 @@ export function findOrCreateWorkspaceByKey(
  */
 export function stampWorkspaceIdentity(
   id: string,
-  patch: { key?: string; prNumber?: number; branch?: string; plainThreadId?: string },
+  patch: {
+    key?: string;
+    prNumber?: number;
+    branch?: string;
+    plainThreadId?: string;
+    externalRef?: ExternalRef;
+  },
 ): Workspace | null {
   const cur = getWorkspace(id);
   if (!cur) return null;
   if (cur.key && patch.key && cur.key !== patch.key) return cur;
+  // externalRefs accrue (a workspace can carry several linked objects, like
+  // PRs) — only the dedupe key is refused once present.
+  const addRef =
+    patch.externalRef &&
+    !(cur.externalRefs || []).some(
+      (r) => r.kind === patch.externalRef!.kind && r.id === patch.externalRef!.id,
+    )
+      ? [...(cur.externalRefs || []), patch.externalRef]
+      : null;
   const next: Workspace = {
     ...cur,
     ...(patch.key && !cur.key ? { key: patch.key } : {}),
@@ -224,6 +245,7 @@ export function stampWorkspaceIdentity(
     ...(patch.plainThreadId && !cur.plainThreadId
       ? { plainThreadId: patch.plainThreadId }
       : {}),
+    ...(addRef ? { externalRefs: addRef } : {}),
   };
   writeJsonAtomic(fileFor(id), next);
   return next;

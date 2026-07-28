@@ -17,6 +17,7 @@ import { handleAuthRoutes } from "./auth";
 import { handleMediaRoutes } from "./media";
 import { handleStaticAssetsRoutes } from "./static-assets";
 import { handlePlainRoutes } from "./plain";
+import { handleFeedsRoutes } from "./feeds";
 import { handleSystemRoutes } from "./system";
 import { handleSessionAssetsRoutes } from "./session-assets";
 import { handleSessionsRoutes } from "./sessions";
@@ -58,6 +59,7 @@ export const routeHandlers: RouteHandler[] = [
 	proxyCloudFrontendRequest,
 	handleStaticAssetsRoutes,
 	handlePlainRoutes,
+	handleFeedsRoutes,
 	handleSystemRoutes,
 	handleOs1UpdateRoutes,
 	handleSessionTransferRoutes,

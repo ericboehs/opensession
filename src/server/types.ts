@@ -1,6 +1,19 @@
 export type SessionSource = "slack" | "linear" | "backstage" | "cli";
 
 /**
+ * Generic linkage from a session/workspace to an external object surfaced by
+ * a feed (Tella video, eventually Plain thread, …). `kind` matches the feed's
+ * refKind; `id` is the item's stable external id. The successor to per-source
+ * foreign keys like plainThreadId — see docs/feeds-design.md.
+ */
+export interface ExternalRef {
+  kind: string;
+  id: string;
+  url?: string;
+  title?: string;
+}
+
+/**
  * Cumulative token/cost accounting for a chat session, updated after every run.
  * Cost is the API-equivalent USD spend (authoritative `total_cost_usd` from the
  * Claude SDK; computed from the rate table for Codex). `contextTokens` is the
@@ -141,6 +154,10 @@ export interface UnifiedSession {
   /** Why this session is archived — powers the "Auto-archived" filter. */
   archivedReason?: "manual" | "idle" | "auto" | "plain";
   plainThreadId?: string;
+  /** Generic external-object linkage (feed items: Tella videos, …) — the
+   *  successor to per-source foreign keys like plainThreadId (see
+   *  docs/feeds-design.md). A session can carry several. */
+  externalRefs?: ExternalRef[];
   /** Model id for runs in this session; unset = default (MICHAEL_MODEL). */
   model?: string;
   /** OpenCode reasoning variant for runs in this session; unset = model default. */
@@ -413,6 +430,7 @@ export interface BackstageSessionFile {
   automationEvent?: string;
 
   plainThreadId?: string; // Plain thread this session is triaging
+  externalRefs?: ExternalRef[]; // generic feed-item linkage (docs/feeds-design.md)
   model?: string; // model id for this session's runs; unset = default
   effort?: string; // OpenCode reasoning variant for this session's runs; unset = model default
   fastMode?: boolean; // OpenAI priority service tier for ChatGPT OAuth Codex runs

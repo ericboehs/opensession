@@ -26,7 +26,7 @@ import { getOpenPrs, getRecentPrs } from "./sessions";
 import { workspaceOwningWorktree } from "./session-repos";
 import { getRepo, listWorktrees } from "./worktree";
 import { prKey } from "../agents/github/constants";
-import type { UnifiedSession } from "./types";
+import type { ExternalRef, UnifiedSession } from "./types";
 
 /** Does this session carry the PR (primary branch, attached repo, or link)? */
 function sessionMatchesPr(
@@ -223,6 +223,52 @@ export function resolvePlainWorkspace(input: {
     createdBy: input.createdBy,
     key,
     plainThreadId: threadId,
+  });
+  adoptSiblingSessions(workspace.id, matches);
+  return { workspace, created: true };
+}
+
+/**
+ * Resolve the one workspace for a generic feed item (Tella video, …) by its
+ * ExternalRef. The generic sibling of resolvePlainWorkspace: dedupe key
+ * `<kind>-<id>`, adopt a filed session already carrying the ref, else mint a
+ * chat-less workspace stamped with the ref (docs/feeds-design.md).
+ */
+export function resolveExternalWorkspace(input: {
+  ref: ExternalRef;
+  createdBy: string;
+}): ResolvedWorkspace {
+  const { ref } = input;
+  const key = `${ref.kind}-${ref.id}`;
+  const matches = (s: UnifiedSession) =>
+    (s.externalRefs || []).some((r) => r.kind === ref.kind && r.id === ref.id);
+
+  const byKey = findWorkspaceByKey(key);
+  if (byKey) {
+    adoptSiblingSessions(byKey.id, matches);
+    return { workspace: byKey, created: false };
+  }
+
+  const all = getCachedSessions().filter(matches);
+  for (const s of newestFirst([
+    ...all.filter((x) => !x.archived),
+    ...all.filter((x) => x.archived),
+  ])) {
+    if (!s.projectId) continue;
+    const ws = getWorkspace(s.projectId);
+    if (!ws) continue;
+    const stamped =
+      stampWorkspaceIdentity(ws.id, { key, externalRef: ref }) || ws;
+    adoptSiblingSessions(stamped.id, matches);
+    return { workspace: stamped, created: false };
+  }
+
+  const workspace = createWorkspace({
+    name: (ref.title || "").trim().slice(0, 120) || `${ref.kind} ${ref.id}`,
+    repo: getRepo().id,
+    createdBy: input.createdBy,
+    key,
+    externalRefs: [ref],
   });
   adoptSiblingSessions(workspace.id, matches);
   return { workspace, created: true };

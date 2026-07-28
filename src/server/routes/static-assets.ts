@@ -92,6 +92,15 @@ export async function handleStaticAssetsRoutes(
 				},
 			});
 		}
+		// Feed bands (docs/feeds-design.md) ride the same tile pipeline.
+		if (id === "tella") {
+			return new Response(Bun.file(`${FRONTEND_SRC}/tella-icon.png`), {
+				headers: {
+					"Content-Type": "image/png",
+					"Cache-Control": "public, max-age=86400",
+				},
+			});
+		}
 		if (id === "backstage") {
 			return new Response(
 				Bun.file(`${FRONTEND_SRC}/../../os1-mac/build/icon-512.png`),
