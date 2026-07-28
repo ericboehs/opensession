@@ -7,6 +7,7 @@ import Observation
 @MainActor
 final class SessionsListViewModel {
     private(set) var sessions: [Session] = []
+    private(set) var archivedSessions: [Session] = []
     private(set) var error: String?
     private(set) var hasLoaded = false
 
@@ -51,28 +52,65 @@ final class SessionsListViewModel {
     /// Sessions archived locally that the server's (2s-cached) list may still
     /// include for a poll or two — suppressed until it catches up, with a
     /// safety expiry so a failed archive doesn't hide the row forever.
-    private var locallyArchived: [String: Date] = [:]
+    private var locallyArchived: [String: (session: Session, added: Date)] = [:]
 
     /// Swipe-to-archive: drop the row immediately, tell the server in the
     /// background, and roll back (surfacing the error) if that fails.
     func archive(_ session: Session) {
         sessions.removeAll { $0.id == session.id }
-        locallyArchived[session.id] = Date()
+        var archived = session
+        archived.archived = true
+        locallyArchived[session.id] = (archived, Date())
+        archivedSessions.removeAll { $0.id == session.id }
+        archivedSessions.insert(archived, at: 0)
         Task {
             do {
                 try await OS1API.setArchived(sessionId: session.id, archived: true)
             } catch {
                 locallyArchived.removeValue(forKey: session.id)
+                archivedSessions.removeAll { $0.id == session.id }
                 self.error = "Couldn't archive: \(error.localizedDescription)"
                 await refresh()
             }
         }
     }
 
+    /// Restore from the archived list immediately, then reconcile with the
+    /// server. The short-lived suppression avoids a cached archived row
+    /// flashing back into the sheet before the PATCH reaches `/api/sessions`.
+    func unarchive(_ session: Session) {
+        archivedSessions.removeAll { $0.id == session.id }
+        locallyUnarchived[session.id] = Date()
+        var restored = session
+        restored.archived = false
+        sessions.insert(restored, at: 0)
+        Task {
+            do {
+                try await OS1API.setArchived(sessionId: session.id, archived: false)
+            } catch {
+                locallyUnarchived.removeValue(forKey: session.id)
+                sessions.removeAll { $0.id == session.id }
+                self.error = "Couldn't restore: \(error.localizedDescription)"
+                await refresh()
+            }
+        }
+    }
+
     private func isLocallyArchived(_ id: String) -> Bool {
-        guard let added = locallyArchived[id] else { return false }
-        if Date().timeIntervalSince(added) > 30 {
+        guard let entry = locallyArchived[id] else { return false }
+        if Date().timeIntervalSince(entry.added) > 30 {
             locallyArchived.removeValue(forKey: id)
+            return false
+        }
+        return true
+    }
+
+    private var locallyUnarchived: [String: Date] = [:]
+
+    private func isLocallyUnarchived(_ id: String) -> Bool {
+        guard let added = locallyUnarchived[id] else { return false }
+        if Date().timeIntervalSince(added) > 30 {
+            locallyUnarchived.removeValue(forKey: id)
             return false
         }
         return true
@@ -114,14 +152,25 @@ final class SessionsListViewModel {
             // heavy pass (thousands of rows) off the main thread — inline it
             // ran on the main actor every 5s poll and hitched typing.
             let hiddenIds = Set(Array(locallyArchived.keys).filter { isLocallyArchived($0) })
+            let restoredIds = Set(Array(locallyUnarchived.keys).filter { isLocallyUnarchived($0) })
+            let localArchivedRows = hiddenIds.compactMap { locallyArchived[$0]?.session }
             let prepared = await Task.detached(priority: .userInitiated) {
-                Self.prepared(all, hiding: hiddenIds)
+                Self.prepared(all, hiding: hiddenIds, restoring: restoredIds)
             }.value
-            let next = mergeOptimistic(into: prepared)
+            let next = mergeOptimistic(into: prepared.active)
+            let serverArchivedIds = Set(prepared.archived.map(\.id))
+            for id in serverArchivedIds {
+                locallyArchived.removeValue(forKey: id)
+            }
+            let archivedNext = localArchivedRows.filter { !serverArchivedIds.contains($0.id) }
+                + prepared.archived
             // Most 5s polls change nothing — skip the assignment so the whole
             // list doesn't re-diff (grouping, sorting, row rebuilds) for a
             // byte-identical result.
             if next != sessions { sessions = next }
+            if archivedNext != archivedSessions {
+                archivedSessions = archivedNext
+            }
             error = nil
         } catch {
             // Keep showing the last good list; surface the error alongside it.
@@ -136,12 +185,29 @@ final class SessionsListViewModel {
     /// milliseconds per poll at this list size — parse once per row instead.
     nonisolated private static func prepared(
         _ all: [Session],
-        hiding hiddenIds: Set<String>
-    ) -> [Session] {
-        all
-            .filter { $0.archived != true && $0.desk != true && !hiddenIds.contains($0.id) }
+        hiding hiddenIds: Set<String>,
+        restoring restoredIds: Set<String>
+    ) -> (active: [Session], archived: [Session]) {
+        let visible = all.filter { $0.desk != true }
+        let active = visible
+            .filter {
+                ($0.archived != true || restoredIds.contains($0.id))
+                    && !hiddenIds.contains($0.id)
+            }
+            .map { session -> Session in
+                guard restoredIds.contains(session.id) else { return session }
+                var restored = session
+                restored.archived = false
+                return restored
+            }
             .map { (session: $0, key: $0.lastActivityDate ?? .distantPast) }
             .sorted { $0.key > $1.key }
             .map(\.session)
+        let archived = visible
+            .filter { $0.archived == true && !restoredIds.contains($0.id) }
+            .map { (session: $0, key: $0.lastActivityDate ?? .distantPast) }
+            .sorted { $0.key > $1.key }
+            .map(\.session)
+        return (active, archived)
     }
 }

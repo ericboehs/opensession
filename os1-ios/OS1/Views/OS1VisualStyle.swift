@@ -47,6 +47,7 @@ enum OS1VisualStyle {
 struct RepoTile: View {
     let name: String
     var size: CGFloat = 18
+    var round = false
 
     static func label(for name: String) -> String {
         name == "backstage" ? "opensession" : name
@@ -74,15 +75,36 @@ struct RepoTile: View {
         return palette[Int(hash.magnitude) % palette.count]
     }
 
+    private var iconURL: URL? {
+        ServerConfig.shared.baseURL?
+            .appendingPathComponent("repo-icon")
+            .appendingPathComponent("\(name).png")
+    }
+
     var body: some View {
-        Text(letter)
-            .font(.system(size: size * 0.6, weight: .bold, design: .rounded))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(
-                color,
-                in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+        ZStack {
+            Text(letter)
+                .font(.system(size: size * 0.6, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(color)
+            if let iconURL {
+                AsyncImage(url: iconURL) { phase in
+                    if case .success(let image) = phase {
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    }
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: round ? size / 2 : size * 0.28,
+                style: .continuous
             )
+        )
             .accessibilityLabel(Self.label(for: name))
     }
 }

@@ -33,6 +33,8 @@ struct SessionsListView: View {
     @State private var showSettings = false
     @State private var path = NavigationPath()
     @State private var searchText = ""
+    @State private var showingSearch = false
+    @FocusState private var searchFocused: Bool
     /// Non-nil opens the new-session sheet; carries the per-repo "+" preset.
     @State private var newSessionRequest: NewSessionRequest?
     /// Opening prompts (and images) of just-created sessions, keyed by id —
@@ -41,6 +43,7 @@ struct SessionsListView: View {
     @State private var optimisticSeeds: [String: SessionViewModel.OptimisticSeed] = [:]
     /// Surfaced when a background session create fails after the sheet closed.
     @State private var createError: String?
+    @State private var showArchived = false
 
     struct NewSessionRequest: Identifiable {
         let id = UUID()
@@ -145,6 +148,12 @@ struct SessionsListView: View {
                 resolveCreate(tempId: tempId, result: result)
             }
         }
+        .sheet(isPresented: $showArchived) {
+            ArchivedSessionsView(
+                sessions: visibleArchivedSessions,
+                onRestore: viewModel.unarchive
+            )
+        }
         .safeAreaInset(edge: .bottom) {
             errorBanner
         }
@@ -153,25 +162,54 @@ struct SessionsListView: View {
     private var navigationContainer: some View {
         NavigationStack(path: $path) {
             loadingOrList
-                .navigationTitle("Workspaces")
+                .inlineTitleBarCompat()
                 .toolbar {
                     ToolbarItem(placement: .topLeadingCompat) {
-                        filterMenu
-                    }
-                    ToolbarItem(placement: .topTrailingCompat) {
-                        Button {
-                            newSessionRequest = NewSessionRequest()
-                        } label: {
-                            Image(systemName: "square.and.pencil")
-                        }
-                    }
-                    ToolbarItem(placement: .topTrailingCompat) {
                         Button {
                             showSettings = true
                         } label: {
-                            Image(systemName: "gearshape")
+                            RepoTile(name: "backstage", size: 34, round: true)
                         }
+                        .accessibilityLabel("Settings")
                     }
+                    ToolbarItem(placement: .topTrailingCompat) {
+                        Button {
+                            withAnimation(.snappy(duration: 0.2)) {
+                                showingSearch.toggle()
+                            }
+                        } label: {
+                            WebIcon(
+                                kind: .search,
+                                size: 24,
+                                color: showingSearch ? OS1VisualStyle.accent : OS1VisualStyle.textDim
+                            )
+                        }
+                        .accessibilityLabel("Search")
+                    }
+                    ToolbarItem(placement: .topTrailingCompat) {
+                        filterMenu
+                    }
+                }
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if showingSearch {
+                        inlineSearchField
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    Button {
+                        newSessionRequest = NewSessionRequest()
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundStyle(.white)
+                            .frame(width: 56, height: 56)
+                            .background(OS1VisualStyle.accent, in: Circle())
+                            .shadow(color: .black.opacity(0.28), radius: 12, y: 6)
+                    }
+                    .accessibilityLabel("New session")
+                    .padding(.trailing, 18)
+                    .padding(.bottom, 18)
                 }
                 .sheet(isPresented: $showSettings) {
                     SettingsView()
@@ -183,8 +221,17 @@ struct SessionsListView: View {
                         resolveCreate(tempId: tempId, result: result)
                     }
                 }
+                .sheet(isPresented: $showArchived) {
+                    ArchivedSessionsView(
+                        sessions: visibleArchivedSessions,
+                        onRestore: viewModel.unarchive
+                    )
+                }
                 .safeAreaInset(edge: .bottom) {
                     errorBanner
+                }
+                .onChange(of: showingSearch) { _, visible in
+                    if visible { searchFocused = true }
                 }
         }
     }
@@ -195,7 +242,7 @@ struct SessionsListView: View {
         if !viewModel.hasLoaded {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if viewModel.sessions.isEmpty {
+        } else if viewModel.sessions.isEmpty && viewModel.archivedSessions.isEmpty {
             emptyState
         } else {
             list
@@ -316,6 +363,13 @@ struct SessionsListView: View {
         return myNames.contains(by)
     }
 
+    private var visibleArchivedSessions: [Session] {
+        viewModel.archivedSessions.filter { session in
+            (peopleFilter != "mine" || isMine(session))
+                && (repoFilter == "all" || session.effectiveRepo == repoFilter)
+        }
+    }
+
     private var filteredSessions: [Session] {
         var result = viewModel.sessions
         if peopleFilter == "mine" {
@@ -404,12 +458,43 @@ struct SessionsListView: View {
                 }
             }
         } label: {
-            Image(
-                systemName: repoFilter == "all"
-                    ? "line.3.horizontal.decrease.circle"
-                    : "line.3.horizontal.decrease.circle.fill"
+            WebIcon(
+                kind: .filter,
+                size: 24,
+                color: repoFilter == "all"
+                    ? OS1VisualStyle.textDim
+                    : OS1VisualStyle.accent
             )
         }
+    }
+
+    private var inlineSearchField: some View {
+        HStack(spacing: 10) {
+            WebIcon(kind: .search, size: 22, color: OS1VisualStyle.textFaint)
+            TextField("Search sessions", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.body)
+                .focused($searchFocused)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(OS1VisualStyle.textFaint)
+                }
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .background(OS1VisualStyle.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(OS1VisualStyle.border, lineWidth: 0.5)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(OS1VisualStyle.background)
     }
 
     // ── List body ─────────────────────────────────────────────────────────
@@ -441,7 +526,6 @@ struct SessionsListView: View {
         .background(OS1VisualStyle.background)
         .listSectionSpacing(10)
         .contentMargins(.top, 4, for: .scrollContent)
-        .searchable(text: $searchText, prompt: "Search sessions")
         .overlay { emptyFilterOverlay }
         .refreshable {
             await viewModel.refresh()
@@ -497,7 +581,10 @@ struct SessionsListView: View {
             Button(role: viaSwipe ? .destructive : nil) {
                 archive(session, animated: !viaSwipe)
             } label: {
-                Label("Archive", systemImage: "archivebox")
+                VStack(spacing: 2) {
+                    WebIcon(kind: .archive, size: 22, color: .white)
+                    Text("Archive")
+                }
             }
             .tint(.purple)
         }
@@ -521,54 +608,87 @@ struct SessionsListView: View {
     }
 
     private var listSections: some View {
-        ForEach(groups) { group in
-            Section {
-                ForEach(group.sessions) { session in
-                    sessionRow(session)
-                }
-            } header: {
-                if !group.title.isEmpty {
-                    HStack(spacing: 6) {
-                        if groupBy == .status,
-                           let lane = Session.Lane(rawValue: String(group.id.dropFirst("lane-".count))) {
-                            Circle()
-                                .fill(lane.color)
-                                .frame(width: 7, height: 7)
-                        }
-                        if groupBy == .repo {
-                            RepoTile(name: group.title)
-                        }
-                        Text(groupBy == .repo ? RepoTile.label(for: group.title) : group.title)
-                            #if os(iOS)
-                            .font(.subheadline.weight(.semibold))
-                            #else
-                            .font(.caption.weight(.semibold))
-                            #endif
-                            .foregroundStyle(OS1VisualStyle.textDim)
-                        Text("\(group.sessions.count)")
-                            #if os(iOS)
-                            .font(.footnote.weight(.medium))
-                            #else
-                            .font(.caption)
-                            #endif
-                            .foregroundStyle(OS1VisualStyle.textDim)
-                        if groupBy == .repo {
-                            // New session directly in this repo — inline next
-                            // to the name rather than pushed flush against
-                            // the panel's far edge.
-                            Button {
-                                newSessionRequest = NewSessionRequest(
-                                    repo: group.title
-                                )
-                            } label: {
-                                Image(systemName: "plus.circle")
-                                    .font(.system(size: 14))
-                            }
-                            .buttonStyle(.borderless)
-                        }
+        Group {
+            ForEach(groups) { group in
+                Section {
+                    ForEach(group.sessions) { session in
+                        sessionRow(session)
                     }
-                    .textCase(nil)
-                    .padding(.top, 4)
+                } header: {
+                    if !group.title.isEmpty {
+                        HStack(spacing: 6) {
+                            if groupBy == .status,
+                               let lane = Session.Lane(
+                                   rawValue: String(group.id.dropFirst("lane-".count))
+                               ) {
+                                Circle()
+                                    .fill(lane.color)
+                                    .frame(width: 7, height: 7)
+                            }
+                            if groupBy == .repo {
+                                RepoTile(name: group.title)
+                            }
+                            Text(groupBy == .repo ? RepoTile.label(for: group.title) : group.title)
+                                #if os(iOS)
+                                .font(.subheadline.weight(.semibold))
+                                #else
+                                .font(.caption.weight(.semibold))
+                                #endif
+                                .foregroundStyle(OS1VisualStyle.textDim)
+                            Text("\(group.sessions.count)")
+                                #if os(iOS)
+                                .font(.footnote.weight(.medium))
+                                #else
+                                .font(.caption)
+                                #endif
+                                .foregroundStyle(OS1VisualStyle.textDim)
+                            if groupBy == .repo {
+                                Spacer(minLength: 8)
+                                Button {
+                                    newSessionRequest = NewSessionRequest(repo: group.title)
+                                } label: {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 18, weight: .medium))
+                                        .frame(width: 30, height: 30)
+                                }
+                                .buttonStyle(.borderless)
+                                .accessibilityLabel(
+                                    "New session in \(RepoTile.label(for: group.title))"
+                                )
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textCase(nil)
+                        .padding(.top, 4)
+                    }
+                }
+            }
+
+            if !visibleArchivedSessions.isEmpty {
+                Section {
+                    Button {
+                        showArchived = true
+                    } label: {
+                        HStack(spacing: 9) {
+                            WebIcon(kind: .archive, size: 22, color: OS1VisualStyle.textDim)
+                                .frame(width: 22, height: 22)
+                            Text("Archived")
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(OS1VisualStyle.textDim)
+                            Spacer()
+                            Text("\(visibleArchivedSessions.count)")
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(OS1VisualStyle.textFaint)
+                        }
+                        .padding(.vertical, 9)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    #if os(iOS)
+                    .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    #endif
                 }
             }
         }
@@ -576,7 +696,7 @@ struct SessionsListView: View {
 
     @ViewBuilder
     private var emptyFilterOverlay: some View {
-        if groups.isEmpty {
+        if groups.isEmpty && visibleArchivedSessions.isEmpty {
             if !searchText.isEmpty {
                 ContentUnavailableView.search(text: searchText)
             } else if peopleFilter == "mine" {
@@ -598,6 +718,61 @@ struct SessionsListView: View {
             Text(viewModel.error ?? "Sessions from the OS1 server will appear here.")
         } actions: {
             Button("Settings") { showSettings = true }
+        }
+    }
+}
+
+private struct ArchivedSessionsView: View {
+    let sessions: [Session]
+    let onRestore: (Session) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if sessions.isEmpty {
+                    ContentUnavailableView(
+                        "Nothing archived",
+                        systemImage: "archivebox"
+                    )
+                } else {
+                    ForEach(sessions) { session in
+                        HStack(spacing: 10) {
+                            RepoTile(name: session.effectiveRepo, size: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(session.displayTitle)
+                                    .font(.body.weight(.medium))
+                                    .lineLimit(2)
+                                Text(RepoTile.label(for: session.effectiveRepo))
+                                    .font(.footnote)
+                                    .foregroundStyle(OS1VisualStyle.textDim)
+                            }
+                            Spacer(minLength: 8)
+                            Button {
+                                onRestore(session)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    WebIcon(kind: .unarchive, size: 18)
+                                    Text("Restore")
+                                }
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            #if os(iOS)
+            .scrollContentBackground(.hidden)
+            .background(OS1VisualStyle.background)
+            #endif
+            .navigationTitle("Archived")
+            .inlineTitleBarCompat()
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
     }
 }
@@ -631,9 +806,7 @@ struct SessionRow: View {
             .overlay(alignment: .trailing) {
                 if hovering, let onArchive {
                     Button(action: onArchive) {
-                        Image(systemName: "archivebox")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
+                        WebIcon(kind: .archive, size: 20, color: .secondary)
                     }
                     .buttonStyle(.borderless)
                     .help("Archive")
@@ -695,14 +868,11 @@ struct SessionRow: View {
         } else if session.lane == .inProgress {
             PulsingDot(color: OS1VisualStyle.yellow)
         } else if session.prState == "MERGED" {
-            Image(systemName: "arrow.triangle.merge")
-                .foregroundStyle(OS1VisualStyle.purple)
+            WebIcon(kind: .gitMerge, size: 22, color: OS1VisualStyle.purple)
         } else if session.prState == "OPEN" {
-            Image(systemName: "arrow.triangle.pull")
-                .foregroundStyle(OS1VisualStyle.green)
+            WebIcon(kind: .pullRequest, size: 22, color: OS1VisualStyle.green)
         } else if session.prState == "CLOSED" {
-            Image(systemName: "arrow.triangle.pull")
-                .foregroundStyle(OS1VisualStyle.red)
+            WebIcon(kind: .pullRequest, size: 22, color: OS1VisualStyle.red)
         } else {
             PulsingDot(color: OS1VisualStyle.textFaint, active: false)
         }
