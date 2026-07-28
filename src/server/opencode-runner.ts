@@ -492,7 +492,6 @@ export const SHARED_INPROCESS_SERVERS = [
   "opensession-goals",
   "opensession-humans",
   "opensession-repos",
-  "opensession-preflight",
   "opensession-memory",
   "opensession-preview",
   "opensession-walkthrough",

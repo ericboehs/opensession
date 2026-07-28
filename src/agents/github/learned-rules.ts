@@ -60,7 +60,7 @@ export function readLearnedRules(ghRepo?: string): LearnedRulesFile | null {
   }
 }
 
-/** Prompt section for review/preflight runs; "" until rules exist. */
+/** Prompt section for review runs; "" until rules exist. */
 export function learnedRulesSection(ghRepo?: string): string {
   const file = readLearnedRules(ghRepo);
   if (!file?.rules.length) return "";

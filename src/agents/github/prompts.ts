@@ -259,63 +259,6 @@ Your checkout is pinned to the PR's HEAD and both refs are fetched. Run
     .join("\n");
 }
 
-/**
- * Pre-flight review prompt (preflight.ts): same base instruction + output
- * contract as the PR review, but the branch has NO PR yet — the reviewer runs
- * in the authoring session's own worktree and the findings go back to that
- * session to fix before `gh pr create`, not to GitHub.
- */
-export function buildPreflightReviewPrompt(
-  base: string,
-  opts: {
-    ghRepo: string;
-    branch: string;
-    baseBranch: string;
-    /** Author model family ("anthropic" | "openai") for the targeted sweep. */
-    authorFamily?: string | null;
-    /** Paths the repo excludes from review (.os-review.json ignoreGlobs). */
-    ignoreGlobs?: string[];
-    /** Optional focus from the authoring session. */
-    focus?: string;
-    /** Per-repo learned calibration (learned-rules.ts learnedRulesSection). */
-    learnedRules?: string;
-  },
-): string {
-  const header = `Pre-flight review: the changes on branch \`${opts.branch}\` of ${opts.ghRepo} are about to be opened as a pull request. Review them NOW, before the PR exists, so the author can fix problems first. Hold them to exactly the same bar as a PR review.`;
-
-  const diffSection = `## The diff
-
-You are in the authoring session's worktree. The prospective PR content is everything this branch changes versus its base, INCLUDING uncommitted work:
-- Committed: \`git diff --find-renames $(git merge-base origin/${opts.baseBranch} HEAD)...HEAD\`
-- Uncommitted (part of the prospective PR too): \`git status --short\` and \`git diff\` (plus \`git diff --cached\`).
-Review the union of both, then use Read/Grep on the checkout for surrounding context.`;
-
-  const ignoreSection = opts.ignoreGlobs?.length
-    ? `Ignore changes under these paths entirely (generated/vendored — the repo excludes them from review; emit no findings there):\n${opts.ignoreGlobs.map((g) => `- \`${g}\``).join("\n")}`
-    : "";
-
-  const preflightContract = `Pre-flight adjustments to the output contract above:
-- There is no PR: findings are returned to the authoring session, not posted to GitHub. \`path\` + \`line\` must point at the CURRENT file content in this worktree (the author jumps there to fix it); \`side\` is always "RIGHT".
-- Omit the \`diagram\` field entirely.
-- \`suggestion\` is still exact replacement code for the commented line(s) — the author applies it by hand, so only include a correct drop-in fix.`;
-
-  return [
-    base.trim(),
-    "",
-    header,
-    `Base: ${opts.baseBranch} ← branch: ${opts.branch}.`,
-    steerBlock(opts.focus),
-    authorChecklist(opts.authorFamily),
-    opts.learnedRules || "",
-    ignoreSection,
-    diffSection,
-    REVIEW_OUTPUT_CONTRACT,
-    preflightContract,
-  ]
-    .filter((s) => s !== "")
-    .join("\n");
-}
-
 export function buildAutoFixPrompt(
   pr: PrDetails,
   reviewSummary: string,
