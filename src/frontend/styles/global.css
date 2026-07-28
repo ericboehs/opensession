@@ -12525,17 +12525,17 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	/* When the strip DOES show (a view tab or 2+ chats), the phone top bar is a fixed
 	   transparent overlay (.app-header-overlay) whose Back/title/⋯ pills float
 	   over the pane — so the strip drops to a SOLID bar docked directly under
-	   those pills. Pulled out of flow and pinned at the header's bottom edge, it
+	   those pills. Pulled out of flow and pinned flush to the header's bottom edge, it
 	   reads as fixed chrome; the transcript starts below it (its padding-top adds
 	   --strip-clearance) rather than scrolling under floating pills. A hairline +
 	   soft shadow lift the opaque bar over the transcript scrolling beneath. */
 	.session-tabs {
 		position: absolute;
-		/* 6px below the header's bottom edge — the breathing room that makes the
-		   pill row and the tab row read as one integrated bar. (--pane-header-h,
-		   not --header-h: on routes whose bar stays in flow the pane already
+		/* Dock flush to the header so the scrolling transcript cannot show through
+		   a seam between the two rows. (--pane-header-h, not --header-h: on routes
+		   whose bar stays in flow the pane already
 		   starts below it — see .detail-pane.) */
-		top: calc(var(--pane-header-h) + 6px);
+		top: var(--pane-header-h);
 		left: 0;
 		right: 0;
 		z-index: 6;
@@ -12550,20 +12550,18 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   multi-chat strip is actually shown. */
 	.detail-pane:has(.session-tab-view),
 	.detail-pane:has(.session-tab-reorder ~ .session-tab-reorder) {
-		/* Tab bar drops 6px below the header (see .session-tabs `top`) for a
-		   little air between the two rows, so the transcript clears both. */
-		--strip-clearance: 52px;
+		--strip-clearance: 46px;
 	}
 	/* …and when the docked bar is present, the floating header above it goes
 	   solid too so the whole top block reads as one opaque bar — otherwise the
 	   transcript ghosts through behind the pills above a solid tab bar, which
 	   looks broken. The header is a sibling of the pane, so key it off the
-	   nearest common ancestor. min-height pins the fill flush to the bar's top
-	   edge (var(--header-h)) even when the pills are a hair shorter. */
+	   nearest common ancestor. min-height pins the fill to the header edge even
+	   when the pills are a hair shorter. */
 	.app:has(.session-tab-view) .app-header-overlay,
 	.app:has(.session-tab-reorder ~ .session-tab-reorder) .app-header-overlay {
 		background: var(--bg);
-		min-height: calc(var(--header-h) + 6px);
+		min-height: var(--header-h);
 	}
 	/* In that solid state the controls sit ON the bar, not floating over the
 	   transcript — so drop their white-bubble fill, border and shadow. The Back
