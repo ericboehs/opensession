@@ -111,3 +111,12 @@ func copyToPasteboard(_ string: String) {
     NSPasteboard.general.setString(string, forType: .string)
     #endif
 }
+
+/// Open links that leave an embedded web surface in the system browser.
+func openExternalURL(_ url: URL) {
+    #if canImport(UIKit)
+    UIApplication.shared.open(url)
+    #else
+    NSWorkspace.shared.open(url)
+    #endif
+}

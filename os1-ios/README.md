@@ -33,8 +33,9 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
 - **Connection care** — client-initiated pings every 20s (the server never
   pings; required against half-open iOS sockets), auto-reconnect with a banner,
   optimistic local echo of your prompts until the server's copy arrives.
-- **Settings** — server URL + display name (UserDefaults) and bearer token
-  (keychain), with a connection test.
+- **Settings** — the complete responsive OpenSession settings surface (Tools,
+  Personal, and Workspace administration) in an isolated authenticated native
+  web view, plus native server/GitHub/token configuration and a connection test.
 
 ## Getting a token
 
@@ -82,7 +83,8 @@ OS1/
     SessionView.swift        Transcript, streaming bubble, ask card, input bar
     TranscriptRow.swift      Per-entry-type rendering + streaming markdown
     AskQuestionCard.swift    Options + free text answer
-    SettingsView.swift       Server/token/name + connection test
+    SettingsView.swift       Full settings shell + native connection controls
+    EmbeddedSettingsView.swift  Isolated authenticated web settings surface
 ```
 
 ## Protocol notes (from the server source)

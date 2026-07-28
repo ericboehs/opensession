@@ -123,6 +123,12 @@ enum OS1API {
         try await get("/api/auth/status")
     }
 
+    /// Revoke the server-side web session before removing its keychain copy.
+    static func logout() async throws {
+        struct LogoutResponse: Decodable { let ok: Bool? }
+        let _: LogoutResponse = try await post("/api/auth/logout", body: [:])
+    }
+
     /// Unauthenticated liveness probe; also carries the server bootId.
     static func health() async throws -> Bool {
         struct Health: Decodable { let ok: Bool? }

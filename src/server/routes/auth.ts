@@ -215,6 +215,27 @@ export async function handleAuthRoutes(
 		);
 	}
 
+	// Native clients keep the opaque web-session token in the keychain and use
+	// Bearer auth. Hand an authenticated settings WebView the same session as an
+	// HttpOnly cookie, then redirect into the stripped-down embedded Settings
+	// surface. Having the server set the cookie keeps the token out of JavaScript.
+	if (path === "/backstage/api/auth/native-settings" && req.method === "GET") {
+		const token = webAuthToken(req);
+		const identity = resolveWebAuth(req);
+		if (webAuthRequired() && (!token || !identity)) {
+			return Response.json({ error: "Sign in required" }, { status: 401 });
+		}
+		return new Response(null, {
+			status: 302,
+			headers: {
+				// Relative keeps Caddy's public HTTPS origin. `url.origin` is the
+				// loopback HTTP origin seen by Bun behind the reverse proxy.
+				Location: "/settings?embedded=native",
+				...(token ? { "Set-Cookie": webAuthSetCookie(token) } : {}),
+			},
+		});
+	}
+
 	if (path === "/backstage/api/auth/logout" && req.method === "POST") {
 		const token = webAuthToken(req);
 		if (token) destroyWebSession(token);

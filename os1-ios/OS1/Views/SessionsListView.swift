@@ -139,7 +139,7 @@ struct SessionsListView: View {
             }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView()
+            SettingsView(onOpenSession: openSessionFromSettings)
         }
         .sheet(item: $newSessionRequest) { request in
             NewSessionView(initialRepo: request.repo) { session, seed in
@@ -212,7 +212,7 @@ struct SessionsListView: View {
                     .padding(.bottom, 18)
                 }
                 .sheet(isPresented: $showSettings) {
-                    SettingsView()
+                    SettingsView(onOpenSession: openSessionFromSettings)
                 }
                 .sheet(item: $newSessionRequest) { request in
                     NewSessionView(initialRepo: request.repo) { session, seed in
@@ -275,6 +275,15 @@ struct SessionsListView: View {
         if selectedSessionID == nil { selectedSessionID = session.id }
         #else
         if path.isEmpty { path.append(session) }
+        #endif
+    }
+
+    private func openSessionFromSettings(_ id: String) {
+        guard let session = viewModel.sessions.first(where: { $0.id == id }) else { return }
+        #if os(macOS)
+        selectedSessionID = session.id
+        #else
+        path.append(session)
         #endif
     }
 
