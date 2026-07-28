@@ -16,6 +16,7 @@ import {
 } from "./worktree";
 import { hasRemoteWorkspace } from "./sandbox";
 import { findWorkspaceByWorktree, type Workspace } from "./workspaces";
+import { sessionPrBranch } from "./session-pr-target";
 import {
 	renderSessionMemoryNote,
 	sessionMemoryScopes,
@@ -181,6 +182,7 @@ export function resolvePrTarget(
 	repoId?: string | null,
 	branch?: string | null,
 ): { ghRepo: string; branch: string } | null {
+	const primaryBranch = sessionPrBranch(session);
 	const primaryRepo =
 		session.repo ||
 		(session.worktreeDir
@@ -201,15 +203,15 @@ export function resolvePrTarget(
 		const found = (session.prs || []).find(
 			(r) => r.repo === repoId && r.branch === branch,
 		);
-		const isPrimary = repoId === primaryRepo && branch === session.branch;
+		const isPrimary = repoId === primaryRepo && branch === primaryBranch;
 		if (!lp && !att && !found && !isPrimary) return null;
 		return { ghRepo: getRepo(repoId).ghRepo, branch };
 	}
 	if (!repoId || repoId === primaryRepo) {
-		if (!session.branch) return null;
+		if (!primaryBranch) return null;
 		return {
 			ghRepo: getRepo(primaryRepo).ghRepo,
-			branch: session.branch,
+			branch: primaryBranch,
 		};
 	}
 	const att = (session.attachedRepos || []).find(

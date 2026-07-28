@@ -24,6 +24,7 @@ import {
   clearTranscriptStoreDegraded,
 } from "./opencode-transcript";
 import { configuredRepos, defaultRepo } from "./config";
+import { sessionPrBranch } from "./session-pr-target";
 import { isLockHeld, readPrState, type LastReviewState } from "../agents/github/state";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg, botGhToken } from "./github-limit";
 import { fetchWithTimeout } from "./shared/fetch-with-timeout";
@@ -1839,20 +1840,22 @@ export function getAllSessions(): UnifiedSession[] {
   >();
   if (prsBySession.size > 0)
     for (const session of allSessions) {
-      if (!session.branch) continue;
+      const branch = sessionPrBranch(session);
+      if (!branch) continue;
       const repoId = session.repo || defaultRepo().id;
-      if (session.branch === configuredRepos()[repoId]?.defaultBranch) continue;
+      if (branch === configuredRepos()[repoId]?.defaultBranch) continue;
       const found = footerPrsFor(prsBySession, session);
       if (!found.length) continue;
-      const key = `${repoId}\x00${session.branch}`;
+      const key = `${repoId}\x00${branch}`;
       const list = discoveredByBranch.get(key);
       if (list) list.push(...found);
       else discoveredByBranch.set(key, [...found]);
     }
   for (const session of allSessions) {
-    if (session.branch) {
+    const primaryBranch = sessionPrBranch(session);
+    if (primaryBranch) {
       const sessionRepoId = session.repo || defaultRepo().id;
-      const pr = prsByRepo.get(sessionRepoId)?.get(session.branch);
+      const pr = prsByRepo.get(sessionRepoId)?.get(primaryBranch);
       if (pr) {
         session.prUrl = pr.url;
         session.prState = pr.state;
@@ -1882,10 +1885,10 @@ export function getAllSessions(): UnifiedSession[] {
       source: SessionPrRef["source"];
       stored?: { url?: string; number?: number; title?: string };
     }> = [];
-    if (session.branch)
+    if (primaryBranch)
       targets.push({
         repo: session.repo || defaultRepo().id,
-        branch: session.branch,
+        branch: primaryBranch,
         source: "primary",
       });
     for (const att of session.attachedRepos || [])
@@ -1899,9 +1902,9 @@ export function getAllSessions(): UnifiedSession[] {
     // PR carries the slack-<channel>-<ts> id it was created under.
     for (const found of [
       ...footerPrsFor(prsBySession, session),
-      ...(session.branch
+      ...(primaryBranch
         ? discoveredByBranch.get(
-            `${session.repo || defaultRepo().id}\x00${session.branch}`,
+            `${session.repo || defaultRepo().id}\x00${primaryBranch}`,
           ) || []
         : []),
     ])
