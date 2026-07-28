@@ -26,6 +26,7 @@
 	--bg-active: #3a3531;
 	--border: #38332f;
 	--border-strong: #4c4640;
+	--top-divider: color-mix(in srgb, var(--border) 68%, transparent);
 	--text: #eee9e3;
 	--text-dim: #aaa29a;
 	--text-faint: #7d756e;
@@ -2606,7 +2607,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	font-weight: 600;
 	color: var(--text);
 	background: var(--topbar-bg);
-	border-bottom: 1px solid var(--border);
+	border-bottom: 1px solid var(--top-divider);
 }
 /* When the tab strip follows the top bar, drop the topbar's OWN border-bottom: BOTH
    dividers (strip↔topbar and the baseline below the tabs) are inset shadows on the
@@ -3163,7 +3164,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	   button. */
 	height: 54px;
 	padding: 0 16px;
-	border-bottom: 1px solid var(--border);
+	border-bottom: 1px solid var(--top-divider);
 	/* Match the chat body (white in light) rather than the lifted topbar tint, so
 	   the whole top region reads as one clean surface the transcript dissolves
 	   into under the floating pills. */
@@ -5564,7 +5565,7 @@ a.workspace-info-check-row {
 	align-items: center;
 	gap: 10px;
 	padding: 8px 12px;
-	border-bottom: 1px solid var(--border);
+	border-bottom: 1px solid var(--top-divider);
 	/* 54px to match the chat header row (.detail-topbar / .viewer-header) so the
 	   panel's first divider lines up with it. */
 	min-height: 54px;
