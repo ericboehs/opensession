@@ -206,7 +206,6 @@ import {
   appendOpencodeTranscript,
   backfillOpencodeTranscriptGap,
   ensureOpencodeTranscriptFile,
-  existingOpencodeTranscriptPath,
   opencodeTurnLooksCompleted,
   recordBksSessionFor,
   recordOpencodeDbFor,
@@ -220,8 +219,8 @@ import {
   transcriptLineToolResult,
   opencodeToolResultImages,
 } from "./opencode-transcript";
-import { parseTranscriptAsync } from "./jsonl-parser";
 import { buildEngineSwitchHandoffNote } from "./fork-handoff";
+import { recoverFreshEngineTranscript } from "./engine-handoff-transcript";
 import { wrapContext } from "./prompt-context";
 import { ensureAnthropicBridge } from "./anthropic-bridge";
 import { ensureAgentAwsCredsFile } from "./aws-creds";
@@ -3450,26 +3449,32 @@ async function* runOpencodeAttempt(
       ocSessionRegistered = ocSessionId;
     }
 
-    // Persist this run to the session's claude-shape jsonl transcript file —
-    // OpenCode's own storage is SQLite (nothing tailable), and without a file
-    // every reload rendered "No transcript available". Fresh cross-engine
-    // handoffs seed the file with the prior engine's history; a fresh session
-    // REPLACING a prior opencode one (model/account switch onto a server that
-    // doesn't have the old id, mid-turn rotation restart) seeds from the prior
-    // session's persisted file, so the UI transcript survives the id change
-    // (bks-019f57a0 lost its visible history across two switches, 2026-07-12).
-    // Legacy sessions (runs from before persistence existed) backfill from
-    // SQLite inside ensure.
+    // Front-load this run's transcript-v2 import. A fresh cross-engine handoff
+    // may carry seed entries from the caller; a fresh session REPLACING a prior
+    // OpenCode one (model/account shard switch, mid-turn rotation restart)
+    // recovers through the canonical merged transcript reader below.
     let seedEntries = createdFresh ? opts.seedTranscriptEntries : undefined;
     // Prior-session recovery entries, tracked separately from seedEntries: an
     // opts.seedTranscriptEntries seed (cross-engine switch) already had its
     // handoff note prepended by the caller — only this path must add its own.
     let restartRecovered: typeof seedEntries;
     if (createdFresh && !seedEntries?.length && priorOcSessionId) {
-      const priorPath = existingOpencodeTranscriptPath(priorOcSessionId);
-      if (priorPath) {
-        restartRecovered = await parseTranscriptAsync(priorPath);
-        seedEntries = restartRecovered;
+      try {
+        restartRecovered = await recoverFreshEngineTranscript({
+          unifiedSessionId: transcriptUnifiedId,
+          priorEngineSessionId: priorOcSessionId,
+          currentEntryId: turn.userLine
+            ? String(turn.userLine.uuid)
+            : undefined,
+        });
+        if (restartRecovered.length) {
+          seedEntries = restartRecovered;
+        }
+      } catch (e) {
+        console.warn(
+          `[opencode-runner] Failed to recover transcript for fresh session replacing ${priorOcSessionId}:`,
+          e,
+        );
       }
     }
     ensureOpencodeTranscriptFile(ocSessionId, seedEntries);
