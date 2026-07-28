@@ -96,7 +96,14 @@ import {
 	saveWorkspaceLastChat,
 } from "./lib/workspace-last-chat";
 import { sessionHasWorkspace } from "./lib/session-workspace";
-import type { AppNotification, Project, SupportThread } from "./lib/types";
+import type {
+	AppNotification,
+	Project,
+	SupportThread,
+	FeedDescriptor,
+	FeedItem,
+} from "./lib/types";
+import { refWebPanel } from "./components/FeedWebPane";
 import { NotificationsBell } from "./components/NotificationsBell";
 import type { ReviewQueueItem } from "./lib/review-queue";
 import { pushRecent } from "./lib/recents";
@@ -143,7 +150,7 @@ type Route =
 	// The workspace container without a chat selected: its view tabs (Review /
 	// Conversation) and, when it has no chats, the first-chat composer. An
 	// optional tab suffix picks the foregrounded pane on entry.
-	| { view: "workspace"; id: string; tab?: "review" | "conversation" }
+	| { view: "workspace"; id: string; tab?: "review" | "conversation" | "video" }
 	// Session-less PR preview (a sidebar PR row with no chat yet).
 	| { view: "pr"; repo: string; branch: string }
 	// Session-less support-ticket preview (a Support row with no session yet).
@@ -212,13 +219,13 @@ function parseRoute(pathname: string): Route {
 	// The workspace container itself (no chat selected), optionally landing on
 	// a specific view tab: <base>/workspace/<wsId>[/review|/conversation].
 	const wsMatch = pathname.match(
-		/^\/workspace\/([^/]+)(?:\/(review|conversation))?$/,
+		/^\/workspace\/([^/]+)(?:\/(review|conversation|video))?$/,
 	);
 	if (wsMatch)
 		return {
 			view: "workspace",
 			id: decodeURIComponent(wsMatch[1]),
-			tab: wsMatch[2] as "review" | "conversation" | undefined,
+			tab: wsMatch[2] as "review" | "conversation" | "video" | undefined,
 		};
 	const sessionMatch = pathname.match(/^\/session\/(.+)$/);
 	if (sessionMatch)
@@ -863,6 +870,7 @@ function App() {
 		useState<ActiveViewTab>(null);
 	const reviewActive = activeViewTab === "review";
 	const conversationActive = activeViewTab === "conversation";
+	const videoActive = activeViewTab === "video";
 	const stagingActive = activeViewTab === "staging";
 	const assetsActive = activeViewTab === "assets";
 	const previewLiveActive = activeViewTab === "preview";
@@ -884,6 +892,9 @@ function App() {
 	const [conversationClosed, setConversationClosed] = useState<Set<string>>(
 		() => new Set(),
 	);
+	// The Video (feed web-panel) tab is likewise default-PRESENT on workspaces
+	// carrying a web-panel ExternalRef (Tella videos) — track explicit closes.
+	const [videoClosed, setVideoClosed] = useState<Set<string>>(() => new Set());
 	const [stagingOpen, setStagingOpen] = useState<Set<string>>(
 		() => new Set(getActiveViewTabKeys("staging")),
 	);
@@ -1314,7 +1325,13 @@ function App() {
 		// Conversation; everything else — PR-backed included — lands in its
 		// main/last-open chat. A PR workspace only defaults to Review when it
 		// has no chat to land in (the else branch below).
-		const tab = route.tab ?? (p?.plainThreadId ? "conversation" : null);
+		const tab =
+			route.tab ??
+			(p?.plainThreadId
+				? "conversation"
+				: p?.externalRefs?.some((r) => refWebPanel(r))
+					? "video"
+					: null);
 		const key = route.id;
 		// Landing in the workspace's first chat keeps the full session chrome —
 		// including the right sidebar — around the foregrounded pane (wsKey is
@@ -1335,6 +1352,16 @@ function App() {
 				return next;
 			});
 			setActiveViewTab("conversation");
+			const first = firstChat();
+			if (first) navigate({ view: "session", id: first.id }, { replace: true });
+		} else if (tab === "video") {
+			setVideoClosed((prev) => {
+				if (!prev.has(key)) return prev;
+				const next = new Set(prev);
+				next.delete(key);
+				return next;
+			});
+			setActiveViewTab("video");
 			const first = firstChat();
 			if (first) navigate({ view: "session", id: first.id }, { replace: true });
 		} else {
@@ -1457,6 +1484,24 @@ function App() {
 					},
 				]
 			: [];
+	// The Video view-tab: the web panel of the workspace's (or open chat's)
+	// feed-item ExternalRef — e.g. the Tella video embed (docs/feeds-design.md).
+	const videoRef =
+		(routeWorkspace?.externalRefs ?? currentSession?.externalRefs ?? []).find(
+			(r) => refWebPanel(r),
+		) ?? null;
+	const videoPanel = videoRef ? refWebPanel(videoRef) : null;
+	const videoViewTabs: ViewTab[] =
+		videoPanel && wsKey && !videoClosed.has(wsKey)
+			? [
+					{
+						id: `video:${wsKey}`,
+						label: videoPanel.label,
+						active: videoActive,
+						dotClass: null,
+					},
+				]
+			: [];
 	// The Preview environment view-tab (the PR's Vercel preview, full-width) —
 	// opened from the Info panel button. Present once opened for this session.
 	const stagingViewTabs: ViewTab[] =
@@ -1503,6 +1548,7 @@ function App() {
 	const viewTabs: ViewTab[] = [
 		...reviewViewTabs,
 		...conversationViewTabs,
+		...videoViewTabs,
 		...stagingViewTabs,
 		...previewViewTabs,
 		...assetsViewTabs,
@@ -1567,6 +1613,16 @@ function App() {
 			});
 		}
 		if (conversationActive) setActiveViewTab(null);
+	}
+	function closeVideoTab() {
+		if (wsKey) {
+			const key = wsKey;
+			setVideoClosed((prev) => {
+				if (prev.has(key)) return prev;
+				return new Set(prev).add(key);
+			});
+		}
+		if (videoActive) setActiveViewTab(null);
 	}
 	// Open/foreground this workspace's Preview environment view-tab (the Info
 	// panel button). Adds the tab to the strip if absent.
@@ -1679,6 +1735,28 @@ function App() {
 				navigate({ view: "workspace", id: workspaceId, tab: "review" });
 			} catch {
 				navigate({ view: "pr", repo: pr.repo, branch: pr.branch });
+			}
+		},
+		[refreshProjects],
+	);
+	// Sidebar feed row (Tella video, …) → the item's ONE workspace, its web
+	// panel foregrounded (docs/feeds-design.md).
+	const openFeedItemWorkspace = React.useCallback(
+		async (feed: FeedDescriptor, item: FeedItem) => {
+			try {
+				const { workspaceId } = await resolveWorkspaceApi({
+					externalRef: {
+						kind: feed.refKind,
+						id: item.id,
+						...(item.url ? { url: item.url } : {}),
+						title: item.title,
+					},
+					name: item.title,
+				});
+				refreshProjects();
+				navigate({ view: "workspace", id: workspaceId, tab: "video" });
+			} catch (e) {
+				console.error("Feed item open failed:", e);
 			}
 		},
 		[refreshProjects],
@@ -2544,6 +2622,7 @@ function App() {
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onOpenReview={openReviewForSession}
 							onOpenTicket={openTicketWorkspace}
+						onOpenFeedItem={openFeedItemWorkspace}
 							onNewSession={() => openPalette()}
 							onNewSessionInRepo={(repo) =>
 								setPalette({ open: true, repo })
@@ -2772,13 +2851,15 @@ function App() {
 											? ("preview" as const)
 											: id.startsWith("conversation:")
 												? ("conversation" as const)
-												: ("review" as const);
+												: id.startsWith("video:")
+													? ("video" as const)
+													: ("review" as const);
 								setActiveViewTab(tab);
 								// On the chat-less workspace route the URL carries the
 								// foregrounded pane (deep-linkable); replace, not push.
 								if (
 									route.view === "workspace" &&
-									(tab === "review" || tab === "conversation")
+									(tab === "review" || tab === "conversation" || tab === "video")
 								)
 									navigate(
 										{ view: "workspace", id: route.id, tab },
@@ -2790,15 +2871,20 @@ function App() {
 								else if (id.startsWith("assets:")) closeAssetsTab();
 								else if (id.startsWith("preview:")) closePreviewTab();
 								else {
-									const isConversation = id.startsWith("conversation:");
-									if (isConversation) closeConversationTab();
+									const closingTab = id.startsWith("conversation:")
+										? ("conversation" as const)
+										: id.startsWith("video:")
+											? ("video" as const)
+											: ("review" as const);
+									if (closingTab === "conversation") closeConversationTab();
+									else if (closingTab === "video") closeVideoTab();
 									else closeReviewTab();
 									// Drop the tab suffix; the URL replace re-runs the
 									// seeding effect, so arm its one-shot suppress (a close
 									// with no suffix causes no replace and needs none).
 									if (
 										route.view === "workspace" &&
-										route.tab === (isConversation ? "conversation" : "review")
+										route.tab === closingTab
 									) {
 										suppressWsSeedRef.current = true;
 										navigate(
@@ -2840,7 +2926,9 @@ function App() {
 											? "review"
 											: conversationActive
 												? "conversation"
-												: null
+												: videoActive
+													? "video"
+													: null
 									}
 									connected={connected}
 									send={send}
@@ -2999,6 +3087,9 @@ function App() {
 									showReview={reviewActive}
 									showConversation={conversationActive}
 									conversationThreadId={conversationThreadId}
+									showVideo={videoActive}
+									videoPanel={videoPanel}
+									videoTitle={videoRef?.title || null}
 									showStaging={stagingActive}
 									showAssets={assetsActive}
 									showPreviewTab={previewLiveActive}

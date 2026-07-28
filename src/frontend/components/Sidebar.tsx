@@ -7,13 +7,21 @@ import React, {
 	useRef,
 } from "react";
 import { createPortal } from "react-dom";
-import type { UnifiedSession, Project, SupportThread } from "../lib/types";
+import type {
+	UnifiedSession,
+	Project,
+	SupportThread,
+	FeedDescriptor,
+	FeedItem,
+} from "../lib/types";
 import { sessionPrApproved, sessionPrMerged } from "../lib/session-prs";
 import type { ReviewQueueItem } from "../lib/review-queue";
 import {
 	relativeTime,
 	fetchOpenPrs,
 	fetchSupportThreads,
+	fetchFeeds,
+	fetchFeedItems,
 	closePrPreviewApi,
 	PR_CLOSED_EVENT,
 	PR_REVIEW_SUBMITTED_EVENT,
@@ -379,6 +387,78 @@ function SupportRow({
 	);
 }
 
+// A feed row: one external object (e.g. a Tella video) in the workspace rows'
+// exact shape — the generic sibling of SupportRow (docs/feeds-design.md). The
+// rail dot wears the linked session's status (the feed lane's color, else
+// faint, when no session exists yet); the hover card carries the preview.
+function FeedRow({
+	feed,
+	item,
+	session,
+	active,
+	onOpen,
+}: {
+	feed: FeedDescriptor;
+	item: FeedItem;
+	session: UnifiedSession | null;
+	active: boolean;
+	onOpen: () => void;
+}) {
+	const isPhone = useIsPhone();
+	const card = useRowHoverCard();
+	const lane = feed.lanes?.find((l) => l.key === item.lane);
+	const dot =
+		(session
+			? MINE_STATUS_META.find((m) => m.key === mineStatus(session))?.dotColor
+			: lane?.dot) || "var(--text-faint)";
+	const ts = item.ts ? new Date(item.ts).toISOString() : null;
+	return (
+		<Popover.Root {...card.rootProps}>
+			<Popover.Trigger
+				{...card.triggerProps}
+				render={
+					<button
+						type="button"
+						className={`sidebar-item sidebar-ws-row${
+							active ? " sidebar-item-selected" : ""
+						}`}
+						onClick={onOpen}
+						aria-label={item.title}
+					/>
+				}
+			>
+				<span className="sidebar-rail">
+					<span
+						className="size-[7px] rounded-full"
+						style={{ backgroundColor: dot }}
+					/>
+				</span>
+				<span className="sidebar-item-title">{item.title}</span>
+				{!isPhone && ts && (
+					<span
+						className="sidebar-ws-time"
+						aria-label={new Date(ts).toLocaleString()}
+					>
+						{shortTime(ts)}
+					</span>
+				)}
+			</Popover.Trigger>
+			<Popover.Popup side="right" align="start" className={ROW_CARD_CLASS}>
+				<div className="flex max-w-[280px] flex-col gap-1.5 p-3">
+					<div className="text-[13px] font-medium text-fg">{item.title}</div>
+					{item.preview && (
+						<div className="line-clamp-4 text-xs text-dim">{item.preview}</div>
+					)}
+					<div className="flex items-center gap-2 text-[11px] text-faint">
+						{ts && <span>{relativeTime(ts)}</span>}
+						{session && <span>· linked session</span>}
+					</div>
+				</div>
+			</Popover.Popup>
+		</Popover.Root>
+	);
+}
+
 interface SupportFilterState {
 	/** "all" | "me" | "unassigned" | "name:<assignee name>" */
 	assignee: string;
@@ -476,6 +556,8 @@ interface Props {
 	onOpenReview: (session: UnifiedSession) => void;
 	/** Open a Support ticket's workspace (resolve-or-create, Conversation tab). */
 	onOpenTicket: (t: SupportThread) => void;
+	/** Open a feed item's workspace (resolve-or-create — docs/feeds-design.md). */
+	onOpenFeedItem: (feed: FeedDescriptor, item: FeedItem) => void;
 	onNewSession: () => void;
 	/** Start a new session with a repo pre-selected (the repo-band "+" action). */
 	onNewSessionInRepo: (repo: string) => void;
@@ -1204,6 +1286,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	onSelect,
 	onOpenReview,
 	onOpenTicket,
+	onOpenFeedItem,
 	onNewSession,
 	onNewSessionInRepo,
 	onOpenProject,
@@ -1656,6 +1739,53 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			clearInterval(t);
 		};
 	}, []);
+
+	// Generic feed bands (Tella videos, … — docs/feeds-design.md): descriptors
+	// once on mount, items per feed on the same gentle 60s cadence as Support
+	// (the server caches ~60s). A feed that errors just keeps its band hidden.
+	const [feeds, setFeeds] = useState<FeedDescriptor[]>([]);
+	const [feedItems, setFeedItems] = useState<Record<string, FeedItem[]>>({});
+	useEffect(() => {
+		let alive = true;
+		let timer: ReturnType<typeof setInterval> | null = null;
+		fetchFeeds()
+			.then((descriptors) => {
+				if (!alive) return;
+				setFeeds(descriptors);
+				if (descriptors.length === 0) return;
+				const load = () => {
+					for (const d of descriptors)
+						fetchFeedItems(d.id)
+							.then((items) => {
+								if (alive)
+									setFeedItems((prev) => ({ ...prev, [d.id]: items }));
+							})
+							.catch(() => {});
+				};
+				load();
+				timer = setInterval(load, 60_000);
+			})
+			.catch(() => {});
+		return () => {
+			alive = false;
+			if (timer) clearInterval(timer);
+		};
+	}, []);
+
+	// Newest live session per feed item (keyed `<kind>:<id>`) — a feed row with
+	// one wears that session's status dot.
+	const feedSessionByRef = useMemo(() => {
+		const m = new Map<string, UnifiedSession>();
+		for (const s of sessions) {
+			if (s.archived || !s.externalRefs?.length) continue;
+			for (const r of s.externalRefs) {
+				const key = `${r.kind}:${r.id}`;
+				const prev = m.get(key);
+				if (!prev || s.lastActivity > prev.lastActivity) m.set(key, s);
+			}
+		}
+		return m;
+	}, [sessions]);
 
 	// Support band filter (assignee / label / has-session; free text rides the
 	// sidebar-wide search box). Persisted per browser.
@@ -4086,6 +4216,73 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		);
 	}
 
+	// Is a feed item's workspace (or its linked session) the open surface?
+	function feedItemActive(feed: FeedDescriptor, item: FeedItem) {
+		if (selectedWorkspaceId) {
+			const ws = projects.find((p) => p.id === selectedWorkspaceId);
+			if (
+				ws?.externalRefs?.some(
+					(r) => r.kind === feed.refKind && r.id === item.id,
+				)
+			)
+				return true;
+		}
+		const session = feedSessionByRef.get(`${feed.refKind}:${item.id}`);
+		return !!session && session.id === selectedId;
+	}
+
+	// A generic feed band (Tella videos, …) styled like the Plain project band:
+	// brand tile + name + count, newest-first rows nested under
+	// (docs/feeds-design.md). Hidden while a repo filter is active, like Plain.
+	function renderFeedBand(feed: FeedDescriptor) {
+		const items = feedItems[feed.id] || [];
+		if (items.length === 0 || filter.repo !== "all") return null;
+		const gkey = `project:feed-${feed.id}`;
+		const open = isOpen(gkey);
+		const renderRow = (item: FeedItem) => (
+			<FeedRow
+				key={`${feed.id}:${item.id}`}
+				feed={feed}
+				item={item}
+				session={feedSessionByRef.get(`${feed.refKind}:${item.id}`) || null}
+				active={feedItemActive(feed, item)}
+				onOpen={() => onOpenFeedItem(feed, item)}
+			/>
+		);
+		// Collapsed band still surfaces the active item (same rule as Plain).
+		const activeItems = open
+			? []
+			: items.filter((i) => feedItemActive(feed, i));
+		return (
+			<div className="sidebar-repo-group" key={gkey}>
+				<button
+					className="sidebar-group-header sidebar-repo-head group transition-colors"
+					onClick={() => toggleGroup(gkey)}
+				>
+					<span className="sidebar-rail">
+						<RepoTile name={feed.id} />
+					</span>
+					<span className="sidebar-group-name">{feed.title}</span>
+					<span className="sidebar-group-count">{items.length}</span>
+					<IconChevronDown
+						className="sidebar-group-chevron"
+						size={22}
+						style={{ transform: open ? "none" : "rotate(-90deg)" }}
+					/>
+				</button>
+				{open ? (
+					<div className="sidebar-repo-lanes">{items.map(renderRow)}</div>
+				) : (
+					activeItems.length > 0 && (
+						<div className="sidebar-repo-lanes">
+							{activeItems.map(renderRow)}
+						</div>
+					)
+				)}
+			</div>
+		);
+	}
+
 	return (
 		<div className="sidebar" ref={sidebarScrollRef}>
 			{localMode && cloudUnreachable && (
@@ -4972,6 +5169,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									? renderStatusLanes([], "", snoozedWsRows)
 									: []),
 								renderPlainProject(filter.groupBy === "repo-status"),
+								...feeds.map(renderFeedBand),
 							]
 						: [
 								...renderStatusLanes(
@@ -4982,6 +5180,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									lanePrItems,
 								),
 								...renderSupportLanes(plainThreadsInView),
+								...feeds.map(renderFeedBand),
 							]}
 				</div>
 

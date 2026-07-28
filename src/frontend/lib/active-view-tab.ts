@@ -6,6 +6,8 @@ const KEY = "opensession-active-view-tabs";
 const VIEW_TABS = [
 	"review",
 	"conversation",
+	// The feed web-panel tab (Tella video embed — docs/feeds-design.md).
+	"video",
 	"staging",
 	"assets",
 	"preview",

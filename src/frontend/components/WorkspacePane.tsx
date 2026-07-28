@@ -4,6 +4,7 @@ import type { Project, UnifiedSession, WSServerMessage } from "../lib/types";
 import { fetchModels, type ModelOption } from "../lib/api";
 import { Composer } from "./Composer";
 import { ConversationPane } from "./ConversationPane";
+import { FeedWebPane, refWebPanel } from "./FeedWebPane";
 import { PrPanel } from "./PrPanel";
 import { useCurrentUser } from "./UserPicker";
 import { useIsPhone } from "../hooks/useIsPhone";
@@ -17,7 +18,7 @@ interface Props {
 	/** All sessions — the Review pane matches the PR target against any of them. */
 	sessions: UnifiedSession[];
 	/** Foregrounded view tab; null = the workspace home (first-chat composer). */
-	tab: "review" | "conversation" | null;
+	tab: "review" | "conversation" | "video" | null;
 	connected: boolean;
 	send: (msg: any) => void;
 	addHandler: (handler: (msg: WSServerMessage) => void) => () => void;
@@ -257,6 +258,21 @@ export function WorkspacePane({
 					threadId={workspace.plainThreadId}
 					onOpenSession={onOpenSession}
 					hideTriage={chats.length > 0}
+				/>
+			</div>,
+		);
+	}
+
+	// The feed web panel (Tella video embed, … — docs/feeds-design.md) on the
+	// chat-less workspace route.
+	const webRef = (workspace.externalRefs || []).find((r) => refWebPanel(r));
+	const webPanel = webRef ? refWebPanel(webRef) : null;
+	if (tab === "video" && webPanel) {
+		return withPanel(
+			<div className="workspace-view-main flex flex-col h-full min-h-0">
+				<FeedWebPane
+					panel={webPanel}
+					title={webRef?.title || workspace.name}
 				/>
 			</div>,
 		);

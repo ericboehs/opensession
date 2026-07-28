@@ -90,6 +90,36 @@ export interface SupportThread {
 	assignee?: SupportThreadAssignee | null;
 }
 
+/** Generic feed-item → session/workspace linkage (mirror of server types.ts;
+ *  docs/feeds-design.md). */
+export interface ExternalRef {
+	kind: string;
+	id: string;
+	url?: string;
+	title?: string;
+}
+
+/** A sidebar feed band's identity (mirror of src/server/feeds.ts). */
+export interface FeedDescriptor {
+	id: string;
+	title: string;
+	refKind: string;
+	lanes?: { key: string; label: string; dot?: string }[];
+	tileBg?: string;
+}
+
+/** One external object in a feed band (mirror of src/server/feeds.ts). */
+export interface FeedItem {
+	id: string;
+	title: string;
+	preview?: string;
+	lane?: string;
+	ts?: number;
+	url?: string;
+	thumbnail?: string;
+	meta?: Record<string, unknown>;
+}
+
 /** One item on a user's Desk todo list (mirror of src/server/todos.ts). */
 export interface TodoItem {
 	id: string;
@@ -302,6 +332,8 @@ export interface UnifiedSession {
 	/** Why this session is archived — powers the "Auto-archived" filter. */
 	archivedReason?: "manual" | "idle" | "auto" | "plain";
 	plainThreadId?: string;
+	/** Generic feed-item linkage (Tella videos, …) — docs/feeds-design.md. */
+	externalRefs?: ExternalRef[];
 	goal?: string;
 	loop?: {
 		prompt: string;
@@ -379,6 +411,8 @@ export interface Project {
 	branch?: string;
 	/** For support-ticket workspaces: the Plain thread they're attached to. */
 	plainThreadId?: string;
+	/** Generic feed-item linkage (Tella videos, …) — docs/feeds-design.md. */
+	externalRefs?: ExternalRef[];
 }
 
 export interface TranscriptEntry {

@@ -96,6 +96,7 @@ import { PrPanel } from "./PrPanel";
 import { PrStatusBar } from "./PrStatusBar";
 
 import { ConversationPane } from "./ConversationPane";
+import { FeedWebPane, type RefWebPanel } from "./FeedWebPane";
 import { WorkflowPanel } from "./WorkflowPanel";
 import { AssetsPanel, useSessionAssets } from "./AssetsPanel";
 import {
@@ -276,6 +277,12 @@ interface Props {
 	showConversation?: boolean;
 	/** The Plain thread the Conversation pane renders (workspace or session). */
 	conversationThreadId?: string | null;
+	/** Whether the feed web panel (Video view-tab) is foregrounded (App state). */
+	showVideo?: boolean;
+	/** The web panel spec of the workspace's feed-item ref (docs/feeds-design.md). */
+	videoPanel?: RefWebPanel | null;
+	/** The feed item's title (pane header). */
+	videoTitle?: string | null;
 	/** Foregrounded full-width local-dev Preview view-tab (App state). */
 	showPreviewTab?: boolean;
 	/** Open/foreground the Preview view-tab (header Preview button). */
@@ -520,6 +527,9 @@ export function SessionViewer({
 	showAssets = false,
 	showConversation = false,
 	conversationThreadId = null,
+	showVideo = false,
+	videoPanel = null,
+	videoTitle = null,
 	showPreviewTab = false,
 	onOpenPreviewTab,
 	onClosePreviewTab,
@@ -628,7 +638,8 @@ export function SessionViewer({
 		showStaging ||
 		showAssets ||
 		showPreviewTab ||
-		(showConversation && !!conversationThreadId);
+		(showConversation && !!conversationThreadId) ||
+		(showVideo && !!videoPanel);
 	const [cachedTranscript] = useState(() => peekCachedTranscriptView(session.id));
 	const transcriptViewStore = useMemo(
 		() =>
@@ -4576,6 +4587,12 @@ export function SessionViewer({
 								onOpenSession={() => {}}
 								hideTriage
 							/>
+						</div>
+					) : showVideo && videoPanel ? (
+						// The workspace's feed web panel (Tella video embed) —
+						// full-width like Conversation (docs/feeds-design.md).
+						<div className="viewer-review-main">
+							<FeedWebPane panel={videoPanel} title={videoTitle || undefined} />
 						</div>
 					) : showReview && hasWorkspace ? (
 						<div className="viewer-review-main">

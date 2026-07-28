@@ -50,7 +50,10 @@ extracting.
 - **Phase 1: migrate Plain onto the generic contract.** Plain feed provider +
   priority lanes + row actions; kill the hardcoded `renderPlainProject`
   splice; conversation panel becomes a registered panel kind bound to
-  `{kind:"plain"}` refs; compat: keep reading+writing `plainThreadId`. Keep
+  `{kind:"plain"}` refs; compat: keep reading+writing `plainThreadId`.
+  ALSO (Michiel 2026-07-28): make the Phase-0 "video" view-tab fully generic —
+  a web-panel tab driven by a panel registry (seed: `refWebPanel` in
+  FeedWebPane.tsx), not a hardcoded `"video"` ActiveViewTab value/label. Keep
   the 13 `/api/plain/*` mutation routes as-is (strangler). If Plain fits
   without the contract growing Plain-shaped warts, the abstraction is real.
 - **Phase 2: "any MCP is a project".** Config-declared feed adapter: name an

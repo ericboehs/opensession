@@ -8,6 +8,9 @@ import type {
 	PlainWorkspaceUser,
 	PlainLabelType,
 	SupportThread,
+	ExternalRef,
+	FeedDescriptor,
+	FeedItem,
 	ReportGroup,
 	ReportMeta,
 	Project,
@@ -728,6 +731,23 @@ export async function fetchSupportThreads(): Promise<SupportThread[]> {
 	return body?.threads || [];
 }
 
+/** The sidebar's generic feed bands (Tella videos, … — docs/feeds-design.md). */
+export async function fetchFeeds(): Promise<FeedDescriptor[]> {
+	const body = await request<{ feeds?: FeedDescriptor[] }>("/feeds", {
+		label: "Failed to fetch feeds",
+	});
+	return body?.feeds || [];
+}
+
+/** One feed band's items (server-cached ~60s). */
+export async function fetchFeedItems(feedId: string): Promise<FeedItem[]> {
+	const body = await request<{ items?: FeedItem[] }>(
+		`/feeds/${encodeURIComponent(feedId)}/items`,
+		{ label: "Failed to fetch feed items" },
+	);
+	return body?.items || [];
+}
+
 /** A Plain thread's conversation by thread id (the session-less Support preview). */
 export async function fetchPlainThreadById(
 	threadId: string,
@@ -883,7 +903,8 @@ export async function fetchPlainLabelTypesApi(): Promise<PlainLabelType[]> {
 export async function resolveWorkspaceApi(
 	target:
 		| { pr: { repo: string; number?: number; branch?: string; title?: string } }
-		| { plainThreadId: string; name?: string },
+		| { plainThreadId: string; name?: string }
+		| { externalRef: ExternalRef; name?: string },
 	user?: string,
 ): Promise<{ workspaceId: string; created: boolean }> {
 	return request<{ workspaceId: string; created: boolean }>(
