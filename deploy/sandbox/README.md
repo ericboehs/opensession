@@ -269,10 +269,10 @@ hot-apply — a real restart is needed after changing it.
   src/server/sandbox/adapters/): always volume-style workspaces cloned
   in-sandbox over https (`cloneCredential`), always ws transport, runner
   payload installed on first ensure by `bootstrapRemoteSandbox` for engines
-  that run inside the sandbox. Other-provider OpenCode engines stay on the
-  host and use `bootstrapRemoteWorkspaceRuntime` instead (Git/Bun/ripgrep/core
-  tools only; no runner checkout, Claude/OpenCode CLI, credentials, or
-  dial-back requirement). Daytona
+  that run inside the sandbox. OpenCode engines (OpenAI, Claude and other
+  providers) stay on the host and use `bootstrapRemoteWorkspaceRuntime`
+  instead (Git/Bun/ripgrep/core tools only; no runner checkout,
+  Claude/OpenCode CLI, credentials, or dial-back requirement). Daytona
   idle-stops natively (`autoStopInterval`); E2B lives on a countdown that
   activity extends — expiry KILLS the sandbox and its workspace. NOTE:
   Daytona Tier 1/2 orgs restrict sandbox egress, which blocks the WS
@@ -303,7 +303,7 @@ hot-apply — a real restart is needed after changing it.
   only `sbxtest-*` scratch resources and a redirected run journal; safe next
   to the live server.
 - `deploy/sandbox/verify-external-engine.ts` — live “brain on host, hands in
-  sandbox” certification for OpenCode-other models. It creates a disposable
+  sandbox” certification for OpenCode OpenAI/Claude models. It creates a disposable
   real WebSocket session, requires all six `opensession-workspace` methods,
   proves the engine/credentials/filesystem boundary, and destroys the session
   plus provider resource in `finally`. Repeat `--provider` to cover several
@@ -314,12 +314,10 @@ hot-apply — a real restart is needed after changing it.
   bun run deploy/sandbox/verify-external-engine.ts --provider microvm --restart
   ```
 
-  It defaults to a reliable host-only xAI model so provider failures are not
-  confused with model tool-calling failures. Use `--model
-  opencode/<other-provider>/<model>` to certify a different host-side model;
-  OpenAI/Anthropic sandbox-native families are rejected. For a UI-driven
-  smoke test, paste `deploy/sandbox/external-engine-test-prompt.md` into a new
-  code session.
+  It defaults to OpenAI GPT-5.6 Sol. Use `--model
+  opencode/anthropic/claude-sonnet-5` to certify the Claude path instead. For
+  a UI-driven smoke test, paste
+  `deploy/sandbox/external-engine-test-prompt.md` into a new code session.
 
 ## When to rebuild
 

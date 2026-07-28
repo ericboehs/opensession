@@ -18,6 +18,7 @@ import {
   SANDBOX_MODEL_FAMILIES,
   resolveRequestedSandbox,
   sandboxConfig,
+  sandboxEnginePlacement,
   sandboxCapabilityStatus,
   sandboxModelFamilyFor,
   sandboxModelSupport,
@@ -227,18 +228,31 @@ describe("model-family × environment capability matrix", () => {
     expect(sandboxModelSupport("claude-fable-5", "modal")).toEqual({ ok: true });
     expect(sandboxModelSupport("claude-fable-5", "lambda-microvm")).toEqual({ ok: true });
     expect(
-      sandboxModelSupport("opencode/cerebras/gpt-oss-120b", "microvm"),
+      sandboxModelSupport("opencode/openai/gpt-5.6-sol", "microvm"),
     ).toEqual({ ok: true });
     expect(
       sandboxModelSupport("opencode/anthropic/claude-sonnet-5", "microvm").ok,
-    ).toBe(false);
-    // opencode/openai runs everywhere: docker mounts the codex material,
-    // remote launches upload the rotation-proof seeds (bootstrap.ts).
+    ).toBe(true);
+    // OpenCode OpenAI/Anthropic run everywhere. Docker mounts its runner auth;
+    // remote providers and MicroVMs keep it on the host.
     expect(sandboxModelSupport("opencode/openai/gpt-5.4-mini", "daytona")).toEqual({ ok: true });
     expect(sandboxModelSupport("opencode/openai/gpt-5.5", "e2b")).toEqual({ ok: true });
     expect(sandboxModelSupport("opencode/anthropic/claude-sonnet-5", "docker")).toEqual({
       ok: true,
     });
+  });
+
+  test("remote OpenAI/Claude engines stay on host; Docker keeps its runner", () => {
+    expect(sandboxEnginePlacement("opencode/openai/gpt-5.6-sol", "daytona")).toBe("host");
+    expect(
+      sandboxEnginePlacement("opencode/anthropic/claude-sonnet-5", "modal"),
+    ).toBe("host");
+    expect(sandboxEnginePlacement("opencode/openai/gpt-5.6-sol", "microvm")).toBe("host");
+    expect(sandboxEnginePlacement("opencode/openai/gpt-5.6-sol", "docker")).toBe("sandbox");
+    expect(
+      sandboxEnginePlacement("opencode/anthropic/claude-sonnet-5", "docker"),
+    ).toBe("sandbox");
+    expect(sandboxEnginePlacement("opencode/google/gemini-3", "docker")).toBe("host");
   });
 
   test("native codex stays host-only; other-provider OpenCode uses an external engine", () => {

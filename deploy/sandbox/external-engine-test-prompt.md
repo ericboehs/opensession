@@ -1,7 +1,7 @@
 # External-engine sandbox boundary test
 
-Use this prompt in a new code session with an “OpenCode (other providers)”
-model and the sandbox provider you want to certify.
+Use this prompt in a new code session with an OpenCode OpenAI or Claude model
+and the remote/MicroVM sandbox provider you want to certify.
 
 Replace `MANUAL-BOUNDARY-001` with a unique token if you run it more than once.
 

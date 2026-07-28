@@ -23,6 +23,7 @@ import { join } from "path";
 import { getSandboxProvider } from "../../src/server/sandbox";
 import {
   isRunnableSandboxProvider,
+  sandboxEnginePlacement,
   sandboxModelFamilyFor,
   sandboxModelSupport,
   sandboxProviderConfigured,
@@ -36,7 +37,7 @@ const DEFAULT_SERVER = "http://127.0.0.1:3850";
 // This suite certifies the sandbox boundary, not model-specific tool-calling.
 // Keep the default on a model that reliably emits OpenCode tool calls; use
 // --model when deliberately certifying another provider/model combination.
-const DEFAULT_MODEL = "opencode/xai/grok-4.5";
+const DEFAULT_MODEL = "opencode/openai/gpt-5.6-sol";
 const DEFAULT_REPO = "backstage";
 const REQUIRED_TOOLS = [
   "opensession-workspace_execute",
@@ -92,7 +93,7 @@ function usage(): never {
 
 Options:
   --provider <id>   Repeat for microvm/daytona/e2b/box/modal/lambda-microvm
-  --model <id>      Opening OpenCode-other model (default ${DEFAULT_MODEL})
+  --model <id>      Opening OpenCode OpenAI/Claude model (default ${DEFAULT_MODEL})
   --repo <id>       Registered repo id (default ${DEFAULT_REPO})
   --user <name>     Web-session login/name to use
   --server <url>    Live OpenSession base URL (default ${DEFAULT_SERVER})
@@ -521,9 +522,14 @@ async function certify(
 ): Promise<void> {
   console.log(`\n── ${providerId}: external-engine certification ──`);
   assert(sandboxProviderConfigured(providerId), `${providerId} is configured`);
+  const modelFamily = sandboxModelFamilyFor(opts.model).id;
   assert(
-    sandboxModelFamilyFor(opts.model).id === "opencode-other",
-    "opening model belongs to the host-engine OpenCode-other family",
+    modelFamily === "opencode-openai" || modelFamily === "opencode-anthropic",
+    "opening model is OpenCode OpenAI or Claude",
+  );
+  assert(
+    sandboxEnginePlacement(opts.model, providerId) === "host",
+    "opening model uses host-engine placement for this provider",
   );
   const support = sandboxModelSupport(opts.model, providerId);
   assert(support.ok, support.ok ? "opening model is supported" : support.error);

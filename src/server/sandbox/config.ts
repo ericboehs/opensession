@@ -622,21 +622,21 @@ const ALL_ENVIRONMENTS: Record<SandboxEnvironmentId, boolean> = {
 
 export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
   {
-    // ChatGPT-subscription auth travels: docker ro-mounts the codex account
-    // material; remote launches upload a scoped store + rotation-proof
-    // access-token seeds per launch (sandbox/adapters/bootstrap.ts).
+    // Docker can run the OpenCode engine in-container with its mounted account
+    // material. Remote providers and MicroVMs keep the engine/auth on the host
+    // and expose only the workspace runtime (sandboxEnginePlacement below).
     id: "opencode-openai",
     label: "GPT (OpenCode)",
     match: { provider: "opencode", idPrefix: "opencode/openai/" },
-    environments: { ...ALL_ENVIRONMENTS, microvm: false },
+    environments: { ...ALL_ENVIRONMENTS },
   },
   {
-    // The meridian bridge config + scoped Claude account slice reach every
-    // sandbox kind (docker mounts, remote uploads).
+    // Docker can run the OpenCode engine in-container with its mounted bridge
+    // config. Remote providers and MicroVMs keep the engine/auth on the host.
     id: "opencode-anthropic",
     label: "Claude (OpenCode)",
     match: { provider: "opencode", idPrefix: "opencode/anthropic/" },
-    environments: { ...ALL_ENVIRONMENTS, microvm: false },
+    environments: { ...ALL_ENVIRONMENTS },
   },
   {
     // Other OpenCode providers keep their auth + model loop on the host and
@@ -689,6 +689,30 @@ export function sandboxModelFamilyFor(model?: string | null): SandboxModelFamily
         (!f.match.idPrefix || canonical.startsWith(f.match.idPrefix)),
     ) ?? SANDBOX_MODEL_FAMILIES[SANDBOX_MODEL_FAMILIES.length - 1]
   );
+}
+
+/**
+ * Decide where the model loop runs for a sandboxed session.
+ *
+ * Remote providers and MicroVMs are workspace sandboxes for every OpenCode
+ * family: credentials, account rotation and engine state stay on this host.
+ * Docker retains the existing in-container OpenAI/Anthropic runner because it
+ * already has explicit local mounts; OpenCode-other remains host-only there
+ * because its provider auth is not mounted.
+ */
+export function sandboxEnginePlacement(
+  model: string | undefined | null,
+  provider: RunnableSandboxProviderId,
+): "host" | "sandbox" {
+  const family = sandboxModelFamilyFor(model).id;
+  if (family === "opencode-other") return "host";
+  if (
+    provider !== "docker" &&
+    (family === "opencode-openai" || family === "opencode-anthropic")
+  ) {
+    return "host";
+  }
+  return "sandbox";
 }
 
 /**

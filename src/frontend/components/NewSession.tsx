@@ -249,8 +249,9 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const [showOptions, setShowOptions] = useState(false);
   const optionsVisible = !isPhone || showOptions;
 
-  // Sandbox provider picker (docs/sandboxes-plan.md): run this session's
-  // agent inside an isolated per-session sandbox instead of on the host.
+  // Sandbox provider picker (docs/sandboxes-plan.md): isolate this session's
+  // workspace in the selected environment. Remote/MicroVM OpenCode sessions
+  // keep the model engine on Host and expose only explicit workspace methods.
   // "" = Host (no sandbox, the default); otherwise an explicit provider id
   // sent as the create's `sandbox` string. Options come from
   // /api/sandbox/status (fetched once when the palette opens) — only
@@ -305,13 +306,13 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     );
   })();
 
-  // Warm-on-typing (docs/sandboxes-plan.md backlog): with a REMOTE provider
-  // selected, the first keystroke in the prompt fires a sandbox prewarm and
-  // repeats at most once per 60s while typing continues — each call extends
-  // the server pool's TTL, and session create then ADOPTS the warmed sandbox
-  // (30-45s of runner bootstrap already done). Strictly fire-and-forget: a
-  // failure must never surface or block typing.
+  // Warm-on-typing applies only to sandbox-engine models. OpenCode models use
+  // the lean host-engine/workspace runtime on remote providers, so adopting a
+  // full runner prewarm would defeat that boundary. Strictly fire-and-forget:
+  // a failure must never surface or block typing.
   const isRemoteSandbox = sandboxProvider === "daytona" || sandboxProvider === "e2b" || sandboxProvider === "box" || sandboxProvider === "modal" || sandboxProvider === "lambda-microvm";
+  const usesRemoteHostEngine =
+    isRemoteSandbox && modelFamily?.match.provider === "opencode";
   const [sandboxWarmed, setSandboxWarmed] = useState(false);
   const lastPrewarmAtRef = useRef(0);
   useEffect(() => {
@@ -320,13 +321,13 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     setSandboxWarmed(false);
   }, [sandboxProvider, repo]);
   useEffect(() => {
-    if (!isRemoteSandbox || !prompt.trim() || creating) return;
+    if (!isRemoteSandbox || usesRemoteHostEngine || !prompt.trim() || creating) return;
     if (Date.now() - lastPrewarmAtRef.current < 60_000) return;
     lastPrewarmAtRef.current = Date.now();
     requestSandboxPrewarm(sandboxProvider, repo, getCurrentUser())
       .then((r) => setSandboxWarmed(r.state === "ready"))
       .catch(() => {});
-  }, [prompt, isRemoteSandbox, sandboxProvider, repo, creating]);
+  }, [prompt, isRemoteSandbox, usesRemoteHostEngine, sandboxProvider, repo, creating]);
 
   // MCP servers: empty by default (minimal context), users can opt in for
   // specific ones. The list comes from mcp-config.json via the connections
@@ -902,6 +903,10 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                     {[{ id: "", note: undefined as string | undefined }, ...sandboxChoices].map(
                       (opt) => {
                         const selected = sandboxProvider === opt.id;
+                        const hostEngineWorkspace =
+                          !!opt.id &&
+                          opt.id !== "docker" &&
+                          modelFamily?.match.provider === "opencode";
                         return (
                           <Menu.Item
                             key={opt.id || "host"}
@@ -922,6 +927,11 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                               {opt.note && (
                                 <span className="whitespace-normal text-[11px] font-medium leading-snug text-faint">
                                   {opt.note}
+                                </span>
+                              )}
+                              {hostEngineWorkspace && (
+                                <span className="whitespace-normal text-[11px] font-medium leading-snug text-faint">
+                                  Model on Host · workspace isolated here
                                 </span>
                               )}
                             </span>

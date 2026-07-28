@@ -251,7 +251,7 @@ export class DaytonaProvider implements SandboxProvider {
       } catch {}
     }
     if (sbx && stateOf(sbx) === "gone") sbx = null;
-    if (!sbx) {
+    if (!sbx && spec.runtime !== "workspace") {
       // Warm-on-typing adoption (src/server/sandbox/prewarm.ts): a ready
       // prewarm for (daytona, repo) whose runner pin + snapshot still match
       // is claimed atomically and relabeled to this session — the expensive

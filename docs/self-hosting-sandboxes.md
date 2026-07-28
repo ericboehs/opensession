@@ -226,8 +226,9 @@ to `provider: "local"` (today's host behavior). Env override for the path:
   },
 
   // Remote runner bootstrap. Sandbox-engine models install the full runner +
-  // model CLIs. Other-provider OpenCode models keep their engine/auth on the
-  // host and install only Git/Bun/ripgrep/core workspace tools:
+  // model CLIs. OpenCode models (OpenAI, Claude and other providers) keep
+  // their engine/auth on the host and install only Git/Bun/ripgrep/core
+  // workspace tools:
   "runnerBundleUrl": null,     // tarball of the runner bundle (preferred)
   "runnerRepoUrl": null,       // git URL fallback (default: this checkout's origin)
   "runnerSha": null            // pinned ref (default: origin default branch)
@@ -392,8 +393,8 @@ bun run deploy/sandbox/verify-external-engine.ts --provider daytona --provider m
 bun run deploy/sandbox/verify-external-engine.ts --provider microvm --restart
 ```
 
-This suite only accepts the OpenCode-other model family: the model loop and
-provider credentials must stay on the host while explicit
+This suite accepts OpenCode OpenAI and Claude models: on remote providers and
+MicroVMs, the model loop and provider credentials stay on the host while explicit
 `opensession-workspace` methods operate the sandbox. It checks all six methods,
 file locality, credential/runner absence, persisted placement, provider
 reattachment, and cleanup. Use
