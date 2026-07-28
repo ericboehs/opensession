@@ -116,6 +116,7 @@ import {
 	IconChevronDown,
 	IconPlus,
 	IconPencil,
+	IconArrowDown,
 	IconArrowUp,
 	IconArrowUpToLine,
 	IconCrosshair,
@@ -4841,19 +4842,15 @@ export function SessionViewer({
 
 								{showScrollToBottom && entries.length > 0 && (
 									<button
-										className={`absolute left-1/2 bottom-6 z-[5] inline-flex -translate-x-1/2 cursor-pointer items-center gap-2 rounded-md border bg-raised px-3.5 py-2 text-[13px] font-semibold shadow-[var(--control-shadow)] transition-[background,border-color,color] hover:bg-hover ${
+										className={`absolute left-1/2 bottom-6 z-[5] inline-flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full bg-control px-3.5 py-2 text-[12px] font-semibold shadow-[0_2px_10px_rgba(0,0,0,0.16)] transition-[background,color,box-shadow,transform] hover:-translate-y-px hover:bg-hover hover:shadow-[0_4px_14px_rgba(0,0,0,0.2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
 											newBelow
-												? "border-accent text-accent"
-												: "border-line text-fg hover:border-accent"
+												? "text-accent"
+												: "text-dim hover:text-fg"
 										}`}
 										onClick={() => scrollToLatest("smooth")}
 										title="Scroll to the bottom"
 									>
-										<span
-											className={`text-[14px] leading-none ${newBelow ? "animate-pulse" : ""}`}
-										>
-											↓
-										</span>
+										<IconArrowDown size={15} aria-hidden />
 										{newBelow ? "New messages" : "Scroll to bottom"}
 									</button>
 								)}
