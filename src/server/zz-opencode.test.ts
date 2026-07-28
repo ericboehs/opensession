@@ -12,6 +12,7 @@ import {
   shouldRepairEmptyCompletion,
   shouldRetryTransientRun,
   emptyCompletionRepairPrompt,
+  meridianRequiredModels,
 } from "./opencode-runner";
 import { STRIPE_CONFIRM_TOOLS, filterMcpServers } from "./runner-shared";
 import { DESK_NOTE } from "./desk";
@@ -53,6 +54,22 @@ describe("parseOpencodeModel", () => {
     expect(parseOpencodeModel("opencode/anthropic")).toBeNull();
     expect(parseOpencodeModel("opencode/anthropic/")).toBeNull();
     expect(parseOpencodeModel("opencode//x")).toBeNull();
+  });
+});
+
+describe("Dial Meridian quota preflight", () => {
+  test("requires both Opus main and Fable oracle capacity", () => {
+    expect(meridianRequiredModels("claude-opus-5", "oracle-fable")).toEqual([
+      "claude-opus-5",
+      "claude-fable-5",
+    ]);
+  });
+
+  test("uses the same-bridge Opus oracle for an Anthropic Fable main", () => {
+    expect(meridianRequiredModels("claude-fable-5", "oracle-sol")).toEqual([
+      "claude-fable-5",
+      "claude-opus-5",
+    ]);
   });
 });
 

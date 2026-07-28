@@ -609,7 +609,17 @@ function scopedLimitForModel(usage: AccountUsage | undefined, model?: string): n
   return currentUtilization(entry);
 }
 
-function accountUtilization(a: ClaudeAccount, model?: string): number {
+export type ClaudeModelRequirement = string | readonly string[];
+
+function requiredModels(model?: ClaudeModelRequirement): Array<string | undefined> {
+  if (Array.isArray(model)) {
+    const unique = [...new Set(model.filter(Boolean))];
+    return unique.length ? unique : [undefined];
+  }
+  return [model as string | undefined];
+}
+
+function accountUtilization(a: ClaudeAccount, model?: ClaudeModelRequirement): number {
   const usage = usageCache.get(a.id);
   // Meridian reconstructs these windows from SDK rate-limit events. They are
   // useful telemetry, but not authoritative account state: its scoped bucket
@@ -617,8 +627,10 @@ function accountUtilization(a: ClaudeAccount, model?: string): number {
   // live turns succeed. Actual provider limit errors still call markExhausted.
   if (usage?.source === "meridian") return 0;
   const fiveHour = currentUtilization(usage?.fiveHour);
-  const scoped = scopedLimitForModel(usage, model);
-  return scoped === null ? fiveHour : Math.max(fiveHour, scoped);
+  return Math.max(
+    fiveHour,
+    ...requiredModels(model).map((required) => scopedLimitForModel(usage, required) ?? 0)
+  );
 }
 
 /**
@@ -628,18 +640,36 @@ function accountUtilization(a: ClaudeAccount, model?: string): number {
  * picker layer. Run-observed exhaustion (a limit error from an actual run)
  * still sidelines it: that error only happens when credits are unavailable too.
  */
-function isAccountUsableFor(a: ClaudeAccount, model?: string, allowExtraUsage?: boolean): boolean {
-  if (isExhausted(a.id) || isModelExhausted(a.id, model)) return false;
+function isAccountUsableFor(
+  a: ClaudeAccount,
+  model?: ClaudeModelRequirement,
+  allowExtraUsage?: boolean
+): boolean {
+  if (isExhausted(a.id)) return false;
+  const models = requiredModels(model);
+  if (models.some((required) => isModelExhausted(a.id, required))) return false;
   const usage = usageCache.get(a.id);
+  // A multi-model Dial turn must be able to run its scarce Fable oracle, not
+  // merely its main model. Fail closed when Fable headroom is unknown or
+  // capped: otherwise a blind/inferred account gets picked, the main turn
+  // starts, and the later oracle request hangs instead of allowing the whole
+  // preset to fall through to Sol before any work begins. Standalone model
+  // picks retain the tolerant Meridian policy below.
+  if (Array.isArray(model) && models.some((required) => required?.includes("fable"))) {
+    const fable = scopedLimitForModel(usage, "claude-fable-5");
+    if (fable === null || fable >= SCOPED_EXHAUSTED_UTILIZATION) {
+      return !!allowExtraUsage && hasCreditHeadroom(a);
+    }
+  }
   // See accountUtilization: inferred Meridian percentages must not sideline a
   // healthy account before the provider gets a chance to accept the request.
   if (usage?.source === "meridian") return true;
   const fiveHour = currentUtilization(usage?.fiveHour);
-  const scoped = scopedLimitForModel(usage, model);
-  if (
-    fiveHour < EXHAUSTED_UTILIZATION &&
-    (scoped === null || scoped < SCOPED_EXHAUSTED_UTILIZATION)
-  ) {
+  const scopedUsable = models.every((required) => {
+    const scoped = scopedLimitForModel(usage, required);
+    return scoped === null || scoped < SCOPED_EXHAUSTED_UTILIZATION;
+  });
+  if (fiveHour < EXHAUSTED_UTILIZATION && scopedUsable) {
     return true;
   }
   return !!allowExtraUsage && hasCreditHeadroom(a);
@@ -680,7 +710,7 @@ export function listAccountsPublic(): ClaudeAccountPublic[] {
  */
 export function getUsableAccountById(
   id: string,
-  model?: string,
+  model?: ClaudeModelRequirement,
   allowExtraUsage?: boolean
 ): ClaudeAccount | undefined {
   const a = readStore().find((x) => x.id === id);
@@ -815,7 +845,7 @@ export function removeAccount(id: string): boolean {
 export function pickAccount(
   exclude?: Set<string>,
   user?: string,
-  model?: string,
+  model?: ClaudeModelRequirement,
   allowExtraUsage?: boolean
 ): ClaudeAccount | undefined {
   const eligible = readStore().filter(
@@ -898,7 +928,10 @@ let nearLimitRefresher: UsageRefresher = refreshAccountUsage;
  * data shows it genuinely at the cap (isAccountUsableFor reads the updated
  * cache). No-op for accounts whose usage can't be polled.
  */
-export async function refreshUsageIfNearLimit(id: string, model?: string): Promise<boolean> {
+export async function refreshUsageIfNearLimit(
+  id: string,
+  model?: ClaudeModelRequirement
+): Promise<boolean> {
   const account = readStore().find((x) => x.id === id);
   if (!account) return false;
   // Blind accounts refresh from a live Meridian proxy instead (same tier and
@@ -992,7 +1025,10 @@ export function clearWedge(id: string): void {
  * wait for), and falls back to now + DEFAULT_EXHAUST_MS when every candidate
  * is sidelined without a known reset.
  */
-export function earliestPoolReset(user?: string, model?: string): number | null {
+export function earliestPoolReset(
+  user?: string,
+  model?: ClaudeModelRequirement
+): number | null {
   const now = Date.now();
   const candidates = readStore().filter(
     (a) => !a.owner || (!!user && userMatchesAny(user, [a.owner]))
@@ -1007,11 +1043,17 @@ export function earliestPoolReset(user?: string, model?: string): number | null 
   for (const a of candidates) {
     if (isAccountUsableFor(a, model)) return now;
     consider(exhaustedUntil.get(a.id));
-    if (model) consider(modelExhaustedUntil.get(modelExhaustionKey(a.id, model)));
+    for (const required of requiredModels(model)) {
+      if (required) {
+        consider(modelExhaustedUntil.get(modelExhaustionKey(a.id, required)));
+      }
+    }
     const usage = usageCache.get(a.id);
     if (usage?.fiveHour?.resetsAt) consider(Date.parse(usage.fiveHour.resetsAt));
-    const scoped = scopedEntryForModel(usage, model);
-    if (scoped?.resetsAt) consider(Date.parse(scoped.resetsAt));
+    for (const required of requiredModels(model)) {
+      const scoped = scopedEntryForModel(usage, required);
+      if (scoped?.resetsAt) consider(Date.parse(scoped.resetsAt));
+    }
   }
   return min ?? now + DEFAULT_EXHAUST_MS;
 }
@@ -1022,7 +1064,10 @@ export function earliestPoolReset(user?: string, model?: string): number | null 
 let lastDryPoolRefreshAt = 0;
 const DRY_POOL_REFRESH_MS = 5 * 60 * 1000;
 
-async function refreshSidelinedAccounts(user?: string, model?: string): Promise<void> {
+async function refreshSidelinedAccounts(
+  user?: string,
+  model?: ClaudeModelRequirement
+): Promise<void> {
   if (Date.now() - lastDryPoolRefreshAt < DRY_POOL_REFRESH_MS) return;
   lastDryPoolRefreshAt = Date.now();
   for (const a of readStore()) {
@@ -1048,7 +1093,7 @@ async function refreshSidelinedAccounts(user?: string, model?: string): Promise<
 export async function waitForUsableAccount(opts: {
   pick: () => ClaudeAccount | null;
   user?: string;
-  model?: string;
+  model?: ClaudeModelRequirement;
   maxWaitMs: number;
   pollMs?: number;
   onWaitStart?: (earliestReset: number) => void;

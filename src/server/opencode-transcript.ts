@@ -838,6 +838,8 @@ interface PartData {
     input?: unknown;
     output?: string;
     error?: string;
+    time?: { start?: number; end?: number };
+    metadata?: { sessionId?: string };
     attachments?: Array<{
       type?: string;
       mime?: string;
@@ -919,6 +921,105 @@ export function hasOpencodeTranscript(
   }
 }
 
+export interface OpencodeOpenTask {
+  id: string;
+  childSessionId?: string;
+}
+
+export interface OpencodeOpenTaskSnapshot {
+  tasks: OpencodeOpenTask[];
+  lastActivityAt: number | null;
+}
+
+function openTaskSnapshotFromDb(
+  db: Database,
+  sessionId: string,
+  messageId: string
+): OpencodeOpenTaskSnapshot {
+  const rows = db
+    .query(
+      "SELECT id, time_updated, data FROM part WHERE session_id = ? AND message_id = ? ORDER BY time_created ASC, id ASC"
+    )
+    .all(sessionId, messageId) as Array<{
+      id: string;
+      time_updated: number | null;
+      data: string;
+    }>;
+  const tasks: OpencodeOpenTask[] = [];
+  let lastActivityAt: number | null = null;
+  for (const row of rows) {
+    let part: PartData;
+    try {
+      part = JSON.parse(row.data) as PartData;
+    } catch {
+      continue;
+    }
+    if (
+      part.type !== "tool" ||
+      part.tool !== "task" ||
+      (part.state?.status !== "pending" && part.state?.status !== "running")
+    ) {
+      continue;
+    }
+    const childSessionId = part.state.metadata?.sessionId;
+    tasks.push({ id: row.id, ...(childSessionId ? { childSessionId } : {}) });
+    for (const candidate of [row.time_updated, part.state.time?.start]) {
+      if (
+        typeof candidate === "number" &&
+        (lastActivityAt === null || candidate > lastActivityAt)
+      ) {
+        lastActivityAt = candidate;
+      }
+    }
+    if (childSessionId) {
+      const child = db
+        .query("SELECT time_updated FROM session WHERE id = ? LIMIT 1")
+        .get(childSessionId) as { time_updated: number | null } | null;
+      if (
+        typeof child?.time_updated === "number" &&
+        (lastActivityAt === null || child.time_updated > lastActivityAt)
+      ) {
+        lastActivityAt = child.time_updated;
+      }
+    }
+  }
+  return { tasks, lastActivityAt };
+}
+
+/**
+ * Open task tools in the latest assistant message, plus the most recent
+ * persisted parent/child activity. Reattach uses this to rebuild the
+ * in-memory subagent watchdog state that a service restart otherwise loses.
+ */
+export function opencodeOpenTaskSnapshot(
+  sessionId: string | null | undefined
+): OpencodeOpenTaskSnapshot | null {
+  if (!sessionId) return null;
+  const dbPath = resolveOpencodeDbFor(sessionId);
+  if (!existsSync(dbPath)) return null;
+  let db: Database;
+  try {
+    db = new Database(dbPath, { readonly: true });
+  } catch {
+    return null;
+  }
+  try {
+    const row = db
+      .query(
+        "SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created DESC, id DESC LIMIT 1"
+      )
+      .get(sessionId) as { id: string; data: string } | null;
+    if (!row) return null;
+    const data = JSON.parse(row.data) as MessageData;
+    if (data.role !== "assistant") return { tasks: [], lastActivityAt: null };
+    return openTaskSnapshotFromDb(db, sessionId, row.id);
+  } catch {
+    return null;
+  } finally {
+    db.close();
+  }
+}
+
 /**
  * Did this session's LAST engine turn end cleanly? Reads the store directly:
  * true  = trailing message is an assistant message with `time.completed`;
@@ -941,15 +1042,19 @@ export function opencodeTurnLooksCompleted(
   try {
     const row = db
       .query(
-        "SELECT data FROM message WHERE session_id = ? ORDER BY time_created DESC, id DESC LIMIT 1"
+        "SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created DESC, id DESC LIMIT 1"
       )
-      .get(sessionId) as { data: string } | null;
+      .get(sessionId) as { id: string; data: string } | null;
     if (!row) return null;
     const data = JSON.parse(row.data) as MessageData & {
       time?: { created?: number; completed?: number };
     };
     if (data.role === "user") return false;
-    return typeof data.time?.completed === "number";
+    if (typeof data.time?.completed !== "number") return false;
+    // OpenCode can stamp the assistant message completed before a task
+    // subagent finishes. Treating that row alone as authoritative made an
+    // idle post-restart probe finalize a turn whose oracle was still pending.
+    return openTaskSnapshotFromDb(db, sessionId, row.id).tasks.length === 0;
   } catch {
     return null;
   } finally {

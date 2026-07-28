@@ -105,6 +105,35 @@ describe("pickAccount usage-credits policy", () => {
     accounts.__setUsageCacheForTest("maxed", usage(100));
   });
 
+  test("requires capacity for every model in a preset", () => {
+    accounts.__setUsageCacheForTest("fresh", {
+      ...usage(20),
+      scopedLimits: [
+        { label: "Opus", utilization: 20, resetsAt: null },
+        { label: "Fable", utilization: 100, resetsAt: null },
+      ],
+    });
+    expect(
+      accounts.pickAccount(new Set(["maxed"]), undefined, "claude-opus-5")?.id
+    ).toBe("fresh");
+    expect(
+      accounts.pickAccount(
+        new Set(["maxed"]),
+        undefined,
+        ["claude-opus-5", "claude-fable-5"]
+      )
+    ).toBeUndefined();
+    accounts.__setUsageCacheForTest("fresh", usage(20));
+    expect(
+      accounts.pickAccount(
+        new Set(["maxed"]),
+        undefined,
+        ["claude-opus-5", "claude-fable-5"]
+      )
+    ).toBeUndefined();
+    accounts.__setUsageCacheForTest("fresh", usage(50));
+  });
+
   test("personal accounts stay off-limits to userless (automation) picks", () => {
     accounts.__setUsageCacheForTest("personal", usage(0));
     accounts.__setUsageCacheForTest(

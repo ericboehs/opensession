@@ -760,6 +760,13 @@ export function resumeInterruptedRuns(
                 );
                 continue;
               }
+              if (event.type === "error" && isTransientRunError(event.content)) {
+                repairingRecoveredResult = true;
+                console.warn(
+                  `[runner] Reattached turn ${run.runKey} hit a transient engine failure — continuing through the normal retry/fallback path`
+                );
+                continue;
+              }
               if (run.bksSessionId) onEvent?.(run.bksSessionId, event);
               if (event.type === "done" || event.type === "error") {
                 onResumed?.(run.bksSessionId, event);

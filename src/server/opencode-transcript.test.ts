@@ -35,6 +35,8 @@ const {
   transcriptLineToolResult,
   transcriptLineForEntry,
   opencodeToolResultImages,
+  opencodeOpenTaskSnapshot,
+  opencodeTurnLooksCompleted,
 } = mod;
 const { parseTranscript, parseJsonlLines } = await import("./jsonl-parser");
 
@@ -88,6 +90,72 @@ describe("isOpencodeSessionId", () => {
     expect(isOpencodeSessionId("b1e2c3d4-0000-7000-8000-000000000000")).toBe(false);
     expect(isOpencodeSessionId(null)).toBe(false);
     expect(isOpencodeSessionId("")).toBe(false);
+  });
+});
+
+describe("restart task-state recovery", () => {
+  test("a completed assistant row is still incomplete while its task child is open", () => {
+    const sessionId = "ses_open_task";
+    const childSessionId = "ses_open_task_child";
+    const createdAt = 1783500500000;
+    const db = new Database(dbPath);
+    db.query("INSERT INTO session VALUES (?, 'p', 't', ?, ?)").run(
+      sessionId,
+      createdAt,
+      createdAt
+    );
+    db.query("INSERT INTO session VALUES (?, 'p', 'child', ?, ?)").run(
+      childSessionId,
+      createdAt + 10,
+      createdAt + 5000
+    );
+    db.query("INSERT INTO message VALUES (?, ?, ?, ?, ?)").run(
+      "msg_open_task",
+      sessionId,
+      createdAt,
+      createdAt,
+      JSON.stringify({
+        role: "assistant",
+        time: { created: createdAt, completed: createdAt + 1000 },
+      })
+    );
+    db.query("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)").run(
+      "prt_open_task",
+      "msg_open_task",
+      sessionId,
+      createdAt,
+      createdAt + 1000,
+      JSON.stringify({
+        type: "tool",
+        tool: "task",
+        state: {
+          status: "running",
+          time: { start: createdAt + 1000 },
+          metadata: { sessionId: childSessionId },
+        },
+      })
+    );
+    db.close();
+
+    expect(opencodeTurnLooksCompleted(sessionId)).toBe(false);
+    expect(opencodeOpenTaskSnapshot(sessionId)).toEqual({
+      tasks: [{ id: "prt_open_task", childSessionId }],
+      lastActivityAt: createdAt + 5000,
+    });
+
+    const finished = new Database(dbPath);
+    finished
+      .query("UPDATE part SET data = ? WHERE id = ?")
+      .run(
+        JSON.stringify({
+          type: "tool",
+          tool: "task",
+          state: { status: "completed", metadata: { sessionId: childSessionId } },
+        }),
+        "prt_open_task"
+      );
+    finished.close();
+    expect(opencodeTurnLooksCompleted(sessionId)).toBe(true);
   });
 });
 

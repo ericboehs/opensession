@@ -206,6 +206,7 @@ import {
   appendOpencodeTranscript,
   backfillOpencodeTranscriptGap,
   ensureOpencodeTranscriptFile,
+  opencodeOpenTaskSnapshot,
   opencodeTurnLooksCompleted,
   recordBksSessionFor,
   recordOpencodeDbFor,
@@ -905,7 +906,7 @@ function meridianEnvIdentity(
  */
 export function pickMeridianAccount(
   user: string | undefined,
-  model: string,
+  model: string | readonly string[],
   ids?: string[],
   pinnedId?: string,
   strict?: boolean,
@@ -950,6 +951,28 @@ export function pickMeridianAccount(
     return picked;
   }
   return { error: "no usable Claude account for the meridian bridge (pool exhausted or none configured)" };
+}
+
+/**
+ * Every Anthropic model a Dial preset may need during the turn. Account
+ * selection used to consider only the main model, so Opus+Fable could start
+ * on an account whose Opus allowance was healthy but whose Fable-scoped
+ * allowance was already dry. The later oracle request then hung behind
+ * Meridian instead of letting runAgent enter its normal Sol fallback graph.
+ */
+export function meridianRequiredModels(
+  mainModelID: string,
+  dialOracleAgent?: string
+): string[] {
+  const required = [mainModelID];
+  if (dialOracleAgent) {
+    const effectiveAgent = sameBridgeDialOracle(dialOracleAgent, "anthropic");
+    const oracleModel = DIAL_ORACLE_AGENTS[effectiveAgent]?.model;
+    if (oracleModel?.startsWith("anthropic/")) {
+      required.push(oracleModel.slice("anthropic/".length));
+    }
+  }
+  return [...new Set(required)];
 }
 
 // Sticky meridian account per server key (bks session id / cwd): parked on
@@ -2513,6 +2536,19 @@ function makeSubagentStallGuard(
   let lastFamilyEventAt = Date.now();
   let timer: ReturnType<typeof setInterval> | undefined;
   return {
+    /** Restore task-family state from OpenCode's SQLite store after restart. */
+    seed(
+      tasks: Array<{ id: string; childSessionId?: string }>,
+      persistedLastActivityAt: number | null
+    ) {
+      for (const task of tasks) {
+        openTasks.set(task.id, persistedLastActivityAt ?? Date.now());
+        if (task.childSessionId) childSessions.add(task.childSessionId);
+      }
+      if (tasks.length && persistedLastActivityAt !== null) {
+        lastFamilyEventAt = persistedLastActivityAt;
+      }
+    },
     /** Call on every SSE event, before any per-handler session filtering. */
     noteEvent(ev: any) {
       const p = ev?.properties;
@@ -2535,7 +2571,7 @@ function makeSubagentStallGuard(
     noteTool(part: any) {
       if (part?.tool !== "task") return;
       const status = part?.state?.status;
-      if (status === "running") {
+      if (status === "pending" || status === "running") {
         if (!openTasks.has(part.id)) openTasks.set(part.id, Date.now());
       } else if (status === "completed" || status === "error") {
         openTasks.delete(part.id);
@@ -2656,6 +2692,7 @@ async function* runOpencodeAttempt(
       return;
     }
   }
+  const meridianModels = meridianRequiredModels(parsed.modelID, dial?.oracleAgent);
 
   const runKey = opts.sessionId || journal?.bksSessionId || crypto.randomUUID();
   if (activeOpencodeRuns.has(runKey)) {
@@ -2813,7 +2850,7 @@ async function* runOpencodeAttempt(
         const repick = () => {
           const p = pickMeridianAccount(
             user,
-            parsed.modelID,
+            meridianModels,
             cfg!.bridgeAccountIds,
             opts.accountId,
             opts.accountStrict,
@@ -2825,7 +2862,7 @@ async function* runOpencodeAttempt(
         const meridianPickOut: { reason?: string } = {};
         let picked = pickMeridianAccount(
           user,
-          parsed.modelID,
+          meridianModels,
           cfg!.bridgeAccountIds,
           opts.accountId,
           opts.accountStrict,
@@ -2844,7 +2881,7 @@ async function* runOpencodeAttempt(
             const waited = await waitForUsableAccount({
               pick: repick,
               user,
-              model: parsed.modelID,
+              model: meridianModels,
               maxWaitMs: waitMs,
               onWaitStart: (earliestReset) => {
                 audit({
@@ -2894,7 +2931,7 @@ async function* runOpencodeAttempt(
         // cached usage is already near the cap, spend one targeted poll
         // (tier/cooldown-bounded in claude-accounts) and re-pick on fresh
         // data — the same account comes back unless it's genuinely at cap.
-        if (await refreshUsageIfNearLimit(picked.id, parsed.modelID)) {
+        if (await refreshUsageIfNearLimit(picked.id, meridianModels)) {
           const fresh = repick();
           if (fresh && fresh.id !== picked.id) {
             audit({
@@ -4255,12 +4292,21 @@ async function* runOpencodeAttempt(
           runFailure +=
             " — the local Claude Code subscription is unavailable; retry after its limit resets or switch models.";
         } else {
-          markExhausted(pickedMeridian.id, parsed.modelID);
+          const failureDetail = (lastProviderRetryError || runFailure).toLowerCase();
+          const exhaustedModel =
+            meridianModels.find(
+              (required) =>
+                required !== parsed.modelID &&
+                failureDetail.includes(
+                  required.replace(/^claude-/, "").replace(/-\d+$/, "")
+                )
+            ) || parsed.modelID;
+          markExhausted(pickedMeridian.id, exhaustedModel);
           if (rotation) {
             const repickNext = () => {
               const p = pickMeridianAccount(
                 user,
-                parsed.modelID,
+                meridianModels,
                 readOpencodeBridgeConfig()?.bridgeAccountIds,
               );
               return "error" in p ? null : p;
@@ -4275,7 +4321,7 @@ async function* runOpencodeAttempt(
                 next = await waitForUsableAccount({
                   pick: repickNext,
                   user,
-                  model: parsed.modelID,
+                  model: meridianModels,
                   maxWaitMs: waitMs,
                   onWaitStart: (earliestReset) => {
                     audit({
@@ -4377,7 +4423,7 @@ async function* runOpencodeAttempt(
           const marked = markWedged(pickedMeridian.id);
           const next = pickMeridianAccount(
             user,
-            parsed.modelID,
+            meridianModels,
             readOpencodeBridgeConfig()?.bridgeAccountIds,
             opts.accountId,
             opts.accountStrict,
@@ -5001,6 +5047,16 @@ export async function tryReattachOpencodeRun(
         void client.session.abort({ path: { id: ocSessionId! }, ...q }).catch(() => {});
         signalDone();
       });
+      const persistedTasks = opencodeOpenTaskSnapshot(ocSessionId!);
+      if (persistedTasks?.tasks.length) {
+        stallGuard.seed(persistedTasks.tasks, persistedTasks.lastActivityAt);
+        turnEvent({
+          direction: "in",
+          kind: "subagent_stall_guard_restored",
+          tool_use_id: persistedTasks.tasks.map((task) => task.id).join(","),
+          last_activity_at: persistedTasks.lastActivityAt,
+        });
+      }
       const handleEvent = async (ev: any) => {
         const p = ev?.properties;
         stallGuard.noteEvent(ev);
