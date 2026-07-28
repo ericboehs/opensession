@@ -843,7 +843,7 @@ html.wco .app-body.sidebar-collapsed
 
 /* The detail pane and its optional right workspace panel form one inset object.
    The sidebar remains unchanged; only a narrow strip of its raised app surface
-   shows around the workspace at the top, right and bottom. Platform-specific
+   shows around the workspace. Platform-specific
    base radii follow the host window language, while --rf/--cs keep the app's
    existing round-vs-squircle treatment. */
 .workspace-shell {
