@@ -832,17 +832,17 @@ html.wco .app-body.sidebar-collapsed
 	--workspace-shell-radius: 16px;
 	display: flex;
 	flex: 1;
+	position: relative;
+	z-index: 1;
 	min-width: 0;
 	min-height: 0;
-	margin: 10px 10px 10px 0;
+	margin: 10px 10px 10px 4px;
 	overflow: hidden;
 	background: var(--bg);
 	border: 1px solid var(--border);
 	border-radius: calc(var(--workspace-shell-radius) * var(--rf));
 	corner-shape: var(--cs);
-	/* Directional shadow: depth on the free right/bottom edges without casting
-	   onto the sidebar or creating a clipped-looking seam at their boundary. */
-	box-shadow: 3px 3px 7px -4px rgba(0, 0, 0, 0.14);
+	box-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
 }
 html[data-platform="mac"] .workspace-shell {
 	--workspace-shell-radius: 12px;
