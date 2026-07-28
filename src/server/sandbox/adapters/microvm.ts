@@ -8,7 +8,7 @@
  * explicit opensession-workspace methods cross the control API.
  */
 
-import { getRepo, worktreePathFor } from "../../worktree";
+import { getRepo } from "../../worktree";
 import { sandboxConfig, sandboxProviderConfigured } from "../config";
 import type {
   PortMap,
@@ -58,6 +58,13 @@ function indexFromId(id: string): number | null {
 
 function ipFor(idx: number): string {
   return `10.200.${idx}.2`;
+}
+
+function workspacePath(sessionId: string): string {
+  const safe = sessionId
+    .replace(/[^a-zA-Z0-9_.-]+/g, "-")
+    .replace(/^[^a-zA-Z0-9]+/, "");
+  return `/home/ubuntu/microvm-workspaces/${safe}`;
 }
 
 async function run(
@@ -200,10 +207,12 @@ export class MicrovmProvider implements SandboxProvider {
     let previous = findRemoteStateBySession(this.id, spec.sessionId);
     const repo = getRepo(spec.repo || previous?.repoId);
     const branch = spec.branch || previous?.branch || repo.defaultBranch;
-    const cwd =
-      spec.cwd ||
-      previous?.cwd ||
-      worktreePathFor(branch, repo.id, { isolated: true });
+    // The clean golden is built from backstage-runner, whose runner bundle
+    // already occupies the host checkout's absolute path (without .git).
+    // Never clone the user's repo over that payload; MicroVM workspaces have a
+    // guest-only namespace and the Sandbox handle reports that real cwd to the
+    // external engine.
+    const cwd = previous?.cwd || workspacePath(spec.sessionId);
 
     let idx = previous ? indexFromId(previous.sandboxId) : null;
     if (idx != null) {
