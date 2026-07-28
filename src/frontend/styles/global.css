@@ -12121,7 +12121,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	/* The workspace overview (Info-tab content) embedded below the actions:
 	   opening prompt, summary, files changed, chats — the whole-workspace view. */
 	.session-info-overview {
-		padding: 8px 12px 0;
+		padding: 8px 0 0;
 	}
 	/* Its title/meta duplicate the page hero — drop the title; the meta
 	   (chats · author) and PR status chips still add detail. */
