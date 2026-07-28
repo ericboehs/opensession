@@ -101,14 +101,14 @@ describe("fake engine through runAgent", () => {
 			}),
 		);
 		// The partial attempt's init passes through, its exhausted done is
-		// swallowed, then the switch cue + runner line + the fallback model's
-		// clean turn. The walk prefers the strongest AUTO candidate over the
+		// swallowed, then the structured switch cue + the fallback model's clean
+		// turn. The switch is a timeline event, never assistant text. The walk
+		// prefers the strongest AUTO candidate over the
 		// configured preference when that preference ranks lower in the tier
 		// graph — sonnet's best auto hop today is gpt-5.6-sol (cross-family).
 		expect(types(events)).toEqual([
 			"init",
 			"model_switch",
-			"text_chunk",
 			"init",
 			"text_chunk",
 			"done",

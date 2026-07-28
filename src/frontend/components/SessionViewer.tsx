@@ -13,6 +13,7 @@ import { Reorder } from "motion/react";
 import { suppressLayoutAnimations } from "../ui/motion";
 import { renderMarkdown } from "../lib/markdown";
 import { LiveTurnStore } from "../lib/live-turn-store";
+import { isTimelineOnlyRunnerNotice } from "../lib/runner-events";
 import { TranscriptViewStore } from "../lib/transcript-view-store";
 import {
 	measureChatPerf,
@@ -1983,6 +1984,7 @@ export function SessionViewer({
 					liveTurnStore.start(msg.by);
 					break;
 				case "stream_text": {
+					if (isTimelineOnlyRunnerNotice(msg.text)) break;
 					liveTurnStore.append(msg.text);
 					break;
 				}

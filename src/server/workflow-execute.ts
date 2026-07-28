@@ -147,10 +147,9 @@ export async function runAgentCollect(
 				}
 			} else if (event.type === "model_switch") {
 				// Usage-limit fallback: agent-runner re-runs the FULL prompt on the
-				// fallback model (model_switch event + a synthetic "[runner] …" text
-				// chunk, then a complete fresh reply). The collected text IS the
-				// agent() return value, so drop the pre-switch partial reply and
-				// swallow the notice chunk that follows.
+				// fallback model. The collected text IS the agent() return value, so
+				// drop the pre-switch partial reply. Keep swallowing the legacy
+				// synthetic "[runner] …" chunk for older/remote runners.
 				text = "";
 				skipRunnerNotice = true;
 				model = event.toModel || model;

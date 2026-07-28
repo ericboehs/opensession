@@ -271,10 +271,10 @@ describe("runAgentCollect", () => {
 		expect(res.error).toBe("boom");
 	});
 
-	test("usage-limit fallback: collected text is only the final model's fresh reply", async () => {
-		// Event order per agent-runner (~lines 180-215): partial first-attempt
-		// text → model_switch → synthetic "[runner] …" notice chunk → fresh
-		// init + complete reply on the fallback model → done.
+	test("legacy runner notice after a fallback does not leak into collected text", async () => {
+		// Compatibility with an older/remote runner: partial first-attempt text →
+		// model_switch → synthetic "[runner] …" notice chunk → fresh init +
+		// complete reply on the fallback model → done.
 		mockRunAgent([
 			[
 				{ type: "init", sessionId: "oc-a", model: "opencode/anthropic/claude-fable-5" },

@@ -335,10 +335,6 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
       toModel: hop.id,
       switchReason: failure.transient ? "hit a transient engine error" : "out of credits",
     };
-    yield {
-      type: "text_chunk",
-      text: `\n\n[runner] ${modelLabel(currentModel)} ${reason}; falling back to ${modelLabel(hop.id)}.\n\n`,
-    };
 
     let prompt = currentOpts.prompt;
     let handoffEntries: TranscriptEntry[] = [];
