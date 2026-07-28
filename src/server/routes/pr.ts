@@ -8,7 +8,16 @@
 
 import { requestUser, type RouteContext } from "./context";
 import { personaName } from "../config";
-import { closePr, getPrDetails, getPrDiff, mergePr, postPrComment, submitPrReview } from "../pr-info";
+import {
+	cachedPrDetailsForSession,
+	closePr,
+	getPrDetails,
+	getPrDiff,
+	mergePr,
+	postPrComment,
+	reconcilePrDetails,
+	submitPrReview,
+} from "../pr-info";
 import { closeTinderPr, commentTinderPr, deleteTinderComment, getSeenPrs, labelTinderPr, listTinderLabels, listTinderPrs, markPrSeen, markPrUnseen, reopenTinderPr } from "../pr-tinder";
 import { findSession, invalidateSessionsCache } from "../session-cache";
 import { getSessionControl } from "../session-control";
@@ -47,10 +56,14 @@ function validDiffGroupingInput(body: any): {
 	return files.length === body.files.length ? { files, patch: body.patch } : null;
 }
 
-async function prApiResponse(load: () => Promise<unknown>): Promise<Response> {
+async function prApiResponse(
+	load: () => Promise<unknown>,
+	fallback?: unknown,
+): Promise<Response> {
 	try {
 		return Response.json(await load());
 	} catch (e: any) {
+		if (fallback !== undefined) return Response.json(fallback);
 		return Response.json(
 			{ error: e?.message || "GitHub's pull request API is unavailable right now." },
 			{ status: 502 },
@@ -200,7 +213,17 @@ export async function handlePrRoutes(
 			url.searchParams.get("branch"),
 		);
 		if (!target) return Response.json(null);
-		return prApiResponse(() => getPrDetails(target.branch, target.ghRepo));
+		const repoId =
+			url.searchParams.get("repo") || session.repo || "tella-fusion";
+		const fallback = cachedPrDetailsForSession(session, repoId, target.branch);
+		return prApiResponse(
+			async () =>
+				reconcilePrDetails(
+					await getPrDetails(target.branch, target.ghRepo),
+					fallback,
+				),
+			fallback ?? undefined,
+		);
 	}
 
 	// PR diff for inline review in the PR tab

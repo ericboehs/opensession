@@ -12,6 +12,7 @@ import { audited } from "./audit";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg } from "./github-limit";
 import { serviceGithubCredential, type GithubCredential } from "./github-auth";
 import { githubAppEnv } from "./github-app";
+import type { UnifiedSession } from "./types";
 
 export interface PrCheck {
   name: string;
@@ -101,6 +102,75 @@ export interface PrDetails {
   mergeStateStatus: string;
   /** The PR's webapp preview environment (Vercel preview), when one exists. */
   staging: PrStaging | null;
+}
+
+/**
+ * Turn the bulk session snapshot into the minimum honest PR detail response.
+ * This keeps PR surfaces coherent when the richer GitHub query is unavailable.
+ */
+export function cachedPrDetailsForSession(
+  session: UnifiedSession,
+  repoId: string,
+  branch: string,
+): PrDetails | null {
+  const ref = (session.prs || []).find(
+    (candidate) =>
+      candidate.repo === repoId &&
+      candidate.branch === branch &&
+      candidate.number != null &&
+      candidate.url &&
+      candidate.state,
+  );
+  const primary =
+    repoId === (session.repo || defaultRepo().id) && branch === session.branch;
+  const number = ref?.number ?? (primary ? session.prNumber : undefined);
+  const url = ref?.url ?? (primary ? session.prUrl : undefined);
+  const state = ref?.state ?? (primary ? session.prState : undefined);
+  // MERGED is irreversible. OPEN/CLOSED snapshots can be stale (a closed PR
+  // may reopen), and synthesizing their missing checks could expose bad actions.
+  if (number == null || !url || state !== "MERGED") return null;
+
+  return {
+    number,
+    title: ref?.title || (primary ? session.prTitle : "") || `PR #${number}`,
+    url,
+    state,
+    isDraft: ref?.isDraft ?? (primary ? !!session.prIsDraft : false),
+    baseRefName: "",
+    headRefName: branch,
+    additions: ref?.additions ?? (primary ? session.prAdditions : 0) ?? 0,
+    deletions: ref?.deletions ?? (primary ? session.prDeletions : 0) ?? 0,
+    changedFiles: primary ? session.prChangedFiles ?? 0 : 0,
+    reviewDecision:
+      ref?.reviewDecision || (primary ? session.prReviewDecision : "") || "",
+    author: primary ? session.prAuthor || "" : "",
+    body: "",
+    checks: [],
+    comments: [],
+    commits: [],
+    files: [],
+    reviewers: [],
+    mergeable: primary ? session.prMergeable || "UNKNOWN" : "UNKNOWN",
+    mergeStateStatus: "",
+    staging: null,
+  };
+}
+
+/** An irreversible bulk merge must not regress from a stale detail-cache row. */
+export function reconcilePrDetails(
+  details: PrDetails | null,
+  cached: PrDetails | null,
+): PrDetails | null {
+  if (!details) return cached;
+  if (
+    cached &&
+    details.number === cached.number &&
+    details.state !== "MERGED" &&
+    cached.state === "MERGED"
+  ) {
+    return { ...details, state: "MERGED", isDraft: false };
+  }
+  return details;
 }
 
 /**

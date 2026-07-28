@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import type { UnifiedSession, Project, SupportThread } from "../lib/types";
+import { sessionPrApproved, sessionPrMerged } from "../lib/session-prs";
 import type { ReviewQueueItem } from "../lib/review-queue";
 import {
 	relativeTime,
@@ -1019,32 +1020,11 @@ function mineStatus(s: UnifiedSession): MineStatus {
 // A chat that shipped one feature as several PRs has only landed once they all
 // have: keying off the primary branch's PR alone drops the row into Done with
 // three PRs still open. Single-PR chats keep the exact old behaviour.
-function chatPrMerged(c: UnifiedSession): boolean {
-	const refs = c.prs || [];
-	if (refs.length > 1)
-		return (
-			refs.every((r) => r.state === "MERGED" || r.state === "CLOSED") &&
-			refs.some((r) => r.state === "MERGED")
-		);
-	return c.prState === "MERGED";
-}
-/** Ditto for review: the series is reviewed when nothing is still waiting. */
-function chatPrApproved(c: UnifiedSession): boolean {
-	const refs = c.prs || [];
-	if (refs.length > 1)
-		return refs.every(
-			(r) =>
-				r.state === "MERGED" ||
-				r.state === "CLOSED" ||
-				r.reviewDecision === "APPROVED",
-		);
-	return c.prReviewDecision === "APPROVED";
-}
 function wsPrMerged(r: { chats: UnifiedSession[] }): boolean {
-	return r.chats.some(chatPrMerged);
+	return r.chats.some(sessionPrMerged);
 }
 function wsPrApproved(r: { chats: UnifiedSession[] }): boolean {
-	return !wsPrMerged(r) && r.chats.some(chatPrApproved);
+	return !wsPrMerged(r) && r.chats.some(sessionPrApproved);
 }
 // Has `person` (lowercase person key) already given their review on the row's
 // PR? Their latest submitted review counts whatever the outcome — approve,
@@ -6821,7 +6801,7 @@ function WsStatusMark({
 	// carry the PR lifecycle anyway, like the lane-grouped view's
 	// WsPrStatusMark does — a grey idle dot on a merged row reads as "no PR".
 	const prChat = frontingPrChat(row.chats);
-	if (row.status === "pending" && prChat && chatPrMerged(prChat))
+	if (row.status === "pending" && prChat && sessionPrMerged(prChat))
 		return slot(<IconGitMerge size={size} className="text-purple" />);
 	return dot("sidebar-status-idle");
 }
