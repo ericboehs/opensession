@@ -657,11 +657,12 @@ export function Composer({
         layout
         // Fuller rounding in the expanded state on phones so the box's corners
         // don't read as square against the iPhone's screen rounding; pill when
-        // collapsed. Desktop rounds to 24px. initial={false}: adopt the
+        // collapsed. Expanded composers round to 28px so their corners follow
+        // the circular toolbar buttons more closely. initial={false}: adopt the
         // target radius instantly on mount — otherwise Motion animates from the
         // stylesheet value on load, a visible radius morph.
         initial={false}
-        animate={{ borderRadius: minimized ? 999 : isPhone ? 28 : 24 }}
+        animate={{ borderRadius: minimized ? 999 : 28 }}
         transition={composerMorph}
         className={`composer ${disabled ? "composer-disabled" : ""} ${minimized ? "composer-min" : ""} ${noteMode ? "composer-note" : ""}`}
         style={
