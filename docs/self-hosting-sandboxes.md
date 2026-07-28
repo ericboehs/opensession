@@ -240,15 +240,24 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 The `microvm` provider is the local version of the brain/hands split. The
 OpenCode model loop and provider credentials stay on the OpenSession host;
 `opensession-workspace` executes explicit filesystem and command methods
-against a per-session Firecracker guest. It is currently offered only for
-`opencode-other` models.
+against a per-session Firecracker guest. OpenCode OpenAI and Claude models use
+this host-engine path too.
 
 Build the dedicated control-only golden, then enable it:
 
 ```sh
 sudo -n bash deploy/sandbox/microvm/refresh-sandbox-golden.sh \
-  /opt/firecracker/sandbox-store backstage-runner:latest
+  /opt/firecracker/sandbox-store
 ```
+
+With no image argument, the refresh builds
+`deploy/sandbox/microvm/Dockerfile.workspace`: a dedicated credential-free
+workspace image with Git, Bun, Node, ripgrep, jq, sqlite3, iproute2, Python and
+native-build basics. It deliberately contains no Claude/OpenCode CLI,
+OpenSession runner checkout, or model account directories. Passing a second
+image argument is an explicit experimental override. Golden publication is
+locked against clone creation and rolls back all three artifacts on failure,
+so a clone can never observe a disk/memory/vmstate generation mix.
 
 Do not point this provider at `/opt/firecracker/store`: that is the preview
 pool's app-specific golden. The sandbox golden starts only the structured

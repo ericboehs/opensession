@@ -281,8 +281,13 @@ hot-apply — a real restart is needed after changing it.
 - **Local Firecracker adapter** (`provider: "microvm"`): restores a
   credential-free control-only golden from `/opt/firecracker/sandbox-store`
   and runs the engine on the host through `opensession-workspace`. Build it
-  with `deploy/sandbox/microvm/refresh-sandbox-golden.sh`; never reuse the
-  preview-pool golden in `/opt/firecracker/store`.
+  with `deploy/sandbox/microvm/refresh-sandbox-golden.sh`; by default that
+  builds the dedicated minimal `Dockerfile.workspace` image (Git, Bun, Node,
+  ripgrep, jq, sqlite3, iproute2, Python, and native-build basics, but no model
+  CLI or OpenSession runner payload). Golden publication is locked against
+  concurrent clone creation and rolls back as one disk/memory/vmstate
+  generation on failure. Never reuse the preview-pool golden in
+  `/opt/firecracker/store`.
 - `deploy/sandbox/conformance.ts` — the provider conformance matrix
   (`bun run deploy/sandbox/conformance.ts [docker-socket|docker-ws|daytona|e2b|box|modal|lambda-microvm]`):
   verify.ts's checks parameterized over providers. Docker entries always run

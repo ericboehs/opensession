@@ -481,6 +481,27 @@ async function assertSandboxState(args: {
     "no model-provider account files entered the sandbox",
   );
 
+  if (providerId === "microvm") {
+    const workspaceTools = await sandbox.exec([
+      "sh",
+      "-lc",
+      "for c in jq sqlite3 ip git rg bun node python3; do command -v \"$c\" >/dev/null 2>&1 || echo \"$c\"; done",
+    ]);
+    assert(
+      !workspaceTools.stdout.trim(),
+      `minimal MicroVM has the practical workspace tool contract${workspaceTools.stdout.trim() ? ` (missing: ${workspaceTools.stdout.trim().replaceAll("\n", ", ")})` : ""}`,
+    );
+    const forbiddenPayload = await sandbox.exec([
+      "sh",
+      "-lc",
+      "for p in \"$(command -v opencode 2>/dev/null)\" \"$(command -v claude 2>/dev/null)\" /home/ubuntu/projects/tella-backstage/package.json /home/ubuntu/projects/tella-backstage/src/runner-host/host.ts; do test -z \"$p\" || test ! -e \"$p\" || echo \"$p\"; done",
+    ]);
+    assert(
+      !forbiddenPayload.stdout.trim(),
+      `minimal MicroVM contains no model CLI or runner payload${forbiddenPayload.stdout.trim() ? ` (found: ${forbiddenPayload.stdout.trim().replaceAll("\n", ", ")})` : ""}`,
+    );
+  }
+
   if (session.worktreeDir) {
     assert(
       !existsSync(join(session.worktreeDir, relativePath)),

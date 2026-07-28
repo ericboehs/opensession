@@ -1,12 +1,12 @@
 #!/bin/bash
-# Build a Firecracker rootfs for the preview pool from the docker golden's
-# exported filesystem. Usage:
+# Build a Firecracker rootfs from a Docker-exported filesystem. Used by both
+# the preview pool and the separate minimal host-engine workspace golden. Usage:
 #   BKS_INIT=/path/to/init build-rootfs.sh <golden.tar> <out.ext4> [size-gb]
 #
 # The image is sparse (only written blocks take disk). Injects:
 #   /sbin/bks-init            guest PID 1 (see bks-init)
 #   /opt/bks/control.py       exec agent (shared with the Lambda MicroVM image)
-#   /opt/bks/busybox          static busybox (the runner image has no iproute2)
+#   /opt/bks/busybox          static lifecycle fallback
 # and fixes up resolv.conf ownership quirks from docker-export.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -35,6 +35,11 @@ destroy() {
 if [ "$CMD" = "destroy" ]; then destroy; echo "destroyed clone $IDX"; exit 0; fi
 [ "$CMD" = "create" ] || { echo "usage: clone.sh create|destroy <idx> [pool-dir]"; exit 2; }
 
+# A golden refresh temporarily swaps the canonical disk before producing its
+# matching memory/vmstate. Never let a clone observe a mixed generation.
+exec 9>"$POOL/.refresh.lock"
+flock -s 9
+
 # Never destroy-first: a concurrent caller re-using a live index must FAIL,
 # not silently kill the running VM (a claim's VM died mid-converge to a
 # racing sweep spawn before this guard).
