@@ -458,7 +458,9 @@ export const microvmPrewarmAdapter: PrewarmAdapter = {
   async prepare(driver, repo, label) {
     await driver.ensureStarted();
     await bootstrapRemoteWorkspaceRuntime(microvmBootstrapDriver(driver), label);
-    await warmRemoteWorkspace(driver, repo, label, { installDeps: false });
+    if (!(await warmRemoteWorkspace(driver, repo, label, { installDeps: false }))) {
+      throw new Error(`MicroVM prewarm could not clone ${repo.id}`);
+    }
   },
 
   async destroy(id) {

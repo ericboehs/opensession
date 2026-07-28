@@ -639,7 +639,7 @@ export async function warmRemoteWorkspace(
   repo: { id: string; repo: string; ghRepo?: string; defaultBranch: string; depsInstall?: string },
   label: string,
   opts?: { installDeps?: boolean },
-): Promise<void> {
+): Promise<boolean> {
   const dir = `${REMOTE_WARM_BASE}/${sanitizeName(repo.id)}`;
   const log = (msg: string) => console.log(`[sandbox:${label}] warm workspace: ${msg}`);
   const has = await driver.exec(`test -d ${shellQuoteWord(dir)}/.git`);
@@ -652,12 +652,12 @@ export async function warmRemoteWorkspace(
     );
     if (clone.exitCode !== 0) {
       log(`clone failed (adoption will set up cold): ${redactUrl(clone.stderr.trim().slice(0, 300))}`);
-      return;
+      return false;
     }
   }
   if (opts?.installDeps === false) {
     log("ready (clone only)");
-    return;
+    return true;
   }
   // Deps: same convention as worktree.ts's installWorktreeDeps, expressed
   // in-sandbox (config depsInstall → tella-fusion webapp install → root
@@ -673,6 +673,7 @@ export async function warmRemoteWorkspace(
   } else {
     log("ready");
   }
+  return true;
 }
 
 export async function setupRemoteWorkspace(
