@@ -12,7 +12,7 @@ struct NotificationsSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Alerts") {
+            Section {
                 Toggle("Push alerts on this device", isOn: $pushAlerts)
                 Picker("Completion sound", selection: $completionSound) {
                     Text("Default").tag("default")
@@ -23,6 +23,8 @@ struct NotificationsSettingsView: View {
                     Text("When OS1 is in the background").tag("background")
                     Text("Never").tag("never")
                 }
+            } header: {
+                Text("Alerts")
             } footer: {
                 Text("These alert preferences apply only to this native OS1 app and device.")
             }
@@ -74,13 +76,15 @@ struct ComposerSettingsView: View {
                     }
                 }
 
-                Section("New sessions") {
+                Section {
                     Picker("Default model", selection: $defaultModel) {
                         Text("No preference").tag("")
                         ForEach(models.filter { $0.id?.isEmpty == false }, id: \.id) { model in
                             Text(model.label ?? model.id ?? "Model").tag(model.id ?? "")
                         }
                     }
+                } header: {
+                    Text("New sessions")
                 } footer: {
                     Text("New sessions use this model when available. No preference uses the workspace default.")
                 }
@@ -184,17 +188,19 @@ struct AppearanceSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Theme") {
+            Section {
                 Picker("Appearance", selection: $appearance) {
                     Text("System").tag("system")
                     Text("Light").tag("light")
                     Text("Dark").tag("dark")
                 }
+            } header: {
+                Text("Theme")
             } footer: {
                 Text("The selected native appearance is stored on this device.")
             }
 
-            Section("Chat") {
+            Section {
                 if loading {
                     ProgressView("Loading chat preferences…")
                 } else {
@@ -208,6 +214,8 @@ struct AppearanceSettingsView: View {
                     }
                     .disabled(saving)
                 }
+            } header: {
+                Text("Chat")
             } footer: {
                 Text("Controls how a turn's working activity is folded in chat. Sidebar settings are not shown because the native app has no web sidebar.")
             }

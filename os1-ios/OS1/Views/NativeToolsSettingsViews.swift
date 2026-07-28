@@ -415,7 +415,7 @@ struct SecuritySettingsView: View {
             if let notice { Section { Text(notice).foregroundStyle(.secondary) } }
             Section("Scans") {
                 if loading && scans.isEmpty { ProgressView("Loading security scans…") }
-                else if scans.isEmpty { Text(error ?? "No security scans yet.").foregroundStyle(error == nil ? .secondary : .red) }
+                else if scans.isEmpty { Text(error ?? "No security scans yet.").foregroundStyle(error == nil ? Color.secondary : Color.red) }
                 else { ForEach(scans, id: \.id) { scan in NavigationLink { SecurityScanDetailView(scan: scan, onChanged: load) } label: { VStack(alignment: .leading, spacing: 4) { Text(scan.profileName ?? "Custom scan"); Text(scan.repos?.joined(separator: ", ") ?? "No repositories").font(.footnote).foregroundStyle(.secondary); StatusBadge(text: scan.status ?? "queued") } } } }
                 Button { showingScanEditor = true } label: { Label("New Scan", systemImage: "plus") }
             }
@@ -459,7 +459,17 @@ private struct SecurityScanEditorView: View {
     private var repos: [SecurityRepo] { (state.repos ?? []).filter { $0.id != nil } }; private var profiles: [SecurityProfile] { (state.profiles ?? []).filter { $0.id != nil } }
     var body: some View {
         Form {
-            Section("Repositories") { if repos.isEmpty { Text("No scannable repositories").foregroundStyle(.secondary) }; ForEach(repos, id: \.id) { repo in if let id = repo.id { Toggle(id, isOn: Binding(get: { selectedRepos.contains(id) }, set: { $0 ? selectedRepos.insert(id) : selectedRepos.remove(id) })).disabled((recurrence != "once" || interactive) && id != "tella-fusion") } } }
+            Section("Repositories") {
+                if repos.isEmpty {
+                    Text("No scannable repositories").foregroundStyle(.secondary)
+                }
+                ForEach(repos, id: \.id) { repo in
+                    if let id = repo.id {
+                        Toggle(id, isOn: repoSelection(id))
+                            .disabled((recurrence != "once" || interactive) && id != "tella-fusion")
+                    }
+                }
+            }
             Section("Profile") { Picker("Profile", selection: $profileId) { Text("Custom instructions").tag(""); ForEach(profiles, id: \.id) { profile in if let id = profile.id { Text(profile.name ?? id).tag(id) } } } }
             Section("Instructions") { TextEditor(text: $instructions).frame(minHeight: 120) }
             Section("Run") { Picker("Recurrence", selection: $recurrence) { Text("Run once").tag("once"); Text("Daily").tag("daily"); Text("Weekly").tag("weekly") }; Toggle("Interactive planning session", isOn: $interactive).disabled(recurrence != "once") }
@@ -469,6 +479,15 @@ private struct SecurityScanEditorView: View {
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button(saving ? "Starting…" : "Start") { Task { await submit() } }.disabled(saving || selectedRepos.isEmpty) } }
         .onChange(of: recurrence) { _, value in if value != "once" { interactive = false; selectedRepos = ["tella-fusion"] } }
         .onChange(of: interactive) { _, value in if value { recurrence = "once"; selectedRepos = ["tella-fusion"] } }
+    }
+    private func repoSelection(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { selectedRepos.contains(id) },
+            set: { selected in
+                if selected { selectedRepos.insert(id) }
+                else { selectedRepos.remove(id) }
+            }
+        )
     }
     private func submit() async { saving = true; defer { saving = false }; var body: [String: Any] = ["repos": Array(selectedRepos), "profileId": profileId, "instructions": instructions, "interactive": interactive, "createdBy": ServerConfig.shared.userName]; if recurrence != "once" { body["recurrence"] = recurrence }; do { _ = try await save(body); dismiss() } catch { self.error = error.localizedDescription } }
 }
