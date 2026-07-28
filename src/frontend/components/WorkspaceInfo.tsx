@@ -19,7 +19,10 @@ import {
 	type WorkspaceOverview,
 	type SessionAssetFile,
 } from "../lib/api";
-import { pollWhileVisible } from "../lib/poll";
+import {
+	pollWhileVisible,
+	PR_WEBHOOK_FALLBACK_POLL_MS,
+} from "../lib/poll";
 import { getCurrentUser, TEAM } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { Menu } from "../ui/menu";
@@ -90,6 +93,8 @@ interface Props {
 	repo?: string;
 	/** PR lane state, when the session has a PR — gates the PR fetch. */
 	prState?: string | null;
+	/** Bumped when a GitHub webhook reports activity for this workspace's PR. */
+	refreshTick?: number;
 	/** The open chat's sandbox opt-in — renders a provider/mode badge in the
 	    status row (from session fields only; no container polling). */
 	sandbox?: {
@@ -1144,6 +1149,7 @@ export function WorkspaceInfo({
 	chats,
 	repo,
 	prState,
+	refreshTick,
 	sandbox,
 	reviewRequest,
 	reviewRequestSessionId,
@@ -1202,8 +1208,8 @@ export function WorkspaceInfo({
 		};
 	}, [cacheKey, chatsKey, workspaceId, liveMediaCount]);
 
-	// PR (for the status chips) — gated so we don't fetch when there's nothing
-	// to show, and refreshed on a slow interval while open.
+	// PR (for the status chips) — webhooks trigger refreshTick; the slow poll only
+	// recovers a missed delivery or a deployment with no matching webhook.
 	useEffect(() => {
 		if (!prState) {
 			setPr(null);
@@ -1215,12 +1221,12 @@ export function WorkspaceInfo({
 				.then((p) => alive && setPr(p))
 				.catch(() => {});
 		load();
-		const stop = pollWhileVisible(load, 45000);
+		const stop = pollWhileVisible(load, PR_WEBHOOK_FALLBACK_POLL_MS);
 		return () => {
 			alive = false;
 			stop();
 		};
-	}, [sessionId, repo, prState]);
+	}, [sessionId, repo, prState, refreshTick]);
 
 	// Files changed — the primary repo's diff (Changes tab has the full view
 	// + repo switcher; here we show a capped preview).

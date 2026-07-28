@@ -44,6 +44,7 @@ import { getCurrentUser } from "./UserPicker";
 import { githubLoginFor } from "./UserAvatar";
 import { renderMarkdown, renderPrCommentMarkdown } from "../lib/markdown";
 import { providerFromUrl, avatarUrl, type Provider } from "../lib/provider";
+import { pollWhileVisible, PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
 import {
   IconArrowUp,
   IconCheck,
@@ -520,15 +521,16 @@ export function PrPanel({
     setGit(null);
     setPending([]);
     load();
-    const interval = setInterval(load, 60000);
+    const stopPolling = pollWhileVisible(load, PR_WEBHOOK_FALLBACK_POLL_MS);
     return () => {
-      clearInterval(interval);
+      stopPolling();
       loadGenerationRef.current += 1;
     };
   }, [load]);
 
   // A GitHub webhook reported activity on the shown PR's branch (review, CI,
-  // push, merge) — refetch immediately instead of waiting out the poll above.
+  // push, merge) — refetch immediately. Primary targets omit their branch, so
+  // match those through the loaded PR number/head branch instead.
   // The server invalidated its caches before broadcasting, so this reads
   // fresh data.
   useEffect(() => {
@@ -536,9 +538,25 @@ export function PrPanel({
     return addHandler((msg) => {
       if (msg.type !== "pr_updated") return;
       const branch = previewTarget?.branch ?? active?.branch;
-      if (branch && msg.branch === branch) void load(true);
+      const repo = previewTarget?.repo ?? active?.repo;
+      if (
+        msg.repo === repo &&
+        (branch
+          ? msg.branch === branch
+          : !pr || msg.number === pr.number || msg.branch === pr.headRefName)
+      )
+        void load(true);
     });
-  }, [addHandler, load, previewTarget?.branch, active?.branch]);
+  }, [
+    addHandler,
+    load,
+    previewTarget?.repo,
+    previewTarget?.branch,
+    active?.repo,
+    active?.branch,
+    pr?.number,
+    pr?.headRefName,
+  ]);
 
   useEffect(() => {
     const files = pr?.files || [];

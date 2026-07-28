@@ -66,7 +66,10 @@ import {
 	type SessionSubagentSnapshot,
 	type PreviewStatus,
 } from "../lib/api";
-import { pollWhileVisible } from "../lib/poll";
+import {
+	pollWhileVisible,
+	PR_WEBHOOK_FALLBACK_POLL_MS,
+} from "../lib/poll";
 import { useBackSwipe } from "../hooks/useBackSwipe";
 import { prReviewCompletion } from "../lib/review-queue";
 import { Composer } from "./Composer";
@@ -771,9 +774,15 @@ export function SessionViewer({
 	const [forkFrom, setForkFrom] = useState<string | null>(null);
 	const [isStreaming, setIsStreaming] = useState(false);
 	const [isRunningLive, setIsRunningLive] = useState(session.isRunning);
-	// Bumped on a `git_pushed` broadcast (server-side auto-push) so the PR status
-	// header refetches immediately and drops "Ahead by N commits".
+	// Bumped on git pushes and matching GitHub webhook events so every mounted PR
+	// surface revalidates immediately.
 	const [gitRefreshTick, setGitRefreshTick] = useState(0);
+	const sessionPrTargetsRef = useRef<Set<string>>(new Set());
+	sessionPrTargetsRef.current = new Set([
+		`${session.repo || "tella-fusion"}\0${session.branch}`,
+		...(session.attachedRepos || []).map((r) => `${r.repo}\0${r.branch}`),
+		...(session.prs || []).map((r) => `${r.repo}\0${r.branch}`),
+	]);
 	const [viewers, setViewers] = useState<string[]>([]);
 	// The create run is still preparing this session's worktree (new workspaces
 	// announce the session before the slow git work). While true the transcript
@@ -1950,12 +1959,9 @@ export function SessionViewer({
 					if (msg.sessionId === session.id) setGitRefreshTick((t) => t + 1);
 					break;
 				case "pr_updated":
-					// GitHub webhook activity on this session's branch (primary or an
-					// attached repo's) — refetch the PR status header immediately.
-					if (
-						msg.branch === session.branch ||
-						(session.attachedRepos || []).some((r) => r.branch === msg.branch)
-					)
+					// Include PR-backed workspace branches: legacy review chats keep a
+					// synthetic checkout branch that differs from the real PR head.
+					if (sessionPrTargetsRef.current.has(`${msg.repo}\0${msg.branch}`))
 						setGitRefreshTick((t) => t + 1);
 					break;
 				case "workspace_status":
@@ -3453,12 +3459,12 @@ export function SessionViewer({
 				})
 				.catch(() => {});
 		load();
-		const stop = pollWhileVisible(load, 60000);
+		const stop = pollWhileVisible(load, PR_WEBHOOK_FALLBACK_POLL_MS);
 		return () => {
 			alive = false;
 			stop();
 		};
-	}, [session.id, stagingRelevant]);
+	}, [session.id, stagingRelevant, gitRefreshTick]);
 	const stagingUrl = staging
 		? withPreviewPath(staging.url, session.previewPath)
 		: null;
@@ -3982,7 +3988,11 @@ export function SessionViewer({
 						/>
 					)}
 					{!isPhone && !panelOpen && (
-						<StagingLink session={session} variant="header" />
+						<StagingLink
+							session={session}
+							variant="header"
+							refreshTick={gitRefreshTick}
+						/>
 					)}
 					{/* Panel closed → surface the PR chip + its primary action (Merge/
 					    Push/Resolve) inline, grouped with the globe directly left of
@@ -4124,6 +4134,7 @@ export function SessionViewer({
 										)}
 										repo={hasWorkspace ? session.repo || "tella-fusion" : undefined}
 										prState={hasWorkspace ? session.prState : undefined}
+										refreshTick={gitRefreshTick}
 										sandbox={session.sandbox}
 										reviewRequest={effectiveReview?.req ?? null}
 										reviewRequestSessionId={effectiveReview?.ownerId}
@@ -4885,7 +4896,7 @@ export function SessionViewer({
 										onStatusChange={setPreviewStatus}
 										onOpenTab={onOpenPreviewTab}
 									/>
-									<StagingLink session={session} />
+									<StagingLink session={session} refreshTick={gitRefreshTick} />
 								</div>
 							</div>
 						)}
@@ -4906,7 +4917,11 @@ export function SessionViewer({
 								// the globe stays in the sheet-head row above.
 								leading={
 									!isPhone ? (
-										<StagingLink session={session} variant="header" />
+										<StagingLink
+											session={session}
+											variant="header"
+											refreshTick={gitRefreshTick}
+										/>
 									) : undefined
 								}
 							/>
@@ -5011,6 +5026,7 @@ export function SessionViewer({
 											hasWorkspace ? session.repo || "tella-fusion" : undefined
 										}
 										prState={hasWorkspace ? session.prState : undefined}
+										refreshTick={gitRefreshTick}
 										sandbox={session.sandbox}
 										reviewRequest={effectiveReview?.req ?? null}
 										reviewRequestSessionId={effectiveReview?.ownerId}

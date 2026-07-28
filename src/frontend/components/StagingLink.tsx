@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { fetchPr } from "../lib/api";
-import { pollWhileVisible } from "../lib/poll";
+import {
+	pollWhileVisible,
+	PR_WEBHOOK_FALLBACK_POLL_MS,
+} from "../lib/poll";
 import type { PrCheck, UnifiedSession } from "../lib/types";
 import { withPreviewPath } from "../lib/preview-url";
 import { Tooltip } from "../ui/tooltip";
@@ -36,12 +39,15 @@ const OPEN_CHORD = /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 export function StagingLink({
 	session,
 	variant = "bar",
+	refreshTick,
 }: {
 	session: UnifiedSession;
 	/** "bar" = the labelled Preview environment link (right panel's action row); "header" = a
 	 *  single state-colored 🌐 icon (amber while building, green once Ready) for
 	 *  the session header, sized to match the panel-toggle icon beside it. */
 	variant?: "bar" | "header";
+	/** Bumped when GitHub reports PR/check/deployment activity for this session. */
+	refreshTick?: number;
 }) {
 	const [staging, setStaging] = useState<{ url: string; status: string } | null>(
 		null,
@@ -80,14 +86,14 @@ export function StagingLink({
 				})
 				.catch(() => {});
 		load();
-		// Slow poll so a Building deploy flips to Ready; hidden tabs skip ticks
-		// and the server caches PR details, so this stays cheap.
-		const stop = pollWhileVisible(load, 60000);
+		// Webhooks normally flip Building to Ready; this is only a missed-event
+		// fallback, and hidden tabs skip it entirely.
+		const stop = pollWhileVisible(load, PR_WEBHOOK_FALLBACK_POLL_MS);
 		return () => {
 			alive = false;
 			stop();
 		};
-	}, [session.id, relevant]);
+	}, [session.id, relevant, refreshTick]);
 
 	if (!relevant) return null;
 

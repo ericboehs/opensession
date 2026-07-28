@@ -16,3 +16,6 @@ export function pollWhileVisible(fn: () => void, ms: number): () => void {
 		document.removeEventListener("visibilitychange", tick);
 	};
 }
+
+/** GitHub webhooks are the primary PR refresh path; this only recovers missed events. */
+export const PR_WEBHOOK_FALLBACK_POLL_MS = 5 * 60_000;

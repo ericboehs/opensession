@@ -9,7 +9,10 @@ import {
 	gitPushApi,
 	mergePrApi,
 } from "../lib/api";
-import { pollWhileVisible } from "../lib/poll";
+import {
+	pollWhileVisible,
+	PR_WEBHOOK_FALLBACK_POLL_MS,
+} from "../lib/poll";
 import { getCurrentUser } from "./UserPicker";
 import { providerFromUrl } from "../lib/provider";
 import { Tooltip } from "../ui/tooltip";
@@ -210,11 +213,9 @@ interface Props {
 	    staging-deploy icon in the Workspace panel. */
 	leading?: React.ReactNode;
 	/** Live run state — when it falls from running→idle the header refetches, so
-	    it reflects the just-finished turn (and any auto-push) without waiting on
-	    the 45s poll. */
+	    it reflects the just-finished turn (and any auto-push) immediately. */
 	running?: boolean;
-	/** Bumped by the viewer on a `git_pushed` broadcast — an immediate refetch so
-	    a server-side auto-push clears "Ahead by N commits" the moment it lands. */
+	/** Bumped by the viewer on a `git_pushed` or matching `pr_updated` broadcast. */
 	refreshTick?: number;
 }
 
@@ -531,13 +532,13 @@ export function PrStatusBar({
 		setGit(cached?.git ?? null);
 		setLoaded(!!cached);
 		load();
-		return pollWhileVisible(load, 45000);
+		return pollWhileVisible(load, PR_WEBHOOK_FALLBACK_POLL_MS);
 	}, [load]);
 
 	// Refetch the instant a turn ends (running→idle) or an auto-push lands
-	// (refreshTick bump), so "Ahead by N commits" clears without waiting on the
-	// 45s poll. Skip the initial mount/true edges — those are already covered by
-	// the load() above. Track the previous run state so only the falling edge
+	// (refreshTick bump), so "Ahead by N commits" clears without waiting on a
+	// webhook or fallback poll. Skip initial mount/true edges: load() above covers
+	// those. Track the previous run state so only the falling edge
 	// triggers (a turn *starting* can't change the pushed/ahead state).
 	const prevRunning = React.useRef(running);
 	useEffect(() => {

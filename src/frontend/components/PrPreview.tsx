@@ -17,6 +17,7 @@ import {
 } from "../lib/api";
 import { PrSessionsList, prRelatedSessions } from "./PrSessions";
 import { IconX } from "./icons";
+import { pollWhileVisible, PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
 import {
 	CheckRow,
 	checkClass,
@@ -141,9 +142,9 @@ export function PrPreview({
 		setPr(null);
 		setDiff(null);
 		load();
-		const interval = setInterval(load, 60000);
+		const stopPolling = pollWhileVisible(load, PR_WEBHOOK_FALLBACK_POLL_MS);
 		return () => {
-			clearInterval(interval);
+			stopPolling();
 			loadGenerationRef.current += 1;
 		};
 	}, [load]);
