@@ -316,86 +316,6 @@ function parseRoute(pathname: string): Route {
 	return { view: "home" };
 }
 
-const EMBEDDED_TOOL_SECTIONS = new Set<SettingsSectionKey>([
-	"automations",
-	"goals",
-	"actions",
-	"security",
-]);
-
-function embeddedSettingsSection(): SettingsSectionKey | undefined {
-	const value = new URLSearchParams(location.search).get("section") as
-		| SettingsSectionKey
-		| null;
-	if (!value) return undefined;
-	return SETTINGS_SECTIONS.has(value) || EMBEDDED_TOOL_SECTIONS.has(value)
-		? value
-		: undefined;
-}
-
-/** Settings-only SPA entry used by the native app. It deliberately does not
- * mount App, so opening Settings on iOS does not start a second session poll,
- * WebSocket, service worker, sidebar, or notification pipeline. */
-function EmbeddedSettingsApp() {
-	const [section, setSection] = useState<SettingsSectionKey | undefined>(
-		embeddedSettingsSection,
-	);
-	const [selectedToolId, setSelectedToolId] = useState<string>();
-	useEffect(() => {
-		const splash = document.getElementById("splash");
-		if (!splash) return;
-		splash.classList.add("splash-hide");
-		const timeout = setTimeout(() => splash.remove(), 400);
-		return () => clearTimeout(timeout);
-	}, []);
-
-	const selectSection = (next?: SettingsSectionKey) => {
-		setSection(next);
-		setSelectedToolId(undefined);
-		const query = new URLSearchParams({ embedded: "native" });
-		if (next) query.set("section", next);
-		history.replaceState(null, "", `${BASE_PATH}/settings?${query}`);
-	};
-	const openSession = (id: string) => {
-		location.href = `os1-settings://session/${encodeURIComponent(id)}`;
-	};
-
-	return (
-		<UserGate>
-			<ToastHost />
-			<Settings
-				embedded
-				onBack={() => {}}
-				section={section}
-				onShowRoot={() => selectSection()}
-				onSelect={selectSection}
-			>
-				{section === "automations" ? (
-					<Automations
-						onOpenSession={openSession}
-						selectedId={selectedToolId}
-						onSelect={setSelectedToolId}
-					/>
-				) : section === "security" ? (
-					<Security onOpenSession={openSession} />
-				) : section === "goals" ? (
-					<Goals
-						onOpenSession={openSession}
-						selectedId={selectedToolId}
-						onSelect={setSelectedToolId}
-					/>
-				) : section === "actions" ? (
-					<Actions
-						onOpenSession={openSession}
-						selectedId={selectedToolId}
-						onSelect={setSelectedToolId}
-					/>
-				) : null}
-			</Settings>
-		</UserGate>
-	);
-}
-
 function routePath(route: Route): string {
 	switch (route.view) {
 		case "session":
@@ -3282,30 +3202,11 @@ function App() {
 // it must work in cold-storage contexts like the iOS PWA's in-app browser).
 // The server's SPA fallback serves the shell for this path; see PreviewWait.
 const previewWaitSessionId = matchPreviewWaitRoute(location.pathname);
-const embeddedSettings =
-	parseRoute(location.pathname).view === "settings" &&
-	new URLSearchParams(location.search).get("embedded") === "native";
-
-// Native owns sign-in. If the short-lived WebView cookie expires while a
-// settings panel is open, turn any API 401 into a navigation the coordinator
-// can observe and route back to the native Connection screen.
-if (embeddedSettings) {
-	const nativeFetch = window.fetch.bind(window);
-	window.fetch = async (...args) => {
-		const response = await nativeFetch(...args);
-		if (response.status === 401) location.href = "os1-settings://auth-expired";
-		return response;
-	};
-}
 
 const root = createRoot(document.getElementById("root")!);
 root.render(
 	previewWaitSessionId ? (
 		<PreviewWait sessionId={previewWaitSessionId} />
-	) : embeddedSettings ? (
-		<TooltipProvider>
-			<EmbeddedSettingsApp />
-		</TooltipProvider>
 	) : (
 		<TooltipProvider>
 			<App />

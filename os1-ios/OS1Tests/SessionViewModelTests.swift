@@ -741,6 +741,7 @@ private final class MockSocket: SessionSocket {
         let images: [String]?
         let effort: String?
         let fastMode: Bool?
+        let busyMode: String?
     }
 
     private(set) var connectCount = 0
@@ -756,11 +757,11 @@ private final class MockSocket: SessionSocket {
     func loadHistory(sessionId: String, beforeSeq: Int) {}
     func prompt(
         sessionId: String, content: String, user: String,
-        images: [String]?, effort: String?, fastMode: Bool?
+        images: [String]?, effort: String?, fastMode: Bool?, busyMode: String?
     ) {
         prompts.append(PromptCall(
             sessionId: sessionId, content: content, user: user,
-            images: images, effort: effort, fastMode: fastMode
+            images: images, effort: effort, fastMode: fastMode, busyMode: busyMode
         ))
     }
     func steerQueued(sessionId: String, queueId: String) { steeredQueueIds.append(queueId) }

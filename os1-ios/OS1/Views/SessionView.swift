@@ -399,6 +399,8 @@ struct SessionView: View {
 /// nothing streaming.
 private struct SessionInputBar: View {
     @Bindable var viewModel: SessionViewModel
+    @AppStorage("os1.composer.sendKey") private var sendKey = "enter"
+    @AppStorage("os1.composer.busySend") private var busySend = "queue"
     /// Matches the transcript column cap so the bar centers with it.
     let contentMaxWidth: CGFloat
     let horizontalInset: CGFloat
@@ -494,7 +496,9 @@ private struct SessionInputBar: View {
         HStack(alignment: .bottom, spacing: 8) {
             AttachImagesButton(images: $viewModel.attachedImages)
             TextField(
-                viewModel.isRunning ? "Message — queues for after this run" : "Message",
+                viewModel.isRunning
+                    ? (busySend == "steer" ? "Message — steers this run" : "Message — queues for after this run")
+                    : "Message",
                 text: $viewModel.draft,
                 axis: .vertical
             )
@@ -505,7 +509,13 @@ private struct SessionInputBar: View {
             .focused($inputFocused)
             // Mac: Return sends; Shift/Option-Return insert a newline. On
             // iOS the software keyboard's return key just wraps, as before.
-            .onSubmit { viewModel.sendDraft() }
+            .onSubmit {
+                #if os(iOS)
+                viewModel.sendDraft()
+                #else
+                if sendKey == "enter" { viewModel.sendDraft() }
+                #endif
+            }
             // A copied screenshot pastes straight into the attachments
             // (Cmd+V on Mac, long-press Paste on iOS); text pastes flow
             // through to the field untouched.
@@ -547,15 +557,27 @@ private struct SessionInputBar: View {
                 let mods = event.modifierFlags
                     .intersection(.deviceIndependentFlagsMask)
                     .subtracting(.capsLock)
-                guard inputFocused,
-                      event.keyCode == 36 || event.keyCode == 76,
-                      mods == .shift
-                else { return event }
-                NSApp.sendAction(
-                    #selector(NSTextView.insertNewlineIgnoringFieldEditor(_:)),
-                    to: nil, from: nil
-                )
-                return nil
+                guard inputFocused, event.keyCode == 36 || event.keyCode == 76 else {
+                    return event
+                }
+                let preferredSendKey = UserDefaults.standard.string(
+                    forKey: "os1.composer.sendKey"
+                ) ?? "enter"
+                if mods == .command || mods == .control {
+                    let mode = UserDefaults.standard.string(
+                        forKey: "os1.composer.busySendMod"
+                    ) ?? "steer"
+                    viewModel.sendDraft(busyModeOverride: mode)
+                    return nil
+                }
+                if mods == .shift || (mods.isEmpty && preferredSendKey == "mod-enter") {
+                    NSApp.sendAction(
+                        #selector(NSTextView.insertNewlineIgnoringFieldEditor(_:)),
+                        to: nil, from: nil
+                    )
+                    return nil
+                }
+                return event
             }
         }
     }

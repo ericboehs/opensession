@@ -4,17 +4,16 @@ import AppKit
 #endif
 
 enum OS1VisualStyle {
-    // Web dark-theme tokens. The native app keeps SwiftUI controls and glass,
-    // but grounds them in the same warm charcoal hierarchy as os.tella.dev.
+    // Use native semantic surfaces so the app follows its Settings appearance.
     #if os(iOS)
-    static let background = Color(red: 0.114, green: 0.106, blue: 0.098)
-    static let raised = Color(red: 0.141, green: 0.129, blue: 0.122)
-    static let panel = Color(red: 0.161, green: 0.149, blue: 0.141)
-    static let hover = Color(red: 0.196, green: 0.180, blue: 0.169)
-    static let border = Color(red: 0.220, green: 0.200, blue: 0.184)
-    static let text = Color(red: 0.933, green: 0.914, blue: 0.890)
-    static let textDim = Color(red: 0.667, green: 0.635, blue: 0.604)
-    static let textFaint = Color(red: 0.490, green: 0.459, blue: 0.431)
+    static let background = Color(uiColor: .systemBackground)
+    static let raised = Color(uiColor: .secondarySystemBackground)
+    static let panel = Color(uiColor: .tertiarySystemBackground)
+    static let hover = Color(uiColor: .quaternarySystemFill)
+    static let border = Color(uiColor: .separator)
+    static let text = Color(uiColor: .label)
+    static let textDim = Color(uiColor: .secondaryLabel)
+    static let textFaint = Color(uiColor: .tertiaryLabel)
     #else
     static let background = Color(nsColor: .windowBackgroundColor)
     static let raised = Color(nsColor: .underPageBackgroundColor)

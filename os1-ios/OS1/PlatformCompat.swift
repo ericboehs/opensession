@@ -28,17 +28,6 @@ extension ToolbarItemPlacement {
 }
 
 extension View {
-    /// The web client defaults to its warm dark palette. Match that on iOS,
-    /// while leaving the desktop app free to follow the Mac's appearance.
-    @ViewBuilder
-    func webColorSchemeCompat() -> some View {
-        #if os(iOS)
-        preferredColorScheme(.dark)
-        #else
-        self
-        #endif
-    }
-
     /// Warm transcript surfaces on iOS; retain SwiftUI's hierarchical fill on
     /// macOS so the desktop app continues to follow the system appearance.
     @ViewBuilder
@@ -109,14 +98,5 @@ func copyToPasteboard(_ string: String) {
     #else
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(string, forType: .string)
-    #endif
-}
-
-/// Open links that leave an embedded web surface in the system browser.
-func openExternalURL(_ url: URL) {
-    #if canImport(UIKit)
-    UIApplication.shared.open(url)
-    #else
-    NSWorkspace.shared.open(url)
     #endif
 }

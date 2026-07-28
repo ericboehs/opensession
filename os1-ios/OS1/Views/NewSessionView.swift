@@ -36,6 +36,7 @@ struct NewSessionView: View {
 
     /// The universal "+" reopens on whatever repo was used last.
     @AppStorage("os1.newSession.repo") private var lastRepo = "tella-fusion"
+    @AppStorage("os1.composer.defaultModel") private var preferredModel = ""
 
     var body: some View {
         NavigationStack {
@@ -308,8 +309,14 @@ struct NewSessionView: View {
         }
         if let fetched = try? await modelsFetch {
             catalog = fetched
-            if model.isEmpty, let def = fetched.defaultModel {
-                model = def
+            let livePreferred = (try? await SettingsAPI.uiPrefs(
+                user: ServerConfig.shared.userName
+            ))?["default-model"] ?? preferredModel
+            preferredModel = livePreferred
+            if model.isEmpty {
+                model = fetched.option(for: livePreferred) != nil
+                    ? livePreferred
+                    : (fetched.defaultModel ?? "")
             }
             defaultEffortForCurrentModel()
         }

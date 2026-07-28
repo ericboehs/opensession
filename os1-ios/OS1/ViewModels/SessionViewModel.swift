@@ -319,23 +319,28 @@ final class SessionViewModel {
             && connectionState == .connected
     }
 
-    func sendDraft() {
+    func sendDraft(busyModeOverride: String? = nil) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let images = attachedImages.map(\.dataURL)
         guard !text.isEmpty || !images.isEmpty, let socket else { return }
         draft = ""
         attachedImages = []
+        let busyMode = busyModeOverride
+            ?? UserDefaults.standard.string(forKey: "os1.composer.busySend")
+            ?? "queue"
         if isRunning {
             // A send during a run is held server-side (busyMode "queue") and
             // only enters the transcript when the queue delivers it after the
             // run — echoing it into the thread now would strand a bubble out
             // of chronological order. Echo it as a queue chip instead; the
             // server's next queue_update replaces this local copy.
-            queuedItems.append(QueueItem(
+            let item = QueueItem(
                 id: "local-queued-\(UUID().uuidString)",
                 content: text,
                 user: ServerConfig.shared.userName
-            ))
+            )
+            if busyMode == "steer" { steeredItems.append(item) }
+            else { queuedItems.append(item) }
             queuedCount = queuedItems.count
         } else {
             let localId = "local-\(UUID().uuidString)"
@@ -355,7 +360,8 @@ final class SessionViewModel {
             user: ServerConfig.shared.userName,
             images: images.isEmpty ? nil : images,
             effort: effort.isEmpty ? nil : effort,
-            fastMode: fastMode ? true : nil
+            fastMode: fastMode ? true : nil,
+            busyMode: busyMode
         )
         sendSeq += 1
     }
@@ -591,6 +597,7 @@ final class SessionViewModel {
             flushLiveTextNow()
 
         case .sessionStatus(let id, let running) where id == session.id:
+            let completed = isRunning && !running
             if running {
                 // Keep the earliest known anchor across resync re-sends.
                 if runStartedAt == nil {
@@ -600,6 +607,13 @@ final class SessionViewModel {
                 runStartedAt = nil
             }
             isRunning = running
+            if completed {
+                NativeNotifications.post(
+                    event: "runComplete",
+                    title: session.displayTitle,
+                    body: "The session finished running."
+                )
+            }
             if !running {
                 streamEnded = true
                 isStreaming = false
@@ -660,7 +674,15 @@ final class SessionViewModel {
             )
 
         case .askQuestion(let id, let question) where id == session.id:
+            let isNewQuestion = pendingQuestion?.id != question.id
             pendingQuestion = question
+            if isNewQuestion {
+                NativeNotifications.post(
+                    event: "needsInput",
+                    title: session.displayTitle,
+                    body: "The session needs your input."
+                )
+            }
 
         case .askResolved(let id, let questionId) where id == session.id:
             if pendingQuestion?.id == questionId { pendingQuestion = nil }

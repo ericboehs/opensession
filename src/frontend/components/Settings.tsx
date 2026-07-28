@@ -547,7 +547,6 @@ export function Settings({
 	section,
 	onSelect,
 	onShowRoot,
-	embedded = false,
 	children,
 }: {
 	onBack: () => void;
@@ -559,8 +558,6 @@ export function Settings({
 	onSelect: (key: SettingsSectionKey) => void;
 	/** Phone sheet's back-to-root (navigate to sectionless /settings). */
 	onShowRoot?: () => void;
-	/** Native WebView: full-bleed settings without app/dismiss chrome. */
-	embedded?: boolean;
 	/** The active tool's panel (App owns the tool components and their props). */
 	children?: React.ReactNode;
 }) {
@@ -586,7 +583,6 @@ export function Settings({
 				onSelect={onSelect}
 				onShowRoot={onShowRoot}
 				onBack={onBack}
-				embedded={embedded}
 			>
 				{children}
 			</MobileSettings>
@@ -597,7 +593,7 @@ export function Settings({
 	return (
 		<div className="settings-page">
 			<aside className="settings-sidenav">
-				{!embedded && <button className="settings-back" onClick={onBack}>
+				<button className="settings-back" onClick={onBack}>
 					<svg width="20" height="20" viewBox="0 0 16 16" fill="none">
 						<path
 							d="M10 3.5L5.5 8l4.5 4.5"
@@ -608,7 +604,7 @@ export function Settings({
 						/>
 					</svg>
 					Back to app
-				</button>}
+				</button>
 				{groups.map((g) => (
 					<div className="settings-sidenav-group" key={g.group}>
 						<div className="settings-sidenav-label">{g.group}</div>
@@ -654,7 +650,6 @@ function MobileSettings({
 	onSelect,
 	onShowRoot,
 	onBack,
-	embedded,
 	children,
 }: {
 	groups: { group: string; items: typeof SECTIONS }[];
@@ -662,7 +657,6 @@ function MobileSettings({
 	onSelect: (key: SettingsSectionKey) => void;
 	onShowRoot?: () => void;
 	onBack: () => void;
-	embedded: boolean;
 	children?: React.ReactNode;
 }) {
 	// Keep the last opened section mounted while popping back to the root, so
@@ -679,7 +673,9 @@ function MobileSettings({
 	const shownLabel = SECTIONS.find((s) => s.key === shownSection)?.label;
 	const pageEase = "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]";
 
-	const pages = (dismiss?: () => void) => (
+	return (
+		<BottomSheet onClose={onBack} label="Settings" className="settings-sheet h-[93dvh]">
+			{(dismiss) => (
 				<>
 					<div className="relative flex h-11 shrink-0 items-center justify-center px-3">
 						{detail && (
@@ -694,13 +690,13 @@ function MobileSettings({
 						<span className="text-[16px] font-semibold text-fg">
 							{detail ? shownLabel : "Settings"}
 						</span>
-						{dismiss && <button
+						<button
 							className="absolute right-3 flex h-8 w-8 items-center justify-center rounded-full border-none bg-active text-dim"
 							onClick={dismiss}
 							aria-label="Close settings"
 						>
 							<IconX size={22} />
-						</button>}
+						</button>
 					</div>
 
 					<div className="relative min-h-0 flex-1 overflow-hidden">
@@ -763,19 +759,7 @@ function MobileSettings({
 						</div>
 					</div>
 				</>
-	);
-
-	if (embedded) {
-		return (
-			<div className="settings-sheet fixed inset-0 flex flex-col bg-surface">
-				{pages()}
-			</div>
-		);
-	}
-
-	return (
-		<BottomSheet onClose={onBack} label="Settings" className="settings-sheet h-[93dvh]">
-			{(dismiss) => pages(dismiss)}
+			)}
 		</BottomSheet>
 	);
 }

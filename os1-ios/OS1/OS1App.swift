@@ -31,6 +31,7 @@ struct OS1App: App {
 
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("os1.appearance") private var appearance = "system"
     @State private var config = ServerConfig.shared
     @State private var showedInitialSettings = false
     @State private var showSettings = false
@@ -39,7 +40,7 @@ struct RootView: View {
         SessionsListView()
             .tint(OS1VisualStyle.accent)
             .background(OS1VisualStyle.background.ignoresSafeArea())
-            .webColorSchemeCompat()
+            .preferredColorScheme(preferredColorScheme)
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
@@ -69,5 +70,13 @@ struct RootView: View {
             #if os(macOS)
             .frame(minWidth: 520, minHeight: 560)
             #endif
+    }
+
+    private var preferredColorScheme: ColorScheme? {
+        switch appearance {
+        case "light": .light
+        case "dark": .dark
+        default: nil
+        }
     }
 }

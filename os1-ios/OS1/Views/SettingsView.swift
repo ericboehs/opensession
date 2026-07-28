@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct SettingsView: View {
-    var onOpenSession: ((String) -> Void)? = nil
-
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
@@ -14,7 +12,6 @@ struct SettingsView: View {
     @State private var checkResult: String?
     @State private var copiedCode = false
 
-    // Device-flow state outlives this sheet while GitHub is open.
     private var signIn: GitHubSignIn { .shared }
 
     private var signedInLogin: String? {
@@ -28,28 +25,15 @@ struct SettingsView: View {
                 if showingConnection || !config.isConfigured {
                     connectionForm
                 } else {
-                    EmbeddedSettingsView(
-                        onAuthenticationFailure: {
-                            config.token = ""
-                            token = ""
-                            showingConnection = true
-                            checkResult = "Your session expired. Sign in again to open Settings."
-                        },
-                        onOpenSession: { id in
-                            dismiss()
-                            onOpenSession?(id)
-                        }
-                    )
+                    settingsHome
                 }
             }
-            .navigationTitle(showingConnection || !config.isConfigured ? "Connection" : "")
+            .navigationTitle(showingConnection || !config.isConfigured ? "Connection" : "Settings")
             .inlineTitleBarCompat()
             #if os(macOS)
-            .frame(minWidth: 520, minHeight: 560)
+            .frame(minWidth: 620, minHeight: 640)
             #endif
             .toolbar { toolbar }
-            // No onDisappear cancellation: device-flow polling deliberately
-            // survives closing Settings while GitHub is in the foreground.
             .onAppear { signIn.nudge() }
             .onChange(of: signIn.flow?.deviceCode) { _, deviceCode in
                 copiedCode = false
@@ -60,6 +44,89 @@ struct SettingsView: View {
                     if config.isConfigured { showingConnection = false }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .settingsAuthenticationExpired)) { _ in
+                config.token = ""
+                token = ""
+                checkResult = "Your session expired. Sign in again to continue."
+                showingConnection = true
+            }
+        }
+    }
+
+    private var settingsHome: some View {
+        List {
+            Section("Tools") {
+                settingsLink("Automations", icon: "clock.arrow.circlepath") {
+                    AutomationSettingsView()
+                }
+                settingsLink("Goals", icon: "target") {
+                    GoalSettingsView()
+                }
+                settingsLink("Actions", icon: "bolt") {
+                    ActionSettingsView()
+                }
+                settingsLink("Security", icon: "checkmark.shield") {
+                    SecuritySettingsView()
+                }
+            }
+
+            Section("Personal") {
+                settingsLink("Notifications", icon: "bell") {
+                    NotificationsSettingsView()
+                }
+                settingsLink("Composer", icon: "keyboard") {
+                    ComposerSettingsView()
+                }
+                settingsLink("Appearance", icon: "circle.lefthalf.filled") {
+                    AppearanceSettingsView()
+                }
+                settingsLink("Personal prompt", icon: "text.bubble") {
+                    PersonalPromptSettingsView()
+                }
+            }
+
+            Section("Workspace") {
+                settingsLink("General", icon: "person") {
+                    WorkspaceGeneralSettingsView()
+                }
+                settingsLink("Accounts", icon: "person.text.rectangle") {
+                    AccountsSettingsView()
+                }
+                settingsLink("Model providers", icon: "square.grid.2x2") {
+                    ModelProvidersSettingsView()
+                }
+                settingsLink("Connections", icon: "point.3.connected.trianglepath.dotted") {
+                    ConnectionsSettingsView()
+                }
+                settingsLink("Memory", icon: "brain") {
+                    MemorySettingsView()
+                }
+                settingsLink("Warm dependencies", icon: "flame") {
+                    WarmDepsSettingsView()
+                }
+                settingsLink("Preview pool", icon: "rectangle.stack") {
+                    PreviewPoolSettingsView()
+                }
+                settingsLink("Papercuts", icon: "bandage") {
+                    PapercutsSettingsView()
+                }
+                settingsLink("Audit log", icon: "list.bullet.rectangle") {
+                    AuditLogSettingsView()
+                }
+            }
+        }
+        .insetGroupedListCompat()
+    }
+
+    private func settingsLink<Destination: View>(
+        _ title: String,
+        icon: String,
+        @ViewBuilder destination: () -> Destination
+    ) -> some View {
+        NavigationLink {
+            destination()
+        } label: {
+            Label(title, systemImage: icon)
         }
     }
 
@@ -100,9 +167,9 @@ struct SettingsView: View {
                     .autocorrectionDisabled()
                     .noAutocapitalizationCompat()
             } header: {
-                Text("Auth")
+                Text("Authentication")
             } footer: {
-                Text("Sign in with GitHub, or paste a session token. Stored in the keychain.")
+                Text("Sign in with GitHub, or paste a session token. The token is stored in the keychain.")
             }
 
             if !signIn.diagnostics.isEmpty {
@@ -183,7 +250,6 @@ struct SettingsView: View {
             }
         }
         .padding(.vertical, 4)
-        // Form rows otherwise merge every button into one tap target.
         .buttonStyle(.borderless)
     }
 
@@ -207,7 +273,11 @@ struct SettingsView: View {
             }
         } else {
             ToolbarItem(placement: .topLeadingCompat) {
-                Button("Connection") { showingConnection = true }
+                Button {
+                    showingConnection = true
+                } label: {
+                    Label("Connection", systemImage: "server.rack")
+                }
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { dismiss() }

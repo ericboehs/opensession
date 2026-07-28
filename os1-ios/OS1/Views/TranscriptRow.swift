@@ -100,6 +100,7 @@ struct ToolCallRow: View {
     let use: TranscriptEntry?
     let result: TranscriptEntry?
 
+    @AppStorage("os1.appearance.turnActivity") private var turnActivity = "auto"
     @State private var expanded = false
 
     private var isError: Bool {
@@ -122,6 +123,15 @@ struct ToolCallRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.leading, 12)
+        .onAppear { applyExpansionPreference() }
+        .onChange(of: result?.id) { _, _ in applyExpansionPreference() }
+        .onChange(of: turnActivity) { _, _ in applyExpansionPreference() }
+    }
+
+    private func applyExpansionPreference() {
+        if turnActivity == "expanded" { expanded = true }
+        else if turnActivity == "collapsed" { expanded = false }
+        else { expanded = result == nil && use != nil }
     }
 
     private var summaryRow: some View {

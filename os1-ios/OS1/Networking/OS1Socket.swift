@@ -13,7 +13,7 @@ protocol SessionSocket: AnyObject {
     func loadHistory(sessionId: String, beforeSeq: Int)
     func prompt(
         sessionId: String, content: String, user: String,
-        images: [String]?, effort: String?, fastMode: Bool?
+        images: [String]?, effort: String?, fastMode: Bool?, busyMode: String?
     )
     func steerQueued(sessionId: String, queueId: String)
     func deleteQueued(sessionId: String, queueId: String)
@@ -27,7 +27,7 @@ extension SessionSocket {
     func prompt(sessionId: String, content: String, user: String) {
         prompt(
             sessionId: sessionId, content: content, user: user,
-            images: nil, effort: nil, fastMode: nil
+            images: nil, effort: nil, fastMode: nil, busyMode: nil
         )
     }
 }
@@ -107,14 +107,15 @@ final class OS1Socket: SessionSocket {
         user: String,
         images: [String]? = nil,
         effort: String? = nil,
-        fastMode: Bool? = nil
+        fastMode: Bool? = nil,
+        busyMode: String? = nil
     ) {
         // busyMode "queue" matches the web composer's default: a send during
         // a run is held as an editable queued message (visible as a chip)
         // until the run completes; steering it sooner is an explicit action.
         var frame: [String: Any] = [
             "type": "prompt", "sessionId": sessionId, "content": content,
-            "user": user, "busyMode": "queue",
+            "user": user, "busyMode": busyMode == "steer" ? "steer" : "queue",
         ]
         // Image attachments as data URLs; effort/fastMode ride every send and
         // persist server-side (the web composer's pill semantics).
