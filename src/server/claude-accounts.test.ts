@@ -92,6 +92,19 @@ describe("pickAccount usage-credits policy", () => {
     expect(accounts.getAccountById("nope")).toBeUndefined();
   });
 
+  test("does not preemptively sideline accounts from inferred Meridian usage", () => {
+    accounts.__setUsageCacheForTest("fresh", usage(50));
+    accounts.__setUsageCacheForTest("maxed", {
+      ...usage(100),
+      scopedLimits: [{ label: "Fable", utilization: 100, resetsAt: null }],
+      source: "meridian",
+    });
+    expect(accounts.pickAccount(new Set(["fresh"]), undefined, "claude-fable-5")?.id).toBe(
+      "maxed"
+    );
+    accounts.__setUsageCacheForTest("maxed", usage(100));
+  });
+
   test("personal accounts stay off-limits to userless (automation) picks", () => {
     accounts.__setUsageCacheForTest("personal", usage(0));
     accounts.__setUsageCacheForTest(

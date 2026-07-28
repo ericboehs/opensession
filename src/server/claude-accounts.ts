@@ -611,6 +611,11 @@ function scopedLimitForModel(usage: AccountUsage | undefined, model?: string): n
 
 function accountUtilization(a: ClaudeAccount, model?: string): number {
   const usage = usageCache.get(a.id);
+  // Meridian reconstructs these windows from SDK rate-limit events. They are
+  // useful telemetry, but not authoritative account state: its scoped bucket
+  // can remain at 100% after the real Claude account has reset, even while
+  // live turns succeed. Actual provider limit errors still call markExhausted.
+  if (usage?.source === "meridian") return 0;
   const fiveHour = currentUtilization(usage?.fiveHour);
   const scoped = scopedLimitForModel(usage, model);
   return scoped === null ? fiveHour : Math.max(fiveHour, scoped);
@@ -626,6 +631,9 @@ function accountUtilization(a: ClaudeAccount, model?: string): number {
 function isAccountUsableFor(a: ClaudeAccount, model?: string, allowExtraUsage?: boolean): boolean {
   if (isExhausted(a.id) || isModelExhausted(a.id, model)) return false;
   const usage = usageCache.get(a.id);
+  // See accountUtilization: inferred Meridian percentages must not sideline a
+  // healthy account before the provider gets a chance to accept the request.
+  if (usage?.source === "meridian") return true;
   const fiveHour = currentUtilization(usage?.fiveHour);
   const scoped = scopedLimitForModel(usage, model);
   if (
@@ -656,7 +664,7 @@ function toPublic(a: ClaudeAccount): ClaudeAccountPublic {
     exhaustedUntil: until !== undefined && until > Date.now() ? new Date(until).toISOString() : null,
     usable:
       !isExhausted(a.id) &&
-      (fiveHour === null || fiveHour < EXHAUSTED_UTILIZATION),
+      (usage?.source === "meridian" || fiveHour === null || fiveHour < EXHAUSTED_UTILIZATION),
   };
 }
 
