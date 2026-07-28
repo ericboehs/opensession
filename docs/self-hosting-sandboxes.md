@@ -384,6 +384,22 @@ is `sbxtest-*` scratch), and keep the conformance matrix green:
 bun run deploy/sandbox/conformance.ts docker-socket docker-ws
 ```
 
+To certify the external-engine path through the real OpenSession WebSocket
+and session lifecycle, run:
+
+```sh
+bun run deploy/sandbox/verify-external-engine.ts --provider daytona --provider modal
+bun run deploy/sandbox/verify-external-engine.ts --provider microvm --restart
+```
+
+This suite only accepts the OpenCode-other model family: the model loop and
+provider credentials must stay on the host while explicit
+`opensession-workspace` methods operate the sandbox. It checks all six methods,
+file locality, credential/runner absence, persisted placement, provider
+reattachment, and cleanup. Use
+`deploy/sandbox/external-engine-test-prompt.md` for the equivalent manual UI
+smoke test.
+
 ### Daytona (implemented, live-certified — full launchRun matrix green 2026-07-09)
 
 Self-hostable sandbox platform (Helm/K8s) with a hosted cloud. The adapter

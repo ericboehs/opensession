@@ -302,6 +302,24 @@ hot-apply — a real restart is needed after changing it.
   WS transport, snapshots, and the sandboxed preview/lifecycle flow. Uses
   only `sbxtest-*` scratch resources and a redirected run journal; safe next
   to the live server.
+- `deploy/sandbox/verify-external-engine.ts` — live “brain on host, hands in
+  sandbox” certification for OpenCode-other models. It creates a disposable
+  real WebSocket session, requires all six `opensession-workspace` methods,
+  proves the engine/credentials/filesystem boundary, and destroys the session
+  plus provider resource in `finally`. Repeat `--provider` to cover several
+  providers; add `--restart` to prove sticky placement and reattachment:
+
+  ```sh
+  bun run deploy/sandbox/verify-external-engine.ts --provider daytona --provider modal
+  bun run deploy/sandbox/verify-external-engine.ts --provider microvm --restart
+  ```
+
+  It defaults to a reliable host-only xAI model so provider failures are not
+  confused with model tool-calling failures. Use `--model
+  opencode/<other-provider>/<model>` to certify a different host-side model;
+  OpenAI/Anthropic sandbox-native families are rejected. For a UI-driven
+  smoke test, paste `deploy/sandbox/external-engine-test-prompt.md` into a new
+  code session.
 
 ## When to rebuild
 
