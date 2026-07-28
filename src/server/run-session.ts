@@ -1050,7 +1050,13 @@ export async function maybeLaunchSandboxedRun(
 		// First vertical slice of the "brain outside, hands inside" architecture:
 		// third-party OpenCode providers keep their host-only auth + engine state
 		// on the host and reach the sandbox through opensession-workspace.
+		// Once a session records the brain/hands split, keep that boundary
+		// stable across provider fallback and model rotation. A Cerebras turn
+		// can persist an OpenAI fallback model; recomputing solely from the new
+		// model would otherwise try to move the next turn's engine into a
+		// workspace-only sandbox that deliberately has no runner payload.
 		const engineOutsideSandbox =
+			session.sandbox?.engine === "host" ||
 			sandboxModelFamilyFor(session.model).id === "opencode-other";
 		const provider = getSandboxProvider(sbProvider);
 		const sandbox = await provider.ensure({
