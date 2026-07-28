@@ -14523,9 +14523,10 @@ html[data-theme="light"] .palette-card .palette-create {
 	.palette-footer .palette-pill-effort { display: none; }
 }
 
-/* ── ⌘K session search palette ─────────────────────────────────────────── */
+/* ── ⌘K command palette ────────────────────────────────────────────────── */
 .ss-card {
-	max-height: 76vh;
+	width: min(640px, 100%);
+	height: min(500px, 76vh);
 }
 
 .ss-search-row {
@@ -14572,7 +14573,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	display: flex;
 	align-items: center;
 	gap: 7px;
-	padding: 10px 14px;
+	padding: 8px 14px;
 	border-bottom: 1px solid var(--border);
 	flex-wrap: wrap;
 }
@@ -14644,6 +14645,12 @@ html[data-theme="light"] .palette-card .palette-create {
 	flex: 1;
 	min-height: 0;
 }
+.ss-group-heading {
+	padding: 10px 10px 5px;
+	color: var(--text-faint);
+	font-size: 12px;
+	font-weight: 600;
+}
 .ss-empty {
 	padding: 28px 16px;
 	text-align: center;
@@ -14664,7 +14671,28 @@ html[data-theme="light"] .palette-card .palette-create {
 	color: var(--text);
 }
 .ss-item-active {
-	background: var(--bg-raised);
+	background: var(--bg-active);
+}
+.ss-command-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	flex-shrink: 0;
+	color: var(--text-dim);
+}
+.ss-shortcut {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	flex-shrink: 0;
+}
+.ss-item-active .ss-command-icon {
+	color: var(--text);
+}
+.ss-item-active .ss-shortcut .ss-kbd {
+	border-color: var(--text-faint);
 }
 .ss-item-dot {
 	width: 8px;
@@ -14769,6 +14797,8 @@ html[data-theme="light"] .palette-card .palette-create {
 @media (max-width: 560px) {
 	.ss-item-branch { display: none; }
 	.ss-item-status { display: none; }
+	.ss-card { height: min(560px, 82vh); }
+	.ss-shortcut { display: none; }
 }
 
 /* ── Settings page (full-window: sub-nav + scrolling body) ──────────────── */

@@ -9,7 +9,10 @@ import { suppressLayoutAnimations } from "./ui/motion";
 import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
 import type { NewSessionPrefill } from "./lib/new-session-link";
-import { SessionSearch } from "./components/SessionSearch";
+import {
+	SessionSearch,
+	type CommandPaletteAction,
+} from "./components/SessionSearch";
 import { Home } from "./components/Home";
 import { CatchUpDeck } from "./components/CatchUpDeck";
 import { PrTinder } from "./components/PrTinder";
@@ -36,7 +39,27 @@ import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
 import { UpdatePill } from "./components/UpdatePill";
 import { DesktopUpdateToast } from "./components/DesktopUpdateToast";
-import { IconDesk, IconGlobe, IconSearch, IconSidebarLeft } from "./components/icons";
+import {
+	IconArchive,
+	IconBook,
+	IconChart,
+	IconCopy,
+	IconDesk,
+	IconFile,
+	IconFlame,
+	IconGear,
+	IconGlobe,
+	IconHome,
+	IconInbox,
+	IconListChecks,
+	IconMoon,
+	IconPencil,
+	IconPlus,
+	IconSearch,
+	IconSidebarLeft,
+	IconStack,
+	IconWrench,
+} from "./components/icons";
 import { DeskOverlay } from "./components/DeskOverlay";
 import { useSessions } from "./hooks/useSessions";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -59,6 +82,7 @@ import {
 	fetchSessionNoteActivityApi,
 	resolveWorkspaceApi,
 	type NoteMeta,
+	type OpenPr,
 } from "./lib/api";
 import {
 	defaultChatWorkspaceView,
@@ -107,6 +131,7 @@ import {
 	onTabColorsChanged,
 } from "./lib/tab-colors";
 import { copySessionTranscript } from "./lib/transcript-copy";
+import { effectiveTheme, setThemePref } from "./lib/theme";
 import type { UnifiedSession } from "./lib/types";
 import "./styles/global.css";
 
@@ -906,8 +931,8 @@ function App() {
 		if (focusComposerOnOpen) setFocusComposerOnOpen(false);
 	}, [focusComposerOnOpen]);
 
-	// The ⌘K session-search command palette. Like the new-session palette it's an
-	// overlay driven by its own state so it can open over any view.
+	// The ⌘K command palette. Sessions, PRs, and app actions share one overlay
+	// driven by its own state so it can open over any view.
 	const [searchOpen, setSearchOpen] = useState(false);
 	// The Desk overlay (⌘J / the floating desk button): todo list + standing
 	// concierge session on top of whatever view is open.
@@ -980,7 +1005,7 @@ function App() {
 	// the current view has nothing linkable.
 	const copyLinkPathRef = useRef<string | null>(null);
 
-	// ⌘K toggles the session-search palette; ⌘N the new-session palette; ⌘⌥N
+	// ⌘K toggles the command palette; ⌘N the new-session palette; ⌘⌥N
 	// opens Notes; ⌘⇧C copies a link to the open chat/PR. Esc closes whichever
 	// palette is open (search's own input also handles Esc, but this covers the
 	// case where focus has left it).
@@ -1637,6 +1662,25 @@ function App() {
 		},
 		[refreshProjects],
 	);
+	const openPrReview = React.useCallback(
+		async (pr: OpenPr) => {
+			try {
+				const { workspaceId } = await resolveWorkspaceApi({
+					pr: {
+						repo: pr.repo,
+						number: pr.number,
+						branch: pr.branch,
+						title: pr.title,
+					},
+				});
+				refreshProjects();
+				navigate({ view: "workspace", id: workspaceId, tab: "review" });
+			} catch {
+				navigate({ view: "pr", repo: pr.repo, branch: pr.branch });
+			}
+		},
+		[refreshProjects],
+	);
 	// Sidebar Support row → the ticket's ONE workspace, Conversation tab. The
 	// row's title rides along as the workspace-name hint (no Plain round-trip).
 	const openTicketWorkspace = React.useCallback(
@@ -1933,6 +1977,18 @@ function App() {
 	};
 	const closeChatRef = useRef(closeChat);
 	closeChatRef.current = closeChat;
+	const unarchiveChat = async (session: UnifiedSession) => {
+		const archivedReason = session.archivedReason;
+		patch(session.id, { archived: false, archivedReason: undefined });
+		try {
+			await archiveSessionApi(session.id, false);
+		} catch (e) {
+			console.error("Unarchive failed:", e);
+			patch(session.id, { archived: true, archivedReason });
+			return;
+		}
+		refresh();
+	};
 
 	// Tab shortcuts for the open chat, matching its context-menu hints: ⌘⌥C
 	// copies the concise transcript, ⌘W closes (archives) the tab, ⌘T opens a
@@ -2007,6 +2063,233 @@ function App() {
 	// weight as the fuller play/globe glyphs there (a framed rectangle reads a
 	// hair lighter than a filled triangle / globe at the same nominal size).
 	const panelIcon = <IconSidebarLeft size={24} />;
+	const appleShortcuts = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+	const mod = appleShortcuts ? "⌘" : "Ctrl";
+	const currentTheme = effectiveTheme();
+	const commandActions: CommandPaletteAction[] = [
+		{
+			id: "new-session",
+			label: "New session",
+			description: "Start a new ask or code session",
+			category: "Actions",
+			keywords: ["create", "chat", "workspace"],
+			shortcut: [mod, "N"],
+			icon: <IconPlus size={18} />,
+			run: () => openPalette(),
+		},
+		...(currentSession
+			? [
+					{
+						id: "new-chat",
+						label: "New chat in this workspace",
+						description: "Share the current workspace and worktree",
+						category: "Actions" as const,
+						keywords: ["tab", "conversation", "sibling"],
+						shortcut: [mod, "T"],
+						icon: <IconPlus size={18} />,
+						run: () => void handleNewChat("share"),
+					},
+					{
+						id: "copy-transcript",
+						label: "Copy conversation",
+						description: "Copy a concise version of the current transcript",
+						category: "Actions" as const,
+						keywords: ["transcript", "clipboard"],
+						shortcut: [mod, appleShortcuts ? "⌥" : "Alt", "C"],
+						icon: <IconCopy size={18} />,
+						run: () =>
+							void copySessionTranscript(currentSession, "concise", showToast),
+					},
+					{
+						id: currentSession.archived ? "unarchive-chat" : "archive-chat",
+						label: currentSession.archived
+							? "Unarchive current chat"
+							: "Archive current chat",
+						description: currentSession.archived
+							? "Return this chat to the active workspace"
+							: "Close this chat and keep it recoverable in Archived",
+						category: "Actions" as const,
+						keywords: currentSession.archived
+							? ["restore", "open"]
+							: ["close", "remove"],
+						shortcut: [mod, appleShortcuts ? "⇧" : "Shift", "A"],
+						icon: <IconArchive size={18} />,
+						run: () =>
+							void (currentSession.archived
+								? unarchiveChat(currentSession)
+								: closeChat(currentSession)),
+					},
+				]
+			: []),
+		...(copyLinkPathRef.current
+			? [
+					{
+						id: "copy-link",
+						label: "Copy link to current view",
+						description: "Copy a shareable link to this chat, workspace, or PR",
+						category: "Actions" as const,
+						keywords: ["url", "share", "clipboard"],
+						shortcut: [mod, appleShortcuts ? "⇧" : "Shift", "C"],
+						icon: <IconCopy size={18} />,
+						run: () => {
+							const path = copyLinkPathRef.current;
+							if (path)
+								copyToClipboard(absoluteLink(path), () => showToast("Link copied"));
+						},
+					},
+				]
+			: []),
+		{
+			id: "desk",
+			label: "Open Desk",
+			description: "View todos and the standing concierge session",
+			category: "Actions",
+			keywords: ["todos", "tasks"],
+			shortcut: [mod, "J"],
+			icon: <IconDesk size={18} />,
+			run: () => setDeskOpen(true),
+		},
+		{
+			id: "toggle-sidebar",
+			label: sidebarCollapsed ? "Show sidebar" : "Hide sidebar",
+			description: "Toggle the workspace sidebar",
+			category: "Actions",
+			keywords: ["toggle", "panel", "navigation"],
+			shortcut: [mod, "B"],
+			icon: <IconSidebarLeft size={18} />,
+			run: toggleSidebarCollapsed,
+		},
+		{
+			id: "toggle-theme",
+			label: `Switch to ${currentTheme === "dark" ? "light" : "dark"} mode`,
+			description: `Current appearance: ${currentTheme}`,
+			category: "Actions",
+			keywords: ["toggle", "theme", "appearance", "dark", "light"],
+			icon: <IconMoon size={18} />,
+			run: () => setThemePref(currentTheme === "dark" ? "light" : "dark"),
+		},
+		{
+			id: "home",
+			label: "Home",
+			description: "Open the workspace overview",
+			category: "Navigate",
+			icon: <IconHome size={18} />,
+			run: () => navigate({ view: "home" }),
+		},
+		{
+			id: "catch-up",
+			label: "Catch up",
+			description: "Swipe through unread workspaces",
+			category: "Navigate",
+			keywords: ["unread", "inbox"],
+			icon: <IconStack size={18} />,
+			run: () => navigate({ view: "catchup" }),
+		},
+		{
+			id: "pr-tinder",
+			label: "PR Tinder",
+			description: "Triage open pull requests",
+			category: "Navigate",
+			keywords: ["pull requests", "review", "swipe"],
+			icon: <IconFlame size={18} />,
+			run: () => navigate({ view: "prtinder" }),
+		},
+		{
+			id: "support-tinder",
+			label: "Support Tinder",
+			description: "Triage the Plain todo queue",
+			category: "Navigate",
+			keywords: ["tickets", "plain", "support"],
+			icon: <IconInbox size={18} />,
+			run: () => navigate({ view: "supporttinder" }),
+		},
+		{
+			id: "reports",
+			label: "Reports",
+			description: "Open recurring automation reports",
+			category: "Navigate",
+			icon: <IconFile size={18} />,
+			run: () => navigate({ view: "reports" }),
+		},
+		{
+			id: "analytics",
+			label: "Analytics",
+			description: "Sessions, tokens, models, and PRs over time",
+			category: "Navigate",
+			icon: <IconChart size={18} />,
+			run: () => navigate({ view: "analytics" }),
+		},
+		{
+			id: "notes",
+			label: "Notes",
+			description: "Open shared notes and documentation",
+			category: "Navigate",
+			keywords: ["docs", "documentation"],
+			shortcut: ["N"],
+			icon: <IconPencil size={18} />,
+			run: () => navigate({ view: "notes", sel: null }),
+		},
+		{
+			id: "reviews",
+			label: "Reviews",
+			description: "Open the pull request review queue",
+			category: "Navigate",
+			keywords: ["pull requests", "code review"],
+			icon: <IconListChecks size={18} />,
+			run: () => navigate({ view: "reviews" }),
+		},
+		{
+			id: "automations",
+			label: "Automations",
+			description: "Manage scheduled and event-triggered routines",
+			category: "Navigate",
+			keywords: ["routines", "scheduled"],
+			icon: <IconWrench size={18} />,
+			run: () => navigate({ view: "automations" }),
+		},
+		{
+			id: "goals",
+			label: "Goals",
+			description: "Manage long-running missions",
+			category: "Navigate",
+			icon: <IconListChecks size={18} />,
+			run: () => navigate({ view: "goals" }),
+		},
+		{
+			id: "actions",
+			label: "Actions",
+			description: "Open event-triggered action runs",
+			category: "Navigate",
+			icon: <IconStack size={18} />,
+			run: () => navigate({ view: "actions" }),
+		},
+		{
+			id: "security",
+			label: "Security",
+			description: "Open security scans and findings",
+			category: "Navigate",
+			icon: <IconBook size={18} />,
+			run: () => navigate({ view: "security" }),
+		},
+		{
+			id: "archived",
+			label: "Archived",
+			description: "Browse closed conversations",
+			category: "Navigate",
+			keywords: ["history", "closed"],
+			icon: <IconArchive size={18} />,
+			run: () => navigate({ view: "archived" }),
+		},
+		{
+			id: "settings",
+			label: "Settings",
+			description: "Configure OpenSession",
+			category: "Navigate",
+			keywords: ["preferences", "appearance", "connections"],
+			icon: <IconGear size={18} />,
+			run: () => navigate({ view: "settings" }),
+		},
+	];
 
 	return (
 		<UserGate>
@@ -2113,7 +2396,7 @@ function App() {
 							<button
 								className="mobile-search-btn"
 								onClick={() => setSearchOpen(true)}
-								aria-label="Search sessions"
+								aria-label="Open command menu"
 							>
 								<IconSearch size={22} />
 							</button>
@@ -2874,14 +3157,13 @@ function App() {
 					onOpenSession={(id) => navigate({ view: "session", id })}
 				/>
 
-				{/* ⌘K session-search palette — overlays every view. */}
+				{/* ⌘K command palette — actions, PRs, and sessions across every view. */}
 				{searchOpen && (
 					<SessionSearch
 						sessions={sessions}
-						onSelect={(id) => {
-							setSearchOpen(false);
-							navigate({ view: "session", id });
-						}}
+						actions={commandActions}
+						onSelectSession={(id) => navigate({ view: "session", id })}
+						onSelectPr={(pr) => void openPrReview(pr)}
 						onClose={() => setSearchOpen(false)}
 					/>
 				)}

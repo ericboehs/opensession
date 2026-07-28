@@ -47,11 +47,11 @@ export function TitleBar({
 				</button>
 			</Tooltip>
 			{onSearch && (
-				<Tooltip label="Search sessions" side="bottom" shortcut={["⌘", "K"]}>
+				<Tooltip label="Command menu" side="bottom" shortcut={["⌘", "K"]}>
 					<button
 						className="wco-nav-btn"
 						onClick={onSearch}
-						aria-label="Search sessions"
+						aria-label="Open command menu"
 					>
 						<IconSearch size={24} />
 					</button>

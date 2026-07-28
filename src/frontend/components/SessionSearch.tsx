@@ -1,12 +1,30 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { UnifiedSession } from "../lib/types";
-import { relativeTime, searchTranscripts } from "../lib/api";
-import { IconSearch } from "./icons";
+import {
+	fetchOpenPrs,
+	relativeTime,
+	searchTranscripts,
+	type OpenPr,
+} from "../lib/api";
+import { IconPullRequest, IconSearch } from "./icons";
+
+export interface CommandPaletteAction {
+	id: string;
+	label: string;
+	description?: string;
+	category: "Actions" | "Navigate";
+	keywords?: string[];
+	shortcut?: string[];
+	icon?: React.ReactNode;
+	run: () => void;
+}
 
 interface Props {
 	sessions: UnifiedSession[];
-	/** Open a session by id (also closes the palette). */
-	onSelect: (id: string) => void;
+	actions: CommandPaletteAction[];
+	/** Open a session or PR (also closes the palette). */
+	onSelectSession: (id: string) => void;
+	onSelectPr: (pr: OpenPr) => void;
 	onClose: () => void;
 }
 
@@ -65,9 +83,34 @@ function haystack(s: UnifiedSession): string {
 		.toLowerCase();
 }
 
-// A compact styled dropdown built on a native <select> (an invisible select is
-// stacked over the pill so we get a real OS menu for free — same trick as the
-// new-session palette).
+function prStatus(pr: OpenPr): string {
+	if (pr.isDraft) return "Draft";
+	if (pr.checks.failed > 0)
+		return `${pr.checks.failed} failing check${pr.checks.failed === 1 ? "" : "s"}`;
+	if (pr.checks.pending > 0)
+		return `${pr.checks.pending} check${pr.checks.pending === 1 ? "" : "s"} running`;
+	if (pr.reviewDecision === "APPROVED") return "Approved";
+	if (pr.reviewDecision === "CHANGES_REQUESTED") return "Changes requested";
+	if (pr.reviewRequested?.length) return "Review requested";
+	return "Open";
+}
+
+type PaletteResult =
+	| { type: "action"; category: string; action: CommandPaletteAction }
+	| { type: "pr"; category: string; pr: OpenPr }
+	| {
+			type: "session";
+			category: string;
+			session: UnifiedSession;
+			snippet?: string;
+	  };
+
+function resultKey(result: PaletteResult): string {
+	if (result.type === "action") return `action:${result.action.id}`;
+	if (result.type === "pr") return `pr:${result.pr.url}`;
+	return `session:${result.session.id}`;
+}
+
 function FilterPill({
 	label,
 	value,
@@ -77,10 +120,10 @@ function FilterPill({
 	label: string;
 	value: string;
 	options: Array<{ value: string; label: string }>;
-	onChange: (v: string) => void;
+	onChange: (value: string) => void;
 }) {
 	const active = value !== "all";
-	const current = options.find((o) => o.value === value);
+	const current = options.find((option) => option.value === value);
 	return (
 		<div className={`ss-pill${active ? " ss-pill-active" : ""}`}>
 			<span className="ss-pill-key">{label}</span>
@@ -89,12 +132,12 @@ function FilterPill({
 			<select
 				className="ss-pill-select"
 				value={value}
-				onChange={(e) => onChange(e.target.value)}
+				onChange={(event) => onChange(event.target.value)}
 				aria-label={label}
 			>
-				{options.map((o) => (
-					<option key={o.value} value={o.value}>
-						{o.label}
+				{options.map((option) => (
+					<option key={option.value} value={option.value}>
+						{option.label}
 					</option>
 				))}
 			</select>
@@ -102,22 +145,50 @@ function FilterPill({
 	);
 }
 
-export function SessionSearch({ sessions, onSelect, onClose }: Props) {
+export function SessionSearch({
+	sessions,
+	actions,
+	onSelectSession,
+	onSelectPr,
+	onClose,
+}: Props) {
 	const [query, setQuery] = useState("");
 	const [person, setPerson] = useState("all");
 	const [repo, setRepo] = useState("all");
 	const [status, setStatus] = useState<Status | "all">("all");
-	const [active, setActive] = useState(0);
+	const [activeKey, setActiveKey] = useState<string | null>(null);
+	const [openPrs, setOpenPrs] = useState<OpenPr[]>([]);
+	const [loadingPrs, setLoadingPrs] = useState(true);
 	// Content matches from the backend transcript search, keyed by session id →
 	// snippet. Populated (debounced) as the query changes; empty when the query
 	// is too short or nothing matched inside any conversation.
 	const [snippets, setSnippets] = useState<Map<string, string>>(new Map());
 	const [searching, setSearching] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
+	const cardRef = useRef<HTMLDivElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
+	const previousFocusRef = useRef<HTMLElement | null>(null);
 
 	useEffect(() => {
+		previousFocusRef.current =
+			document.activeElement instanceof HTMLElement ? document.activeElement : null;
 		inputRef.current?.focus();
+		return () => previousFocusRef.current?.focus();
+	}, []);
+
+	useEffect(() => {
+		let alive = true;
+		fetchOpenPrs()
+			.then((prs) => {
+				if (alive) setOpenPrs(prs);
+			})
+			.catch(() => {})
+			.finally(() => {
+				if (alive) setLoadingPrs(false);
+			});
+		return () => {
+			alive = false;
+		};
 	}, []);
 
 	// Search inside conversations too — the metadata filter is instant/local, but
@@ -156,51 +227,79 @@ export function SessionSearch({ sessions, onSelect, onClose }: Props) {
 		[sessions],
 	);
 
-	// Filter option lists are built off the full pool (not the filtered set) so
-	// they don't churn as you narrow things down.
 	const personOptions = useMemo(() => {
-		const seen = new Map<string, string>(); // lowercased → first-seen spelling
-		for (const s of pool) {
-			if (s.automation || !s.startedBy) continue;
-			const k = s.startedBy.toLowerCase();
-			if (!seen.has(k)) seen.set(k, s.startedBy);
+		const seen = new Map<string, string>();
+		for (const session of pool) {
+			if (session.automation || !session.startedBy) continue;
+			const key = session.startedBy.toLowerCase();
+			if (!seen.has(key)) seen.set(key, session.startedBy);
 		}
 		return [
 			{ value: "all", label: "Anyone" },
 			...Array.from(seen.entries())
 				.sort((a, b) => a[1].localeCompare(b[1]))
-				.map(([k, label]) => ({ value: k, label })),
+				.map(([value, label]) => ({ value, label })),
 		];
 	}, [pool]);
 
 	const repoOptions = useMemo(() => {
 		const counts = new Map<string, number>();
-		for (const s of pool) {
-			const p = sessionRepo(s);
-			counts.set(p, (counts.get(p) || 0) + 1);
+		for (const session of pool) {
+			const project = sessionRepo(session);
+			counts.set(project, (counts.get(project) || 0) + 1);
 		}
 		return [
 			{ value: "all", label: "Any repo" },
 			...Array.from(counts.entries())
 				.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-				.map(([p]) => ({ value: p, label: p })),
+				.map(([value]) => ({ value, label: value })),
 		];
 	}, [pool]);
 
 	const statusOptions = useMemo(
 		() => [
 			{ value: "all", label: "Any status" },
-			...STATUS_ORDER.map((k) => ({ value: k, label: STATUS_META[k].label })),
+			...STATUS_ORDER.map((value) => ({ value, label: STATUS_META[value].label })),
 		],
 		[],
 	);
+	const hasSessionFilter = person !== "all" || repo !== "all" || status !== "all";
 
-	// Each row carries its session plus, for conversation-only hits, the matching
-	// transcript snippet to render under the title.
-	const results = useMemo(() => {
+	// Commands, PRs, and chats share one flat result list so arrow-key navigation
+	// crosses group boundaries just like Tella's command menu.
+	const results = useMemo<PaletteResult[]>(() => {
 		const q = query.trim().toLowerCase();
 		const terms = q.split(/\s+/).filter(Boolean);
-		let out = pool.filter((s) => {
+		const matches = (values: Array<string | undefined>) => {
+			if (terms.length === 0) return true;
+			const text = values.filter(Boolean).join(" ").toLowerCase();
+			return terms.every((term) => text.includes(term));
+		};
+		const actionResults: PaletteResult[] = (hasSessionFilter ? [] : actions)
+			.filter((action) =>
+				matches([
+					action.label,
+					action.description,
+					...(action.keywords || []),
+					...(action.shortcut || []),
+				]),
+			)
+			.map((action) => ({ type: "action", category: action.category, action }));
+		const prResults: PaletteResult[] = (hasSessionFilter ? [] : openPrs)
+			.filter((pr) =>
+				matches([
+					pr.title,
+					pr.repo,
+					pr.branch,
+					pr.author,
+					`#${pr.number}`,
+					prStatus(pr),
+				]),
+			)
+			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+			.slice(0, 40)
+			.map((pr) => ({ type: "pr", category: "Pull requests", pr }));
+		let sessionResults = pool.filter((s) => {
 			if (person !== "all" && (s.startedBy || "").toLowerCase() !== person)
 				return false;
 			if (repo !== "all" && sessionRepo(s) !== repo) return false;
@@ -212,23 +311,26 @@ export function SessionSearch({ sessions, onSelect, onClose }: Props) {
 			return terms.every((t) => hay.includes(t)) || snippets.has(s.id);
 		});
 		// Most-recently-active first — the same order the sidebar defaults to.
-		out = out.sort(
+		sessionResults = sessionResults.sort(
 			(a, b) =>
 				new Date(b.lastActivity).getTime() -
 				new Date(a.lastActivity).getTime(),
 		);
-		return out.slice(0, 100).map((s) => {
+		const sessionRows: PaletteResult[] = sessionResults.slice(0, 100).map((s) => {
 			// Show the snippet only when the title/metadata didn't already match —
 			// otherwise the row explains itself.
 			const metaMatch = terms.length > 0 && terms.every((t) => haystack(s).includes(t));
-			return { session: s, snippet: metaMatch ? undefined : snippets.get(s.id) };
+			return {
+				type: "session",
+				category: "Sessions",
+				session: s,
+				snippet: metaMatch ? undefined : snippets.get(s.id),
+			};
 		});
-	}, [pool, query, person, repo, status, snippets]);
-
-	// Clamp the active row whenever the result set changes.
-	useEffect(() => {
-		setActive((i) => Math.min(i, Math.max(0, results.length - 1)));
-	}, [results.length]);
+		return [...actionResults, ...prResults, ...sessionRows];
+	}, [actions, hasSessionFilter, openPrs, person, pool, query, repo, snippets, status]);
+	const keyedActive = results.findIndex((result) => resultKey(result) === activeKey);
+	const active = keyedActive >= 0 ? keyedActive : 0;
 
 	// Keep the highlighted row scrolled into view during keyboard nav.
 	useEffect(() => {
@@ -236,27 +338,49 @@ export function SessionSearch({ sessions, onSelect, onClose }: Props) {
 			`[data-idx="${active}"]`,
 		);
 		el?.scrollIntoView({ block: "nearest" });
-	}, [active]);
+	}, [active, activeKey, results.length]);
 
 	function onKeyDown(e: React.KeyboardEvent) {
+		if (e.key === "Tab") {
+			const focusable = Array.from(
+				cardRef.current?.querySelectorAll<HTMLElement>(
+					"input, select, button:not([tabindex='-1'])",
+				) || [],
+			);
+			if (focusable.length === 0) return;
+			const current = focusable.indexOf(document.activeElement as HTMLElement);
+			const next = e.shiftKey
+				? (current - 1 + focusable.length) % focusable.length
+				: (current + 1) % focusable.length;
+			e.preventDefault();
+			focusable[next]?.focus();
+			return;
+		}
+		if (e.target instanceof HTMLSelectElement) return;
 		if (e.key === "ArrowDown") {
 			e.preventDefault();
-			setActive((i) => Math.min(i + 1, results.length - 1));
+			const next = Math.min(active + 1, results.length - 1);
+			if (results[next]) setActiveKey(resultKey(results[next]));
 		} else if (e.key === "ArrowUp") {
 			e.preventDefault();
-			setActive((i) => Math.max(i - 1, 0));
+			const next = Math.max(active - 1, 0);
+			if (results[next]) setActiveKey(resultKey(results[next]));
 		} else if (e.key === "Enter") {
 			e.preventDefault();
-			const s = results[active]?.session;
-			if (s) onSelect(s.id);
+			selectResult(results[active]);
 		} else if (e.key === "Escape") {
 			e.preventDefault();
 			onClose();
 		}
 	}
 
-	const hasFilter =
-		person !== "all" || repo !== "all" || status !== "all";
+	function selectResult(result?: PaletteResult) {
+		if (!result) return;
+		onClose();
+		if (result.type === "action") result.action.run();
+		else if (result.type === "pr") onSelectPr(result.pr);
+		else onSelectSession(result.session.id);
+	}
 
 	return (
 		<div
@@ -266,9 +390,11 @@ export function SessionSearch({ sessions, onSelect, onClose }: Props) {
 			}}
 		>
 			<div
+				ref={cardRef}
 				className="palette-card ss-card"
 				role="dialog"
-				aria-label="Search sessions"
+				aria-label="Command menu"
+				aria-modal="true"
 				onKeyDown={onKeyDown}
 			>
 				<div className="ss-search-row">
@@ -277,15 +403,26 @@ export function SessionSearch({ sessions, onSelect, onClose }: Props) {
 						ref={inputRef}
 						className="ss-search-input"
 						value={query}
-						onChange={(e) => setQuery(e.target.value)}
-						placeholder="Search sessions & conversations…"
+						onChange={(e) => {
+							setQuery(e.target.value);
+							setActiveKey(null);
+						}}
+						placeholder="Search actions, pull requests & conversations…"
 						spellCheck={false}
+						role="combobox"
+						aria-label="Search commands and conversations"
+						aria-autocomplete="list"
+						aria-expanded="true"
+						aria-controls="command-palette-results"
+						aria-activedescendant={results[active] ? `command-result-${active}` : undefined}
 					/>
-					{searching && <span className="ss-searching" aria-label="Searching" />}
+					{(searching || loadingPrs) && (
+						<span className="ss-searching" aria-label="Searching" />
+					)}
 					<kbd className="ss-kbd">esc</kbd>
 				</div>
 
-				<div className="ss-filters">
+				<div className="ss-filters" aria-label="Session filters">
 					<FilterPill
 						label="Person"
 						value={person}
@@ -302,9 +439,9 @@ export function SessionSearch({ sessions, onSelect, onClose }: Props) {
 						label="Status"
 						value={status}
 						options={statusOptions}
-						onChange={(v) => setStatus(v as Status | "all")}
+						onChange={(value) => setStatus(value as Status | "all")}
 					/>
-					{hasFilter && (
+					{hasSessionFilter && (
 						<button
 							className="ss-clear"
 							onClick={() => {
@@ -318,46 +455,119 @@ export function SessionSearch({ sessions, onSelect, onClose }: Props) {
 					)}
 				</div>
 
-				<div className="ss-results" ref={listRef}>
+				<div
+					id="command-palette-results"
+					className="ss-results"
+					ref={listRef}
+					role="listbox"
+				>
 					{results.length === 0 && (
 						<div className="ss-empty">
-							{searching ? "Searching conversations…" : "No matching sessions"}
+							{searching ? "Searching conversations…" : "Nothing found"}
 						</div>
 					)}
-					{results.map(({ session: s, snippet }, i) => {
+					{results.map((result, i) => {
+						const startsGroup = i === 0 || results[i - 1]?.category !== result.category;
+						if (result.type === "action") {
+							return (
+								<React.Fragment key={`action:${result.action.id}`}>
+									{startsGroup && <div className="ss-group-heading">{result.category}</div>}
+									<button
+										id={`command-result-${i}`}
+										data-idx={i}
+										type="button"
+										role="option"
+										aria-selected={i === active}
+										tabIndex={-1}
+										className={`ss-item ss-command-item${i === active ? " ss-item-active" : ""}`}
+										onMouseMove={() => setActiveKey(resultKey(result))}
+										onClick={() => selectResult(result)}
+									>
+										{result.action.icon && (
+											<span className="ss-command-icon">{result.action.icon}</span>
+										)}
+										<span className="ss-item-main">
+											<span className="ss-item-title">{result.action.label}</span>
+											{result.action.description && (
+												<span className="ss-item-snippet">{result.action.description}</span>
+											)}
+										</span>
+										{result.action.shortcut && (
+											<span className="ss-shortcut">
+												{result.action.shortcut.map((key) => <kbd key={key} className="ss-kbd">{key}</kbd>)}
+											</span>
+										)}
+									</button>
+								</React.Fragment>
+							);
+						}
+						if (result.type === "pr") {
+							const pr = result.pr;
+							return (
+								<React.Fragment key={`pr:${pr.url}`}>
+									{startsGroup && <div className="ss-group-heading">{result.category}</div>}
+									<button
+										id={`command-result-${i}`}
+										data-idx={i}
+										type="button"
+										role="option"
+										aria-selected={i === active}
+										tabIndex={-1}
+										className={`ss-item${i === active ? " ss-item-active" : ""}`}
+										onMouseMove={() => setActiveKey(resultKey(result))}
+										onClick={() => selectResult(result)}
+									>
+										<span className="ss-command-icon"><IconPullRequest size={18} /></span>
+										<span className="ss-item-main">
+											<span className="ss-item-title">{pr.title}</span>
+											<span className="ss-item-meta">
+												<span className="ss-item-repo">{pr.repo} #{pr.number}</span>
+												<span className="ss-item-branch">{pr.branch}</span>
+												<span>{pr.author}</span>
+											</span>
+										</span>
+										<span className="ss-item-status">{prStatus(pr)}</span>
+									</button>
+								</React.Fragment>
+							);
+						}
+						const s = result.session;
 						const st = sessionStatus(s);
 						const meta = STATUS_META[st];
 						return (
-							<button
-								key={s.id}
-								data-idx={i}
-								className={`ss-item${i === active ? " ss-item-active" : ""}`}
-								onMouseMove={() => setActive(i)}
-								onClick={() => onSelect(s.id)}
-							>
-								<span className={`ss-item-dot ${meta.dotClass}`} />
-								<span className="ss-item-main">
-									<span className="ss-item-title">{s.title}</span>
-									{snippet && (
-										<span className="ss-item-snippet">{snippet}</span>
-									)}
-									<span className="ss-item-meta">
-										{s.automation ? (
-											<span className="ss-tag ss-tag-auto">{s.automation}</span>
-										) : (
-											s.startedBy && <span>{s.startedBy}</span>
+							<React.Fragment key={`session:${s.id}`}>
+								{startsGroup && <div className="ss-group-heading">{result.category}</div>}
+								<button
+									id={`command-result-${i}`}
+									data-idx={i}
+									type="button"
+									role="option"
+									aria-selected={i === active}
+									tabIndex={-1}
+									className={`ss-item${i === active ? " ss-item-active" : ""}`}
+									onMouseMove={() => setActiveKey(resultKey(result))}
+									onClick={() => selectResult(result)}
+								>
+									<span className={`ss-item-dot ${meta.dotClass}`} />
+									<span className="ss-item-main">
+										<span className="ss-item-title">{s.title}</span>
+										{result.snippet && (
+											<span className="ss-item-snippet">{result.snippet}</span>
 										)}
-										<span className="ss-item-repo">{sessionRepo(s)}</span>
-										{s.branch && (
-											<span className="ss-item-branch">{s.branch}</span>
-										)}
-										<span className="ss-item-time">
-											{relativeTime(s.lastActivity)}
+										<span className="ss-item-meta">
+											{s.automation ? (
+												<span className="ss-tag ss-tag-auto">{s.automation}</span>
+											) : (
+												s.startedBy && <span>{s.startedBy}</span>
+											)}
+											<span className="ss-item-repo">{sessionRepo(s)}</span>
+											{s.branch && <span className="ss-item-branch">{s.branch}</span>}
+											<span className="ss-item-time">{relativeTime(s.lastActivity)}</span>
 										</span>
 									</span>
-								</span>
-								<span className="ss-item-status">{meta.label}</span>
-							</button>
+									<span className="ss-item-status">{meta.label}</span>
+								</button>
+							</React.Fragment>
 						);
 					})}
 				</div>
@@ -371,7 +581,7 @@ export function SessionSearch({ sessions, onSelect, onClose }: Props) {
 						<kbd className="ss-kbd">↵</kbd> open
 					</span>
 					<span className="ss-hint-count">
-						{results.length} session{results.length === 1 ? "" : "s"}
+						{results.length} result{results.length === 1 ? "" : "s"}
 					</span>
 				</div>
 			</div>
