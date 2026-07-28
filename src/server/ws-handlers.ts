@@ -1560,40 +1560,24 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					// Video tab on its chats and joins the sidebar feed row to the
 					// session — and gets the item named in its opening context.
 					const inheritedRefs = workspace?.externalRefs;
+					// Least privilege for feed-workspace chats: unless the creator
+					// explicitly picked servers, the session's MCP allowlist is the
+					// feed's declared list (e.g. tella → ["tella"]) — never the full
+					// mcp-config (a video chat must not see Plain/Stripe/WorkOS).
+					const feedMcpServers =
+						!createMcpServers?.length && inheritedRefs?.length
+							? await (
+									await import("./feeds")
+								).feedMcpServersForRefs(inheritedRefs)
+							: undefined;
 					if (inheritedRefs?.length) {
-						const lines = inheritedRefs
-							.map(
-								(r) =>
-									`- ${r.kind} ${r.id}${r.title ? ` — "${r.title}"` : ""}${r.url ? ` (${r.url})` : ""}`,
-							)
-							.join("\n");
-						openingPrompt += `\n\n${wrapContext(
-							`This chat belongs to a workspace linked to external object(s):\n${lines}${
-								isScratch
-									? "\n\nYour working directory is a scratch space (not a git repo) — download media, run ffmpeg, write files there freely. Use the available MCP tools for the linked service when the task concerns the object itself."
-									: ""
-							}`,
-						)}`;
-						// Tella refs get the video itself in the opening context
-						// (metadata + chapters + transcript excerpt), like Plain
-						// creates get the ticket conversation.
-						for (const r of inheritedRefs.filter((x) => x.kind === "tella")) {
-							try {
-								const { getVideo, formatVideoContext } = await import(
-									"../agents/tella/api"
-								);
-								const video = await getVideo(r.id);
-								if (video)
-									openingPrompt += `\n\n${wrapContext(
-										`Tella video context for ${r.id}:\n\n${formatVideoContext(video)}`,
-									)}`;
-							} catch (e) {
-								console.error(
-									`[create_session] Tella video lookup failed for ${r.id}:`,
-									e,
-								);
-							}
-						}
+						const refsContext = await (
+							await import("./feeds")
+						).externalRefsOpeningContext(inheritedRefs, {
+							scratch: isScratch,
+						});
+						if (refsContext)
+							openingPrompt += `\n\n${wrapContext(refsContext)}`;
 					}
 					const plainThreadId = msgPlainThreadId || workspace?.plainThreadId;
 					if (plainThreadId) {
@@ -1690,7 +1674,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 								...(inheritedRefs?.length
 									? { externalRefs: inheritedRefs }
 									: {}),
-								...(createMcpServers && createMcpServers.length ? { mcpServers: createMcpServers } : {}),
+								...(createMcpServers && createMcpServers.length
+									? { mcpServers: createMcpServers }
+									: feedMcpServers?.length
+										? { mcpServers: feedMcpServers }
+										: {}),
 								...(createSandboxProvider
 									? {
 											sandbox: {

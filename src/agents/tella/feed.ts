@@ -15,6 +15,10 @@ export function registerTellaFeed(): void {
       title: "Tella",
       refKind: "tella",
       tileBg: "#7048e8",
+      // Sessions in tella-video workspaces see ONLY this server (least
+      // privilege — no Plain/Stripe/WorkOS in a video chat). Not in
+      // mcp-config yet (the Tella MCP is OAuth 2.1); it lights up when added.
+      mcpServers: ["tella"],
     },
     async listItems(): Promise<FeedItem[]> {
       const videos = await listRecentVideos(30);

@@ -110,7 +110,12 @@ export async function handleSessionsRoutes(
 		if (!prompt) {
 			return Response.json({ error: "prompt required" }, { status: 400 });
 		}
-		const mode = body?.mode === "code" ? ("code" as const) : ("ask" as const);
+		const mode =
+			body?.mode === "code"
+				? ("code" as const)
+				: body?.mode === "scratch"
+					? ("scratch" as const)
+					: ("ask" as const);
 		let branch = typeof body?.branch === "string" ? body.branch.trim() : "";
 		if (mode === "code" && !branch) {
 			branch =

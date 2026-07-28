@@ -482,6 +482,9 @@ export async function handleWorkspaceRoutes(
 			...(workspaceId ? { projectId: workspaceId } : {}),
 			...(plainThreadId ? { plainThreadId } : {}),
 			...(siblingRefs?.length ? { externalRefs: siblingRefs } : {}),
+			// Siblings keep the source chat's MCP scoping (least privilege —
+			// a sibling of a tella-scoped chat must not regain every server).
+			...(src.mcpServers?.length ? { mcpServers: src.mcpServers } : {}),
 			createdBy: requestUser(ctx, body.user) || "Anonymous",
 			createdAt: new Date().toISOString(),
 			lastActivity: new Date().toISOString(),
@@ -631,7 +634,8 @@ export async function handleWorkspaceRoutes(
 		// (ask sessions read the shared checkout — nothing to switch).
 		// `hasWork`: it already has commits/edits, so the UI confirms before
 		// switching (the work stays in the old worktree, not carried over).
-		const switchable = session.mode !== "ask";
+		// Scratch sessions are repo-less — nothing to switch either.
+		const switchable = session.mode !== "ask" && session.mode !== "scratch";
 		const hasWork =
 			switchable &&
 			!!session.worktreeDir &&

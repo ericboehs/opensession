@@ -48,6 +48,14 @@ export interface FeedDescriptor {
   lanes?: FeedLane[];
   /** Brand tile background for the band header. */
   tileBg?: string;
+  /**
+   * External MCP servers (mcp-config.json names) sessions in this feed's
+   * workspaces get — their session allowlist defaults to exactly this list,
+   * so a Tella-video chat never sees Plain/Stripe/WorkOS tools. Names not
+   * (yet) in mcp-config are skipped by filterMcpServers, so declaring a
+   * future server (e.g. "tella") is safe and lights up when it's added.
+   */
+  mcpServers?: string[];
 }
 
 export interface FeedProvider {
@@ -86,6 +94,66 @@ export async function getFeedItems(feedId: string): Promise<FeedItem[] | null> {
   return items;
 }
 
+/**
+ * The MCP allowlist for a session whose workspace carries these refs: the
+ * union of the matching feeds' declared servers. Returns undefined when no
+ * matching feed declares any — callers then leave the session unrestricted
+ * (an EMPTY allowlist would be normalized back to "all servers" by
+ * run-session, so "scoped" is only expressible as a non-empty list).
+ */
+export async function feedMcpServersForRefs(
+  refs: Array<{ kind: string }>,
+): Promise<string[] | undefined> {
+  await ensureFeedsRegistered();
+  const out = new Set<string>();
+  for (const entry of registry.values()) {
+    const d = entry.provider.descriptor;
+    if (!d.mcpServers?.length) continue;
+    if (refs.some((r) => r.kind === d.refKind))
+      for (const s of d.mcpServers) out.add(s);
+  }
+  return out.size ? [...out] : undefined;
+}
+
+/**
+ * The opening-context block for a session whose workspace carries these refs:
+ * names the linked objects, adds the scratch-dir note for scratch sessions,
+ * and for Tella refs appends the video's metadata + chapters + transcript
+ * excerpt (the Plain ticket-context analogue). Used by BOTH create paths and
+ * the first prompt of prompt-less creates (tab-strip "+" siblings) — a chat
+ * in a feed workspace must get this no matter how it was born. Returns null
+ * when there's nothing to say. Callers wrap it (wrapContext) themselves.
+ */
+export async function externalRefsOpeningContext(
+  refs: ExternalRef[] | undefined,
+  opts: { scratch?: boolean } = {},
+): Promise<string | null> {
+  if (!refs?.length) return null;
+  const lines = refs
+    .map(
+      (r) =>
+        `- ${r.kind} ${r.id}${r.title ? ` — "${r.title}"` : ""}${r.url ? ` (${r.url})` : ""}`,
+    )
+    .join("\n");
+  let out = `This chat belongs to a workspace linked to external object(s):\n${lines}`;
+  if (opts.scratch)
+    out +=
+      "\n\nYour working directory is a scratch space (not a git repo) — download media, run ffmpeg, write files there freely. Use the available MCP tools for the linked service when the task concerns the object itself.";
+  for (const r of refs.filter((x) => x.kind === "tella")) {
+    try {
+      const { getVideo, formatVideoContext } = await import(
+        "../agents/tella/api"
+      );
+      const video = await getVideo(r.id);
+      if (video)
+        out += `\n\nTella video context for ${r.id}:\n\n${formatVideoContext(video)}`;
+    } catch (e) {
+      console.error(`[feeds] Tella video lookup failed for ${r.id}:`, e);
+    }
+  }
+  return out;
+}
+
 let registered = false;
 /** Idempotently register the built-in providers (called from the routes). */
 export async function ensureFeedsRegistered(): Promise<void> {
@@ -93,4 +161,28 @@ export async function ensureFeedsRegistered(): Promise<void> {
   registered = true;
   const { registerTellaFeed } = await import("../agents/tella/feed");
   registerTellaFeed();
+  // Once per boot: sweep scratch dirs whose workspace is gone (deleted
+  // workspaces clean up inline in deleteWorkspace; this catches dirs from
+  // before that hook and workspace-less creates). 14-day grace on mtime.
+  sweepOrphanScratchDirs().catch(() => {});
+}
+
+const SCRATCH_ORPHAN_GRACE_MS = 14 * 24 * 60 * 60 * 1000;
+
+async function sweepOrphanScratchDirs(): Promise<void> {
+  const { readdirSync, rmSync, statSync, existsSync } = await import("fs");
+  const { stateDir } = await import("./rename-compat");
+  const { getWorkspace } = await import("./workspaces");
+  const root = stateDir("scratch");
+  if (!existsSync(root)) return;
+  for (const entry of readdirSync(root)) {
+    try {
+      if (getWorkspace(entry)) continue;
+      const full = `${root}/${entry}`;
+      if (Date.now() - statSync(full).mtimeMs < SCRATCH_ORPHAN_GRACE_MS)
+        continue;
+      rmSync(full, { recursive: true, force: true });
+      console.log(`[feeds] Swept orphan scratch dir ${entry}`);
+    } catch {}
+  }
 }

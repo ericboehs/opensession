@@ -285,6 +285,12 @@ export function deleteWorkspace(id: string): boolean {
   if (!existsSync(f)) return false;
   try {
     rmSync(f);
+    // A deleted workspace's scratch dir (scratch-mode chats — see
+    // worktree.ts ensureScratchDir) goes with it; safeId() already rules
+    // out anything path-escaping.
+    try {
+      rmSync(`${stateDir("scratch")}/${id}`, { recursive: true, force: true });
+    } catch {}
     return true;
   } catch {
     return false;

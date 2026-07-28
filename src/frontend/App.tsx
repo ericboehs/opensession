@@ -433,7 +433,7 @@ function App() {
 	sessionsRef.current = sessions;
 	type PendingCreateDraft = {
 		prompt: string;
-		mode: "ask" | "code";
+		mode: "ask" | "code" | "scratch";
 		repo: string;
 		branch: string | null;
 		projectId?: string;
@@ -844,7 +844,7 @@ function App() {
 		projectId?: string;
 		repo?: string;
 		branch?: string;
-		mode?: "ask" | "code";
+		mode?: "ask" | "code" | "scratch";
 	}>(() =>
 		route.view === "new" ? { open: true, prompt: route.prompt } : { open: false },
 	);

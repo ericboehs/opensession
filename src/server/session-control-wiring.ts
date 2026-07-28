@@ -30,7 +30,7 @@ import { handleSlashCommand } from "./slash-commands";
 import { type BackstageSessionFile, type SessionUsage, type UnifiedSession } from "./types";
 import { type Workspace, createWorkspace, getWorkspace } from "./workspaces";
 import { ownedWorktree } from "./chat-workspace";
-import { createWorktree, ensureAskCheckout, getRepo, listWorktrees, repoForPath, worktreeHeadBranch } from "./worktree";
+import { createWorktree, ensureAskCheckout, ensureScratchDir, getRepo, listWorktrees, repoForPath, worktreeHeadBranch } from "./worktree";
 import { broadcastToAll, broadcastToSession } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
 import { existsSync, watch } from "fs";
@@ -220,7 +220,9 @@ registerSessionControl({
 		user,
 		sandbox,
 	}) => {
-		const isAsk = mode !== "code";
+		// Scratch: repo-less sessions (feed-item workspaces — docs/feeds-design.md).
+		const isScratch = mode === "scratch";
+		const isAsk = !isScratch && mode !== "code";
 		const model = modelInput ? resolveModel(String(modelInput))?.id : undefined;
 		// Same validation as the web palette's create_session: unknown efforts
 		// are dropped rather than persisted; images arrive as data URLs.
@@ -253,17 +255,36 @@ registerSessionControl({
 			parentSession?.projectId
 				? getWorkspace(parentSession.projectId)
 				: null;
+		// Least privilege: children in feed-item workspaces default their MCP
+		// allowlist to the feed's declared servers, else inherit the parent's
+		// scoping — never widen back to the full mcp-config.
+		const { feedMcpServersForRefs } = await import("./feeds");
+		const effectiveMcpServers = mcpServers?.length
+			? mcpServers
+			: parentWorkspace?.externalRefs?.length
+				? ((await feedMcpServersForRefs(parentWorkspace.externalRefs)) ??
+					parentSession?.mcpServers)
+				: parentSession?.mcpServers;
 
 		let wtPath: string;
 		let sessionBranch = branch || "";
 		const sharedParentContext =
 			parentSession &&
 			parentSession.mode !== "ask" &&
+			parentSession.mode !== "scratch" &&
 			parentRepoContext?.repo === repo.id &&
 			existsSync(parentRepoContext.dir)
 				? parentRepoContext
 				: null;
-		if (isAsk) {
+		if (isScratch) {
+			// Scratch children share the parent workspace's scratch dir (so a
+			// child sees the parent's downloads); standalone scratch creates get
+			// a fresh one. Never a repo checkout (docs/feeds-design.md).
+			wtPath = ensureScratchDir(
+				parentSession?.projectId || randomUUIDv7(),
+			);
+			sessionBranch = "";
+		} else if (isAsk) {
 			// A child reviewer shares the selected parent worktree read-only so
 			// it sees uncommitted/current-branch work. Standalone ask sessions
 			// keep using the pinned default-branch checkout.
@@ -333,7 +354,7 @@ registerSessionControl({
 				const ws = createWorkspace({
 					name:
 						parentSession?.title || parentSession?.branch || title || "Workspace",
-					repo: parentSession?.repo || repo.id,
+					...(isScratch ? {} : { repo: parentSession?.repo || repo.id }),
 					createdBy: user || parentSession?.startedBy || "Anonymous",
 					...(branchForWs ? { branch: branchForWs } : {}),
 					...(dir ? { worktreeDir: dir } : {}),
@@ -361,7 +382,10 @@ registerSessionControl({
 		// Actual worktree HEAD when it drifted from the recorded branch (the
 		// agent switched/renamed branches during the opening turn).
 		const headBranchPatch = () => {
-			const head = !isAsk && sessionBranch ? worktreeHeadBranch(wtPath) : null;
+			const head =
+				!isAsk && !isScratch && sessionBranch
+					? worktreeHeadBranch(wtPath)
+					: null;
 			return head && head !== sessionBranch ? { branch: head } : {};
 		};
 		// Field-scoped write: creation fields are create-if-absent defaults (an
@@ -375,19 +399,32 @@ registerSessionControl({
 				return {
 					id: bksId,
 					claudeSessionId: "",
-					branch: isAsk ? "" : sessionBranch,
+					branch: isAsk || isScratch ? "" : sessionBranch,
 					worktreeDir: wtPath,
-					repo: repo.id,
+					// Scratch sessions are repo-less (wtPath is a plain dir).
+					...(isScratch ? {} : { repo: repo.id }),
 					...(projectId ? { projectId } : {}),
 					...(parentSessionId ? { parentSessionId } : {}),
 					// Persisted so the failure beacon (handoff-evidence.ts) can tell
 					// a worker that owes its parent a report from a child session
 					// that was explicitly told not to report (e.g. the PR chat).
 					...(parentSessionId && reportBack ? { reportBack: true } : {}),
+					// Feed-item linkage follows the parent workspace (Video tab +
+					// sidebar feed-row join — docs/feeds-design.md).
+					...(parentWorkspace?.externalRefs?.length
+						? { externalRefs: parentWorkspace.externalRefs }
+						: {}),
+					// Persist the MCP scoping so follow-up prompts keep it.
+					...(effectiveMcpServers?.length
+						? { mcpServers: effectiveMcpServers }
+						: {}),
 					createdBy: user || personaName(),
 					createdAt: new Date().toISOString(),
 					title,
-					mode: (isAsk ? "ask" : "code") as "ask" | "code",
+					mode: (isScratch ? "scratch" : isAsk ? "ask" : "code") as
+						| "ask"
+						| "code"
+						| "scratch",
 					...(createEffort ? { effort: createEffort } : {}),
 					...(createFastMode ? { fastMode: true } : {}),
 					// Sandbox opt-in: the opening run below and every later prompt
@@ -443,7 +480,7 @@ registerSessionControl({
 								cwd: wtPath,
 								user,
 								images,
-								mcpServers,
+								mcpServers: effectiveMcpServers,
 								isAutomationSession: false,
 							})
 						: null;
@@ -468,17 +505,17 @@ registerSessionControl({
 				for await (const event of sandboxOpeningRun ?? runAgent({
 					prompt: openingPrompt,
 					cwd: wtPath,
-					mode: isAsk ? "ask" : "code",
+					mode: isScratch ? ("scratch" as const) : isAsk ? ("ask" as const) : ("code" as const),
 					model,
 					effort: createEffort,
 					fastMode: createFastMode || undefined,
 					images,
 					fallbackModel: interactiveFallbackModel(model),
-					mcpServers,
+					mcpServers: effectiveMcpServers,
 					reposNote:
 						[
 							buildBranchNote({
-								mode: isAsk ? "ask" : "code",
+								mode: isScratch ? ("scratch" as const) : isAsk ? ("ask" as const) : ("code" as const),
 								branch: sessionBranch,
 								worktreeDir: wtPath,
 							}),

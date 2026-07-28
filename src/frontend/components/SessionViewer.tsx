@@ -3906,14 +3906,36 @@ export function SessionViewer({
 							</span>
 						)
 					)}
-					{session.worktreeDir && hasWorkspace && (
-						<RepoBar
-							sessionId={session.id}
-							primaryRepo={session.repo || "repository"}
-							branch={session.branch}
-							initialAttached={session.attachedRepos || []}
-						/>
-					)}
+					{session.worktreeDir &&
+						hasWorkspace &&
+						// Scratch sessions are repo-less: a static feed-kind tile
+						// ("tella") instead of the repo switch/attach menu.
+						(session.mode === "scratch" ? (
+							<span className="flex min-w-0 items-center gap-1.5">
+								<span
+									className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-dim"
+									title="Scratch session — no repo"
+								>
+									<RepoTile
+										name={session.externalRefs?.[0]?.kind || "scratch"}
+									/>
+									<span className="truncate">
+										{session.externalRefs?.[0]?.kind || "scratch"}
+									</span>
+								</span>
+								<IconChevronDown
+									size={18}
+									className="shrink-0 -rotate-90 text-faint"
+								/>
+							</span>
+						) : (
+							<RepoBar
+								sessionId={session.id}
+								primaryRepo={session.repo || "repository"}
+								branch={session.branch}
+								initialAttached={session.attachedRepos || []}
+							/>
+						))}
 					{renameDraft !== null ? (
 						<input
 							className="viewer-branch-rename"

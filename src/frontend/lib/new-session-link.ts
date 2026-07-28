@@ -1,7 +1,7 @@
 import { stripBasePath } from "./base";
 
 export interface NewSessionPrefill {
-	mode: "ask" | "code";
+	mode: "ask" | "code" | "scratch";
 	prompt?: string;
 	repo?: string;
 	branch?: string;

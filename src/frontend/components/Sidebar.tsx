@@ -1238,7 +1238,9 @@ function readFilter(): FilterState {
 }
 
 function sessionRepo(s: UnifiedSession): string {
-	return s.repo || DEFAULT_PROJECT;
+	// Repo-less feed/scratch chats file under their feed's kind ("tella") so
+	// they don't mislabel as the default repo (docs/feeds-design.md).
+	return s.repo || s.externalRefs?.[0]?.kind || DEFAULT_PROJECT;
 }
 
 // Every `repo\nbranch` key a chat's work can be reached by: its own checkout
@@ -3720,7 +3722,12 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// reads as two pieces of work); the repo *filter* honours every repo it
 	// touches, so it stays findable from the others.
 	function wsRowRepo(row: WsRow): string {
-		return row.workspace?.repo || row.chats[0]?.repo || DEFAULT_PROJECT;
+		return (
+		row.workspace?.repo ||
+		row.workspace?.externalRefs?.[0]?.kind ||
+		row.chats[0]?.repo ||
+		sessionRepo(row.chats[0] || ({} as UnifiedSession))
+	);
 	}
 
 	// The Conductor-style status lanes (Needs input / In progress / …) over a set

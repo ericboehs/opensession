@@ -38,7 +38,7 @@ interface Props {
   connected: boolean;
   /** Prefill the prompt (e.g. from the Home "New session" box). */
   prefillPrompt?: string;
-  forceMode?: "ask" | "code";
+  forceMode?: "ask" | "code" | "scratch";
   /** When starting a chat inside a Project (folder), the chat joins this project… */
   projectId?: string;
   /** …and defaults to the project's shared repo + worktree (a sibling's branch). */
@@ -48,7 +48,7 @@ interface Props {
       in the polled session list. */
   onCreateStarted?: (draft: {
     prompt: string;
-    mode: "ask" | "code";
+    mode: "ask" | "code" | "scratch";
     repo: string;
     branch: string | null;
     projectId?: string;
@@ -131,7 +131,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     (window as { os1?: { desktop?: boolean } }).os1?.desktop === true ||
     navigator.userAgent.includes("Electron/");
   const [prefill] = useState(readPrefill);
-  const [mode, setMode] = useState<"ask" | "code">(forceMode || prefill.mode);
+  const [mode, setMode] = useState<"ask" | "code" | "scratch">(forceMode || prefill.mode);
   // Plan-first gate (code mode): design doc + ask_user approval before any
   // code, then vertical slices with per-slice evidence. See buildPlanFirstNote.
   const [planFirst, setPlanFirst] = useState(false);
@@ -526,12 +526,12 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     // stacking a fresh worktree off it for a new branch. Unscoped, the default
     // is a brand-new Workspace + first Chat created together.
     const chatMode =
-      mode === "ask" ? "ask" : selectedWorktree === "__new__" ? "stack" : "share";
+      mode === "ask" ? "ask" : mode === "code" && selectedWorktree === "__new__" ? "stack" : "share";
     onCreateStarted?.({
       prompt: prompt.trim(),
       mode,
       repo,
-      branch: mode === "ask" ? null : branch,
+      branch: mode === "code" ? branch : null,
       ...(projectId ? { projectId } : {}),
       ...(model ? { model } : {}),
       ...(images.length ? { images } : {}),
@@ -544,7 +544,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
       ...(projectId
         ? { workspaceId: projectId, chatMode }
         : { createWorkspace: {} }),
-      branch: mode === "ask" ? "" : branch,
+      branch: mode === "code" ? branch : "",
       prompt: prompt.trim(),
       user: getCurrentUser(),
       ...(mode === "code" && planFirst ? { planFirst: true } : {}),
@@ -568,19 +568,22 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const canCreate =
     !creating &&
     connected &&
-		!!repo &&
+		(!!repo || mode === "scratch") &&
     // Unsupported model × environment combo: the server would reject the
     // create with the same message (resolveRequestedSandbox) — block here so
     // the wall is discovered before submit, not after.
     !sandboxModelWarning &&
     (prompt.trim() || images.length > 0 || files.length > 0) &&
-    (mode === "ask" || selectedWorktree !== "" );
+    (mode === "ask" || mode === "scratch" || selectedWorktree !== "");
 
   // "Create from…" combines the mode + base into one control.
-  const createFromValue = mode === "ask" ? "__ask__" : selectedWorktree;
+  const createFromValue =
+    mode === "ask" ? "__ask__" : mode === "scratch" ? "__scratch__" : selectedWorktree;
   function onCreateFromChange(v: string) {
     if (v === "__ask__") {
       setMode("ask");
+    } else if (v === "__scratch__") {
+      setMode("scratch");
     } else {
       setMode("code");
       setSelectedWorktree(v);
@@ -589,9 +592,11 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const createFromLabel =
     mode === "ask"
       ? "Ask · read-only"
-      : selectedWorktree === "__new__"
-        ? "New branch"
-        : selectedWorktree;
+      : mode === "scratch"
+        ? "Scratch · no repo"
+        : selectedWorktree === "__new__"
+          ? "New branch"
+          : selectedWorktree;
   const createFromOptions = [
     {
       value: "__new__",
@@ -602,6 +607,9 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     // Ask stays above the branch list — as the last option it drowned below
     // the scroll fold once the worktree list grew, reading as "Ask is gone".
     { value: "__ask__", label: "Ask — read-only on main", menuLabel: "Ask · read-only on main" },
+    // Scratch: repo-less scratch dir with write+bash (media/MCP work —
+    // docs/feeds-design.md). No branch, no PR flow.
+    { value: "__scratch__", label: "Scratch — no repo, writable scratch dir", menuLabel: "Scratch · no repo" },
     ...worktrees.map((wt) => ({ value: wt.branch, label: wt.branch })),
   ];
 

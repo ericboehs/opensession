@@ -336,7 +336,7 @@ export interface SpawnTaskArgs {
   repo?: string;
   branch?: string;
   model?: string;
-  mode?: "ask" | "code";
+  mode?: "ask" | "code" | "scratch";
   /** true = config default provider; or an explicit configured provider id. */
   sandbox?: boolean | "docker" | "daytona" | "e2b" | "box" | "modal" | "microvm" | "lambda-microvm";
 }
@@ -637,7 +637,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
         async (args: {
           prompt: string;
           repo?: string;
-          mode?: "ask" | "code";
+          mode?: "ask" | "code" | "scratch";
           branch?: string;
           model?: string;
           mcpServers?: string[];
@@ -730,7 +730,7 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
           repo: z.string().optional().describe("Registered repo id. Defaults to this session's repo."),
           branch: z.string().optional().describe("Branch for code mode when the child can't share this session's worktree (standalone or different repo)."),
           model: z.string().optional().describe("Optional model id (e.g. 'gpt-5.5' for a Codex worker, or a Claude model id)."),
-          mode: z.enum(["ask", "code"]).optional().describe("'code' (default) can edit files / open PRs; 'ask' is read-only."),
+          mode: z.enum(["ask", "code", "scratch"]).optional().describe("'code' (default) can edit files / open PRs; 'ask' is read-only."),
           sandbox: z.union([z.boolean(), z.enum(["docker", "daytona", "e2b", "box", "modal", "microvm", "lambda-microvm"])]).optional().describe("Run the child in an isolated sandbox: true = the server's default provider, or an explicit configured provider id."),
         },
         async (args: SpawnTaskArgs) => {

@@ -1547,7 +1547,14 @@ async function runSessionPromptInner(
 	// while the seeded UI transcript looked continuous (bks-019f818d, 2026-07-20).
 	const mcpServers = isAutomationSession
 		? automationMcpServersByName(session.automation!)
-		: (session.mcpServers && session.mcpServers.length) ? session.mcpServers : undefined;
+		: (session.mcpServers && session.mcpServers.length)
+			? session.mcpServers
+			: session.externalRefs?.length
+				? // Feed-workspace chats are scoped to their feed's declared MCP
+					// servers even when the session file predates the stamping
+					// (least privilege — docs/feeds-design.md).
+					await (await import("./feeds")).feedMcpServersForRefs(session.externalRefs)
+				: undefined;
 	const deniedTools = isAutomationSession ? automationDeniedTools() : undefined;
 
 	// @session:<id> mentions → footer resolving them for the agent's
@@ -1555,6 +1562,30 @@ async function runSessionPromptInner(
 	if (!isAutomationSession) {
 		const mentionsNote = sessionMentionsNote(prompt, inlinedChatIds);
 		if (mentionsNote) prompt += `\n\n${mentionsNote}`;
+	}
+
+	// First engine turn of a feed-workspace chat that was born prompt-less
+	// (tab-strip "+" siblings): inject the workspace's external-object context
+	// (Tella video metadata + transcript excerpt, scratch-dir note) exactly
+	// like the create_session paths do — a chat must get this context no
+	// matter how it was created (docs/feeds-design.md).
+	if (
+		!isAutomationSession &&
+		session.externalRefs?.length &&
+		!session.claudeSessionId &&
+		!session.opencodeSessionId &&
+		!session.codexThreadId
+	) {
+		try {
+			const { externalRefsOpeningContext } = await import("./feeds");
+			const refsContext = await externalRefsOpeningContext(
+				session.externalRefs,
+				{ scratch: session.mode === "scratch" },
+			);
+			if (refsContext) prompt += `\n\n${wrapContext(refsContext)}`;
+		} catch (e) {
+			console.error("[run-session] externalRefs context failed:", e);
+		}
 	}
 
 	// Sidebar name: make sure this chat has a short generated summary title.
