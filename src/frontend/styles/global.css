@@ -12829,6 +12829,8 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		   scroll's top by the bar height — the tool cards clear the pills at rest
 		   and the list scrolls under them. */
 		padding-top: var(--header-h);
+		/* Keep the final section clear of the home indicator and rounded corners. */
+		padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
 		/* Fade the list into the bar as it scrolls under the floating pills. */
 		-webkit-mask-image: linear-gradient(
 			to bottom,
