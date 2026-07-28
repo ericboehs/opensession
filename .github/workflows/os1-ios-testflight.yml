@@ -101,7 +101,9 @@ jobs:
           echo "iOS build number: $BN"
 
       - name: Generate Xcode project
-        run: xcodegen generate
+        run: |
+          echo "Xcode build cache hit: ${{ steps.build-cache.outputs.cache-hit }}"
+          xcodegen generate
 
       - name: Run unit tests
         run: |
