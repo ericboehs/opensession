@@ -246,7 +246,9 @@ export interface SandboxConfig {
   modal?: SandboxModalConfig;
   /** AWS Lambda MicroVM adapter (provider "lambda-microvm"). */
   awsLambdaMicrovm?: SandboxAwsLambdaMicrovmConfig;
-  /** Clone auth for remote-provider workspaces + runner bootstrap. */
+  /** Clone auth for remote-provider workspaces + runner bootstrap. On hosted
+   *  GitHub clones, the live GITHUB_API_TOKEN takes precedence so an expiring
+   *  GitHub App user token is never treated as durable sandbox config. */
   cloneCredential?: SandboxCloneCredential;
   /** Warm-on-typing prewarm pool (remote providers). Absent = defaults, with
    *  `enabled` true whenever a remote provider is configured. */

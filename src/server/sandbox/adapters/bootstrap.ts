@@ -296,8 +296,20 @@ function toHttpsUrl(origin: string): string | null {
 
 function injectToken(httpsUrl: string): string {
   const cred = sandboxConfig().cloneCredential;
-  if (cred?.type === "https-token" && cred.token) {
-    return httpsUrl.replace(/^https:\/\//, `https://x-access-token:${cred.token}@`);
+  if (cred?.type === "https-token") {
+    // Hosted OpenSession keeps a long-lived, tellahq-scoped bot credential in
+    // GITHUB_API_TOKEN. Prefer it for GitHub clones over the config's token:
+    // GitHub App user tokens expire in ~8h, so persisting one in sandbox.json
+    // makes every fresh Daytona/Modal bootstrap fail days later. Self-hosters
+    // without the env keep the explicit cloneCredential.token behavior, and
+    // non-GitHub origins never receive our GitHub-specific credential.
+    const liveGithubToken = /^https:\/\/github\.com\//i.test(httpsUrl)
+      ? process.env.GITHUB_API_TOKEN
+      : undefined;
+    const token = liveGithubToken || cred.token;
+    if (token) {
+      return httpsUrl.replace(/^https:\/\//, `https://x-access-token:${token}@`);
+    }
   }
   return httpsUrl;
 }
