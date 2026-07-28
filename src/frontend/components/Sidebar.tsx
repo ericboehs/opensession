@@ -6670,7 +6670,7 @@ interface WsCardRow {
 	running: boolean;
 }
 
-// Leading status mark for a workspace, Conductor-style: the live dots
+// Leading status mark for a workspace, Conductor-style: live states
 // (blocked question, running) keep their animated form, then the PR lifecycle
 // gets an icon — open PR (green, faint while still a draft) or merged
 // (purple). Backlog rows get a quiet gray idle dot. Shared by
@@ -6802,7 +6802,8 @@ function WsStatusMark({
 	);
 	const dot = (cls: string) => slot(<span className={`sidebar-item-status ${cls}`} />);
 	if (row.status === "needsinput") return dot("sidebar-status-waiting");
-	if (row.running) return dot("sidebar-status-running");
+	if (row.running)
+		return slot(<PixelSpinner className="text-yellow sidebar-spinner" />);
 	if (row.status === "review") {
 		const open = row.chats.filter((c) => c.prState === "OPEN");
 		const allDraft = open.length > 0 && open.every((c) => c.prIsDraft);
