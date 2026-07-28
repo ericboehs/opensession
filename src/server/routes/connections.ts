@@ -35,6 +35,98 @@ export async function handleConnectionsRoutes(
 		return Response.json(result);
 	}
 
+	// ── MCP OAuth (browser flow — src/server/mcp-oauth.ts) ──
+	// Callback first: AuthKit-style redirects land here with ?code&state. The
+	// signed-in cookie rides along (same-site), so the auth gate passes.
+	if (
+		path === "/backstage/api/connections/mcp-oauth/callback" &&
+		req.method === "GET"
+	) {
+		const code = url.searchParams.get("code") || "";
+		const state = url.searchParams.get("state") || "";
+		const page = (title: string, body: string, ok: boolean) =>
+			new Response(
+				`<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><body style="font-family:system-ui;display:grid;place-items:center;height:90vh;margin:0"><div style="text-align:center;max-width:26rem"><div style="font-size:40px">${ok ? "✅" : "⚠️"}</div><h2 style="margin:8px 0 4px">${title}</h2><p style="color:#666">${body}</p></div></body>`,
+				{ headers: { "Content-Type": "text/html; charset=utf-8" } },
+			);
+		if (!code || !state)
+			return page("Connect failed", "Missing code/state in the redirect.", false);
+		try {
+			const { completeMcpOauthFlow } = await import("../mcp-oauth");
+			const done = await completeMcpOauthFlow(
+				state,
+				code,
+				ctx.authUser?.login || ctx.authUser?.name || undefined,
+			);
+			return page(
+				`${done.name} connected`,
+				done.teamName
+					? `Connected as ${done.teamName}'s account. You can close this tab.`
+					: "Connected for the whole workspace. You can close this tab.",
+				true,
+			);
+		} catch (e: any) {
+			return page("Connect failed", e?.message || String(e), false);
+		}
+	}
+
+	const mcpOauthMatch = path.match(
+		/^\/backstage\/api\/connections\/mcp\/([^/]+)\/oauth$/,
+	);
+	if (mcpOauthMatch && req.method === "GET") {
+		const { mcpOauthStatus } = await import("../mcp-oauth");
+		return Response.json(mcpOauthStatus(decodeURIComponent(mcpOauthMatch[1])));
+	}
+	if (mcpOauthMatch && req.method === "DELETE") {
+		const { removeMcpOauthGrant } = await import("../mcp-oauth");
+		const me = url.searchParams.get("scope") === "me";
+		const ok = removeMcpOauthGrant(
+			decodeURIComponent(mcpOauthMatch[1]),
+			me ? ctx.authUser?.login || ctx.authUser?.name || undefined : undefined,
+		);
+		return Response.json(ok ? { ok: true } : { error: "No such grant" }, {
+			status: ok ? 200 : 404,
+		});
+	}
+	const mcpOauthStartMatch = path.match(
+		/^\/backstage\/api\/connections\/mcp\/([^/]+)\/oauth\/start$/,
+	);
+	if (mcpOauthStartMatch && req.method === "POST") {
+		const name = decodeURIComponent(mcpOauthStartMatch[1]);
+		const body = (await req.json().catch(() => ({}))) as { scope?: string };
+		const cfg = (await import("../connections")).readMcpConfig().mcpServers[
+			name
+		] as { url?: string } | undefined;
+		if (!cfg?.url)
+			return Response.json(
+				{ error: "Not an HTTP MCP server" },
+				{ status: 400 },
+			);
+		try {
+			const { startMcpOauthFlow } = await import("../mcp-oauth");
+			const forUser =
+				body.scope === "me"
+					? ctx.authUser?.login || ctx.authUser?.name || undefined
+					: undefined;
+			if (body.scope === "me" && !forUser)
+				return Response.json(
+					{ error: "Sign in to connect your own account" },
+					{ status: 401 },
+				);
+			const { url: authorizeUrl } = await startMcpOauthFlow(
+				name,
+				cfg.url,
+				forUser,
+			);
+			return Response.json({ url: authorizeUrl });
+		} catch (e: any) {
+			return Response.json(
+				{ error: e?.message || String(e) },
+				{ status: 502 },
+			);
+		}
+	}
+
 	const mcpDelMatch = path.match(
 		/^\/backstage\/api\/connections\/mcp\/([^/]+)$/,
 	);

@@ -28,7 +28,7 @@ export function filterMcpServers(
   allowlist?: string[],
   user?: string
 ): Record<string, unknown> {
-  const all = withDynamicCredentials(readMcpConfig().mcpServers);
+  const all = withDynamicCredentials(readMcpConfig().mcpServers, user);
   const out: Record<string, unknown> = {};
   const names = allowlist ?? Object.keys(all);
   for (const name of names) {

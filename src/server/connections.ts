@@ -6,6 +6,7 @@
 import { existsSync, readFileSync, copyFileSync, watchFile } from "fs";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { configuredPaths } from "./config";
+import { mcpAuthHeader } from "./mcp-oauth";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 // mcp-config.json location. BACKSTAGE_MCP_CONFIG env → config
@@ -53,24 +54,46 @@ const LINEAR_AGENT_TOKENS_PATH = `${HOME}/.linear-agent-tokens.json`;
  * (personal API key) applies instead. Read per run — never persisted back.
  */
 export function withDynamicCredentials(
-  servers: Record<string, any>
+  servers: Record<string, any>,
+  user?: string,
 ): Record<string, any> {
+  let out = servers;
   const linear = servers.linear;
-  if (!linear?.url?.includes("mcp.linear.app")) return servers;
+  if (linear?.url?.includes("mcp.linear.app")) {
+    try {
+      const tokens = JSON.parse(readFileSync(LINEAR_AGENT_TOKENS_PATH, "utf-8"));
+      const t: any = Object.values(tokens)[0];
+      if (t?.accessToken && (!t.expiresAt || t.expiresAt > Date.now() + 60_000)) {
+        out = {
+          ...out,
+          linear: {
+            ...linear,
+            headers: { ...linear.headers, Authorization: `Bearer ${t.accessToken}` },
+          },
+        };
+      }
+    } catch {}
+  }
+  // OAuth-connected HTTP servers (src/server/mcp-oauth.ts): inject the run
+  // user's own grant first (per-user MCP identity), else the shared grant.
+  // Servers with a static Authorization header keep it unless a grant exists.
   try {
-    const tokens = JSON.parse(readFileSync(LINEAR_AGENT_TOKENS_PATH, "utf-8"));
-    const t: any = Object.values(tokens)[0];
-    if (t?.accessToken && (!t.expiresAt || t.expiresAt > Date.now() + 60_000)) {
-      return {
-        ...servers,
-        linear: {
-          ...linear,
-          headers: { ...linear.headers, Authorization: `Bearer ${t.accessToken}` },
-        },
+    for (const [name, cfg] of Object.entries(out)) {
+      if (!cfg || typeof cfg !== "object") continue;
+      const c: any = cfg;
+      const isHttp = c.type === "http" || c.type === "sse" || !!c.url;
+      if (!isHttp) continue;
+      const header = mcpAuthHeader(name, user);
+      if (!header) continue;
+      out = {
+        ...out,
+        [name]: { ...c, headers: { ...c.headers, Authorization: header } },
       };
     }
-  } catch {}
-  return servers;
+  } catch (e) {
+    console.error("[connections] mcp-oauth header injection failed:", e);
+  }
+  return out;
 }
 
 function writeMcpConfig(config: { mcpServers: Record<string, any> }): void {

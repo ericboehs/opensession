@@ -102,6 +102,39 @@ page over the embed — note Safari/3p-cookie caveat in the PR); scoped
 sessions run on per-session opencode servers (allowlist ⇒ not
 shared-pool-eligible) — acceptable, same as automations.
 
+## Full build-out (Michiel's standing goal, 2026-07-28)
+
+"Make it easy to connect any MCP (sign in per user too), and easy to create
+projects like plain/tella and link MCPs to them; custom code per project via
+plugins." Workstreams:
+
+- **W1 — MCP connect UX (LANDED)**: browser OAuth 2.1+PKCE flow run by
+  OpenSession itself (src/server/mcp-oauth.ts): RFC 9728/8414 discovery,
+  dynamic client registration, redirect to
+  `<publicBaseUrl>/backstage/api/connections/mcp-oauth/callback`, Connect
+  buttons on Connections cards (workspace-wide or "my account"). Replaces the
+  unusable headless CLI flow (opencode's loopback listener).
+- **W2 — per-user MCP auth (LANDED)**: grants stored per server in
+  `~/.opensession-mcp-oauth.json` — one `shared` + per-user keyed by
+  canonical team name. Injection at run time in withDynamicCredentials():
+  the run user's own grant wins, else shared; engines only ever see access
+  tokens (refresh handled here: lazy kick + 2-min ticker). Automations pass
+  no user ⇒ shared grant only, fail-closed like allowedUsers. Caveat: token
+  rotation changes the per-run config hash ⇒ shared-server drain-respawn,
+  same as GitHub user tokens.
+- **W3 — projects/feeds as config (NEXT)**: a "New project" flow that takes
+  name/icon/refKind + linked MCP servers + an items source (REST endpoint or
+  an MCP list-tool + field mapping) + a web-panel URL template, stored in
+  `~/.opensession-feeds.json`; the feeds registry loads config feeds beside
+  code feeds. This is the "any MCP/API is a project" payoff — Tella stays
+  the code-feed reference, new ones need zero core changes.
+- **W4 — plugins for custom code**: a feed package dir (src/agents/<feed>/
+  today; `@opensession/feed-*` after open-sourcing) exporting descriptor +
+  provider + panels + webhook module. The interface is the boundary; config
+  feeds (W3) cover the no-code case.
+- **W5 — migrate Plain onto the contract** (original Phase 1, incl. the
+  generic panel registry replacing the hardcoded "video" tab).
+
 ## Contract sketch
 
 ```ts

@@ -110,6 +110,70 @@ export function Connections() {
     };
   }, [load]);
 
+  // OAuth grants per HTTP server (mcp-oauth.ts): shared + per-user badges.
+  const [oauthByName, setOauthByName] = useState<
+    Record<string, { shared?: { connectedBy?: string }; users: string[] }>
+  >({});
+  const loadOauth = useCallback(async (servers: McpConnection[]) => {
+    const entries = await Promise.all(
+      servers
+        .filter((s) => s.transport === "http")
+        .map(async (s) => {
+          try {
+            const res = await fetch(
+              `${BASE_PATH}/api/connections/mcp/${encodeURIComponent(s.name)}/oauth`,
+            );
+            return res.ok ? ([s.name, await res.json()] as const) : null;
+          } catch {
+            return null;
+          }
+        }),
+    );
+    setOauthByName(Object.fromEntries(entries.filter(Boolean) as any));
+  }, []);
+  useEffect(() => {
+    if (data?.mcpServers) void loadOauth(data.mcpServers);
+  }, [data, loadOauth]);
+
+  // Start a browser OAuth flow (workspace-wide or the signed-in user's own
+  // account) and open the consent in a new tab; re-poll status for a while
+  // so the badge appears once they approve.
+  async function handleOauthConnect(s: McpConnection, scope: "shared" | "me") {
+    try {
+      const res = await fetch(
+        `${BASE_PATH}/api/connections/mcp/${encodeURIComponent(s.name)}/oauth/start`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope }),
+        },
+      );
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      window.open(body.url, "_blank", "noopener");
+      let polls = 0;
+      const t = setInterval(() => {
+        if (++polls > 24 || !data?.mcpServers) return clearInterval(t);
+        void loadOauth(data.mcpServers);
+      }, 5000);
+    } catch (e: any) {
+      setRemoveError(e.message);
+    }
+  }
+
+  async function handleOauthDisconnect(s: McpConnection, scope: "shared" | "me") {
+    try {
+      const res = await fetch(
+        `${BASE_PATH}/api/connections/mcp/${encodeURIComponent(s.name)}/oauth${scope === "me" ? "?scope=me" : ""}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) throw new Error((await res.json()).error || `Failed: ${res.status}`);
+      if (data?.mcpServers) void loadOauth(data.mcpServers);
+    } catch (e: any) {
+      setRemoveError(e.message);
+    }
+  }
+
   async function handleRemove(name: string) {
     if (!confirm(`Remove MCP server "${name}"? New sessions will no longer get its tools.`)) return;
     try {
@@ -256,6 +320,27 @@ export function Connections() {
                           <LockIcon /> {s.allowedUsers!.join(", ")}
                         </span>
                       )}
+                      {(oauthByName[s.name]?.shared || oauthByName[s.name]?.users.length) ? (
+                        <span
+                          className="flex flex-shrink-0 items-center gap-1 rounded-full bg-active px-1.5 py-0.5 text-[10.5px] font-medium text-green"
+                          title={[
+                            oauthByName[s.name]?.shared
+                              ? `Workspace grant${oauthByName[s.name]!.shared!.connectedBy ? ` (by ${oauthByName[s.name]!.shared!.connectedBy})` : ""}`
+                              : null,
+                            oauthByName[s.name]!.users.length
+                              ? `Personal: ${oauthByName[s.name]!.users.join(", ")}`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        >
+                          OAuth
+                          {oauthByName[s.name]?.shared ? " · workspace" : ""}
+                          {oauthByName[s.name]!.users.length
+                            ? ` · ${oauthByName[s.name]!.users.join(", ")}`
+                            : ""}
+                        </span>
+                      ) : null}
                     </div>
                     <div className="truncate text-xs text-dim">
                       {MCP_BLURBS[s.name] || "MCP server"}
@@ -279,6 +364,35 @@ export function Connections() {
                       <IconDotsHorizontal size={18} />
                     </Menu.Trigger>
                     <Menu.Popup align="end" sideOffset={4}>
+                      {s.transport === "http" && (
+                        <>
+                          <Menu.Item onClick={() => handleOauthConnect(s, "shared")}>
+                            <IconPlus size={16} className="text-faint" />
+                            {oauthByName[s.name]?.shared
+                              ? "Reconnect (workspace)"
+                              : "Connect (workspace)"}
+                          </Menu.Item>
+                          <Menu.Item onClick={() => handleOauthConnect(s, "me")}>
+                            <IconPlus size={16} className="text-faint" />
+                            Connect my account
+                          </Menu.Item>
+                          {(oauthByName[s.name]?.shared ||
+                            oauthByName[s.name]?.users.length) ? (
+                            <Menu.Item
+                              onClick={() =>
+                                handleOauthDisconnect(
+                                  s,
+                                  oauthByName[s.name]?.shared ? "shared" : "me",
+                                )
+                              }
+                            >
+                              <IconTrash size={16} className="text-faint" />
+                              Disconnect OAuth
+                            </Menu.Item>
+                          ) : null}
+                          <Menu.Separator />
+                        </>
+                      )}
                       <Menu.Item onClick={() => handleRestrict(s)}>
                         <IconSliders size={16} className="text-faint" />
                         {restricted ? "Edit access" : "Restrict access"}
