@@ -70,6 +70,22 @@ Packages: do NOT build a package system first. Extend `AgentModule`
 in `src/agents/tella/` like Plain. The interface is the package boundary;
 extraction to `@opensession/feed-*` workspaces later is mechanical.
 
+## Scratch mode (landed fc1eba52, 2026-07-28)
+
+Feed-item workspaces start chats in session mode `"scratch"`: like ask (no
+repo/worktree/branch/PR flow) but with code-mode permissions — Write/Edit,
+bash (ffmpeg, curl, downloads), MCP tools — in a per-WORKSPACE scratch dir
+`~/.opensession-scratch/<workspaceId>` (sibling chats share downloads;
+`ensureScratchDir` in worktree.ts). The opening prompt names the workspace's
+externalRefs, and Tella refs get metadata + chapters + transcript excerpt
+injected (`formatVideoContext`, agents/tella/api.ts). Every
+`session.repo || repoForPath(worktreeDir)` site is scratch-guarded
+(repoForPath throws on non-repo paths). Known follow-ups: NewSession palette
+has no scratch option yet; opensession-sessions MCP create_session + HTTP
+POST /api/sessions still coerce to ask/code; RepoBar/breadcrumb + sidebar
+band mislabel repo-less sessions under the default repo (cosmetic); scratch
+dirs have no cleanup policy yet (tie to workspace archive later).
+
 ## Contract sketch
 
 ```ts
