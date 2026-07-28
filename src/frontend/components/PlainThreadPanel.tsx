@@ -577,7 +577,7 @@ export function PlainReplyBox({
 				)}
 			</div>
 			<textarea
-				className="plain-reply-textarea w-full resize-none rounded-md border border-line bg-surface text-fg text-[13px] leading-normal p-2 min-h-[64px] focus:outline-none focus:border-line-strong placeholder:text-faint"
+				className="plain-reply-textarea w-full min-h-[128px] resize-y rounded-md border border-line bg-surface text-fg text-[13px] leading-normal p-2 focus:outline-none focus:border-line-strong placeholder:text-faint"
 				placeholder={
 					kind === "note"
 						? "Internal note for the team (English)…"
