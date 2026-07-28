@@ -1876,6 +1876,13 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			// parent recovered. Fall back for an unusual child-only workspace.
 			const stateChats = chats.filter((c) => !c.parentSessionId);
 			const statusSources = stateChats.length > 0 ? stateChats : chats;
+			// Automated PR reviews run in a separate bks-ghpr-* automation chat,
+			// so the workspace's own chats never carry isRunning for that work.
+			// The PR feed is the authoritative live signal for both its lane and
+			// its leading spinner.
+			const reviewRunning = chats.some((c) =>
+				chatPrKeys(c).some((k) => activeReviewPrKeys.has(k)),
+			);
 			let status =
 				STATUS_PRIORITY.find((st) =>
 					statusSources.some((c) => mineStatus(c) === st),
@@ -1890,10 +1897,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				// ready for anything yet — that review can still come back
 				// requesting changes. Hold the row in In progress until it lands.
 				status =
-					prLane === "review" &&
-					chats.some((c) =>
-						chatPrKeys(c).some((k) => activeReviewPrKeys.has(k)),
-					)
+					prLane === "review" && reviewRunning
 						? "inprogress"
 						: (prLane ?? status);
 			}
@@ -1922,7 +1926,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							isNoteUnread(c.id, a.lastTs, a.lastUser, meUser)
 						);
 					}),
-				running: statusSources.some((c) => c.isRunning),
+				running: statusSources.some((c) => c.isRunning) || reviewRunning,
 				owner: (workspace?.createdBy || chats[0]?.startedBy || "").toLowerCase(),
 			};
 		};
