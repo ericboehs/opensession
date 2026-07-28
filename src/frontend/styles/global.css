@@ -9387,8 +9387,8 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 .composer {
 	/* Anchors the dictation overlay (VoiceInput). */
 	position: relative;
-	background: var(--bg-raised);
-	border: 1px solid var(--border-strong);
+	background: var(--control-surface);
+	border: 1px solid var(--border);
 	border-radius: calc(64px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: var(--composer-shadow);
 	padding: 14px 14px 10px 16px;
