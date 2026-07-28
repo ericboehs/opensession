@@ -20,6 +20,7 @@ import {
   activeDetachedOpencodeRunCount,
   tryReattachOpencodeRun,
   steerOpencodeRun,
+  EMPTY_COMPLETION_RESULT,
 } from "./opencode-runner";
 import {
   providerFor,
@@ -720,7 +721,7 @@ export function resumeInterruptedRuns(
     if (run.bksSessionId) resumed.push(run.bksSessionId);
     void (async () => {
       try {
-        let repairingMalformedReattach = false;
+        let repairingRecoveredResult = false;
         // First choice: REATTACH — the run's detached `opencode serve`
         // survived the restart and the turn may still be executing. The
         // adopted-pool lookup + session probe live in tryReattachOpencodeRun;
@@ -747,9 +748,9 @@ export function resumeInterruptedRuns(
             );
             for await (const event of reattached) {
               if (recoveredResultNeedsContinuation(event)) {
-                repairingMalformedReattach = true;
+                repairingRecoveredResult = true;
                 console.warn(
-                  `[runner] Reattached turn ${run.runKey} ended on echoed tool output — continuing once for a real final answer`
+                  `[runner] Reattached turn ${run.runKey} ended without a usable final answer — continuing once`
                 );
                 continue;
               }
@@ -758,23 +759,23 @@ export function resumeInterruptedRuns(
                 onResumed?.(run.bksSessionId, event);
               }
             }
-            if (!repairingMalformedReattach) return;
+            if (!repairingRecoveredResult) return;
           }
         }
         console.log(
-          repairingMalformedReattach
-            ? `[runner] Repairing malformed recovered result for ${run.bksSessionId || run.runKey}`
+          repairingRecoveredResult
+            ? `[runner] Repairing recovered result for ${run.bksSessionId || run.runKey}`
             : `[runner] Resuming interrupted ${run.kind || "run"} ${run.bksSessionId || run.runKey} (started ${run.startedAt}, model ${run.model || "default"})`
         );
-        if (run.bksSessionId && !repairingMalformedReattach)
+        if (run.bksSessionId && !repairingRecoveredResult)
           transitionRunState(run.bksSessionId, "resume_reprompt", { run_key: run.runKey });
         // The continuation run journals under its own runKey — drop the
         // claimed record only now, AFTER the reattach probe settled: dying
         // mid-probe used to lose the run to the wipe-on-take (2026-07-27).
         journalClear(run.runKey);
         for await (const event of runAgent({
-          prompt: repairingMalformedReattach
-            ? malformedRecoveryContinuationPrompt(run.prompt)
+          prompt: repairingRecoveredResult
+            ? recoveredResultContinuationPrompt(run.prompt)
             : resumeContinuationPrompt(run.prompt),
           sessionId: run.claudeSessionId,
           cwd: run.cwd,
@@ -824,15 +825,15 @@ export const RESUME_CONTINUATION_PROMPT =
   "If the work was actually complete, just post the final summary/answer.";
 
 /**
- * Meridian can very occasionally close a post-restart turn with its internal
- * tool-result envelope as assistant text (the observed shape starts
- * `[your bash …]:`) and still report a successful `finish: stop`. Accepting
- * that as the final answer strands completed research without a conclusion.
- * Keep this deliberately narrow: only recovered `done` events with that
- * unmistakable envelope get one repair continuation.
+ * Meridian can very occasionally close a post-restart turn with either no
+ * final text or its internal tool-result envelope as assistant text (the
+ * observed shape starts `[your bash …]:`) while still reporting a successful
+ * `finish: stop`. Accepting either strands partial work without a conclusion.
+ * Keep this deliberately narrow and bounded to one repair continuation.
  */
 export function recoveredResultNeedsContinuation(event: StreamEvent): boolean {
   if (event.type !== "done") return false;
+  if (!event.result?.trim() || event.result === EMPTY_COMPLETION_RESULT) return true;
   return /^\s*\[your (?:bash|read|write|edit|grep|glob|task|webfetch|websearch)\b[^\]]*\]:/i.test(
     event.result || "",
   );
@@ -857,11 +858,11 @@ export function resumeContinuationPrompt(originalPrompt?: string | null): string
   );
 }
 
-function malformedRecoveryContinuationPrompt(originalPrompt?: string | null): string {
+function recoveredResultContinuationPrompt(originalPrompt?: string | null): string {
   const p = (originalPrompt || "").trim();
   const clamped = p.length > 2000 ? `${p.slice(0, 2000)}…` : p;
   return (
-    "Your reattached turn ended by echoing raw tool output instead of giving the user a final answer. " +
+    "Your reattached turn ended without giving the user a usable final answer. " +
     "Review the work already completed in this session, finish anything still needed, and provide the actual concise answer or handoff now. " +
     "Do not merely repeat the last tool output." +
     (clamped

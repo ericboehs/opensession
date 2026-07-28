@@ -136,5 +136,14 @@ describe("run journal", () => {
 				model: "opencode/anthropic/claude-opus-5",
 			}),
 		).toBe(false);
+		expect(
+			agent.recoveredResultNeedsContinuation({
+				type: "done",
+				sessionId: "engine-1",
+				result: "Done! (no text output)",
+				provider: "opencode",
+				model: "opencode/anthropic/claude-opus-5",
+			}),
+		).toBe(true);
 	});
 });

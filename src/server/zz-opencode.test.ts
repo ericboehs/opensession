@@ -9,6 +9,8 @@ import {
   inProcessOpencodeMcpConfigs,
   buildOpencodeInstructions,
   reconnectSharedInProcessMcp,
+  shouldRepairEmptyCompletion,
+  emptyCompletionRepairPrompt,
 } from "./opencode-runner";
 import { STRIPE_CONFIRM_TOOLS, filterMcpServers } from "./runner-shared";
 import { DESK_NOTE } from "./desk";
@@ -50,6 +52,22 @@ describe("parseOpencodeModel", () => {
     expect(parseOpencodeModel("opencode/anthropic")).toBeNull();
     expect(parseOpencodeModel("opencode/anthropic/")).toBeNull();
     expect(parseOpencodeModel("opencode//x")).toBeNull();
+  });
+});
+
+describe("empty successful completion recovery", () => {
+  test("retries one empty or whitespace-only stop, then stays bounded", () => {
+    expect(shouldRepairEmptyCompletion("", 0)).toBe(true);
+    expect(shouldRepairEmptyCompletion(" \n\t", 0)).toBe(true);
+    expect(shouldRepairEmptyCompletion("", 1)).toBe(false);
+    expect(shouldRepairEmptyCompletion("Finished the task.", 0)).toBe(false);
+  });
+
+  test("repair prompt anchors the original task and demands a real finish", () => {
+    const prompt = emptyCompletionRepairPrompt("make the PR");
+    expect(prompt).toContain("previous response stopped successfully");
+    expect(prompt).toContain("make the PR");
+    expect(prompt).toContain("finish the user's task");
   });
 });
 

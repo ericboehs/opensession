@@ -2336,6 +2336,11 @@ interface AccountRotation {
 interface TurnTranscriptState {
   promptWrittenTo: string;
   notes: string[];
+  /** A successful engine stop with no final text is not a usable completion.
+   * Keep its one-shot repair state across the runner's attempt loop so the
+   * continuation cannot spin forever or get reset by an account rotation. */
+  emptyCompletionRepairs: number;
+  repairPrompt?: string;
   /** The turn's user transcript line, built ONCE (stable uuid) — the early
    *  intake persist and the per-engine-session write below both use it, so
    *  the store upserts one row instead of minting duplicate user bubbles
@@ -2352,6 +2357,28 @@ interface TurnTranscriptState {
  *  bug (an account that never sticks as exhausted) from spinning forever; set
  *  well above any realistic personal-subs + shared-pool count. */
 const MAX_ACCOUNT_ATTEMPTS = 64;
+export const EMPTY_COMPLETION_RESULT = "Done! (no text output)";
+
+export function shouldRepairEmptyCompletion(
+  text: string | undefined | null,
+  repairs: number,
+): boolean {
+  return !text?.trim() && repairs < 1;
+}
+
+export function emptyCompletionRepairPrompt(originalPrompt?: string | null): string {
+  const original = (originalPrompt || "").trim();
+  const clamped = original.length > 2_000 ? `${original.slice(0, 2_000)}…` : original;
+  return (
+    "Your previous response stopped successfully but contained no final text. " +
+    "Review the work and tool results already in this session, continue from the current state, " +
+    "and finish the user's task now. Keep using tools until the task is complete or genuinely " +
+    "blocked, then provide a concise final answer. Do not merely announce the next step." +
+    (clamped
+      ? `\n\nThe prompt that started this turn was:\n"""\n${clamped}\n"""`
+      : "")
+  );
+}
 
 /**
  * The Dial's oracle subagents, STATIC per server: shared servers host many
@@ -2499,7 +2526,11 @@ export async function* runOpencode(
   // (another usable account exists — the capped one is marked exhausted so the
   // re-pick moves on) or a bounded transient retry. When the pool is dry the box
   // is left untouched and the attempt emits the terminal error itself.
-  const turn: TurnTranscriptState = { promptWrittenTo: "", notes: [] };
+  const turn: TurnTranscriptState = {
+    promptWrittenTo: "",
+    notes: [],
+    emptyCompletionRepairs: 0,
+  };
   for (let attempt = 0; attempt < MAX_ACCOUNT_ATTEMPTS; attempt++) {
     const rotation: AccountRotation = { rotate: false, note: "" };
     yield* runOpencodeAttempt(opts, model, rotation, attempt, turn);
@@ -2522,7 +2553,11 @@ async function* runOpencodeAttempt(
   model: string,
   rotation?: AccountRotation,
   attemptIndex = 0,
-  turn: TurnTranscriptState = { promptWrittenTo: "", notes: [] }
+  turn: TurnTranscriptState = {
+    promptWrittenTo: "",
+    notes: [],
+    emptyCompletionRepairs: 0,
+  }
 ): AsyncGenerator<StreamEvent> {
   const { prompt, cwd, mode, mcpServers, confirmTools, journal, user, author } = opts;
   const isAsk = mode === "ask";
@@ -3476,6 +3511,11 @@ async function* runOpencodeAttempt(
     // session's model context is empty. Hand the model the recovered history
     // too — fenced, so it renders invisibly — or the turn starts amnesiac
     // while the UI history looks continuous (bks-019f818d, 2026-07-20).
+    // Most retries redeliver the original prompt. The one exception is a
+    // provider-declared successful stop with no usable text: repeating an
+    // imperative such as "make a PR" can duplicate side effects, so its
+    // bounded repair uses an explicit continuation prompt instead.
+    const attemptPrompt = turn.repairPrompt || prompt;
     const enginePrompt = restartRecovered?.length
       ? `${wrapContext(
           buildEngineSwitchHandoffNote({
@@ -3484,8 +3524,8 @@ async function* runOpencodeAttempt(
             sameEngineRestart: true,
             entries: restartRecovered,
           })
-        )}\n\n${prompt}`
-      : prompt;
+        )}\n\n${attemptPrompt}`
+      : attemptPrompt;
     // Account-rotation retries rerun this whole attempt with the same prompt —
     // appending the user line again gave one send two or three identical
     // bubbles (3× "FINISH ITTT", doubled resume prompts, 2026-07-09). But a
@@ -3562,7 +3602,7 @@ async function* runOpencodeAttempt(
       ...(policy.unattended
         ? { denied_tools: policy.noteGroups.flatMap((g) => g.tools) }
         : {}),
-      ...summarizeText(prompt),
+      ...summarizeText(attemptPrompt),
     });
     yield { type: "init", sessionId: ocSessionId, provider: PROVIDER, model };
 
@@ -4457,6 +4497,45 @@ async function* runOpencodeAttempt(
       return;
     }
 
+    // Providers can occasionally emit only hidden reasoning / empty text
+    // blocks and still declare `finish: stop` (bks-019fa8a2, 2026-07-28).
+    // Treat that as an incomplete turn, not success. Continue once in the
+    // SAME engine session so the model sees its edits/tool results; if the
+    // repair is also empty, stop with an honest error instead of looping.
+    if (!textOut.trim()) {
+      const emptyMessage =
+        `opencode ${parsed.providerID} returned a successful stop with no final text ` +
+        `on account "${bridgeAccountLabel}"`;
+      if (
+        rotation &&
+        shouldRepairEmptyCompletion(textOut, turn.emptyCompletionRepairs)
+      ) {
+        turn.emptyCompletionRepairs++;
+        turn.repairPrompt = emptyCompletionRepairPrompt(prompt);
+        turnEvent({
+          direction: "out",
+          kind: "empty_completion_retry",
+          error: emptyMessage,
+        });
+        bridgeRunEnd("error", emptyMessage);
+        rotation.rotate = true;
+        rotation.note =
+          "The model stopped without a final response — continuing once from its saved work.";
+        return;
+      }
+      const terminalMessage =
+        `${emptyMessage}; the one automatic continuation also produced no final text`;
+      turnEvent({ direction: "out", kind: "error", error: terminalMessage });
+      bridgeRunEnd("error", terminalMessage);
+      yield {
+        type: "error",
+        content: `${terminalMessage}. Work up to this point is saved; send a message to continue.`,
+        provider: PROVIDER,
+        model,
+      };
+      return;
+    }
+
     const tokens = info?.tokens;
     const usage: TurnUsage | undefined = tokens
       ? {
@@ -4487,7 +4566,7 @@ async function* runOpencodeAttempt(
     yield {
       type: "done",
       sessionId: ocSessionId,
-      result: textOut || "Done! (no text output)",
+      result: textOut || EMPTY_COMPLETION_RESULT,
       provider: PROVIDER,
       model,
       usage,
@@ -5191,7 +5270,7 @@ export async function tryReattachOpencodeRun(
       yield {
         type: "done",
         sessionId: ocSessionId!,
-        result: textOut || "Done! (no text output)",
+        result: textOut || EMPTY_COMPLETION_RESULT,
         provider: PROVIDER,
         model,
         usage,

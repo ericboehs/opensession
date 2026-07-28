@@ -852,22 +852,22 @@ html.wco .app-body.sidebar-collapsed
 	flex: 1;
 	min-width: 0;
 	min-height: 0;
-	margin: 6px 6px 6px 0;
+	margin: 10px 10px 10px 0;
 	overflow: hidden;
 	background: var(--bg);
 	border: 1px solid var(--border);
 	border-radius: calc(var(--workspace-shell-radius) * var(--rf));
 	corner-shape: var(--cs);
-	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
 }
 html[data-platform="mac"] .workspace-shell {
-	--workspace-shell-radius: 18px;
+	--workspace-shell-radius: 12px;
 }
 html[data-platform="windows"] .workspace-shell {
 	--workspace-shell-radius: 12px;
 }
 .app-body.sidebar-collapsed .workspace-shell {
-	margin-left: 6px;
+	margin-left: 10px;
 }
 
 .hamburger {
@@ -924,9 +924,6 @@ html[data-platform="windows"] .workspace-shell {
 	align-items: center;
 	justify-content: flex-start;
 	gap: 8px;
-	/* Continue the header rows' divider (.viewer-header / .pr-bar) across the
-	   sidebar so the top line runs the full window width. */
-	border-bottom: 1px solid var(--border);
 	height: 54px;
 	/* The brand trigger carries its own 8px left padding, so pull the row's in
 	   to keep the logo aligned with the list icons at --sidebar-icon-left. */
