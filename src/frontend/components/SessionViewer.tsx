@@ -4842,7 +4842,7 @@ export function SessionViewer({
 
 								{showScrollToBottom && entries.length > 0 && (
 									<button
-										className={`absolute left-1/2 bottom-6 z-[5] inline-flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full bg-control px-3.5 py-2 text-[12px] font-semibold shadow-[0_2px_10px_rgba(0,0,0,0.16)] transition-[background,color,box-shadow,transform] hover:-translate-y-px hover:bg-hover hover:shadow-[0_4px_14px_rgba(0,0,0,0.2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+										className={`absolute left-1/2 bottom-6 z-[5] inline-flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full bg-control px-3.5 py-2 text-[12px] font-semibold shadow-[0_1px_6px_rgba(0,0,0,0.12)] transition-[background,color,box-shadow,transform] hover:-translate-y-px hover:bg-hover hover:shadow-[0_2px_9px_rgba(0,0,0,0.16)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
 											newBelow
 												? "text-accent"
 												: "text-dim hover:text-fg"
@@ -4850,7 +4850,7 @@ export function SessionViewer({
 										onClick={() => scrollToLatest("smooth")}
 										title="Scroll to the bottom"
 									>
-										<IconArrowDown size={15} aria-hidden />
+										<IconArrowDown size={13} aria-hidden />
 										{newBelow ? "New messages" : "Scroll to bottom"}
 									</button>
 								)}
