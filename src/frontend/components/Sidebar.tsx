@@ -5157,11 +5157,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									return (
 										<button
 											key={p.name}
-											className={`sidebar-people-row flex items-center gap-[9px] w-full min-w-0 text-left border-0 cursor-pointer rounded-md pl-[12px] pr-2 py-[5px] max-[720px]:py-2 ${
+											className={`sidebar-people-row flex items-center gap-[9px] w-full min-w-0 text-left border-0 cursor-pointer rounded-lg pl-[12px] pr-2 py-[5px] max-[720px]:py-2 ${
 												selected
-													? "bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_22%,transparent)]"
+													? "bg-[color-mix(in_srgb,var(--person-color)_16%,transparent)] hover:bg-[color-mix(in_srgb,var(--person-color)_22%,transparent)]"
 													: "bg-transparent hover:bg-hover"
 											}`}
+											style={
+												{
+													"--person-color": personColor(p.name),
+												} as React.CSSProperties
+											}
 											onClick={() => {
 												// First click: filter to their lanes AND open the
 												// session the row shows — going back lands on their
