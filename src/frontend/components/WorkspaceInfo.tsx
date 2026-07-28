@@ -28,6 +28,7 @@ import { cn } from "../ui/cn";
 import type {
 	DiffFile,
 	GitStatusInfo,
+	PrCheck,
 	PrDetails,
 } from "../lib/types";
 import { formatPrCommentPrompt } from "./PrPanel";
@@ -38,6 +39,7 @@ import {
 	overviewCache,
 	type OverviewChatRef,
 } from "../lib/workspace-overview";
+import { summarizeChecks } from "./PrStatusBar";
 import { openLightbox } from "./MediaLightbox";
 import { SandboxBadge } from "./SandboxBadge";
 import {
@@ -46,11 +48,13 @@ import {
 	IconBell,
 	IconCheck,
 	IconChevronDown,
+	IconClock,
 	IconFile,
 	IconGlobe,
 	IconPlay,
 	IconPullRequest,
 	IconSparkle,
+	IconX,
 } from "./icons";
 
 /**
@@ -466,6 +470,222 @@ function FileRow({
 					</div>
 				</Popover.Popup>
 			)}
+		</Popover.Root>
+	);
+}
+
+type CheckVisual = "success" | "failure" | "pending" | "skipped" | "neutral";
+
+function checkStatusMeta(check: PrCheck): { kind: CheckVisual; label: string } {
+	const running = check.status !== "COMPLETED" && check.status !== "";
+	if (
+		running ||
+		check.conclusion === "PENDING" ||
+		check.conclusion === "EXPECTED"
+	)
+		return { kind: "pending", label: running ? "Running" : "Queued" };
+	switch (check.conclusion) {
+		case "SUCCESS":
+			return { kind: "success", label: "Succeeded" };
+		case "FAILURE":
+			return { kind: "failure", label: "Failed" };
+		case "TIMED_OUT":
+			return { kind: "failure", label: "Timed out" };
+		case "ERROR":
+			return { kind: "failure", label: "Error" };
+		case "ACTION_REQUIRED":
+			return { kind: "failure", label: "Action required" };
+		case "CANCELLED":
+			return { kind: "neutral", label: "Cancelled" };
+		case "SKIPPED":
+			return { kind: "skipped", label: "Skipped" };
+		case "NEUTRAL":
+			return { kind: "neutral", label: "Neutral" };
+		default:
+			return { kind: "neutral", label: check.conclusion || "Pending" };
+	}
+}
+
+function checkToneClass(kind: CheckVisual): string {
+	switch (kind) {
+		case "success":
+			return "text-green";
+		case "failure":
+			return "text-red";
+		case "pending":
+			return "text-yellow";
+		default:
+			return "text-dim";
+	}
+}
+
+function CheckStatusIcon({ kind }: { kind: CheckVisual }) {
+	if (kind === "pending")
+		return (
+			<span
+				className="m-[1.5px] block size-[13px] animate-spin rounded-full border-[1.6px] border-current/30 border-t-current"
+				aria-hidden
+			/>
+		);
+	if (kind === "success")
+		return (
+			<svg className="block size-4" viewBox="0 0 16 16" aria-hidden>
+				<circle cx="8" cy="8" r="8" fill="currentColor" />
+				<path
+					d="M4.4 8.3l2.3 2.3 4.9-4.9"
+					fill="none"
+					stroke="#fff"
+					strokeWidth="1.7"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				/>
+			</svg>
+		);
+	if (kind === "failure")
+		return (
+			<svg className="block size-4" viewBox="0 0 16 16" aria-hidden>
+				<circle cx="8" cy="8" r="8" fill="currentColor" />
+				<path
+					d="M5.4 5.4l5.2 5.2M10.6 5.4l-5.2 5.2"
+					stroke="#fff"
+					strokeWidth="1.7"
+					strokeLinecap="round"
+				/>
+			</svg>
+		);
+	return (
+		<svg className="block size-4" viewBox="0 0 16 16" aria-hidden>
+			<circle
+				cx="8"
+				cy="8"
+				r="7"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+				strokeDasharray="2.4 2.2"
+			/>
+		</svg>
+	);
+}
+
+/** Keep the aggregate state visible in Info while the hover card preserves the
+ * useful detail that the one-line PR strip cannot show. */
+function ChecksChip({
+	pr,
+	onOpenTab,
+}: {
+	pr: PrDetails;
+	onOpenTab?: (tab: PanelTab) => void;
+}) {
+	const order: Record<CheckVisual, number> = {
+		failure: 0,
+		pending: 1,
+		success: 2,
+		skipped: 3,
+		neutral: 3,
+	};
+	const checks = [...(pr.checks || [])].sort(
+		(a, b) => order[checkStatusMeta(a).kind] - order[checkStatusMeta(b).kind],
+	);
+	const sum = summarizeChecks(pr);
+	if (checks.length === 0) return null;
+
+	const aggregate =
+		sum.failed > 0
+			? {
+					label: `${sum.failed} check${sum.failed === 1 ? "" : "s"} failing`,
+					icon: <IconX size={18} />,
+					className: "border-red/30 bg-red-soft text-red",
+				}
+			: sum.pending > 0
+				? {
+						label: `${sum.pending} check${sum.pending === 1 ? "" : "s"} pending`,
+						icon: <IconClock size={18} />,
+						className:
+							"border-yellow/30 bg-[rgba(210,153,34,0.14)] text-yellow",
+					}
+				: {
+						label: "Checks passing",
+						icon: <IconCheck size={18} />,
+						className: "border-green/30 bg-green-soft text-green",
+					};
+
+	return (
+		<Popover.Root>
+			<Popover.Trigger
+				openOnHover
+				delay={200}
+				closeDelay={120}
+				type="button"
+				className={cn(
+					"mt-1.5 inline-flex w-fit cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1 text-[12px] font-semibold leading-[1.35] transition-colors hover:brightness-110",
+					aggregate.className,
+				)}
+				onClick={() => onOpenTab?.("pr")}
+			>
+				<span className="inline-flex items-center opacity-70">{aggregate.icon}</span>
+				{aggregate.label}
+			</Popover.Trigger>
+			<Popover.Popup
+				side="left"
+				align="start"
+				sideOffset={10}
+				className="flex max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))] flex-col overflow-hidden p-0"
+			>
+				<div className="flex items-baseline justify-between gap-2.5 border-b border-line bg-surface px-3 py-[9px]">
+					<span className="text-[12px] font-semibold text-fg">
+						{checks.length} check{checks.length === 1 ? "" : "s"}
+					</span>
+					<span className="inline-flex gap-2 text-[11.5px] font-semibold">
+						{sum.passed > 0 && <span className="text-green">{sum.passed} passed</span>}
+						{sum.failed > 0 && <span className="text-red">{sum.failed} failed</span>}
+						{sum.pending > 0 && (
+							<span className="text-yellow">{sum.pending} running</span>
+						)}
+					</span>
+				</div>
+				<div className="overflow-y-auto p-1">
+					{checks.map((check, i) => {
+						const status = checkStatusMeta(check);
+						const content = (
+							<>
+								<span
+									className={cn(
+										"inline-flex size-4 shrink-0",
+										checkToneClass(status.kind),
+									)}
+								>
+									<CheckStatusIcon kind={status.kind} />
+								</span>
+								<span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">
+									{check.name}
+								</span>
+								<span className="shrink-0 text-[12px] font-medium text-dim">
+									{status.label}
+								</span>
+							</>
+						);
+						return check.url ? (
+							<a
+								key={`${check.name}:${i}`}
+								className="flex items-center gap-[9px] rounded-md px-2 py-1.5 text-fg no-underline hover:bg-surface"
+								href={check.url}
+								target="_blank"
+								rel="noopener"
+							>
+								{content}
+							</a>
+						) : (
+							<div
+								key={`${check.name}:${i}`}
+								className="flex items-center gap-[9px] rounded-md px-2 py-1.5 text-fg"
+							>
+								{content}
+							</div>
+						);
+					})}
+				</div>
+			</Popover.Popup>
 		</Popover.Root>
 	);
 }
@@ -1135,6 +1355,7 @@ export function WorkspaceInfo({
 						<SandboxBadge sandbox={sandbox} />
 					</div>
 				)}
+				{pr && <ChecksChip pr={pr} onOpenTab={onOpenTab} />}
 			</div>
 			<div className={INFO_SECTION_CLASS}>
 				<div className={INFO_LABEL_CLASS}>Actions</div>
