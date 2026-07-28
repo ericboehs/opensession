@@ -10,6 +10,7 @@ import {
   buildOpencodeInstructions,
   reconnectSharedInProcessMcp,
   shouldRepairEmptyCompletion,
+  shouldRetryTransientRun,
   emptyCompletionRepairPrompt,
 } from "./opencode-runner";
 import { STRIPE_CONFIRM_TOOLS, filterMcpServers } from "./runner-shared";
@@ -68,6 +69,62 @@ describe("empty successful completion recovery", () => {
     expect(prompt).toContain("previous response stopped successfully");
     expect(prompt).toContain("make the PR");
     expect(prompt).toContain("finish the user's task");
+  });
+});
+
+describe("transient bridge recovery", () => {
+  test("walks two alternative accounts after distinct bridge wedges", () => {
+    expect(
+      shouldRetryTransientRun({
+        livenessWedged: true,
+        hasAlternativeAccount: true,
+        attemptIndex: 0,
+        wedgeRetries: 0,
+      })
+    ).toBe(true);
+    expect(
+      shouldRetryTransientRun({
+        livenessWedged: true,
+        hasAlternativeAccount: true,
+        attemptIndex: 1,
+        wedgeRetries: 1,
+      })
+    ).toBe(true);
+    expect(
+      shouldRetryTransientRun({
+        livenessWedged: true,
+        hasAlternativeAccount: true,
+        attemptIndex: 2,
+        wedgeRetries: 2,
+      })
+    ).toBe(false);
+  });
+
+  test("keeps ordinary and same-account transient retries at one", () => {
+    expect(
+      shouldRetryTransientRun({
+        livenessWedged: false,
+        hasAlternativeAccount: false,
+        attemptIndex: 0,
+        wedgeRetries: 0,
+      })
+    ).toBe(true);
+    expect(
+      shouldRetryTransientRun({
+        livenessWedged: false,
+        hasAlternativeAccount: false,
+        attemptIndex: 1,
+        wedgeRetries: 0,
+      })
+    ).toBe(false);
+    expect(
+      shouldRetryTransientRun({
+        livenessWedged: true,
+        hasAlternativeAccount: false,
+        attemptIndex: 1,
+        wedgeRetries: 1,
+      })
+    ).toBe(false);
   });
 });
 

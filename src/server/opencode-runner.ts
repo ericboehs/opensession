@@ -2336,6 +2336,11 @@ interface AccountRotation {
 interface TurnTranscriptState {
   promptWrittenTo: string;
   notes: string[];
+  /** Distinct bridge-account wedge retries already spent this turn. Wedge
+   * sidelining makes each retry shrink the usable pool, so walking a small
+   * bounded number of accounts is safe and avoids requiring a manual
+   * "continue" when the first replacement account is wedged too. */
+  wedgeRetries: number;
   /** A successful engine stop with no final text is not a usable completion.
    * Keep its one-shot repair state across the runner's attempt loop so the
    * continuation cannot spin forever or get reset by an account rotation. */
@@ -2358,6 +2363,7 @@ interface TurnTranscriptState {
  *  well above any realistic personal-subs + shared-pool count. */
 const MAX_ACCOUNT_ATTEMPTS = 64;
 export const EMPTY_COMPLETION_RESULT = "Done! (no text output)";
+const MAX_WEDGE_ACCOUNT_RETRIES = 2;
 
 export function shouldRepairEmptyCompletion(
   text: string | undefined | null,
@@ -2378,6 +2384,21 @@ export function emptyCompletionRepairPrompt(originalPrompt?: string | null): str
       ? `\n\nThe prompt that started this turn was:\n"""\n${clamped}\n"""`
       : "")
   );
+}
+
+export function shouldRetryTransientRun(input: {
+  livenessWedged: boolean;
+  hasAlternativeAccount: boolean;
+  attemptIndex: number;
+  wedgeRetries: number;
+}): boolean {
+  if (!input.livenessWedged) return input.attemptIndex === 0;
+  // With an alternative account, markWedged/markCodexWedged has removed the
+  // failed one from subsequent picks, so allow two bounded pool-walk retries.
+  // With a dry pool, retain the old single same-account respawn retry.
+  return input.hasAlternativeAccount
+    ? input.wedgeRetries < MAX_WEDGE_ACCOUNT_RETRIES
+    : input.attemptIndex === 0;
 }
 
 /**
@@ -2529,6 +2550,7 @@ export async function* runOpencode(
   const turn: TurnTranscriptState = {
     promptWrittenTo: "",
     notes: [],
+    wedgeRetries: 0,
     emptyCompletionRepairs: 0,
   };
   for (let attempt = 0; attempt < MAX_ACCOUNT_ATTEMPTS; attempt++) {
@@ -2556,6 +2578,7 @@ async function* runOpencodeAttempt(
   turn: TurnTranscriptState = {
     promptWrittenTo: "",
     notes: [],
+    wedgeRetries: 0,
     emptyCompletionRepairs: 0,
   }
 ): AsyncGenerator<StreamEvent> {
@@ -4352,13 +4375,22 @@ async function* runOpencodeAttempt(
       // Transient infra failure — recover instead of failing the turn. Covers
       // the silent liveness wedge (the Meridian proxy's first post-boot request
       // works, later ones hang forever) plus server death, network blips, 5xx
-      // and SQLite write contention (isTransientRunError). Bounded to the first
-      // attempt so a genuinely-stuck account costs one extra try (≈2×90s for a
-      // wedge), not an endless respawn loop; anything past that falls through to
-      // the terminal error and agent-runner's model-fallback graph.
+      // and SQLite write contention (isTransientRunError). Ordinary transient
+      // errors retain one retry. Account wedges may walk two replacement
+      // accounts because each failed account was sidelined above, while a dry
+      // pool retains one same-account respawn. All paths stay bounded.
       const transientFailure =
         !usageLimitHit && (livenessWedged || isTransientRunError(runFailure));
-      if (transientFailure && rotation && attemptIndex === 0) {
+      const retryTransient =
+        transientFailure &&
+        rotation &&
+        shouldRetryTransientRun({
+          livenessWedged,
+          hasAlternativeAccount: !!wedgeSwitchTo,
+          attemptIndex,
+          wedgeRetries: turn.wedgeRetries,
+        });
+      if (retryTransient) {
         // A wedged per-session server is unrecoverable for this session — kill
         // it so the retry cold-boots a fresh proxy instead of hanging again. A
         // wedged SHARED server used to be left alone entirely (other sessions
@@ -4376,6 +4408,7 @@ async function* runOpencodeAttempt(
         }
         turnEvent({ direction: "out", kind: "server_respawn_retry", error: runFailure });
         bridgeRunEnd("error", runFailure);
+        if (livenessWedged) turn.wedgeRetries++;
         rotation.rotate = true;
         rotation.note = livenessWedged
           ? `Engine bridge went silent on account "${bridgeAccountLabel}" — respawned the opencode server and retrying once` +

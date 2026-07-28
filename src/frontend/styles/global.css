@@ -881,15 +881,13 @@ html[data-platform="windows"] .workspace-shell {
 	min-height: 0;
 }
 
-/* macOS-style desktop chrome material: a faint glass sheen over the wash,
-   shared by the sidebar and the exposed gutter around the workspace so their
-   surfaces stay continuous. No backdrop-filter —
+/* macOS-style desktop sidebar material: a faint glass sheen over the wash,
+   compositing onto the opaque --bg-raised base above. No backdrop-filter —
    the vibrancy-era blur sampled nothing but our own flat background since the
    shell went opaque, while forcing the compositor to re-rasterize the whole
    sidebar whenever anything behind it repainted (scroll-flash amplifier).
    Keep the phone root page opaque below. */
 @media (min-width: 721px) {
-	.app-body,
 	.sidebar-container {
 		background:
 			linear-gradient(
