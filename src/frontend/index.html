@@ -57,6 +57,14 @@
       add("apple-touch-icon", prefix + "/apple-touch-icon.png?v=4");
       add("manifest", prefix + "/manifest.webmanifest");
 
+      // The desktop workspace shell follows the host OS's window language.
+      // Mobile stays edge-to-edge, but setting this before first paint avoids a
+      // radius jump in browsers and the desktop shell.
+      var platform = (navigator.userAgentData && navigator.userAgentData.platform)
+        || navigator.platform || "";
+      document.documentElement.dataset.platform = /win/i.test(platform)
+        ? "windows" : /mac/i.test(platform) ? "mac" : "linux";
+
       // Window Controls Overlay detection → `html.wco` (drives the titlebar
       // band + drag region in global.css). JS instead of the display-mode
       // media query because Electron (the OS¹ desktop shell) exposes the WCO

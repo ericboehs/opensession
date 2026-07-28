@@ -2722,7 +2722,8 @@ function App() {
 						/>
 					</div>
 
-					<main className="detail-pane" ref={detailPaneRef}>
+					<div className="workspace-shell">
+						<main className="detail-pane" ref={detailPaneRef}>
 						{/* WCO back/forward fallback: the primary cluster lives in the
 						    sidebar's top chrome row, which vanishes when the sidebar is
 						    collapsed — this floating copy shows only then (CSS-gated). */}
@@ -3096,11 +3097,13 @@ function App() {
 								onNewSession={() => openPalette()}
 							/>
 						)}
-					</main>
+						</main>
 
-					{/* Full-height right column beside the detail pane. The active
-					    session's workspace/sub-agent panel portals in here. */}
-					<div className="right-panel-slot" ref={setRightPanelEl} />
+						{/* Full-height right column inside the same rounded workspace shell as
+						    the detail pane. The active session's workspace/sub-agent panel
+						    portals in here. */}
+						<div className="right-panel-slot" ref={setRightPanelEl} />
+					</div>
 				</div>
 				)}
 
