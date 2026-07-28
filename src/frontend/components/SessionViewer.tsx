@@ -58,6 +58,7 @@ import {
 	fetchRepos,
 	promoteChatApi,
 	fetchPr,
+	fetchPreview,
 	fetchChatMessagesApi,
 	postChatMessageApi,
 	type WorkspaceMediaItem,
@@ -3529,6 +3530,24 @@ export function SessionViewer({
 	}, [showAssets, assetFiles.length, onCloseAssets]);
 	const [previewStatus, setPreviewStatus] = useState<PreviewStatus | null>(null);
 	useEffect(() => setPreviewStatus(null), [session.id]);
+	// The header preview control used to keep this status warm. Now that the
+	// launcher lives in the overflow menu, poll only while its view tab is open.
+	useEffect(() => {
+		if (!showPreviewTab || !session.worktreeDir) return;
+		let alive = true;
+		const load = () =>
+			fetchPreview(session.id)
+				.then((status) => {
+					if (alive) setPreviewStatus(status);
+				})
+				.catch(() => {});
+		load();
+		const stop = pollWhileVisible(load, 3000);
+		return () => {
+			alive = false;
+			stop();
+		};
+	}, [showPreviewTab, session.id, session.worktreeDir]);
 
 	// ⌘O opens the PR's preview environment (the Vercel preview StagingLink's globe
 	// points at); ⌘G opens its GitHub PR. Chords without a target (no staging
@@ -4011,6 +4030,13 @@ export function SessionViewer({
 								{isPhone && secondaryActions(true)}
 								{(compactHeader || isPhone) && shareAction(true)}
 								{newChatAction}
+								<PreviewButton
+									session={session}
+									onAttachImage={(img) => setImages((prev) => [...prev, img])}
+									onStatusChange={setPreviewStatus}
+									onOpenTab={onOpenPreviewTab}
+									variant="menu"
+								/>
 								{transcriptActions}
 								{overflowActions}
 								{archiveAction}
@@ -4018,21 +4044,11 @@ export function SessionViewer({
 							</Menu.Popup>
 						</div>
 					</Menu.Root>
-					{/* Code-workspace testing affordances as state-colored icons, docked
-					    immediately left of the side-panel toggle. Each self-gates
-					    (renders null when not applicable). The play button stays put;
-					    the globe rides beside it only while the panel is closed —
+					{/* Code-workspace testing affordances dock immediately left of the
+					    side-panel toggle. The local preview launcher lives in the ⋯ menu;
+					    the globe rides here only while the panel is closed —
 					    once the panel opens the globe moves into the panel's PR row
 					    (to the left of the PR), so it isn't shown twice. */}
-					{!isPhone && (
-						<PreviewButton
-							session={session}
-							onAttachImage={(img) => setImages((prev) => [...prev, img])}
-							onStatusChange={setPreviewStatus}
-							onOpenTab={onOpenPreviewTab}
-							variant="header"
-						/>
-					)}
 					{!isPhone && !panelOpen && (
 						<StagingLink
 							session={session}

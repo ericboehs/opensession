@@ -13,6 +13,7 @@ import { Tooltip } from "../ui/tooltip";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { CopyCheck, useCopy } from "../ui/copy";
+import { Menu } from "../ui/menu";
 import {
   IconArrowUpRight,
   IconCamera,
@@ -78,8 +79,8 @@ export function PreviewButton({
   /** "bar" = the full segmented split button (right panel's action row);
    *  "header" = a single state-colored ▶ icon for the session header, sized to
    *  match the panel-toggle icon it sits beside. "action" = a compact cell for
-   *  the mobile workspace Actions grid. */
-  variant?: "bar" | "header" | "action";
+   *  the mobile workspace Actions grid. "menu" = a single overflow-menu row. */
+  variant?: "bar" | "header" | "action" | "menu";
 }) {
   const [status, setStatus] = useState<PreviewStatus | null>(null);
   const [open, setOpen] = useState(false);
@@ -353,6 +354,28 @@ export function PreviewButton({
       </div>
     </div>
   );
+
+  if (variant === "menu") {
+    return (
+      <Menu.Item
+        disabled={!bootable && !isStarting}
+        onClick={() => {
+          if (isStarting) void stop();
+          else void start();
+        }}
+        title={bootable ? "Open or start the local preview" : notBootableHint}
+      >
+        {isStarting ? (
+          <span className={spinnerClass} />
+        ) : (
+          <IconPlayOutline size={20} className={running ? "text-green" : "text-faint"} />
+        )}
+        <span className="grow">
+          {isStarting ? "Cancel preview startup" : running ? "Open preview" : "Preview"}
+        </span>
+      </Menu.Item>
+    );
+  }
 
   if (variant === "action") {
     const openMenu = (e: React.MouseEvent) => {
