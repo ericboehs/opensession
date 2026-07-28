@@ -256,16 +256,19 @@ body {
 	-webkit-touch-callout: none;
 }
 
-/* Text/names the user may legitimately want to select and copy — scoped to the
-   actual text leaves (message prose, the name label, system text, code, diffs,
-   inputs), NOT the wide `.msg` wrapper. Selecting the wrapper roped in its
-   padding/gutters and neighbouring chrome, so a drag painted whole full-width
-   rows; targeting the text elements keeps the highlight hugging the words. */
+/* Text the user may legitimately want to select and copy: message rows and
+   their prose, names, system text, code, diffs, inputs. The row wrapper is
+   included on purpose — a drag has to be able to start in a bubble's padding
+   or the gutter beside it (see the transcript rule below) — and the highlight
+   still hugs the words because .msg and .msg-body are flex columns, which is
+   what stopped WebKit painting full-width bands across the gaps. */
 input,
 textarea,
 select,
 [contenteditable],
 [contenteditable] *,
+.msg,
+.msg *,
 .msg-label,
 .msg-body,
 .msg-body *,
@@ -284,10 +287,31 @@ pre,
 	-webkit-touch-callout: default;
 }
 
+/* The transcript is a document, not chrome: the whole reading area selects —
+   row gutters, bubble padding and the space between messages included.
+   Opting in only the text leaves (above) wasn't enough, because a browser
+   refuses to START a selection inside a `user-select: none` region and won't
+   extend out of one: a drag that began a few pixels off a glyph — in the
+   gutter beside a right-aligned user bubble, in the bubble's own 10/14px
+   padding, or between two messages — selected nothing at all, which reads as
+   "messages can't be selected" (reported on the desktop shell). The
+   full-width "gap band" painting that made us narrow this in the first place
+   is handled structurally now: .viewer-messages, .msg and .msg-body are flex
+   columns, which WebKit doesn't band-paint. */
+.viewer-messages,
+.viewer-messages * {
+	-webkit-user-select: text;
+	-moz-user-select: text;
+	user-select: text;
+	-webkit-touch-callout: default;
+}
+
 /* Interactive controls stay unselectable even inside selectable content
-   (e.g. the hover fork button on a message). */
-button,
-button * {
+   (e.g. the hover fork button on a message). :is() lifts these to the same
+   specificity as the .viewer-messages opt-in above, so — coming later — they
+   still win inside the transcript. */
+:is(button, [role="button"]),
+:is(button, [role="button"]) * {
 	-webkit-user-select: none;
 	-moz-user-select: none;
 	user-select: none;
