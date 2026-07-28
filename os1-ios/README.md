@@ -11,11 +11,12 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
 ## Features (v0.1)
 
 - **Sessions list** — polls `GET /api/sessions` every 5s (matching the web UI);
-  status dot (green running / orange needs-input), repo + branch, queued count,
-  relative last-activity time, pull to refresh.
+  flat single-line workspace rows with live/PR status marks and a running-time
+  ticker, plus grouping, search, swipe-to-archive, and pull to refresh.
 - **Session view** — live transcript over the `/ws` WebSocket: user/assistant
-  bubbles (streaming CommonMark/GFM with links, tables, and highlighted code
-  blocks), compact tool-call rows, system events, and token-level streaming via
+  messages in the same neutral, repo-aware visual hierarchy as mobile web
+  (streaming CommonMark/GFM with links, tables, and highlighted code blocks),
+  compact tool-call rows, system events, and token-level streaming via
   `stream_text` with a cursor bubble.
 - **Prompting** — WS `prompt` frames (the server has no REST prompt endpoint).
   Sending while a run is active queues, exactly like the web UI. Stop button
@@ -74,6 +75,7 @@ OS1/
     SessionsListViewModel.swift  5s polling
     SessionViewModel.swift       watch/stream/prompt/ask state machine
   Views/
+    OS1VisualStyle.swift      Shared accent, chat width, and repo tile
     SessionsListView.swift   List + status rows + settings sheet
     SessionView.swift        Transcript, streaming bubble, ask card, input bar
     TranscriptRow.swift      Per-entry-type rendering + streaming markdown

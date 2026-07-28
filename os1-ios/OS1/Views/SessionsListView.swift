@@ -101,7 +101,7 @@ struct SessionsListView: View {
     private var navigationContainer: some View {
         NavigationSplitView {
             loadingOrList
-                .navigationTitle("Sessions")
+                .navigationTitle("Workspaces")
                 .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
                 .toolbar {
                     ToolbarItem(placement: .topLeadingCompat) {
@@ -153,7 +153,7 @@ struct SessionsListView: View {
     private var navigationContainer: some View {
         NavigationStack(path: $path) {
             loadingOrList
-                .navigationTitle("Sessions")
+                .navigationTitle("Workspaces")
                 .toolbar {
                     ToolbarItem(placement: .topLeadingCompat) {
                         filterMenu
@@ -436,7 +436,9 @@ struct SessionsListView: View {
         List {
             listSections
         }
-        .insetGroupedListCompat()
+        .listStyle(.plain)
+        .listSectionSpacing(10)
+        .contentMargins(.top, 4, for: .scrollContent)
         .searchable(text: $searchText, prompt: "Search sessions")
         .overlay { emptyFilterOverlay }
         .refreshable {
@@ -464,9 +466,15 @@ struct SessionsListView: View {
         .swipeActions(edge: .trailing) { archiveButton(session, viaSwipe: true) }
         .contextMenu { archiveButton(session) }
         #else
-        NavigationLink(value: session) {
+        Button {
+            path.append(session)
+        } label: {
             SessionRow(session: session)
         }
+        .buttonStyle(.plain)
+        .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
         .swipeActions(edge: .trailing) { archiveButton(session, viaSwipe: true) }
         #endif
     }
@@ -525,7 +533,11 @@ struct SessionsListView: View {
                                 .fill(lane.color)
                                 .frame(width: 7, height: 7)
                         }
-                        Text(group.title)
+                        if groupBy == .repo {
+                            RepoTile(name: group.title)
+                        }
+                        Text(groupBy == .repo ? RepoTile.label(for: group.title) : group.title)
+                            .font(.caption.weight(.semibold))
                         Text("\(group.sessions.count)")
                             .foregroundStyle(.tertiary)
                         if groupBy == .repo {
@@ -543,6 +555,8 @@ struct SessionsListView: View {
                             .buttonStyle(.borderless)
                         }
                     }
+                    .textCase(nil)
+                    .padding(.top, 4)
                 }
             }
         }
@@ -610,7 +624,7 @@ struct SessionRow: View {
                     }
                     .buttonStyle(.borderless)
                     .help("Archive")
-                    // Sit on an opaque-ish pad so it reads over the meta line.
+                    // Keep the action legible over a long title.
                     .padding(4)
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 5))
                 }
@@ -625,52 +639,76 @@ struct SessionRow: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 7) {
-                statusDot
-                Text(session.displayTitle)
-                    .font(.body.weight(.medium))
-                    .lineLimit(2)
+        HStack(spacing: 9) {
+            statusMark
+                .frame(width: 22, height: 22)
+            Text(rowTitle)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if session.lane == .inProgress {
+                WorkspaceRunElapsedLabel(since: session.runStartedDate)
             }
-            HStack(spacing: 6) {
-                Text(session.effectiveRepo)
-                if let branch = session.branch {
-                    Text(branch)
-                        .lineLimit(1)
-                }
-                if session.prState == "OPEN" {
-                    metaChip("PR open", tint: .green)
-                }
-                if session.queuedCount ?? 0 > 0 {
-                    metaChip("+\(session.queuedCount!) queued", tint: .secondary)
-                }
-                Spacer()
-                if let date = session.lastActivityDate {
-                    Text(date, format: .relative(presentation: .named))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 11)
+        .contentShape(Rectangle())
     }
 
-    private var statusDot: some View {
-        // A running session's dot pulses (like the web sidebar) so in-flight
-        // work is visible at a glance.
-        PulsingDot(color: session.lane.color, active: session.lane == .inProgress)
+    private var rowTitle: String {
+        session.displayTitle.replacingOccurrences(
+            of: #"^PR\s*#\d+(:|\s*[—–-])\s*"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
     }
 
-    /// Tiny tinted capsule for row badges (PR state, queued count).
-    private func metaChip(_ text: String, tint: Color) -> some View {
-        Text(text)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(tint.opacity(0.12), in: Capsule())
+    @ViewBuilder
+    private var statusMark: some View {
+        if session.lane == .needsInput {
+            PulsingDot(color: .blue)
+        } else if session.lane == .inProgress {
+            PulsingDot(color: .yellow)
+        } else if session.prState == "MERGED" {
+            Image(systemName: "arrow.triangle.merge")
+                .foregroundStyle(.purple)
+        } else if session.prState == "OPEN" {
+            Image(systemName: "arrow.triangle.pull")
+                .foregroundStyle(.green)
+        } else if session.prState == "CLOSED" {
+            Image(systemName: "arrow.triangle.pull")
+                .foregroundStyle(.red)
+        } else {
+            PulsingDot(color: .secondary.opacity(0.35), active: false)
+        }
+    }
+}
+
+/// Web workspace rows reserve their trailing slot for a live run clock; idle
+/// rows intentionally show no last-used timestamp.
+private struct WorkspaceRunElapsedLabel: View {
+    let since: Date?
+
+    var body: some View {
+        Group {
+            if let since {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(label(context.date.timeIntervalSince(since)))
+                }
+            } else {
+                Text("Running")
+            }
+        }
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.yellow)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func label(_ elapsed: TimeInterval) -> String {
+        let total = max(0, Int(elapsed))
+        if total < 60 { return "\(total)s" }
+        if total < 3_600 { return "\(total / 60)m \(total % 60)s" }
+        return "\(total / 3_600)h \((total % 3_600) / 60)m"
     }
 }
 

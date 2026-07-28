@@ -6,10 +6,17 @@ import AppKit
 struct SessionView: View {
     @State private var viewModel: SessionViewModel
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     /// Full-window-width chat text is unreadable on the Mac; cap the content
     /// column (transcript AND composer) and center it, like other chat apps.
-    private let contentMaxWidth: CGFloat = 720
+    private let contentMaxWidth = OS1VisualStyle.chatMaxWidth
+
+    /// Mobile web uses a tighter 12pt content rail; regular-width iPad and Mac
+    /// keep more breathing room while sharing the same 780pt reading column.
+    private var contentInset: CGFloat {
+        horizontalSizeClass == .compact ? 12 : 20
+    }
 
     /// Anchor for restoring the scroll position after a requested history
     /// prepend: the entry that was topmost stays where the reader left it.
@@ -48,8 +55,7 @@ struct SessionView: View {
                             ForEach(viewModel.displayItems) { item in
                                 TranscriptRow(
                                     item: item,
-                                    sessionId: viewModel.session.id,
-                                    showsUserAvatar: viewModel.avatarItemIds.contains(item.id)
+                                    sessionId: viewModel.session.id
                                 )
                                 .id(item.id)
                             }
@@ -64,7 +70,7 @@ struct SessionView: View {
                                 .id("ask-\(ask.id)")
                             }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, contentInset)
                         .padding(.vertical, 8)
                         .frame(maxWidth: contentMaxWidth)
                         .frame(maxWidth: .infinity)
@@ -131,11 +137,20 @@ struct SessionView: View {
             // `canSend`) inside SessionView.body would re-evaluate this whole
             // body — transcript included — per key. Keep per-keystroke reads
             // out of SessionView.body.
-            SessionInputBar(viewModel: viewModel, contentMaxWidth: contentMaxWidth)
+            SessionInputBar(
+                viewModel: viewModel,
+                contentMaxWidth: contentMaxWidth,
+                horizontalInset: contentInset
+            )
         }
         .navigationTitle(viewModel.session.displayTitle)
         .inlineTitleBarCompat()
         .toolbar {
+            #if os(iOS)
+            ToolbarItem(placement: .principal) {
+                sessionIdentityMenu
+            }
+            #endif
             // PR chip: number + status dot. Present as soon as either the
             // fetched details or the sessions-list snapshot know of a PR.
             if let prNumber = viewModel.prDetails?.number ?? viewModel.session.prNumber {
@@ -148,9 +163,9 @@ struct SessionView: View {
                     .accessibilityLabel(Text(verbatim: "Pull request #\(prNumber)"))
                 }
             }
-            ToolbarItem(placement: .topTrailingCompat) {
-                modelMenu
-            }
+            #if os(macOS)
+            ToolbarItem(placement: .topTrailingCompat) { modelMenu }
+            #endif
             if viewModel.isRunning {
                 ToolbarItem(placement: .topTrailingCompat) {
                     Button {
@@ -245,57 +260,109 @@ struct SessionView: View {
     /// noticed); effort/fast ride the next send.
     private var modelMenu: some View {
         Menu {
-            let currentModel = viewModel.model.isEmpty
-                ? (catalog?.defaultModel ?? "") : viewModel.model
-            if let option = catalog?.option(for: currentModel),
-               let efforts = option.efforts, !efforts.isEmpty {
-                Section("Reasoning") {
-                    ForEach(efforts, id: \.self) { level in
-                        Button {
-                            viewModel.effort = level
-                        } label: {
-                            if viewModel.effort == level {
-                                Label(EffortLevel.label(level), systemImage: "checkmark")
-                            } else {
-                                Text(EffortLevel.label(level))
-                            }
-                        }
-                    }
-                }
-            }
-            if catalog?.option(for: currentModel)?.fastModeSupported == true {
-                Button {
-                    viewModel.fastMode.toggle()
-                } label: {
-                    if viewModel.fastMode {
-                        Label("Fast mode", systemImage: "checkmark")
-                    } else {
-                        Text("Fast mode")
-                    }
-                }
-            }
-            if let catalog {
-                Menu {
-                    ForEach(catalog.presets + catalog.regular) { option in
-                        Button {
-                            viewModel.changeModel(to: option.id)
-                        } label: {
-                            if option.id == currentModel {
-                                Label(option.displayLabel, systemImage: "checkmark")
-                            } else {
-                                Text(option.displayLabel)
-                            }
-                        }
-                    }
-                } label: {
-                    Label(
-                        "Model — \(catalog.label(for: currentModel))",
-                        systemImage: "cpu"
-                    )
-                }
-            }
+            modelMenuContents
         } label: {
             Image(systemName: "slider.horizontal.3")
+        }
+    }
+
+    #if os(iOS)
+    /// The mobile web header is a repo tile with the workspace name over
+    /// `repo · model`. Native navigation supplies the back button and glass;
+    /// this principal menu supplies the same identity and opens model controls.
+    private var sessionIdentityMenu: some View {
+        Menu {
+            modelMenuContents
+        } label: {
+            HStack(spacing: 8) {
+                RepoTile(name: viewModel.session.effectiveRepo, size: 28)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 5) {
+                        Text(viewModel.session.displayTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        if viewModel.isRunning {
+                            PulsingDot(color: .green, size: 6)
+                        }
+                    }
+                    Text(headerSubtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: 230, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .tint(.primary)
+        .accessibilityLabel("Session settings")
+    }
+    #endif
+
+    private var currentModel: String {
+        viewModel.model.isEmpty ? (catalog?.defaultModel ?? "") : viewModel.model
+    }
+
+    private var headerSubtitle: String {
+        let label = catalog?.label(for: currentModel) ?? currentModel
+        return [RepoTile.label(for: viewModel.session.effectiveRepo), label]
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private var modelMenuContents: some View {
+        if let option = catalog?.option(for: currentModel),
+           let efforts = option.efforts, !efforts.isEmpty {
+            Section("Reasoning") {
+                ForEach(efforts, id: \.self) { level in
+                    Button {
+                        viewModel.effort = level
+                    } label: {
+                        if viewModel.effort == level {
+                            Label(EffortLevel.label(level), systemImage: "checkmark")
+                        } else {
+                            Text(EffortLevel.label(level))
+                        }
+                    }
+                }
+            }
+        }
+        if catalog?.option(for: currentModel)?.fastModeSupported == true {
+            Button {
+                viewModel.fastMode.toggle()
+            } label: {
+                if viewModel.fastMode {
+                    Label("Fast mode", systemImage: "checkmark")
+                } else {
+                    Text("Fast mode")
+                }
+            }
+        }
+        if let catalog {
+            Menu {
+                ForEach(catalog.presets + catalog.regular) { option in
+                    Button {
+                        viewModel.changeModel(to: option.id)
+                    } label: {
+                        if option.id == currentModel {
+                            Label(option.displayLabel, systemImage: "checkmark")
+                        } else {
+                            Text(option.displayLabel)
+                        }
+                    }
+                }
+            } label: {
+                Label(
+                    "Model — \(catalog.label(for: currentModel))",
+                    systemImage: "cpu"
+                )
+            }
         }
     }
 
@@ -330,6 +397,7 @@ private struct SessionInputBar: View {
     @Bindable var viewModel: SessionViewModel
     /// Matches the transcript column cap so the bar centers with it.
     let contentMaxWidth: CGFloat
+    let horizontalInset: CGFloat
     @FocusState private var inputFocused: Bool
 
     #if os(macOS)
@@ -403,9 +471,9 @@ private struct SessionInputBar: View {
         }
         .frame(maxWidth: contentMaxWidth)
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, horizontalInset)
         .padding(.top, 6)
-        .padding(.bottom, 10)
+        .padding(.bottom, 8)
         // No bar background: the composer and chips are individual glass
         // elements floating over the transcript, which scrolls beneath them
         // through the soft scroll-edge fade.
@@ -420,11 +488,7 @@ private struct SessionInputBar: View {
     /// apps converge on, instead of a floating button next to a pill.
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            // 4.5 centers the 27pt buttons on the field's single-line text
-            // (36pt tall: 22pt line + 7pt vertical padding); when the field
-            // grows they stay pinned to the last line via .bottom alignment.
             AttachImagesButton(images: $viewModel.attachedImages)
-                .padding(.bottom, 4.5)
             TextField(
                 viewModel.isRunning ? "Message — queues for after this run" : "Message",
                 text: $viewModel.draft,
@@ -433,7 +497,7 @@ private struct SessionInputBar: View {
             .textFieldStyle(.plain)
             .lineLimit(1...10)
             .padding(.leading, 6)
-            .padding(.vertical, 7)
+            .padding(.vertical, 9)
             .focused($inputFocused)
             // Mac: Return sends; Shift/Option-Return insert a newline. On
             // iOS the software keyboard's return key just wraps, as before.
@@ -449,7 +513,7 @@ private struct SessionInputBar: View {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(viewModel.canSend ? Color.white : Color.secondary)
-                    .frame(width: 27, height: 27)
+                    .frame(width: 32, height: 32)
                     .background(
                         viewModel.canSend
                             ? AnyShapeStyle(.tint)
@@ -459,13 +523,12 @@ private struct SessionInputBar: View {
             }
             .buttonStyle(.plain)
             .disabled(!viewModel.canSend)
-            .padding(.bottom, 4.5)
-            .padding(.trailing, 1)
+            .frame(width: 40, height: 40)
             .animation(.easeOut(duration: 0.15), value: viewModel.canSend)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .glassSurface(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.horizontal, 4)
+        .padding(.vertical, 3)
+        .glassSurface(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
     #if os(macOS)

@@ -1,17 +1,12 @@
 import SwiftUI
 
-/// Renders one display item: user prompts as tinted right-aligned bubbles,
+/// Renders one display item: user prompts as neutral right-aligned bubbles,
 /// assistant text as left-aligned markdown, tool calls as compact collapsible
 /// rows (summary line; tap to expand input + result), system events as
 /// centered captions.
 struct TranscriptRow: View {
     let item: SessionViewModel.DisplayItem
     let sessionId: String
-    /// True when this user message is the last of its consecutive group —
-    /// only that one shows the avatar; the rest reserve the gutter so all
-    /// bubbles in the group share a trailing edge.
-    var showsUserAvatar = false
-
     var body: some View {
         switch item {
         case .toolCall(let use, let result):
@@ -31,9 +26,6 @@ struct TranscriptRow: View {
     }
 
     private func userBubble(_ entry: TranscriptEntry) -> some View {
-        // Avatar bottom-aligned in a trailing gutter, like group chat apps:
-        // it marks the end of a consecutive run of messages from the person,
-        // and non-tail bubbles keep the same gutter so trailing edges align.
         HStack(alignment: .bottom, spacing: 8) {
             Spacer(minLength: 40)
             VStack(alignment: .trailing, spacing: 6) {
@@ -41,23 +33,18 @@ struct TranscriptRow: View {
                 if !entry.text.isEmpty {
                     Text(entry.text)
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .foregroundStyle(.white)
+                        .padding(.vertical, 10)
+                        .foregroundStyle(.primary)
                         .background(
-                            LinearGradient(
-                                colors: [Color.accentColor, Color.accentColor.opacity(0.82)],
-                                startPoint: .top, endPoint: .bottom
-                            ),
-                            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill.tertiary,
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                         )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(.secondary.opacity(0.14), lineWidth: 0.5)
+                        }
                         .textSelection(.enabled)
                 }
-            }
-            if showsUserAvatar {
-                UserAvatar(size: 26)
-                    .padding(.bottom, 4)
-            } else {
-                Color.clear.frame(width: 26, height: 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)

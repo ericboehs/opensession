@@ -75,9 +75,13 @@ struct AttachImagesButton: View {
 
     private var icon: some View {
         Image(systemName: "paperclip")
-            .font(.system(size: 15, weight: .medium))
+            .font(.system(size: 17, weight: .medium))
             .foregroundStyle(.secondary)
+            #if os(iOS)
+            .frame(width: 40, height: 40)
+            #else
             .frame(width: 27, height: 27)
+            #endif
             .contentShape(Circle())
     }
 }

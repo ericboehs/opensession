@@ -37,6 +37,7 @@ struct RootView: View {
 
     var body: some View {
         SessionsListView()
+            .tint(OS1VisualStyle.accent)
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }

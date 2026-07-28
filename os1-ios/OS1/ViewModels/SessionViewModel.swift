@@ -711,11 +711,6 @@ final class SessionViewModel {
     /// body evaluation — including each ~8Hz liveText flush mid-stream.
     private(set) var displayItems: [DisplayItem] = []
 
-    /// Ids of user messages that are the LAST of a consecutive user-message
-    /// group — the one that gets the avatar next to it (group-chat style);
-    /// earlier messages in the group just reserve the gutter.
-    private(set) var avatarItemIds: Set<String> = []
-
     private func rebuildDisplayItems() {
         // Durable file-ordered entries first, then the ephemeral live tail.
         var all = entries
@@ -748,17 +743,6 @@ final class SessionViewModel {
             }
         }
         displayItems = items
-
-        var tails: Set<String> = []
-        for (index, item) in items.enumerated() {
-            guard case .entry(let entry) = item, entry.isUser else { continue }
-            if index + 1 < items.count,
-               case .entry(let next) = items[index + 1], next.isUser {
-                continue // a later user message in the same group carries the avatar
-            }
-            tails.insert(item.id)
-        }
-        avatarItemIds = tails
     }
 
     private func upsert(_ incoming: [TranscriptEntry]) {
