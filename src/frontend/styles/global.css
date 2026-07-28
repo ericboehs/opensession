@@ -855,19 +855,24 @@ html.wco .app-body.sidebar-collapsed
 	flex: 1;
 	min-width: 0;
 	min-height: 0;
-	margin: 10px;
+	margin: 10px 10px 10px 0;
 	overflow: hidden;
 	background: var(--bg);
 	border: 1px solid var(--border);
 	border-radius: calc(var(--workspace-shell-radius) * var(--rf));
 	corner-shape: var(--cs);
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+	/* Directional shadow: depth on the free right/bottom edges without casting
+	   onto the sidebar or creating a clipped-looking seam at their boundary. */
+	box-shadow: 3px 3px 7px -4px rgba(0, 0, 0, 0.14);
 }
 html[data-platform="mac"] .workspace-shell {
 	--workspace-shell-radius: 12px;
 }
 html[data-platform="windows"] .workspace-shell {
 	--workspace-shell-radius: 12px;
+}
+.app-body.sidebar-collapsed .workspace-shell {
+	margin-left: 10px;
 }
 .hamburger {
 	display: none;
