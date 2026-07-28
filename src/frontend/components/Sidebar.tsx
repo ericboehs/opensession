@@ -1872,14 +1872,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			// merge, otherwise-open → In progress). A human-pinned lane wins —
 			// deliberately parking a row in Backlog must stick.
 			if (status === "pending" && !chats.some((c) => pinnedLane(c))) {
-				const prLane = prLaneForChats(statusSources);
-				// …but a green PR whose automated review is still running isn't
-				// ready for anything yet — that review can still come back
-				// requesting changes. Hold the row in In progress until it lands.
-				status =
-					prLane === "review" && reviewRunning
-						? "inprogress"
-						: (prLane ?? status);
+				// …unless an automated review is still running. The row already
+				// wears the spinner for it (see `running` below), and a spinning
+				// row parked outside In progress reads as a contradiction. The
+				// review can still come back requesting changes, so no PR lane is
+				// trustworthy until it lands — including when the live review is
+				// on a sibling PR (a cross-repo port, say) while the fronting PR
+				// has already merged.
+				status = reviewRunning
+					? "inprogress"
+					: (prLaneForChats(statusSources) ?? status);
 			}
 			return {
 				key,
