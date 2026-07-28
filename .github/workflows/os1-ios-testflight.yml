@@ -33,11 +33,35 @@ jobs:
   testflight:
     runs-on: macos-26
     timeout-minutes: 45
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      OS1_DERIVED_DATA: ${{ runner.temp }}/os1-dd-ios
     steps:
       - uses: actions/checkout@v4
 
       - name: Install XcodeGen
         run: brew install xcodegen
+
+      - name: Fingerprint build tools
+        id: build-tools
+        run: |
+          FINGERPRINT=$(
+            { xcodebuild -version; xcodegen --version; } |
+              shasum -a 256 | cut -d ' ' -f 1
+          )
+          echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
+
+      # SwiftStreamingMarkdown's package graph dominates clean builds. Keep one
+      # DerivedData tree so tests and the device archive reuse package work.
+      - name: Restore Xcode build cache
+        id: build-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ env.OS1_DERIVED_DATA }}/Build
+            ${{ env.OS1_DERIVED_DATA }}/SourcePackages
+            ${{ env.OS1_DERIVED_DATA }}/ModuleCache.noindex
+          key: os1-dd-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}
 
       - name: Import Apple Distribution certificate
         uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
@@ -89,6 +113,8 @@ jobs:
             -project OS1.xcodeproj \
             -scheme OS1 \
             -destination "id=$UDID" \
+            -derivedDataPath "$OS1_DERIVED_DATA" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Archive
@@ -99,7 +125,9 @@ jobs:
             -scheme OS1 \
             -configuration Release \
             -destination 'generic/platform=iOS' \
+            -derivedDataPath "$OS1_DERIVED_DATA" \
             -archivePath "$RUNNER_TEMP/OS1.xcarchive" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
             CURRENT_PROJECT_VERSION=${{ steps.build.outputs.number }}
           # Manual signing (style/identity/profile) lives in project.yml's
           # Release config, scoped to the app target: command-line settings
@@ -138,6 +166,22 @@ jobs:
         run: |
           xcrun altool --upload-app -f "$RUNNER_TEMP/export/OS1.ipa" -t ios \
             --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Remove signed products from build cache
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        run: find "$OS1_DERIVED_DATA/Build" -type d -name '*.app' -prune -exec rm -rf {} +
+
+      # This package/toolchain key is deliberately stable: app sources still
+      # rebuild, while unchanged dependency artifacts avoid a fresh compile.
+      - name: Save Xcode build cache
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ env.OS1_DERIVED_DATA }}/Build
+            ${{ env.OS1_DERIVED_DATA }}/SourcePackages
+            ${{ env.OS1_DERIVED_DATA }}/ModuleCache.noindex
+          key: os1-dd-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}
 
   cooldown:
     needs: testflight

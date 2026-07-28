@@ -41,11 +41,35 @@ jobs:
   testflight:
     runs-on: macos-26
     timeout-minutes: 45
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      OS1_DERIVED_DATA: ${{ runner.temp }}/os1-dd-macos
     steps:
       - uses: actions/checkout@v4
 
       - name: Install XcodeGen
         run: brew install xcodegen
+
+      - name: Fingerprint build tools
+        id: build-tools
+        run: |
+          FINGERPRINT=$(
+            { xcodebuild -version; xcodegen --version; } |
+              shasum -a 256 | cut -d ' ' -f 1
+          )
+          echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
+
+      # The universal archive otherwise recompiles SwiftStreamingMarkdown and
+      # its transitive packages for both architectures on every fresh runner.
+      - name: Restore Xcode build cache
+        id: build-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ env.OS1_DERIVED_DATA }}/Build
+            ${{ env.OS1_DERIVED_DATA }}/SourcePackages
+            ${{ env.OS1_DERIVED_DATA }}/ModuleCache.noindex
+          key: os1-dd-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}
 
       - name: Build signing keychain (both identities, -A key access)
         env:
@@ -119,8 +143,10 @@ jobs:
             -scheme OS1Mac \
             -configuration Release \
             -destination 'generic/platform=macOS' \
+            -derivedDataPath "$OS1_DERIVED_DATA" \
             -archivePath "$RUNNER_TEMP/OS1Mac.xcarchive" \
             OTHER_CODE_SIGN_FLAGS="--keychain $OS1_KEYCHAIN" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
             CURRENT_PROJECT_VERSION=${{ steps.build.outputs.number }}
           # Manual signing (style/identity/profile) lives in project.yml's
           # Release config, scoped to the app target: command-line settings
@@ -161,6 +187,22 @@ jobs:
         run: |
           xcrun altool --upload-app -f "$RUNNER_TEMP/export/OS1.pkg" -t macos \
             --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Remove signed products from build cache
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        run: find "$OS1_DERIVED_DATA/Build" -type d -name '*.app' -prune -exec rm -rf {} +
+
+      # This package/toolchain key is deliberately stable: app sources still
+      # rebuild, while unchanged dependency artifacts avoid a fresh compile.
+      - name: Save Xcode build cache
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ env.OS1_DERIVED_DATA }}/Build
+            ${{ env.OS1_DERIVED_DATA }}/SourcePackages
+            ${{ env.OS1_DERIVED_DATA }}/ModuleCache.noindex
+          key: os1-dd-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}
 
   cooldown:
     needs: testflight
