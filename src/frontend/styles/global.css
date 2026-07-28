@@ -20,7 +20,7 @@
 	   topbar so they read as lifted, with a whisper of shadow. Codex-style. */
 	--control-surface: #2d2926;
 	--control-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
-	--composer-shadow: 0 2px 6px rgba(0, 0, 0, 0.2), 0 14px 36px rgba(0, 0, 0, 0.24);
+	--composer-shadow: 0 2px 6px rgba(0, 0, 0, 0.16), 0 14px 36px rgba(0, 0, 0, 0.2);
 	--bg-panel: #292624;
 	--bg-hover: #322e2b;
 	--bg-active: #3a3531;
@@ -85,7 +85,7 @@ html[data-theme="light"] {
 	   the clean lifted chip from the Codex reference. */
 	--control-surface: #ffffff;
 	--control-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-	--composer-shadow: 0 2px 6px rgba(0, 0, 0, 0.05), 0 14px 36px rgba(0, 0, 0, 0.1);
+	--composer-shadow: 0 2px 6px rgba(0, 0, 0, 0.04), 0 14px 36px rgba(0, 0, 0, 0.08);
 	--bg-panel: #f2f0ec;
 	--bg-hover: #ece9e4;
 	--bg-active: #e4e0d9;
@@ -9379,7 +9379,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 /* ── Composer (shared chat input — Claude/Codex style) ─────────────── */
 
 .composer-wrap {
-	max-width: var(--chat-col);
+	max-width: calc(var(--chat-col) + 40px);
 	margin: 0 auto;
 	width: 100%;
 }
