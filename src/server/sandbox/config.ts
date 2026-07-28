@@ -598,13 +598,13 @@ export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
     environments: { ...ALL_ENVIRONMENTS },
   },
   {
-    // Other opencode providers authenticate via `opencode auth login` state
-    // that exists only on the host — nothing mounts/uploads it into sandboxes.
+    // Other OpenCode providers keep their auth + model loop on the host and
+    // operate on sandbox workspaces through opensession-workspace. Local
+    // filesystem/bash tools are stripped on those runs (opencodeRunPolicy).
     id: "opencode-other",
     label: "OpenCode (other providers)",
     match: { provider: "opencode" },
-    environments: { local: true, docker: false, daytona: false, e2b: false, box: false, modal: false, "lambda-microvm": false },
-    hint: "its `opencode auth login` credential only exists on the host",
+    environments: { ...ALL_ENVIRONMENTS },
   },
   {
     // Native Codex runs need a writable CODEX_HOME (refresh-token rotation) —

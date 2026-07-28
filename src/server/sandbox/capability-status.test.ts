@@ -225,7 +225,7 @@ describe("model-family × environment capability matrix", () => {
     });
   });
 
-  test("native codex and other-provider opencode models are host-only, with a pointed error", () => {
+  test("native codex stays host-only; other-provider OpenCode uses an external engine", () => {
     const codex = sandboxModelSupport("gpt-5.5", "docker");
     expect(codex.ok).toBe(false);
     if (!codex.ok) {
@@ -234,8 +234,10 @@ describe("model-family × environment capability matrix", () => {
       expect(codex.error).toContain("opencode/openai");
     }
     const other = sandboxModelSupport("opencode/google/gemini-3", "daytona");
-    expect(other.ok).toBe(false);
-    if (!other.ok) expect(other.error).toContain("pick Host");
+    expect(other).toEqual({ ok: true });
+    expect(sandboxModelSupport("opencode/xai/grok-4.5", "modal")).toEqual({
+      ok: true,
+    });
   });
 });
 

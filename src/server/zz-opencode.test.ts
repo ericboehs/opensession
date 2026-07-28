@@ -202,6 +202,26 @@ describe("opencodeRunPolicy (unattended least-privilege enforcement)", () => {
     expect(opencodeRunPolicy({ journalKind: "automation" }).disables.question).toBe(false);
   });
 
+  test("engine-outside-sandbox runs strip every host-local workspace tool", () => {
+    const p = opencodeRunPolicy({
+      journalKind: "prompt",
+      disableLocalWorkspaceTools: true,
+    });
+    for (const name of [
+      "bash",
+      "read",
+      "write",
+      "edit",
+      "patch",
+      "apply_patch",
+      "grep",
+      "glob",
+    ]) {
+      expect(p.disables[name]).toBe(false);
+    }
+    expect(p.unattended).toBe(false);
+  });
+
   test("every automation-denied tool is stripped under opencode's <server>_<tool> naming", () => {
     const p = opencodeRunPolicy({
       journalKind: "automation",

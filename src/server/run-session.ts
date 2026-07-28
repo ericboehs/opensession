@@ -9,7 +9,7 @@
  */
 
 import { randomUUIDv7 } from "bun";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync } from "fs";
 import {
 	runAgent,
 	isAgentSessionBusy,
@@ -75,8 +75,13 @@ import {
 	isRemoteSandboxProvider,
 	isRunnableSandboxProvider,
 	sandboxesEnabled,
+	sandboxModelFamilyFor,
 	sandboxProviderConfigured,
 } from "./sandbox/config";
+import {
+	createRemoteWorkspaceMcpServer,
+	remoteWorkspaceInstructions,
+} from "./sandbox/workspace-mcp";
 import { getTitleOverride } from "./title-overrides";
 import { ensureGeneratedTitle } from "./generated-titles";
 import { gitIdentityFor } from "./shared/user-mappings";
@@ -1042,6 +1047,11 @@ export async function maybeLaunchSandboxedRun(
 	// leak the run token (spawnHostRun's error path does the same cleanup).
 	let rpcToken: string | undefined;
 	try {
+		// First vertical slice of the "brain outside, hands inside" architecture:
+		// third-party OpenCode providers keep their host-only auth + engine state
+		// on the host and reach the sandbox through opensession-workspace.
+		const engineOutsideSandbox =
+			sandboxModelFamilyFor(session.model).id === "opencode-other";
 		const provider = getSandboxProvider(sbProvider);
 		const sandbox = await provider.ensure({
 			sessionId: session.id,
@@ -1063,7 +1073,9 @@ export async function maybeLaunchSandboxedRun(
 		if (
 			session.source === "backstage" &&
 			(session.sandbox?.sandboxId !== sandbox.id ||
-				session.sandbox?.workspace !== sandbox.workspace)
+				session.sandbox?.workspace !== sandbox.workspace ||
+				session.sandbox?.engine !==
+					(engineOutsideSandbox ? "host" : "sandbox"))
 		) {
 			touchBackstageSession(session.id, {
 				sandbox: {
@@ -1072,8 +1084,9 @@ export async function maybeLaunchSandboxedRun(
 					// Record how the workspace materialized ("volume" = it lives only
 					// inside the sandbox; host existsSync guards must not gate it).
 					workspace: sandbox.workspace,
+					engine: engineOutsideSandbox ? "host" : "sandbox",
 				},
-				...(remoteSandboxReplaced
+				...(remoteSandboxReplaced && !engineOutsideSandbox
 					? {
 							claudeSessionId: undefined,
 							codexThreadId: undefined,
@@ -1118,6 +1131,56 @@ export async function maybeLaunchSandboxedRun(
 			accountId: session.accountId,
 			journalKind: "prompt",
 		};
+		if (engineOutsideSandbox) {
+			// The in-sandbox run-host proxy token above is not used on this path;
+			// runOpencode mints its own host-local MCP token.
+			unregisterRunToken(rpcToken);
+			rpcToken = undefined;
+			const engineCwd = `${SESSIONS_DIR}/opencode/remote-cwd/${session.id}`;
+			mkdirSync(engineCwd, { recursive: true });
+			const inProcessMcp = {
+				...interactiveMcpServers(opts.user, session.id),
+				...(session.goalId
+					? {
+							"opensession-goal-self": createGoalSelfMcpServer(
+								session.goalId,
+							),
+						}
+					: {}),
+				"opensession-workspace": createRemoteWorkspaceMcpServer(sandbox),
+			};
+			const reposNote = [
+				spec.reposNote,
+				remoteWorkspaceInstructions(sandbox),
+			]
+				.filter(Boolean)
+				.join("\n\n");
+			console.log(
+				`[sandbox] ${session.id}: engine on host, workspace in ${sandbox.id} (${sandbox.cwd})`,
+			);
+			return runAgent({
+				prompt: opts.prompt,
+				sessionId: opts.engineSessionId,
+				cwd: engineCwd,
+				mode: session.mode,
+				model: session.model,
+				effort: session.effort,
+				fastMode: session.fastMode,
+				images: opts.images,
+				mcpServers: opts.mcpServers,
+				inProcessMcp,
+				disableLocalWorkspaceTools: true,
+				reposNote,
+				confirmTools: STRIPE_CONFIRM_TOOLS,
+				aws: true,
+				author: gitIdentityFor(opts.user),
+				user: opts.user,
+				fallbackModel: interactiveFallbackModel(session.model),
+				accountId: session.accountId,
+				journal: { bksSessionId: session.id, kind: "prompt" },
+				onAskUser: makeAskHandler(session.id),
+			});
+		}
 		const runCallbacks = {
 			onAskUser: makeAskHandler(session.id),
 			// A steer that reached the in-container run too late must not

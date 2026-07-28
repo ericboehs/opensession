@@ -69,6 +69,12 @@ export interface RunAgentOpts {
    */
   inProcessMcp?: Record<string, unknown>;
   /**
+   * The model loop is running outside its coding sandbox. Strip OpenCode's
+   * built-in local bash/read/write/edit/search tools so the run can only touch
+   * the workspace through the session-scoped remote-workspace MCP server.
+   */
+  disableLocalWorkspaceTools?: boolean;
+  /**
    * System-prompt note describing the session's repos (primary + attached) and
    * their worktree paths, so the agent works in the right isolated checkout for
    * cross-repo sessions. Claude receives it as system context; Codex via the

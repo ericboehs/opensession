@@ -228,7 +228,13 @@ export interface UnifiedSession {
    *  `sandboxId` is set once a provider materializes the sandbox (Phase 1+).
    *  `workspace` records how the workspace was materialized: "volume" means it
    *  lives ONLY inside the sandbox (no host worktree — Phase 2). */
-  sandbox?: { provider: string; sandboxId?: string; workspace?: "bind" | "volume" };
+  sandbox?: {
+    provider: string;
+    sandboxId?: string;
+    workspace?: "bind" | "volume";
+    /** Where the model loop lives for this session's current engine. */
+    engine?: "host" | "sandbox";
+  };
 }
 
 // Slack session file format (two variants exist)
@@ -440,7 +446,12 @@ export interface BackstageSessionFile {
    *  set once a provider materializes a sandbox for the session (Phase 1+);
    *  `workspace` records the materialized mode — "volume" workspaces live only
    *  inside the sandbox (no host worktree; Phase 2). */
-  sandbox?: { provider: string; sandboxId?: string; workspace?: "bind" | "volume" };
+  sandbox?: {
+    provider: string;
+    sandboxId?: string;
+    workspace?: "bind" | "volume";
+    engine?: "host" | "sandbox";
+  };
 }
 
 export interface TranscriptEntry {

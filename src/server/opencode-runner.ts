@@ -582,6 +582,21 @@ export interface OpencodeRunPolicy {
   noteGroups: Array<{ message: string; tools: string[] }>;
 }
 
+/** Built-ins that resolve against the `opencode serve` process's local cwd.
+ * Engine-outside-sandbox runs must never see them: their real workspace is
+ * reachable only through opensession-workspace. Keep aliases in the strip set
+ * as OpenCode's edit surface has used both patch/apply_patch across versions. */
+export const LOCAL_WORKSPACE_TOOL_IDS = [
+  "bash",
+  "read",
+  "write",
+  "edit",
+  "patch",
+  "apply_patch",
+  "grep",
+  "glob",
+] as const;
+
 /** Claude-style tool name (mcp__<server>__<tool>) → the ids OpenCode's `tools`
  *  config must disable. `<server>_<tool>` is OpenCode's MCP tool naming
  *  (verified live 2026-07-09, opencode 1.17.15 + the stripe MCP →
@@ -620,12 +635,16 @@ export function opencodeRunPolicy(opts: {
   deniedTools?: Record<string, string>;
   confirmTools?: Record<string, string>;
   journalKind?: string;
+  disableLocalWorkspaceTools?: boolean;
 }): OpencodeRunPolicy {
   // OpenCode's native `question` tool waits for its own TUI to answer. Our
   // engine runs headlessly and exposes opensession-ask instead, which routes
   // through the session question card. Leaving both visible lets the model
   // choose the native tool and wedge the turn with raw JSON in the transcript.
   const disables: Record<string, false> = { question: false };
+  if (opts.disableLocalWorkspaceTools) {
+    for (const name of LOCAL_WORKSPACE_TOOL_IDS) disables[name] = false;
+  }
   const denied = opts.deniedTools || {};
   const unattended =
     Object.keys(denied).length > 0 || isUnattendedKind(baseJournalKind(opts.journalKind));
@@ -3124,6 +3143,7 @@ async function* runOpencodeAttempt(
       deniedTools: opts.deniedTools,
       confirmTools,
       journalKind: journal?.kind,
+      disableLocalWorkspaceTools: opts.disableLocalWorkspaceTools,
     });
     // Per-user GitHub auth (opt-in — github-auth.ts): the session owner's own
     // token rides the server env so `gh` acts as them (PRs authored by the
