@@ -135,6 +135,7 @@ jobs:
       - name: Generate Xcode project
         run: |
           echo "Xcode build cache hit: ${{ steps.build-cache.outputs.cache-hit }}"
+          echo "Xcode build cache hit: ${{ steps.build-cache.outputs.cache-hit }}" >> "$GITHUB_STEP_SUMMARY"
           xcodegen generate
 
       - name: Archive
