@@ -113,6 +113,8 @@ export const REMOTE_OPENCODE = `${REMOTE_HOME}/.bun/bin/opencode`;
 export const REMOTE_OPENCODE_VERSION = "1.17.15";
 export const REMOTE_REPO = REPO_ROOT; // /home/ubuntu/projects/tella-backstage
 const BOOTSTRAP_MARKER = `${REMOTE_HOME}/.bks-bootstrapped`;
+const WORKSPACE_BOOTSTRAP_MARKER = `${REMOTE_HOME}/.bks-workspace-runtime`;
+const WORKSPACE_BOOTSTRAP_SIGNATURE = "workspace-runtime-v1+bun";
 /** Where per-launch openai seed material lands in-sandbox — threaded to the
  *  run host via the OPENSESSION_OPENAI_SEED_DIR env (openaiRemoteSeedDir()),
  *  never derived independently on the two sides. */
@@ -390,6 +392,82 @@ export function bootstrapSignature(): string {
 }
 
 /**
+ * Provision only the command/filesystem contract used by
+ * opensession-workspace. This is the lightweight half of the external-engine
+ * architecture: no runner checkout, runner dependencies, model CLI, account
+ * material, or dial-back transport enters the sandbox.
+ */
+export async function bootstrapRemoteWorkspaceRuntime(
+  driver: RemoteDriver,
+  label: string,
+): Promise<void> {
+  const marker = await driver.exec(`cat ${WORKSPACE_BOOTSTRAP_MARKER} 2>/dev/null`);
+  if (
+    marker.exitCode === 0 &&
+    marker.stdout.trim() === WORKSPACE_BOOTSTRAP_SIGNATURE
+  ) {
+    return;
+  }
+  const log = (msg: string) =>
+    console.log(`[sandbox:${label}] workspace runtime: ${msg}`);
+
+  need(
+    await driver.exec(
+      `test -w ${REMOTE_HOME} || (sudo -n mkdir -p ${REMOTE_HOME} && sudo -n chown $(id -u):$(id -g) ${REMOTE_HOME})`,
+    ),
+    `writable ${REMOTE_HOME} (image needs passwordless sudo or a prebaked /home/ubuntu)`,
+  );
+
+  // Provider base images vary. Install one small, explicit command contract
+  // through whichever package manager the image supplies. coreutils provides
+  // base64/nl/wc; sed and ripgrep back the native read/search tools.
+  const tools = await driver.exec(
+    "for c in git curl unzip rg sed nl wc base64; do command -v \"$c\" >/dev/null 2>&1 || echo \"$c\"; done",
+  );
+  if (tools.stdout.trim()) {
+    log(`installing workspace tools (${tools.stdout.trim().replaceAll("\n", ", ")})…`);
+    need(
+      await driver.exec(
+        `SUDO=""; [ "$(id -u)" = 0 ] || SUDO="sudo -n"; ` +
+          `if command -v apt-get >/dev/null 2>&1; then ` +
+          `$SUDO apt-get update -qq && $SUDO apt-get install -y -qq git curl unzip ripgrep coreutils sed; ` +
+          `elif command -v apk >/dev/null 2>&1; then ` +
+          `$SUDO apk add --no-cache git curl unzip ripgrep coreutils sed; ` +
+          `elif command -v dnf >/dev/null 2>&1; then ` +
+          `$SUDO dnf install -y git curl unzip ripgrep coreutils sed; ` +
+          `elif command -v yum >/dev/null 2>&1; then ` +
+          `$SUDO yum install -y git curl unzip ripgrep coreutils sed; ` +
+          `else echo "no supported package manager" >&2; exit 1; fi`,
+        { timeoutMs: 300_000 },
+      ),
+      "workspace tools install",
+    );
+  }
+  need(
+    await driver.exec(
+      "for c in git curl unzip rg sed nl wc base64; do command -v \"$c\" >/dev/null 2>&1 || { echo \"missing $c\" >&2; exit 1; }; done",
+    ),
+    "workspace tools check",
+  );
+
+  log("ensuring bun…");
+  need(
+    await driver.exec(
+      `test -x ${REMOTE_BUN} || curl -fsSL https://bun.sh/install | HOME=${REMOTE_HOME} bash`,
+      { timeoutMs: 300_000 },
+    ),
+    "bun install",
+  );
+  need(
+    await driver.exec(
+      `printf '%s' ${shellQuoteWord(WORKSPACE_BOOTSTRAP_SIGNATURE)} > ${WORKSPACE_BOOTSTRAP_MARKER}`,
+    ),
+    "workspace runtime marker",
+  );
+  log("ready");
+}
+
+/**
  * Install the runner payload in a fresh remote sandbox (idempotent — a marker
  * file short-circuits every later call). See the module header for what/why
  * and the cold-start cost.
@@ -404,31 +482,7 @@ export async function bootstrapRemoteSandbox(
   if (marker.exitCode === 0 && marker.stdout.trim() === signature) return;
   const log = (msg: string) => console.log(`[sandbox:${label}] bootstrap: ${msg}`);
 
-  // /home/ubuntu must exist and be ours — the runner's absolute paths live
-  // under it regardless of the image's default user (E2B "base" runs as
-  // `user`, Daytona images vary; both ship passwordless sudo by default).
-  need(
-    await driver.exec(
-      `test -w ${REMOTE_HOME} || (sudo -n mkdir -p ${REMOTE_HOME} && sudo -n chown $(id -u):$(id -g) ${REMOTE_HOME})`,
-    ),
-    `writable ${REMOTE_HOME} (image needs passwordless sudo or a prebaked /home/ubuntu)`,
-  );
-  need(await driver.exec("command -v curl"), "curl present in the image");
-  // bun's installer needs unzip; best-effort apt when missing.
-  const unzip = await driver.exec(
-    "command -v unzip || (sudo -n apt-get update -qq && sudo -n apt-get install -y -qq unzip)",
-    { timeoutMs: 180_000 },
-  );
-  if (unzip.exitCode !== 0) log("unzip install failed — bun install may fail");
-
-  log("installing bun…");
-  need(
-    await driver.exec(
-      `test -x ${REMOTE_BUN} || curl -fsSL https://bun.sh/install | HOME=${REMOTE_HOME} bash`,
-      { timeoutMs: 300_000 },
-    ),
-    "bun install",
-  );
+  await bootstrapRemoteWorkspaceRuntime(driver, label);
 
   // Runner bundle: tarball if configured, else git clone at the pinned sha.
   const hasRepo = await driver.exec(`test -f ${REMOTE_REPO}/package.json`);

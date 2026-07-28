@@ -55,6 +55,7 @@ import type {
 import {
   assertDialbackReachable,
   bootstrapRemoteSandbox,
+  bootstrapRemoteWorkspaceRuntime,
   findRemoteStateBySession,
   makeRemoteSandbox,
   readRemoteState,
@@ -413,8 +414,12 @@ export class BoxProvider implements SandboxProvider {
     await driver.ensureStarted();
     // Cheap dial-back probe BEFORE the expensive bootstrap — same rationale
     // as daytona: a box that can't reach our callback URL can never run.
-    await assertDialbackReachable(driver, "box");
-    await bootstrapRemoteSandbox(driver, "box");
+    if (spec.runtime === "workspace") {
+      await bootstrapRemoteWorkspaceRuntime(driver, "box");
+    } else {
+      await assertDialbackReachable(driver, "box");
+      await bootstrapRemoteSandbox(driver, "box");
+    }
     await setupRemoteWorkspace(
       driver,
       cwd,

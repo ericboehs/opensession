@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build a Firecracker rootfs for the preview pool from the docker golden's
 # exported filesystem. Usage:
-#   build-rootfs.sh <golden.tar> <out.ext4> [size-gb]
+#   BKS_INIT=/path/to/init build-rootfs.sh <golden.tar> <out.ext4> [size-gb]
 #
 # The image is sparse (only written blocks take disk). Injects:
 #   /sbin/bks-init            guest PID 1 (see bks-init)
@@ -11,6 +11,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TAR="$1"; OUT="$2"; SIZE_GB="${3:-25}"
+INIT="${BKS_INIT:-$HERE/bks-init}"
 
 BUSYBOX_URL=https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox
 [ -f "$HERE/.cache-busybox" ] || curl -fsSL "$BUSYBOX_URL" -o "$HERE/.cache-busybox"
@@ -26,7 +27,7 @@ sudo mount -o loop "$OUT" "$MNT"
 echo "[build-rootfs] untarring golden ($(du -h "$TAR" | cut -f1))…"
 sudo tar -xf "$TAR" -C "$MNT"
 
-sudo install -m 0755 "$HERE/bks-init" "$MNT/sbin/bks-init"
+sudo install -m 0755 "$INIT" "$MNT/sbin/bks-init"
 sudo mkdir -p "$MNT/opt/bks"
 sudo install -m 0755 "$HERE/../lambda-microvm/control.py" "$MNT/opt/bks/control.py"
 sudo install -m 0755 "$HERE/.cache-busybox" "$MNT/opt/bks/busybox"

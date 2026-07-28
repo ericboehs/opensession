@@ -631,6 +631,7 @@ export function resumeInterruptedRuns(
         run.sandboxProvider === "e2b" ||
         run.sandboxProvider === "box" ||
         run.sandboxProvider === "modal" ||
+        run.sandboxProvider === "microvm" ||
         run.sandboxProvider === "lambda-microvm")
     ) {
       const isDocker = run.sandboxProvider === "docker";

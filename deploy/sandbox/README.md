@@ -268,14 +268,21 @@ hot-apply — a real restart is needed after changing it.
 - **Remote adapters** (`provider: "daytona"` / `"e2b"`,
   src/server/sandbox/adapters/): always volume-style workspaces cloned
   in-sandbox over https (`cloneCredential`), always ws transport, runner
-  payload installed on first ensure by `bootstrapRemoteSandbox` (bun + repo
-  clone/tarball + bun install + claude CLI — minutes cold; provider
-  snapshots/templates as a prebaked fast path are a follow-up). Daytona
+  payload installed on first ensure by `bootstrapRemoteSandbox` for engines
+  that run inside the sandbox. Other-provider OpenCode engines stay on the
+  host and use `bootstrapRemoteWorkspaceRuntime` instead (Git/Bun/ripgrep/core
+  tools only; no runner checkout, Claude/OpenCode CLI, credentials, or
+  dial-back requirement). Daytona
   idle-stops natively (`autoStopInterval`); E2B lives on a countdown that
   activity extends — expiry KILLS the sandbox and its workspace. NOTE:
   Daytona Tier 1/2 orgs restrict sandbox egress, which blocks the WS
   dial-back entirely — launchRun there needs a Tier 3 org or self-hosted
   Daytona.
+- **Local Firecracker adapter** (`provider: "microvm"`): restores a
+  credential-free control-only golden from `/opt/firecracker/sandbox-store`
+  and runs the engine on the host through `opensession-workspace`. Build it
+  with `deploy/sandbox/microvm/refresh-sandbox-golden.sh`; never reuse the
+  preview-pool golden in `/opt/firecracker/store`.
 - `deploy/sandbox/conformance.ts` — the provider conformance matrix
   (`bun run deploy/sandbox/conformance.ts [docker-socket|docker-ws|daytona|e2b|box|modal|lambda-microvm]`):
   verify.ts's checks parameterized over providers. Docker entries always run

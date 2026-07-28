@@ -83,6 +83,7 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
       "e2b",
       "box",
       "modal",
+      "microvm",
       "lambda-microvm",
     ]);
     expect(s.providers.every((p) => !p.configured)).toBe(true);
@@ -166,6 +167,15 @@ describe("sandboxCapabilityStatus (the /api/sandbox/status payload)", () => {
     });
   });
 
+  test("local Firecracker microvm requires explicit config and a clean golden", () => {
+    write({ provider: "microvm", firecrackerMicrovm: { enabled: false } });
+    expect(sandboxProviderConfigured("microvm")).toBe(false);
+    expect(
+      sandboxCapabilityStatus().providers.find((p) => p.id === "microvm")
+        ?.configured,
+    ).toBe(false);
+  });
+
   test("an explicit callbackBaseUrl also counts as dial-back configured", () => {
     write({
       provider: "docker",
@@ -216,6 +226,12 @@ describe("model-family × environment capability matrix", () => {
     expect(sandboxModelSupport("claude-fable-5", "daytona")).toEqual({ ok: true });
     expect(sandboxModelSupport("claude-fable-5", "modal")).toEqual({ ok: true });
     expect(sandboxModelSupport("claude-fable-5", "lambda-microvm")).toEqual({ ok: true });
+    expect(
+      sandboxModelSupport("opencode/cerebras/gpt-oss-120b", "microvm"),
+    ).toEqual({ ok: true });
+    expect(
+      sandboxModelSupport("opencode/anthropic/claude-sonnet-5", "microvm").ok,
+    ).toBe(false);
     // opencode/openai runs everywhere: docker mounts the codex material,
     // remote launches upload the rotation-proof seeds (bootstrap.ts).
     expect(sandboxModelSupport("opencode/openai/gpt-5.4-mini", "daytona")).toEqual({ ok: true });

@@ -198,6 +198,16 @@ export interface SandboxAwsLambdaMicrovmConfig {
   logGroup?: string;
 }
 
+export interface SandboxFirecrackerMicrovmConfig {
+  /** Explicit opt-in: the provider owns root-level Firecracker/netns resources. */
+  enabled: boolean;
+  /** Credential-free golden store built by refresh-sandbox-golden.sh. */
+  storeDir: string;
+  /** Disjoint from preview-pool clone indexes (defaults 64..127). */
+  indexStart: number;
+  indexEnd: number;
+}
+
 export interface SandboxConfig {
   provider: SandboxProviderId;
   /** Container image for the docker provider (Phase 1). */
@@ -246,6 +256,8 @@ export interface SandboxConfig {
   modal?: SandboxModalConfig;
   /** AWS Lambda MicroVM adapter (provider "lambda-microvm"). */
   awsLambdaMicrovm?: SandboxAwsLambdaMicrovmConfig;
+  /** Local Firecracker adapter (provider "microvm"). */
+  firecrackerMicrovm?: SandboxFirecrackerMicrovmConfig;
   /** Clone auth for remote-provider workspaces + runner bootstrap. On hosted
    *  GitHub clones, the live GITHUB_API_TOKEN takes precedence so an expiring
    *  GitHub App user token is never treated as durable sandbox config. */
@@ -270,6 +282,7 @@ const PROVIDER_IDS = new Set<string>([
   "e2b",
   "box",
   "modal",
+  "microvm",
   "lambda-microvm",
 ]);
 
@@ -418,6 +431,29 @@ export function sandboxConfig(): SandboxConfig {
                 logGroup: str(raw.awsLambdaMicrovm.logGroup),
               }
             : undefined,
+        firecrackerMicrovm:
+          raw?.firecrackerMicrovm && typeof raw.firecrackerMicrovm === "object"
+            ? {
+                enabled: raw.firecrackerMicrovm.enabled === true,
+                storeDir:
+                  str(raw.firecrackerMicrovm.storeDir) ||
+                  "/opt/firecracker/sandbox-store",
+                indexStart:
+                  typeof raw.firecrackerMicrovm.indexStart === "number" &&
+                  Number.isInteger(raw.firecrackerMicrovm.indexStart) &&
+                  raw.firecrackerMicrovm.indexStart >= 1 &&
+                  raw.firecrackerMicrovm.indexStart <= 253
+                    ? raw.firecrackerMicrovm.indexStart
+                    : 64,
+                indexEnd:
+                  typeof raw.firecrackerMicrovm.indexEnd === "number" &&
+                  Number.isInteger(raw.firecrackerMicrovm.indexEnd) &&
+                  raw.firecrackerMicrovm.indexEnd >= 1 &&
+                  raw.firecrackerMicrovm.indexEnd <= 253
+                    ? raw.firecrackerMicrovm.indexEnd
+                    : 127,
+              }
+            : undefined,
         cloneCredential:
           raw?.cloneCredential?.type === "https-token" ||
           raw?.cloneCredential?.type === "none"
@@ -501,6 +537,7 @@ export const RUNNABLE_SANDBOX_PROVIDERS = [
   "e2b",
   "box",
   "modal",
+  "microvm",
   "lambda-microvm",
 ] as const;
 export type RunnableSandboxProviderId = (typeof RUNNABLE_SANDBOX_PROVIDERS)[number];
@@ -516,12 +553,13 @@ export function isRunnableSandboxProvider(v: unknown): v is RunnableSandboxProvi
  *  volume-style (cloned inside the sandbox; no host fallback for runs). */
 export function isRemoteSandboxProvider(
   v: unknown,
-): v is "daytona" | "e2b" | "box" | "modal" | "lambda-microvm" {
+): v is "daytona" | "e2b" | "box" | "modal" | "microvm" | "lambda-microvm" {
   return (
     v === "daytona" ||
     v === "e2b" ||
     v === "box" ||
     v === "modal" ||
+    v === "microvm" ||
     v === "lambda-microvm"
   );
 }
@@ -578,6 +616,7 @@ const ALL_ENVIRONMENTS: Record<SandboxEnvironmentId, boolean> = {
   e2b: true,
   box: true,
   modal: true,
+  microvm: true,
   "lambda-microvm": true,
 };
 
@@ -589,7 +628,7 @@ export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
     id: "opencode-openai",
     label: "GPT (OpenCode)",
     match: { provider: "opencode", idPrefix: "opencode/openai/" },
-    environments: { ...ALL_ENVIRONMENTS },
+    environments: { ...ALL_ENVIRONMENTS, microvm: false },
   },
   {
     // The meridian bridge config + scoped Claude account slice reach every
@@ -597,7 +636,7 @@ export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
     id: "opencode-anthropic",
     label: "Claude (OpenCode)",
     match: { provider: "opencode", idPrefix: "opencode/anthropic/" },
-    environments: { ...ALL_ENVIRONMENTS },
+    environments: { ...ALL_ENVIRONMENTS, microvm: false },
   },
   {
     // Other OpenCode providers keep their auth + model loop on the host and
@@ -615,14 +654,14 @@ export const SANDBOX_MODEL_FAMILIES: SandboxModelFamily[] = [
     id: "codex",
     label: "GPT (Codex)",
     match: { provider: "codex" },
-    environments: { local: true, docker: false, daytona: false, e2b: false, box: false, modal: false, "lambda-microvm": false },
+    environments: { local: true, docker: false, daytona: false, e2b: false, box: false, modal: false, microvm: false, "lambda-microvm": false },
     hint: "Codex account state stays on the host; use an opencode/openai/* model to run GPT in a sandbox",
   },
   {
     id: "claude",
     label: "Claude",
     match: { provider: "claude" },
-    environments: { ...ALL_ENVIRONMENTS },
+    environments: { ...ALL_ENVIRONMENTS, microvm: false },
   },
 ];
 
@@ -633,6 +672,7 @@ const ENVIRONMENT_LABELS: Record<SandboxEnvironmentId, string> = {
   e2b: "E2B",
   box: "Box",
   modal: "Modal",
+  microvm: "Local Firecracker MicroVM",
   "lambda-microvm": "AWS Lambda MicroVM",
 };
 
@@ -715,6 +755,18 @@ export function sandboxProviderConfigured(id: RunnableSandboxProviderId): boolea
         modalConfigHasCredentials(),
     );
   }
+  if (id === "microvm") {
+    const m = cfg.firecrackerMicrovm;
+    return Boolean(
+      m?.enabled &&
+        m.indexStart <= m.indexEnd &&
+        existsSync("/opt/firecracker/firecracker") &&
+        existsSync("/opt/firecracker/vmlinux") &&
+        existsSync(`${m.storeDir}/golden.ext4`) &&
+        existsSync(`${m.storeDir}/golden.mem`) &&
+        existsSync(`${m.storeDir}/golden.vmstate`),
+    );
+  }
   if (id === "lambda-microvm") return Boolean(cfg.awsLambdaMicrovm?.imageIdentifier);
   return Boolean(cfg.e2b?.apiKey || process.env.E2B_API_KEY);
 }
@@ -739,6 +791,8 @@ export function sandboxCapabilityStatus(): SandboxCapabilityStatus {
         modalConfigHasCredentials(),
     );
   const lambdaMicrovmConfigured = enabled && Boolean(cfg.awsLambdaMicrovm?.imageIdentifier);
+  const firecrackerMicrovmConfigured =
+    enabled && sandboxProviderConfigured("microvm");
   // Remote sandboxes must dial back over WS: healthy = a public-ingress URL or
   // an explicit callbackBaseUrl is configured, and then the row shows no note.
   // Only an actually-missing dial-back URL surfaces a caveat (no static
@@ -773,6 +827,10 @@ export function sandboxCapabilityStatus(): SandboxCapabilityStatus {
       id: "modal",
       configured: modalConfigured,
       ...(modalConfigured ? remoteNote : {}),
+    },
+    {
+      id: "microvm",
+      configured: firecrackerMicrovmConfigured,
     },
     {
       id: "lambda-microvm",
@@ -820,7 +878,7 @@ export function resolveRequestedSandbox(
   if (!isRunnableSandboxProvider(id)) {
     return {
       ok: false,
-      error: `Unknown sandbox provider "${requested}" — valid values: docker, daytona, e2b, box, modal, lambda-microvm (or true for the configured default).`,
+      error: `Unknown sandbox provider "${requested}" — valid values: docker, daytona, e2b, box, modal, microvm, lambda-microvm (or true for the configured default).`,
     };
   }
   if (!sandboxProviderConfigured(id)) {
@@ -833,6 +891,8 @@ export function resolveRequestedSandbox(
             ? 'set {"box":{"apiKey":"…"}} in ~/.opensession-sandbox.json (or BOX_API_KEY)'
             : id === "modal"
               ? 'set {"modal":{"tokenId":"…","tokenSecret":"…"}} in ~/.opensession-sandbox.json (or MODAL_TOKEN_ID/MODAL_TOKEN_SECRET)'
+              : id === "microvm"
+                ? 'build a clean golden with deploy/sandbox/microvm/refresh-sandbox-golden.sh and set {"firecrackerMicrovm":{"enabled":true,"storeDir":"/opt/firecracker/sandbox-store"}}'
               : id === "lambda-microvm"
                 ? 'set {"awsLambdaMicrovm":{"imageIdentifier":"arn:aws:lambda:…:microvm-image/…"}} in ~/.opensession-sandbox.json'
                 : 'set {"e2b":{"apiKey":"…"}} in ~/.opensession-sandbox.json (or E2B_API_KEY)';

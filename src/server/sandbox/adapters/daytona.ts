@@ -46,6 +46,7 @@ import type {
 import {
   assertDialbackReachable,
   bootstrapRemoteSandbox,
+  bootstrapRemoteWorkspaceRuntime,
   findRemoteStateBySession,
   makeRemoteSandbox,
   readRemoteState,
@@ -307,8 +308,12 @@ export class DaytonaProvider implements SandboxProvider {
     // Cheap dial-back probe BEFORE the expensive bootstrap: a sandbox that
     // can't reach our callback URL can never run anything — fail fast with
     // the documented error instead of 30s+ of doomed bootstrap.
-    await assertDialbackReachable(driver, "daytona");
-    await bootstrapRemoteSandbox(driver, "daytona");
+    if (spec.runtime === "workspace") {
+      await bootstrapRemoteWorkspaceRuntime(driver, "daytona");
+    } else {
+      await assertDialbackReachable(driver, "daytona");
+      await bootstrapRemoteSandbox(driver, "daytona");
+    }
     await setupRemoteWorkspace(
       driver,
       cwd,

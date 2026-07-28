@@ -1064,6 +1064,7 @@ export async function maybeLaunchSandboxedRun(
 			attachedDirs: (session.attachedRepos || [])
 				.map((r) => r.dir)
 				.filter(Boolean),
+			runtime: engineOutsideSandbox ? "workspace" : "runner",
 		});
 		// Remote engine databases live inside the sandbox. A replacement VM cannot
 		// resume the old engine id, even when its git workspace was safely pushed.

@@ -79,7 +79,7 @@ export interface CreateSessionOpts {
    * picks one explicitly and must be configured (~/.opensession-sandbox.json),
    * else the create fails with a clear error.
    */
-  sandbox?: boolean | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm";
+  sandbox?: boolean | "docker" | "daytona" | "e2b" | "box" | "modal" | "microvm" | "lambda-microvm";
 }
 
 /**

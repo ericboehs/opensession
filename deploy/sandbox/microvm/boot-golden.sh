@@ -14,7 +14,9 @@ LOG="${API%.sock}.log"
 sudo bash "$(dirname "$0")/setup-net.sh" "$TAP" "$HOST_IP/30"
 rm -f "$API"
 "$FC" --api-sock "$API" > "$LOG" 2>&1 &
-echo "firecracker pid $! (api $API, serial log $LOG)"
+FC_PID=$!
+[ -n "${BKS_FIRECRACKER_PID_FILE:-}" ] && printf '%s\n' "$FC_PID" > "$BKS_FIRECRACKER_PID_FILE"
+echo "firecracker pid $FC_PID (api $API, serial log $LOG)"
 sleep 0.3
 fc() { curl -s --unix-socket "$API" -X "$1" "http://x$2" -H 'Content-Type: application/json' -d "$3"; }
 fc PUT /boot-source "{\"kernel_image_path\":\"$KERNEL\",\"boot_args\":\"console=ttyS0 reboot=k panic=1 pci=off init=/sbin/bks-init ip=$GUEST_IP::$HOST_IP:255.255.255.252::eth0:off\"}"

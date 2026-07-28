@@ -85,7 +85,8 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 ```jsonc
 {
   // Which SandboxProvider new opted-in sessions get.
-  // "local" | "docker" | "daytona" | "e2b" | "box" | "modal" | "lambda-microvm"
+  // "local" | "docker" | "daytona" | "e2b" | "box" | "modal" | "microvm" |
+  // "lambda-microvm"
   "provider": "docker",
 
   // ── Docker provider ────────────────────────────────────────────────
@@ -198,6 +199,14 @@ to `provider: "local"` (today's host behavior). Env override for the path:
     "suspendedDurationSeconds": 3600, // only used with idleSuspendSeconds
     "logGroup": "/aws/lambda/microvms/opensession"
   },
+  // Local Firecracker. Build this credential-free golden separately from the
+  // preview-pool golden; the latter contains an app and may contain app creds.
+  "firecrackerMicrovm": {
+    "enabled": false,
+    "storeDir": "/opt/firecracker/sandbox-store",
+    "indexStart": 64,          // 1..63 are reserved for preview-pool clones
+    "indexEnd": 127
+  },
 
   // How remote sandboxes authenticate `git clone` (they can't mount host
   // creds). "none" = public clone; "https-token" injects the token into the
@@ -216,13 +225,37 @@ to `provider: "local"` (today's host behavior). Env override for the path:
     "maxLive": 2               // max live prewarms across all repos (paid compute)
   },
 
-  // Remote runner bootstrap (first ensure() installs bun + the backstage
-  // runner + claude CLI inside the sandbox — minutes cold):
+  // Remote runner bootstrap. Sandbox-engine models install the full runner +
+  // model CLIs. Other-provider OpenCode models keep their engine/auth on the
+  // host and install only Git/Bun/ripgrep/core workspace tools:
   "runnerBundleUrl": null,     // tarball of the runner bundle (preferred)
   "runnerRepoUrl": null,       // git URL fallback (default: this checkout's origin)
   "runnerSha": null            // pinned ref (default: origin default branch)
 }
 ```
+
+### Local Firecracker MicroVM (host engine, guest workspace)
+
+The `microvm` provider is the local version of the brain/hands split. The
+OpenCode model loop and provider credentials stay on the OpenSession host;
+`opensession-workspace` executes explicit filesystem and command methods
+against a per-session Firecracker guest. It is currently offered only for
+`opencode-other` models.
+
+Build the dedicated control-only golden, then enable it:
+
+```sh
+sudo -n bash deploy/sandbox/microvm/refresh-sandbox-golden.sh \
+  /opt/firecracker/sandbox-store backstage-runner:latest
+```
+
+Do not point this provider at `/opt/firecracker/store`: that is the preview
+pool's app-specific golden. The sandbox golden starts only the structured
+control daemon and contains no seeded app credentials. Clones use COW ext4
+disks and transient systemd scopes, so they survive an OpenSession restart.
+They do not yet survive a host reboot/Firecracker crash; push work regularly.
+Each restored guest is currently 4 vCPU/12 GB, and browser preview ports are
+not exposed yet.
 
 ## Public dial-back ingress (remote providers)
 

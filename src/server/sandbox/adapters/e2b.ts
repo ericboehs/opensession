@@ -43,6 +43,7 @@ import type {
 } from "../provider";
 import {
   bootstrapRemoteSandbox,
+  bootstrapRemoteWorkspaceRuntime,
   findRemoteStateBySession,
   makeRemoteSandbox,
   readRemoteState,
@@ -169,7 +170,11 @@ export class E2bProvider implements SandboxProvider {
 
     const driver = e2bDriver(sbx);
     await driver.ensureStarted();
-    await bootstrapRemoteSandbox(driver, "e2b");
+    if (spec.runtime === "workspace") {
+      await bootstrapRemoteWorkspaceRuntime(driver, "e2b");
+    } else {
+      await bootstrapRemoteSandbox(driver, "e2b");
+    }
     await setupRemoteWorkspace(
       driver,
       cwd,

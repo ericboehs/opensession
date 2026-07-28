@@ -22,6 +22,7 @@ import type {
 import {
   assertDialbackReachable,
   bootstrapRemoteSandbox,
+  bootstrapRemoteWorkspaceRuntime,
   findRemoteStateBySession,
   makeRemoteSandbox,
   readRemoteState,
@@ -343,8 +344,12 @@ export class LambdaMicrovmProvider implements SandboxProvider {
     const driver = lambdaDriver(client, id, info.endpoint);
     try {
       await driver.ensureStarted();
-      await assertDialbackReachable(driver, "lambda-microvm");
-      await bootstrapRemoteSandbox(driver, "lambda-microvm");
+      if (spec.runtime === "workspace") {
+        await bootstrapRemoteWorkspaceRuntime(driver, "lambda-microvm");
+      } else {
+        await assertDialbackReachable(driver, "lambda-microvm");
+        await bootstrapRemoteSandbox(driver, "lambda-microvm");
+      }
       await setupRemoteWorkspace(
         driver,
         cwd,

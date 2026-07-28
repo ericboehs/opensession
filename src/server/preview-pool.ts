@@ -41,6 +41,7 @@ import { $ } from "bun";
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   statSync,
@@ -360,6 +361,27 @@ function mvmGoldenReady(): boolean {
   return existsSync(`${MVM_STORE}/golden.vmstate`) && existsSync(`${MVM_STORE}/golden.mem`);
 }
 
+/** Clone indexes owned by the general `microvm` sandbox provider. Preview
+ * allocation and orphan GC share the same host-level Firecracker namespace,
+ * even though their goldens/stores are deliberately separate. */
+function sandboxMicrovmIndexes(): Set<number> {
+  const indexes = new Set<number>();
+  const dir = join(OPENSESSION_CHATS_DIR, "sandboxes");
+  try {
+    for (const file of readdirSync(dir)) {
+      if (!file.startsWith("microvm-") || !file.endsWith(".json")) continue;
+      try {
+        const state = JSON.parse(readFileSync(join(dir, file), "utf-8")) as {
+          sandboxId?: string;
+        };
+        const match = /^microvm-(\d+)$/.exec(state.sandboxId || "");
+        if (match) indexes.add(Number(match[1]));
+      } catch {}
+    }
+  } catch {}
+  return indexes;
+}
+
 async function sudoRun(args: string[], timeoutMs = 120_000): Promise<{ ok: boolean; out: string }> {
   const proc = Bun.spawn(["sudo", "-n", ...args], { stdout: "pipe", stderr: "pipe" });
   const killer = setTimeout(() => proc.kill(9), timeoutMs);
@@ -424,7 +446,7 @@ async function spawnMicrovmClone(repo: Repo): Promise<PoolContainer | null> {
   // spawns picked the same index and the second's destroy-first create
   // killed the first's live VM (2026-07-24).
   const reserved = ((globalThis as { __mvmReservedIdx?: Set<number> }).__mvmReservedIdx ??= new Set<number>());
-  const used = new Set<number>(reserved);
+  const used = new Set<number>([...reserved, ...sandboxMicrovmIndexes()]);
   for (const rid of Object.keys(configuredRepos())) {
     for (const cc of Object.values(readState(rid).containers)) {
       if (cc.mvmIdx != null) used.add(cc.mvmIdx);
@@ -1792,7 +1814,7 @@ export function resumePoolSyncIfNeeded(worktreeDir: string): void {
  * Crash-safe cleanup — spawn/destroy failures at any step can strand these.
  */
 async function gcMicrovmOrphans(): Promise<void> {
-  const known = new Set<number>();
+  const known = sandboxMicrovmIndexes();
   for (const rid of Object.keys(configuredRepos())) {
     for (const c of Object.values(readState(rid).containers)) {
       if (c.mvmIdx != null) known.add(c.mvmIdx);
