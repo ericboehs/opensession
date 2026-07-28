@@ -44,6 +44,7 @@ jobs:
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
       OS1_DERIVED_DATA: ${{ github.workspace }}/.xcode-derived-data/macos
+      OS1_COMPILATION_CACHE: ${{ github.workspace }}/.xcode-compilation-cache/macos
     steps:
       - uses: actions/checkout@v4
 
@@ -59,17 +60,23 @@ jobs:
           )
           echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
 
-      # The universal archive otherwise recompiles SwiftStreamingMarkdown and
-      # its transitive packages for both architectures on every fresh runner.
-      - name: Restore Xcode build cache
-        id: build-cache
+      - name: Restore Swift packages
+        id: package-cache
         uses: actions/cache/restore@v4
         with:
-          path: |
-            ${{ env.OS1_DERIVED_DATA }}/Build
-            ${{ env.OS1_DERIVED_DATA }}/SourcePackages
-            ${{ env.OS1_DERIVED_DATA }}/ModuleCache.noindex
-          key: os1-dd-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}
+          path: ${{ env.OS1_DERIVED_DATA }}/SourcePackages
+          key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('os1-ios/project.yml') }}
+
+      # The universal archive recompiles every dependency for arm64 and x86_64.
+      # Xcode 26's CAS reuses those compiler outputs across clean archives.
+      - name: Restore Xcode compilation cache
+        id: compilation-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.OS1_COMPILATION_CACHE }}
+          key: os1-cas-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}-${{ github.sha }}
+          restore-keys: |
+            os1-cas-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}-
 
       - name: Build signing keychain (both identities, -A key access)
         env:
@@ -134,8 +141,7 @@ jobs:
 
       - name: Generate Xcode project
         run: |
-          echo "Xcode build cache hit: ${{ steps.build-cache.outputs.cache-hit }}"
-          echo "Xcode build cache hit: ${{ steps.build-cache.outputs.cache-hit }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Compilation cache exact hit: ${{ steps.compilation-cache.outputs.cache-hit }}" >> "$GITHUB_STEP_SUMMARY"
           xcodegen generate
 
       - name: Archive
@@ -149,6 +155,9 @@ jobs:
             -derivedDataPath "$OS1_DERIVED_DATA" \
             -archivePath "$RUNNER_TEMP/OS1Mac.xcarchive" \
             OTHER_CODE_SIGN_FLAGS="--keychain $OS1_KEYCHAIN" \
+            COMPILATION_CACHE_ENABLE_CACHING=YES \
+            SWIFT_ENABLE_COMPILE_CACHE=YES \
+            COMPILATION_CACHE_CAS_PATH="$OS1_COMPILATION_CACHE" \
             COMPILER_INDEX_STORE_ENABLE=NO \
             CURRENT_PROJECT_VERSION=${{ steps.build.outputs.number }}
           # Manual signing (style/identity/profile) lives in project.yml's
@@ -183,6 +192,20 @@ jobs:
             -exportPath "$RUNNER_TEMP/export" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
 
+      - name: Save Swift packages
+        if: steps.package-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.OS1_DERIVED_DATA }}/SourcePackages
+          key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('os1-ios/project.yml') }}
+
+      - name: Save Xcode compilation cache
+        if: steps.compilation-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.OS1_COMPILATION_CACHE }}
+          key: os1-cas-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}-${{ github.sha }}
+
       - name: Upload to TestFlight
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -190,22 +213,6 @@ jobs:
         run: |
           xcrun altool --upload-app -f "$RUNNER_TEMP/export/OS1.pkg" -t macos \
             --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
-
-      - name: Remove signed products from build cache
-        if: steps.build-cache.outputs.cache-hit != 'true'
-        run: find "$OS1_DERIVED_DATA/Build" -type d -name '*.app' -prune -exec rm -rf {} +
-
-      # This package/toolchain key is deliberately stable: app sources still
-      # rebuild, while unchanged dependency artifacts avoid a fresh compile.
-      - name: Save Xcode build cache
-        if: steps.build-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ${{ env.OS1_DERIVED_DATA }}/Build
-            ${{ env.OS1_DERIVED_DATA }}/SourcePackages
-            ${{ env.OS1_DERIVED_DATA }}/ModuleCache.noindex
-          key: os1-dd-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}
 
   cooldown:
     needs: testflight
