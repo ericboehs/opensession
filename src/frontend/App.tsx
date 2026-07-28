@@ -341,6 +341,13 @@ function EmbeddedSettingsApp() {
 		embeddedSettingsSection,
 	);
 	const [selectedToolId, setSelectedToolId] = useState<string>();
+	useEffect(() => {
+		const splash = document.getElementById("splash");
+		if (!splash) return;
+		splash.classList.add("splash-hide");
+		const timeout = setTimeout(() => splash.remove(), 400);
+		return () => clearTimeout(timeout);
+	}, []);
 
 	const selectSection = (next?: SettingsSectionKey) => {
 		setSection(next);
