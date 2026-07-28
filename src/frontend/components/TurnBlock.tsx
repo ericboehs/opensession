@@ -3,7 +3,6 @@ import type { TranscriptEntry } from "../lib/types";
 import {
   ToolCallBlock,
   ToolGlyph,
-  canonicalToolName,
   toolFamily,
   toolDisplayName,
   toolSummary,
@@ -17,6 +16,7 @@ import {
   getTurnActivityPref,
   onTurnActivityChanged,
 } from "../lib/turn-activity";
+import { collectTouchedFiles } from "./TurnFooter";
 
 interface Props {
   /** The folded part of one assistant turn: tool_use + intermediate assistant
@@ -110,41 +110,12 @@ export const TurnBlock = React.memo(function TurnBlock({
       if (familyReps.length >= 6) break;
     }
   }
-  const touchedPaths = new Set<string>();
-  for (const tool of tools) {
-    if (!tool.toolInput || typeof tool.toolInput !== "object") continue;
-    const input = tool.toolInput as Record<string, unknown>;
-    const filePath =
-      typeof input.file_path === "string"
-        ? input.file_path
-        : typeof input.filePath === "string"
-          ? input.filePath
-          : null;
-    const direct =
-      filePath ??
-      (typeof input.path === "string" &&
-      ["Edit", "Write", "Read", "FileChange"].includes(canonicalToolName(tool.toolName))
-        ? input.path
-        : null);
-    if (direct) touchedPaths.add(direct);
-    if (Array.isArray(input.changes)) {
-      for (const change of input.changes) {
-        if (
-          change &&
-          typeof change === "object" &&
-          typeof (change as { path?: unknown }).path === "string"
-        ) {
-          touchedPaths.add((change as { path: string }).path);
-        }
-      }
-    }
-  }
+  const editedFiles = collectTouchedFiles(tools);
+  const editedFilesLabel = summarizeEditedFiles(editedFiles.map((file) => file.path));
 
   const countsLabel = [
     tools.length > 0 &&
       `${tools.length} step${tools.length === 1 ? "" : "s"}`,
-    touchedPaths.size > 0 &&
-      `${touchedPaths.size} file${touchedPaths.size === 1 ? "" : "s"}`,
     tools.length === 0 &&
       messages.length > 0 &&
       `${messages.length} message${messages.length === 1 ? "" : "s"}`,
@@ -213,7 +184,12 @@ export const TurnBlock = React.memo(function TurnBlock({
             · {failures} failed
           </span>
         )}
-        {live && !expanded && lastTool && (
+        {!expanded && editedFilesLabel && (
+          <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-faint">
+            · {editedFilesLabel}
+          </span>
+        )}
+        {live && !expanded && lastTool && !editedFilesLabel && (
           <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-faint">
             {toolDisplayName(lastTool.toolName)}:{" "}
             {toolSummary(
@@ -273,6 +249,12 @@ export const TurnBlock = React.memo(function TurnBlock({
     </div>
   );
 }, turnBlockPropsEqual);
+
+export function summarizeEditedFiles(paths: string[]): string {
+  const names = paths.map((path) => path.split(/[\\/]/).pop() || path);
+  const shown = names.slice(0, 2).join(", ");
+  return names.length > 2 ? `${shown} +${names.length - 2}` : shown;
+}
 
 /** An intermediate assistant note inside the fold — body only, no label. */
 function TurnMessage({
