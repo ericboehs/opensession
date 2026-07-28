@@ -1784,7 +1784,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 									cwd: wtPath,
 									user,
 									images,
-									mcpServers: createMcpServers ?? [],
+									mcpServers: (createMcpServers?.length ? createMcpServers : feedMcpServers) ?? [],
 									isAutomationSession: false,
 								})
 							: null;
@@ -1798,21 +1798,23 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					for await (const event of sandboxOpeningRun ?? runAgent({
 						prompt: openingPrompt,
 						cwd: wtPath,
-						mode: isAsk ? "ask" : "code",
+						mode: isScratch ? ("scratch" as const) : isAsk ? ("ask" as const) : ("code" as const),
 						model,
 						effort: createEffort,
 						fastMode: createFastMode,
 						accountId: createAccountId,
 						fallbackModel: interactiveFallbackModel(model),
-						mcpServers: createMcpServers,
+						// Feed workspaces default to their feed's scoped list (least
+						// privilege) — same value the session file persists above.
+						mcpServers: createMcpServers?.length ? createMcpServers : feedMcpServers,
 						reposNote:
 							[
 								buildPlanFirstNote({
-									mode: isAsk ? "ask" : "code",
+									mode: isScratch ? ("scratch" as const) : isAsk ? ("ask" as const) : ("code" as const),
 									planFirst: msg.planFirst === true,
 								}),
 								buildBranchNote({
-									mode: isAsk ? "ask" : "code",
+									mode: isScratch ? ("scratch" as const) : isAsk ? ("ask" as const) : ("code" as const),
 									branch: sessionBranch,
 									worktreeDir: wtPath,
 								}),
