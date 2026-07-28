@@ -393,27 +393,6 @@ a {
 	color: var(--accent);
 }
 
-/* Auto-hiding scrollbars. Styling ::-webkit-scrollbar at all opts Chrome out
-   of native overlay scrollbars, so it parks a permanent grey thumb in every
-   overflowing panel (macOS Safari/Chrome would otherwise fade it away). Keep
-   the thin branded bar but make the thumb transparent until you hover (or
-   interact with) the scroll region — hover bubbles up from the content, so the
-   bar appears whenever the pointer is over that panel and hides when it leaves. */
-::-webkit-scrollbar {
-	width: 8px;
-	height: 8px;
-}
-::-webkit-scrollbar-thumb {
-	background: transparent;
-	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
-}
-::-webkit-scrollbar-track {
-	background: transparent;
-}
-:hover::-webkit-scrollbar-thumb {
-	background: var(--border-strong);
-}
-
 /* ── App chrome ──────────────────────────────────────────── */
 
 .app {
