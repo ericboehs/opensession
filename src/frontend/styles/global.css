@@ -838,6 +838,36 @@ html.wco .app-body.sidebar-collapsed
 	display: flex;
 	flex: 1;
 	min-height: 0;
+	background: var(--bg-raised);
+}
+
+/* The detail pane and its optional right workspace panel form one inset object.
+   The sidebar remains unchanged; only a narrow strip of its raised app surface
+   shows around the workspace at the top, right and bottom. Platform-specific
+   base radii follow the host window language, while --rf/--cs keep the app's
+   existing round-vs-squircle treatment. */
+.workspace-shell {
+	--workspace-shell-radius: 16px;
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	margin: 6px 6px 6px 0;
+	overflow: hidden;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: calc(var(--workspace-shell-radius) * var(--rf));
+	corner-shape: var(--cs);
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+html[data-platform="mac"] .workspace-shell {
+	--workspace-shell-radius: 18px;
+}
+html[data-platform="windows"] .workspace-shell {
+	--workspace-shell-radius: 12px;
+}
+.app-body.sidebar-collapsed .workspace-shell {
+	margin-left: 6px;
 }
 
 .hamburger {
@@ -862,7 +892,6 @@ html.wco .app-body.sidebar-collapsed
 	--sidebar-icon-left: 16px;
 	width: var(--sidebar-w, 252px);
 	flex-shrink: 0;
-	border-right: 1px solid var(--border);
 	background: var(--bg-raised);
 	display: flex;
 	flex-direction: column;
@@ -11638,6 +11667,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.app-body {
 		position: relative;
 		overflow: hidden;
+		background: var(--bg);
+	}
+
+	/* Phones keep their existing edge-to-edge page stack. Dissolving the desktop
+	   shell also restores .detail-pane and the fixed panel portal to the layout
+	   relationship their mobile positioning rules expect. */
+	.workspace-shell {
+		display: contents;
 	}
 
 	.sidebar-container {
@@ -12023,17 +12060,13 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.session-info-status .pr-bar-extra:last-child {
 		border-bottom: none;
 	}
-	.session-info-tabs {
-		margin: 0 0 2px;
-		padding: 4px 12px 8px;
-		border-bottom: 1px solid var(--border);
-		background: var(--bg);
-	}
 	.session-info-content {
 		min-height: 320px;
 	}
-	.session-info-content > .diff-panel {
-		min-height: 420px;
+	.session-info-section {
+		margin-top: 8px;
+		padding: 12px;
+		border-top: 1px solid var(--border);
 	}
 
 	/* Static, full-width settings list on the session info page. */

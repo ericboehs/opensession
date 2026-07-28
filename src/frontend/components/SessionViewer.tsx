@@ -1519,9 +1519,7 @@ export function SessionViewer({
 	// DiffPanel (passed in as `diff=` below so they poll once, not twice). Parked
 	// unless either workspace surface is open on a code session.
 	const diffState = useSessionDiff(session.id, {
-		enabled:
-			hasWorkspace &&
-			(panelOpen || (infoPageOpen && panelTab === "changes")),
+		enabled: hasWorkspace && panelOpen,
 		isRunning: isBusy,
 	});
 	const changesFileCount = React.useMemo(
@@ -3302,7 +3300,6 @@ export function SessionViewer({
 	useEffect(() => {
 		if (!infoPageOpen) {
 			setInfoPageScrolled(false);
-			if (isPhone) setShellOpened(false);
 			return;
 		}
 		const root = infoPageRef.current;
@@ -3341,7 +3338,6 @@ export function SessionViewer({
 		const toggle = () =>
 			setInfoPageOpen((open) => {
 				if (!open) {
-					setPanelTab("info");
 					setInfoPageScrolled(false);
 				}
 				return !open;
@@ -4165,271 +4161,147 @@ export function SessionViewer({
 										/>
 									</div>
 								)}
-								<div
-									className="panel-tabs session-info-tabs"
-									role="tablist"
-									aria-label="Workspace details"
-									onKeyDown={(event) => {
-										if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
-											return;
-										const tabs = Array.from(
-											event.currentTarget.querySelectorAll<HTMLButtonElement>(
-												'[role="tab"]',
-											),
-										);
-										const current = tabs.indexOf(document.activeElement as HTMLButtonElement);
-										if (current < 0 || tabs.length === 0) return;
-										event.preventDefault();
-										const next =
-											event.key === "Home"
-												? 0
-												: event.key === "End"
-													? tabs.length - 1
-													: (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) %
-														tabs.length;
-										tabs[next]?.focus();
-										tabs[next]?.click();
-									}}
-								>
-									{toolEvidence && (
-										<button
-											className={`panel-tab ${panelTab === "evidence" ? "active" : ""}`}
-											onClick={() => selectPanelTab("evidence")}
-											role="tab"
-											aria-selected={panelTab === "evidence"}
-											tabIndex={panelTab === "evidence" ? 0 : -1}
-										>
-											Evidence
-										</button>
-									)}
-									<button
-										className={`panel-tab ${panelTab === "info" ? "active" : ""}`}
-										onClick={() => selectPanelTab("info")}
-										role="tab"
-										aria-selected={panelTab === "info"}
-										tabIndex={panelTab === "info" ? 0 : -1}
-									>
-										Info
-									</button>
-									{hasWorkspace && (
-										<>
-											<button
-												className={`panel-tab ${panelTab === "changes" ? "active" : ""}`}
-												onClick={() => selectPanelTab("changes")}
-												role="tab"
-												aria-selected={panelTab === "changes"}
-												tabIndex={panelTab === "changes" ? 0 : -1}
-											>
-												Changes
-												{changesFileCount ? (
-													<span className="panel-tab-count">{changesFileCount}</span>
-												) : null}
-											</button>
-											<button
-												className={`panel-tab ${panelTab === "shell" ? "active" : ""}`}
-												onClick={() => selectPanelTab("shell")}
-												role="tab"
-												aria-selected={panelTab === "shell"}
-												tabIndex={panelTab === "shell" ? 0 : -1}
-											>
-												Terminal
-											</button>
-										</>
-									)}
-									{(hasWorkspace || workflowRuns.length > 0 || subagents.length > 0) && (
-										<button
-											className={`panel-tab ${panelTab === "workflows" ? "active" : ""}`}
-											onClick={() => selectPanelTab("workflows")}
-											role="tab"
-											aria-selected={panelTab === "workflows"}
-											tabIndex={panelTab === "workflows" ? 0 : -1}
-										>
-											Agents
-											{workflowRuns.some((run) => run.status === "running") ||
-											subagents.some((agent) => agent.status === "running") ? (
-												<span className="panel-tab-dot animate-pulse bg-green" />
-											) : workflowRuns.length + subagents.length > 0 ? (
-												<span className="panel-tab-count">
-													{workflowRuns.length + subagents.length}
-												</span>
-											) : null}
-										</button>
-									)}
-									{sessionReports.length > 0 && (
-										<button
-											className={`panel-tab ${panelTab === "reports" ? "active" : ""}`}
-											onClick={() => selectPanelTab("reports")}
-											role="tab"
-											aria-selected={panelTab === "reports"}
-											tabIndex={panelTab === "reports" ? 0 : -1}
-										>
-											Reports
-											<span className="panel-tab-count">{sessionReports.length}</span>
-										</button>
-									)}
-								</div>
-								<div
-									className="session-info-content"
-									role="tabpanel"
-									aria-label={`${panelTab === "workflows" ? "Agents" : panelTab} details`}
-								>
-									{panelTab === "evidence" && toolEvidence ? (
-										<ToolEvidencePanel
-											evidence={toolEvidence}
+								<div className="session-info-content">
+									<div className="session-info-list">
+										<div className="session-info-preview-actions">
+											<PreviewButton
+												session={session}
+												onAttachImage={(img) =>
+													setImages((prev) => [...prev, img])
+												}
+												onStatusChange={setPreviewStatus}
+												onOpenTab={
+													onOpenPreviewTab
+														? () => {
+															setInfoPageOpen(false);
+															onOpenPreviewTab();
+														}
+														: undefined
+												}
+											/>
+											<StagingLink session={session} refreshTick={gitRefreshTick} />
+										</div>
+										{hasWorkspace && (
+											<RepoBar
+												sessionId={session.id}
+												primaryRepo={session.repo || "tella-fusion"}
+												branch={session.branch}
+												initialAttached={session.attachedRepos || []}
+												variant="menu-row"
+											/>
+										)}
+										{session.source === "backstage" && models.length > 0 && (
+											<ModelMenuRow
+												models={models}
+												model={model}
+												defaultModel={defaultModel}
+												onChange={handleModelChange}
+												prettyLabel={prettyModel}
+											/>
+										)}
+									</div>
+									<div className="session-info-overview">
+										<WorkspaceInfo
 											sessionId={session.id}
-											onOpenChanges={
-												hasWorkspace ? () => selectPanelTab("changes") : undefined
-											}
+											workspaceId={session.projectId || null}
+											workspaceName={workspaceName}
+											chats={(workspaceChats?.length ? workspaceChats : [session]).map(
+												(s) => ({
+													id: s.id,
+													title: s.title,
+													createdAt: s.createdAt || "",
+													startedBy: s.startedBy,
+												}),
+											)}
+											repo={hasWorkspace ? session.repo || "tella-fusion" : undefined}
+											prState={hasWorkspace ? session.prState : undefined}
+											refreshTick={gitRefreshTick}
+											sandbox={session.sandbox}
+											reviewRequest={effectiveReview?.req ?? null}
+											reviewRequestSessionId={effectiveReview?.ownerId}
+											reviewAcceptedFromPr={effectiveReview?.acceptedFromPr}
+											onReviewChange={onReviewChange}
+											send={connected ? send : undefined}
+											assets={assetFiles}
+											onOpenAsset={(path) => {
+												setInfoPageOpen(false);
+												setSelectedAssetPath(path);
+												onOpenAssets?.();
+											}}
+											onOpenTab={(tab) => {
+												setSubagentStack([]);
+												if (tab === "changes" || tab === "pr") {
+													setInfoPageOpen(false);
+													onOpenReview?.();
+													return;
+												}
+												if (tab === "staging") {
+													setInfoPageOpen(false);
+													onOpenStaging?.();
+													return;
+												}
+												if (tab === "assets") {
+													setInfoPageOpen(false);
+													onOpenAssets?.();
+													return;
+												}
+												setInfoPageOpen(false);
+												selectPanelTab(tab);
+												setPanelOpen(true);
+											}}
+											onAddToInput={(text) => {
+												setInfoPageOpen(false);
+												setComposerPrefill((prev) => ({
+													seq: (prev?.seq ?? 0) + 1,
+													text,
+												}));
+											}}
+											onOpenSession={(id) => {
+												setInfoPageOpen(false);
+												onOpenSession?.(id);
+											}}
+											liveMediaCount={liveMediaCount}
+											liveMedia={liveOverviewMedia}
 										/>
-									) : panelTab === "info" ? (
-										<>
-											<div className="session-info-list">
-												<div className="session-info-preview-actions">
-													<PreviewButton
-														session={session}
-														onAttachImage={(img) =>
-															setImages((prev) => [...prev, img])
-														}
-														onStatusChange={setPreviewStatus}
-														onOpenTab={
-															onOpenPreviewTab
-																? () => {
-																	setInfoPageOpen(false);
-																	onOpenPreviewTab();
-																}
-																: undefined
-														}
-													/>
-													<StagingLink
-														session={session}
-														refreshTick={gitRefreshTick}
-													/>
-												</div>
-												{hasWorkspace && (
-													<RepoBar
-														sessionId={session.id}
-														primaryRepo={session.repo || "tella-fusion"}
-														branch={session.branch}
-														initialAttached={session.attachedRepos || []}
-														variant="menu-row"
-													/>
-												)}
-												{session.source === "backstage" && models.length > 0 && (
-													<ModelMenuRow
-														models={models}
-														model={model}
-														defaultModel={defaultModel}
-														onChange={handleModelChange}
-														prettyLabel={prettyModel}
-													/>
-												)}
-											</div>
-											<div className="session-info-overview">
-												<WorkspaceInfo
-													sessionId={session.id}
-													workspaceId={session.projectId || null}
-													workspaceName={workspaceName}
-													chats={(workspaceChats?.length ? workspaceChats : [session]).map(
-														(s) => ({
-															id: s.id,
-															title: s.title,
-															createdAt: s.createdAt || "",
-															startedBy: s.startedBy,
-														}),
-													)}
-													repo={hasWorkspace ? session.repo || "tella-fusion" : undefined}
-													prState={hasWorkspace ? session.prState : undefined}
-													refreshTick={gitRefreshTick}
-													sandbox={session.sandbox}
-													reviewRequest={effectiveReview?.req ?? null}
-													reviewRequestSessionId={effectiveReview?.ownerId}
-													reviewAcceptedFromPr={effectiveReview?.acceptedFromPr}
-													onReviewChange={onReviewChange}
-													send={connected ? send : undefined}
-													assets={assetFiles}
-													onOpenAsset={(path) => {
-														setInfoPageOpen(false);
-														setSelectedAssetPath(path);
-														onOpenAssets?.();
-													}}
-													onOpenTab={(tab) => {
-														setSubagentStack([]);
-														if (tab === "changes") {
-															selectPanelTab("changes");
-															return;
-														}
-														// Review, Staging and Assets are full-width App views.
-														if (tab === "pr") {
+									</div>
+									{toolEvidence && (
+										<div className="session-info-section">
+											<ToolEvidencePanel
+												evidence={toolEvidence}
+												sessionId={session.id}
+												onOpenChanges={
+													hasWorkspace
+														? () => {
 															setInfoPageOpen(false);
 															onOpenReview?.();
-															return;
 														}
-														if (tab === "staging") {
-															setInfoPageOpen(false);
-															onOpenStaging?.();
-															return;
-														}
-														if (tab === "assets") {
-															setInfoPageOpen(false);
-															onOpenAssets?.();
-															return;
-														}
-														selectPanelTab(tab);
-													}}
-													onAddToInput={(text) => {
-														setInfoPageOpen(false);
-														setComposerPrefill((prev) => ({
-															seq: (prev?.seq ?? 0) + 1,
-															text,
-														}));
-													}}
-													onOpenSession={(id) => {
-														setInfoPageOpen(false);
-														onOpenSession?.(id);
-													}}
-													liveMediaCount={liveMediaCount}
-													liveMedia={liveOverviewMedia}
-												/>
-											</div>
-										</>
-									) : waitingForWorkspace &&
-									  (panelTab === "changes" || panelTab === "shell") ? (
-										<WorkspaceWaiting detail="Waiting for the workspace to be ready." />
-									) : panelTab === "changes" ? (
-										<DiffPanel
-											sessionId={session.id}
-											isRunning={isBusy}
-											canSend={connected && !isBusy && !noEngine}
-											send={send}
-											diff={diffState}
-										/>
-									) : panelTab === "workflows" ? (
-										<WorkflowPanel
-											sessionId={session.id}
-											runs={workflowRuns}
-											onCancel={cancelWorkflowRun}
-											subagents={subagents}
-											onOpenSubagent={(agentId, label) => {
-												setInfoPageOpen(false);
-												openSubagent(agentId, label);
-											}}
-										/>
-									) : panelTab === "reports" ? (
-										<SessionReportsPanel
-											reports={sessionReports}
-											onOpenNewSession={onOpenNewSession}
-										/>
-									) : null}
-									{hasWorkspace && !waitingForWorkspace && shellOpened ? (
-										<div className={panelTab === "shell" ? "h-full min-h-[420px]" : "hidden"}>
-											<ShellPanel
-												sessionId={session.id}
-												send={send}
-												addHandler={addHandler}
-												visible={panelTab === "shell"}
+														: undefined
+												}
 											/>
 										</div>
-									) : null}
+									)}
+									{(workflowRuns.length > 0 || subagents.length > 0) && (
+										<div className="session-info-section">
+											<WorkflowPanel
+												sessionId={session.id}
+												runs={workflowRuns}
+												onCancel={cancelWorkflowRun}
+												subagents={subagents}
+												onOpenSubagent={(agentId, label) => {
+													setInfoPageOpen(false);
+													openSubagent(agentId, label);
+												}}
+											/>
+										</div>
+									)}
+									{sessionReports.length > 0 && (
+										<div className="session-info-section">
+											<SessionReportsPanel
+												reports={sessionReports}
+												onOpenNewSession={onOpenNewSession}
+											/>
+										</div>
+									)}
 								</div>
 							</div>,
 							document.body,
