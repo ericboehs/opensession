@@ -20,17 +20,24 @@ import type {
 import {
   bootstrapRemoteWorkspaceRuntime,
   findRemoteStateBySession,
+  listRemoteStates,
   makeRemoteSandbox,
   readRemoteState,
   remoteCloneUrl,
   removeRemoteState,
   setupRemoteWorkspace,
   touchRemoteState,
+  warmRemoteWorkspace,
   withRemoteEnsureLock,
   writeRemoteState,
   type RemoteDriver,
   type RemoteExecOpts,
 } from "./bootstrap";
+import {
+  claimPrewarmOrWait,
+  discardClaimedPrewarm,
+  type PrewarmAdapter,
+} from "../prewarm";
 
 const SCRIPTS = `${process.cwd()}/deploy/sandbox/microvm`;
 const CONTROL_PORT = 8080;
@@ -211,6 +218,42 @@ async function destroyClone(idx: number, storeDir: string): Promise<void> {
   }
 }
 
+async function allocateClone(
+  storeDir: string,
+  indexStart: number,
+  indexEnd: number,
+): Promise<number> {
+  return withRemoteEnsureLock("microvm", "__allocate__", async () => {
+    for (let candidate = indexStart; candidate <= indexEnd; candidate++) {
+      const result = await run(
+        [
+          "sudo",
+          "-n",
+          "bash",
+          `${SCRIPTS}/clone.sh`,
+          "create",
+          String(candidate),
+          storeDir,
+        ],
+        300_000,
+      );
+      if (result.exitCode === 0) return candidate;
+      if (
+        result.exitCode === 3 ||
+        /already has a live VM/i.test(result.stderr + result.stdout)
+      ) {
+        continue;
+      }
+      throw new Error(
+        `creating Firecracker MicroVM ${candidate} failed: ${(result.stderr || result.stdout).trim().slice(-1000)}`,
+      );
+    }
+    throw new Error(
+      `no free Firecracker MicroVM clone index in ${indexStart}..${indexEnd}`,
+    );
+  });
+}
+
 export class MicrovmProvider implements SandboxProvider {
   readonly id = "microvm" as const;
 
@@ -235,11 +278,9 @@ export class MicrovmProvider implements SandboxProvider {
     let previous = findRemoteStateBySession(this.id, spec.sessionId);
     const repo = getRepo(spec.repo || previous?.repoId);
     const branch = spec.branch || previous?.branch || repo.defaultBranch;
-    // The clean golden is built from backstage-runner, whose runner bundle
-    // already occupies the host checkout's absolute path (without .git).
-    // Never clone the user's repo over that payload; MicroVM workspaces have a
-    // guest-only namespace and the Sandbox handle reports that real cwd to the
-    // external engine.
+    // Keep workspaces in a guest-only namespace. The minimal golden deliberately
+    // has no runner checkout, and the Sandbox handle reports this real cwd to
+    // the host-side engine.
     const cwd = previous?.cwd || workspacePath(spec.sessionId);
 
     let idx = previous ? indexFromId(previous.sandboxId) : null;
@@ -256,36 +297,34 @@ export class MicrovmProvider implements SandboxProvider {
 
     let created = false;
     if (idx == null) {
-      idx = await withRemoteEnsureLock(this.id, "__allocate__", async () => {
-        for (let candidate = cfg.indexStart; candidate <= cfg.indexEnd; candidate++) {
-          const result = await run(
-            [
-              "sudo",
-              "-n",
-              "bash",
-              `${SCRIPTS}/clone.sh`,
-              "create",
-              String(candidate),
-              cfg.storeDir,
-            ],
-            300_000,
-          );
-          if (result.exitCode === 0) return candidate;
-          if (
-            result.exitCode === 3 ||
-            /already has a live VM/i.test(result.stderr + result.stdout)
-          ) {
-            continue;
+      const claim = await claimPrewarmOrWait(this.id, repo.id, spec.sessionId);
+      if (claim) {
+        const candidate = indexFromId(claim.sandboxId);
+        if (candidate != null) {
+          try {
+            await driverFor(candidate).ensureStarted();
+            idx = candidate;
+            created = true;
+            console.log(
+              `[sandbox:microvm] adopted prewarmed clone ${claim.sandboxId} for ${spec.sessionId}`,
+            );
+          } catch (error) {
+            console.warn(
+              `[sandbox:microvm] prewarm adoption failed (cold-creating):`,
+              error,
+            );
+            discardClaimedPrewarm(this.id, claim.sandboxId);
           }
-          throw new Error(
-            `creating Firecracker MicroVM ${candidate} failed: ${(result.stderr || result.stdout).trim().slice(-1000)}`,
-          );
+        } else {
+          discardClaimedPrewarm(this.id, claim.sandboxId);
         }
-        throw new Error(
-          `no free Firecracker MicroVM clone index in ${cfg.indexStart}..${cfg.indexEnd}`,
-        );
-      });
+      }
+    }
+    if (idx == null) {
+      idx = await allocateClone(cfg.storeDir, cfg.indexStart, cfg.indexEnd);
       created = true;
+    }
+    if (created) {
       writeRemoteState({
         sandboxId: sandboxId(idx),
         provider: this.id,
@@ -385,3 +424,62 @@ export class MicrovmProvider implements SandboxProvider {
     removeRemoteState(this.id, id);
   }
 }
+
+// ── Warm-on-typing workspace prewarm hooks ──────────────────────────────────
+
+export const microvmPrewarmAdapter: PrewarmAdapter = {
+  async create(labels) {
+    const cfg = config();
+    const key = labels["backstage.prewarm.key"];
+    if (!key?.startsWith("microvm:")) {
+      throw new Error(`invalid MicroVM prewarm key: ${key || "(missing)"}`);
+    }
+    const repoId = key.slice("microvm:".length);
+    const idx = await allocateClone(cfg.storeDir, cfg.indexStart, cfg.indexEnd);
+    const id = sandboxId(idx);
+    try {
+      writeRemoteState({
+        sandboxId: id,
+        provider: "microvm",
+        sessionId: `__prewarm__:${key}`,
+        cwd: workspacePath(`prewarm-${idx}`),
+        repoId,
+        createdAt: new Date().toISOString(),
+        lastActivityAt: new Date().toISOString(),
+      });
+      return { sandboxId: id, driver: driverFor(idx) };
+    } catch (error) {
+      await destroyClone(idx, cfg.storeDir).catch(() => {});
+      removeRemoteState("microvm", id);
+      throw error;
+    }
+  },
+
+  async prepare(driver, repo, label) {
+    await driver.ensureStarted();
+    await bootstrapRemoteWorkspaceRuntime(microvmBootstrapDriver(driver), label);
+    await warmRemoteWorkspace(driver, repo, label, { installDeps: false });
+  },
+
+  async destroy(id) {
+    const idx = indexFromId(id);
+    if (idx == null) return;
+    const cfg = sandboxConfig().firecrackerMicrovm;
+    await destroyClone(idx, cfg?.storeDir || "/opt/firecracker/sandbox-store");
+    removeRemoteState("microvm", id);
+  },
+
+  async listPrewarmed() {
+    const out: Array<{ id: string; key: string }> = [];
+    for (const state of listRemoteStates("microvm")) {
+      if (!state.sessionId.startsWith("__prewarm__:")) continue;
+      const idx = indexFromId(state.sandboxId);
+      if (idx == null || !(await unitRunning(idx))) continue;
+      out.push({
+        id: state.sandboxId,
+        key: state.sessionId.slice("__prewarm__:".length),
+      });
+    }
+    return out;
+  },
+};

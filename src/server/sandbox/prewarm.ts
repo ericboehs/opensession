@@ -1,20 +1,16 @@
 /**
- * Warm-on-typing sandbox PREWARM pool for REMOTE providers (daytona today,
- * e2b when its adapter registers) — the background-agents pattern from
+ * Warm-on-typing sandbox PREWARM pool for sandbox providers (Daytona and the
+ * local Firecracker MicroVM today) — the background-agents pattern from
  * docs/sandboxes-plan.md's backlog: "sandbox provisioning starts when the
  * user begins typing".
  *
- * The expensive part of a remote sandbox's first turn is the runner
- * bootstrap (bun + backstage repo + deps + claude CLI — 30-45s+, minutes
- * cold; see adapters/bootstrap.ts). The workspace clone is cheap and can't
- * be prewarmed anyway (the branch doesn't exist until the session does). So:
- * when a user starts typing a new-session prompt with a remote provider
- * selected, the frontend POSTs /api/sandbox/prewarm and this pool creates a
- * sandbox labeled `backstage.prewarm=1` + `backstage.prewarm.key=
- * <provider>:<repoId>` and runs ONLY the runner bootstrap. When the session
- * is actually created, the provider's ensure() calls `claimPrewarm()` and
- * ADOPTS the warmed sandbox — relabels it to the session, then does just the
- * workspace clone — cutting first-turn sandbox latency to a few seconds.
+ * Preparation is provider-specific. Daytona warms its sandbox runner; the
+ * local MicroVM restores the credential-free workspace golden and pre-clones
+ * the selected repo without installing dependencies. The branch need not
+ * exist yet: adoption moves the default-branch clone into the session cwd,
+ * refreshes it, then creates the requested branch. The frontend POSTs
+ * /api/sandbox/prewarm on first input; session creation atomically adopts the
+ * prepared sandbox instead of creating a racing sibling.
  *
  * Paid-compute discipline (this pool creates real remote sandboxes):
  *  - keyed by `provider:repoId`; a live prewarm per key is reused, never
@@ -113,6 +109,13 @@ export interface PrewarmAdapter {
   /** Provider-side sandboxes still carrying PREWARM_LABEL, with their
    *  PREWARM_KEY_LABEL (orphan audit — the key scopes who may reap). */
   listPrewarmed(): Promise<Array<{ id: string; key: string }>>;
+  /** Provider-specific preparation. Omitted means the legacy full-runner
+   * bootstrap, followed by the optional warm-preview workspace clone. */
+  prepare?(
+    driver: RemoteDriver,
+    repo: (typeof REPOS)[string],
+    label: string,
+  ): Promise<void>;
 }
 
 const SWEEP_INTERVAL_MS = 60_000;
@@ -194,6 +197,10 @@ async function adapterFor(provider: string): Promise<PrewarmAdapter | null> {
   if (provider === "daytona") {
     const { daytonaPrewarmAdapter } = await import("./adapters/daytona");
     return daytonaPrewarmAdapter;
+  }
+  if (provider === "microvm") {
+    const { microvmPrewarmAdapter } = await import("./adapters/microvm");
+    return microvmPrewarmAdapter;
   }
   // e2b: no prewarm adapter yet — requests answer "unsupported" until one
   // registers here (the pool itself is already provider-agnostic).
@@ -315,25 +322,30 @@ async function runPrewarmBootstrap(entry: PrewarmEntry, adapter: PrewarmAdapter)
       return;
     }
     persist(entry);
-    await assertDialbackReachable(driver, `${entry.provider}-prewarm`);
-    await bootstrapRemoteSandbox(driver, `${entry.provider}-prewarm`);
-    if (!current()) {
-      destroyLater(entry.provider, sandboxId, "superseded mid-bootstrap");
-      return;
-    }
-    // Warm-previews repos ALSO get their workspace pre-cloned at the default
-    // branch (+ deps) — the adopting session then just mv's it into place and
-    // branches (setupRemoteWorkspace). Non-fatal: a failure leaves a normal
-    // runner-only prewarm.
-    try {
-      const { warmTemplateConfig } = await import("../warm-template");
-      if (warmTemplateConfig(entry.repoId).enabled) {
-        const { warmRemoteWorkspace } = await import("./adapters/bootstrap");
-        const repo = REPOS[entry.repoId];
-        if (repo) await warmRemoteWorkspace(driver, repo, `${entry.provider}-prewarm`);
+    const repo = REPOS[entry.repoId];
+    if (!repo) throw new Error(`unknown prewarm repo ${entry.repoId}`);
+    if (adapter.prepare) {
+      await adapter.prepare(driver, repo, `${entry.provider}-prewarm`);
+    } else {
+      await assertDialbackReachable(driver, `${entry.provider}-prewarm`);
+      await bootstrapRemoteSandbox(driver, `${entry.provider}-prewarm`);
+      if (!current()) {
+        destroyLater(entry.provider, sandboxId, "superseded mid-bootstrap");
+        return;
       }
-    } catch (e) {
-      console.warn(`[sandbox-prewarm] ${entry.key} warm workspace failed (non-fatal):`, e);
+      // Warm-previews repos ALSO get their workspace pre-cloned at the default
+      // branch (+ deps) — the adopting session then just mv's it into place and
+      // branches (setupRemoteWorkspace). Non-fatal: a failure leaves a normal
+      // runner-only prewarm.
+      try {
+        const { warmTemplateConfig } = await import("../warm-template");
+        if (warmTemplateConfig(entry.repoId).enabled) {
+          const { warmRemoteWorkspace } = await import("./adapters/bootstrap");
+          await warmRemoteWorkspace(driver, repo, `${entry.provider}-prewarm`);
+        }
+      } catch (e) {
+        console.warn(`[sandbox-prewarm] ${entry.key} warm workspace failed (non-fatal):`, e);
+      }
     }
     if (!current()) {
       destroyLater(entry.provider, sandboxId, "superseded mid-warm");
@@ -551,8 +563,8 @@ async function auditProviderOrphans(now: number): Promise<void> {
   const g = globalThis as unknown as { __prewarmOrphanAuditAt?: number };
   if (now - (g.__prewarmOrphanAuditAt || 0) < ORPHAN_AUDIT_INTERVAL_MS) return;
   g.__prewarmOrphanAuditAt = now;
-  for (const provider of ["daytona", "e2b"]) {
-    if (!sandboxProviderConfigured(provider as "daytona" | "e2b")) continue;
+  for (const provider of ["daytona", "e2b", "microvm"]) {
+    if (!sandboxProviderConfigured(provider as "daytona" | "e2b" | "microvm")) continue;
     // A create in flight has a live sandbox with no recorded id yet — skip
     // this provider's audit round rather than destroy it mid-bootstrap.
     const creating = [...pool().values()].some(

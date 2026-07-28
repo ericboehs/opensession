@@ -259,6 +259,13 @@ image argument is an explicit experimental override. Golden publication is
 locked against clone creation and rolls back all three artifacts on failure,
 so a clone can never observe a disk/memory/vmstate generation mix.
 
+MicroVMs participate in warm-on-typing when sandbox prewarming is enabled.
+The first prompt input restores a workspace-only clone and pre-clones the
+selected repo; session creation atomically adopts it. This is not a hidden
+model runner: dependency installation, OpenCode/Claude, and provider
+credentials remain outside the guest. Unused warm clones follow the normal
+prewarm TTL and restart-orphan cleanup.
+
 Do not point this provider at `/opt/firecracker/store`: that is the preview
 pool's app-specific golden. The sandbox golden starts only the structured
 control daemon and contains no seeded app credentials. Clones use COW ext4

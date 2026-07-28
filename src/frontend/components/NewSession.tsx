@@ -306,13 +306,17 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     );
   })();
 
-  // Warm-on-typing applies only to sandbox-engine models. OpenCode models use
-  // the lean host-engine/workspace runtime on remote providers, so adopting a
-  // full runner prewarm would defeat that boundary. Strictly fire-and-forget:
-  // a failure must never surface or block typing.
+  // Remote sandbox-engine models adopt a full-runner prewarm. MicroVM OpenCode
+  // sessions adopt a workspace-only prewarm (restore + repo clone); other
+  // host-engine providers deliberately skip the full-runner pool. Strictly
+  // fire-and-forget: a failure must never surface or block typing.
   const isRemoteSandbox = sandboxProvider === "daytona" || sandboxProvider === "e2b" || sandboxProvider === "box" || sandboxProvider === "modal" || sandboxProvider === "lambda-microvm";
   const usesRemoteHostEngine =
     isRemoteSandbox && modelFamily?.match.provider === "opencode";
+  const usesMicrovmWorkspacePrewarm =
+    sandboxProvider === "microvm" && modelFamily?.match.provider === "opencode";
+  const shouldPrewarm =
+    (isRemoteSandbox && !usesRemoteHostEngine) || usesMicrovmWorkspacePrewarm;
   const [sandboxWarmed, setSandboxWarmed] = useState(false);
   const lastPrewarmAtRef = useRef(0);
   useEffect(() => {
@@ -321,13 +325,13 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     setSandboxWarmed(false);
   }, [sandboxProvider, repo]);
   useEffect(() => {
-    if (!isRemoteSandbox || usesRemoteHostEngine || !prompt.trim() || creating) return;
+    if (!shouldPrewarm || !prompt.trim() || creating) return;
     if (Date.now() - lastPrewarmAtRef.current < 60_000) return;
     lastPrewarmAtRef.current = Date.now();
     requestSandboxPrewarm(sandboxProvider, repo, getCurrentUser())
       .then((r) => setSandboxWarmed(r.state === "ready"))
       .catch(() => {});
-  }, [prompt, isRemoteSandbox, usesRemoteHostEngine, sandboxProvider, repo, creating]);
+  }, [prompt, shouldPrewarm, sandboxProvider, repo, creating]);
 
   // MCP servers: empty by default (minimal context), users can opt in for
   // specific ones. The list comes from mcp-config.json via the connections
@@ -891,7 +895,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
                   className={`palette-icon-btn ${sandboxProvider ? "is-on" : ""}`}
                   disabled={creating}
                   title={`Run environment — ${sandboxLabel(sandboxProvider)}${
-                    sandboxWarmed && isRemoteSandbox ? " (warmed)" : ""
+                    sandboxWarmed && shouldPrewarm ? " (warmed)" : ""
                   }`}
                   aria-label="Run environment"
                 >

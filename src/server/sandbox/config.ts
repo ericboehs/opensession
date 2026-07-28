@@ -115,11 +115,9 @@ export interface SandboxPublicIngressConfig {
 
 export const PUBLIC_INGRESS_DEFAULT_PORT = 3860;
 
-/** Warm-on-typing prewarm pool for REMOTE providers (src/server/sandbox/
- *  prewarm.ts): typing a new-session prompt with daytona/e2b selected starts
- *  the runner bootstrap immediately; session create adopts the warmed
- *  sandbox. `enabled` defaults to TRUE whenever a remote provider is
- *  configured (the pool is inert otherwise). */
+/** Warm-on-typing prewarm pool (src/server/sandbox/prewarm.ts): typing a
+ *  new-session prompt starts provider-specific preparation; session create
+ *  adopts the warmed sandbox. */
 export interface SandboxPrewarmConfig {
   enabled: boolean;
   /** Destroy an untouched prewarm after this many minutes (default 10). */
@@ -262,8 +260,8 @@ export interface SandboxConfig {
    *  GitHub clones, the live GITHUB_API_TOKEN takes precedence so an expiring
    *  GitHub App user token is never treated as durable sandbox config. */
   cloneCredential?: SandboxCloneCredential;
-  /** Warm-on-typing prewarm pool (remote providers). Absent = defaults, with
-   *  `enabled` true whenever a remote provider is configured. */
+  /** Warm-on-typing prewarm pool. Absent = defaults, with `enabled` true
+   *  whenever a provider with a prewarm adapter is configured. */
   prewarm?: Partial<SandboxPrewarmConfig>;
   /** Tarball URL of the backstage runner bundle for remote bootstrap (takes
    *  precedence over the git-clone fallback). */
@@ -501,22 +499,21 @@ export function sandboxSnapshots(): SandboxSnapshotsConfig {
 }
 
 /** Effective warm-on-typing prewarm settings (prewarm.ts pool). `enabled`
- *  defaults to true exactly when a remote provider (daytona/e2b) has an API
- *  key — a docker-only or unconfigured setup never prewarms paid compute.
- *  ("box" is deliberately absent: it has no prewarm adapter yet, so a
- *  box-only setup keeps the pool inert.) */
+ *  defaults to true exactly when a provider with an implemented adapter is
+ *  configured — a docker-only or unconfigured setup stays inert. */
 export function sandboxPrewarmConfig(): SandboxPrewarmConfig {
   const cfg = sandboxConfig();
-  const remoteConfigured =
+  const prewarmProviderConfigured =
     sandboxConfigPresent() &&
     Boolean(
       cfg.daytona?.apiKey ||
         process.env.DAYTONA_API_KEY ||
         cfg.e2b?.apiKey ||
-        process.env.E2B_API_KEY,
+        process.env.E2B_API_KEY ||
+        sandboxProviderConfigured("microvm"),
     );
   return {
-    enabled: cfg.prewarm?.enabled ?? remoteConfigured,
+    enabled: cfg.prewarm?.enabled ?? prewarmProviderConfigured,
     ttlMinutes: cfg.prewarm?.ttlMinutes ?? PREWARM_DEFAULTS.ttlMinutes,
     maxLive: cfg.prewarm?.maxLive ?? PREWARM_DEFAULTS.maxLive,
   };

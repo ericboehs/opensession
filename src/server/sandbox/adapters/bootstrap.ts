@@ -236,17 +236,24 @@ export function findRemoteStateBySession(
   provider: string,
   sessionId: string,
 ): RemoteSandboxState | null {
+  return listRemoteStates(provider).find((state) => state.sessionId === sessionId) || null;
+}
+
+/** Enumerate a provider's persisted sandboxes. Used by provider-side orphan
+ * audits (notably local MicroVM prewarms); malformed files fail closed. */
+export function listRemoteStates(provider: string): RemoteSandboxState[] {
+  const states: RemoteSandboxState[] = [];
   try {
-    if (!existsSync(STATE_DIR)) return null;
+    if (!existsSync(STATE_DIR)) return states;
     for (const f of readdirSync(STATE_DIR)) {
       if (!f.startsWith(`${provider}-`) || !f.endsWith(".json")) continue;
       try {
         const s: RemoteSandboxState = JSON.parse(readFileSync(`${STATE_DIR}/${f}`, "utf-8"));
-        if (s.sessionId === sessionId) return s;
+        if (s.provider === provider && s.sandboxId && s.sessionId) states.push(s);
       } catch {}
     }
   } catch {}
-  return null;
+  return states;
 }
 
 /** Serialize ensure() per provider+session — same in-process chain pattern as
@@ -631,6 +638,7 @@ export async function warmRemoteWorkspace(
   driver: RemoteDriver,
   repo: { id: string; repo: string; ghRepo?: string; defaultBranch: string; depsInstall?: string },
   label: string,
+  opts?: { installDeps?: boolean },
 ): Promise<void> {
   const dir = `${REMOTE_WARM_BASE}/${sanitizeName(repo.id)}`;
   const log = (msg: string) => console.log(`[sandbox:${label}] warm workspace: ${msg}`);
@@ -646,6 +654,10 @@ export async function warmRemoteWorkspace(
       log(`clone failed (adoption will set up cold): ${redactUrl(clone.stderr.trim().slice(0, 300))}`);
       return;
     }
+  }
+  if (opts?.installDeps === false) {
+    log("ready (clone only)");
+    return;
   }
   // Deps: same convention as worktree.ts's installWorktreeDeps, expressed
   // in-sandbox (config depsInstall → tella-fusion webapp install → root

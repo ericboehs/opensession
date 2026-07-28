@@ -166,6 +166,17 @@ describe("requestPrewarm", () => {
     expect(existsSync(join(prewarmDir(), "daytona-tella-fusion.json"))).toBe(true);
   });
 
+  test.skipIf(killSwitch)("uses a provider-specific preparation hook", async () => {
+    const fake = makeFakeAdapter();
+    const prepared: string[] = [];
+    fake.adapter.prepare = async (_driver, repo, label) => {
+      prepared.push(`${repo.id}:${label}`);
+    };
+    await requestPrewarm("daytona", "tella-fusion");
+    await until(() => readyEntry()?.state === "ready");
+    expect(prepared).toEqual(["tella-fusion:daytona-prewarm"]);
+  });
+
   test.skipIf(killSwitch)("prewarm disabled by config → disabled", async () => {
     makeFakeAdapter();
     writeConfig({ prewarm: { enabled: false } });
