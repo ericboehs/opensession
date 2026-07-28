@@ -327,6 +327,21 @@ export async function runReview(
       error: result.error,
     };
 
+    // Per-review telemetry for the Analytics review-quality trend.
+    if (!result.error) {
+      audit({
+        msg: "review_completed",
+        pr_number: pr.number,
+        repo: pr.ghRepo || defaultRepo().ghRepo,
+        verdict: outcome.verdict,
+        confidence: outcome.confidence,
+        findings: outcome.findings,
+        blocking: outcome.blocking,
+        is_update: isUpdate,
+        model: result.model,
+      });
+    }
+
     // Record the SHA as reviewed only on a successful run, so a transient failure
     // (model error/timeout) leaves it eligible for retry on the next delivery.
     if (!result.error && pr.headSha) {

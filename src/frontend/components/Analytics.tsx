@@ -382,7 +382,25 @@ export function Analytics() {
 		});
 
 		const maxModelOutput = Math.max(1, ...data.models.map((m) => m.outputTokens));
-		return { labels, kindSeries, kindValues, modelSeries, modelValues, prSeries, prValues, turnSeries, turnValues, factorySeries, factoryValues, maxModelOutput };
+
+		// Review finding outcomes, cohorted by the day the finding was posted.
+		// Guard: the live-rebuilt frontend can briefly run against a not-yet-
+		// restarted server whose payload has no reviewQuality.
+		const rq = data.reviewQuality;
+		const reviewSeries: Series[] = [
+			{ label: "Addressed", color: slot(2) },
+			{ label: "Pushback", color: slot(4) },
+			{ label: "Ignored", color: slot(8) },
+			{ label: "Pending", color: OTHER_COLOR },
+		];
+		const reviewByDate = new Map((rq?.days || []).map((d) => [d.date, d]));
+		const reviewValues = labels.map((date) => {
+			const d = reviewByDate.get(date);
+			return [d?.addressed || 0, d?.dismissed || 0, d?.ignored || 0, d?.pending || 0];
+		});
+		const splitDate = labels[Math.floor(labels.length / 2)] || "";
+
+		return { labels, kindSeries, kindValues, modelSeries, modelValues, prSeries, prValues, turnSeries, turnValues, factorySeries, factoryValues, maxModelOutput, rq, reviewSeries, reviewValues, splitDate };
 	}, [data]);
 
 	const dateInput =
@@ -550,6 +568,66 @@ export function Analytics() {
 									</tbody>
 								</table>
 							</ChartCard>
+							{derived.rq && (
+								<>
+									<ChartCard
+										title="Review finding outcomes"
+										subtitle="Bot findings by day posted; outcomes settle as PRs progress, so recent days show pending"
+										series={derived.reviewSeries}
+									>
+										<BarChart
+											labels={derived.labels}
+											series={derived.reviewSeries}
+											values={derived.reviewValues}
+											mode="stacked"
+											formatValue={fmtInt}
+										/>
+									</ChartCard>
+									<ChartCard
+										title="Review quality trend"
+										subtitle={`Earlier vs recent half of the range (split at ${shortDate(derived.splitDate)}) — is the reviewer getting better?`}
+									>
+										<table className="w-full border-collapse text-xs">
+											<thead>
+												<tr className="text-left text-[11px] text-faint">
+													<th className="pb-1.5 font-medium">Metric</th>
+													<th className="pb-1.5 text-right font-medium">Earlier</th>
+													<th className="pb-1.5 text-right font-medium">Recent</th>
+												</tr>
+											</thead>
+											<tbody>
+												{(() => {
+													const { earlier, recent } = derived.rq;
+													const pct = (v: number | null) => (v === null ? "–" : `${v}%`);
+													const num = (v: number | null) => (v === null ? "–" : String(v));
+													const rows: Array<[string, string, string]> = [
+														["Findings posted", fmtInt(earlier.posted), fmtInt(recent.posted)],
+														["Addressed rate (of settled)", pct(earlier.addressedRate), pct(recent.addressedRate)],
+														["Author pushback", fmtInt(earlier.dismissed), fmtInt(recent.dismissed)],
+														["Ignored at close", fmtInt(earlier.ignored), fmtInt(recent.ignored)],
+														["Missed bugs detected", fmtInt(earlier.missedBugs), fmtInt(recent.missedBugs)],
+														["Reviews run", fmtInt(earlier.reviews), fmtInt(recent.reviews)],
+														["Findings per review", num(earlier.avgFindingsPerReview), num(recent.avgFindingsPerReview)],
+														["Avg merge-confidence", num(earlier.avgConfidence), num(recent.avgConfidence)],
+														["Withheld by noise filter", fmtInt(earlier.withheld), fmtInt(recent.withheld)],
+													];
+													return rows.map(([label, a, b]) => (
+														<tr key={label} className="border-t border-line">
+															<td className="py-1.5 text-fg">{label}</td>
+															<td className="py-1.5 text-right tabular-nums text-dim">{a}</td>
+															<td className="py-1.5 text-right tabular-nums text-dim">{b}</td>
+														</tr>
+													));
+												})()}
+											</tbody>
+										</table>
+										<p className="m-0 mt-2 text-[11px] text-faint">
+											Addressed = author acted on the finding · pushback = author explicitly rejected it · reviews-run
+											metrics collect from Jul 28 on. High addressed rate + low pushback/missed bugs = healthier reviews.
+										</p>
+									</ChartCard>
+								</>
+							)}
 						</div>
 
 						<div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">

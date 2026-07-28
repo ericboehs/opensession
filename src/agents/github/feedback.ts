@@ -29,7 +29,9 @@ import {
 } from "./feedback-gates";
 
 const STATE_DIR = stateDir("github");
-const MAX_RECORDS = 600;
+// Also the review-quality trend's history window (analytics.ts reads this
+// store cohort-by-posted-date): at ~5 findings/PR this is months of history.
+const MAX_RECORDS = 2000;
 
 function feedbackPath(ghRepo?: string): string {
   const key =

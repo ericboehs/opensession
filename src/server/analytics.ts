@@ -18,13 +18,15 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { $ } from "bun";
 import { stateDir } from "./rename-compat";
 import { OPENSESSION_CHATS_DIR } from "./paths";
-import { configuredRepos } from "./config";
+import { configuredRepos, defaultRepo } from "./config";
 import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "./github-limit";
+import { readFeedback } from "../agents/github/feedback";
+import type { FeedbackRecord } from "../agents/github/feedback-gates";
 
 const AUDIT_DIR = stateDir("audit");
 const CACHE_DIR = stateDir("analytics-cache");
 // Bump when the rollup shape changes — stale disk caches recompute.
-const ROLLUP_VERSION = 4;
+const ROLLUP_VERSION = 5;
 
 interface TokenTotals {
 	input: number;
@@ -44,6 +46,39 @@ interface SessionAgg {
 	errors: number;
 }
 
+/** Per-day PR-review telemetry from `review_*` audit events. `completed`
+ *  (verdict/confidence/findings) only exists from 2026-07-28 on — earlier
+ *  days legitimately roll up to zeros. */
+interface ReviewDayAgg {
+	completed: number;
+	updates: number;
+	verdicts: Record<string, number>;
+	confidenceSum: number;
+	confidenceN: number;
+	findings: number;
+	blocking: number;
+	withheld: number;
+	missedBugs: number;
+	repliesPositive: number;
+	repliesDismissive: number;
+}
+
+function emptyReviewAgg(): ReviewDayAgg {
+	return {
+		completed: 0,
+		updates: 0,
+		verdicts: {},
+		confidenceSum: 0,
+		confidenceN: 0,
+		findings: 0,
+		blocking: 0,
+		withheld: 0,
+		missedBugs: 0,
+		repliesPositive: 0,
+		repliesDismissive: 0,
+	};
+}
+
 interface DayRollup {
 	date: string;
 	turns: number;
@@ -58,6 +93,7 @@ interface DayRollup {
 	 *  `model` at compose time. */
 	unknownModel: Record<string, ModelAgg>;
 	bySession: Record<string, SessionAgg>;
+	review: ReviewDayAgg;
 }
 
 /** "opencode/anthropic/claude-sonnet-4-6" → "claude-sonnet-4-6". */
@@ -81,6 +117,7 @@ function rollupAuditDay(date: string): DayRollup {
 		byModel: {},
 		unknownModel: {},
 		bySession: {},
+		review: emptyReviewAgg(),
 	};
 	const path = `${AUDIT_DIR}/audit-${date}.jsonl`;
 	if (!existsSync(path)) return rollup;
@@ -112,11 +149,41 @@ function rollupAuditDay(date: string): DayRollup {
 		const isRunEnd =
 			line.includes('"phase":"end"') &&
 			(line.includes('"msg":"opencode_meridian_run"') || line.includes('"msg":"opencode_openai_run"'));
-		if (!isResult && !isPrompt && !isError && !isCancelled && !isOneshot && !isRunEnd) continue;
+		const isReviewEvt = line.includes('"msg":"review_');
+		if (!isResult && !isPrompt && !isError && !isCancelled && !isOneshot && !isRunEnd && !isReviewEvt) continue;
 		let e: Record<string, unknown>;
 		try {
 			e = JSON.parse(line);
 		} catch {
+			continue;
+		}
+		if (isReviewEvt) {
+			const rv = rollup.review;
+			switch (String(e.msg || "")) {
+				case "review_completed": {
+					rv.completed++;
+					if (e.is_update) rv.updates++;
+					const verdict = String(e.verdict || "");
+					if (verdict) rv.verdicts[verdict] = (rv.verdicts[verdict] || 0) + 1;
+					if (typeof e.confidence === "number") {
+						rv.confidenceSum += e.confidence;
+						rv.confidenceN++;
+					}
+					rv.findings += Number(e.findings) || 0;
+					rv.blocking += Number(e.blocking) || 0;
+					break;
+				}
+				case "review_findings_withheld":
+					rv.withheld += Number(e.withheld) || 0;
+					break;
+				case "review_missed_bug":
+					rv.missedBugs++;
+					break;
+				case "review_reply_signal":
+					rv.repliesPositive += Number(e.positive) || 0;
+					rv.repliesDismissive += Number(e.dismissive) || 0;
+					break;
+			}
 			continue;
 		}
 		if (e.msg === "opencode_oneshot") {
@@ -443,6 +510,96 @@ function factoryCohort(prs: FactoryPr[]): FactoryCohort {
 	};
 }
 
+// ── Review quality: is the PR reviewer getting better or worse? ──
+//
+// Two sources. The feedback store (~/.opensession-github/feedback-*.json) is a
+// COHORT view: every inline finding by the day it was POSTED, with the outcome
+// readers eventually gave it (addressed / ignored / explicit pushback) — recent
+// days naturally show "pending" until their PRs settle. The audit rollup adds
+// per-day review-run facts (verdicts, confidence, findings, withheld); the
+// `review_completed` event only exists from 2026-07-28, so those columns are
+// honest zeros before that.
+
+export interface ReviewQualityDay {
+	date: string;
+	posted: number;
+	addressed: number;
+	ignored: number;
+	dismissed: number;
+	pending: number;
+	missedBugs: number;
+	reviews: number;
+	findings: number;
+	withheld: number;
+	confidenceSum: number;
+	confidenceN: number;
+}
+
+export interface ReviewQualityCohort {
+	posted: number;
+	addressed: number;
+	ignored: number;
+	dismissed: number;
+	pending: number;
+	missedBugs: number;
+	/** addressed / settled, 0-100; null with nothing settled yet. */
+	addressedRate: number | null;
+	reviews: number;
+	avgConfidence: number | null;
+	avgFindingsPerReview: number | null;
+	withheld: number;
+}
+
+/** One finding record → its settled bucket. Explicit words win over silence. */
+function outcomeBucket(r: FeedbackRecord): "addressed" | "ignored" | "dismissed" | "pending" {
+	if (r.replySignal === "dismissive") return "dismissed";
+	if (r.outcome === "addressed") return "addressed";
+	if (r.outcome === "ignored") return "ignored";
+	return "pending";
+}
+
+/** Feedback records across every configured repo (default first). */
+function loadAllFeedbackRecords(): FeedbackRecord[] {
+	const targets: Array<string | undefined> = [undefined];
+	for (const repo of Object.values(configuredRepos())) {
+		if (repo.ghRepo && repo.ghRepo.toLowerCase() !== defaultRepo().ghRepo.toLowerCase()) {
+			targets.push(repo.ghRepo);
+		}
+	}
+	const out: FeedbackRecord[] = [];
+	for (const t of targets) {
+		try {
+			out.push(...readFeedback(t));
+		} catch {}
+	}
+	return out;
+}
+
+function reviewQualityCohort(days: ReviewQualityDay[]): ReviewQualityCohort {
+	const sum = (f: (d: ReviewQualityDay) => number) => days.reduce((acc, d) => acc + f(d), 0);
+	const posted = sum((d) => d.posted);
+	const addressed = sum((d) => d.addressed);
+	const ignored = sum((d) => d.ignored);
+	const dismissed = sum((d) => d.dismissed);
+	const settled = addressed + ignored + dismissed;
+	const reviews = sum((d) => d.reviews);
+	const confidenceN = sum((d) => d.confidenceN);
+	const round1 = (n: number) => Math.round(n * 10) / 10;
+	return {
+		posted,
+		addressed,
+		ignored,
+		dismissed,
+		pending: sum((d) => d.pending),
+		missedBugs: sum((d) => d.missedBugs),
+		addressedRate: settled ? Math.round((100 * addressed) / settled) : null,
+		reviews,
+		avgConfidence: confidenceN ? round1(sum((d) => d.confidenceSum) / confidenceN) : null,
+		avgFindingsPerReview: reviews ? round1(sum((d) => d.findings) / reviews) : null,
+		withheld: sum((d) => d.withheld),
+	};
+}
+
 // ── The composed summary ──
 
 export interface AnalyticsSummary {
@@ -512,6 +669,12 @@ export interface AnalyticsSummary {
 		agent: FactoryCohort;
 		/** Every other merged PR in range (humans + external bots). */
 		other: FactoryCohort;
+	};
+	reviewQuality: {
+		days: ReviewQualityDay[];
+		/** First half of the range vs the second — the better-or-worse split. */
+		earlier: ReviewQualityCohort;
+		recent: ReviewQualityCohort;
 	};
 }
 
@@ -625,8 +788,10 @@ export async function buildAnalytics(from: string, to: string): Promise<Analytic
 		agg.sessionsCreated++;
 	}
 
+	const reviewByDate = new Map<string, ReviewDayAgg>();
 	for (const date of dates) {
 		const r = cachedRollup(date);
+		reviewByDate.set(date, r.review || emptyReviewAgg());
 		const sessionsByKind: Record<string, number> = {};
 		for (const [id, s] of Object.entries(r.bySession)) {
 			allSessions.add(id);
@@ -769,6 +934,43 @@ export async function buildAnalytics(from: string, to: string): Promise<Analytic
 		other: factoryCohort(factoryInRange.filter((pr) => !codeBranches.has(pr.headRefName))),
 	};
 
+	// Review quality: audit-rollup run facts per day + the feedback store's
+	// finding cohorts folded in by posted date.
+	const reviewQualityDays: ReviewQualityDay[] = dates.map((date) => {
+		const rv = reviewByDate.get(date) || emptyReviewAgg();
+		return {
+			date,
+			posted: 0,
+			addressed: 0,
+			ignored: 0,
+			dismissed: 0,
+			pending: 0,
+			missedBugs: 0,
+			reviews: rv.completed,
+			findings: rv.findings,
+			withheld: rv.withheld,
+			confidenceSum: rv.confidenceSum,
+			confidenceN: rv.confidenceN,
+		};
+	});
+	const reviewDayIndex = new Map(reviewQualityDays.map((d) => [d.date, d]));
+	for (const rec of loadAllFeedbackRecords()) {
+		const d = reviewDayIndex.get((rec.postedAt || "").slice(0, 10));
+		if (!d) continue;
+		if (rec.falseNegative) {
+			d.missedBugs++;
+			continue;
+		}
+		d.posted++;
+		d[outcomeBucket(rec)]++;
+	}
+	const half = Math.floor(dates.length / 2);
+	const reviewQuality = {
+		days: reviewQualityDays,
+		earlier: reviewQualityCohort(reviewQualityDays.slice(0, half)),
+		recent: reviewQualityCohort(reviewQualityDays.slice(half)),
+	};
+
 	return {
 		from,
 		to,
@@ -780,5 +982,6 @@ export async function buildAnalytics(from: string, to: string): Promise<Analytic
 		repos: [...repoAgg.values()].sort((a, b) => b.allOpened - a.allOpened),
 		prs,
 		factory,
+		reviewQuality,
 	};
 }

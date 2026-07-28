@@ -1013,4 +1013,39 @@ export interface AnalyticsSummary {
 		agent: AnalyticsFactoryCohort;
 		other: AnalyticsFactoryCohort;
 	};
+	reviewQuality: {
+		days: AnalyticsReviewDay[];
+		earlier: AnalyticsReviewCohort;
+		recent: AnalyticsReviewCohort;
+	};
+}
+
+/** Per-day PR-review quality: finding cohorts by day posted + run facts. */
+export interface AnalyticsReviewDay {
+	date: string;
+	posted: number;
+	addressed: number;
+	ignored: number;
+	dismissed: number;
+	pending: number;
+	missedBugs: number;
+	reviews: number;
+	findings: number;
+	withheld: number;
+	confidenceSum: number;
+	confidenceN: number;
+}
+
+export interface AnalyticsReviewCohort {
+	posted: number;
+	addressed: number;
+	ignored: number;
+	dismissed: number;
+	pending: number;
+	missedBugs: number;
+	addressedRate: number | null;
+	reviews: number;
+	avgConfidence: number | null;
+	avgFindingsPerReview: number | null;
+	withheld: number;
 }
