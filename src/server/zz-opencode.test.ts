@@ -509,6 +509,15 @@ describe("reconnectSharedInProcessMcp", () => {
 });
 
 describe("buildOpencodeInstructions", () => {
+  test("every run forbids interactive AWS login and human device-code asks", () => {
+    for (const isAsk of [true, false]) {
+      const s = buildOpencodeInstructions({ isAsk });
+      expect(s).toContain("## AWS access is non-interactive");
+      expect(s).toContain("NEVER run `aws login` or `aws sso login`");
+      expect(s).toContain("NEVER ask a human to authorize AWS");
+      expect(s).toContain("without setting `AWS_PROFILE` or passing `--profile`");
+    }
+  });
   // The public-repo confirmation PROMPT was removed in aa4009d5: enforcement
   // moved to credential scope (tellahq-only PAT + GitHub App user tokens —
   // GitHub 403s any outside write server-side), which prompt wording can't

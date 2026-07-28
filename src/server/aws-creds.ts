@@ -22,6 +22,35 @@ import { mkdirSync, renameSync, writeFileSync } from "fs";
 
 const REGION = process.env.AGENT_AWS_REGION || "us-east-2"; // tella prod (tella-app-prod)
 
+export const AWS_HUMAN_AUTH_DENIAL =
+  "AWS device login is not a human gate in OpenSession. Do not run `aws login` or " +
+  "`aws sso login`, and do not ask anyone to open an AWS authorization URL or enter a " +
+  "device code. OpenSession supplies non-interactive read credentials to eligible runs. " +
+  "If those credentials are unavailable or insufficient, report the infrastructure " +
+  "failure and continue without AWS.";
+
+/**
+ * Fail closed before a model-authored AWS device-login request can become a UI
+ * card or Slack DM. The instruction layer tells agents not to start interactive
+ * AWS auth; this is the enforcement layer for resumed sessions and models that
+ * ignore that instruction.
+ *
+ * Keep this narrower than "AWS + login": teammates can still be asked ordinary
+ * questions about auth architecture or IAM. We block only requests that ask a
+ * human to perform/approve an interactive login or device-code authorization.
+ */
+export function isAwsHumanAuthRequest(...parts: Array<string | undefined>): boolean {
+  const text = parts.filter(Boolean).join("\n");
+  if (!text) return false;
+  const aws =
+    /\bAWS\b|Amazon Web Services|awsapps\.com\/start|aws\s+sso/i.test(text);
+  const interactiveAuth =
+    /\b(?:authori[sz]e|approve|authenticate|log\s*in|login|sign\s*in|device\s*(?:login|code|authorization)|enter\s+(?:the\s+)?code)\b/i.test(
+      text
+    );
+  return aws && interactiveAuth;
+}
+
 interface ImdsCreds {
   AccessKeyId: string;
   SecretAccessKey: string;

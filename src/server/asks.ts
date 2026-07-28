@@ -13,6 +13,10 @@ import {
 	cancelAsk,
 	registerAsk,
 } from "./human-asks";
+import {
+	AWS_HUMAN_AUTH_DENIAL,
+	isAwsHumanAuthRequest,
+} from "./aws-creds";
 import { resolveTeammate } from "./shared/user-mappings";
 import { transitionRunState } from "./run-state";
 import { findSession } from "./session-cache";
@@ -129,6 +133,16 @@ export function makeAskHandler(sessionId: string) {
 		const questions = input.questions as AskQuestionInput[] | undefined;
 		if (!questions || questions.length === 0) {
 			return { behavior: "allow", updatedInput: input };
+		}
+		if (
+			questions.some((q) =>
+				isAwsHumanAuthRequest(q.header, q.question),
+			)
+		) {
+			return {
+				behavior: "deny",
+				message: AWS_HUMAN_AUTH_DENIAL,
+			};
 		}
 
 		const questionId = crypto.randomUUID();

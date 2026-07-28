@@ -27,6 +27,10 @@ import {
   type HumanAsk,
 } from "../../server/human-asks";
 import { offerAskCard } from "../../server/asks";
+import {
+  AWS_HUMAN_AUTH_DENIAL,
+  isAwsHumanAuthRequest,
+} from "../../server/aws-creds";
 import { resolveTeammate } from "../../server/shared/user-mappings";
 import { parseWhen } from "./parse-when";
 
@@ -143,6 +147,9 @@ export function createHumansMcpServer(ctx: HumansToolContext) {
           at_time?: string;
         }) => {
           if (!args.question?.trim()) return text("Need a question to ask.");
+          if (isAwsHumanAuthRequest(args.question, args.context)) {
+            return text(AWS_HUMAN_AUTH_DENIAL);
+          }
           const person = resolveTeammate(args.person);
           if (!person) {
             return text(

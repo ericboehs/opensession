@@ -1285,6 +1285,21 @@ export function buildOpencodeInstructions(input: {
       "controlled channel fails, stop and report the failure instead of escalating to a " +
       "third-party host."
   );
+  // OpenSession vends bounded instance-role credentials to eligible runs.
+  // Interactive SSO was both unnecessary and noisy: models started `aws sso
+  // login`, then blocked the UI and pinged teammates with expiring device
+  // codes. asks.ts + humans-tools.ts enforce this too; the prompt prevents the
+  // wasted login process in the first place.
+  parts.push(
+    "## AWS access is non-interactive\nNEVER run `aws login` or `aws sso login`, and NEVER " +
+      "ask a human to authorize AWS, open an AWS device-login URL, enter a device code, or " +
+      "confirm an AWS login. OpenSession supplies non-interactive read credentials to eligible " +
+      "runs. Use those ambient credentials without setting `AWS_PROFILE` or passing `--profile`. " +
+      "If AWS access is missing, expired, or insufficient, treat that as an OpenSession " +
+      "infrastructure limitation: report it clearly and continue without AWS. Do not inspect " +
+      "or reuse the host's personal AWS SSO profiles, and do not try to work around the failure " +
+      "with another login path."
+  );
   // Unconditional, every run. History: a Codex-backed session opened a PR
   // against an open-source repo; then despite this block, runs opened a public
   // issue (vercel-labs/deepsec#114, 2026-07-19 — "issue" wasn't listed below)
