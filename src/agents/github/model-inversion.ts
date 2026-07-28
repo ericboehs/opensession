@@ -79,6 +79,24 @@ export function authorFamilyFor(pr: PrRef): { family: ModelFamily; source: strin
 }
 
 /**
+ * Reviewer for a PRE-FLIGHT review (preflight.ts): the code's author is the
+ * calling session itself, so its model decides the family directly — no PR or
+ * branch-owner resolution needed. Honors the same kill switch as PR reviews:
+ * with inversion off, the caller should fall back to the configured review
+ * model instead (`model` is null then).
+ */
+export function preflightReviewerFor(
+  authorModel?: string,
+): { model: string | null; authorFamily: ModelFamily } {
+  const family = familyOf(authorModel) || "anthropic";
+  if (!inversionEnabled()) return { model: null, authorFamily: family };
+  return {
+    model: family === "anthropic" ? OPENAI_REVIEWER : ANTHROPIC_REVIEWER,
+    authorFamily: family,
+  };
+}
+
+/**
  * The review model to use for this PR, or null to keep the configured one.
  * Returns a switch only when the reviewer that would otherwise run shares the
  * author's family.

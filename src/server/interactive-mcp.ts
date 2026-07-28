@@ -18,6 +18,7 @@ import { createAdminMcpServer } from "../agents/slack/admin-tools";
 import { createHumansMcpServer } from "../agents/slack/humans-tools";
 import { createAskUserMcpServer } from "../agents/slack/ask-tools";
 import { createReposMcpServer } from "../agents/slack/repos-tools";
+import { createPreflightMcpServer } from "../agents/slack/preflight-tools";
 import { createPreviewMcpServer } from "../agents/slack/preview-tools";
 import { createWalkthroughMcpServer } from "../agents/slack/walkthrough-tools";
 import { createMemoryMcpServer } from "../agents/slack/memory-tools";
@@ -132,6 +133,23 @@ export function interactiveMcpServers(
 								sharedCheckout: !!p.sharedCheckout,
 							})),
 						linkPr: (input) => linkPr(sessionId, input),
+					}),
+					// Pre-flight review: run the PR review locally BEFORE gh pr create
+					// (fresh-context, cross-family reviewer in this session's worktree)
+					// so findings get fixed without GitHub review round-trips.
+					"opensession-preflight": createPreflightMcpServer({
+						sessionId,
+						snapshot: () => {
+							const s = findSession(sessionId);
+							if (!s) return null;
+							return {
+								worktreeDir: s.worktreeDir,
+								branch: s.branch,
+								model: s.model,
+								projectId: s.projectId,
+								title: s.title,
+							};
+						},
 					}),
 					// Durable repo/user/team memory (stored under ~/.michael-memory,
 					// shared both ways with Slack's channel memory). Write tools are

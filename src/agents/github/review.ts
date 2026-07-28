@@ -59,7 +59,7 @@ export interface ReviewConfig {
   model?: string;
 }
 
-interface Finding {
+export interface Finding {
   path: string;
   line: number;
   side?: "RIGHT" | "LEFT";

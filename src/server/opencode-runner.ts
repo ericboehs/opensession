@@ -493,6 +493,7 @@ export const SHARED_INPROCESS_SERVERS = [
   "opensession-goals",
   "opensession-humans",
   "opensession-repos",
+  "opensession-preflight",
   "opensession-memory",
   "opensession-preview",
   "opensession-walkthrough",
@@ -1418,6 +1419,19 @@ export function buildOpencodeInstructions(input: {
         "answer_session_question, cancel_session, create_session), manage setup via " +
         "opensession-admin, ask teammates via opensession-humans, and attach/switch repos via " +
         "opensession-repos when those servers are available."
+    );
+  }
+  if (!input.isAsk && inproc["opensession-preflight"]) {
+    parts.push(
+      "## Pre-flight review before opening a PR\nWhen you've finished a non-trivial change and " +
+        "are about to open a PR, first call opensession-preflight's `preflight_review`. It runs " +
+        "the same automated review the PR would get on GitHub — same prompt, same bar, reviewed " +
+        "by the opposite model family — locally against this worktree, and returns the findings " +
+        "here (it blocks for a few minutes). Fix the P0/P1 findings (and any others you accept) " +
+        "before `gh pr create`; if you dismiss a finding, say why in the PR description instead " +
+        "of silently dropping it. Skip it for trivial, mechanical, or docs-only changes, and " +
+        "don't re-run it after every small fix — once per PR is the intent. The normal PR " +
+        "review still runs on GitHub after you open the PR."
     );
   }
   // Legacy michael-ask key: journaled runner-host runs resumed across the
