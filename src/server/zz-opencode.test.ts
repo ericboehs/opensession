@@ -409,6 +409,14 @@ describe("buildOpencodeInstructions", () => {
       expect(s).toContain("stop and report the failure");
     }
   });
+  test("every run knows the private-key-backed GitHub checks command", () => {
+    for (const isAsk of [true, false]) {
+      const s = buildOpencodeInstructions({ isAsk });
+      expect(s).toContain("## GitHub checks authentication");
+      expect(s).toContain("scripts/gh-checks.ts <pr-number>");
+      expect(s).toContain("short-lived, read-only installation token");
+    }
+  });
   test("shared-pool runs are told their real cwd; per-session runs aren't", () => {
     const shared = buildOpencodeInstructions({
       isAsk: false,

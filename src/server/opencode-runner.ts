@@ -413,6 +413,7 @@ const SESSION_TAG_PLUGIN_PATH = join(import.meta.dir, "opencode-plugin-session-t
 /** Repairs model-stringified object args on MCP tool calls (see the plugin's
  *  module doc; upstream closed coercion as not-planned). */
 const ARG_COERCE_PLUGIN_PATH = join(import.meta.dir, "opencode-plugin-arg-coerce.js");
+const GH_CHECKS_CLI_PATH = join(import.meta.dir, "..", "..", "scripts", "gh-checks.ts");
 
 const PROVIDER = "opencode" as const;
 
@@ -1262,6 +1263,13 @@ export function buildOpencodeInstructions(input: {
       "it. Found a bug in a third-party tool? Report it in your note — never on their " +
       "tracker. This rule overrides bias-to-action and generic commit/push/PR defaults; " +
       "automatic PR creation applies only to Tella's own repositories."
+  );
+  parts.push(
+    "## GitHub checks authentication\nThe ambient GitHub PAT or user token cannot read " +
+      "GitHub Checks API data. When inspecting PR checks, use the private-key-backed command " +
+      `\`bun ${GH_CHECKS_CLI_PATH} <pr-number> --repo <owner/repo>\`. It mints a short-lived, ` +
+      "read-only installation token from OpenSession's GitHub App. Do not conclude that checks " +
+      "are inaccessible from a `gh pr checks` or `statusCheckRollup` permission error."
   );
   // Observed 2026-07-10 (bks-019f4b70): twice in one session the model ended
   // its turn on a plan sentence ("I'll rebase X, then …") with zero tool
