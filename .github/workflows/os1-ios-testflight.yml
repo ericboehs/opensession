@@ -35,7 +35,7 @@ jobs:
     timeout-minutes: 45
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
-      OS1_DERIVED_DATA: ${{ runner.temp }}/os1-dd-ios
+      OS1_DERIVED_DATA: ${{ github.workspace }}/.xcode-derived-data/ios
     steps:
       - uses: actions/checkout@v4
 
