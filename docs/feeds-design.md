@@ -1,7 +1,12 @@
 # Feeds: external objects as first-class workspace sources
 
-Status: Phase 0 (Tella prototype) in progress (2026-07-28). Owner: Michiel;
-implementation: Michael sessions.
+Status: Phase 0 core LANDED 2026-07-28 (595d7eb6 backend contract + Tella
+provider, 5cbcd284 sidebar bands + Video tab; verified live). Remaining
+Phase-0 follow-ups: Tella MCP mount for tella-ref sessions (server is OAuth
+2.1 at https://api.tella.com/mcp — needs interactive auth, not the API key),
+frame-ancestors carve-out PR in tella-fusion so the Editor itself can iframe
+(embed page iframes today), tella:video_created webhook → automation. Owner:
+Michiel; implementation: Michael sessions.
 
 ## Thesis
 
