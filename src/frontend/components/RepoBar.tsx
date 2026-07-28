@@ -157,11 +157,14 @@ export function RepoBar({
         title="Repo — switch or attach another"
       >
         <RepoTile name={primary} size={18} />
-        <span className="min-w-0 flex-1 truncate text-left">
-          {busy ?? repoLabel(primary)}
-          {attached.length > 0 && (
-            <span className="text-faint"> +{attached.length}</span>
-          )}
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+          <span className="text-[10.5px] font-semibold leading-none text-faint">Repository</span>
+          <span className="truncate text-[13px] leading-[1.2] text-fg">
+            {busy ?? repoLabel(primary)}
+            {attached.length > 0 && (
+              <span className="text-faint"> +{attached.length}</span>
+            )}
+          </span>
         </span>
         <IconChevronRight size={16} className="shrink-0 text-faint" />
       </Menu.Trigger>

@@ -42,10 +42,9 @@ export function StagingLink({
 	refreshTick,
 }: {
 	session: UnifiedSession;
-	/** "bar" = the labelled Preview environment link (right panel's action row); "header" = a
-	 *  single state-colored 🌐 icon (amber while building, green once Ready) for
-	 *  the session header, sized to match the panel-toggle icon beside it. */
-	variant?: "bar" | "header";
+	/** "bar" = the labelled Preview environment link; "header" = a compact
+	 *  state-colored icon; "action" = a cell in the mobile workspace grid. */
+	variant?: "bar" | "header" | "action";
 	/** Bumped when GitHub reports PR/check/deployment activity for this session. */
 	refreshTick?: number;
 }) {
@@ -121,6 +120,19 @@ export function StagingLink({
 						{shimmerGlobe(25)}
 					</span>
 				</Tooltip>
+			);
+		}
+		if (variant === "action") {
+			return (
+				<span
+					className="flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12.5px] font-semibold text-faint"
+					title="Preview environment starting… the link appears once it's up"
+				>
+					<span className="inline-flex size-5 shrink-0 items-center justify-center">
+						{shimmerGlobe(17)}
+					</span>
+					<span className="min-w-0 flex-1 truncate">Preview environment</span>
+				</span>
 			);
 		}
 		return (
@@ -216,6 +228,24 @@ export function StagingLink({
 					{globe(25)}
 				</a>
 			</Tooltip>
+		);
+	}
+	if (variant === "action") {
+		return (
+			<a
+				href={href}
+				target="_blank"
+				rel="noopener"
+				onClick={onClick}
+				aria-disabled={building || undefined}
+				className={`flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12.5px] font-semibold no-underline outline-none transition-colors hover:bg-hover focus-visible:bg-hover ${building ? "cursor-default text-faint" : "text-fg"}`}
+				title={`${tooltip("⌘-click to copy the link")} — ${href}`}
+			>
+				<span className="inline-flex size-5 shrink-0 items-center justify-center text-faint">
+					{globe(17)}
+				</span>
+				<span className="min-w-0 flex-1 truncate">Preview environment</span>
+			</a>
 		);
 	}
 

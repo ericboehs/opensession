@@ -4163,24 +4163,6 @@ export function SessionViewer({
 								)}
 								<div className="session-info-content">
 									<div className="session-info-list">
-										<div className="session-info-preview-actions">
-											<PreviewButton
-												session={session}
-												onAttachImage={(img) =>
-													setImages((prev) => [...prev, img])
-												}
-												onStatusChange={setPreviewStatus}
-												onOpenTab={
-													onOpenPreviewTab
-														? () => {
-															setInfoPageOpen(false);
-															onOpenPreviewTab();
-														}
-														: undefined
-												}
-											/>
-											<StagingLink session={session} refreshTick={gitRefreshTick} />
-										</div>
 										{hasWorkspace && (
 											<RepoBar
 												sessionId={session.id}
@@ -4228,6 +4210,31 @@ export function SessionViewer({
 												setSelectedAssetPath(path);
 												onOpenAssets?.();
 											}}
+											previewActions={
+												<>
+													<PreviewButton
+														session={session}
+														onAttachImage={(img) =>
+															setImages((prev) => [...prev, img])
+														}
+														onStatusChange={setPreviewStatus}
+														onOpenTab={
+															onOpenPreviewTab
+																? () => {
+																	setInfoPageOpen(false);
+																	onOpenPreviewTab();
+																}
+																: undefined
+														}
+														variant="action"
+													/>
+													<StagingLink
+														session={session}
+														refreshTick={gitRefreshTick}
+														variant="action"
+													/>
+												</>
+											}
 											onOpenTab={(tab) => {
 												setSubagentStack([]);
 												if (tab === "changes" || tab === "pr") {

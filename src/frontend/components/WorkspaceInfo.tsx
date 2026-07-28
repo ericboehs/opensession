@@ -1,6 +1,6 @@
 import { AGENT_NAME } from "../lib/brand";
 import { BASE_PATH } from "../lib/base";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parsePatchFiles } from "@pierre/diffs";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
@@ -133,6 +133,9 @@ interface Props {
 	liveMediaCount: number;
 	/** Images visible in the chat UI before the transcript-backed overview catches up. */
 	liveMedia?: WorkspaceMediaItem[];
+	/** Preview controls supplied by the mobile workspace page. When present they
+	    replace the panel's generic staging action in the Actions grid. */
+	previewActions?: ReactNode;
 }
 
 const INFO_LABEL_CLASS = "text-[12px] font-[650] tracking-[-0.01em] text-faint";
@@ -1163,6 +1166,7 @@ export function WorkspaceInfo({
 	liveMedia = [],
 	assets = [],
 	onOpenAsset,
+	previewActions,
 }: Props) {
 	const chatsKey = chats.map((c) => c.id).join(",");
 	const cacheKey = workspaceId || `chats:${chatsKey}`;
@@ -1368,6 +1372,7 @@ export function WorkspaceInfo({
 			<div className={INFO_SECTION_CLASS}>
 				<div className={INFO_LABEL_CLASS}>Actions</div>
 				<div className="grid grid-cols-2 gap-0.5 rounded-lg border border-line bg-panel p-1">
+					{previewActions}
 					{repo && (
 						<button
 							type="button"
@@ -1381,7 +1386,7 @@ export function WorkspaceInfo({
 							<span className="min-w-0 flex-1 truncate">Review changes</span>
 						</button>
 					)}
-					{prState === "OPEN" && pr?.staging?.url && (
+					{!previewActions && prState === "OPEN" && pr?.staging?.url && (
 						<button
 							type="button"
 							className={ACTION_BUTTON_CLASS}

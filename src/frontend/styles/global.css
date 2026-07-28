@@ -12043,11 +12043,22 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		color: var(--text-dim);
 	}
 	.session-info-status {
-		margin: 0 12px 8px;
-		overflow: hidden;
+		margin: 0 12px 12px;
+		padding: 8px;
 		border: 1px solid var(--border);
-		border-radius: calc(12px * var(--rf));
+		border-radius: calc(16px * var(--rf));
 		corner-shape: var(--cs);
+		background: var(--bg-panel);
+	}
+	.session-info-status > .pr-bar,
+	.session-info-status > .pr-bar-stack {
+		overflow: hidden;
+		border-radius: calc(10px * var(--rf));
+		corner-shape: var(--cs);
+	}
+	.session-info-status .pr-bar {
+		min-height: 46px;
+		padding: 8px 10px;
 	}
 	.session-info-status .pr-bar:last-child,
 	.session-info-status .pr-bar-extra:last-child {
@@ -12100,14 +12111,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		border-color: transparent;
 		background: var(--bg-hover);
 	}
-	.session-info-preview-actions {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		min-height: 36px;
-		padding: 3px 6px;
-	}
-
 	/* The workspace overview (Info-tab content) embedded below the actions:
 	   opening prompt, summary, files changed, chats — the whole-workspace view. */
 	.session-info-overview {

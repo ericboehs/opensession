@@ -77,9 +77,9 @@ export function PreviewButton({
   onStatusChange?: (status: PreviewStatus | null) => void;
   /** "bar" = the full segmented split button (right panel's action row);
    *  "header" = a single state-colored ▶ icon for the session header, sized to
-   *  match the panel-toggle icon it sits beside. Right-click opens the dev
-   *  services popover (stop / snapshot). */
-  variant?: "bar" | "header";
+   *  match the panel-toggle icon it sits beside. "action" = a compact cell for
+   *  the mobile workspace Actions grid. */
+  variant?: "bar" | "header" | "action";
 }) {
   const [status, setStatus] = useState<PreviewStatus | null>(null);
   const [open, setOpen] = useState(false);
@@ -325,15 +325,14 @@ export function PreviewButton({
       ) : (
         <div className="px-0 py-1 text-xs text-faint">{notBootableHint}.</div>
       )}
-      {variant === "header" && running && (
+      {variant !== "bar" && running && (
         <button className={cn(popoverActionClass, "mt-1.5")} onClick={snap} disabled={snapping}>
           {snapping ? "Capturing…" : "Snapshot preview"}
         </button>
       )}
-      {/* Header mode has no room for a copy segment (single icon by design), so
-          the copy action lives here — plus ⌘-click on the icon, mirroring
-          StagingLink. The bar layout gets a dedicated segment instead. */}
-      {variant === "header" && running && (
+      {/* Compact modes have no room for dedicated snapshot/copy segments, so
+          those actions live here. The bar layout keeps its split controls. */}
+      {variant !== "bar" && running && (
         <button
           className={cn(popoverActionClass, "mt-1.5")}
           onClick={() => copy(url, { toast: "Preview link copied" })}
@@ -354,6 +353,73 @@ export function PreviewButton({
       </div>
     </div>
   );
+
+  if (variant === "action") {
+    const openMenu = (e: React.MouseEvent) => {
+      e.preventDefault();
+      setOpen((v) => !v);
+    };
+    const mainClass =
+      "flex min-w-0 flex-1 items-center gap-2 rounded-md rounded-r-none px-2.5 py-2 text-left text-[12.5px] font-semibold text-fg no-underline outline-none transition-colors hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:opacity-50 aria-disabled:cursor-default aria-disabled:opacity-50";
+    const mainContent = (
+      <>
+        <span className="inline-flex size-5 shrink-0 items-center justify-center text-faint">
+          {isStarting ? <span className={spinnerClass} /> : <IconPlay size={17} />}
+        </span>
+        <span className="min-w-0 flex-1 truncate">
+          {isStarting ? (stopping ? "Cancelling…" : "Starting…") : "Preview"}
+        </span>
+      </>
+    );
+
+    return (
+      <div className="relative flex min-w-0" ref={wrapRef}>
+        {running ? (
+          <a
+            className={mainClass}
+            href={url}
+            target="_blank"
+            rel="noopener"
+            title={`Open the webapp — ${url}`}
+            onClick={(e) => {
+              if (e.metaKey || e.ctrlKey) {
+                e.preventDefault();
+                copy(url, { toast: "Preview link copied" });
+              } else if (onOpenTab) {
+                e.preventDefault();
+                onOpenTab();
+              }
+            }}
+          >
+            {mainContent}
+          </a>
+        ) : isStarting ? (
+          <button className={mainClass} onClick={stop} disabled={stopping}>
+            {mainContent}
+          </button>
+        ) : !bootable ? (
+          <button className={mainClass} onClick={openMenu} aria-disabled="true">
+            {mainContent}
+          </button>
+        ) : (
+          <button className={mainClass} onClick={start}>
+            {mainContent}
+          </button>
+        )}
+        <button
+          className="flex w-8 shrink-0 items-center justify-center rounded-md rounded-l-none text-faint outline-none transition-colors hover:bg-hover hover:text-fg focus-visible:bg-hover focus-visible:text-fg"
+          onClick={openMenu}
+          title="Dev services"
+          aria-label="Dev services"
+          aria-expanded={open}
+        >
+          <IconChevronDown size={16} />
+        </button>
+        {snapshotModal}
+        {servicesPopover}
+      </div>
+    );
+  }
 
   // Header mode: a single ▶ icon, color-coded by state (dim=off, amber=starting,
   // green=live), sized to sit next to the panel-toggle icon. Left-click does the
