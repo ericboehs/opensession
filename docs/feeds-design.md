@@ -169,7 +169,18 @@ plugins." Workstreams:
   loadAgents). Config feeds (W3) cover no-code; a module is for bespoke
   fetching/webhooks/background work. `@opensession/feed-*` extraction stays
   mechanical because the interface is the boundary.
-- **W5 — migrate Plain onto the contract** (original Phase 1). Execution
+- **W5 — CUTOVER LANDED ef919ee3 (2026-07-29)**: Plain rides the generic
+  feed band. PlainAgent.getFeed() (lanes, attentionLane, meta = full
+  SupportThreadSummary); sidebar derives supportThreads from feed items (own
+  fetch loop deleted); generic band = container/header/badge/lanes, plain
+  rows still the bespoke SupportRow pipeline; flat view keeps lanes inline;
+  mark-done busts the feed cache; renderPlainProject deleted. Verified by
+  screenshot (band + Urgent lane + filter pixel-faithful). REMAINING POLISH
+  (not blocking): step 3's panel-kind registry rename (the conversation tab
+  still rides plainThreadId — works; the "video" ActiveViewTab key is
+  internal naming only), and step 5 after-checks in daily use (Tinder,
+  SupportPreview, triage redirect — routes untouched). Original plan below
+  for reference. Execution
   plan (atomic cutover — a registered plain feed + the legacy band would
   render TWICE, so these land in ONE commit after the generic band grows the
   missing capabilities):
