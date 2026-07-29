@@ -193,6 +193,7 @@ const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"composer",
 	"appearance",
 	"personalPrompt",
+	"myAccounts",
 	"workspace",
 	"model",
 	"modelProviders",

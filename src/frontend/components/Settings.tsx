@@ -63,6 +63,7 @@ import {
 	onPinNewWorkspacesChanged,
 } from "../lib/pins";
 import { Connections } from "./Connections";
+import { MyAccountsPanel } from "./MyAccounts";
 import { AccountsPanel } from "./Models";
 import { ModelProvidersPanel } from "./ModelProviders";
 import {
@@ -145,6 +146,7 @@ export type SettingsSectionKey =
 	| "composer"
 	| "appearance"
 	| "personalPrompt"
+	| "myAccounts"
 	| "workspace"
 	| "model"
 	| "modelProviders"
@@ -328,6 +330,24 @@ const SECTIONS: {
 					d="M12.9 9.1l-3.4 3.4-.5 1.5 1.5-.5 3.4-3.4a1 1 0 0 0-1-1z"
 					strokeLinejoin="round"
 				/>
+			</svg>
+		),
+	},
+	{
+		key: "myAccounts",
+		label: "My accounts",
+		group: "Personal",
+		icon: (
+			<svg
+				width="20"
+				height="20"
+				viewBox="0 0 16 16"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="1.4"
+			>
+				<circle cx="8" cy="5.2" r="2.7" />
+				<path d="M2.8 13.5a5.2 5.2 0 0 1 10.4 0" strokeLinecap="round" />
 			</svg>
 		),
 	},
@@ -534,6 +554,7 @@ function SectionPanel({
 			{section === "modelProviders" && <ModelProvidersPanel />}
 			{section === "connections" && <Connections />}
 			{section === "personalPrompt" && <PersonalPromptPanel />}
+			{section === "myAccounts" && <MyAccountsPanel />}
 			{section === "memory" && <MemoryPanel />}
 			{section === "warmPreviews" && <WarmPreviewsPanel />}
 			{section === "previewPool" && <PreviewPoolPanel />}
