@@ -1326,13 +1326,24 @@ function App() {
 		// Conversation; everything else — PR-backed included — lands in its
 		// main/last-open chat. A PR workspace only defaults to Review when it
 		// has no chat to land in (the else branch below).
+		// Default pane by workspace shape — but a workspace WITH chats always
+		// lands in its main/last-open chat (same rule as PR workspaces); the
+		// panel (Conversation/Video) is only the landing surface when there is
+		// no chat to land in. Explicit /conversation-/video URLs still win.
+		const hasChat = !!pickLandingChat(
+			sessionsRef.current,
+			route.id,
+			getWorkspaceLastChat(route.id),
+		);
 		const tab =
 			route.tab ??
-			(p?.plainThreadId
-				? "conversation"
-				: p?.externalRefs?.some((r) => refWebPanel(r))
-					? "video"
-					: null);
+			(hasChat
+				? null
+				: p?.plainThreadId
+					? "conversation"
+					: p?.externalRefs?.some((r) => refWebPanel(r))
+						? "video"
+						: null);
 		const key = route.id;
 		// Landing in the workspace's first chat keeps the full session chrome —
 		// including the right sidebar — around the foregrounded pane (wsKey is

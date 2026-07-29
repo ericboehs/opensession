@@ -2477,6 +2477,19 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			)
 			.sort((a, b) => rowIdx(a) - rowIdx(b));
 	}, [wsRows, pins, reviewBandKeys, activeSnoozeKeys]);
+	// Feed workspaces (repo-less, externalRefs — Tella videos, PostHog
+	// dashboards) are represented by their feed band's rows. They only join
+	// the status lanes when they demand attention (running / needs input) —
+	// an idle one in Backlog is a duplicate of its feed row (Michiel
+	// 2026-07-29).
+	const feedRefKinds = useMemo(
+		() => new Set(feeds.map((f) => f.refKind)),
+		[feeds],
+	);
+	const rowIsFeedOnly = (r: WsRow) =>
+		!r.workspace?.repo &&
+		!!r.workspace?.externalRefs?.length &&
+		feedRefKinds.has(r.workspace.externalRefs[0].kind);
 	const focusWsRows = useMemo(() => {
 		const focus =
 			filter.person === "me" ? currentUser.toLowerCase() : filter.person;
@@ -2508,7 +2521,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							((r.owner === "" || focus === currentUser.toLowerCase()) &&
 								r.chats.some((c) => getLane(c.id))))) &&
 				!reviewBandKeys.has(r.key) &&
-				!activeSnoozeKeys.has(r.key),
+				!activeSnoozeKeys.has(r.key) &&
+				// Idle feed workspaces stay out of the lanes (their feed row is
+				// the representation); attention states still surface.
+				(!rowIsFeedOnly(r) || r.running || r.status === "needsinput"),
 		);
 	}, [
 		wsRows,
@@ -4004,14 +4020,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			}
 			return b;
 		};
-		// Feed workspaces (repo-less, externalRefs) are represented by their
-		// feed band's item rows — don't also mint a pseudo-repo band for them
-		// (a lowercase "tella" band next to the Tella feed reads as a dupe).
-		const feedKinds = new Set(feeds.map((f) => f.refKind));
-		const rowIsFeedOnly = (r: WsRow) =>
-			!r.workspace?.repo &&
-			!!r.workspace?.externalRefs?.length &&
-			feedKinds.has(r.workspace.externalRefs[0].kind);
+		// Feed workspaces are represented by their feed band's item rows —
+		// don't also mint a pseudo-repo band for them (rowIsFeedOnly above).
 		for (const r of focusWsRows)
 			if (!rowIsFeedOnly(r)) bucket(byRepo, wsRowRepo(r)).push(r);
 		// "Repo and status" keeps each repo's snoozed rows in that repo's own

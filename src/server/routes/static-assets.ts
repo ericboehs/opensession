@@ -6,6 +6,7 @@
  * next handler (see routes/index.ts for the dispatch order).
  */
 
+import { existsSync } from "fs";
 import type { RouteContext } from "./context";
 import { configuredIntegration, configuredRepos, productName } from "../config";
 import { FRONTEND_DIST, FRONTEND_SRC, frontend } from "../frontend-build";
@@ -92,7 +93,19 @@ export async function handleStaticAssetsRoutes(
 				},
 			});
 		}
-		// Feed bands (docs/feeds-design.md) ride the same tile pipeline.
+		// Feed bands (docs/feeds-design.md) ride the same tile pipeline:
+		// any `<id>-icon.png` dropped in src/frontend serves generically.
+		if (/^[a-z0-9][a-z0-9_-]{0,40}$/i.test(id)) {
+			const generic = `${FRONTEND_SRC}/${id}-icon.png`;
+			if (existsSync(generic)) {
+				return new Response(Bun.file(generic), {
+					headers: {
+						"Content-Type": "image/png",
+						"Cache-Control": "public, max-age=86400",
+					},
+				});
+			}
+		}
 		if (id === "tella") {
 			return new Response(Bun.file(`${FRONTEND_SRC}/tella-icon.png`), {
 				headers: {

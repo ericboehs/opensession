@@ -97,6 +97,7 @@ import { PrStatusBar } from "./PrStatusBar";
 
 import { ConversationPane } from "./ConversationPane";
 import { FeedWebPane, type RefWebPanel } from "./FeedWebPane";
+import { feedForRefKind } from "../lib/feeds-meta";
 import { WorkflowPanel } from "./WorkflowPanel";
 import { AssetsPanel, useSessionAssets } from "./AssetsPanel";
 import {
@@ -1467,6 +1468,13 @@ export function SessionViewer({
 	const hasPlain = Boolean(session.plainThreadId);
 	const plainUrl = session.plainThreadId
 		? plainThreadUrl(session.plainThreadId)
+		: "";
+	// Feed-item link (Tella video, PostHog dashboard, …): the same
+	// jump-out affordance Plain has, generic over the session's externalRefs.
+	const feedRef = (session.externalRefs || []).find((r) => r.url);
+	const feedRefLabel = feedRef
+		? feedForRefKind(feedRef.kind)?.title ||
+			feedRef.kind.charAt(0).toUpperCase() + feedRef.kind.slice(1)
 		: "";
 	// Workflow runs open the panel too: ask-mode sessions without a workspace
 	// or Plain thread still need somewhere to show the Agents tab.
@@ -3865,6 +3873,20 @@ export function SessionViewer({
 								className="session-link session-link-plain"
 							>
 								Plain ↗
+							</a>
+						))}
+						{feedRef && (inMenu ? (
+							<Menu.Item render={<a href={feedRef.url} target="_blank" rel="noopener" />}>
+								<span className="grow">{feedRefLabel} ↗</span>
+							</Menu.Item>
+						) : (
+							<a
+								href={feedRef.url}
+								target="_blank"
+								rel="noopener"
+								className="session-link session-link-plain"
+							>
+								{feedRefLabel} ↗
 							</a>
 						))}
 					</>

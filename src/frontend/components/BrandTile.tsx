@@ -22,6 +22,7 @@ export const BRANDS: Record<string, { bg: string; fg?: string }> = {
 /** Pretty display names for the handful that don't title-case cleanly. */
 const DISPLAY_NAMES: Record<string, string> = {
   workos: "WorkOS",
+  posthog: "PostHog",
   github: "GitHub",
   "grafana-poller": "Grafana Poller",
   incident: "incident.io",
