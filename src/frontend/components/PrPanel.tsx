@@ -41,15 +41,11 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import { CommentableDiff, type CommentTarget, type PendingComment } from "./CommentableDiff";
 import { SelectionToSession } from "./SelectionToSession";
 import { getCurrentUser } from "./UserPicker";
-import { githubLoginFor } from "./UserAvatar";
 import { renderMarkdown, renderPrCommentMarkdown } from "../lib/markdown";
-import { GITHUB_BOT_LOGINS } from "../lib/brand";
 import { providerFromUrl, avatarUrl, type Provider } from "../lib/provider";
 import { pollWhileVisible, PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
 import {
-  IconArrowUp,
   IconCheck,
-  IconGitMerge,
   IconMessage,
   IconClock,
   IconX,
@@ -977,21 +973,15 @@ export function PrPanel({
           {switcher}
           <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-4 py-4 sm:px-5">
             {walkthrough && <WalkthroughCard walkthrough={walkthrough} />}
-            <PrCard title="Status">
-              <div className="flex items-center gap-3 text-xs">
-                <span className="inline-flex items-center gap-1.5 font-medium text-faint">
-                  <PrStateIcon state="OPEN" />
-                  No pull request
-                </span>
-            </div>
-            <GitStatusRows
-              git={git}
-              pr={null}
-              sessionId={sessionId}
-              repo={active?.repo}
-              send={send}
-              onRefresh={load}
-            />
+            <PrCard title="Git status">
+              <GitStatusRows
+                git={git}
+                pr={null}
+                sessionId={sessionId}
+                repo={active?.repo}
+                send={send}
+                onRefresh={load}
+              />
             </PrCard>
             {linkable && !showBar && (
               <div className="flex flex-wrap items-center gap-2">
@@ -1010,14 +1000,6 @@ export function PrPanel({
   const comments = (pr.comments || []).filter((c) => stripHtmlComments(c.body));
 
   if (reviewCanvas) {
-    const currentLogin = githubLoginFor(getCurrentUser())?.toLowerCase();
-    const myReview = reviewers.find(
-      (reviewer) => reviewer.login.toLowerCase() === currentLogin,
-    );
-    const needsReview =
-      (GITHUB_BOT_LOGINS.has(pr.author.toLowerCase()) &&
-        pr.reviewDecision !== "APPROVED") ||
-      myReview?.state === "PENDING";
     const canMergeAfterReview =
       pr.state === "OPEN" &&
       !pr.isDraft &&
@@ -1053,10 +1035,6 @@ export function PrPanel({
               {pr.title} <span className="font-normal text-faint">#{pr.number}</span>
             </a>
             <div className="mt-2 flex items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-dim">
-              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold ${pr.state === "OPEN" ? "bg-green text-surface" : pr.state === "MERGED" ? "bg-purple text-surface" : "bg-active text-dim"}`}>
-                <PrStateIcon state={pr.state} isDraft={pr.isDraft} />
-                {pr.isDraft ? "Draft" : status.label}
-              </span>
               <span className="truncate">
                 <strong>{pr.author}</strong> wants to merge {pr.commits?.length || 0} commit{pr.commits?.length === 1 ? "" : "s"} into
                 {" "}<span className="rounded-sm bg-blue-soft px-1.5 py-0.5 font-mono text-blue">{pr.baseRefName}</span>
@@ -1067,7 +1045,7 @@ export function PrPanel({
           <div className="flex shrink-0 items-center gap-2 max-[760px]:hidden">
             {sessions && (
               <button
-                className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs font-medium text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+                className="border-0 bg-transparent px-1 py-2 text-xs font-medium text-dim hover:text-fg"
                 onClick={() => setSessionsOpen(true)}
                 title="Sessions linked to this PR"
               >
@@ -1076,7 +1054,7 @@ export function PrPanel({
             )}
             {pr.staging?.url && (
               <a
-                className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs font-medium text-dim no-underline hover:border-line-strong hover:bg-hover hover:text-fg"
+                className="px-1 py-2 text-xs font-medium text-dim no-underline hover:text-fg"
                 href={pr.staging.url}
                 target="_blank"
                 rel="noopener"
@@ -1086,48 +1064,32 @@ export function PrPanel({
             )}
             {onOpenSession && (
               <button
-                className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs font-medium text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+                className="border-0 bg-transparent px-1 py-2 text-xs font-medium text-dim hover:text-fg"
                 onClick={onOpenSession}
               >
                 Open workspace
               </button>
             )}
-            {pr.state === "OPEN" && !pr.isDraft && (
-              <>
-                {needsReview ? (
-                  <button
-                    className="rounded-sm border border-fg bg-fg px-3 py-2 text-xs font-semibold text-surface hover:opacity-90"
-                    onClick={() => setReviewOpen(true)}
-                  >
-                    Finish review
-                  </button>
-                ) : status.key !== "ready" ? (
-                  <button
-                    className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs font-medium text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
-                    onClick={() => setReviewOpen(true)}
-                  >
-                    Review
-                  </button>
-                ) : null}
-                <button
-                  className={`rounded-sm border px-3 py-2 text-xs font-semibold ${
-                    confirmMerge
-                      ? "border-green bg-green text-surface"
-                      : "border-green/40 bg-green-soft text-green hover:border-green"
-                  }`}
-                  onClick={handleMerge}
-                  disabled={merging}
-                >
-                  {merging
-                    ? "Merging…"
-                    : confirmMerge
-                      ? "Confirm squash & merge"
-                      : "Squash & merge"}
-                </button>
-              </>
-            )}
           </div>
         </header>
+
+        <section className="shrink-0 px-6 pb-4 max-[720px]:px-3">
+          <h2 className="m-0 mb-1 text-xs font-semibold text-dim">Git status</h2>
+          <div className="max-w-[680px]">
+            <GitStatusRows
+              git={git}
+              pr={pr}
+              sessionId={sessionId}
+              repo={active?.repo}
+              send={send}
+              onRefresh={load}
+              onMerge={handleMerge}
+              merging={merging}
+              confirmMerge={confirmMerge}
+            />
+            {mergeError && <div className="pr-git-note pr-git-note-error">{mergeError}</div>}
+          </div>
+        </section>
 
         {sessionsOpen && (
           <>
@@ -1551,39 +1513,11 @@ export function PrPanel({
             </div>
           </div>
 
-          {/* Compact action row — primary merge, quiet secondaries (Linear-style). */}
-          <div className="flex flex-wrap items-center gap-2">
-            {pr.state === "OPEN" && !pr.isDraft && (
-              <button
-                className={`rounded-sm border px-3 py-2 text-xs font-semibold ${confirmMerge ? "border-green bg-green text-surface hover:border-green hover:bg-green" : "border-fg bg-fg text-surface hover:border-accent hover:bg-accent"}`}
-                onClick={handleMerge}
-                disabled={merging}
-                title={`Squash and merge this ${provider.changeNoun} into its base branch`}
-              >
-                {merging ? "Merging…" : confirmMerge ? "Confirm squash & merge?" : "Squash & merge"}
-              </button>
-            )}
-            <a
-              className="rounded-sm border border-line bg-panel px-3 py-2 text-xs text-dim no-underline hover:border-line-strong hover:bg-hover hover:text-fg"
-              href={pr.url}
-              target="_blank"
-              rel="noopener"
-            >
-              Open on {provider.name} ↗
-            </a>
-            {onOpenSession && (
-              <button
-                className="rounded-sm border border-line bg-panel px-3 py-2 text-xs text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
-                onClick={onOpenSession}
-              >
-                Open workspace →
-              </button>
-            )}
-            {linkable && !showBar && (
+          {linkable && !showBar && (
+            <div>
               <LinkPrControl sessionId={sessionId} variant="action" onLinked={handleLinked} />
-            )}
-          </div>
-          {mergeError && <div className="pr-merge-error">{mergeError}</div>}
+            </div>
+          )}
 
           {walkthrough && <WalkthroughCard walkthrough={walkthrough} />}
 
@@ -1602,23 +1536,7 @@ export function PrPanel({
             </div>
           )}
 
-          {/* Status card */}
-          <PrCard title="Status">
-            <div className="flex flex-wrap items-center gap-3 text-xs">
-              <span
-                className={`inline-flex items-center gap-1.5 font-medium ${status.tone === "green" ? "text-green" : status.tone === "red" ? "text-red" : status.tone === "yellow" ? "text-yellow" : status.tone === "purple" ? "text-accent" : "text-faint"}`}
-              >
-                <PrStateIcon state={pr.state} isDraft={pr.isDraft} />
-                {status.label}
-              </span>
-              {status.qualifier && (
-                <span
-                  className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${status.tone === "green" ? "border-green/35 bg-green-soft text-green" : status.tone === "red" ? "border-red/35 bg-red-soft text-red" : status.tone === "yellow" ? "border-yellow/35 bg-yellow-soft text-yellow" : "border-line bg-surface text-faint"}`}
-                >
-                  {status.qualifier}
-                </span>
-              )}
-            </div>
+          <PrCard title="Git status">
             <GitStatusRows
               git={git}
               pr={pr}
@@ -1626,7 +1544,11 @@ export function PrPanel({
               repo={active?.repo}
               send={send}
               onRefresh={load}
+              onMerge={handleMerge}
+              merging={merging}
+              confirmMerge={confirmMerge}
             />
+            {mergeError && <div className="pr-git-note pr-git-note-error">{mergeError}</div>}
           </PrCard>
 
           {/* Sessions card — every session linked to this PR + start a new one. */}
@@ -2459,6 +2381,9 @@ function GitStatusRows({
   repo,
   send,
   onRefresh,
+  onMerge,
+  merging,
+  confirmMerge,
 }: {
   git: GitStatusInfo | null;
   pr: PrDetails | null;
@@ -2466,6 +2391,9 @@ function GitStatusRows({
   repo?: string;
   send?: (msg: any) => void;
   onRefresh: () => Promise<void> | void;
+  onMerge?: () => void;
+  merging?: boolean;
+  confirmMerge?: boolean;
 }) {
   const [pushing, setPushing] = useState(false);
   const [prompted, setPrompted] = useState<string | null>(null);
@@ -2497,10 +2425,42 @@ function GitStatusRows({
   const rows: Array<{
     key: string;
     label: string;
-    tone: string;
-    strong?: boolean;
     action?: React.ReactNode;
   }> = [];
+
+  if (pr) {
+    const status = deriveStatus(pr);
+    const resolveAction =
+      status.key === "conflicts" && send ? (
+        <button
+          className="pr-git-action"
+          onClick={() =>
+            promptSession(
+              "resolve the conflicts",
+              `The PR has merge conflicts with ${base}. Rebase this branch on the latest origin/${base}, resolve the conflicts, and push.`,
+            )
+          }
+        >
+          Resolve
+        </button>
+      ) : undefined;
+    rows.push({
+      key: "pr-status",
+      label: status.qualifier || status.label,
+      action:
+        resolveAction ||
+        (pr.state === "OPEN" && !pr.isDraft && onMerge ? (
+          <button
+            className="pr-git-action"
+            onClick={onMerge}
+            disabled={merging}
+            title="Squash and merge this pull request"
+          >
+            {merging ? "Merging…" : confirmMerge ? "Confirm merge" : "Merge"}
+          </button>
+        ) : undefined),
+    });
+  }
 
   // Base-sync (rebase) status — lead with it so the panel answers "am I behind
   // main?" at a glance. Shown for any real feature branch (not the base branch
@@ -2514,12 +2474,10 @@ function GitStatusRows({
         behind > 0
           ? `${behind} commit${behind === 1 ? "" : "s"} behind ${base}`
           : `Up to date with ${base}`,
-      tone: behind > 0 ? "yellow" : "green",
-      strong: behind > 0,
       action:
         behind > 0 && send ? (
           <button
-            className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+            className="pr-git-action"
             onClick={() =>
               promptSession(
                 "update from " + base,
@@ -2527,20 +2485,19 @@ function GitStatusRows({
               )
             }
           >
-            Update
+            Pull
           </button>
         ) : undefined,
     });
   }
 
-  if (!pr && git) {
+  if (!pr) {
     rows.push({
       key: "no-pr",
-      label: "Not pushed as a PR yet",
-      tone: "muted",
+      label: "No pull request",
       action: send && (
         <button
-          className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+          className="pr-git-action"
           onClick={() =>
             promptSession(
               "create a PR",
@@ -2557,10 +2514,9 @@ function GitStatusRows({
     rows.push({
       key: "ahead",
       label: `${git.ahead} commit${git.ahead === 1 ? "" : "s"} ahead of remote`,
-      tone: "yellow",
       action: (
         <button
-          className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-50"
+          className="pr-git-action"
           onClick={handlePush}
           disabled={pushing}
         >
@@ -2573,35 +2529,14 @@ function GitStatusRows({
     rows.push({
       key: "dirty",
       label: `${git.uncommittedFiles} uncommitted file${git.uncommittedFiles === 1 ? "" : "s"}`,
-      tone: "yellow",
       action: send && (
         <button
-          className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+          className="pr-git-action"
           onClick={() =>
             promptSession("commit the changes", "Commit and push the current work in the worktree.")
           }
         >
           Commit
-        </button>
-      ),
-    });
-  }
-  if (pr?.mergeable === "CONFLICTING") {
-    rows.push({
-      key: "conflicts",
-      label: "Resolve conflicts",
-      tone: "red",
-      action: send && (
-        <button
-          className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
-          onClick={() =>
-            promptSession(
-              "resolve the conflicts",
-              `The PR has merge conflicts with ${base}. Rebase this branch on the latest origin/${base}, resolve the conflicts, and push.`,
-            )
-          }
-        >
-          Resolve
         </button>
       ),
     });
@@ -2613,17 +2548,15 @@ function GitStatusRows({
       {rows.map((row) => (
         <div
           key={row.key}
-          className={`flex items-center gap-3 rounded-sm px-1 py-1.5 text-xs ${row.strong ? "font-medium text-fg" : "text-dim"}`}
+          className="pr-git-row"
         >
-          <span
-            className={`size-2 shrink-0 rounded-full ${row.tone === "green" ? "bg-green" : row.tone === "red" ? "bg-red" : row.tone === "yellow" ? "bg-yellow" : "bg-faint"}`}
-          />
-          <span className="min-w-0 flex-1">{row.label}</span>
+          <span className="pr-git-dot" aria-hidden />
+          <span className="pr-git-label">{row.label}</span>
           {row.action}
         </div>
       ))}
-      {prompted && <div className="text-[11px] text-faint">Asked Michael to {prompted} ✓</div>}
-      {error && <div className="text-[11px] text-red">{error}</div>}
+      {prompted && <div className="pr-git-note">Asked Michael to {prompted} ✓</div>}
+      {error && <div className="pr-git-note pr-git-note-error">{error}</div>}
     </>
   );
 }
