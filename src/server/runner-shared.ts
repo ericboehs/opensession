@@ -236,11 +236,22 @@ export const TOOL_RESULT_ENVELOPE_RE = /^\s*\[your [a-z0-9][\w.:-]*(?:\s[^\]]*)?
  */
 const DURATION_CHIP_JSON_RE = /(^|\n)[–—]\s*\d+(?:\.\d+)?\s*m?s\s*\n\s*[{[]/;
 
+/**
+ * Third observed costume (2026-07-29, bks-019fad97): the model wrote a raw
+ * function-call block — `<invoke name="…">` with `<parameter name="…">`
+ * lines — as assistant text, invented the tool's output inline, and ended
+ * the turn convinced the call was in flight. That syntax is pure harness
+ * protocol and never belongs in prose; requiring BOTH tags keeps a passing
+ * mention of "<invoke" in code discussion from tripping it.
+ */
+const INVOKE_XML_RE = /<invoke name="[^"\n]{1,120}">[\s\S]{0,2000}?<parameter name="[^"\n]{1,120}">/;
+
 export function looksLikeFabricatedToolTranscript(text: string): boolean {
   if (!text) return false;
   return (
     TOOL_RESULT_ENVELOPE_RE.test(text) ||
     DURATION_CHIP_JSON_RE.test(text) ||
+    INVOKE_XML_RE.test(text) ||
     text.includes("Todos have been modified successfully")
   );
 }

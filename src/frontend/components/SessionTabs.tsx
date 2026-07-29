@@ -9,6 +9,7 @@ import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { copySessionTranscript } from "../lib/transcript-copy";
 import { IconHistory, IconPencil, IconPlus, IconRestore } from "./icons";
 import { useIsPhone } from "../hooks/useIsPhone";
+import type { TabSplit } from "../lib/split-tabs";
 
 /**
  * The tab strip is scoped to ONE Workspace: it shows the sibling chats of the
@@ -59,6 +60,13 @@ interface Props {
 	 * Receives the reordered session ids; the parent persists it per-workspace.
 	 */
 	onReorderTabs: (orderedIds: string[]) => void;
+	/** One persisted two-chat group rendered as a single combined tab. */
+	split?: TabSplit | null;
+	onSeparateSplit?: () => void;
+	/** Dragging below the strip previews a left/right split over the content. */
+	onSplitDrag?: (id: string | null, point?: { x: number; y: number }) => void;
+	/** Return true when the drop created a split instead of committing a reorder. */
+	onSplitDrop?: (id: string, point: { x: number; y: number }) => boolean;
 	/**
 	 * Non-chat "view" tabs (Review, Preview, …) shown after the chat tabs.
 	 * Each is bound to a session; selecting one foregrounds that
@@ -104,6 +112,10 @@ export function SessionTabs({
 	onSelect,
 	onSetColor,
 	onReorderTabs,
+	split,
+	onSeparateSplit,
+	onSplitDrag,
+	onSplitDrop,
 	viewTabs,
 	onSelectView,
 	onCloseView,
@@ -134,14 +146,31 @@ export function SessionTabs({
 	// that fires synchronously after a drop so it doesn't select the tab.
 	const [orderDraft, setOrderDraft] = useState<string[] | null>(null);
 	const justDragged = useRef(false);
+	const dragPoint = useRef<{ x: number; y: number } | null>(null);
+	const stopPointerTracking = useRef<(() => void) | null>(null);
 	const canReorder = !isPhone && tabs.length > 1;
-	const keepMainFirst = React.useCallback(
-		(ids: string[]) =>
-			mainId && ids.includes(mainId)
-				? [mainId, ...ids.filter((id) => id !== mainId)]
-				: ids,
-		[mainId],
-	);
+
+	function trackPointer(id: string, event: React.PointerEvent) {
+		stopPointerTracking.current?.();
+		dragPoint.current = { x: event.clientX, y: event.clientY };
+		const move = (pointer: PointerEvent) => {
+			dragPoint.current = { x: pointer.clientX, y: pointer.clientY };
+			onSplitDrag?.(id, dragPoint.current);
+		};
+		const stop = () => {
+			window.removeEventListener("pointermove", move);
+			window.removeEventListener("pointerup", stop);
+			window.removeEventListener("pointercancel", stop);
+			stopPointerTracking.current = null;
+			onSplitDrag?.(null);
+		};
+		stopPointerTracking.current = stop;
+		window.addEventListener("pointermove", move);
+		window.addEventListener("pointerup", stop);
+		window.addEventListener("pointercancel", stop);
+	}
+
+	useEffect(() => () => stopPointerTracking.current?.(), []);
 
 	// Render order: the in-flight drag draft when dragging, else the parent's
 	// (already persisted) order. Any tab absent from the draft is appended so a
@@ -157,6 +186,34 @@ export function SessionTabs({
 		for (const s of tabs) if (!orderDraft.includes(s.id)) out.push(s);
 		return out;
 	}, [tabs, orderDraft]);
+	const tabUnits = React.useMemo(() => {
+		const visibleSplit = isPhone ? null : split;
+		const splitIds = visibleSplit
+			? new Set([visibleSplit.leftId, visibleSplit.rightId])
+			: null;
+		const splitSessions = visibleSplit
+			? [
+					orderedTabs.find((s) => s.id === visibleSplit.leftId),
+					orderedTabs.find((s) => s.id === visibleSplit.rightId),
+				].filter(
+					(s): s is UnifiedSession => !!s,
+				)
+			: [];
+		let splitInserted = false;
+		return orderedTabs.flatMap((session) => {
+			if (!splitIds?.has(session.id) || splitSessions.length !== 2) {
+				return [{ key: session.id, sessions: [session] }];
+			}
+			if (splitInserted) return [];
+			splitInserted = true;
+			return [
+				{
+					key: `split:${splitSessions[0].id}:${splitSessions[1].id}`,
+					sessions: splitSessions,
+				},
+			];
+		});
+	}, [isPhone, orderedTabs, split]);
 
 	// Drop: hand the new order to the parent (which persists it and feeds it back
 	// as the next `tabs`), swallow the trailing click, then release the draft.
@@ -168,6 +225,14 @@ export function SessionTabs({
 		const order = orderDraft;
 		setOrderDraft(null);
 		if (order) onReorderTabs(order);
+	}
+
+	function reorderUnits(keys: string[]) {
+		const byKey = new Map(tabUnits.map((unit) => [unit.key, unit] as const));
+		let units = keys.map((key) => byKey.get(key)).filter((unit): unit is (typeof tabUnits)[number] => !!unit);
+		const mainUnit = mainId ? units.find((unit) => unit.sessions.some((session) => session.id === mainId)) : null;
+		if (mainUnit) units = [mainUnit, ...units.filter((unit) => unit !== mainUnit)];
+		setOrderDraft(units.flatMap((unit) => unit.sessions.map((session) => session.id)));
 	}
 
 	function commitRename() {
@@ -218,20 +283,14 @@ export function SessionTabs({
 	// the ⟲ restores it into the strip for good.
 	const historyMenu = archived.length > 0 && (
 		<Menu.Root>
-			<Menu.Trigger
-				className="session-tab session-tab-history"
-				aria-label="Archived chats"
-				title="Archived chats"
-			>
+			<Menu.Trigger className="session-tab session-tab-history" aria-label="Archived chats" title="Archived chats">
 				<IconHistory size={ctrlIconSize} />
 			</Menu.Trigger>
 			<Menu.Popup align="end" sideOffset={4} className="min-w-[240px] max-w-[320px]">
 				{archived.map((s) => (
 					<Menu.Item key={s.id} onClick={() => onSelect(s)}>
 						<span className="min-w-0 flex-1 truncate">{s.title}</span>
-						<span className="shrink-0 text-[11.5px] text-faint">
-							{relativeTime(s.lastActivity)}
-						</span>
+						<span className="shrink-0 text-[11.5px] text-faint">{relativeTime(s.lastActivity)}</span>
 						<button
 							type="button"
 							className="flex shrink-0 cursor-pointer items-center rounded-sm border-0 bg-transparent p-0.5 text-dim hover:text-fg"
@@ -257,175 +316,240 @@ export function SessionTabs({
 					as="div"
 					axis="x"
 					className="session-tabs-chatgroup"
-					values={orderedTabs.map((s) => s.id)}
-					onReorder={(ids: string[]) => setOrderDraft(keepMainFirst(ids))}
+					values={tabUnits.map((unit) => unit.key)}
+					onReorder={reorderUnits}
 				>
-				{orderedTabs.map((session) => {
-					const key = session.id;
-					const waiting = !!session.waitingForInput;
-					const hex = colorHex(colors[key]);
-					return (
-						<Reorder.Item
-							as="div"
-							key={key}
-							value={key}
-							dragListener={
-								canReorder && editKey !== key && key !== mainId
-							}
-							transition={{ duration: 0 }}
-							onDragEnd={commitReorder}
-							whileDrag={{ scale: 1.02, zIndex: 3 }}
-							onClickCapture={(e) => {
-								if (justDragged.current) {
-									e.stopPropagation();
-									e.preventDefault();
-								}
-							}}
-							className="session-tab-reorder"
-						>
-						<ContextMenu.Root>
-							<ContextMenu.Trigger
-								render={
-									<div
-										role="tab"
-										aria-selected={key === activeId}
-										className={`session-tab ${key === activeId ? "session-tab-active" : ""} ${
-											waiting ? "session-tab-waiting" : ""
-										} ${hex ? "session-tab-colored" : ""}`}
-										style={
-											hex
-												? ({ "--tab-color": hex } as React.CSSProperties)
-												: undefined
+					{tabUnits.map((unit) => {
+						if (unit.sessions.length === 2) {
+							const groupActive = unit.sessions.some((session) => session.id === activeId);
+							const containsMain = unit.sessions.some((session) => session.id === mainId);
+							return (
+								<Reorder.Item
+									as="div"
+									key={unit.key}
+									value={unit.key}
+									dragListener={canReorder && !containsMain}
+									transition={{ duration: 0 }}
+									onDragEnd={commitReorder}
+									whileDrag={{ scale: 1.02, zIndex: 3 }}
+									onClickCapture={(event) => {
+										if (justDragged.current) {
+											event.stopPropagation();
+											event.preventDefault();
 										}
-										onClick={() => onSelect(session)}
-										title={session.title}
-									/>
-								}
+									}}
+									className="session-tab-reorder"
+								>
+									<ContextMenu.Root>
+										<ContextMenu.Trigger
+											render={
+												<div
+													role="tab"
+													aria-selected={groupActive}
+													className={`session-tab session-tab-split ${groupActive ? "session-tab-active" : ""}`}
+												/>
+											}
+										>
+											{unit.sessions.map((session) => (
+												<div
+													key={session.id}
+													className={`session-tab-split-part ${session.id === activeId ? "session-tab-split-part-active" : ""}`}
+													title={session.title}
+												>
+													<button
+														type="button"
+														className="session-tab-split-select"
+														onClick={(event) => {
+															event.stopPropagation();
+															onSelect(session);
+														}}
+													>
+														{session.waitingForInput ? (
+															<span className="session-tab-dot session-tab-dot-waiting" />
+														) : session.isRunning ? (
+															<span className="session-tab-dot" />
+														) : null}
+														<span className="session-tab-title">{session.title}</span>
+													</button>
+													<button
+														type="button"
+														className="session-tab-split-close"
+														aria-label={`Close ${session.title}`}
+														onClick={(event) => {
+															event.stopPropagation();
+															onClose(session);
+														}}
+													>
+														×
+													</button>
+												</div>
+											))}
+										</ContextMenu.Trigger>
+										<ContextMenu.Popup className="min-w-[190px]">
+											<ContextMenu.Item onClick={onSeparateSplit}>Separate tabs</ContextMenu.Item>
+										</ContextMenu.Popup>
+									</ContextMenu.Root>
+								</Reorder.Item>
+							);
+						}
+						const session = unit.sessions[0];
+						const key = session.id;
+						const waiting = !!session.waitingForInput;
+						const hex = colorHex(colors[key]);
+						return (
+							<Reorder.Item
+								as="div"
+								key={key}
+								value={key}
+								dragListener={canReorder && editKey !== key && key !== mainId}
+								transition={{ duration: 0 }}
+								onPointerDown={(event) => {
+									if (canReorder && editKey !== key && key !== mainId) trackPointer(key, event);
+								}}
+								onDragEnd={() => {
+									onSplitDrag?.(null);
+									const point = dragPoint.current;
+									dragPoint.current = null;
+									if (point && onSplitDrop?.(key, point)) {
+										setOrderDraft(null);
+										justDragged.current = true;
+										setTimeout(() => (justDragged.current = false), 0);
+										return;
+									}
+									commitReorder();
+								}}
+								whileDrag={{ scale: 1.02, zIndex: 3 }}
+								onClickCapture={(e) => {
+									if (justDragged.current) {
+										e.stopPropagation();
+										e.preventDefault();
+									}
+								}}
+								className="session-tab-reorder"
 							>
-							{waiting ? (
-								<span className="session-tab-dot session-tab-dot-waiting" />
-							) : (
-								session.isRunning && <span className="session-tab-dot" />
-							)}
-							{editKey === key ? (
-								<input
-									className="session-tab-rename"
-									value={draft}
-									autoFocus
-									onChange={(e) => setDraft(e.target.value)}
-									onClick={(e) => e.stopPropagation()}
-									onDoubleClick={(e) => e.stopPropagation()}
-									onBlur={commitRename}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") commitRename();
-										else if (e.key === "Escape") setEditKey(null);
-										e.stopPropagation();
-									}}
-								/>
-							) : (
-								<span
-									className="session-tab-title"
-									onDoubleClick={(e) => {
-										e.stopPropagation();
-										setDraft(session.title);
-										setEditKey(key);
-									}}
-								>
-									{session.title}
-								</span>
-							)}
-							{/* Unsent draft in a sibling chat (the active tab's draft is
+								<ContextMenu.Root>
+									<ContextMenu.Trigger
+										render={
+											<div
+												role="tab"
+												aria-selected={key === activeId}
+												className={`session-tab ${key === activeId ? "session-tab-active" : ""} ${
+													waiting ? "session-tab-waiting" : ""
+												} ${hex ? "session-tab-colored" : ""}`}
+												style={hex ? ({ "--tab-color": hex } as React.CSSProperties) : undefined}
+												onClick={() => onSelect(session)}
+												title={session.title}
+											/>
+										}
+									>
+										{waiting ? (
+											<span className="session-tab-dot session-tab-dot-waiting" />
+										) : (
+											session.isRunning && <span className="session-tab-dot" />
+										)}
+										{editKey === key ? (
+											<input
+												className="session-tab-rename"
+												value={draft}
+												autoFocus
+												onChange={(e) => setDraft(e.target.value)}
+												onClick={(e) => e.stopPropagation()}
+												onDoubleClick={(e) => e.stopPropagation()}
+												onBlur={commitRename}
+												onKeyDown={(e) => {
+													if (e.key === "Enter") commitRename();
+													else if (e.key === "Escape") setEditKey(null);
+													e.stopPropagation();
+												}}
+											/>
+										) : (
+											<span
+												className="session-tab-title"
+												onDoubleClick={(e) => {
+													e.stopPropagation();
+													setDraft(session.title);
+													setEditKey(key);
+												}}
+											>
+												{session.title}
+											</span>
+										)}
+										{/* Unsent draft in a sibling chat (the active tab's draft is
 							    already on screen in the composer — no pencil needed). */}
-							{key !== activeId && hasDraft(`chat:${key}`) && (
-								<span className="session-tab-draft" title="Unsent draft">
-									<IconPencil size={20} />
-								</span>
-							)}
-								<button
-									type="button"
-									className="session-tab-close"
-									aria-label="Close chat"
-									title="Close chat"
-									onClick={(e) => {
-										e.stopPropagation();
-										onClose(session);
-									}}
-								>
-									×
-								</button>
-							</ContextMenu.Trigger>
-							{/* finalFocus=false: "Rename chat" mounts the inline rename
+										{key !== activeId && hasDraft(`chat:${key}`) && (
+											<span className="session-tab-draft" title="Unsent draft">
+												<IconPencil size={20} />
+											</span>
+										)}
+										<button
+											type="button"
+											className="session-tab-close"
+											aria-label="Close chat"
+											title="Close chat"
+											onClick={(e) => {
+												e.stopPropagation();
+												onClose(session);
+											}}
+										>
+											×
+										</button>
+									</ContextMenu.Trigger>
+									{/* finalFocus=false: "Rename chat" mounts the inline rename
 							    input (autoFocus) — the closing menu must not steal focus
 							    back to the tab. */}
-							<ContextMenu.Popup className="min-w-[250px]" finalFocus={false}>
-								<ContextMenu.Item
-									onClick={() => {
-										setDraft(session.title);
-										setEditKey(key);
-									}}
-								>
-									<span className="grow">Rename chat</span>
-								</ContextMenu.Item>
-								<ContextMenu.Separator />
-								<ContextMenu.Item
-									onClick={() =>
-										void copySessionTranscript(session, "concise", onToast)
-									}
-								>
-									<span className="grow">Copy concise transcript</span>
-									{key === activeId && (
-										<MenuHint label={isApple ? "⌘ ⌥ C" : "Ctrl+Alt+C"} />
-									)}
-								</ContextMenu.Item>
-								<ContextMenu.Item
-									onClick={() =>
-										void copySessionTranscript(session, "full", onToast)
-									}
-								>
-									<span className="grow">Copy full transcript</span>
-								</ContextMenu.Item>
-								<ContextMenu.Item
-									onClick={() =>
-										copyToClipboard(absoluteLink(chatPath(session)), () =>
-											onToast("Link copied"),
-										)
-									}
-								>
-									<span className="grow">Copy link</span>
-								</ContextMenu.Item>
-								<ContextMenu.Separator />
-								{/* Tab color. A swatch click bubbles to the Item, which
+									<ContextMenu.Popup className="min-w-[250px]" finalFocus={false}>
+										<ContextMenu.Item
+											onClick={() => {
+												setDraft(session.title);
+												setEditKey(key);
+											}}
+										>
+											<span className="grow">Rename chat</span>
+										</ContextMenu.Item>
+										<ContextMenu.Separator />
+										<ContextMenu.Item onClick={() => void copySessionTranscript(session, "concise", onToast)}>
+											<span className="grow">Copy concise transcript</span>
+											{key === activeId && <MenuHint label={isApple ? "⌘ ⌥ C" : "Ctrl+Alt+C"} />}
+										</ContextMenu.Item>
+										<ContextMenu.Item onClick={() => void copySessionTranscript(session, "full", onToast)}>
+											<span className="grow">Copy full transcript</span>
+										</ContextMenu.Item>
+										<ContextMenu.Item
+											onClick={() => copyToClipboard(absoluteLink(chatPath(session)), () => onToast("Link copied"))}
+										>
+											<span className="grow">Copy link</span>
+										</ContextMenu.Item>
+										<ContextMenu.Separator />
+										{/* Tab color. A swatch click bubbles to the Item, which
 								    closes the menu — the Item itself does nothing. */}
-								<ContextMenu.Item className="data-[highlighted]:bg-transparent">
-									{TAB_COLORS.map((c) => (
-										<button
-											key={c.key}
-											type="button"
-											className={`tab-color-swatch ${colors[key] === c.key ? "tab-color-swatch-on" : ""}`}
-											style={{ background: c.hex }}
-											aria-label={c.label}
-											title={c.label}
-											onClick={() => onSetColor(key, c.key)}
-										/>
-									))}
-									<button
-										type="button"
-										className="tab-color-swatch tab-color-swatch-none"
-										aria-label="No color"
-										title="No color"
-										onClick={() => onSetColor(key, null)}
-									/>
-								</ContextMenu.Item>
-								<ContextMenu.Separator />
-								<ContextMenu.Item onClick={() => onClose(session)}>
-									<span className="grow">Close tab</span>
-									{key === activeId && (
-										<MenuHint label={isApple ? "⌘ W" : "Ctrl+W"} />
-									)}
-								</ContextMenu.Item>
-							</ContextMenu.Popup>
-						</ContextMenu.Root>
-						</Reorder.Item>
+										<ContextMenu.Item className="data-[highlighted]:bg-transparent">
+											{TAB_COLORS.map((c) => (
+												<button
+													key={c.key}
+													type="button"
+													className={`tab-color-swatch ${colors[key] === c.key ? "tab-color-swatch-on" : ""}`}
+													style={{ background: c.hex }}
+													aria-label={c.label}
+													title={c.label}
+													onClick={() => onSetColor(key, c.key)}
+												/>
+											))}
+											<button
+												type="button"
+												className="tab-color-swatch tab-color-swatch-none"
+												aria-label="No color"
+												title="No color"
+												onClick={() => onSetColor(key, null)}
+											/>
+										</ContextMenu.Item>
+										<ContextMenu.Separator />
+										<ContextMenu.Item onClick={() => onClose(session)}>
+											<span className="grow">Close tab</span>
+											{key === activeId && <MenuHint label={isApple ? "⌘ W" : "Ctrl+W"} />}
+										</ContextMenu.Item>
+									</ContextMenu.Popup>
+								</ContextMenu.Root>
+							</Reorder.Item>
 						);
 					})}
 				</Reorder.Group>
@@ -463,15 +587,15 @@ export function SessionTabs({
 						</button>
 					</div>
 				))}
-					{/* Phone: the +/history controls scroll WITH the tabs so the strip
+				{/* Phone: the +/history controls scroll WITH the tabs so the strip
 					    uses the full width — nothing pinned eating horizontal room. */}
-					{isPhone && newTabButton}
-					{isPhone && historyMenu}
-				</div>
-				{/* Desktop: the "+" sits OUTSIDE the scroll so it's pinned and always
+				{isPhone && newTabButton}
+				{isPhone && historyMenu}
+			</div>
+			{/* Desktop: the "+" sits OUTSIDE the scroll so it's pinned and always
 				    visible — never scrolled off when the tabs overflow a narrow pane. */}
-				{!isPhone && newTabButton}
-				{!isPhone && <div className="session-tabs-actions">{historyMenu}</div>}
+			{!isPhone && newTabButton}
+			{!isPhone && <div className="session-tabs-actions">{historyMenu}</div>}
 
 			{newMenu && (
 				<div
@@ -511,7 +635,6 @@ export function SessionTabs({
 					</button>
 				</div>
 			)}
-
 		</div>
 	);
 }

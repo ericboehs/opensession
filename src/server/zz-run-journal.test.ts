@@ -190,6 +190,20 @@ describe("run journal", () => {
 				"Todos have been modified successfully. Ensure that you continue to use the todo list.",
 			),
 		).toBe(true);
+		// Costume 3 (2026-07-29 late morning, bks-019fad97): a raw function-call
+		// block written as text, invented output inline, turn ended right after.
+		expect(
+			shared.looksLikeFabricatedToolTranscript(
+				'I\'ll trace how the report-back gets injected.\n\n\n<invoke name="Bash">\n<parameter name="command">grep -rn "reportBack" src/agents/slack/sessions-tools.ts | head -40</parameter>\n</invoke>\n\n\n347:      const spawn_task = tool({\n',
+			),
+		).toBe(true);
+		// A bare mention of the tag in code discussion (no parameter tag) stays
+		// clean.
+		expect(
+			shared.looksLikeFabricatedToolTranscript(
+				'The harness wraps each call in an <invoke name="..."> element.',
+			),
+		).toBe(false);
 		// Legit prose stays clean: markdown bullets use ASCII hyphens, and an
 		// en-dash duration inside a sentence has no JSON line after it.
 		expect(

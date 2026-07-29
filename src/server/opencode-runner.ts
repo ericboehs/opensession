@@ -142,7 +142,13 @@ import { dirname, join } from "path";
 import type { Subprocess } from "bun";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
 import type { RunAgentOpts } from "./agent-runner";
-import { journalSet, journalClear, registerActiveRunProbe, type ActiveRunRecord } from "./run-journal";
+import {
+  journalSet,
+  journalClear,
+  registerActiveRunProbe,
+  activeRunRecords,
+  type ActiveRunRecord,
+} from "./run-journal";
 import { transitionRunState } from "./run-state";
 import {
   adoptedProcHandle,
@@ -156,6 +162,7 @@ import {
   reapUnregisteredScopes,
   stopDetachedUnit,
   upsertDetachedRecord,
+  type DetachedServerRecord,
   type ServerProcHandle,
 } from "./opencode-detach";
 import {
@@ -1858,6 +1865,21 @@ if (!g.__opencodeIdleSweep) {
         killServer(key, entry, "idle sweep");
       }
     }
+    // Draining backstop: normally a run's finally reaps a drained server, but
+    // an ADOPTED draining entry (boot kept a superseded server for its live
+    // turns) has no run attached until a reattach claims it — if none ever
+    // does, nothing else kills it. DB mtime is useless here (the shard is per
+    // KEY and the successor keeps writing it), so reap on pool bookkeeping
+    // alone: no active runs and past the base idle TTL since adoption/last
+    // attach. Reattach happens seconds after boot, so a still-idle draining
+    // entry at 30 minutes is dead weight.
+    for (const entry of drainingServers) {
+      if (entry.activeRuns > 0) continue;
+      if (Date.now() - entry.lastUsed >= IDLE_KILL_MS) {
+        drainingServers.delete(entry);
+        killServerProc(entry, "idle sweep (draining)");
+      }
+    }
   }, IDLE_SWEEP_MS);
   g.__opencodeIdleSweep.unref?.();
 }
@@ -2295,6 +2317,32 @@ function syncDetachedRecord(entry: OpencodeServerEntry): void {
   });
 }
 
+/** How many journaled runs are still EXECUTING on this detached server, per
+ *  the server's own in-memory `/session/status`. Status is scoped to the
+ *  per-directory instance — an unscoped call returns `{}` even mid-turn
+ *  (verified live 2026-07-29) — so probe with each journaled run's cwd and
+ *  check that run's engine session specifically. Unreachable server → 0
+ *  (the caller stops it, same as an unhealthy adoptee). */
+async function detachedRecordBusyRuns(rec: DetachedServerRecord): Promise<number> {
+  const runs = activeRunRecords().filter(
+    (r) => r.serverKey === rec.key && r.claudeSessionId && r.cwd
+  );
+  if (!runs.length) return 0;
+  const client = clientFor({ url: rec.url, password: rec.password } as OpencodeServerEntry);
+  let busy = 0;
+  for (const run of runs) {
+    try {
+      const st = await client.session.status({ query: { directory: run.cwd } });
+      const statuses = st.data as Record<string, { type?: string }> | undefined;
+      const mine = statuses?.[run.claudeSessionId!];
+      if (mine && mine.type !== "idle") busy++;
+    } catch {
+      // Probe failure = no evidence of a live turn on this instance.
+    }
+  }
+  return busy;
+}
+
 /**
  * Re-adopt detached `opencode serve` scopes that survived the last restart
  * into the live pool, so (a) journaled runs can REATTACH to their still-
@@ -2315,12 +2363,54 @@ export async function adoptDetachedOpencodeServers(): Promise<number> {
   }
   let adopted = 0;
   for (const [key, recs] of byKey) {
-    // Newest per key wins; older duplicates are config-change drains the
-    // restart cut short — their runs can't be reattached (the pool holds one
-    // entry per key), so stop them rather than leak authed servers.
+    // Newest per key wins the pool slot; older duplicates are config-change
+    // drains the restart cut short. They can STILL be executing live turns —
+    // killing one mid-turn is exactly the blast radius draining exists to
+    // avoid (bks-019facef, 2026-07-29: the boot stopped a superseded shared
+    // server one second before reattaching the run that was mid-write on it;
+    // the turn died with "Claude Code process exited unexpectedly (code
+    // 143)"). Probe each older duplicate against the run journal: if any
+    // journaled run's engine session is busy THERE, adopt it as DRAINING so
+    // tryReattachOpencodeRun can find the turn; the run's finally (or the
+    // idle-sweep backstop) reaps it once the last turn ends. Idle or
+    // unreachable duplicates are stopped as before.
     recs.sort((a, b) => (a.spawnedAt < b.spawnedAt ? 1 : -1));
     const [newest, ...older] = recs;
     for (const r of older) {
+      // Hot reload: this process may still hold the superseded server as a
+      // live draining entry (or even the pool entry) — don't double-track or
+      // stop a unit that's already being managed.
+      const tracked =
+        [...drainingServers].some((e) => e.proc.unit === r.unit) ||
+        [...servers.values()].some((e) => e.proc.unit === r.unit);
+      if (tracked) continue;
+      const busyRuns = await detachedRecordBusyRuns(r);
+      if (busyRuns > 0) {
+        const entry: OpencodeServerEntry = {
+          proc: adoptedProcHandle(r.unit, r.pid),
+          url: r.url,
+          password: r.password,
+          cwd: r.cwd,
+          configHash: r.configHash,
+          key,
+          shared: r.shared,
+          draining: true,
+          rpcToken: r.rpcToken,
+          meridianKey: r.meridianKey,
+          meridianPort: r.meridianPort,
+          accountId: r.accountId,
+          dbPath: r.dbPath,
+          lastUsed: Date.now(),
+          activeRuns: 0,
+        };
+        drainingServers.add(entry);
+        // Registry record stays: a further restart re-probes it, and the
+        // eventual killServerProc removes it.
+        console.log(
+          `[opencode-runner] kept superseded detached server ${r.unit} (${key}) — ${busyRuns} live turn(s), draining`
+        );
+        continue;
+      }
       stopDetachedUnit(r.unit);
       removeDetachedRecord(r.unit);
       console.log(`[opencode-runner] stopped superseded detached server ${r.unit} (${key})`);
@@ -4845,25 +4935,47 @@ export async function tryReattachOpencodeRun(
   const ocSessionId = run.claudeSessionId;
   const serverKey = run.serverKey;
   if (!ocSessionId || !serverKey) return null;
-  const entry = servers.get(serverKey);
-  if (!entry || !entry.proc.detached || entry.proc.exitCode !== null) return null;
   const runKey = run.runKey;
   if (activeOpencodeRuns.has(runKey)) return null;
   if (run.bksSessionId && activeOpencodeRuns.has(run.bksSessionId)) return null;
+  // The pool holds one entry per key, but a drain-respawn (or the boot
+  // adoption of one) can leave the run's live turn on a SUPERSEDED server
+  // that no longer owns the key — shared shard DBs make the successor answer
+  // session.get for a turn it never ran (bks-019facef, 2026-07-29). Scan the
+  // pool entry AND same-key draining servers; attach to whichever instance
+  // reports the session busy (its in-memory status is the ground truth),
+  // falling back to the first instance that at least knows the session.
+  const candidates: OpencodeServerEntry[] = [];
+  const pooled = servers.get(serverKey);
+  if (pooled && pooled.proc.detached && pooled.proc.exitCode === null) candidates.push(pooled);
+  for (const d of drainingServers) {
+    if (d.key === serverKey && d.proc.detached && d.proc.exitCode === null) candidates.push(d);
+  }
+  if (!candidates.length) return null;
+  let entry: OpencodeServerEntry | undefined;
+  let busy = false;
+  for (const cand of candidates) {
+    const candQ = cand.shared ? { query: { directory: run.cwd } } : {};
+    try {
+      const sess = await clientFor(cand).session.get({ path: { id: ocSessionId }, ...candQ });
+      if (!sess.data) continue;
+      const st = await clientFor(cand).session.status({ ...candQ });
+      const statuses = st.data as Record<string, { type?: string }> | undefined;
+      const mine = statuses?.[ocSessionId];
+      if (mine && mine.type !== "idle") {
+        entry = cand;
+        busy = true;
+        break;
+      }
+      entry ??= cand;
+    } catch {
+      continue;
+    }
+  }
+  if (!entry) return null;
   const shared = !!entry.shared;
   const q = shared ? { query: { directory: run.cwd } } : {};
   const client = clientFor(entry);
-  let busy = false;
-  try {
-    const sess = await client.session.get({ path: { id: ocSessionId }, ...q });
-    if (!sess.data) return null;
-    const st = await client.session.status({ ...q });
-    const statuses = st.data as Record<string, { type?: string }> | undefined;
-    const mine = statuses?.[ocSessionId];
-    busy = !!mine && mine.type !== "idle";
-  } catch {
-    return null;
-  }
   if (!busy && opencodeTurnLooksCompleted(ocSessionId) === false) {
     // The server reports idle but the store's trailing message never
     // completed. Shared serverKeys survive drain-respawns, so this probe can
