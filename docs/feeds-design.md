@@ -121,6 +121,13 @@ plugins." Workstreams:
   REST client + TELLA_API_KEY are retired. Proof session (bks-019fac65…):
   exactly one external server visible, get_video + list_videos called
   successfully on Michiel's grant.
+- **W2b — fresh-auth MCP relay (LANDED c79a70ba)**: AuthKit access tokens
+  live ~5 min; static header injection 401'd mid-turn (bks-019fac84 — the
+  agent hand-rolled an MCP client and read the token store in response).
+  OAuth-granted servers now route via /relay/<server>?t=… on the loopback
+  MCP-HTTP listener: fresh Authorization per REQUEST (creator-first),
+  streamable-HTTP passthrough, tokens never in engine config, config hash
+  stable across rotation, relay tokens persisted for detached servers.
 - **W2 — per-user MCP auth (LANDED)**: grants stored per server in
   `~/.opensession-mcp-oauth.json` — one `shared` + per-user keyed by
   canonical team name. Injection at run time in withDynamicCredentials():
