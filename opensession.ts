@@ -436,6 +436,18 @@ async function loadAgents(): Promise<AgentModule[]> {
 		}
 	}
 
+	// Tella feed module (docs/feeds-design.md W4 reference plugin). Loaded
+	// unconditionally — it self-gates: getFeed() is null until the tella MCP
+	// server is configured and connected, so an unconfigured module
+	// contributes nothing (no webhooks yet, empty route map).
+	try {
+		const { TellaAgent } = await import("./src/agents/tella/index");
+		agents.push(new TellaAgent());
+		console.log("[agents] Tella module loaded");
+	} catch (e) {
+		console.error("[agents] Failed to load tella module:", e);
+	}
+
 	if (enabled("linear", "ENABLE_LINEAR_AGENT")) {
 		try {
 			const { LinearAgent } = await import("./src/agents/linear/index");

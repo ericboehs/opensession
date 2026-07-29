@@ -154,10 +154,14 @@ plugins." Workstreams:
   `~/.opensession-feeds.json`; the feeds registry loads config feeds beside
   code feeds. This is the "any MCP/API is a project" payoff — Tella stays
   the code-feed reference, new ones need zero core changes.
-- **W4 — plugins for custom code**: a feed package dir (src/agents/<feed>/
-  today; `@opensession/feed-*` after open-sourcing) exporting descriptor +
-  provider + panels + webhook module. The interface is the boundary; config
-  feeds (W3) cover the no-code case.
+- **W4 — plugins for custom code (LANDED)**: AgentModule is the plugin seam
+  — optional `getFeed()` beside getRoutes/startup/shutdown/health, with the
+  five-surface contract documented on the interface (src/agents/types.ts).
+  ensureFeedsRegistered pulls feeds from loaded modules; src/agents/tella is
+  the reference plugin (TellaAgent, self-gating, loaded unconditionally in
+  loadAgents). Config feeds (W3) cover no-code; a module is for bespoke
+  fetching/webhooks/background work. `@opensession/feed-*` extraction stays
+  mechanical because the interface is the boundary.
 - **W5 — migrate Plain onto the contract** (original Phase 1, incl. the
   generic panel registry replacing the hardcoded "video" tab).
 

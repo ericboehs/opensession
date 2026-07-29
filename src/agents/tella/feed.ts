@@ -7,12 +7,13 @@
  * `frame-ancestors 'none'` until tella-fusion PR #5332; the embed page is
  * embeddable today).
  */
-import { registerFeed, type FeedItem } from "../../server/feeds";
+import { registerFeed, type FeedItem, type FeedProvider } from "../../server/feeds";
 import { listRecentVideos, tellaConfigured, tellaEditUrl } from "./api";
 
-export function registerTellaFeed(): void {
-  if (!tellaConfigured()) return;
-  registerFeed({
+/** The provider, or null while unconfigured (module contract — index.ts). */
+export function tellaFeedProvider(): FeedProvider | null {
+  if (!tellaConfigured()) return null;
+  return {
     descriptor: {
       id: "tella",
       title: "Tella",
@@ -50,5 +51,11 @@ export function registerTellaFeed(): void {
         }))
         .sort((a, b) => (b.ts || 0) - (a.ts || 0));
     },
-  });
+  };
+}
+
+/** Legacy direct registration (pre-W4 boot orderings). */
+export function registerTellaFeed(): void {
+  const provider = tellaFeedProvider();
+  if (provider) registerFeed(provider);
 }

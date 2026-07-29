@@ -256,12 +256,29 @@ export async function externalRefsOpeningContext(
 }
 
 let registered = false;
-/** Idempotently register the built-in providers (called from the routes). */
+/** Idempotently register the code-feed providers (called from the routes):
+ *  every loaded AgentModule with a getFeed() contribution (the W4 plugin
+ *  seam), plus the direct tella fallback for boot orderings where the module
+ *  didn't load. Config feeds overlay separately (syncConfigFeeds). */
 export async function ensureFeedsRegistered(): Promise<void> {
   if (registered) return;
   registered = true;
-  const { registerTellaFeed } = await import("../agents/tella/feed");
-  registerTellaFeed();
+  try {
+    const { getAgents } = await import("./agents-registry");
+    for (const a of getAgents()) {
+      if (!a.getFeed) continue;
+      try {
+        const provider = a.getFeed();
+        if (provider) registerFeed(provider);
+      } catch (e) {
+        console.error(`[feeds] ${a.name}.getFeed() failed:`, e);
+      }
+    }
+  } catch {}
+  if (!registry.has("tella")) {
+    const { registerTellaFeed } = await import("../agents/tella/feed");
+    registerTellaFeed();
+  }
   // Once per boot: sweep scratch dirs whose workspace is gone (deleted
   // workspaces clean up inline in deleteWorkspace; this catches dirs from
   // before that hook and workspace-less creates). 14-day grace on mtime.
