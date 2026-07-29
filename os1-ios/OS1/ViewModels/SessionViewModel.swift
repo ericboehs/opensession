@@ -198,6 +198,17 @@ final class SessionViewModel {
         let images: [String]
     }
 
+    /// Composer state parked by the list while switching workspace tabs.
+    /// Keeping it outside the discarded conversation view preserves unsent
+    /// text and staged screenshots without observing draft changes in the
+    /// transcript view's body on every keystroke.
+    struct ComposerDraft {
+        let text: String
+        let images: [AttachedImage]
+
+        var isEmpty: Bool { text.isEmpty && images.isEmpty }
+    }
+
     /// True until the first transcript_init lands for a session opened right
     /// after creation — "Session not found" watch errors are retried quietly
     /// instead of surfaced (the server persists the file a few seconds after
@@ -209,6 +220,7 @@ final class SessionViewModel {
     init(
         session: Session,
         seed: OptimisticSeed? = nil,
+        composerDraft: ComposerDraft? = nil,
         socketFactory: @escaping @MainActor () -> any SessionSocket = { OS1Socket() }
     ) {
         self.session = session
@@ -218,6 +230,10 @@ final class SessionViewModel {
         self.model = session.model ?? ""
         self.effort = session.effort ?? ""
         self.fastMode = session.fastMode ?? false
+        if let composerDraft {
+            self.draft = composerDraft.text
+            self.attachedImages = composerDraft.images
+        }
         if self.isRunning {
             self.runStartedAt = session.runStartedDate
         }

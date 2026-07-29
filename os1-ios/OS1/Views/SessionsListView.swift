@@ -41,6 +41,9 @@ struct SessionsListView: View {
     /// seeds the conversation view so it renders instantly instead of waiting
     /// for the server to persist the session.
     @State private var optimisticSeeds: [String: SessionViewModel.OptimisticSeed] = [:]
+    /// Unsent composer state survives switching sibling tabs (whose
+    /// SessionViewModel/socket is otherwise deliberately recreated).
+    @State private var composerDrafts: [String: SessionViewModel.ComposerDraft] = [:]
     /// Surfaced when a background session create fails after the sheet closed.
     @State private var createError: String?
     @State private var showArchived = false
@@ -589,7 +592,20 @@ struct SessionsListView: View {
             await viewModel.refresh()
         }
         .navigationDestination(for: Session.self) { session in
-            SessionView(session: session, seed: optimisticSeeds[session.id])
+            SessionView(
+                session: session,
+                seed: optimisticSeeds[session.id],
+                tabs: SessionsListViewModel.tabSessions(
+                    in: viewModel.sessions,
+                    containing: session
+                ),
+                composerDraft: composerDrafts[session.id],
+                onSelectTab: switchToTab,
+                onSaveComposerDraft: { draft in
+                    composerDrafts[session.id] = draft.isEmpty ? nil : draft
+                }
+            )
+            .id(session.id)
         }
     }
     #endif
@@ -664,6 +680,20 @@ struct SessionsListView: View {
             viewModel.archive(session)
         }
     }
+
+    #if os(iOS)
+    /// Keep sibling-tab switches at the current navigation depth instead of
+    /// pushing another conversation onto the back stack.
+    private func switchToTab(_ session: Session) {
+        guard !path.isEmpty else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            path.removeLast()
+            path.append(session)
+        }
+    }
+    #endif
 
     private var listSections: some View {
         Group {

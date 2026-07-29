@@ -5,6 +5,9 @@ import AppKit
 
 struct SessionView: View {
     @State private var viewModel: SessionViewModel
+    private let tabs: [Session]
+    private let onSelectTab: ((Session) -> Void)?
+    private let onSaveComposerDraft: ((SessionViewModel.ComposerDraft) -> Void)?
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -38,8 +41,22 @@ struct SessionView: View {
     /// PR details sheet, opened from the toolbar PR chip.
     @State private var showPrPanel = false
 
-    init(session: Session, seed: SessionViewModel.OptimisticSeed? = nil) {
-        _viewModel = State(initialValue: SessionViewModel(session: session, seed: seed))
+    init(
+        session: Session,
+        seed: SessionViewModel.OptimisticSeed? = nil,
+        tabs: [Session]? = nil,
+        composerDraft: SessionViewModel.ComposerDraft? = nil,
+        onSelectTab: ((Session) -> Void)? = nil,
+        onSaveComposerDraft: ((SessionViewModel.ComposerDraft) -> Void)? = nil
+    ) {
+        _viewModel = State(initialValue: SessionViewModel(
+            session: session,
+            seed: seed,
+            composerDraft: composerDraft
+        ))
+        self.tabs = tabs ?? [session]
+        self.onSelectTab = onSelectTab
+        self.onSaveComposerDraft = onSaveComposerDraft
     }
 
     var body: some View {
@@ -130,7 +147,18 @@ struct SessionView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            statusBanner
+            VStack(spacing: 0) {
+                #if os(iOS)
+                if tabs.count > 1, let onSelectTab {
+                    SessionTabBar(
+                        tabs: tabs,
+                        activeId: viewModel.session.id,
+                        onSelect: onSelectTab
+                    )
+                }
+                #endif
+                statusBanner
+            }
         }
         .background(OS1VisualStyle.background.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) {
@@ -186,6 +214,10 @@ struct SessionView: View {
             catalog = try? await OS1API.models()
         }
         .onDisappear {
+            onSaveComposerDraft?(SessionViewModel.ComposerDraft(
+                text: viewModel.draft,
+                images: viewModel.attachedImages
+            ))
             viewModel.stop()
         }
         .onChange(of: scenePhase) { _, phase in
@@ -407,6 +439,82 @@ struct SessionView: View {
         }
     }
 }
+
+#if os(iOS)
+/// Compact workspace chat tabs below the navigation bar. The active tab is
+/// centered when the strip opens, while horizontal overflow remains native
+/// touch scrolling.
+private struct SessionTabBar: View {
+    let tabs: [Session]
+    let activeId: String
+    let onSelect: (Session) -> Void
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                HStack(spacing: 4) {
+                    ForEach(tabs) { session in
+                        Button {
+                            if session.id != activeId { onSelect(session) }
+                        } label: {
+                            HStack(spacing: 7) {
+                                if session.waitingForInput == true {
+                                    PulsingDot(color: OS1VisualStyle.blue, size: 6)
+                                } else if session.isRunning == true {
+                                    PulsingDot(color: OS1VisualStyle.yellow, size: 6)
+                                }
+                                Text(session.displayTitle)
+                                    .font(.footnote.weight(
+                                        session.id == activeId ? .semibold : .medium
+                                    ))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(
+                                session.id == activeId
+                                    ? OS1VisualStyle.text
+                                    : OS1VisualStyle.textDim
+                            )
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: 44)
+                            .frame(maxWidth: 180)
+                            .background(
+                                session.id == activeId
+                                    ? OS1VisualStyle.raised
+                                    : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            )
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .id(session.id)
+                        .accessibilityAddTraits(
+                            session.id == activeId ? .isSelected : []
+                        )
+                        .accessibilityValue(tabAccessibilityValue(session))
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+            }
+            .scrollIndicators(.hidden)
+            .background(.bar)
+            .overlay(alignment: .bottom) { Divider() }
+            .onAppear {
+                proxy.scrollTo(activeId, anchor: .center)
+            }
+            .onChange(of: activeId) { _, id in
+                withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
+            }
+        }
+    }
+
+    private func tabAccessibilityValue(_ session: Session) -> String {
+        if session.waitingForInput == true { return "Needs input" }
+        if session.isRunning == true { return "Running" }
+        return session.id == activeId ? "Selected" : "Idle"
+    }
+}
+#endif
 
 /// The bottom input area: queue/steer/delivering chips, the run-status chip,
 /// staged images, and the composer. A SEPARATE view struct on purpose — its

@@ -21,8 +21,9 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
 - **Session view** — live transcript over the `/ws` WebSocket: user/assistant
   messages in the same neutral, repo-aware visual hierarchy as mobile web
   (streaming CommonMark/GFM with links, tables, and highlighted code blocks),
-  compact tool-call rows, system events, and token-level streaming via
-  `stream_text` with a cursor bubble.
+  compact tool-call rows, system events, token-level streaming via
+  `stream_text` with a cursor bubble, and a horizontally scrollable chat tab
+  strip when a workspace/worktree contains multiple sessions.
 - **Prompting** — WS `prompt` frames (the server has no REST prompt endpoint).
   Sending while a run is active queues, exactly like the web UI. Stop button
   sends `cancel` for the watched session.

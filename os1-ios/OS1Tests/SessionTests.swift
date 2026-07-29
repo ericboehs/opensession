@@ -51,4 +51,64 @@ final class SessionTests: XCTestCase {
             ["gamma", "alpha", "beta"]
         )
     }
+
+    func testTabSessionsUseWorkspaceAndNaturalOrder() throws {
+        let sessions = try JSONDecoder().decode(
+            [Session].self,
+            from: Data(
+                #"[{"id":"second","projectId":"prj-1","createdAt":"2026-07-02T00:00:00Z"},{"id":"other","projectId":"prj-2","createdAt":"2026-07-01T00:00:00Z"},{"id":"first","projectId":"prj-1","createdAt":"2026-07-01T00:00:00Z"},{"id":"archived","projectId":"prj-1","archived":true},{"id":"side","projectId":"prj-1","sideChatOf":"first"}]"#.utf8
+            )
+        )
+
+        XCTAssertEqual(
+            SessionsListViewModel.tabSessions(in: sessions, containing: sessions[0]).map(\.id),
+            ["first", "second"]
+        )
+    }
+
+    func testTabSessionsFallBackToIsolatedWorktree() throws {
+        let sessions = try JSONDecoder().decode(
+            [Session].self,
+            from: Data(
+                #"[{"id":"one","worktreeDir":"/home/ubuntu/worktrees/feature"},{"id":"two","worktreeDir":"/home/ubuntu/worktrees/feature"},{"id":"main","worktreeDir":"/home/ubuntu/projects/tella-backstage"}]"#.utf8
+            )
+        )
+
+        XCTAssertEqual(
+            SessionsListViewModel.tabSessions(in: sessions, containing: sessions[0]).map(\.id),
+            ["one", "two"]
+        )
+        XCTAssertEqual(
+            SessionsListViewModel.tabSessions(in: sessions, containing: sessions[2]).map(\.id),
+            ["main"]
+        )
+    }
+
+    func testWorktreeFallbackIncludesWorkspaceAssignedSibling() throws {
+        let sessions = try JSONDecoder().decode(
+            [Session].self,
+            from: Data(
+                #"[{"id":"readonly","worktreeDir":"/home/ubuntu/worktrees/feature"},{"id":"filed","projectId":"prj-1","worktreeDir":"/home/ubuntu/worktrees/feature"}]"#.utf8
+            )
+        )
+
+        XCTAssertEqual(
+            SessionsListViewModel.tabSessions(in: sessions, containing: sessions[0]).map(\.id),
+            ["filed", "readonly"]
+        )
+    }
+
+    func testTabSessionsPinStartedHumanChatFirst() throws {
+        let sessions = try JSONDecoder().decode(
+            [Session].self,
+            from: Data(
+                #"[{"id":"automation","projectId":"prj-1","automation":"Review","createdAt":"2026-07-01T00:00:00Z","lastActivity":"2026-07-01T00:01:00Z","opencodeSessionId":"oc-1"},{"id":"main","projectId":"prj-1","createdAt":"2026-07-02T00:00:00Z","lastActivity":"2026-07-02T00:01:00Z","opencodeSessionId":"oc-2"},{"id":"shell","projectId":"prj-1","createdAt":"2026-07-03T00:00:00Z","lastActivity":"2026-07-03T00:00:00Z"}]"#.utf8
+            )
+        )
+
+        XCTAssertEqual(
+            SessionsListViewModel.tabSessions(in: sessions, containing: sessions[1]).map(\.id),
+            ["main", "automation", "shell"]
+        )
+    }
 }

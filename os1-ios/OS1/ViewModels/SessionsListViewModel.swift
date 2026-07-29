@@ -37,6 +37,43 @@ final class SessionsListViewModel {
         return ordered + discovered.filter { seen.insert($0).inserted }
     }
 
+    /// Live sibling chats shown in the conversation tab strip. This mirrors
+    /// the web client: workspace membership wins, with isolated worktrees as
+    /// the fallback for legacy rows, and the natural order is oldest first.
+    nonisolated static func tabSessions(
+        in sessions: [Session], containing current: Session
+    ) -> [Session] {
+        let belongs: (Session) -> Bool
+        if let projectId = current.projectId, !projectId.isEmpty {
+            belongs = { $0.projectId == projectId }
+        } else if let worktreeDir = current.worktreeDir,
+                  worktreeDir.hasPrefix("/home/ubuntu/worktrees/") {
+            // Match the worktree directly even when a writable sibling has
+            // already been filed into a workspace but this read-only row has not.
+            belongs = { $0.worktreeDir == worktreeDir }
+        } else {
+            return [current]
+        }
+        var tabs = sessions.filter {
+            belongs($0)
+                && $0.sideChatOf == nil
+                && ($0.archived != true || $0.id == current.id)
+        }
+        if !tabs.contains(where: { $0.id == current.id }) {
+            tabs.append(current)
+        }
+        tabs.sort {
+            let left = $0.createdAt ?? ""
+            let right = $1.createdAt ?? ""
+            return left == right ? $0.id < $1.id : left < right
+        }
+        let main = tabs.first { !$0.isAutomation && !$0.neverRan }
+            ?? tabs.first { !$0.neverRan }
+            ?? tabs.first
+        guard let main else { return [] }
+        return [main] + tabs.filter { $0.id != main.id }
+    }
+
     /// Just-created sessions rendered before the server's list includes them.
     /// Dropped once the real row appears (or after a 2-minute safety window).
     private var optimistic: [String: (session: Session, added: Date)] = [:]

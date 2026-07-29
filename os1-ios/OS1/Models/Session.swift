@@ -5,10 +5,16 @@ import Foundation
 /// fields are ignored, so server-side additions never break the client.
 struct Session: Identifiable, Decodable, Equatable, Hashable {
     let id: String
+    var claudeSessionId: String?
+    var codexThreadId: String?
+    var opencodeSessionId: String?
     var title: String?
     var source: String?
     var repo: String?
     var branch: String?
+    var worktreeDir: String?
+    var projectId: String?
+    var sideChatOf: String?
     var mode: String?
     var model: String?
     var effort: String?
@@ -45,6 +51,18 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     var effectiveRepo: String {
         guard let repo, !repo.isEmpty else { return "opensession" }
         return repo
+    }
+
+    /// Untouched tabs are eagerly created before their first prompt. They are
+    /// valid tabs, but should not displace the conversation that started the
+    /// workspace from the leading position.
+    var neverRan: Bool {
+        claudeSessionId == nil
+            && codexThreadId == nil
+            && opencodeSessionId == nil
+            && isRunning != true
+            && (queuedCount ?? 0) == 0
+            && lastActivity == createdAt
     }
 
     var lastActivityDate: Date? {
