@@ -9629,8 +9629,8 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 .composer-queue-item.is-draggable:active {
 	cursor: grabbing;
 }
-/* Actions hover over the message's top-right corner; the clamped text runs
-   behind them, fading out under a gradient of the flap's own background. */
+/* Actions hover over the message's top-right corner. The content reserves
+   their width, so the group itself can stay transparent. */
 .composer-queue-actions {
 	position: absolute;
 	top: -8px;
@@ -9639,8 +9639,6 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	display: inline-flex;
 	align-items: center;
 	gap: 2px;
-	padding-left: 28px;
-	background: linear-gradient(90deg, transparent, var(--bg-panel) 26px);
 }
 .composer-queue-item + .composer-queue-item .composer-queue-actions {
 	top: 0;
