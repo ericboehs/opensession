@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, copyFileSync, watchFile } from "fs";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { configuredPaths } from "./config";
-import { mcpAuthHeader } from "./mcp-oauth";
+import { mcpAuthHeader, mcpOauthStatus } from "./mcp-oauth";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 // mcp-config.json location. BACKSTAGE_MCP_CONFIG env → config
@@ -204,7 +204,7 @@ export interface McpConnection {
   transport: "http" | "stdio";
   target: string; // sanitized: origin+path for http, command for stdio
   envKeys: string[];
-  status: "connected" | "ready" | "needs-env" | "unreachable" | "missing";
+  status: "connected" | "ready" | "needs-env" | "needs-auth" | "unreachable" | "missing";
   detail?: string;
   /** Per-user allowlist, if this server is restricted (empty/absent = everyone). */
   allowedUsers?: string[];
@@ -247,6 +247,32 @@ async function checkServer(name: string, cfg: any): Promise<McpConnection> {
       // MCP servers typically reject bare GETs but still answer.
       const res = await fetch(cfg.url, { method: "GET", signal: controller.signal });
       clearTimeout(timer);
+      // Reachable, but an OAuth-protected server with no grant and no static
+      // Authorization header isn't usable yet — surface "Sign in required"
+      // instead of a misleading "Connected" (the GET's 401/405 only proves
+      // the endpoint is up). Detection = the origin publishes RFC 9728
+      // protected-resource metadata.
+      if (!cfg.headers?.Authorization) {
+        try {
+          const st = mcpOauthStatus(name);
+          if (!st.shared && st.users.length === 0) {
+            const pr = await fetch(
+              `${new URL(cfg.url).origin}/.well-known/oauth-protected-resource`,
+              { signal: AbortSignal.timeout(3000) },
+            );
+            if (pr.ok) {
+              return {
+                name,
+                transport: "http",
+                target,
+                envKeys: Object.keys(cfg.env || {}),
+                status: "needs-auth",
+                detail: "OAuth sign-in required — Connect from this card's menu",
+              };
+            }
+          }
+        } catch {}
+      }
       return {
         name,
         transport: "http",

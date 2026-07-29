@@ -11,7 +11,7 @@ interface McpConnection {
   transport: "http" | "stdio";
   target: string;
   envKeys: string[];
-  status: "connected" | "ready" | "needs-env" | "unreachable" | "missing";
+  status: "connected" | "ready" | "needs-env" | "needs-auth" | "unreachable" | "missing";
   detail?: string;
   /** Per-user allowlist, if this server is restricted (absent = everyone). */
   allowedUsers?: string[];
@@ -32,6 +32,7 @@ const STATUS_META: Record<McpConnection["status"], { label: string; dot: string;
   connected: { label: "Connected", dot: "var(--green)" },
   ready: { label: "Ready", dot: "var(--green)" },
   "needs-env": { label: "Needs setup", dot: "var(--yellow)", bad: true },
+  "needs-auth": { label: "Sign in required", dot: "var(--yellow)", bad: true },
   unreachable: { label: "Unreachable", dot: "var(--red)", bad: true },
   missing: { label: "Missing", dot: "var(--red)", bad: true },
 };
