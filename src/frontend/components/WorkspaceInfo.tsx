@@ -141,7 +141,7 @@ interface Props {
 const INFO_LABEL_CLASS = "text-[12px] font-[650] tracking-[-0.01em] text-faint";
 const INFO_SECTION_CLASS = "grid gap-[5px]";
 const INFO_LIST_CLASS =
-	"grid gap-px overflow-hidden rounded-lg border border-line bg-panel p-1";
+	"grid gap-px overflow-hidden rounded-lg bg-panel p-1";
 const INFO_MORE_BUTTON_CLASS =
 	"cursor-pointer bg-panel px-[9px] py-[7px] text-left text-[12px] font-semibold text-faint transition-colors hover:bg-hover hover:text-fg";
 
@@ -1371,7 +1371,7 @@ export function WorkspaceInfo({
 			</div>
 			<div className={INFO_SECTION_CLASS}>
 				<div className={INFO_LABEL_CLASS}>Actions</div>
-				<div className="grid grid-cols-2 gap-0.5 rounded-lg border border-line bg-panel p-1">
+				<div className="grid grid-cols-2 gap-0.5 rounded-lg bg-panel p-1">
 					{previewActions}
 					{repo && (
 						<button
