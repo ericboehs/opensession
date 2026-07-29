@@ -31,7 +31,12 @@ import { Database } from "bun:sqlite";
 import type { TranscriptEntry } from "./types";
 import type { ImageInput } from "./run-events";
 import { stripContext } from "./prompt-context";
-import { extractAssistantVideos, parseJsonlLines } from "./jsonl-parser";
+import {
+  extractAssistantVideos,
+  extractBackstageImages,
+  extractBackstageVideos,
+  parseJsonlLines,
+} from "./jsonl-parser";
 import { transcriptStore } from "./transcript-store";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -1183,17 +1188,26 @@ export function readOpencodeTranscript(
           });
           const state = part.state;
           if (state?.status === "completed" || state?.status === "error") {
+            const resultText =
+              state.status === "completed"
+                ? state.output || ""
+                : `Error: ${state.error || "tool failed"}`;
+            // BACKSTAGE_VIDEO/IMAGE markers printed by tools (echo after
+            // ffmpeg etc.) must survive the refresh re-parse exactly like
+            // they do on the live stream (jsonl-parser does the same for
+            // the claude engine's tool results).
+            const markerVideos = extractBackstageVideos(resultText);
+            const markerImages = extractBackstageImages(resultText);
+            const allImages = [...images, ...markerImages];
             entries.push({
               id: `tr-${p.id}`,
               type: "tool_result",
-              content:
-                state.status === "completed"
-                  ? state.output || ""
-                  : `Error: ${state.error || "tool failed"}`,
+              content: resultText,
               timestamp: ts,
               toolUseId: p.id,
               ...(state.status === "error" ? { isError: true } : {}),
-              ...(images.length ? { images } : {}),
+              ...(allImages.length ? { images: allImages } : {}),
+              ...(markerVideos.length ? { videos: markerVideos } : {}),
             });
           }
         }
