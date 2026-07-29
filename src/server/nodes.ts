@@ -29,7 +29,11 @@ import { randomUUIDv7 } from "bun";
 import { statePath } from "./rename-compat";
 import { writeJsonAtomic } from "./shared/atomic-write";
 
-const STORE_PATH = statePath(".opensession-nodes.json", ".backstage-nodes.json");
+/** Resolved per call, not at import: tests point HOME at a scratch directory,
+ *  and a module-level constant would have already baked in the real one. */
+function storePath(): string {
+  return statePath(".opensession-nodes.json", ".backstage-nodes.json");
+}
 
 /** Tailscale hands out addresses from the CGNAT range. */
 const TAILNET_CIDR_PREFIX = 100;
@@ -57,9 +61,10 @@ export type ExecNode = {
 type Store = { nodes: ExecNode[] };
 
 function load(): Store {
-  if (!existsSync(STORE_PATH)) return { nodes: [] };
+  const path = storePath();
+  if (!existsSync(path)) return { nodes: [] };
   try {
-    const parsed = JSON.parse(readFileSync(STORE_PATH, "utf8"));
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
     return Array.isArray(parsed?.nodes) ? parsed : { nodes: [] };
   } catch {
     return { nodes: [] };
@@ -67,7 +72,7 @@ function load(): Store {
 }
 
 function save(store: Store): void {
-  writeJsonAtomic(STORE_PATH, store);
+  writeJsonAtomic(storePath(), store);
 }
 
 // ── address gating ───────────────────────────────────────────────────────────

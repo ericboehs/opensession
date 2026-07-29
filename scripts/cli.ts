@@ -22,6 +22,7 @@ import { update } from "./lib/update";
 import { bold, dim, fail, green, heading, info, ok, run, runInherit, warn } from "./lib/ui";
 import { INTEGRATIONS, findIntegration } from "../src/server/integrations/registry";
 import { findRecipe, installRecipe, installedKeys, listRecipes, removeRecipe } from "./lib/recipes";
+import { connect, nodeRun, nodeStatus, nodesList, nodesPair, nodesRemove } from "./lib/connect";
 
 const argv = process.argv.slice(2);
 const command = argv[0] ?? "help";
@@ -60,6 +61,15 @@ ${bold("Maintenance")}
   automations add <id>     install one (takes effect on restart)
   automations remove <id>
   version
+
+${bold("Execution nodes")}   ${dim("run sessions on another machine (macOS/Linux)")}
+  nodes                    list attached nodes
+  nodes pair               mint a one-time pairing code
+  nodes remove <id>        revoke a node
+  connect --server <url> --code <code>
+                           attach THIS machine to a server
+  node run                 stay attached (heartbeat)
+  node status              is this machine attached?
 
 Docs: docs/setup/README.md
 `);
@@ -255,6 +265,25 @@ async function main(): Promise<number> {
       if (positional[0] === "add") return await addAutomation(positional[1] ?? "");
       if (positional[0] === "remove") return await removeAutomation(positional[1] ?? "");
       return await listAutomations();
+
+    case "connect":
+      return await connect({
+        server: flagValue("--server"),
+        code: flagValue("--code"),
+        name: flagValue("--name"),
+        label: flagValue("--label"),
+      });
+
+    case "node":
+      if (positional[0] === "run") return await nodeRun();
+      if (positional[0] === "status" || !positional[0]) return await nodeStatus();
+      fail("usage: opensession node run|status");
+      return 1;
+
+    case "nodes":
+      if (positional[0] === "pair") return await nodesPair();
+      if (positional[0] === "remove") return await nodesRemove(positional[1] ?? "");
+      return await nodesList();
 
     case "version":
     case "--version":

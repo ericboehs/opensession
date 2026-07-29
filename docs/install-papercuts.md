@@ -233,9 +233,11 @@ and it would boot looking healthy but inert.
 status/logs/install` all branch on it. `logs` tails the plist's
 `StandardOutPath` on macOS, since there is no journal.
 
-Verified as far as is possible without a Mac: the generated plist parses with
-Python's `plistlib` and carries the right label, `RunAtLoad`, `KeepAlive`,
-exec line and `PATH`. **End-to-end macOS install is still untested.**
+**Now verified end to end on a real Mac**, via a `macos-latest` CI job: install,
+Bun bootstrap, the `opensession` command, `doctor` with no errors, the LaunchAgent
+plist rendering, recipe installation and uninstall all pass. Adding CI was what
+closed this — the only Mac reachable from the build host is a teammate's personal
+machine.
 
 ### 13. `OPENCODE_BIN` fell back to a hardcoded Tella path
 
@@ -471,6 +473,7 @@ Measured against the two reference tools:
 | Update command | — | `update --channel` | `update --channel` |
 | Package manager | npm/brew/paru | npm | `bun add -g` / npm-ready |
 | Health diagnostics | — | `gateway status --deep` | `doctor` |
+| CI-verified install | — | — | Linux + macOS, every PR |
 | Service management | — | via CLI | via CLI (systemd + launchd) |
 | Uninstall | — | — | `--uninstall` |
 
@@ -482,7 +485,5 @@ Two things are outside the code and remain open:
 1. **The repository is private.** The install path needs nothing else — iteration
    7 proves it works with zero credentials — but a stranger cannot clone it until
    visibility flips. That is a business decision, not an installer defect.
-2. **macOS is not verified end to end.** The code paths exist and the launchd
-   half is unit-tested, but the only Mac reachable from here is a teammate's
-   personal machine and installing onto it uninvited was not appropriate. This
-   needs one run on a Mac before claiming macOS support.
+2. ~~macOS is not verified end to end.~~ **Closed** — a `macos-latest` CI job
+   now runs the whole install on a real Mac on every PR.

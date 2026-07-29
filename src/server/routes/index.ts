@@ -38,6 +38,7 @@ import { handleActionsRoutes } from "./actions";
 import { handleConnectionsRoutes } from "./connections";
 import { handleAccountsRoutes } from "./accounts";
 import { handleModelsRoutes } from "./models";
+import { handleNodesRoutes } from "./nodes";
 import { handleNotesRoutes } from "./notes";
 import { handlePapercutsRoutes } from "./papercuts";
 import { handleTodosRoutes } from "./todos";
@@ -90,6 +91,7 @@ export const routeHandlers: RouteHandler[] = [
 	handleConnectionsRoutes,
 	handleAccountsRoutes,
 	handleModelsRoutes,
+	handleNodesRoutes,
 	handleNotesRoutes,
 	handlePapercutsRoutes,
 	handleTodosRoutes,
