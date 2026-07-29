@@ -156,32 +156,39 @@ export class SlackAgent implements AgentModule {
         const token = ctx?.user
           ? mcpUserGrantToken("slack", ctx.user)
           : undefined;
-        const items: import("../../server/feeds").FeedItem[] = [];
+        const byId = new Map<string, import("../../server/feeds").FeedItem>();
         let teamId = "";
         try {
           const auth = await slackApiCall("auth.test", {}, token);
           teamId = auth?.team_id || "";
         } catch {}
+        // conversations.list wants query params (a JSON body is silently
+        // ignored → the same first page forever); GET like worktree-channels.
+        const { fetchWithTimeout } = await import(
+          "../../server/shared/fetch-with-timeout"
+        );
+        const authToken = token || process.env.SLACK_BOT_TOKEN;
         let cursor = "";
-        do {
-          const data = await slackApiCall(
-            "conversations.list",
-            {
-              types: "public_channel,private_channel",
-              exclude_archived: true,
-              limit: 200,
-              ...(cursor ? { cursor } : {}),
-            },
-            token,
+        for (let page = 0; page < 6; page++) {
+          const params = new URLSearchParams({
+            types: "public_channel,private_channel",
+            exclude_archived: "true",
+            limit: "200",
+            ...(cursor ? { cursor } : {}),
+          });
+          const resp = await fetchWithTimeout(
+            `https://slack.com/api/conversations.list?${params}`,
+            { headers: { Authorization: `Bearer ${authToken}` } },
           );
+          const data = (await resp.json()) as any;
           if (!data?.ok) break;
           for (const ch of data.channels || []) {
             if (!ch.is_member) continue; // history needs membership
-            items.push({
+            byId.set(ch.id, {
               id: ch.id,
               title: `#${ch.name}`,
               preview: ch.topic?.value || ch.purpose?.value || undefined,
-              ts: (ch.updated || ch.created || 0) * (ch.updated ? 1 : 1000),
+              ts: (ch.created || 0) * 1000,
               ...(teamId
                 ? { url: `https://app.slack.com/client/${teamId}/${ch.id}` }
                 : {}),
@@ -194,12 +201,17 @@ export class SlackAgent implements AgentModule {
             });
           }
           cursor = data.response_metadata?.next_cursor || "";
-        } while (cursor);
-        return items.sort(
-          (a, b) =>
-            ((b.meta?.members as number) || 0) -
-            ((a.meta?.members as number) || 0),
-        );
+          if (!cursor) break;
+        }
+        // Most-populated first — the bot's hundreds of 1-2-member worktree
+        // channels sink; cap to a sane band size.
+        return [...byId.values()]
+          .sort(
+            (a, b) =>
+              ((b.meta?.members as number) || 0) -
+              ((a.meta?.members as number) || 0),
+          )
+          .slice(0, 40);
       },
       async contextForRef(id: string, user?: string) {
         const { fetchChannelHistory, slackApiCall } = await import(
