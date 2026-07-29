@@ -6,6 +6,7 @@ import {
 	parseHumanReply,
 	parseAttribution,
 	isGitHubAttribution,
+	parseRecoveryNotice,
 	parseReviewHandoff,
 	parseSessionNotice,
 	parseWorkerReport,
@@ -366,7 +367,23 @@ export const MessageBubble = React.memo(function MessageBubble({
 				: null,
 		[entry.type, entry.content, workerReport, workflowNotice],
 	);
+	const recoveryNotice = useMemo(
+		() => (entry.type === "user" ? parseRecoveryNotice(entry.content) : null),
+		[entry.type, entry.content],
+	);
 	const [workerReportOpen, setWorkerReportOpen] = useState(false);
+
+	if (entry.type === "user" && recoveryNotice) {
+		return (
+			<CollapsibleSystemNotice
+				entry={entry}
+				sessionId={sessionId}
+				label="Session resumed after a service restart"
+				toggleNoun="details"
+				content={recoveryNotice.body}
+			/>
+		);
+	}
 
 	if (entry.type === "user" && workerReport) {
 		return (

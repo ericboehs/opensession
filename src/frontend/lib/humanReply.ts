@@ -143,6 +143,21 @@ export function parseWorkflowNotice(
 }
 
 /**
+ * Detect the synthetic continuation prompt emitted after a service restart.
+ * It is persisted as a user turn because the engine must act on it, but in the
+ * transcript it is operational metadata rather than something the human typed.
+ * Match the stable sentence instead of the persona name so renamed personas and
+ * older transcripts get the same treatment.
+ */
+const RECOVERY_NOTICE_RE =
+	/^This session was interrupted by an? [^\n]{1,80} service restart mid-run\.\s/;
+
+export function parseRecoveryNotice(content?: string): { body: string } | null {
+	if (!content || !RECOVERY_NOTICE_RE.test(content)) return null;
+	return { body: content };
+}
+
+/**
  * Detect an informational heads-up sent by one session into another. The
  * server marks new notices; the strict opener keeps already-delivered notices
  * from before the marker shipped from looking like words the human typed.

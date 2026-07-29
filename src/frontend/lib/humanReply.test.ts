@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
 	isGitHubAttribution,
 	parseAttribution,
+	parseRecoveryNotice,
 	parseReviewHandoff,
 	parseSessionNotice,
 	parseWorkerReport,
@@ -108,6 +109,27 @@ describe("workflow notice detection", () => {
 	it("leaves ordinary turns alone", () => {
 		expect(parseWorkflowNotice("Workflow finished, what now?")).toBeNull();
 		expect(parseWorkflowNotice("✅ done")).toBeNull();
+	});
+});
+
+describe("service restart recovery detection", () => {
+	it("detects synthetic continuation prompts across persona names", () => {
+		const content =
+			"This session was interrupted by a Michael service restart mid-run. Review what you had already done.";
+		expect(parseRecoveryNotice(content)).toEqual({ body: content });
+		expect(
+			parseRecoveryNotice(
+				"This session was interrupted by an OS1 service restart mid-run. Pick up where you left off.",
+			),
+		).not.toBeNull();
+	});
+
+	it("leaves human messages that merely quote a recovery prompt alone", () => {
+		expect(
+			parseRecoveryNotice(
+				"Can we collapse this?\n\nThis session was interrupted by a Michael service restart mid-run.",
+			),
+		).toBeNull();
 	});
 });
 
