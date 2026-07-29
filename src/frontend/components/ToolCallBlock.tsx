@@ -406,14 +406,46 @@ function PathSummary({ path }: { path: string }) {
   );
 }
 
-function stepDuration(entry: TranscriptEntry, result?: TranscriptEntry): string | null {
-  if (!result) return null;
-  const secs = Math.round(
-    (new Date(result.timestamp).getTime() - new Date(entry.timestamp).getTime()) / 1000
-  );
-  if (!isFinite(secs) || secs < 2) return null;
+export function toolDurationMs(
+  entry: TranscriptEntry,
+  result?: TranscriptEntry,
+  nowMs?: number
+): number | null {
+  const startedAt = new Date(entry.timestamp).getTime();
+  const endedAt = result ? new Date(result.timestamp).getTime() : nowMs;
+  if (!isFinite(startedAt) || endedAt === undefined || !isFinite(endedAt)) return null;
+  const durationMs = endedAt - startedAt;
+  return durationMs >= 0 ? durationMs : null;
+}
+
+function formatToolDuration(durationMs: number): string {
+  const secs = Math.round(durationMs / 1000);
   if (secs < 60) return `${secs}s`;
   return `${Math.floor(secs / 60)}m ${secs % 60}s`;
+}
+
+function stepDuration(entry: TranscriptEntry, result?: TranscriptEntry): string | null {
+  const durationMs = toolDurationMs(entry, result);
+  if (durationMs === null || durationMs < 1500) return null;
+  return formatToolDuration(durationMs);
+}
+
+function RunningToolDuration({ entry }: { entry: TranscriptEntry }) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const durationMs = toolDurationMs(entry, undefined, nowMs);
+  if (durationMs === null) return null;
+  return (
+    <span
+      data-tool-duration
+      className="hidden flex-shrink-0 text-[10.5px] tabular-nums text-faint group-hover:block"
+    >
+      {formatToolDuration(durationMs)}
+    </span>
+  );
 }
 
 export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEvidence, sessionId }: Props) {
@@ -547,6 +579,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
         {duration && (
           <span className="flex-shrink-0 text-[10.5px] tabular-nums text-faint">{duration}</span>
         )}
+        {pending && <RunningToolDuration entry={entry} />}
 
         {pending ? (
           <span className="size-[10px] flex-shrink-0 animate-spin rounded-full border-2 border-green-soft border-t-green" />

@@ -88,14 +88,13 @@ export const WorkBlock = React.memo(function WorkBlock({
 
       {expanded && (
         <div className="mt-0.5">
-          {items.map((entry, i) => (
+          {items.map((entry) => (
             <ToolCallBlock
               key={entry.id}
               entry={entry}
               result={entry.toolUseId ? toolResults.get(entry.toolUseId) : undefined}
               pending={
                 live &&
-                i === items.length - 1 &&
                 !!entry.toolUseId &&
                 !toolResults.has(entry.toolUseId)
               }

@@ -227,7 +227,6 @@ export const TurnBlock = React.memo(function TurnBlock({
                     }
                     pending={
                       live &&
-                      entry === lastItem &&
                       !!entry.toolUseId &&
                       !toolResults.has(entry.toolUseId)
                     }

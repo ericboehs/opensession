@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   canonicalToolName,
   parseMcpTool,
+  toolDurationMs,
   toolFamily,
   toolLineStats,
   toolSummary,
@@ -129,4 +130,25 @@ test("the run-rpc session key stays out of MCP summaries", () => {
       roots
     )
   ).toBe("id: bks-1");
+});
+
+test("tool duration uses the result timestamp or a live clock", () => {
+  const entry = {
+    id: "call",
+    type: "tool_use" as const,
+    content: "",
+    timestamp: "2026-07-29T10:00:00.000Z",
+  };
+  const result = {
+    id: "result",
+    type: "tool_result" as const,
+    content: "",
+    timestamp: "2026-07-29T10:00:12.500Z",
+  };
+
+  expect(toolDurationMs(entry, result)).toBe(12_500);
+  expect(toolDurationMs(entry, undefined, Date.parse("2026-07-29T10:01:00.000Z"))).toBe(
+    60_000
+  );
+  expect(toolDurationMs(entry)).toBeNull();
 });
