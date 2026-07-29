@@ -397,12 +397,17 @@ function FeedRow({
 	item,
 	session,
 	active,
+	pinned,
+	onTogglePin,
 	onOpen,
 }: {
 	feed: FeedDescriptor;
 	item: FeedItem;
 	session: UnifiedSession | null;
 	active: boolean;
+	/** Pinned into the sidebar's Pinned band (per-user, like ticket pins). */
+	pinned: boolean;
+	onTogglePin: () => void;
 	onOpen: () => void;
 }) {
 	const isPhone = useIsPhone();
@@ -443,6 +448,26 @@ function FeedRow({
 						{shortTime(ts)}
 					</span>
 				)}
+				<span className="sidebar-ws-actions">
+					<span
+						role="button"
+						tabIndex={0}
+						className={`sidebar-ws-action${pinned ? " is-on" : ""}`}
+						aria-label={pinned ? "Unpin" : "Pin"}
+						onClick={(e) => {
+							e.stopPropagation();
+							onTogglePin();
+						}}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.stopPropagation();
+								onTogglePin();
+							}
+						}}
+					>
+						<IconPin size={21} fill={pinned ? "currentColor" : "none"} />
+					</span>
+				</span>
 			</Popover.Trigger>
 			<Popover.Popup side="right" align="start" className={ROW_CARD_CLASS}>
 				<div className="flex max-w-[280px] flex-col gap-1.5 p-3">
@@ -4268,16 +4293,21 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			return null;
 		const gkey = isPlain ? "project:plain" : `project:feed-${feed.id}`;
 		const open = isOpen(gkey);
-		const renderRow = (item: FeedItem) => (
-			<FeedRow
-				key={`${feed.id}:${item.id}`}
-				feed={feed}
-				item={item}
-				session={feedSessionByRef.get(`${feed.refKind}:${item.id}`) || null}
-				active={feedItemActive(feed, item)}
-				onOpen={() => onOpenFeedItem(feed, item)}
-			/>
-		);
+		const renderRow = (item: FeedItem) => {
+			const pinKey = `feed:${feed.refKind}:${item.id}`;
+			return (
+				<FeedRow
+					key={`${feed.id}:${item.id}`}
+					feed={feed}
+					item={item}
+					session={feedSessionByRef.get(`${feed.refKind}:${item.id}`) || null}
+					active={feedItemActive(feed, item)}
+					pinned={pins.includes(pinKey)}
+					onTogglePin={() => setPins(togglePin(pinKey))}
+					onOpen={() => onOpenFeedItem(feed, item)}
+				/>
+			);
+		};
 		// Collapsed band still surfaces the active item/ticket (same rule as
 		// the repo bands' selected rows).
 		const activeItems = open
@@ -4953,6 +4983,22 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							(supportThreads || []).find((t) => t.id === e.slice(8)),
 						)
 						.filter((t): t is SupportThread => !!t);
+					// Pinned feed items (Tella videos, PostHog dashboards) —
+					// resolved against the live feed items like tickets are.
+					const pinnedFeedItems = pins
+						.filter((e) => e.startsWith("feed:"))
+						.map((e) => {
+							const [, refKind, ...idParts] = e.split(":");
+							const id = idParts.join(":");
+							const feed = feeds.find((f) => f.refKind === refKind);
+							const item = feed
+								? (feedItems[feed.id] || []).find((i) => i.id === id)
+								: undefined;
+							return feed && item ? { feed, item } : null;
+						})
+						.filter(
+							(x): x is { feed: FeedDescriptor; item: FeedItem } => !!x,
+						);
 					const pinnedPrs = pins
 						.filter((e) => e.startsWith("pr:"))
 						.map((e) =>
@@ -4964,6 +5010,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						!pinnedLoose.length &&
 						!pinnedNotes.length &&
 						!pinnedTickets.length &&
+						!pinnedFeedItems.length &&
 						!pinnedPrs.length
 					)
 						return null;
@@ -5065,6 +5112,31 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							repo: null,
 							chats: [],
 							node: renderSupportRow(t),
+						});
+					}
+					for (const { feed, item } of pinnedFeedItems) {
+						const pinKey = `feed:${feed.refKind}:${item.id}`;
+						entries.push({
+							key: pinKey,
+							pinKeys: [pinKey],
+							repo: null,
+							chats: [],
+							node: (
+								<FeedRow
+									key={pinKey}
+									feed={feed}
+									item={item}
+									session={
+										feedSessionByRef.get(
+											`${feed.refKind}:${item.id}`,
+										) || null
+									}
+									active={feedItemActive(feed, item)}
+									pinned
+									onTogglePin={() => setPins(togglePin(pinKey))}
+									onOpen={() => onOpenFeedItem(feed, item)}
+								/>
+							),
 						});
 					}
 					for (const item of pinnedPrs) {
