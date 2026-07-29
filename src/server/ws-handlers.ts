@@ -1575,6 +1575,9 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							await import("./feeds")
 						).externalRefsOpeningContext(inheritedRefs, {
 							scratch: isScratch,
+							// The creator's MCP grant fetches the object context
+							// (e.g. the Tella video via their account).
+							user,
 						});
 						if (refsContext)
 							openingPrompt += `\n\n${wrapContext(refsContext)}`;

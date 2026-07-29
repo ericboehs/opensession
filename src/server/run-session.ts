@@ -1580,7 +1580,10 @@ async function runSessionPromptInner(
 			const { externalRefsOpeningContext } = await import("./feeds");
 			const refsContext = await externalRefsOpeningContext(
 				session.externalRefs,
-				{ scratch: session.mode === "scratch" },
+				{
+					scratch: session.mode === "scratch",
+					user: user || session.startedBy || undefined,
+				},
 			);
 			if (refsContext) prompt += `\n\n${wrapContext(refsContext)}`;
 		} catch (e) {

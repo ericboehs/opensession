@@ -1,8 +1,11 @@
 /**
- * Tella feed provider: the key owner's recent videos as a sidebar band
- * (docs/feeds-design.md, Phase 0). Items carry the embed + editor URLs in
- * meta so the workspace's Video tab can render in-place (the edit/view pages
- * send `frame-ancestors 'none'`; the embed page is embeddable).
+ * Tella feed provider: the VIEWER's recent videos as a sidebar band
+ * (docs/feeds-design.md). Backed by the Tella MCP server's list_videos tool
+ * on the viewer's own OAuth grant (workspace grant fallback) — no REST
+ * client, no API key. Items carry the embed + editor URLs in meta so the
+ * workspace's Video tab can render in-place (the edit/view pages send
+ * `frame-ancestors 'none'` until tella-fusion PR #5332; the embed page is
+ * embeddable today).
  */
 import { registerFeed, type FeedItem } from "../../server/feeds";
 import { listRecentVideos, tellaConfigured, tellaEditUrl } from "./api";
@@ -20,8 +23,8 @@ export function registerTellaFeed(): void {
       // mcp-config yet (the Tella MCP is OAuth 2.1); it lights up when added.
       mcpServers: ["tella"],
     },
-    async listItems(): Promise<FeedItem[]> {
-      const videos = await listRecentVideos(30);
+    async listItems(ctx?: { user?: string }): Promise<FeedItem[]> {
+      const videos = await listRecentVideos(30, ctx?.user);
       return videos
         .map((v) => ({
           id: v.id,

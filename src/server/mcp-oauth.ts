@@ -396,6 +396,13 @@ export function mcpOauthStatus(
   };
 }
 
+/** Any grant at all for this server (shared or any user's)? */
+export function hasMcpOauthGrant(name: string, user?: string): boolean {
+  if (user) return !!mcpAuthHeader(name, user);
+  const auth = readStore()[name];
+  return !!auth?.shared || Object.keys(auth?.users || {}).length > 0;
+}
+
 /** Drop a grant (Disconnect in the UI). */
 export function removeMcpOauthGrant(name: string, forUser?: string): boolean {
   const store = readStore();

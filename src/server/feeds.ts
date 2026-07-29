@@ -8,8 +8,10 @@
  * Design doc: docs/feeds-design.md.
  *
  * Registration is lazy (ensureFeedsRegistered from the routes) so this module
- * has no import-time side effects; providers whose backing credential is
- * absent (e.g. no TELLA_API_KEY) simply don't register, which hides the band.
+ * has no import-time side effects; providers whose backing connection is
+ * absent (e.g. no tella MCP server / no OAuth grant yet) simply don't
+ * register, which hides the band. MCP-backed feeds are per-viewer: items are
+ * fetched on the requesting user's grant and cached per user.
  */
 import type { ExternalRef } from "./types";
 
@@ -60,12 +62,15 @@ export interface FeedDescriptor {
 
 export interface FeedProvider {
   descriptor: FeedDescriptor;
-  listItems(): Promise<FeedItem[]>;
+  /** `ctx.user`: the requesting viewer — MCP-backed feeds run on THEIR
+   *  grant (workspace grant fallback), so the band is per-viewer. */
+  listItems(ctx?: { user?: string }): Promise<FeedItem[]>;
 }
 
 interface FeedEntry {
   provider: FeedProvider;
-  cache: { items: FeedItem[]; ts: number } | null;
+  /** Items cached per viewer (feeds can be per-user — MCP grants). */
+  cache: Map<string, { items: FeedItem[]; ts: number }>;
 }
 
 // Parked on globalThis like the other state modules so a hot reload (dev)
@@ -76,21 +81,25 @@ const registry: Map<string, FeedEntry> = ((globalThis as any).__osFeeds ??=
 const ITEMS_TTL = 60_000;
 
 export function registerFeed(provider: FeedProvider): void {
-  registry.set(provider.descriptor.id, { provider, cache: null });
+  registry.set(provider.descriptor.id, { provider, cache: new Map() });
 }
 
 export function listFeedDescriptors(): FeedDescriptor[] {
   return [...registry.values()].map((e) => e.provider.descriptor);
 }
 
-/** Items for one feed, cached ~60s (every open browser polls this). */
-export async function getFeedItems(feedId: string): Promise<FeedItem[] | null> {
+/** Items for one feed, cached ~60s per viewer (every open browser polls). */
+export async function getFeedItems(
+  feedId: string,
+  user?: string,
+): Promise<FeedItem[] | null> {
   const entry = registry.get(feedId);
   if (!entry) return null;
-  if (entry.cache && Date.now() - entry.cache.ts < ITEMS_TTL)
-    return entry.cache.items;
-  const items = await entry.provider.listItems();
-  entry.cache = { items, ts: Date.now() };
+  const key = user || "";
+  const cached = entry.cache.get(key);
+  if (cached && Date.now() - cached.ts < ITEMS_TTL) return cached.items;
+  const items = await entry.provider.listItems({ user });
+  entry.cache.set(key, { items, ts: Date.now() });
   return items;
 }
 
@@ -126,7 +135,7 @@ export async function feedMcpServersForRefs(
  */
 export async function externalRefsOpeningContext(
   refs: ExternalRef[] | undefined,
-  opts: { scratch?: boolean } = {},
+  opts: { scratch?: boolean; user?: string } = {},
 ): Promise<string | null> {
   if (!refs?.length) return null;
   const lines = refs
@@ -144,7 +153,7 @@ export async function externalRefsOpeningContext(
       const { getVideo, formatVideoContext } = await import(
         "../agents/tella/api"
       );
-      const video = await getVideo(r.id);
+      const video = await getVideo(r.id, opts.user);
       if (video)
         out += `\n\nTella video context for ${r.id}:\n\n${formatVideoContext(video)}`;
     } catch (e) {

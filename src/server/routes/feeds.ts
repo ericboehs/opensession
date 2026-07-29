@@ -26,7 +26,11 @@ export async function handleFeedsRoutes(
 		await ensureFeedsRegistered();
 		const feedId = decodeURIComponent(itemsMatch[1]);
 		try {
-			const items = await getFeedItems(feedId);
+			// Per-viewer: MCP-backed feeds run on the signed-in user's grant.
+			const items = await getFeedItems(
+				feedId,
+				ctx.authUser?.login || ctx.authUser?.name || undefined,
+			);
 			if (!items)
 				return Response.json({ error: "Unknown feed" }, { status: 404 });
 			return Response.json({ items });
