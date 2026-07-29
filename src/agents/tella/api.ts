@@ -30,11 +30,12 @@ export function tellaConfigured(): boolean {
 export async function listRecentVideos(
   limit = 30,
   user?: string,
+  extraArgs?: Record<string, string>,
 ): Promise<TellaVideo[]> {
   const body = await callMcpTool<{ videos?: TellaVideo[] }>(
     "tella",
     "list_videos",
-    { limit },
+    { limit, ...(extraArgs || {}) },
     user,
   );
   return body.videos || [];

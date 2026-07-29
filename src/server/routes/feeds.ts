@@ -14,7 +14,7 @@ import {
 export async function handleFeedsRoutes(
 	ctx: RouteContext,
 ): Promise<Response | undefined> {
-	const { req, path } = ctx;
+	const { req, url, path } = ctx;
 
 	if (path === "/backstage/api/feeds" && req.method === "GET") {
 		await ensureFeedsRegistered();
@@ -68,15 +68,50 @@ export async function handleFeedsRoutes(
 		return Response.json(result);
 	}
 
+	// Options for one of a feed's filter controls (resolved via MCP on the
+	// viewer's grant — e.g. tella tags via list_tags).
+	const filterOptsMatch = path.match(
+		/^\/backstage\/api\/feeds\/([^/]+)\/filters\/([^/]+)\/options$/,
+	);
+	if (filterOptsMatch && req.method === "GET") {
+		await ensureFeedsRegistered();
+		try {
+			const { getFeedFilterOptions } = await import("../feeds");
+			const options = await getFeedFilterOptions(
+				decodeURIComponent(filterOptsMatch[1]),
+				decodeURIComponent(filterOptsMatch[2]),
+				ctx.authUser?.login || ctx.authUser?.name || undefined,
+			);
+			if (!options)
+				return Response.json({ error: "Unknown filter" }, { status: 404 });
+			return Response.json({ options });
+		} catch (e: any) {
+			return Response.json(
+				{ error: e?.message || String(e) },
+				{ status: 502 },
+			);
+		}
+	}
+
 	const itemsMatch = path.match(/^\/backstage\/api\/feeds\/([^/]+)\/items$/);
 	if (itemsMatch && req.method === "GET") {
 		await ensureFeedsRegistered();
 		const feedId = decodeURIComponent(itemsMatch[1]);
 		try {
+			// Selected filter values ride as f_<key> query params; only keys the
+			// descriptor declares as arg-mode filters reach the list tool.
+			const desc = listFeedDescriptors().find((d) => d.id === feedId);
+			const args: Record<string, string> = {};
+			for (const spec of desc?.filters || []) {
+				if (spec.mode === "meta") continue;
+				const v = url.searchParams.get(`f_${spec.key}`);
+				if (v) args[spec.key] = v;
+			}
 			// Per-viewer: MCP-backed feeds run on the signed-in user's grant.
 			const items = await getFeedItems(
 				feedId,
 				ctx.authUser?.login || ctx.authUser?.name || undefined,
+				Object.keys(args).length ? args : undefined,
 			);
 			if (!items)
 				return Response.json({ error: "Unknown feed" }, { status: 404 });

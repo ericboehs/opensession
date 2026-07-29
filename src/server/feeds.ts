@@ -39,6 +39,40 @@ export interface FeedItem {
   meta?: Record<string, unknown>;
 }
 
+/**
+ * One filter control on a feed band (docs/feeds-design.md — "filters, like
+ * tella has tag/playlist filters on list_videos, configurable per
+ * project/plugin"). `key` is the LIST-TOOL ARGUMENT the selected value is
+ * passed as; options are static or resolved from another MCP tool on the
+ * viewer's grant (e.g. tella tags via list_tags).
+ */
+export interface FeedFilterSpec {
+  key: string;
+  label: string;
+  /** "arg" (default): the selected value is passed as this list-tool
+   *  argument (tella tagIds/playlistId). "meta": filtered client-side
+   *  against item.meta (plain assignee/labels). */
+  mode?: "arg" | "meta";
+  /** meta mode: dot-path into item.meta. Arrays match when SOME element's
+   *  option-value path equals the selection; null/undefined matches the
+   *  reserved "__unassigned__" option value. */
+  field?: string;
+  /** Static options (prepended before derived/fetched ones). */
+  options?: { value: string; label: string }[];
+  /** arg mode: resolve options from another MCP tool on the viewer's grant. */
+  optionsFrom?: {
+    server: string;
+    tool: string;
+    args?: Record<string, unknown>;
+    /** Dot-path to the option array in the tool result. */
+    path?: string;
+    map: { value: string; label: string };
+  };
+  /** meta mode: derive options from the items' field values — paths applied
+   *  to each element (arrays) or the value itself. */
+  optionsFromItems?: { value: string; label: string };
+}
+
 export interface FeedLane {
   key: string;
   label: string;
@@ -70,6 +104,11 @@ export interface FeedDescriptor {
   /** Lane whose count shows as the collapsed band's attention badge
    *  (e.g. plain's Urgent lane). */
   attentionLane?: string;
+  /** Filter controls the band header offers; values feed the list tool. */
+  filters?: FeedFilterSpec[];
+  /** Extra meta dot-paths the sidebar's text search matches besides
+   *  title/preview (e.g. plain's customer name/email). */
+  searchMeta?: string[];
   /** True for config-declared feeds (editable/deletable in the UI). */
   fromConfig?: boolean;
 }
@@ -77,8 +116,13 @@ export interface FeedDescriptor {
 export interface FeedProvider {
   descriptor: FeedDescriptor;
   /** `ctx.user`: the requesting viewer — MCP-backed feeds run on THEIR
-   *  grant (workspace grant fallback), so the band is per-viewer. */
-  listItems(ctx?: { user?: string }): Promise<FeedItem[]>;
+   *  grant (workspace grant fallback), so the band is per-viewer.
+   *  `ctx.args`: selected filter values (descriptor.filters keys only),
+   *  merged into the backing list-tool call. */
+  listItems(ctx?: {
+    user?: string;
+    args?: Record<string, string>;
+  }): Promise<FeedItem[]>;
 }
 
 interface FeedEntry {
@@ -185,16 +229,62 @@ export function listFeedDescriptors(): FeedDescriptor[] {
 export async function getFeedItems(
   feedId: string,
   user?: string,
+  args?: Record<string, string>,
 ): Promise<FeedItem[] | null> {
   syncConfigFeeds();
   const entry = registry.get(feedId);
   if (!entry) return null;
-  const key = user || "";
+  const key = `${user || ""}\u0000${JSON.stringify(args || {})}`;
   const cached = entry.cache.get(key);
   if (cached && Date.now() - cached.ts < ITEMS_TTL) return cached.items;
-  const items = await entry.provider.listItems({ user });
+  const items = await entry.provider.listItems({ user, args });
   entry.cache.set(key, { items, ts: Date.now() });
   return items;
+}
+
+// Filter-option lists resolved via MCP (e.g. tella tags), cached briefly.
+const filterOptionsCache = new Map<
+  string,
+  { options: { value: string; label: string }[]; ts: number }
+>();
+const FILTER_OPTIONS_TTL = 5 * 60_000;
+
+/** Options for one of a feed's filter controls, on the viewer's grant. */
+export async function getFeedFilterOptions(
+  feedId: string,
+  filterKey: string,
+  user?: string,
+): Promise<{ value: string; label: string }[] | null> {
+  syncConfigFeeds();
+  const spec = registry
+    .get(feedId)
+    ?.provider.descriptor.filters?.find((f) => f.key === filterKey);
+  if (!spec) return null;
+  if (spec.options) return spec.options;
+  if (!spec.optionsFrom) return [];
+  const cacheKey = `${feedId}\u0000${filterKey}\u0000${user || ""}`;
+  const cached = filterOptionsCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < FILTER_OPTIONS_TTL)
+    return cached.options;
+  const { callMcpTool } = await import("./mcp-client");
+  const { dotGet } = await import("./feeds-config");
+  const raw = await callMcpTool<unknown>(
+    spec.optionsFrom.server,
+    spec.optionsFrom.tool,
+    spec.optionsFrom.args || {},
+    user,
+  );
+  const arr = dotGet(raw, spec.optionsFrom.path);
+  const options = Array.isArray(arr)
+    ? arr
+        .map((o) => ({
+          value: String(dotGet(o, spec.optionsFrom!.map.value) ?? ""),
+          label: String(dotGet(o, spec.optionsFrom!.map.label) ?? ""),
+        }))
+        .filter((o) => o.value && o.label)
+    : [];
+  filterOptionsCache.set(cacheKey, { options, ts: Date.now() });
+  return options;
 }
 
 /** Drop a feed's cached items (all viewers) — mutations that change the

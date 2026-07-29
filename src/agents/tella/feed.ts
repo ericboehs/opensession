@@ -22,6 +22,31 @@ export function tellaFeedProvider(): FeedProvider | null {
       // Sessions in tella-video workspaces see ONLY this server (least
       // privilege — no Plain/Stripe/WorkOS in a video chat).
       mcpServers: ["tella"],
+      // Band filters: the list tool's own filter args, options resolved
+      // from sibling MCP tools on the viewer's grant.
+      filters: [
+        {
+          key: "tagIds",
+          label: "Tag",
+          optionsFrom: {
+            server: "tella",
+            tool: "list_tags",
+            path: "tags",
+            map: { value: "id", label: "name" },
+          },
+        },
+        {
+          key: "playlistId",
+          label: "Playlist",
+          optionsFrom: {
+            server: "tella",
+            tool: "list_playlists",
+            args: { limit: 50 },
+            path: "channels",
+            map: { value: "id", label: "name" },
+          },
+        },
+      ],
       // Workspace tab: embed player + editor/view links (the frontend's
       // generic feed-panel renderer consumes this — no tella hardcode).
       panel: {
@@ -33,8 +58,11 @@ export function tellaFeedProvider(): FeedProvider | null {
         ],
       },
     },
-    async listItems(ctx?: { user?: string }): Promise<FeedItem[]> {
-      const videos = await listRecentVideos(30, ctx?.user);
+    async listItems(ctx?: {
+      user?: string;
+      args?: Record<string, string>;
+    }): Promise<FeedItem[]> {
+      const videos = await listRecentVideos(30, ctx?.user, ctx?.args);
       return videos
         .map((v) => ({
           id: v.id,

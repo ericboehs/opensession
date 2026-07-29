@@ -39,6 +39,26 @@ export class PlainAgent implements AgentModule {
           { key: "3", label: "Low", dot: "var(--text-faint)" },
         ],
         attentionLane: "0",
+        searchMeta: ["customer.name", "customer.email", "previewText"],
+        // Generic band filters (docs/feeds-design.md): the old bespoke
+        // assignee/label menu, expressed as meta-mode filter specs.
+        filters: [
+          {
+            key: "assignee",
+            label: "Assignee",
+            mode: "meta",
+            field: "assignee",
+            options: [{ value: "__unassigned__", label: "Unassigned" }],
+            optionsFromItems: { value: "name", label: "name" },
+          },
+          {
+            key: "label",
+            label: "Label",
+            mode: "meta",
+            field: "labels",
+            optionsFromItems: { value: "name", label: "name" },
+          },
+        ],
       },
       async listItems(): Promise<import("../../server/feeds").FeedItem[]> {
         const { listTodoThreads } = await import("./api");

@@ -99,6 +99,17 @@ export interface ExternalRef {
 	title?: string;
 }
 
+/** One filter control on a feed band (mirror of src/server/feeds.ts). */
+export interface FeedFilterSpec {
+	key: string;
+	label: string;
+	mode?: "arg" | "meta";
+	field?: string;
+	options?: { value: string; label: string }[];
+	optionsFrom?: unknown;
+	optionsFromItems?: { value: string; label: string };
+}
+
 /** A sidebar feed band's identity (mirror of src/server/feeds.ts). */
 export interface FeedDescriptor {
 	id: string;
@@ -116,6 +127,10 @@ export interface FeedDescriptor {
 	};
 	/** Lane whose count badges the collapsed band (e.g. Urgent). */
 	attentionLane?: string;
+	/** Filter controls for the band header (mirror of server feeds.ts). */
+	filters?: FeedFilterSpec[];
+	/** Extra meta dot-paths the sidebar search matches. */
+	searchMeta?: string[];
 	/** True for config-declared feeds (editable/deletable in the UI). */
 	fromConfig?: boolean;
 }

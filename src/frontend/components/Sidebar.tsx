@@ -12,6 +12,7 @@ import type {
 	Project,
 	SupportThread,
 	FeedDescriptor,
+	FeedFilterSpec,
 	FeedItem,
 } from "../lib/types";
 import { sessionPrApproved, sessionPrMerged } from "../lib/session-prs";
@@ -21,6 +22,7 @@ import {
 	fetchOpenPrs,
 	fetchFeeds,
 	fetchFeedItems,
+	fetchFeedFilterOptions,
 	closePrPreviewApi,
 	PR_CLOSED_EVENT,
 	PR_REVIEW_SUBMITTED_EVENT,
@@ -458,37 +460,168 @@ function FeedRow({
 	);
 }
 
-interface SupportFilterState {
-	/** "all" | "me" | "unassigned" | "name:<assignee name>" */
-	assignee: string;
-	/** "all" | a label-type name present on the queue */
-	label: string;
-	session: "all" | "with" | "without";
-}
-const SUPPORT_FILTER_KEY = "opensession-support-filter";
-const DEFAULT_SUPPORT_FILTER: SupportFilterState = {
-	assignee: "all",
-	label: "all",
-	session: "all",
-};
-function readSupportFilter(): SupportFilterState {
+// ── Generic feed-band filters (docs/feeds-design.md) ──
+// Every band's filter menu is driven by the feed descriptor's FeedFilterSpec
+// list: arg-mode specs feed the backing list tool (tella tags/playlists),
+// meta-mode specs filter client-side over item.meta (plain assignee/labels,
+// options derived from the items). Built-ins on every feed: "Linked session"
+// and (non-lane feeds) "Sort". Selections persist per browser, per feed.
+// This replaced plain's bespoke SupportFilterState menu.
+type FeedFilterValues = Record<string, string>;
+const FEED_FILTERS_KEY = "opensession-feed-filters";
+function readFeedFilters(): Record<string, FeedFilterValues> {
 	try {
-		const saved = JSON.parse(
-			localStorage.getItem(SUPPORT_FILTER_KEY) || "null",
-		);
-		if (!saved) return DEFAULT_SUPPORT_FILTER;
-		return {
-			assignee:
-				typeof saved.assignee === "string" ? saved.assignee : "all",
-			label: typeof saved.label === "string" ? saved.label : "all",
-			session:
-				saved.session === "with" || saved.session === "without"
-					? saved.session
-					: "all",
-		};
+		const saved = JSON.parse(localStorage.getItem(FEED_FILTERS_KEY) || "{}");
+		return saved && typeof saved === "object" ? saved : {};
 	} catch {
-		return DEFAULT_SUPPORT_FILTER;
+		return {};
 	}
+}
+
+/** `a.b` getter over item meta / option objects. */
+function dget(obj: unknown, path?: string): unknown {
+	if (!path) return obj;
+	let cur: any = obj;
+	for (const seg of path.split(".")) {
+		if (cur == null) return undefined;
+		cur = cur[seg];
+	}
+	return cur;
+}
+
+function FeedFilterMenu({
+	feed,
+	values,
+	rawItems,
+	currentUser,
+	onSet,
+}: {
+	feed: FeedDescriptor;
+	values: FeedFilterValues;
+	rawItems: FeedItem[];
+	currentUser: string;
+	onSet: (key: string, value: string) => void;
+}) {
+	const [argOptions, setArgOptions] = useState<
+		Record<string, { value: string; label: string }[]>
+	>({});
+	const [opened, setOpened] = useState(false);
+	const argSpecs = (feed.filters || []).filter((f) => f.mode !== "meta");
+	const metaSpecs = (feed.filters || []).filter((f) => f.mode === "meta");
+	useEffect(() => {
+		if (!opened) return;
+		for (const spec of argSpecs) {
+			if (argOptions[spec.key]) continue;
+			fetchFeedFilterOptions(feed.id, spec.key)
+				.then((options) =>
+					setArgOptions((prev) => ({ ...prev, [spec.key]: options })),
+				)
+				.catch(() => {});
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [opened, feed.id]);
+
+	const active = Object.entries(values).some(
+		([k, v]) => v && !(k === "__sort" && v === "recent"),
+	);
+	const item = (
+		key: string,
+		label: string,
+		value: string,
+		selected: boolean,
+	) => (
+		<Menu.Item key={`${key}:${value}`} onClick={() => onSet(key, selected ? "" : value)}>
+			<span className="flex size-4 shrink-0 items-center justify-center">
+				{selected && <IconCheck size={13} />}
+			</span>
+			<span className="truncate">{label}</span>
+		</Menu.Item>
+	);
+	// meta options derived from the current items (plus static prepends);
+	// a "Me" shortcut appears when the viewer's first name is among them.
+	const metaOptions = (spec: FeedFilterSpec) => {
+		const out = new Map<string, string>();
+		for (const o of spec.options || []) out.set(o.value, o.label);
+		for (const it of rawItems) {
+			const v = dget(it.meta, spec.field);
+			const els = Array.isArray(v) ? v : v != null ? [v] : [];
+			for (const el of els) {
+				const value = String(dget(el, spec.optionsFromItems?.value) ?? "");
+				const label = String(dget(el, spec.optionsFromItems?.label) ?? value);
+				if (value) out.set(value, label);
+			}
+		}
+		return [...out.entries()].map(([value, label]) => ({ value, label }));
+	};
+	const meFirst = currentUser.trim().toLowerCase().split(/\s+/)[0];
+	return (
+		<Menu.Root onOpenChange={setOpened}>
+			<Menu.Trigger
+				render={
+					<span
+						role="button"
+						tabIndex={0}
+						aria-label={`Filter ${feed.title}`}
+						title={`Filter ${feed.title}`}
+						className={`sidebar-band-action sidebar-filter-btn ml-auto shrink-0${active ? " has-filter" : ""}`}
+						onClick={(e: React.MouseEvent) => e.stopPropagation()}
+					/>
+				}
+			>
+				<IconFilter size={19} />
+			</Menu.Trigger>
+			<Menu.Popup align="end" sideOffset={5} className="min-w-[230px]">
+				{metaSpecs.map((spec) => {
+					const options = metaOptions(spec);
+					const me = options.find(
+						(o) => o.label.toLowerCase().split(/\s+/)[0] === meFirst,
+					);
+					const sel = values[spec.key] || "";
+					return (
+						<Menu.Group key={spec.key}>
+							<Menu.GroupLabel>{spec.label}</Menu.GroupLabel>
+							{item(spec.key, "Any", "", sel === "")}
+							{me && item(spec.key, "Me", me.value, sel === me.value)}
+							{options
+								.filter((o) => o.value !== me?.value)
+								.map((o) => item(spec.key, o.label, o.value, sel === o.value))}
+						</Menu.Group>
+					);
+				})}
+				{argSpecs.map((spec) => {
+					const options = argOptions[spec.key];
+					const sel = values[spec.key] || "";
+					return (
+						<Menu.Group key={spec.key}>
+							<Menu.GroupLabel>{spec.label}</Menu.GroupLabel>
+							{item(spec.key, "Any", "", sel === "")}
+							{options === undefined ? (
+								<div className="px-3 py-1 text-xs text-faint">Loading…</div>
+							) : (
+								options.map((o) =>
+									item(spec.key, o.label, o.value, sel === o.value),
+								)
+							)}
+						</Menu.Group>
+					);
+				})}
+				<Menu.Group>
+					<Menu.GroupLabel>Linked session</Menu.GroupLabel>
+					{item("__session", "Any", "", !values.__session)}
+					{item("__session", "With session", "with", values.__session === "with")}
+					{item("__session", "Without session", "without", values.__session === "without")}
+				</Menu.Group>
+				{!feed.lanes?.length && (
+					<Menu.Group>
+						<Menu.GroupLabel>Sort</Menu.GroupLabel>
+						{item("__sort", "Most recent", "recent", (values.__sort || "recent") === "recent")}
+						{item("__sort", "Oldest first", "oldest", values.__sort === "oldest")}
+						{item("__sort", "Title", "title", values.__sort === "title")}
+					</Menu.Group>
+				)}
+			</Menu.Popup>
+		</Menu.Root>
+	);
 }
 
 const personColor = swatchColor;
@@ -1733,7 +1866,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				if (descriptors.length === 0) return;
 				const load = () => {
 					for (const d of descriptors)
-						fetchFeedItems(d.id)
+						fetchFeedItems(d.id, argFiltersFor(d))
 							.then((items) => {
 								if (alive)
 									setFeedItems((prev) => ({ ...prev, [d.id]: items }));
@@ -1775,17 +1908,36 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return m;
 	}, [sessions]);
 
-	// Support band filter (assignee / label / has-session; free text rides the
-	// sidebar-wide search box). Persisted per browser.
-	const [supportFilter, setSupportFilterState] = useState<SupportFilterState>(
-		readSupportFilter,
-	);
-	const setSupportFilter = (patch: Partial<SupportFilterState>) => {
-		setSupportFilterState((prev) => {
-			const next = { ...prev, ...patch };
+	// Per-feed filter selections (generic — see FeedFilterMenu). Arg-mode
+	// changes refetch that feed immediately; meta/builtin ones just re-derive.
+	const [feedFilters, setFeedFiltersState] = useState<
+		Record<string, FeedFilterValues>
+	>(readFeedFilters);
+	const feedFiltersRef = useRef(feedFilters);
+	feedFiltersRef.current = feedFilters;
+	const argFiltersFor = (feed: FeedDescriptor, all = feedFiltersRef.current) =>
+		Object.fromEntries(
+			(feed.filters || [])
+				.filter((f) => f.mode !== "meta")
+				.map((f) => [f.key, (all[feed.id] || {})[f.key] || ""])
+				.filter(([, v]) => v),
+		) as Record<string, string>;
+	const setFeedFilter = (feed: FeedDescriptor, key: string, value: string) => {
+		setFeedFiltersState((prev) => {
+			const next = {
+				...prev,
+				[feed.id]: { ...(prev[feed.id] || {}), [key]: value },
+			};
 			try {
-				localStorage.setItem(SUPPORT_FILTER_KEY, JSON.stringify(next));
+				localStorage.setItem(FEED_FILTERS_KEY, JSON.stringify(next));
 			} catch {}
+			const spec = (feed.filters || []).find((f) => f.key === key);
+			if (spec && spec.mode !== "meta")
+				fetchFeedItems(feed.id, argFiltersFor(feed, next))
+					.then((items) =>
+						setFeedItems((p) => ({ ...p, [feed.id]: items })),
+					)
+					.catch(() => {});
 			return next;
 		});
 	};
@@ -2970,43 +3122,50 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const workspacesOpen = bandOpen("workspaces");
 	// Assignee/label/session filter over the Plain queue; free text rides the
 	// sidebar-wide search box (title/customer/preview).
-	const filteredSupportThreads = (() => {
-		let list = supportThreads || [];
+	// Generic feed filtering: sidebar search (title/preview + descriptor
+	// searchMeta paths), meta-mode filter specs over item.meta, and the
+	// builtin linked-session filter. Arg-mode specs were already applied
+	// server-side by the fetch. Replaces filteredSupportThreads.
+	function sessionForItem(feed: FeedDescriptor, item: FeedItem) {
+		return feed.id === "plain"
+			? supportSessionByThread.get(item.id)
+			: feedSessionByRef.get(`${feed.refKind}:${item.id}`);
+	}
+	function applyFeedFilters(feed: FeedDescriptor, items: FeedItem[]) {
+		let list = items;
 		const q = search.trim().toLowerCase();
 		if (q)
-			list = list.filter((t) =>
-				[t.title, t.customer.name, t.customer.email, t.previewText].some(
-					(v) => !!v && v.toLowerCase().includes(q),
+			list = list.filter((i) =>
+				[
+					i.title,
+					i.preview,
+					...(feed.searchMeta || []).map((p) => dget(i.meta, p)),
+				].some(
+					(v) => typeof v === "string" && v.toLowerCase().includes(q),
 				),
 			);
-		const f = supportFilter;
-		if (f.assignee === "me") {
-			// Name-based: Plain user ids aren't backstage users, so match the
-			// first name (the same convention reply signing uses).
-			const me = currentUser.trim().toLowerCase().split(/\s+/)[0];
-			list = list.filter(
-				(t) =>
-					t.assignee &&
-					t.assignee.name.toLowerCase().split(/\s+/)[0] === me,
-			);
-		} else if (f.assignee === "unassigned") {
-			list = list.filter((t) => !t.assignee);
-		} else if (f.assignee.startsWith("name:")) {
-			const name = f.assignee.slice(5);
-			list = list.filter((t) => t.assignee?.name === name);
+		const vals = feedFilters[feed.id] || {};
+		for (const spec of feed.filters || []) {
+			if (spec.mode !== "meta") continue;
+			const sel = vals[spec.key];
+			if (!sel) continue;
+			list = list.filter((i) => {
+				const v = dget(i.meta, spec.field);
+				if (v == null || (Array.isArray(v) && v.length === 0))
+					return sel === "__unassigned__";
+				const els = Array.isArray(v) ? v : [v];
+				return els.some(
+					(el) =>
+						String(dget(el, spec.optionsFromItems?.value) ?? el) === sel,
+				);
+			});
 		}
-		if (f.label !== "all")
-			list = list.filter((t) =>
-				(t.labels || []).some((l) => l.name === f.label),
-			);
-		if (f.session !== "all")
-			list = list.filter((t) =>
-				f.session === "with"
-					? supportSessionByThread.has(t.id)
-					: !supportSessionByThread.has(t.id),
-			);
+		if (vals.__session === "with")
+			list = list.filter((i) => !!sessionForItem(feed, i));
+		else if (vals.__session === "without")
+			list = list.filter((i) => !sessionForItem(feed, i));
 		return list;
-	})();
+	}
 	const automationsOpen = bandOpen("automations");
 	const visibleAutomationGroups = automationsOpen
 		? groups
@@ -3468,7 +3627,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					) : row.running ? (
 						<PixelSpinner className="text-yellow sidebar-spinner" />
 					) : (
-						<WsPrStatusMark chats={row.chats} size={18} />
+						<WsPrStatusMark chats={row.chats} size={18} workspace={row.workspace} />
 					)}
 				</span>
 				{editing ? (
@@ -3845,14 +4004,23 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			}
 			return b;
 		};
-		for (const r of focusWsRows) bucket(byRepo, wsRowRepo(r)).push(r);
+		// Feed workspaces (repo-less, externalRefs) are represented by their
+		// feed band's item rows — don't also mint a pseudo-repo band for them
+		// (a lowercase "tella" band next to the Tella feed reads as a dupe).
+		const feedKinds = new Set(feeds.map((f) => f.refKind));
+		const rowIsFeedOnly = (r: WsRow) =>
+			!r.workspace?.repo &&
+			!!r.workspace?.externalRefs?.length &&
+			feedKinds.has(r.workspace.externalRefs[0].kind);
+		for (const r of focusWsRows)
+			if (!rowIsFeedOnly(r)) bucket(byRepo, wsRowRepo(r)).push(r);
 		// "Repo and status" keeps each repo's snoozed rows in that repo's own
 		// band, as a Snoozed lane beside the other lanes — a global Snoozed
 		// group would strand them away from their repo. Flat "Repo" mode has no
 		// lanes to slot one into, so there they stay in the single global group.
 		if (withLanes)
 			for (const r of snoozedWsRows)
-				bucket(snoozedByRepo, wsRowRepo(r)).push(r);
+				if (!rowIsFeedOnly(r)) bucket(snoozedByRepo, wsRowRepo(r)).push(r);
 		// Session-less PR rows file into their repo's band alongside the
 		// workspace rows (the dissolved Pull-requests band). Review requests
 		// pointed at you are excluded — they ride the notification band under
@@ -3990,8 +4158,13 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// The Plain TODO queue rendered as a sibling of the repo bands: a project
 	// whose lanes are priorities (Urgent/High/Normal/Low) instead of statuses.
 	// Hidden while a repo filter narrows the list — tickets belong to no repo.
+	const plainFeedDesc = feeds.find((f) => f.id === "plain");
 	const plainThreadsInView =
-		filter.repo === "all" ? filteredSupportThreads : [];
+		filter.repo === "all" && plainFeedDesc
+			? applyFeedFilters(plainFeedDesc, feedItems.plain || []).map(
+					(i) => i.meta as unknown as SupportThread,
+				)
+			: [];
 
 	// The priority lanes, shared by the Plain project band (nested under it)
 	// and the flat "Group by: Status" view (appended after the status lanes).
@@ -4039,115 +4212,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// project band's header as a span-rendered menu trigger (the header itself
 	// is a button, so a nested <button> trigger is off the table). Free text
 	// rides the sidebar-wide search box.
-	function plainFilterMenu() {
-		const customFilter =
-			supportFilter.assignee !== "all" ||
-			supportFilter.label !== "all" ||
-			supportFilter.session !== "all";
-		const assigneeNames = [
-			...new Set(
-				(supportThreads || [])
-					.map((t) => t.assignee?.name)
-					.filter((n): n is string => !!n),
-			),
-		].sort();
-		const labelNames = [
-			...new Set(
-				(supportThreads || []).flatMap((t) =>
-					(t.labels || []).map((l) => l.name),
-				),
-			),
-		].sort();
-		const item = (
-			label: string,
-			selected: boolean,
-			onClick: () => void,
-		) => (
-			<Menu.Item key={label} onClick={onClick}>
-				<span className="flex size-4 shrink-0 items-center justify-center">
-					{selected && <IconCheck size={13} />}
-				</span>
-				<span className="truncate">{label}</span>
-			</Menu.Item>
-		);
-		return (
-			<Menu.Root>
-				<Menu.Trigger
-					render={
-						<span
-							role="button"
-							tabIndex={0}
-							aria-label="Filter support tickets"
-							title="Filter support tickets"
-							className={`sidebar-band-action sidebar-filter-btn ml-auto shrink-0${customFilter ? " has-filter" : ""}`}
-							onClick={(e: React.MouseEvent) => e.stopPropagation()}
-						/>
-					}
-				>
-					<IconFilter size={19} />
-				</Menu.Trigger>
-				<Menu.Popup align="end" sideOffset={5} className="min-w-[230px]">
-					<Menu.Group>
-						<Menu.GroupLabel>Assignee</Menu.GroupLabel>
-						{item("Anyone", supportFilter.assignee === "all", () =>
-							setSupportFilter({ assignee: "all" }),
-						)}
-						{item("Me", supportFilter.assignee === "me", () =>
-							setSupportFilter({ assignee: "me" }),
-						)}
-						{item(
-							"Unassigned",
-							supportFilter.assignee === "unassigned",
-							() => setSupportFilter({ assignee: "unassigned" }),
-						)}
-						{assigneeNames.map((name) =>
-							item(
-								name,
-								supportFilter.assignee === `name:${name}`,
-								() => setSupportFilter({ assignee: `name:${name}` }),
-							),
-						)}
-					</Menu.Group>
-					{labelNames.length > 0 && (
-						<>
-							<Menu.Separator />
-							<Menu.Group>
-								<Menu.GroupLabel>Label</Menu.GroupLabel>
-								{item(
-									"All labels",
-									supportFilter.label === "all",
-									() => setSupportFilter({ label: "all" }),
-								)}
-								{labelNames.map((name) =>
-									item(name, supportFilter.label === name, () =>
-										setSupportFilter({ label: name }),
-									),
-								)}
-							</Menu.Group>
-						</>
-					)}
-					<Menu.Separator />
-					<Menu.Group>
-						<Menu.GroupLabel>Session</Menu.GroupLabel>
-						{item("All tickets", supportFilter.session === "all", () =>
-							setSupportFilter({ session: "all" }),
-						)}
-						{item(
-							"Have session",
-							supportFilter.session === "with",
-							() => setSupportFilter({ session: "with" }),
-						)}
-						{item(
-							"No session",
-							supportFilter.session === "without",
-							() => setSupportFilter({ session: "without" }),
-						)}
-					</Menu.Group>
-				</Menu.Popup>
-			</Menu.Root>
-		);
-	}
-
 	// Is a feed item's workspace (or its linked session) the open surface?
 	function feedItemActive(feed: FeedDescriptor, item: FeedItem) {
 		if (selectedWorkspaceId) {
@@ -4168,7 +4232,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// (docs/feeds-design.md). Hidden while a repo filter is active, like Plain.
 	function renderFeedBand(feed: FeedDescriptor, withLanes = false) {
 		const isPlain = feed.id === "plain";
-		const items = feedItems[feed.id] || [];
+		const sortSel = (feedFilters[feed.id] || {}).__sort || "recent";
+		const items = applyFeedFilters(feed, feedItems[feed.id] || []).sort(
+			(a, b) =>
+				sortSel === "title"
+					? a.title.localeCompare(b.title)
+					: sortSel === "oldest"
+						? (a.ts || 0) - (b.ts || 0)
+						: (b.ts || 0) - (a.ts || 0),
+		);
 		// Plain rows render through the bespoke SupportRow pipeline (hover
 		// card, mark-done, filters) inside this generic band container; the
 		// filtered thread list is the source of truth for it.
@@ -4246,7 +4318,13 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						size={22}
 						style={{ transform: open ? "none" : "rotate(-90deg)" }}
 					/>
-					{isPlain && plainFilterMenu()}
+					<FeedFilterMenu
+						feed={feed}
+						values={feedFilters[feed.id] || {}}
+						rawItems={feedItems[feed.id] || []}
+						currentUser={currentUser}
+						onSet={(k, v) => setFeedFilter(feed, k, v)}
+					/>
 				</button>
 				{open ? openBody : collapsedBody}
 			</div>
@@ -6891,12 +6969,28 @@ function frontingPrChat(chats: UnifiedSession[]): UnifiedSession | undefined {
 function WsPrStatusMark({
 	chats,
 	size,
+	workspace,
 }: {
 	chats: UnifiedSession[];
 	size: number;
+	workspace?: { branch?: string | null; prNumber?: number } | null;
 }) {
 	const chat = frontingPrChat(chats);
 	if (!chat) {
+		// Rows that can never have a PR — feed/scratch workspaces (repo-less
+		// chats, no workspace branch/PR) — get an empty alignment slot, not a
+		// misleading git glyph (Michiel 2026-07-29).
+		const canPr =
+			chats.some((c) => c.branch || c.prUrl || c.repo) ||
+			!!workspace?.branch ||
+			workspace?.prNumber !== undefined;
+		if (!canPr)
+			return (
+				<span
+					className="flex shrink-0 items-center justify-center"
+					style={{ width: size, height: size }}
+				/>
+			);
 		return (
 			<span title="No pull request">
 				<IconPullRequest size={size} className="text-faint" />
