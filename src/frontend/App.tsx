@@ -2010,7 +2010,6 @@ function App() {
 			ratio: 0.5,
 		};
 		saveTabSplit(tabOrderKey, next);
-		setActiveViewTab(null);
 		setSplitDropSide(null);
 	}
 	// The strip's history menu: archived (closed) chats of the same workspace,

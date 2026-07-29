@@ -151,7 +151,7 @@ export function SessionTabs({
 	const justDragged = useRef(false);
 	const dragPoint = useRef<{ x: number; y: number } | null>(null);
 	const stopPointerTracking = useRef<(() => void) | null>(null);
-	const canReorder = !isPhone && tabs.length > 1;
+	const canDragTabs = !isPhone && tabs.length + viewTabs.length > 1;
 
 	function trackPointer(
 		id: string,
@@ -444,7 +444,7 @@ export function SessionTabs({
 									as="div"
 									key={unit.key}
 									value={unit.key}
-									dragListener={canReorder && !containsMain}
+									dragListener={canDragTabs && !containsMain}
 									transition={{ duration: 0 }}
 									onDragEnd={commitReorder}
 									whileDrag={{ scale: 1.02, zIndex: 3 }}
@@ -471,10 +471,10 @@ export function SessionTabs({
 								as="div"
 								key={key}
 								value={key}
-								dragListener={canReorder && editKey !== key && key !== mainId}
+								dragListener={canDragTabs && editKey !== key}
 								transition={{ duration: 0 }}
 								onPointerDown={(event) => {
-									if (canReorder && editKey !== key && key !== mainId) trackPointer(key, event);
+									if (canDragTabs && editKey !== key) trackPointer(key, event);
 								}}
 								onDragEnd={() => {
 									onSplitDrag?.(null);
