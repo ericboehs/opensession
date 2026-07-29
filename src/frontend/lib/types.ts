@@ -106,6 +106,14 @@ export interface FeedDescriptor {
 	refKind: string;
 	lanes?: { key: string; label: string; dot?: string }[];
 	tileBg?: string;
+	/** Session MCP allowlist for this feed's workspaces (server names). */
+	mcpServers?: string[];
+	/** Web panel template for this feed's items ({id}-substituted). */
+	panel?: {
+		label: string;
+		embedUrlTemplate: string;
+		links?: { label: string; hrefTemplate: string }[];
+	};
 }
 
 /** One external object in a feed band (mirror of src/server/feeds.ts). */

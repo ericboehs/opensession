@@ -18,6 +18,39 @@ import { mcpAuthHeader } from "./mcp-oauth";
 
 export class McpToolError extends Error {}
 
+/** List a server's tool catalog (name + description) — powers the New
+ *  project flow's tool picker. */
+export async function listMcpTools(
+  serverName: string,
+  user?: string,
+): Promise<Array<{ name: string; description?: string }>> {
+  const cfg = readMcpConfig().mcpServers[serverName] as
+    | { url?: string; headers?: Record<string, string> }
+    | undefined;
+  if (!cfg?.url) throw new McpToolError(`No HTTP MCP server "${serverName}"`);
+  const oauth = mcpAuthHeader(serverName, user);
+  const auth = oauth || cfg.headers?.Authorization;
+  const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
+    requestInit: {
+      headers: {
+        ...(cfg.headers || {}),
+        ...(auth ? { Authorization: auth } : {}),
+      },
+    },
+  });
+  const client = new Client({ name: "opensession-feeds", version: "1.0.0" });
+  try {
+    await client.connect(transport);
+    const res = await client.listTools();
+    return res.tools.map((t) => ({
+      name: t.name,
+      ...(t.description ? { description: t.description.slice(0, 200) } : {}),
+    }));
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
+
 /**
  * Call one tool on a configured HTTP MCP server and return the first text
  * content, JSON-parsed when possible. Opens a fresh session per call —

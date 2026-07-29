@@ -21,6 +21,25 @@ export async function handleFeedsRoutes(
 		return Response.json({ feeds: listFeedDescriptors() });
 	}
 
+	// Create/update a config-declared feed ("any MCP is a project" —
+	// docs/feeds-design.md W3). Body = a ConfigFeed; id is the upsert key.
+	if (path === "/backstage/api/feeds" && req.method === "POST") {
+		const body = await req.json().catch(() => null);
+		if (!body) return Response.json({ error: "Invalid JSON" }, { status: 400 });
+		const { upsertConfigFeed } = await import("../feeds-config");
+		const result = upsertConfigFeed(body);
+		if ("error" in result) return Response.json(result, { status: 400 });
+		return Response.json(result);
+	}
+
+	const feedDelMatch = path.match(/^\/backstage\/api\/feeds\/([^/]+)$/);
+	if (feedDelMatch && req.method === "DELETE") {
+		const { removeConfigFeed } = await import("../feeds-config");
+		const result = removeConfigFeed(decodeURIComponent(feedDelMatch[1]));
+		if ("error" in result) return Response.json(result, { status: 404 });
+		return Response.json(result);
+	}
+
 	const itemsMatch = path.match(/^\/backstage\/api\/feeds\/([^/]+)\/items$/);
 	if (itemsMatch && req.method === "GET") {
 		await ensureFeedsRegistered();

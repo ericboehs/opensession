@@ -1,5 +1,6 @@
 import React from "react";
 import type { ExternalRef } from "../lib/types";
+import { feedForRefKind } from "../lib/feeds-meta";
 
 /**
  * The generic web panel for feed-item workspaces (docs/feeds-design.md): a
@@ -23,8 +24,28 @@ export interface RefWebPanel {
 	links: { label: string; href: string }[];
 }
 
-/** The web panel spec for a ref, or null when the kind has none. */
+function fillTemplate(template: string, id: string): string {
+	return template.replaceAll("{id}", encodeURIComponent(id));
+}
+
+/**
+ * The web panel spec for a ref, or null when the kind has none. Driven by
+ * the feed descriptors' `panel` templates (lib/feeds-meta.ts — config and
+ * code feeds alike declare them); the tella fallback only covers a cold
+ * meta cache on first paint.
+ */
 export function refWebPanel(ref: ExternalRef): RefWebPanel | null {
+	const feed = feedForRefKind(ref.kind);
+	if (feed?.panel) {
+		return {
+			label: feed.panel.label,
+			embedUrl: fillTemplate(feed.panel.embedUrlTemplate, ref.id),
+			links: (feed.panel.links || []).map((l) => ({
+				label: l.label,
+				href: fillTemplate(l.hrefTemplate, ref.id),
+			})),
+		};
+	}
 	if (ref.kind === "tella") {
 		return {
 			label: "Video",

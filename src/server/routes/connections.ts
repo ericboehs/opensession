@@ -70,6 +70,26 @@ export async function handleConnectionsRoutes(
 		}
 	}
 
+	// Tool catalog of an HTTP MCP server (New-project tool picker).
+	const mcpToolsMatch = path.match(
+		/^\/backstage\/api\/connections\/mcp\/([^/]+)\/tools$/,
+	);
+	if (mcpToolsMatch && req.method === "GET") {
+		try {
+			const { listMcpTools } = await import("../mcp-client");
+			const tools = await listMcpTools(
+				decodeURIComponent(mcpToolsMatch[1]),
+				ctx.authUser?.login || ctx.authUser?.name || undefined,
+			);
+			return Response.json({ tools });
+		} catch (e: any) {
+			return Response.json(
+				{ error: e?.message || String(e) },
+				{ status: 502 },
+			);
+		}
+	}
+
 	const mcpOauthMatch = path.match(
 		/^\/backstage\/api\/connections\/mcp\/([^/]+)\/oauth$/,
 	);

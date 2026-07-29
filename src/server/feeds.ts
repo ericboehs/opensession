@@ -14,8 +14,14 @@
  * fetched on the requesting user's grant and cached per user.
  */
 import type { ExternalRef } from "./types";
+import {
+  dotGet,
+  readConfigFeeds,
+  type ConfigFeed,
+  type FeedPanelSpec,
+} from "./feeds-config";
 
-export type { ExternalRef };
+export type { ExternalRef, FeedPanelSpec };
 
 export interface FeedItem {
   /** Stable external id (e.g. Tella `vid_…`); becomes ExternalRef.id. */
@@ -58,6 +64,9 @@ export interface FeedDescriptor {
    * future server (e.g. "tella") is safe and lights up when it's added.
    */
   mcpServers?: string[];
+  /** Web panel the workspace tab renders for this feed's items
+   *  (`{id}`-templated iframe URL + header links). */
+  panel?: FeedPanelSpec;
 }
 
 export interface FeedProvider {
@@ -84,7 +93,85 @@ export function registerFeed(provider: FeedProvider): void {
   registry.set(provider.descriptor.id, { provider, cache: new Map() });
 }
 
+/** Config feed → provider: items via one MCP tool call on the viewer's
+ *  grant, fields picked by dot-path mapping (docs/feeds-design.md W3). */
+function configFeedProvider(cf: ConfigFeed): FeedProvider {
+  return {
+    descriptor: {
+      id: cf.id,
+      title: cf.title,
+      refKind: cf.refKind,
+      ...(cf.tileBg ? { tileBg: cf.tileBg } : {}),
+      ...(cf.mcpServers?.length ? { mcpServers: cf.mcpServers } : {}),
+      ...(cf.panel ? { panel: cf.panel } : {}),
+    },
+    async listItems(ctx?: { user?: string }): Promise<FeedItem[]> {
+      const { callMcpTool } = await import("./mcp-client");
+      const raw = await callMcpTool<unknown>(
+        cf.items.server,
+        cf.items.tool,
+        cf.items.args || {},
+        ctx?.user,
+      );
+      const arr = dotGet(raw, cf.items.path);
+      if (!Array.isArray(arr)) return [];
+      const m = cf.items.map;
+      return arr
+        .map((it): FeedItem | null => {
+          const id = dotGet(it, m.id);
+          const title = dotGet(it, m.title);
+          if (typeof id !== "string" || !id || typeof title !== "string")
+            return null;
+          const tsRaw = m.ts ? dotGet(it, m.ts) : undefined;
+          const ts =
+            typeof tsRaw === "number"
+              ? tsRaw
+              : typeof tsRaw === "string"
+                ? Date.parse(tsRaw) || undefined
+                : undefined;
+          return {
+            id,
+            title,
+            ...(m.preview && typeof dotGet(it, m.preview) === "string"
+              ? { preview: dotGet(it, m.preview) as string }
+              : {}),
+            ...(ts ? { ts } : {}),
+            ...(m.url && typeof dotGet(it, m.url) === "string"
+              ? { url: dotGet(it, m.url) as string }
+              : {}),
+            ...(m.thumbnail && typeof dotGet(it, m.thumbnail) === "string"
+              ? { thumbnail: dotGet(it, m.thumbnail) as string }
+              : {}),
+          };
+        })
+        .filter((x): x is FeedItem => !!x)
+        .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    },
+  };
+}
+
+/** Overlay ~/.opensession-feeds.json entries onto the registry: add/update
+ *  config feeds, drop removed ones. Code feeds (registered directly) win on
+ *  id collision. Called by every read path so edits apply without restart. */
+function syncConfigFeeds(): void {
+  const config = readConfigFeeds();
+  const configIds = new Set(config.map((f) => f.id));
+  for (const [id, entry] of registry)
+    if ((entry as any).fromConfig && !configIds.has(id)) registry.delete(id);
+  for (const cf of config) {
+    const existing = registry.get(cf.id);
+    if (existing && !(existing as any).fromConfig) continue; // code feed wins
+    const entry: FeedEntry = {
+      provider: configFeedProvider(cf),
+      cache: existing?.cache ?? new Map(),
+    };
+    (entry as any).fromConfig = true;
+    registry.set(cf.id, entry);
+  }
+}
+
 export function listFeedDescriptors(): FeedDescriptor[] {
+  syncConfigFeeds();
   return [...registry.values()].map((e) => e.provider.descriptor);
 }
 
@@ -93,6 +180,7 @@ export async function getFeedItems(
   feedId: string,
   user?: string,
 ): Promise<FeedItem[] | null> {
+  syncConfigFeeds();
   const entry = registry.get(feedId);
   if (!entry) return null;
   const key = user || "";
@@ -114,6 +202,7 @@ export async function feedMcpServersForRefs(
   refs: Array<{ kind: string }>,
 ): Promise<string[] | undefined> {
   await ensureFeedsRegistered();
+  syncConfigFeeds();
   const out = new Set<string>();
   for (const entry of registry.values()) {
     const d = entry.provider.descriptor;

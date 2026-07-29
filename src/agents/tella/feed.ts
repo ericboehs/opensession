@@ -19,9 +19,18 @@ export function registerTellaFeed(): void {
       refKind: "tella",
       tileBg: "#7048e8",
       // Sessions in tella-video workspaces see ONLY this server (least
-      // privilege — no Plain/Stripe/WorkOS in a video chat). Not in
-      // mcp-config yet (the Tella MCP is OAuth 2.1); it lights up when added.
+      // privilege — no Plain/Stripe/WorkOS in a video chat).
       mcpServers: ["tella"],
+      // Workspace tab: embed player + editor/view links (the frontend's
+      // generic feed-panel renderer consumes this — no tella hardcode).
+      panel: {
+        label: "Video",
+        embedUrlTemplate: "https://www.tella.tv/video/{id}/embed",
+        links: [
+          { label: "Open editor", hrefTemplate: "https://www.tella.tv/video/{id}/edit" },
+          { label: "View page", hrefTemplate: "https://www.tella.tv/video/{id}/view" },
+        ],
+      },
     },
     async listItems(ctx?: { user?: string }): Promise<FeedItem[]> {
       const videos = await listRecentVideos(30, ctx?.user);
