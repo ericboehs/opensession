@@ -315,11 +315,21 @@ const server: import("bun").Server<WSClientData> = hotServe({
 					(path.startsWith("/backstage/api/os1-mac/") ||
 						path.startsWith("/backstage/api/os1-chrome/")) &&
 					req.method === "GET";
+				// An execution node dialling in has no browser session: it
+				// registers with a one-time pairing code and then heartbeats with
+				// its own bearer token. Both routes do their own authentication
+				// AND require the caller to be on the tailnet (src/server/nodes.ts),
+				// so the sign-in gate would only make them impossible to use.
+				const openNodeAuth =
+					(path === "/backstage/api/nodes/register" ||
+						path === "/backstage/api/nodes/heartbeat") &&
+					req.method === "POST";
 				if (
 					!authUser &&
 					!openHealth &&
 					!keypadBearer &&
 					!openOs1Update &&
+					!openNodeAuth &&
 					((path.startsWith("/backstage/api/") &&
 						!path.startsWith("/backstage/api/auth/")) ||
 						path === "/backstage/ws")
