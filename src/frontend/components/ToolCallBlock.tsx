@@ -306,21 +306,8 @@ function fileChangeSummary(inp: Record<string, unknown>, roots: readonly PathRoo
     .join("  ·  ");
 }
 
-/** Tool-family accent for the expanded detail's left edge. */
 type FamilyKey =
   | "run" | "file" | "edit" | "find" | "web" | "agent" | "mcp" | "skill" | "plain";
-
-const FAMILY_STYLES: Record<FamilyKey, { edge: string }> = {
-  run: { edge: "border-l-tool-run/45" },
-  file: { edge: "border-l-tool-file/45" },
-  edit: { edge: "border-l-tool-edit/45" },
-  find: { edge: "border-l-tool-find/45" },
-  web: { edge: "border-l-tool-web/45" },
-  agent: { edge: "border-l-tool-agent/45" },
-  mcp: { edge: "border-l-tool-mcp/45" },
-  skill: { edge: "border-l-tool-skill/45" },
-  plain: { edge: "border-l-line-strong" },
-};
 
 export function toolFamily(toolName: string): FamilyKey {
   if (parseMcpTool(toolName)) return "mcp";
@@ -446,7 +433,6 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
   const lineStats = toolLineStats(toolName, entry.toolInput);
   const duration = stepDuration(entry, result);
   const failed = Boolean(result?.isError);
-  const family = FAMILY_STYLES[toolFamily(toolName)];
   const inputNode = expanded ? toolInputNode(canonical, entry.toolInput) : null;
 
   // A Task/Agent call whose sub-agent transcript we can open in the sidebar.
@@ -579,10 +565,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
 
       {expanded && (
         <div
-          className={cn(
-            "relative z-[1] mb-1.5 ml-[30px] mt-0.5 overflow-hidden rounded-lg border border-line border-l-2 bg-panel",
-            failed ? "border-l-red/50" : family.edge
-          )}
+          className="relative z-[1] mb-1.5 ml-[30px] mt-0.5 overflow-hidden rounded-lg bg-panel"
         >
           {inputNode && <div className="p-1.5">{inputNode}</div>}
           {result && (result.content || result.images?.length || result.videos?.length) && (
@@ -590,7 +573,6 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
               <div
                 className={cn(
                   "px-2.5 pb-1 pt-1.5 text-[10px] font-bold tracking-[-0.01em]",
-                  inputNode && "border-t border-line",
                   failed ? "text-red" : "text-faint"
                 )}
               >

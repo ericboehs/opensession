@@ -145,7 +145,7 @@ function CompactionNotice({
 				</span>
 			</button>
 			{open && (
-				<div className="mx-auto mt-2 w-full max-w-[560px] rounded-lg border border-line bg-panel px-4 py-3 text-left">
+				<div className="mx-auto mt-2 w-full max-w-[560px] rounded-lg bg-panel px-4 py-3 text-left">
 					<ClampedBody
 						className="msg-body markdown"
 						content={entry.content}
@@ -318,8 +318,8 @@ export const MessageBubble = React.memo(function MessageBubble({
 	if (entry.type === "user" && reviewHandoff) {
 		return (
 			<div className="msg" data-eid={entry.id}>
-				<div className="border border-line rounded-lg bg-panel overflow-hidden">
-					<div className="flex items-center gap-2 px-3.5 py-2 border-b border-line text-xs font-medium text-dim">
+				<div className="overflow-hidden rounded-lg bg-panel">
+					<div className="flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-dim">
 						<span>
 							🔍 Review findings
 							{reviewHandoff.prNumber ? ` · PR #${reviewHandoff.prNumber}` : ""}
