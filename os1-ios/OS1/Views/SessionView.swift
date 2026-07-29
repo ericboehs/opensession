@@ -458,32 +458,39 @@ private struct SessionTabBar: View {
             ScrollView(.horizontal) {
                 HStack(spacing: 4) {
                     ForEach(tabs) { session in
+                        let isActive = session.id == activeId
                         Button {
-                            if session.id != activeId { onSelect(session) }
+                            if !isActive { onSelect(session) }
                         } label: {
                             HStack(spacing: 7) {
                                 if session.waitingForInput == true {
-                                    PulsingDot(color: OS1VisualStyle.blue, size: 6)
+                                    PulsingDot(
+                                        color: isActive ? .white : OS1VisualStyle.blue,
+                                        size: 6
+                                    )
                                 } else if session.isRunning == true {
-                                    PulsingDot(color: OS1VisualStyle.yellow, size: 6)
+                                    PulsingDot(
+                                        color: isActive ? .white : OS1VisualStyle.yellow,
+                                        size: 6
+                                    )
                                 }
                                 Text(session.displayTitle)
                                     .font(.footnote.weight(
-                                        session.id == activeId ? .semibold : .medium
+                                        isActive ? .semibold : .medium
                                     ))
                                     .lineLimit(1)
                             }
                             .foregroundStyle(
-                                session.id == activeId
-                                    ? OS1VisualStyle.text
+                                isActive
+                                    ? Color.white
                                     : OS1VisualStyle.textDim
                             )
                             .padding(.horizontal, 12)
                             .frame(minWidth: 44, minHeight: 44)
                             .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? 260 : 180)
                             .background(
-                                session.id == activeId
-                                    ? OS1VisualStyle.raised
+                                isActive
+                                    ? OS1VisualStyle.accent
                                     : Color.clear,
                                 in: RoundedRectangle(cornerRadius: 9, style: .continuous)
                             )
@@ -492,7 +499,7 @@ private struct SessionTabBar: View {
                         .buttonStyle(.plain)
                         .id(session.id)
                         .accessibilityAddTraits(
-                            session.id == activeId ? .isSelected : []
+                            isActive ? .isSelected : []
                         )
                         .accessibilityValue(tabAccessibilityValue(session))
                     }
