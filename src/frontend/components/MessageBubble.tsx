@@ -12,6 +12,7 @@ import { useCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
 import { BASE_PATH } from "../lib/base";
 import { resolveEntryImageSrc } from "../lib/osBlob";
+import { fullTime, shortTime } from "../lib/time";
 
 // Only this much of a message is markdown-parsed eagerly. marked is
 // superlinear on input size (~25ms at 10KB, ~400ms at 80KB, seconds past
@@ -158,28 +159,27 @@ function CompactionNotice({
 	);
 }
 
-/** Very short relative time for the message label ("now", "5m", "3h", "2d",
- * then a date). Hover shows the full local time. */
-function shortTime(ts: string): string {
-	const d = new Date(ts);
-	if (Number.isNaN(+d)) return "";
-	const s = (Date.now() - +d) / 1000;
-	if (s < 60) return "now";
-	if (s < 3600) return `${Math.floor(s / 60)}m`;
-	if (s < 86400) return `${Math.floor(s / 3600)}h`;
-	if (s < 7 * 86400) return `${Math.floor(s / 86400)}d`;
-	return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
+/** Relative time in a message's label row ("5m"), hover for the real one. */
 function MsgTime({ ts }: { ts?: string }) {
 	if (!ts) return null;
 	const label = shortTime(ts);
 	if (!label) return null;
 	return (
-		<Tooltip label={new Date(ts).toLocaleString()}>
+		<Tooltip label={fullTime(ts)}>
 			<span className="msg-time">{label}</span>
 		</Tooltip>
 	);
+}
+
+/** The real time beside your own bubble, faded in while the row is hovered —
+ * those turns carry no label row to hang a MsgTime off, and a timestamp on
+ * every one of them would just be noise while reading. Hover-capable pointers
+ * only (see .msg-hover-time); on touch the row renders exactly as before. */
+function BubbleHoverTime({ ts }: { ts?: string }) {
+	if (!ts) return null;
+	const label = fullTime(ts);
+	if (!label) return null;
+	return <span className="msg-hover-time">{label}</span>;
 }
 
 interface Props {
@@ -402,12 +402,18 @@ export const MessageBubble = React.memo(function MessageBubble({
 					</div>
 				)}
 				{displayContent && (
-					<ClampedBody
-						className="msg-body msg-body-user markdown"
-						content={displayContent}
-						entry={entry}
-						sessionId={sessionId}
-					/>
+					// Row wrapper so the hover time can sit in the gutter left of the
+					// bubble. The bubble still shrink-wraps and hugs the right edge —
+					// justify-content takes over from its align-self here.
+					<div className="msg-user-row">
+						{!fromOther && <BubbleHoverTime ts={entry.timestamp} />}
+						<ClampedBody
+							className="msg-body msg-body-user markdown"
+							content={displayContent}
+							entry={entry}
+							sessionId={sessionId}
+						/>
+					</div>
 				)}
 				<EntryImages images={entry.images} sessionId={sessionId} />
 				<EntryVideos videos={entry.videos} />

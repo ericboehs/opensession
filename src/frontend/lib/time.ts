@@ -12,6 +12,32 @@ export function shortTime(ts: string): string {
 	return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/** The real wall-clock time behind a message, written out: "Today at 14:32",
+ * "Yesterday at 09:05", "Jul 12 at 14:32", "Jul 12, 2025 at 14:32". The locale
+ * picks 12h/24h; no seconds — a transcript reads in minutes, and durations are
+ * the TurnFooter's job. Used by hover reveals and timestamp tooltips.
+ *
+ * Absolute only, deliberately: these strings render inside memoized bubbles
+ * with stable entry refs, so a relative part ("5m ago") would freeze at
+ * whatever it was when the bubble last rendered. Only the day words go stale,
+ * and only across midnight — the same tradeoff shortTime already makes. */
+export function fullTime(ts: string, now: Date = new Date()): string {
+	const d = new Date(ts);
+	if (Number.isNaN(+d)) return "";
+	const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+	const midnight = (x: Date) =>
+		new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+	const days = Math.round((midnight(now) - midnight(d)) / 86_400_000);
+	if (days === 0) return `Today at ${time}`;
+	if (days === 1) return `Yesterday at ${time}`;
+	const date = d.toLocaleDateString(undefined, {
+		month: "short",
+		day: "numeric",
+		...(d.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+	});
+	return `${date} at ${time}`;
+}
+
 /** Elapsed duration as a stopwatch: "0:07", "3:42", then "1:04:22" past an hour.
  * Used by the sidebar's live "in progress" ticker (how long a run's been going).
  */

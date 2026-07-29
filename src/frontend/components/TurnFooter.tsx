@@ -7,10 +7,12 @@ import { cn } from "../ui/cn";
 import {
   IconBranches,
   IconCheck,
+  IconClock,
   IconCopy,
   IconDotsHorizontal,
   IconSparkle,
 } from "./icons";
+import { fullTime } from "../lib/time";
 import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
 import { canonicalToolName } from "./ToolCallBlock";
 
@@ -67,10 +69,17 @@ export const TurnFooter = React.memo(function TurnFooter({
   const rest = files.slice(MAX_CHIPS);
 
   return (
-    <div className="mx-auto -mt-2.5 mb-[18px] flex w-full max-w-[var(--chat-col)] flex-wrap items-center gap-x-0.5 gap-y-1.5">
+    <div className="relative mx-auto -mt-2.5 mb-[18px] flex w-full max-w-[var(--chat-col)] flex-wrap items-center gap-x-0.5 gap-y-1.5">
       {duration && (
         <span className="mr-1.5 text-xs font-medium text-faint">{duration}</span>
       )}
+      {/* When the turn actually happened. Absolutely placed, so revealing it
+          can't shift the buttons out from under the cursor; the background
+          lets it occlude cleanly on the rare row whose file chips reach the
+          right edge. */}
+      <span className="turn-footer-time absolute right-0 top-[3px] bg-bg pl-2 text-xs font-medium text-faint">
+        {fullTime(entry.timestamp)}
+      </span>
       <Tooltip label={copied ? "Copied" : "Copy message"}>
         <button type="button" onClick={doCopy} className={BTN}>
           {copied ? (
@@ -95,14 +104,17 @@ export const TurnFooter = React.memo(function TurnFooter({
             <IconCopy size={20} className="text-faint" />
             Copy message
           </Menu.Item>
+          <Menu.Separator className="my-1" />
+          {/* Touch has no hover, so the time also lives here — menus open on tap. */}
+          <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-faint">
+            <IconClock size={20} />
+            {fullTime(entry.timestamp)}
+          </div>
           {entry.model && (
-            <>
-              <Menu.Separator className="my-1" />
-              <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-faint">
-                <IconSparkle size={20} />
-                Written by {messageModelLabel(entry.model)}
-              </div>
-            </>
+            <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-faint">
+              <IconSparkle size={20} />
+              Written by {messageModelLabel(entry.model)}
+            </div>
           )}
         </Menu.Popup>
       </Menu.Root>

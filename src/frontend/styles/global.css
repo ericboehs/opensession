@@ -15336,6 +15336,66 @@ html.wco .settings-sidenav {
 	background: var(--bg-hover);
 }
 
+/* Hover-revealed real timestamps. A message's time is a detail you go looking
+   for, not something to read past on every turn — so it fades in while the
+   message is hovered and costs nothing the rest of the time. Reveals are
+   opacity-only over elements that either reserve their space (the user
+   gutter) or take none (the absolutely-placed footer time): nothing here may
+   change a block's height, or VirtualTranscriptBlock's measured placeholders
+   would mis-size and jump the scroll.
+
+   Touch pointers never get a dead element: display:none outside
+   hover-capable devices, where the assistant's time lives in the ⋯ menu
+   instead. */
+.msg-hover-time,
+.turn-footer-time {
+	display: none;
+	font-size: 11px;
+	font-weight: 500;
+	color: var(--text-faint);
+	white-space: nowrap;
+	user-select: none;
+}
+@media (hover: hover) {
+	.msg-hover-time,
+	.turn-footer-time {
+		display: block;
+		opacity: 0;
+		transition: opacity 0.12s ease;
+	}
+	.msg-user-row:hover .msg-hover-time,
+	/* The answer and its footer are adjacent .transcript-window siblings
+	   (see TranscriptBlocks), so hovering either one reveals the time. */
+	.transcript-window:hover .turn-footer-time,
+	.transcript-window:hover + .transcript-window .turn-footer-time {
+		opacity: 1;
+	}
+}
+/* Same WebKit selection mask as .msg-label: a drag-select sweeping past an
+   unselectable label paints a phantom highlight without it, and a fully
+   transparent background is ignored (1% alpha sticks). */
+.msg-hover-time::selection,
+.turn-footer-time::selection {
+	background: rgba(0, 0, 0, 0.01);
+}
+
+/* Your own turns carry no label row, so their time sits in the gutter left of
+   the bubble. Full-width row: the whole band is the hover target, and the
+   bubble keeps hugging the right edge (justify-content replaces the
+   align-self it uses as a direct child of .msg). */
+.msg-user-row {
+	display: flex;
+	justify-content: flex-end;
+	align-items: flex-end;
+	gap: 10px;
+	min-width: 0;
+}
+.msg-user-row .msg-hover-time {
+	flex-shrink: 0;
+	/* Sits on the bubble's last line rather than its bottom edge. */
+	padding-bottom: 11px;
+}
+
 /* Short per-message timestamp in the label row (hover for the full time). */
 .msg-time {
 	margin-left: 6px;
