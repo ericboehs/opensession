@@ -5,6 +5,7 @@
   "scripts": {
     "app:dev": "bun scripts/app-dev.ts",
     "dev": "bun --hot opensession.ts",
+    "setup": "bun scripts/setup.ts",
     "start": "bun opensession.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
