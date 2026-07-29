@@ -284,7 +284,7 @@ function TurnMessage({
           Thinking
         </span>
         {!expanded && summary ? (
-          <span className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-0.5 text-[13px] leading-5 text-dim">
+          <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-dim">
             {summary}
           </span>
         ) : (
