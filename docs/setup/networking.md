@@ -91,6 +91,99 @@ curl -m 5 http://<public-ip>:3850/    # must fail
 On a cloud box, also check the firewall — the security group or firewall rules
 should not open 3850 or 3848 at all. See [ec2.md](ec2.md#networking).
 
+## A custom domain (os.company.dev)
+
+`http://100.64.12.34:3850` works but is unpleasant to type and impossible to
+remember. You can put a real name and a real certificate in front of it without
+exposing anything.
+
+The trick is that **a public DNS record may point at a private address.** Anyone
+can resolve `os.company.dev` to `100.64.12.34`; only devices on your tailnet can
+reach it. Publishing the name costs you nothing, because the name was never the
+security boundary — reachability is.
+
+### 1. Point the name at the tailnet address
+
+```sh
+tailscale ip -4        # e.g. 100.64.12.34
+```
+
+Create an **A record** for `os.company.dev` with that value, at whatever DNS
+provider you use. An A record, not a CNAME — you are pointing at an address, and
+a CNAME would need something else already resolving to it.
+
+(If you would rather not publish the mapping at all, Tailscale's MagicDNS gives
+you `<machine>.<tailnet>.ts.net` for free with no public record. You lose the
+custom name and gain slightly more privacy.)
+
+### 2. Get a certificate
+
+Your host is not reachable from the internet, so the usual HTTP-01 ACME
+challenge cannot work — Let's Encrypt cannot connect to it. Use **DNS-01**,
+which proves control of the domain by writing a TXT record instead.
+
+With [lego](https://go-acme.github.io/lego/) and, say, Cloudflare DNS:
+
+```sh
+CLOUDFLARE_DNS_API_TOKEN=... lego \
+  --email you@company.dev \
+  --dns cloudflare \
+  --domains os.company.dev \
+  run
+```
+
+Most providers have a lego plugin; Caddy and Traefik can also do DNS-01
+themselves with the matching plugin, which avoids running lego separately.
+
+Renewal is the part people forget — put it on a timer.
+
+### 3. Terminate TLS in front of the server
+
+Keep OpenSession on `127.0.0.1:3850` and let a proxy hold the certificate.
+Caddy, bound to the tailnet address:
+
+```caddy
+os.company.dev {
+    bind 100.64.12.34
+    tls /etc/lego/certificates/os.company.dev.crt /etc/lego/certificates/os.company.dev.key
+    reverse_proxy 127.0.0.1:3850
+}
+```
+
+The `bind` line is the important one. Without it Caddy listens on every
+interface, which quietly undoes the whole arrangement — the certificate makes it
+look secure while the port is open to the world.
+
+**A TLS proxy adds encryption, not authentication.** Anything that can reach the
+proxy can use OpenSession.
+
+### 4. Tell OpenSession its own name
+
+```sh
+# ~/.opensession.env
+OPENSESSION_UI_BASE=https://os.company.dev
+```
+
+Links posted into Slack, Linear and notes are built from this. Get it wrong and
+everything works except that every link you share points somewhere unreachable.
+
+The clients (Chrome extension, Electron shell, Swift app) each take a server
+address too — see [instance-configuration.md](../instance-configuration.md).
+
+### 5. Check it from outside
+
+```sh
+# on the tailnet
+curl -I https://os.company.dev
+
+# off the tailnet — must fail to connect, NOT return 401
+curl -m 5 -I https://os.company.dev
+```
+
+A connection timeout is the correct result. A `401` would mean the port is open
+to the internet and only a login stands in the way, which is a different and
+much weaker position.
+
 ## SSH tunnel
 
 If you are the only user and only need occasional access, skip Tailscale:

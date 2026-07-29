@@ -75,6 +75,77 @@ path differs, **rebuild the image with matching paths** — see the audit note
 in `docs/portability-audit.md` §6: this is the one place `/home/ubuntu`
 coupling is intrinsic, not lazy.
 
+## Images, warm pools and snapshots
+
+Three separate mechanisms get confused with each other. They solve the same
+problem — a cold sandbox is slow — at different layers.
+
+### The runner image
+
+The base image a sandbox starts from. `deploy/sandbox/build.sh` builds it and
+tags `opensession-runner:latest` plus the git SHA. It carries the toolchain a
+session needs (bun, git, the engine) so no session pays to install them.
+
+This is the piece you should rebuild deliberately: pinning
+`"image": "opensession-runner:<sha>"` means a rebuild cannot change behaviour
+underneath running sessions, and rolling back is retagging.
+
+Path parity between the image and the host is load-bearing — see the section
+above before "tidying" any of it.
+
+### Warm pools (prewarm)
+
+Remote providers take 30–45 seconds to hand back a usable sandbox, which is a
+long time to stare at a prompt box. The prewarm pool starts one *while you are
+still typing*, so the sandbox is ready when you hit send.
+
+```json
+"prewarm": { "enabled": true, "ttlMinutes": 10, "maxLive": 2 }
+```
+
+`maxLive` is the setting that matters: prewarms are paid compute whether or not
+you use them, and an untouched one is destroyed after `ttlMinutes`. Default is
+deliberately 2.
+
+Off by default. Docker starts fast enough locally that it does not need this.
+
+### Snapshots
+
+Snapshots capture a *running* sandbox — installed dependencies, warm caches,
+container-layer state — so the next start restores rather than rebuilds. Docker
+snapshots on idle-stop; the Firecracker MicroVM backend goes further and
+restores from a memory snapshot, so a workspace resumes in about a second.
+
+```json
+"snapshots": { "enabled": true, "onIdle": true, "maxPerSession": 2 }
+```
+
+Master switch is off. Nothing is captured or restored unless you turn it on, and
+`maxPerSession` bounds disk growth — snapshots are large, and without a cap they
+are the thing that fills a disk quietly.
+
+Daytona has its own notion: an **org snapshot** that sandboxes are created from.
+Worth setting, because Daytona's default is 1 vCPU / 1 GB / 3 GiB, which is too
+small for a real repository. Note that custom `resources` are rejected when
+creating from a snapshot — sizing lives in the snapshot itself.
+
+### Still rough
+
+Honest status, because these are the newest parts:
+
+- **Snapshot restore is best-effort.** A restored workspace can hold stale git
+  refs; `refreshRefs` exists for exactly that. If a session starts confused
+  about what branch it is on, suspect this first.
+- **Prewarm accounting** across restarts is imperfect — orphaned prewarms are
+  reaped, but you may briefly pay for a sandbox nobody adopted.
+- **The MicroVM backend is experimental** and not certified. It is the fastest
+  option and the least proven.
+- Only **Docker, Daytona and Modal** are live-certified. The rest are
+  implemented and unproven; see the per-provider status below.
+
+If you are starting out: use Docker, leave prewarm and snapshots off, and come
+back to them when cold starts actually bother you.
+
 ## Config schema — `~/.opensession-sandbox.json`
 
 Read fresh per run (no restart for value changes — but see "What needs a

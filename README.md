@@ -48,6 +48,14 @@ Then read the real setup guide — secrets, accounts, integrations, systemd:
 - [docs/setup/install.md](docs/setup/install.md) — bare box → running service
 - [docs/setup/ec2.md](docs/setup/ec2.md) — provisioning a clean EC2 box
 - **[docs/local-profile.md](docs/local-profile.md)** — minimal single-user setup on macOS
+- [docs/setup/networking.md](docs/setup/networking.md) — Tailscale, a custom
+  domain, and verifying you are not public
+- [docs/clients.md](docs/clients.md) — web UI, PWA, desktop shell, native app,
+  Chrome extension
+- [docs/worktrees.md](docs/worktrees.md) — how sessions map to git worktrees,
+  and where the disk goes
+- [docs/extending.md](docs/extending.md) — adding tools, recipes, integrations
+  and providers
 - [docs/self-hosting-sandboxes.md](docs/self-hosting-sandboxes.md) — isolated
   Docker/Daytona/E2B/Box/Modal/AWS Lambda MicroVM execution for sessions
 
