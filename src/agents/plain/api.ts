@@ -52,6 +52,24 @@ export async function getThreadWithMessages(threadId: string): Promise<any> {
             icon
           }
         }
+        # Plain's own inbound/outbound tracking — it deliberately ignores
+        # autoresponders, so this is the honest "is the customer still
+        # waiting on a human?" signal rather than one we infer.
+        lastInboundMessageInfo {
+          timestamp {
+            iso8601
+          }
+        }
+        firstOutboundMessageInfo {
+          timestamp {
+            iso8601
+          }
+        }
+        lastOutboundMessageInfo {
+          timestamp {
+            iso8601
+          }
+        }
         timelineEntries(first: 100) {
           edges {
             node {
@@ -106,10 +124,16 @@ export async function getThreadWithMessages(threadId: string): Promise<any> {
                   }
                   subject
                   textContent
+                  attachments {
+                    ...AttachmentParts
+                  }
                 }
                 ... on ChatEntry {
                   chatId
                   text
+                  attachments {
+                    ...AttachmentParts
+                  }
                 }
                 ... on CustomEntry {
                   title
@@ -123,11 +147,23 @@ export async function getThreadWithMessages(threadId: string): Promise<any> {
                       linkButtonLabel
                     }
                   }
+                  attachments {
+                    ...AttachmentParts
+                  }
                 }
               }
             }
           }
         }
+      }
+    }
+
+    fragment AttachmentParts on Attachment {
+      id
+      fileName
+      fileMimeType
+      fileSize {
+        bytes
       }
     }
   `;
@@ -144,6 +180,64 @@ export async function getThreadWithMessages(threadId: string): Promise<any> {
   return (result.data as any).thread;
 }
 
+/**
+ * Mint a download URL for one attachment. Plain's URLs are signed and expire
+ * after ~3 minutes, so this is called per request rather than baked into the
+ * thread payload. Returns null when Plain refuses, and refuses ourselves when
+ * the file failed its virus scan.
+ */
+export async function getAttachmentDownloadUrl(
+  attachmentId: string,
+): Promise<{ url: string; fileName: string; mimeType: string } | null> {
+  const result = await plain.rawRequest({
+    query: `
+      mutation CreateAttachmentDownloadUrl($input: CreateAttachmentDownloadUrlInput!) {
+        createAttachmentDownloadUrl(input: $input) {
+          attachmentDownloadUrl {
+            downloadUrl
+            attachment {
+              fileName
+              fileMimeType
+            }
+          }
+          attachmentVirusScanResult
+          error {
+            message
+          }
+        }
+      }
+    `,
+    variables: { input: { attachmentId } },
+  });
+  if (result.error)
+    throw new Error(`Attachment download URL failed: ${result.error.message}`);
+
+  const payload = (result.data as any)?.createAttachmentDownloadUrl;
+  if (payload?.error?.message) throw new Error(payload.error.message);
+  if (payload?.attachmentVirusScanResult === "INFECTED")
+    throw new Error("Attachment failed its virus scan");
+
+  const link = payload?.attachmentDownloadUrl;
+  if (!link?.downloadUrl) return null;
+  return {
+    url: link.downloadUrl,
+    fileName: link.attachment?.fileName || "attachment",
+    mimeType: link.attachment?.fileMimeType || "application/octet-stream",
+  };
+}
+
+/**
+ * A file the customer (or we) attached to a message. Plain only hands out
+ * short-lived signed URLs, so the id is all we carry — the UI loads the bytes
+ * through backstage's own `/plain/attachments/:id` proxy.
+ */
+export interface PlainEntryAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 /** A single, UI-ready message in a Plain thread's timeline. */
 export interface NormalizedPlainEntry {
   id: string;
@@ -154,6 +248,19 @@ export interface NormalizedPlainEntry {
   kind: "email" | "chat" | "note" | "message";
   subject?: string;
   text: string;
+  attachments?: PlainEntryAttachment[];
+}
+
+/** Flatten an entry's `attachments` selection to the UI shape. */
+function entryAttachments(entry: any): PlainEntryAttachment[] {
+  return (entry?.attachments || [])
+    .filter((a: any) => a?.id)
+    .map((a: any) => ({
+      id: a.id,
+      fileName: a.fileName || "attachment",
+      mimeType: a.fileMimeType || "application/octet-stream",
+      sizeBytes: a.fileSize?.bytes ?? 0,
+    }));
 }
 
 /**
@@ -191,6 +298,14 @@ export interface NormalizedPlainThread {
   assignee: { id: string; name: string; isBot: boolean } | null;
   /** Labels on the thread. `id` removes it, `labelTypeId` identifies the kind. */
   labels: { id: string; labelTypeId: string; name: string; icon: string | null }[];
+  /**
+   * When the customer's still-unanswered message landed, else null. Straight
+   * from Plain's inbound/outbound tracking, which ignores autoresponders — so
+   * an auto-reply doesn't make a waiting customer look answered.
+   */
+  waitingSince: string | null;
+  /** True while no human has ever replied — Plain's "needs first response". */
+  awaitingFirstResponse: boolean;
   entries: NormalizedPlainEntry[];
 }
 
@@ -253,7 +368,10 @@ export function normalizePlainThread(thread: any): NormalizedPlainThread {
     } else {
       continue; // status changes, assignments, etc. — not part of the conversation
     }
-    if (!text.trim()) continue;
+    // A message can be nothing but a screenshot — keep those, they're often
+    // the whole bug report.
+    const attachments = entryAttachments(entry);
+    if (!text.trim() && attachments.length === 0) continue;
 
     entries.push({
       id: node.id,
@@ -263,6 +381,7 @@ export function normalizePlainThread(thread: any): NormalizedPlainThread {
       kind,
       subject,
       text,
+      ...(attachments.length ? { attachments } : {}),
     });
   }
 
@@ -297,7 +416,30 @@ export function normalizePlainThread(thread: any): NormalizedPlainThread {
         name: l.labelType.name || "?",
         icon: l.labelType.icon || null,
       })),
+    ...threadWaitingState(thread),
     entries,
+  };
+}
+
+/**
+ * Whether the customer is still waiting on us, from Plain's own message
+ * tracking: they're waiting when their latest message is newer than our
+ * latest reply (or we've never replied at all).
+ */
+function threadWaitingState(thread: any): {
+  waitingSince: string | null;
+  awaitingFirstResponse: boolean;
+} {
+  const inbound = thread?.lastInboundMessageInfo?.timestamp?.iso8601 || null;
+  const outbound = thread?.lastOutboundMessageInfo?.timestamp?.iso8601 || null;
+  const everReplied = Boolean(
+    thread?.firstOutboundMessageInfo?.timestamp?.iso8601,
+  );
+  const waiting =
+    inbound && (!outbound || new Date(inbound) > new Date(outbound));
+  return {
+    waitingSince: waiting ? inbound : null,
+    awaitingFirstResponse: Boolean(waiting) && !everReplied,
   };
 }
 

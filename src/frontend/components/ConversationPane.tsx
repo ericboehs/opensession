@@ -5,6 +5,7 @@ import {
 	PlainEntryRow,
 	PlainReplyBox,
 	PlainThreadActions,
+	PlainWaitingBanner,
 	plainThreadUrl,
 	STATUS_LABEL,
 } from "./PlainThreadPanel";
@@ -143,6 +144,12 @@ export function ConversationPane({
 							</div>
 						)}
 
+						{/* Is anyone still owed an answer? Plain leads with this;
+						    so should we. */}
+						{thread && (
+							<PlainWaitingBanner thread={thread} className="mt-3" />
+						)}
+
 						{/* One-click ticket admin, straight from here: status,
 						    priority, spam — no need to jump into Plain. */}
 						{thread && (
@@ -189,7 +196,7 @@ export function ConversationPane({
 								</div>
 							) : (
 								thread?.entries.map((e) => (
-									<PlainEntryRow key={e.id} entry={e} />
+									<PlainEntryRow key={e.id} entry={e} threadId={threadId} />
 								))
 							)}
 						</div>

@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type {
+	PlainEntryAttachment,
 	PlainLabelType,
 	PlainThread,
 	PlainTimelineEntry,
 	PlainWorkspaceUser,
 } from "../lib/types";
 import {
+	API_BASE,
 	changePlainThreadLabelsApi,
 	fetchPlainLabelTypesApi,
 	fetchPlainThreadApi,
@@ -17,6 +19,7 @@ import {
 	setPlainThreadStatusApi,
 	setPlainThreadTitleApi,
 } from "../lib/api";
+import { BASE_PATH } from "../lib/base";
 import { Menu } from "../ui/menu";
 import { renderMarkdown } from "../lib/markdown";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
@@ -140,6 +143,13 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 				</a>
 			</div>
 
+			{thread?.waitingSince && (
+				<PlainWaitingBanner
+					thread={thread}
+					className="shrink-0 mx-3 mt-2 rounded-md"
+				/>
+			)}
+
 			{thread && (
 				<PlainThreadActions
 					threadId={threadId}
@@ -159,7 +169,9 @@ export function PlainThreadPanel({ sessionId, threadId, plainUrl }: Props) {
 				) : thread && thread.entries.length === 0 ? (
 					<div className="plain-loading">No messages in this thread yet.</div>
 				) : (
-					thread?.entries.map((e) => <PlainEntryRow key={e.id} entry={e} />)
+					thread?.entries.map((e) => (
+						<PlainEntryRow key={e.id} entry={e} threadId={threadId} />
+					))
 				)}
 			</div>
 
@@ -623,19 +635,201 @@ export function PlainReplyBox({
 	);
 }
 
-export function PlainEntryRow({ entry }: { entry: PlainTimelineEntry }) {
+/** "3d 4h" / "2h 15m" / "8m" — coarse enough to read at a glance. */
+function waitDuration(since: string): string {
+	const ms = Date.now() - new Date(since).getTime();
+	if (!Number.isFinite(ms) || ms < 0) return "";
+	const mins = Math.floor(ms / 60_000);
+	if (mins < 60) return `${mins}m`;
+	const hours = Math.floor(mins / 60);
+	if (hours < 24) return `${hours}h ${mins % 60}m`;
+	return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
+/**
+ * "Customer waiting 2d 4h" — the signal Plain gives a whole banner to and we
+ * previously dropped. Uses Plain's own inbound/outbound tracking, so the
+ * autoresponder never counts as an answer.
+ */
+export function PlainWaitingBanner({
+	thread,
+	className,
+}: {
+	thread: PlainThread;
+	className?: string;
+}) {
+	if (!thread.waitingSince || thread.status === "DONE") return null;
+	const waited = waitDuration(thread.waitingSince);
+	if (!waited) return null;
+	const who = thread.customer?.name || thread.customer?.email || "Customer";
+	return (
+		<div
+			className={cn(
+				"flex items-center gap-2 rounded-md border border-yellow/40 bg-yellow/10 px-2.5 py-1.5 text-[12.5px] text-fg",
+				className,
+			)}
+		>
+			<span aria-hidden>⏳</span>
+			<span className="min-w-0 truncate">
+				{thread.awaitingFirstResponse ? (
+					<>
+						<strong className="font-semibold">{who}</strong> is waiting
+						for a first response
+					</>
+				) : (
+					<>
+						<strong className="font-semibold">{who}</strong> is waiting
+						for a reply
+					</>
+				)}
+				<span className="text-dim"> · {waited}</span>
+			</span>
+		</div>
+	);
+}
+
+/** Human-readable file size for an attachment chip. */
+function fileSize(bytes: number): string {
+	if (!bytes) return "";
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * A message's attachments. Images render inline — on a visual bug report the
+ * screenshot usually *is* the report — and click through to the full-size file.
+ * Everything else gets a download chip.
+ */
+function PlainAttachments({
+	attachments,
+}: {
+	attachments: PlainEntryAttachment[];
+}) {
+	const [failed, setFailed] = useState<Record<string, boolean>>({});
+	return (
+		<div className="flex flex-wrap gap-2 mt-2">
+			{attachments.map((a) => {
+				const href = `${API_BASE}/plain/attachments/${encodeURIComponent(a.id)}`;
+				const isImage = a.mimeType.startsWith("image/") && !failed[a.id];
+				return (
+					<a
+						key={a.id}
+						href={href}
+						target="_blank"
+						rel="noreferrer"
+						title={`${a.fileName}${a.sizeBytes ? ` — ${fileSize(a.sizeBytes)}` : ""}`}
+						className={cn(
+							"block rounded-md border border-line overflow-hidden hover:border-line-strong",
+							!isImage && "px-2 py-1 text-[12px] text-dim hover:text-fg",
+						)}
+					>
+						{isImage ? (
+							<img
+								src={href}
+								alt={a.fileName}
+								loading="lazy"
+								onError={() =>
+									setFailed((f) => ({ ...f, [a.id]: true }))
+								}
+								className="block max-h-[220px] max-w-full object-contain bg-surface"
+							/>
+						) : (
+							<>
+								📎 {a.fileName}
+								{a.sizeBytes ? (
+									<span className="text-faint">
+										{" "}
+										· {fileSize(a.sizeBytes)}
+									</span>
+								) : null}
+							</>
+						)}
+					</a>
+				);
+			})}
+		</div>
+	);
+}
+
+/**
+ * Notes posted from here carry an author prefix (see the reply route) because
+ * Plain's API can't attribute a write to a workspace user — everything lands
+ * as our machine user. Unpick that so a teammate's note shows *their* name,
+ * and so anything else from the machine user is honestly labelled as the
+ * agent rather than passing for a human.
+ */
+const NOTE_VIA_PREFIX = /^\*\*(.+?) \(via [^)]+\):\*\*\s*/;
+
+function noteAuthor(entry: PlainTimelineEntry): {
+	name: string;
+	isAgent: boolean;
+	text: string;
+} {
+	const viaUs = entry.text.match(NOTE_VIA_PREFIX);
+	if (viaUs)
+		return {
+			name: viaUs[1],
+			isAgent: false,
+			text: entry.text.slice(viaUs[0].length),
+		};
+	if (entry.actorType === "bot") {
+		// Agents open their notes with their own name; the badge says it now.
+		const selfSigned = new RegExp(
+			`^${entry.actorName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*`,
+		);
+		return {
+			name: entry.actorName,
+			isAgent: true,
+			text: entry.text.replace(selfSigned, ""),
+		};
+	}
+	return { name: entry.actorName, isAgent: false, text: entry.text };
+}
+
+export function PlainEntryRow({
+	entry,
+	threadId,
+}: {
+	entry: PlainTimelineEntry;
+	/** Enables the "open the triage session" link on agent notes. */
+	threadId?: string;
+}) {
 	if (entry.kind === "note") {
+		const author = noteAuthor(entry);
 		return (
 			<div className="plain-entry plain-entry-note">
 				<div className="plain-entry-head">
 					<span className="plain-kind-badge plain-kind-note">note</span>
-					<span className="plain-actor">{entry.actorName}</span>
+					<span className="plain-actor">{author.name}</span>
+					{author.isAgent && (
+						<span
+							className="plain-kind-badge"
+							title="Written by an agent run, not a teammate"
+						>
+							agent
+						</span>
+					)}
 					<span className="plain-time">{timeOf(entry.timestamp)}</span>
+					{author.isAgent && threadId && (
+						<a
+							className="plain-open ml-auto"
+							href={`${BASE_PATH}/plain-triage/${encodeURIComponent(threadId)}`}
+							target="_blank"
+							rel="noreferrer"
+							title="Open the triage session for this ticket"
+						>
+							Session ↗
+						</a>
+					)}
 				</div>
 				<div
 					className="plain-note-body markdown"
-					dangerouslySetInnerHTML={{ __html: renderMarkdown(entry.text) }}
+					dangerouslySetInnerHTML={{ __html: renderMarkdown(author.text) }}
 				/>
+				{entry.attachments?.length ? (
+					<PlainAttachments attachments={entry.attachments} />
+				) : null}
 			</div>
 		);
 	}
@@ -649,7 +843,10 @@ export function PlainEntryRow({ entry }: { entry: PlainTimelineEntry }) {
 				<span className="plain-time">{timeOf(entry.timestamp)}</span>
 			</div>
 			{entry.subject && <div className="plain-subject">{entry.subject}</div>}
-			<div className="plain-entry-text">{entry.text}</div>
+			{entry.text && <div className="plain-entry-text">{entry.text}</div>}
+			{entry.attachments?.length ? (
+				<PlainAttachments attachments={entry.attachments} />
+			) : null}
 		</div>
 	);
 }

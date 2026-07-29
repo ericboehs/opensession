@@ -23,6 +23,14 @@ export interface OsReview {
 }
 
 /** One message in a session's linked Plain thread (customer support). */
+/** A file on a Plain message. Bytes load through `/plain/attachments/:id`. */
+export interface PlainEntryAttachment {
+	id: string;
+	fileName: string;
+	mimeType: string;
+	sizeBytes: number;
+}
+
 export interface PlainTimelineEntry {
 	id: string;
 	timestamp: string;
@@ -32,6 +40,7 @@ export interface PlainTimelineEntry {
 	kind: "email" | "chat" | "note" | "message";
 	subject?: string;
 	text: string;
+	attachments?: PlainEntryAttachment[];
 }
 
 /** A Plain thread's conversation timeline, as shown in the Plain sidebar. */
@@ -50,6 +59,10 @@ export interface PlainThread {
 	assignee?: { id: string; name: string; isBot: boolean } | null;
 	/** Labels on the thread. `id` removes it, `labelTypeId` is the kind. */
 	labels?: { id: string; labelTypeId: string; name: string; icon: string | null }[];
+	/** When the customer's still-unanswered message landed, else null. */
+	waitingSince?: string | null;
+	/** True while no human has ever replied ("needs first response"). */
+	awaitingFirstResponse?: boolean;
 	entries: PlainTimelineEntry[];
 }
 
@@ -131,6 +144,8 @@ export interface FeedDescriptor {
 	filters?: FeedFilterSpec[];
 	/** Extra meta dot-paths the sidebar search matches. */
 	searchMeta?: string[];
+	/** Sort options (first = default): recent | oldest | title | meta:<path>. */
+	sortOptions?: { value: string; label: string }[];
 	/** True for config-declared feeds (editable/deletable in the UI). */
 	fromConfig?: boolean;
 }

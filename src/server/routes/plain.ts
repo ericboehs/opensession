@@ -104,6 +104,48 @@ export async function handlePlainRoutes(
 		});
 	}
 
+	// Serve one of a thread's attachments (customer screenshots, mostly).
+	// Plain hands out signed URLs that expire in ~3 minutes, so we mint one
+	// per request and stream the bytes back rather than leaking a URL that
+	// would be dead by the time the image is rendered. Cached hard by the
+	// browser — attachment bytes are immutable once uploaded.
+	const plainAttachmentMatch = path.match(
+		/^\/backstage\/api\/plain\/attachments\/([^/]+)$/,
+	);
+	if (plainAttachmentMatch && req.method === "GET") {
+		const attachmentId = decodeURIComponent(plainAttachmentMatch[1]);
+		try {
+			const { getAttachmentDownloadUrl } =
+				await import("../../agents/plain/api");
+			const link = await getAttachmentDownloadUrl(attachmentId);
+			if (!link)
+				return Response.json({ error: "Not found" }, { status: 404 });
+
+			const upstream = await fetch(link.url);
+			if (!upstream.ok || !upstream.body)
+				return Response.json(
+					{ error: `Attachment fetch failed (${upstream.status})` },
+					{ status: 502 },
+				);
+			// `inline` so images render in the timeline; the filename still
+			// drives Save-as. Quotes escaped so a quirky name can't break out.
+			const safeName = link.fileName.replace(/["\\]/g, "");
+			return new Response(upstream.body, {
+				headers: {
+					"Content-Type": link.mimeType,
+					"Content-Disposition": `inline; filename="${safeName}"`,
+					"Cache-Control": "private, max-age=86400",
+				},
+			});
+		} catch (e: any) {
+			console.error(`[plain-attachment] ${attachmentId} failed:`, e);
+			return Response.json(
+				{ error: e?.message || "Attachment fetch failed" },
+				{ status: 502 },
+			);
+		}
+	}
+
 	// The conversation timeline for a session's linked Plain thread,
 	// flattened for the session viewer's read-only Plain sidebar.
 	const plainThreadMatch = path.match(
