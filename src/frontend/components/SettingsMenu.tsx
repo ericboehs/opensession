@@ -7,6 +7,7 @@ import {
 	IconCheck,
 	IconChevronRight,
 	IconGear,
+	IconLogOut,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { TEAM, setCurrentUser, signOut, useAuthStatus, useCurrentUser } from "./UserPicker";
@@ -35,12 +36,12 @@ import { PRODUCT_MARK, PRODUCT_NAME } from "../lib/brand";
 //               bottom of the desktop sidebar, plus a sibling gear button that
 //               goes straight to the Settings page (bypassing the menu).
 
-function Avatar({ name, active }: { name: string; active?: boolean }) {
+function Avatar({ name, size = 22 }: { name: string; size?: number }) {
 	return (
 		<UserAvatar
 			name={name}
-			size={22}
-			className={cn(active && "border-accent shadow-[0_0_0_1px_var(--accent)]")}
+			size={size}
+			className="border-line shadow-[0_1px_2px_rgba(0,0,0,0.18)]"
 		/>
 	);
 }
@@ -150,7 +151,7 @@ function SettingsSheet({
 								// decides who you are. Show it + a way out.
 								<div className="overflow-hidden rounded-xl border border-line bg-panel">
 									<div className="flex w-full items-center gap-3 border-x-0 border-b border-t-0 border-solid border-line px-3.5 py-3">
-										<Avatar name={currentUser} active />
+										<Avatar name={currentUser} />
 										<span className="flex min-w-0 flex-1 flex-col leading-tight">
 											<span className="text-[15px] font-medium text-fg">
 												{currentUser}
@@ -186,7 +187,7 @@ function SettingsSheet({
 													dismiss();
 												}}
 											>
-												<Avatar name={name} active={name === currentUser} />
+												<Avatar name={name} />
 												<span className="min-w-0 flex-1 text-[15px] font-medium text-fg">
 													{name}
 												</span>
@@ -345,21 +346,21 @@ export function SettingsMenu({
 				side={footer ? "top" : undefined}
 				align="start"
 				sideOffset={8}
-				className="min-w-[244px]"
+				className="min-w-[252px]"
 			>
 				{githubAuth ? (
 					// GitHub-verified identity: nothing to switch — show who the
 					// server says you are.
-					<div className="flex items-center gap-[9px] px-2 py-1.5">
-						<Avatar name={currentUser} active />
-						<span className="flex min-w-0 flex-1 flex-col gap-px leading-tight">
-							<span className="text-[10.5px] font-bold tracking-[-0.01em] text-faint">
+					<div className="flex items-center gap-3 rounded-lg px-2.5 py-2">
+						<Avatar name={currentUser} size={30} />
+						<span className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
+							<span className="text-[11px] font-medium text-faint">
 								Signed in with GitHub
 							</span>
-							<span className="font-medium">
+							<span className="truncate text-[14px] font-semibold text-fg">
 								{currentUser}
 								{githubAuth.login && (
-									<span className="ml-1.5 font-normal text-faint">
+									<span className="ml-1.5 font-normal text-dim">
 										@{githubAuth.login}
 									</span>
 								)}
@@ -369,7 +370,7 @@ export function SettingsMenu({
 				) : (
 					<Menu.SubmenuRoot>
 						<Menu.SubmenuTrigger className="gap-[9px] rounded-[7px] px-2 py-1.5">
-							<Avatar name={currentUser} active />
+							<Avatar name={currentUser} />
 							<span className="flex min-w-0 flex-1 flex-col gap-px leading-tight">
 								<span className="text-[10.5px] font-bold tracking-[-0.01em] text-faint">
 									Acting as
@@ -405,7 +406,7 @@ export function SettingsMenu({
 										closeOnClick
 										className="gap-[9px] rounded-[7px] px-2 py-1.5"
 									>
-										<Avatar name={name} active={name === currentUser} />
+										<Avatar name={name} />
 										<span className="min-w-0 flex-1 font-medium">{name}</span>
 										{name === currentUser && (
 											<svg
@@ -451,13 +452,24 @@ export function SettingsMenu({
 					</>
 				)}
 
-				<Menu.Item onClick={() => onOpenSettings?.()}>
-					<IconGear size={22} />
-					Settings
+				<Menu.Item
+					onClick={() => onOpenSettings?.()}
+					className="gap-2.5 rounded-lg px-2.5 py-2 text-sm"
+				>
+					<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-dim">
+						<IconGear size={20} />
+					</span>
+					<span className="font-medium">Settings</span>
 				</Menu.Item>
 				{githubAuth && !githubAuth.local && (
-					<Menu.Item onClick={() => void signOut()} className="text-dim">
-						Sign out
+					<Menu.Item
+						onClick={() => void signOut()}
+						className="gap-2.5 rounded-lg px-2.5 py-2 text-sm text-dim data-[highlighted]:text-fg"
+					>
+						<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-faint">
+							<IconLogOut size={20} />
+						</span>
+						<span className="font-medium">Sign out</span>
 					</Menu.Item>
 				)}
 			</Menu.Popup>

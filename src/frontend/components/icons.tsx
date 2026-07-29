@@ -477,6 +477,16 @@ export function IconGear(p: IconProps) {
   );
 }
 
+export function IconLogOut(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M9.25 5.25h-2.5a2 2 0 0 0-2 2v9.5a2 2 0 0 0 2 2h2.5" />
+      <path {...stroke} d="M14.25 8.25 18 12l-3.75 3.75" />
+      <path {...stroke} d="M18 12H9.25" />
+    </Svg>
+  );
+}
+
 export function IconPlug(p: IconProps) {
   return (
     <Svg {...p}>
