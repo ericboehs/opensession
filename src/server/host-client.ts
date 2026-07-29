@@ -80,6 +80,7 @@ export interface HostedRunOpts {
   sessionId?: string;
   cwd: string;
   mode?: "ask" | "code" | "scratch";
+  mcpGrantUser?: string;
   model?: string;
   images?: ImageInput[];
   forkSession?: boolean;
@@ -125,6 +126,7 @@ export async function* runAgentHosted(opts: HostedRunOpts): AsyncGenerator<Strea
     sessionId: opts.sessionId,
     cwd: opts.cwd,
     mode: opts.mode,
+    mcpGrantUser: opts.mcpGrantUser,
     model: opts.model,
     images: opts.images,
     forkSession: opts.forkSession,

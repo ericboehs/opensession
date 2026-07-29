@@ -1132,6 +1132,7 @@ export async function maybeLaunchSandboxedRun(
 			aws: true,
 			author: gitIdentityFor(opts.user),
 			user: opts.user,
+			mcpGrantUser: session.startedBy || undefined,
 			fallbackModel: interactiveFallbackModel(session.model),
 			effort: session.effort,
 			fastMode: session.fastMode,
@@ -1182,6 +1183,7 @@ export async function maybeLaunchSandboxedRun(
 				aws: true,
 				author: gitIdentityFor(opts.user),
 				user: opts.user,
+				mcpGrantUser: session.startedBy || undefined,
 				fallbackModel: interactiveFallbackModel(session.model),
 				accountId: session.accountId,
 				journal: { bksSessionId: session.id, kind: "prompt" },
@@ -1582,7 +1584,7 @@ async function runSessionPromptInner(
 				session.externalRefs,
 				{
 					scratch: session.mode === "scratch",
-					user: user || session.startedBy || undefined,
+					user: session.startedBy || user || undefined,
 				},
 			);
 			if (refsContext) prompt += `\n\n${wrapContext(refsContext)}`;

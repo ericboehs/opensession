@@ -26,9 +26,16 @@ export const CLAUDE_CODE_BIN = configuredPaths().claudeBin;
  */
 export function filterMcpServers(
   allowlist?: string[],
-  user?: string
+  user?: string,
+  /** OAuth grant identities in priority order (default: [user]). The
+   *  allowedUsers VISIBILITY gate below always uses `user` (the prompter) —
+   *  that's least-privilege, not identity preference. */
+  grantUsers?: Array<string | undefined>,
 ): Record<string, unknown> {
-  const all = withDynamicCredentials(readMcpConfig().mcpServers, user);
+  const all = withDynamicCredentials(
+    readMcpConfig().mcpServers,
+    grantUsers ?? user,
+  );
   const out: Record<string, unknown> = {};
   const names = allowlist ?? Object.keys(all);
   for (const name of names) {
@@ -38,9 +45,14 @@ export function filterMcpServers(
       continue;
     }
     const { allowedUsers, ...entry } = cfg;
-    if (Array.isArray(allowedUsers) && allowedUsers.length && !userMatchesAny(user, allowedUsers)) {
-      // User-restricted server this run's user isn't cleared for — hide it.
-      continue;
+    if (Array.isArray(allowedUsers) && allowedUsers.length) {
+      // Cleared when the prompter OR the session creator (grantUsers[0]) is
+      // on the list — anyone with access to a cleared person's session can
+      // use it there (Michiel 2026-07-29; per-session invites = future).
+      const gateUsers = [user, ...(grantUsers || [])].filter(
+        (u): u is string => !!u,
+      );
+      if (!gateUsers.some((u) => userMatchesAny(u, allowedUsers))) continue;
     }
     out[name] = entry;
   }

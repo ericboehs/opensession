@@ -1078,9 +1078,12 @@ const ASK_EXTERNAL_DIR_PERMISSIONS: Record<string, "allow" | "deny"> = {
  */
 export function buildOpencodeMcpConfig(
   allowlist: string[] | undefined,
-  user: string | undefined
+  user: string | undefined,
+  /** OAuth grant identities in priority order (session creator first — a
+   *  shared session's MCP calls run as its creator; Michiel 2026-07-29). */
+  grantUsers?: Array<string | undefined>,
 ): { mcp: Record<string, Record<string, unknown>> } {
-  const filtered = filterMcpServers(allowlist, user) as Record<string, any>;
+  const filtered = filterMcpServers(allowlist, user, grantUsers) as Record<string, any>;
   const mcp: Record<string, Record<string, unknown>> = {};
   for (const [name, cfg] of Object.entries(filtered)) {
     if (cfg.type === "http" || cfg.type === "sse" || cfg.url) {
@@ -3218,7 +3221,7 @@ async function* runOpencodeAttempt(
       serverExtraEnv = { ...(serverExtraEnv || {}), ...githubAuthEnv(user || author?.name) };
     }
 
-    const { mcp: externalMcp } = buildOpencodeMcpConfig(shared ? undefined : mcpServers, user);
+    const { mcp: externalMcp } = buildOpencodeMcpConfig(shared ? undefined : mcpServers, user, [opts.mcpGrantUser, user]);
 
     // Session context (ask guardrails, repos note, managing-Michael notes).
     // Per-session servers deliver it via an instructions FILE in the config;

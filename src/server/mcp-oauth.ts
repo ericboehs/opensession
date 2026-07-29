@@ -362,18 +362,37 @@ function ensureTicker(): void {
  * which reads as "tools unavailable this turn", never a crashed run.
  */
 export function mcpAuthHeader(name: string, user?: string): string | undefined {
+  return mcpUserGrantHeader(name, user) ?? mcpSharedGrantHeader(name);
+}
+
+/** The user's own grant ONLY (no shared fallback) — lets callers order
+ *  identities explicitly (e.g. session creator first, then prompter). */
+export function mcpUserGrantHeader(
+  name: string,
+  user?: string,
+): string | undefined {
+  if (!user) return undefined;
+  const teamName = resolveTeammate(user)?.name;
+  if (!teamName) return undefined;
+  return grantHeader(name, readStore()[name]?.users?.[teamName], teamName);
+}
+
+/** The workspace-wide grant ONLY. */
+export function mcpSharedGrantHeader(name: string): string | undefined {
+  return grantHeader(name, readStore()[name]?.shared, "shared");
+}
+
+function grantHeader(
+  name: string,
+  grant: Grant | undefined,
+  who: string,
+): string | undefined {
   ensureTicker();
   const auth = readStore()[name];
-  if (!auth) return undefined;
-  const teamName = user ? resolveTeammate(user)?.name : undefined;
-  const grant =
-    (teamName ? auth.users?.[teamName] : undefined) ?? auth.shared;
-  if (!grant) return undefined;
+  if (!auth || !grant) return undefined;
   const { accessToken, expiresAt, refreshToken } = grant.tokens;
   if (expiresAt && expiresAt - Date.now() < REFRESH_AHEAD_MS && refreshToken)
-    refreshGrant(name, auth, teamName && auth.users?.[teamName] ? teamName : "shared").catch(
-      () => {},
-    );
+    refreshGrant(name, auth, who).catch(() => {});
   if (expiresAt && expiresAt < Date.now()) return undefined;
   return `Bearer ${accessToken}`;
 }

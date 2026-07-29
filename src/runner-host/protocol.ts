@@ -37,6 +37,8 @@ export interface RunHostSpec {
   engineSessionId?: string;
   cwd: string;
   mode?: "ask" | "code" | "scratch";
+  /** MCP OAuth identity: the session creator (see agent-runner RunAgentOpts). */
+  mcpGrantUser?: string;
   model?: string;
   images?: ImageInput[];
   forkSession?: boolean;

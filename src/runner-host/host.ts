@@ -407,6 +407,7 @@ try {
     sessionId: spec.engineSessionId || undefined,
     cwd: spec.cwd,
     mode: spec.mode,
+    mcpGrantUser: spec.mcpGrantUser,
     model: spec.model,
     images: spec.images,
     forkSession: spec.forkSession,

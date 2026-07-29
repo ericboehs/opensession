@@ -54,6 +54,11 @@ export interface RunAgentOpts {
   sessionId?: string;
   cwd: string;
   mode?: "ask" | "code" | "scratch";
+  /** MCP OAuth identity override: the session CREATOR — shared sessions run
+   *  MCP calls as their creator so teammates see the same objects (their own
+   *  grant is the fallback, then the workspace grant). TODO(sandbox): the
+   *  sandboxed-run path doesn't thread this yet. */
+  mcpGrantUser?: string;
   /** Model id; decides the backend. Omitted = default Claude model. */
   model?: string;
   /** OpenCode reasoning variant for this run; unset = the model default. */

@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, copyFileSync, watchFile } from "fs";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { configuredPaths } from "./config";
-import { mcpAuthHeader, mcpOauthStatus } from "./mcp-oauth";
+import { mcpOauthStatus, mcpSharedGrantHeader, mcpUserGrantHeader } from "./mcp-oauth";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 // mcp-config.json location. BACKSTAGE_MCP_CONFIG env → config
@@ -55,7 +55,10 @@ const LINEAR_AGENT_TOKENS_PATH = `${HOME}/.linear-agent-tokens.json`;
  */
 export function withDynamicCredentials(
   servers: Record<string, any>,
-  user?: string,
+  /** Grant identities in priority order (e.g. [session creator, prompter]);
+   *  a bare string is treated as a one-element list. First personal grant
+   *  wins, then the workspace grant. */
+  user?: string | Array<string | undefined>,
 ): Record<string, any> {
   let out = servers;
   const linear = servers.linear;
@@ -83,7 +86,13 @@ export function withDynamicCredentials(
       const c: any = cfg;
       const isHttp = c.type === "http" || c.type === "sse" || !!c.url;
       if (!isHttp) continue;
-      const header = mcpAuthHeader(name, user);
+      const candidates = (Array.isArray(user) ? user : [user]).filter(
+        (u): u is string => !!u,
+      );
+      const header =
+        candidates
+          .map((u) => mcpUserGrantHeader(name, u))
+          .find((h) => !!h) ?? mcpSharedGrantHeader(name);
       if (!header) continue;
       out = {
         ...out,
