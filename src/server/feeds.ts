@@ -127,6 +127,11 @@ export interface FeedProvider {
     user?: string;
     args?: Record<string, string>;
   }): Promise<FeedItem[]>;
+  /** Plugin-level session context for one item (the code sibling of the
+   *  descriptor's declarative `context` spec — for sources that aren't an
+   *  HTTP MCP tool call, e.g. Slack channel history via the Web API).
+   *  Returned string is injected verbatim into the opening prompt. */
+  contextForRef?(id: string, user?: string): Promise<string | null>;
 }
 
 interface FeedEntry {
@@ -376,9 +381,20 @@ export async function externalRefsOpeningContext(
   await ensureFeedsRegistered();
   syncConfigFeeds();
   for (const r of refs.filter((x) => x.kind !== "tella")) {
-    const desc = [...registry.values()]
-      .map((e) => e.provider.descriptor)
-      .find((d) => d.refKind === r.kind);
+    const entry = [...registry.values()].find(
+      (e) => e.provider.descriptor.refKind === r.kind,
+    );
+    const desc = entry?.provider.descriptor;
+    // Plugin hook first (code feeds), declarative spec second.
+    if (entry?.provider.contextForRef) {
+      try {
+        const text = await entry.provider.contextForRef(r.id, opts.user);
+        if (text) out += `\n\n${desc!.title} context for ${r.id}:\n\n${text}`;
+      } catch (e) {
+        console.error(`[feeds] plugin context failed for ${r.kind} ${r.id}:`, e);
+      }
+      continue;
+    }
     const ctxSpec = desc?.context;
     if (!ctxSpec) continue;
     try {

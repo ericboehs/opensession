@@ -75,6 +75,57 @@ function writeStore(store: Store): void {
   });
 }
 
+/**
+ * Preset OAuth providers — servers whose OAuth is NOT the MCP spec (no RFC
+ * 9728 discovery / dynamic registration). Slack: fixed app credentials from
+ * the env, user-scope consent, token in authed_user.access_token (xoxp-,
+ * "send messages as them"). The grant store/refresh/injection is shared
+ * with MCP-spec grants; only start/complete differ.
+ */
+interface OauthPreset {
+  authorize: string;
+  token: string;
+  clientIdEnv: string;
+  clientSecretEnv: string;
+  /** Query params for the authorize URL (slack: user_scope). */
+  authorizeParams: Record<string, string>;
+  /** Pull the token out of the exchange response. */
+  extract(res: any): {
+    accessToken?: string;
+    refreshToken?: string;
+    expiresIn?: number;
+  };
+  /** Env var the grant token is injected as for stdio MCP servers. */
+  envVar?: string;
+}
+
+const OAUTH_PRESETS: Record<string, OauthPreset> = {
+  slack: {
+    authorize: "https://slack.com/oauth/v2/authorize",
+    token: "https://slack.com/api/oauth.v2.access",
+    clientIdEnv: "SLACK_OAUTH_CLIENT_ID",
+    clientSecretEnv: "SLACK_OAUTH_CLIENT_SECRET",
+    authorizeParams: {
+      user_scope:
+        "channels:read,groups:read,channels:history,groups:history,chat:write,users:read,search:read",
+    },
+    extract: (res) => ({
+      accessToken: res?.authed_user?.access_token,
+      refreshToken: res?.authed_user?.refresh_token,
+      expiresIn: res?.authed_user?.expires_in,
+    }),
+    envVar: "SLACK_BOT_TOKEN",
+  },
+};
+
+export function oauthPresetFor(name: string): OauthPreset | undefined {
+  const p = OAUTH_PRESETS[name];
+  if (!p) return undefined;
+  return process.env[p.clientIdEnv] && process.env[p.clientSecretEnv]
+    ? p
+    : undefined;
+}
+
 function callbackUrl(): string {
   return `${configuredServer().publicBaseUrl}/backstage/api/connections/mcp-oauth/callback`;
 }
@@ -194,6 +245,31 @@ export async function startMcpOauthFlow(
   const teamName = forUser ? resolveTeammate(forUser)?.name : undefined;
   if (forUser && !teamName)
     throw new Error(`"${forUser}" doesn't resolve to a configured teammate`);
+  const preset = oauthPresetFor(name);
+  if (preset) {
+    const state = b64url(randomBytes(24));
+    pending.set(state, {
+      name,
+      verifier: "",
+      teamName,
+      createdAt: Date.now(),
+    });
+    const url = new URL(preset.authorize);
+    url.searchParams.set("client_id", process.env[preset.clientIdEnv]!);
+    url.searchParams.set("redirect_uri", callbackUrl());
+    url.searchParams.set("state", state);
+    for (const [k, v] of Object.entries(preset.authorizeParams))
+      url.searchParams.set(k, v);
+    // Ensure a store entry exists so grants have a home.
+    const store = readStore();
+    store[name] = store[name] || {
+      serverUrl,
+      endpoints: { authorize: preset.authorize, token: preset.token },
+      clientInfo: { clientId: process.env[preset.clientIdEnv]! },
+    };
+    writeStore(store);
+    return { url: url.toString() };
+  }
   const auth = await ensureServerAuth(name, serverUrl);
   const verifier = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
@@ -224,6 +300,47 @@ export async function completeMcpOauthFlow(
   if (!flow || Date.now() - flow.createdAt > PENDING_TTL_MS)
     throw new Error("This connect link expired — start again from Connections");
   pending.delete(state);
+  const preset = oauthPresetFor(flow.name);
+  if (preset) {
+    const body = new URLSearchParams({
+      code,
+      client_id: process.env[preset.clientIdEnv]!,
+      client_secret: process.env[preset.clientSecretEnv]!,
+      redirect_uri: callbackUrl(),
+    });
+    const res = (await (
+      await fetch(preset.token, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+        signal: AbortSignal.timeout(15_000),
+      })
+    ).json()) as any;
+    const tok = preset.extract(res);
+    if (!tok.accessToken)
+      throw new Error(
+        `Token exchange failed: ${res?.error || "no user token in response"}`,
+      );
+    const grant: Grant = {
+      tokens: {
+        accessToken: tok.accessToken,
+        ...(tok.refreshToken ? { refreshToken: tok.refreshToken } : {}),
+        ...(tok.expiresIn
+          ? { expiresAt: Date.now() + tok.expiresIn * 1000 }
+          : {}),
+      },
+      updatedAt: new Date().toISOString(),
+      ...(completedBy ? { connectedBy: completedBy } : {}),
+    };
+    const fresh = readStore();
+    const entry = fresh[flow.name];
+    if (!entry) throw new Error(`Registration for ${flow.name} vanished`);
+    if (flow.teamName)
+      entry.users = { ...(entry.users || {}), [flow.teamName]: grant };
+    else entry.shared = grant;
+    writeStore(fresh);
+    return { name: flow.name, teamName: flow.teamName };
+  }
   const store = readStore();
   const auth = store[flow.name];
   if (!auth) throw new Error(`No pending registration for ${flow.name}`);
@@ -437,6 +554,15 @@ export async function isOauthCapable(serverUrl: string): Promise<boolean> {
   } catch {}
   capableCache.set(origin, { capable, ts: Date.now() });
   return capable;
+}
+
+/** Raw grant token (no "Bearer " prefix) — stdio env injection. */
+export function mcpUserGrantToken(
+  name: string,
+  user?: string,
+): string | undefined {
+  const h = mcpUserGrantHeader(name, user);
+  return h?.replace(/^Bearer\s+/i, "");
 }
 
 /** Any grant at all for this server (shared or any user's)? */

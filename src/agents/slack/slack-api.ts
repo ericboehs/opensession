@@ -116,13 +116,15 @@ export const MESSAGES = {
 
 export async function slackApiCall(
   method: string,
-  params: Record<string, any>
+  params: Record<string, any>,
+  /** Act as a specific user (xoxp- grant token) instead of the bot. */
+  tokenOverride?: string,
 ): Promise<any> {
   const resp = await fetchWithTimeout(`https://slack.com/api/${method}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+      Authorization: `Bearer ${tokenOverride || SLACK_BOT_TOKEN}`,
     },
     body: JSON.stringify(params),
   });

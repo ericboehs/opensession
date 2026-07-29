@@ -127,6 +127,110 @@ function markGithubDelivery(id: string): void {
 export class SlackAgent implements AgentModule {
   name = "slack";
 
+  /**
+   * Slack channels as a sidebar feed (docs/feeds-design.md): the bot's
+   * member channels, most-populated first. Click → repo-less workspace with
+   * scratch sessions scoped to the slack MCP; the plugin context hook
+   * injects the channel's recent history (fetchChannelHistory — resolved
+   * user names, prettified mentions) so a session opens knowing the
+   * conversation. Bot-token identity for now; per-user Slack OAuth (user
+   * tokens via a Slack app) is a follow-up — it's Slack's own OAuth, not
+   * MCP-spec OAuth, so it needs a github-auth-style custom flow.
+   */
+  getFeed(): import("../../server/feeds").FeedProvider | null {
+    if (!process.env.SLACK_BOT_TOKEN) return null;
+    return {
+      descriptor: {
+        id: "slack",
+        title: "Slack",
+        refKind: "slack-channel",
+        tileBg: "#4a154b",
+        mcpServers: ["slack"],
+        searchMeta: ["topic", "purpose"],
+      },
+      async listItems(ctx?: { user?: string }) {
+        const { slackApiCall } = await import("./slack-api");
+        const { mcpUserGrantToken } = await import("../../server/mcp-oauth");
+        // The viewer's own grant (once they've connected Slack in My
+        // accounts) lists THEIR channels; bot token as fallback.
+        const token = ctx?.user
+          ? mcpUserGrantToken("slack", ctx.user)
+          : undefined;
+        const items: import("../../server/feeds").FeedItem[] = [];
+        let teamId = "";
+        try {
+          const auth = await slackApiCall("auth.test", {}, token);
+          teamId = auth?.team_id || "";
+        } catch {}
+        let cursor = "";
+        do {
+          const data = await slackApiCall(
+            "conversations.list",
+            {
+              types: "public_channel,private_channel",
+              exclude_archived: true,
+              limit: 200,
+              ...(cursor ? { cursor } : {}),
+            },
+            token,
+          );
+          if (!data?.ok) break;
+          for (const ch of data.channels || []) {
+            if (!ch.is_member) continue; // history needs membership
+            items.push({
+              id: ch.id,
+              title: `#${ch.name}`,
+              preview: ch.topic?.value || ch.purpose?.value || undefined,
+              ts: (ch.updated || ch.created || 0) * (ch.updated ? 1 : 1000),
+              ...(teamId
+                ? { url: `https://app.slack.com/client/${teamId}/${ch.id}` }
+                : {}),
+              meta: {
+                topic: ch.topic?.value || "",
+                purpose: ch.purpose?.value || "",
+                members: ch.num_members || 0,
+                isPrivate: !!ch.is_private,
+              },
+            });
+          }
+          cursor = data.response_metadata?.next_cursor || "";
+        } while (cursor);
+        return items.sort(
+          (a, b) =>
+            ((b.meta?.members as number) || 0) -
+            ((a.meta?.members as number) || 0),
+        );
+      },
+      async contextForRef(id: string, user?: string) {
+        const { fetchChannelHistory, slackApiCall } = await import(
+          "./slack-api"
+        );
+        const { mcpUserGrantToken } = await import("../../server/mcp-oauth");
+        const token = user ? mcpUserGrantToken("slack", user) : undefined;
+        const [info, history] = await Promise.all([
+          slackApiCall("conversations.info", { channel: id }, token).catch(
+            () => null,
+          ),
+          fetchChannelHistory(id, 30),
+        ]);
+        const ch = info?.channel;
+        const lines = history.map(
+          (m) =>
+            `[${new Date(Number(m.ts) * 1000).toISOString().slice(5, 16)}] ${m.userName}: ${m.text}`,
+        );
+        return [
+          ch
+            ? `Channel: #${ch.name}${ch.topic?.value ? ` — topic: ${ch.topic.value}` : ""}${ch.purpose?.value ? `\nPurpose: ${ch.purpose.value}` : ""}`
+            : `Channel: ${id}`,
+          lines.length
+            ? `Recent messages (oldest first):\n${lines.join("\n")}`
+            : "No recent messages.",
+          "Use the slack MCP tools for more history, thread replies, or to post (always prefix posts saying you're Michael).",
+        ].join("\n\n");
+      },
+    };
+  }
+
   getRoutes(): Map<string, (req: Request, url: URL) => Promise<Response>> {
     const routes = new Map<
       string,

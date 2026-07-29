@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, copyFileSync, watchFile } from "fs";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { configuredPaths } from "./config";
-import { mcpOauthStatus, mcpSharedGrantHeader, mcpUserGrantHeader } from "./mcp-oauth";
+import { mcpOauthStatus, mcpSharedGrantHeader, mcpUserGrantHeader, mcpUserGrantToken, oauthPresetFor } from "./mcp-oauth";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 // mcp-config.json location. BACKSTAGE_MCP_CONFIG env → config
@@ -85,7 +85,28 @@ export function withDynamicCredentials(
       if (!cfg || typeof cfg !== "object") continue;
       const c: any = cfg;
       const isHttp = c.type === "http" || c.type === "sse" || !!c.url;
-      if (!isHttp) continue;
+      if (!isHttp) {
+        // Stdio servers with a preset OAuth (slack): inject the grant token
+        // as the preset's env var — the run then acts AS THE PERSON
+        // (creator-first order), falling back to the static bot token.
+        const preset = oauthPresetFor(name);
+        if (preset?.envVar && c.command) {
+          const candidates = (Array.isArray(user) ? user : [user]).filter(
+            (u): u is string => !!u,
+          );
+          const token =
+            candidates
+              .map((u) => mcpUserGrantToken(name, u))
+              .find((t) => !!t) ??
+            mcpSharedGrantHeader(name)?.replace(/^Bearer\s+/i, "");
+          if (token)
+            out = {
+              ...out,
+              [name]: { ...c, env: { ...c.env, [preset.envVar]: token } },
+            };
+        }
+        continue;
+      }
       const candidates = (Array.isArray(user) ? user : [user]).filter(
         (u): u is string => !!u,
       );

@@ -94,13 +94,17 @@ export async function handleConnectionsRoutes(
 		/^\/backstage\/api\/connections\/mcp\/([^/]+)\/oauth$/,
 	);
 	if (mcpOauthMatch && req.method === "GET") {
-		const { mcpOauthStatus, isOauthCapable } = await import("../mcp-oauth");
+		const { mcpOauthStatus, isOauthCapable, oauthPresetFor } = await import(
+			"../mcp-oauth"
+		);
 		const name = decodeURIComponent(mcpOauthMatch[1]);
 		const status = mcpOauthStatus(name);
 		const cfg = (await import("../connections")).readMcpConfig().mcpServers[
 			name
 		] as { url?: string } | undefined;
-		const capable = cfg?.url ? await isOauthCapable(cfg.url) : false;
+		const capable =
+			!!oauthPresetFor(name) ||
+			(cfg?.url ? await isOauthCapable(cfg.url) : false);
 		return Response.json({ ...status, capable });
 	}
 	if (mcpOauthMatch && req.method === "DELETE") {
@@ -123,13 +127,13 @@ export async function handleConnectionsRoutes(
 		const cfg = (await import("../connections")).readMcpConfig().mcpServers[
 			name
 		] as { url?: string } | undefined;
-		if (!cfg?.url)
+		const { startMcpOauthFlow, oauthPresetFor } = await import("../mcp-oauth");
+		if (!cfg?.url && !oauthPresetFor(name))
 			return Response.json(
-				{ error: "Not an HTTP MCP server" },
+				{ error: "Not an OAuth-capable MCP server" },
 				{ status: 400 },
 			);
 		try {
-			const { startMcpOauthFlow } = await import("../mcp-oauth");
 			const forUser =
 				body.scope === "me"
 					? ctx.authUser?.login || ctx.authUser?.name || undefined
@@ -141,7 +145,7 @@ export async function handleConnectionsRoutes(
 				);
 			const { url: authorizeUrl } = await startMcpOauthFlow(
 				name,
-				cfg.url,
+				cfg?.url || `stdio://${name}`,
 				forUser,
 			);
 			return Response.json({ url: authorizeUrl });
