@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
 import { fetchSubagent, type SubagentTranscript } from "../lib/api";
-import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
 import { TranscriptBlocks } from "./TranscriptBlocks";
 
 export interface SubagentRef {
@@ -88,9 +87,6 @@ export function SubagentPanel({ sessionId, stack, onOpenSubagent, onBack, onClos
 
   const meta = data?.meta;
   const title = meta?.agentType || current.label || "Sub-agent";
-  const modelLabel = meta?.model
-    ? friendlyModelSlug(opencodeModelParts(meta.model)?.model ?? meta.model)
-    : null;
 
   return (
     <div className="viewer-panel subagent-panel" style={style}>
@@ -101,14 +97,6 @@ export function SubagentPanel({ sessionId, stack, onOpenSubagent, onBack, onClos
           <span className="subagent-title" title={meta?.description || current.label}>
             {title}
           </span>
-          {modelLabel && (
-            <span
-              className="shrink-0 rounded-sm bg-surface px-1.5 py-0.5 text-[11px] text-dim"
-              title={meta?.model}
-            >
-              {modelLabel}
-            </span>
-          )}
           {data?.sessionRunning && <span className="subagent-live-dot" title="Session running" />}
           <button className="panel-close" onClick={onClose} aria-label="Close sub-agent panel">
             ✕

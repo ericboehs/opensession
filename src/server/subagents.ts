@@ -21,7 +21,6 @@ import type { TranscriptEntry } from "./types";
 export interface SubagentMeta {
   agentId: string;
   agentType?: string;
-  model?: string;
   description?: string;
   toolUseId?: string;
   spawnDepth?: number;
@@ -47,7 +46,6 @@ function readMeta(dir: string, agentId: string): SubagentMeta {
       return {
         agentId,
         agentType: m.agentType,
-        model: typeof m.model === "string" ? m.model : undefined,
         description: m.description,
         toolUseId: m.toolUseId,
         spawnDepth: m.spawnDepth,

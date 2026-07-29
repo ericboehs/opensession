@@ -168,15 +168,6 @@ struct SessionView: View {
             #if os(macOS)
             ToolbarItem(placement: .topTrailingCompat) { modelMenu }
             #endif
-            if viewModel.isRunning {
-                ToolbarItem(placement: .topTrailingCompat) {
-                    Button {
-                        viewModel.cancelRun()
-                    } label: {
-                        Image(systemName: "stop.circle")
-                    }
-                }
-            }
         }
         .sheet(isPresented: $showPrPanel) {
             PrPanelView(viewModel: viewModel)
@@ -413,30 +404,6 @@ private struct SessionInputBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Messages waiting on the current run, each visibly either
-            // delivering (left the server queue, transcript echo in flight),
-            // queued (held until the run finishes — steerable/deletable)
-            // or steering in (delivering at the next turn boundary).
-            if !viewModel.deliveringItems.isEmpty || !viewModel.steeredItems.isEmpty
-                || !viewModel.queuedItems.isEmpty {
-                VStack(spacing: 6) {
-                    ForEach(viewModel.deliveringItems) { item in
-                        QueuedMessageChip(item: item, phase: .delivering)
-                    }
-                    ForEach(viewModel.steeredItems) { item in
-                        QueuedMessageChip(item: item, phase: .steering)
-                    }
-                    ForEach(viewModel.queuedItems) { item in
-                        QueuedMessageChip(
-                            item: item,
-                            phase: .queued,
-                            onSteer: viewModel.isRunning
-                                ? { viewModel.steerQueued(item) } : nil,
-                            onDelete: { viewModel.deleteQueued(item) }
-                        )
-                    }
-                }
-            }
             if viewModel.isRunning
                 || (viewModel.queuedCount > 0 && viewModel.queuedItems.isEmpty)
                 || viewModel.notice != nil {
@@ -473,7 +440,14 @@ private struct SessionInputBar: View {
                 }
             }
 
-            composer
+            VStack(spacing: 0) {
+                if hasQueueItems {
+                    queueFlap
+                        .zIndex(0)
+                }
+                composer
+                    .zIndex(1)
+            }
         }
         .frame(maxWidth: contentMaxWidth)
         .frame(maxWidth: .infinity)
@@ -489,12 +463,78 @@ private struct SessionInputBar: View {
         #endif
     }
 
-    /// The message composer: one bordered rounded container holding the
-    /// multiline text field and an embedded send button — the shape chat
-    /// apps converge on, instead of a floating button next to a pill.
+    private var hasQueueItems: Bool {
+        !viewModel.deliveringItems.isEmpty || !viewModel.steeredItems.isEmpty
+            || !viewModel.queuedItems.isEmpty
+    }
+
+    /// The queue uses the web composer's flap treatment: inset from the input,
+    /// rounded at the top, and tucked behind the composer at the bottom.
+    private var queueFlap: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(queueTitle)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(OS1VisualStyle.textFaint)
+
+            ForEach(viewModel.deliveringItems) { item in
+                QueuedMessageRow(item: item, phase: .delivering)
+            }
+            ForEach(viewModel.steeredItems) { item in
+                QueuedMessageRow(item: item, phase: .steering)
+            }
+            ForEach(viewModel.queuedItems) { item in
+                QueuedMessageRow(
+                    item: item,
+                    phase: .queued,
+                    onSteer: viewModel.isRunning
+                        ? { viewModel.steerQueued(item) } : nil,
+                    onDelete: { viewModel.deleteQueued(item) }
+                )
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 24)
+        .background(
+            OS1VisualStyle.panel.opacity(0.9),
+            in: UnevenRoundedRectangle(
+                topLeadingRadius: 16,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: 16,
+                style: .continuous
+            )
+        )
+        .overlay {
+            UnevenRoundedRectangle(
+                topLeadingRadius: 16,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: 16,
+                style: .continuous
+            )
+            .stroke(OS1VisualStyle.border, lineWidth: 0.5)
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, -14)
+    }
+
+    private var queueTitle: String {
+        let queued = viewModel.queuedItems.count
+        let inFlight = viewModel.steeredItems.count + viewModel.deliveringItems.count
+        if queued == 0 {
+            return "\(inFlight) in flight"
+        }
+        if inFlight == 0 {
+            return "\(queued) queued \(queued == 1 ? "message" : "messages")"
+        }
+        return "\(queued) queued · \(inFlight) in flight"
+    }
+
+    /// The message composer mirrors the web input: draft above, controls on a
+    /// bottom row, including stop while a turn is active.
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            AttachImagesButton(images: $viewModel.attachedImages)
+        VStack(alignment: .leading, spacing: 2) {
             TextField(
                 viewModel.isRunning
                     ? (busySend == "steer" ? "Message — steers this run" : "Message — queues for after this run")
@@ -504,8 +544,9 @@ private struct SessionInputBar: View {
             )
             .textFieldStyle(.plain)
             .lineLimit(1...10)
-            .padding(.leading, 6)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 10)
+            .padding(.top, 9)
+            .padding(.bottom, 5)
             .focused($inputFocused)
             // Mac: Return sends; Shift/Option-Return insert a newline. On
             // iOS the software keyboard's return key just wraps, as before.
@@ -521,27 +562,49 @@ private struct SessionInputBar: View {
             // through to the field untouched.
             .pastesImages(into: $viewModel.attachedImages)
 
-            Button {
-                viewModel.sendDraft()
-            } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(viewModel.canSend ? Color.white : Color.secondary)
-                    .frame(width: 32, height: 32)
-                    .background(
-                        viewModel.canSend
-                            ? AnyShapeStyle(.tint)
-                            : AnyShapeStyle(.fill.secondary),
-                        in: Circle()
-                    )
+            HStack(spacing: 6) {
+                AttachImagesButton(images: $viewModel.attachedImages)
+                Spacer(minLength: 8)
+
+                if viewModel.isRunning {
+                    Button {
+                        viewModel.cancelRun()
+                    } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(OS1VisualStyle.red, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+                    .accessibilityLabel("Stop current turn")
+                }
+
+                Button {
+                    viewModel.sendDraft()
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(viewModel.canSend ? Color.white : Color.secondary)
+                        .frame(width: 32, height: 32)
+                        .background(
+                            viewModel.canSend
+                                ? AnyShapeStyle(.tint)
+                                : AnyShapeStyle(.fill.secondary),
+                            in: Circle()
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!viewModel.canSend)
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+                .animation(.easeOut(duration: 0.15), value: viewModel.canSend)
             }
-            .buttonStyle(.plain)
-            .disabled(!viewModel.canSend)
-            .frame(width: 40, height: 40)
-            .animation(.easeOut(duration: 0.15), value: viewModel.canSend)
+            .padding(.horizontal, 4)
+            .padding(.bottom, 3)
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 3)
         .glassSurface(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
@@ -590,14 +653,14 @@ private struct SessionInputBar: View {
     }
     #endif
 
-    // MARK: - Queue chips
+    // MARK: - Queue rows
 
     /// One message waiting on the current run. "Queued" holds until the run
     /// fully finishes; "Steering" is already committed to deliver at the
     /// run's next turn boundary (a receipt — no actions left to take);
     /// "Delivering" has left the server queue and is waiting on its
     /// transcript echo (~1s file watcher) — inert, just kept visible.
-    private struct QueuedMessageChip: View {
+    private struct QueuedMessageRow: View {
         enum Phase { case queued, steering, delivering }
 
         let item: QueueItem
@@ -642,7 +705,6 @@ private struct SessionInputBar: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .glassSurface(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }
 }
