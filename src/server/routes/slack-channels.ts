@@ -15,6 +15,41 @@ export async function handleSlackChannelRoutes(
 ): Promise<Response | undefined> {
 	const { req, url, path } = ctx;
 
+	// Viewing the pane marks the channel read (as Slack itself does) — moves
+	// the caller's OWN read cursor via their grant, so the sidebar unread dot
+	// clears. No grant → no-op (the bot has no per-user cursor to move).
+	const readMatch = path.match(
+		/^\/backstage\/api\/slack\/channels\/([^/]+)\/read$/,
+	);
+	if (readMatch && req.method === "POST") {
+		const caller = ctx.authUser?.login || ctx.authUser?.name || undefined;
+		const { mcpUserGrantToken } = await import("../mcp-oauth");
+		const grantToken = caller
+			? mcpUserGrantToken("slack", caller)
+			: undefined;
+		if (!grantToken) return Response.json({ ok: false });
+		const body = (await req.json().catch(() => null)) as {
+			ts?: string;
+		} | null;
+		if (!body?.ts)
+			return Response.json({ error: "ts required" }, { status: 400 });
+		try {
+			const { slackApiCall } = await import("../../agents/slack/slack-api");
+			const res = await slackApiCall(
+				"conversations.mark",
+				{ channel: decodeURIComponent(readMatch[1]), ts: body.ts },
+				grantToken,
+			);
+			if (res?.ok) {
+				const { invalidateFeedCache } = await import("../feeds");
+				invalidateFeedCache("slack");
+			}
+			return Response.json({ ok: !!res?.ok });
+		} catch {
+			return Response.json({ ok: false });
+		}
+	}
+
 	const msgsMatch = path.match(
 		/^\/backstage\/api\/slack\/channels\/([^/]+)\/messages$/,
 	);

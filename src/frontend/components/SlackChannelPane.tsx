@@ -218,6 +218,7 @@ export function SlackChannelPane({
 	const aliveRef = useRef(true);
 	const scrollRef = useRef<HTMLDivElement | null>(null);
 	const stickBottomRef = useRef(true);
+	const lastMarkedRef = useRef("");
 
 	useEffect(() => {
 		aliveRef.current = true;
@@ -246,6 +247,20 @@ export function SlackChannelPane({
 				return [...olders, ...incoming];
 			});
 			setError(null);
+			// Viewing marks the channel read (as the signed-in user) so the
+			// sidebar unread dot clears — same behavior as Slack itself.
+			const newest = (body.messages || []).at(-1)?.ts;
+			if (body.asUser && newest && newest !== lastMarkedRef.current) {
+				lastMarkedRef.current = newest;
+				void fetch(
+					`${BASE_PATH}/api/slack/channels/${encodeURIComponent(channelId)}/read`,
+					{
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ ts: newest }),
+					},
+				).catch(() => {});
+			}
 		} catch (e: any) {
 			if (aliveRef.current) setError(e.message);
 		} finally {

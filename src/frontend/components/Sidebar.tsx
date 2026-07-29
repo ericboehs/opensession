@@ -413,10 +413,14 @@ function FeedRow({
 	const isPhone = useIsPhone();
 	const card = useRowHoverCard();
 	const lane = feed.lanes?.find((l) => l.key === item.lane);
+	// Per-viewer unread (e.g. Slack read cursors) renders Slack-style: bold
+	// title + accent dot.
+	const unread = item.meta?.unread === true;
 	const dot =
 		(session
 			? MINE_STATUS_META.find((m) => m.key === mineStatus(session))?.dotColor
-			: lane?.dot) || "var(--text-faint)";
+			: lane?.dot) ||
+		(unread ? "var(--accent)" : "var(--text-faint)");
 	const ts = item.ts ? new Date(item.ts).toISOString() : null;
 	return (
 		<Popover.Root {...card.rootProps}>
@@ -439,7 +443,11 @@ function FeedRow({
 						style={{ backgroundColor: dot }}
 					/>
 				</span>
-				<span className="sidebar-item-title">{item.title}</span>
+				<span
+					className={`sidebar-item-title${unread ? " font-semibold text-fg" : ""}`}
+				>
+					{item.title}
+				</span>
 				{!isPhone && ts && (
 					<span
 						className="sidebar-ws-time"

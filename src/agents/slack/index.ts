@@ -229,13 +229,54 @@ export class SlackAgent implements AgentModule {
         }
         // Most-populated first — the bot's hundreds of 1-2-member worktree
         // channels sink; cap to a sane band size.
-        return [...byId.values()]
+        const items = [...byId.values()]
           .sort(
             (a, b) =>
               ((b.meta?.members as number) || 0) -
               ((a.meta?.members as number) || 0),
           )
           .slice(0, 40);
+        // Unread state — only meaningful against a person's own read
+        // cursors, so grant-token only. Slack exposes no bulk unreads to
+        // xoxp tokens (client.counts is xoxc-only): per channel, compare
+        // conversations.info's last_read with the newest history ts. Two
+        // Tier-3 calls per channel, bounded concurrency; failures just
+        // leave the item unread-less. The 60s feed cache amortizes it.
+        if (token) {
+          const { slackApiGet } = await import("./slack-api");
+          const CONCURRENCY = 8;
+          const queue = [...items];
+          const workers = Array.from({ length: CONCURRENCY }, async () => {
+            for (;;) {
+              const item = queue.shift();
+              if (!item) return;
+              try {
+                const [info, history] = await Promise.all([
+                  slackApiGet(
+                    "conversations.info",
+                    { channel: item.id },
+                    token,
+                  ),
+                  slackApiGet(
+                    "conversations.history",
+                    { channel: item.id, limit: 1 },
+                    token,
+                  ),
+                ]);
+                const lastRead = info?.channel?.last_read;
+                const latest = history?.messages?.[0]?.ts;
+                if (lastRead && latest) {
+                  item.meta = {
+                    ...item.meta,
+                    unread: Number(latest) > Number(lastRead),
+                  };
+                }
+              } catch {}
+            }
+          });
+          await Promise.all(workers);
+        }
+        return items;
       },
       async contextForRef(id: string, user?: string) {
         const { fetchChannelHistory, slackApiCall } = await import(
