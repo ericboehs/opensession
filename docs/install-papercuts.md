@@ -401,6 +401,24 @@ Ubuntu between runs:
 | 4 | installed with engine | 8s |
 | 5 | + credential scrubbing | 9s |
 | 6 | + gh, PATH fix | 10s |
+| 7 | **anonymous, zero credentials** | 9s |
+
+Iteration 7 is the one that matters for the open-source question. The
+repository is still private, so every earlier install used a PAT, which left an
+obvious doubt: is the installer only smooth *because* it is being fed
+credentials?
+
+To settle it, the repository was mirrored to the test box, served anonymously
+over `git daemon` on localhost, and **every credential on the box deleted** —
+`~/.tok`, `~/.git-credentials`, the global credential helper. The documented
+flow then ran end to end with nothing to authenticate with: fetch the installer,
+clone, install Bun from scratch, install the engine, wire PATH, onboard, start,
+`opensession update`, `opensession doctor`. 9 seconds, 0 errors.
+
+That is precisely the public-repo experience. The install process is not gated
+on authentication in any way; repository visibility is a flag, not a property of
+the installer. Note the credential-scrubbing step correctly did not fire — there
+was nothing to scrub.
 
 Plus a parallel track in a systemd-capable container (`--privileged
 --cgroupns=host`, real `/sbin/init`, user with passwordless sudo) covering the
@@ -409,3 +427,33 @@ service install and the apt path the EC2 box cannot reach.
 Server reaches a healthy `/backstage/api/health` on a fresh box, loading only
 the self-gating Tella module — the correct state for an install with no
 integrations enabled.
+
+---
+
+## Where this landed
+
+Measured against the two reference tools:
+
+| | opencode | openclaw | opensession |
+| --- | --- | --- | --- |
+| One-line install | ✅ | ✅ | ✅ |
+| Command on `PATH` | ✅ | ✅ | ✅ |
+| Onboarding wizard | — | `onboard` | `onboard` |
+| Update command | — | `update --channel` | `update --channel` |
+| Package manager | npm/brew/paru | npm | `bun add -g` / npm-ready |
+| Health diagnostics | — | `gateway status --deep` | `doctor` |
+| Service management | — | via CLI | via CLI (systemd + launchd) |
+| Uninstall | — | — | `--uninstall` |
+
+Verified end to end, anonymously, on a bare Ubuntu box: **9 seconds** from one
+command to a running server, 0 errors from `doctor`.
+
+Two things are outside the code and remain open:
+
+1. **The repository is private.** The install path needs nothing else — iteration
+   7 proves it works with zero credentials — but a stranger cannot clone it until
+   visibility flips. That is a business decision, not an installer defect.
+2. **macOS is not verified end to end.** The code paths exist and the launchd
+   half is unit-tested, but the only Mac reachable from here is a teammate's
+   personal machine and installing onto it uninvited was not appropriate. This
+   needs one run on a Mac before claiming macOS support.
