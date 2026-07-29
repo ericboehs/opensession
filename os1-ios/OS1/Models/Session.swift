@@ -57,9 +57,9 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     /// valid tabs, but should not displace the conversation that started the
     /// workspace from the leading position.
     var neverRan: Bool {
-        claudeSessionId == nil
-            && codexThreadId == nil
-            && opencodeSessionId == nil
+        [claudeSessionId, codexThreadId, opencodeSessionId].allSatisfy {
+            $0?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+        }
             && isRunning != true
             && (queuedCount ?? 0) == 0
             && lastActivity == createdAt

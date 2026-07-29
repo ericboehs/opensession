@@ -44,6 +44,9 @@ struct SessionsListView: View {
     /// Unsent composer state survives switching sibling tabs (whose
     /// SessionViewModel/socket is otherwise deliberately recreated).
     @State private var composerDrafts: [String: SessionViewModel.ComposerDraft] = [:]
+    /// Temp IDs remain aliases through the outgoing view's onDisappear so a
+    /// draft edited while session creation resolves is saved under the real ID.
+    @State private var resolvedSessionIds: [String: String] = [:]
     /// Surfaced when a background session create fails after the sheet closed.
     @State private var createError: String?
     @State private var showArchived = false
@@ -341,8 +344,12 @@ struct SessionsListView: View {
         switch result {
         case .success(let id):
             viewModel.resolveOptimistic(tempId: tempId, realId: id)
+            resolvedSessionIds[tempId] = id
             if let seed = optimisticSeeds.removeValue(forKey: tempId) {
                 optimisticSeeds[id] = seed
+            }
+            if let draft = composerDrafts.removeValue(forKey: tempId) {
+                composerDrafts[id] = draft
             }
             #if os(macOS)
             if selectedSessionID == tempId { selectedSessionID = id }
@@ -351,11 +358,13 @@ struct SessionsListView: View {
                let session = viewModel.sessions.first(where: { $0.id == id }) {
                 // Swap the pending push for the real session without a
                 // visible pop/push double transition.
+                var next = path
+                next.removeLast()
+                next.append(session)
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
-                    path.removeLast()
-                    path.append(session)
+                    path = next
                 }
             }
             pushedPendingId = nil
@@ -602,7 +611,8 @@ struct SessionsListView: View {
                 composerDraft: composerDrafts[session.id],
                 onSelectTab: switchToTab,
                 onSaveComposerDraft: { draft in
-                    composerDrafts[session.id] = draft.isEmpty ? nil : draft
+                    let id = resolvedSessionIds[session.id] ?? session.id
+                    composerDrafts[id] = draft.isEmpty ? nil : draft
                 }
             )
             .id(session.id)
@@ -686,11 +696,13 @@ struct SessionsListView: View {
     /// pushing another conversation onto the back stack.
     private func switchToTab(_ session: Session) {
         guard !path.isEmpty else { return }
+        var next = path
+        next.removeLast()
+        next.append(session)
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            path.removeLast()
-            path.append(session)
+            path = next
         }
     }
     #endif
@@ -1068,12 +1080,13 @@ struct PulsingDot: View {
     let color: Color
     var active: Bool = true
     var size: CGFloat = 8
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let dot = Circle()
             .fill(color)
             .frame(width: size, height: size)
-        if active {
+        if active && !reduceMotion {
             dot.phaseAnimator([1.0, 0.35]) { view, opacity in
                 view.opacity(opacity)
             } animation: { _ in

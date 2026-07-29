@@ -450,6 +450,8 @@ private struct SessionTabBar: View {
     let tabs: [Session]
     let activeId: String
     let onSelect: (Session) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -477,8 +479,8 @@ private struct SessionTabBar: View {
                                     : OS1VisualStyle.textDim
                             )
                             .padding(.horizontal, 12)
-                            .frame(minHeight: 44)
-                            .frame(maxWidth: 180)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? 260 : 180)
                             .background(
                                 session.id == activeId
                                     ? OS1VisualStyle.raised
@@ -505,15 +507,24 @@ private struct SessionTabBar: View {
                 proxy.scrollTo(activeId, anchor: .center)
             }
             .onChange(of: activeId) { _, id in
-                withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
+                if reduceMotion {
+                    proxy.scrollTo(id, anchor: .center)
+                } else {
+                    withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
+                }
             }
         }
     }
 
     private func tabAccessibilityValue(_ session: Session) -> String {
-        if session.waitingForInput == true { return "Needs input" }
-        if session.isRunning == true { return "Running" }
-        return session.id == activeId ? "Selected" : "Idle"
+        let state = if session.waitingForInput == true {
+            "Needs input"
+        } else if session.isRunning == true {
+            "Running"
+        } else {
+            "Idle"
+        }
+        return session.id == activeId ? "Selected, \(state)" : state
     }
 }
 #endif

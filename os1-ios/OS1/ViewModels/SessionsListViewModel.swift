@@ -43,6 +43,10 @@ final class SessionsListViewModel {
     nonisolated static func tabSessions(
         in sessions: [Session], containing current: Session
     ) -> [Session] {
+        // NavigationPath retains the row snapshot that was originally pushed.
+        // Prefer the latest polled copy so a newly filed optimistic session
+        // joins its workspace without requiring the conversation to reopen.
+        let current = sessions.first { $0.id == current.id } ?? current
         let belongs: (Session) -> Bool
         if let projectId = current.projectId, !projectId.isEmpty {
             belongs = { $0.projectId == projectId }

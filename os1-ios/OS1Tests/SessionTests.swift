@@ -111,4 +111,33 @@ final class SessionTests: XCTestCase {
             ["main", "automation", "shell"]
         )
     }
+
+    func testTabSessionsUseLatestPolledWorkspaceMembership() throws {
+        let stale = try JSONDecoder().decode(
+            Session.self,
+            from: Data(#"{"id":"current"}"#.utf8)
+        )
+        let sessions = try JSONDecoder().decode(
+            [Session].self,
+            from: Data(
+                #"[{"id":"current","projectId":"prj-1","createdAt":"2026-07-01T00:00:00Z"},{"id":"sibling","projectId":"prj-1","createdAt":"2026-07-02T00:00:00Z"}]"#.utf8
+            )
+        )
+
+        XCTAssertEqual(
+            SessionsListViewModel.tabSessions(in: sessions, containing: stale).map(\.id),
+            ["current", "sibling"]
+        )
+    }
+
+    func testEmptyEngineIdStillCountsAsNeverRun() throws {
+        let session = try JSONDecoder().decode(
+            Session.self,
+            from: Data(
+                #"{"id":"shell","claudeSessionId":"","createdAt":"2026-07-01T00:00:00Z","lastActivity":"2026-07-01T00:00:00Z"}"#.utf8
+            )
+        )
+
+        XCTAssertTrue(session.neverRan)
+    }
 }
