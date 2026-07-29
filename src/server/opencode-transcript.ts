@@ -35,6 +35,7 @@ import {
   extractAssistantVideos,
   extractBackstageImages,
   extractBackstageVideos,
+  extractImplicitMedia,
   parseJsonlLines,
 } from "./jsonl-parser";
 import { transcriptStore } from "./transcript-store";
@@ -1198,7 +1199,10 @@ export function readOpencodeTranscript(
             // the claude engine's tool results).
             const markerVideos = extractBackstageVideos(resultText);
             const markerImages = extractBackstageImages(resultText);
-            const allImages = [...images, ...markerImages];
+            const implicit = extractImplicitMedia(resultText);
+            const allImages = [
+              ...new Set([...images, ...markerImages, ...implicit.images]),
+            ];
             entries.push({
               id: `tr-${p.id}`,
               type: "tool_result",
@@ -1207,7 +1211,9 @@ export function readOpencodeTranscript(
               toolUseId: p.id,
               ...(state.status === "error" ? { isError: true } : {}),
               ...(allImages.length ? { images: allImages } : {}),
-              ...(markerVideos.length ? { videos: markerVideos } : {}),
+              ...(markerVideos.length || implicit.videos.length
+                ? { videos: [...new Set([...markerVideos, ...implicit.videos])] }
+                : {}),
             });
           }
         }

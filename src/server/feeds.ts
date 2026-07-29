@@ -338,7 +338,7 @@ export async function externalRefsOpeningContext(
   let out = `This chat belongs to a workspace linked to external object(s):\n${lines}`;
   if (opts.scratch)
     out +=
-      "\n\nYour working directory is a scratch space (not a git repo) — download media, run ffmpeg, write files there freely. Use the available MCP tools for the linked service when the task concerns the object itself. IMPORTANT — showing media: the user CANNOT see files you merely save or mention by path. Whenever your work produces a video (a clip you cut, a downloaded rendition), print `BACKSTAGE_VIDEO: /absolute/path/to/file.mp4` on its own line; for an image (thumbnail, extracted frame, screenshot), print `BACKSTAGE_IMAGE: /absolute/path/to/file.png`. Each marker renders inline in the chat as a playable video / visible image — without it, the media is invisible to the user.";
+      "\n\nYour working directory is a scratch space (not a git repo) — download media, run ffmpeg, write files there freely. Use the available MCP tools for the linked service when the task concerns the object itself. IMPORTANT — showing media: when your work produces a video or image, make sure its ABSOLUTE local path (or a direct media URL) appears in your output — recognized media paths/URLs render inline in the chat automatically (local files must exist on disk). To force it explicitly, print `BACKSTAGE_VIDEO: /abs/path.mp4` or `BACKSTAGE_IMAGE: /abs/path.png` on its own line. Media that never appears as a path/URL/marker in output is invisible to the user.";
   for (const r of refs.filter((x) => x.kind === "tella")) {
     try {
       const { getVideo, formatVideoContext } = await import(

@@ -162,6 +162,49 @@ export function extractBackstageImages(text: string): string[] {
   return extractMarker(text, IMAGE_MARKER);
 }
 
+// Implicit media (Michiel 2026-07-29): tool results and assistant text that
+// mention media by path/URL render it inline WITHOUT needing the explicit
+// markers. Guardrails against code-session noise: local candidates must be
+// absolute paths that actually exist on disk (a diff's `b/logo.png` or a
+// source file's "/assets/x.png" never render), remote candidates must be
+// clean URLs ending in a media extension, and both are capped per entry.
+const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp)$/i;
+const LOCAL_MEDIA_RE =
+  /(?:^|[\s"'`(=])(\/[^\s"'`)\]},;]+\.(?:png|jpe?g|gif|webp|mp4|webm|mov|m4v))(?=$|[\s"'`)\]},;:])/gim;
+const REMOTE_MEDIA_RE =
+  /(https?:\/\/[^\s"'`)\]}>,;]+\.(?:png|jpe?g|gif|webp|mp4|webm|mov|m4v)(?:\?[^\s"'`)\]}>,;]*)?)/gi;
+const IMPLICIT_MEDIA_CAP = 6;
+
+export function extractImplicitMedia(text: string): {
+  images: string[];
+  videos: string[];
+} {
+  const images: string[] = [];
+  const videos: string[] = [];
+  if (!text || text.length > 512_000) return { images, videos };
+  const seen = new Set<string>();
+  const add = (src: string, pathLike: string) => {
+    if (seen.has(src)) return;
+    const bucket = IMAGE_EXT.test(pathLike.replace(/\?.*$/, ""))
+      ? images
+      : videos;
+    if (bucket.length >= IMPLICIT_MEDIA_CAP) return;
+    seen.add(src);
+    bucket.push(src);
+  };
+  for (const m of text.matchAll(LOCAL_MEDIA_RE)) {
+    const p = m[1];
+    try {
+      if (!existsSync(p)) continue;
+    } catch {
+      continue;
+    }
+    add(`/backstage/media?path=${encodeURIComponent(p)}`, p);
+  }
+  for (const m of text.matchAll(REMOTE_MEDIA_RE)) add(m[1], m[1]);
+  return { images, videos };
+}
+
 export function extractAssistantVideos(text: string): {
   content: string;
   videos: string[];
@@ -172,10 +215,17 @@ export function extractAssistantVideos(text: string): {
   let content = text;
   if (videos.length > 0) content = content.replace(VIDEO_MARKER, "");
   if (images.length > 0) content = content.replace(IMAGE_MARKER, "");
+  // Implicit mentions render too (markers stay the explicit override; the
+  // Set-union keeps a marker + bare mention of the same file to one embed).
+  const implicit = extractImplicitMedia(content);
+  const vset = new Set(videos);
+  const iset = new Set(images);
+  for (const v of implicit.videos) vset.add(v);
+  for (const i of implicit.images) iset.add(i);
   return {
     content: videos.length || images.length ? content.trimEnd() : text,
-    videos,
-    images,
+    videos: [...vset],
+    images: [...iset],
   };
 }
 
@@ -311,11 +361,20 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
                     .map((c: any) => c.text)
                     .join("\n")
                 : "";
+          const implicitTool = extractImplicitMedia(resultText);
           const images = [
-            ...extractImages(block.content),
-            ...extractBackstageImages(resultText),
+            ...new Set([
+              ...extractImages(block.content),
+              ...extractBackstageImages(resultText),
+              ...implicitTool.images,
+            ]),
           ];
-          const videos = extractBackstageVideos(resultText);
+          const videos = [
+            ...new Set([
+              ...extractBackstageVideos(resultText),
+              ...implicitTool.videos,
+            ]),
+          ];
           // A Task/Agent result carries the spawned sub-agent's id on the line's
           // toolUseResult; attach it so the UI can open the sub-agent transcript.
           const agentId = raw.toolUseResult?.agentId;
