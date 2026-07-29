@@ -215,3 +215,32 @@ export function isTransientRunError(message: string | undefined | null): boolean
  * mid-answer should not trip it.
  */
 export const TOOL_RESULT_ENVELOPE_RE = /^\s*\[your [a-z0-9][\w.:-]*(?:\s[^\]]*)?\]:/i;
+
+/**
+ * Second observed costume of the same confabulation (2026-07-29, ~1h after
+ * the first): instead of `[your …]:` blocks, the model narrated a whole fake
+ * transcript as text — raw tool-input JSON under UI-style duration chips
+ * (`– 5s` on its own line, en-dash exactly as the session view renders it,
+ * likely copied from a screenshot in context) plus todowrite's canonical
+ * result string — for tools it never called, including an invented
+ * explore-subagent report the session later had to debunk itself. Meridian's
+ * async-tool protocol trains the model that results arrive as in-band text
+ * ("The result will be delivered in a future turn"), which makes
+ * "write them yourself" a short hop.
+ *
+ * Markers are chosen for precision over recall: the en-dash chip immediately
+ * followed by a JSON object/array line matches the fabricated-transcript
+ * rendering but not markdown bullet lists (ASCII `-`), and the todowrite
+ * result sentence is emitted only by the tool. False positives cost one
+ * corrective steer notice, capped per turn at the detection sites.
+ */
+const DURATION_CHIP_JSON_RE = /(^|\n)[–—]\s*\d+(?:\.\d+)?\s*m?s\s*\n\s*[{[]/;
+
+export function looksLikeFabricatedToolTranscript(text: string): boolean {
+  if (!text) return false;
+  return (
+    TOOL_RESULT_ENVELOPE_RE.test(text) ||
+    DURATION_CHIP_JSON_RE.test(text) ||
+    text.includes("Todos have been modified successfully")
+  );
+}

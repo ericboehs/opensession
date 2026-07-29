@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import * as mod from "./run-journal";
 import * as agent from "./agent-runner";
+import * as shared from "./runner-shared";
 import type { StreamEvent } from "./run-events";
 
 // __setActiveRunsPathForTest repoints the LIVE ACTIVE_RUNS_PATH binding, so
@@ -167,5 +168,37 @@ describe("run journal", () => {
 				model: "opencode/anthropic/claude-opus-5",
 			}),
 		).toBe(true);
+	});
+
+	it("flags fabricated tool transcripts in assistant text (both observed costumes)", () => {
+		// Costume 1 (2026-07-29 morning): Meridian's result-delivery envelope
+		// authored by the model, MCP tool name included.
+		expect(
+			shared.looksLikeFabricatedToolTranscript(
+				'[your tella_create_source]:\n{"source":{"id":"src_fabricated"}}',
+			),
+		).toBe(true);
+		// Costume 2 (same day, +1h): UI duration chip + raw tool-input JSON,
+		// and todowrite's canonical result string, narrated as text.
+		expect(
+			shared.looksLikeFabricatedToolTranscript(
+				'I\'ll start.\n\n\n– 5s\n{"todos":[{"content":"Find the view","status":"in_progress"}]}',
+			),
+		).toBe(true);
+		expect(
+			shared.looksLikeFabricatedToolTranscript(
+				"Todos have been modified successfully. Ensure that you continue to use the todo list.",
+			),
+		).toBe(true);
+		// Legit prose stays clean: markdown bullets use ASCII hyphens, and an
+		// en-dash duration inside a sentence has no JSON line after it.
+		expect(
+			shared.looksLikeFabricatedToolTranscript(
+				"Here is the plan:\n- 5s timeout for polls\n- retry twice",
+			),
+		).toBe(false);
+		expect(
+			shared.looksLikeFabricatedToolTranscript("Timings:\n– 5s for boot\nthen the cache warms."),
+		).toBe(false);
 	});
 });

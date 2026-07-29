@@ -165,7 +165,7 @@ import {
   isCodexUsageLimitError,
   isTransientRunError,
   CLAUDE_CODE_BIN,
-  TOOL_RESULT_ENVELOPE_RE,
+  looksLikeFabricatedToolTranscript,
 } from "./runner-shared";
 import {
   isLikelyPromptCacheMiss,
@@ -1687,12 +1687,14 @@ const activeOpencodeSteers: Map<string, OpencodeSteerFn> = (g.__activeOpencodeSt
  * at the detection sites — a model that keeps re-emitting envelopes after two
  * corrections won't be argued out of it by a third. */
 const ENVELOPE_LEAK_STEER_PROMPT =
-  "Runner notice: the `[your <tool> …]:` block in your last message was written " +
-  "by YOU, not returned by any tool — every value in it (ids, URLs, signatures, " +
-  "file contents) is fabricated. Real tool results only ever arrive as " +
-  "tool-result messages, never as text you author. Discard the values you just " +
-  "wrote, re-read the genuine tool outputs earlier in this conversation (or " +
-  "re-run the tools), and continue from those real values.";
+  "Runner notice: your last message contains what looks like a tool-call " +
+  "transcript — tool inputs, results, `[your <tool> …]:` blocks, or duration " +
+  "chips written out as text. None of that was executed: you authored it, and " +
+  "every value in it (ids, URLs, signatures, file contents, reports) is " +
+  "fabricated. Real tool results only ever arrive as tool-result messages, " +
+  "never as text you write. Discard the values you just wrote, re-read the " +
+  "genuine tool outputs earlier in this conversation, actually invoke any tool " +
+  "you only narrated, and continue from real outputs only.";
 
 /** Fold a message into a live opencode run at its next step boundary.
  *  True = accepted for delivery (fire-and-forget POST; the caller keeps a
@@ -4036,10 +4038,11 @@ async function* runOpencodeAttempt(
                 transcriptLineAssistantText(part.text, part.id, undefined, model),
               ]);
               push({ type: "text_chunk", text: part.text });
-              // Envelope-shaped assistant text = the model reciting tool
-              // results it invented (see TOOL_RESULT_ENVELOPE_RE). Correct it
-              // in-band before the fabricated values reach a command.
-              if (TOOL_RESULT_ENVELOPE_RE.test(part.text) && envelopeLeakSteers < 2) {
+              // Assistant text shaped like a tool transcript = the model
+              // narrating tool calls/results it invented (see
+              // looksLikeFabricatedToolTranscript). Correct it in-band before
+              // the fabricated values reach a command.
+              if (looksLikeFabricatedToolTranscript(part.text) && envelopeLeakSteers < 2) {
                 envelopeLeakSteers++;
                 turnEvent({
                   direction: "out",
@@ -5165,9 +5168,9 @@ export async function tryReattachOpencodeRun(
                   transcriptLineAssistantText(part.text, part.id, undefined, model),
                 ]);
                 push({ type: "text_chunk", text: part.text });
-                // Same envelope-leak correction as the primary pump — a
-                // reattached turn can derail the same way.
-                if (TOOL_RESULT_ENVELOPE_RE.test(part.text) && envelopeLeakSteers < 2) {
+                // Same fabricated-transcript correction as the primary pump —
+                // a reattached turn can derail the same way.
+                if (looksLikeFabricatedToolTranscript(part.text) && envelopeLeakSteers < 2) {
                   envelopeLeakSteers++;
                   turnEvent({
                     direction: "out",
