@@ -363,8 +363,8 @@ export function IconMap(p: IconProps) {
 export function IconTerminal(p: IconProps) {
   return (
     <Svg {...p}>
-      <path {...stroke} d="M6.75 8.75L10.25 12L6.75 15.25" />
-      <path {...stroke} d="M12.75 15.25H17.25" />
+      <path {...stroke} d="M5.25 7.25L10.25 12L5.25 16.75" />
+      <path {...stroke} d="M12.25 16.75H18.75" />
     </Svg>
   );
 }
