@@ -772,7 +772,7 @@ function MichaelReviewCard({
 	if (pr.state === "MERGED") verdict = "Merged with this score";
 	else if (pr.state === "CLOSED") verdict = "Pull request closed";
 	else if (active) verdict = "Review in progress";
-	else if (stale) verdict = "Score needs a refresh";
+	else if (stale) verdict = "New commits since review";
 	else if (score === 5) verdict = "Safe to merge";
 	else if (score === 4) verdict = "Looks mergeable";
 	else if (score === 3) verdict = "Worth another pass";
