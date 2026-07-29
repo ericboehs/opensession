@@ -64,6 +64,8 @@
 	/* Chat column width — messages, work blocks, composer, ask cards all share
 	   it so the conversation reads as one column. */
 	--chat-col: 780px;
+	/* Shared height for the desktop sidebar, session header and PR strip. */
+	--desktop-header-h: 48px;
 	/* Header height grows by the iOS status-bar inset when installed as a PWA
      (black-translucent draws the webview under the clock/notch) */
 	--header-h: calc(52px + env(safe-area-inset-top, 0px));
@@ -448,7 +450,7 @@ a {
    it's a pure chrome row — traffic lights (centered on the row by the shell's
    trafficLightPosition), then collapse + the avatar account trigger, with
    back/forward/search at the right edge — and it continues through the detail pane's
-   54px header and the right panel's PR strip. Every segment is a drag region
+   header and the right panel's PR strip. Every segment is a drag region
    so grabbing anywhere along the top moves the window.
 
    Keyed off `html.wco` (set by the detection script in index.html), NOT the
@@ -507,7 +509,7 @@ html.wco:has(.app-menu-popup)
    fullscreen, where the lights hide and the row packs left again). */
 .wco-nav-pane {
 	position: absolute;
-	top: 13px;
+	top: calc((var(--desktop-header-h) - 30px) / 2);
 	left: 50px;
 	z-index: 20;
 }
@@ -927,7 +929,7 @@ html[data-platform="windows"] .workspace-shell {
 	align-items: center;
 	justify-content: flex-start;
 	gap: 8px;
-	height: 54px;
+	height: var(--desktop-header-h);
 	/* The brand trigger carries its own 8px left padding, so pull the row's in
 	   to keep the logo aligned with the list icons at --sidebar-icon-left. */
 	padding: 0 12px 0 calc(var(--sidebar-icon-left) - 8px);
@@ -1006,7 +1008,7 @@ html[data-platform="windows"] .workspace-shell {
 .sidebar-reopen {
 	position: absolute;
 	/* Match the open row's center, accounting for its 1px bottom divider. */
-	top: 9.5px;
+	top: calc((var(--desktop-header-h) - 35px) / 2);
 	/* Same 8px anchor as the open sidebar's .sidebar-brand row. */
 	left: 8px;
 	z-index: 20;
@@ -2589,8 +2591,8 @@ body:is(.resizing-sidebar, .resizing-panel) {
 .detail-topbar-title {
 	display: flex;
 	align-items: center;
-	/* Same 54px as .viewer-header / the sidebar brand row. */
-	height: 54px;
+	/* Match .viewer-header and the sidebar brand row. */
+	height: var(--desktop-header-h);
 	padding: 0 16px;
 	font-size: 14px;
 	font-weight: 600;
@@ -3270,7 +3272,7 @@ body.resizing-tab-split {
 
 .tab-split-drop-preview {
 	position: absolute;
-	top: 98px;
+	top: calc(var(--desktop-header-h) + 44px);
 	bottom: 8px;
 	z-index: 25;
 	width: calc(50% - 12px);
@@ -3292,10 +3294,9 @@ body.resizing-tab-split {
 	align-items: center;
 	justify-content: space-between;
 	gap: 12px;
-	/* Fixed height so the bar lines up with the sidebar's 54px brand row
-	   (28px controls + 10px padding) instead of growing with its tallest
-	   button. */
-	height: 54px;
+	/* Fixed height so the bar lines up with the sidebar brand row instead of
+	   growing with its tallest button. */
+	height: var(--desktop-header-h);
 	padding: 0 16px;
 	border-bottom: 1px solid var(--top-divider);
 	/* Match the chat body (white in light) rather than the lifted topbar tint, so
@@ -5699,9 +5700,8 @@ a.workspace-info-check-row {
 	gap: 10px;
 	padding: 8px 12px;
 	border-bottom: 1px solid var(--top-divider);
-	/* 54px to match the chat header row (.detail-topbar / .viewer-header) so the
-	   panel's first divider lines up with it. */
-	min-height: 54px;
+	/* Match the chat header row so the panel's first divider lines up with it. */
+	min-height: var(--desktop-header-h);
 }
 /* Globe (staging) icon riding inside the PR strip, left of the PR chip, so it
    shares the strip's tone background. Nudge it flush-left to the strip padding. */
@@ -15063,10 +15063,10 @@ html[data-theme="light"] .palette-card .palette-create {
 /* In the desktop shell (os1-mac) the settings page fills the whole window,
    including the titlebar band — but it has no .sidebar-brand to reserve it, so
    the traffic lights overlay the first row and land on "Back to app". Reserve
-   the app's 54px titlebar band at the top so the button clears the lights.
+   the app's titlebar band at the top so the button clears the lights.
    Keyed off html.wco (the WCO/desktop-shell flag); web keeps the base 16px. */
 html.wco .settings-sidenav {
-	padding-top: 54px;
+	padding-top: var(--desktop-header-h);
 }
 .settings-back {
 	display: flex;
