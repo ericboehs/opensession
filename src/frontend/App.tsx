@@ -1996,6 +1996,11 @@ function App() {
 					projectId: route.id,
 					repo: p?.repo,
 					branch: p?.branch,
+					// Feed workspaces (externalRefs, no repo) default new chats
+					// to Scratch — repo-less, like their existing chats.
+					...(p?.externalRefs?.length && !p?.repo
+						? { mode: "scratch" as const }
+						: {}),
 				});
 			}
 			return;
@@ -2661,6 +2666,9 @@ function App() {
 										projectId: id,
 										repo: p?.repo,
 										branch: p?.branch,
+									...(p?.externalRefs?.length && !p?.repo
+										? { mode: "scratch" as const }
+										: {}),
 									});
 								}
 							}}
