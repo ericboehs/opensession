@@ -104,6 +104,7 @@ import type {
 	FeedItem,
 } from "./lib/types";
 import { refWebPanel } from "./components/FeedWebPane";
+import { ensureFeedMeta } from "./lib/feeds-meta";
 import { NotificationsBell } from "./components/NotificationsBell";
 import type { ReviewQueueItem } from "./lib/review-queue";
 import { pushRecent } from "./lib/recents";
@@ -1496,6 +1497,12 @@ function App() {
 					},
 				]
 			: [];
+	// Feed descriptors (panel templates, labels) into the module cache that
+	// refWebPanel reads — without this only hardcoded fallbacks resolve.
+	const [, setFeedMetaTick] = useState(0);
+	useEffect(() => {
+		void ensureFeedMeta().then(() => setFeedMetaTick((t) => t + 1));
+	}, []);
 	// The Video view-tab: the web panel of the workspace's (or open chat's)
 	// feed-item ExternalRef — e.g. the Tella video embed (docs/feeds-design.md).
 	// On a chat route routeWorkspace is null, so fall back to the open chat's
