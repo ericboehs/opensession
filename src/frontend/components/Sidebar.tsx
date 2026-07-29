@@ -4226,7 +4226,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							"sidebar-repo-group",
 							canReorder && "cursor-grab active:cursor-grabbing",
 							repoDragKey === repo &&
-								"[&>.sidebar-repo-head]:rounded-md [&>.sidebar-repo-head]:bg-accent-soft [&>.sidebar-repo-head]:opacity-50 [&>.sidebar-repo-head]:ring-1 [&>.sidebar-repo-head]:ring-inset [&>.sidebar-repo-head]:ring-accent",
+								"[&>.sidebar-repo-head]:rounded-md [&>.sidebar-repo-head]:bg-hover [&>.sidebar-repo-head]:opacity-50 [&>.sidebar-repo-head]:ring-1 [&>.sidebar-repo-head]:ring-inset [&>.sidebar-repo-head]:ring-line-strong",
 						)}
 						key={gkey}
 						data-repo-id={repo}
