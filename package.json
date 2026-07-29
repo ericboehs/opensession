@@ -2,6 +2,9 @@
   "name": "opensession",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "opensession": "scripts/cli.ts"
+  },
   "scripts": {
     "app:dev": "bun scripts/app-dev.ts",
     "dev": "bun --hot opensession.ts",

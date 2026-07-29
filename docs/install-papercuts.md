@@ -323,6 +323,26 @@ rituals — no, that is instance config.
 
 ## Open
 
+### 23. The advertised install URL did not exist
+
+README and the docs led with `curl -fsSL https://opensession.com/install.sh`,
+which 404s — the domain is owned but nothing is served from it. A quickstart
+whose first line fails is worse than no quickstart.
+
+**Fix:** every documented command now uses the raw GitHub URL, which works the
+moment the repository is public and needs no hosting set up at all. Serving a
+vanity alias at opensession.com is then a nice-to-have rather than a
+prerequisite.
+
+### 24. No package-manager install path
+
+opencode offers npm/brew/paru, openclaw offers npm. OpenSession offered only
+curl-or-clone.
+
+**Fix:** a `bin` entry, so `bun add -g github:tellahq/opensession` (and
+`npm i -g` once published) puts `opensession` on PATH. Verified by installing
+the package from a local path and running the linked binary.
+
 ### 17. Prompts run together when answers arrive faster than a human types
 
 Cosmetic, and an artifact of the test harness rather than a real bug: feeding

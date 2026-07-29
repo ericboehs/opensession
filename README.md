@@ -13,7 +13,7 @@ and GitHub agents, driving coding sessions through the OpenCode engine
 ## Quickstart
 
 ```sh
-curl -fsSL https://opensession.com/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
 ```
 
 Installs Bun and the OpenCode engine if you do not have them, clones the
@@ -27,13 +27,20 @@ opensession update     # pull, reinstall, restart
 opensession --help     # everything else
 ```
 
-Prefer to do it yourself:
+Other ways in:
+
+```sh
+bun add -g github:tellahq/opensession     # or npm i -g, once published
+```
 
 ```sh
 git clone https://github.com/tellahq/opensession.git
 cd opensession && bun install
-bun run setup          # same wizard, without the installer
+bun run setup                             # same wizard, without the installer
 ```
+
+The installer accepts `--dir`, `--channel <ref>`, `--no-engine`,
+`--no-modify-path`, `--yes` and `--uninstall`; `--help` lists them.
 
 Then read the real setup guide — secrets, accounts, integrations, systemd:
 

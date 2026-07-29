@@ -2,7 +2,7 @@
 #
 # OpenSession installer.
 #
-#   curl -fsSL https://opensession.com/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
 #
 # Gets a bare box to a working `opensession` command: installs Bun if needed,
 # clones the source, installs dependencies, puts a shim on PATH, and hands off

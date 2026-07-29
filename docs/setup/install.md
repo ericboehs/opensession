@@ -11,7 +11,7 @@ cloud-init trap worth knowing about.
 ## 1. Install
 
 ```sh
-curl -fsSL https://opensession.com/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
 ```
 
 This installs missing prerequisites, clones the source to

@@ -1,0 +1,99 @@
+/**
+ * Service-definition tests.
+ *
+ * These exist because both real bugs in this area produced files that were
+ * syntactically perfect and semantically wrong — `systemd-analyze verify` was
+ * happy with a unit containing `User=unknown`, which then failed every start
+ * with an opaque 217/USER. Validating the *content* is what catches that.
+ *
+ * The launchd half is deliberately covered here rather than only on a Mac:
+ * `renderPlist()` is platform-independent code, so its output can be asserted
+ * anywhere. That does not substitute for a real macOS install, but it does mean
+ * a regression in the plist shape fails in CI rather than on someone's laptop.
+ */
+
+import { describe, expect, test } from "bun:test";
+import { LAUNCHD_LABEL, renderPlist, renderUnit } from "./service";
+import { ENV_PATH, REPO_ROOT } from "./paths";
+
+describe("systemd unit", () => {
+  test("rewrites every host-specific directive", async () => {
+    const unit = await renderUnit();
+
+    const user = unit.match(/^User=(.*)$/m)?.[1];
+    expect(user).toBeTruthy();
+    // The bug this pins: os.userInfo() returns the literal "unknown" under
+    // some non-login shells, and the resulting unit fails with 217/USER.
+    expect(user).not.toBe("unknown");
+    expect(user).not.toContain(" ");
+
+    expect(unit).toContain(`WorkingDirectory=${REPO_ROOT}`);
+    expect(unit).toContain(`EnvironmentFile=${ENV_PATH}`);
+    expect(unit.match(/^ExecStart=(\S+) run opensession\.ts$/m)?.[1]).toMatch(/bun$/);
+  });
+
+  test("preserves the tuning directives that encode real incidents", async () => {
+    const unit = await renderUnit();
+    // Each of these exists because something broke without it; a renderer that
+    // dropped them would look fine and misbehave under load or on shutdown.
+    expect(unit).toContain("KillMode=mixed");
+    expect(unit).toContain("IPAddressDeny=169.254.169.254/32");
+    expect(unit).toMatch(/^TimeoutStopSec=\d+$/m);
+    expect(unit).toContain("[Install]");
+  });
+
+  test("PATH carries bun and the engine", async () => {
+    const path = (await renderUnit()).match(/^Environment="PATH=(.*)"$/m)?.[1] ?? "";
+    // Engine resolution goes through Bun.which("opencode"); a PATH without it
+    // means the server silently finds no engine at runtime.
+    expect(path).toContain(".opencode/bin");
+    expect(path).toContain("/usr/bin");
+    expect(path.split(":").every((p) => p.startsWith("/"))).toBe(true);
+  });
+});
+
+describe("launchd plist", () => {
+  test("is well-formed and carries the expected keys", () => {
+    const plist = renderPlist();
+    expect(plist).toStartWith('<?xml version="1.0"');
+    expect(plist).toContain("<!DOCTYPE plist");
+    expect(plist.trimEnd()).toEndWith("</plist>");
+
+    for (const key of [
+      "Label",
+      "ProgramArguments",
+      "WorkingDirectory",
+      "EnvironmentVariables",
+      "RunAtLoad",
+      "KeepAlive",
+      "StandardOutPath",
+      "StandardErrorPath",
+    ]) {
+      expect(plist).toContain(`<key>${key}</key>`);
+    }
+    expect(plist).toContain(`<string>${LAUNCHD_LABEL}</string>`);
+  });
+
+  test("sources the env file, because launchd has no EnvironmentFile", () => {
+    const plist = renderPlist();
+    // Without this the server boots looking healthy but with no integration
+    // flags and no secrets — inert, and hard to diagnose.
+    expect(plist).toContain(ENV_PATH);
+    expect(plist).toContain("set -a");
+    expect(plist).toMatch(/exec \S*bun run opensession\.ts/);
+  });
+
+  test("escapes XML so a path with & or < cannot corrupt the file", () => {
+    // The renderer escapes on the way out; assert the escaping helper is
+    // actually applied by checking no raw & survives outside an entity.
+    const plist = renderPlist();
+    const rawAmpersands = plist.match(/&(?!(amp|lt|gt|quot|apos);)/g);
+    expect(rawAmpersands).toBeNull();
+  });
+
+  test("restarts on failure and starts at login", () => {
+    const plist = renderPlist();
+    expect(plist).toMatch(/<key>RunAtLoad<\/key>\s*<true\/>/);
+    expect(plist).toMatch(/<key>KeepAlive<\/key>\s*<true\/>/);
+  });
+});

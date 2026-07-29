@@ -102,7 +102,7 @@ users:
 
 ```bash
 ssh ubuntu@<address>
-curl -fsSL https://opensession.com/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
 ```
 
 Then follow [install.md](install.md) for accounts and integrations.
@@ -180,7 +180,7 @@ The root volume is `DeleteOnTermination`, so nothing is left behind. To remove
 an install without destroying the box:
 
 ```bash
-curl -fsSL https://opensession.com/install.sh | bash -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash -s -- --uninstall
 ```
 
 That stops and removes the service and the `opensession` command, and leaves
