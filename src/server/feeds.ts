@@ -107,6 +107,10 @@ export interface FeedDescriptor {
   attentionLane?: string;
   /** Filter controls the band header offers; values feed the list tool. */
   filters?: FeedFilterSpec[];
+  /** Sort options for the band (first = default). Values: "recent" |
+   *  "oldest" | "title" | "meta:<dot-path>" (numeric desc). Absent = the
+   *  built-in recent/oldest/title trio. */
+  sortOptions?: { value: string; label: string }[];
   /** Extra meta dot-paths the sidebar's text search matches besides
    *  title/preview (e.g. plain's customer name/email). */
   searchMeta?: string[];

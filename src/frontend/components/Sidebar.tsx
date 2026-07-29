@@ -639,9 +639,22 @@ function FeedFilterMenu({
 				{!feed.lanes?.length && (
 					<Menu.Group>
 						<Menu.GroupLabel>Sort</Menu.GroupLabel>
-						{item("__sort", "Most recent", "recent", (values.__sort || "recent") === "recent")}
-						{item("__sort", "Oldest first", "oldest", values.__sort === "oldest")}
-						{item("__sort", "Title", "title", values.__sort === "title")}
+						{(
+							feed.sortOptions || [
+								{ value: "recent", label: "Most recent" },
+								{ value: "oldest", label: "Oldest first" },
+								{ value: "title", label: "Title" },
+							]
+						).map((o, i) =>
+							item(
+								"__sort",
+								o.label,
+								o.value,
+								(values.__sort ||
+									feed.sortOptions?.[0]?.value ||
+									"recent") === o.value,
+							),
+						)}
 					</Menu.Group>
 				)}
 			</Menu.Popup>
@@ -3291,7 +3304,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			title: `Shared notes and documentation (${NOTES_SHORTCUT_HINT})`,
 		},
 	];
-	const visibleTools = tools.filter((tool) => !hiddenTools.has(tool.id));
+	const visibleTools = tools.filter(
+		(tool) => !hiddenTools.has(tool.id) && (!isPhone || tool.id !== "home"),
+	);
 
 	const setToolVisible = setSidebarToolVisible;
 
@@ -4267,14 +4282,23 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// (docs/feeds-design.md). Hidden while a repo filter is active, like Plain.
 	function renderFeedBand(feed: FeedDescriptor, withLanes = false) {
 		const isPlain = feed.id === "plain";
-		const sortSel = (feedFilters[feed.id] || {}).__sort || "recent";
+		const sortSel =
+			(feedFilters[feed.id] || {}).__sort ||
+			feed.sortOptions?.[0]?.value ||
+			"recent";
+		const metaSortPath = sortSel.startsWith("meta:")
+			? sortSel.slice(5)
+			: null;
 		const items = applyFeedFilters(feed, feedItems[feed.id] || []).sort(
 			(a, b) =>
-				sortSel === "title"
-					? a.title.localeCompare(b.title)
-					: sortSel === "oldest"
-						? (a.ts || 0) - (b.ts || 0)
-						: (b.ts || 0) - (a.ts || 0),
+				metaSortPath
+					? (Number(dget(b.meta, metaSortPath)) || 0) -
+						(Number(dget(a.meta, metaSortPath)) || 0)
+					: sortSel === "title"
+						? a.title.localeCompare(b.title)
+						: sortSel === "oldest"
+							? (a.ts || 0) - (b.ts || 0)
+							: (b.ts || 0) - (a.ts || 0),
 		);
 		// Plain rows render through the bespoke SupportRow pipeline (hover
 		// card, mark-done, filters) inside this generic band container; the

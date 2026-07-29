@@ -147,6 +147,24 @@ export class SlackAgent implements AgentModule {
         tileBg: "#4a154b",
         mcpServers: ["slack"],
         searchMeta: ["topic", "purpose"],
+        filters: [
+          {
+            key: "visibility",
+            label: "Type",
+            mode: "meta",
+            field: "isPrivate",
+            options: [
+              { value: "false", label: "Public" },
+              { value: "true", label: "Private" },
+            ],
+          },
+        ],
+        // Slack-style list sorting: busiest first (default), A–Z, newest.
+        sortOptions: [
+          { value: "meta:members", label: "Most members" },
+          { value: "title", label: "A–Z" },
+          { value: "recent", label: "Newest first" },
+        ],
       },
       async listItems(ctx?: { user?: string }) {
         const { slackApiCall } = await import("./slack-api");
