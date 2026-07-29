@@ -99,12 +99,16 @@ enum GitHubAuth {
                 }
                 ServerConfig.shared.token = token
                 ServerConfig.shared.githubLogin = poll.login ?? ""
-                if let name = poll.name, !name.isEmpty {
+                if let name = poll.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !name.isEmpty {
                     // First name only, like the web picker — sessions store
                     // first names in startedBy, so this keeps "mine" filters
                     // and prompt attribution consistent across clients.
-                    ServerConfig.shared.userName =
-                        String(name.split(separator: " ").first ?? Substring(name))
+                    ServerConfig.shared.userName = String(name.split(separator: " ").first!)
+                } else if let login = poll.login, !login.isEmpty {
+                    // Never retain the previous account's display identity if
+                    // GitHub omits a profile name for this account.
+                    ServerConfig.shared.userName = login
                 }
                 return poll.login ?? "github"
             case "slow_down":

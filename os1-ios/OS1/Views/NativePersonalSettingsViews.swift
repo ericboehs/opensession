@@ -47,12 +47,13 @@ struct NotificationsSettingsView: View {
 }
 
 struct ComposerSettingsView: View {
-    @AppStorage("os1.composer.defaultModel") private var defaultModel = ""
+    @AppStorage("os1.composer.defaultModel") private var nativeDefaultModel = ""
     @AppStorage("os1.composer.sendKey") private var nativeSendKey = "enter"
     @AppStorage("os1.composer.busySend") private var nativeBusySend = "queue"
     @AppStorage("os1.composer.busySendMod") private var nativeBusySendMod = "steer"
 
     @State private var models: [SettingsModelOption] = []
+    @State private var defaultModel = ""
     @State private var sendKey = "enter"
     @State private var busySend = "queue"
     @State private var busySendMod = "steer"
@@ -62,8 +63,6 @@ struct ComposerSettingsView: View {
     @State private var savedMessage: String?
     @State private var savedPrefs: [String: String] = [:]
     @State private var prefsLoaded = false
-
-    private let user = ServerConfig.shared.userName
 
     var body: some View {
         Form {
@@ -136,8 +135,10 @@ struct ComposerSettingsView: View {
         error = nil
         prefsLoaded = false
         do {
-            let prefs = try await SettingsAPI.uiPrefs(user: user)
-            defaultModel = prefs["default-model"] ?? defaultModel
+            let requestContext = NativePreferences.context()
+            let prefs = try await SettingsAPI.uiPrefs(user: requestContext.user)
+            guard NativePreferences.context() == requestContext else { loading = false; return }
+            defaultModel = prefs["default-model"] ?? nativeDefaultModel
             sendKey = prefs["send-key"] == "mod-enter" ? "mod-enter" : "enter"
             busySend = prefs["busy-send"] == "steer" ? "steer" : "queue"
             busySendMod = prefs["busy-send-mod"] == "queue" ? "queue" : "steer"
@@ -170,18 +171,27 @@ struct ComposerSettingsView: View {
                 patch[key] = value
             }
             guard !patch.isEmpty else { saving = false; return }
-            let prefs = try await SettingsAPI.updateUiPrefs(user: user, prefs: patch)
-            NativePreferences.apply(prefs)
-            defaultModel = prefs["default-model"] ?? defaultModel
-            sendKey = prefs["send-key"] == "mod-enter" ? "mod-enter" : "enter"
-            busySend = prefs["busy-send"] == "steer" ? "steer" : "queue"
-            busySendMod = prefs["busy-send-mod"] == "queue" ? "queue" : "steer"
+            let requestContext = NativePreferences.context()
+            let response = try await SettingsAPI.updateUiPrefs(user: requestContext.user, prefs: patch)
+            var confirmed = savedPrefs
+            for (key, value) in current where patch.keys.contains(key) { confirmed[key] = value }
+            confirmed.merge(response) { _, server in server }
+            guard NativePreferences.apply(confirmed, for: requestContext) else {
+                self.error = "Connection changed before preferences finished saving."
+                saving = false
+                return
+            }
+            defaultModel = confirmed["default-model"] ?? defaultModel
+            sendKey = confirmed["send-key"] == "mod-enter" ? "mod-enter" : "enter"
+            busySend = confirmed["busy-send"] == "steer" ? "steer" : "queue"
+            busySendMod = confirmed["busy-send-mod"] == "queue" ? "queue" : "steer"
+            nativeDefaultModel = defaultModel
             #if os(macOS)
             nativeSendKey = sendKey
             #endif
             nativeBusySend = busySend
             nativeBusySendMod = busySendMod
-            savedPrefs = currentPrefs
+            savedPrefs = confirmed
             savedMessage = "Composer preferences saved."
         } catch {
             self.error = error.localizedDescription
@@ -208,8 +218,8 @@ struct AppearanceSettingsView: View {
     @State private var saving = false
     @State private var error: String?
     @State private var savedMessage: String?
-
-    private let user = ServerConfig.shared.userName
+    @State private var savedTurnActivity = "auto"
+    @State private var prefsLoaded = false
 
     var body: some View {
         Form {
@@ -237,7 +247,7 @@ struct AppearanceSettingsView: View {
                     Button(saving ? "Saving…" : "Save chat preference") {
                         Task { await saveTurnActivity() }
                     }
-                    .disabled(saving)
+                    .disabled(!prefsLoaded || saving || turnActivity == savedTurnActivity)
                 }
             } header: {
                 Text("Chat")
@@ -257,17 +267,25 @@ struct AppearanceSettingsView: View {
         }
         .navigationTitle("Appearance")
         .task { await load() }
+        .disabled(saving)
     }
 
     private func load() async {
         loading = true
         error = nil
+        prefsLoaded = false
         do {
-            let prefs = try await SettingsAPI.uiPrefs(user: user)
+            let requestContext = NativePreferences.context()
+            let prefs = try await SettingsAPI.uiPrefs(user: requestContext.user)
+            guard NativePreferences.context() == requestContext else { loading = false; return }
             if ["auto", "expanded", "collapsed"].contains(prefs["turn-activity"]) {
                 turnActivity = prefs["turn-activity"] ?? "auto"
                 nativeTurnActivity = turnActivity
+            } else {
+                turnActivity = nativeTurnActivity
             }
+            savedTurnActivity = turnActivity
+            prefsLoaded = true
         } catch {
             self.error = error.localizedDescription
         }
@@ -279,9 +297,22 @@ struct AppearanceSettingsView: View {
         error = nil
         savedMessage = nil
         do {
-            let prefs = try await SettingsAPI.updateUiPrefs(user: user, prefs: ["turn-activity": turnActivity])
-            NativePreferences.apply(prefs)
+            let requestContext = NativePreferences.context()
+            let selected = turnActivity
+            let response = try await SettingsAPI.updateUiPrefs(
+                user: requestContext.user,
+                prefs: ["turn-activity": selected]
+            )
+            var confirmed = response
+            confirmed["turn-activity"] = response["turn-activity"] ?? selected
+            guard NativePreferences.apply(confirmed, for: requestContext) else {
+                self.error = "Connection changed before preferences finished saving."
+                saving = false
+                return
+            }
+            turnActivity = confirmed["turn-activity"] ?? selected
             nativeTurnActivity = turnActivity
+            savedTurnActivity = turnActivity
             savedMessage = "Chat preference saved."
         } catch {
             self.error = error.localizedDescription

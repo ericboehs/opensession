@@ -4,35 +4,52 @@ import Foundation
 /// to use AppStorage so a refresh updates existing screens immediately.
 @MainActor
 enum NativePreferences {
+    struct Context: Equatable {
+        let server: String
+        let user: String
+        let login: String
+        fileprivate let token: String
+    }
+
     private static var generation = 0
     private static let identityKey = "os1.preferences.identity"
+
+    static func context() -> Context {
+        let config = ServerConfig.shared
+        return Context(
+            server: config.baseURLString,
+            user: config.userName,
+            login: config.githubLogin,
+            token: config.token
+        )
+    }
 
     static func hydrate() async {
         let config = ServerConfig.shared
         guard config.isConfigured else { return }
-        let server = config.baseURLString
-        let user = config.userName
+        let requestContext = context()
         generation += 1
         let requestGeneration = generation
-        guard let prefs = try? await SettingsAPI.uiPrefs(user: user) else { return }
+        guard let prefs = try? await SettingsAPI.uiPrefs(user: requestContext.user) else { return }
         guard requestGeneration == generation,
-              config.baseURLString == server,
-              config.userName == user
+              context() == requestContext
         else { return }
 
-        apply(prefs, identity: identity(server: server, user: user))
+        apply(prefs, identity: identity(for: requestContext))
     }
 
-    static func apply(_ prefs: [String: String]) {
-        let config = ServerConfig.shared
+    @discardableResult
+    static func apply(_ prefs: [String: String], for requestContext: Context) -> Bool {
+        guard context() == requestContext else { return false }
         generation += 1
-        apply(prefs, identity: identity(server: config.baseURLString, user: config.userName))
+        apply(prefs, identity: identity(for: requestContext))
+        return true
     }
 
     private static func apply(_ prefs: [String: String], identity: String) {
         let defaults = UserDefaults.standard
         let previousIdentity = defaults.string(forKey: identityKey)
-        let changedIdentity = previousIdentity != nil && previousIdentity != identity
+        let changedIdentity = previousIdentity != identity
 
         set(
             prefs["default-model"],
@@ -72,8 +89,9 @@ enum NativePreferences {
         defaults.set(identity, forKey: identityKey)
     }
 
-    private static func identity(server: String, user: String) -> String {
-        "\(server)|\(user.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+    private static func identity(for context: Context) -> String {
+        let person = context.login.isEmpty ? "user:\(context.user)" : "github:\(context.login)"
+        return "\(context.server)|\(person.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
     }
 
     private static func validated(_ value: String?, allowed: Set<String>) -> String? {

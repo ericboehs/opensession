@@ -118,9 +118,7 @@ struct SessionsListView: View {
                         }
                     }
                     ToolbarItem(placement: .topTrailingCompat) {
-                        Button {
-                            showSettings = true
-                        } label: {
+                        SettingsLink {
                             Image(systemName: "gearshape")
                         }
                     }
@@ -137,9 +135,6 @@ struct SessionsListView: View {
                     systemImage: "bubble.left.and.bubble.right"
                 )
             }
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
         }
         .sheet(item: $newSessionRequest) { request in
             NewSessionView(initialRepo: request.repo) { session, seed in
@@ -648,8 +643,13 @@ struct SessionsListView: View {
                                     newSessionRequest = NewSessionRequest(repo: group.title)
                                 } label: {
                                     Image(systemName: "plus")
+                                        #if os(iOS)
                                         .font(.system(size: 18, weight: .medium))
                                         .frame(width: 30, height: 30)
+                                        #else
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 20, height: 20)
+                                        #endif
                                 }
                                 .buttonStyle(.borderless)
                                 .accessibilityLabel(
@@ -670,17 +670,30 @@ struct SessionsListView: View {
                         showArchived = true
                     } label: {
                         HStack(spacing: 9) {
+                            #if os(iOS)
                             WebIcon(kind: .archive, size: 22, color: OS1VisualStyle.textDim)
                                 .frame(width: 22, height: 22)
+                            #else
+                            WebIcon(kind: .archive, size: 16, color: OS1VisualStyle.textDim)
+                                .frame(width: 16, height: 16)
+                            #endif
                             Text("Archived")
+                                #if os(iOS)
                                 .font(.body.weight(.medium))
+                                #else
+                                .font(.body)
+                                #endif
                                 .foregroundStyle(OS1VisualStyle.textDim)
                             Spacer()
                             Text("\(visibleArchivedSessions.count)")
                                 .font(.footnote.weight(.medium))
                                 .foregroundStyle(OS1VisualStyle.textFaint)
                         }
+                        #if os(iOS)
                         .padding(.vertical, 9)
+                        #else
+                        .padding(.vertical, 3)
+                        #endif
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -717,7 +730,11 @@ struct SessionsListView: View {
         } description: {
             Text(viewModel.error ?? "Sessions from the OS1 server will appear here.")
         } actions: {
+            #if os(macOS)
+            SettingsLink { Text("Settings") }
+            #else
             Button("Settings") { showSettings = true }
+            #endif
         }
     }
 }
@@ -824,25 +841,40 @@ struct SessionRow: View {
         #endif
     }
 
+    /// Mac sidebar rows are compact and body-sized like Finder/System
+    /// Settings; iOS keeps the roomier touch metrics.
     private var content: some View {
         HStack(spacing: 9) {
             statusMark
-                .frame(width: 22, height: 22)
+                .frame(width: markSize, height: markSize)
             Text(rowTitle)
                 #if os(iOS)
                 .font(.body.weight(.medium))
-                #else
-                .font(.subheadline.weight(.medium))
-                #endif
                 .foregroundStyle(OS1VisualStyle.textDim)
+                #else
+                .font(.body)
+                .foregroundStyle(.primary)
+                #endif
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if session.lane == .inProgress && showsElapsedTime {
                 WorkspaceRunElapsedLabel(since: session.runStartedDate)
             }
         }
+        #if os(iOS)
         .padding(.vertical, 11)
+        #else
+        .padding(.vertical, 3)
+        #endif
         .contentShape(Rectangle())
+    }
+
+    private var markSize: CGFloat {
+        #if os(iOS)
+        22
+        #else
+        16
+        #endif
     }
 
     private var rowTitle: String {
@@ -868,11 +900,11 @@ struct SessionRow: View {
         } else if session.lane == .inProgress {
             PulsingDot(color: OS1VisualStyle.yellow)
         } else if session.prState == "MERGED" {
-            WebIcon(kind: .gitMerge, size: 22, color: OS1VisualStyle.purple)
+            WebIcon(kind: .gitMerge, size: markSize, color: OS1VisualStyle.purple)
         } else if session.prState == "OPEN" {
-            WebIcon(kind: .pullRequest, size: 22, color: OS1VisualStyle.green)
+            WebIcon(kind: .pullRequest, size: markSize, color: OS1VisualStyle.green)
         } else if session.prState == "CLOSED" {
-            WebIcon(kind: .pullRequest, size: 22, color: OS1VisualStyle.red)
+            WebIcon(kind: .pullRequest, size: markSize, color: OS1VisualStyle.red)
         } else {
             PulsingDot(color: OS1VisualStyle.textFaint, active: false)
         }

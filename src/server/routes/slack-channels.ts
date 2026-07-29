@@ -23,13 +23,18 @@ export async function handleSlackChannelRoutes(
 	// Slack markup → markdown-ish the pane can linkify: <url|label> →
 	// [label](url), bare <url> → url, <!here>/<!channel> → @here/@channel,
 	// <#C…|name> → #name. User mentions ride prettifyMentions.
+	// Entities last: Slack escapes literal &, <, > — decode only after the
+	// <...> markup is consumed so an escaped "&lt;" can't become fake markup.
 	const renderSlackText = (raw: string, prettifyMentions: (t: string) => string) =>
 		prettifyMentions(
 			raw
 				.replace(/<(https?:[^|>]+)\|([^>]+)>/g, "[$2]($1)")
 				.replace(/<(https?:[^>]+)>/g, "$1")
 				.replace(/<!(here|channel|everyone)(\|[^>]*)?>/g, "@$1")
-				.replace(/<#[A-Z0-9]+\|([^>]*)>/g, "#$1"),
+				.replace(/<#[A-Z0-9]+\|([^>]*)>/g, "#$1")
+				.replace(/&lt;/g, "<")
+				.replace(/&gt;/g, ">")
+				.replace(/&amp;/g, "&"),
 		);
 	const channelId = decodeURIComponent(msgsMatch[1]);
 	const caller = ctx.authUser?.login || ctx.authUser?.name || undefined;

@@ -26,6 +26,15 @@ struct OS1App: App {
             }
         }
         #endif
+
+        #if os(macOS)
+        // Real macOS Settings scene (App menu > Settings…, Cmd+,) hosting the
+        // System Settings-style split view. The in-window settings sheet the
+        // iOS app uses is not a Mac pattern.
+        Settings {
+            MacSettingsView()
+        }
+        #endif
     }
 }
 
@@ -42,7 +51,13 @@ struct RootView: View {
             .background(OS1VisualStyle.background.ignoresSafeArea())
             .preferredColorScheme(preferredColorScheme)
             .sheet(isPresented: $showSettings) {
+                #if os(macOS)
+                // First-run connect flow only; day-to-day settings live in
+                // the Settings scene (Cmd+,).
+                ConnectionOnboardingSheet()
+                #else
                 SettingsView()
+                #endif
             }
             .onAppear {
                 if !config.isConfigured && !showedInitialSettings {
@@ -54,14 +69,19 @@ struct RootView: View {
                 // Devices signed in before the app stored the GitHub login
                 // (pre-07-23 builds) hold a valid token but an empty login —
                 // backfill it from the server so the avatar can resolve.
+                let authContext = NativePreferences.context()
                 if config.isConfigured, config.githubLogin.isEmpty,
                    let status = try? await OS1API.authStatus(),
-                   status.authenticated == true {
+                   status.authenticated == true,
+                   NativePreferences.context() == authContext {
                     if let login = status.login, !login.isEmpty {
                         config.githubLogin = login
                     }
-                    if let name = status.name, !name.isEmpty {
-                        config.userName = String(name.split(separator: " ").first ?? Substring(name))
+                    if let name = status.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !name.isEmpty {
+                        config.userName = String(name.split(separator: " ").first!)
+                    } else if let login = status.login, !login.isEmpty {
+                        config.userName = login
                     }
                 }
             }
