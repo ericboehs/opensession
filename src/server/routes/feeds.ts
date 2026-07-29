@@ -32,6 +32,34 @@ export async function handleFeedsRoutes(
 		return Response.json(result);
 	}
 
+	// Sample tool call for the New-project form's mapping suggester: runs the
+	// named tool once on the signed-in user's grant and returns the raw JSON
+	// (truncated) so the client can propose the items path + field mapping.
+	if (path === "/backstage/api/feeds/preview" && req.method === "POST") {
+		const body = (await req.json().catch(() => null)) as {
+			server?: string;
+			tool?: string;
+			args?: Record<string, unknown>;
+		} | null;
+		if (!body?.server || !body?.tool)
+			return Response.json({ error: "server and tool required" }, { status: 400 });
+		try {
+			const { callMcpTool } = await import("../mcp-client");
+			const raw = await callMcpTool<unknown>(
+				body.server,
+				body.tool,
+				body.args || {},
+				ctx.authUser?.login || ctx.authUser?.name || undefined,
+			);
+			const text = JSON.stringify(raw);
+			return text.length > 60_000
+				? Response.json({ truncated: true, sample: text.slice(0, 60_000) })
+				: Response.json({ result: raw });
+		} catch (e: any) {
+			return Response.json({ error: e?.message || String(e) }, { status: 502 });
+		}
+	}
+
 	const feedDelMatch = path.match(/^\/backstage\/api\/feeds\/([^/]+)$/);
 	if (feedDelMatch && req.method === "DELETE") {
 		const { removeConfigFeed } = await import("../feeds-config");

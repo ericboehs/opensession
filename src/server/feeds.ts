@@ -67,6 +67,8 @@ export interface FeedDescriptor {
   /** Web panel the workspace tab renders for this feed's items
    *  (`{id}`-templated iframe URL + header links). */
   panel?: FeedPanelSpec;
+  /** True for config-declared feeds (editable/deletable in the UI). */
+  fromConfig?: boolean;
 }
 
 export interface FeedProvider {
@@ -104,6 +106,7 @@ function configFeedProvider(cf: ConfigFeed): FeedProvider {
       ...(cf.tileBg ? { tileBg: cf.tileBg } : {}),
       ...(cf.mcpServers?.length ? { mcpServers: cf.mcpServers } : {}),
       ...(cf.panel ? { panel: cf.panel } : {}),
+      fromConfig: true,
     },
     async listItems(ctx?: { user?: string }): Promise<FeedItem[]> {
       const { callMcpTool } = await import("./mcp-client");

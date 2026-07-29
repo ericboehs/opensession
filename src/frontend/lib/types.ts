@@ -114,6 +114,8 @@ export interface FeedDescriptor {
 		embedUrlTemplate: string;
 		links?: { label: string; hrefTemplate: string }[];
 	};
+	/** True for config-declared feeds (editable/deletable in the UI). */
+	fromConfig?: boolean;
 }
 
 /** One external object in a feed band (mirror of src/server/feeds.ts). */

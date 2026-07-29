@@ -5,6 +5,7 @@ import { cn } from "../ui/cn";
 import { IconDotsHorizontal, IconTrash, IconSliders, IconHistory, IconPlus } from "./icons";
 import { IconTile, displayName } from "./BrandTile";
 import { AGENT_NAME, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { ProjectsSection } from "./ProjectsSection";
 
 interface McpConnection {
   name: string;
@@ -412,6 +413,7 @@ export function Connections() {
             })}
           </div>
 
+          <ProjectsSection />
 
           <PlainRouter />
 
