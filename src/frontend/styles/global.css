@@ -5661,22 +5661,22 @@ a.workspace-info-check-row {
 .pr-num-chip-green {
 	color: var(--green);
 	border-color: transparent;
-	background: color-mix(in srgb, var(--green) 15%, var(--control-surface));
+	background: color-mix(in srgb, var(--green) 24%, var(--control-surface));
 }
 .pr-num-chip-purple {
 	color: var(--purple);
 	border-color: transparent;
-	background: color-mix(in srgb, var(--purple) 15%, var(--control-surface));
+	background: color-mix(in srgb, var(--purple) 24%, var(--control-surface));
 }
 .pr-num-chip-red {
 	color: var(--red);
 	border-color: transparent;
-	background: color-mix(in srgb, var(--red) 15%, var(--control-surface));
+	background: color-mix(in srgb, var(--red) 24%, var(--control-surface));
 }
 .pr-num-chip-yellow {
 	color: var(--yellow);
 	border-color: transparent;
-	background: color-mix(in srgb, var(--yellow) 15%, var(--control-surface));
+	background: color-mix(in srgb, var(--yellow) 24%, var(--control-surface));
 }
 .pr-num-chip-green,
 .pr-num-chip-purple,
@@ -5688,7 +5688,7 @@ a.workspace-info-check-row {
 .pr-num-chip-purple:hover,
 .pr-num-chip-red:hover,
 .pr-num-chip-yellow:hover {
-	background: color-mix(in srgb, currentColor 24%, var(--control-surface));
+	background: color-mix(in srgb, currentColor 32%, var(--control-surface));
 }
 /* A session that shipped one feature as several PRs: the primary strip keeps
    its tone band and its action, and the other PRs stack under it as their own
