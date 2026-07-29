@@ -119,7 +119,6 @@ export function Connections() {
   const loadOauth = useCallback(async (servers: McpConnection[]) => {
     const entries = await Promise.all(
       servers
-        .filter((s) => s.transport === "http")
         .map(async (s) => {
           try {
             const res = await fetch(
@@ -366,7 +365,7 @@ export function Connections() {
                       <IconDotsHorizontal size={18} />
                     </Menu.Trigger>
                     <Menu.Popup align="end" sideOffset={4}>
-                      {s.transport === "http" && (
+                      {(s.transport === "http" || oauthByName[s.name]?.capable) && (
                         <>
                           <Menu.Item onClick={() => handleOauthConnect(s, "shared")}>
                             <IconPlus size={16} className="text-faint" />

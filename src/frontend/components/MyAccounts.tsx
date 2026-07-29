@@ -35,9 +35,9 @@ export function MyAccountsPanel() {
 			const res = await fetch(`${BASE_PATH}/api/connections`);
 			if (!res.ok) return;
 			const body = await res.json();
-			const mcp = (body.mcpServers || []).filter(
-				(s: { transport: string }) => s.transport === "http",
-			);
+			// All servers — stdio ones can be OAuth-capable too via presets
+			// (Slack user tokens); the status endpoint's `capable` decides.
+			const mcp = body.mcpServers || [];
 			setServers(mcp);
 			const entries = await Promise.all(
 				mcp.map(async (s: { name: string }) => {
