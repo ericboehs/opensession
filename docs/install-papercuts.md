@@ -354,6 +354,35 @@ sensible result?** Reviewing a PR, watching the instance, sweeping dead code —
 yes. Anything naming a product, customers, domain, metrics, people or internal
 rituals — no, that is instance config.
 
+### 25. The test suite is order-dependent, so it cannot gate CI yet
+
+Turning CI on surfaced two layers of test-suite rot.
+
+**Three files already failed on master** and had for a while — almost certainly
+why an earlier CI attempt was deleted rather than fixed.
+`zz-opencode-mirror.test.ts` and `opencode-transcript.test.ts` predate the
+transcript-v2 store (PR #73 ports the first); `sessions.test.ts` expects
+`getOpenPrs().reviewRequested` to be `[]` where the code now returns `undefined`.
+
+**Worse, the suite is order-dependent.** Quarantining those three changed the
+discovery order, and a *different four* failed instead —
+`opencodeAutomationModel`, `buildOpencodeInstructions`, `sessionMemoryScopes`,
+`requestPrewarm`. All four pass in isolation. State is leaking between test files,
+which is unsurprising in a codebase that deliberately parks a lot on `globalThis`
+to survive hot reloads.
+
+That second problem is the blocker. While which tests fail depends on what else
+ran, a red build cannot reliably mean "you broke something", and a gate nobody
+trusts is worse than no gate.
+
+So: the suite runs on every PR and its output is visible, but it does not block.
+The type-check and the two real end-to-end install jobs do. Fixing this means
+finding the cross-file state and isolating it, then deleting one
+`continue-on-error`.
+
+Recorded rather than papered over, because "CI is green" currently means less
+than it looks like it does.
+
 ---
 
 ## Open
