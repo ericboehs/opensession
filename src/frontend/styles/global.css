@@ -15157,7 +15157,7 @@ html.wco .settings-sidenav {
 	overflow-y: auto;
 	display: flex;
 	justify-content: center;
-	padding: 44px 32px 88px;
+	padding: 44px 32px 0;
 }
 /* Tool sections (Automations, Notes, …) hosted in Settings bring their own
    layout, padding and scrolling — the content area goes edge-to-edge. */
@@ -15168,6 +15168,12 @@ html.wco .settings-sidenav {
 .settings-panel {
 	width: 100%;
 	max-width: 720px;
+}
+.settings-panel-frame {
+	width: 100%;
+	max-width: 720px;
+	padding-bottom: 88px;
+	align-self: flex-start;
 }
 .settings-title {
 	font-size: 24px;
@@ -15199,7 +15205,10 @@ html.wco .settings-sidenav {
    sheet header already carries the section title, and desktop's roomy content
    padding doesn't fit a phone. */
 .settings-sheet .settings-content {
-	padding: 16px 16px 48px;
+	padding: 16px 16px 0;
+}
+.settings-sheet .settings-panel-frame {
+	padding-bottom: 48px;
 }
 .settings-sheet .settings-title {
 	display: none;

@@ -660,7 +660,13 @@ export function Settings({
 					TOOL_SECTIONS.has(active) ? " settings-content-tool" : ""
 				}`}
 			>
-				<SectionPanel section={active}>{children}</SectionPanel>
+				{TOOL_SECTIONS.has(active) ? (
+					<SectionPanel section={active}>{children}</SectionPanel>
+				) : (
+					<div className="settings-panel-frame">
+						<SectionPanel section={active}>{children}</SectionPanel>
+					</div>
+				)}
 			</div>
 		</div>
 	);
@@ -781,7 +787,13 @@ function MobileSettings({
 											: ""
 									}`}
 								>
-									<SectionPanel section={shownSection}>{children}</SectionPanel>
+									{TOOL_SECTIONS.has(shownSection) ? (
+										<SectionPanel section={shownSection}>{children}</SectionPanel>
+									) : (
+										<div className="settings-panel-frame">
+											<SectionPanel section={shownSection}>{children}</SectionPanel>
+										</div>
+									)}
 								</div>
 							)}
 						</div>
