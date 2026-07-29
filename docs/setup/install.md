@@ -106,12 +106,11 @@ what the code actually reads, by feature:
 | `HOST` | `127.0.0.1` | bind address for the main server. Bind to a Tailscale IP to share it with your team — there is no auth layer (see the [trust model](README.md#trust-model-read-this)) |
 | `PORT` | `3850` | main server (UI + API at `/opensession/`) |
 | `WEBHOOK_PORT` | `3848` | second HTTP server for inbound webhooks |
-| `OPENSESSION_UI_BASE` | Tella tailnet URL | public base URL used in links posted to Slack/Linear/notes |
+| `OPENSESSION_UI_BASE` | `http://127.0.0.1:<port>` | public base URL used in links posted to Slack/Linear/notes |
 | `OPENSESSION_CONFIG` | `~/.opensession/config.json` | config-file path override |
 | `SHUTDOWN_DRAIN_MS` | `60000` | graceful-shutdown drain window for in-flight runs |
 | `OPENSESSION_CHATS_DIR` | `~/.opensession-chats` | session store override (mostly a test seam) |
 | `OPENSESSION_WORKTREES_DIR` | `/home/ubuntu/worktrees` | where session worktrees are created |
-| `OPENSESSION_TELLA_FUSION` | `/home/ubuntu/projects/tella-fusion` | checkout path of the default repo |
 | `OPENSESSION_DEV` | unset | `1` = dev frontend build only; does NOT disable agent loops (a second naive instance double-sends) |
 
 **Engines and models** (details: [engines.md](engines.md))

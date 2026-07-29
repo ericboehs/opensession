@@ -83,11 +83,11 @@ problem — a cold sandbox is slow — at different layers.
 ### The runner image
 
 The base image a sandbox starts from. `deploy/sandbox/build.sh` builds it and
-tags `opensession-runner:latest` plus the git SHA. It carries the toolchain a
+tags `backstage-runner:latest` plus the git SHA (the tag predates the rename; `IMAGE=` overrides it). It carries the toolchain a
 session needs (bun, git, the engine) so no session pays to install them.
 
 This is the piece you should rebuild deliberately: pinning
-`"image": "opensession-runner:<sha>"` means a rebuild cannot change behaviour
+`"image": "backstage-runner:<sha>"` means a rebuild cannot change behaviour
 underneath running sessions, and rolling back is retagging.
 
 Path parity between the image and the host is load-bearing — see the section

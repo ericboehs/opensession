@@ -64,6 +64,6 @@ IDs — team ids are fetched per issue. Session state is persisted to disk so
 in-flight Linear sessions survive restarts.
 
 Note the default worktree paths target Tella's repo (e.g.
-`/home/ubuntu/worktrees/tella-fusion-<branch>` in
+`~/worktrees/<repo>-<branch>` in
 `src/agents/linear/session.ts` / `handlers.ts`) — repo retargeting is part of
 the portability workstream ([portability-audit §1b](../portability-audit.md)).

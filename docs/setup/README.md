@@ -61,21 +61,39 @@ UI and API at `/opensession/`.
 
 ## Trust model (read this)
 
-OpenSession has **no built-in authentication**. It binds to `HOST` (default
-`127.0.0.1`; Tella binds it to a Tailscale IP) and trusts everyone who can
-reach that address — the UI "user" is a self-selected display name stored in
-localStorage, used for attribution and per-user MCP gating, not for auth. Put
-it behind Tailscale or an equivalent private network; never expose it
-publicly. Inside that boundary, safety comes from least-privilege scoping of
-what runs can do, enforced at the tool/env layer rather than in prompts:
-automation runs (which process untrusted text like customer tickets) get a
-minimal environment without your API tokens, a per-automation MCP-server
-allowlist, hard-denied customer-facing/identity-mutating tools, and per-call
-human confirmation for money-moving Stripe tools. The systemd unit and the
-sandbox host setup both block the EC2 metadata endpoint so agent code can't
-mint cloud credentials. See the "Automation least-privilege", "Per-user MCP
-servers", and "Self-management tools" sections of [CLAUDE.md](../../CLAUDE.md)
-for the full rules the code enforces.
+**By default there is no authentication.** OpenSession binds to `HOST` (default
+`127.0.0.1`) and trusts everyone who can reach that address. The UI "user" is a
+self-selected display name in localStorage — it drives attribution and per-user
+tool gating, not access control. On a default install, **the bind address is the
+security boundary**: put it behind Tailscale or an equivalent private network and
+never expose it publicly. [networking.md](networking.md) covers how.
+
+**Authentication is available, and it is opt-in.** Setting
+`integrations.github` with `userPrAuth` and an OAuth client id activates GitHub
+sign-in: every `/api/*` request and the UI WebSocket require a session cookie,
+only logins listed in `identity.team` may sign in, and the verified identity
+overrides any client-claimed user. Tella's own deployment runs with this on. See
+[github.md](github.md#per-user-github-auth--web-sign-in).
+
+Turning it on does **not** make the server safe to expose publicly. It protects
+the UI and API; it does not change the fact that a session executes arbitrary
+code on your machine. Keep the network boundary and treat sign-in as defence in
+depth.
+
+Inside that boundary, safety comes from least-privilege scoping of what *runs*
+can do, enforced at the tool and environment layer rather than in prompts:
+
+- automation runs — the ones processing untrusted text like customer tickets —
+  get a minimal environment with none of your API tokens
+- each automation carries an MCP-server allowlist, so a run only sees the tools
+  it was granted
+- customer-facing and identity-mutating tools are hard-denied for unattended runs
+- money-moving tools are stripped from the model's tool list entirely
+- the systemd unit and the sandbox host setup both block the cloud metadata
+  endpoint, so agent code cannot mint cloud credentials
+
+[extending.md](../extending.md#security-when-you-extend) has the rules to follow
+when adding anything that touches this.
 
 ## Pages
 
