@@ -87,10 +87,11 @@ async function status(): Promise<number> {
     info(dim("no service manager here"));
   } else if (!(await service.isInstalled())) {
     warn(`no ${kind} service installed`, "run `opensession service install`");
-  } else if (await service.isActive()) {
-    ok(`${kind} service active`);
   } else {
-    fail(`${kind} service not running`);
+    const state = await service.state();
+    if (state === "active") ok(`${kind} service active`);
+    else if (state === "inactive") fail(`${kind} service not running`);
+    else warn(`could not query ${kind}`, "no permission or no session bus");
   }
   return 0;
 }

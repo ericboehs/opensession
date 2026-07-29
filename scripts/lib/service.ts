@@ -55,21 +55,42 @@ export async function isInstalled(): Promise<boolean> {
   }
 }
 
-export async function isActive(): Promise<boolean> {
+/**
+ * Tri-state on purpose. Querying the supervisor can fail in ways that mean
+ * "I could not tell", not "it is stopped" — a non-root user with no session
+ * bus gets `Failed to connect to bus` from systemctl, and reporting that as
+ * "not running" while the service is happily serving traffic is worse than
+ * admitting ignorance.
+ */
+export type ServiceState = "active" | "inactive" | "unknown";
+
+export async function state(): Promise<ServiceState> {
   switch (supervisor()) {
     case "systemd": {
       const { stdout } = await run(["systemctl", "is-active", SERVICE_NAME]);
-      return stdout === "active";
+      if (stdout === "active" || stdout === "activating") return "active";
+      // systemctl prints one of these on stdout when it could actually look.
+      if (["inactive", "failed", "deactivating"].includes(stdout)) return "inactive";
+      return "unknown";
     }
     case "launchd": {
-      // `launchctl print` exits non-zero when the label is not loaded; when it
-      // is, the running instance reports a pid.
-      const { code, stdout } = await run(["launchctl", "print", `${domain()}/${LAUNCHD_LABEL}`]);
-      return code === 0 && /\bpid = \d+/.test(stdout);
+      const { code, stdout, stderr } = await run([
+        "launchctl",
+        "print",
+        `${domain()}/${LAUNCHD_LABEL}`,
+      ]);
+      if (code === 0) return /\bpid = \d+/.test(stdout) ? "active" : "inactive";
+      // launchctl says this when the label simply is not loaded.
+      if (/could not find service|No such process/i.test(stderr)) return "inactive";
+      return "unknown";
     }
     default:
-      return false;
+      return "unknown";
   }
+}
+
+export async function isActive(): Promise<boolean> {
+  return (await state()) === "active";
 }
 
 /** PATH for the service. Engine subprocesses inherit it, so a thin one shows
@@ -93,6 +114,48 @@ function bunPath(): string {
   return Bun.which("bun") ?? join(HOME, ".bun", "bin", "bun");
 }
 
+/**
+ * Who the service should run as.
+ *
+ * `os.userInfo().username` is not trustworthy on its own: in a container
+ * entered as a uid with no USER in the environment it returns the literal
+ * string "unknown". That produced a unit containing `User=unknown`, which
+ * installs and enables without complaint and then fails every start with
+ * `status=217/USER` — a late, opaque failure a long way from its cause.
+ *
+ * So: try several sources, and verify the answer resolves to a real account
+ * before using it. If none does, refuse to render rather than emit a unit that
+ * is guaranteed to fail.
+ */
+async function resolveUsername(): Promise<string> {
+  let fromApi: string | undefined;
+  try {
+    const name = userInfo().username;
+    if (name && name !== "unknown") fromApi = name;
+  } catch {
+    // getpwuid can fail outright in minimal environments.
+  }
+
+  const candidates = [
+    fromApi,
+    process.env.USER,
+    process.env.LOGNAME,
+    (await run(["id", "-un"])).stdout,
+  ];
+
+  for (const candidate of candidates) {
+    const name = candidate?.trim();
+    if (!name || name === "unknown") continue;
+    // `id -u <name>` is the cheapest "does this account exist" check.
+    if ((await run(["id", "-u", name])).code === 0) return name;
+  }
+
+  throw new Error(
+    "could not determine which user to run the service as — " +
+      "set USER in the environment, or edit User= in the generated unit",
+  );
+}
+
 /** Rewrite the repo's systemd unit for this box. */
 export async function renderUnit(): Promise<string> {
   const template = join(REPO_ROOT, "opensession.service");
@@ -101,7 +164,7 @@ export async function renderUnit(): Promise<string> {
   }
   const bun = bunPath();
   return (await Bun.file(template).text())
-    .replace(/^User=.*$/m, `User=${userInfo().username}`)
+    .replace(/^User=.*$/m, `User=${await resolveUsername()}`)
     .replace(/^WorkingDirectory=.*$/m, `WorkingDirectory=${REPO_ROOT}`)
     .replace(/^EnvironmentFile=.*$/m, `EnvironmentFile=${ENV_PATH}`)
     .replace(/^ExecStart=.*$/m, `ExecStart=${bun} run opensession.ts`)

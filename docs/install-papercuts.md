@@ -219,24 +219,56 @@ PR operations need it. The installer now installs it best-effort (it is never
 fatal, and it needs its own `gh auth login` regardless, so this only gets you
 half way — but it removes a `doctor` warning from every fresh install).
 
+### 14. The systemd install path was never tested end to end
+
+`opensession service install` needs root, and the EC2 test box has no working
+sudo (papercut #12), so the whole path was unexercised.
+
+Closed by testing it in a **systemd-capable container** on the build host —
+`--privileged --cgroupns=host` with a real `/sbin/init`, and a user with
+passwordless sudo. That also exercises the apt-install path the EC2 box cannot
+reach. It immediately found #18 and #19, neither of which
+`systemd-analyze verify` could have caught.
+
+### 18. The generated unit said `User=unknown`
+
+**Symptom:** `service install` succeeded, `systemctl enable --now` succeeded,
+and then every start failed with `status=217/USER` and
+`Failed to determine user credentials: No such process`. The unit was installed
+and enabled the whole time, so this looked like a systemd or container problem
+rather than a bad file.
+
+**Cause:** `os.userInfo().username` returns the literal string `"unknown"` when
+the process is running as a uid with no `USER` in the environment — which is
+exactly what happens in a container entered by uid, and can happen under `su`,
+cron and some CI runners. The renderer wrote that straight into `User=`.
+
+**Fix:** `resolveUsername()` tries `os.userInfo()`, `$USER`, `$LOGNAME` and
+`id -un` in turn, and **verifies the answer resolves to a real account** with
+`id -u <name>` before using it. If none does, it refuses to render rather than
+emitting a unit that is guaranteed to fail.
+
+The general lesson is the one worth keeping: this failed *late* and *far* from
+its cause. Validating the value at generation time turns a cryptic runtime
+failure into a clear message at the moment you can still do something about it.
+
+### 19. `status` reported "not running" when it could not tell
+
+**Symptom:** `opensession status` said `systemd service not running` while
+`systemctl is-active` said `active` and the server was serving traffic.
+
+**Cause:** a non-root user with no session bus gets `Failed to connect to bus`
+from systemctl. The code compared stdout to `"active"` and treated everything
+else — including total failure to ask — as "stopped".
+
+**Fix:** service state is a tri-state (`active` / `inactive` / `unknown`).
+"Could not determine" is now reported as such, and `doctor` counts it as a
+warning rather than an error, deferring to the health probe for the real
+answer.
+
 ---
 
 ## Open
-
-### 14. The systemd install path is not end-to-end tested
-
-`opensession service install` needs root, and the test box has no working sudo
-(papercut #12), so installing the unit, boot-on-reboot and `opensession logs`
-have not been exercised on a clean machine.
-
-Partially mitigated: the rendered unit is validated with `systemd-analyze
-verify`, which parses it and checks every directive. It comes back clean, with
-`KillMode=mixed`, `TimeoutStopSec=80` and the `IPAddressDeny` metadata block
-preserved from the template. That proves the file is correct; it does not prove
-`systemctl enable --now` behaves.
-
-Needs a re-provisioned instance (with the corrected user-data from #12) to
-close properly.
 
 ### 17. Prompts run together when answers arrive faster than a human types
 

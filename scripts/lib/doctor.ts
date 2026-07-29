@@ -162,11 +162,18 @@ async function checkService(t: Tally, config?: Record<string, unknown>): Promise
   } else if (!(await service.isInstalled())) {
     warn(`no ${kind} service installed`, "run `opensession service install`");
     t.warnings++;
-  } else if (await service.isActive()) {
-    ok(`${kind} service active`);
   } else {
-    fail(`${kind} service installed but not running`, "`opensession logs` to see why");
-    t.errors++;
+    const state = await service.state();
+    if (state === "active") {
+      ok(`${kind} service active`);
+    } else if (state === "inactive") {
+      fail(`${kind} service installed but not running`, "`opensession logs` to see why");
+      t.errors++;
+    } else {
+      // Could not ask. The health probe below is the real answer.
+      warn(`could not query ${kind}`, "no permission or no session bus");
+      t.warnings++;
+    }
   }
 
   const server = (config?.server ?? {}) as { host?: string; port?: number };
