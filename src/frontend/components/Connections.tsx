@@ -5,6 +5,7 @@ import { cn } from "../ui/cn";
 import { IconDotsHorizontal, IconTrash, IconSliders, IconHistory, IconPlus } from "./icons";
 import { IconTile, displayName } from "./BrandTile";
 import { AGENT_NAME, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { useCurrentUser } from "./UserPicker";
 
 interface McpConnection {
   name: string;
@@ -89,6 +90,7 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 }
 
 export function Connections() {
+  const currentUser = useCurrentUser();
   const [data, setData] = useState<ConnectionsData | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -411,6 +413,76 @@ export function Connections() {
               );
             })}
           </div>
+
+          {/* Personal MCP accounts: OAuth-capable servers, connected AS YOU.
+              Sessions use your grant first, the workspace grant as fallback
+              (src/server/mcp-oauth.ts) — the sibling of "PRs as yourself". */}
+          {(() => {
+            const oauthServers = data.mcpServers.filter(
+              (s) =>
+                s.transport === "http" &&
+                (s.status === "needs-auth" ||
+                  oauthByName[s.name]?.shared ||
+                  oauthByName[s.name]?.users.length),
+            );
+            if (!oauthServers.length) return null;
+            const isMe = (teamName: string) => {
+              const a = teamName.toLowerCase();
+              const b = (currentUser || "").toLowerCase();
+              return !!b && (a === b || a.startsWith(b) || b.startsWith(a));
+            };
+            return (
+              <>
+                <SectionHeading>
+                  Your MCP accounts — tools as yourself
+                </SectionHeading>
+                <div className="overflow-hidden rounded-lg border border-line bg-panel">
+                  {oauthServers.map((s, i) => {
+                    const st = oauthByName[s.name];
+                    const mine = st?.users.some(isMe);
+                    return (
+                      <div
+                        key={s.name}
+                        className={cn(
+                          "flex items-center gap-3 px-4 py-3",
+                          i > 0 && "border-t border-line",
+                        )}
+                      >
+                        <IconTile name={s.name} size={30} />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-fg">
+                            {displayName(s.name)}
+                          </div>
+                          <div className="text-xs leading-snug text-dim">
+                            {mine
+                              ? "Connected as you — your sessions use your account"
+                              : st?.shared
+                                ? "Using the workspace account — connect yours so sessions act as you"
+                                : "Not connected — sign in to use these tools as yourself"}
+                          </div>
+                        </div>
+                        {mine ? (
+                          <button
+                            className="flex-shrink-0 rounded-md border border-line-strong px-3 py-1.5 text-[13px] font-medium text-dim transition-colors hover:border-faint hover:text-fg"
+                            onClick={() => handleOauthDisconnect(s, "me")}
+                          >
+                            Disconnect
+                          </button>
+                        ) : (
+                          <button
+                            className="flex-shrink-0 rounded-md bg-accent px-3 py-1.5 text-[13px] font-semibold text-white transition-[filter] hover:brightness-105"
+                            onClick={() => handleOauthConnect(s, "me")}
+                          >
+                            Connect
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })()}
 
           <GithubAccounts />
 
