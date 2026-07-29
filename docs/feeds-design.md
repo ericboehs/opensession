@@ -129,7 +129,25 @@ plugins." Workstreams:
   no user ⇒ shared grant only, fail-closed like allowedUsers. Caveat: token
   rotation changes the per-run config hash ⇒ shared-server drain-respawn,
   same as GitHub user tokens.
-- **W3 — projects/feeds as config (NEXT)**: a "New project" flow that takes
+- **Sharing/identity decisions (Michiel 2026-07-29, landed 869c0c36)**:
+  sessions have no per-session auth (whole team can open/prompt). MCP grant
+  identity per run: session CREATOR first → prompter's own grant → workspace
+  grant, so a shared session reads the same objects for everyone
+  (RunAgentOpts.mcpGrantUser; TODO: sandboxed-run path doesn't thread it).
+  allowedUsers visibility passes when prompter OR creator is cleared
+  ("anyone with access to the session"); per-session invite lists are the
+  future refinement. Feed-workspace context teaches `BACKSTAGE_VIDEO:
+  /abs/path` (jsonl-parser VIDEO_MARKER) so cut clips render inline.
+- **W3 — projects/feeds as config (BACKEND LANDED d0df39c6)**: ConfigFeed in
+  ~/.opensession-feeds.json (MCP server + list tool + dot-path map + {id}
+  panel template), registry overlay per read (edit without restart), generic
+  adapter on the viewer's grant, CRUD POST/DELETE /api/feeds, tool catalog
+  GET /api/connections/mcp/:name/tools. Panels are descriptor-driven
+  frontend-wide (lib/feeds-meta.ts; tella hardcode = cold-cache fallback
+  only). PROVEN: "Playlists" project created purely from config (wrong path
+  guess fixed by config re-POST — list_playlists returns `channels`).
+  REMAINING: the "New project" UI form (server picker → tool picker from the
+  catalog → sample-call mapping suggester → panel template).: a "New project" flow that takes
   name/icon/refKind + linked MCP servers + an items source (REST endpoint or
   an MCP list-tool + field mapping) + a web-panel URL template, stored in
   `~/.opensession-feeds.json`; the feeds registry loads config feeds beside
