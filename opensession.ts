@@ -11,6 +11,7 @@ import {
 import { enableOpencodeServerDetach } from "./src/server/opencode-detach";
 import { adoptDetachedOpencodeServers } from "./src/server/opencode-runner";
 import { startAccountHealthMonitor } from "./src/server/account-health";
+import { startDiskGc } from "./src/server/disk-gc";
 import { startTodoReminderTicker } from "./src/server/todos";
 import { kickTranscriptBackfillOnce } from "./src/server/transcript-backfill";
 import { makeAskHandler } from "./src/server/asks";
@@ -617,6 +618,9 @@ if (!g.__backstageBooted) {
 
 	// DM owners/Michiel when pool credentials expire or break (account-health.ts)
 	startAccountHealthMonitor();
+
+	// Reclaim rust target/ build caches from idle worktrees we keep (disk-gc.ts)
+	startDiskGc();
 
 	// Desk todo reminders: push + Slack DM when a remindAt passes (todos.ts)
 	startTodoReminderTicker();
