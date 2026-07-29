@@ -433,10 +433,9 @@ export function SettingsMenu({
 
 				<Menu.Separator />
 
-				{/* The footer row and the top trigger's avatar dot already show the
-				    connection state, so the menu only repeats it for the compact
-				    chevron variant. */}
-				{!footer && !top && (
+				{/* Triggers with a status dot or status label do not repeat the
+				    connection state inside the menu. */}
+				{!footer && !top && !user && (
 					<>
 						<div className="flex items-center gap-2 px-2 py-0.5 text-xs text-dim">
 							<span
