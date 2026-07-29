@@ -47,10 +47,10 @@ export async function handleSlackChannelRoutes(
 			100,
 		);
 		try {
-			const { slackApiCall, resolveSlackUser, prettifyMentions } =
+			const { slackApiGet, resolveSlackUser, prettifyMentions } =
 				await import("../../agents/slack/slack-api");
 			const { personaName } = await import("../config");
-			const data = await slackApiCall(
+			const data = await slackApiGet(
 				threadTs ? "conversations.replies" : "conversations.history",
 				{
 					channel: channelId,

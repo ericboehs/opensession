@@ -135,6 +135,33 @@ export async function slackApiCall(
   return data;
 }
 
+/**
+ * GET variant for Slack's read methods (conversations.list/history/replies):
+ * they want query params — a JSON POST body is silently ignored, which
+ * surfaces as invalid_arguments/missing filters.
+ */
+export async function slackApiGet(
+  method: string,
+  params: Record<string, string | number | boolean | undefined>,
+  tokenOverride?: string,
+): Promise<any> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined) qs.set(k, String(v));
+  }
+  const resp = await fetchWithTimeout(
+    `https://slack.com/api/${method}?${qs}`,
+    {
+      headers: { Authorization: `Bearer ${tokenOverride || SLACK_BOT_TOKEN}` },
+    },
+  );
+  const data = await resp.json();
+  if (!(data as any).ok) {
+    console.warn(`[slack] Slack API ${method} error:`, (data as any).error);
+  }
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Message helpers
 // ---------------------------------------------------------------------------
