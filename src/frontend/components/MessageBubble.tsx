@@ -7,6 +7,7 @@ import {
 	parseAttribution,
 	isGitHubAttribution,
 	parseReviewHandoff,
+	parseSessionNotice,
 	parseWorkerReport,
 	parseWorkflowNotice,
 } from "../lib/humanReply";
@@ -123,18 +124,20 @@ export function ClampedBody({
 	);
 }
 
-/** Engine context-compaction summary (entry.compaction): the conversation
- * history was summarized to fit the model's context window and the handoff
- * summary is this entry's content. Rendered as a collapsed system pill —
- * without this it looks like the model randomly dumping a status report
- * mid-conversation — with the summary expandable for anyone who wants to see
- * what the model carried forward. */
-function CompactionNotice({
+/** Centered system pill whose full markdown body stays out of the transcript
+ * until requested. Used for informational machine-authored messages. */
+function CollapsibleSystemNotice({
 	entry,
 	sessionId,
+	label,
+	toggleNoun,
+	content,
 }: {
 	entry: TranscriptEntry;
 	sessionId?: string;
+	label: string;
+	toggleNoun: string;
+	content: string;
 }) {
 	const [open, setOpen] = useState(false);
 	return (
@@ -144,22 +147,42 @@ function CompactionNotice({
 				onClick={() => setOpen((v) => !v)}
 				className="msg-system-text cursor-pointer [font-family:inherit]"
 			>
-				Context compacted — earlier conversation summarized to keep going ·{" "}
+				{label} ·{" "}
 				<span className="font-medium text-dim">
-					{open ? "hide summary" : "show summary"}
+					{open ? `hide ${toggleNoun}` : `show ${toggleNoun}`}
 				</span>
 			</button>
 			{open && (
 				<div className="mx-auto mt-2 w-full max-w-[560px] rounded-lg bg-panel px-4 py-3 text-left">
 					<ClampedBody
 						className="msg-body markdown"
-						content={entry.content}
+						content={content}
 						entry={entry}
 						sessionId={sessionId}
 					/>
 				</div>
 			)}
 		</div>
+	);
+}
+
+function CompactionNotice({
+	entry,
+	sessionId,
+}: {
+	entry: TranscriptEntry;
+	sessionId?: string;
+}) {
+	// Without this fold, context compaction looks like the model randomly
+	// dumping a status report in the middle of the conversation.
+	return (
+		<CollapsibleSystemNotice
+			entry={entry}
+			sessionId={sessionId}
+			label="Context compacted — earlier conversation summarized to keep going"
+			toggleNoun="summary"
+			content={entry.content}
+		/>
 	);
 }
 
@@ -336,6 +359,13 @@ export const MessageBubble = React.memo(function MessageBubble({
 				: null,
 		[entry.type, entry.content, workerReport],
 	);
+	const sessionNotice = useMemo(
+		() =>
+			entry.type === "user" && !workerReport && !workflowNotice
+				? parseSessionNotice(entry.content)
+				: null,
+		[entry.type, entry.content, workerReport, workflowNotice],
+	);
 	const [workerReportOpen, setWorkerReportOpen] = useState(false);
 
 	if (entry.type === "user" && workerReport) {
@@ -388,6 +418,18 @@ export const MessageBubble = React.memo(function MessageBubble({
 			<div className="msg msg-system" data-eid={entry.id}>
 				<span className="msg-system-text">{workflowNotice.body}</span>
 			</div>
+		);
+	}
+
+	if (entry.type === "user" && sessionNotice) {
+		return (
+			<CollapsibleSystemNotice
+				entry={entry}
+				sessionId={sessionId}
+				label="Heads-up from another session"
+				toggleNoun="message"
+				content={sessionNotice.body}
+			/>
 		);
 	}
 

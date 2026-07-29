@@ -23,6 +23,7 @@ import { AGENT_NAME, DEFAULT_DOC_TITLE } from "../lib/brand";
 import {
 	isGitHubAttribution,
 	parseHumanReply,
+	parseSessionNotice,
 	parseWorkerReport,
 	parseWorkflowNotice,
 } from "../lib/humanReply";
@@ -2914,9 +2915,11 @@ export function SessionViewer({
 		// message in flight reads the same as the card it becomes.
 		const worker = opts.human ? null : parseWorkerReport(item.content);
 		const workflow = opts.human || worker ? null : parseWorkflowNotice(item.content);
+		const sessionNotice =
+			opts.human || worker || workflow ? null : parseSessionNotice(item.content);
 		const body = opts.human
 			? opts.human.body
-			: (worker?.body ?? workflow?.body ?? item.content);
+			: (worker?.body ?? workflow?.body ?? sessionNotice?.body ?? item.content);
 		return (
 			<div className="composer-queue-content">
 				{firstImage && (
@@ -2934,6 +2937,9 @@ export function SessionViewer({
 					{opts.github && <span className="composer-queue-from">GitHub</span>}
 					{worker && <span className="composer-queue-from">🤖 Worker report</span>}
 					{workflow && <span className="composer-queue-from">⚙️ Workflow</span>}
+					{sessionNotice && (
+						<span className="composer-queue-from">System message</span>
+					)}
 					{body}
 				</div>
 			</div>

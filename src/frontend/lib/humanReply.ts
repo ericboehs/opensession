@@ -141,3 +141,23 @@ export function parseWorkflowNotice(
 	const run = sentinel?.[1] || body.match(/\b(wf-[\w-]+)/)?.[1] || null;
 	return { runId: run, body };
 }
+
+/**
+ * Detect an informational heads-up sent by one session into another. The
+ * server marks new notices; the strict opener keeps already-delivered notices
+ * from before the marker shipped from looking like words the human typed.
+ */
+const SESSION_NOTICE_SENTINEL_RE = /^<!--os:session-notice-->\s*/;
+const LEGACY_SESSION_NOTICE_RE = /^Heads-up from another session(?:\s*\([^\n)]*\))?:/i;
+
+export function parseSessionNotice(content?: string): { body: string } | null {
+	if (!content) return null;
+	const text = content.replace(ATTR_PREFIX_RE, "");
+	const sentinel = text.match(SESSION_NOTICE_SENTINEL_RE);
+	const body = (sentinel ? text.slice(sentinel[0].length) : text).trim();
+	if (!sentinel && !LEGACY_SESSION_NOTICE_RE.test(body)) return null;
+	// Co-released steers can be joined into one user entry. Keep that entry as a
+	// user turn rather than folding a real attributed instruction into the notice.
+	if (/\n\s*\n\[[^\]\n]{1,80}\]\s+/.test(body)) return null;
+	return { body };
+}

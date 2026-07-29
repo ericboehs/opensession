@@ -3,6 +3,7 @@ import {
 	isGitHubAttribution,
 	parseAttribution,
 	parseReviewHandoff,
+	parseSessionNotice,
 	parseWorkerReport,
 	parseWorkflowNotice,
 } from "./humanReply";
@@ -107,5 +108,32 @@ describe("workflow notice detection", () => {
 	it("leaves ordinary turns alone", () => {
 		expect(parseWorkflowNotice("Workflow finished, what now?")).toBeNull();
 		expect(parseWorkflowNotice("✅ done")).toBeNull();
+	});
+});
+
+describe("cross-session notice detection", () => {
+	const headsUp =
+		"Heads-up from another session (Michael, working on the sidebar): a shared-checkout commit picked up your changes.\n\nNothing was lost.";
+
+	it("detects an existing unmarked heads-up", () => {
+		expect(parseSessionNotice(headsUp)).toEqual({ body: headsUp });
+	});
+
+	it("strips the marker and delivery attribution from new notices", () => {
+		expect(
+			parseSessionNotice(`[Michiel] <!--os:session-notice-->\n${headsUp}`),
+		).toEqual({ body: headsUp });
+	});
+
+	it("leaves ordinary cross-session prompts as user turns", () => {
+		expect(parseSessionNotice("Please keep editing and commit the fix.")).toBeNull();
+	});
+
+	it("does not hide a separately attributed prompt merged into the entry", () => {
+		expect(
+			parseSessionNotice(
+				`<!--os:session-notice-->\n${headsUp}\n\n[Kent] Please also run the tests.`,
+			),
+		).toBeNull();
 	});
 });

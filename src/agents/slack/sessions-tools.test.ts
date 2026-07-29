@@ -3,6 +3,7 @@ import {
 	buildChildSessionPrompt,
 	cancelTaskImpl,
 	resolveSpawnDepth,
+	sessionNoticePayload,
 	spawnTaskImpl,
 	taskStateOf,
 	taskStatusImpl,
@@ -51,6 +52,20 @@ describe("buildChildSessionPrompt", () => {
 
 		expect(prompt).toContain("Run a standalone investigation.");
 		expect(prompt).not.toContain("send_to_session");
+	});
+});
+
+describe("sessionNoticePayload", () => {
+	it("marks an informational heads-up for system rendering", () => {
+		expect(sessionNoticePayload("Heads-up from another session: a commit landed.")).toBe(
+			"<!--os:session-notice-->\nHeads-up from another session: a commit landed.",
+		);
+	});
+
+	it("leaves ordinary cross-session prompts untouched", () => {
+		expect(sessionNoticePayload("Please continue with the implementation.")).toBe(
+			"Please continue with the implementation.",
+		);
 	});
 });
 

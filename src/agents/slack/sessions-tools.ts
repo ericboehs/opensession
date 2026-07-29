@@ -166,6 +166,17 @@ const EVIDENCE_MAX_CHARS = 4000;
  */
 const WORKER_REPORT_SENTINEL = "<!--os:worker-report-->";
 
+const SESSION_NOTICE_SENTINEL = "<!--os:session-notice-->";
+
+/** Mark an explicitly informational cross-session heads-up. Other messages sent
+ * through send_to_session remain ordinary user turns that drive the target. */
+export function sessionNoticePayload(message: string): string {
+  const body = message.trim();
+  return /^Heads-up from another session(?:\s|\(|:)/i.test(body)
+    ? `${SESSION_NOTICE_SENTINEL}\n${body}`
+    : message;
+}
+
 /**
  * A worker reporting to its parent gets the server's facts stapled to its
  * prose, and is attributed as a worker rather than as the human whose name it
@@ -577,9 +588,13 @@ export function createSessionsMcpServer(ctx: SessionsToolContext) {
         async (args: { id: string; message: string }) => {
           if (!args.message?.trim()) return text("Nothing to send (empty message).");
           // Reporting to my own parent → prose + server-computed evidence,
-          // attributed as a worker. Any other target is delivered as-is.
-          const { content, user } = await workerReportPayload(args.id, args.message, ctx);
-          const res = await getSessionControl().deliverToSession(args.id, content, user);
+          // attributed as a worker. Explicit heads-ups get a UI-only notice
+          // marker; every other cross-session prompt is delivered as-is.
+          const payload = await workerReportPayload(args.id, args.message, ctx);
+          const content = payload.user.startsWith("worker ")
+            ? payload.content
+            : sessionNoticePayload(payload.content);
+          const res = await getSessionControl().deliverToSession(args.id, content, payload.user);
           return text(res.message);
         }
       ),
