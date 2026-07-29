@@ -20,7 +20,12 @@ export function parseNewSessionLink(
 	if (url.origin !== origin || stripBasePath(url.pathname) !== "/new") return null;
 
 	return {
-		mode: url.searchParams.get("mode") === "ask" ? "ask" : "code",
+		mode:
+			url.searchParams.get("mode") === "ask"
+				? "ask"
+				: url.searchParams.get("mode") === "scratch"
+					? "scratch"
+					: "code",
 		prompt: url.searchParams.get("prompt") || undefined,
 		repo: url.searchParams.get("repo") || url.searchParams.get("project") || undefined,
 		branch: url.searchParams.get("branch") || undefined,
