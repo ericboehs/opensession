@@ -14,8 +14,9 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
 - **Sessions list** — polls `GET /api/sessions` every 5s (matching the web UI);
   flat single-line workspace rows with live/PR status marks and a running-time
   ticker, larger mobile type, and the web client's warm dark palette, plus
-  grouping, compact toolbar search/filter, swipe-to-archive, restore from the
-  archived list, a floating create button, and pull to refresh.
+  grouping with most-used repositories first, compact toolbar
+  search/filter, swipe-to-archive, restore from the archived list, a floating
+  create button, and pull to refresh.
 - **Session view** — live transcript over the `/ws` WebSocket: user/assistant
   messages in the same neutral, repo-aware visual hierarchy as mobile web
   (streaming CommonMark/GFM with links, tables, and highlighted code blocks),
@@ -35,7 +36,8 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   pings; required against half-open iOS sockets), auto-reconnect with a banner,
   optimistic local echo of your prompts until the server's copy arrives.
 - **Settings** — native SwiftUI Tools, Personal, and Workspace administration,
-  plus server/GitHub/token configuration and a connection test.
+  plus server/GitHub/token configuration and a connection test. Cross-device
+  composer and chat preferences refresh at launch and when the app foregrounds.
 
 ## Getting a token
 
@@ -64,6 +66,7 @@ Then run the `OS1` scheme on iOS 26+.
 ```
 OS1/
   OS1App.swift               App entry; forces Settings on first run
+  NativePreferences.swift    Cross-device preference hydration/cache
   Models/
     Session.swift            Tolerant subset of the server's UnifiedSession
     TranscriptEntry.swift    Transcript entry (REST + WS frames)

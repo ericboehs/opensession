@@ -39,14 +39,10 @@ extension View {
         #endif
     }
 
-    /// Distinguish the person's messages on iOS without changing the Mac surface.
-    @ViewBuilder
+    /// The person's own messages get the same blue-gray bubble on both
+    /// platforms (`OS1VisualStyle.userMessage` resolves per appearance).
     func userMessagePanelCompat<S: Shape>(in shape: S) -> some View {
-        #if os(iOS)
         background(OS1VisualStyle.userMessage, in: shape)
-        #else
-        background(.fill.tertiary, in: shape)
-        #endif
     }
 
     /// Inline nav-bar title on iOS; titles are inline by nature on macOS.

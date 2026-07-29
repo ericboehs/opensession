@@ -28,21 +28,22 @@ enum OS1VisualStyle {
     static let text = Color(nsColor: .labelColor)
     static let textDim = Color(nsColor: .secondaryLabelColor)
     static let textFaint = Color(nsColor: .tertiaryLabelColor)
+    /// Same blue-gray tint as the iOS user bubble, resolved per appearance,
+    /// so the two apps read as one product.
+    static let userMessage = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.149, green: 0.192, blue: 0.259, alpha: 1)
+            : NSColor(red: 0.933, green: 0.949, blue: 0.969, alpha: 1)
+    })
     #endif
     static let accent = Color(red: 1.0, green: 0.231, blue: 0.231)
-    #if os(iOS)
+    // One status palette on both platforms — the Mac previously used stock
+    // Color.green/.yellow/… which rendered different hues than iOS.
     static let green = Color(red: 0.247, green: 0.725, blue: 0.314)
     static let yellow = Color(red: 0.824, green: 0.600, blue: 0.133)
     static let blue = Color(red: 0.345, green: 0.651, blue: 1.0)
     static let red = Color(red: 0.973, green: 0.318, blue: 0.286)
     static let purple = Color(red: 0.639, green: 0.443, blue: 0.969)
-    #else
-    static let green = Color.green
-    static let yellow = Color.yellow
-    static let blue = Color.blue
-    static let red = Color.red
-    static let purple = Color.purple
-    #endif
     static let chatMaxWidth: CGFloat = 780
 }
 

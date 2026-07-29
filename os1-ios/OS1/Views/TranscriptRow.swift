@@ -83,7 +83,7 @@ struct TranscriptRow: View {
             #if os(iOS)
             .font(.footnote)
             #else
-            .font(.caption2)
+            .font(.caption)
             #endif
             .foregroundStyle(OS1VisualStyle.textDim)
             .lineLimit(3)
@@ -156,7 +156,7 @@ struct ToolCallRow: View {
         #if os(iOS)
         .font(.subheadline)
         #else
-        .font(.caption)
+        .font(.callout)
         #endif
         .foregroundStyle(OS1VisualStyle.textDim)
         .contentShape(Rectangle())
@@ -238,7 +238,7 @@ struct ToolCallRow: View {
                     #if os(iOS)
                     .font(.system(.footnote, design: .monospaced))
                     #else
-                    .font(.system(.caption2, design: .monospaced))
+                    .font(.system(.caption, design: .monospaced))
                     #endif
                     .foregroundStyle(OS1VisualStyle.textDim)
                     .textSelection(.enabled)

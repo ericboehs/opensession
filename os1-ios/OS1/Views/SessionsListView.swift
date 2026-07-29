@@ -121,6 +121,7 @@ struct SessionsListView: View {
                         SettingsLink {
                             Image(systemName: "gearshape")
                         }
+                        .accessibilityLabel("Settings")
                     }
                 }
         } detail: {
