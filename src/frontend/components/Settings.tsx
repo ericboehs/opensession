@@ -85,6 +85,7 @@ import {
 	savePersonalPrompt,
 	relativeTime,
 	fetchModels,
+	fetchFeeds,
 	type ModelOption,
 	type WarmTemplateEntry,
 	type MemoryScopeDto,
@@ -92,6 +93,7 @@ import {
 	type PapercutDto,
 	type PapercutsRepoConfig,
 } from "../lib/api";
+import type { FeedDescriptor } from "../lib/types";
 import { getPushState, enablePush, disablePush, type PushState } from "../lib/push";
 import { getCurrentUser } from "./UserPicker";
 import { useIsPhone } from "../hooks/useIsPhone";
@@ -124,6 +126,11 @@ import {
 	SIDEBAR_SECTION_LABELS,
 	type SidebarSectionId,
 } from "../lib/sidebar-order";
+import {
+	onSidebarFeedsChanged,
+	readHiddenSidebarFeeds,
+	setSidebarFeedVisible,
+} from "../lib/sidebar-feeds";
 
 // The full-window Settings surface: a left sub-nav + a scrolling body, reached
 // from the "Settings" item in the account menu. Designed to grow — each area is
@@ -2266,6 +2273,21 @@ function AppearancePanel() {
 	const [hiddenSidebarTools, setHiddenSidebarTools] = useState(
 		readHiddenSidebarTools,
 	);
+	const [sidebarFeeds, setSidebarFeeds] = useState<FeedDescriptor[]>([]);
+	const [hiddenSidebarFeeds, setHiddenSidebarFeeds] = useState(
+		readHiddenSidebarFeeds,
+	);
+	useEffect(() => {
+		let alive = true;
+		fetchFeeds()
+			.then((feeds) => {
+				if (alive) setSidebarFeeds(feeds);
+			})
+			.catch(() => {});
+		return () => {
+			alive = false;
+		};
+	}, []);
 	const [sidebarOrder, setSidebarOrderState] = useState(getSidebarOrder);
 	const sidebarOrderRef = React.useRef(sidebarOrder);
 	useEffect(
@@ -2281,6 +2303,13 @@ function AppearancePanel() {
 		() =>
 			onSidebarToolsChanged(() =>
 				setHiddenSidebarTools(readHiddenSidebarTools()),
+			),
+		[],
+	);
+	useEffect(
+		() =>
+			onSidebarFeedsChanged(() =>
+				setHiddenSidebarFeeds(readHiddenSidebarFeeds()),
 			),
 		[],
 	);
@@ -2395,6 +2424,22 @@ function AppearancePanel() {
 								checked={!hiddenSidebarTools.has(toolId)}
 								onChange={(visible) =>
 									setSidebarToolVisible(toolId, visible)
+								}
+							/>
+						}
+					/>
+				))}
+				{sidebarFeeds.map((feed) => (
+					<SettingRow
+						key={feed.id}
+						title={feed.title}
+						desc="Show this source in the sidebar. Hidden sources stop refreshing until shown again."
+						control={
+							<Toggle
+								label={`Show ${feed.title} in sidebar`}
+								checked={!hiddenSidebarFeeds.has(feed.id)}
+								onChange={(visible) =>
+									setSidebarFeedVisible(feed.id, visible)
 								}
 							/>
 						}
