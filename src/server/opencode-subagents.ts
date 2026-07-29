@@ -244,12 +244,16 @@ export function getOpencodeSubagentTranscript(
   if (!ocId || !isOpencodeSessionId(childId)) return null;
   const dbPath = resolveOpencodeDbFor(ocId);
   if (!existsSync(dbPath)) return null;
-  let row: { agent: string | null; title: string | null } | undefined;
+  let row:
+    | { agent: string | null; title: string | null; model: string | null }
+    | undefined;
   try {
     const db = new Database(dbPath, { readonly: true });
     try {
       row = db
-        .query("SELECT agent, title FROM session WHERE id = ? AND parent_id = ?")
+        .query(
+          "SELECT agent, title, model FROM session WHERE id = ? AND parent_id = ?"
+        )
         .get(childId, ocId) as typeof row;
     } finally {
       db.close();
@@ -262,6 +266,7 @@ export function getOpencodeSubagentTranscript(
     meta: {
       agentId: childId,
       agentType: row.agent ?? undefined,
+      model: modelId(row.model),
       description: tidyChildTitle(row.title) || undefined,
     },
     entries: readOpencodeTranscript(childId, dbPath),

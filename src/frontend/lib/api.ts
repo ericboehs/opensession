@@ -415,6 +415,7 @@ export interface SubagentTranscript {
 	meta: {
 		agentId: string;
 		agentType?: string;
+		model?: string;
 		description?: string;
 		toolUseId?: string;
 		spawnDepth?: number;
