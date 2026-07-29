@@ -277,6 +277,10 @@ export async function handlePlainRoutes(
 					: undefined,
 			);
 			plainTodoCache = null; // the queue changed — next poll refetches
+			// The sidebar band reads the feeds layer now — bust that cache too.
+			try {
+				(await import("../feeds")).invalidateFeedCache("plain");
+			} catch {}
 			console.log(
 				`[plain-status] ${requestUser(ctx, body?.user) || "someone"} marked ${threadId} ${status}`,
 			);

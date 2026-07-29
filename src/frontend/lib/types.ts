@@ -114,6 +114,8 @@ export interface FeedDescriptor {
 		embedUrlTemplate: string;
 		links?: { label: string; hrefTemplate: string }[];
 	};
+	/** Lane whose count badges the collapsed band (e.g. Urgent). */
+	attentionLane?: string;
 	/** True for config-declared feeds (editable/deletable in the UI). */
 	fromConfig?: boolean;
 }

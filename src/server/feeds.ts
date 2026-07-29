@@ -67,6 +67,9 @@ export interface FeedDescriptor {
   /** Web panel the workspace tab renders for this feed's items
    *  (`{id}`-templated iframe URL + header links). */
   panel?: FeedPanelSpec;
+  /** Lane whose count shows as the collapsed band's attention badge
+   *  (e.g. plain's Urgent lane). */
+  attentionLane?: string;
   /** True for config-declared feeds (editable/deletable in the UI). */
   fromConfig?: boolean;
 }
@@ -192,6 +195,12 @@ export async function getFeedItems(
   const items = await entry.provider.listItems({ user });
   entry.cache.set(key, { items, ts: Date.now() });
   return items;
+}
+
+/** Drop a feed's cached items (all viewers) — mutations that change the
+ *  list (e.g. Plain mark-done) call this so the next poll refetches. */
+export function invalidateFeedCache(feedId: string): void {
+  registry.get(feedId)?.cache.clear();
 }
 
 /**

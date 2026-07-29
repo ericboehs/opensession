@@ -2,6 +2,7 @@
  * Plain Agent Module — handles Plain webhook events for the configured mention.
  */
 import type { AgentModule } from "../types";
+import type { FeedProvider } from "../../server/feeds";
 import { verifyPlainSignature } from "../../server/shared/signature";
 import { handleWebhook, activeSessions, pendingConfirmations } from "./handlers";
 import type { PlainWebhookPayload } from "./handlers";
@@ -14,6 +15,45 @@ let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 export class PlainAgent implements AgentModule {
   name = "plain";
+
+  /**
+   * The Support queue as a generic sidebar feed (docs/feeds-design.md W5):
+   * TODO threads with priority lanes; item.meta carries the full
+   * SupportThreadSummary so the frontend keeps rendering its bespoke
+   * SupportRow (hover card, mark-done, filters) inside the generic band.
+   * The 30s route cache is superseded by the feeds layer's 60s cache;
+   * mark-done invalidates it (routes/plain.ts → invalidateFeedCache).
+   */
+  getFeed(): FeedProvider | null {
+    return {
+      descriptor: {
+        id: "plain",
+        title: "Plain",
+        refKind: "plain",
+        tileBg: "#0d9488",
+        mcpServers: ["plain"],
+        lanes: [
+          { key: "0", label: "Urgent", dot: "var(--red)" },
+          { key: "1", label: "High", dot: "var(--yellow)" },
+          { key: "2", label: "Normal", dot: "var(--blue)" },
+          { key: "3", label: "Low", dot: "var(--text-faint)" },
+        ],
+        attentionLane: "0",
+      },
+      async listItems(): Promise<import("../../server/feeds").FeedItem[]> {
+        const { listTodoThreads } = await import("./api");
+        const threads = await listTodoThreads(100);
+        return threads.map((t) => ({
+          id: t.id,
+          title: t.title || t.customer?.name || t.customer?.email || "Ticket",
+          preview: t.previewText || undefined,
+          lane: String(t.priority ?? 2),
+          ts: t.statusChangedAt ? Date.parse(t.statusChangedAt) || undefined : undefined,
+          meta: t as unknown as Record<string, unknown>,
+        }));
+      },
+    };
+  }
 
   getRoutes(): Map<string, (req: Request, url: URL) => Promise<Response>> {
     const routes = new Map<string, (req: Request, url: URL) => Promise<Response>>();

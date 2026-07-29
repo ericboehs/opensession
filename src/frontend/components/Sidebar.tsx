@@ -19,7 +19,6 @@ import type { ReviewQueueItem } from "../lib/review-queue";
 import {
 	relativeTime,
 	fetchOpenPrs,
-	fetchSupportThreads,
 	fetchFeeds,
 	fetchFeedItems,
 	closePrPreviewApi,
@@ -1719,29 +1718,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return () => window.removeEventListener(PR_CLOSED_EVENT, onClosed);
 	}, []);
 
-	// The Plain TODO queue for the Support band, polled gently (the server
-	// caches ~30s, so every open browser sharing one fetch is fine). Null until
-	// the first fetch lands; fetch errors (Plain not configured, API down) just
-	// keep the band hidden.
-	const [supportThreads, setSupportThreads] = useState<SupportThread[] | null>(
-		null,
-	);
-	useEffect(() => {
-		let alive = true;
-		const load = () =>
-			fetchSupportThreads()
-				.then((threads) => {
-					if (alive) setSupportThreads(threads);
-				})
-				.catch(() => {});
-		load();
-		const t = setInterval(load, 60_000);
-		return () => {
-			alive = false;
-			clearInterval(t);
-		};
-	}, []);
-
 	// Generic feed bands (Tella videos, … — docs/feeds-design.md): descriptors
 	// once on mount, items per feed on the same gentle 60s cadence as Support
 	// (the server caches ~60s). A feed that errors just keeps its band hidden.
@@ -1773,6 +1749,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			if (timer) clearInterval(timer);
 		};
 	}, []);
+
+	// The Support queue now arrives through the generic feeds poll: the plain
+	// feed's items carry the full SupportThreadSummary in meta, so all the
+	// bespoke Support UI (SupportRow, filters, Tinder hand-offs) keeps working
+	// off the same derived shape (docs/feeds-design.md W5).
+	const supportThreads = useMemo<SupportThread[] | null>(() => {
+		const items = feedItems["plain"];
+		if (!items) return null;
+		return items.map((i) => i.meta as unknown as SupportThread);
+	}, [feedItems]);
 
 	// Newest live session per feed item (keyed `<kind>:<id>`) — a feed row with
 	// one wears that session's status dot.
@@ -3669,14 +3655,17 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// Quick "mark done" straight from a Support row — optimistic removal (the
 	// ticket leaves Plain's Todo queue), restored by a refetch if Plain says no.
 	async function markSupportRowDone(threadId: string) {
-		setSupportThreads((prev) =>
-			prev ? prev.filter((x) => x.id !== threadId) : prev,
-		);
+		setFeedItems((prev) => ({
+			...prev,
+			plain: (prev.plain || []).filter((x) => x.id !== threadId),
+		}));
 		try {
 			await setPlainThreadStatusApi(threadId, "done", { user: currentUser });
 		} catch {
-			fetchSupportThreads()
-				.then(setSupportThreads)
+			fetchFeedItems("plain")
+				.then((items) =>
+					setFeedItems((prev) => ({ ...prev, plain: items })),
+				)
 				.catch(() => {});
 		}
 	}
@@ -4159,70 +4148,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		);
 	}
 
-	// The Plain project band, styled like a repo band: Plain tile + name +
-	// count, an urgent badge while collapsed, the queue filter at the far end,
-	// and the priority lanes (or a flat priority-ordered list) nested under.
-	function renderPlainProject(withLanes: boolean) {
-		if ((supportThreads?.length || 0) === 0 || filter.repo !== "all")
-			return null;
-		const threads = plainThreadsInView;
-		const gkey = "project:plain";
-		const open = isOpen(gkey);
-		// Collapsed band still surfaces the active ticket (same rule as the
-		// repo bands' selected rows) without force-opening the band.
-		const activeThreads = open ? [] : threads.filter(supportThreadActive);
-		const urgentCount = threads.filter(
-			(t) => (t.priority ?? 2) === 0,
-		).length;
-		return (
-			<div className="sidebar-repo-group" key={gkey}>
-				<button
-					className="sidebar-group-header sidebar-repo-head group transition-colors"
-					onClick={() => toggleGroup(gkey)}
-				>
-					<span className="sidebar-rail">
-						<RepoTile name="plain" />
-					</span>
-					<span className="sidebar-group-name">Plain</span>
-					<span className="sidebar-group-count">{threads.length}</span>
-					{/* Urgent tickets must not vanish into a closed band. */}
-					{!open && urgentCount > 0 && (
-						<span
-							className="sidebar-repo-attn"
-							aria-label={`${urgentCount} urgent tickets`}
-						>
-							{urgentCount}
-						</span>
-					)}
-					<IconChevronDown
-						className="sidebar-group-chevron"
-						size={22}
-						style={{ transform: open ? "none" : "rotate(-90deg)" }}
-					/>
-					{plainFilterMenu()}
-				</button>
-				{open ? (
-					<div className="sidebar-repo-lanes">
-						{withLanes
-							? renderSupportLanes(threads)
-							: [...threads]
-									.sort(
-										(a, b) =>
-											(a.priority ?? 2) - (b.priority ?? 2),
-									)
-									.map(renderSupportRow)}
-					</div>
-				) : (
-					activeThreads.length > 0 && (
-						<div className="sidebar-repo-lanes">
-							{activeThreads.map(renderSupportRow)}
-						</div>
-					)
-				)}
-			</div>
-		);
-	}
-
 	// Is a feed item's workspace (or its linked session) the open surface?
 	function feedItemActive(feed: FeedDescriptor, item: FeedItem) {
 		if (selectedWorkspaceId) {
@@ -4241,10 +4166,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// A generic feed band (Tella videos, …) styled like the Plain project band:
 	// brand tile + name + count, newest-first rows nested under
 	// (docs/feeds-design.md). Hidden while a repo filter is active, like Plain.
-	function renderFeedBand(feed: FeedDescriptor) {
+	function renderFeedBand(feed: FeedDescriptor, withLanes = false) {
+		const isPlain = feed.id === "plain";
 		const items = feedItems[feed.id] || [];
-		if (items.length === 0 || filter.repo !== "all") return null;
-		const gkey = `project:feed-${feed.id}`;
+		// Plain rows render through the bespoke SupportRow pipeline (hover
+		// card, mark-done, filters) inside this generic band container; the
+		// filtered thread list is the source of truth for it.
+		const plainThreads = isPlain ? plainThreadsInView : null;
+		const count = isPlain ? plainThreads!.length : items.length;
+		if (count === 0 || filter.repo !== "all") return null;
+		const gkey = isPlain ? "project:plain" : `project:feed-${feed.id}`;
 		const open = isOpen(gkey);
 		const renderRow = (item: FeedItem) => (
 			<FeedRow
@@ -4256,10 +4187,41 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				onOpen={() => onOpenFeedItem(feed, item)}
 			/>
 		);
-		// Collapsed band still surfaces the active item (same rule as Plain).
+		// Collapsed band still surfaces the active item/ticket (same rule as
+		// the repo bands' selected rows).
 		const activeItems = open
 			? []
 			: items.filter((i) => feedItemActive(feed, i));
+		const activeThreads =
+			open || !isPlain ? [] : plainThreads!.filter(supportThreadActive);
+		// Attention badge on a collapsed band (e.g. Plain's Urgent lane).
+		const attentionCount = feed.attentionLane
+			? isPlain
+				? plainThreads!.filter((t) => (t.priority ?? 2) === 0).length
+				: items.filter((i) => i.lane === feed.attentionLane).length
+			: 0;
+		const openBody = isPlain ? (
+			<div className="sidebar-repo-lanes">
+				{withLanes
+					? renderSupportLanes(plainThreads!)
+					: [...plainThreads!]
+							.sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2))
+							.map(renderSupportRow)}
+			</div>
+		) : (
+			<div className="sidebar-repo-lanes">{items.map(renderRow)}</div>
+		);
+		const collapsedBody = isPlain
+			? activeThreads.length > 0 && (
+					<div className="sidebar-repo-lanes">
+						{activeThreads.map(renderSupportRow)}
+					</div>
+				)
+			: activeItems.length > 0 && (
+					<div className="sidebar-repo-lanes">
+						{activeItems.map(renderRow)}
+					</div>
+				);
 		return (
 			<div className="sidebar-repo-group" key={gkey}>
 				<button
@@ -4270,22 +4232,23 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						<RepoTile name={feed.id} />
 					</span>
 					<span className="sidebar-group-name">{feed.title}</span>
-					<span className="sidebar-group-count">{items.length}</span>
+					<span className="sidebar-group-count">{count}</span>
+					{!open && attentionCount > 0 && (
+						<span
+							className="sidebar-repo-attn"
+							aria-label={`${attentionCount} urgent`}
+						>
+							{attentionCount}
+						</span>
+					)}
 					<IconChevronDown
 						className="sidebar-group-chevron"
 						size={22}
 						style={{ transform: open ? "none" : "rotate(-90deg)" }}
 					/>
+					{isPlain && plainFilterMenu()}
 				</button>
-				{open ? (
-					<div className="sidebar-repo-lanes">{items.map(renderRow)}</div>
-				) : (
-					activeItems.length > 0 && (
-						<div className="sidebar-repo-lanes">
-							{activeItems.map(renderRow)}
-						</div>
-					)
-				)}
+				{open ? openBody : collapsedBody}
 			</div>
 		);
 	}
@@ -5175,8 +5138,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								...(filter.groupBy === "repo"
 									? renderStatusLanes([], "", snoozedWsRows)
 									: []),
-								renderPlainProject(filter.groupBy === "repo-status"),
-								...feeds.map(renderFeedBand),
+								...feeds.map((d) =>
+									renderFeedBand(d, filter.groupBy === "repo-status"),
+								),
 							]
 						: [
 								...renderStatusLanes(
@@ -5186,8 +5150,13 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									undefined,
 									lanePrItems,
 								),
+								// Flat status view: Plain's priority lanes stay inlined
+								// after the status lanes (one continuous list); other
+								// feeds render as bands below.
 								...renderSupportLanes(plainThreadsInView),
-								...feeds.map(renderFeedBand),
+								...feeds
+									.filter((d) => d.id !== "plain")
+									.map((d) => renderFeedBand(d, false)),
 							]}
 				</div>
 
