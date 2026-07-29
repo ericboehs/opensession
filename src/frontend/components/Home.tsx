@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { Project, UnifiedSession } from "../lib/types";
-import { fetchRecentPrs, type RecentPr } from "../lib/api";
+import { fetchHomeStats, fetchRecentPrs, type HomeStats, type RecentPr } from "../lib/api";
 import { Menu } from "../ui/menu";
 import { useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
@@ -18,6 +18,7 @@ interface Props {
   projects: Project[];
   onSelect: (session: UnifiedSession) => void;
   onNewSession: () => void;
+  onOpenAnalytics?: () => void;
 }
 
 interface WorktreeRow {
@@ -142,6 +143,104 @@ function personLabel(person: string): string {
     .join(" ");
 }
 
+const compactFmt = new Intl.NumberFormat("en", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+const fmtCompact = (n: number) => compactFmt.format(n);
+
+function fmtAgentTime(ms: number): string {
+  const hours = ms / 3_600_000;
+  if (hours < 1) return `${Math.round(ms / 60_000)}m`;
+  return `${hours >= 10 ? Math.round(hours) : hours.toFixed(1)}h`;
+}
+
+function StatCell({
+  value,
+  label,
+  sub,
+  title,
+  dot,
+}: {
+  value: string;
+  label: string;
+  sub?: string;
+  title?: string;
+  dot?: "live" | "idle";
+}) {
+  return (
+    <div
+      className="-ml-px -mt-px min-w-0 border-l border-t border-line px-4 py-2.5 transition-colors group-hover:bg-hover max-[720px]:px-3.5 max-[720px]:py-2"
+      title={title}
+    >
+      <div className="flex items-center gap-1.5">
+        {dot && (
+          <span
+            className={
+              dot === "live"
+                ? "h-2 w-2 shrink-0 animate-pulse rounded-full bg-green"
+                : "h-2 w-2 shrink-0 rounded-full bg-line"
+            }
+          />
+        )}
+        <span className="truncate text-[17px] font-semibold leading-6 tabular-nums text-fg">
+          {value}
+        </span>
+      </div>
+      <div className="truncate text-[11px] leading-4 text-dim">{label}</div>
+      {sub && <div className="truncate text-[11px] leading-4 text-faint">{sub}</div>}
+    </div>
+  );
+}
+
+function OverviewStrip({
+  running,
+  stats,
+  onOpenAnalytics,
+}: {
+  running: number;
+  stats: HomeStats;
+  onOpenAnalytics?: () => void;
+}) {
+  const { today, week } = stats;
+  return (
+    <button
+      type="button"
+      onClick={onOpenAnalytics}
+      title="Open Analytics"
+      className="group mt-6 grid w-full cursor-pointer grid-cols-5 overflow-hidden rounded-lg border border-line bg-panel p-0 text-left max-[860px]:grid-cols-3 max-[560px]:grid-cols-2"
+    >
+      <StatCell
+        value={fmtCompact(running)}
+        label={running === 1 ? "agent running now" : "agents running now"}
+        dot={running > 0 ? "live" : "idle"}
+      />
+      <StatCell
+        value={fmtCompact(today.sessions)}
+        label="sessions today"
+        sub={`${fmtCompact(week.sessions)} · 7d`}
+      />
+      <StatCell
+        value={fmtCompact(today.turns)}
+        label="turns today"
+        sub={`${fmtCompact(week.turns)} · 7d`}
+        title={`${today.errors.toLocaleString()} errors today`}
+      />
+      <StatCell
+        value={fmtAgentTime(today.durationMs)}
+        label="agent time today"
+        sub={`${fmtAgentTime(week.durationMs)} · 7d`}
+      />
+      <StatCell
+        value={fmtCompact(today.outputTokens)}
+        label="tokens out today"
+        sub={`${fmtCompact(week.outputTokens)} · 7d`}
+        title={`${today.inputTokens.toLocaleString()} input · ${today.cacheReadTokens.toLocaleString()} cache read today`}
+      />
+    </button>
+  );
+}
+
 function StateIcon({ state }: { state: WorktreeRow["state"] }) {
   if (state === "MERGED") return <IconGitMerge size={20} />;
   if (state === "CLOSED") return <IconArchive size={20} />;
@@ -195,7 +294,7 @@ export function buildWorktreeRows(recentPrs: RecentPr[], sessions: UnifiedSessio
   );
 }
 
-export function Home({ sessions, projects, onSelect, onNewSession }: Props) {
+export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalytics }: Props) {
   const currentUser = useCurrentUser();
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("all");
@@ -205,6 +304,26 @@ export function Home({ sessions, projects, onSelect, onNewSession }: Props) {
   const [showArchived, setShowArchived] = useState(false);
   const [recentPrs, setRecentPrs] = useState<RecentPr[]>([]);
   const [personPrs, setPersonPrs] = useState<RecentPr[]>([]);
+  const [stats, setStats] = useState<HomeStats | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const load = () =>
+      fetchHomeStats()
+        .then((data) => active && setStats(data))
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 60_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const running = useMemo(
+    () => sessions.filter((s) => s.isRunning && !s.archived).length,
+    [sessions],
+  );
 
   useEffect(() => {
     let active = true;
@@ -293,6 +412,10 @@ export function Home({ sessions, projects, onSelect, onNewSession }: Props) {
             Create workspace
           </button>
         </div>
+
+        {stats && (
+          <OverviewStrip running={running} stats={stats} onOpenAnalytics={onOpenAnalytics} />
+        )}
 
         <div className="mt-7 grid grid-cols-[minmax(180px,1fr)_auto_auto_auto] items-center gap-5 border-b border-line px-2 pb-4 max-[860px]:grid-cols-2 max-[720px]:grid-cols-1 max-[720px]:gap-2.5">
           <label className="flex min-w-0 items-center gap-2 text-faint focus-within:text-dim">

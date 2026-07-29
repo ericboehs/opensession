@@ -3434,6 +3434,7 @@ function App() {
 								projects={projects}
 								onSelect={(s) => navigate({ view: "session", id: s.id })}
 								onNewSession={() => openPalette()}
+								onOpenAnalytics={() => navigate({ view: "analytics" })}
 							/>
 						)}
 						</main>

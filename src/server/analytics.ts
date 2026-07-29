@@ -985,3 +985,61 @@ export async function buildAnalytics(from: string, to: string): Promise<Analytic
 		reviewQuality,
 	};
 }
+
+// ── Home overview strip ──
+
+export interface HomeStatsBucket {
+	/** Sessions that had at least one turn in the window. */
+	sessions: number;
+	turns: number;
+	errors: number;
+	durationMs: number;
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+}
+
+/** Cheap numbers for the Home overview strip: audit-rollup reads only — no
+ *  session-store scan and no gh calls. Past days come straight from the disk
+ *  cache; today's rollup recomputes only when its audit file has grown. */
+export function buildHomeStats(): { today: HomeStatsBucket; week: HomeStatsBucket } {
+	const empty = (): HomeStatsBucket => ({
+		sessions: 0,
+		turns: 0,
+		errors: 0,
+		durationMs: 0,
+		inputTokens: 0,
+		outputTokens: 0,
+		cacheReadTokens: 0,
+		cacheWriteTokens: 0,
+	});
+	let today = empty();
+	const week = empty();
+	const weekSessions = new Set<string>();
+	for (let i = 6; i >= 0; i--) {
+		const date = new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10);
+		const r = cachedRollup(date);
+		const bucket: HomeStatsBucket = {
+			sessions: Object.keys(r.bySession).length,
+			turns: r.turns,
+			errors: r.errors,
+			durationMs: r.durationMs,
+			inputTokens: r.tokens.input,
+			outputTokens: r.tokens.output,
+			cacheReadTokens: r.tokens.cacheRead,
+			cacheWriteTokens: r.tokens.cacheWrite,
+		};
+		for (const id of Object.keys(r.bySession)) weekSessions.add(id);
+		week.turns += bucket.turns;
+		week.errors += bucket.errors;
+		week.durationMs += bucket.durationMs;
+		week.inputTokens += bucket.inputTokens;
+		week.outputTokens += bucket.outputTokens;
+		week.cacheReadTokens += bucket.cacheReadTokens;
+		week.cacheWriteTokens += bucket.cacheWriteTokens;
+		if (i === 0) today = bucket;
+	}
+	week.sessions = weekSessions.size;
+	return { today, week };
+}

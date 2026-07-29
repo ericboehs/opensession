@@ -61,6 +61,29 @@ export async function fetchAnalytics(
 	);
 }
 
+/** Today/last-7-days aggregates for the Home overview strip. */
+export interface HomeStatsBucket {
+	sessions: number;
+	turns: number;
+	errors: number;
+	durationMs: number;
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+}
+
+export interface HomeStats {
+	today: HomeStatsBucket;
+	week: HomeStatsBucket;
+}
+
+export async function fetchHomeStats(): Promise<HomeStats> {
+	return request<HomeStats>("/analytics/home", {
+		label: "Failed to load home stats",
+	});
+}
+
 /** Single error shape for every API failure: HTTP status + the server's
  * `error` field when it sent one (else a "<label>: <status>" message). */
 export class ApiError extends Error {
