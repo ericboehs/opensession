@@ -158,6 +158,15 @@ export function buildChildSessionPrompt(input: {
 const EVIDENCE_MAX_CHARS = 4000;
 
 /**
+ * Marks the delivered report as agent-authored so the UI renders it as a
+ * worker card rather than a message the human appears to have typed. Kept in
+ * sync with WORKER_SENTINEL_RE in src/frontend/lib/humanReply.ts, which also
+ * falls back to the "worker <id>" attribution so reports sent before this
+ * sentinel shipped still render as cards.
+ */
+const WORKER_REPORT_SENTINEL = "<!--os:worker-report-->";
+
+/**
  * A worker reporting to its parent gets the server's facts stapled to its
  * prose, and is attributed as a worker rather than as the human whose name it
  * inherited (a report arriving as "[Michiel] …" reads to the parent model like
@@ -213,8 +222,9 @@ export async function workerReportPayload(
 
     const block = await evidence(me);
     stamp(me);
+    const body = block ? `${message}\n\n${block.slice(0, EVIDENCE_MAX_CHARS)}` : message;
     return {
-      content: block ? `${message}\n\n${block.slice(0, EVIDENCE_MAX_CHARS)}` : message,
+      content: `${WORKER_REPORT_SENTINEL}\n${body}`,
       user: `worker ${me}`,
     };
   } catch {

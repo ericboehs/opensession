@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { isGitHubAttribution, parseAttribution, parseReviewHandoff } from "./humanReply";
+import {
+	isGitHubAttribution,
+	parseAttribution,
+	parseReviewHandoff,
+	parseWorkerReport,
+	parseWorkflowNotice,
+} from "./humanReply";
 
 describe("human reply attribution", () => {
 	it("parses bracketed attributions", () => {
@@ -33,5 +39,58 @@ describe("review handoff detection", () => {
 	it("ignores other GitHub FYIs", () => {
 		expect(parseReviewHandoff("🔀 PR #42 was merged")).toBeNull();
 		expect(parseReviewHandoff("plain message")).toBeNull();
+	});
+});
+
+describe("worker report detection", () => {
+	const id = "bks-019fa49c-71bb-7000-85d4-c8cc61d0ca85";
+
+	it("detects the delivered sentinel form and strips both markers", () => {
+		const parsed = parseWorkerReport(
+			`[worker ${id}] <!--os:worker-report-->\nInspection complete.`,
+		);
+		expect(parsed).toEqual({ sessionId: id, body: "Inspection complete." });
+	});
+
+	it("detects pre-sentinel reports by their worker attribution", () => {
+		// parseAttribution can't: "worker <id>" is 47 chars, over its 40 cap —
+		// which is why these used to render as raw text in the human's bubble.
+		expect(parseAttribution(`[worker ${id}] Done.`)).toBeNull();
+		expect(parseWorkerReport(`[worker ${id}] Done.`)).toEqual({
+			sessionId: id,
+			body: "Done.",
+		});
+	});
+
+	it("carries the worker's id so the card can link back to it", () => {
+		expect(parseWorkerReport(`<!--os:worker-report:${id}-->\nDone.`)?.sessionId).toBe(id);
+	});
+
+	it("leaves ordinary turns alone", () => {
+		expect(parseWorkerReport("Please review the worker output")).toBeNull();
+		expect(parseWorkerReport("[Kent] worker bks-1 looks stuck")).toBeNull();
+	});
+});
+
+describe("workflow notice detection", () => {
+	const run = "wf-019fadb0-1b1a-7000-bb6f-4e889643002f";
+
+	it("detects the sentinel through the human attribution it's delivered under", () => {
+		const parsed = parseWorkflowNotice(
+			`[Michiel Westerbeek] <!--os:workflow-notice:${run}-->\n✅ Workflow "perspective-review" finished (${run}) — 2 agents: 2 done.`,
+		);
+		expect(parsed?.runId).toBe(run);
+		expect(parsed?.body.startsWith("✅ Workflow")).toBe(true);
+	});
+
+	it("detects pre-sentinel notices by their status opener", () => {
+		expect(parseWorkflowNotice(`⚠️ Workflow "audit" failed (${run}) — 3 agents.`)?.runId).toBe(
+			run,
+		);
+	});
+
+	it("leaves ordinary turns alone", () => {
+		expect(parseWorkflowNotice("Workflow finished, what now?")).toBeNull();
+		expect(parseWorkflowNotice("✅ done")).toBeNull();
 	});
 });

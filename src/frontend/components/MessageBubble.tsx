@@ -7,6 +7,8 @@ import {
 	parseAttribution,
 	isGitHubAttribution,
 	parseReviewHandoff,
+	parseWorkerReport,
+	parseWorkflowNotice,
 } from "../lib/humanReply";
 import { useCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
@@ -315,6 +317,60 @@ export const MessageBubble = React.memo(function MessageBubble({
 				: null,
 		[entry.type, attribution],
 	);
+	// Agent-to-agent deliveries that arrive as "user" turns but are nobody's
+	// instruction: a worker reporting to its parent, and the nudge a finished
+	// workflow sends its launching session. Parsed off the raw content — the
+	// worker attribution is too long for parseAttribution, and the workflow
+	// nudge is attributed to the human who launched it, so both would otherwise
+	// render as words the human appears to have typed.
+	const workerReport = useMemo(
+		() => (entry.type === "user" ? parseWorkerReport(entry.content) : null),
+		[entry.type, entry.content],
+	);
+	const workflowNotice = useMemo(
+		() =>
+			entry.type === "user" && !workerReport
+				? parseWorkflowNotice(entry.content)
+				: null,
+		[entry.type, entry.content, workerReport],
+	);
+
+	if (entry.type === "user" && workerReport) {
+		return (
+			<div className="msg" data-eid={entry.id}>
+				<div className="overflow-hidden rounded-lg bg-panel">
+					<div className="flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-dim">
+						<span>🤖 Worker report</span>
+						{workerReport.sessionId && (
+							<a
+								className="text-dim underline decoration-dotted hover:text-fg"
+								href={`${BASE_PATH}/session/${workerReport.sessionId}`}
+							>
+								open worker
+							</a>
+						)}
+						<MsgTime ts={entry.timestamp} />
+					</div>
+					<ClampedBody
+						className="msg-body markdown px-3.5 py-2.5"
+						content={workerReport.body}
+						entry={entry}
+						sessionId={sessionId}
+					/>
+				</div>
+			</div>
+		);
+	}
+
+	// Short and purely informational — the centered system pill, like "🔀 merged".
+	if (entry.type === "user" && workflowNotice) {
+		return (
+			<div className="msg msg-system" data-eid={entry.id}>
+				<span className="msg-system-text">{workflowNotice.body}</span>
+			</div>
+		);
+	}
+
 	if (entry.type === "user" && reviewHandoff) {
 		return (
 			<div className="msg" data-eid={entry.id}>

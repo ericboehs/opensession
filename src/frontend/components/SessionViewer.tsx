@@ -20,7 +20,12 @@ import {
 	recordChatPerf,
 } from "../lib/chat-performance";
 import { AGENT_NAME, DEFAULT_DOC_TITLE } from "../lib/brand";
-import { isGitHubAttribution, parseHumanReply } from "../lib/humanReply";
+import {
+	isGitHubAttribution,
+	parseHumanReply,
+	parseWorkerReport,
+	parseWorkflowNotice,
+} from "../lib/humanReply";
 import type {
 	UnifiedSession,
 	TranscriptEntry,
@@ -2904,7 +2909,14 @@ export function SessionViewer({
 	) {
 		const firstImage = item.images?.[0];
 		const extraImages = Math.max(0, (item.images?.length ?? 0) - 1);
-		const body = opts.human ? opts.human.body : item.content;
+		// An agent-to-agent delivery (worker report, finished-workflow nudge)
+		// carries a sentinel the human should never see — strip it here too, so a
+		// message in flight reads the same as the card it becomes.
+		const worker = opts.human ? null : parseWorkerReport(item.content);
+		const workflow = opts.human || worker ? null : parseWorkflowNotice(item.content);
+		const body = opts.human
+			? opts.human.body
+			: (worker?.body ?? workflow?.body ?? item.content);
 		return (
 			<div className="composer-queue-content">
 				{firstImage && (
@@ -2920,6 +2932,8 @@ export function SessionViewer({
 						<span className="composer-queue-from">💬 {opts.human.name}</span>
 					)}
 					{opts.github && <span className="composer-queue-from">GitHub</span>}
+					{worker && <span className="composer-queue-from">🤖 Worker report</span>}
+					{workflow && <span className="composer-queue-from">⚙️ Workflow</span>}
 					{body}
 				</div>
 			</div>

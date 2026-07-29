@@ -89,7 +89,12 @@ function wakeOwningSession(snap: WorkflowRunSnapshot): void {
 				: snap.status === "error"
 					? `⚠️ Workflow "${snap.name}" failed`
 					: `⏹️ Workflow "${snap.name}" ${snap.status}`;
+		// The sentinel marks this as an agent-to-agent nudge: it is delivered
+		// attributed to the human who launched the run, so without it the UI
+		// renders it as a message they appear to have typed. Kept in sync with
+		// WORKFLOW_SENTINEL_RE in src/frontend/lib/humanReply.ts.
 		const msg =
+			`<!--os:workflow-notice:${snap.runId}-->\n` +
 			`${head} (${snap.runId}) — ${snap.agents.length} agents${tally ? `: ${tally}` : ""}. ` +
 			`Read its result with workflow_status ${snap.runId} and continue the task.` +
 			(snap.error ? `\nError: ${snap.error}` : "");

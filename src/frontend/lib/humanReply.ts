@@ -69,3 +69,72 @@ export function parseReviewHandoff(body?: string): { prNumber: number | null; bo
   const pr = text.match(/PR #(\d+)/);
   return { prNumber: pr ? parseInt(pr[1], 10) : null, body: text };
 }
+
+/**
+ * Strip the "[Name] " attribution prefix deliverToSession prepends, so the
+ * agent-notice parsers below work on both the delivered form and a bare body
+ * (tests, and the already-stripped `attribution.body` in MessageBubble). Wider
+ * than ATTRIBUTION_RE's 40-char name cap on purpose: a worker is attributed as
+ * "worker <session-id>", which is 47 chars and so never parses as an
+ * attribution — the very reason these turns used to render as raw
+ * "[worker bks-…] …" text in the human's own bubble.
+ */
+const ATTR_PREFIX_RE = /^\[[^\]\n]{1,80}\]\s*/;
+
+/**
+ * Detect a worker's report to its parent (workerReportPayload in
+ * src/agents/slack/sessions-tools.ts): a child session's findings, delivered as
+ * a user turn but authored by an agent — not an instruction from the human.
+ *
+ * Matched on the "worker <session-id>" attribution (which every such report has
+ * carried since the feature shipped, so old transcripts render as cards too)
+ * and/or the sentinel, kept in sync with WORKER_REPORT_SENTINEL in
+ * sessions-tools.ts. Returns the worker's session id, for a link back to it.
+ */
+const WORKER_ATTR_RE = /^\[worker\s+([^\]\s]+)\]\s*/;
+const WORKER_SENTINEL_RE = /^<!--os:worker-report(?::([^\s>]+))?-->\s*/;
+
+export function parseWorkerReport(
+  content?: string,
+): { sessionId: string | null; body: string } | null {
+  if (!content) return null;
+  let text = content;
+  let sessionId: string | null = null;
+  const attr = text.match(WORKER_ATTR_RE);
+  if (attr) {
+    sessionId = attr[1];
+    text = text.slice(attr[0].length);
+  }
+  const sentinel = text.match(WORKER_SENTINEL_RE);
+  if (sentinel) {
+    sessionId = sentinel[1] || sessionId;
+    text = text.slice(sentinel[0].length);
+  }
+  if (!attr && !sentinel) return null;
+  return { sessionId, body: text.trim() };
+}
+
+/**
+ * Detect the "your workflow finished, pick the results up" nudge
+ * (wakeOwningSession in src/server/workflow-runner.ts). It's delivered
+ * attributed to the human who launched the run, so without this it renders as
+ * a message the human appears to have typed. Sentinel kept in sync with
+ * WORKFLOW_NOTICE_SENTINEL there; the status-emoji opener is the fallback for
+ * notices delivered before the sentinel shipped.
+ */
+const WORKFLOW_SENTINEL_RE = /^<!--os:workflow-notice(?::([^\s>]+))?-->\s*/;
+const LEGACY_WORKFLOW_RE = /^(?:✅|⚠️|⏹️)\s*Workflow\s+["“]/;
+
+export function parseWorkflowNotice(
+  content?: string,
+): { runId: string | null; body: string } | null {
+  if (!content) return null;
+  const text = content.replace(ATTR_PREFIX_RE, "");
+  const sentinel = text.match(WORKFLOW_SENTINEL_RE);
+  if (sentinel) {
+    return { runId: sentinel[1] || null, body: text.slice(sentinel[0].length).trim() };
+  }
+  if (!LEGACY_WORKFLOW_RE.test(text)) return null;
+  const run = text.match(/\b(wf-[\w-]+)/);
+  return { runId: run ? run[1] : null, body: text.trim() };
+}
