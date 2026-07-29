@@ -34,6 +34,7 @@ struct OS1App: App {
         Settings {
             MacSettingsView()
         }
+        .windowResizability(.contentMinSize)
         #endif
     }
 }
@@ -87,7 +88,10 @@ struct RootView: View {
             }
             .task(id: preferenceHydrationID) {
                 guard scenePhase == .active else { return }
-                await NativePreferences.hydrate()
+                while !Task.isCancelled {
+                    await NativePreferences.hydrate()
+                    try? await Task.sleep(for: .seconds(30))
+                }
             }
             // Coming back from Safari/GitHub after approving the device code:
             // poll right away so the sign-in lands the moment we're foreground
@@ -111,6 +115,6 @@ struct RootView: View {
     }
 
     private var preferenceHydrationID: String {
-        "\(scenePhase)|\(config.baseURLString)|\(config.userName)|\(config.token.hashValue)"
+        "\(scenePhase)|\(config.baseURLString)|\(config.userName)|\(config.githubLogin)|\(config.token.hashValue)"
     }
 }

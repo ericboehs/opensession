@@ -13,6 +13,7 @@ enum NativePreferences {
 
     private static var generation = 0
     private static let identityKey = "os1.preferences.identity"
+    private static let bucketKey = "os1.preferences.bucket"
 
     static func context() -> Context {
         let config = ServerConfig.shared
@@ -35,21 +36,34 @@ enum NativePreferences {
               context() == requestContext
         else { return }
 
-        apply(prefs, identity: identity(for: requestContext))
+        apply(
+            prefs,
+            identity: identity(for: requestContext),
+            bucket: bucket(for: requestContext)
+        )
     }
 
     @discardableResult
     static func apply(_ prefs: [String: String], for requestContext: Context) -> Bool {
         guard context() == requestContext else { return false }
         generation += 1
-        apply(prefs, identity: identity(for: requestContext))
+        apply(
+            prefs,
+            identity: identity(for: requestContext),
+            bucket: bucket(for: requestContext)
+        )
         return true
     }
 
-    private static func apply(_ prefs: [String: String], identity: String) {
+    private static func apply(
+        _ prefs: [String: String],
+        identity: String,
+        bucket: String
+    ) {
         let defaults = UserDefaults.standard
         let previousIdentity = defaults.string(forKey: identityKey)
-        let changedIdentity = previousIdentity != identity
+        let previousBucket = defaults.string(forKey: bucketKey)
+        let changedIdentity = previousIdentity != identity || previousBucket != bucket
 
         set(
             prefs["default-model"],
@@ -86,7 +100,15 @@ enum NativePreferences {
             resetMissing: changedIdentity,
             in: defaults
         )
+        set(
+            validatedRepoOrder(prefs["repo-order"]),
+            default: "[]",
+            key: "os1.sidebar.repoOrder",
+            resetMissing: true,
+            in: defaults
+        )
         defaults.set(identity, forKey: identityKey)
+        defaults.set(bucket, forKey: bucketKey)
     }
 
     private static func identity(for context: Context) -> String {
@@ -94,9 +116,28 @@ enum NativePreferences {
         return "\(context.server)|\(person.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
     }
 
+    private static func bucket(for context: Context) -> String {
+        "\(context.server)|\(context.user.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+    }
+
     private static func validated(_ value: String?, allowed: Set<String>) -> String? {
         guard let value, allowed.contains(value) else { return nil }
         return value
+    }
+
+    private static func validatedRepoOrder(_ value: String?) -> String? {
+        guard let value,
+              let data = value.data(using: .utf8),
+              let repos = try? JSONDecoder().decode([String].self, from: data)
+        else { return nil }
+        var seen = Set<String>()
+        let normalized = repos.compactMap { repo -> String? in
+            let repo = repo.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !repo.isEmpty, seen.insert(repo).inserted else { return nil }
+            return repo
+        }
+        guard let encoded = try? JSONEncoder().encode(normalized) else { return nil }
+        return String(decoding: encoded, as: UTF8.self)
     }
 
     private static func set(

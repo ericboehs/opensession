@@ -21,7 +21,13 @@ const PREFS_DIR = stateDir("ui-prefs");
 // entry count — this is a preferences file, not a datastore.
 const KEY_RE = /^[a-z][a-zA-Z0-9-]{0,40}$/;
 const MAX_VALUE_LEN = 200;
+const LONG_VALUE_KEYS = new Set(["repo-order"]);
+const MAX_LONG_VALUE_LEN = 16_384;
 const MAX_ENTRIES = 100;
+
+export function maxValueLength(key: string): number {
+	return LONG_VALUE_KEYS.has(key) ? MAX_LONG_VALUE_LEN : MAX_VALUE_LEN;
+}
 
 /** Map a free-form user name to a safe filename; empty/odd input → Anonymous. */
 function sanitizeUser(user: string): string {
@@ -49,7 +55,7 @@ function clean(input: unknown): UiPrefs {
 			if (
 				KEY_RE.test(key) &&
 				typeof value === "string" &&
-				value.length <= MAX_VALUE_LEN
+				value.length <= maxValueLength(key)
 			) {
 				out[key] = value;
 			}
@@ -81,14 +87,12 @@ export function patchUiPrefs(user: string, patch: unknown): UiPrefs {
 		)) {
 			if (!KEY_RE.test(key)) continue;
 			if (value === null) delete current[key];
-			else if (typeof value === "string" && value.length <= MAX_VALUE_LEN)
+			else if (typeof value === "string" && value.length <= maxValueLength(key))
 				current[key] = value;
 		}
 	}
 	const cleaned = clean(current);
-	try {
-		if (!existsSync(PREFS_DIR)) mkdirSync(PREFS_DIR, { recursive: true });
-		writeJsonAtomic(fileFor(user), { prefs: cleaned });
-	} catch {}
+	if (!existsSync(PREFS_DIR)) mkdirSync(PREFS_DIR, { recursive: true });
+	writeJsonAtomic(fileFor(user), { prefs: cleaned });
 	return cleaned;
 }

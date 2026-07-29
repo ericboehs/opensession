@@ -34,4 +34,21 @@ final class SessionTests: XCTestCase {
             ["alpha", "zebra", "beta"]
         )
     }
+
+    func testRepositoryOrderHonorsPreferenceAndAppendsNewRepos() throws {
+        let sessions = try JSONDecoder().decode(
+            [Session].self,
+            from: Data(
+                #"[{"id":"1","repo":"alpha"},{"id":"2","repo":"beta"},{"id":"3","repo":"gamma"}]"#.utf8
+            )
+        )
+
+        XCTAssertEqual(
+            SessionsListViewModel.repositoryOrder(
+                in: sessions,
+                preferredOrderJSON: #"["gamma","missing","alpha","gamma"]"#
+            ),
+            ["gamma", "alpha", "beta"]
+        )
+    }
 }

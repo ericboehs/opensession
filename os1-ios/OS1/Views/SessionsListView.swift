@@ -56,6 +56,7 @@ struct SessionsListView: View {
     // Default to the signed-in person's own sessions, like the web sidebar —
     // the server also hosts hundreds of automation runs and teammates' chats.
     @AppStorage("os1.list.people") private var peopleFilter = "mine"
+    @AppStorage("os1.sidebar.repoOrder") private var preferredRepoOrder = "[]"
 
     private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .status }
     private var sortBy: SortBy { SortBy(rawValue: sortByRaw) ?? .updated }
@@ -335,7 +336,10 @@ struct SessionsListView: View {
     // ── Filtering / grouping ──────────────────────────────────────────────
 
     private var availableRepos: [String] {
-        SessionsListViewModel.repositoryOrder(in: viewModel.sessions)
+        SessionsListViewModel.repositoryOrder(
+            in: viewModel.sessions,
+            preferredOrderJSON: preferredRepoOrder
+        )
     }
 
     /// Identity strings that count as "me": display name, its first token

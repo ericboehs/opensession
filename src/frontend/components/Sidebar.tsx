@@ -66,6 +66,14 @@ import { providerFromUrl } from "../lib/provider";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
 import { getWsTimePref, onWsTimeChanged } from "../lib/workspace-time";
 import { getSidebarOrder, onSidebarOrderChanged } from "../lib/sidebar-order";
+import {
+	getRepoOrder,
+	mergeRepoOrder,
+	normalizeRepoOrder,
+	onRepoOrderChanged,
+	replaceVisibleRepoOrder,
+	setRepoOrder,
+} from "../lib/repo-order";
 import { UserAvatar, githubLoginFor } from "./UserAvatar";
 import { shortTime, elapsedClock } from "../lib/time";
 import {
@@ -1497,6 +1505,17 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// Tools stay at flex order 0, so only these bands move beneath it.
 	const sectionOrder = (section: (typeof sidebarOrder)[number]) =>
 		sidebarOrder.indexOf(section) + 1;
+	const [savedRepoOrder, setSavedRepoOrder] = useState(getRepoOrder);
+	useEffect(
+		() => onRepoOrderChanged(() => setSavedRepoOrder(getRepoOrder())),
+		[],
+	);
+	const [repoOrderDraft, setRepoOrderDraft] = useState<string[] | null>(null);
+	const repoOrderAtDragStart = useRef<string[] | null>(null);
+	const repoOrderPending = useRef<string[] | null>(null);
+	const repoVisualOrder = useRef<string[] | null>(null);
+	const repoDragging = useRef<string | null>(null);
+	const repoJustDragged = useRef(false);
 	const [pins, setPins] = useState<string[]>(getPins);
 	// Per-user workspace snoozes (row key → ISO until). An overlay like pins:
 	// actively-snoozed rows park in the Snoozed section; the wake sweep below
@@ -1998,7 +2017,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// Distinct repos across the (non-archived) sessions, most-used first, for the
 	// Repo filter dropdown. Built off every session (not the search-filtered set)
 	// so the options don't churn while you type.
-	const repos = useMemo(() => {
+	const discoveredRepos = useMemo(() => {
 		const counts = new Map<string, number>();
 		for (const s of sessions) {
 			if (s.archived) continue;
@@ -2011,6 +2030,28 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
 			.map(([name]) => name);
 	}, [sessions, openPrs]);
+	const repos = useMemo(
+		() => mergeRepoOrder(repoOrderDraft ?? savedRepoOrder, discoveredRepos),
+		[repoOrderDraft, savedRepoOrder, discoveredRepos],
+	);
+	const completeRepoOrder = useMemo(() => {
+		const next = normalizeRepoOrder(savedRepoOrder);
+		const seen = new Set(next);
+		for (const repo of discoveredRepos) {
+			if (!seen.has(repo)) {
+				seen.add(repo);
+				next.push(repo);
+			}
+		}
+		return next;
+	}, [savedRepoOrder, discoveredRepos]);
+	useEffect(() => {
+		if (
+			savedRepoOrder.length > 0 &&
+			JSON.stringify(completeRepoOrder) !== JSON.stringify(savedRepoOrder)
+		)
+			setRepoOrder(completeRepoOrder);
+	}, [savedRepoOrder, completeRepoOrder]);
 
 	// Distinct people who started sessions, most-active first, for the Person
 	// filter dropdown. Only recognized teammates (see KNOWN_PEOPLE) are offered;
@@ -4048,9 +4089,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// each row's own glyph, needs-input rows float to the top), while "Repo and
 	// status" (`withLanes`) nests the labeled status lanes under each band. In
 	// both, a collapsed band wears a count of the urgent rows it hides. Repos
-	// are ordered by the sidebar's frequency list (`repos`), with any
-	// stragglers appended; a band is force-open while it holds the selected
-	// row so the open session never hides inside a collapsed repo.
+	// are ordered by the user's shared preference (`repos`), with newly seen
+	// repositories appended in frequency order; a band is force-open while it
+	// holds the selected row so the open session never hides inside a collapsed repo.
 	function renderRepoGroups(withLanes: boolean) {
 		const byRepo = new Map<string, WsRow[]>();
 		const snoozedByRepo = new Map<string, WsRow[]>();
@@ -4092,8 +4133,56 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			...repos.filter((r) => present.has(r)),
 			...Array.from(present).filter((r) => !repos.includes(r)),
 		];
-		return order
-			.map((repo) => {
+		const fullOrder = normalizeRepoOrder([
+			...normalizeRepoOrder(savedRepoOrder),
+			...repos.filter((repo) => !savedRepoOrder.includes(repo)),
+			...order.filter((repo) => !repos.includes(repo)),
+		]);
+		const canReorder = !isPhone && filter.repo === "all" && order.length > 1;
+		const moveDraggedRepo = (
+			targetRepo: string,
+			event: React.DragEvent<HTMLDivElement>,
+		) => {
+			const draggedRepo = repoDragging.current;
+			if (!draggedRepo) return;
+			event.preventDefault();
+			if (draggedRepo === targetRepo) return;
+			const visibleOrder = [...(repoVisualOrder.current ?? order)];
+			const from = visibleOrder.indexOf(draggedRepo);
+			if (from < 0) return;
+			visibleOrder.splice(from, 1);
+			let target = visibleOrder.indexOf(targetRepo);
+			if (target < 0) return;
+			const header = event.currentTarget.querySelector<HTMLElement>(
+				":scope > .sidebar-repo-head",
+			);
+			const rect = (header ?? event.currentTarget).getBoundingClientRect();
+			if (event.clientY > rect.top + rect.height / 2) target++;
+			visibleOrder.splice(target, 0, draggedRepo);
+			if (JSON.stringify(visibleOrder) === JSON.stringify(repoVisualOrder.current))
+				return;
+			repoVisualOrder.current = visibleOrder;
+			const baseline = repoOrderAtDragStart.current ?? fullOrder;
+			const next = replaceVisibleRepoOrder(baseline, visibleOrder);
+			repoOrderPending.current = next;
+			setRepoOrderDraft(next);
+		};
+		const finishRepoDrag = (commit: boolean) => {
+			repoJustDragged.current = true;
+			setTimeout(() => {
+				repoJustDragged.current = false;
+			}, 0);
+			repoOrderAtDragStart.current = null;
+			repoVisualOrder.current = null;
+			repoDragging.current = null;
+			const pending = repoOrderPending.current;
+			repoOrderPending.current = null;
+			setRepoOrderDraft(null);
+			if (commit && pending) setRepoOrder(pending);
+		};
+		return (
+			<div className="sidebar-repo-order-list">
+				{order.map((repo) => {
 				const rows = byRepo.get(repo) || [];
 				const snoozedRows = snoozedByRepo.get(repo) || [];
 				const prs = prByRepo.get(repo) || [];
@@ -4119,9 +4208,37 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						);
 				const selectedPrs = open ? [] : prs.filter(prRowSelected);
 				return (
-					<div className="sidebar-repo-group" key={gkey}>
+					<div
+						className={cn(
+							"sidebar-repo-group",
+							canReorder && "cursor-grab active:cursor-grabbing",
+						)}
+						key={gkey}
+						data-repo-id={repo}
+						onDragOver={(event) => moveDraggedRepo(repo, event)}
+						onDrop={(event) => {
+							event.preventDefault();
+							finishRepoDrag(true);
+						}}
+						onClickCapture={(event: React.MouseEvent) => {
+							if (!repoJustDragged.current) return;
+							event.preventDefault();
+							event.stopPropagation();
+						}}
+					>
 						<button
 							className="sidebar-group-header sidebar-repo-head group transition-colors"
+							draggable={canReorder}
+							title={canReorder ? "Drag to reorder repositories" : undefined}
+							onDragStart={(event) => {
+								repoDragging.current = repo;
+								repoOrderAtDragStart.current = [...fullOrder];
+								repoOrderPending.current = null;
+								repoVisualOrder.current = [...order];
+								event.dataTransfer.effectAllowed = "move";
+								event.dataTransfer.setData("text/plain", repo);
+							}}
+							onDragEnd={() => finishRepoDrag(false)}
 							onClick={() => toggleGroup(gkey)}
 						>
 							{/* The tile is 18px; the rail holds it on the same column
@@ -4203,7 +4320,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						)}
 					</div>
 				);
-			});
+				})}
+			</div>
+		);
 	}
 
 	// ── Plain (support) as a project ────────────────────────────────────────
@@ -5323,15 +5442,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					    in the flat status view, its priority lanes appended after
 					    the status lanes so everything reads as one list. */}
 					{filter.groupBy === "repo" || filter.groupBy === "repo-status"
-						? [
-								...renderRepoGroups(filter.groupBy === "repo-status"),
-								...(filter.groupBy === "repo"
-									? renderStatusLanes([], "", snoozedWsRows)
-									: []),
-								...feeds.map((d) =>
-									renderFeedBand(d, filter.groupBy === "repo-status"),
-								),
-							]
+						? (
+								<>
+									{renderRepoGroups(filter.groupBy === "repo-status")}
+									{filter.groupBy === "repo" &&
+										renderStatusLanes([], "", snoozedWsRows)}
+									{feeds.map((d) =>
+										renderFeedBand(d, filter.groupBy === "repo-status"),
+									)}
+								</>
+							)
 						: [
 								...renderStatusLanes(
 									focusWsRows,

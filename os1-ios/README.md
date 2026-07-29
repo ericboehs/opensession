@@ -14,7 +14,8 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
 - **Sessions list** — polls `GET /api/sessions` every 5s (matching the web UI);
   flat single-line workspace rows with live/PR status marks and a running-time
   ticker, larger mobile type, and the web client's warm dark palette, plus
-  grouping with most-used repositories first, compact toolbar
+  grouping with the web sidebar's shared, drag-to-reorder repository order,
+  compact toolbar
   search/filter, swipe-to-archive, restore from the archived list, a floating
   create button, and pull to refresh.
 - **Session view** — live transcript over the `/ws` WebSocket: user/assistant
