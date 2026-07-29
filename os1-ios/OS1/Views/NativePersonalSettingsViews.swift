@@ -60,6 +60,8 @@ struct ComposerSettingsView: View {
     @State private var saving = false
     @State private var error: String?
     @State private var savedMessage: String?
+    @State private var savedPrefs: [String: String] = [:]
+    @State private var prefsLoaded = false
 
     private let user = ServerConfig.shared.userName
 
@@ -95,18 +97,20 @@ struct ComposerSettingsView: View {
                         Text("Enter").tag("enter")
                         Text("Command/Control-Enter").tag("mod-enter")
                     }
+                    #else
+                    LabeledContent("Send messages with", value: "Return")
+                    #endif
                     Picker("Send button while busy", selection: $busySend) {
                         Text("Queue for later").tag("queue")
                         Text("Steer the current run").tag("steer")
                     }
+                    #if os(macOS)
                     if sendKey == "enter" {
                         Picker("Command/Control-Enter while busy", selection: $busySendMod) {
                             Text("Queue for later").tag("queue")
                             Text("Steer the current run").tag("steer")
                         }
                     }
-                    #else
-                    LabeledContent("Send messages with", value: "Return")
                     #endif
                 }
 
@@ -114,7 +118,7 @@ struct ComposerSettingsView: View {
                     Button(saving ? "Saving…" : "Save composer preferences") {
                         Task { await save() }
                     }
-                    .disabled(saving)
+                    .disabled(!prefsLoaded || saving || currentPrefs == savedPrefs)
                     if let savedMessage {
                         Text(savedMessage)
                             .foregroundStyle(.green)
@@ -124,16 +128,15 @@ struct ComposerSettingsView: View {
         }
         .navigationTitle("Composer")
         .task { await load() }
+        .disabled(saving)
     }
 
     private func load() async {
         loading = true
         error = nil
+        prefsLoaded = false
         do {
-            async let fetchedPrefs = SettingsAPI.uiPrefs(user: user)
-            async let fetchedCatalog = SettingsAPI.modelCatalog()
-            let (prefs, catalog) = try await (fetchedPrefs, fetchedCatalog)
-            models = catalog.models ?? []
+            let prefs = try await SettingsAPI.uiPrefs(user: user)
             defaultModel = prefs["default-model"] ?? defaultModel
             sendKey = prefs["send-key"] == "mod-enter" ? "mod-enter" : "enter"
             busySend = prefs["busy-send"] == "steer" ? "steer" : "queue"
@@ -143,8 +146,15 @@ struct ComposerSettingsView: View {
             #endif
             nativeBusySend = busySend
             nativeBusySendMod = busySendMod
+            savedPrefs = currentPrefs
+            prefsLoaded = true
         } catch {
             self.error = error.localizedDescription
+        }
+        do {
+            models = try await SettingsAPI.modelCatalog().models ?? []
+        } catch {
+            if self.error == nil { self.error = error.localizedDescription }
         }
         loading = false
     }
@@ -154,23 +164,38 @@ struct ComposerSettingsView: View {
         error = nil
         savedMessage = nil
         do {
-            let prefs = try await SettingsAPI.updateUiPrefs(user: user, prefs: [
-                "default-model": defaultModel,
-                "send-key": sendKey,
-                "busy-send": busySend,
-                "busy-send-mod": busySendMod,
-            ])
+            let current = currentPrefs
+            var patch: [String: String?] = [:]
+            for (key, value) in current where savedPrefs[key] != value {
+                patch[key] = value
+            }
+            guard !patch.isEmpty else { saving = false; return }
+            let prefs = try await SettingsAPI.updateUiPrefs(user: user, prefs: patch)
+            NativePreferences.apply(prefs)
             defaultModel = prefs["default-model"] ?? defaultModel
+            sendKey = prefs["send-key"] == "mod-enter" ? "mod-enter" : "enter"
+            busySend = prefs["busy-send"] == "steer" ? "steer" : "queue"
+            busySendMod = prefs["busy-send-mod"] == "queue" ? "queue" : "steer"
             #if os(macOS)
             nativeSendKey = sendKey
             #endif
             nativeBusySend = busySend
             nativeBusySendMod = busySendMod
+            savedPrefs = currentPrefs
             savedMessage = "Composer preferences saved."
         } catch {
             self.error = error.localizedDescription
         }
         saving = false
+    }
+
+    private var currentPrefs: [String: String] {
+        [
+            "default-model": defaultModel,
+            "send-key": sendKey,
+            "busy-send": busySend,
+            "busy-send-mod": busySendMod,
+        ]
     }
 }
 
@@ -254,7 +279,8 @@ struct AppearanceSettingsView: View {
         error = nil
         savedMessage = nil
         do {
-            _ = try await SettingsAPI.updateUiPrefs(user: user, prefs: ["turn-activity": turnActivity])
+            let prefs = try await SettingsAPI.updateUiPrefs(user: user, prefs: ["turn-activity": turnActivity])
+            NativePreferences.apply(prefs)
             nativeTurnActivity = turnActivity
             savedMessage = "Chat preference saved."
         } catch {

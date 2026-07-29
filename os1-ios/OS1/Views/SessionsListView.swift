@@ -339,7 +339,7 @@ struct SessionsListView: View {
     // ── Filtering / grouping ──────────────────────────────────────────────
 
     private var availableRepos: [String] {
-        Array(Set(viewModel.sessions.map(\.effectiveRepo))).sorted()
+        SessionsListViewModel.repositoryOrder(in: viewModel.sessions)
     }
 
     /// Identity strings that count as "me": display name, its first token
@@ -421,7 +421,7 @@ struct SessionsListView: View {
             return sessions.isEmpty ? [] : [SessionGroup(id: "recent", title: "", sessions: sessions)]
         case .repo:
             let byRepo = Dictionary(grouping: sessions, by: \.effectiveRepo)
-            return byRepo.keys.sorted().map {
+            return availableRepos.filter { byRepo[$0] != nil }.map {
                 SessionGroup(id: "repo-\($0)", title: $0, sessions: byRepo[$0]!)
             }
         case .status:

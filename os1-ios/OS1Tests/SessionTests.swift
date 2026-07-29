@@ -20,4 +20,18 @@ final class SessionTests: XCTestCase {
 
         XCTAssertEqual(session.effectiveRepo, "backstage")
     }
+
+    func testRepositoryOrderUsesFrequencyThenName() throws {
+        let sessions = try JSONDecoder().decode(
+            [Session].self,
+            from: Data(
+                #"[{"id":"1","repo":"zebra"},{"id":"2","repo":"alpha"},{"id":"3","repo":"zebra"},{"id":"4","repo":"beta"},{"id":"5","repo":"alpha"}]"#.utf8
+            )
+        )
+
+        XCTAssertEqual(
+            SessionsListViewModel.repositoryOrder(in: sessions),
+            ["alpha", "zebra", "beta"]
+        )
+    }
 }

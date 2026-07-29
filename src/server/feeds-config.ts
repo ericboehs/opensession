@@ -34,10 +34,13 @@ const STORE_PATH = statePath(
 );
 
 export interface FeedPanelSpec {
-  /** Tab label ("Video", "Doc", …). */
+  /** Tab label ("Video", "Conversation", …). */
   label: string;
+  /** Custom frontend component key (e.g. "slack-channel") instead of an
+   *  iframe — the panel registry in FeedWebPane.tsx maps it. */
+  component?: string;
   /** Iframe URL; `{id}` is replaced with the item id. */
-  embedUrlTemplate: string;
+  embedUrlTemplate?: string;
   /** Header links; `{id}` replaced likewise. */
   links?: { label: string; hrefTemplate: string }[];
 }
@@ -128,11 +131,14 @@ export function validateConfigFeed(input: unknown): ConfigFeed | { error: string
       ...(items.path ? { path: String(items.path) } : {}),
       map: items.map,
     },
-    ...(f.panel?.label && f.panel?.embedUrlTemplate
+    ...(f.panel?.label && (f.panel?.embedUrlTemplate || f.panel?.component)
       ? {
           panel: {
             label: f.panel.label,
-            embedUrlTemplate: f.panel.embedUrlTemplate,
+            ...(f.panel.component ? { component: f.panel.component } : {}),
+            ...(f.panel.embedUrlTemplate
+              ? { embedUrlTemplate: f.panel.embedUrlTemplate }
+              : {}),
             ...(f.panel.links?.length ? { links: f.panel.links } : {}),
           },
         }

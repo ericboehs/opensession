@@ -132,10 +132,12 @@ export interface FeedDescriptor {
 	tileBg?: string;
 	/** Session MCP allowlist for this feed's workspaces (server names). */
 	mcpServers?: string[];
-	/** Web panel template for this feed's items ({id}-substituted). */
+	/** Web panel template for this feed's items ({id}-substituted), or a
+	 *  custom component key (slack-channel). */
 	panel?: {
 		label: string;
-		embedUrlTemplate: string;
+		component?: string;
+		embedUrlTemplate?: string;
 		links?: { label: string; hrefTemplate: string }[];
 	};
 	/** Lane whose count badges the collapsed band (e.g. Urgent). */

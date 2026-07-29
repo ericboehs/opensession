@@ -13,6 +13,20 @@ final class SessionsListViewModel {
 
     private var pollTask: Task<Void, Never>?
 
+    /// Use the web sidebar's frequency rule for the sessions available here:
+    /// most-used repositories first, with a stable alphabetical tie-breaker.
+    nonisolated static func repositoryOrder(in sessions: [Session]) -> [String] {
+        var counts: [String: Int] = [:]
+        for session in sessions where session.archived != true {
+            counts[session.effectiveRepo, default: 0] += 1
+        }
+        return counts.keys.sorted {
+            let left = counts[$0, default: 0]
+            let right = counts[$1, default: 0]
+            return left != right ? left > right : $0.localizedStandardCompare($1) == .orderedAscending
+        }
+    }
+
     /// Just-created sessions rendered before the server's list includes them.
     /// Dropped once the real row appears (or after a 2-minute safety window).
     private var optimistic: [String: (session: Session, added: Date)] = [:]

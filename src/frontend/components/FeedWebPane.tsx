@@ -16,10 +16,15 @@ import { feedForRefKind } from "../lib/feeds-meta";
  */
 
 export interface RefWebPanel {
-	/** Tab label ("Video"). */
+	/** Tab label ("Video", "Conversation"). */
 	label: string;
-	/** The iframe-able URL. */
-	embedUrl: string;
+	/** Custom component key (e.g. "slack-channel") — rendered by the panel
+	 *  registry in SessionViewer/WorkspacePane instead of an iframe. */
+	component?: string;
+	/** The item id the panel is about (channel id, video id). */
+	refId: string;
+	/** The iframe-able URL (web panels). */
+	embedUrl?: string;
 	/** External links rendered in the pane header. */
 	links: { label: string; href: string }[];
 }
@@ -36,10 +41,14 @@ function fillTemplate(template: string, id: string): string {
  */
 export function refWebPanel(ref: ExternalRef): RefWebPanel | null {
 	const feed = feedForRefKind(ref.kind);
-	if (feed?.panel) {
+	if (feed?.panel && (feed.panel.embedUrlTemplate || feed.panel.component)) {
 		return {
 			label: feed.panel.label,
-			embedUrl: fillTemplate(feed.panel.embedUrlTemplate, ref.id),
+			refId: ref.id,
+			...(feed.panel.component ? { component: feed.panel.component } : {}),
+			...(feed.panel.embedUrlTemplate
+				? { embedUrl: fillTemplate(feed.panel.embedUrlTemplate, ref.id) }
+				: {}),
 			links: (feed.panel.links || []).map((l) => ({
 				label: l.label,
 				href: fillTemplate(l.hrefTemplate, ref.id),
@@ -49,6 +58,7 @@ export function refWebPanel(ref: ExternalRef): RefWebPanel | null {
 	if (ref.kind === "tella") {
 		return {
 			label: "Video",
+			refId: ref.id,
 			embedUrl: `https://www.tella.tv/video/${encodeURIComponent(ref.id)}/embed`,
 			links: [
 				{ label: "Open editor", href: `https://www.tella.tv/video/${encodeURIComponent(ref.id)}/edit` },
@@ -87,7 +97,7 @@ export function FeedWebPane({
 				))}
 			</div>
 			<iframe
-				src={panel.embedUrl}
+				src={panel.embedUrl || "about:blank"}
 				title={title || panel.label}
 				className="min-h-0 w-full flex-1 border-0 bg-black"
 				allow="fullscreen; autoplay; clipboard-write"

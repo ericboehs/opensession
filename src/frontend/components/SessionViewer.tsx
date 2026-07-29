@@ -97,6 +97,7 @@ import { PrStatusBar } from "./PrStatusBar";
 
 import { ConversationPane } from "./ConversationPane";
 import { FeedWebPane, type RefWebPanel } from "./FeedWebPane";
+import { SlackChannelPane } from "./SlackChannelPane";
 import { feedForRefKind } from "../lib/feeds-meta";
 import { WorkflowPanel } from "./WorkflowPanel";
 import { AssetsPanel, useSessionAssets } from "./AssetsPanel";
@@ -4633,10 +4634,18 @@ export function SessionViewer({
 							/>
 						</div>
 					) : showVideo && videoPanel ? (
-						// The workspace's feed web panel (Tella video embed) —
-						// full-width like Conversation (docs/feeds-design.md).
+						// The workspace's feed panel — web embed (Tella) or a custom
+						// component (Slack channel Conversation) via the panel
+						// registry (docs/feeds-design.md).
 						<div className="viewer-review-main">
-							<FeedWebPane panel={videoPanel} title={videoTitle || undefined} />
+							{videoPanel.component === "slack-channel" ? (
+								<SlackChannelPane channelId={videoPanel.refId} />
+							) : (
+								<FeedWebPane
+									panel={videoPanel}
+									title={videoTitle || undefined}
+								/>
+							)}
 						</div>
 					) : showReview && hasWorkspace ? (
 						<div className="viewer-review-main">

@@ -5,6 +5,7 @@ import { fetchModels, type ModelOption } from "../lib/api";
 import { Composer } from "./Composer";
 import { ConversationPane } from "./ConversationPane";
 import { FeedWebPane, refWebPanel } from "./FeedWebPane";
+import { SlackChannelPane } from "./SlackChannelPane";
 import { PrPanel } from "./PrPanel";
 import { useCurrentUser } from "./UserPicker";
 import { useIsPhone } from "../hooks/useIsPhone";
@@ -276,10 +277,14 @@ export function WorkspacePane({
 	if (tab === "video" && webPanel) {
 		return withPanel(
 			<div className="workspace-view-main flex flex-col h-full min-h-0">
-				<FeedWebPane
-					panel={webPanel}
-					title={webRef?.title || workspace.name}
-				/>
+				{webPanel.component === "slack-channel" ? (
+					<SlackChannelPane channelId={webPanel.refId} />
+				) : (
+					<FeedWebPane
+						panel={webPanel}
+						title={webRef?.title || workspace.name}
+					/>
+				)}
 			</div>,
 		);
 	}

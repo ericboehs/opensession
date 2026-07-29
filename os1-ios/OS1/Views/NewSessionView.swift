@@ -152,9 +152,9 @@ struct NewSessionView: View {
                     repo = repoInfo.id
                 } label: {
                     if repo == repoInfo.id {
-                        Label(repoInfo.id, systemImage: "checkmark")
+                        Label(repoInfo.label ?? repoInfo.id, systemImage: "checkmark")
                     } else {
-                        Text(repoInfo.id)
+                        Text(repoInfo.label ?? repoInfo.id)
                     }
                 }
             }

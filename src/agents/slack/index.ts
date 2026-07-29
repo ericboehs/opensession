@@ -159,6 +159,9 @@ export class SlackAgent implements AgentModule {
             ],
           },
         ],
+        // Workspace tab: the channel Conversation pane (custom component —
+        // routes/slack-channels.ts serves history + post-as-me).
+        panel: { label: "Conversation", component: "slack-channel" },
         // Slack-style list sorting: busiest first (default), A–Z, newest.
         sortOptions: [
           { value: "meta:members", label: "Most members" },
