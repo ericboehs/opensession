@@ -162,8 +162,39 @@ plugins." Workstreams:
   loadAgents). Config feeds (W3) cover no-code; a module is for bespoke
   fetching/webhooks/background work. `@opensession/feed-*` extraction stays
   mechanical because the interface is the boundary.
-- **W5 — migrate Plain onto the contract** (original Phase 1, incl. the
-  generic panel registry replacing the hardcoded "video" tab).
+- **W5 — migrate Plain onto the contract** (original Phase 1). Execution
+  plan (atomic cutover — a registered plain feed + the legacy band would
+  render TWICE, so these land in ONE commit after the generic band grows the
+  missing capabilities):
+  1. Generic band capabilities in Sidebar.tsx: descriptor-driven LANES
+     (FeedLane[] grouping + collapsed-band attention badge), row ACTIONS
+     (pin via the existing `support:`-style pin keys → generalize to
+     `feed:<refKind>:<id>`; a per-feed "complete" action → new optional
+     descriptor field `actions: [{key,label,icon}]` POSTing to
+     /api/feeds/:id/items/:itemId/action → provider callback), and the
+     per-feed filter menu (assignee/label from item.meta) — port
+     SupportFilterState generically.
+  2. PlainAgent.getFeed(): SupportThreadSummary → FeedItem (lane =
+     priority, meta = {labels, assignee, customer}), lanes = the
+     SUPPORT_PRIORITY_GROUPS taxonomy, mcpServers ["plain"], action
+     mark-done → setThreadStatus. Feed items poll listTodoThreads (the 30s
+     cache moves into the provider).
+  3. Panel kind registry: descriptor gains `panelKind?: "web" |
+     "conversation"`; the view-tab producer in App.tsx goes generic
+     (iterate refs → panel meta → ViewTab with the feed's label), replacing
+     BOTH the `"video"` ActiveViewTab literal and the plainThreadId-driven
+     conversation tab; ConversationPane binds to `{kind:"plain"}` refs.
+     Route slug becomes /workspace/:id/panel/<refKind> with 301s from
+     /video + /conversation.
+  4. Cutover commit: register plain feed, delete renderPlainProject +
+     renderSupportLanes + the splice; keep plainThreadId reads/writes
+     (compat) and ALL 13 /api/plain/* mutation routes.
+  5. After-checks: Support Tinder + SupportPreview deep links, plain-triage
+     redirect, plainThreadId workspace resolve (stays keyed plain-<id>;
+     ExternalRef {kind:"plain"} stamped ADDITIONALLY), archive sweep.
+  Risk notes: Sidebar.tsx is a sweep magnet (stage with git add -p);
+  the Plain band is the team's daily support surface — cutover behind a
+  quick visual check (headless screenshot recipe in memory).
 
 ## Contract sketch
 
