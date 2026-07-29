@@ -19,6 +19,18 @@ export async function handleSlackChannelRoutes(
 		/^\/backstage\/api\/slack\/channels\/([^/]+)\/messages$/,
 	);
 	if (!msgsMatch) return undefined;
+
+	// Slack markup → markdown-ish the pane can linkify: <url|label> →
+	// [label](url), bare <url> → url, <!here>/<!channel> → @here/@channel,
+	// <#C…|name> → #name. User mentions ride prettifyMentions.
+	const renderSlackText = (raw: string, prettifyMentions: (t: string) => string) =>
+		prettifyMentions(
+			raw
+				.replace(/<(https?:[^|>]+)\|([^>]+)>/g, "[$2]($1)")
+				.replace(/<(https?:[^>]+)>/g, "$1")
+				.replace(/<!(here|channel|everyone)(\|[^>]*)?>/g, "@$1")
+				.replace(/<#[A-Z0-9]+\|([^>]*)>/g, "#$1"),
+		);
 	const channelId = decodeURIComponent(msgsMatch[1]);
 	const caller = ctx.authUser?.login || ctx.authUser?.name || undefined;
 	const { mcpUserGrantToken } = await import("../mcp-oauth");
@@ -26,7 +38,9 @@ export async function handleSlackChannelRoutes(
 
 	if (req.method === "GET") {
 		// Newest page by default; `before=<ts>` pages older (exclusive), the
-		// same shape the transcript's Load-history uses.
+		// same shape the transcript's Load-history uses. `thread_ts=<ts>`
+		// returns that thread's replies instead (parent excluded).
+		const threadTs = url.searchParams.get("thread_ts") || undefined;
 		const before = url.searchParams.get("before") || undefined;
 		const limit = Math.min(
 			Math.max(parseInt(url.searchParams.get("limit") || "40", 10) || 40, 1),
@@ -37,42 +51,54 @@ export async function handleSlackChannelRoutes(
 				await import("../../agents/slack/slack-api");
 			const { personaName } = await import("../config");
 			const data = await slackApiCall(
-				"conversations.history",
+				threadTs ? "conversations.replies" : "conversations.history",
 				{
 					channel: channelId,
 					limit,
+					...(threadTs ? { ts: threadTs } : {}),
 					...(before ? { latest: before, inclusive: false } : {}),
 				},
 				grantToken,
 			);
+			if (threadTs && Array.isArray(data?.messages))
+				data.messages = data.messages.filter(
+					(m: any) => m.ts !== threadTs,
+				);
 			if (!data?.ok)
 				return Response.json(
 					{ error: data?.error || "history failed" },
 					{ status: 502 },
 				);
-			const chronological = [...(data.messages || [])].reverse();
+			// history arrives newest-first (reverse to chronological); thread
+			// replies arrive oldest-first already.
+			const chronological = threadTs
+				? [...(data.messages || [])]
+				: [...(data.messages || [])].reverse();
 			const out: unknown[] = [];
 			for (const m of chronological) {
 				if (m.type !== "message") continue;
 				if (m.subtype && m.subtype !== "bot_message") continue;
 				if (!m.text) continue;
-				if (m.bot_id || m.subtype === "bot_message") {
-					out.push({
-						ts: m.ts,
-						userName: m.username || personaName(),
-						avatarUrl: m.icons?.image_72 || m.icons?.image_48,
-						text: prettifyMentions(m.text),
-						isBot: true,
-						replyCount: m.reply_count || 0,
-					});
-				} else if (m.user) {
+				// User-first: app-relayed posts carry BOTH user and bot_id (a
+				// person's own message via an app) — the person wins, otherwise
+				// Michiel's posts render as the bot.
+				if (m.user) {
 					const u = await resolveSlackUser(m.user);
 					out.push({
 						ts: m.ts,
 						userName: u.name,
 						avatarUrl: u.avatarUrl,
-						text: prettifyMentions(m.text),
+						text: renderSlackText(m.text, prettifyMentions),
 						isBot: false,
+						replyCount: m.reply_count || 0,
+					});
+				} else {
+					out.push({
+						ts: m.ts,
+						userName: m.username || personaName(),
+						avatarUrl: m.icons?.image_72 || m.icons?.image_48,
+						text: renderSlackText(m.text, prettifyMentions),
+						isBot: true,
 						replyCount: m.reply_count || 0,
 					});
 				}
