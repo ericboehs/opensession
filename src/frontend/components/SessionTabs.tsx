@@ -49,8 +49,6 @@ interface Props {
 	archived: UnifiedSession[];
 	/** Session id of the active tab. */
 	activeId: string | null;
-	/** Main chat id. This tab stays first while sibling chats are reordered. */
-	mainId: string | null;
 	/** Map of session id → swatch key for colored tabs. */
 	colors: Record<string, string>;
 	onSelect: (session: UnifiedSession) => void;
@@ -110,7 +108,6 @@ export function SessionTabs({
 	tabs,
 	archived,
 	activeId,
-	mainId,
 	colors,
 	onSelect,
 	onSetColor,
@@ -148,6 +145,7 @@ export function SessionTabs({
 	// the parent's reordered `tabs` come back. `justDragged` swallows the click
 	// that fires synchronously after a drop so it doesn't select the tab.
 	const [orderDraft, setOrderDraft] = useState<string[] | null>(null);
+	const orderDraftRef = useRef<string[] | null>(null);
 	const justDragged = useRef(false);
 	const dragPoint = useRef<{ x: number; y: number } | null>(null);
 	const stopPointerTracking = useRef<(() => void) | null>(null);
@@ -252,27 +250,24 @@ export function SessionTabs({
 		setTimeout(() => {
 			justDragged.current = false;
 		}, 0);
-		const order = orderDraft;
+		const order = orderDraftRef.current;
+		orderDraftRef.current = null;
 		setOrderDraft(null);
 		if (order) onReorderTabs(order);
 	}
 
 	function reorderUnits(keys: string[]) {
 		const byKey = new Map(tabUnits.units.map((unit) => [unit.key, unit] as const));
-		let units = keys
+		const units = keys
 			.map((key) => byKey.get(key))
 			.filter((unit): unit is (typeof tabUnits.units)[number] => !!unit);
-		const mainUnit = mainId
-			? units.find((unit) => unit.members.some((member) => member.id === mainId))
-			: null;
-		if (mainUnit) units = [mainUnit, ...units.filter((unit) => unit !== mainUnit)];
-		setOrderDraft(
-			units.flatMap((unit) =>
-				unit.members.flatMap((member) =>
-					member.kind === "chat" ? [member.session.id] : [],
-				),
+		const order = units.flatMap((unit) =>
+			unit.members.flatMap((member) =>
+				member.kind === "chat" ? [member.session.id] : [],
 			),
 		);
+		orderDraftRef.current = order;
+		setOrderDraft(order);
 	}
 
 	function selectMember(member: TabMember) {
@@ -438,14 +433,12 @@ export function SessionTabs({
 				>
 					{tabUnits.units.map((unit) => {
 						if (unit.members.length === 2) {
-							const containsMain = unit.members.some((member) => member.id === mainId);
 							return (
 								<Reorder.Item
 									as="div"
 									key={unit.key}
 									value={unit.key}
-									dragListener={canDragTabs && !containsMain}
-									transition={{ duration: 0 }}
+									dragListener={canDragTabs}
 									onDragEnd={commitReorder}
 									whileDrag={{ scale: 1.02, zIndex: 3 }}
 									onClickCapture={(event) => {
@@ -472,7 +465,6 @@ export function SessionTabs({
 								key={key}
 								value={key}
 								dragListener={canDragTabs && editKey !== key}
-								transition={{ duration: 0 }}
 								onPointerDown={(event) => {
 									if (canDragTabs && editKey !== key) trackPointer(key, event);
 								}}
@@ -481,6 +473,7 @@ export function SessionTabs({
 									const point = dragPoint.current;
 									dragPoint.current = null;
 									if (point && onSplitDrop?.(key, point)) {
+										orderDraftRef.current = null;
 										setOrderDraft(null);
 										justDragged.current = true;
 										setTimeout(() => (justDragged.current = false), 0);

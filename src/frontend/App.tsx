@@ -90,7 +90,6 @@ import {
 import {
 	defaultChatWorkspaceView,
 	mainChat,
-	pinMainChatFirst,
 	pickLandingChat,
 } from "./lib/landing-chat";
 import {
@@ -1940,17 +1939,13 @@ function App() {
 	const projectChats: UnifiedSession[] = (() => {
 		if (!tabOrderKey || naturalChats.length < 2) return naturalChats;
 		const byId = new Map(naturalChats.map((s) => [s.id, s] as const));
-		return pinMainChatFirst(
-			naturalChats,
-			applyTabOrder(
-				tabOrderKey,
-				naturalChats.map((s) => s.id),
-			),
+		return applyTabOrder(
+			tabOrderKey,
+			naturalChats.map((s) => s.id),
 		)
 			.map((id) => byId.get(id))
 			.filter((s): s is UnifiedSession => !!s);
 	})();
-	const mainChatId = mainChat(naturalChats)?.id ?? null;
 	const focusedTopTabId = activeViewTab
 		? viewTabs.find((tab) => tab.active)?.id ?? null
 		: currentSession?.id ?? null;
@@ -2101,7 +2096,7 @@ function App() {
 	// sibling chat instantly (browser-tab feel): shares the workspace worktree by
 	// default, or stacks/asks. No engine run until the first prompt.
 	const handleNewChat = async (mode: "share" | "stack" | "ask") => {
-		const src = currentSession || projectChats[0];
+		const src = currentSession || mainChat(naturalChats);
 		if (!src) {
 			// "+" on an empty workspace (chat-less route): no sibling to clone —
 			// open the new-chat palette scoped to it, same as onOpenProject.
@@ -3221,7 +3216,6 @@ function App() {
 							tabs={projectChats}
 							archived={archivedChats}
 							activeId={activeViewTab ? null : currentSession?.id || null}
-							mainId={mainChatId}
 							colors={tabColors}
 							onSelect={(s) => {
 								setActiveViewTab(null);
