@@ -1516,7 +1516,56 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const repoVisualOrder = useRef<string[] | null>(null);
 	const repoDragging = useRef<string | null>(null);
 	const [repoDragKey, setRepoDragKey] = useState<string | null>(null);
+	const repoAutoScrollFrame = useRef<number | null>(null);
+	const repoAutoScrollSpeed = useRef(0);
+	const repoAutoScrollContainer = useRef<HTMLElement | null>(null);
 	const repoJustDragged = useRef(false);
+	const stopRepoAutoScroll = () => {
+		if (repoAutoScrollFrame.current !== null)
+			cancelAnimationFrame(repoAutoScrollFrame.current);
+		repoAutoScrollFrame.current = null;
+		repoAutoScrollSpeed.current = 0;
+		repoAutoScrollContainer.current = null;
+	};
+	const tickRepoAutoScroll = () => {
+		const container = repoAutoScrollContainer.current;
+		if (!container || repoAutoScrollSpeed.current === 0) {
+			repoAutoScrollFrame.current = null;
+			return;
+		}
+		container.scrollTop += repoAutoScrollSpeed.current;
+		repoAutoScrollFrame.current = requestAnimationFrame(tickRepoAutoScroll);
+	};
+	const handleRepoAutoScroll = (event: React.DragEvent<HTMLDivElement>) => {
+		if (!repoDragging.current) return;
+		event.preventDefault();
+		const container = event.currentTarget;
+		const rect = container.getBoundingClientRect();
+		const edge = Math.min(96, rect.height * 0.18);
+		const fromTop = event.clientY - rect.top;
+		const fromBottom = rect.bottom - event.clientY;
+		const maxSpeed = 18;
+		let speed = 0;
+		if (fromTop < edge)
+			speed = -Math.ceil(maxSpeed * (1 - Math.max(0, fromTop) / edge));
+		else if (fromBottom < edge)
+			speed = Math.ceil(maxSpeed * (1 - Math.max(0, fromBottom) / edge));
+		if (speed === 0) {
+			stopRepoAutoScroll();
+			return;
+		}
+		repoAutoScrollContainer.current = container;
+		repoAutoScrollSpeed.current = speed;
+		if (repoAutoScrollFrame.current === null)
+			repoAutoScrollFrame.current = requestAnimationFrame(tickRepoAutoScroll);
+	};
+	useEffect(
+		() => () => {
+			if (repoAutoScrollFrame.current !== null)
+				cancelAnimationFrame(repoAutoScrollFrame.current);
+		},
+		[],
+	);
 	const [pins, setPins] = useState<string[]>(getPins);
 	// Per-user workspace snoozes (row key → ISO until). An overlay like pins:
 	// actively-snoozed rows park in the Snoozed section; the wake sweep below
@@ -4180,6 +4229,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			setRepoOrderDraft(next);
 		};
 		const finishRepoDrag = (commit: boolean) => {
+			stopRepoAutoScroll();
 			repoJustDragged.current = true;
 			setTimeout(() => {
 				repoJustDragged.current = false;
@@ -4551,7 +4601,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	}
 
 	return (
-		<div className="sidebar" ref={sidebarScrollRef}>
+		<div
+			className="sidebar"
+			ref={sidebarScrollRef}
+			onDragOver={handleRepoAutoScroll}
+			onDragLeave={(event) => {
+				if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+					stopRepoAutoScroll();
+			}}
+		>
 			{localMode && cloudUnreachable && (
 				<div
 					className="mx-2 mt-2 flex items-center gap-2 rounded-md border border-line bg-panel px-2.5 py-2 text-[11px] text-dim"
