@@ -14,6 +14,41 @@ invisible from the repository.
 
 ---
 
+## History audit (July 2026)
+
+Run before open-sourcing, to answer "did we ever commit a key?".
+
+**TruffleHog over all 2216 commits:** 0 verified secrets. 22 unverified, of
+which 21 are vendored example strings inside `node_modules/` (`user:pass@`
+placeholders in Bun, Zod and `@types/node` docs) and one was this file quoting a
+token prefix — now redacted.
+
+**Targeted pattern sweep** over all history excluding `node_modules`, for Slack
+`xox*`, GitHub `ghp_`/`github_pat_`, Anthropic `sk-ant-`, OpenAI `sk-proj-`,
+AWS `AKIA`, Stripe `sk_live_`/`rk_live_`, Linear `lin_api_`, GitLab `glpat-`
+and PEM private-key headers: **one match**, `sk_live_51AbCdEf…` in
+`src/agents/github/secret-scan.test.ts` — a deliberate placeholder fixture for
+the secret scanner's own tests.
+
+**Conclusion: no history rewrite is needed for secrets.** Nothing live, nothing
+revoked-but-embarrassing.
+
+Two things the audit did surface, neither a secret:
+
+- **`node_modules` was committed** (11k files) and untracked later in
+  `fbcffae3`. It is still in history — 10,527 objects, and most of the 79 MB
+  pack. Every clone pays for it.
+- Scanning is worth wiring into CI before the repo is public, so this stays
+  true. `src/agents/github/secret-scan.ts` already runs TruffleHog over PR
+  diffs; that only covers changed lines, not the archive.
+
+If the `node_modules` bloat is worth removing, that is a `git filter-repo` pass
+— but it rewrites every SHA, so it invalidates open PRs, every existing
+worktree and every branch. Do it as a scheduled operation with nothing in
+flight, not opportunistically.
+
+---
+
 ## Fixed
 
 ### 1. Bun's installer needs `unzip`, which minimal cloud images lack
@@ -35,7 +70,7 @@ installs — that covers containers and locked-down hosts, not just this one.
 **Symptom:** installing from the private repo printed
 
 ```
-source      https://x-access-token:github_pat_11BS...@github.com/tellahq/opensession.git
+source      https://x-access-token:<the actual PAT, in full>@github.com/tellahq/opensession.git
 ```
 
 **Cause:** the plan banner echoed `$OPENSESSION_REPO` verbatim.
