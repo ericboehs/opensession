@@ -460,8 +460,12 @@ registerSessionControl({
 			? `${prompt}\n\n${createMentionsNote}`
 			: prompt;
 
+		// Make the id resolvable before returning it. Callers can navigate to the
+		// fresh chat immediately, while engine startup continues in the background.
+		await persist();
+
 		// Run in the background; watchers (web UI) see the live stream, the same as
-		// a UI-created session. The tool returns the id immediately.
+		// a UI-created session. The tool returns once the session file exists.
 		void (async () => {
 			try {
 				// Sandbox session: the OPENING turn routes through the same launcher

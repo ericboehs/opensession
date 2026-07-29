@@ -2607,6 +2607,19 @@ function App() {
 			run: () => navigate({ view: "settings" }),
 		},
 	];
+	const openSession = (id: string) => {
+		const known = sessions.some(
+			(session) => session.id === id || session.aliasIds?.includes(id),
+		);
+		if (!known) {
+			setPendingSessionId(id);
+			setPendingNewWorkspace(false);
+			clearTimeout(pendingTimer.current);
+			pendingTimer.current = setTimeout(() => setPendingSessionId(null), 30000);
+			refresh();
+		}
+		navigate({ view: "session", id });
+	};
 	const renderSessionPane = (
 		viewerSession: UnifiedSession,
 		socket: ReturnType<typeof useWebSocket>,
@@ -2708,7 +2721,7 @@ function App() {
 					model: session.model,
 					isRunning: session.isRunning,
 				}))}
-			onOpenSession={(id) => navigate({ view: "session", id })}
+			onOpenSession={openSession}
 			onOpenNewSession={openPrefilledSession}
 			onRunningChange={handleSessionRunningChange}
 			onReviewChange={(id, request) =>
