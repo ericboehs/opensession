@@ -629,6 +629,17 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             always visible — on phones the create-from picker hides until the
             options toggle in the footer opens it. */}
         <div className="palette-header">
+          {mode === "scratch" ? (
+            // Scratch sessions are repo-less — a picker here would imply the
+            // choice matters. A muted chip holds the slot instead.
+            <span
+              className="palette-trigger palette-trigger-strong pointer-events-none opacity-60"
+              title="Scratch sessions have no repository"
+            >
+              <RepoTile name="scratch" />
+              <span className="palette-trigger-label">No repo</span>
+            </span>
+          ) : (
           <PaletteSelect
             className="palette-trigger palette-trigger-strong"
             title="Repository"
@@ -667,6 +678,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             </span>
             <IconChevronDown className="palette-chevron" size={22} />
           </PaletteSelect>
+          )}
 
           {optionsVisible && (
           <PaletteSelect
