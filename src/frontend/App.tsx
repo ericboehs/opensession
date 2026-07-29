@@ -1597,6 +1597,25 @@ function App() {
 		...previewViewTabs,
 		...assetsViewTabs,
 	];
+	function viewTabKind(id: string): Exclude<ActiveViewTab, null> | null {
+		if (id.startsWith("staging:")) return "staging";
+		if (id.startsWith("assets:")) return "assets";
+		if (id.startsWith("preview:")) return "preview";
+		if (id.startsWith("conversation:")) return "conversation";
+		if (id.startsWith("video:")) return "video";
+		if (id.startsWith("review:")) return "review";
+		return null;
+	}
+	function selectViewTab(id: string) {
+		const tab = viewTabKind(id);
+		if (!tab) return;
+		setActiveViewTab(tab);
+		if (
+			route.view === "workspace" &&
+			(tab === "review" || tab === "conversation" || tab === "video")
+		)
+			navigate({ view: "workspace", id: route.id, tab }, { replace: true });
+	}
 	// Foreground/dismiss the Review view-tab; onOpenReview re-adds a dismissed
 	// one (fired by the PR status chip / "open PR" affordances in SessionViewer).
 	function openReview() {
@@ -1931,19 +1950,25 @@ function App() {
 			.filter((s): s is UnifiedSession => !!s);
 	})();
 	const mainChatId = mainChat(naturalChats)?.id ?? null;
+	const focusedTopTabId = activeViewTab
+		? viewTabs.find((tab) => tab.active)?.id ?? null
+		: currentSession?.id ?? null;
 	const storedTabSplit = tabOrderKey ? getTabSplit(tabOrderKey) : null;
 	const tabSplit = splitIsLive(
 		storedTabSplit,
-		projectChats.map((chat) => chat.id),
+		[
+			...projectChats.map((chat) => chat.id),
+			...viewTabs.map((tab) => tab.id),
+		],
 	)
 		? storedTabSplit
 		: null;
 	const activeTabSplit =
 		!isPhone &&
-		!activeViewTab &&
 		currentSession &&
 		tabSplit &&
-		(tabSplit.leftId === currentSession.id || tabSplit.rightId === currentSession.id)
+		focusedTopTabId &&
+		(tabSplit.leftId === focusedTopTabId || tabSplit.rightId === focusedTopTabId)
 			? tabSplit
 			: null;
 
@@ -1953,11 +1978,12 @@ function App() {
 	): "left" | "right" | null {
 		if (
 			isPhone ||
-			activeViewTab ||
 			activeTabSplit ||
 			!currentSession ||
-			currentSession.id === draggedId ||
-			!projectChats.some((chat) => chat.id === draggedId)
+			focusedTopTabId === draggedId ||
+			![...projectChats.map((chat) => chat.id), ...viewTabs.map((tab) => tab.id)].includes(
+				draggedId,
+			)
 		)
 			return null;
 		const pane = detailPaneRef.current?.getBoundingClientRect();
@@ -1977,10 +2003,10 @@ function App() {
 	}
 
 	function createTabSplit(draggedId: string, side: "left" | "right") {
-		if (!tabOrderKey || !currentSession || currentSession.id === draggedId) return;
+		if (!tabOrderKey || !focusedTopTabId || focusedTopTabId === draggedId) return;
 		const next: TabSplit = {
-			leftId: side === "left" ? draggedId : currentSession.id,
-			rightId: side === "right" ? draggedId : currentSession.id,
+			leftId: side === "left" ? draggedId : focusedTopTabId,
+			rightId: side === "right" ? draggedId : focusedTopTabId,
 			ratio: 0.5,
 		};
 		saveTabSplit(tabOrderKey, next);
@@ -2486,6 +2512,7 @@ function App() {
 		socket: ReturnType<typeof useWebSocket>,
 		focused: boolean,
 		splitMode: boolean,
+		surfaceId = viewerSession.id,
 	) => (
 		<SessionViewer
 			key={viewerSession.id}
@@ -2521,15 +2548,31 @@ function App() {
 				})
 			}
 			workspaceChats={projectChats}
-			showReview={focused && reviewActive}
-			showConversation={focused && conversationActive}
+			showReview={
+				splitMode ? viewTabKind(surfaceId) === "review" : focused && reviewActive
+			}
+			showConversation={
+				splitMode
+					? viewTabKind(surfaceId) === "conversation"
+					: focused && conversationActive
+			}
 			conversationThreadId={conversationThreadId}
-			showVideo={focused && videoActive}
+			showVideo={
+				splitMode ? viewTabKind(surfaceId) === "video" : focused && videoActive
+			}
 			videoPanel={videoPanel}
 			videoTitle={videoRef?.title || null}
-			showStaging={focused && stagingActive}
-			showAssets={focused && assetsActive}
-			showPreviewTab={focused && previewLiveActive}
+			showStaging={
+				splitMode ? viewTabKind(surfaceId) === "staging" : focused && stagingActive
+			}
+			showAssets={
+				splitMode ? viewTabKind(surfaceId) === "assets" : focused && assetsActive
+			}
+			showPreviewTab={
+				splitMode
+					? viewTabKind(surfaceId) === "preview"
+					: focused && previewLiveActive
+			}
 			onOpenReview={openReview}
 			onOpenStaging={openStaging}
 			onCloseStaging={closeStagingTab}
@@ -3078,31 +3121,14 @@ function App() {
 								return true;
 							}}
 							viewTabs={viewTabs}
-							onSelectView={(id) => {
-								const tab = id.startsWith("staging:")
-									? ("staging" as const)
-									: id.startsWith("assets:")
-										? ("assets" as const)
-										: id.startsWith("preview:")
-											? ("preview" as const)
-											: id.startsWith("conversation:")
-												? ("conversation" as const)
-												: id.startsWith("video:")
-													? ("video" as const)
-													: ("review" as const);
-								setActiveViewTab(tab);
-								// On the chat-less workspace route the URL carries the
-								// foregrounded pane (deep-linkable); replace, not push.
-								if (
-									route.view === "workspace" &&
-									(tab === "review" || tab === "conversation" || tab === "video")
-								)
-									navigate(
-										{ view: "workspace", id: route.id, tab },
-										{ replace: true },
-									);
-							}}
+							onSelectView={selectViewTab}
 							onCloseView={(id) => {
+								if (
+									tabSplit &&
+									tabOrderKey &&
+									(tabSplit.leftId === id || tabSplit.rightId === id)
+								)
+									clearTabSplit(tabOrderKey);
 								if (id.startsWith("staging:")) closeStagingTab();
 								else if (id.startsWith("assets:")) closeAssetsTab();
 								else if (id.startsWith("preview:")) closePreviewTab();
@@ -3296,21 +3322,23 @@ function App() {
 									<SessionSplit
 										leftId={activeTabSplit.leftId}
 										rightId={activeTabSplit.rightId}
-										focusedId={currentSession.id}
+										focusedId={focusedTopTabId || currentSession.id}
 										ratio={activeTabSplit.ratio}
 										onFocus={(id) => {
-											setActiveViewTab(null);
-											navigate({ view: "session", id }, { replace: true });
+											if (viewTabKind(id)) selectViewTab(id);
+											else {
+												setActiveViewTab(null);
+												navigate({ view: "session", id }, { replace: true });
+											}
 										}}
 										onRatioChange={(ratio) =>
 											tabOrderKey &&
 											saveTabSplit(tabOrderKey, { ...activeTabSplit, ratio })
 										}
 										renderPane={(id, socket, focused) => {
-											const session = sessions.find((candidate) => candidate.id === id);
-											return session
-												? renderSessionPane(session, socket, focused, true)
-												: null;
+											const session =
+												sessions.find((candidate) => candidate.id === id) ?? currentSession;
+											return renderSessionPane(session, socket, focused, true, id);
 										}}
 									/>
 								) : (

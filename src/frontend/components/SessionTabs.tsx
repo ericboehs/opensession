@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Reorder } from "motion/react";
+import { motion, Reorder } from "motion/react";
 import type { UnifiedSession } from "../lib/types";
 import { TAB_COLORS, colorHex } from "../lib/tab-colors";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
@@ -95,6 +95,9 @@ interface Props {
 }
 
 type NewMenu = { x: number; y: number };
+type TabMember =
+	| { kind: "chat"; id: string; session: UnifiedSession }
+	| { kind: "view"; id: string; view: ViewTab };
 
 const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
@@ -150,24 +153,41 @@ export function SessionTabs({
 	const stopPointerTracking = useRef<(() => void) | null>(null);
 	const canReorder = !isPhone && tabs.length > 1;
 
-	function trackPointer(id: string, event: React.PointerEvent) {
+	function trackPointer(
+		id: string,
+		event: React.PointerEvent,
+		dropOnPointerUp = false,
+	) {
 		stopPointerTracking.current?.();
-		dragPoint.current = { x: event.clientX, y: event.clientY };
+		const start = { x: event.clientX, y: event.clientY };
+		let moved = false;
+		dragPoint.current = start;
 		const move = (pointer: PointerEvent) => {
 			dragPoint.current = { x: pointer.clientX, y: pointer.clientY };
+			moved ||= Math.hypot(pointer.clientX - start.x, pointer.clientY - start.y) > 5;
 			onSplitDrag?.(id, dragPoint.current);
 		};
-		const stop = () => {
+		const finish = (allowDrop: boolean) => {
 			window.removeEventListener("pointermove", move);
-			window.removeEventListener("pointerup", stop);
-			window.removeEventListener("pointercancel", stop);
+			window.removeEventListener("pointerup", up);
+			window.removeEventListener("pointercancel", cancel);
 			stopPointerTracking.current = null;
 			onSplitDrag?.(null);
+			if (dropOnPointerUp) {
+				const point = dragPoint.current;
+				dragPoint.current = null;
+				if (allowDrop && moved && point && onSplitDrop?.(id, point)) {
+					justDragged.current = true;
+					setTimeout(() => (justDragged.current = false), 0);
+				}
+			}
 		};
-		stopPointerTracking.current = stop;
+		const up = () => finish(true);
+		const cancel = () => finish(false);
+		stopPointerTracking.current = cancel;
 		window.addEventListener("pointermove", move);
-		window.addEventListener("pointerup", stop);
-		window.addEventListener("pointercancel", stop);
+		window.addEventListener("pointerup", up);
+		window.addEventListener("pointercancel", cancel);
 	}
 
 	useEffect(() => () => stopPointerTracking.current?.(), []);
@@ -186,34 +206,44 @@ export function SessionTabs({
 		for (const s of tabs) if (!orderDraft.includes(s.id)) out.push(s);
 		return out;
 	}, [tabs, orderDraft]);
+	const activeTopId = activeId ?? viewTabs.find((tab) => tab.active)?.id ?? null;
 	const tabUnits = React.useMemo(() => {
 		const visibleSplit = isPhone ? null : split;
 		const splitIds = visibleSplit
 			? new Set([visibleSplit.leftId, visibleSplit.rightId])
 			: null;
-		const splitSessions = visibleSplit
-			? [
-					orderedTabs.find((s) => s.id === visibleSplit.leftId),
-					orderedTabs.find((s) => s.id === visibleSplit.rightId),
-				].filter(
-					(s): s is UnifiedSession => !!s,
+		const resolveMember = (id: string): TabMember | null => {
+			const session = orderedTabs.find((candidate) => candidate.id === id);
+			if (session) return { kind: "chat", id, session };
+			const view = viewTabs.find((candidate) => candidate.id === id);
+			return view ? { kind: "view", id, view } : null;
+		};
+		const splitMembers = visibleSplit
+			? [resolveMember(visibleSplit.leftId), resolveMember(visibleSplit.rightId)].filter(
+					(member): member is TabMember => !!member,
 				)
 			: [];
 		let splitInserted = false;
-		return orderedTabs.flatMap((session) => {
-			if (!splitIds?.has(session.id) || splitSessions.length !== 2) {
-				return [{ key: session.id, sessions: [session] }];
+		const units = orderedTabs.flatMap((session) => {
+			if (!splitIds?.has(session.id) || splitMembers.length !== 2) {
+				return [
+					{
+						key: session.id,
+						members: [{ kind: "chat", id: session.id, session } as TabMember],
+					},
+				];
 			}
 			if (splitInserted) return [];
 			splitInserted = true;
 			return [
 				{
-					key: `split:${splitSessions[0].id}:${splitSessions[1].id}`,
-					sessions: splitSessions,
+					key: `split:${splitMembers[0].id}:${splitMembers[1].id}`,
+					members: splitMembers,
 				},
 			];
 		});
-	}, [isPhone, orderedTabs, split]);
+		return { units, splitMembers };
+	}, [isPhone, orderedTabs, split, viewTabs]);
 
 	// Drop: hand the new order to the parent (which persists it and feeds it back
 	// as the next `tabs`), swallow the trailing click, then release the draft.
@@ -228,11 +258,98 @@ export function SessionTabs({
 	}
 
 	function reorderUnits(keys: string[]) {
-		const byKey = new Map(tabUnits.map((unit) => [unit.key, unit] as const));
-		let units = keys.map((key) => byKey.get(key)).filter((unit): unit is (typeof tabUnits)[number] => !!unit);
-		const mainUnit = mainId ? units.find((unit) => unit.sessions.some((session) => session.id === mainId)) : null;
+		const byKey = new Map(tabUnits.units.map((unit) => [unit.key, unit] as const));
+		let units = keys
+			.map((key) => byKey.get(key))
+			.filter((unit): unit is (typeof tabUnits.units)[number] => !!unit);
+		const mainUnit = mainId
+			? units.find((unit) => unit.members.some((member) => member.id === mainId))
+			: null;
 		if (mainUnit) units = [mainUnit, ...units.filter((unit) => unit !== mainUnit)];
-		setOrderDraft(units.flatMap((unit) => unit.sessions.map((session) => session.id)));
+		setOrderDraft(
+			units.flatMap((unit) =>
+				unit.members.flatMap((member) =>
+					member.kind === "chat" ? [member.session.id] : [],
+				),
+			),
+		);
+	}
+
+	function selectMember(member: TabMember) {
+		if (member.kind === "chat") onSelect(member.session);
+		else onSelectView(member.view.id);
+	}
+
+	function closeMember(member: TabMember) {
+		if (member.kind === "chat") onClose(member.session);
+		else onCloseView(member.view.id);
+	}
+
+	function splitTabContent(members: TabMember[]) {
+		const groupActive = members.some((member) => member.id === activeTopId);
+		return (
+			<ContextMenu.Root>
+				<ContextMenu.Trigger
+					render={
+						<div
+							role="tab"
+							aria-selected={groupActive}
+							className={`session-tab session-tab-split ${groupActive ? "session-tab-active" : ""}`}
+						/>
+					}
+				>
+					{members.map((member) => {
+						const session = member.kind === "chat" ? member.session : null;
+						const label = member.kind === "chat" ? member.session.title : member.view.label;
+						return (
+							<div
+								key={member.id}
+								className={`session-tab-split-part ${member.id === activeTopId ? "session-tab-split-part-active" : ""}`}
+								title={label}
+							>
+								<button
+									type="button"
+									className="session-tab-split-select"
+									onClick={(event) => {
+										event.stopPropagation();
+										selectMember(member);
+									}}
+								>
+									{session?.waitingForInput ? (
+										<span className="session-tab-dot session-tab-dot-waiting" />
+									) : session?.isRunning ? (
+										<span className="session-tab-dot" />
+									) : member.kind === "view" && member.view.dotClass ? (
+										<span className={`panel-tab-dot ${member.view.dotClass}`} />
+									) : null}
+									{member.kind === "view" && member.view.icon ? (
+										<span className="session-tab-vicon" aria-hidden="true">
+											{member.view.icon}
+										</span>
+									) : (
+										<span className="session-tab-title">{label}</span>
+									)}
+								</button>
+								<button
+									type="button"
+									className="session-tab-split-close"
+									aria-label={`Close ${label}`}
+									onClick={(event) => {
+										event.stopPropagation();
+										closeMember(member);
+									}}
+								>
+									×
+								</button>
+							</div>
+						);
+					})}
+				</ContextMenu.Trigger>
+				<ContextMenu.Popup className="min-w-[190px]">
+					<ContextMenu.Item onClick={onSeparateSplit}>Separate tabs</ContextMenu.Item>
+				</ContextMenu.Popup>
+			</ContextMenu.Root>
+		);
 	}
 
 	function commitRename() {
@@ -316,13 +433,12 @@ export function SessionTabs({
 					as="div"
 					axis="x"
 					className="session-tabs-chatgroup"
-					values={tabUnits.map((unit) => unit.key)}
+					values={tabUnits.units.map((unit) => unit.key)}
 					onReorder={reorderUnits}
 				>
-					{tabUnits.map((unit) => {
-						if (unit.sessions.length === 2) {
-							const groupActive = unit.sessions.some((session) => session.id === activeId);
-							const containsMain = unit.sessions.some((session) => session.id === mainId);
+					{tabUnits.units.map((unit) => {
+						if (unit.members.length === 2) {
+							const containsMain = unit.members.some((member) => member.id === mainId);
 							return (
 								<Reorder.Item
 									as="div"
@@ -340,59 +456,13 @@ export function SessionTabs({
 									}}
 									className="session-tab-reorder"
 								>
-									<ContextMenu.Root>
-										<ContextMenu.Trigger
-											render={
-												<div
-													role="tab"
-													aria-selected={groupActive}
-													className={`session-tab session-tab-split ${groupActive ? "session-tab-active" : ""}`}
-												/>
-											}
-										>
-											{unit.sessions.map((session) => (
-												<div
-													key={session.id}
-													className={`session-tab-split-part ${session.id === activeId ? "session-tab-split-part-active" : ""}`}
-													title={session.title}
-												>
-													<button
-														type="button"
-														className="session-tab-split-select"
-														onClick={(event) => {
-															event.stopPropagation();
-															onSelect(session);
-														}}
-													>
-														{session.waitingForInput ? (
-															<span className="session-tab-dot session-tab-dot-waiting" />
-														) : session.isRunning ? (
-															<span className="session-tab-dot" />
-														) : null}
-														<span className="session-tab-title">{session.title}</span>
-													</button>
-													<button
-														type="button"
-														className="session-tab-split-close"
-														aria-label={`Close ${session.title}`}
-														onClick={(event) => {
-															event.stopPropagation();
-															onClose(session);
-														}}
-													>
-														×
-													</button>
-												</div>
-											))}
-										</ContextMenu.Trigger>
-										<ContextMenu.Popup className="min-w-[190px]">
-											<ContextMenu.Item onClick={onSeparateSplit}>Separate tabs</ContextMenu.Item>
-										</ContextMenu.Popup>
-									</ContextMenu.Root>
+									{splitTabContent(unit.members)}
 								</Reorder.Item>
 							);
 						}
-						const session = unit.sessions[0];
+						const member = unit.members[0];
+						if (member.kind !== "chat") return null;
+						const session = member.session;
 						const key = session.id;
 						const waiting = !!session.waitingForInput;
 						const hex = colorHex(colors[key]);
@@ -553,15 +623,38 @@ export function SessionTabs({
 						);
 					})}
 				</Reorder.Group>
+				{tabUnits.splitMembers.length === 2 &&
+					tabUnits.splitMembers.every((member) => member.kind === "view") && (
+						<div className="session-tab-reorder">
+							{splitTabContent(tabUnits.splitMembers)}
+						</div>
+					)}
 				{/* Non-chat panes (Review, …) ride at the END of the strip: the main
 				    chat leads, sibling chats follow, panes close the row. */}
-				{viewTabs.map((v) => (
-					<div
+				{viewTabs
+					.filter(
+						(view) => !tabUnits.splitMembers.some((member) => member.id === view.id),
+					)
+					.map((v) => (
+					<motion.div
 						key={v.id}
 						role="tab"
 						aria-selected={v.active}
 						aria-label={v.icon ? v.label : undefined}
 						className={`session-tab session-tab-view ${v.icon ? "session-tab-view-icon" : ""} ${v.active ? "session-tab-active" : ""}`}
+						drag={!isPhone}
+						dragMomentum={false}
+						dragSnapToOrigin
+						dragElastic={0.08}
+						onPointerDown={(event) => {
+							if (!isPhone) trackPointer(v.id, event, true);
+						}}
+						onClickCapture={(event) => {
+							if (justDragged.current) {
+								event.stopPropagation();
+								event.preventDefault();
+							}
+						}}
 						onClick={() => onSelectView(v.id)}
 						title={v.label}
 					>
@@ -585,7 +678,7 @@ export function SessionTabs({
 						>
 							×
 						</button>
-					</div>
+					</motion.div>
 				))}
 				{/* Phone: the +/history controls scroll WITH the tabs so the strip
 					    uses the full width — nothing pinned eating horizontal room. */}
