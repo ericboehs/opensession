@@ -21,6 +21,7 @@ import { ExclusivePopupProvider } from "./exclusive-popups";
  */
 
 type Side = "top" | "bottom" | "left" | "right";
+type Align = "start" | "center" | "end";
 
 /** Mount once at the app root: shared 200ms open delay, and for 300ms after a
  * tooltip closes, neighbouring triggers open instantly (toolbar sweep). */
@@ -39,6 +40,7 @@ export function TooltipProvider({
 export function Tooltip({
 	label,
 	side = "top",
+	align = "center",
 	offset = 8,
 	shortcut,
 	multiline,
@@ -46,6 +48,10 @@ export function Tooltip({
 }: {
 	label: React.ReactNode;
 	side?: Side;
+	/** Where along `side` the popup sits. "start" keeps it by the trigger's
+	 *  leading edge — right for a wide block trigger, where centering would
+	 *  float the tip far from whatever the cursor is actually over. */
+	align?: Align;
 	offset?: number;
 	/** Optional keyboard-shortcut badges, e.g. ["⌘", "S"]. */
 	shortcut?: string[];
@@ -61,6 +67,7 @@ export function Tooltip({
 			<BaseTooltip.Portal>
 				<BaseTooltip.Positioner
 					side={side}
+					align={align}
 					sideOffset={offset}
 					collisionPadding={6}
 					className="z-[10001]"
