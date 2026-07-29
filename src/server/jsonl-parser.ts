@@ -140,21 +140,42 @@ function attachUploads(
 // tool or assistant can print `BACKSTAGE_VIDEO: <abs-path>` and we turn each
 // marker into a /backstage/media URL the frontend streams.
 const VIDEO_MARKER = /^[\t ]*BACKSTAGE_VIDEO:[\t ]*(\/\S+)[\t ]*$/gm;
+// Sibling marker for stills (thumbnails, extracted frames, downloaded
+// images): `BACKSTAGE_IMAGE: <abs-path>` renders inline via the same
+// authenticated media route, landing in the entry's existing `images` field.
+const IMAGE_MARKER = /^[\t ]*BACKSTAGE_IMAGE:[\t ]*(\/\S+)[\t ]*$/gm;
 
-export function extractBackstageVideos(text: string): string[] {
+function extractMarker(text: string, marker: RegExp): string[] {
   if (!text) return [];
   const out: string[] = [];
-  for (const m of text.matchAll(VIDEO_MARKER)) {
+  for (const m of text.matchAll(marker)) {
     out.push(`/backstage/media?path=${encodeURIComponent(m[1])}`);
   }
   return out;
 }
 
-export function extractAssistantVideos(text: string): { content: string; videos: string[] } {
+export function extractBackstageVideos(text: string): string[] {
+  return extractMarker(text, VIDEO_MARKER);
+}
+
+export function extractBackstageImages(text: string): string[] {
+  return extractMarker(text, IMAGE_MARKER);
+}
+
+export function extractAssistantVideos(text: string): {
+  content: string;
+  videos: string[];
+  images: string[];
+} {
   const videos = extractBackstageVideos(text);
+  const images = extractBackstageImages(text);
+  let content = text;
+  if (videos.length > 0) content = content.replace(VIDEO_MARKER, "");
+  if (images.length > 0) content = content.replace(IMAGE_MARKER, "");
   return {
-    content: videos.length > 0 ? text.replace(VIDEO_MARKER, "").trimEnd() : text,
+    content: videos.length || images.length ? content.trimEnd() : text,
     videos,
+    images,
   };
 }
 
@@ -290,7 +311,10 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
                     .map((c: any) => c.text)
                     .join("\n")
                 : "";
-          const images = extractImages(block.content);
+          const images = [
+            ...extractImages(block.content),
+            ...extractBackstageImages(resultText),
+          ];
           const videos = extractBackstageVideos(resultText);
           // A Task/Agent result carries the spawned sub-agent's id on the line's
           // toolUseResult; attach it so the UI can open the sub-agent transcript.
@@ -398,6 +422,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
             requestId: raw.requestId,
             ...(model ? { model } : {}),
             ...(assistant.videos.length > 0 ? { videos: assistant.videos } : {}),
+            ...(assistant.images.length > 0 ? { images: assistant.images } : {}),
           });
           textBlockCount++;
         }
@@ -426,6 +451,7 @@ function parseEntry(raw: RawJsonlEntry): TranscriptEntry[] {
           requestId: raw.requestId,
           ...(model ? { model } : {}),
           ...(assistant.videos.length > 0 ? { videos: assistant.videos } : {}),
+          ...(assistant.images.length > 0 ? { images: assistant.images } : {}),
         });
       }
     }

@@ -1168,6 +1168,7 @@ export function readOpencodeTranscript(
             timestamp: ts,
             ...(model ? { model } : {}),
             ...(assistant?.videos.length ? { videos: assistant.videos } : {}),
+            ...(assistant?.images.length ? { images: assistant.images } : {}),
           });
         } else if (part.type === "tool") {
           const images = opencodeToolResultImages(part);
