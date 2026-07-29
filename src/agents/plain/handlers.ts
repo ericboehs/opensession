@@ -205,7 +205,7 @@ async function handleAgentMention(
 
     if (pending.type === "customer_reply") {
       const sent = await sendCustomerReply(threadId, customerId, pending.draftText);
-      if (sent) {
+      if (sent.ok) {
         try {
           await plain.snoozeThread({
             threadId,

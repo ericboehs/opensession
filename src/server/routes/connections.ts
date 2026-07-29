@@ -101,10 +101,13 @@ export async function handleConnectionsRoutes(
 		const status = mcpOauthStatus(name);
 		const cfg = (await import("../connections")).readMcpConfig().mcpServers[
 			name
-		] as { url?: string } | undefined;
+		] as { url?: string; oauthUrl?: string } | undefined;
+		// oauthUrl: a stdio server's HTTP OAuth home (e.g. plain runs a local
+		// stdio MCP but per-user grants come from Plain's hosted MCP).
+		const oauthTarget = cfg?.url || cfg?.oauthUrl;
 		const capable =
 			!!oauthPresetFor(name) ||
-			(cfg?.url ? await isOauthCapable(cfg.url) : false);
+			(oauthTarget ? await isOauthCapable(oauthTarget) : false);
 		return Response.json({ ...status, capable });
 	}
 	if (mcpOauthMatch && req.method === "DELETE") {
@@ -126,9 +129,10 @@ export async function handleConnectionsRoutes(
 		const body = (await req.json().catch(() => ({}))) as { scope?: string };
 		const cfg = (await import("../connections")).readMcpConfig().mcpServers[
 			name
-		] as { url?: string } | undefined;
+		] as { url?: string; oauthUrl?: string } | undefined;
 		const { startMcpOauthFlow, oauthPresetFor } = await import("../mcp-oauth");
-		if (!cfg?.url && !oauthPresetFor(name))
+		const oauthTarget = cfg?.url || cfg?.oauthUrl;
+		if (!oauthTarget && !oauthPresetFor(name))
 			return Response.json(
 				{ error: "Not an OAuth-capable MCP server" },
 				{ status: 400 },
@@ -145,7 +149,7 @@ export async function handleConnectionsRoutes(
 				);
 			const { url: authorizeUrl } = await startMcpOauthFlow(
 				name,
-				cfg?.url || `stdio://${name}`,
+				oauthTarget || `stdio://${name}`,
 				forUser,
 			);
 			return Response.json({ url: authorizeUrl });

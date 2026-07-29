@@ -44,7 +44,7 @@ export function filterMcpServers(
       if (allowlist) console.warn(`[runner] MCP allowlist names unknown server "${name}" — skipping`);
       continue;
     }
-    const { allowedUsers, ...entry } = cfg;
+    const { allowedUsers, oauthUrl, ...entry } = cfg;
     if (Array.isArray(allowedUsers) && allowedUsers.length) {
       // Cleared when the prompter OR the session creator (grantUsers[0]) is
       // on the list — anyone with access to a cleared person's session can

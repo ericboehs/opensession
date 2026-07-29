@@ -677,11 +677,38 @@ export function cleanDraftText(text: string): string {
 export async function sendCustomerReply(
   threadId: string,
   customerId: string,
-  text: string
-): Promise<boolean> {
+  text: string,
+  /** Per-user Plain OAuth token — the reply is then attributed to that
+   *  person instead of the workspace machine user. Auth failures fall back
+   *  to the system key so the customer still gets the reply. */
+  userToken?: string
+): Promise<{ ok: boolean; sentAs: "user" | "system" }> {
+  const cleanText = cleanDraftText(text);
+  if (userToken) {
+    try {
+      const asUser = new PlainClient({ apiKey: userToken });
+      const result = await asUser.replyToThread({
+        threadId,
+        textContent: cleanText,
+      });
+      if (!result.error) {
+        console.log(
+          `[plain] Sent reply in thread ${threadId} as the connected user`
+        );
+        return { ok: true, sentAs: "user" };
+      }
+      console.warn(
+        "[plain] user-token reply failed, falling back to system key:",
+        result.error
+      );
+    } catch (e) {
+      console.warn(
+        "[plain] user-token reply failed, falling back to system key:",
+        e
+      );
+    }
+  }
   try {
-    const cleanText = cleanDraftText(text);
-
     const result = await plain.replyToThread({
       threadId,
       textContent: cleanText,
@@ -689,14 +716,14 @@ export async function sendCustomerReply(
 
     if (result.error) {
       console.error("Error sending reply:", result.error);
-      return false;
+      return { ok: false, sentAs: "system" };
     }
 
     console.log(`[plain] Sent reply to customer in thread ${threadId}`);
-    return true;
+    return { ok: true, sentAs: "system" };
   } catch (e) {
     console.error("Error sending reply:", e);
-    return false;
+    return { ok: false, sentAs: "system" };
   }
 }
 

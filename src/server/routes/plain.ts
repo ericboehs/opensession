@@ -274,8 +274,24 @@ export async function handlePlainRoutes(
 					firstName && !alreadySigned
 						? `${text.trimEnd()}\n\n${firstName}`
 						: text;
-				const ok = await sendCustomerReply(threadId, "", replyText);
-				if (!ok) throw new Error("Plain rejected the reply");
+				// Their own Plain grant (My accounts → Connect) sends the reply
+				// AS THEM; without one (or if Plain rejects the token) the
+				// workspace machine user sends it, name carried in the sign-off.
+				const { mcpUserGrantToken } = await import("../mcp-oauth");
+				const grantToken = senderName
+					? mcpUserGrantToken("plain", senderName)
+					: undefined;
+				const res = await sendCustomerReply(
+					threadId,
+					"",
+					replyText,
+					grantToken,
+				);
+				if (!res.ok) throw new Error("Plain rejected the reply");
+				console.log(
+					`[plain-reply] ${senderName || "someone"} sent a reply to ${threadId} (as ${res.sentAs})`,
+				);
+				return Response.json({ ok: true, sentAs: res.sentAs });
 			}
 			console.log(
 				`[plain-reply] ${requestUser(ctx, body?.user) || "someone"} sent a ${kind} to ${threadId}`,

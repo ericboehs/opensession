@@ -53,6 +53,10 @@ interface Grant {
 interface ServerAuth {
   serverUrl: string;
   resource?: string;
+  /** scopes_supported from RFC 9728 metadata — some ASes (Cognito, e.g.
+   *  Plain's) reject unknown scopes, so the authorize request must stick to
+   *  what the resource advertises. */
+  scopes?: string[];
   endpoints: OauthEndpoints;
   clientInfo: { clientId: string };
   shared?: Grant;
@@ -133,19 +137,27 @@ function callbackUrl(): string {
 /** RFC 9728 → RFC 8414 discovery for an MCP server URL. */
 async function discover(serverUrl: string): Promise<{
   resource?: string;
+  scopes?: string[];
   endpoints: OauthEndpoints;
 }> {
   const origin = new URL(serverUrl).origin;
   let asBase = origin;
   let resource: string | undefined;
+  let scopes: string[] | undefined;
   try {
     const pr = (await (
       await fetch(`${origin}/.well-known/oauth-protected-resource`, {
         signal: AbortSignal.timeout(10_000),
       })
-    ).json()) as { resource?: string; authorization_servers?: string[] };
+    ).json()) as {
+      resource?: string;
+      authorization_servers?: string[];
+      scopes_supported?: string[];
+    };
     if (pr.authorization_servers?.[0]) asBase = pr.authorization_servers[0];
     resource = pr.resource;
+    if (Array.isArray(pr.scopes_supported) && pr.scopes_supported.length)
+      scopes = pr.scopes_supported;
   } catch {}
   for (const wk of [
     `${asBase.replace(/\/$/, "")}/.well-known/oauth-authorization-server`,
@@ -158,6 +170,7 @@ async function discover(serverUrl: string): Promise<{
       if (meta.authorization_endpoint && meta.token_endpoint)
         return {
           resource,
+          scopes,
           endpoints: {
             authorize: meta.authorization_endpoint,
             token: meta.token_endpoint,
@@ -177,7 +190,7 @@ async function ensureServerAuth(
   const store = readStore();
   const cur = store[name];
   if (cur?.clientInfo?.clientId && cur.serverUrl === serverUrl) return cur;
-  const { resource, endpoints } = await discover(serverUrl);
+  const { resource, scopes, endpoints } = await discover(serverUrl);
   if (!endpoints.register)
     throw new Error(
       `${name}: authorization server offers no dynamic client registration`,
@@ -203,6 +216,7 @@ async function ensureServerAuth(
   const next: ServerAuth = {
     serverUrl,
     resource,
+    ...(scopes ? { scopes } : {}),
     endpoints,
     clientInfo: { clientId: reg.client_id },
     ...(cur ? { shared: cur.shared, users: cur.users } : {}),
@@ -284,7 +298,12 @@ export async function startMcpOauthFlow(
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", state);
-  url.searchParams.set("scope", "openid profile email offline_access");
+  // Scope to what the resource advertises when it does (strict ASes like
+  // Cognito reject unknown scopes); the permissive default otherwise.
+  url.searchParams.set(
+    "scope",
+    auth.scopes?.join(" ") || "openid profile email offline_access",
+  );
   url.searchParams.set("prompt", "consent");
   if (auth.resource) url.searchParams.set("resource", auth.resource);
   return { url: url.toString() };
