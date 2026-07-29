@@ -743,12 +743,12 @@ function MichaelReviewCard({
 		null,
 	);
 	const [error, setError] = useState<string | null>(null);
-	const [reviewQueued, setReviewQueued] = useState(false);
+	const [reviewQueued, setReviewQueued] = useState<{ at?: string } | null>(null);
 	const review = pr.osReview;
 	const score = review?.confidence;
 	const stale = !!review?.stale;
 	const actionable = pr.state === "OPEN";
-	const active = !!pr.reviewActive || busy === "review" || reviewQueued;
+	const active = !!pr.reviewActive || busy === "review" || !!reviewQueued;
 	const canFix = actionable && !!review && !stale && review.findings > 0;
 	const scoreTone = stale
 		? "text-faint"
@@ -793,8 +793,13 @@ function MichaelReviewCard({
 	// Keep the just-started state latched until a later PR refresh observes the
 	// run or its new result; otherwise the button flashes idle after the POST.
 	useEffect(() => {
-		if (!pr.reviewActive) setReviewQueued(false);
-	}, [pr.reviewActive, pr.osReview?.at]);
+		if (
+			reviewQueued &&
+			(pr.reviewActive || pr.osReview?.at !== reviewQueued.at)
+		) {
+			setReviewQueued(null);
+		}
+	}, [pr.reviewActive, pr.osReview?.at, reviewQueued]);
 
 	async function run(action: (typeof PR_AGENT_ACTIONS)[number]) {
 		if (busy) return;
@@ -809,7 +814,7 @@ function MichaelReviewCard({
 				repo,
 			);
 			if (res.ok) {
-				if (action.kind === "review") setReviewQueued(true);
+				if (action.kind === "review") setReviewQueued({ at: review?.at });
 				// Auto-fix opens a live chat in this workspace — jump straight into it
 				// instead of leaving a "posted on the PR" note behind.
 				if (res.openChat && res.bksId && onOpenSession) {
@@ -830,94 +835,25 @@ function MichaelReviewCard({
 	const moreActions = PR_AGENT_ACTIONS.slice(2);
 
 	return (
-		<div
-			data-michael-score
-			className="relative grid gap-3 overflow-hidden rounded-xl border border-line-strong bg-raised p-3 shadow-[var(--control-shadow)]"
-		>
-			<div className="pointer-events-none absolute -right-8 -top-10 size-24 rounded-full bg-accent-soft blur-2xl" />
-			<div className="relative flex items-center gap-2">
-				<span className="grid size-7 shrink-0 place-items-center rounded-lg border border-line bg-panel text-accent shadow-[var(--control-shadow)]">
-					<IconSparkle size={17} />
-				</span>
-				<div className="text-[12px] font-[700] tracking-[-0.01em] text-fg">
-					{AGENT_NAME} score
-				</div>
+		<div data-michael-score className={INFO_SECTION_CLASS}>
+			<div className="flex items-center gap-2 px-1">
+				<div className={INFO_LABEL_CLASS}>{AGENT_NAME} score</div>
 				{active ? (
-					<span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2 py-1 text-[10.5px] font-semibold text-accent">
+					<span className="ml-auto inline-flex items-center gap-1 text-[10.5px] font-semibold text-accent">
 						<span className="size-1.5 animate-pulse rounded-full bg-accent" />
 						Reviewing
 					</span>
 				) : stale ? (
-					<span className="ml-auto rounded-full bg-active px-2 py-1 text-[10.5px] font-semibold text-faint">
-						Stale
-					</span>
+					<span className="ml-auto text-[10.5px] font-semibold text-faint">Stale</span>
 				) : null}
-			</div>
-
-			<div className="relative flex items-end gap-3">
-				<div className={cn("shrink-0 font-mono leading-none", scoreTone)}>
-					<span className="text-[32px] font-[750] tracking-[-0.08em]">{score ?? "–"}</span>
-					<span className="ml-1 text-[12px] font-semibold tracking-normal text-faint">/ 5</span>
-				</div>
-				<div className="min-w-0 pb-0.5">
-					<div className="text-[13px] font-[680] leading-tight text-fg">{verdict}</div>
-					<div className="mt-1 text-[11px] leading-[1.35] text-faint">{detail}</div>
-				</div>
-			</div>
-
-			<div
-				className="relative flex h-4 items-end gap-1"
-				role={score ? "meter" : "status"}
-				aria-label={`${AGENT_NAME} merge-safety score`}
-				aria-valuemin={score ? 1 : undefined}
-				aria-valuemax={score ? 5 : undefined}
-				aria-valuenow={score}
-			>
-				{[1, 2, 3, 4, 5].map((step) => (
-					<span
-						key={step}
-						className={cn(
-							"flex-1 rounded-[3px] transition-colors",
-							score && step <= score ? meterTone : "bg-active",
-						)}
-						style={{ height: 6 + step * 2 }}
-					/>
-				))}
-			</div>
-
-			{actionable && (
-				<div className="relative flex items-center gap-1.5 border-t border-line pt-2.5">
-					{canFix && (
-						<button
-							type="button"
-							className="inline-flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-fg px-3 text-[12px] font-semibold text-bg shadow-[var(--control-shadow)] transition-[filter,transform] hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
-							disabled={busy !== null}
-							onClick={() => run(fixAction)}
-							title={fixAction.hint}
-						>
-							<IconSparkle size={15} />
-							{busy === "autofix" ? "Starting..." : "Fix findings"}
-						</button>
-					)}
-					<button
-						type="button"
-						className={cn(
-							"inline-flex min-h-8 items-center justify-center rounded-lg border border-line-strong bg-panel px-3 text-[12px] font-semibold text-fg shadow-[var(--control-shadow)] transition-[background-color,transform] hover:bg-hover active:scale-[0.98] disabled:opacity-60",
-							!canFix && "flex-1",
-						)}
-						disabled={busy !== null || active}
-						onClick={() => run(reviewAction)}
-						title={reviewAction.hint}
-					>
-						{active ? "Reviewing..." : review ? "Review again" : "Run review"}
-					</button>
+				{actionable && (
 					<Menu.Root>
 						<Menu.Trigger
-							className="grid size-8 shrink-0 place-items-center rounded-lg border border-line-strong bg-panel text-dim shadow-[var(--control-shadow)] transition-colors hover:bg-hover hover:text-fg disabled:opacity-60"
+							className="-mr-1 grid size-6 shrink-0 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-fg disabled:opacity-50"
 							disabled={busy !== null}
 							aria-label={`More ${AGENT_NAME} actions`}
 						>
-							<IconChevronDown size={15} />
+							<IconChevronDown size={14} />
 						</Menu.Trigger>
 						<Menu.Popup align="end" sideOffset={6} className="min-w-[280px]">
 							<Menu.Group>
@@ -940,10 +876,74 @@ function MichaelReviewCard({
 							</Menu.Group>
 						</Menu.Popup>
 					</Menu.Root>
+				)}
+			</div>
+			<div className="grid gap-px rounded-lg bg-panel p-1">
+				<div className="flex items-center gap-2.5 rounded-md px-2 py-2">
+					<div className={cn("shrink-0 font-mono leading-none", scoreTone)}>
+						<span className="text-[20px] font-[750] tracking-[-0.06em]">{score ?? "–"}</span>
+						<span className="ml-0.5 text-[10.5px] font-semibold tracking-normal text-faint">/5</span>
+					</div>
+					<div className="min-w-0 flex-1">
+						<div className="truncate text-[12px] font-semibold text-fg">{verdict}</div>
+						<div className="mt-0.5 truncate text-[10.5px] text-faint">{detail}</div>
+					</div>
+					<div
+						className="flex w-12 shrink-0 gap-0.5"
+						role={score ? "meter" : "status"}
+						aria-label={`${AGENT_NAME} merge-safety score`}
+						aria-valuemin={score ? 1 : undefined}
+						aria-valuemax={score ? 5 : undefined}
+						aria-valuenow={score}
+					>
+						{[1, 2, 3, 4, 5].map((step) => (
+							<span
+								key={step}
+								className={cn(
+									"h-1 flex-1 rounded-full",
+									score && step <= score ? meterTone : "bg-active",
+								)}
+							/>
+						))}
+					</div>
 				</div>
-			)}
+				{actionable && (
+					<div className="grid grid-cols-2 gap-px">
+						{canFix && (
+							<button
+								type="button"
+								className={ACTION_BUTTON_CLASS}
+								disabled={busy !== null}
+								onClick={() => run(fixAction)}
+								title={fixAction.hint}
+							>
+								<span className={ACTION_ICON_CLASS}>
+									<IconSparkle size={16} />
+								</span>
+								<span className="truncate">
+									{busy === "autofix" ? "Starting..." : "Fix findings"}
+								</span>
+							</button>
+						)}
+						<button
+							type="button"
+							className={cn(ACTION_BUTTON_CLASS, !canFix && "col-span-2")}
+							disabled={busy !== null || active}
+							onClick={() => run(reviewAction)}
+							title={reviewAction.hint}
+						>
+							<span className={ACTION_ICON_CLASS}>
+								<IconPullRequest size={16} />
+							</span>
+							<span className="truncate">
+								{active ? "Reviewing..." : review ? "Review again" : "Run review"}
+							</span>
+						</button>
+					</div>
+				)}
+			</div>
 			{done && (
-				<div className="relative text-[11.5px] font-medium text-dim">
+				<div className="px-1 text-[11px] font-medium text-dim">
 					Started {done.label.toLowerCase()} — {AGENT_NAME} will post results on{" "}
 					{pr.url ? (
 						<a
@@ -971,7 +971,7 @@ function MichaelReviewCard({
 				</div>
 			)}
 			{error && (
-				<div className="relative text-[11.5px] font-medium text-red">
+				<div className="px-1 text-[11px] font-medium text-red">
 					{error}
 				</div>
 			)}
