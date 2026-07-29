@@ -152,7 +152,7 @@ function FileChip({ file }: { file: TouchedFile }) {
         openOnHover
         delay={250}
         closeDelay={100}
-        className="ml-1 flex h-6 min-w-0 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-panel px-1.5 hover:border-line-strong data-[popup-open]:border-line-strong"
+        className="ml-1 flex h-6 min-w-0 cursor-pointer items-center gap-1.5 rounded-md bg-panel px-1.5"
       >
         <ExtBadge name={name} />
         <span className="max-w-[180px] truncate text-xs font-medium text-dim">
@@ -230,7 +230,7 @@ function MoreChip({ files }: { files: TouchedFile[] }) {
         .map((f) => f.path.split("/").pop())
         .join(", ") + (files.length > 12 ? ", …" : "")}
     >
-      <span className="ml-1 flex h-6 items-center gap-1.5 rounded-md border border-line bg-panel px-1.5">
+      <span className="ml-1 flex h-6 items-center gap-1.5 rounded-md bg-panel px-1.5">
         <span className="text-xs font-medium text-faint">
           +{files.length} more
         </span>
