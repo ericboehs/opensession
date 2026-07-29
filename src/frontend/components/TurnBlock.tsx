@@ -283,10 +283,12 @@ function TurnMessage({
         <span className="flex-shrink-0 text-[14px] font-medium leading-5 text-fg">
           Thinking
         </span>
-        {summary && (
+        {!expanded && summary ? (
           <span className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-0.5 text-[13px] leading-5 text-dim">
             {summary}
           </span>
+        ) : (
+          <span className="min-w-0 flex-1" />
         )}
         <span
           className={cn(
