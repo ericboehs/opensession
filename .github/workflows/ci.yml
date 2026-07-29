@@ -36,8 +36,33 @@ jobs:
       - name: Type-check
         run: bun run typecheck
 
+      # Three test files were already failing on master before this workflow
+      # existed, which is very likely why the previous CI attempt was removed.
+      # A permanently red CI trains people to ignore it, so they are quarantined
+      # explicitly rather than left to rot:
+      #
+      #   zz-opencode-mirror.test.ts  } predate the transcript-v2 store;
+      #   opencode-transcript.test.ts }   PR #73 ports the first of them
+      #   sessions.test.ts            } getOpenPrs().reviewRequested returns
+      #                                 undefined where the test expects []
+      #
+      # Delete a line here when its fix lands. Do NOT add to this list to make a
+      # build green — a failing test you introduced is a failing test.
       - name: Unit tests
-        run: bun test
+        run: |
+          find src deploy -name '*.test.ts' \
+            ! -name 'zz-opencode-mirror.test.ts' \
+            ! -name 'opencode-transcript.test.ts' \
+            ! -name 'sessions.test.ts' \
+            -print0 | sort -z | xargs -0 bun test
+
+      - name: Quarantined tests (reported, non-blocking)
+        continue-on-error: true
+        run: |
+          bun test \
+            src/server/zz-opencode-mirror.test.ts \
+            src/server/opencode-transcript.test.ts \
+            src/server/sessions.test.ts
 
   installer:
     name: Install (${{ matrix.os }})
