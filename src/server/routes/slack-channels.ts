@@ -20,22 +20,37 @@ export async function handleSlackChannelRoutes(
 	);
 	if (!msgsMatch) return undefined;
 
-	// Slack markup → markdown-ish the pane can linkify: <url|label> →
-	// [label](url), bare <url> → url, <!here>/<!channel> → @here/@channel,
-	// <#C…|name> → #name. User mentions ride prettifyMentions.
-	// Entities last: Slack escapes literal &, <, > — decode only after the
-	// <...> markup is consumed so an escaped "&lt;" can't become fake markup.
-	const renderSlackText = (raw: string, prettifyMentions: (t: string) => string) =>
-		prettifyMentions(
-			raw
-				.replace(/<(https?:[^|>]+)\|([^>]+)>/g, "[$2]($1)")
-				.replace(/<(https?:[^>]+)>/g, "$1")
-				.replace(/<!(here|channel|everyone)(\|[^>]*)?>/g, "@$1")
-				.replace(/<#[A-Z0-9]+\|([^>]*)>/g, "#$1")
+	// Slack markup → markdown-ish the pane renders: <url|label> →
+	// [label](url), bare <url> → url, mentions/broadcasts/channel refs →
+	// [[@Name]]/[[@here]]/[[#name]] tag tokens (chips in the pane), custom
+	// emoji → ![:name:](url) image tokens, standard emoji → unicode.
+	// Entities decode only after the <...> markup is consumed so an escaped
+	// "&lt;" can't become fake markup; emoji run last so a decoded ":" can
+	// join a shortcode.
+	const renderSlackText = async (
+		raw: string,
+		resolveSlackUser: (id: string) => Promise<{ name: string }>,
+		emojify: (t: string) => string,
+	) => {
+		let text = raw
+			.replace(/<(https?:[^|>]+)\|([^>]+)>/g, "[$2]($1)")
+			.replace(/<(https?:[^>]+)>/g, "$1")
+			.replace(/<!(here|channel|everyone)(\|[^>]*)?>/g, "[[@$1]]")
+			.replace(/<#[A-Z0-9]+\|([^>]*)>/g, "[[#$1]]");
+		const mentionIds = [...text.matchAll(/<@(U[A-Z0-9]+)>/g)].map(
+			(m) => m[1],
+		);
+		for (const id of [...new Set(mentionIds)]) {
+			const u = await resolveSlackUser(id).catch(() => ({ name: "someone" }));
+			text = text.replaceAll(`<@${id}>`, `[[@${u.name.split(" ")[0]}]]`);
+		}
+		return emojify(
+			text
 				.replace(/&lt;/g, "<")
 				.replace(/&gt;/g, ">")
 				.replace(/&amp;/g, "&"),
 		);
+	};
 	const channelId = decodeURIComponent(msgsMatch[1]);
 	const caller = ctx.authUser?.login || ctx.authUser?.name || undefined;
 	const { mcpUserGrantToken } = await import("../mcp-oauth");
@@ -52,9 +67,22 @@ export async function handleSlackChannelRoutes(
 			100,
 		);
 		try {
-			const { slackApiGet, resolveSlackUser, prettifyMentions } =
-				await import("../../agents/slack/slack-api");
+			const { slackApiGet, resolveSlackUser } = await import(
+				"../../agents/slack/slack-api"
+			);
+			const { customEmojiMap, emojifySlackText, reactionDisplay } =
+				await import("../../agents/slack/emoji");
 			const { personaName } = await import("../config");
+			const custom = await customEmojiMap(grantToken);
+			const emojify = (t: string) => emojifySlackText(t, custom);
+			const reactionsOf = (m: any) =>
+				(m.reactions || [])
+					.filter((r: any) => r?.name && r?.count)
+					.map((r: any) => ({
+						name: r.name,
+						count: r.count,
+						...reactionDisplay(r.name, custom),
+					}));
 			const data = await slackApiGet(
 				threadTs ? "conversations.replies" : "conversations.history",
 				{
@@ -87,24 +115,31 @@ export async function handleSlackChannelRoutes(
 				// User-first: app-relayed posts carry BOTH user and bot_id (a
 				// person's own message via an app) — the person wins, otherwise
 				// Michiel's posts render as the bot.
+				const text = await renderSlackText(
+					m.text,
+					resolveSlackUser,
+					emojify,
+				);
 				if (m.user) {
 					const u = await resolveSlackUser(m.user);
 					out.push({
 						ts: m.ts,
 						userName: u.name,
 						avatarUrl: u.avatarUrl,
-						text: renderSlackText(m.text, prettifyMentions),
+						text,
 						isBot: false,
 						replyCount: m.reply_count || 0,
+						reactions: reactionsOf(m),
 					});
 				} else {
 					out.push({
 						ts: m.ts,
 						userName: m.username || personaName(),
 						avatarUrl: m.icons?.image_72 || m.icons?.image_48,
-						text: renderSlackText(m.text, prettifyMentions),
+						text,
 						isBot: true,
 						replyCount: m.reply_count || 0,
+						reactions: reactionsOf(m),
 					});
 				}
 			}

@@ -2,6 +2,15 @@ import { BASE_PATH } from "../lib/base";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { IconArrowUp } from "./icons";
 
+interface MessageReaction {
+	name: string;
+	count: number;
+	/** Unicode char for standard emoji. */
+	emoji?: string;
+	/** Image URL for custom workspace emoji. */
+	url?: string;
+}
+
 interface ChannelMessage {
 	ts: string;
 	userName: string;
@@ -9,38 +18,84 @@ interface ChannelMessage {
 	text: string;
 	isBot: boolean;
 	replyCount?: number;
+	reactions?: MessageReaction[];
 }
 
-/** Markdown-lite renderer for slack text the route emits: [label](url)
- *  links, bare URLs, everything else as selectable text. */
+/** Markdown-lite renderer for slack text the route emits: ![:name:](url)
+ *  custom-emoji images, [label](url) links, [[@Name]]/[[#chan]] mention
+ *  chips, bare URLs — everything else as selectable text. */
 function MessageText({ text }: { text: string }) {
 	const parts: React.ReactNode[] = [];
-	// [label](url) first, then bare URLs in the remainder.
-	const re = /\[([^\]]+)\]\((https?:[^)\s]+)\)|(https?:\/\/[^\s<>]+[^\s<>.,)\]}])/g;
+	const re =
+		/!\[([^\]]*)\]\((https?:[^)\s]+)\)|\[([^\]]+)\]\((https?:[^)\s]+)\)|\[\[([@#][^\]]+)\]\]|(https?:\/\/[^\s<>]+[^\s<>.,)\]}])/g;
 	let last = 0;
 	let m: RegExpExecArray | null;
 	let key = 0;
 	while ((m = re.exec(text))) {
 		if (m.index > last) parts.push(text.slice(last, m.index));
-		const href = m[2] || m[3];
-		const label = m[1] || m[3];
-		parts.push(
-			<a
-				key={key++}
-				href={href}
-				target="_blank"
-				rel="noreferrer"
-				className="text-accent underline decoration-line underline-offset-2 hover:decoration-current"
-			>
-				{label}
-			</a>,
-		);
+		if (m[2] !== undefined) {
+			// Custom emoji image, sized to ride inline with the text.
+			parts.push(
+				<img
+					key={key++}
+					src={m[2]}
+					alt={m[1]}
+					title={m[1]}
+					className="inline-block h-[18px] w-[18px] align-text-bottom"
+				/>,
+			);
+		} else if (m[5] !== undefined) {
+			parts.push(
+				<span
+					key={key++}
+					className="rounded-sm bg-accent-soft px-1 font-medium text-accent"
+				>
+					{m[5]}
+				</span>,
+			);
+		} else {
+			const href = m[4] || m[6];
+			const label = m[3] || m[6];
+			parts.push(
+				<a
+					key={key++}
+					href={href}
+					target="_blank"
+					rel="noreferrer"
+					className="text-accent underline decoration-line underline-offset-2 hover:decoration-current"
+				>
+					{label}
+				</a>,
+			);
+		}
 		last = m.index + m[0].length;
 	}
 	if (last < text.length) parts.push(text.slice(last));
 	return (
 		<div className="select-text whitespace-pre-wrap break-words text-[13.5px] leading-snug text-fg">
 			{parts}
+		</div>
+	);
+}
+
+function ReactionPills({ reactions }: { reactions?: MessageReaction[] }) {
+	if (!reactions?.length) return null;
+	return (
+		<div className="mt-1 flex flex-wrap gap-1">
+			{reactions.map((r) => (
+				<span
+					key={r.name}
+					title={`:${r.name}:`}
+					className="inline-flex items-center gap-1 rounded-full border border-line bg-panel px-1.5 py-0.5 text-[11.5px] leading-none text-dim"
+				>
+					{r.url ? (
+						<img src={r.url} alt={r.name} className="h-[14px] w-[14px]" />
+					) : (
+						<span className="text-[13px]">{r.emoji || `:${r.name}:`}</span>
+					)}
+					<span className="font-medium">{r.count}</span>
+				</span>
+			))}
 		</div>
 	);
 }
@@ -106,6 +161,7 @@ function MessageRow({
 					<span className="text-[11px] text-faint">{timeOf(m.ts)}</span>
 				</div>
 				<MessageText text={m.text} />
+				<ReactionPills reactions={m.reactions} />
 				{depth === 0 && (m.replyCount || 0) > 0 && (
 					<button
 						className="mt-1 text-[11.5px] font-medium text-accent hover:underline"
