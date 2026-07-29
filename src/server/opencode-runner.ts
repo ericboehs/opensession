@@ -165,6 +165,7 @@ import {
   isCodexUsageLimitError,
   isTransientRunError,
   CLAUDE_CODE_BIN,
+  TOOL_RESULT_ENVELOPE_RE,
 } from "./runner-shared";
 import {
   isLikelyPromptCacheMiss,
@@ -1677,6 +1678,21 @@ export function cancelOpencodeRun(id: string): boolean {
 type OpencodeSteerFn = (text: string, images?: ImageInput[]) => void;
 const activeOpencodeSteers: Map<string, OpencodeSteerFn> = (g.__activeOpencodeSteers ??=
   new Map());
+
+/** In-band correction injected when an assistant text part arrives in
+ * Meridian's tool-result envelope shape (TOOL_RESULT_ENVELOPE_RE): the model
+ * just recited tool results it invented and is about to act on the fabricated
+ * values. Delivered as a noReply steer so the running turn reads it at its
+ * next step, before the fake values propagate into commands. Capped per turn
+ * at the detection sites — a model that keeps re-emitting envelopes after two
+ * corrections won't be argued out of it by a third. */
+const ENVELOPE_LEAK_STEER_PROMPT =
+  "Runner notice: the `[your <tool> …]:` block in your last message was written " +
+  "by YOU, not returned by any tool — every value in it (ids, URLs, signatures, " +
+  "file contents) is fabricated. Real tool results only ever arrive as " +
+  "tool-result messages, never as text you author. Discard the values you just " +
+  "wrote, re-read the genuine tool outputs earlier in this conversation (or " +
+  "re-run the tools), and continue from those real values.";
 
 /** Fold a message into a live opencode run at its next step boundary.
  *  True = accepted for delivery (fire-and-forget POST; the caller keeps a
@@ -3776,6 +3792,7 @@ async function* runOpencodeAttempt(
     const compactionMsgs = new Set<string>();
     const startedTools = new Set<string>();
     const finishedTools = new Set<string>();
+    let envelopeLeakSteers = 0;
     let sawFirstOutput = false;
     const stallGuard = makeSubagentStallGuard(ocSessionId, (info) => {
       if (idle || runFailure || abortController.signal.aborted) return;
@@ -4019,6 +4036,18 @@ async function* runOpencodeAttempt(
                 transcriptLineAssistantText(part.text, part.id, undefined, model),
               ]);
               push({ type: "text_chunk", text: part.text });
+              // Envelope-shaped assistant text = the model reciting tool
+              // results it invented (see TOOL_RESULT_ENVELOPE_RE). Correct it
+              // in-band before the fabricated values reach a command.
+              if (TOOL_RESULT_ENVELOPE_RE.test(part.text) && envelopeLeakSteers < 2) {
+                envelopeLeakSteers++;
+                turnEvent({
+                  direction: "out",
+                  kind: "envelope_leak_detected",
+                  ...summarizeText(part.text, 300),
+                });
+                steerFn(ENVELOPE_LEAK_STEER_PROMPT);
+              }
             }
           }
           if (part.type === "reasoning" && part.time?.end && !emittedText.has(part.id)) {
@@ -4947,6 +4976,7 @@ export async function tryReattachOpencodeRun(
       const compactionMsgs = new Set<string>();
       const startedTools = new Set<string>();
       const finishedTools = new Set<string>();
+      let envelopeLeakSteers = 0;
       for (const uuid of seenUuids) {
         if (uuid.endsWith("-use")) startedTools.add(uuid.slice(0, -4));
         else if (uuid.endsWith("-result")) finishedTools.add(uuid.slice(0, -7));
@@ -5135,6 +5165,17 @@ export async function tryReattachOpencodeRun(
                   transcriptLineAssistantText(part.text, part.id, undefined, model),
                 ]);
                 push({ type: "text_chunk", text: part.text });
+                // Same envelope-leak correction as the primary pump — a
+                // reattached turn can derail the same way.
+                if (TOOL_RESULT_ENVELOPE_RE.test(part.text) && envelopeLeakSteers < 2) {
+                  envelopeLeakSteers++;
+                  turnEvent({
+                    direction: "out",
+                    kind: "envelope_leak_detected",
+                    ...summarizeText(part.text, 300),
+                  });
+                  steerFn(ENVELOPE_LEAK_STEER_PROMPT);
+                }
               }
             }
             if (part.type === "tool") {

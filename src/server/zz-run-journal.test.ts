@@ -127,11 +127,33 @@ describe("run journal", () => {
 				model: "opencode/anthropic/claude-opus-5",
 			}),
 		).toBe(true);
+		// MCP tool ids must match too — 2026-07-29: a turn recited fabricated
+		// `[your tella_create_source]:` results the builtin-name regex missed.
+		expect(
+			agent.recoveredResultNeedsContinuation({
+				type: "done",
+				sessionId: "engine-1",
+				result: '[your tella_create_source]:\n{"source":{"id":"src_fabricated"}}',
+				provider: "opencode",
+				model: "opencode/anthropic/claude-opus-5",
+			}),
+		).toBe(true);
 		expect(
 			agent.recoveredResultNeedsContinuation({
 				type: "done",
 				sessionId: "engine-1",
 				result: "The proxy GOP is 60 frames, or two seconds at 30fps.",
+				provider: "opencode",
+				model: "opencode/anthropic/claude-opus-5",
+			}),
+		).toBe(false);
+		// Prose that merely mentions the envelope shape mid-answer stays a
+		// real answer — the match is anchored to the start of the text.
+		expect(
+			agent.recoveredResultNeedsContinuation({
+				type: "done",
+				sessionId: "engine-1",
+				result: "The leak shape starts with `[your bash …]:` in assistant text.",
 				provider: "opencode",
 				model: "opencode/anthropic/claude-opus-5",
 			}),

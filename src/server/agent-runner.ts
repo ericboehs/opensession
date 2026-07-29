@@ -32,7 +32,7 @@ import {
   resolveModel,
   toOpencodeModel,
 } from "./models";
-import { isTransientRunError } from "./runner-shared";
+import { isTransientRunError, TOOL_RESULT_ENVELOPE_RE } from "./runner-shared";
 import {
   hostRunBusy,
   hostSteer,
@@ -845,13 +845,13 @@ export const RESUME_CONTINUATION_PROMPT =
  * observed shape starts `[your bash …]:`) while still reporting a successful
  * `finish: stop`. Accepting either strands partial work without a conclusion.
  * Keep this deliberately narrow and bounded to one repair continuation.
+ * The envelope shape lives in runner-shared (TOOL_RESULT_ENVELOPE_RE) and
+ * covers any tool id — MCP tools included — not just the builtin set.
  */
 export function recoveredResultNeedsContinuation(event: StreamEvent): boolean {
   if (event.type !== "done") return false;
   if (!event.result?.trim() || event.result === EMPTY_COMPLETION_RESULT) return true;
-  return /^\s*\[your (?:bash|read|write|edit|grep|glob|task|webfetch|websearch)\b[^\]]*\]:/i.test(
-    event.result || "",
-  );
+  return TOOL_RESULT_ENVELOPE_RE.test(event.result || "");
 }
 
 /** RESUME_CONTINUATION_PROMPT anchored to the interrupted turn's original

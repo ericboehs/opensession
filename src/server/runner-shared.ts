@@ -199,3 +199,19 @@ export function isTransientRunError(message: string | undefined | null): boolean
     s.includes("failed to execute statement")
   );
 }
+
+/**
+ * Meridian's internal tool-result envelope shape — `[your <tool> …]: <output>`.
+ * That envelope is how the bridge represents tool results in the model's
+ * context, so assistant TEXT should never open with it: when it does, the
+ * model is reciting tool results it invented, and every value inside is
+ * fabricated (2026-07-29: a dial/opus-fable turn wrote four fake
+ * `tella_create_source` results — wrong bucket, wrong ids, a signature reading
+ * "I_TRUNCATED_FOR_BREVITY" — two seconds after the real results landed, then
+ * spent five minutes debugging its own fake URLs and blamed the MCP relay).
+ * The tool name is deliberately unconstrained: MCP tool ids like
+ * `tella_create_source` must match, not just the builtin set. Anchored to the
+ * start of the text to stay narrow — prose that merely quotes an envelope
+ * mid-answer should not trip it.
+ */
+export const TOOL_RESULT_ENVELOPE_RE = /^\s*\[your [a-z0-9][\w.:-]*(?:\s[^\]]*)?\]:/i;
