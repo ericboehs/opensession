@@ -465,12 +465,12 @@ private struct SessionTabBar: View {
                             HStack(spacing: 7) {
                                 if session.waitingForInput == true {
                                     PulsingDot(
-                                        color: isActive ? .white : OS1VisualStyle.blue,
+                                        color: OS1VisualStyle.blue,
                                         size: 6
                                     )
                                 } else if session.isRunning == true {
                                     PulsingDot(
-                                        color: isActive ? .white : OS1VisualStyle.yellow,
+                                        color: OS1VisualStyle.yellow,
                                         size: 6
                                     )
                                 }
@@ -482,7 +482,7 @@ private struct SessionTabBar: View {
                             }
                             .foregroundStyle(
                                 isActive
-                                    ? Color.white
+                                    ? OS1VisualStyle.text
                                     : OS1VisualStyle.textDim
                             )
                             .padding(.horizontal, 12)
@@ -490,7 +490,7 @@ private struct SessionTabBar: View {
                             .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? 260 : 180)
                             .background(
                                 isActive
-                                    ? OS1VisualStyle.accent
+                                    ? OS1VisualStyle.hover
                                     : Color.clear,
                                 in: RoundedRectangle(cornerRadius: 9, style: .continuous)
                             )
