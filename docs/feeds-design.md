@@ -114,6 +114,13 @@ plugins." Workstreams:
   `<publicBaseUrl>/backstage/api/connections/mcp-oauth/callback`, Connect
   buttons on Connections cards (workspace-wide or "my account"). Replaces the
   unusable headless CLI flow (opencode's loopback listener).
+- **W1b — feeds ride the MCP (LANDED)**: the sidebar band and the
+  opening-prompt video context call the Tella MCP's list_videos/get_video
+  tools server-side (src/server/mcp-client.ts) on the REQUESTING USER's
+  grant (workspace fallback) — per-viewer feeds, per-user 60s cache. The
+  REST client + TELLA_API_KEY are retired. Proof session (bks-019fac65…):
+  exactly one external server visible, get_video + list_videos called
+  successfully on Michiel's grant.
 - **W2 — per-user MCP auth (LANDED)**: grants stored per server in
   `~/.opensession-mcp-oauth.json` — one `shared` + per-user keyed by
   canonical team name. Injection at run time in withDynamicCredentials():
