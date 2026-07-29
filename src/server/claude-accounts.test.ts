@@ -19,7 +19,12 @@ const mkAccount = (id: string, owner?: string) => ({
 writeFileSync(
   storePath,
   JSON.stringify({
-    accounts: [mkAccount("fresh"), mkAccount("maxed"), mkAccount("personal", "Michiel")],
+    accounts: [
+      mkAccount("fresh"),
+      mkAccount("maxed"),
+      mkAccount("personal", "Michiel"),
+      mkAccount("blind-personal", "Jaap"),
+    ],
   })
 );
 
@@ -103,6 +108,12 @@ describe("pickAccount usage-credits policy", () => {
       "maxed"
     );
     accounts.__setUsageCacheForTest("maxed", usage(100));
+  });
+
+  test("allows a blind personal account for a singleton Fable requirement", () => {
+    expect(
+      accounts.pickAccount(undefined, "Jaap", ["claude-fable-5"])?.id
+    ).toBe("blind-personal");
   });
 
   test("requires capacity for every model in a preset", () => {

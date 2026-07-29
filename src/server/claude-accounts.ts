@@ -655,7 +655,11 @@ function isAccountUsableFor(
   // starts, and the later oracle request hangs instead of allowing the whole
   // preset to fall through to Sol before any work begins. Standalone model
   // picks retain the tolerant Meridian policy below.
-  if (Array.isArray(model) && models.some((required) => required?.includes("fable"))) {
+  if (
+    Array.isArray(model) &&
+    models.length > 1 &&
+    models.some((required) => required?.includes("fable"))
+  ) {
     const fable = scopedLimitForModel(usage, "claude-fable-5");
     if (fable === null || fable >= SCOPED_EXHAUSTED_UTILIZATION) {
       return !!allowExtraUsage && hasCreditHeadroom(a);
