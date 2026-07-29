@@ -89,6 +89,21 @@ describe("workflow notice detection", () => {
 		);
 	});
 
+	it("keeps the error tail with the notice", () => {
+		const parsed = parseWorkflowNotice(`⚠️ Workflow "audit" failed (${run}).\nError: boom`);
+		expect(parsed?.body.endsWith("Error: boom")).toBe(true);
+	});
+
+	it("leaves a turn the human typed into alone", () => {
+		// Typing while the notice lands merges both into one turn — dimming that
+		// into the system pill would hide the question they actually asked.
+		expect(
+			parseWorkflowNotice(
+				`✅ Workflow "perspective-review" finished (${run}) — 2 agents: 2 done.\n\nshould also be rendered as a different card`,
+			),
+		).toBeNull();
+	});
+
 	it("leaves ordinary turns alone", () => {
 		expect(parseWorkflowNotice("Workflow finished, what now?")).toBeNull();
 		expect(parseWorkflowNotice("✅ done")).toBeNull();

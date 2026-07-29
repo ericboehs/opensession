@@ -126,15 +126,18 @@ const WORKFLOW_SENTINEL_RE = /^<!--os:workflow-notice(?::([^\s>]+))?-->\s*/;
 const LEGACY_WORKFLOW_RE = /^(?:✅|⚠️|⏹️)\s*Workflow\s+["“]/;
 
 export function parseWorkflowNotice(
-  content?: string,
+	content?: string,
 ): { runId: string | null; body: string } | null {
-  if (!content) return null;
-  const text = content.replace(ATTR_PREFIX_RE, "");
-  const sentinel = text.match(WORKFLOW_SENTINEL_RE);
-  if (sentinel) {
-    return { runId: sentinel[1] || null, body: text.slice(sentinel[0].length).trim() };
-  }
-  if (!LEGACY_WORKFLOW_RE.test(text)) return null;
-  const run = text.match(/\b(wf-[\w-]+)/);
-  return { runId: run ? run[1] : null, body: text.trim() };
+	if (!content) return null;
+	const text = content.replace(ATTR_PREFIX_RE, "");
+	const sentinel = text.match(WORKFLOW_SENTINEL_RE);
+	const body = (sentinel ? text.slice(sentinel[0].length) : text).trim();
+	if (!sentinel && !LEGACY_WORKFLOW_RE.test(body)) return null;
+	// The notice must be the WHOLE message. A human typing while it lands gets
+	// their words merged into the same turn ("<notice>\n\n<their question>") —
+	// dimming those into the system pill would hide what they actually asked, so
+	// a merged turn stays an ordinary user bubble.
+	if (/\n\s*\n/.test(body)) return null;
+	const run = sentinel?.[1] || body.match(/\b(wf-[\w-]+)/)?.[1] || null;
+	return { runId: run, body };
 }
