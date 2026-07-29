@@ -313,6 +313,8 @@ struct SessionView: View {
                 PulsingDot(color: OS1VisualStyle.yellow, size: 6)
             }
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
         .frame(maxWidth: 520, alignment: .leading)
         .help(headerSubtitle)
         .accessibilityElement(children: .combine)
