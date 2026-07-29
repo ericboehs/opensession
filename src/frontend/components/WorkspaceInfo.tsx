@@ -11,6 +11,7 @@ import {
 	fetchGitStatus,
 	gitPushApi,
 	gitPullApi,
+	mergePrApi,
 	setSessionReviewerApi,
 	acceptReviewApi,
 	triggerPrActionApi,
@@ -46,8 +47,6 @@ import { summarizeChecks } from "./PrStatusBar";
 import { openLightbox } from "./MediaLightbox";
 import { SandboxBadge } from "./SandboxBadge";
 import {
-	IconArrowDown,
-	IconArrowUp,
 	IconBell,
 	IconCheck,
 	IconChevronDown,
@@ -64,8 +63,8 @@ import {
  * Workspace info block at the top of the right side panel (the "Info" tab): a
  * dense, at-a-glance catch-all - title + meta, workspace actions, local git
  * state, PR comments, changed files, and a compact filmstrip of every screenshot
- * / video from the workspace's chats. PR state belongs to the persistent strip
- * above the tabs; the transcript remains the source for the opening prompt.
+ * / video from the workspace's chats. PR state and local git deltas share one
+ * compact Git status section; the transcript remains the opening-prompt source.
  *
  * Loading/caching for the overview lives in lib/workspace-overview (shared with
  * the sidebar's workspace hover card), including the pre-restart transcript
@@ -160,12 +159,6 @@ function statusBadgeClass(status: DiffFile["status"]): string {
 	}
 }
 
-const GIT_BUTTON_CLASS =
-	"ml-auto inline-flex min-h-7 items-center justify-center gap-1.5 rounded-lg border px-3 py-1 text-[13px] font-[650] leading-none shadow-[var(--control-shadow)] transition-[background-color,border-color,color,filter,transform] duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default disabled:opacity-60 disabled:shadow-none active:scale-[0.98]";
-const GIT_SOLID_BUTTON_CLASS =
-	"border-[color:color-mix(in_srgb,var(--text)_84%,transparent)] bg-fg text-bg hover:brightness-110 active:brightness-[0.98]";
-const GIT_SECONDARY_BUTTON_CLASS =
-	"border-line-strong bg-raised text-fg hover:bg-hover";
 const ACTION_BUTTON_CLASS =
 	"flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12.5px] font-semibold text-fg outline-none transition-colors hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:opacity-50";
 const ACTION_ICON_CLASS =
@@ -1121,18 +1114,15 @@ function ReviewerChip({
 }
 
 /**
-* The "Status" section of the info panel: the PR/branch state, plus a row per
-* outstanding git fact — ahead of remote → Push, behind → Update, dirty tree →
-* Commit. This is the Conductor-style status header (see server/git-status.ts),
- * surfaced in the same labelled card treatment as the other info sections.
- * Push/Update call the git APIs directly; Commit prompts the session
-* (we don't do bare `git commit` — a session-authored commit gets a real
-* message), matching how Create PR / Resolve work in the status strip.
+ * The Git status section of the info panel: PR state first, then one row per
+ * outstanding local git fact. Direct git actions stay local; judgment calls
+ * prompt the session so commits and conflict resolutions remain agent-authored.
 */
 function GitStatusRows({
 	sessionId,
 	repo,
 	git,
+	pr,
 	prState,
 	send,
 	onReload,
@@ -1140,13 +1130,15 @@ function GitStatusRows({
 	sessionId: string;
 	repo?: string;
 	git: GitStatusInfo | null;
+	pr: PrDetails | null;
 	prState?: string | null;
 	send?: (msg: any) => void;
 	onReload: () => void;
 }) {
 	const [busy, setBusy] = useState<string | null>(null);
+	const [confirmMerge, setConfirmMerge] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const [prompted, setPrompted] = useState(false);
+	const [prompted, setPrompted] = useState<string | null>(null);
 
 	const ahead = git?.ahead ?? 0;
 	const behind = git?.behind ?? 0;
@@ -1160,7 +1152,7 @@ function GitStatusRows({
 		prState === "MERGED" ? 0 : behind > 0 ? behind : behindBase;
 	const behindWhat = behind > 0 ? "remote" : git?.baseBranch || "main";
 
-	const hasRows = ahead > 0 || behindCount > 0 || dirty > 0;
+	const hasRows = !!pr || ahead > 0 || behindCount > 0 || dirty > 0;
 	if (!hasRows) return null;
 
 	async function run(name: string, fn: () => Promise<unknown>) {
@@ -1187,45 +1179,110 @@ function GitStatusRows({
 				dirty === 1 ? "" : "s"
 			} in this worktree with a clear, descriptive message, then push.`,
 		});
-		setPrompted(true);
-		setTimeout(() => setPrompted(false), 6000);
+		setPrompted("commit the changes");
+		setTimeout(() => setPrompted(null), 6000);
 	}
+
+	async function merge() {
+		if (busy) return;
+		if (!confirmMerge) {
+			setConfirmMerge(true);
+			setError(null);
+			setTimeout(() => setConfirmMerge(false), 4000);
+			return;
+		}
+		setConfirmMerge(false);
+		await run("merge", () => mergePrApi(sessionId, "squash", repo));
+	}
+
+	function resolveConflicts() {
+		if (!send) return;
+		send({
+			type: "prompt",
+			sessionId,
+			user: getCurrentUser(),
+			content: `The PR has merge conflicts with ${pr?.baseRefName || git?.baseBranch || "main"}. Rebase this branch on the latest origin/${pr?.baseRefName || git?.baseBranch || "main"}, resolve the conflicts, and push.`,
+		});
+		setPrompted("resolve the conflicts");
+		setTimeout(() => setPrompted(null), 6000);
+	}
+
+	const checks = summarizeChecks(pr);
+	const prStatus = !pr
+		? null
+		: pr.state === "MERGED"
+			? "Merged"
+			: pr.state === "CLOSED"
+				? "Closed"
+				: pr.isDraft
+					? "Draft"
+					: pr.mergeable === "CONFLICTING"
+						? "Merge conflicts"
+						: checks.failed > 0
+							? "Checks failed"
+							: checks.pending > 0
+								? "Checks running"
+								: pr.reviewDecision === "CHANGES_REQUESTED"
+									? "Changes requested"
+									: pr.reviewDecision === "REVIEW_REQUIRED"
+										? "Review required"
+										: "Ready to merge";
 
 	return (
 		<div className={INFO_SECTION_CLASS}>
-			<div className={INFO_LABEL_CLASS}>Status</div>
+			<div className={INFO_LABEL_CLASS}>Git status</div>
 			<div className={INFO_LIST_CLASS}>
+				{prStatus && (
+					<div className="pr-git-row">
+						<span className="pr-git-dot" aria-hidden />
+						<span className="pr-git-label">{prStatus}</span>
+						{pr?.mergeable === "CONFLICTING" && send ? (
+							<button type="button" className="pr-git-action" onClick={resolveConflicts}>
+								Resolve
+							</button>
+						) : pr?.state === "OPEN" && !pr.isDraft ? (
+							<button
+								type="button"
+								className="pr-git-action"
+								disabled={!!busy}
+								onClick={() => void merge()}
+								title="Squash and merge this pull request"
+							>
+								{busy === "merge"
+									? "Merging…"
+									: confirmMerge
+										? "Confirm merge"
+										: "Merge"}
+							</button>
+						) : null}
+					</div>
+				)}
 				{ahead > 0 && (
-					<div className="flex items-center gap-2 rounded-md px-2.5 py-2 text-[12px] text-fg">
-						<span className="size-1.5 rounded-full bg-green" />
-						<span className="min-w-0 flex-1 text-[12.5px] font-medium text-fg">
+					<div className="pr-git-row">
+						<span className="pr-git-dot" aria-hidden />
+						<span className="pr-git-label">
 							{ahead} commit{ahead === 1 ? "" : "s"} ahead of remote
 						</span>
 						<button
 							type="button"
-							className={cn(GIT_BUTTON_CLASS, GIT_SOLID_BUTTON_CLASS)}
+							className="pr-git-action"
 							disabled={!!busy}
 							onClick={() => run("push", () => gitPushApi(sessionId, repo))}
 						>
-							<span className="inline-flex size-[18px] shrink-0 items-center justify-center">
-								<IconArrowUp size={18} />
-							</span>
-							<span className="inline-flex items-center">
-								{busy === "push" ? "Pushing…" : "Push"}
-							</span>
+							{busy === "push" ? "Pushing…" : "Push"}
 						</button>
 					</div>
 				)}
 				{behindCount > 0 && (
-					<div className="flex items-center gap-2 rounded-md px-2.5 py-2 text-[12px] text-fg">
-						<span className="size-1.5 rounded-full bg-purple" />
-						<span className="min-w-0 flex-1 text-[12.5px] font-medium text-fg">
+					<div className="pr-git-row">
+						<span className="pr-git-dot" aria-hidden />
+						<span className="pr-git-label">
 							{behindCount} commit{behindCount === 1 ? "" : "s"} behind{" "}
 							{behindWhat}
 						</span>
 						<button
 							type="button"
-							className={cn(GIT_BUTTON_CLASS, GIT_SOLID_BUTTON_CLASS)}
+							className="pr-git-action"
 							disabled={!!busy}
 							title={
 								behindWhat === "remote"
@@ -1236,42 +1293,31 @@ function GitStatusRows({
 								run("pull", () => gitPullApi(sessionId, repo, behind === 0))
 							}
 						>
-							<span className="inline-flex size-[18px] shrink-0 items-center justify-center">
-								<IconArrowDown size={18} />
-							</span>
-							<span className="inline-flex items-center">
-								{busy === "pull" ? "Updating…" : "Update"}
-							</span>
+							{busy === "pull" ? "Pulling…" : "Pull"}
 						</button>
 					</div>
 				)}
 				{dirty > 0 && (
-					<div className="flex items-center gap-2 rounded-md px-2.5 py-2 text-[12px] text-fg">
-						<span className="size-1.5 rounded-full bg-dim" />
-						<span className="min-w-0 flex-1 text-[12.5px] font-medium text-fg">
+					<div className="pr-git-row">
+						<span className="pr-git-dot" aria-hidden />
+						<span className="pr-git-label">
 							{dirty} uncommitted file{dirty === 1 ? "" : "s"}
 						</span>
-						{send &&
-							(prompted ? (
-								<span className="ml-auto text-[11.5px] font-semibold text-dim">
-									Asked {AGENT_NAME} ✓
-								</span>
-							) : (
-								<button
-									type="button"
-									className={cn(GIT_BUTTON_CLASS, GIT_SECONDARY_BUTTON_CLASS)}
-									onClick={commit}
-									title={`Ask ${AGENT_NAME} to commit the uncommitted changes and push`}
-								>
-									<span className="inline-flex items-center">Commit</span>
-								</button>
-							))}
+						{send && (
+							<button
+								type="button"
+								className="pr-git-action"
+								onClick={commit}
+								title={`Ask ${AGENT_NAME} to commit the uncommitted changes and push`}
+							>
+								Commit
+							</button>
+						)}
 					</div>
 				)}
 			</div>
-			{error && (
-				<div className="text-[11.5px] font-medium text-red">{error}</div>
-			)}
+			{prompted && <div className="pr-git-note">Asked {AGENT_NAME} to {prompted} ✓</div>}
+			{error && <div className="pr-git-note pr-git-note-error">{error}</div>}
 		</div>
 	);
 }
@@ -1310,7 +1356,7 @@ export function WorkspaceInfo({
 	// The primary repo's raw patch, kept so the file rows can hover-reveal the
 	// actual diff for that file (parsed lazily below).
 	const [rawPatch, setRawPatch] = useState<string>("");
-	// Local git state (ahead/behind, dirty tree) for the Status section.
+	// Local git state (ahead/behind, dirty tree) for the Git status section.
 	const [git, setGit] = useState<GitStatusInfo | null>(null);
 
 	// The chats array is re-created every App render — read it through a ref so
@@ -1390,7 +1436,7 @@ export function WorkspaceInfo({
 		};
 	}, [sessionId, repo, liveMediaCount]);
 
-	// Local git status (ahead/behind, uncommitted) for the Status section — same
+	// Local git status (ahead/behind, uncommitted) for the Git status section — same
 	// slow poll, refetched as live media bumps (a proxy for run activity) so the
 	// counts settle after a turn's auto-commit/push. Only when the chat has a repo.
 	useEffect(() => {
@@ -1413,10 +1459,14 @@ export function WorkspaceInfo({
 
 	// Refetch git status right after a Push/Update lands, so the row clears
 	// without waiting on the 45s poll.
-	const reloadGit = () => {
+	const reloadStatus = () => {
 		if (repo)
 			fetchGitStatus(sessionId, repo)
 				.then(setGit)
+				.catch(() => {});
+		if (prState)
+			fetchPr(sessionId, repo)
+				.then(setPr)
 				.catch(() => {});
 	};
 
@@ -1469,17 +1519,16 @@ export function WorkspaceInfo({
 			) === i,
 	);
 
-	// Show the Status section when there's any local git delta to act on
-	// (ahead / behind / uncommitted) — a clean tree stays quiet. PR state is not
-	// mirrored here; it already lives in the status strip at the top of the panel.
+	// PR status belongs in the Info sidebar even when the local tree is clean;
+	// local deltas add rows beneath it.
 	const showGit = Boolean(
-		git &&
-		(git.ahead > 0 ||
-			(prState !== "MERGED" && (git.behind > 0 || git.behindBase > 0)) ||
-			git.uncommittedFiles > 0),
+		pr ||
+			(git &&
+				(git.ahead > 0 ||
+					(prState !== "MERGED" && (git.behind > 0 || git.behindBase > 0)) ||
+					git.uncommittedFiles > 0)),
 	);
 	const hasBody = Boolean(
-		showGit ||
 		comments.length > 0 ||
 		changed.length > 0 ||
 		media.length > 0 ||
@@ -1506,6 +1555,17 @@ export function WorkspaceInfo({
 					repo={repo}
 					pr={pr}
 					onOpenSession={onOpenSession}
+				/>
+			)}
+			{showGit && (
+				<GitStatusRows
+					sessionId={sessionId}
+					repo={repo}
+					git={git}
+					pr={pr}
+					prState={prState}
+					send={send}
+					onReload={reloadStatus}
 				/>
 			)}
 			<div className={INFO_SECTION_CLASS}>
@@ -1549,16 +1609,6 @@ export function WorkspaceInfo({
 			</div>
 			{hasBody ? (
 				<div className="grid gap-4">
-					{showGit && (
-						<GitStatusRows
-							sessionId={sessionId}
-							repo={repo}
-							git={git}
-							prState={prState}
-							send={send}
-							onReload={reloadGit}
-						/>
-					)}
 					{comments.length > 0 && (
 						<div className={INFO_SECTION_CLASS}>
 							<div className="flex items-center justify-between gap-2 px-1 text-[12px] font-[650] tracking-[-0.01em] text-faint">
