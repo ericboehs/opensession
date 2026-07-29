@@ -1,0 +1,110 @@
+name: CI
+
+# The server had no CI at all — the other workflows in here are client-app
+# releases. This runs on every PR: type-check, the unit suite, and an actual
+# end-to-end install on both Linux and macOS.
+#
+# The macOS job matters more than it looks. macOS support (Homebrew prerequisite
+# installs, darwin Bun targets, LaunchAgent service management) was written
+# without a Mac to test on, so CI is the only thing standing between "we wrote
+# macOS code" and "macOS works".
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Type-check and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type-check
+        run: bun run typecheck
+
+      - name: Unit tests
+        run: bun test
+
+  installer:
+    name: Install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint the installer
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          bash -n install.sh
+          # Style-only findings should not fail the build; real bugs should.
+          shellcheck --severity=warning install.sh
+
+      # Deliberately NOT pre-installing Bun: bootstrapping it is part of what
+      # the installer is being tested for.
+      - name: Install from this checkout
+        run: |
+          OPENSESSION_REPO="file://$GITHUB_WORKSPACE" \
+          OPENSESSION_HOME="$HOME/.opensession" \
+            bash install.sh --yes --no-engine
+
+      - name: The command exists and runs
+        run: |
+          export PATH="$HOME/.opensession/bin:$PATH"
+          opensession version
+          opensession --help > /dev/null
+
+      - name: PATH survives a non-interactive login shell
+        if: runner.os == 'Linux'
+        # Regression guard: appending only to ~/.bashrc is invisible to
+        # non-interactive shells, so `opensession` worked when typed and not
+        # when scripted.
+        run: bash -lc 'opensession version'
+
+      - name: Doctor reports no errors
+        run: |
+          export PATH="$HOME/.opensession/bin:$PATH"
+          opensession doctor
+
+      - name: Service definition renders for this platform
+        run: |
+          export PATH="$HOME/.opensession/bin:$PATH"
+          cd "$HOME/.opensession/src"
+          bun -e '
+            import { renderPlist, renderUnit, supervisor } from "./scripts/lib/service";
+            const kind = supervisor();
+            console.log("supervisor:", kind);
+            const text = kind === "launchd" ? renderPlist() : await renderUnit();
+            if (!text.includes("opensession.ts")) throw new Error("no ExecStart");
+            const user = text.match(/^User=(.*)$/m)?.[1];
+            if (user === "unknown") throw new Error("User=unknown would fail 217/USER");
+            console.log("service definition ok");
+          '
+
+      - name: Recipes are installable
+        run: |
+          export PATH="$HOME/.opensession/bin:$PATH"
+          opensession automations
+          opensession automations add instance-health
+          opensession automations | grep -q "added"
+
+      - name: Uninstall cleanly
+        run: bash install.sh --uninstall
