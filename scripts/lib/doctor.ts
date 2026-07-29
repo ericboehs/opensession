@@ -30,7 +30,11 @@ const TOOLS = [
 async function checkTools(t: Tally): Promise<void> {
   heading("Tooling");
   for (const tool of TOOLS) {
-    const path = Bun.which(tool.bin);
+    // This CLI is itself running under Bun, so a PATH lookup failing does not
+    // mean Bun is missing — it means PATH is thin (a non-login shell, cron,
+    // systemd). Trust the running interpreter over the lookup.
+    const path =
+      Bun.which(tool.bin) ?? (tool.bin === "bun" ? process.execPath : undefined);
     if (path) {
       const { stdout } = await run([tool.bin, "--version"]);
       ok(tool.label, stdout.split("\n")[0] || path);

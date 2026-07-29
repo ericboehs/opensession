@@ -16,6 +16,7 @@
 #   --repo <url>          OPENSESSION_REPO     source repository
 #   --no-modify-path      NO_MODIFY_PATH=1     do not touch shell profiles
 #   --no-onboard          NO_ONBOARD=1         install only, skip the wizard
+#   --no-engine           NO_ENGINE=1          do not install the OpenCode engine
 #   --yes                 NO_PROMPT=1          accept defaults, never prompt
 #   --uninstall                                remove the install
 #
@@ -28,6 +29,7 @@ REPO="${OPENSESSION_REPO:-https://github.com/tellahq/opensession.git}"
 CHANNEL="${OPENSESSION_CHANNEL:-}"
 NO_MODIFY_PATH="${NO_MODIFY_PATH:-0}"
 NO_ONBOARD="${NO_ONBOARD:-0}"
+NO_ENGINE="${NO_ENGINE:-0}"
 NO_PROMPT="${NO_PROMPT:-0}"
 DO_UNINSTALL=0
 
@@ -38,6 +40,7 @@ while [ $# -gt 0 ]; do
     --repo) REPO="$2"; shift 2 ;;
     --no-modify-path) NO_MODIFY_PATH=1; shift ;;
     --no-onboard) NO_ONBOARD=1; shift ;;
+    --no-engine) NO_ENGINE=1; shift ;;
     --yes|-y) NO_PROMPT=1; shift ;;
     --uninstall) DO_UNINSTALL=1; shift ;;
     -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -54,6 +57,9 @@ else
 fi
 
 step() { printf '%s\n' "${B}$1${N}"; }
+# Strip credentials out of a URL before printing it. A tokenised clone URL in
+# terminal scrollback or CI logs is a leaked credential.
+redact() { printf '%s' "$1" | sed -E 's#(://)[^/@]*@#\1***@#'; }
 info() { printf '  %s\n' "$1"; }
 muted() { printf '  %s%s%s\n' "$D" "$1" "$N"; }
 good() { printf '  %sok%s      %s\n' "$G" "$N" "$1"; }
@@ -107,7 +113,7 @@ run_interactive() {
 
 printf '\n'
 step "OpenSession"
-muted "source      $REPO${CHANNEL:+ ($CHANNEL)}"
+muted "source      $(redact "$REPO")${CHANNEL:+ ($CHANNEL)}"
 muted "install to  $DIR"
 muted "command     $BIN_DIR/opensession"
 printf '\n'
@@ -115,16 +121,99 @@ printf '\n'
 # ── prerequisites ───────────────────────────────────────────────────────────
 
 step "Prerequisites"
-command -v git >/dev/null 2>&1 || die "git is required — install it and re-run"
+
+# Install a missing system package. Minimal cloud images (the Ubuntu EC2 AMI
+# among them) ship without unzip, which Bun's own installer requires — so
+# without this the very first install on a fresh box fails.
+install_package() {
+  pkg="$1"
+  if ! sudo -n true 2>/dev/null; then
+    return 1
+  fi
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo -n apt-get update -qq >/dev/null 2>&1
+    sudo -n apt-get install -y -qq "$pkg" >/dev/null 2>&1
+  elif command -v dnf >/dev/null 2>&1; then
+    sudo -n dnf install -y -q "$pkg" >/dev/null 2>&1
+  elif command -v apk >/dev/null 2>&1; then
+    sudo -n apk add --quiet "$pkg" >/dev/null 2>&1
+  else
+    return 1
+  fi
+}
+
+# cmd -> package name, when they differ
+require_tool() {
+  cmd="$1"; pkg="${2:-$1}"; why="$3"
+  command -v "$cmd" >/dev/null 2>&1 && return 0
+  muted "installing $pkg ($why) ..."
+  if install_package "$pkg" && command -v "$cmd" >/dev/null 2>&1; then
+    good "$pkg installed"
+  else
+    die "$cmd is required ($why). Install it and re-run: sudo apt-get install -y $pkg"
+  fi
+}
+
+require_tool curl curl "downloading Bun"
+require_tool git git "cloning the source"
 good "git $(git --version | awk '{print $3}')"
 
+# Bun's own installer shells out to unzip. On a box with neither unzip nor
+# passwordless sudo (minimal containers, locked-down hosts, an EC2 image whose
+# default user was overridden) that is a dead end — so fall back to Python's
+# zipfile module, which is present on essentially every Linux image.
+install_bun_via_python() {
+  command -v python3 >/dev/null 2>&1 || return 1
+  case "$(uname -m)" in
+    x86_64|amd64) target="bun-linux-x64" ;;
+    aarch64|arm64) target="bun-linux-aarch64" ;;
+    *) return 1 ;;
+  esac
+
+  tmp="$(mktemp -d)"
+  url="https://github.com/oven-sh/bun/releases/latest/download/${target}.zip"
+  curl -fsSL "$url" -o "$tmp/bun.zip" 2>/dev/null || { rm -rf "$tmp"; return 1; }
+  python3 -m zipfile -e "$tmp/bun.zip" "$tmp" >/dev/null 2>&1 || { rm -rf "$tmp"; return 1; }
+  mkdir -p "$HOME/.bun/bin"
+  mv "$tmp/$target/bun" "$HOME/.bun/bin/bun" 2>/dev/null || { rm -rf "$tmp"; return 1; }
+  chmod +x "$HOME/.bun/bin/bun"
+  rm -rf "$tmp"
+
+  # Pre-AVX2 CPUs need the baseline build; the normal one dies with SIGILL.
+  if ! "$HOME/.bun/bin/bun" --version >/dev/null 2>&1; then
+    tmp="$(mktemp -d)"
+    curl -fsSL "https://github.com/oven-sh/bun/releases/latest/download/${target}-baseline.zip" \
+      -o "$tmp/bun.zip" 2>/dev/null || { rm -rf "$tmp"; return 1; }
+    python3 -m zipfile -e "$tmp/bun.zip" "$tmp" >/dev/null 2>&1 || { rm -rf "$tmp"; return 1; }
+    mv "$tmp/${target}-baseline/bun" "$HOME/.bun/bin/bun" 2>/dev/null || { rm -rf "$tmp"; return 1; }
+    chmod +x "$HOME/.bun/bin/bun"
+    rm -rf "$tmp"
+  fi
+  "$HOME/.bun/bin/bun" --version >/dev/null 2>&1
+}
+
 if ! command -v bun >/dev/null 2>&1; then
-  # The Bun installer appends to a shell profile this non-interactive shell has
-  # not sourced, so put it on PATH for the rest of this run explicitly.
   muted "installing Bun ..."
-  command -v curl >/dev/null 2>&1 || die "curl is required to install Bun"
-  curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1 || die "Bun install failed"
   export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+
+  if command -v unzip >/dev/null 2>&1 || install_package unzip; then
+    bun_log="$(mktemp)"
+    if ! curl -fsSL https://bun.sh/install | bash >"$bun_log" 2>&1; then
+      # Never swallow this: a hidden installer error is undiagnosable.
+      warn "Bun's installer failed:"
+      sed 's/^/    /' "$bun_log" | tail -20
+      rm -f "$bun_log"
+      die "could not install Bun — see https://bun.sh"
+    fi
+    rm -f "$bun_log"
+  elif install_bun_via_python; then
+    muted "(unzip unavailable — extracted with python3)"
+  else
+    die "could not install Bun. Install unzip and re-run: sudo apt-get install -y unzip"
+  fi
+
+  # Bun's installer appends to a shell profile this non-interactive shell has
+  # not sourced, so put it on PATH for the rest of this run explicitly.
   export PATH="$BUN_INSTALL/bin:$PATH"
   command -v bun >/dev/null 2>&1 || die "Bun installed but not on PATH — open a new shell and re-run"
 fi
@@ -146,17 +235,49 @@ if [ -d "$DIR/.git" ]; then
 else
   [ -e "$DIR" ] && die "$DIR exists but is not a git checkout — move it or pass --dir"
   mkdir -p "$(dirname "$DIR")"
-  if [ -n "$CHANNEL" ]; then
-    git clone --quiet --branch "$CHANNEL" "$REPO" "$DIR" || die "clone failed"
-  else
-    git clone --quiet "$REPO" "$DIR" || die "clone failed"
+  clone_log="$(mktemp)"
+  clone_args="--quiet"
+  [ -n "$CHANNEL" ] && clone_args="$clone_args --branch $CHANNEL"
+  # shellcheck disable=SC2086
+  if ! git clone $clone_args "$REPO" "$DIR" >"$clone_log" 2>&1; then
+    warn "clone failed:"
+    # git echoes the remote URL on failure, which may carry a token.
+    redact "$(sed 's/^/    /' "$clone_log" | tail -10)"; printf '\n'
+    rm -f "$clone_log"
+    die "could not clone $(redact "$REPO")"
   fi
+  rm -f "$clone_log"
   good "cloned to $DIR"
 fi
 
 step "Dependencies"
 (cd "$DIR" && bun install --silent) || die "bun install failed"
 good "installed"
+
+# ── engine ──────────────────────────────────────────────────────────────────
+#
+# OpenCode is the engine that actually runs agent turns. Without it the server
+# starts, the UI loads, and every session fails — so install it by default
+# rather than leaving a fresh box in that state.
+
+step "Engine"
+if command -v opencode >/dev/null 2>&1; then
+  good "opencode $(opencode --version 2>/dev/null || echo present)"
+elif [ "$NO_ENGINE" = "1" ]; then
+  muted "skipped (--no-engine)"
+else
+  muted "installing OpenCode ..."
+  engine_log="$(mktemp)"
+  if curl -fsSL https://opencode.ai/install | bash >"$engine_log" 2>&1; then
+    export PATH="$HOME/.opencode/bin:$PATH"
+    good "opencode $(opencode --version 2>/dev/null || echo installed)"
+  else
+    warn "could not install OpenCode automatically:"
+    sed 's/^/    /' "$engine_log" | tail -10
+    muted "install it later: curl -fsSL https://opencode.ai/install | bash"
+  fi
+  rm -f "$engine_log"
+fi
 
 # ── shim ────────────────────────────────────────────────────────────────────
 
@@ -169,6 +290,12 @@ cat >"$BIN_DIR/opensession" <<EOF
 BUN="$BUN_BIN"
 [ -x "\$BUN" ] || BUN="\$(command -v bun 2>/dev/null)" || {
   echo "opensession: bun not found — see https://bun.sh" >&2; exit 1; }
+
+# Put the user-local bins on PATH before handing off. Without this, a shim
+# invoked from a non-login shell (ssh, cron, systemd) runs with a PATH that
+# lacks bun and opencode — and the server resolves the engine through
+# Bun.which(), so it would silently find no engine at all.
+export PATH="\$(dirname "\$BUN"):\$HOME/.opencode/bin:\$HOME/.local/bin:\$PATH"
 exec "\$BUN" "$DIR/scripts/cli.ts" "\$@"
 EOF
 chmod +x "$BIN_DIR/opensession"
