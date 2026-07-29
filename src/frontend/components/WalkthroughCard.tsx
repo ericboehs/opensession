@@ -63,7 +63,7 @@ export function WalkthroughCard({
 			)}
 		>
 			<div className="mb-2 flex items-baseline gap-2">
-				<span className="text-xs font-semibold uppercase tracking-wide text-dim">
+				<span className="text-xs font-semibold text-dim">
 					Walkthrough
 				</span>
 				{chat && walkthrough.publishedAt && (
@@ -107,7 +107,7 @@ export function WalkthroughCard({
 							(side) =>
 								shot[side] && (
 									<figure className="m-0 min-w-0 flex-1" key={side}>
-										<figcaption className="mb-1 text-[11px] font-medium uppercase tracking-wide text-dim">
+										<figcaption className="mb-1 text-[11px] font-medium text-dim">
 											{side === "before" ? "Before" : "After"}
 										</figcaption>
 										<img
