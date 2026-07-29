@@ -1,24 +1,69 @@
 # Install: bare box to running service
 
-Prerequisites: Linux, [Bun](https://bun.sh), `git`, `gh` (authenticated),
-the `claude` CLI. See [README.md](README.md#minimum-requirements) for the
-optional extras.
+Prerequisites: Linux (or macOS), `git`, and `curl`. The installer brings its
+own [Bun](https://bun.sh) and [OpenCode](https://opencode.ai). `gh`
+(authenticated) is needed for pull-request operations. See
+[README.md](README.md#minimum-requirements) for the optional extras.
 
-## 1. Clone and install
+Provisioning a fresh cloud box first? [ec2.md](ec2.md) — there is one
+cloud-init trap worth knowing about.
+
+## 1. Install
 
 ```sh
-mkdir -p ~/projects && cd ~/projects
-git clone https://github.com/tellahq/backstage.git tella-backstage
-cd tella-backstage
-bun install
+curl -fsSL https://opensession.com/install.sh | bash
 ```
 
-The checkout path matters more than usual: the default mcp-config path is
-`~/projects/tella-backstage/mcp-config.json` (`src/server/config.ts`), and
-the repo registers *itself* as the `backstage` repo at
-`~/projects/tella-backstage`. Other paths work but need config overrides.
+This installs missing prerequisites, clones the source to
+`~/.opensession/src`, installs dependencies and the engine, puts an
+`opensession` command on your `PATH`, and runs the onboarding wizard. It is
+safe to re-run: an existing install is fast-forwarded, and existing config is
+backed up rather than overwritten.
 
-## 2. Secrets: `~/.opensession.env`
+Useful flags — `--dir <path>` to install elsewhere, `--channel <ref>` to track
+a branch or tag, `--no-engine` to skip OpenCode, `--yes` to accept defaults,
+`--uninstall` to remove it. `--help` lists them all.
+
+### Doing it by hand
+
+```sh
+git clone https://github.com/tellahq/opensession.git
+cd opensession && bun install
+bun run setup
+```
+
+Nothing depends on the checkout living in a particular place — the CLI derives
+paths from wherever it is running, and onboarding writes the rest into
+`~/.opensession/config.json`. If you skip onboarding, the default mcp-config
+path is `<checkout>/mcp-config.json` (`src/server/config.ts`) and the checkout
+registers *itself* as a repo.
+
+## 2. Onboarding
+
+`opensession onboard` asks for the bind address and port, your public base
+URL, your first repository, and which integrations to turn on. It writes:
+
+| File | What |
+| --- | --- |
+| `~/.opensession/config.json` | instance config — re-read on change, no restart |
+| `~/.opensession.env` | secrets and feature flags, `0600` |
+| `~/.opensession/opensession.service` | systemd unit templated for this box |
+
+Re-run it any time with `opensession onboard --force`; the previous files are
+backed up to `.bak-<n>` first.
+
+Then check the result:
+
+```sh
+opensession doctor
+```
+
+It reports missing tooling, unparseable config, an integration that is enabled
+but missing a required credential, a service that is installed but dead, and
+whether anything is actually listening. Sections below are the reference for
+what it is checking.
+
+## 3. Secrets: `~/.opensession.env`
 
 Bun auto-loads a `.env` in the working directory for manual runs; the
 systemd unit (`opensession.service`) instead loads
@@ -53,7 +98,7 @@ what the code actually reads, by feature:
 | `OPENSESSION_OPENCODE_BIN` / `OPENSESSION_OPENCODE_CONFIG` | see engines.md | OpenCode binary / config path |
 | `OPENSESSION_MODEL` | `claude-fable-5` | default model (below the UI override file) |
 | `OPENSESSION_FALLBACK_MODEL` | unset | global fallback model; `none` disables |
-| `OPENSESSION_MCP_CONFIG` | `~/projects/tella-backstage/mcp-config.json` | MCP config path override |
+| `OPENSESSION_MCP_CONFIG` | `<checkout>/mcp-config.json` | MCP config path override |
 | `SUGGEST_BRANCH_MODEL`, `NOTE_EDIT_MODEL`, `MONITOR_ANSWER_MODEL`, `DRAFT_AUTOMATION_MODEL` | `claude-haiku-4-5` | per-feature cheap-task models |
 
 **Integrations** — each has its own page with the full list:
@@ -87,7 +132,7 @@ Note: agent subprocesses do **not** inherit this env file — runs get a
 minimal env (PATH, HOME, LANG, OPENSESSION_MODEL) by design, and MCP servers
 carry their own credentials (`src/server/runner-shared.ts`).
 
-## 3. `~/.opensession/config.json`
+## 4. `~/.opensession/config.json`
 
 Instance config for everything that isn't a secret: server ports/URLs,
 binary paths, the **repo registry**, the **team identity table**, persona
@@ -118,7 +163,7 @@ automations without putting company playbooks in application source.
 the default repo id, public URL, and GitHub bot identities are injected into
 the SPA bootstrap.
 
-## 4. Engine accounts
+## 5. Engine accounts
 
 At minimum add one Claude account or the default engine has nothing to run
 on:
@@ -132,7 +177,7 @@ by hand — file shapes, account picking, Codex accounts
 (`~/.opensession-codex-accounts.json`), and OpenCode config are documented in
 [engines.md](engines.md).
 
-## 5. `mcp-config.json`
+## 6. `mcp-config.json`
 
 MCP servers give runs their external tools. Copy
 [`mcp-config.example.json`](../../mcp-config.example.json) to
@@ -153,7 +198,7 @@ Manage servers later from the Connections UI. **Changing the runner-layer
 filtering code requires a restart; editing mcp-config.json itself is read
 fresh per run.**
 
-## 6. First run
+## 7. First run
 
 ```sh
 bun run opensession.ts
@@ -166,7 +211,7 @@ Health returns `{ ok, bootId, frontendVersion, uptime, activeRuns, agents }`
 GRAFANA credentials"). The drain-aware deploy polls `activeRuns` to restart
 when idle.
 
-## 7. systemd
+## 8. Running it as a service
 
 ```sh
 sudo cp opensession.service /etc/systemd/system/opensession.service
@@ -191,7 +236,7 @@ automatically). Unit choices worth knowing (comments in the file itself):
 - The unit's `User`, paths, and `PATH=` line assume user `ubuntu` with bun
   in `~/.bun/bin` — adjust for your box.
 
-## 8. Frontend rebuilds vs restart
+## 9. Frontend rebuilds vs restart
 
 The production unit intentionally does not use `bun --hot`: failed backend
 reloads on Bun 1.3.14 can permanently stop timer delivery while HTTP remains
@@ -201,7 +246,7 @@ Restarts are graceful: detached engine turns survive and the run journal
 reattaches them on boot, but they still churn active sessions, so restart once
 after the backend change rather than after every save.
 
-## 9. Next
+## 10. Next
 
 - Wire up integrations: [slack.md](slack.md), [github.md](github.md),
   [linear.md](linear.md), [plain.md](plain.md),

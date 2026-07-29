@@ -82,12 +82,15 @@ async function start(): Promise<number> {
 
 async function status(): Promise<number> {
   heading("Status");
-  if (!service.hasSystemd()) {
-    info(dim("no systemd on this box"));
+  const kind = service.supervisor();
+  if (kind === "none") {
+    info(dim("no service manager here"));
   } else if (!(await service.isInstalled())) {
-    warn("no service installed", "run `opensession service install`");
+    warn(`no ${kind} service installed`, "run `opensession service install`");
+  } else if (await service.isActive()) {
+    ok(`${kind} service active`);
   } else {
-    (await service.isActive()) ? ok("service active") : fail("service not running");
+    fail(`${kind} service not running`);
   }
   return 0;
 }
@@ -161,8 +164,9 @@ async function main(): Promise<number> {
 
     case "service":
       if (positional[0] === "install") {
-        const unit = await service.renderUnit();
-        await Bun.write(STAGED_UNIT_PATH, unit);
+        if (service.supervisor() === "systemd") {
+          await Bun.write(STAGED_UNIT_PATH, await service.renderUnit());
+        }
         return (await service.install(STAGED_UNIT_PATH)) ? 0 : 1;
       }
       fail("usage: opensession service install");

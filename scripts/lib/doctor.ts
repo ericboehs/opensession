@@ -156,15 +156,16 @@ async function checkIntegrations(t: Tally, config?: Record<string, unknown>): Pr
 async function checkService(t: Tally, config?: Record<string, unknown>): Promise<void> {
   heading("Server");
 
-  if (!service.hasSystemd()) {
-    info(dim("no systemd on this box — run in the foreground with `opensession start`"));
+  const kind = service.supervisor();
+  if (kind === "none") {
+    info(dim("no service manager here — run in the foreground with `opensession start`"));
   } else if (!(await service.isInstalled())) {
-    warn("no service installed", "run `opensession service install`");
+    warn(`no ${kind} service installed`, "run `opensession service install`");
     t.warnings++;
   } else if (await service.isActive()) {
-    ok("service active");
+    ok(`${kind} service active`);
   } else {
-    fail("service installed but not running", "`opensession logs` to see why");
+    fail(`${kind} service installed but not running`, "`opensession logs` to see why");
     t.errors++;
   }
 

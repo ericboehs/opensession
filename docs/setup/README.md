@@ -49,6 +49,7 @@ UI and API at `/opensession/`.
   [github.md](github.md) for the AWS-specific deploy pipeline, which is
   replaceable).
 - [Bun](https://bun.sh) — runtime, package manager, and bundler. No Node/Vite.
+  The installer brings its own; you only need it up front for a manual install.
 - `git`, and the [`gh` CLI](https://cli.github.com) for PR operations.
 - The `claude` CLI (Claude Code) — the Claude engine shells out to it
   (`OPENSESSION_CLAUDE_BIN`, default `/home/ubuntu/.local/bin/claude`).
@@ -80,7 +81,8 @@ for the full rules the code enforces.
 
 | Page | Covers |
 | --- | --- |
-| [install.md](install.md) | clone → env vars → config.json → accounts → systemd → health |
+| [install.md](install.md) | installer → onboarding → env vars → config.json → accounts → systemd → health |
+| [ec2.md](ec2.md) | provisioning a clean EC2 box, networking, SSH debugging |
 | [slack.md](slack.md) | Slack app, token, scopes, event intake, admin gating |
 | [github.md](github.md) | GitHub token, webhook server, PR agent, deploy pipeline |
 | [linear.md](linear.md) | Linear OAuth app, webhooks, the Linear agent |

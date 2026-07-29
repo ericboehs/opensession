@@ -32,6 +32,7 @@ NO_ONBOARD="${NO_ONBOARD:-0}"
 NO_ENGINE="${NO_ENGINE:-0}"
 NO_PROMPT="${NO_PROMPT:-0}"
 DO_UNINSTALL=0
+OS="$(uname -s)"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -70,7 +71,14 @@ die() { printf '  %serror%s   %s\n' "$R" "$N" "$1" >&2; exit 1; }
 
 if [ "$DO_UNINSTALL" = "1" ]; then
   step "Uninstalling OpenSession"
-  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files opensession.service >/dev/null 2>&1; then
+  if [ "$OS" = "Darwin" ]; then
+    plist="$HOME/Library/LaunchAgents/dev.opensession.server.plist"
+    if [ -f "$plist" ]; then
+      launchctl bootout "gui/$(id -u)/dev.opensession.server" 2>/dev/null || true
+      rm -f "$plist"
+      good "LaunchAgent removed"
+    fi
+  elif [ -f /etc/systemd/system/opensession.service ]; then
     sudo systemctl disable --now opensession 2>/dev/null || true
     sudo rm -f /etc/systemd/system/opensession.service
     sudo systemctl daemon-reload 2>/dev/null || true
@@ -127,6 +135,13 @@ step "Prerequisites"
 # without this the very first install on a fresh box fails.
 install_package() {
   pkg="$1"
+  # Homebrew installs as the invoking user — no sudo, and asking for it is
+  # actively wrong on macOS.
+  if [ "$OS" = "Darwin" ]; then
+    command -v brew >/dev/null 2>&1 || return 1
+    brew install --quiet "$pkg" >/dev/null 2>&1
+    return $?
+  fi
   if ! sudo -n true 2>/dev/null; then
     return 1
   fi
@@ -150,7 +165,7 @@ require_tool() {
   if install_package "$pkg" && command -v "$cmd" >/dev/null 2>&1; then
     good "$pkg installed"
   else
-    die "$cmd is required ($why). Install it and re-run: sudo apt-get install -y $pkg"
+    die "$cmd is required ($why). Install $pkg and re-run."
   fi
 }
 
@@ -164,9 +179,14 @@ good "git $(git --version | awk '{print $3}')"
 # zipfile module, which is present on essentially every Linux image.
 install_bun_via_python() {
   command -v python3 >/dev/null 2>&1 || return 1
+  case "$OS" in
+    Darwin) plat="darwin" ;;
+    Linux)  plat="linux" ;;
+    *) return 1 ;;
+  esac
   case "$(uname -m)" in
-    x86_64|amd64) target="bun-linux-x64" ;;
-    aarch64|arm64) target="bun-linux-aarch64" ;;
+    x86_64|amd64) target="bun-${plat}-x64" ;;
+    aarch64|arm64) target="bun-${plat}-aarch64" ;;
     *) return 1 ;;
   esac
 
@@ -180,7 +200,8 @@ install_bun_via_python() {
   rm -rf "$tmp"
 
   # Pre-AVX2 CPUs need the baseline build; the normal one dies with SIGILL.
-  if ! "$HOME/.bun/bin/bun" --version >/dev/null 2>&1; then
+  # Only x64 has a baseline variant.
+  if ! "$HOME/.bun/bin/bun" --version >/dev/null 2>&1 && [ "${target%-x64}" != "$target" ]; then
     tmp="$(mktemp -d)"
     curl -fsSL "https://github.com/oven-sh/bun/releases/latest/download/${target}-baseline.zip" \
       -o "$tmp/bun.zip" 2>/dev/null || { rm -rf "$tmp"; return 1; }
@@ -209,7 +230,7 @@ if ! command -v bun >/dev/null 2>&1; then
   elif install_bun_via_python; then
     muted "(unzip unavailable — extracted with python3)"
   else
-    die "could not install Bun. Install unzip and re-run: sudo apt-get install -y unzip"
+    die "could not install Bun — install unzip and re-run, or see https://bun.sh"
   fi
 
   # Bun's installer appends to a shell profile this non-interactive shell has

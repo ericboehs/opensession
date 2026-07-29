@@ -211,15 +211,22 @@ export async function onboard(opts: OnboardOptions = {}): Promise<number> {
   }
 
   try {
-    const unit = await service.renderUnit();
-    await Bun.write(STAGED_UNIT_PATH, unit);
-    wrote(STAGED_UNIT_PATH, "(templated for this box)");
-
-    if (service.hasSystemd() && askYesNo("\n  Install and start it as a service now?", false)) {
-      await service.install(STAGED_UNIT_PATH);
+    const kind = service.supervisor();
+    if (kind === "systemd") {
+      // Staged rather than installed: putting it in /etc needs root, so that
+      // stays an explicit choice.
+      await Bun.write(STAGED_UNIT_PATH, await service.renderUnit());
+      wrote(STAGED_UNIT_PATH, "(templated for this box)");
+    }
+    if (kind !== "none") {
+      const what = kind === "launchd" ? "LaunchAgent" : "systemd service";
+      const needsRoot = kind === "systemd" ? " (needs sudo)" : "";
+      if (askYesNo(`\n  Install and start it as a ${what} now?${needsRoot}`, false)) {
+        await service.install(STAGED_UNIT_PATH);
+      }
     }
   } catch (err) {
-    warn(`could not render the systemd unit: ${(err as Error).message}`);
+    warn(`could not prepare the service definition: ${(err as Error).message}`);
   }
 
   heading("Next steps");
