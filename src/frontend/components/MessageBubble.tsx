@@ -15,6 +15,8 @@ import { Tooltip } from "../ui/tooltip";
 import { BASE_PATH } from "../lib/base";
 import { resolveEntryImageSrc } from "../lib/osBlob";
 import { fullTime, shortTime } from "../lib/time";
+import { IconChevronDown } from "./icons";
+import { cn } from "../ui/cn";
 
 // Only this much of a message is markdown-parsed eagerly. marked is
 // superlinear on input size (~25ms at 10KB, ~400ms at 80KB, seconds past
@@ -334,16 +336,32 @@ export const MessageBubble = React.memo(function MessageBubble({
 				: null,
 		[entry.type, entry.content, workerReport],
 	);
+	const [workerReportOpen, setWorkerReportOpen] = useState(false);
 
 	if (entry.type === "user" && workerReport) {
 		return (
 			<div className="msg" data-eid={entry.id}>
 				<div className="overflow-hidden rounded-lg bg-panel">
-					<div className="flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-dim">
-						<span>🤖 Worker report</span>
+					<div className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-dim">
+						<button
+							type="button"
+							aria-expanded={workerReportOpen}
+							onClick={() => setWorkerReportOpen((open) => !open)}
+							className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-1 py-0.5 text-left font-sans text-xs font-medium text-dim hover:text-fg"
+						>
+							<span
+								className={cn(
+									"shrink-0 text-faint transition-transform duration-150",
+									!workerReportOpen && "-rotate-90",
+								)}
+							>
+								<IconChevronDown size={16} />
+							</span>
+							<span>🤖 Worker report</span>
+						</button>
 						{workerReport.sessionId && (
 							<a
-								className="text-dim underline decoration-dotted hover:text-fg"
+								className="shrink-0 text-dim underline decoration-dotted hover:text-fg"
 								href={`${BASE_PATH}/session/${workerReport.sessionId}`}
 							>
 								open worker
@@ -351,12 +369,14 @@ export const MessageBubble = React.memo(function MessageBubble({
 						)}
 						<MsgTime ts={entry.timestamp} />
 					</div>
-					<ClampedBody
-						className="msg-body markdown px-3.5 py-2.5"
-						content={workerReport.body}
-						entry={entry}
-						sessionId={sessionId}
-					/>
+					{workerReportOpen && (
+						<ClampedBody
+							className="msg-body markdown px-3.5 py-2.5"
+							content={workerReport.body}
+							entry={entry}
+							sessionId={sessionId}
+						/>
+					)}
 				</div>
 			</div>
 		);
