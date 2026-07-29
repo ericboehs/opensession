@@ -117,6 +117,7 @@ Do not open port 3850 to the internet. The two sane options:
 
 - **Tailscale (recommended).** Install it, then set `HOST` to the box's
   tailnet IP. The UI is reachable from your devices and nothing else.
+  Step-by-step: [networking.md](networking.md).
 - **SSH tunnel.** Leave it on `127.0.0.1` and forward it per session:
 
   ```bash

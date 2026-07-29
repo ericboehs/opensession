@@ -82,6 +82,7 @@ for the full rules the code enforces.
 | Page | Covers |
 | --- | --- |
 | [install.md](install.md) | installer → onboarding → env vars → config.json → accounts → systemd → health |
+| [networking.md](networking.md) | **keeping it private** — Tailscale, SSH tunnels, verifying exposure |
 | [ec2.md](ec2.md) | provisioning a clean EC2 box, networking, SSH debugging |
 | [../../recipes/README.md](../../recipes/README.md) | bundled automation recipes, and what belongs in the repo |
 | [slack.md](slack.md) | Slack app, token, scopes, event intake, admin gating |

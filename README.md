@@ -54,7 +54,8 @@ Then read the real setup guide — secrets, accounts, integrations, systemd:
 > **No built-in authentication.** OpenSession trusts everyone who can reach the
 > address it binds to. Keep it on Tailscale, a private network, or behind an SSH
 > tunnel — never expose it publicly. See the
-> [trust model](docs/setup/README.md#trust-model-read-this).
+> [trust model](docs/setup/README.md#trust-model-read-this), and
+> [networking.md](docs/setup/networking.md) for how to set that up.
 
 Repositories, identity, branding, public URLs, integration enablement,
 deployment policy, client endpoints, action seeds, and automation seeds are
