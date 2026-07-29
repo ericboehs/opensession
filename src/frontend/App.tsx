@@ -43,6 +43,7 @@ import { UpdatePill } from "./components/UpdatePill";
 import { DesktopUpdateToast } from "./components/DesktopUpdateToast";
 import {
 	IconArchive,
+	IconUnarchive,
 	IconBook,
 	IconChart,
 	IconCopy,
@@ -2129,6 +2130,28 @@ function App() {
 	const handleNewChatRef = useRef(handleNewChat);
 	handleNewChatRef.current = handleNewChat;
 
+	// ⌘⇧T reopens what you just archived, browser-style. Every archive path
+	// pushes the chats it tucked away as one entry, so a press undoes one
+	// action: closing a tab brings that chat back, archiving a workspace brings
+	// the whole row back. Ids only — the session objects go stale on the next
+	// refresh, so entries resolve against the live list when they're restored.
+	const [archiveUndo, setArchiveUndo] = useState<string[][]>([]);
+	const rememberArchived = useCallback((ids: string[]) => {
+		if (!ids.length) return;
+		setArchiveUndo((prev) =>
+			[
+				// An id lives in one entry only: archiving a chat again moves it to
+				// the top instead of leaving a stale entry underneath.
+				...prev
+					.map((entry) => entry.filter((id) => !ids.includes(id)))
+					.filter((entry) => entry.length),
+				ids,
+			]
+				// An undo affordance, not a history.
+				.slice(-10),
+		);
+	}, []);
+
 	// Close a tab = archive the chat: it leaves the strip and the active list,
 	// but stays recoverable from Archived. An empty chat that never ran has
 	// nothing to recover, so it's deleted outright instead of cluttering
@@ -2172,6 +2195,7 @@ function App() {
 			else {
 				const { stoppedRun } = await archiveSessionApi(s.id, true);
 				if (stoppedRun) showToast("Archived · stopped the running turn");
+				rememberArchived([s.id]);
 			}
 		} catch (e) {
 			console.error("Close failed:", e);
@@ -2193,28 +2217,88 @@ function App() {
 	};
 	const closeChatRef = useRef(closeChat);
 	closeChatRef.current = closeChat;
-	const unarchiveChat = async (session: UnifiedSession) => {
-		const archivedReason = session.archivedReason;
-		patch(session.id, { archived: false, archivedReason: undefined });
+	// Bring archived chats back. Optimistic like the archive paths: the local
+	// list flips first so it feels instant, and rolls back if the server refuses.
+	const unarchiveChats = async (chats: UnifiedSession[]): Promise<boolean> => {
+		if (!chats.length) return false;
+		const reasons = new Map(chats.map((c) => [c.id, c.archivedReason]));
+		for (const c of chats) {
+			patch(c.id, { archived: false, archivedReason: undefined });
+		}
 		try {
-			await archiveSessionApi(session.id, false);
+			await Promise.all(chats.map((c) => archiveSessionApi(c.id, false)));
 		} catch (e) {
 			console.error("Unarchive failed:", e);
-			patch(session.id, { archived: true, archivedReason });
-			return;
+			for (const c of chats) {
+				patch(c.id, { archived: true, archivedReason: reasons.get(c.id) });
+			}
+			return false;
 		}
 		refresh();
+		return true;
 	};
+	const unarchiveChat = (session: UnifiedSession) => unarchiveChats([session]);
 
-	// Tab shortcuts for the open chat, matching its context-menu hints: ⌘⌥C
-	// copies the concise transcript, ⌘W closes (archives) the tab, ⌘T opens a
-	// new tab (sibling chat) in the workspace. Refs keep this mount-once listener
-	// reading fresh state. A browser that reserves ⌘W/⌘T for itself (Chrome)
-	// never delivers the keydown — there the browser tab opens/closes as always;
-	// where the event does arrive (Safari), we take it.
+	// The newest undo entry that's still restorable, resolved against the live
+	// list: an entry whose chats were unarchived elsewhere (or deleted) falls
+	// through to the one below it, so ⌘⇧T never no-ops on a ghost.
+	const restorableArchived: UnifiedSession[] = (() => {
+		if (!archiveUndo.length) return [];
+		const wanted = new Set(archiveUndo.flat());
+		const byId = new Map<string, UnifiedSession>();
+		for (const s of sessions) {
+			if (s.archived && wanted.has(s.id)) byId.set(s.id, s);
+		}
+		for (let i = archiveUndo.length - 1; i >= 0; i--) {
+			const chats = archiveUndo[i]
+				.map((id) => byId.get(id))
+				.filter((s): s is UnifiedSession => !!s);
+			if (chats.length) return chats;
+		}
+		return [];
+	})();
+	const restorableArchivedRef = useRef(restorableArchived);
+	restorableArchivedRef.current = restorableArchived;
+
+	// ⌘⇧T (and the palette's "Reopen closed chat"): undo the last archive and
+	// land on what came back. The entry is only dropped once the server agrees,
+	// so a failed restore stays retryable.
+	const reopenLastArchived = async () => {
+		const chats = restorableArchivedRef.current;
+		if (!chats.length) {
+			showToast("Nothing to reopen");
+			return;
+		}
+		if (!(await unarchiveChats(chats))) return;
+		const ids = new Set(chats.map((c) => c.id));
+		setArchiveUndo((prev) =>
+			prev
+				.map((entry) => entry.filter((id) => !ids.has(id)))
+				.filter((entry) => entry.length),
+		);
+		navigate({ view: "session", id: chats[0].id });
+	};
+	const reopenLastArchivedRef = useRef(reopenLastArchived);
+	reopenLastArchivedRef.current = reopenLastArchived;
+
+	// Tab shortcuts matching the strip's context-menu hints: ⌘⌥C copies the
+	// concise transcript, ⌘W closes (archives) the tab, ⌘T opens a new tab
+	// (sibling chat) in the workspace, and ⌘⇧T reopens the chat you just closed.
+	// Refs keep this mount-once listener reading fresh state. A browser that
+	// reserves these for itself (Chrome) never delivers the keydown — there the
+	// browser tab opens/closes as always, and the palette's "Reopen closed chat"
+	// covers the undo; where the event does arrive (Safari, the installed PWA,
+	// the desktop shell), we take it.
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
-			if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
+			if (!(e.metaKey || e.ctrlKey)) return;
+			if (e.shiftKey) {
+				if (!e.altKey && e.key.toLowerCase() === "t") {
+					e.preventDefault();
+					void reopenLastArchivedRef.current();
+				}
+				return;
+			}
 			const s = currentSessionRef.current;
 			if (!s) return;
 			// e.code, not e.key: on macOS ⌥C types "ç".
@@ -2334,6 +2418,23 @@ function App() {
 							void (currentSession.archived
 								? unarchiveChat(currentSession)
 								: closeChat(currentSession)),
+					},
+				]
+			: []),
+		...(restorableArchived.length
+			? [
+					{
+						id: "reopen-archived",
+						label: "Reopen closed chat",
+						description:
+							restorableArchived.length > 1
+								? `Bring back the ${restorableArchived.length} chats you just archived`
+								: `Bring back "${restorableArchived[0].title || "the chat you just archived"}"`,
+						category: "Actions" as const,
+						keywords: ["unarchive", "restore", "undo", "closed", "reopen"],
+						shortcut: [mod, appleShortcuts ? "⇧" : "Shift", "T"],
+						icon: <IconUnarchive size={18} />,
+						run: () => void reopenLastArchived(),
 					},
 				]
 			: []),
@@ -2524,6 +2625,10 @@ function App() {
 			onArchive={focused ? () => sidebarRef.current?.archiveSelected() : undefined}
 			onArchived={(stoppedRun) => {
 				if (stoppedRun) showToast("Archived · stopped the running turn");
+				// Only fires when the viewer archived on its own — with onArchive
+				// passed (a focused pane) it defers to the sidebar path instead, so
+				// this can't double-record.
+				rememberArchived([viewerSession.id]);
 			}}
 			send={socket.send}
 			addHandler={socket.addHandler}
@@ -2962,6 +3067,7 @@ function App() {
 									const { stoppedRun } = await archiveSessionApi(s.id, true);
 									if (stoppedRun)
 										showToast("Archived · stopped the running turn");
+									rememberArchived([s.id]);
 								} catch (e) {
 									console.error("Archive failed:", e);
 									patch(s.id, { archived: false, archivedReason: undefined });
@@ -2996,6 +3102,9 @@ function App() {
 										showToast(
 											`Archived · stopped ${stopped} running turn${stopped === 1 ? "" : "s"}`,
 										);
+									// One entry for the whole row, so ⌘⇧T brings the
+									// workspace back in a single press.
+									rememberArchived(chats.map((c) => c.id));
 								} catch (e) {
 									console.error("Archive workspace failed:", e);
 									for (const chat of chats) {
@@ -3306,6 +3415,10 @@ function App() {
 										await Promise.all(
 											chats.map((c) => archiveSessionApi(c.id, true)),
 										);
+										// Swiping through the deck archives fast — one entry per
+										// card keeps ⌘⇧T an undo of the last swipe, not of the
+										// whole session.
+										rememberArchived(chats.map((c) => c.id));
 									} catch (e) {
 										console.error("Archive failed:", e);
 									}
