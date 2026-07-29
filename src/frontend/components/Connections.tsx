@@ -219,7 +219,7 @@ export function Connections() {
   }
 
   return (
-    <div className="connections">
+    <div className="settings-panel">
       <div className="page-header">
         <div>
           <h2 className="page-title">Connections</h2>
