@@ -66,9 +66,16 @@ jobs:
           OPENSESSION_HOME="$HOME/.opensession" \
             bash install.sh --yes --no-engine
 
+      - name: Put the command and bun on PATH for later steps
+        # Steps do not share a shell and do not source profiles, so the
+        # installer's profile edits are invisible here. install.sh already
+        # appends its own bin dir when GITHUB_PATH is set; bun needs adding too.
+        run: |
+          echo "$HOME/.opensession/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+
       - name: The command exists and runs
         run: |
-          export PATH="$HOME/.opensession/bin:$PATH"
           opensession version
           opensession --help > /dev/null
 
@@ -80,13 +87,10 @@ jobs:
         run: bash -lc 'opensession version'
 
       - name: Doctor reports no errors
-        run: |
-          export PATH="$HOME/.opensession/bin:$PATH"
-          opensession doctor
+        run: opensession doctor
 
       - name: Service definition renders for this platform
         run: |
-          export PATH="$HOME/.opensession/bin:$PATH"
           cd "$HOME/.opensession/src"
           bun -e '
             import { renderPlist, renderUnit, supervisor } from "./scripts/lib/service";
@@ -101,7 +105,6 @@ jobs:
 
       - name: Recipes are installable
         run: |
-          export PATH="$HOME/.opensession/bin:$PATH"
           opensession automations
           opensession automations add instance-health
           opensession automations | grep -q "added"

@@ -72,4 +72,9 @@ to launch the frontend proxy and desktop app together.
 
 ## License
 
-TBD — not yet licensed for redistribution.
+[Apache License 2.0](LICENSE). Use it, fork it, run it commercially, build on
+it — the only obligations are keeping the notice and not using the project's
+trademarks to imply endorsement.
+
+Contributions are accepted under the same license; see
+[CONTRIBUTING.md](CONTRIBUTING.md).

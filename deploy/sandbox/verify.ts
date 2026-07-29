@@ -854,13 +854,16 @@ exec bun -e 'Bun.serve({ port: Number(process.env.WEBAPP_PORT), hostname: "0.0.0
     for (let i = 0; i < ms / 250 && !cond(); i++) await new Promise((r) => setTimeout(r, 250));
     return cond();
   };
+  // terminals are keyed by (socket, termId); each scratch socket below opens
+  // exactly one shell, so a fixed id is correct.
+  const TERM_ID = "verify";
   const typeInto = (ws: unknown, line: string) =>
-    termMod.writeTerminal(ws, Buffer.from(`${line}\n`).toString("base64"));
+    termMod.writeTerminal(ws, TERM_ID, Buffer.from(`${line}\n`).toString("base64"));
   const termSession = { worktreeDir: WT, sandbox: { provider: "docker", sandboxId: pre.id } };
 
   const term1 = termCollect();
   const tws1 = {};
-  await termMod.startSessionTerminal(tws1, termSession, { cols: 100, rows: 30, send: term1.send });
+  await termMod.startSessionTerminal(tws1, TERM_ID, termSession, { cols: 100, rows: 30, send: term1.send });
   ok("terminal targets the docker sandbox", term1.st.ready?.target === "docker",
     JSON.stringify(term1.st.ready));
   await new Promise((r) => setTimeout(r, 1200)); // let bash -il settle
@@ -869,21 +872,21 @@ exec bun -e 'Bun.serve({ port: Number(process.env.WEBAPP_PORT), hostname: "0.0.0
   ok("shell ran inside the container in the workspace cwd",
     term1.st.out.includes("T_IN_SBX") && term1.st.out.includes(WT),
     JSON.stringify(term1.st.out.slice(-120)));
-  termMod.stopTerminal(tws1);
+  termMod.stopTerminal(tws1, TERM_ID);
 
   // Wake-on-demand: opening a terminal is an interactive gesture — it starts
   // a stopped container (unlike the read surfaces, which never wake one).
   await sh(["docker", "stop", "-t", "2", pre.id]);
   const term2 = termCollect();
   const tws2 = {};
-  await termMod.startSessionTerminal(tws2, termSession, { cols: 80, rows: 24, send: term2.send });
+  await termMod.startSessionTerminal(tws2, TERM_ID, termSession, { cols: 80, rows: 24, send: term2.send });
   await new Promise((r) => setTimeout(r, 1200));
   typeInto(tws2, "echo WAKE_OK; exit");
   const wokeExited = await waitTerm(() => term2.st.exited);
   ok("terminal wakes a stopped container and gets a live shell",
     term2.st.ready?.target === "docker" && wokeExited && term2.st.out.includes("WAKE_OK"),
     JSON.stringify({ ready: term2.st.ready?.target, exited: wokeExited }));
-  termMod.stopTerminal(tws2);
+  termMod.stopTerminal(tws2, TERM_ID);
 
   // Gone sandbox → host shell fallback with a notice (fail-open, never a
   // dead tab).
@@ -891,13 +894,14 @@ exec bun -e 'Bun.serve({ port: Number(process.env.WEBAPP_PORT), hostname: "0.0.0
   const tws3 = {};
   await termMod.startSessionTerminal(
     tws3,
+        TERM_ID,
     { worktreeDir: WT, sandbox: { provider: "docker", sandboxId: "bks-sbx-sbxtest-gone-p" } },
     { cols: 80, rows: 24, send: term3.send },
   );
   ok("gone sandbox falls back to a host shell with a notice",
     term3.st.ready?.target === "host" && term3.st.notices > 0 && term3.st.ready?.cwd === WT,
     JSON.stringify(term3.st.ready));
-  termMod.stopTerminal(tws3);
+  termMod.stopTerminal(tws3, TERM_ID);
 
   // Daytona terminal (SSH gateway) — bare sandbox, only with credentials.
   const daytonaKey =
@@ -927,6 +931,7 @@ exec bun -e 'Bun.serve({ port: Number(process.env.WEBAPP_PORT), hostname: "0.0.0
       const tws4 = {};
       await termMod.startSessionTerminal(
         tws4,
+        TERM_ID,
         { worktreeDir: "/home/daytona", sandbox: { provider: "daytona", sandboxId: dsbx.id } },
         { cols: 100, rows: 30, send: term4.send },
       );
@@ -937,7 +942,7 @@ exec bun -e 'Bun.serve({ port: Number(process.env.WEBAPP_PORT), hostname: "0.0.0
       await waitTerm(() => term4.st.exited, 30_000);
       ok("daytona shell ran in-sandbox as the sandbox user",
         term4.st.out.includes("DT_daytona_OK"), JSON.stringify(term4.st.out.slice(-120)));
-      termMod.stopTerminal(tws4);
+      termMod.stopTerminal(tws4, TERM_ID);
     } finally {
       await dclient.delete(dsbx, 120).catch((e: any) =>
         console.warn("  daytona sandbox delete failed:", e?.message || e));

@@ -16,7 +16,7 @@ test("session upgrade accepts a cloud destination when local archival failed", a
 				error: "The cloud session was imported, but the local session could not be archived",
 			},
 			{ status: 500 },
-		)) as typeof fetch;
+		)) as unknown as typeof fetch;
 
 	await expect(upgradeSessionApi("bks-local")).resolves.toEqual({
 		id: "bks-cloud",
@@ -32,7 +32,7 @@ test("session upgrade keeps structured dirty-worktree failures", async () => {
 				uncommittedFiles: ["src/index.ts", 42],
 			},
 			{ status: 409 },
-		)) as typeof fetch;
+		)) as unknown as typeof fetch;
 
 	const error = await upgradeSessionApi("bks-local").catch((cause) => cause);
 	expect(error).toBeInstanceOf(SessionUpgradeError);
