@@ -18,10 +18,11 @@ import {
   dotGet,
   readConfigFeeds,
   type ConfigFeed,
+  type FeedContextSpec,
   type FeedPanelSpec,
 } from "./feeds-config";
 
-export type { ExternalRef, FeedPanelSpec };
+export type { ExternalRef, FeedContextSpec, FeedPanelSpec };
 
 export interface FeedItem {
   /** Stable external id (e.g. Tella `vid_…`); becomes ExternalRef.id. */
@@ -109,6 +110,9 @@ export interface FeedDescriptor {
   /** Extra meta dot-paths the sidebar's text search matches besides
    *  title/preview (e.g. plain's customer name/email). */
   searchMeta?: string[];
+  /** Session context: tool called with the item id at session start,
+   *  result injected into the opening prompt ({id}-templated args). */
+  context?: FeedContextSpec;
   /** True for config-declared feeds (editable/deletable in the UI). */
   fromConfig?: boolean;
 }
@@ -153,6 +157,10 @@ function configFeedProvider(cf: ConfigFeed): FeedProvider {
       ...(cf.tileBg ? { tileBg: cf.tileBg } : {}),
       ...(cf.mcpServers?.length ? { mcpServers: cf.mcpServers } : {}),
       ...(cf.panel ? { panel: cf.panel } : {}),
+      ...(cf.context ? { context: cf.context } : {}),
+      ...(Array.isArray(cf.filters) && cf.filters.length
+        ? { filters: cf.filters as FeedFilterSpec[] }
+        : {}),
       fromConfig: true,
     },
     async listItems(ctx?: { user?: string }): Promise<FeedItem[]> {
@@ -168,10 +176,21 @@ function configFeedProvider(cf: ConfigFeed): FeedProvider {
       const m = cf.items.map;
       return arr
         .map((it): FeedItem | null => {
-          const id = dotGet(it, m.id);
-          const title = dotGet(it, m.title);
-          if (typeof id !== "string" || !id || typeof title !== "string")
-            return null;
+          const idRaw = dotGet(it, m.id);
+          const titleRaw = dotGet(it, m.title);
+          const id =
+            typeof idRaw === "string"
+              ? idRaw
+              : typeof idRaw === "number"
+                ? String(idRaw)
+                : "";
+          const title =
+            typeof titleRaw === "string"
+              ? titleRaw
+              : typeof titleRaw === "number"
+                ? String(titleRaw)
+                : "";
+          if (!id || !title) return null;
           const tsRaw = m.ts ? dotGet(it, m.ts) : undefined;
           const ts =
             typeof tsRaw === "number"
@@ -349,6 +368,39 @@ export async function externalRefsOpeningContext(
         out += `\n\nTella video context for ${r.id}:\n\n${formatVideoContext(video)}`;
     } catch (e) {
       console.error(`[feeds] Tella video lookup failed for ${r.id}:`, e);
+    }
+  }
+  // Generic per-feed context (docs/feeds-design.md — posthog dashboards
+  // etc.): the descriptor's context tool called with the item id, result
+  // injected as a JSON excerpt. Declarative — no per-feed code.
+  await ensureFeedsRegistered();
+  syncConfigFeeds();
+  for (const r of refs.filter((x) => x.kind !== "tella")) {
+    const desc = [...registry.values()]
+      .map((e) => e.provider.descriptor)
+      .find((d) => d.refKind === r.kind);
+    const ctxSpec = desc?.context;
+    if (!ctxSpec) continue;
+    try {
+      const { callMcpTool } = await import("./mcp-client");
+      const args = Object.fromEntries(
+        Object.entries(ctxSpec.args || {}).map(([k, v]) => [
+          k,
+          typeof v === "string" ? v.replaceAll("{id}", r.id) : v,
+        ]),
+      );
+      const raw = await callMcpTool<unknown>(
+        ctxSpec.server,
+        ctxSpec.tool,
+        args,
+        opts.user,
+      );
+      const text =
+        typeof raw === "string" ? raw : JSON.stringify(raw, null, 1);
+      const cap = ctxSpec.maxChars || 6_000;
+      out += `\n\n${desc!.title} context for ${r.id}${text.length > cap ? ` (first ${cap} chars — use the ${ctxSpec.server} MCP tools for the rest)` : ""}:\n\n${text.slice(0, cap)}`;
+    } catch (e) {
+      console.error(`[feeds] context lookup failed for ${r.kind} ${r.id}:`, e);
     }
   }
   return out;

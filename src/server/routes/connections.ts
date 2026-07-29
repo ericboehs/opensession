@@ -94,8 +94,14 @@ export async function handleConnectionsRoutes(
 		/^\/backstage\/api\/connections\/mcp\/([^/]+)\/oauth$/,
 	);
 	if (mcpOauthMatch && req.method === "GET") {
-		const { mcpOauthStatus } = await import("../mcp-oauth");
-		return Response.json(mcpOauthStatus(decodeURIComponent(mcpOauthMatch[1])));
+		const { mcpOauthStatus, isOauthCapable } = await import("../mcp-oauth");
+		const name = decodeURIComponent(mcpOauthMatch[1]);
+		const status = mcpOauthStatus(name);
+		const cfg = (await import("../connections")).readMcpConfig().mcpServers[
+			name
+		] as { url?: string } | undefined;
+		const capable = cfg?.url ? await isOauthCapable(cfg.url) : false;
+		return Response.json({ ...status, capable });
 	}
 	if (mcpOauthMatch && req.method === "DELETE") {
 		const { removeMcpOauthGrant } = await import("../mcp-oauth");

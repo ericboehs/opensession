@@ -415,6 +415,30 @@ export function mcpOauthStatus(
   };
 }
 
+// OAuth-capability probe (RFC 9728 protected-resource metadata on the
+// server origin), cached 1h — drives "Connect my account" visibility for
+// servers that run on a static workspace key today (e.g. posthog).
+const capableCache = new Map<string, { capable: boolean; ts: number }>();
+export async function isOauthCapable(serverUrl: string): Promise<boolean> {
+  let origin: string;
+  try {
+    origin = new URL(serverUrl).origin;
+  } catch {
+    return false;
+  }
+  const cached = capableCache.get(origin);
+  if (cached && Date.now() - cached.ts < 60 * 60_000) return cached.capable;
+  let capable = false;
+  try {
+    const res = await fetch(`${origin}/.well-known/oauth-protected-resource`, {
+      signal: AbortSignal.timeout(6_000),
+    });
+    capable = res.ok;
+  } catch {}
+  capableCache.set(origin, { capable, ts: Date.now() });
+  return capable;
+}
+
 /** Any grant at all for this server (shared or any user's)? */
 export function hasMcpOauthGrant(name: string, user?: string): boolean {
   if (user) return !!mcpAuthHeader(name, user);

@@ -8,6 +8,9 @@ import { GithubAccounts, SectionHeading } from "./Connections";
 interface OauthStatus {
 	shared?: { connectedBy?: string };
 	users: string[];
+	/** Server publishes OAuth metadata (connectable even if it runs on a
+	 *  workspace API key today, e.g. posthog). */
+	capable?: boolean;
 }
 
 /**
@@ -99,10 +102,12 @@ export function MyAccountsPanel() {
 		const b = (currentUser || "").toLowerCase();
 		return !!b && (a === b || a.startsWith(b) || b.startsWith(a));
 	};
-	// OAuth-capable = the probe flagged it, or grants already exist.
+	// OAuth-capable = the server publishes OAuth metadata (even when it runs
+	// on a workspace key today), needs sign-in, or already has grants.
 	const oauthServers = (servers || []).filter(
 		(s) =>
 			s.status === "needs-auth" ||
+			oauthByName[s.name]?.capable ||
 			oauthByName[s.name]?.shared ||
 			oauthByName[s.name]?.users.length,
 	);
@@ -154,7 +159,9 @@ export function MyAccountsPanel() {
 											? "Connected as you — your sessions use your account"
 											: st?.shared
 												? "Using the workspace account — connect yours so sessions act as you"
-												: "Not connected — sign in to use these tools as yourself"}
+												: st?.capable
+													? "Using the workspace key — connect your own account to act as you"
+													: "Not connected — sign in to use these tools as yourself"}
 									</div>
 								</div>
 								{mine ? (

@@ -42,6 +42,17 @@ export interface FeedPanelSpec {
   links?: { label: string; hrefTemplate: string }[];
 }
 
+/** Per-feed session context: called with the item id at session start and
+ *  injected into the opening prompt. String arg values get `{id}` replaced
+ *  with the item id (works inside exec-style command strings too). */
+export interface FeedContextSpec {
+  server: string;
+  tool: string;
+  args?: Record<string, unknown>;
+  /** Injected excerpt cap (default 6000 chars). */
+  maxChars?: number;
+}
+
 export interface ConfigFeed {
   id: string;
   title: string;
@@ -68,6 +79,9 @@ export interface ConfigFeed {
     };
   };
   panel?: FeedPanelSpec;
+  context?: FeedContextSpec;
+  /** Band filter specs (same shape as FeedFilterSpec in feeds.ts). */
+  filters?: unknown[];
 }
 
 export function readConfigFeeds(): ConfigFeed[] {
@@ -122,6 +136,19 @@ export function validateConfigFeed(input: unknown): ConfigFeed | { error: string
             ...(f.panel.links?.length ? { links: f.panel.links } : {}),
           },
         }
+      : {}),
+    ...(f.context?.server && f.context?.tool
+      ? {
+          context: {
+            server: f.context.server,
+            tool: f.context.tool,
+            ...(f.context.args ? { args: f.context.args } : {}),
+            ...(f.context.maxChars ? { maxChars: f.context.maxChars } : {}),
+          },
+        }
+      : {}),
+    ...(Array.isArray(f.filters) && f.filters.length
+      ? { filters: f.filters }
       : {}),
   };
 }
