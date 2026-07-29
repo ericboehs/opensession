@@ -603,6 +603,10 @@ export interface PrDetails {
 	/** The PR's webapp preview environment (Vercel preview), when one exists.
 	 * `embeddable` is true once the deploy's CSP lets os.tella.dev frame it. */
 	staging?: { url: string; status: string; embeddable?: boolean } | null;
+	/** The latest automated Michael review for this PR. */
+	osReview?: OsReview;
+	/** An automated review is currently running for this PR. */
+	reviewActive?: boolean;
 }
 
 /** Local git state of a session's worktree (git-status endpoint). */

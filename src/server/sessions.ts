@@ -1724,13 +1724,29 @@ function lastReviewSummary(
 	};
 }
 
+/** Live automated-review state for one PR, shared by the queue and PR detail
+ * surfaces so the same score and staleness rules are rendered everywhere. */
+export function getPrReviewStatus(
+	prNumber: number,
+	ghRepo: string | undefined,
+	headRefOid: string | undefined,
+): { reviewActive: boolean; osReview?: OsReviewSummary } {
+	const state = readPrState(prNumber, ghRepo);
+	return {
+		reviewActive:
+			state?.activeRun?.kind === "review" ||
+			isLockHeld("review", prNumber, ghRepo),
+		osReview: lastReviewSummary(state?.lastReview, headRefOid),
+	};
+}
+
 export function getOpenPrs(): OpenPrEntry[] {
 	const out: OpenPrEntry[] = [];
 	for (const [repoId, byBranch] of getPrsByRepo()) {
 		const ghRepo = configuredRepos()[repoId]?.ghRepo;
 		for (const [branch, pr] of byBranch) {
 			if (pr.state !== "OPEN") continue;
-			const reviewState = readPrState(pr.number, ghRepo);
+			const review = getPrReviewStatus(pr.number, ghRepo, pr.headRefOid);
 			out.push({
 				repo: repoId,
 				branch,
@@ -1751,10 +1767,7 @@ export function getOpenPrs(): OpenPrEntry[] {
 				checks: pr.checks,
 				mergeable: pr.mergeable,
 				reviewRequested: pr.reviewRequested,
-				reviewActive:
-					reviewState?.activeRun?.kind === "review" ||
-					isLockHeld("review", pr.number, ghRepo),
-				osReview: lastReviewSummary(reviewState?.lastReview, pr.headRefOid),
+				...review,
 			});
 		}
 	}

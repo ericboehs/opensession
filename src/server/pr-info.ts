@@ -12,7 +12,7 @@ import { audited } from "./audit";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg } from "./github-limit";
 import { serviceGithubCredential, type GithubCredential } from "./github-auth";
 import { githubAppEnv } from "./github-app";
-import type { UnifiedSession } from "./types";
+import type { OsReviewSummary, UnifiedSession } from "./types";
 
 export interface PrCheck {
   name: string;
@@ -102,6 +102,10 @@ export interface PrDetails {
   mergeStateStatus: string;
   /** The PR's webapp preview environment (Vercel preview), when one exists. */
   staging: PrStaging | null;
+  /** The latest automated Michael review, enriched by the session PR route. */
+  osReview?: OsReviewSummary;
+  /** An automated review is currently running for this PR. */
+  reviewActive?: boolean;
 }
 
 /**

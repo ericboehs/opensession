@@ -24,6 +24,7 @@ import { getSessionControl } from "../session-control";
 import { resolvePrTarget } from "../session-repos";
 import {
 	getOpenPrs,
+	getPrReviewStatus,
 	getRecentPrs,
 	getRecentPrsForPerson,
 	markCachedPrClosed,
@@ -216,13 +217,28 @@ export async function handlePrRoutes(
 		const repoId =
 			url.searchParams.get("repo") || session.repo || defaultRepo().id;
 		const fallback = cachedPrDetailsForSession(session, repoId, target.branch);
+		const withReview = <T extends { number: number; headRefOid?: string } | null>(
+			details: T,
+		) =>
+			details
+				? {
+						...details,
+						...getPrReviewStatus(
+							details.number,
+							target.ghRepo,
+							details.headRefOid,
+						),
+					}
+				: null;
 		return prApiResponse(
 			async () =>
-				reconcilePrDetails(
-					await getPrDetails(target.branch, target.ghRepo),
-					fallback,
+				withReview(
+					reconcilePrDetails(
+						await getPrDetails(target.branch, target.ghRepo),
+						fallback,
+					),
 				),
-			fallback ?? undefined,
+			withReview(fallback) ?? undefined,
 		);
 	}
 

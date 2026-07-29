@@ -698,10 +698,8 @@ function ChecksChip({
 	);
 }
 
-/** The GitHub PR agent behaviors, surfaced as one-tap buttons on the info panel.
-		Each maps to a michael-* PR label; hitting the button is equivalent to adding
-		that label on GitHub (or @mentioning the agent on the PR), but without leaving
-		Backstage. tella-fusion PRs only — the agent is repo-scoped. */
+/** The GitHub PR agent behaviors behind the score card. Each maps to an os-*
+		PR label, but runs directly from the panel without a GitHub round trip. */
 const PR_AGENT_ACTIONS: Array<{
 	kind: PrAgentAction;
 	label: string;
@@ -729,15 +727,15 @@ const PR_AGENT_ACTIONS: Array<{
 	},
 ];
 
-function PrAgentActions({
+function MichaelReviewCard({
 	sessionId,
 	repo,
-	prUrl,
+	pr,
 	onOpenSession,
 }: {
 	sessionId: string;
 	repo?: string;
-	prUrl?: string;
+	pr: PrDetails;
 	onOpenSession?: (id: string) => void;
 }) {
 	const [busy, setBusy] = useState<PrAgentAction | null>(null);
@@ -745,6 +743,58 @@ function PrAgentActions({
 		null,
 	);
 	const [error, setError] = useState<string | null>(null);
+	const [reviewQueued, setReviewQueued] = useState(false);
+	const review = pr.osReview;
+	const score = review?.confidence;
+	const stale = !!review?.stale;
+	const actionable = pr.state === "OPEN";
+	const active = !!pr.reviewActive || busy === "review" || reviewQueued;
+	const canFix = actionable && !!review && !stale && review.findings > 0;
+	const scoreTone = stale
+		? "text-faint"
+		: score && score >= 4
+			? "text-green"
+			: score === 3
+				? "text-yellow"
+				: score
+					? "text-red"
+					: "text-dim";
+	const meterTone = stale
+		? "bg-faint"
+		: score && score >= 4
+			? "bg-green"
+			: score === 3
+				? "bg-yellow"
+				: score
+					? "bg-red"
+					: "bg-dim";
+	let verdict = "Not scored yet";
+	if (pr.state === "MERGED") verdict = "Merged with this score";
+	else if (pr.state === "CLOSED") verdict = "Pull request closed";
+	else if (active) verdict = "Review in progress";
+	else if (stale) verdict = "Score needs a refresh";
+	else if (score === 5) verdict = "Safe to merge";
+	else if (score === 4) verdict = "Looks mergeable";
+	else if (score === 3) verdict = "Worth another pass";
+	else if (score) verdict = "Needs work";
+	const reviewedAgo = review ? relTime(review.at) : "";
+	const detail = review
+		? [
+				review.findings
+					? `${review.findings} finding${review.findings === 1 ? "" : "s"}`
+					: "No findings",
+				review.blocking
+					? `${review.blocking} blocking`
+					: null,
+				reviewedAgo ? `reviewed ${reviewedAgo} ago` : "reviewed recently",
+			].filter(Boolean).join(" · ")
+		: `Run ${AGENT_NAME}'s merge-safety review`;
+
+	// Keep the just-started state latched until a later PR refresh observes the
+	// run or its new result; otherwise the button flashes idle after the POST.
+	useEffect(() => {
+		if (!pr.reviewActive) setReviewQueued(false);
+	}, [pr.reviewActive, pr.osReview?.at]);
 
 	async function run(action: (typeof PR_AGENT_ACTIONS)[number]) {
 		if (busy) return;
@@ -759,6 +809,7 @@ function PrAgentActions({
 				repo,
 			);
 			if (res.ok) {
+				if (action.kind === "review") setReviewQueued(true);
 				// Auto-fix opens a live chat in this workspace — jump straight into it
 				// instead of leaving a "posted on the PR" note behind.
 				if (res.openChat && res.bksId && onOpenSession) {
@@ -774,49 +825,129 @@ function PrAgentActions({
 		}
 	}
 
+	const reviewAction = PR_AGENT_ACTIONS[0];
+	const fixAction = PR_AGENT_ACTIONS[1];
+	const moreActions = PR_AGENT_ACTIONS.slice(2);
+
 	return (
-		<div className="contents">
-			<Menu.Root>
-				<Menu.Trigger
-					className={ACTION_BUTTON_CLASS}
-					disabled={busy !== null}
-					title={`Choose a task for ${AGENT_NAME}`}
-				>
-					<span className={ACTION_ICON_CLASS}>
-						<IconSparkle size={18} />
+		<div
+			data-michael-score
+			className="relative grid gap-3 overflow-hidden rounded-xl border border-line-strong bg-raised p-3 shadow-[var(--control-shadow)]"
+		>
+			<div className="pointer-events-none absolute -right-8 -top-10 size-24 rounded-full bg-accent-soft blur-2xl" />
+			<div className="relative flex items-center gap-2">
+				<span className="grid size-7 shrink-0 place-items-center rounded-lg border border-line bg-panel text-accent shadow-[var(--control-shadow)]">
+					<IconSparkle size={17} />
+				</span>
+				<div className="text-[12px] font-[700] tracking-[-0.01em] text-fg">
+					{AGENT_NAME} score
+				</div>
+				{active ? (
+					<span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2 py-1 text-[10.5px] font-semibold text-accent">
+						<span className="size-1.5 animate-pulse rounded-full bg-accent" />
+						Reviewing
 					</span>
-					<span className="min-w-0 flex-1 truncate">
-						{busy ? "Starting..." : `Ask ${AGENT_NAME}`}
+				) : stale ? (
+					<span className="ml-auto rounded-full bg-active px-2 py-1 text-[10.5px] font-semibold text-faint">
+						Stale
 					</span>
-					<IconChevronDown size={14} className="shrink-0 text-faint" />
-				</Menu.Trigger>
-				<Menu.Popup align="start" sideOffset={6} className="min-w-[300px]">
-					<Menu.Group>
-						<Menu.GroupLabel>Ask {AGENT_NAME} to...</Menu.GroupLabel>
-						{PR_AGENT_ACTIONS.map((a) => (
-							<Menu.Item
-								key={a.kind}
-								disabled={busy !== null}
-								onClick={() => run(a)}
-								className="items-start py-2"
-							>
-								<div className="min-w-0">
-									<div className="font-semibold text-fg">{a.label}</div>
-									<div className="mt-0.5 text-[11.5px] leading-[1.35] text-faint">
-										{a.hint}
-									</div>
-								</div>
-							</Menu.Item>
-						))}
-					</Menu.Group>
-				</Menu.Popup>
-			</Menu.Root>
+				) : null}
+			</div>
+
+			<div className="relative flex items-end gap-3">
+				<div className={cn("shrink-0 font-mono leading-none", scoreTone)}>
+					<span className="text-[32px] font-[750] tracking-[-0.08em]">{score ?? "–"}</span>
+					<span className="ml-1 text-[12px] font-semibold tracking-normal text-faint">/ 5</span>
+				</div>
+				<div className="min-w-0 pb-0.5">
+					<div className="text-[13px] font-[680] leading-tight text-fg">{verdict}</div>
+					<div className="mt-1 text-[11px] leading-[1.35] text-faint">{detail}</div>
+				</div>
+			</div>
+
+			<div
+				className="relative flex h-4 items-end gap-1"
+				role={score ? "meter" : "status"}
+				aria-label={`${AGENT_NAME} merge-safety score`}
+				aria-valuemin={score ? 1 : undefined}
+				aria-valuemax={score ? 5 : undefined}
+				aria-valuenow={score}
+			>
+				{[1, 2, 3, 4, 5].map((step) => (
+					<span
+						key={step}
+						className={cn(
+							"flex-1 rounded-[3px] transition-colors",
+							score && step <= score ? meterTone : "bg-active",
+						)}
+						style={{ height: 6 + step * 2 }}
+					/>
+				))}
+			</div>
+
+			{actionable && (
+				<div className="relative flex items-center gap-1.5 border-t border-line pt-2.5">
+					{canFix && (
+						<button
+							type="button"
+							className="inline-flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-fg px-3 text-[12px] font-semibold text-bg shadow-[var(--control-shadow)] transition-[filter,transform] hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
+							disabled={busy !== null}
+							onClick={() => run(fixAction)}
+							title={fixAction.hint}
+						>
+							<IconSparkle size={15} />
+							{busy === "autofix" ? "Starting..." : "Fix findings"}
+						</button>
+					)}
+					<button
+						type="button"
+						className={cn(
+							"inline-flex min-h-8 items-center justify-center rounded-lg border border-line-strong bg-panel px-3 text-[12px] font-semibold text-fg shadow-[var(--control-shadow)] transition-[background-color,transform] hover:bg-hover active:scale-[0.98] disabled:opacity-60",
+							!canFix && "flex-1",
+						)}
+						disabled={busy !== null || active}
+						onClick={() => run(reviewAction)}
+						title={reviewAction.hint}
+					>
+						{active ? "Reviewing..." : review ? "Review again" : "Run review"}
+					</button>
+					<Menu.Root>
+						<Menu.Trigger
+							className="grid size-8 shrink-0 place-items-center rounded-lg border border-line-strong bg-panel text-dim shadow-[var(--control-shadow)] transition-colors hover:bg-hover hover:text-fg disabled:opacity-60"
+							disabled={busy !== null}
+							aria-label={`More ${AGENT_NAME} actions`}
+						>
+							<IconChevronDown size={15} />
+						</Menu.Trigger>
+						<Menu.Popup align="end" sideOffset={6} className="min-w-[280px]">
+							<Menu.Group>
+								<Menu.GroupLabel>More {AGENT_NAME} actions</Menu.GroupLabel>
+								{moreActions.map((action) => (
+									<Menu.Item
+										key={action.kind}
+										disabled={busy !== null}
+										onClick={() => run(action)}
+										className="items-start py-2"
+									>
+										<div className="min-w-0">
+											<div className="font-semibold text-fg">{action.label}</div>
+											<div className="mt-0.5 text-[11.5px] leading-[1.35] text-faint">
+												{action.hint}
+											</div>
+										</div>
+									</Menu.Item>
+								))}
+							</Menu.Group>
+						</Menu.Popup>
+					</Menu.Root>
+				</div>
+			)}
 			{done && (
-				<div className="col-span-2 px-2 pb-1 text-[11.5px] font-medium text-dim">
+				<div className="relative text-[11.5px] font-medium text-dim">
 					Started {done.label.toLowerCase()} — {AGENT_NAME} will post results on{" "}
-					{prUrl ? (
+					{pr.url ? (
 						<a
-							href={prUrl}
+							href={pr.url}
 							target="_blank"
 							rel="noopener"
 							className="text-fg underline decoration-line-strong underline-offset-2"
@@ -840,7 +971,7 @@ function PrAgentActions({
 				</div>
 			)}
 			{error && (
-				<div className="col-span-2 px-2 pb-1 text-[11.5px] font-medium text-red">
+				<div className="relative text-[11.5px] font-medium text-red">
 					{error}
 				</div>
 			)}
@@ -1369,6 +1500,14 @@ export function WorkspaceInfo({
 				)}
 				{pr && <ChecksChip pr={pr} onOpenTab={onOpenTab} />}
 			</div>
+			{pr?.number && (
+				<MichaelReviewCard
+					sessionId={sessionId}
+					repo={repo}
+					pr={pr}
+					onOpenSession={onOpenSession}
+				/>
+			)}
 			<div className={INFO_SECTION_CLASS}>
 				<div className={INFO_LABEL_CLASS}>Actions</div>
 				<div className="grid grid-cols-2 gap-0.5 rounded-lg bg-panel p-1">
@@ -1406,14 +1545,6 @@ export function WorkspaceInfo({
 						acceptedFromPr={reviewAcceptedFromPr}
 						onReviewChange={onReviewChange}
 					/>
-					{pr?.number && (
-						<PrAgentActions
-							sessionId={sessionId}
-							repo={repo}
-							prUrl={pr.url}
-							onOpenSession={onOpenSession}
-						/>
-					)}
 				</div>
 			</div>
 			{hasBody ? (
