@@ -63,7 +63,32 @@ but missing a required credential, a service that is installed but dead, and
 whether anything is actually listening. Sections below are the reference for
 what it is checking.
 
-## 3. Secrets: `~/.opensession.env`
+## 3. Automations (optional)
+
+A fresh install runs nothing on its own. The repository ships a few generic
+starting points:
+
+```sh
+opensession automations              # what is available
+opensession automations add github-pr-review
+opensession restart                  # created on the next boot, disabled
+```
+
+`github-pr-review` is the highest-leverage one — a lot of other workflow hangs
+off having every PR reviewed automatically. `instance-health` watches this
+install's own disk, memory and liveness. Both are offered during onboarding.
+
+Recipes arrive **disabled**: read the prompt, adjust it for your codebase, then
+enable it in the UI. Adding one appends to `integrations.seeds.automations` in
+your config, and seeding is create-if-absent, so your edits are never
+overwritten by a later restart.
+
+Anything specific to your company — your product, customers, people, playbooks
+— belongs in that config section rather than in the repository. See
+[recipes/README.md](../../recipes/README.md) for the line and for how to write
+your own.
+
+## 4. Secrets: `~/.opensession.env`
 
 Bun auto-loads a `.env` in the working directory for manual runs; the
 systemd unit (`opensession.service`) instead loads
@@ -83,7 +108,7 @@ what the code actually reads, by feature:
 | `WEBHOOK_PORT` | `3848` | second HTTP server for inbound webhooks |
 | `OPENSESSION_UI_BASE` | Tella tailnet URL | public base URL used in links posted to Slack/Linear/notes |
 | `OPENSESSION_CONFIG` | `~/.opensession/config.json` | config-file path override |
-| `SHUTDOWN_DRAIN_MS` | `120000` | graceful-shutdown drain window for in-flight runs |
+| `SHUTDOWN_DRAIN_MS` | `60000` | graceful-shutdown drain window for in-flight runs |
 | `OPENSESSION_CHATS_DIR` | `~/.opensession-chats` | session store override (mostly a test seam) |
 | `OPENSESSION_WORKTREES_DIR` | `/home/ubuntu/worktrees` | where session worktrees are created |
 | `OPENSESSION_TELLA_FUSION` | `/home/ubuntu/projects/tella-fusion` | checkout path of the default repo |
@@ -132,7 +157,7 @@ Note: agent subprocesses do **not** inherit this env file — runs get a
 minimal env (PATH, HOME, LANG, OPENSESSION_MODEL) by design, and MCP servers
 carry their own credentials (`src/server/runner-shared.ts`).
 
-## 4. `~/.opensession/config.json`
+## 5. `~/.opensession/config.json`
 
 Instance config for everything that isn't a secret: server ports/URLs,
 binary paths, the **repo registry**, the **team identity table**, persona
@@ -163,7 +188,7 @@ automations without putting company playbooks in application source.
 the default repo id, public URL, and GitHub bot identities are injected into
 the SPA bootstrap.
 
-## 5. Engine accounts
+## 6. Engine accounts
 
 At minimum add one Claude account or the default engine has nothing to run
 on:
@@ -177,7 +202,7 @@ by hand — file shapes, account picking, Codex accounts
 (`~/.opensession-codex-accounts.json`), and OpenCode config are documented in
 [engines.md](engines.md).
 
-## 6. `mcp-config.json`
+## 7. `mcp-config.json`
 
 MCP servers give runs their external tools. Copy
 [`mcp-config.example.json`](../../mcp-config.example.json) to
@@ -198,12 +223,12 @@ Manage servers later from the Connections UI. **Changing the runner-layer
 filtering code requires a restart; editing mcp-config.json itself is read
 fresh per run.**
 
-## 7. First run
+## 8. First run
 
 ```sh
-bun run opensession.ts
-# UI at http://127.0.0.1:3850/opensession/
-curl -s http://127.0.0.1:3850/opensession/api/health
+opensession start --foreground     # or just `opensession start`
+# UI at http://127.0.0.1:3850/
+curl -s http://127.0.0.1:3850/api/health
 ```
 
 Health returns `{ ok, bootId, frontendVersion, uptime, activeRuns, agents }`
@@ -211,21 +236,33 @@ Health returns `{ ok, bootId, frontendVersion, uptime, activeRuns, agents }`
 GRAFANA credentials"). The drain-aware deploy polls `activeRuns` to restart
 when idle.
 
-## 8. Running it as a service
+## 9. Running it as a service
 
 ```sh
-sudo cp opensession.service /etc/systemd/system/opensession.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now opensession
+opensession service install     # renders the unit for this box, then enables it
+opensession status
+opensession logs -f
 ```
 
-The deployed unit is a **copy, not a symlink** — after editing the repo's
-`opensession.service`, re-`cp` and `daemon-reload` (deploy.sh does this
-automatically). Unit choices worth knowing (comments in the file itself):
+On Linux that installs a systemd unit (needs sudo). On macOS it installs a
+per-user **LaunchAgent**, which needs no root at all.
+
+The repo's `opensession.service` is a **template**, not a file to install
+verbatim — it carries one deployment's user, checkout path and bun path.
+`opensession service install` rewrites those for your box. The username is
+resolved and then verified to exist: `os.userInfo()` returns the literal string
+`"unknown"` under some non-login shells, and a unit containing `User=unknown`
+installs happily and then fails every start with `status=217/USER`.
+
+On Tella's own deployment the unit is a copy, not a symlink — after editing the
+repo's `opensession.service`, re-`cp` and `daemon-reload` (deploy.sh does this
+automatically).
+
+Unit choices worth knowing (comments in the file itself):
 
 - `ExecStart=bun run opensession.ts` — stable production runtime, see below.
 - `EnvironmentFile=/home/ubuntu/.opensession.env` — your secrets file.
-- `TimeoutStopSec=140` — must stay above `SHUTDOWN_DRAIN_MS` (120s) plus
+- `TimeoutStopSec=80` — must stay above `SHUTDOWN_DRAIN_MS` (60s) plus
   buffer, or systemd SIGKILLs mid-drain.
 - `KillMode=mixed` — SIGTERM hits only the bun parent so it can drain
   in-flight runs; the default control-group mode would kill the Claude
@@ -233,20 +270,21 @@ automatically). Unit choices worth knowing (comments in the file itself):
 - `IPAddressDeny=169.254.169.254/32` — blocks the EC2 metadata endpoint for
   the whole service cgroup (untrusted agent text must not mint cloud
   credentials). Harmless off-cloud.
-- The unit's `User`, paths, and `PATH=` line assume user `ubuntu` with bun
-  in `~/.bun/bin` — adjust for your box.
+- `User`, `WorkingDirectory`, `EnvironmentFile`, `ExecStart` and `PATH=` are
+  rewritten per box by `opensession service install`; the values checked into
+  the repo are Tella's.
 
-## 9. Frontend rebuilds vs restart
+## 10. Frontend rebuilds vs restart
 
 The production unit intentionally does not use `bun --hot`: failed backend
 reloads on Bun 1.3.14 can permanently stop timer delivery while HTTP remains
 healthy. The in-process frontend watcher still rebuilds frontend edits live.
-All backend changes need `systemctl restart opensession` after commit and push.
+All backend changes need `opensession restart` after commit and push.
 Restarts are graceful: detached engine turns survive and the run journal
 reattaches them on boot, but they still churn active sessions, so restart once
 after the backend change rather than after every save.
 
-## 10. Next
+## 11. Next
 
 - Wire up integrations: [slack.md](slack.md), [github.md](github.md),
   [linear.md](linear.md), [plain.md](plain.md),

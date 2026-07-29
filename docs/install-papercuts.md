@@ -266,6 +266,59 @@ else — including total failure to ask — as "stopped".
 warning rather than an error, deferring to the health probe for the real
 answer.
 
+### 20. `opensession` was not on PATH for anything automated
+
+**Symptom:** `opensession` worked when typed, and `bash -lc 'opensession version'`
+returned `command not found`.
+
+**Cause:** the installer appended the PATH line to `~/.bashrc`. Ubuntu's stock
+`.bashrc` opens with an "if not running interactively, return" guard, so a line
+at the *end* of it never runs for non-interactive shells — which is what ssh
+commands, cron jobs and scripts use. (opencode's installer picks the first
+existing profile file the same way, so this is a shared trap, not an exotic
+one.)
+
+**Fix:** write to the interactive file **and** the one login/non-interactive
+shells read — `.bashrc` + `.profile`, or `.zshrc` + `.zshenv` for zsh. Verified
+with `bash -lc` in a clean container.
+
+### 21. Seeded automations arrived enabled
+
+**Symptom:** recipes that declare `"enabled": false` were created running.
+
+**Cause:** `createAutomation` hardcoded `enabled: true` and did not accept the
+field at all, so the seed value was dropped on the floor.
+
+For shipped recipes this is a real footgun rather than a cosmetic default:
+`github-pr-review` would have started reviewing pull requests, and
+`instance-health` would have started its hourly run, before anyone had read the
+prompt.
+
+**Fix:** `enabled` is an optional input honoured as `input.enabled !== false`,
+so every existing caller keeps the old behaviour, and the seed path passes it
+through explicitly instead of relying on an object spread.
+
+Found by inspecting the *created records* after a container install rather than
+trusting the seed input — the recipes had said `false` the whole time.
+
+### 22. A fresh install did nothing, and looked like it
+
+Not a bug, but the biggest gap between "installed" and "useful". Automations are
+per-instance data rather than source, so a new operator got a healthy server and
+a blank page.
+
+**Fix:** `recipes/automations/` ships six generic recipes, off by default, with
+`opensession automations list|add|remove`; onboarding offers the two
+highest-leverage ones. They install through the existing
+`integrations.seeds.automations` path, so the CLI never needs to know how
+automations are persisted.
+
+The selection rule, written down in `recipes/README.md` so it does not have to
+be re-derived: **could a stranger run this on their own repository and get a
+sensible result?** Reviewing a PR, watching the instance, sweeping dead code —
+yes. Anything naming a product, customers, domain, metrics, people or internal
+rituals — no, that is instance config.
+
 ---
 
 ## Open
@@ -291,6 +344,12 @@ Ubuntu between runs:
 | 2 | failed — `unzip` install needed sudo | — |
 | 3 | installed, no engine | 7s |
 | 4 | installed with engine | 8s |
+| 5 | + credential scrubbing | 9s |
+| 6 | + gh, PATH fix | 10s |
+
+Plus a parallel track in a systemd-capable container (`--privileged
+--cgroupns=host`, real `/sbin/init`, user with passwordless sudo) covering the
+service install and the apt path the EC2 box cannot reach.
 
 Server reaches a healthy `/backstage/api/health` on a fresh box, loading only
 the self-gating Tella module — the correct state for an install with no

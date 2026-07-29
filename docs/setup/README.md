@@ -83,6 +83,7 @@ for the full rules the code enforces.
 | --- | --- |
 | [install.md](install.md) | installer → onboarding → env vars → config.json → accounts → systemd → health |
 | [ec2.md](ec2.md) | provisioning a clean EC2 box, networking, SSH debugging |
+| [../../recipes/README.md](../../recipes/README.md) | bundled automation recipes, and what belongs in the repo |
 | [slack.md](slack.md) | Slack app, token, scopes, event intake, admin gating |
 | [github.md](github.md) | GitHub token, webhook server, PR agent, deploy pipeline |
 | [linear.md](linear.md) | Linear OAuth app, webhooks, the Linear agent |
