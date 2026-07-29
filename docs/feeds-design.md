@@ -169,6 +169,18 @@ plugins." Workstreams:
   loadAgents). Config feeds (W3) cover no-code; a module is for bespoke
   fetching/webhooks/background work. `@opensession/feed-*` extraction stays
   mechanical because the interface is the boundary.
+- **W6 — per-feed filters (LANDED 577aac51)**: FeedFilterSpec on
+  descriptors — arg-mode (values passed to the list tool; options resolvable
+  from sibling MCP tools on the viewer's grant: tella tagIds via list_tags,
+  playlistId via list_playlists) and meta-mode (client-side over item.meta,
+  options derived from items: plain assignee incl. Me/Unassigned, labels).
+  Built-ins per band: Linked session + Sort (non-lane feeds). Selections
+  persist per browser/feed; arg changes refetch (server cache keys
+  user+args). Plain's bespoke filter menu retired onto this; search honors
+  descriptor searchMeta. Config feeds can declare filters in
+  ~/.opensession-feeds.json (same spec). Also fixed: repo-less feed
+  workspaces no longer mint a pseudo-repo band (duplicate "tella"), and
+  repo-less rows drop the PR glyph.
 - **W5 — CUTOVER LANDED ef919ee3 (2026-07-29)**: Plain rides the generic
   feed band. PlainAgent.getFeed() (lanes, attentionLane, meta = full
   SupportThreadSummary); sidebar derives supportThreads from feed items (own
