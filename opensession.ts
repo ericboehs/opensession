@@ -2,6 +2,7 @@
 
 import { createGoalSelfMcpServer } from "./src/agents/slack/goal-tools";
 import { type AgentModule } from "./src/agents/types";
+import { loadIntegrations } from "./src/server/integrations/load";
 import { ensureSeedActions } from "./src/server/actions";
 import {
 	activeAgentRunCount,
@@ -419,112 +420,14 @@ console.log(`Backstage running at http://${HOST}:${PORT}/backstage/`);
 // --- Agent loading and webhook server ---
 
 async function loadAgents(): Promise<AgentModule[]> {
-	const agents: AgentModule[] = [];
-	const enabled = (name: string, envName: string) => {
-		const env = process.env[envName];
-		return env == null
-			? configuredIntegration(name).enabled === true
-			: env === "true";
-	};
-
-	if (enabled("plain", "ENABLE_PLAIN_AGENT")) {
-		try {
-			const { PlainAgent } = await import("./src/agents/plain/index");
-			agents.push(new PlainAgent());
-			console.log("[agents] Plain agent loaded");
-		} catch (e) {
-			console.error("[agents] Failed to load plain agent:", e);
-		}
-	}
-
-	// Tella feed module (docs/feeds-design.md W4 reference plugin). Loaded
-	// unconditionally — it self-gates: getFeed() is null until the tella MCP
-	// server is configured and connected, so an unconfigured module
-	// contributes nothing (no webhooks yet, empty route map).
-	try {
-		const { TellaAgent } = await import("./src/agents/tella/index");
-		agents.push(new TellaAgent());
-		console.log("[agents] Tella module loaded");
-	} catch (e) {
-		console.error("[agents] Failed to load tella module:", e);
-	}
-
-	if (enabled("linear", "ENABLE_LINEAR_AGENT")) {
-		try {
-			const { LinearAgent } = await import("./src/agents/linear/index");
-			agents.push(new LinearAgent());
-			console.log("[agents] Linear agent loaded");
-		} catch (e) {
-			console.error("[agents] Failed to load linear agent:", e);
-		}
-	}
-
-	if (enabled("slack", "ENABLE_SLACK_AGENT")) {
-		try {
-			const { SlackAgent } = await import("./src/agents/slack/index");
-			agents.push(new SlackAgent());
-			console.log("[agents] Slack agent loaded");
-		} catch (e) {
-			console.error("[agents] Failed to load slack agent:", e);
-		}
-	}
-
-	// Gated on the signing secret: without it every webhook fails verification, so
-	// there's no point exposing the route. Set STRIPE_WEBHOOK_SECRET to activate.
-	if (
-		enabled("stripe", "ENABLE_STRIPE_AGENT") &&
-		process.env.STRIPE_WEBHOOK_SECRET
-	) {
-		try {
-			const { StripeAgent } = await import("./src/agents/stripe/index");
-			agents.push(new StripeAgent());
-			console.log("[agents] Stripe agent loaded");
-		} catch (e) {
-			console.error("[agents] Failed to load stripe agent:", e);
-		}
-	}
-
-	// Generic Grafana poller: drives every automation that carries a `grafanaPoll`
-	// config (export failures, upload-processing failures, and any future signal
-	// added as data). Gated on Grafana creds (the agent no-ops without them).
-	if (enabled("grafana", "ENABLE_GRAFANA_POLLER")) {
-		try {
-			const { GrafanaPollerAgent } = await import(
-				"./src/agents/grafana-poller/index"
-			);
-			agents.push(
-				new GrafanaPollerAgent({
-					onSessionInvalidate: () => {
-						invalidateSessionsCache();
-					},
-				}),
-			);
-			console.log("[agents] Grafana poller loaded");
-		} catch (e) {
-			console.error("[agents] Failed to load grafana poller:", e);
-		}
-	}
-
-	// GitHub PR agent: review / auto-fix / simplify on configured repos. Receives
-	// PR events forwarded from the Slack agent's /github/webhook; owns lifecycle
-	// (seeds the disabled review automation, recovers interrupted fix loops).
-	if (enabled("github", "ENABLE_GITHUB_AGENT")) {
-		try {
-			const { GithubAgent } = await import("./src/agents/github/index");
-			agents.push(
-				new GithubAgent({
-					onSessionInvalidate: () => {
-						invalidateSessionsCache();
-					},
-				}),
-			);
-			console.log("[agents] GitHub agent loaded");
-		} catch (e) {
-			console.error("[agents] Failed to load github agent:", e);
-		}
-	}
-
-	return agents;
+	// Every integration is declared in src/server/integrations/registry.ts;
+	// this is a loop over that registry, not a hand-written chain. Add an
+	// integration there, not here.
+	return await loadIntegrations({
+		onSessionInvalidate: () => {
+			invalidateSessionsCache();
+		},
+	});
 }
 
 // One-time startup: agents, schedulers, recurring timers, and signal handlers.
