@@ -146,8 +146,9 @@ plugins." Workstreams:
   frontend-wide (lib/feeds-meta.ts; tella hardcode = cold-cache fallback
   only). PROVEN: "Playlists" project created purely from config (wrong path
   guess fixed by config re-POST — list_playlists returns `channels`).
-  REMAINING: the "New project" UI form (server picker → tool picker from the
-  catalog → sample-call mapping suggester → panel template).: a "New project" flow that takes
+  UI LANDED 1d272215: Connections → Projects section + New-project modal
+  (server picker → live tool catalog → Fetch-sample mapping suggester →
+  panel template → Create; config feeds deletable). W3 COMPLETE.: a "New project" flow that takes
   name/icon/refKind + linked MCP servers + an items source (REST endpoint or
   an MCP list-tool + field mapping) + a web-panel URL template, stored in
   `~/.opensession-feeds.json`; the feeds registry loads config feeds beside
