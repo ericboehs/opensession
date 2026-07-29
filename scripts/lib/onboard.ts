@@ -85,7 +85,9 @@ function collect(): Answers {
   );
   const enabled: string[] = [];
   if (canPrompt()) {
-    for (const integration of INTEGRATIONS) {
+    // `always` modules self-gate and ignore their flag entirely — asking about
+    // them offers a choice that does nothing.
+    for (const integration of INTEGRATIONS.filter((i) => !i.always)) {
       if (askYesNo(`Enable ${integration.label}?`, false)) enabled.push(integration.id);
     }
   }
@@ -129,7 +131,10 @@ function buildConfig(a: Answers): Record<string, unknown> {
       },
     },
     integrations: Object.fromEntries(
-      INTEGRATIONS.map((i) => [i.id, { enabled: a.enabled.includes(i.id) }]),
+      INTEGRATIONS.filter((i) => !i.always).map((i) => [
+        i.id,
+        { enabled: a.enabled.includes(i.id) },
+      ]),
     ),
     // Populate with teammates to enable commit attribution, per-user MCP
     // `allowedUsers` gating and human-ask routing. An empty roster makes every
@@ -157,7 +162,7 @@ function buildEnv(a: Answers): string {
     "# credentials are filled in below.",
   ];
 
-  for (const integration of INTEGRATIONS) {
+  for (const integration of INTEGRATIONS.filter((i) => !i.always)) {
     const on = a.enabled.includes(integration.id);
     lines.push("", `# ${integration.label} — ${integration.doc}`);
     lines.push(`${integration.enableFlag}=${on}`);

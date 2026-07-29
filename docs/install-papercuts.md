@@ -202,32 +202,49 @@ Verified as far as is possible without a Mac: the generated plist parses with
 Python's `plistlib` and carries the right label, `RunAtLoad`, `KeepAlive`,
 exec line and `PATH`. **End-to-end macOS install is still untested.**
 
+### 13. `OPENCODE_BIN` fell back to a hardcoded Tella path
+
+`src/server/opencode-runner.ts` resolved the engine as `env ->
+Bun.which("opencode") -> nvm scan -> ${HOME}/.nvm/versions/node/v20.20.0/bin/opencode`.
+
+That last fallback is a specific nvm version path from Tella's box. It is only
+reached when everything else fails, so it never broke anything here — but on
+someone else's machine the resulting error names a directory they have never
+heard of. It now falls back to `~/.opencode/bin/opencode`, which is where
+opencode.ai's own installer puts it.
+
+### 15. `gh` was not installed
+
+PR operations need it. The installer now installs it best-effort (it is never
+fatal, and it needs its own `gh auth login` regardless, so this only gets you
+half way — but it removes a `doctor` warning from every fresh install).
+
 ---
 
 ## Open
 
-### 13. `OPENCODE_BIN` falls back to a hardcoded Tella path
+### 14. The systemd install path is not end-to-end tested
 
-`src/server/opencode-runner.ts` resolves the engine as
-`env -> Bun.which("opencode") -> nvm scan -> ${HOME}/.nvm/versions/node/v20.20.0/bin/opencode`.
+`opensession service install` needs root, and the test box has no working sudo
+(papercut #12), so installing the unit, boot-on-reboot and `opensession logs`
+have not been exercised on a clean machine.
 
-The last fallback is a specific nvm version path from Tella's box. It is only
-reached when everything else fails, and the installer now guarantees `opencode`
-is on `PATH`, so it is cosmetic rather than breaking — but it should become a
-clear "engine not found" error instead of a misleading path.
+Partially mitigated: the rendered unit is validated with `systemd-analyze
+verify`, which parses it and checks every directive. It comes back clean, with
+`KillMode=mixed`, `TimeoutStopSec=80` and the `IPAddressDeny` metadata block
+preserved from the template. That proves the file is correct; it does not prove
+`systemctl enable --now` behaves.
 
-### 14. The systemd path is untested on a clean box
+Needs a re-provisioned instance (with the corrected user-data from #12) to
+close properly.
 
-`opensession service install` needs root. The test box has no working sudo
-(papercut #12), so the service install, boot-on-reboot and `opensession logs`
-paths have only been exercised on a box that already had a service. Needs a
-re-provisioned instance to verify.
+### 17. Prompts run together when answers arrive faster than a human types
 
-### 15. `gh` is not installed
-
-`doctor` warns about it. PR operations need it, and it is the one remaining
-tool a fresh install does not provide. It needs its own auth step regardless, so
-installing it only gets you half way.
+Cosmetic, and an artifact of the test harness rather than a real bug: feeding
+newlines into a pty makes Bun's `prompt()` render several questions on one
+line, because the newline that normally separates them comes from the user's
+own keypress echoing. A real interactive session looks correct. Recorded in
+case it ever shows up in a scripted install.
 
 ---
 

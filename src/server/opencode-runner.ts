@@ -296,7 +296,11 @@ export const OPENCODE_BIN =
   envAlias("OPENSESSION_OPENCODE_BIN", "BACKSTAGE_OPENCODE_BIN") ||
   Bun.which("opencode") ||
   nvmOpencodeScan() ||
-  `${HOME}/.nvm/versions/node/v20.20.0/bin/opencode`;
+  // Where opencode.ai's own installer puts it. The previous last-resort was a
+  // specific nvm version path from Tella's box, which on any other machine
+  // produced a confusing "no such file" naming a directory the operator had
+  // never heard of.
+  `${HOME}/.opencode/bin/opencode`;
 
 // Source-verified floor: anomalyco/opencode@fa95a61c4 first classified
 // absolute paths as file plugins, and v1.3.8 is the first release containing it.

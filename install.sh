@@ -271,6 +271,21 @@ else
   good "cloned to $DIR"
 fi
 
+# Cloning a private fork with a tokenised URL leaves that token in
+# .git/config, which is a file people paste into bug reports and which
+# `opensession update` would keep using forever. Move it into git's own
+# credential store (0600) and point the remote at the clean URL.
+if git -C "$DIR" remote get-url origin 2>/dev/null | grep -q '://[^/@]*@'; then
+  full_url="$(git -C "$DIR" remote get-url origin)"
+  clean_url="$(printf '%s' "$full_url" | sed -E 's#(://)[^/@]*@#\1#')"
+  cred_file="$HOME/.git-credentials"
+  touch "$cred_file"; chmod 600 "$cred_file"
+  grep -qxF "$full_url" "$cred_file" 2>/dev/null || printf '%s\n' "$full_url" >>"$cred_file"
+  git -C "$DIR" remote set-url origin "$clean_url"
+  git -C "$DIR" config credential.helper store
+  good "clone credentials moved to ~/.git-credentials (0600)"
+fi
+
 step "Dependencies"
 (cd "$DIR" && bun install --silent) || die "bun install failed"
 good "installed"
@@ -301,6 +316,16 @@ else
 fi
 
 # ── shim ────────────────────────────────────────────────────────────────────
+
+# gh is only needed for pull-request operations and needs its own `gh auth
+# login` regardless, so this is best-effort and never fatal.
+if ! command -v gh >/dev/null 2>&1 && [ "$NO_ENGINE" != "1" ]; then
+  if install_package gh >/dev/null 2>&1 && command -v gh >/dev/null 2>&1; then
+    good "gh $(gh --version | head -1 | awk '{print $3}')"
+  else
+    muted "gh not installed (needed only for pull requests) — https://cli.github.com"
+  fi
+fi
 
 step "Command"
 mkdir -p "$BIN_DIR"
