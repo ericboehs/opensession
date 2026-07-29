@@ -195,6 +195,8 @@ import {
   opencodeModelLabel,
 } from "./models";
 import { BUN_BIN, MCP_PROXY_ENTRY, mcpHttpUrl, rpcSocketPath } from "./run-rpc-protocol";
+import { mcpRelayUrl, mintMcpRelayToken } from "./mcp-relay";
+import { mcpSharedGrantHeader, mcpUserGrantHeader } from "./mcp-oauth";
 import {
   registerRunToken,
   unregisterRunToken,
@@ -1087,6 +1089,32 @@ export function buildOpencodeMcpConfig(
   const mcp: Record<string, Record<string, unknown>> = {};
   for (const [name, cfg] of Object.entries(filtered)) {
     if (cfg.type === "http" || cfg.type === "sse" || cfg.url) {
+      // OAuth-granted servers route through the local fresh-auth relay
+      // (mcp-relay.ts): short-lived access tokens are re-resolved per
+      // REQUEST, so they can't expire mid-turn, never appear in engine
+      // config, and token rotation doesn't change the config hash.
+      const candidates = (grantUsers ?? [user]).filter(
+        (u): u is string => !!u,
+      );
+      const hasGrant =
+        candidates.some((u) => mcpUserGrantHeader(name, u)) ||
+        !!mcpSharedGrantHeader(name);
+      if (hasGrant) {
+        const token = mintMcpRelayToken(name, candidates);
+        const { Authorization: _drop, ...restHeaders } = (cfg.headers ||
+          {}) as Record<string, string>;
+        mcp[name] = {
+          type: "remote",
+          url: mcpRelayUrl(name, token),
+          ...(Object.keys(restHeaders).length
+            ? { headers: restHeaders }
+            : {}),
+          oauth: false,
+          enabled: true,
+          timeout: 30_000,
+        };
+        continue;
+      }
       mcp[name] = {
         type: "remote",
         url: cfg.url,
