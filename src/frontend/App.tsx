@@ -36,6 +36,7 @@ import { SettingsMenu } from "./components/SettingsMenu";
 import { TitleBar } from "./components/TitleBar";
 import { Settings, type SettingsSectionKey } from "./components/Settings";
 import { SessionTabs, type ViewTab } from "./components/SessionTabs";
+import { SessionSplit } from "./components/SessionSplit";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
 import { UpdatePill } from "./components/UpdatePill";
@@ -128,6 +129,14 @@ import {
 	receivePins,
 } from "./lib/pins";
 import { applyTabOrder, saveTabOrder, onTabOrderChanged } from "./lib/tab-order";
+import {
+	clearTabSplit,
+	getTabSplit,
+	onTabSplitChanged,
+	saveTabSplit,
+	splitIsLive,
+	type TabSplit,
+} from "./lib/split-tabs";
 import {
 	getActiveViewTab,
 	getActiveViewTabKeys,
@@ -914,6 +923,14 @@ function App() {
 	useEffect(
 		() => onTabOrderChanged(() => setTabOrderRev((v) => v + 1)),
 		[],
+	);
+	const [, setTabSplitRev] = useState(0);
+	useEffect(
+		() => onTabSplitChanged(() => setTabSplitRev((value) => value + 1)),
+		[],
+	);
+	const [splitDropSide, setSplitDropSide] = useState<"left" | "right" | null>(
+		null,
 	);
 	// One-shot: the session whose Review tab should foreground once it lands, set
 	// when opening Review from the sidebar. Survives the session-change reset
@@ -1914,6 +1931,62 @@ function App() {
 			.filter((s): s is UnifiedSession => !!s);
 	})();
 	const mainChatId = mainChat(naturalChats)?.id ?? null;
+	const storedTabSplit = tabOrderKey ? getTabSplit(tabOrderKey) : null;
+	const tabSplit = splitIsLive(
+		storedTabSplit,
+		projectChats.map((chat) => chat.id),
+	)
+		? storedTabSplit
+		: null;
+	const activeTabSplit =
+		!isPhone &&
+		!activeViewTab &&
+		currentSession &&
+		tabSplit &&
+		(tabSplit.leftId === currentSession.id || tabSplit.rightId === currentSession.id)
+			? tabSplit
+			: null;
+
+	function splitSideAt(
+		draggedId: string,
+		point: { x: number; y: number },
+	): "left" | "right" | null {
+		if (
+			isPhone ||
+			activeViewTab ||
+			activeTabSplit ||
+			!currentSession ||
+			currentSession.id === draggedId ||
+			!projectChats.some((chat) => chat.id === draggedId)
+		)
+			return null;
+		const pane = detailPaneRef.current?.getBoundingClientRect();
+		const strip = detailPaneRef.current
+			?.querySelector<HTMLElement>(".session-tabs")
+			?.getBoundingClientRect();
+		if (
+			!pane ||
+			!strip ||
+			point.y < strip.bottom + 8 ||
+			point.y > pane.bottom ||
+			point.x < pane.left ||
+			point.x > pane.right
+		)
+			return null;
+		return point.x < pane.left + pane.width / 2 ? "left" : "right";
+	}
+
+	function createTabSplit(draggedId: string, side: "left" | "right") {
+		if (!tabOrderKey || !currentSession || currentSession.id === draggedId) return;
+		const next: TabSplit = {
+			leftId: side === "left" ? draggedId : currentSession.id,
+			rightId: side === "right" ? draggedId : currentSession.id,
+			ratio: 0.5,
+		};
+		saveTabSplit(tabOrderKey, next);
+		setActiveViewTab(null);
+		setSplitDropSide(null);
+	}
 	// The strip's history menu: archived (closed) chats of the same workspace,
 	// newest activity first. The open chat is excluded — if it's archived it
 	// already holds a live tab via liveTab().
@@ -2045,6 +2118,12 @@ function App() {
 			!s.isRunning &&
 			!s.queuedCount;
 		const wasOpen = currentSession?.id === s.id;
+		if (
+			tabSplit &&
+			tabOrderKey &&
+			(tabSplit.leftId === s.id || tabSplit.rightId === s.id)
+		)
+			clearTabSplit(tabOrderKey);
 		const next = wasOpen ? projectChats.find((c) => c.id !== s.id) : null;
 		let replacementId: string | null = null;
 		if (wasOpen && !next) {
@@ -2402,6 +2481,119 @@ function App() {
 			run: () => navigate({ view: "settings" }),
 		},
 	];
+	const renderSessionPane = (
+		viewerSession: UnifiedSession,
+		socket: ReturnType<typeof useWebSocket>,
+		focused: boolean,
+		splitMode: boolean,
+	) => (
+		<SessionViewer
+			key={viewerSession.id}
+			session={viewerSession}
+			focused={focused}
+			hideHeader={splitMode && !focused}
+			hideRightPanel={splitMode && !focused}
+			localMode={localMode}
+			onBack={goBack}
+			onArchive={focused ? () => sidebarRef.current?.archiveSelected() : undefined}
+			onArchived={(stoppedRun) => {
+				if (stoppedRun) showToast("Archived · stopped the running turn");
+			}}
+			send={socket.send}
+			addHandler={socket.addHandler}
+			connected={socket.connected}
+			initialPending={pendingInitialPrompts[viewerSession.id]}
+			topbarEl={focused ? topbarEl : null}
+			headerActionsEl={focused ? headerActionsEl : null}
+			headerModelEl={focused ? headerModelEl : null}
+			headerRepoEl={focused ? headerRepoEl : null}
+			rightPanelEl={focused ? rightPanelEl : null}
+			newChatSeq={focused ? newChatSeq : 0}
+			autoFocusComposer={focused && focusComposerOnOpen}
+			composerPrefillExternal={sessionComposerPrefills[viewerSession.id] ?? null}
+			onComposerPrefillConsumed={(seq) =>
+				setSessionComposerPrefills((prev) => {
+					const cur = prev[viewerSession.id];
+					if (!cur || cur.seq !== seq) return prev;
+					const next = { ...prev };
+					delete next[viewerSession.id];
+					return next;
+				})
+			}
+			workspaceChats={projectChats}
+			showReview={focused && reviewActive}
+			showConversation={focused && conversationActive}
+			conversationThreadId={conversationThreadId}
+			showVideo={focused && videoActive}
+			videoPanel={videoPanel}
+			videoTitle={videoRef?.title || null}
+			showStaging={focused && stagingActive}
+			showAssets={focused && assetsActive}
+			showPreviewTab={focused && previewLiveActive}
+			onOpenReview={openReview}
+			onOpenStaging={openStaging}
+			onCloseStaging={closeStagingTab}
+			onOpenPreviewTab={openPreviewTab}
+			onClosePreviewTab={closePreviewTab}
+			onOpenAssets={openAssets}
+			onCloseAssets={closeAssetsTab}
+			onOpenWorkspace={() => setActiveViewTab(null)}
+			allSessions={sessions}
+			allProjects={projects}
+			onNewChat={handleNewChat}
+			parentSession={
+				viewerSession.parentSessionId
+					? (() => {
+							const parent = sessions.find(
+								(session) => session.id === viewerSession.parentSessionId,
+							);
+							return parent
+								? { id: parent.id, title: parent.title, model: parent.model }
+								: null;
+						})()
+					: null
+			}
+			workerSessions={sessions
+				.filter((session) => session.parentSessionId === viewerSession.id)
+				.map((session) => ({
+					id: session.id,
+					title: session.title,
+					model: session.model,
+					isRunning: session.isRunning,
+				}))}
+			onOpenSession={(id) => navigate({ view: "session", id })}
+			onOpenNewSession={openPrefilledSession}
+			onRunningChange={handleSessionRunningChange}
+			onReviewChange={(id, request) =>
+				patch(id, { reviewRequest: request ?? undefined })
+			}
+			onRename={async (id, title) => {
+				try {
+					await renameSessionApi(id, title);
+				} catch (error) {
+					console.error("Rename failed:", error);
+				}
+				refresh();
+			}}
+			workspaceName={
+				activeProjectId
+					? projects.find((project) => project.id === activeProjectId)?.name
+					: undefined
+			}
+			onRenameWorkspace={
+				activeProjectId
+					? async (name) => {
+							try {
+								await updateProjectApi(activeProjectId, { name });
+							} catch (error) {
+								console.error("Rename workspace failed:", error);
+							}
+							refreshProjects();
+						}
+					: undefined
+			}
+		/>
+	);
 
 	return (
 		<UserGate>
@@ -2873,6 +3065,18 @@ function App() {
 							}}
 							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
 							onReorderTabs={(ids) => saveTabOrder(tabOrderKey, ids)}
+							split={tabSplit}
+							onSeparateSplit={() => tabOrderKey && clearTabSplit(tabOrderKey)}
+							onSplitDrag={(id, point) => {
+								setSplitDropSide(id && point ? splitSideAt(id, point) : null);
+							}}
+							onSplitDrop={(id, point) => {
+								const side = splitSideAt(id, point);
+								setSplitDropSide(null);
+								if (!side) return false;
+								createTabSplit(id, side);
+								return true;
+							}}
 							viewTabs={viewTabs}
 							onSelectView={(id) => {
 								const tab = id.startsWith("staging:")
@@ -2946,6 +3150,12 @@ function App() {
 								refresh();
 							}}
 						/>
+						{splitDropSide && (
+							<div
+								className={`tab-split-drop-preview tab-split-drop-preview-${splitDropSide}`}
+								aria-hidden="true"
+							/>
+						)}
 						{route.view === "workspace" ? (
 							routeWorkspace ? (
 								<WorkspacePane
@@ -3082,112 +3292,35 @@ function App() {
 							/>
 						) : route.view === "session" ? (
 							currentSession ? (
-								<SessionViewer
-									key={currentSession.id}
-									session={currentSession}
-									localMode={localMode}
-									onBack={goBack}
-									onArchive={() => sidebarRef.current?.archiveSelected()}
-									onArchived={(stoppedRun) => {
-										if (stoppedRun)
-											showToast("Archived · stopped the running turn");
-									}}
-									send={send}
-									addHandler={addHandler}
-									connected={connected}
-									initialPending={pendingInitialPrompts[currentSession.id]}
-									topbarEl={topbarEl}
-									headerActionsEl={headerActionsEl}
-									headerModelEl={headerModelEl}
-									headerRepoEl={headerRepoEl}
-									rightPanelEl={rightPanelEl}
-									newChatSeq={newChatSeq}
-									autoFocusComposer={focusComposerOnOpen}
-									composerPrefillExternal={
-										sessionComposerPrefills[currentSession.id] ?? null
-									}
-									onComposerPrefillConsumed={(seq) =>
-										setSessionComposerPrefills((prev) => {
-											const cur = prev[currentSession.id];
-											if (!cur || cur.seq !== seq) return prev;
-											const next = { ...prev };
-											delete next[currentSession.id];
-											return next;
-										})
-									}
-									workspaceChats={projectChats}
-									showReview={reviewActive}
-									showConversation={conversationActive}
-									conversationThreadId={conversationThreadId}
-									showVideo={videoActive}
-									videoPanel={videoPanel}
-									videoTitle={videoRef?.title || null}
-									showStaging={stagingActive}
-									showAssets={assetsActive}
-									showPreviewTab={previewLiveActive}
-									onOpenReview={openReview}
-									onOpenStaging={openStaging}
-									onCloseStaging={closeStagingTab}
-									onOpenPreviewTab={openPreviewTab}
-									onClosePreviewTab={closePreviewTab}
-									onOpenAssets={openAssets}
-									onCloseAssets={closeAssetsTab}
-									onOpenWorkspace={() => setActiveViewTab(null)}
-									allSessions={sessions}
-									allProjects={projects}
-									onNewChat={handleNewChat}
-									parentSession={
-										currentSession.parentSessionId
-											? (() => {
-													const p = sessions.find(
-														(s) => s.id === currentSession.parentSessionId,
-													);
-													return p
-														? { id: p.id, title: p.title, model: p.model }
-														: null;
-												})()
-											: null
-									}
-									workerSessions={sessions
-										.filter((s) => s.parentSessionId === currentSession.id)
-										.map((s) => ({
-											id: s.id,
-											title: s.title,
-											model: s.model,
-											isRunning: s.isRunning,
-										}))}
-									onOpenSession={(id) => navigate({ view: "session", id })}
-									onOpenNewSession={openPrefilledSession}
-									onRunningChange={handleSessionRunningChange}
-									onReviewChange={(id, req) =>
-										patch(id, { reviewRequest: req ?? undefined })
-									}
-									onRename={async (id, title) => {
-										try {
-											await renameSessionApi(id, title);
-										} catch (e) {
-											console.error("Rename failed:", e);
+								activeTabSplit ? (
+									<SessionSplit
+										leftId={activeTabSplit.leftId}
+										rightId={activeTabSplit.rightId}
+										focusedId={currentSession.id}
+										ratio={activeTabSplit.ratio}
+										onFocus={(id) => {
+											setActiveViewTab(null);
+											navigate({ view: "session", id }, { replace: true });
+										}}
+										onRatioChange={(ratio) =>
+											tabOrderKey &&
+											saveTabSplit(tabOrderKey, { ...activeTabSplit, ratio })
 										}
-										refresh();
-									}}
-									workspaceName={
-										activeProjectId
-											? projects.find((p) => p.id === activeProjectId)?.name
-											: undefined
-									}
-									onRenameWorkspace={
-										activeProjectId
-											? async (name) => {
-													try {
-														await updateProjectApi(activeProjectId, { name });
-													} catch (e) {
-														console.error("Rename workspace failed:", e);
-													}
-													refreshProjects();
-												}
-											: undefined
-									}
-								/>
+										renderPane={(id, socket, focused) => {
+											const session = sessions.find((candidate) => candidate.id === id);
+											return session
+												? renderSessionPane(session, socket, focused, true)
+												: null;
+										}}
+									/>
+								) : (
+									renderSessionPane(
+										currentSession,
+										{ connected, send, addHandler },
+										true,
+										false,
+									)
+								)
 							) : (
 								<div className="detail-empty">
 									<div className="detail-empty-inner">

@@ -161,6 +161,11 @@ type QueueReceipt = {
 
 interface Props {
 	session: UnifiedSession;
+	/** Only the focused pane in a desktop tab split owns global shortcuts/title. */
+	focused?: boolean;
+	/** The unfocused half of a split keeps its conversation chrome-free. */
+	hideHeader?: boolean;
+	hideRightPanel?: boolean;
 	/** True only when auth/status identifies this SPA as the local profile. */
 	localMode: boolean;
 	onBack: () => void;
@@ -491,6 +496,9 @@ function pickScrollAnchor(el: HTMLElement): HTMLElement | null {
 
 export function SessionViewer({
 	session,
+	focused = true,
+	hideHeader = false,
+	hideRightPanel = false,
 	localMode,
 	onBack,
 	onArchive,
@@ -1413,6 +1421,7 @@ export function SessionViewer({
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
 			if (
+				!focused ||
 				e.defaultPrevented ||
 				!(e.metaKey || e.ctrlKey) ||
 				e.altKey ||
@@ -1429,7 +1438,7 @@ export function SessionViewer({
 		}
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [session.id]);
+	}, [focused, session.id]);
 
 	const isAsk = session.mode === "ask";
 	const hasWorkspace = sessionHasWorkspace(session);
@@ -1480,12 +1489,13 @@ export function SessionViewer({
 	// Workflow runs open the panel too: ask-mode sessions without a workspace
 	// or Plain thread still need somewhere to show the Agents tab.
 	const panelAvailable =
-		hasWorkspace ||
-		hasPlain ||
-		workflowRuns.length > 0 ||
-		subagents.length > 0 ||
-		sessionReports.length > 0 ||
-		Boolean(toolEvidence);
+		!hideRightPanel &&
+		(hasWorkspace ||
+			hasPlain ||
+			workflowRuns.length > 0 ||
+			subagents.length > 0 ||
+			sessionReports.length > 0 ||
+			Boolean(toolEvidence));
 	useEffect(() => {
 		if (panelTab === "reports" && sessionReports.length === 0)
 			setPanelTab("info");
@@ -1606,6 +1616,7 @@ export function SessionViewer({
 	const composerRef = useRef<HTMLTextAreaElement | null>(null);
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
+			if (!focused) return;
 			if (
 				e.key.toLowerCase() === "r" &&
 				e.ctrlKey &&
@@ -1619,7 +1630,7 @@ export function SessionViewer({
 		}
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, []);
+	}, [focused]);
 
 	// ⌘⌥↑/⌘⌥↓ step the reasoning effort through the current model's supported
 	// levels (up = more thinking), wrapping at the ends. Resolves the same
@@ -1630,6 +1641,7 @@ export function SessionViewer({
 	// cycling in the Sidebar, and caret start/end moves in the textarea).
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
+			if (!focused) return;
 			// Match e.code too: with Option held, some layouts/browsers alter
 			// e.key; the physical-key code never changes.
 			const arrow =
@@ -1666,7 +1678,7 @@ export function SessionViewer({
 		}
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [models, defaultModel, model, effort]);
+	}, [focused, models, defaultModel, model, effort]);
 
 	// ⌃⇧↑/⌃⇧↓ page the transcript up/down — keyboard scrolling that works while
 	// the composer is focused. A programmatic scroll carries no reader gesture,
@@ -1674,6 +1686,7 @@ export function SessionViewer({
 	// land at the live edge goes through scrollToLatest, which resumes following.
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
+			if (!focused) return;
 			const arrow =
 				e.key === "ArrowUp" || e.code === "ArrowUp"
 					? "ArrowUp"
@@ -1707,7 +1720,7 @@ export function SessionViewer({
 		}
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [messagesRef, scrollToLatest]);
+	}, [focused, messagesRef, scrollToLatest]);
 
 	// A "new tab" while this session is open is a fresh chat *in this session*:
 	// clear the composer and jump to the live edge. We skip the first run (and
@@ -1732,11 +1745,12 @@ export function SessionViewer({
 
 	// Browser tab title follows the session
 	useEffect(() => {
+		if (!focused) return;
 		document.title = session.title || DEFAULT_DOC_TITLE;
 		return () => {
 			document.title = DEFAULT_DOC_TITLE;
 		};
-	}, [session.title]);
+	}, [focused, session.title]);
 
 	// Subscribe to WebSocket messages
 	useEffect(() => {
@@ -2279,6 +2293,7 @@ export function SessionViewer({
 			window.removeEventListener("keydown", stopForScrollKey);
 		};
 		const stopForScrollKey = (event: KeyboardEvent) => {
+			if (!focused) return;
 			if (
 				["PageUp", "PageDown", "Home", "End"].includes(event.key) ||
 				(event.ctrlKey &&
@@ -2601,6 +2616,7 @@ export function SessionViewer({
 			}
 		};
 		const onKeyDown = (event: KeyboardEvent) => {
+			if (!focused) return;
 			const upward =
 				event.ctrlKey &&
 				event.shiftKey &&
@@ -2624,7 +2640,7 @@ export function SessionViewer({
 			el.removeEventListener("pointerdown", onPointerDown);
 			window.removeEventListener("keydown", onKeyDown);
 		};
-	}, [session.id, chatHidden, loadEarlierHistory, messagesRef]);
+	}, [focused, session.id, chatHidden, loadEarlierHistory, messagesRef]);
 
 	// When a turn finishes, release the spacer so the layout settles back.
 	const wasBusyRef = useRef(false);
@@ -3456,6 +3472,7 @@ export function SessionViewer({
 
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
+			if (!focused) return;
 			if (
 				e.defaultPrevented ||
 				document.querySelector(
@@ -3491,7 +3508,7 @@ export function SessionViewer({
 		}
 		window.addEventListener("keydown", onKeyDown, true);
 		return () => window.removeEventListener("keydown", onKeyDown, true);
-	}, [archiving, handleArchive, session.archived]);
+	}, [focused, archiving, handleArchive, session.archived]);
 
 	// Preview environment for the ⌘O chord — mirrors StagingLink's poll (same
 	// relevance gate; the server caches PR details for 30s, so the duplicate
@@ -3576,6 +3593,7 @@ export function SessionViewer({
 	// deploy / no PR) fall through to the browser.
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
+			if (!focused) return;
 			if (
 				e.defaultPrevented ||
 				!(e.metaKey || e.ctrlKey) ||
@@ -3627,7 +3645,7 @@ export function SessionViewer({
 		}
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [session.prUrl, session.prs, session.previewPath, staging]);
+	}, [focused, session.prUrl, session.prs, session.previewPath, staging]);
 
 
 	return (
@@ -3651,7 +3669,7 @@ export function SessionViewer({
 					</div>
 				</div>
 			)}
-			{(() => {
+			{!hideHeader && (() => {
 				// Share rides inline on a wide header but tucks into the ⋯ overflow
 				// menu when it gets narrow. Inline it's a bare text chip (the header
 				// is already dense with icons); in the menu it takes a leading icon
@@ -5326,6 +5344,7 @@ export function SessionViewer({
 				) : null}
 					</>
 				);
+				if (hideRightPanel) return null;
 				return rightPanelEl ? createPortal(rightRegion, rightPanelEl) : rightRegion;
 				})()}
 			</div>
