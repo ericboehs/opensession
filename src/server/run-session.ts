@@ -57,7 +57,7 @@ import { wrapContext, stripContext } from "./prompt-context";
 import { activeRunRecords, type ActiveRunRecord } from "./run-journal";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { createSlackPostScanner, linkThreadInIndex } from "./slack-links";
-import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
+import { STRIPE_CONFIRM_TOOLS, looksLikeFabricatedToolTranscript } from "./runner-shared";
 import {
 	engineSessionPatch,
 	engineUserTexts,
@@ -133,6 +133,7 @@ import { makeAskHandler } from "./asks";
 import { audit } from "./audit";
 import {
 	announcesNextAction,
+	AUTO_CONTINUE_FABRICATED_PROMPT,
 	AUTO_CONTINUE_PROMPT,
 	AUTO_CONTINUE_USER,
 	INTERRUPT_STEER_NOTE,
@@ -2068,6 +2069,14 @@ async function runSessionPromptInner(
 		(m) => m.user !== AUTO_CONTINUE_USER,
 	).length;
 	if (queuedBehind > 0 && toolUseCount > 0) autoContinueNudged.delete(sessionId);
+	// A turn whose TAIL is a fabricated tool transcript (the model narrated a
+	// tool call as text and stopped — bks-019fad97, 2026-07-29) is the same
+	// stall in a worse costume: it believes work is in flight that was never
+	// started. Tail-only so a mid-turn fabrication the runner already steered
+	// past doesn't re-trigger at the end of an otherwise clean turn.
+	const endedOnFabricatedTranscript = looksLikeFabricatedToolTranscript(
+		assistantText.slice(-2000),
+	);
 	if (
 		!endedWithError &&
 		!runFailure &&
@@ -2075,7 +2084,7 @@ async function runSessionPromptInner(
 		!isAutomationSession &&
 		!stoppedSessions.has(sessionId) &&
 		!autoContinueNudged.has(sessionId) &&
-		announcesNextAction(assistantText)
+		(announcesNextAction(assistantText) || endedOnFabricatedTranscript)
 	) {
 		autoContinueNudged.add(sessionId);
 		audit({
@@ -2083,11 +2092,13 @@ async function runSessionPromptInner(
 			bks_session_id: sessionId,
 			tail: assistantText.trim().slice(-200),
 			...(queuedBehind > 0 ? { queued_held: queuedBehind } : {}),
+			...(endedOnFabricatedTranscript ? { fabricated_tail: true } : {}),
 		});
 		broadcastToSession(sessionId, {
 			type: "notice",
-			message:
-				queuedBehind > 0
+			message: endedOnFabricatedTranscript
+				? "Turn ended on a narrated (never-executed) tool call — auto-continuing with a correction."
+				: queuedBehind > 0
 					? `Still mid-task — auto-continuing first; ${queuedBehind} queued message${queuedBehind === 1 ? "" : "s"} deliver once the agent fully finishes.`
 					: "Turn ended on an announced next step without doing it — auto-continuing.",
 		});
@@ -2097,7 +2108,12 @@ async function runSessionPromptInner(
 		// the audit event) are the human-visible trace.
 		enqueuePrompt(
 			sessionId,
-			{ content: wrapContext(AUTO_CONTINUE_PROMPT), user: AUTO_CONTINUE_USER },
+			{
+				content: wrapContext(
+					endedOnFabricatedTranscript ? AUTO_CONTINUE_FABRICATED_PROMPT : AUTO_CONTINUE_PROMPT,
+				),
+				user: AUTO_CONTINUE_USER,
+			},
 			{ front: true },
 		);
 	}

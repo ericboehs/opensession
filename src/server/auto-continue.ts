@@ -18,6 +18,22 @@ export const AUTO_CONTINUE_PROMPT =
 	"can give.";
 
 /**
+ * Variant for turns that ended on a FABRICATED tool transcript (see
+ * looksLikeFabricatedToolTranscript in runner-shared.ts): the model narrated
+ * a tool call — and often its result — as text and stopped, convinced the
+ * call was in flight (bks-019fad97, 2026-07-29: a raw `<invoke …>` block as
+ * the final message). The runner's mid-turn steer can't help when the turn
+ * ends right after, so the nudge carries the correction itself.
+ */
+export const AUTO_CONTINUE_FABRICATED_PROMPT =
+	"[auto-continue] Your previous turn ended with what looks like a tool-call " +
+	"transcript written out as text. None of it was executed: you authored it, " +
+	"and every value in it is fabricated. Re-read the genuine tool results " +
+	"earlier in the conversation, actually invoke the tools you only narrated, " +
+	"and keep working until the task is done or you are genuinely blocked on " +
+	"input only the human can give.";
+
+/**
  * Fenced context appended to a prompt that was delivered by ABORTING the
  * running turn (busy-send interrupt). The engine has no mid-turn steer (see
  * "why opencode stops": every busy-send is an abort, and the truncated turn
