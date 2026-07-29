@@ -171,7 +171,10 @@ export class SlackAgent implements AgentModule {
         let cursor = "";
         for (let page = 0; page < 6; page++) {
           const params = new URLSearchParams({
-            types: "public_channel,private_channel",
+            // Bot token lacks groups:read → private_channel errors the whole
+            // call (missing_scope). Personal grants request groups:read, so
+            // private channels appear once a user connects their account.
+            types: token ? "public_channel,private_channel" : "public_channel",
             exclude_archived: "true",
             limit: "200",
             ...(cursor ? { cursor } : {}),
