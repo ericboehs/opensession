@@ -95,7 +95,75 @@ extension View {
         listStyle(.inset)
         #endif
     }
+
+    /// OS1's split settings surface is resizable and minimizable. Tahoe's
+    /// `Settings` scene still does not support window zoom/full-screen, so do
+    /// not leave a dead grey traffic-light control in the titlebar.
+    @ViewBuilder
+    func macSettingsWindowChrome() -> some View {
+        #if os(macOS)
+        background(MacSettingsWindowConfigurator())
+        #else
+        self
+        #endif
+    }
+
+    /// Keep the real NSWindow title useful to the Window menu and assistive
+    /// technologies while a custom principal toolbar item owns the visuals.
+    @ViewBuilder
+    func macWindowTitle(_ title: String) -> some View {
+        #if os(macOS)
+        background(MacWindowTitleConfigurator(title: title))
+        #else
+        self
+        #endif
+    }
 }
+
+#if os(macOS)
+private struct MacSettingsWindowConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        configureWhenAttached(view)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        configureWhenAttached(view)
+    }
+
+    private func configureWhenAttached(_ view: NSView) {
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            window.title = "OS1 Settings"
+            window.styleMask.formUnion([.resizable, .miniaturizable])
+            window.standardWindowButton(.miniaturizeButton)?.isEnabled = true
+            window.standardWindowButton(.zoomButton)?.isHidden = true
+            window.toolbarStyle = .unifiedCompact
+        }
+    }
+}
+
+private struct MacWindowTitleConfigurator: NSViewRepresentable {
+    let title: String
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        updateTitle(whenAttached: view)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        updateTitle(whenAttached: view)
+    }
+
+    private func updateTitle(whenAttached view: NSView) {
+        DispatchQueue.main.async {
+            view.window?.title = title
+        }
+    }
+}
+#endif
 
 /// Cross-platform "copy to clipboard".
 func copyToPasteboard(_ string: String) {

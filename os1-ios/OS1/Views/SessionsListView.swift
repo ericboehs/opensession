@@ -104,27 +104,12 @@ struct SessionsListView: View {
     /// detail column (like the web app), instead of iOS push navigation.
     private var navigationContainer: some View {
         NavigationSplitView {
-            loadingOrList
-                .navigationTitle("Workspaces")
+            VStack(spacing: 0) {
+                macSidebarHeader
+                Divider()
+                loadingOrList
+            }
                 .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
-                .toolbar {
-                    ToolbarItem(placement: .topLeadingCompat) {
-                        filterMenu
-                    }
-                    ToolbarItem(placement: .topTrailingCompat) {
-                        Button {
-                            newSessionRequest = NewSessionRequest()
-                        } label: {
-                            Image(systemName: "square.and.pencil")
-                        }
-                    }
-                    ToolbarItem(placement: .topTrailingCompat) {
-                        SettingsLink {
-                            Image(systemName: "gearshape")
-                        }
-                        .accessibilityLabel("Settings")
-                    }
-                }
         } detail: {
             if let selectedSessionID,
                let session = viewModel.sessions.first(where: { $0.id == selectedSessionID }) {
@@ -154,6 +139,60 @@ struct SessionsListView: View {
         .safeAreaInset(edge: .bottom) {
             errorBanner
         }
+    }
+
+    /// A stable in-sidebar hierarchy avoids three unrelated icon buttons
+    /// floating in the unified window toolbar. Settings remains available in
+    /// the app menu (Cmd+,), where Mac users expect it.
+    private var macSidebarHeader: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 7) {
+                Text("Sessions")
+                    .font(.headline)
+                Text("\(viewModel.sessions.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(OS1VisualStyle.textFaint)
+                Spacer(minLength: 8)
+                filterMenu
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .controlSize(.small)
+                    .help("Filter, group, and sort sessions")
+                Button {
+                    newSessionRequest = NewSessionRequest()
+                } label: {
+                    Label("New", systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .help("New session (Command-N)")
+            }
+
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .font(.caption)
+                    .foregroundStyle(OS1VisualStyle.textFaint)
+                TextField("Search sessions", text: $searchText)
+                    .textFieldStyle(.plain)
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(OS1VisualStyle.textFaint)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
+                }
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 28)
+            .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 7))
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 11)
+        .background(.bar)
     }
     #else
     private var navigationContainer: some View {
@@ -458,6 +497,17 @@ struct SessionsListView: View {
                 }
             }
         } label: {
+            #if os(macOS)
+            Image(
+                systemName: repoFilter == "all"
+                    ? "line.3.horizontal.decrease"
+                    : "line.3.horizontal.decrease.circle.fill"
+            )
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(repoFilter == "all" ? OS1VisualStyle.textDim : OS1VisualStyle.accent)
+            .frame(width: 26, height: 24)
+            .contentShape(Rectangle())
+            #else
             WebIcon(
                 kind: .filter,
                 size: 24,
@@ -465,7 +515,16 @@ struct SessionsListView: View {
                     ? OS1VisualStyle.textDim
                     : OS1VisualStyle.accent
             )
+            #endif
         }
+        .accessibilityLabel("Filter sessions")
+        .accessibilityValue(filterAccessibilityValue)
+    }
+
+    private var filterAccessibilityValue: String {
+        let people = peopleFilter == "mine" ? "My sessions" : "Everyone"
+        let repo = repoFilter == "all" ? "All repositories" : RepoTile.label(for: repoFilter)
+        return "\(people), grouped by \(groupBy.label), \(repo), sorted by \(sortBy.label)"
     }
 
     private var inlineSearchField: some View {
@@ -505,7 +564,6 @@ struct SessionsListView: View {
             listSections
         }
         .listStyle(.sidebar)
-        .searchable(text: $searchText, prompt: "Search sessions")
         .overlay { emptyFilterOverlay }
         // Delete key archives the selected session — the Mac-native
         // counterpart to iOS's swipe.
@@ -639,7 +697,7 @@ struct SessionsListView: View {
                                 #if os(iOS)
                                 .font(.footnote.weight(.medium))
                                 #else
-                                .font(.caption)
+                                .font(.caption.monospacedDigit())
                                 #endif
                                 .foregroundStyle(OS1VisualStyle.textDim)
                             if groupBy == .repo {
@@ -723,6 +781,10 @@ struct SessionsListView: View {
                 } description: {
                     Text("Sessions you start appear here.")
                 } actions: {
+                    Button("New session") {
+                        newSessionRequest = NewSessionRequest()
+                    }
+                    .buttonStyle(.borderedProminent)
                     Button("Show everyone's") { peopleFilter = "all" }
                 }
             }
@@ -872,13 +934,19 @@ struct SessionRow: View {
         .padding(.vertical, 3)
         #endif
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(rowTitle)
+        .accessibilityValue(accessibilityStatus)
+        #if os(macOS)
+        .help(rowTitle)
+        #endif
     }
 
     private var markSize: CGFloat {
         #if os(iOS)
         22
         #else
-        16
+        14
         #endif
     }
 
@@ -901,9 +969,9 @@ struct SessionRow: View {
     @ViewBuilder
     private var statusMark: some View {
         if session.lane == .needsInput {
-            PulsingDot(color: OS1VisualStyle.blue)
+            PulsingDot(color: OS1VisualStyle.blue, active: animatesStatus)
         } else if session.lane == .inProgress {
-            PulsingDot(color: OS1VisualStyle.yellow)
+            PulsingDot(color: OS1VisualStyle.yellow, active: animatesStatus)
         } else if session.prState == "MERGED" {
             WebIcon(kind: .gitMerge, size: markSize, color: OS1VisualStyle.purple)
         } else if session.prState == "OPEN" {
@@ -913,6 +981,22 @@ struct SessionRow: View {
         } else {
             PulsingDot(color: OS1VisualStyle.textFaint, active: false)
         }
+    }
+
+    private var animatesStatus: Bool {
+        #if os(iOS)
+        true
+        #else
+        false
+        #endif
+    }
+
+    private var accessibilityStatus: String {
+        var parts = [session.lane.label, RepoTile.label(for: session.effectiveRepo)]
+        if let prState = session.prState?.lowercased() {
+            parts.append("pull request \(prState)")
+        }
+        return parts.joined(separator: ", ")
     }
 }
 

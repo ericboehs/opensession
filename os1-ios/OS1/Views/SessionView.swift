@@ -145,7 +145,12 @@ struct SessionView: View {
                 horizontalInset: contentInset
             )
         }
+        #if os(macOS)
+        .navigationTitle("")
+        .macWindowTitle(viewModel.session.displayTitle)
+        #else
         .navigationTitle(viewModel.session.displayTitle)
+        #endif
         .inlineTitleBarCompat()
         .toolbar {
             #if os(iOS)
@@ -166,7 +171,11 @@ struct SessionView: View {
                 }
             }
             #if os(macOS)
-            ToolbarItem(placement: .topTrailingCompat) { modelMenu }
+            ToolbarItem(placement: .principal) { macSessionTitle }
+            ToolbarItem(placement: .topTrailingCompat) {
+                modelMenu
+                    .help("Model and reasoning settings")
+            }
             #endif
         }
         .sheet(isPresented: $showPrPanel) {
@@ -258,6 +267,25 @@ struct SessionView: View {
             Image(systemName: "slider.horizontal.3")
         }
     }
+
+    #if os(macOS)
+    /// Own the detail title instead of accepting NavigationSplitView's
+    /// automatic circular title-menu control, which had no useful action.
+    private var macSessionTitle: some View {
+        HStack(spacing: 8) {
+            RepoTile(name: viewModel.session.effectiveRepo, size: 20)
+            Text(viewModel.session.displayTitle)
+                .font(.headline)
+                .lineLimit(1)
+            if viewModel.isRunning {
+                PulsingDot(color: OS1VisualStyle.yellow, size: 6)
+            }
+        }
+        .frame(maxWidth: 520, alignment: .leading)
+        .help(headerSubtitle)
+        .accessibilityElement(children: .combine)
+    }
+    #endif
 
     #if os(iOS)
     /// The mobile web header is a repo tile with the workspace name over
@@ -406,7 +434,7 @@ private struct SessionInputBar: View {
         VStack(alignment: .leading, spacing: 4) {
             if viewModel.isRunning
                 || (viewModel.queuedCount > 0 && viewModel.queuedItems.isEmpty)
-                || viewModel.notice != nil {
+                || visibleNotice != nil {
                 // Compact glass chip floating above the composer.
                 HStack(spacing: 6) {
                     if viewModel.isRunning {
@@ -422,7 +450,7 @@ private struct SessionInputBar: View {
                         Text("\(viewModel.queuedCount) queued")
                             .foregroundStyle(.secondary)
                     }
-                    if let notice = viewModel.notice {
+                    if let notice = visibleNotice {
                         Text(notice)
                             .foregroundStyle(.orange)
                             .lineLimit(1)
@@ -466,6 +494,15 @@ private struct SessionInputBar: View {
     private var hasQueueItems: Bool {
         !viewModel.deliveringItems.isEmpty || !viewModel.steeredItems.isEmpty
             || !viewModel.queuedItems.isEmpty
+    }
+
+    private var visibleNotice: String? {
+        guard let notice = viewModel.notice else { return nil }
+        if case .connected = viewModel.connectionState { return notice }
+        let normalized = notice.lowercased()
+        return normalized.contains("connect") || normalized.contains("socket")
+            ? nil
+            : notice
     }
 
     /// The queue uses the web composer's flap treatment: inset from the input,
@@ -567,19 +604,7 @@ private struct SessionInputBar: View {
                 Spacer(minLength: 8)
 
                 if viewModel.isRunning {
-                    Button {
-                        viewModel.cancelRun()
-                    } label: {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 32, height: 32)
-                            .background(OS1VisualStyle.red, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Circle())
-                    .accessibilityLabel("Stop current turn")
+                    stopButton
                 }
 
                 Button {
@@ -605,7 +630,48 @@ private struct SessionInputBar: View {
             .padding(.horizontal, 4)
             .padding(.bottom, 3)
         }
-        .glassSurface(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .glassSurface(
+            in: RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous)
+        )
+    }
+
+    @ViewBuilder
+    private var stopButton: some View {
+        #if os(macOS)
+        Button {
+            viewModel.cancelRun()
+        } label: {
+            Label("Stop", systemImage: "stop.fill")
+                .font(.caption.weight(.medium))
+        }
+        .buttonStyle(.bordered)
+        .tint(OS1VisualStyle.red)
+        .controlSize(.small)
+        .frame(minWidth: 68, minHeight: 44)
+        .help("Stop current turn")
+        #else
+        Button {
+            viewModel.cancelRun()
+        } label: {
+            Image(systemName: "stop.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 32, height: 32)
+                .background(OS1VisualStyle.red, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .frame(width: 44, height: 44)
+        .contentShape(Circle())
+        .accessibilityLabel("Stop current turn")
+        #endif
+    }
+
+    private var composerCornerRadius: CGFloat {
+        #if os(macOS)
+        18
+        #else
+        26
+        #endif
     }
 
     #if os(macOS)

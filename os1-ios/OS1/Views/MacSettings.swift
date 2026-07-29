@@ -83,7 +83,7 @@ struct MacSettingsView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
-                Section {
+                Section("OS1") {
                     paneRow(.general)
                     paneRow(.connection)
                 }
@@ -93,17 +93,19 @@ struct MacSettingsView: View {
                     paneRow(.appearance)
                     paneRow(.personalPrompt)
                 }
-                Section("Tools") {
-                    paneRow(.automations)
-                    paneRow(.goals)
-                    paneRow(.actions)
-                    paneRow(.security)
-                }
                 Section("Workspace") {
                     paneRow(.accounts)
                     paneRow(.modelProviders)
                     paneRow(.connections)
                     paneRow(.memory)
+                }
+                Section("Automation") {
+                    paneRow(.automations)
+                    paneRow(.goals)
+                    paneRow(.actions)
+                    paneRow(.security)
+                }
+                Section("Advanced") {
                     paneRow(.warmDependencies)
                     paneRow(.previewPool)
                     paneRow(.papercuts)
@@ -123,6 +125,7 @@ struct MacSettingsView: View {
             .id(selection)
         }
         .frame(minWidth: 840, idealWidth: 920, minHeight: 560, idealHeight: 660)
+        .macSettingsWindowChrome()
         .preferredColorScheme(preferredColorScheme)
         .onReceive(NotificationCenter.default.publisher(for: .settingsAuthenticationExpired)) { _ in
             config.token = ""

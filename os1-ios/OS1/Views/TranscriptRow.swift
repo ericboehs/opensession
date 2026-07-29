@@ -46,8 +46,17 @@ struct TranscriptRow: View {
                         .textSelection(.enabled)
                 }
             }
+            .frame(maxWidth: userMessageMaxWidth, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private var userMessageMaxWidth: CGFloat {
+        #if os(macOS)
+        520
+        #else
+        .infinity
+        #endif
     }
 
     /// Assistant text renders plain (no bubble), the shape modern AI chat
