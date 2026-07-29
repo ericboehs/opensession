@@ -426,18 +426,24 @@ export async function externalRefsOpeningContext(
   return out;
 }
 
-let registered = false;
+// Agents whose getFeed() has been consulted. NOT a single boot-wide latch:
+// agents load up to ~15s after boot, and a feeds request in that window used
+// to freeze the registry without them for the whole process lifetime (the
+// "sidebar shows slack-channel, no channels" regression, 2026-07-29). Each
+// call registers only agents not seen before, so existing entries keep their
+// per-user item caches.
+const feedAgentsSeen = new Set<string>();
+let scratchSweepDone = false;
 /** Idempotently register the code-feed providers (called from the routes):
  *  every loaded AgentModule with a getFeed() contribution (the W4 plugin
  *  seam), plus the direct tella fallback for boot orderings where the module
  *  didn't load. Config feeds overlay separately (syncConfigFeeds). */
 export async function ensureFeedsRegistered(): Promise<void> {
-  if (registered) return;
-  registered = true;
   try {
     const { getAgents } = await import("./agents-registry");
     for (const a of getAgents()) {
-      if (!a.getFeed) continue;
+      if (!a.getFeed || feedAgentsSeen.has(a.name)) continue;
+      feedAgentsSeen.add(a.name);
       try {
         const provider = a.getFeed();
         if (provider) registerFeed(provider);
@@ -446,6 +452,8 @@ export async function ensureFeedsRegistered(): Promise<void> {
       }
     }
   } catch {}
+  if (scratchSweepDone) return;
+  scratchSweepDone = true;
   if (!registry.has("tella")) {
     const { registerTellaFeed } = await import("../agents/tella/feed");
     registerTellaFeed();
