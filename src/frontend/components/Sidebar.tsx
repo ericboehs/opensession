@@ -791,8 +791,6 @@ interface Props {
 	 * header — the header's own filter/+ buttons are hidden on mobile.
 	 */
 	headerActionsEl?: HTMLElement | null;
-	/** True once the scrollable workspace list has moved under its header. */
-	onListScrolledChange?: (scrolled: boolean) => void;
 	/** Show a transient toast (e.g. "Link copied"). */
 	onToast?: (message: string) => void;
 }
@@ -1484,7 +1482,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	onSetStatus,
 	teamViewing = [],
 	headerActionsEl = null,
-	onListScrolledChange,
 	onToast,
 }, ref) {
 	const isPhone = useIsPhone();
@@ -1713,9 +1710,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// gap between isRunning flipping via WS and the next sessions poll). Entries
 	// are pruned once a row stops running so a later run starts its clock fresh.
 	const runStartSeen = useRef<Map<string, number>>(new Map());
-	// Divider under the Sessions header, shown only once the list is scrolled off
-	// the top — a scroll-shadow cue that there's content tucked under the header.
-	const [listScrolled, setListScrolled] = useState(false);
 	useLayoutEffect(() => {
 		if (filter.repo === "all") return;
 		const measure = () => {
@@ -4555,11 +4549,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				style={{ order: sectionOrder("workspaces") }}
 			>
 			<div
-				className={cn(
-					"sidebar-workspace sidebar-sticky-head mt-1 border-b border-transparent px-[16px] pb-0.5 pr-[7px] pt-3 transition-colors",
-					listScrolled && "sidebar-workspace--scrolled",
-					listScrolled && "border-b-line",
-				)}
+				className="sidebar-workspace sidebar-sticky-head mt-1 px-[16px] pb-0.5 pr-[7px] pt-3"
 			>
 				<div className="sidebar-workspace-head flex min-w-0 items-center gap-1.5" ref={headRef}>
 					<button
@@ -4881,17 +4871,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					);
 				})()}
 			{workspacesOpen && (
-				<div
-					className="sidebar-list"
-					onScroll={(e) => {
-					const scrolled = e.currentTarget.scrollTop > 0;
-					setListScrolled((prev) => {
-						if (prev === scrolled) return prev;
-						onListScrolledChange?.(scrolled);
-						return scrolled;
-					});
-					}}
-				>
+				<div className="sidebar-list">
 				{workspaceListEmpty && (
 					<div className="mx-4 my-7 text-center text-[13px] leading-[1.4] text-faint">
 						{hasWorkspaceFilter

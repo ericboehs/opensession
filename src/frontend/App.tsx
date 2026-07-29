@@ -588,7 +588,6 @@ function App() {
 	// the actions render in the topbar slot above instead.
 	const [headerActionsEl, setHeaderActionsEl] =
 		useState<HTMLDivElement | null>(null);
-	const [rootListScrolled, setRootListScrolled] = useState(false);
 	// Right-column slot (sibling of the left sidebar). The session viewer portals
 	// its workspace/sub-agent panel here so it opens as a full-height column from
 	// the very top, at the same level as the left sidebar (Conductor-style).
@@ -2419,9 +2418,7 @@ function App() {
 				    suppress this one there to avoid a duplicate back bar. */}
 				{route.view !== "catchup" && (
 				<header
-					className={`app-header${
-						!mobileDetail && rootListScrolled ? " app-header-scrolled" : ""
-					}${mobileDetail ? " app-header-detail" : ""}${
+					className={`app-header${mobileDetail ? " app-header-detail" : ""}${
 						route.view === "home" || route.view === "session"
 							? " app-header-overlay"
 							: ""
@@ -2716,7 +2713,6 @@ function App() {
 							// mounted underneath and would portal its filter button into
 							// the chat's top bar.
 							headerActionsEl={mobileDetail ? null : headerActionsEl}
-							onListScrolledChange={setRootListScrolled}
 							onOpenArchived={() => navigate({ view: "archived" })}
 							onOpenCatchUp={() => navigate({ view: "catchup" })}
 							catchUpActive={route.view === "catchup"}

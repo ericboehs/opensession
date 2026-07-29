@@ -575,12 +575,8 @@ html.wco .app-body.sidebar-collapsed
 	justify-content: space-between;
 	padding: env(safe-area-inset-top, 0px) 16px 0;
 	height: var(--header-h);
-	border-bottom: 1px solid transparent;
 	background: var(--bg-raised);
 	flex-shrink: 0;
-}
-.app-header-scrolled {
-	border-bottom-color: var(--border);
 }
 
 .app-header-left {
@@ -733,8 +729,7 @@ html.wco .app-body.sidebar-collapsed
 	   ±400px overhang is clipped by the sidebar's overflow-x). Opaque on
 	   purpose — this used to backdrop-blur the rows sliding beneath, but
 	   toggling a blur from the scroll listener re-rasterized the whole sidebar
-	   mid-scroll (visible flashing on loaded machines). Hairline rides the
-	   pseudo so it's full-width too. */
+	   mid-scroll (visible flashing on loaded machines). */
 	.sidebar-sticky-head.is-stuck::before,
 	.sidebar-status-group > .sidebar-group-header.is-stuck::before,
 	.sidebar-group--pinned > .sidebar-group-header.is-stuck::before,
@@ -752,7 +747,6 @@ html.wco .app-body.sidebar-collapsed
 		background:
 			linear-gradient(var(--sidebar-material), var(--sidebar-material)),
 			var(--bg-raised);
-		box-shadow: 0 1px 0 0 color-mix(in srgb, var(--border) 60%, transparent);
 	}
 	/* One invariant row height prevents the outgoing and incoming sticky labels
 	   from peeking around each other while one section pushes the next away. */
@@ -1078,22 +1072,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
    icons), with the session search bar directly below it. */
 .sidebar-workspace {
 	padding: 12px 7px 2px 16px;
-	/* Transparent by default so toggling the color on scroll never shifts layout;
-	   turns into a visible divider under the header once the list scrolls. */
-	border-bottom: 1px solid transparent;
 	margin-top: 4px;
-	transition: border-bottom-color 0.15s ease;
-}
-.sidebar-workspace--scrolled {
-	border-bottom-color: var(--border);
-}
-/* No top divider on mobile: on phones the sidebar IS the full home page, so this
-   on-scroll Sessions-header divider read as a bare hairline stranded across the
-   top of the page. Desktop keeps it (the sidebar is a rail there). */
-@media (max-width: 720px) {
-	.sidebar-workspace--scrolled {
-		border-bottom-color: transparent;
-	}
 }
 .sidebar-workspace-head {
 	display: flex;
