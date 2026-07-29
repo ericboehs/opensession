@@ -114,7 +114,10 @@ export function Connections() {
 
   // OAuth grants per HTTP server (mcp-oauth.ts): shared + per-user badges.
   const [oauthByName, setOauthByName] = useState<
-    Record<string, { shared?: { connectedBy?: string }; users: string[] }>
+    Record<
+      string,
+      { shared?: { connectedBy?: string }; users: string[]; capable?: boolean }
+    >
   >({});
   const loadOauth = useCallback(async (servers: McpConnection[]) => {
     const entries = await Promise.all(
