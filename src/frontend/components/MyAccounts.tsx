@@ -113,7 +113,7 @@ export function MyAccountsPanel() {
 	);
 
 	return (
-		<div>
+		<div className="settings-panel">
 			<div className="page-header">
 				<div>
 					<h2 className="page-title">My accounts</h2>
