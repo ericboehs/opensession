@@ -216,6 +216,43 @@ export function toolSummary(
   }
 }
 
+export function toolLineStats(
+  toolName: string,
+  input: unknown
+): { additions: number; deletions: number } | null {
+  if (!input || typeof input !== "object") return null;
+  const canonical = canonicalToolName(toolName);
+  if (canonical !== "Edit" && canonical !== "Write") return null;
+  const inp = input as Record<string, unknown>;
+  const patch = pickStr(inp, "patchText", "patch");
+  if (patch) {
+    let additions = 0;
+    let deletions = 0;
+    for (const line of patch.split("\n")) {
+      if (line.startsWith("+") && !line.startsWith("+++")) additions++;
+      else if (line.startsWith("-") && !line.startsWith("---")) deletions++;
+    }
+    return additions || deletions ? { additions, deletions } : null;
+  }
+
+  const edits = Array.isArray(inp.edits) ? inp.edits : [inp];
+  let additions = 0;
+  let deletions = 0;
+  for (const value of edits) {
+    if (!value || typeof value !== "object") continue;
+    const edit = value as Record<string, unknown>;
+    const oldText = pickStr(edit, "old_string", "oldString");
+    const newText = pickStr(edit, "new_string", "newString", "content");
+    additions += lineCount(newText);
+    deletions += lineCount(oldText);
+  }
+  return additions || deletions ? { additions, deletions } : null;
+}
+
+function lineCount(value: string): number {
+  return value ? value.split("\n").length : 0;
+}
+
 /** "3/7 done" plus whatever the run is on right now. */
 function todoSummary(inp: Record<string, unknown>): string {
   const list = Array.isArray(inp.todos) ? inp.todos : Array.isArray(inp.plan) ? inp.plan : null;
@@ -269,25 +306,20 @@ function fileChangeSummary(inp: Record<string, unknown>, roots: readonly PathRoo
     .join("  ·  ");
 }
 
-/**
- * Tool families: each gets an icon and an accent hue (via the --tool-* palette
- * vars, theme-aware). Class strings are literal so the Tailwind scanner sees
- * them. `chip` styles the timeline icon; `edge` tints the expanded detail's
- * left border to visually tie it back to the row.
- */
+/** Tool-family accent for the expanded detail's left edge. */
 type FamilyKey =
   | "run" | "file" | "edit" | "find" | "web" | "agent" | "mcp" | "skill" | "plain";
 
-const FAMILY_STYLES: Record<FamilyKey, { chip: string; edge: string }> = {
-  run: { chip: "text-tool-run", edge: "border-l-tool-run/45" },
-  file: { chip: "text-tool-file", edge: "border-l-tool-file/45" },
-  edit: { chip: "text-tool-edit", edge: "border-l-tool-edit/45" },
-  find: { chip: "text-tool-find", edge: "border-l-tool-find/45" },
-  web: { chip: "text-tool-web", edge: "border-l-tool-web/45" },
-  agent: { chip: "text-tool-agent", edge: "border-l-tool-agent/45" },
-  mcp: { chip: "text-tool-mcp", edge: "border-l-tool-mcp/45" },
-  skill: { chip: "text-tool-skill", edge: "border-l-tool-skill/45" },
-  plain: { chip: "text-dim", edge: "border-l-line-strong" },
+const FAMILY_STYLES: Record<FamilyKey, { edge: string }> = {
+  run: { edge: "border-l-tool-run/45" },
+  file: { edge: "border-l-tool-file/45" },
+  edit: { edge: "border-l-tool-edit/45" },
+  find: { edge: "border-l-tool-find/45" },
+  web: { edge: "border-l-tool-web/45" },
+  agent: { edge: "border-l-tool-agent/45" },
+  mcp: { edge: "border-l-tool-mcp/45" },
+  skill: { edge: "border-l-tool-skill/45" },
+  plain: { edge: "border-l-line-strong" },
 };
 
 export function toolFamily(toolName: string): FamilyKey {
@@ -411,6 +443,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
   const mcp = parseMcpTool(toolName);
   const summary = toolSummary(toolName, entry.toolInput, entry.content, roots);
   const isFileTool = canonical === "Read" || canonical === "Edit" || canonical === "Write";
+  const lineStats = toolLineStats(toolName, entry.toolInput);
   const duration = stepDuration(entry, result);
   const failed = Boolean(result?.isError);
   const family = FAMILY_STYLES[toolFamily(toolName)];
@@ -450,11 +483,11 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
       >
         <span
           className={cn(
-            "tool-chip relative z-[1] flex size-[22px] flex-shrink-0 items-center justify-center rounded-md border border-current/25",
-            failed ? "text-red" : family.chip
+            "relative z-[1] flex size-[22px] flex-shrink-0 items-center justify-center",
+            failed ? "text-red" : "text-dim"
           )}
         >
-          <ToolGlyph toolName={toolName} />
+          <ToolGlyph toolName={toolName} size={20} />
         </span>
 
         {mcp ? (
@@ -468,13 +501,25 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
           <span className="flex-shrink-0 text-[14px] leading-5 font-medium text-fg">{toolName}</span>
         )}
 
-        <span
-          className={cn(
-            "min-w-0 flex-1 truncate font-mono text-[12px] leading-4",
-            failed ? "text-red/80" : "text-dim"
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          <span
+            className={cn(
+              "min-w-0 truncate font-mono text-[12px] leading-4",
+              failed ? "text-red/80" : "text-dim"
+            )}
+          >
+            {isFileTool ? <PathSummary path={summary} /> : summary}
+          </span>
+          {lineStats && (
+            <span className="flex flex-shrink-0 gap-1.5 font-mono text-[12px] leading-4">
+              {lineStats.additions > 0 && (
+                <span className="text-green">+{lineStats.additions}</span>
+              )}
+              {lineStats.deletions > 0 && (
+                <span className="text-red">-{lineStats.deletions}</span>
+              )}
+            </span>
           )}
-        >
-          {isFileTool ? <PathSummary path={summary} /> : summary}
         </span>
 
         {canOpenSubagent && (

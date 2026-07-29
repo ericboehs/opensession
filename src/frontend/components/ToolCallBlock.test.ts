@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { canonicalToolName, parseMcpTool, toolFamily, toolSummary } from "./ToolCallBlock";
+import {
+  canonicalToolName,
+  parseMcpTool,
+  toolFamily,
+  toolLineStats,
+  toolSummary,
+} from "./ToolCallBlock";
 
 const roots = [
   { dir: "/home/ubuntu/projects/tella-backstage" },
@@ -54,6 +60,28 @@ test("codex patch bodies name the files they touch", () => {
     "src/a.ts  ·  src/b.ts"
   );
   expect(toolFamily("apply_patch")).toBe("edit");
+  expect(toolLineStats("apply_patch", { patchText })).toEqual({
+    additions: 2,
+    deletions: 0,
+  });
+});
+
+test("edit rows report added and removed lines", () => {
+  expect(
+    toolLineStats("edit", {
+      oldString: "one\ntwo\nthree",
+      newString: "one\nupdated\nthree\nfour\nfive",
+    })
+  ).toEqual({ additions: 5, deletions: 3 });
+
+  expect(
+    toolLineStats("multiedit", {
+      edits: [
+        { old_string: "old", new_string: "new\nextra" },
+        { old_string: "remove", new_string: "replace" },
+      ],
+    })
+  ).toEqual({ additions: 3, deletions: 2 });
 });
 
 test("todo writes summarize as progress, not raw JSON", () => {
