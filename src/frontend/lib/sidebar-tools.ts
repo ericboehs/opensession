@@ -22,7 +22,13 @@ export const SIDEBAR_TOOL_LABELS: Record<SidebarToolId, string> = {
 
 const HIDDEN_TOOLS_KEY = "opensession-sidebar-hidden-tools";
 const TOOLS_CHANGED_EVENT = "opensession-sidebar-tools-changed";
-const DEFAULT_HIDDEN_TOOLS: SidebarToolId[] = ["catchup", "prtinder"];
+const DEFAULT_HIDDEN_TOOLS: SidebarToolId[] = [
+	"catchup",
+	"prtinder",
+	"supporttinder",
+	"analytics",
+	"notes",
+];
 
 export function readHiddenSidebarTools(): Set<SidebarToolId> {
 	try {
