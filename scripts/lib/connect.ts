@@ -220,16 +220,50 @@ async function localApi(): Promise<string> {
   return `http://${host}:${port}/backstage/api/nodes`;
 }
 
+/**
+ * A local bearer token, when GitHub web sign-in is active.
+ *
+ * With sign-in on, every /api/* call needs a session — including this CLI, which
+ * runs on the server box and has no browser. Non-browser callers authenticate
+ * with a token from the web-sessions store, which is the documented mechanism.
+ * Absent (sign-in off) we send nothing and the request is allowed as before.
+ */
+async function operatorToken(): Promise<string | undefined> {
+  const { HOME } = await import("./paths");
+  const path = join(HOME, ".opensession-web-sessions.json");
+  if (!existsSync(path)) return undefined;
+  try {
+    const parsed = JSON.parse(await Bun.file(path).text());
+    const sessions = parsed?.sessions ?? parsed;
+    const list = Array.isArray(sessions) ? sessions : Object.values(sessions ?? {});
+    for (const entry of list as any[]) {
+      if (typeof entry?.token === "string" && entry.token) return entry.token;
+    }
+  } catch {
+    // A malformed store should not stop the command working without auth.
+  }
+  return undefined;
+}
+
 async function apiCall(path: string, init?: RequestInit): Promise<any | undefined> {
   const base = await localApi();
+  const token = await operatorToken();
   try {
     const response = await fetch(`${base}${path}`, {
       ...init,
+      headers: {
+        ...(init?.headers ?? {}),
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}) as any);
       fail(`server returned ${response.status}`, body?.error ?? "");
+      if (response.status === 401) {
+        info(dim("  sign-in is active and no local session token was found —"));
+        info(dim("  sign in via the UI once, or run this on the server box"));
+      }
       return undefined;
     }
     return await response.json();

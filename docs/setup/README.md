@@ -110,6 +110,7 @@ when adding anything that touches this.
 | [integrations-misc.md](integrations-misc.md) | Stripe, WorkOS, Grafana/Sentry/Tinybird, web push, voice |
 | [engines.md](engines.md) | the OpenCode engine, accounts, model routing |
 | [../self-hosting-sandboxes.md](../self-hosting-sandboxes.md) | Docker/Daytona/E2B/Box/Modal/AWS Lambda MicroVM sandboxes |
+| [../nodes.md](../nodes.md) | attaching a Mac/Linux box as an execution node |
 | [../worktrees.md](../worktrees.md) | how sessions map to git worktrees, and where the disk goes |
 | [../clients.md](../clients.md) | web UI, PWA, Electron shell, Swift app, Chrome extension |
 | [../extending.md](../extending.md) | MCP servers, recipes, integrations, providers, skills |

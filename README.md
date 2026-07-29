@@ -52,6 +52,8 @@ Then read the real setup guide — secrets, accounts, integrations, systemd:
   domain, and verifying you are not public
 - [docs/clients.md](docs/clients.md) — web UI, PWA, desktop shell, native app,
   Chrome extension
+- [docs/nodes.md](docs/nodes.md) — attaching another machine as an
+  execution node (`opensession connect`)
 - [docs/worktrees.md](docs/worktrees.md) — how sessions map to git worktrees,
   and where the disk goes
 - [docs/extending.md](docs/extending.md) — adding tools, recipes, integrations
