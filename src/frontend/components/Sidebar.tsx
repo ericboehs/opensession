@@ -2205,9 +2205,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			chats.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
 			// Spawned workers are implementation details of their parent chat. A failed
 			// oracle/task must not leave the whole workspace looking blocked after the
-			// parent recovered. Fall back for an unusual child-only workspace.
+			// parent recovered, but live workers still make the workspace actively busy.
+			// Fall back for an unusual child-only workspace.
 			const stateChats = chats.filter((c) => !c.parentSessionId);
 			const statusSources = stateChats.length > 0 ? stateChats : chats;
+			const workerRunning = chats.some((c) => c.parentSessionId && c.isRunning);
 			// Automated PR reviews run in a separate bks-ghpr-* automation chat,
 			// so the workspace's own chats never carry isRunning for that work.
 			// The PR feed is the authoritative live signal for both its lane and
@@ -2220,6 +2222,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					statusSources.some((c) => mineStatus(c) === st),
 				) ||
 				"pending";
+			// A running worker is live workspace activity even though child failures and
+			// blocked states stay isolated from the parent. Needs-input and explicit
+			// human lanes still win, matching mineStatus's priority rules.
+			if (
+				workerRunning &&
+				status !== "needsinput" &&
+				!chats.some((c) => pinnedLane(c))
+			)
+				status = "inprogress";
 			// An idle row's lane follows its PR lifecycle (ready → Ready to
 			// merge, otherwise-open → In progress). A human-pinned lane wins —
 			// deliberately parking a row in Backlog must stick.
@@ -2260,7 +2271,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							isNoteUnread(c.id, a.lastTs, a.lastUser, meUser)
 						);
 					}),
-				running: statusSources.some((c) => c.isRunning) || reviewRunning,
+				running: chats.some((c) => c.isRunning) || reviewRunning,
 				owner: (workspace?.createdBy || chats[0]?.startedBy || "").toLowerCase(),
 			};
 		};
