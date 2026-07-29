@@ -22,10 +22,13 @@ export const SIDEBAR_TOOL_LABELS: Record<SidebarToolId, string> = {
 
 const HIDDEN_TOOLS_KEY = "opensession-sidebar-hidden-tools";
 const TOOLS_CHANGED_EVENT = "opensession-sidebar-tools-changed";
+const DEFAULT_HIDDEN_TOOLS: SidebarToolId[] = ["catchup", "prtinder"];
 
 export function readHiddenSidebarTools(): Set<SidebarToolId> {
 	try {
-		const stored = JSON.parse(localStorage.getItem(HIDDEN_TOOLS_KEY) || "[]");
+		const value = localStorage.getItem(HIDDEN_TOOLS_KEY);
+		if (value === null) return new Set(DEFAULT_HIDDEN_TOOLS);
+		const stored = JSON.parse(value);
 		return new Set(
 			Array.isArray(stored)
 				? stored.filter((id): id is SidebarToolId =>
@@ -34,7 +37,7 @@ export function readHiddenSidebarTools(): Set<SidebarToolId> {
 				: [],
 		);
 	} catch {
-		return new Set();
+		return new Set(DEFAULT_HIDDEN_TOOLS);
 	}
 }
 
