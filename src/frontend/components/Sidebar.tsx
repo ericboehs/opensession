@@ -112,7 +112,7 @@ import {
 	IconHome,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
-import { Menu } from "../ui/menu";
+import { ContextMenu, Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
 import { cn } from "../ui/cn";
 import {
@@ -4587,37 +4587,50 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				);
 		return (
 			<div className="sidebar-repo-group" key={gkey}>
-				<button
-					className="sidebar-group-header sidebar-repo-head group transition-colors"
-					onClick={() => toggleGroup(gkey)}
-				>
-					<span className="sidebar-rail">
-						<RepoTile name={feed.id} />
-					</span>
-					<span className="sidebar-group-name">{feed.title}</span>
-					<span className="sidebar-group-count">{count}</span>
-					{!open && attentionCount > 0 && (
-						<span
-							className="sidebar-repo-attn"
-							aria-label={`${attentionCount} urgent`}
-						>
-							{attentionCount}
+				<ContextMenu.Root>
+					<ContextMenu.Trigger
+						render={
+							<button
+								className="sidebar-group-header sidebar-repo-head group transition-colors"
+								onClick={() => toggleGroup(gkey)}
+							/>
+						}
+					>
+						<span className="sidebar-rail">
+							<RepoTile name={feed.id} />
 						</span>
-					)}
-					<IconChevronDown
-						className="sidebar-group-chevron"
-						size={22}
-						style={{ transform: open ? "none" : "rotate(-90deg)" }}
-					/>
-					<FeedFilterMenu
-						feed={feed}
-						values={feedFilters[feed.id] || {}}
-						rawItems={feedItems[feed.id] || []}
-						currentUser={currentUser}
-						onSet={(k, v) => setFeedFilter(feed, k, v)}
-						onHide={() => setSidebarFeedVisible(feed.id, false)}
-					/>
-				</button>
+						<span className="sidebar-group-name">{feed.title}</span>
+						<span className="sidebar-group-count">{count}</span>
+						{!open && attentionCount > 0 && (
+							<span
+								className="sidebar-repo-attn"
+								aria-label={`${attentionCount} urgent`}
+							>
+								{attentionCount}
+							</span>
+						)}
+						<IconChevronDown
+							className="sidebar-group-chevron"
+							size={22}
+							style={{ transform: open ? "none" : "rotate(-90deg)" }}
+						/>
+						<FeedFilterMenu
+							feed={feed}
+							values={feedFilters[feed.id] || {}}
+							rawItems={feedItems[feed.id] || []}
+							currentUser={currentUser}
+							onSet={(k, v) => setFeedFilter(feed, k, v)}
+							onHide={() => setSidebarFeedVisible(feed.id, false)}
+						/>
+					</ContextMenu.Trigger>
+					<ContextMenu.Popup>
+						<ContextMenu.Item
+							onClick={() => setSidebarFeedVisible(feed.id, false)}
+						>
+							Hide from sidebar
+						</ContextMenu.Item>
+					</ContextMenu.Popup>
+				</ContextMenu.Root>
 				{open ? openBody : collapsedBody}
 			</div>
 		);
