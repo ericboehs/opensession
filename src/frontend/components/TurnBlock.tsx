@@ -10,12 +10,13 @@ import {
 } from "./ToolCallBlock";
 import { ClampedBody } from "./MessageBubble";
 import { resolveEntryImageSrc } from "../lib/osBlob";
-import { IconChevronDown } from "./icons";
+import { IconBrain, IconChevronDown } from "./icons";
 import { cn } from "../ui/cn";
 import {
   getTurnActivityPref,
   onTurnActivityChanged,
 } from "../lib/turn-activity";
+import { thoughtSummary } from "../lib/thought-summary";
 import { collectTouchedFiles } from "./TurnFooter";
 
 interface Props {
@@ -149,6 +150,7 @@ export const TurnBlock = React.memo(function TurnBlock({
     >
       <button
         type="button"
+        aria-expanded={expanded}
         onClick={() => {
           userToggledRef.current = true;
           setExpanded(!expanded);
@@ -256,7 +258,7 @@ export function summarizeEditedFiles(paths: string[]): string {
   return names.length > 2 ? `${shown} +${names.length - 2}` : shown;
 }
 
-/** An intermediate assistant note inside the fold — body only, no label. */
+/** An intermediate assistant thought inside the turn, folded to one line. */
 function TurnMessage({
   entry,
   sessionId,
@@ -264,33 +266,71 @@ function TurnMessage({
   entry: TranscriptEntry;
   sessionId?: string;
 }) {
+  const hasMedia = Boolean(entry.images?.length);
+  const [expanded, setExpanded] = useState(hasMedia);
+  const summary = thoughtSummary(entry.content);
+  useEffect(() => {
+    if (hasMedia) setExpanded(true);
+  }, [hasMedia]);
+
   return (
     <div
-      className="mx-auto my-2 w-full max-w-[var(--chat-col)] px-1"
+      className="relative"
       data-eid={entry.id}
     >
-      <ClampedBody
-        className="msg-body msg-body-assistant markdown"
-        content={entry.content}
-        entry={entry}
-        sessionId={sessionId}
-      />
-      {entry.images && entry.images.length > 0 && (
-        <div className="msg-images">
-          {entry.images.map((raw, i) => {
-            const src = resolveEntryImageSrc(raw, sessionId);
-            return (
-              <a
-                key={i}
-                href={src}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="md-image-link"
-              >
-                <img className="md-image" src={src} alt="" loading="lazy" />
-              </a>
-            );
-          })}
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((open) => !open)}
+        className="group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-[3px] text-left font-sans hover:bg-hover"
+      >
+        <span className="relative z-[1] flex size-[22px] flex-shrink-0 items-center justify-center text-dim">
+          <IconBrain size={20} />
+        </span>
+        <span className="flex-shrink-0 text-[14px] font-medium leading-5 text-fg">
+          Thinking
+        </span>
+        {summary && (
+          <span className="min-w-0 flex-1 truncate rounded bg-surface px-2 py-0.5 text-[13px] leading-5 text-dim">
+            {summary}
+          </span>
+        )}
+        <span
+          className={cn(
+            "flex-shrink-0 text-faint opacity-0 transition-[opacity,transform] duration-150 group-hover:opacity-100",
+            expanded && "rotate-180 opacity-100"
+          )}
+        >
+          <IconChevronDown size={20} />
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="mb-2 ml-[30px] mt-1 px-2 pb-1">
+          <ClampedBody
+            className="msg-body msg-body-assistant markdown text-dim"
+            content={entry.content}
+            entry={entry}
+            sessionId={sessionId}
+          />
+          {entry.images && entry.images.length > 0 && (
+            <div className="msg-images">
+              {entry.images.map((raw, i) => {
+                const src = resolveEntryImageSrc(raw, sessionId);
+                return (
+                  <a
+                    key={i}
+                    href={src}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="md-image-link"
+                  >
+                    <img className="md-image" src={src} alt="" loading="lazy" />
+                  </a>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

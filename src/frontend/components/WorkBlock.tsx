@@ -53,6 +53,7 @@ export const WorkBlock = React.memo(function WorkBlock({
     <div className="mx-auto mb-3 max-w-[var(--chat-col)]">
       <button
         type="button"
+        aria-expanded={expanded}
         onClick={() => setExpanded(!expanded)}
         className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-[12.5px] text-dim hover:bg-hover"
       >

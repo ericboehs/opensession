@@ -441,6 +441,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
     <div className="relative" data-eid={entry.id}>
       <button
         type="button"
+        aria-expanded={expanded}
         onClick={() => setExpanded(!expanded)}
         className={cn(
           "group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-[3px] text-left font-sans",
