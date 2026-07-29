@@ -328,6 +328,9 @@ export function createAutomation(input: {
   runOnceAt?: string;
   mode: "ask" | "code";
   createdBy: string;
+  /** Defaults to true. Seeded automations pass false so an operator reads the
+   * prompt before it runs — see recipes/README.md. */
+  enabled?: boolean;
   eventKey?: string;
   mcpServers?: string[];
   repo?: string;
@@ -374,7 +377,9 @@ export function createAutomation(input: {
     schedule,
     runOnceAt,
     mode: input.mode === "code" ? "code" : "ask",
-    enabled: true,
+    // Only an explicit false opts out; every existing caller omits this and
+    // keeps the old always-enabled behaviour.
+    enabled: input.enabled !== false,
     createdBy: input.createdBy || "Anonymous",
     createdAt: new Date().toISOString(),
     webhookSecret: generateSecret(),
@@ -422,6 +427,7 @@ export function ensureConfiguredAutomations(): void {
       eventKey: eventKey || undefined,
       schedule: typeof value.schedule === "string" ? value.schedule : "",
       mode: value.mode === "code" ? "code" : "ask",
+      enabled: value.enabled !== false,
       createdBy:
         typeof value.createdBy === "string"
           ? value.createdBy
