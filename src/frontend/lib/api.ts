@@ -3,7 +3,6 @@ import type {
 	UnifiedSession,
 	ChatMessage,
 	ChatImage,
-	AppNotification,
 	PlainThread,
 	PlainWorkspaceUser,
 	PlainLabelType,
@@ -1033,17 +1032,6 @@ export async function fetchSessionNoteActivityApi(): Promise<
 	for (const c of body?.channels || [])
 		out[c.sessionId] = { lastTs: c.lastTs, lastUser: c.lastUser };
 	return out;
-}
-
-/** The user's notification inbox (mirror of every push sent to them). */
-export async function fetchNotificationsApi(
-	user: string,
-): Promise<AppNotification[]> {
-	const body = await request<{ items?: AppNotification[] }>(
-		`/notifications?user=${encodeURIComponent(user)}`,
-		{ label: "Failed to fetch notifications" },
-	);
-	return Array.isArray(body?.items) ? body.items : [];
 }
 
 export async function fetchWorktrees(repo?: string) {

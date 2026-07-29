@@ -137,6 +137,11 @@ import {
 	SIDEBAR_TOOL_LABELS,
 	type SidebarToolId,
 } from "../lib/sidebar-tools";
+import {
+	onSidebarFeedsChanged,
+	readHiddenSidebarFeeds,
+	setSidebarFeedVisible,
+} from "../lib/sidebar-feeds";
 
 const AUTOMATION_COLOR = "#d29922";
 
@@ -536,12 +541,14 @@ function FeedFilterMenu({
 	rawItems,
 	currentUser,
 	onSet,
+	onHide,
 }: {
 	feed: FeedDescriptor;
 	values: FeedFilterValues;
 	rawItems: FeedItem[];
 	currentUser: string;
 	onSet: (key: string, value: string) => void;
+	onHide: () => void;
 }) {
 	const [argOptions, setArgOptions] = useState<
 		Record<string, { value: string; label: string }[]>
@@ -673,6 +680,8 @@ function FeedFilterMenu({
 						)}
 					</Menu.Group>
 				)}
+				<Menu.Separator />
+				<Menu.Item onClick={onHide}>Hide from sidebar</Menu.Item>
 			</Menu.Popup>
 		</Menu.Root>
 	);
@@ -733,8 +742,6 @@ interface Props {
 	analyticsActive: boolean;
 	/** Open the Analytics view (sessions/tokens/models/PRs over time). */
 	onOpenAnalytics: () => void;
-	/** The notification bell (rendered by App, next to the filter/new buttons). */
-	notifBell?: React.ReactNode;
 	/** Latest team note per session (unread-note dots on workspace rows). */
 	noteActivity?: Record<string, { lastTs: number; lastUser: string }>;
 	onSelect: (session: UnifiedSession) => void;
@@ -1467,7 +1474,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	onOpenReports,
 	analyticsActive,
 	onOpenAnalytics,
-	notifBell,
 	noteActivity = {},
 	onSelect,
 	onOpenReview,
@@ -1497,6 +1503,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// Groups are collapsed by default; the expanded set persists per browser
 	const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
 	const [hiddenTools, setHiddenTools] = useState(readHiddenSidebarTools);
+	const [hiddenFeeds, setHiddenFeeds] = useState(readHiddenSidebarFeeds);
 	const [sidebarOrder, setSidebarOrder] = useState(getSidebarOrder);
 	useEffect(
 		() => onSidebarOrderChanged(() => setSidebarOrder(getSidebarOrder())),
@@ -1679,6 +1686,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	);
 	useEffect(
 		() => onSidebarToolsChanged(() => setHiddenTools(readHiddenSidebarTools())),
+		[],
+	);
+	useEffect(
+		() => onSidebarFeedsChanged(() => setHiddenFeeds(readHiddenSidebarFeeds())),
 		[],
 	);
 	const sidebarScrollRef = useRef<HTMLDivElement>(null);
@@ -1961,36 +1972,25 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	}, []);
 
 	// Generic feed bands (Tella videos, … — docs/feeds-design.md): descriptors
-	// once on mount, items per feed on the same gentle 60s cadence as Support
-	// (the server caches ~60s). A feed that errors just keeps its band hidden.
+	// once on mount. Hidden feeds remain available to Settings but do not poll.
 	const [feeds, setFeeds] = useState<FeedDescriptor[]>([]);
 	const [feedItems, setFeedItems] = useState<Record<string, FeedItem[]>>({});
 	useEffect(() => {
 		let alive = true;
-		let timer: ReturnType<typeof setInterval> | null = null;
 		fetchFeeds()
 			.then((descriptors) => {
 				if (!alive) return;
 				setFeeds(descriptors);
-				if (descriptors.length === 0) return;
-				const load = () => {
-					for (const d of descriptors)
-						fetchFeedItems(d.id, argFiltersFor(d))
-							.then((items) => {
-								if (alive)
-									setFeedItems((prev) => ({ ...prev, [d.id]: items }));
-							})
-							.catch(() => {});
-				};
-				load();
-				timer = setInterval(load, 60_000);
 			})
 			.catch(() => {});
 		return () => {
 			alive = false;
-			if (timer) clearInterval(timer);
 		};
 	}, []);
+	const visibleFeeds = useMemo(
+		() => feeds.filter((feed) => !hiddenFeeds.has(feed.id)),
+		[feeds, hiddenFeeds],
+	);
 
 	// The Support queue now arrives through the generic feeds poll: the plain
 	// feed's items carry the full SupportThreadSummary in meta, so all the
@@ -2050,6 +2050,28 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			return next;
 		});
 	};
+	// Items use the same gentle 60s cadence as Support (the server caches ~60s).
+	// Re-enabling a source loads it immediately; hiding one tears its timer down.
+	useEffect(() => {
+		if (visibleFeeds.length === 0) return;
+		let alive = true;
+		const load = () => {
+			for (const feed of visibleFeeds) {
+				fetchFeedItems(feed.id, argFiltersFor(feed))
+					.then((items) => {
+						if (alive)
+							setFeedItems((prev) => ({ ...prev, [feed.id]: items }));
+					})
+					.catch(() => {});
+			}
+		};
+		load();
+		const timer = setInterval(load, 60_000);
+		return () => {
+			alive = false;
+			clearInterval(timer);
+		};
+	}, [visibleFeeds]);
 
 	// Newest live session per Plain thread — a Support row with one opens that
 	// session instead of the session-less ticket preview.
@@ -4395,7 +4417,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// The Plain TODO queue rendered as a sibling of the repo bands: a project
 	// whose lanes are priorities (Urgent/High/Normal/Low) instead of statuses.
 	// Hidden while a repo filter narrows the list — tickets belong to no repo.
-	const plainFeedDesc = feeds.find((f) => f.id === "plain");
+	const plainFeedDesc = visibleFeeds.find((f) => f.id === "plain");
 	const plainThreadsInView =
 		filter.repo === "all" && plainFeedDesc
 			? applyFeedFilters(plainFeedDesc, feedItems.plain || []).map(
@@ -4593,6 +4615,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						rawItems={feedItems[feed.id] || []}
 						currentUser={currentUser}
 						onSet={(k, v) => setFeedFilter(feed, k, v)}
+						onHide={() => setSidebarFeedVisible(feed.id, false)}
 					/>
 				</button>
 				{open ? openBody : collapsedBody}
@@ -4780,7 +4803,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					)}
 					<div className="min-w-0 flex-1" />
 					<div className="sidebar-workspace-actions" ref={actionsRef}>
-						{notifBell}
 						<Tooltip label="Group, filter & sort">
 						<button
 							ref={filterBtnRef}
@@ -4842,13 +4864,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				headerActionsEl &&
 				createPortal(
 					<>
-						{/* The bell rides the top bar too — the header actions cluster
-						    it sits in on desktop is display:none on phones. */}
-						{notifBell && (
-							<span className="mobile-filter-btn" style={{ order: -2 }}>
-								{notifBell}
-							</span>
-						)}
 						<button
 							ref={mobileFilterBtnRef}
 							className={`mobile-filter-btn${filterOpen ? " active" : ""}${
@@ -5521,7 +5536,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									{renderRepoGroups(filter.groupBy === "repo-status")}
 									{filter.groupBy === "repo" &&
 										renderStatusLanes([], "", snoozedWsRows)}
-									{feeds.map((d) =>
+									{visibleFeeds.map((d) =>
 										renderFeedBand(d, filter.groupBy === "repo-status"),
 									)}
 								</>
@@ -5538,7 +5553,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								// after the status lanes (one continuous list); other
 								// feeds render as bands below.
 								...renderSupportLanes(plainThreadsInView),
-								...feeds
+								...visibleFeeds
 									.filter((d) => d.id !== "plain")
 									.map((d) => renderFeedBand(d, false)),
 							]}

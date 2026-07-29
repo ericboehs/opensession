@@ -963,24 +963,8 @@ export type WSServerMessage =
 	// never bumps unread badges.
 	| { type: "chat_message_updated"; channel: string; message: ChatMessage }
 	| { type: "chat_typing"; channel: string; user: string }
-	// A notification landed in someone's inbox (every sendPushToUser mirrors
-	// here). Clients keep items addressed to their own user.
-	| { type: "notification_added"; item: AppNotification }
 	| { type: "pong" }
 	| { type: "error"; sessionId?: string; message: string };
-
-/** One row of the per-user notification inbox (server push.ts mirror). */
-export interface AppNotification {
-	id: string;
-	/** Recipient (picker first name). */
-	user: string;
-	title: string;
-	body?: string;
-	/** In-app path to open, e.g. /backstage/session/<id>. */
-	url?: string;
-	/** ms epoch */
-	ts: number;
-}
 
 export interface AskQuestion {
 	question: string;

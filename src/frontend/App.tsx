@@ -81,7 +81,6 @@ import {
 	updateProjectApi,
 	deleteProjectApi,
 	newChatApi,
-	fetchNotificationsApi,
 	fetchSessionNoteActivityApi,
 	resolveWorkspaceApi,
 	type NoteMeta,
@@ -98,7 +97,6 @@ import {
 } from "./lib/workspace-last-chat";
 import { sessionHasWorkspace } from "./lib/session-workspace";
 import type {
-	AppNotification,
 	Project,
 	SupportThread,
 	FeedDescriptor,
@@ -106,7 +104,6 @@ import type {
 } from "./lib/types";
 import { refWebPanel } from "./components/FeedWebPane";
 import { ensureFeedMeta } from "./lib/feeds-meta";
-import { NotificationsBell } from "./components/NotificationsBell";
 import type { ReviewQueueItem } from "./lib/review-queue";
 import { pushRecent } from "./lib/recents";
 import { setLane } from "./lib/lanes";
@@ -489,31 +486,6 @@ function App() {
 		}
 		return parsed;
 	});
-	// Notification inbox (the sidebar bell): every push sent to me, mirrored
-	// server-side (push.ts). "Seen" is a client-local timestamp stamp.
-	const [notifItems, setNotifItems] = useState<AppNotification[]>([]);
-	const [notifSeenTs, setNotifSeenTs] = useState<number>(() =>
-		Number(localStorage.getItem("opensession-notif-seen") || 0),
-	);
-	useEffect(() => {
-		fetchNotificationsApi(getCurrentUser())
-			.then(setNotifItems)
-			.catch(() => {});
-	}, []);
-	useEffect(
-		() =>
-			addHandler((msg) => {
-				if (msg.type !== "notification_added") return;
-				if (msg.item.user !== getCurrentUser()) return;
-				setNotifItems((prev) =>
-					prev.some((n) => n.id === msg.item.id)
-						? prev
-						: [msg.item, ...prev],
-				);
-			}),
-		[addHandler],
-	);
-	const notifUnseen = notifItems.filter((n) => n.ts > notifSeenTs).length;
 	// Latest team note per session — the sidebar's unread-note dots.
 	const [noteActivity, setNoteActivity] = useState<
 		Record<string, { lastTs: number; lastUser: string }>
@@ -534,35 +506,10 @@ function App() {
 			}),
 		[addHandler],
 	);
-	const markNotifSeen = useCallback(() => {
-		const now = Date.now();
-		localStorage.setItem("opensession-notif-seen", String(now));
-		setNotifSeenTs(now);
-	}, []);
-	// App-icon badge count (PWA/Electron): unseen notifications.
-	const chatUnread = notifUnseen;
 	// Register the service worker at boot, not just when enabling push: it also
 	// caches the app shell (sw.js), so a cold start on a flaky tailnet paints
 	// the app instead of white-screening.
 	useEffect(() => registerServiceWorker(), []);
-	// Mirror the unread count onto the app-icon badge (iOS/macOS installed PWA,
-	// Chrome taskbar). While the app is open this is the source of truth,
-	// overwriting whatever notification count sw.js left; no-op where the
-	// Badging API is missing.
-	useEffect(() => {
-		const nav = navigator as Navigator & {
-			setAppBadge?: (n?: number) => Promise<void>;
-			clearAppBadge?: () => Promise<void>;
-		};
-		// The OS¹ desktop app (tellahq/os1-mac) exposes window.os1: the Badging
-		// API doesn't reach Electron's dock, so mirror the count through its
-		// bridge there.
-		const os1 = (window as { os1?: { setBadge: (n: number) => void } }).os1;
-		os1?.setBadge(chatUnread);
-		if (!nav.setAppBadge) return;
-		if (chatUnread > 0) nav.setAppBadge(chatUnread).catch(() => {});
-		else nav.clearAppBadge?.().catch(() => {});
-	}, [chatUnread]);
 	// On phones the layout is an iOS-style page stack: the sidebar is the root
 	// page and any non-home route is a page pushed over it. `mobileDetail` drives
 	// that (see the `.mobile-detail` CSS and the back button below). It's inert on
@@ -2983,19 +2930,6 @@ function App() {
 							analyticsActive={route.view === "analytics"}
 							onOpenAnalytics={() => navigate({ view: "analytics" })}
 							noteActivity={noteActivity}
-							notifBell={
-								<NotificationsBell
-									items={notifItems}
-									unseen={notifUnseen}
-									onOpened={markNotifSeen}
-									onNavigate={(url) => {
-										const path =
-											url.replace(/^\/(backstage|opensession)(?=\/|$)/, "") ||
-											"/";
-										navigate(parseRoute(path));
-									}}
-								/>
-							}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onOpenReview={openReviewForSession}
 							onOpenTicket={openTicketWorkspace}
