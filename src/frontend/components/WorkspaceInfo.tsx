@@ -603,19 +603,21 @@ function ChecksChip({
 			? {
 					label: `${sum.failed} check${sum.failed === 1 ? "" : "s"} failing`,
 					icon: <IconX size={18} />,
-					className: "border-red/30 bg-red-soft text-red",
+					className:
+						"border-transparent bg-red-soft text-red shadow-[0_3px_10px_color-mix(in_srgb,currentColor_12%,transparent)]",
 				}
 			: sum.pending > 0
 				? {
 						label: `${sum.pending} check${sum.pending === 1 ? "" : "s"} pending`,
 						icon: <IconClock size={18} />,
 						className:
-							"border-yellow/30 bg-[rgba(210,153,34,0.14)] text-yellow",
+							"border-transparent bg-[rgba(210,153,34,0.14)] text-yellow shadow-[0_3px_10px_color-mix(in_srgb,currentColor_12%,transparent)]",
 					}
 				: {
 						label: "Checks passing",
 						icon: <IconCheck size={18} />,
-						className: "border-green/30 bg-green-soft text-green",
+						className:
+							"border-transparent bg-green-soft text-green shadow-[0_3px_10px_color-mix(in_srgb,currentColor_12%,transparent)]",
 					};
 
 	return (

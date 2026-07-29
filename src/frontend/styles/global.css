@@ -5660,23 +5660,27 @@ a.workspace-info-check-row {
    hover deepens it. */
 .pr-num-chip-green {
 	color: var(--green);
-	border-color: color-mix(in srgb, var(--green) 40%, transparent);
+	border-color: transparent;
 	background: color-mix(in srgb, var(--green) 15%, var(--control-surface));
+	box-shadow: 0 3px 10px color-mix(in srgb, var(--green) 12%, transparent);
 }
 .pr-num-chip-purple {
 	color: var(--purple);
-	border-color: color-mix(in srgb, var(--purple) 40%, transparent);
+	border-color: transparent;
 	background: color-mix(in srgb, var(--purple) 15%, var(--control-surface));
+	box-shadow: 0 3px 10px color-mix(in srgb, var(--purple) 12%, transparent);
 }
 .pr-num-chip-red {
 	color: var(--red);
-	border-color: color-mix(in srgb, var(--red) 40%, transparent);
+	border-color: transparent;
 	background: color-mix(in srgb, var(--red) 15%, var(--control-surface));
+	box-shadow: 0 3px 10px color-mix(in srgb, var(--red) 12%, transparent);
 }
 .pr-num-chip-yellow {
 	color: var(--yellow);
-	border-color: color-mix(in srgb, var(--yellow) 40%, transparent);
+	border-color: transparent;
 	background: color-mix(in srgb, var(--yellow) 15%, var(--control-surface));
+	box-shadow: 0 3px 10px color-mix(in srgb, var(--yellow) 12%, transparent);
 }
 .pr-num-chip-green:hover,
 .pr-num-chip-purple:hover,
