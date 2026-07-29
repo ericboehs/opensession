@@ -3566,8 +3566,20 @@ body.resizing-tab-split {
 }
 .presence-me {
 	background: var(--accent-soft);
-	border-color: var(--accent);
-	color: var(--accent);
+	color: var(--text-dim);
+}
+.presence-me::after {
+	content: "";
+	position: absolute;
+	left: 50%;
+	bottom: -4px;
+	z-index: 2;
+	width: 8px;
+	height: 3px;
+	border-radius: 99px;
+	background: var(--accent);
+	box-shadow: 0 0 0 2px var(--bg-raised);
+	transform: translateX(-50%);
 }
 .presence-count {
 	position: absolute;
