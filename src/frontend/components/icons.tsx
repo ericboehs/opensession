@@ -209,16 +209,6 @@ export function IconBolt(p: IconProps) {
   );
 }
 
-export function IconBrain(p: IconProps) {
-  return (
-    <Svg {...p}>
-      <path {...stroke} d="M9.75 5.75A2.5 2.5 0 0 0 5.5 7.5c0 .55.18 1.05.48 1.46A3 3 0 0 0 6.5 14.8v.45a3 3 0 0 0 3.25 3" />
-      <path {...stroke} d="M14.25 5.75A2.5 2.5 0 0 1 18.5 7.5c0 .55-.18 1.05-.48 1.46a3 3 0 0 1-.52 5.84v.45a3 3 0 0 1-3.25 3" />
-      <path {...stroke} d="M9.75 5.75v12.5M14.25 5.75v12.5M6.25 10.25c.9.1 1.55.5 2 1.25M17.75 10.25c-.9.1-1.55.5-2 1.25M6.5 14.8c.75-.25 1.35-.15 1.9.3M17.5 14.8c-.75-.25-1.35-.15-1.9.3" />
-    </Svg>
-  );
-}
-
 export function IconArrowDownRight(p: IconProps) {
   return (
     <Svg {...p}>
