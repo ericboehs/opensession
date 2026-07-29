@@ -1,0 +1,14 @@
+{
+  "id": "code-cleanup-sweep",
+  "label": "Code cleanup sweep",
+  "description": "Weekly pass for dead code, duplication and drifted patterns, proposed as a reviewable PR.",
+  "requires": [],
+  "automation": {
+    "name": "Code cleanup sweep",
+    "eventKey": "sweep:code-cleanup",
+    "mode": "code",
+    "schedule": "0 17 * * 1",
+    "enabled": false,
+    "prompt": "Find and remove genuine cruft in this repository, and open one pull request with the result.\n\nLook for, in priority order:\n\n1. **Dead code** — exported symbols with no consumers, unreachable branches, feature flags whose other side is gone, commented-out blocks. Verify with Grep across the whole repository before deleting; a symbol used only in tests is still used.\n2. **Duplication that must change in lockstep** — near-identical logic in two or more places where a bug fix would have to be applied to each. Extract only when the shared shape is obvious and the call sites genuinely agree.\n3. **Drifted patterns** — code that solves a problem differently from the established helper or sibling module for no stated reason.\n\nRules that keep this safe to merge:\n- **Behaviour must not change.** If a cleanup would alter behaviour in any observable way, do not make it — describe it in the PR body instead.\n- Run the test suite and the type-checker before opening the PR. If either fails, fix it or drop the change that caused it.\n- Keep the diff proportionate. A sweep that touches hundreds of files will not get reviewed; prefer the ten changes most worth making.\n- Do not reformat, rename for taste, or restructure directories.\n- Every change in the PR body gets one line saying what was removed and how you established it was unused.\n\nIf the codebase is clean, open no PR and say so. That is a good outcome, not a failure."
+  }
+}

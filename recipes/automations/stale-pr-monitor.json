@@ -1,0 +1,16 @@
+{
+  "id": "stale-pr-monitor",
+  "label": "Stale PR monitor",
+  "description": "Weekly nudge listing open pull requests that have gone quiet, so nothing rots unnoticed.",
+  "requires": [
+    "github"
+  ],
+  "automation": {
+    "name": "Stale PR monitor",
+    "eventKey": "monitor:stale-prs",
+    "mode": "ask",
+    "schedule": "0 16 * * 1",
+    "enabled": false,
+    "prompt": "List the open pull requests in the configured repositories that have gone stale, and report them once, briefly.\n\nUse the `gh` CLI. Stale means any of:\n\n- no commits and no comments for 7+ days\n- approved but unmerged for 3+ days\n- CI red for 2+ days with no pushes since\n- open for 14+ days regardless of activity\n\nFor each, give: number, title, author, how long it has been stalled, and which of the above it hit. Sort by how stuck it is, most stuck first.\n\nThen add one line naming the single PR most worth unblocking this week, and why.\n\nRules:\n- Draft PRs are excluded unless they are 14+ days old.\n- Do not comment on the PRs, do not push, do not close anything. This is a report.\n- If nothing is stale, say exactly that in one line. Do not pad the report to look busy."
+  }
+}

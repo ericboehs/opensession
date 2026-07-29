@@ -21,6 +21,7 @@ import * as service from "./lib/service";
 import { update } from "./lib/update";
 import { bold, dim, fail, green, heading, info, ok, run, runInherit, warn } from "./lib/ui";
 import { INTEGRATIONS, findIntegration } from "../src/server/integrations/registry";
+import { findRecipe, installRecipe, installedKeys, listRecipes, removeRecipe } from "./lib/recipes";
 
 const argv = process.argv.slice(2);
 const command = argv[0] ?? "help";
@@ -55,6 +56,9 @@ ${bold("Maintenance")}
   integrations             list integrations and whether they are on
   integrations enable <id>
   integrations disable <id>
+  automations              list bundled automation recipes
+  automations add <id>     install one (takes effect on restart)
+  automations remove <id>
   version
 
 Docs: docs/setup/README.md
@@ -139,6 +143,68 @@ async function listIntegrations(): Promise<number> {
   return 0;
 }
 
+/**
+ * Bundled recipes are opt-in: installing one writes it into the config seed
+ * list, and the server creates it (create-if-absent) on the next boot.
+ */
+async function listAutomations(): Promise<number> {
+  const recipes = listRecipes();
+  if (!recipes.length) {
+    warn("no bundled recipes found", RECIPES_HINT);
+    return 0;
+  }
+  const installed = await installedKeys();
+  heading("Automation recipes");
+  for (const recipe of recipes) {
+    const key = recipe.automation.eventKey || recipe.automation.name;
+    const mark = installed.has(key) ? green("added") : dim("  -  ");
+    info(`${mark}  ${recipe.id.padEnd(24)} ${dim(recipe.description)}`);
+    if (recipe.requires?.length) {
+      info(`         ${dim(`needs the ${recipe.requires.join(", ")} integration`)}`);
+    }
+  }
+  info(dim("\n  opensession automations add <id>"));
+  return 0;
+}
+
+async function addAutomation(id: string): Promise<number> {
+  const recipe = findRecipe(id);
+  if (!recipe) {
+    fail(`unknown recipe '${id}'`, `known: ${listRecipes().map((r) => r.id).join(", ")}`);
+    return 1;
+  }
+  const result = await installRecipe(recipe);
+  if (result === "already-present") {
+    info(dim(`${recipe.id} is already installed`));
+    return 0;
+  }
+  ok(`added ${recipe.label}`, "disabled until you enable it in the UI");
+  if (recipe.requires?.length) {
+    info(dim(`  needs: ${recipe.requires.join(", ")} — opensession integrations enable <id>`));
+  }
+  if (recipe.notes) info(dim(`  ${recipe.notes}`));
+  warn("restart to create it", "opensession restart");
+  return 0;
+}
+
+async function removeAutomation(id: string): Promise<number> {
+  const recipe = findRecipe(id);
+  if (!recipe) {
+    fail(`unknown recipe '${id}'`);
+    return 1;
+  }
+  if (!(await removeRecipe(recipe))) {
+    info(dim(`${recipe.id} was not in the seed list`));
+    return 0;
+  }
+  ok(`removed ${recipe.label} from the seed list`);
+  // Seeding is create-if-absent, so an already-created automation stays put.
+  info(dim("  an automation already created from it is untouched — delete it in the UI"));
+  return 0;
+}
+
+const RECIPES_HINT = "expected them in recipes/automations/";
+
 async function main(): Promise<number> {
   switch (command) {
     case "onboard":
@@ -184,6 +250,11 @@ async function main(): Promise<number> {
       if (positional[0] === "enable") return await setIntegration(positional[1] ?? "", true);
       if (positional[0] === "disable") return await setIntegration(positional[1] ?? "", false);
       return await listIntegrations();
+
+    case "automations":
+      if (positional[0] === "add") return await addAutomation(positional[1] ?? "");
+      if (positional[0] === "remove") return await removeAutomation(positional[1] ?? "");
+      return await listAutomations();
 
     case "version":
     case "--version":

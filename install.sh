@@ -362,16 +362,35 @@ add_to_path() {
   fi
 }
 
+# Write to more than one file on purpose.
+#
+# Ubuntu's stock ~/.bashrc begins with an "if not running interactively, return"
+# guard, so a line appended to the END of it is invisible to non-interactive
+# shells — which is what ssh commands, cron jobs and scripts use. Appending only
+# there produces an install where `opensession` works when you type it and
+# "command not found" the moment anything automated runs it.
+#
+# So: the interactive file AND the one login/non-interactive shells read.
 if [ "$NO_MODIFY_PATH" != "1" ]; then
   case "$(basename "${SHELL:-bash}")" in
-    fish) profile="$HOME/.config/fish/config.fish"; line="fish_add_path $BIN_DIR" ;;
-    zsh)  profile="${ZDOTDIR:-$HOME}/.zshrc";        line="export PATH=\"$BIN_DIR:\$PATH\"" ;;
-    *)    profile="$HOME/.bashrc";                   line="export PATH=\"$BIN_DIR:\$PATH\"" ;;
+    fish)
+      profiles="$HOME/.config/fish/config.fish"
+      line="fish_add_path $BIN_DIR"
+      mkdir -p "$HOME/.config/fish"
+      ;;
+    zsh)
+      # .zshenv is read by every zsh invocation; .zshrc only by interactive ones.
+      profiles="${ZDOTDIR:-$HOME}/.zshrc ${ZDOTDIR:-$HOME}/.zshenv"
+      line="export PATH=\"$BIN_DIR:\$PATH\""
+      ;;
+    *)
+      profiles="$HOME/.bashrc $HOME/.profile"
+      line="export PATH=\"$BIN_DIR:\$PATH\""
+      ;;
   esac
-  case ":$PATH:" in
-    *":$BIN_DIR:"*) good "already on PATH for this shell" ;;
-    *) add_to_path "$profile" "$line" ;;
-  esac
+  for profile in $profiles; do
+    add_to_path "$profile" "$line"
+  done
 fi
 export PATH="$BIN_DIR:$PATH"
 

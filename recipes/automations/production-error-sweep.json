@@ -1,0 +1,15 @@
+{
+  "id": "production-error-sweep",
+  "label": "Production error sweep",
+  "description": "Weekday triage of new production errors, grouped by root cause with a recommended owner.",
+  "requires": [],
+  "notes": "Expects a Sentry (or equivalent) MCP server; set `mcpServers` on the automation to match yours.",
+  "automation": {
+    "name": "Production error sweep",
+    "eventKey": "sweep:production-errors",
+    "mode": "ask",
+    "schedule": "0 16 * * 1-5",
+    "enabled": false,
+    "prompt": "Triage the production errors from the last 24 hours and report what actually matters.\n\nPull the recent issues from the configured error-tracking MCP server. Then:\n\n1. **Group by root cause, not by message.** Several distinct stack traces frequently share one bug; say so rather than listing them separately.\n2. **Rank by user impact** — how many users or sessions are affected, whether it breaks a flow or is merely noisy, and whether it is new or long-standing. A high-volume error that harms nobody ranks below a rare one that loses data.\n3. **Find the cause in the code.** For the top few, read the relevant source and name the specific function and likely mechanism. Do not speculate — if you cannot locate it, say the cause is unidentified.\n\nReport, for each issue worth acting on:\n- one-line description and the affected user-facing behaviour\n- volume, and whether it is new, growing, or steady\n- the code location, when you found it\n- the smallest credible fix\n\nRules:\n- Be strict about what qualifies. A short report of real problems beats a long list.\n- Explicitly separate **new since yesterday** from **ongoing** — the new ones are why this runs daily.\n- Known-noisy or already-tracked errors get one summary line, not a section.\n- If nothing new is worth acting on, say that in a line."
+  }
+}

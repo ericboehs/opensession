@@ -16,6 +16,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { INTEGRATIONS } from "../../src/server/integrations/registry";
 import { CONFIG_PATH, ENV_PATH, HOME, OPENSESSION_HOME, REPO_ROOT, STAGED_UNIT_PATH } from "./paths";
+import { installRecipe, listRecipes } from "./recipes";
 import * as service from "./service";
 import { ask, askYesNo, bold, canPrompt, dim, heading, info, warn, wrote, yellow } from "./ui";
 
@@ -213,6 +214,23 @@ export async function onboard(opts: OnboardOptions = {}): Promise<number> {
     await Bun.write(path, contents);
     chmodSync(path, 0o600);
     wrote(path, backedUp ? `(backed up to ${backedUp})` : undefined);
+  }
+
+  // Offered after the config exists, since installing one appends to it.
+  // A fresh install otherwise boots healthy and does nothing, which gives a new
+  // operator no sense of what this is for.
+  const recommended = listRecipes().filter((r) => r.recommended);
+  if (recommended.length && canPrompt()) {
+    heading("Suggested automations");
+    info(dim("Off by default; you enable them in the UI once you have looked at them."));
+    for (const recipe of recommended) {
+      info(dim(`  ${recipe.description}`));
+      if (askYesNo(`Add ${recipe.label}?`, false)) {
+        await installRecipe(recipe);
+        wrote(CONFIG_PATH, `+ ${recipe.id}`);
+      }
+    }
+    info(dim("\n  More: `opensession automations`"));
   }
 
   try {

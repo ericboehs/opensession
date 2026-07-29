@@ -1,0 +1,14 @@
+{
+  "id": "docs-spell-check",
+  "label": "Docs spell-check",
+  "description": "Weekly pass over the repository's documentation for typos and broken links, opening a PR with the fixes.",
+  "requires": [],
+  "automation": {
+    "name": "Docs spell-check",
+    "eventKey": "sweep:docs-spellcheck",
+    "mode": "code",
+    "schedule": "0 16 * * 1",
+    "enabled": false,
+    "prompt": "Proof-read the documentation in this repository and fix what is unambiguously wrong.\n\nScope: markdown files (`README.md`, `docs/**`, and any `*.md` at the top level). Skip generated files, changelogs, and vendored directories.\n\nFix only things that are objectively wrong:\n- spelling mistakes and typos\n- broken internal links (a relative link to a file that does not exist)\n- code fences whose stated language is wrong or missing\n- obviously stale references — a command, path, flag or filename that no longer exists in the repository. Verify with Grep before changing it.\n\nDo NOT:\n- rewrite prose for style, tone, or brevity\n- reformat, re-wrap, or reorder anything\n- touch technical terms, product names, or deliberate spellings you merely find unfamiliar — check them first\n- change American/British spelling to match your preference\n\nOpen one pull request with all the fixes. In the description, group them by kind and state the count. If a change is a judgement call rather than a clear error, leave it out and mention it in the PR description instead.\n\nIf nothing needs fixing, open no PR and say so."
+  }
+}
