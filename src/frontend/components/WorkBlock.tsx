@@ -87,10 +87,7 @@ export const WorkBlock = React.memo(function WorkBlock({
       </button>
 
       {expanded && (
-        <div className="relative mt-0.5 pl-1">
-          {/* Timeline rail drawn behind the (opaque) tool icons */}
-          {/* pl-1 (4px) + row px-1 (4px) + half the 22px icon = 19px to the icon centerline */}
-          <span aria-hidden className="absolute bottom-2 left-[19px] top-2 w-px bg-line" />
+        <div className="mt-0.5">
           {items.map((entry, i) => (
             <ToolCallBlock
               key={entry.id}

@@ -216,15 +216,8 @@ export const TurnBlock = React.memo(function TurnBlock({
             ) : (
               <div
                 key={sec.items[0].id}
-                className="relative pl-1"
                 data-eid={`${sec.items[sec.items.length - 1].id}#sec`}
               >
-                {/* Timeline rail drawn behind the (opaque) tool icons */}
-                {/* pl-1 (4px) + row px-1 (4px) + half the 22px icon = 19px to the icon centerline */}
-                <span
-                  aria-hidden
-                  className="absolute bottom-2 left-[19px] top-2 w-px bg-line"
-                />
                 {sec.items.map((entry) => (
                   <ToolCallBlock
                     key={entry.id}
