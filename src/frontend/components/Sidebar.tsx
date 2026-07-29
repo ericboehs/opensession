@@ -1515,6 +1515,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const repoOrderPending = useRef<string[] | null>(null);
 	const repoVisualOrder = useRef<string[] | null>(null);
 	const repoDragging = useRef<string | null>(null);
+	const [repoDragKey, setRepoDragKey] = useState<string | null>(null);
 	const repoJustDragged = useRef(false);
 	const [pins, setPins] = useState<string[]>(getPins);
 	// Per-user workspace snoozes (row key → ISO until). An overlay like pins:
@@ -4175,6 +4176,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			repoOrderAtDragStart.current = null;
 			repoVisualOrder.current = null;
 			repoDragging.current = null;
+			setRepoDragKey(null);
 			const pending = repoOrderPending.current;
 			repoOrderPending.current = null;
 			setRepoOrderDraft(null);
@@ -4212,6 +4214,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						className={cn(
 							"sidebar-repo-group",
 							canReorder && "cursor-grab active:cursor-grabbing",
+							repoDragKey === repo &&
+								"[&>.sidebar-repo-head]:rounded-md [&>.sidebar-repo-head]:bg-accent-soft [&>.sidebar-repo-head]:opacity-50 [&>.sidebar-repo-head]:ring-1 [&>.sidebar-repo-head]:ring-inset [&>.sidebar-repo-head]:ring-accent",
 						)}
 						key={gkey}
 						data-repo-id={repo}
@@ -4232,6 +4236,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							title={canReorder ? "Drag to reorder repositories" : undefined}
 							onDragStart={(event) => {
 								repoDragging.current = repo;
+								setRepoDragKey(repo);
 								repoOrderAtDragStart.current = [...fullOrder];
 								repoOrderPending.current = null;
 								repoVisualOrder.current = [...order];
