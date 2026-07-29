@@ -177,7 +177,7 @@ export function MyAccountsPanel() {
 					})}
 				</div>
 			)}
-			<GithubAccounts />
+			<GithubAccounts personal />
 		</div>
 	);
 }
