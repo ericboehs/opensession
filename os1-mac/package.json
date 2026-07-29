@@ -6,7 +6,7 @@
   "private": true,
   "main": "src/main.js",
   "opensession": {
-    "defaultServer": "https://os.tella.dev/"
+    "defaultServer": "http://127.0.0.1:3850/"
   },
   "scripts": {
     "start": "electron .",

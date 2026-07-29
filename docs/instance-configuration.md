@@ -27,7 +27,23 @@ point.
   `integrations.seeds.enabled` is true. Existing persisted records are never
   deleted when seeds are disabled.
 
-Client distributions have their own packaging configuration:
+Client distributions have their own packaging configuration. The values
+committed here are deliberately **portable** — `http://127.0.0.1:3850`, so a
+fresh clone points at your own machine and not at somebody else's server. Release
+workflows stamp the real address in at build time from the `OS1_SERVER_URL`
+repository variable.
+
+Every client also lets the user change the server at runtime, so a wrong default
+is an inconvenience rather than a dead end:
+
+| Client | Where the user changes it | Build-time default |
+| --- | --- | --- |
+| Chrome extension | the Server field in the side panel | `os1-chrome/deployment.json` |
+| Electron shell | `OS1_URL` / `OS1_CLOUD_URL` env | `os1-mac/package.json` → `opensession.defaultServer` |
+| Swift app (iOS/macOS) | Settings → Server | `OS1DefaultServerURL` in `os1-ios/project.yml` |
+| Web UI / PWA | n/a — served by the server itself | n/a |
+
+Packaging configuration:
 
 - Chrome: `os1-chrome/deployment.json`
 - Electron: `os1-mac/package.json` → `opensession.defaultServer`

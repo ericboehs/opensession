@@ -64,6 +64,18 @@ jobs:
           mv /tmp/manifest.json os1-chrome/manifest.json
           jq -r '"packing version " + .version' os1-chrome/manifest.json
 
+      # The repository ships a portable default (localhost) so a fresh clone does
+      # not point at someone else's server. Release builds stamp the real one in.
+      # Set the OS1_SERVER_URL repository variable to override.
+      - name: Stamp deployment server
+        if: steps.exists.outputs.skip != 'true'
+        env:
+          SERVER: ${{ vars.OS1_SERVER_URL || 'https://os.tella.dev' }}
+        run: |
+          jq --arg s "$SERVER" '.defaultServer = $s' os1-chrome/deployment.json > /tmp/dep.json
+          mv /tmp/dep.json os1-chrome/deployment.json
+          jq -r '"default server: " + .defaultServer' os1-chrome/deployment.json
+
       - name: Pack signed CRX
         if: steps.exists.outputs.skip != 'true'
         env:

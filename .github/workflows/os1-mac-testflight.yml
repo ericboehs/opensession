@@ -142,6 +142,18 @@ jobs:
           echo "number=$BN" >> "$GITHUB_OUTPUT"
           echo "macOS build number: $BN"
 
+      # The repository ships a portable default (localhost) so a fresh clone does
+      # not point at someone else's server. Release builds stamp the real one in.
+      # Set the OS1_SERVER_URL repository variable to override.
+      - name: Stamp deployment server
+        env:
+          SERVER: ${{ vars.OS1_SERVER_URL || 'https://os.tella.dev' }}
+        run: |
+          grep -q 'INFOPLIST_KEY_OS1DefaultServerURL:' project.yml \
+            || { echo '::error::OS1DefaultServerURL key missing from project.yml'; exit 1; }
+          sed -i '' "s|INFOPLIST_KEY_OS1DefaultServerURL: .*|INFOPLIST_KEY_OS1DefaultServerURL: $SERVER|" project.yml
+          grep 'INFOPLIST_KEY_OS1DefaultServerURL' project.yml
+
       - name: Generate Xcode project
         run: |
           echo "Compilation cache restored: ${{ steps.compilation-cache.outputs.cache-matched-key || 'none' }}" >> "$GITHUB_STEP_SUMMARY"
