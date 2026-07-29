@@ -4246,7 +4246,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		// filtered thread list is the source of truth for it.
 		const plainThreads = isPlain ? plainThreadsInView : null;
 		const count = isPlain ? plainThreads!.length : items.length;
-		if (count === 0 || filter.repo !== "all") return null;
+		// An active filter (or search) must never hide the band — zero matches
+		// with no visible filter menu is a trap you can't click out of. Only a
+		// genuinely empty feed (no raw items, nothing filtered away) hides.
+		const vals = feedFilters[feed.id] || {};
+		const hasActiveFilter =
+			Object.entries(vals).some(([k, v]) => v && k !== "__sort") ||
+			!!search.trim();
+		const rawCount = (feedItems[feed.id] || []).length;
+		if ((count === 0 && rawCount === 0 && !hasActiveFilter) || filter.repo !== "all")
+			return null;
 		const gkey = isPlain ? "project:plain" : `project:feed-${feed.id}`;
 		const open = isOpen(gkey);
 		const renderRow = (item: FeedItem) => (
@@ -4272,16 +4281,25 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				? plainThreads!.filter((t) => (t.priority ?? 2) === 0).length
 				: items.filter((i) => i.lane === feed.attentionLane).length
 			: 0;
+		const noMatches = (
+			<div className="px-3 py-2 text-[12px] text-faint">
+				No items match the filters
+			</div>
+		);
 		const openBody = isPlain ? (
 			<div className="sidebar-repo-lanes">
-				{withLanes
-					? renderSupportLanes(plainThreads!)
-					: [...plainThreads!]
-							.sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2))
-							.map(renderSupportRow)}
+				{count === 0
+					? noMatches
+					: withLanes
+						? renderSupportLanes(plainThreads!)
+						: [...plainThreads!]
+								.sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2))
+								.map(renderSupportRow)}
 			</div>
 		) : (
-			<div className="sidebar-repo-lanes">{items.map(renderRow)}</div>
+			<div className="sidebar-repo-lanes">
+				{count === 0 ? noMatches : items.map(renderRow)}
+			</div>
 		);
 		const collapsedBody = isPlain
 			? activeThreads.length > 0 && (
