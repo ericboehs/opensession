@@ -14,6 +14,11 @@ enum OS1VisualStyle {
     static let text = Color(uiColor: .label)
     static let textDim = Color(uiColor: .secondaryLabel)
     static let textFaint = Color(uiColor: .tertiaryLabel)
+    static let userMessage = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.149, green: 0.192, blue: 0.259, alpha: 1)
+            : UIColor(red: 0.933, green: 0.949, blue: 0.969, alpha: 1)
+    })
     #else
     static let background = Color(nsColor: .windowBackgroundColor)
     static let raised = Color(nsColor: .underPageBackgroundColor)

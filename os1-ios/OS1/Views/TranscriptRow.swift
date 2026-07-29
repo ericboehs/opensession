@@ -36,7 +36,7 @@ struct TranscriptRow: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .foregroundStyle(OS1VisualStyle.text)
-                        .transcriptPanelCompat(
+                        .userMessagePanelCompat(
                             in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                         )
                         .overlay {

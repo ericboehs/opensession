@@ -39,6 +39,16 @@ extension View {
         #endif
     }
 
+    /// Distinguish the person's messages on iOS without changing the Mac surface.
+    @ViewBuilder
+    func userMessagePanelCompat<S: Shape>(in shape: S) -> some View {
+        #if os(iOS)
+        background(OS1VisualStyle.userMessage, in: shape)
+        #else
+        background(.fill.tertiary, in: shape)
+        #endif
+    }
+
     /// Inline nav-bar title on iOS; titles are inline by nature on macOS.
     @ViewBuilder
     func inlineTitleBarCompat() -> some View {
