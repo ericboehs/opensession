@@ -24,6 +24,24 @@ describe("announcesNextAction", () => {
 		);
 	});
 
+	test("matches unfinished tails from bks-019fad64 after tool use", () => {
+		expect(
+			announcesNextAction(
+				"The init effect has no readiness check, so I need to check whether that static value ever updates in the editor, and where.",
+			),
+		).toBe(true);
+		expect(
+			announcesNextAction(
+				"The Seeking branch pushes unconditionally. I need to check whether pushCommand is a safe no-op before init runs.",
+			),
+		).toBe(true);
+		expect(
+			announcesNextAction(
+				"Both edits applied. Now the init effect's deps need `uploadsReady` added so it re-runs when readiness flips.",
+			),
+		).toBe(true);
+	});
+
 	test("matches bare gerund announcements (observed bks-019f54f8 tail)", () => {
 		expect(
 			announcesNextAction("Fetching the review comments on #4791."),
@@ -57,6 +75,15 @@ describe("announcesNextAction", () => {
 			announcesNextAction(
 				"Live verification completed: the bundle contains the new label and health checks pass.",
 			),
+		).toBe(false);
+	});
+
+	test("does not treat explanatory needs as announced work", () => {
+		expect(
+			announcesNextAction("Users need to log in before opening this page."),
+		).toBe(false);
+		expect(
+			announcesNextAction("Now users need to log in before opening this page."),
 		).toBe(false);
 	});
 

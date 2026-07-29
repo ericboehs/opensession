@@ -1681,8 +1681,8 @@ async function runSessionPromptInner(
 	// the session posted to (slackReplyTo — e.g. a reply under an automation's
 	// summary message lands here via deliverToSession).
 	let assistantText = "";
-	// Tool calls seen this run — the announce-then-stop guard below only fires
-	// on turns that did no work at all.
+	// Tool calls seen this run — used to replenish the continuation budget only
+	// while human messages are queued behind ongoing work.
 	let toolUseCount = 0;
 
 	for await (const event of sandboxRun ?? runAgent({
@@ -2048,30 +2048,31 @@ async function runSessionPromptInner(
 
 	// Announce-then-stop guard: the instruction-layer fix (28731464) still lets
 	// an occasional turn end cleanly on a plan sentence ("Now let me read the
-	// exact code…") with zero tool calls — the session then sits idle until the
-	// human types "continue" (seen 2026-07-10 bks-019f4b70, again 2026-07-12
-	// bks-019f533e). When a clean, tool-less interactive turn ends on an
-	// announced next action, queue ONE auto-continue; the drain watcher delivers
-	// it as the next turn. Never for automation sessions, never over a user
-	// Stop, one consecutive workless nudge max.
+	// exact code…") — including after substantial tool use. The session then
+	// sits idle until the human types "continue" (seen 2026-07-10 bks-019f4b70,
+	// 2026-07-12 bks-019f533e, and repeatedly after 5-8 tool calls in 2026-07-29
+	// bks-019fad64). Queue ONE auto-continue per human prompt when a clean
+	// interactive turn ends on an announced next action; the drain watcher
+	// delivers it as the next turn. Never for automation sessions or over a user
+	// Stop.
 	//
 	// Queue-hold: queued messages are a promise to deliver at FULL completion,
 	// so when the turn ends still announcing work while something is queued,
 	// the nudge fires ahead of the queue (front + solo drain) — regardless of
 	// tool use — and the user's messages stay parked until a turn ends without
-	// announcing more. Turns doing real work reset the nudge budget, so a
-	// genuinely working agent holds the queue as long as it needs; a stalled
-	// one (two workless announces in a row) lets the queue drain.
-	if (toolUseCount > 0) autoContinueNudged.delete(sessionId);
+	// announcing more. When messages are waiting, turns doing real work reset
+	// the nudge budget so a genuinely working agent holds the queue as long as it
+	// needs; without a queue, the budget remains one nudge per human prompt so a
+	// model cannot loop indefinitely by using one tool before each announcement.
 	const queuedBehind = (promptQueues.get(sessionId) || []).filter(
 		(m) => m.user !== AUTO_CONTINUE_USER,
 	).length;
+	if (queuedBehind > 0 && toolUseCount > 0) autoContinueNudged.delete(sessionId);
 	if (
 		!endedWithError &&
 		!runFailure &&
 		session.source === "backstage" &&
 		!isAutomationSession &&
-		(toolUseCount === 0 || queuedBehind > 0) &&
 		!stoppedSessions.has(sessionId) &&
 		!autoContinueNudged.has(sessionId) &&
 		announcesNextAction(assistantText)

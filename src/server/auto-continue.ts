@@ -5,7 +5,7 @@
  * bks-019f533e ("Research is complete… Now let me read the exact code…"),
  * where the session then sat idle overnight until the user typed "continue".
  * run-session.ts uses this detector to send ONE bounded auto-continue when a
- * clean, tool-less turn ends on an announced next action.
+ * clean turn ends on an announced next action.
  */
 
 /** Sentinel user for the auto-continue turn (also keys the one-nudge guard). */
@@ -57,7 +57,17 @@ export function announcesNextAction(text: string): boolean {
 	)
 		return false;
 	if (
-		/\b(let me|i['’]ll|i will|i['’]m going to|i['’]m about to|next,? i|now i['’]m|now i will)\b/i.test(
+		/\b(let me|i['’]ll|i will|i need to|i['’]m going to|i['’]m about to|next,? i|now i['’]m|now i will)\b/i.test(
+			last,
+		)
+	)
+		return true;
+	// Passive implementation announcements can omit the model as actor, e.g.
+	// "Now the init effect's deps need `uploadsReady` added…". Keep this to
+	// concrete mutation/verification verbs so explanatory "users need to…"
+	// sentences do not trigger another turn.
+	if (
+		/^(?:now|next),?\s+.{1,180}\bneeds?\s+.{1,120}\b(?:added|updated|changed|fixed|implemented|removed|verified|checked|tested|run)\b/i.test(
 			last,
 		)
 	)
