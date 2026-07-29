@@ -66,6 +66,8 @@ jobs:
         with:
           path: ${{ env.OS1_DERIVED_DATA }}/SourcePackages
           key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('os1-ios/project.yml') }}
+          restore-keys: |
+            os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-
 
       # The universal archive recompiles every dependency for arm64 and x86_64.
       # Xcode 26's CAS reuses those compiler outputs across clean archives.
@@ -77,6 +79,7 @@ jobs:
           key: os1-cas-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}-${{ github.sha }}
           restore-keys: |
             os1-cas-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}-
+            os1-cas-v1-macos-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-
 
       - name: Build signing keychain (both identities, -A key access)
         env:

@@ -47,23 +47,6 @@ targets:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: Apple Distribution
           PROVISIONING_PROFILE_SPECIFIER: OS1 App Store
-    # Explicit scheme (replaces Xcode's autocreated one) so `xcodebuild test
-    # -scheme OS1` runs the unit bundle; archive stays Release, unchanged.
-    scheme:
-      testTargets:
-        - OS1Tests
-  OS1Tests:
-    type: bundle.unit-test
-    platform: iOS
-    sources:
-      - OS1Tests
-    dependencies:
-      - target: OS1
-    settings:
-      base:
-        GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: dev.tella.os1.tests
-        SWIFT_VERSION: "5.9"
   OS1Mac:
     type: application
     platform: macOS
@@ -104,3 +87,22 @@ targets:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: Apple Distribution
           PROVISIONING_PROFILE_SPECIFIER: OS1 Mac App Store
+    # The test sources are pure logic. Hosting them in the native macOS app
+    # avoids booting and installing into an iOS simulator on every CI run.
+    scheme:
+      testTargets:
+        - OS1Tests
+  OS1Tests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - OS1Tests
+    dependencies:
+      - target: OS1Mac
+    settings:
+      base:
+        BUNDLE_LOADER: $(TEST_HOST)
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tella.os1.tests
+        SWIFT_VERSION: "5.9"
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/OS1.app/Contents/MacOS/OS1

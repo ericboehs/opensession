@@ -32,9 +32,9 @@ ssh tella-mac-node '
     -destination "generic/platform=iOS Simulator" -derivedDataPath /tmp/os1-check/dd
   xcodebuild -quiet build -skipMacroValidation -project OS1.xcodeproj -scheme OS1Mac \
     -destination "platform=macOS" -derivedDataPath /tmp/os1-check/dd CODE_SIGNING_ALLOWED=NO
-  UDID=$(xcrun simctl list devices available | grep iPhone | grep -m1 -oE "[0-9A-F-]{36}")
-  xcodebuild -quiet test -skipMacroValidation -project OS1.xcodeproj -scheme OS1 \
-    -destination "id=$UDID" -derivedDataPath /tmp/os1-check/dd'
+  xcodebuild -quiet test -skipMacroValidation -project OS1.xcodeproj -scheme OS1Mac \
+    -destination "platform=macOS" -derivedDataPath /tmp/os1-check/dd \
+    CODE_SIGNING_ALLOWED=NO'
 ```
 
 - Always build BOTH schemes: `#if os(macOS)` blocks only compile in `OS1Mac`.

@@ -58,6 +58,8 @@ jobs:
         with:
           path: ${{ env.OS1_DERIVED_DATA }}/SourcePackages
           key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('os1-ios/project.yml') }}
+          restore-keys: |
+            os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-
 
       # Xcode archives rebuild their DerivedData intermediates. Xcode 26's CAS
       # is specifically designed to reuse compiler outputs across clean builds.
@@ -69,6 +71,7 @@ jobs:
           key: os1-cas-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}-${{ github.sha }}
           restore-keys: |
             os1-cas-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}-
+            os1-cas-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-
 
       - name: Import Apple Distribution certificate
         uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
@@ -102,16 +105,13 @@ jobs:
           echo "Compilation cache restored: ${{ steps.compilation-cache.outputs.cache-matched-key || 'none' }}" >> "$GITHUB_STEP_SUMMARY"
           xcodegen generate
 
-      - name: Run unit tests
+      - name: Run unit tests on macOS
         run: |
-          # Any available iPhone simulator will do; the suite is pure logic.
-          UDID=$(xcrun simctl list devices available | grep iPhone | grep -m1 -oE '[0-9A-F-]{36}')
-          test -n "$UDID"
           xcodebuild test \
             -skipMacroValidation \
             -project OS1.xcodeproj \
-            -scheme OS1 \
-            -destination "id=$UDID" \
+            -scheme OS1Mac \
+            -destination 'platform=macOS' \
             -derivedDataPath "$OS1_DERIVED_DATA" \
             COMPILATION_CACHE_ENABLE_CACHING=YES \
             SWIFT_ENABLE_COMPILE_CACHE=YES \
