@@ -30,7 +30,6 @@ import {
   archiveSlackChannel,
   setChannelTopic,
   inviteBotToChannel,
-  cleanupWorktrees,
   getWorktreeDirForChannel,
 } from "./worktree-channels";
 import { loadQueueFromDisk, sessionQueues } from "./queue";
@@ -80,10 +79,6 @@ import {
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || "";
 const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || "";
-
-// Cleanup interval handle
-let cleanupInterval: ReturnType<typeof setInterval> | null = null;
-let cleanupTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Shared-secret gate for the /worktree/* hooks. Caddy proxies all of the
@@ -1012,10 +1007,6 @@ Please address this feedback:
       console.warn("[slack] Failed to fetch Slack team info:", e);
     }
 
-    // Run cleanup every 6 hours, and once on startup (after 60s delay)
-    cleanupTimeout = setTimeout(cleanupWorktrees, 60_000);
-    cleanupInterval = setInterval(cleanupWorktrees, 6 * 60 * 60 * 1000);
-
     console.log("[slack] Agent started");
   }
 
@@ -1026,10 +1017,6 @@ Please address this feedback:
         sq.abortController.abort();
       }
     }
-
-    // Clear cleanup timers
-    if (cleanupTimeout) clearTimeout(cleanupTimeout);
-    if (cleanupInterval) clearInterval(cleanupInterval);
 
     console.log("[slack] Agent shut down");
   }

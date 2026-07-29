@@ -367,13 +367,38 @@ export async function reviveWorktree(branch: string, repoId?: string): Promise<s
 
   return withGitLock(async () => {
     await $`git -C ${repo.repo} worktree prune`.quiet();
+    if (existsSync(wtPath)) return wtPath;
+    const owner = (await listWorktrees(repo.id)).find((w) => w.branch === branch);
+    if (owner) {
+      throw new Error(
+        `Branch ${JSON.stringify(branch)} is already checked out at ${owner.path}; cannot recreate ${wtPath}`,
+      );
+    }
     const hasBranch =
       (await $`git -C ${repo.repo} show-ref --verify --quiet refs/heads/${branch}`.nothrow()).exitCode === 0;
+    let add;
     if (hasBranch) {
-      await $`git -C ${repo.repo} worktree add ${wtPath} ${branch}`;
+      add = await $`git -C ${repo.repo} worktree add ${wtPath} ${branch}`.quiet().nothrow();
     } else {
-      await $`git -C ${repo.repo} fetch origin ${repo.defaultBranch} --quiet`;
-      await $`git -C ${repo.repo} worktree add -b ${branch} ${wtPath} origin/${repo.defaultBranch}`;
+      const fetchBranch = await $`git -C ${repo.repo} fetch origin +refs/heads/${branch}:refs/remotes/origin/${branch} --quiet`
+        .quiet()
+        .nothrow();
+      const hasRemote =
+        fetchBranch.exitCode === 0 &&
+        (await $`git -C ${repo.repo} show-ref --verify --quiet refs/remotes/origin/${branch}`.nothrow())
+          .exitCode === 0;
+      if (!hasRemote) {
+        await $`git -C ${repo.repo} fetch origin ${repo.defaultBranch} --quiet`;
+      }
+      const startPoint = hasRemote ? `origin/${branch}` : `origin/${repo.defaultBranch}`;
+      add = await $`git -C ${repo.repo} worktree add -b ${branch} ${wtPath} ${startPoint}`
+        .quiet()
+        .nothrow();
+    }
+    if (add.exitCode !== 0) {
+      throw new Error(
+        `git worktree add failed for ${JSON.stringify(branch)}: ${add.stderr.toString().trim().slice(0, 300)}`,
+      );
     }
     return wtPath;
   });
@@ -482,6 +507,9 @@ export async function createReviewWorktreeForPrHead(
     );
     await fetchBranchesWithTracking(repo.repo, headRef, baseRef || repo.defaultBranch);
     if (existsSync(wtPath)) {
+      // A code session recovering from a deleted worktree may have borrowed this
+      // path and switched it onto the source branch. Restore review ownership.
+      await $`git -C ${wtPath} switch -C ${headRef}-os-review origin/${headRef}`.quiet();
       await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet();
       return wtPath;
     }

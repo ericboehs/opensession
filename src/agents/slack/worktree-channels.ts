@@ -9,20 +9,11 @@ import { sendSlackMessage } from "./slack-api";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import {
-  githubApi,
   findGitHubUsersForBranch,
   inviteRelevantUsersToChannel,
 } from "./github-reviews";
-import {
-  SESSION_DIR,
-  DEFAULT_CWD,
-  GITHUB_REPO,
-  activeSessions,
-} from "./state";
-import { removeWorktree, worktreePathFor } from "../../server/worktree";
-import { defaultRepo } from "../../server/config";
-import { runCommand } from "../../server/run-command";
-import { statSync } from "fs";
+import { SESSION_DIR } from "./state";
+import { worktreePathFor } from "../../server/worktree";
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const WORKTREE_CHANNELS_FILE = `${SESSION_DIR}/worktree-channels.json`;
@@ -231,71 +222,5 @@ export async function inviteBotToChannel(channelId: string): Promise<void> {
   const joinData = (await joinResp.json()) as any;
   if (!joinData.ok) {
     console.error("[slack] conversations.join error:", joinData.error);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Auto-cleanup stale worktrees (cron)
-// ---------------------------------------------------------------------------
-
-export async function cleanupWorktrees(): Promise<void> {
-  const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-
-  try {
-    // List all worktree branches
-    const result = await runCommand(["git", "worktree", "list", "--porcelain"], {
-      cwd: DEFAULT_CWD,
-    });
-    if (result.status !== 0) return;
-
-    const worktreePaths = (result.stdout as string)
-      .split("\n")
-      .filter((l: string) => l.startsWith("worktree "))
-      .map((l: string) => l.replace("worktree ", ""))
-      .filter((p: string) => p !== DEFAULT_CWD); // skip main repo
-
-    for (const wtPath of worktreePaths) {
-      const branch = wtPath.split("/").pop()?.replace(`${defaultRepo().wtPrefix}-`, "");
-      if (!branch) continue;
-
-      // Check if PR for this branch is merged
-      const prs = await githubApi(
-        `/repos/${GITHUB_REPO}/pulls?head=${GITHUB_REPO.split("/")[0]}:${branch}&state=closed&per_page=1`
-      );
-      const hasMergedPR =
-        prs && Array.isArray(prs) && prs.length > 0 && prs[0].merged_at;
-
-      if (hasMergedPR) {
-        console.log(
-          `[slack] [cleanup] Branch ${branch} has merged PR #${prs[0].number}, cleaning up`
-        );
-      } else {
-        // No merged PR — only clean up if older than 7 days
-        const sessionEntry = [...activeSessions.entries()].find(
-          ([, s]) => s.branch === branch
-        );
-        const session = sessionEntry?.[1];
-        let lastActiveMs = session?.lastActivity
-          ? new Date(session.lastActivity).getTime()
-          : 0;
-
-        // Fallback: check worktree directory mtime
-        if (!lastActiveMs) {
-          try {
-            lastActiveMs = statSync(wtPath).mtimeMs;
-          } catch {}
-        }
-
-        if (!lastActiveMs || Date.now() - lastActiveMs < SEVEN_DAYS) continue;
-        console.log(
-          `[slack] [cleanup] Branch ${branch} has no PR and is older than 7 days, cleaning up`
-        );
-      }
-
-      await removeWorktree(branch, defaultRepo().id);
-      console.log(`[slack] [cleanup] Deleted worktree: ${branch}`);
-    }
-  } catch (e) {
-    console.error("[slack] [cleanup] Worktree cleanup error:", e);
   }
 }
