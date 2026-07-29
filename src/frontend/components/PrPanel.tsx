@@ -1018,7 +1018,7 @@ export function PrPanel({
           : "Submit review";
     return (
       <div
-        className="relative flex h-full min-h-0 flex-col overflow-hidden bg-surface"
+        className="selectable relative flex h-full min-h-0 flex-col overflow-hidden bg-surface"
         data-review-canvas="true"
         ref={rootRef}
       >
