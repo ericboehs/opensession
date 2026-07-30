@@ -196,7 +196,7 @@ function StatCell({
 }) {
   return (
     <div
-      className="relative min-w-0 px-5 py-3 transition-colors group-hover:bg-hover max-[720px]:px-4 max-[720px]:py-2.5"
+      className="relative min-w-0 px-5 py-3 transition-colors group-hover:bg-active max-[720px]:px-4 max-[720px]:py-2.5"
       title={title}
     >
       <span
@@ -258,7 +258,7 @@ function OverviewStrip({
       onClick={onOpenAnalytics}
       title={stats ? "Open Analytics" : "Analytics are loading"}
       aria-busy={!stats}
-      className="group mt-6 grid w-full cursor-pointer grid-cols-5 overflow-hidden rounded-xl bg-panel p-0 text-left outline-none transition-[background,box-shadow] hover:bg-hover focus-visible:shadow-[0_0_0_3px_var(--accent-soft)] max-[860px]:grid-cols-3 max-[560px]:grid-cols-2"
+      className="group mt-6 grid w-full cursor-pointer grid-cols-5 overflow-hidden rounded-xl bg-hover p-0 text-left outline-none transition-[background,box-shadow] hover:bg-active focus-visible:shadow-[0_0_0_3px_var(--accent-soft)] max-[860px]:grid-cols-3 max-[560px]:grid-cols-2"
     >
       <StatCell
         value={fmtCompact(running)}
