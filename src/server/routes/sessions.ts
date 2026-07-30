@@ -57,7 +57,41 @@ import {
 } from "./github-credential";
 import { defaultRepo } from "../config";
 
-let sessionsGzipCache: { hash: string; body: Blob } | null = null;
+const SESSIONS_RESPONSE_TTL_MS = 5_000;
+interface SessionsResponseSnapshot {
+	text: string;
+	hash: string;
+	cloudUnreachable: boolean;
+	expiresAt: number;
+	gzip?: Blob;
+}
+let sessionsResponseSnapshot: SessionsResponseSnapshot | null = null;
+
+function sessionsListResponse(
+	req: Request,
+	snapshot: SessionsResponseSnapshot,
+): Response {
+	const gzip = (req.headers.get("Accept-Encoding") || "").includes("gzip");
+	const etag = `"${snapshot.hash}${gzip ? "-gzip" : ""}"`;
+	const headers = new Headers({
+		"Cache-Control": "private, no-cache",
+		"Content-Type": "application/json; charset=utf-8",
+		ETag: etag,
+		Vary: "Accept-Encoding",
+	});
+	if (snapshot.cloudUnreachable)
+		headers.set("X-OpenSession-Cloud-Unreachable", "true");
+	if (gzip) headers.set("Content-Encoding", "gzip");
+	if (req.headers.get("If-None-Match") === etag)
+		return new Response(null, { status: 304, headers });
+	if (!gzip) return new Response(snapshot.text, { headers });
+	if (!snapshot.gzip) {
+		snapshot.gzip = new Blob([
+			Bun.gzipSync(new TextEncoder().encode(snapshot.text)),
+		]);
+	}
+	return new Response(snapshot.gzip, { headers });
+}
 
 /**
  * List which of `files` contain `query` (case-insensitive, literal) via
@@ -161,6 +195,12 @@ export async function handleSessionsRoutes(
 
 	// List sessions
 	if (path === "/backstage/api/sessions" && req.method === "GET") {
+		if (
+			sessionsResponseSnapshot &&
+			sessionsResponseSnapshot.expiresAt > Date.now()
+		) {
+			return sessionsListResponse(req, sessionsResponseSnapshot);
+		}
 		// Enrich with live, in-process signals that aren't on the cached session
 		// objects: whether a run is blocked on a human question (pendingAsks) and
 		// how many prompts are queued behind it. Drives the sidebar/tab "needs
@@ -183,30 +223,13 @@ export async function handleSessionsRoutes(
 			}));
 		const { sessions, cloudUnreachable } = await mergedCloudSessions(enriched);
 		const text = JSON.stringify(sessions.filter((s) => !isLegacySideChat(s)));
-		const hash = Bun.hash(text).toString(16);
-		const gzip = (req.headers.get("Accept-Encoding") || "").includes("gzip");
-		const etag = `"${hash}${gzip ? "-gzip" : ""}"`;
-		const headers = new Headers({
-			"Cache-Control": "private, no-cache",
-			"Content-Type": "application/json; charset=utf-8",
-			ETag: etag,
-			Vary: "Accept-Encoding",
-		});
-		if (cloudUnreachable)
-			headers.set("X-OpenSession-Cloud-Unreachable", "true");
-		if (gzip) headers.set("Content-Encoding", "gzip");
-		if (req.headers.get("If-None-Match") === etag)
-			return new Response(null, { status: 304, headers });
-		if (gzip) {
-			if (sessionsGzipCache?.hash !== hash) {
-				sessionsGzipCache = {
-					hash,
-					body: new Blob([Bun.gzipSync(new TextEncoder().encode(text))]),
-				};
-			}
-			return new Response(sessionsGzipCache.body, { headers });
-		}
-		return new Response(text, { headers });
+		sessionsResponseSnapshot = {
+			text,
+			hash: Bun.hash(text).toString(16),
+			cloudUnreachable,
+			expiresAt: Date.now() + SESSIONS_RESPONSE_TTL_MS,
+		};
+		return sessionsListResponse(req, sessionsResponseSnapshot);
 	}
 
 	// Deliver a follow-up prompt to an existing session. REST shape for the
