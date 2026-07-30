@@ -1098,6 +1098,10 @@ export function PrPanel({
           </div>
         </section>
 
+        {/* Where this PR sits in its chain of layers — directly under Git
+            status, because it reframes what that status means. */}
+        <StackSection pr={pr} sessionId={sessionId} onLinked={load} />
+
         {sessionsOpen && (
           <>
             <button
@@ -2221,14 +2225,22 @@ function PrCard({
  * another chat's branch but whose PRs were never linked (pr.stackBase, set by
  * the session PR route).
  */
-function StackCard({
+/**
+ * The stack map body: every layer of a GitHub stack, top layer first (the
+ * trunk sits under the last row, the way the stack is drawn on github.com).
+ * The row for the PR being viewed is marked rather than linked — it's already
+ * here. Rendered by both PrPanel layouts through the wrappers below.
+ *
+ * Also carries the "link into a stack" action for a chat that was branched off
+ * another chat's branch but whose PRs were never linked (pr.stackBase, set by
+ * the session PR route).
+ */
+function StackBody({
   pr,
   sessionId,
   onLinked,
 }: {
   pr: PrDetails;
-  /** Absent on the session-less /pr/<repo>/<branch> view: the map still
-   *  renders there, only the link action needs a chat to act on. */
   sessionId?: string;
   onLinked: () => void;
 }) {
@@ -2251,12 +2263,9 @@ function StackCard({
     }
   };
 
-  if (!stack) {
-    // Not stacked on GitHub. Only worth a card when this chat sits on another
-    // chat's branch — otherwise a standalone PR would grow an empty section.
-    if (!pr.stackBase || !sessionId) return null;
+  if (!stack)
     return (
-      <PrCard title="Stack">
+      <>
         <div className="text-xs leading-relaxed text-dim">
           This branch was cut from{" "}
           <span className="rounded-sm border border-line bg-surface px-1.5 py-0.5 text-[11px]">
@@ -2274,21 +2283,13 @@ function StackCard({
           </button>
           {error && <span className="text-xs text-red">{error}</span>}
         </div>
-      </PrCard>
+      </>
     );
-  }
 
   // Top of the stack first — the trunk is the base line below the last row.
   const layers = [...stack.layers].sort((a, b) => b.position - a.position);
   return (
-    <PrCard
-      title="Stack"
-      headExtra={
-        <span className="text-[11px] text-faint">
-          {stack.position} of {stack.size}
-        </span>
-      }
-    >
+    <>
       {layers.map((layer) => {
         const current = layer.number === pr.number;
         const tone =
@@ -2335,7 +2336,73 @@ function StackCard({
           {stack.baseRefName}
         </span>
       </div>
+    </>
+  );
+}
+
+/**
+ * Whether this PR has anything stack-shaped to say: a real stack, or a chat
+ * stacked locally whose PRs a human could still link. Both layouts gate on
+ * this so a standalone PR never grows an empty section.
+ */
+function hasStackToShow(pr: PrDetails, sessionId?: string): boolean {
+  return !!pr.stack || (!!pr.stackBase && !!sessionId);
+}
+
+/** Card form — the narrow right-hand column layout. */
+function StackCard({
+  pr,
+  sessionId,
+  onLinked,
+}: {
+  pr: PrDetails;
+  /** Absent on the session-less /pr/<repo>/<branch> view: the map still
+   *  renders there, only the link action needs a chat to act on. */
+  sessionId?: string;
+  onLinked: () => void;
+}) {
+  if (!hasStackToShow(pr, sessionId)) return null;
+  return (
+    <PrCard
+      title="Stack"
+      headExtra={
+        pr.stack ? (
+          <span className="text-[11px] text-faint">
+            {pr.stack.position} of {pr.stack.size}
+          </span>
+        ) : undefined
+      }
+    >
+      <StackBody pr={pr} sessionId={sessionId} onLinked={onLinked} />
     </PrCard>
+  );
+}
+
+/** Section form — the wide review-canvas layout, matching Git status above it. */
+function StackSection({
+  pr,
+  sessionId,
+  onLinked,
+}: {
+  pr: PrDetails;
+  sessionId?: string;
+  onLinked: () => void;
+}) {
+  if (!hasStackToShow(pr, sessionId)) return null;
+  return (
+    <section className="shrink-0 px-6 pb-4 max-[720px]:px-3">
+      <h2 className="m-0 mb-1 flex items-center gap-2 text-xs font-semibold text-dim">
+        Stack
+        {pr.stack && (
+          <span className="font-normal text-faint">
+            {pr.stack.position} of {pr.stack.size}
+          </span>
+        )}
+      </h2>
+      <div className="flex max-w-[680px] flex-col gap-1">
+        <StackBody pr={pr} sessionId={sessionId} onLinked={onLinked} />
+      </div>
+    </section>
   );
 }
 
