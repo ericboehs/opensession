@@ -10057,8 +10057,8 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	position: fixed;
 	max-height: 240px;
 	overflow-y: auto;
-	background: var(--bg-panel);
-	border: 1px solid var(--border-strong);
+	background: var(--control-surface);
+	border: 1px solid var(--border);
 	border-radius: calc(16px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
 	padding: 4px;
@@ -10079,7 +10079,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	overflow: hidden;
 }
 .mention-item-active {
-	background: color-mix(in srgb, var(--accent) 16%, transparent);
+	background: var(--bg-active);
 }
 .mention-repo {
 	flex-shrink: 0;
