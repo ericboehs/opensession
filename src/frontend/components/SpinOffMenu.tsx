@@ -1,6 +1,8 @@
 import { AGENT_NAME } from "../lib/brand";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
+import { Button } from "../ui/button";
 import { Menu } from "../ui/menu";
+import { Modal } from "../ui/modal";
 import { IconBranches, IconChevronRight } from "./icons";
 import type { UnifiedSession, TranscriptEntry } from "../lib/types";
 import { getCurrentUser } from "./UserPicker";
@@ -26,6 +28,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
   const [branch, setBranch] = useState("");
   const [task, setTask] = useState("");
   const [starting, setStarting] = useState(false);
+  const branchRef = useRef<HTMLInputElement>(null);
 
   const isAsk = session.mode === "ask";
   const hasContent = entries.some((e) => e.type === "assistant");
@@ -112,8 +115,27 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
   const itemCls =
     "flex-col items-start gap-0.5 rounded-none border-b border-line px-3.5 py-2.5 last:border-b-0";
 
+  const fieldLabelCls = "flex flex-col gap-1.5 text-sm font-medium text-fg";
+  const fieldCls =
+    "w-full rounded-md border border-line-strong bg-surface px-3 text-sm text-fg outline-none placeholder:text-faint focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]";
+
+  const flavorMeta: Record<Flavor, { title: string; description: string }> = {
+    build: {
+      title: "Build this",
+      description: "Start a coding session with this conversation as context.",
+    },
+    learnings: {
+      title: "Capture learnings → docs PR",
+      description: `${AGENT_NAME} adds what was learned here to ${session.repo || "the repository"} docs, as a PR to review.`,
+    },
+    analyze: {
+      title: "Analyze session",
+      description: "What went well, what didn't, and a prompt that would have worked in one shot.",
+    },
+  };
+
   return (
-    <div className="spinoff">
+    <>
       <Menu.SubmenuRoot open={menuOpen} onOpenChange={setMenuOpen}>
         <Menu.SubmenuTrigger title="Spin off a new session from this one">
           <IconBranches size={20} />
@@ -138,17 +160,35 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
         </Menu.Popup>
       </Menu.SubmenuRoot>
 
-      {flavor && (
-        <div className="spinoff-form">
-          <div className="spinoff-form-title">
-            {flavor === "build" ? "Build this" : flavor === "learnings" ? "Capture learnings → docs PR" : "Analyze session"}
-          </div>
+      {/* The form used to be an absolutely-positioned panel inside this menu
+          popup — which clips overflow, so a 380px form in a ≤300px menu was
+          sawn down to a sliver of its own buttons. It's a form opened from a
+          menu row, so it takes the same shape as the sibling Move-to-cloud
+          dialog: ui/modal, which portals out of the menu and brings the shared
+          focus trap, Escape/backdrop dismissal and enter/exit motion. */}
+      <Modal.Root
+        open={flavor !== null}
+        onOpenChange={(next) => {
+          if (!next && !starting) setFlavor(null);
+        }}
+        disablePointerDismissal={starting}
+      >
+        <Modal.Content
+          widthClassName="max-w-[30rem]"
+          initialFocus={needsBranch ? branchRef : undefined}
+        >
+          <Modal.Header
+            icon={<IconBranches size={22} />}
+            title={flavor ? flavorMeta[flavor].title : ""}
+            description={flavor ? flavorMeta[flavor].description : undefined}
+          />
 
           {needsBranch && (
-            <label>
+            <label className={fieldLabelCls}>
               Branch
               <input
-                className="mono-input"
+                ref={branchRef}
+                className={`${fieldCls} h-10 font-mono`}
                 value={branch}
                 onChange={(e) => setBranch(e.target.value)}
                 disabled={starting}
@@ -157,9 +197,10 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
           )}
 
           {flavor !== "analyze" && (
-            <label>
+            <label className={fieldLabelCls}>
               {flavor === "build" ? "Task" : "Extra guidance (optional)"}
               <textarea
+                className={`${fieldCls} resize-y py-2 leading-relaxed`}
                 value={task}
                 onChange={(e) => setTask(e.target.value)}
                 rows={3}
@@ -169,20 +210,23 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
             </label>
           )}
 
-          <div className="spinoff-form-actions">
-            <button className="btn-delete-cancel" onClick={() => setFlavor(null)} disabled={starting}>
+          <Modal.Footer>
+            {starting && (
+              <span className="text-[11.5px] text-faint">
+                Starting the session. We'll take you there automatically.
+              </span>
+            )}
+            <div className="flex-1" />
+            <Button variant="ghost" onClick={() => setFlavor(null)} disabled={starting}>
               Cancel
-            </button>
-            <button className="btn-send" onClick={start} disabled={!canStart}>
+            </Button>
+            <Button variant="primary" onClick={start} disabled={!canStart}>
               {starting ? "Starting…" : "Start session"}
-            </button>
-          </div>
-          {starting && (
-            <div className="spinoff-note">Starting the session. We'll take you there automatically.</div>
-          )}
-        </div>
-      )}
-    </div>
+            </Button>
+          </Modal.Footer>
+        </Modal.Content>
+      </Modal.Root>
+    </>
   );
 }
 
