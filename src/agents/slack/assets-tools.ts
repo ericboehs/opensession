@@ -19,12 +19,13 @@ import { createSdkMcpServer, tool } from "../../server/inprocess-mcp";
 import { z } from "zod";
 import {
   assetsDirFor,
-  deleteAsset,
-  listAssets,
-  resolveAssetPath,
+  deleteAssetAcross,
+  findAssetPath,
+  listAssetsAcross,
   writeAsset,
   MAX_WRITE_BYTES,
 } from "../../server/session-assets";
+import { sessionIdsFor } from "../../server/session-cache";
 import { readFileSync, statSync } from "fs";
 
 const READ_CAP = 256 * 1024;
@@ -40,6 +41,7 @@ function fmtSize(n: number): string {
 }
 
 export function createAssetsMcpServer(ctx: { sessionId: string }) {
+  const assetSessionIds = () => sessionIdsFor(ctx.sessionId);
   const tools = [
     tool(
       "write_asset",
@@ -58,14 +60,15 @@ export function createAssetsMcpServer(ctx: { sessionId: string }) {
       },
       async (args: { path: string; content: string; encoding?: "utf8" | "base64" }) => {
         try {
+          const sessionId = assetSessionIds()[0] || ctx.sessionId;
           const data = Buffer.from(
             args.content,
             args.encoding === "base64" ? "base64" : "utf8"
           );
-          const f = writeAsset(ctx.sessionId, args.path, data);
+          const f = writeAsset(sessionId, args.path, data);
           return text(
             `Saved ${f.path} (${fmtSize(f.size)}). It's visible in this session's Assets tab now.\n` +
-              `On disk: ${assetsDirFor(ctx.sessionId)}/${f.path}`
+              `On disk: ${assetsDirFor(sessionId)}/${f.path}`
           );
         } catch (e: any) {
           return text(`Couldn't write ${args.path}: ${e?.message || String(e)}`);
@@ -77,8 +80,9 @@ export function createAssetsMcpServer(ctx: { sessionId: string }) {
       "List this session's assets folder (path, size, modified time), plus its on-disk location. In code mode you can also write into that directory directly with shell tools — useful for binary files or anything over the write_asset size cap.",
       {},
       async () => {
-        const dir = assetsDirFor(ctx.sessionId);
-        const files = listAssets(ctx.sessionId);
+        const sessionIds = assetSessionIds();
+        const dir = assetsDirFor(sessionIds[0] || ctx.sessionId);
+        const files = listAssetsAcross(sessionIds);
         if (!files.length)
           return text(
             `No assets yet. Save files with write_asset (or directly into ${dir}); ` +
@@ -98,7 +102,9 @@ export function createAssetsMcpServer(ctx: { sessionId: string }) {
       },
       async (args: { path: string }) => {
         try {
-          const { abs, rel } = resolveAssetPath(ctx.sessionId, args.path);
+          const found = findAssetPath(assetSessionIds(), args.path);
+          if (!found) throw new Error(`no such asset: ${args.path}`);
+          const { abs, rel } = found;
           const size = statSync(abs).size;
           const buf = readFileSync(abs);
           const body = buf.subarray(0, READ_CAP).toString("utf8");
@@ -120,7 +126,7 @@ export function createAssetsMcpServer(ctx: { sessionId: string }) {
       },
       async (args: { path: string }) => {
         try {
-          deleteAsset(ctx.sessionId, args.path);
+          deleteAssetAcross(assetSessionIds(), args.path);
           return text(`Deleted ${args.path}.`);
         } catch (e: any) {
           return text(`Couldn't delete ${args.path}: ${e?.message || String(e)}`);

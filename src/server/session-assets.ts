@@ -127,12 +127,52 @@ export function listAssets(sessionId: string): SessionAssetFile[] {
 	return out.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+/** Merge asset folders for one canonical session and its historical aliases.
+ * Canonical files win when the same relative path exists in more than one. */
+export function listAssetsAcross(sessionIds: string[]): SessionAssetFile[] {
+	const files = new Map<string, SessionAssetFile>();
+	for (const sessionId of new Set(sessionIds)) {
+		for (const file of listAssets(sessionId)) {
+			if (!files.has(file.path)) files.set(file.path, file);
+		}
+	}
+	return [...files.values()].sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** Find an existing file across a canonical session and its aliases. */
+export function findAssetPath(
+	sessionIds: string[],
+	relPath: string,
+): { abs: string; rel: string; sessionId: string } | null {
+	for (const sessionId of new Set(sessionIds)) {
+		const candidate = resolveAssetPath(sessionId, relPath);
+		if (existsSync(candidate.abs) && statSync(candidate.abs).isFile()) {
+			return { ...candidate, sessionId };
+		}
+	}
+	return null;
+}
+
 /** Delete one file (or an entire subfolder) inside the assets dir. */
 export function deleteAsset(sessionId: string, relPath: string): void {
-	const { abs } = resolveAssetPath(sessionId, relPath);
-	if (!existsSync(abs)) throw new Error(`no such asset: ${relPath}`);
-	rmSync(abs, { recursive: true, force: true });
-	broadcastToSession(sessionId, { type: "assets_changed", sessionId });
+	deleteAssetAcross([sessionId], relPath);
+}
+
+/** Delete from whichever alias folder owns the file and refresh every open
+ * representation of the deduped session. */
+export function deleteAssetAcross(sessionIds: string[], relPath: string): void {
+	const ids = [...new Set(sessionIds)];
+	let deleted = false;
+	for (const sessionId of ids) {
+		const { abs } = resolveAssetPath(sessionId, relPath);
+		if (!existsSync(abs)) continue;
+		rmSync(abs, { recursive: true, force: true });
+		deleted = true;
+	}
+	if (!deleted) throw new Error(`no such asset: ${relPath}`);
+	for (const sessionId of ids) {
+		broadcastToSession(sessionId, { type: "assets_changed", sessionId });
+	}
 }
 
 // Preview/serving MIME map. Text types get charset so inline previews render

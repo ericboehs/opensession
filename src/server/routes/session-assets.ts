@@ -14,12 +14,12 @@
 import type { RouteContext } from "./context";
 import {
 	assetMime,
-	deleteAsset,
+	deleteAssetAcross,
 	assetsDirFor,
-	listAssets,
-	resolveAssetPath,
+	findAssetPath,
+	listAssetsAcross,
 } from "../session-assets";
-import { existsSync, statSync } from "fs";
+import { sessionIdsFor } from "../session-cache";
 
 export async function handleSessionAssetsRoutes(
 	ctx: RouteContext,
@@ -33,9 +33,10 @@ export async function handleSessionAssetsRoutes(
 	if (listMatch && req.method === "GET") {
 		try {
 			const sessionId = decodeURIComponent(listMatch[1]!);
+			const sessionIds = sessionIdsFor(sessionId);
 			return Response.json({
-				dir: assetsDirFor(sessionId),
-				files: listAssets(sessionId),
+				dir: assetsDirFor(sessionIds[0] || sessionId),
+				files: listAssetsAcross(sessionIds),
 			});
 		} catch (e: any) {
 			return Response.json(
@@ -51,17 +52,16 @@ export async function handleSessionAssetsRoutes(
 		/^\/backstage\/api\/sessions\/([^/]+)\/assets\/raw\/(.+)$/,
 	);
 	if (rawMatch && req.method === "GET") {
-		let abs: string;
-		let rel: string;
+		let found: ReturnType<typeof findAssetPath>;
 		try {
 			const sessionId = decodeURIComponent(rawMatch[1]!);
 			const relRaw = decodeURIComponent(rawMatch[2]!);
-			({ abs, rel } = resolveAssetPath(sessionId, relRaw));
+			found = findAssetPath(sessionIdsFor(sessionId), relRaw);
 		} catch (e: any) {
 			return new Response(e?.message || "bad path", { status: 400 });
 		}
-		if (!existsSync(abs) || !statSync(abs).isFile())
-			return new Response("not found", { status: 404 });
+		if (!found) return new Response("not found", { status: 404 });
+		const { abs, rel } = found;
 		const file = Bun.file(abs);
 		const headers: Record<string, string> = {
 			"Content-Type": assetMime(rel),
@@ -89,7 +89,7 @@ export async function handleSessionAssetsRoutes(
 			};
 			if (!body.path)
 				return Response.json({ error: "path required" }, { status: 400 });
-			deleteAsset(sessionId, body.path);
+			deleteAssetAcross(sessionIdsFor(sessionId), body.path);
 			return Response.json({ ok: true });
 		} catch (e: any) {
 			return Response.json(

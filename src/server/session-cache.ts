@@ -175,6 +175,20 @@ export function findSession(sessionId: string): UnifiedSession | undefined {
 	return getCachedSessions().find((s) => s.id === sessionId);
 }
 
+/** Canonical id followed by every historical alias for this session. Asset
+ * stores and other id-keyed sidecars use this to survive session deduping. */
+export function sessionIdsFor(
+	sessionId: string,
+	sessions: UnifiedSession[] = getCachedSessions(),
+): string[] {
+	const session = sessions.find(
+		(s) => s.id === sessionId || s.aliasIds?.includes(sessionId),
+	);
+	return session
+		? [...new Set([session.id, ...(session.aliasIds || [])])]
+		: [sessionId];
+}
+
 // ── Serialized session-file writes ────────────────────────────────────────────
 // Every session-file writer goes through updateSessionFile: fresh read →
 // field-scoped mutator → atomic write, serialized per session id by a
