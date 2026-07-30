@@ -129,6 +129,16 @@ function Content({
 					palette
 						? "z-[6000] bg-black/42 backdrop-blur-[3px] duration-[120ms]"
 						: "z-[10000] bg-black/45 backdrop-blur-[1px] duration-150",
+					// `palette-backdrop` rides along purely as a runtime marker:
+					// SessionViewer (⌘P) and Sidebar (archive chord) suppress their
+					// window-level shortcuts via
+					// `document.querySelector(".palette-backdrop, …)`, and a palette
+					// must keep matching it. The legacy rule's own declarations are
+					// the same z-index/tint/blur written above, and its flex+padding
+					// are inert on a childless backdrop, so it changes nothing
+					// visually. Removable once those two guards move to
+					// `[role=dialog]`, which App already uses for its bare-"n" check.
+					palette && "palette-backdrop",
 				)}
 			/>
 			{palette ? (
