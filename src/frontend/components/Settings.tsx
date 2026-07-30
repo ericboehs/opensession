@@ -2361,15 +2361,15 @@ function AppearancePanel() {
 			<div className="setting-card">
 				<SettingRow
 					title="Tool calls & messages"
-					desc="How each turn's working — tool calls and in-between messages — folds in the chat. Expand while running shows the work live and collapses it once the turn finishes."
+					desc="How each turn's working — tool calls and in-between messages — folds in the chat. Work stays folded by default; expanding a turn does not open its individual tool inputs."
 					control={
 						<Select
 							label="Tool calls & messages"
 							value={turnActivity}
 							options={[
+								{ value: "collapsed", label: "Always folded" },
 								{ value: "auto", label: "Expand while running" },
 								{ value: "expanded", label: "Always expanded" },
-								{ value: "collapsed", label: "Always collapsed" },
 							]}
 							onChange={setTurnActivityPref}
 						/>
