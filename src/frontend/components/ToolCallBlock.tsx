@@ -514,7 +514,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
 
           {mcp ? (
             <span className="flex min-w-0 flex-shrink-0 items-baseline gap-1.5 text-[14px] leading-5">
-              <span className="rounded bg-purple/15 px-1.5 py-px text-[12px] leading-4 font-bold tracking-[-0.01em] text-purple">
+              <span className="rounded bg-panel px-1.5 py-px text-[12px] leading-4 font-bold tracking-[-0.01em] text-dim">
                 {mcp.server}
               </span>
               <span className="font-medium text-fg">{mcp.tool}</span>
