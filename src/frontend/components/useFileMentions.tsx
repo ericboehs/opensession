@@ -134,6 +134,13 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
     if (!ctx) setSuggestions([]);
   }
 
+  // Controlled textarea updates are not guaranteed to commit before a caller's
+  // queued microtask. Re-sync from the committed value so soft keyboards,
+  // dictation and the toolbar's programmatic "@" insertion all open reliably.
+  useEffect(() => {
+    sync();
+  }, [value]);
+
   // Debounced fetch of suggestions for the active mention/skill query.
   useEffect(() => {
     const fetcher = mention?.kind === "skill" ? skillsFetchRef.current : mentionFetchRef.current;
