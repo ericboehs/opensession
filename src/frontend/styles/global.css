@@ -15561,8 +15561,7 @@ html.wco .settings-sidenav {
 /* Hover-revealed real timestamps. A message's time is a detail you go looking
    for, not something to read past on every turn — so it fades in while the
    message is hovered and costs nothing the rest of the time. Reveals are
-   opacity-only over elements that either reserve their space (the user
-   gutter) or take none (the absolutely-placed footer time): nothing here may
+   opacity-only over absolutely positioned elements: nothing here may
    change a block's height, or VirtualTranscriptBlock's measured placeholders
    would mis-size and jump the scroll.
 
@@ -15601,21 +15600,20 @@ html.wco .settings-sidenav {
 	background: rgba(0, 0, 0, 0.01);
 }
 
-/* Your own turns carry no label row, so their time sits in the gutter left of
-   the bubble. Full-width row: the whole band is the hover target, and the
-   bubble keeps hugging the right edge (justify-content replaces the
-   align-self it uses as a direct child of .msg). */
+/* Your own turns carry no label row, so their time sits just below the bubble.
+   It uses the message's existing bottom spacing rather than affecting layout,
+   which keeps virtual transcript measurements stable. */
 .msg-user-row {
+	position: relative;
 	display: flex;
 	justify-content: flex-end;
-	align-items: flex-end;
-	gap: 10px;
 	min-width: 0;
 }
 .msg-user-row .msg-hover-time {
-	flex-shrink: 0;
-	/* Sits on the bubble's last line rather than its bottom edge. */
-	padding-bottom: 11px;
+	position: absolute;
+	top: calc(100% + 1px);
+	right: 0;
+	line-height: 1;
 }
 
 /* Short per-message timestamp in the label row (hover for the full time). */

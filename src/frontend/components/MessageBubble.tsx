@@ -199,7 +199,7 @@ function MsgTime({ ts }: { ts?: string }) {
 	);
 }
 
-/** The real time beside your own bubble, faded in while the row is hovered —
+/** The real time below your own bubble, faded in while the row is hovered —
  * those turns carry no label row to hang a MsgTime off, and a timestamp on
  * every one of them would just be noise while reading. Hover-capable pointers
  * only (see .msg-hover-time); on touch the row renders exactly as before. */
@@ -537,9 +537,8 @@ export const MessageBubble = React.memo(function MessageBubble({
 					</div>
 				)}
 				{displayContent && (
-					// Row wrapper so the hover time can sit in the gutter left of the
-					// bubble. The bubble still shrink-wraps and hugs the right edge —
-					// justify-content takes over from its align-self here.
+					// Row wrapper anchors the hover time below the bubble. The bubble still
+					// shrink-wraps and hugs the right edge.
 					<div className="msg-user-row">
 						{!fromOther && <BubbleHoverTime ts={entry.timestamp} />}
 						<ClampedBody
