@@ -50,9 +50,9 @@ export function AskCard({ questions, onAnswer }: Props) {
   }
 
   return (
-    <div className="mx-auto mb-6 mt-2 flex w-full max-w-[var(--chat-col)] flex-col gap-3 rounded-[calc(22px*var(--rf))] border border-line bg-raised p-3 shadow-[0_1px_2px_rgba(0,0,0,0.05)] [corner-shape:var(--cs)] sm:p-4">
+    <div className="mx-auto mb-6 mt-2 flex w-full max-w-[var(--chat-col)] flex-col gap-3 rounded-[calc(22px*var(--rf))] bg-raised p-3 shadow-[0_1px_2px_rgba(0,0,0,0.05)] [corner-shape:var(--cs)] sm:p-4">
       <div className="flex items-center gap-2">
-        <span className="inline-flex min-h-7 items-center gap-2 rounded-full border border-line bg-panel px-2.5 py-1 text-xs font-semibold text-fg">
+        <span className="inline-flex min-h-7 items-center gap-2 rounded-full bg-panel px-2.5 py-1 text-xs font-semibold text-fg">
           <span
             aria-hidden="true"
             className="h-2 w-2 rounded-full bg-green shadow-[0_0_0_3px_var(--green-soft)]"
@@ -64,7 +64,7 @@ export function AskCard({ questions, onAnswer }: Props) {
       {questions.map((q) => (
         <section
           key={q.question}
-          className="rounded-[calc(16px*var(--rf))] border border-line bg-panel p-3.5 [corner-shape:var(--cs)] sm:p-4"
+          className="rounded-[calc(16px*var(--rf))] bg-panel p-3.5 [corner-shape:var(--cs)] sm:p-4"
         >
           {q.header && (
             <div className="mb-1.5 text-xs font-semibold text-faint">{q.header}</div>
@@ -87,10 +87,10 @@ export function AskCard({ questions, onAnswer }: Props) {
                     type="button"
                     aria-pressed={active}
                     className={cn(
-                      "group flex min-h-11 w-full items-center gap-3 rounded-[calc(13px*var(--rf))] border px-3 text-left transition-[background-color,border-color,box-shadow] focus-visible:border-accent focus-visible:shadow-[0_0_0_3px_var(--accent-soft)] [corner-shape:var(--cs)]",
+                      "group flex min-h-11 w-full items-center gap-3 rounded-[calc(13px*var(--rf))] px-3 text-left transition-[background-color,box-shadow] focus-visible:shadow-[0_0_0_3px_var(--accent-soft)] [corner-shape:var(--cs)]",
                       active
-                        ? "border-accent bg-accent-soft text-fg shadow-[inset_0_0_0_1px_var(--accent-soft)]"
-                        : "border-line-strong bg-raised text-fg hover:border-line-strong hover:bg-hover",
+                        ? "bg-accent-soft text-fg"
+                        : "bg-raised text-fg hover:bg-hover",
                     )}
                     onClick={() => toggle(q, opt.label)}
                     disabled={submitted}
@@ -107,10 +107,10 @@ export function AskCard({ questions, onAnswer }: Props) {
                     <span
                       aria-hidden="true"
                       className={cn(
-                        "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-[background-color,border-color,color]",
+                        "flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-[background-color,color]",
                         active
-                          ? "border-accent bg-accent text-white"
-                          : "border-line-strong text-transparent group-hover:border-faint",
+                          ? "bg-accent text-white"
+                          : "bg-pressed text-transparent",
                       )}
                     >
                       <IconCheck size={20} />
@@ -122,7 +122,7 @@ export function AskCard({ questions, onAnswer }: Props) {
           ) : null}
           <input
             aria-label={q.options?.length ? "Custom answer" : "Answer"}
-            className="mt-3 h-11 w-full rounded-[calc(13px*var(--rf))] border border-line-strong bg-raised px-3.5 text-base text-fg outline-none transition-[border-color,box-shadow] placeholder:text-faint focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] sm:text-sm [corner-shape:var(--cs)]"
+            className="mt-3 h-11 w-full rounded-[calc(13px*var(--rf))] bg-raised px-3.5 text-base text-fg outline-none transition-shadow placeholder:text-faint focus:shadow-[0_0_0_3px_var(--accent-soft)] sm:text-sm [corner-shape:var(--cs)]"
             placeholder={
               q.options?.length ? "Or type your own answer…" : "Type your answer…"
             }
@@ -136,7 +136,7 @@ export function AskCard({ questions, onAnswer }: Props) {
         </section>
       ))}
 
-      <div className="flex justify-end border-t border-line pt-3">
+      <div className="flex justify-end">
         <Button
           variant="primary"
           className="min-h-10 rounded-[calc(13px*var(--rf))] px-4 text-sm [corner-shape:var(--cs)]"
