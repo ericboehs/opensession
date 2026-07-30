@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { Sidebar, type SidebarHandle } from "./components/Sidebar";
 import { Tooltip, TooltipProvider } from "./ui/tooltip";
 import { ToastHost, toast } from "./ui/toast";
+import { Modal } from "./ui/modal";
 import { suppressLayoutAnimations } from "./ui/motion";
 import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
@@ -2078,6 +2079,26 @@ function App() {
 	// the whole row back. Ids only — the session objects go stale on the next
 	// refresh, so entries resolve against the live list when they're restored.
 	const [archiveUndo, setArchiveUndo] = useState<string[][]>([]);
+	const [runningCloseConfirmation, setRunningCloseConfirmation] = useState<{
+		runningCount: number;
+		onConfirm: () => void;
+	} | null>(null);
+	useEffect(() => {
+		if (!runningCloseConfirmation) return;
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (
+				event.key !== "Enter" ||
+				!(event.metaKey || event.ctrlKey)
+			)
+				return;
+			event.preventDefault();
+			const confirmation = runningCloseConfirmation;
+			setRunningCloseConfirmation(null);
+			confirmation.onConfirm();
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [runningCloseConfirmation]);
 	const rememberArchived = useCallback((ids: string[]) => {
 		if (!ids.length) return;
 		setArchiveUndo((prev) =>
@@ -2099,7 +2120,7 @@ function App() {
 	// nothing to recover, so it's deleted outright instead of cluttering
 	// Archived. The local list updates before the request returns so closing
 	// feels instant. Shared by the tab ×, the tab context menu, and ⌘W.
-	const closeChat = async (s: UnifiedSession) => {
+	const closeChatNow = async (s: UnifiedSession) => {
 		const neverRan =
 			s.source === "backstage" &&
 			!s.claudeSessionId &&
@@ -2157,6 +2178,21 @@ function App() {
 		}
 		refresh();
 	};
+	const confirmRunningCloses = (
+		sessionsToClose: UnifiedSession[],
+		onConfirm: () => void,
+	) => {
+		const runningCount = sessionsToClose.filter((session) => session.isRunning).length;
+		if (!runningCount) {
+			onConfirm();
+			return;
+		}
+		setRunningCloseConfirmation({ runningCount, onConfirm });
+	};
+	const confirmRunningClose = (session: UnifiedSession, onConfirm: () => void) =>
+		confirmRunningCloses([session], onConfirm);
+	const closeChat = (s: UnifiedSession) =>
+		confirmRunningClose(s, () => void closeChatNow(s));
 	const closeChatRef = useRef(closeChat);
 	closeChatRef.current = closeChat;
 	// Bring archived chats back. Optimistic like the archive paths: the local
@@ -2577,7 +2613,11 @@ function App() {
 			hideRightPanel={splitMode && !focused}
 			localMode={localMode}
 			onBack={goBack}
-			onArchive={focused ? () => sidebarRef.current?.archiveSelected() : undefined}
+			onArchive={() =>
+				focused
+					? sidebarRef.current?.archiveSelected()
+					: closeChat(viewerSession)
+			}
 			onArchived={(stoppedRun) => {
 				if (stoppedRun) showToast("Archived · stopped the running turn");
 				// Only fires when the viewer archived on its own — with onArchive
@@ -2703,6 +2743,48 @@ function App() {
 			<MediaLightboxHost />
 			<ToastHost />
 			<DesktopUpdateToast />
+			<Modal.Root
+				open={runningCloseConfirmation !== null}
+				onOpenChange={(open) => {
+					if (!open) setRunningCloseConfirmation(null);
+				}}
+				disablePointerDismissal
+			>
+				<Modal.Content widthClassName="max-w-[34rem]" className="gap-5">
+					<Modal.Title className="m-0 text-[26px] font-semibold tracking-[-0.03em] text-fg">
+						Close running chat{runningCloseConfirmation?.runningCount === 1 ? "" : "s"}?
+					</Modal.Title>
+					<Modal.Description className="m-0 text-[17px] leading-relaxed text-dim">
+						{runningCloseConfirmation?.runningCount === 1
+							? "This chat is currently running. Closing it will cancel its current run."
+							: `These ${runningCloseConfirmation?.runningCount ?? 0} chats are currently running. Closing them will cancel their current runs.`}
+					</Modal.Description>
+					<Modal.Footer className="mt-3 justify-end gap-3">
+						<Modal.Close
+							render={
+								<button
+									type="button"
+									className="rounded-md border border-line-strong px-5 py-2.5 text-[16px] font-medium text-fg outline-none transition-[background-color,transform] duration-150 ease-out hover:bg-hover active:scale-[0.96]"
+								>
+									Cancel
+								</button>
+							}
+						/>
+						<button
+							type="button"
+							className="rounded-md bg-red px-5 py-2.5 text-[16px] font-semibold text-white outline-none transition-[filter,transform] duration-150 ease-out hover:brightness-110 active:scale-[0.96]"
+							onClick={() => {
+								const confirmation = runningCloseConfirmation;
+								setRunningCloseConfirmation(null);
+								confirmation?.onConfirm();
+							}}
+						>
+							<span>Close anyway</span>
+							<span className="ml-5 text-[14px] font-medium opacity-70">⌘↵</span>
+						</button>
+					</Modal.Footer>
+				</Modal.Content>
+			</Modal.Root>
 			<div className="app">
 				{/* Mobile-only top bar. On the sidebar-root page it shows the brand;
 				    on a pushed page (a session or other view) the brand is replaced by
@@ -2998,68 +3080,74 @@ function App() {
 							onOpenCatchUp={() => navigate({ view: "catchup" })}
 							catchUpActive={route.view === "catchup"}
 							archivedActive={route.view === "archived"}
-							onArchive={async (s, next) => {
-								patch(s.id, { archived: true, archivedReason: "manual" });
-								const wasOpen = route.view === "session" && route.id === s.id;
-								if (wasOpen) {
-									if (next) navigate({ view: "session", id: next.id });
-									else goBack();
-								}
-								try {
-									const { stoppedRun } = await archiveSessionApi(s.id, true);
-									if (stoppedRun)
-										showToast("Archived · stopped the running turn");
-									rememberArchived([s.id]);
-								} catch (e) {
-									console.error("Archive failed:", e);
-									patch(s.id, { archived: false, archivedReason: undefined });
-									if (wasOpen) navigate({ view: "session", id: s.id });
-									return;
-								}
-								dropStalePins([s]);
-								refresh();
-							}}
-							onArchiveWorkspace={async (chats, next) => {
-								// Archive a whole workspace = archive every member chat (the
-								// archive registry is per-chat; the workspace row disappears
-								// once no live chats remain).
-								for (const chat of chats) {
-									patch(chat.id, { archived: true, archivedReason: "manual" });
-								}
-								const openChatId =
-									route.view === "session" &&
-									chats.some((c) => c.id === route.id)
-										? route.id
-										: null;
-								if (openChatId) {
-									if (next) navigate({ view: "session", id: next.id });
-									else goBack();
-								}
-								try {
-									const results = await Promise.all(
-										chats.map((c) => archiveSessionApi(c.id, true)),
-									);
-									const stopped = results.filter((r) => r.stoppedRun).length;
-									if (stopped > 0)
-										showToast(
-											`Archived · stopped ${stopped} running turn${stopped === 1 ? "" : "s"}`,
-										);
-									// One entry for the whole row, so ⌘⇧T brings the
-									// workspace back in a single press.
-									rememberArchived(chats.map((c) => c.id));
-								} catch (e) {
-									console.error("Archive workspace failed:", e);
-									for (const chat of chats) {
-										patch(chat.id, {
-											archived: false,
-											archivedReason: undefined,
-										});
+							onArchive={(s, next) => {
+								const archive = async () => {
+									patch(s.id, { archived: true, archivedReason: "manual" });
+									const wasOpen = route.view === "session" && route.id === s.id;
+									if (wasOpen) {
+										if (next) navigate({ view: "session", id: next.id });
+										else goBack();
 									}
-									if (openChatId) navigate({ view: "session", id: openChatId });
-									return;
-								}
-								dropStalePins(chats);
-								refresh();
+									try {
+										const { stoppedRun } = await archiveSessionApi(s.id, true);
+										if (stoppedRun)
+											showToast("Archived · stopped the running turn");
+										rememberArchived([s.id]);
+									} catch (e) {
+										console.error("Archive failed:", e);
+										patch(s.id, { archived: false, archivedReason: undefined });
+										if (wasOpen) navigate({ view: "session", id: s.id });
+										return;
+									}
+									dropStalePins([s]);
+									refresh();
+								};
+								confirmRunningClose(s, () => void archive());
+							}}
+							onArchiveWorkspace={(chats, next) => {
+								const archive = async () => {
+									// Archive a whole workspace = archive every member chat (the
+									// archive registry is per-chat; the workspace row disappears
+									// once no live chats remain).
+									for (const chat of chats) {
+										patch(chat.id, { archived: true, archivedReason: "manual" });
+									}
+									const openChatId =
+										route.view === "session" &&
+										chats.some((c) => c.id === route.id)
+											? route.id
+											: null;
+									if (openChatId) {
+										if (next) navigate({ view: "session", id: next.id });
+										else goBack();
+									}
+									try {
+										const results = await Promise.all(
+											chats.map((c) => archiveSessionApi(c.id, true)),
+										);
+										const stopped = results.filter((r) => r.stoppedRun).length;
+										if (stopped > 0)
+											showToast(
+												`Archived · stopped ${stopped} running turn${stopped === 1 ? "" : "s"}`,
+											);
+										// One entry for the whole row, so ⌘⇧T brings the
+										// workspace back in a single press.
+										rememberArchived(chats.map((c) => c.id));
+									} catch (e) {
+										console.error("Archive workspace failed:", e);
+										for (const chat of chats) {
+											patch(chat.id, {
+												archived: false,
+												archivedReason: undefined,
+											});
+										}
+										if (openChatId) navigate({ view: "session", id: openChatId });
+										return;
+									}
+									dropStalePins(chats);
+									refresh();
+								};
+								confirmRunningCloses(chats, () => void archive());
 							}}
 							onUnarchiveWorkspace={async (chats) => {
 								// The inverse of onArchiveWorkspace: the archive registry is
@@ -3351,19 +3439,22 @@ function App() {
 								projects={projects}
 								send={send}
 								connected={connected}
-								onArchive={async (chats) => {
-									try {
-										await Promise.all(
-											chats.map((c) => archiveSessionApi(c.id, true)),
-										);
-										// Swiping through the deck archives fast — one entry per
-										// card keeps ⌘⇧T an undo of the last swipe, not of the
-										// whole session.
-										rememberArchived(chats.map((c) => c.id));
-									} catch (e) {
-										console.error("Archive failed:", e);
-									}
-									refresh();
+								onArchive={(chats) => {
+									const archive = async () => {
+										try {
+											await Promise.all(
+												chats.map((c) => archiveSessionApi(c.id, true)),
+											);
+											// Swiping through the deck archives fast — one entry per
+											// card keeps ⌘⇧T an undo of the last swipe, not of the
+											// whole session.
+											rememberArchived(chats.map((c) => c.id));
+										} catch (e) {
+											console.error("Archive failed:", e);
+										}
+										refresh();
+									};
+									confirmRunningCloses(chats, () => void archive());
 								}}
 								onOpenSession={(id) => navigate({ view: "session", id })}
 								onNewWorkspace={() => openPalette()}
