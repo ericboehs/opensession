@@ -1288,7 +1288,7 @@ function GitStatusRows({
 			<div className={INFO_LABEL_CLASS}>Git status</div>
 			<div className={INFO_LIST_CLASS}>
 				{prStatus && (
-					<div className="pr-git-row">
+					<div className="pr-git-row py-2">
 						<span className="pr-git-dot" aria-hidden />
 						<span className="pr-git-label">{prStatus}</span>
 						{pr?.mergeable === "CONFLICTING" && send ? (
@@ -1313,7 +1313,7 @@ function GitStatusRows({
 					</div>
 				)}
 				{ahead > 0 && (
-					<div className="pr-git-row">
+					<div className="pr-git-row py-2">
 						<span className="pr-git-dot" aria-hidden />
 						<span className="pr-git-label">
 							{ahead} commit{ahead === 1 ? "" : "s"} ahead of remote
@@ -1329,7 +1329,7 @@ function GitStatusRows({
 					</div>
 				)}
 				{behindCount > 0 && (
-					<div className="pr-git-row">
+					<div className="pr-git-row py-2">
 						<span className="pr-git-dot" aria-hidden />
 						<span className="pr-git-label">
 							{behindCount} commit{behindCount === 1 ? "" : "s"} behind{" "}
@@ -1353,7 +1353,7 @@ function GitStatusRows({
 					</div>
 				)}
 				{dirty > 0 && (
-					<div className="pr-git-row">
+					<div className="pr-git-row py-2">
 						<span className="pr-git-dot" aria-hidden />
 						<span className="pr-git-label">
 							{dirty} uncommitted file{dirty === 1 ? "" : "s"}
