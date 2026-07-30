@@ -334,6 +334,8 @@ export interface PrDiffData {
 }
 
 const diffCache = new Map<string, { data: PrDiffData | null; ts: number }>();
+const diffInflight: Map<string, Promise<PrDiffData | null>> =
+  ((globalThis as any).__prDiffInflight ??= new Map());
 
 function spawnGh(args: string[], credential: GithubCredential, stdin?: "pipe") {
   return Bun.spawn(["gh", ...args], {
@@ -389,6 +391,8 @@ export async function getPrDiff(
   const key = cacheKey(repo, branch);
   const hit = diffCache.get(key);
   if (hit && Date.now() - hit.ts < TTL) return hit.data;
+  const running = diffInflight.get(key);
+  if (running) return running;
   // Known backoff window: stale answer if we have one, fast friendly failure
   // if we don't — never a doomed gh spawn.
   if (ghRateLimited()) {
@@ -396,44 +400,48 @@ export async function getPrDiff(
     throw new Error(GH_RATE_LIMIT_MESSAGE);
   }
 
-  try {
-    const metaRaw = await $`gh pr view ${branch} --repo ${repo} --json number,headRefOid,baseRefName`
-      .quiet()
-      .text();
-    const meta = JSON.parse(metaRaw);
-    let patch: string;
+  const refresh = (async () => {
     try {
-      patch = await $`gh pr diff ${meta.number} --repo ${repo}`.quiet().text();
-    } catch (diffErr: any) {
-      // GitHub's API refuses diffs for PRs touching >300 files (HTTP 406,
-      // "diff exceeded the maximum number of files"). Reconstruct the same
-      // merge-base patch from the configured local checkout instead of
-      // leaving big PRs permanently un-diffable (review/autofix depend on
-      // this).
-      const dmsg = String(diffErr?.stderr || diffErr?.message || diffErr);
-      if (!/maximum number of files/i.test(dmsg)) throw diffErr;
-      console.warn(`[pr-info] PR #${meta.number} diff >300 files; using local merge-base diff`);
+      const metaRaw = await $`gh pr view ${branch} --repo ${repo} --json number,headRefOid,baseRefName`
+        .quiet()
+        .text();
+      const meta = JSON.parse(metaRaw);
+      let patch: string;
       try {
-        patch = await localPrDiffPatch(repo, meta);
-      } catch (localErr: any) {
-        console.warn(`[pr-info] local diff fallback failed: ${String(localErr?.stderr || localErr?.message || localErr).slice(0, 300)}`);
-        throw localErr;
+        patch = await $`gh pr diff ${meta.number} --repo ${repo}`.quiet().text();
+      } catch (diffErr: any) {
+        // GitHub's API refuses diffs for PRs touching >300 files (HTTP 406,
+        // "diff exceeded the maximum number of files"). Reconstruct the same
+        // merge-base patch from the configured local checkout instead of
+        // leaving big PRs permanently un-diffable (review/autofix depend on
+        // this).
+        const dmsg = String(diffErr?.stderr || diffErr?.message || diffErr);
+        if (!/maximum number of files/i.test(dmsg)) throw diffErr;
+        console.warn(`[pr-info] PR #${meta.number} diff >300 files; using local merge-base diff`);
+        try {
+          patch = await localPrDiffPatch(repo, meta);
+        } catch (localErr: any) {
+          console.warn(`[pr-info] local diff fallback failed: ${String(localErr?.stderr || localErr?.message || localErr).slice(0, 300)}`);
+          throw localErr;
+        }
       }
+      const data = { number: meta.number, headRefOid: meta.headRefOid, patch };
+      diffCache.set(key, { data, ts: Date.now() });
+      return data;
+    } catch (e: any) {
+      const msg = String(e?.stderr || e?.message || e).slice(0, 300);
+      if (!isNoPrError(msg)) {
+        if (isGhRateLimitMsg(msg)) noteGhRateLimited("pr-info");
+        console.warn(`[pr-info] gh pr diff ${branch} (${repo}) failed: ${msg}`);
+        if (hit) return hit.data; // stale beats an error
+        throw new Error(prApiErrorMessage(msg));
+      }
+      diffCache.set(key, { data: null, ts: Date.now() });
+      return null;
     }
-    const data = { number: meta.number, headRefOid: meta.headRefOid, patch };
-    diffCache.set(key, { data, ts: Date.now() });
-    return data;
-  } catch (e: any) {
-    const msg = String(e?.stderr || e?.message || e).slice(0, 300);
-    if (!isNoPrError(msg)) {
-      if (isGhRateLimitMsg(msg)) noteGhRateLimited("pr-info");
-      console.warn(`[pr-info] gh pr diff ${branch} (${repo}) failed: ${msg}`);
-      if (hit) return hit.data; // stale beats an error
-      throw new Error(prApiErrorMessage(msg));
-    }
-    diffCache.set(key, { data: null, ts: Date.now() });
-    return null;
-  }
+  })().finally(() => diffInflight.delete(key));
+  diffInflight.set(key, refresh);
+  return refresh;
 }
 
 /** Merge-base patch computed from the repo's local checkout — the fallback
