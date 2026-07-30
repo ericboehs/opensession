@@ -161,6 +161,7 @@ function StatCell({
   sub,
   title,
   dot,
+  loading,
   divider,
   rowDivider,
 }: {
@@ -169,6 +170,7 @@ function StatCell({
   sub?: string;
   title?: string;
   dot?: "live" | "idle";
+  loading?: boolean;
   divider?: string;
   rowDivider?: string;
 }) {
@@ -186,21 +188,35 @@ function StatCell({
         className={`absolute inset-x-4 top-0 h-px bg-line ${rowDivider ?? "hidden"}`}
       />
       <div className="flex items-center gap-1.5">
-        {dot && (
-          <span
-            className={
-              dot === "live"
-                ? "h-2 w-2 shrink-0 animate-pulse rounded-full bg-green"
-                : "h-2 w-2 shrink-0 rounded-full bg-line"
-            }
-          />
+        {loading ? (
+          <span className="my-1 h-4 w-10 rounded-sm bg-line motion-safe:animate-pulse" />
+        ) : (
+          dot && (
+            <span
+              className={
+                dot === "live"
+                  ? "h-2 w-2 shrink-0 animate-pulse rounded-full bg-green"
+                  : "h-2 w-2 shrink-0 rounded-full bg-line"
+              }
+            />
+          )
         )}
-        <span className="truncate text-[17px] font-semibold leading-6 tabular-nums text-fg">
-          {value}
-        </span>
+        {!loading && (
+          <span
+            className="truncate text-[17px] font-semibold leading-6 tabular-nums text-fg"
+          >
+            {value}
+          </span>
+        )}
       </div>
       <div className="truncate text-[11px] leading-4 text-dim">{label}</div>
-      {sub && <div className="truncate text-[11px] leading-4 text-faint">{sub}</div>}
+      {loading ? (
+        <div className="flex h-4 items-center">
+          <span className="h-2.5 w-14 rounded-sm bg-line motion-safe:animate-pulse" />
+        </div>
+      ) : (
+        sub && <div className="truncate text-[11px] leading-4 text-faint">{sub}</div>
+      )}
     </div>
   );
 }
@@ -211,15 +227,17 @@ function OverviewStrip({
   onOpenAnalytics,
 }: {
   running: number;
-  stats: HomeStats;
+  stats: HomeStats | null;
   onOpenAnalytics?: () => void;
 }) {
-  const { today, week } = stats;
+  const today = stats?.today;
+  const week = stats?.week;
   return (
     <button
       type="button"
       onClick={onOpenAnalytics}
-      title="Open Analytics"
+      title={stats ? "Open Analytics" : "Analytics are loading"}
+      aria-busy={!stats}
       className="group mt-6 grid w-full cursor-pointer grid-cols-5 overflow-hidden rounded-xl bg-panel p-0 text-left outline-none transition-[background,box-shadow] hover:bg-hover focus-visible:shadow-[0_0_0_3px_var(--accent-soft)] max-[860px]:grid-cols-3 max-[560px]:grid-cols-2"
     >
       <StatCell
@@ -228,31 +246,39 @@ function OverviewStrip({
         dot={running > 0 ? "live" : "idle"}
       />
       <StatCell
-        value={fmtCompact(today.sessions)}
+        value={today ? fmtCompact(today.sessions) : ""}
         label="sessions today"
-        sub={`${fmtCompact(week.sessions)} · 7d`}
+        sub={week ? `${fmtCompact(week.sessions)} · 7d` : undefined}
+        loading={!stats}
         divider="block"
       />
       <StatCell
-        value={fmtCompact(today.turns)}
+        value={today ? fmtCompact(today.turns) : ""}
         label="turns today"
-        sub={`${fmtCompact(week.turns)} · 7d`}
-        title={`${today.errors.toLocaleString()} errors today`}
+        sub={week ? `${fmtCompact(week.turns)} · 7d` : undefined}
+        title={today ? `${today.errors.toLocaleString()} errors today` : undefined}
+        loading={!stats}
         divider="block max-[560px]:hidden"
         rowDivider="hidden max-[560px]:block"
       />
       <StatCell
-        value={fmtAgentTime(today.durationMs)}
+        value={today ? fmtAgentTime(today.durationMs) : ""}
         label="agent time today"
-        sub={`${fmtAgentTime(week.durationMs)} · 7d`}
+        sub={week ? `${fmtAgentTime(week.durationMs)} · 7d` : undefined}
+        loading={!stats}
         divider="hidden min-[861px]:block max-[560px]:block"
         rowDivider="hidden max-[860px]:block"
       />
       <StatCell
-        value={fmtCompact(today.outputTokens)}
+        value={today ? fmtCompact(today.outputTokens) : ""}
         label="tokens out today"
-        sub={`${fmtCompact(week.outputTokens)} · 7d`}
-        title={`${today.inputTokens.toLocaleString()} input · ${today.cacheReadTokens.toLocaleString()} cache read today`}
+        sub={week ? `${fmtCompact(week.outputTokens)} · 7d` : undefined}
+        title={
+          today
+            ? `${today.inputTokens.toLocaleString()} input · ${today.cacheReadTokens.toLocaleString()} cache read today`
+            : undefined
+        }
+        loading={!stats}
         divider="block max-[560px]:hidden"
         rowDivider="hidden max-[860px]:block"
       />
@@ -432,9 +458,7 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
           </button>
         </div>
 
-        {stats && (
-          <OverviewStrip running={running} stats={stats} onOpenAnalytics={onOpenAnalytics} />
-        )}
+        <OverviewStrip running={running} stats={stats} onOpenAnalytics={onOpenAnalytics} />
 
         <div className="mt-7 grid grid-cols-[minmax(180px,1fr)_auto_auto_auto] items-center gap-5 border-b border-line px-2 pb-4 max-[860px]:grid-cols-2 max-[720px]:grid-cols-1 max-[720px]:gap-2.5">
           <label className="flex min-w-0 items-center gap-2 text-faint focus-within:text-dim">
