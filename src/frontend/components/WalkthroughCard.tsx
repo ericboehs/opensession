@@ -55,7 +55,11 @@ export function WalkthroughCard({
 	return (
 		<div
 			className={cn(
-				"rounded-lg bg-panel p-3",
+				// p-4 deliberately exceeds the mt-3 rhythm between the blocks
+				// inside, so the card edge reads as an edge — at 12px a trailing
+				// screenshot looks like it runs out of the card rather than sitting
+				// in it.
+				"rounded-lg bg-raised p-4",
 				// In the chat the card is a transcript block like any other, so it
 				// takes the same centered reading column the turns and footers use
 				// (mx-auto + --chat-col) instead of spanning the whole pane.
