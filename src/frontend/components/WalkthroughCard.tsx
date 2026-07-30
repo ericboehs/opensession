@@ -62,8 +62,11 @@ export function WalkthroughCard({
 				"rounded-lg bg-raised p-4",
 				// In the chat the card is a transcript block like any other, so it
 				// takes the same centered reading column the turns and footers use
-				// (mx-auto + --chat-col) instead of spanning the whole pane.
-				chat ? "mx-auto my-2 w-full max-w-[var(--chat-col)]" : "mb-3",
+				// (mx-auto + --chat-col) instead of spanning the whole pane. It
+				// trails more space than it leads: unlike the neighbouring blocks
+				// it ends in media, which otherwise butts straight into the next
+				// message.
+				chat ? "mx-auto mb-6 mt-2 w-full max-w-[var(--chat-col)]" : "mb-4",
 			)}
 		>
 			<div className="mb-2 flex items-baseline gap-2">
