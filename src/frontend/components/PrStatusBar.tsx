@@ -1,4 +1,3 @@
-import { AGENT_NAME } from "../lib/brand";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { GitStatusInfo, PrDetails, UnifiedSession } from "../lib/types";
 import {
@@ -646,7 +645,7 @@ export function PrStatusBar({
 	// Primary action for the current headline (right side of the strip).
 	function renderAction(): React.ReactNode {
 		if (prompted)
-			return <span className="pr-bar-prompted">Asked {AGENT_NAME} to {prompted} ✓</span>;
+			return <span className="pr-bar-prompted">{prompted}</span>;
 		switch (headline.key) {
 			case "merged":
 				// Don't offer to archive a session that still has open PRs in its
@@ -705,7 +704,7 @@ export function PrStatusBar({
 						tone="red"
 						onClick={() =>
 							promptSession(
-								"resolve conflicts",
+								"Resolving conflicts…",
 								`The PR has merge conflicts with ${pr?.baseRefName || git?.baseBranch || "main"}. Rebase this branch on the latest origin/${pr?.baseRefName || git?.baseBranch || "main"}, resolve the conflicts, and push.`,
 							)
 						}
@@ -720,7 +719,7 @@ export function PrStatusBar({
 						icon={<IconPullRequest size={18} />}
 						onClick={() =>
 							promptSession(
-								"create a PR",
+								"Creating PR…",
 								"Commit any remaining work, push the branch, and open a PR for it.",
 							)
 						}

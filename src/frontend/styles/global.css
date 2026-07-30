@@ -5776,7 +5776,7 @@ a.workspace-info-check-row {
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	padding: 8px 8px 8px 12px;
+	padding: 8px 12px;
 	border-bottom: 1px solid var(--top-divider);
 	/* Match the chat header row so the panel's first divider lines up with it. */
 	min-height: var(--desktop-header-h);
