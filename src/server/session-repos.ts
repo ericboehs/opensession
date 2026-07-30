@@ -138,7 +138,7 @@ export function buildStackNote(session: {
 		"## Stacked branch",
 		`This branch was cut from \`${base}\` (another chat's branch), not from the trunk — its commits sit ON TOP of that work, and a diff against the trunk would show both.`,
 		`Open your PR against that branch: \`gh pr create --base ${base}\`. Never retarget it at the default branch, and never merge \`${base}\` into this branch to "catch up" — it moves under you as its own PR updates.`,
-		`Once both PRs exist, register them as a GitHub stack so each is reviewed on its own diff and the bases rebase themselves as layers merge: \`gh stack link <base-PR-url> <your-PR-url>\` (bottom first, run from this worktree). If \`gh stack\` isn't installed, say so and leave the PR as-is — the base is what matters.`,
+		`Once both PRs exist, register them as a GitHub stack so each is reviewed on its own diff and the bases rebase themselves as layers merge: \`gh stack link <base-PR-url> <your-PR-url>\` (bottom first, run from this worktree). If that reports \`unknown command "stack"\`, don't retry or try to install it — just say so; the PR's base is what matters, and the Stack card in the PR tab links it in one click.`,
 		"Never merge either PR — the human merges the stack.",
 	].join("\n");
 }

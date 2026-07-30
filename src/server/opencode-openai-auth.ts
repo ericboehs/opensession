@@ -91,7 +91,7 @@
  */
 
 import { envAlias, stateDir } from "./rename-compat";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "fs";
 import {
   getCodexAccountById,
   getUsableCodexAccountById,
@@ -107,6 +107,29 @@ const HOME = process.env.HOME || "/home/ubuntu";
 export const OPENAI_DATA_ROOT = isLocalProfile()
   ? localOpencodeDataRoot("openai")
   : `${stateDir("opencode")}/openai-data`;
+
+/**
+ * Point `$XDG_DATA_HOME/gh` at the real one so the gh CLI keeps finding its
+ * extensions inside an isolated data root.
+ *
+ * gh resolves extensions under the XDG *data* dir, and the isolation above
+ * repoints XDG_DATA_HOME at a per-account directory — which silently hid every
+ * installed extension from every agent run (`unknown command "stack" for
+ * "gh"`, caught 2026-07-30 when an agent tried to register a stacked PR). The
+ * link exposes only gh's own data dir, owned by the same user; opencode reads
+ * `$XDG_DATA_HOME/opencode`, which stays per-account.
+ *
+ * Best-effort: a missing source or a lost race just means gh behaves as it did
+ * before, so no auth path should fail over it.
+ */
+export function linkGhDataDir(dataHome: string): void {
+  try {
+    const real = `${HOME}/.local/share/gh`;
+    const link = `${dataHome}/gh`;
+    if (!existsSync(real) || existsSync(link)) return;
+    symlinkSync(real, link);
+  } catch {}
+}
 
 /** Deliberately invalid refresh token seeded into opencode's auth.json: it
  *  MUST never hold a usable refresh token (see module header — a successful
@@ -525,6 +548,7 @@ export function bindOpenaiAccount(account: CodexAccount): OpenaiAccountBinding |
   const dataHome = `${OPENAI_DATA_ROOT}/${account.id}`;
   const authDir = `${dataHome}/opencode`;
   mkdirSync(authDir, { recursive: true, mode: 0o700 });
+  linkGhDataDir(dataHome);
   const outPath = `${authDir}/auth.json`;
   writeFileSync(outPath, JSON.stringify(seeded));
   chmodSync(outPath, 0o600);

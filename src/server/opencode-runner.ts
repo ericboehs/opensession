@@ -238,6 +238,7 @@ import { ensureAgentAwsCredsFile } from "./aws-creds";
 import {
   pickOpenaiAccount,
   bindOpenaiAccount,
+  linkGhDataDir,
   maskOpenaiAccount,
   opencodeHasNativeOpenaiAuth,
   openaiPromptVariant,
@@ -3286,6 +3287,9 @@ async function* runOpencodeAttempt(
           )?.meridianKey ||
           crypto.randomUUID();
         const meridianEnv = meridianAccountEnv(picked, meridianKey);
+        // Repointing XDG_DATA_HOME hides gh's installed extensions from the
+        // run unless gh's data dir is linked in (see linkGhDataDir).
+        if (isLocalProfile()) linkGhDataDir(localOpencodeDataRoot("anthropic"));
         serverExtraEnv = {
           ...meridianEnv,
           ...(isLocalProfile() ? { XDG_DATA_HOME: localOpencodeDataRoot("anthropic") } : {}),
