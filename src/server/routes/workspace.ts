@@ -26,7 +26,7 @@ import { configuredIdentity, defaultRepo } from "../config";
 import { searchSkills } from "../skills";
 import { handleSlashCommand } from "../slash-commands";
 import { suggestBranchName } from "../suggest-branch";
-import { type BackstageSessionFile } from "../types";
+import { type BackstageSessionFile, type StackedOn } from "../types";
 import { type Workspace, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace } from "../workspaces";
 import { resolveExternalWorkspace, resolvePlainWorkspace, resolvePrWorkspace } from "../workspace-resolve";
 import { REPOS, createWorktree, createWorktreeForExistingBranch, getRepo, isSharedCheckoutDir, listWorktrees, repoForPath, worktreeHasWork } from "../worktree";
@@ -397,6 +397,7 @@ export async function handleWorkspaceRoutes(
 		let worktreeDir = src.worktreeDir || "";
 		let mode: "ask" | "code" | "scratch" = src.mode || "code";
 		let repoId = src.repo;
+		let stackedOn: StackedOn | undefined;
 		// Scratch siblings stay scratch: same repo-less scratch dir (shared
 		// downloads), no branch/repo — and the repoForPath probes below must
 		// not run on a scratch dir (they'd throw).
@@ -434,6 +435,13 @@ export async function handleWorkspaceRoutes(
 					base: src.branch,
 				});
 				mode = "code";
+				// Remember the layer underneath so this chat's PR bases on it and
+				// the pair can be linked into a GitHub stack (see pr-stack.ts).
+				stackedOn = {
+					repo: repo.id,
+					branch: src.branch,
+					...(src.source === "backstage" ? { sessionId: src.id } : {}),
+				};
 			}
 		} else if (chatMode === "share" && !worktreeDir && src.projectId) {
 			// Same workspace ⇒ same worktree: even when the source chat has no
@@ -506,6 +514,7 @@ export async function handleWorkspaceRoutes(
 			branch,
 			worktreeDir,
 			...(repoId ? { repo: repoId } : {}),
+			...(stackedOn ? { stackedOn } : {}),
 			...(workspaceId ? { projectId: workspaceId } : {}),
 			...(plainThreadId ? { plainThreadId } : {}),
 			...(siblingRefs?.length ? { externalRefs: siblingRefs } : {}),

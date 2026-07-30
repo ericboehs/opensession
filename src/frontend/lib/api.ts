@@ -1403,6 +1403,17 @@ export async function mergePrApi(
 	);
 }
 
+/**
+ * Register this chat's PR and the one it was stacked on as a GitHub stack.
+ * Both PRs must already exist; the server refuses rather than opening one.
+ */
+export async function linkPrStackApi(sessionId: string) {
+	return request<{ ok: true }>(
+		`/sessions/${encodeURIComponent(sessionId)}/pr-stack`,
+		{ method: "POST", body: {} },
+	);
+}
+
 export async function mergePrPreviewApi(
 	repo: string,
 	branch: string,

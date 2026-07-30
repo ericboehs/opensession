@@ -130,6 +130,8 @@ export interface UnifiedSession {
   spawnDepth?: number;
   /** Secondary repos this session also works in (cross-repo sessions). */
   attachedRepos?: AttachedRepo[];
+  /** The branch beneath this one when this chat was stacked on another's. */
+  stackedOn?: StackedOn;
   /** PRs manually linked to this session (beyond branch/attached-repo ones). */
   linkedPrs?: LinkedPr[];
   /**
@@ -307,6 +309,18 @@ export interface AttachedRepo {
 }
 
 /**
+ * The branch a stacked session was cut from — the layer directly beneath it.
+ * Recorded at worktree creation, when we still know which chat we branched
+ * off; `baseRefName` on the PR can't stand in for it, because GitHub rebases
+ * a stack's bases as lower layers merge.
+ */
+export interface StackedOn {
+  repo: string; // repo id
+  branch: string; // the parent layer's branch
+  sessionId?: string; // the chat that owns that branch, when it is one of ours
+}
+
+/**
  * A pull request manually linked to a session, beyond the ones derived from
  * its own branch (primary repo) and attached repos. Keyed by repo+branch —
  * the whole PR pipeline (pr-info, the bulk PR cache) is branch-keyed — with
@@ -402,6 +416,10 @@ export interface BackstageSessionFile {
   repo?: string; // which registered repo this chat works in
   workspaceId?: string | null; // Workspace this chat belongs to (canonical key)
   projectId?: string | null; // legacy alias of workspaceId (dual-read during migration)
+  /** The branch this session's worktree was cut from, when it was stacked on
+   *  another session's branch rather than on the trunk. Drives the stacked-PR
+   *  base (`gh pr create --base`) and the "link this stack" action. */
+  stackedOn?: StackedOn;
   /** Parent/orchestrator session when this chat was spawned as a visible worker sub-session. */
   parentSessionId?: string;
   /** Legacy removed side-chat record. Kept hidden until its parent is deleted. */

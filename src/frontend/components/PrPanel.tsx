@@ -26,6 +26,7 @@ import {
   mergePrApi,
   closePrApi,
   linkPrApi,
+  linkPrStackApi,
   unlinkPrApi,
 } from "../lib/api";
 import {
@@ -1542,6 +1543,13 @@ export function PrPanel({
             </div>
           )}
 
+          {/* Stack map — where this PR sits in its chain of layers. Above Git
+              status because it reframes everything below it: the diff, the
+              base branch, and whether a merge is even in order yet. */}
+          {sessionId && (
+            <StackCard pr={pr} sessionId={sessionId} onLinked={load} />
+          )}
+
           <PrCard title="Git status">
             <GitStatusRows
               git={git}
@@ -2203,6 +2211,130 @@ function PrCard({
       </div>
       <div className="flex flex-col gap-2 px-4 py-3 sm:px-5">{children}</div>
     </div>
+  );
+}
+
+/**
+ * The stack map: every layer of a GitHub stack, top layer first (the trunk
+ * sits under the last row, the way the stack is drawn on github.com). The row
+ * for the PR being viewed is marked rather than linked — it's already here.
+ *
+ * Also carries the "link into a stack" action for a chat that was branched off
+ * another chat's branch but whose PRs were never linked (pr.stackBase, set by
+ * the session PR route).
+ */
+function StackCard({
+  pr,
+  sessionId,
+  onLinked,
+}: {
+  pr: PrDetails;
+  sessionId: string;
+  onLinked: () => void;
+}) {
+  const [linking, setLinking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const stack = pr.stack;
+
+  const link = async () => {
+    setLinking(true);
+    setError(null);
+    try {
+      await linkPrStackApi(sessionId);
+      toast("Linked into a stack");
+      onLinked();
+    } catch (e: any) {
+      setError(e?.message || "Couldn't link the stack");
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  if (!stack) {
+    // Not stacked on GitHub. Only worth a card when this chat sits on another
+    // chat's branch — otherwise a standalone PR would grow an empty section.
+    if (!pr.stackBase) return null;
+    return (
+      <PrCard title="Stack">
+        <div className="text-xs leading-relaxed text-dim">
+          This branch was cut from{" "}
+          <span className="rounded-sm border border-line bg-surface px-1.5 py-0.5 text-[11px]">
+            {pr.stackBase}
+          </span>{" "}
+          but the PRs aren't a stack on GitHub yet — each is still reviewed against the whole chain.
+        </div>
+        <div className="flex items-center gap-3 pt-1">
+          <button
+            className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-fg transition-transform hover:border-faint active:scale-[0.96] disabled:opacity-60"
+            onClick={link}
+            disabled={linking}
+          >
+            {linking ? "Linking…" : "Link into a stack"}
+          </button>
+          {error && <span className="text-xs text-red">{error}</span>}
+        </div>
+      </PrCard>
+    );
+  }
+
+  // Top of the stack first — the trunk is the base line below the last row.
+  const layers = [...stack.layers].sort((a, b) => b.position - a.position);
+  return (
+    <PrCard
+      title="Stack"
+      headExtra={
+        <span className="text-[11px] text-faint">
+          {stack.position} of {stack.size}
+        </span>
+      }
+    >
+      {layers.map((layer) => {
+        const current = layer.number === pr.number;
+        const tone =
+          layer.state === "MERGED"
+            ? "text-purple"
+            : layer.state === "CLOSED"
+              ? "text-red"
+              : layer.isDraft
+                ? "text-faint"
+                : "text-green";
+        const body = (
+          <>
+            <span className={`shrink-0 ${tone}`}>
+              <PrStateIcon state={layer.state} isDraft={layer.isDraft} />
+            </span>
+            <span className="min-w-0 flex-1 truncate">{layer.title}</span>
+            <span className="shrink-0 text-faint">#{layer.number}</span>
+          </>
+        );
+        return current ? (
+          <div
+            key={layer.number}
+            className="flex items-center gap-2 rounded-md bg-surface px-2 py-1.5 text-xs font-medium text-fg"
+            aria-current="true"
+          >
+            {body}
+          </div>
+        ) : (
+          <a
+            key={layer.number}
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-dim no-underline hover:bg-surface hover:text-fg"
+            href={layer.url}
+            target="_blank"
+            rel="noopener"
+            title={layer.headRefName}
+          >
+            {body}
+          </a>
+        );
+      })}
+      <div className="border-t border-line pt-2 text-[11px] text-faint">
+        Bottom of the stack merges into{" "}
+        <span className="rounded-sm border border-line bg-surface px-1.5 py-0.5">
+          {stack.baseRefName}
+        </span>
+      </div>
+    </PrCard>
   );
 }
 

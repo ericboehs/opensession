@@ -743,6 +743,7 @@ function scanBackstageSessions(): UnifiedSession[] {
       desk: data.desk,
       spawnDepth: data.spawnDepth,
       attachedRepos: data.attachedRepos,
+      stackedOn: data.stackedOn,
       linkedPrs: data.linkedPrs,
       previewPath: data.previewPath,
       walkthrough: data.walkthrough,

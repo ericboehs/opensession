@@ -603,10 +603,43 @@ export interface PrDetails {
 	/** The PR's webapp preview environment (Vercel preview), when one exists.
 	 * `embeddable` is true once the deploy's CSP lets os.tella.dev frame it. */
 	staging?: { url: string; status: string; embeddable?: boolean } | null;
+	/** The GitHub stack this PR is a layer of. Null/absent covers both "not
+	 *  stacked" and "the stack read failed" — the UI treats them the same. */
+	stack?: PrStack | null;
+	/** Set on the session PR route when this chat's worktree was branched off
+	 *  another chat's branch: the branch underneath. With no `stack`, it's the
+	 *  cue to offer "link these into a stack". */
+	stackBase?: string;
 	/** The latest automated Michael review for this PR. */
 	osReview?: OsReview;
 	/** An automated review is currently running for this PR. */
 	reviewActive?: boolean;
+}
+
+/** One PR in a GitHub stack (see server/pr-stack.ts), trunk-most first. */
+export interface PrStackLayer {
+	number: number;
+	title: string;
+	url: string;
+	state: "OPEN" | "MERGED" | "CLOSED";
+	isDraft: boolean;
+	headRefName: string;
+	baseRefName: string;
+	/** Position within the stack; 1 is the layer closest to the trunk. */
+	position: number;
+	/** True for the PR this panel is showing. */
+	current?: boolean;
+}
+
+export interface PrStack {
+	/** The stack number GitHub shows in its own UI. */
+	number: number;
+	/** Branch the bottom layer targets. */
+	baseRefName: string;
+	size: number;
+	/** Position of the PR this panel is showing. */
+	position: number;
+	layers: PrStackLayer[];
 }
 
 /** Local git state of a session's worktree (git-status endpoint). */

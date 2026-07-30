@@ -13,11 +13,14 @@ import {
 	closePr,
 	getPrDetails,
 	getPrDiff,
+	invalidatePrInfo,
 	mergePr,
 	postPrComment,
+	prMetaForBranch,
 	reconcilePrDetails,
 	submitPrReview,
 } from "../pr-info";
+import { linkPrStack } from "../pr-stack";
 import { closeTinderPr, commentTinderPr, deleteTinderComment, getSeenPrs, labelTinderPr, listTinderLabels, listTinderPrs, markPrSeen, markPrUnseen, reopenTinderPr } from "../pr-tinder";
 import { findSession, invalidateSessionsCache } from "../session-cache";
 import { getSessionControl } from "../session-control";
@@ -32,7 +35,7 @@ import {
 } from "../sessions";
 import { githubLoginToPersonKey } from "../shared/user-mappings";
 import { getRepo } from "../worktree";
-import { watch } from "fs";
+import { existsSync, watch } from "fs";
 import {
 	githubCredentialRequiredResponse,
 	githubMutationCredential,
@@ -217,12 +220,20 @@ export async function handlePrRoutes(
 		const repoId =
 			url.searchParams.get("repo") || session.repo || defaultRepo().id;
 		const fallback = cachedPrDetailsForSession(session, repoId, target.branch);
+		// The branch this chat stacked on, for the panel's "link this stack"
+		// action. Only for the chat's OWN branch — an attached or linked PR is
+		// not what this chat was stacked on top of.
+		const stackBase =
+			session.stackedOn?.branch && target.branch === session.branch
+				? session.stackedOn.branch
+				: undefined;
 		const withReview = <T extends { number: number; headRefOid?: string } | null>(
 			details: T,
 		) =>
 			details
 				? {
 						...details,
+						...(stackBase ? { stackBase } : {}),
 						...getPrReviewStatus(
 							details.number,
 							target.ghRepo,
@@ -503,7 +514,7 @@ export async function handlePrRoutes(
 		try {
 			const result = await mergePr(
 				branch,
-				{ method, deleteBranch: !!body.deleteBranch },
+				{ method, deleteBranch: !!body.deleteBranch, force: !!body.force },
 				repo.ghRepo,
 				credential,
 			);
@@ -670,7 +681,7 @@ export async function handlePrRoutes(
 		try {
 			const result = await mergePr(
 				target.branch,
-				{ method, deleteBranch: !!body.deleteBranch },
+				{ method, deleteBranch: !!body.deleteBranch, force: !!body.force },
 				target.ghRepo,
 				credential,
 			);
@@ -682,6 +693,73 @@ export async function handlePrRoutes(
 				{ error: e.message || String(e) },
 				{ status: 502 },
 			);
+		}
+	}
+
+	// Register this chat's PR and the one it was stacked on as a GitHub stack.
+	// The agent is told to do this itself (buildStackNote), but it skips or
+	// fails often enough — and the pairing is knowable server-side — that the
+	// PR panel offers it as a button.
+	if (
+		path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-stack$/) &&
+		req.method === "POST"
+	) {
+		const credential = githubMutationCredential(ctx);
+		if (!credential) return githubCredentialRequiredResponse();
+		const sessionId = decodeURIComponent(
+			path.match(/^\/backstage\/api\/sessions\/(.+)\/pr-stack$/)![1],
+		);
+		const session = findSession(sessionId);
+		if (!session)
+			return Response.json({ error: "Session not found" }, { status: 404 });
+		const stackedOn = session.stackedOn;
+		if (!stackedOn?.branch)
+			return Response.json(
+				{ error: "This chat isn't stacked on another branch" },
+				{ status: 400 },
+			);
+		if (!session.branch || !session.worktreeDir)
+			return Response.json(
+				{ error: "This chat has no branch to stack" },
+				{ status: 400 },
+			);
+		// `gh stack link` reads its remote from the working directory and has no
+		// --repo flag, so it must run inside the session's own worktree.
+		if (!existsSync(session.worktreeDir))
+			return Response.json(
+				{ error: "This chat's worktree is gone — nothing to link from" },
+				{ status: 400 },
+			);
+		const ghRepo = getRepo(stackedOn.repo || session.repo).ghRepo;
+		try {
+			const [own, base] = await Promise.all([
+				prMetaForBranch(session.branch, ghRepo, credential),
+				prMetaForBranch(stackedOn.branch, ghRepo, credential),
+			]);
+			// Both layers must already exist as PRs: we pass URLs precisely so
+			// that gh never pushes a branch or opens a PR on our behalf.
+			if (!base)
+				return Response.json(
+					{ error: `No open PR on \`${stackedOn.branch}\` yet — open the base PR first` },
+					{ status: 400 },
+				);
+			if (!own)
+				return Response.json(
+					{ error: `No PR on \`${session.branch}\` yet — open this chat's PR first` },
+					{ status: 400 },
+				);
+			const result = await linkPrStack(
+				[base.url, own.url],
+				session.worktreeDir,
+				credential,
+			);
+			if ("error" in result) return Response.json(result, { status: 502 });
+			// Both panels should show the stack on their next poll, not in 5 min.
+			invalidatePrInfo(ghRepo, session.branch);
+			invalidatePrInfo(ghRepo, stackedOn.branch);
+			return Response.json({ ok: true });
+		} catch (e: any) {
+			return Response.json({ error: e.message || String(e) }, { status: 502 });
 		}
 	}
 

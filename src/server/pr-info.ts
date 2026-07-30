@@ -12,6 +12,7 @@ import { audited } from "./audit";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg } from "./github-limit";
 import { serviceGithubCredential, type GithubCredential } from "./github-auth";
 import { githubAppEnv } from "./github-app";
+import { getPrStack, unmergedLayersBelow, type PrStack } from "./pr-stack";
 import type { OsReviewSummary, UnifiedSession } from "./types";
 
 export interface PrCheck {
@@ -102,6 +103,10 @@ export interface PrDetails {
   mergeStateStatus: string;
   /** The PR's webapp preview environment (Vercel preview), when one exists. */
   staging: PrStaging | null;
+  /** The GitHub stack this PR is a layer of, when it belongs to one. Read
+   *  best-effort (see pr-stack.ts) — null covers both "not stacked" and "the
+   *  stack read failed", which the UI treats identically. */
+  stack?: PrStack | null;
   /** The latest automated Michael review, enriched by the session PR route. */
   osReview?: OsReviewSummary;
   /** An automated review is currently running for this PR. */
@@ -355,12 +360,25 @@ export function invalidatePrInfo(repo: string, branch: string): void {
   diffCache.delete(key);
 }
 
-interface MutationPrMeta {
+export interface MutationPrMeta {
   number: number;
   headRefOid: string;
   state: "OPEN" | "MERGED" | "CLOSED";
   isDraft: boolean;
   url: string;
+}
+
+/**
+ * The cheap "does this branch have a PR, and which one" lookup. Callers that
+ * only need the number/url/state (stack linking, merge gates) use this instead
+ * of getPrDetails, which pulls checks, files, comments and the stack too.
+ */
+export async function prMetaForBranch(
+  branch: string,
+  repo: string = DEFAULT_REPO(),
+  credential: GithubCredential = serviceGithubCredential,
+): Promise<MutationPrMeta | null> {
+  return getMutationPrMeta(branch, repo, credential);
 }
 
 async function getMutationPrMeta(
@@ -670,7 +688,7 @@ export async function closePr(
  */
 export async function mergePr(
   branch: string,
-  opts: { method?: MergeMethod; deleteBranch?: boolean } = {},
+  opts: { method?: MergeMethod; deleteBranch?: boolean; force?: boolean } = {},
   repo: string = DEFAULT_REPO(),
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true; url?: string } | { error: string }> {
@@ -678,6 +696,24 @@ export async function mergePr(
   if (!pr) return { error: "No PR found for this branch" };
   if (pr.state !== "OPEN") return { error: `PR #${pr.number} is ${pr.state.toLowerCase()}, not open` };
   if (pr.isDraft) return { error: `PR #${pr.number} is a draft — mark it ready first` };
+
+  // Stack order: a layer merges into the one below it, so taking this one
+  // while a lower layer is still open would either land the whole chain's
+  // commits at once or strand the layers underneath. GitHub's own stack merge
+  // is how you take several layers deliberately; `force` is the human's
+  // override for the cases we can't see (e.g. the layer below was superseded).
+  if (!opts.force) {
+    const stack = await getPrStack(repo, pr.number, credential);
+    const below = stack ? unmergedLayersBelow(stack) : [];
+    if (below.length)
+      return {
+        error:
+          `PR #${pr.number} is layer ${stack!.position} of stack #${stack!.number} and ` +
+          `${below.length === 1 ? "the layer" : "the layers"} below ${below.length === 1 ? "is" : "are"} still open (` +
+          `${below.map((l) => `#${l.number}`).join(", ")}). Merge from the bottom up, ` +
+          "or merge the stack on GitHub.",
+      };
+  }
 
   const method = opts.method || "squash";
   const flag = method === "merge" ? "--merge" : method === "rebase" ? "--rebase" : "--squash";
@@ -991,6 +1027,10 @@ async function fetchPrDetails(
       mergeStateStatus: pr.mergeStateStatus || "",
       staging: parseStaging(pr.comments),
     };
+    // Stacks live in GraphQL only (no `gh pr view --json stack`), so this is a
+    // second call — paid once per cache miss, and never fatal: getPrStack
+    // swallows its own failures and answers null.
+    data.stack = await getPrStack(repo, pr.number);
   } catch (e: any) {
     const msg = String(e?.stderr || e?.message || e).slice(0, 300);
     if (!isNoPrError(msg)) {

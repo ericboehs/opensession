@@ -1459,6 +1459,14 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							}
 						}
 					}
+					// The layer this chat stacks on, captured BEFORE the adoption
+					// block below can rewrite workspace.branch to this chat's own
+					// branch — reading it afterwards would make a stacked chat try
+					// to base on itself.
+					const stackBase =
+						chatMode === "stack" && !isAsk && !isScratch
+							? workspace?.branch || ""
+							: "";
 					// First code chat materializes the workspace's owned worktree so
 					// later share-mode chats inherit it. Stacked chats keep their own —
 					// except a "stack" in a workspace with no branch yet, which has no
@@ -1675,6 +1683,14 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 									| "ask"
 									| "code"
 									| "scratch",
+								...(stackBase && stackBase !== sessionBranch
+									? {
+											stackedOn: {
+												repo: repoForPath(wtPath).id,
+												branch: stackBase,
+											},
+										}
+									: {}),
 								...(msg.planFirst === true && !isAsk ? { planFirst: true } : {}),
 								...(createEffort ? { effort: createEffort } : {}),
 								...(createFastMode ? { fastMode: true } : {}),
@@ -1749,14 +1765,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 								if (fromPr) {
 									await createWorktreeForExistingBranch(branch, repo.id);
 								} else {
-									const base =
-										chatMode === "stack" && workspace?.branch
-											? workspace.branch
-											: undefined;
 									await createWorktree(
 										branch,
 										repo.id,
-										base ? { base } : undefined,
+										stackBase ? { base: stackBase } : undefined,
 									);
 								}
 								// Deps install runs in the background (worktree.ts) — say

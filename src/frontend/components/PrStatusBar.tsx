@@ -50,6 +50,7 @@ interface PrHeadline {
 		| "running"
 		| "draft"
 		| "changes-requested"
+		| "stack-blocked" // a lower layer of this PR's stack is still open
 		| "ready"
 		| "ahead"
 		| "behind" // behind the branch's own upstream → Pull
@@ -97,6 +98,19 @@ function deriveHeadline(
 		if (pr.isDraft) return { key: "draft", label: "Draft", tone: "muted" };
 		if (pr.reviewDecision === "CHANGES_REQUESTED")
 			return { key: "changes-requested", label: "Changes requested", tone: "red" };
+		// A stack layer can't land before the layers under it (mergePr refuses
+		// it) — "Ready to merge" would be a promise the merge button breaks.
+		const openBelow = pr.stack
+			? pr.stack.layers.filter(
+					(l) => l.position < pr.stack!.position && l.state === "OPEN",
+				)
+			: [];
+		if (openBelow.length)
+			return {
+				key: "stack-blocked",
+				label: `Waiting on #${openBelow[openBelow.length - 1].number} below it`,
+				tone: "yellow",
+			};
 		return { key: "ready", label: "Ready to merge", tone: "green" };
 	}
 	if (behind > 0)

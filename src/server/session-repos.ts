@@ -24,7 +24,7 @@ import {
 import { DESK_NOTE } from "./desk";
 import { personalPromptNoteFor } from "./personal-prompts";
 import { findSession, touchBackstageSession } from "./session-cache";
-import type { AttachedRepo, LinkedPr, UnifiedSession } from "./types";
+import type { AttachedRepo, LinkedPr, StackedOn, UnifiedSession } from "./types";
 import { defaultRepo } from "./config";
 
 export interface SessionRepoContext {
@@ -120,15 +120,41 @@ export function buildBranchNote(session: {
 }
 
 /**
+ * System-prompt note for a chat whose worktree was branched off ANOTHER chat's
+ * branch rather than the trunk (the "stacked worktree" chat mode). Its diff is
+ * only reviewable against that branch, so its PR must target it — and GitHub's
+ * stacked PRs (public preview, 2026-07-30) then give the pair a real stack:
+ * each layer reviewed on its own diff, lower layers rebased automatically as
+ * they merge. See pr-stack.ts for the read/link surface behind the UI.
+ */
+export function buildStackNote(session: {
+	mode?: "ask" | "code" | "scratch";
+	branch?: string | null;
+	stackedOn?: StackedOn;
+}): string | undefined {
+	const base = session.stackedOn?.branch;
+	if (!base || session.mode !== "code" || !session.branch) return undefined;
+	return [
+		"## Stacked branch",
+		`This branch was cut from \`${base}\` (another chat's branch), not from the trunk — its commits sit ON TOP of that work, and a diff against the trunk would show both.`,
+		`Open your PR against that branch: \`gh pr create --base ${base}\`. Never retarget it at the default branch, and never merge \`${base}\` into this branch to "catch up" — it moves under you as its own PR updates.`,
+		`Once both PRs exist, register them as a GitHub stack so each is reviewed on its own diff and the bases rebase themselves as layers merge: \`gh stack link <base-PR-url> <your-PR-url>\` (bottom first, run from this worktree). If \`gh stack\` isn't installed, say so and leave the PR as-is — the base is what matters.`,
+		"Never merge either PR — the human merges the stack.",
+	].join("\n");
+}
+
+/**
  * System-prompt note describing a session's repos when it spans more than one.
  * Lists the primary worktree + every attached repo with its path/branch and how
  * `@<project>:path` mentions resolve. Returns undefined for single-repo sessions
  * so the prompt stays clean.
  */
 export function buildReposNote(session: UnifiedSession): string | undefined {
-	const branchNote = buildBranchNote(session);
+	const branchNote = [buildBranchNote(session), buildStackNote(session)]
+		.filter(Boolean)
+		.join("\n\n");
 	const attached = session.attachedRepos || [];
-	if (!attached.length) return branchNote;
+	if (!attached.length) return branchNote || undefined;
 	const primaryRepo =
 		session.repo ||
 		(session.worktreeDir && session.mode !== "scratch"
