@@ -685,17 +685,16 @@ struct SessionsListView: View {
             await viewModel.refresh()
         }
         .navigationDestination(for: Session.self) { session in
-            SessionView(
+            SessionTabsView(
                 session: session,
-                seed: optimisticSeeds[session.id],
                 tabs: SessionsListViewModel.tabSessions(
                     in: viewModel.sessions,
                     containing: session
                 ),
-                composerDraft: composerDrafts[session.id],
-                onSelectTab: switchToTab,
-                onSaveComposerDraft: { draft in
-                    let id = resolvedSessionIds[session.id] ?? session.id
+                seedForSession: { optimisticSeeds[$0.id] },
+                composerDraftForSession: { composerDrafts[$0.id] },
+                onSaveComposerDraft: { savedSession, draft in
+                    let id = resolvedSessionIds[savedSession.id] ?? savedSession.id
                     composerDrafts[id] = draft.isEmpty ? nil : draft
                 }
             )
@@ -781,22 +780,6 @@ struct SessionsListView: View {
             workspace.sessions.forEach(viewModel.archive)
         }
     }
-
-    #if os(iOS)
-    /// Keep sibling-tab switches at the current navigation depth instead of
-    /// pushing another conversation onto the back stack.
-    private func switchToTab(_ session: Session) {
-        guard !path.isEmpty else { return }
-        var next = path
-        next.removeLast()
-        next.append(session)
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            path = next
-        }
-    }
-    #endif
 
     private var listSections: some View {
         Group {
