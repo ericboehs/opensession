@@ -156,7 +156,8 @@ struct SessionView: View {
                     SessionTabBar(
                         tabs: tabs,
                         activeId: viewModel.session.id,
-                        onSelect: onSelectTab
+                        onSelect: onSelectTab,
+                        isSelectionEnabled: true
                     )
                 }
                 #endif
@@ -461,6 +462,116 @@ struct SessionView: View {
 }
 
 #if os(iOS)
+/// Keeps the tab strip anchored while sibling conversations move horizontally
+/// according to their order. Each conversation still owns a fresh view model
+/// and socket, just as it did when tab changes replaced the navigation path.
+struct SessionTabsView: View {
+    let initialSession: Session
+    let tabs: [Session]
+    let seedForSession: (Session) -> SessionViewModel.OptimisticSeed?
+    let composerDraftForSession: (Session) -> SessionViewModel.ComposerDraft?
+    let onSaveComposerDraft: (Session, SessionViewModel.ComposerDraft) -> Void
+
+    @State private var activeId: String
+    @State private var transitionEdge = Edge.trailing
+    @State private var isTransitioning = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(
+        session: Session,
+        tabs: [Session],
+        seedForSession: @escaping (Session) -> SessionViewModel.OptimisticSeed?,
+        composerDraftForSession: @escaping (Session) -> SessionViewModel.ComposerDraft?,
+        onSaveComposerDraft: @escaping (Session, SessionViewModel.ComposerDraft) -> Void
+    ) {
+        initialSession = session
+        self.tabs = tabs
+        self.seedForSession = seedForSession
+        self.composerDraftForSession = composerDraftForSession
+        self.onSaveComposerDraft = onSaveComposerDraft
+        _activeId = State(initialValue: session.id)
+    }
+
+    private var activeSession: Session {
+        tabs.first(where: { $0.id == activeId }) ?? tabs.first ?? initialSession
+    }
+
+    private var conversationTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        let removalEdge: Edge = transitionEdge == .trailing ? .leading : .trailing
+        return .asymmetric(
+            insertion: .move(edge: transitionEdge).combined(with: .opacity),
+            removal: .move(edge: removalEdge).combined(with: .opacity)
+        )
+    }
+
+    var body: some View {
+        let session = activeSession
+
+        ZStack {
+            SessionView(
+                session: session,
+                seed: seedForSession(session),
+                tabs: tabs,
+                composerDraft: composerDraftForSession(session),
+                onSaveComposerDraft: { draft in
+                    onSaveComposerDraft(session, draft)
+                }
+            )
+            .id(session.id)
+            .transition(conversationTransition)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if tabs.count > 1 {
+                SessionTabBar(
+                    tabs: tabs,
+                    activeId: session.id,
+                    onSelect: select,
+                    isSelectionEnabled: !isTransitioning
+                )
+            }
+        }
+        .onChange(of: tabs) { _, updatedTabs in
+            guard !updatedTabs.contains(where: { $0.id == activeId }),
+                  let fallback = updatedTabs.first
+            else { return }
+
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                activeId = fallback.id
+            }
+        }
+    }
+
+    private func select(_ session: Session) {
+        guard !isTransitioning,
+              session.id != activeId,
+              let targetIndex = tabs.firstIndex(where: { $0.id == session.id })
+        else { return }
+
+        let currentIndex = tabs.firstIndex(where: { $0.id == activeId }) ?? 0
+        transitionEdge = targetIndex > currentIndex ? .trailing : .leading
+        isTransitioning = true
+        let transitionDuration = reduceMotion ? 0.16 : 0.26
+
+        withAnimation(
+            reduceMotion
+                ? .easeOut(duration: 0.16)
+                : .snappy(duration: 0.26, extraBounce: 0)
+        ) {
+            activeId = session.id
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(transitionDuration))
+            isTransitioning = false
+        }
+    }
+}
+
 /// Compact workspace chat tabs below the navigation bar. The active tab is
 /// centered when the strip opens, while horizontal overflow remains native
 /// touch scrolling.
@@ -468,8 +579,10 @@ private struct SessionTabBar: View {
     let tabs: [Session]
     let activeId: String
     let onSelect: (Session) -> Void
+    let isSelectionEnabled: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Namespace private var activeTabIndicator
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -506,15 +619,28 @@ private struct SessionTabBar: View {
                             .padding(.horizontal, 12)
                             .frame(minWidth: 44, minHeight: 44)
                             .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? 260 : 180)
-                            .background(
-                                isActive
-                                    ? OS1VisualStyle.hover
-                                    : Color.clear,
-                                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            )
+                            .background {
+                                if isActive {
+                                    let indicator = RoundedRectangle(
+                                        cornerRadius: 9,
+                                        style: .continuous
+                                    )
+                                    .fill(OS1VisualStyle.hover)
+
+                                    if reduceMotion {
+                                        indicator
+                                    } else {
+                                        indicator.matchedGeometryEffect(
+                                            id: "active-session-tab",
+                                            in: activeTabIndicator
+                                        )
+                                    }
+                                }
+                            }
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .disabled(!isSelectionEnabled && !isActive)
                         .id(session.id)
                         .accessibilityAddTraits(
                             isActive ? .isSelected : []

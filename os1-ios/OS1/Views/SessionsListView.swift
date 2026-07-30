@@ -2,17 +2,20 @@ import Combine
 import SwiftUI
 
 /// Sessions list, mirroring the web sidebar's organization: group by Status
-/// (In progress / Needs input / In review / Done / Backlog), by Repo, or a
-/// flat Recent list — plus a repo filter, updated/created sort, and search.
+/// (In progress / Needs input / In review / Done / Backlog), by Repo, by Repo
+/// and Status, or a flat Recent list — plus a repo filter, sort, and search.
 /// The grouping/filter choices persist like the web's filter popover does.
 struct SessionsListView: View {
     enum GroupBy: String, CaseIterable {
-        case status, repo, recent
+        case status, repo
+        case repoStatus = "repo-status"
+        case recent
 
         var label: String {
             switch self {
             case .status: "Status"
             case .repo: "Repo"
+            case .repoStatus: "Repo and status"
             case .recent: "Recently active"
             }
         }
@@ -56,7 +59,7 @@ struct SessionsListView: View {
         var repo: String?
     }
 
-    @AppStorage("os1.list.groupBy") private var groupByRaw = GroupBy.status.rawValue
+    @AppStorage("os1.list.groupBy") private var groupByRaw = GroupBy.repoStatus.rawValue
     @AppStorage("os1.list.repo") private var repoFilter = "all"
     @AppStorage("os1.list.sort") private var sortByRaw = SortBy.updated.rawValue
     // Default to the signed-in person's own sessions, like the web sidebar —
@@ -64,7 +67,7 @@ struct SessionsListView: View {
     @AppStorage("os1.list.people") private var peopleFilter = "mine"
     @AppStorage("os1.sidebar.repoOrder") private var preferredRepoOrder = "[]"
 
-    private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .status }
+    private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .repoStatus }
     private var sortBy: SortBy { SortBy(rawValue: sortByRaw) ?? .updated }
 
     #if os(macOS)
@@ -490,6 +493,16 @@ struct SessionsListView: View {
         let id: String
         let title: String
         let workspaces: [SidebarWorkspace]
+        let lane: Session.Lane?
+        let repo: String?
+    }
+
+    private struct RepoSessionGroup: Identifiable {
+        let repo: String
+        let workspaces: [SidebarWorkspace]
+        let lanes: [SessionGroup]
+
+        var id: String { repo }
     }
 
     private var groups: [SessionGroup] {
@@ -498,11 +511,23 @@ struct SessionsListView: View {
         case .recent:
             return workspaces.isEmpty
                 ? []
-                : [SessionGroup(id: "recent", title: "", workspaces: workspaces)]
+                : [SessionGroup(
+                    id: "recent",
+                    title: "",
+                    workspaces: workspaces,
+                    lane: nil,
+                    repo: nil
+                )]
         case .repo:
             let byRepo = Dictionary(grouping: workspaces, by: \.effectiveRepo)
             return availableRepos.filter { byRepo[$0] != nil }.map {
-                SessionGroup(id: "repo-\($0)", title: $0, workspaces: byRepo[$0]!)
+                SessionGroup(
+                    id: "repo-\($0)",
+                    title: $0,
+                    workspaces: byRepo[$0]!,
+                    lane: nil,
+                    repo: $0
+                )
             }
         case .status:
             return Session.Lane.allCases.compactMap { lane in
@@ -512,9 +537,33 @@ struct SessionsListView: View {
                     : SessionGroup(
                         id: "lane-\(lane.rawValue)",
                         title: lane.label,
-                        workspaces: inLane
+                        workspaces: inLane,
+                        lane: lane,
+                        repo: nil
                     )
             }
+        case .repoStatus:
+            return []
+        }
+    }
+
+    private var repoSessionGroups: [RepoSessionGroup] {
+        let byRepo = Dictionary(grouping: filteredWorkspaces, by: \.effectiveRepo)
+        return availableRepos.compactMap { repo in
+            guard let workspaces = byRepo[repo] else { return nil }
+            let lanes = Session.Lane.allCases.compactMap { lane in
+                let inLane = workspaces.filter { $0.lane == lane }
+                return inLane.isEmpty
+                    ? nil
+                    : SessionGroup(
+                        id: "repo-\(repo)-lane-\(lane.rawValue)",
+                        title: lane.label,
+                        workspaces: inLane,
+                        lane: lane,
+                        repo: nil
+                    )
+            }
+            return RepoSessionGroup(repo: repo, workspaces: workspaces, lanes: lanes)
         }
     }
 
@@ -751,62 +800,38 @@ struct SessionsListView: View {
 
     private var listSections: some View {
         Group {
-            ForEach(groups) { group in
-                Section {
-                    ForEach(group.workspaces) { workspace in
-                        sessionRow(workspace)
-                    }
-                } header: {
-                    if !group.title.isEmpty {
-                        HStack(spacing: 6) {
-                            if groupBy == .status,
-                               let lane = Session.Lane(
-                                   rawValue: String(group.id.dropFirst("lane-".count))
-                               ) {
-                                Circle()
-                                    .fill(lane.color)
-                                    .frame(width: 7, height: 7)
-                            }
-                            if groupBy == .repo {
-                                RepoTile(name: group.title)
-                            }
-                            Text(groupBy == .repo ? RepoTile.label(for: group.title) : group.title)
-                                #if os(iOS)
-                                .font(.subheadline.weight(.semibold))
-                                #else
-                                .font(.caption.weight(.semibold))
-                                #endif
-                                .foregroundStyle(OS1VisualStyle.textDim)
-                            Text("\(group.workspaces.count)")
-                                #if os(iOS)
-                                .font(.footnote.weight(.medium))
-                                #else
-                                .font(.caption.monospacedDigit())
-                                #endif
-                                .foregroundStyle(OS1VisualStyle.textDim)
-                            if groupBy == .repo {
-                                Spacer(minLength: 8)
-                                Button {
-                                    newSessionRequest = NewSessionRequest(repo: group.title)
-                                } label: {
-                                    Image(systemName: "plus")
-                                        #if os(iOS)
-                                        .font(.system(size: 18, weight: .medium))
-                                        .frame(width: 30, height: 30)
-                                        #else
-                                        .font(.system(size: 12, weight: .medium))
-                                        .frame(width: 20, height: 20)
-                                        #endif
-                                }
-                                .buttonStyle(.borderless)
-                                .accessibilityLabel(
-                                    "New session in \(RepoTile.label(for: group.title))"
-                                )
+            if groupBy == .repoStatus {
+                ForEach(repoSessionGroups) { repoGroup in
+                    Section {
+                        ForEach(repoGroup.lanes) { laneGroup in
+                            statusLaneHeader(laneGroup)
+                            ForEach(laneGroup.workspaces) { workspace in
+                                sessionRow(workspace)
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textCase(nil)
-                        .padding(.top, 4)
+                    } header: {
+                        groupHeader(
+                            title: repoGroup.repo,
+                            count: repoGroup.workspaces.count,
+                            repo: repoGroup.repo
+                        )
+                    }
+                }
+            } else {
+                ForEach(groups) { group in
+                    Section {
+                        ForEach(group.workspaces) { workspace in
+                            sessionRow(workspace)
+                        }
+                    } header: {
+                        if !group.title.isEmpty {
+                            groupHeader(
+                                title: group.title,
+                                count: group.workspaces.count,
+                                lane: group.lane,
+                                repo: group.repo
+                            )
+                        }
                     }
                 }
             }
@@ -856,7 +881,7 @@ struct SessionsListView: View {
 
     @ViewBuilder
     private var emptyFilterOverlay: some View {
-        if groups.isEmpty && visibleArchivedSessions.isEmpty {
+        if filteredWorkspaces.isEmpty && visibleArchivedSessions.isEmpty {
             if !searchText.isEmpty {
                 ContentUnavailableView.search(text: searchText)
             } else if peopleFilter == "mine" {
@@ -873,6 +898,77 @@ struct SessionsListView: View {
                 }
             }
         }
+    }
+
+    private func groupHeader(
+        title: String,
+        count: Int,
+        lane: Session.Lane? = nil,
+        repo: String? = nil
+    ) -> some View {
+        HStack(spacing: 6) {
+            if let lane {
+                Circle()
+                    .fill(lane.color)
+                    .frame(width: 7, height: 7)
+            }
+            if let repo {
+                RepoTile(name: repo)
+            }
+            Text(repo.map { RepoTile.label(for: $0) } ?? title)
+                #if os(iOS)
+                .font(.subheadline.weight(.semibold))
+                #else
+                .font(.caption.weight(.semibold))
+                #endif
+                .foregroundStyle(OS1VisualStyle.textDim)
+            Text("\(count)")
+                #if os(iOS)
+                .font(.footnote.weight(.medium))
+                #else
+                .font(.caption.monospacedDigit())
+                #endif
+                .foregroundStyle(OS1VisualStyle.textDim)
+            if let repo {
+                Spacer(minLength: 8)
+                Button {
+                    newSessionRequest = NewSessionRequest(repo: repo)
+                } label: {
+                    Image(systemName: "plus")
+                        #if os(iOS)
+                        .font(.system(size: 18, weight: .medium))
+                        .frame(width: 30, height: 30)
+                        #else
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 20, height: 20)
+                        #endif
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("New session in \(RepoTile.label(for: repo))")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .textCase(nil)
+        .padding(.top, 4)
+    }
+
+    private func statusLaneHeader(_ group: SessionGroup) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(group.lane?.color ?? OS1VisualStyle.textFaint)
+                .frame(width: 7, height: 7)
+            Text(group.title)
+                .font(.footnote.weight(.semibold))
+            Text("\(group.workspaces.count)")
+                .font(.caption.monospacedDigit())
+        }
+        .foregroundStyle(OS1VisualStyle.textDim)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 6)
+        .listRowInsets(EdgeInsets(top: 0, leading: 22, bottom: 0, trailing: 16))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .accessibilityElement(children: .combine)
     }
 
     private var emptyState: some View {
