@@ -906,7 +906,7 @@ export function Composer({
                         ? {
                             width: "auto",
                             gap: 6,
-                            padding: "0 6px",
+                            padding: "0 9px",
                             color: "var(--yellow)",
                           }
                         : undefined
