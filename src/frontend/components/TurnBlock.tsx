@@ -153,17 +153,17 @@ export const TurnBlock = React.memo(function TurnBlock({
           userToggledRef.current = true;
           setExpanded(!expanded);
         }}
-        className="mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-[14px] leading-5 text-dim hover:bg-hover"
+        className="mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-[14px] leading-5 text-dim transition-colors hover:bg-hover/40 hover:text-fg"
       >
         <span
           className={cn(
-            "flex-shrink-0 text-faint transition-transform duration-150",
+            "grid size-5 flex-shrink-0 place-items-center leading-none text-faint transition-transform duration-150",
             !expanded && "-rotate-90"
           )}
         >
-          <IconChevronDown size={20} />
+          <IconChevronDown size={20} className="block" />
         </span>
-        <span className={cn("flex-shrink-0 font-medium", live && "text-green")}>
+        <span className="flex-shrink-0 font-medium">
           {live ? "Working" : "Worked"}
         </span>
         {familyReps.length > 0 && (
