@@ -6,6 +6,7 @@
  * one place to look for "credentials this box holds for an OpenSession server".
  */
 
+import type { SessionScope } from "./identity";
 import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -22,6 +23,8 @@ export type TuiConfig = {
 	user?: string;
 	/** tmux prefix key name, e.g. "b" for ctrl+b. */
 	prefix?: string;
+	/** Last sidebar scope (^b f), so it survives a restart. */
+	scope?: SessionScope;
 };
 
 const DEFAULT_HOST = "http://127.0.0.1:3850";

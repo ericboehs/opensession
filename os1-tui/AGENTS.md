@@ -51,6 +51,21 @@ COLUMNS=120 LINES=30 timeout 10 script -qec "bun src/index.ts --host http://127.
   `Action` variant + a `resolveKey` case + a `runAction` case, and a `KEY_HELP`
   row (the help overlay and README both read from that constant). A key handler
   that reaches into a store directly is a bug.
+- **There is always a way out, and it's discoverable.** The renderer runs with
+  `exitOnCtrlC: false` (inside a session ^c means "interrupt the turn"), so
+  quitting is the app's job: `q`, `^b q`, `^b d`, and a second `ctrl+c` inside
+  two seconds. The status bar advertises `^b q` at all times. Don't take a key
+  away from that set without replacing it with a louder one — a TUI you can't
+  leave is the worst bug this client can ship.
+- **Don't bind `ctrl+letter` or rely on `ctrl+arrow` alone.** ctrl+h/j/k/l are
+  backspace and newline; ctrl+arrows are eaten by tmux and by most terminals'
+  word-jump. Prefix-less movement lives on alt+arrows, with prefixed
+  equivalents (`^b o`, `^b n`, `^b p`) as the always-available fallback.
+- **The sidebar is scoped, and the scope is visible.** `GET /api/sessions`
+  returns the whole install — thousands of rows, mostly automation runs — so
+  `src/client/identity.ts` filters to mine / team / all (`f`), the poller caps
+  the result at 200 newest, and the header shows which scope with a count. An
+  empty *unchosen* scope widens itself; a scope the user picked never does.
 - **Never read render-scoped state inside a key handler.** A terminal delivers
   `^b w` as two keypresses in one tick, before React re-renders — that's why
   `UiStore` is ref-backed and why `flatRef`/`stateRef`/`watchedRef` exist. Read

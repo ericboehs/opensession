@@ -5,8 +5,9 @@
  * groups that need a human float to the top (see groupSessions).
  */
 
-import { TextAttributes } from "@opentui/core";
-import type { ReactNode } from "react";
+import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
+import { useEffect, useRef, type ReactNode } from "react";
+import type { SessionScope } from "../client/identity";
 import type { WorkspaceGroup } from "../client/sessions-poller";
 import { type Session, sessionStatus, sessionTitle } from "../client/types";
 import { relativeTime } from "./format";
@@ -23,6 +24,15 @@ export type SidebarProps = {
 	width: number;
 	spinnerFrame: number;
 	loaded: boolean;
+	/** Which slice of the server's sessions these groups are. */
+	scope: SessionScope;
+	/** The scope widened by itself because the chosen one was empty. */
+	scopeAuto: boolean;
+	/** Rows shown, how many the scope matched, and the server's total. */
+	shown: number;
+	matched: number;
+	total: number;
+	truncated: boolean;
 	error?: string;
 };
 
@@ -44,11 +54,19 @@ export function Sidebar({
 	width,
 	spinnerFrame,
 	loaded,
+	scope,
+	scopeAuto,
+	shown,
+	matched,
+	total,
+	truncated,
 	error,
 }: SidebarProps) {
 	// One flat index across groups so ↑/↓ walks the list the way it looks.
 	let flatIndex = -1;
 	const rows: ReactNode[] = [];
+	/** Screen row of the cursor, group headers included — for scroll-follow. */
+	let cursorRow = 0;
 
 	for (const group of groups) {
 		const attention = group.waiting
@@ -67,6 +85,7 @@ export function Sidebar({
 
 		for (const session of group.sessions) {
 			flatIndex += 1;
+			if (flatIndex === cursor) cursorRow = rows.length;
 			const selected = focused && flatIndex === cursor;
 			const active = session.id === activeSessionId;
 			const tabIndex = openTabs.indexOf(session.id);
@@ -99,6 +118,20 @@ export function Sidebar({
 		}
 	}
 
+	// Keep the cursor on screen. Without this the list scrolls only by mouse and
+	// ↓ walks the selection straight off the bottom into nothing — which is what
+	// a sidebar holding a couple of hundred sessions does immediately.
+	const scrollRef = useRef<ScrollBoxRenderable>(null);
+	useEffect(() => {
+		const box = scrollRef.current;
+		if (!box) return;
+		const height = box.viewport.height;
+		if (height <= 0) return;
+		const top = box.scrollTop;
+		if (cursorRow < top) box.scrollTo(cursorRow);
+		else if (cursorRow >= top + height) box.scrollTo(cursorRow - height + 1);
+	}, [cursorRow]);
+
 	if (!loaded) {
 		rows.push(
 			<text key="loading" fg={theme.faint} paddingLeft={1}>
@@ -107,8 +140,18 @@ export function Sidebar({
 		);
 	} else if (!groups.length) {
 		rows.push(
-			<text key="empty" fg={theme.faint} paddingLeft={1}>
-				{error ? "" : "no sessions yet — ^b c to start one"}
+			<text key="empty" fg={theme.faint} paddingLeft={1} wrapMode="word">
+				{error
+					? ""
+					: total
+						? `nothing in ${scope} — f widens the scope`
+						: "no sessions yet — ^b c to start one"}
+			</text>,
+		);
+	} else if (truncated) {
+		rows.push(
+			<text key="truncated" fg={theme.faint} paddingLeft={1}>
+				…{matched - shown} older hidden
 			</text>,
 		);
 	}
@@ -128,8 +171,32 @@ export function Sidebar({
 			borderColor={focused ? theme.borderStrong : theme.border}
 			flexShrink={0}
 		>
+			{/* Which slice of the fleet this is. Without it an install with a few
+			    thousand automation runs looks either broken (empty) or unusable
+			    (everyone's runs), and there's no hint the filter exists. */}
+			{/* height + flexShrink pinned: a scrollbox whose content is taller than
+			    the pane would otherwise overflow straight over this row. */}
+			<box
+				flexDirection="row"
+				height={1}
+				flexShrink={0}
+				paddingLeft={1}
+				paddingRight={1}
+				backgroundColor={theme.panel}
+			>
+				<text fg={scopeAuto ? theme.yellow : theme.accent} attributes={TextAttributes.BOLD}>
+					{scope}
+				</text>
+				<text fg={theme.faint} flexGrow={1} truncate>
+					{total ? ` ${shown}/${total}` : ""}
+				</text>
+				<text fg={theme.faint}>f</text>
+			</box>
 			<scrollbox
+				ref={scrollRef}
 				flexGrow={1}
+				flexShrink={1}
+				minHeight={0}
 				verticalScrollbarOptions={{ visible: false }}
 				contentOptions={{ flexDirection: "column" }}
 			>

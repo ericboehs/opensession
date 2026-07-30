@@ -53,6 +53,9 @@ async function mount(
 		{
 			width: options.width ?? 100,
 			height: options.height ?? 24,
+			// Same as the real renderer (src/index.ts): ctrl+c is the app's key,
+			// not the renderer's, or it would exit before the app ever sees it.
+			exitOnCtrlC: false,
 			...(options.kittyKeyboard ? { kittyKeyboard: true } : {}),
 		},
 	);
@@ -316,6 +319,61 @@ describe("tmux keys", () => {
 		expect(ws.sentOfType("cancel")).toHaveLength(1);
 	});
 
+	test("^b q quits, and so does q from the sidebar", async () => {
+		const app = await mount();
+		active = app;
+		app.mockInput.pressKey("q");
+		await app.flush();
+		expect(app.exited()).toBe(true);
+	});
+
+	test("ctrl+c interrupts first and quits on the second press", async () => {
+		const app = await mount({ sessions: [fakeSession({ id: "bks-1", isRunning: true })] });
+		active = app;
+		app.mockInput.pressEnter();
+		await app.flush();
+		const ws = FakeWebSocket.last!;
+		ws.open();
+		ws.deliver({ type: "transcript_init", entries: [], endOffset: 0, rev: "r" } as ServerFrame);
+		ws.deliver({ type: "session_status", isRunning: true } as ServerFrame);
+		await app.flush();
+
+		app.mockInput.pressKey("c", { ctrl: true });
+		await app.flush();
+		expect(ws.sentOfType("cancel")).toHaveLength(1);
+		expect(app.exited()).toBe(false);
+		expect(app.frame()).toContain("ctrl+c again to quit");
+
+		app.mockInput.pressKey("c", { ctrl: true });
+		await app.flush();
+		expect(app.exited()).toBe(true);
+	});
+
+	test("f cycles the sidebar scope and shows which one is on", async () => {
+		const app = await mount({
+			sessions: [
+				fakeSession({ id: "bks-1", title: "a human session", startedBy: "Jaap" }),
+				fakeSession({
+					id: "bks-2",
+					title: "nightly sweep",
+					startedBy: "docs-sync (automation)",
+					automation: "docs-sync",
+				}),
+			],
+		});
+		active = app;
+		// Nothing is "mine" here, so the scope widened to team — automations out.
+		expect(app.frame()).toContain("team");
+		expect(app.frame()).toContain("a human session");
+		expect(app.frame()).not.toContain("nightly sweep");
+
+		app.mockInput.pressKey("f");
+		await app.flush();
+		const frame = app.frame();
+		expect(frame).toContain("all");
+		expect(frame).toContain("nightly sweep");
+	});
+
 	test("^b d detaches", async () => {
 		const app = await mount();
 		active = app;
@@ -325,7 +383,7 @@ describe("tmux keys", () => {
 		expect(app.exited()).toBe(true);
 	});
 
-	test("two open tabs show a tab strip, and ctrl+→ switches", async () => {
+	test("two open tabs show a tab strip, and alt+← switches", async () => {
 		const app = await mount({
 			sessions: [
 				fakeSession({ id: "bks-1", title: "first one" }),
@@ -348,10 +406,38 @@ describe("tmux keys", () => {
 		expect(frame).toContain("1:first one");
 		expect(frame).toContain("2:second one");
 
-		app.mockInput.pressArrow("left", { ctrl: true });
+		// alt is the primary movement modifier — ctrl+arrows are eaten by tmux
+		// and by most terminals' word-jump before the app ever sees them.
+		app.mockInput.pressArrow("left", { meta: true });
 		await app.flush();
 		// Still both tabs; the active one changed (title bar shows first one).
 		expect(app.frame()).toContain("first one");
+	});
+});
+
+describe("a sidebar longer than the terminal", () => {
+	test("the cursor scrolls the list instead of walking off the bottom", async () => {
+		const app = await mount({
+			height: 24,
+			sessions: Array.from({ length: 40 }, (_, i) =>
+				fakeSession({
+					id: `bks-${i}`,
+					projectId: `prj-${i % 8}`,
+					title: `session number ${i}`,
+					startedBy: "Jaap",
+				}),
+			),
+		});
+		active = app;
+		const topRow = () => app.frame().split("\n")[1];
+		const before = topRow();
+
+		for (let i = 0; i < 30; i++) app.mockInput.pressKey("j");
+		await app.flush();
+
+		// The list scrolled under the cursor, and the scope header stayed put.
+		expect(topRow()).not.toBe(before);
+		expect(app.frame().split("\n")[0]).toContain("team");
 	});
 });
 

@@ -88,7 +88,8 @@ export function StatusBar({
 				{mode !== "nav" && mode !== "composer" ? (
 					<text fg={theme.purple}>{mode.toUpperCase()} </text>
 				) : null}
-				{width > 60 ? <text fg={theme.faint}>^b ?</text> : null}
+				{/* The two keys you need before you know any of them: help, and out. */}
+			{width > 60 ? <text fg={theme.faint}>^b ? keys · ^b q quit</text> : null}
 			</box>
 		</box>
 	);

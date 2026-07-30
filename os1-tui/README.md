@@ -45,7 +45,8 @@ from the server CLI.
 | `os login` | sign in via the GitHub device flow |
 | `os logout` | revoke and forget this box's token |
 | `os whoami` | host, user, token, and what the server thinks |
-| `os sessions` | one-shot list, no TUI — for scripts and ssh one-liners |
+| `os sessions` | one-shot list of your sessions, no TUI — for scripts and ssh one-liners |
+| `os sessions --team` · `--all` | …everyone's, and everyone's plus automation runs |
 
 Host resolution: `--host` → `OPENSESSION_HOST` → `~/.opensession/tui.json` →
 `http://127.0.0.1:3850`. Bare hostnames get `https://` (loopback and `.local`
@@ -53,19 +54,23 @@ get `http://`).
 
 ## Keys
 
-tmux by default: prefix `ctrl+b`, plus prefix-less `ctrl+arrow` movement.
+tmux by default: prefix `ctrl+b`, plus prefix-less `alt+arrow` movement.
 `^b ?` shows this list in the app.
 
 | Key | Action |
 | --- | --- |
-| `ctrl+←/→` | previous / next tab |
-| `ctrl+↑/↓` | focus pane (sidebar · transcript · composer) |
+| `q` · `^b q` | quit — the sessions keep running on the server |
+| `ctrl+c` | interrupt the running turn; again within 2s quits |
+| `alt+←/→` | previous / next tab |
+| `alt+↑/↓` | focus pane (sidebar · transcript · composer) |
+| `tab` · `^b o` | focus the next pane |
 | `↑/↓` · `j/k` | move in the focused pane |
 | `enter` | open session · focus composer |
 | `i` | jump to the composer |
 | `enter` (composer) | send — queues behind a running turn |
 | `ctrl+enter` · `alt+enter` | send as a steer instead |
 | `1…9` | answer a pending question |
+| `f` · `^b f` | sidebar scope: mine → team → all |
 | `^b c` | new session |
 | `^b w` | session picker |
 | `^b n` · `^b p` | next · previous tab |
@@ -78,12 +83,40 @@ tmux by default: prefix `ctrl+b`, plus prefix-less `ctrl+arrow` movement.
 | `^b [` | scroll mode — `b` loads earlier history, `q` exits |
 | `^b :` | command prompt |
 | `^b r` | reconnect |
-| `^b d` | detach (sessions keep running) |
+| `^b d` | detach (same as quit) |
 
 `ctrl+enter` needs the kitty keyboard protocol to be distinguishable from a bare
 enter at all — `os` asks for it at startup, and terminals that don't speak it
 (Terminal.app, older tmux) fall back to `alt+enter`, which every terminal
-reports. `ctrl+c` is *not* quit here: it's forwarded as a session interrupt.
+reports.
+
+Movement is on **alt**, not ctrl: `ctrl+arrow` is already taken almost
+everywhere `os` runs — tmux binds it to pane resize, iTerm2 and Terminal.app to
+word-jump — and an outer tmux swallows it before the app sees it. It still works
+where a terminal passes it through, and `^b o` / `^b n` / `^b p` are there when
+both modifiers are eaten. `ctrl+h/j/k/l` are deliberately unbound: they're
+backspace and newline in every terminal.
+
+## Whose sessions
+
+The server's list is the whole install's — on a busy one that's thousands of
+sessions, most of them automation runs. The sidebar shows **your** sessions by
+default; `f` widens it:
+
+| Scope | Shows |
+| --- | --- |
+| `mine` | non-automation sessions you started |
+| `team` | non-automation sessions, everyone's |
+| `all` | everything, automation runs included |
+
+The scope is in the sidebar's top-left with a `shown/total` count, and it sticks
+across runs (`~/.opensession/tui.json`). "Mine" is matched against `startedBy`
+by name token — the display name the server knows your login by, your GitHub
+login, or the local `user` — so `Michiel` matches `Michiel Westerbeek` while
+`John` never matches `Johnny`. If the scope you asked for is empty and you
+haven't picked one yourself, it widens on its own rather than showing you an
+empty sidebar. The list is capped at the 200 most recent; the rest are one
+`^b w` away.
 
 Command prompt verbs: `archive`, `rename <title>`, `new <prompt>`, `cancel`,
 `reconnect`, `close`, `quit`. Anything else is sent to the session as a prompt.
@@ -106,6 +139,7 @@ Workspaces with something blocked float to the top of the sidebar.
 ```
 src/client/     the server, as types — no terminal, no React
   types.ts            wire shapes (a documented copy, not a server import)
+  identity.ts         who am I · which sessions are mine (sidebar scope)
   api.ts              REST
   auth.ts             GitHub device flow
   socket.ts           one WebSocket: ping/pong liveness, backoff, resume cursor

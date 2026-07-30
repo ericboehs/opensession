@@ -14,6 +14,12 @@
 import { Api, ApiError } from "./client/api";
 import { pollDeviceFlow, startDeviceFlow } from "./client/auth";
 import { normalizeHost, readConfig, resolve, writeConfig } from "./client/config";
+import {
+	type Identity,
+	type SessionScope,
+	identityTokens,
+	inScope,
+} from "./client/identity";
 import { WatchPool } from "./client/pool";
 import { SessionsPoller } from "./client/sessions-poller";
 import { sessionStatus, sessionTitle } from "./client/types";
@@ -55,10 +61,12 @@ os — OpenSession in your terminal (v${VERSION})
   os logout                 forget this box's token
   os whoami                 who am I, and where
   os sessions               one-shot list, no TUI (scripts, ssh one-liners)
+  os sessions --all         …including everyone's automation runs
   os help · os version
 
-Keys inside: ^b ? shows them all. tmux muscle memory works —
-ctrl+←/→ switches tabs, ^b c starts a session, ^b d detaches.
+Keys inside: ^b ? shows them all. q (or ^b q) quits — the sessions keep
+running on the server. alt+←/→ switches tabs, ^b c starts a session.
+The sidebar shows your sessions; f cycles mine → team → all.
 `);
 }
 
@@ -120,12 +128,30 @@ async function whoami(): Promise<number> {
 }
 
 async function listSessions(): Promise<number> {
-	const { host, token } = await resolve(hostFlag);
+	const { host, token, user, config } = await resolve(hostFlag);
 	const api = new Api(host, token);
+	// Same default as the TUI sidebar: yours, not the whole fleet's automation
+	// output. `--all` / `--team` widen it.
+	const scope: SessionScope = flags.has("all")
+		? "all"
+		: flags.has("team")
+			? "team"
+			: (config.scope ?? "mine");
 	try {
-		const sessions = (await api.sessions()).filter((s) => !s.archived && !s.sideChatOf);
+		const status = await api.authStatus().catch(() => null);
+		const tokens = identityTokens({
+			user,
+			login: status?.login ?? config.login,
+			name: status?.name,
+		});
+		const all = (await api.sessions()).filter((s) => !s.archived && !s.sideChatOf);
+		const sessions = all.filter((s) => inScope(s, scope, tokens));
 		if (!sessions.length) {
-			console.log("No sessions.");
+			console.log(
+				all.length && scope !== "all"
+					? `No ${scope} sessions (${all.length} in total — try \`os sessions --all\`).`
+					: "No sessions.",
+			);
 			return 0;
 		}
 		for (const session of sessions) {
@@ -158,6 +184,10 @@ async function tui(): Promise<number> {
 	}
 
 	const api = new Api(host, token);
+	// The sidebar defaults to *your* sessions, so it needs every name the server
+	// might have stamped on them: the display name it knows this token by, the
+	// GitHub login, and whatever `user` this box sends with prompts.
+	const identity: Identity = { user, login: config.login };
 	if (!(await api.reachable())) {
 		console.error(`✗ Can't reach ${host}`);
 		console.error("  Is the server up, and are you on its network (tailnet/VPN)?");
@@ -172,6 +202,11 @@ async function tui(): Promise<number> {
 		}
 		throw e;
 	}
+	// Best-effort: on a server with the sign-in gate on this is the name that
+	// ends up on `startedBy`. Not fatal if it fails — we still have the config.
+	const status = await api.authStatus().catch(() => null);
+	if (status?.name) identity.name = status.name;
+	if (status?.login) identity.login = status.login;
 
 	// Imported here, not at the top: the renderer pulls in a native module, and
 	// `os login` / `os sessions` / `--help` must work on a box where that fails.
@@ -180,7 +215,7 @@ async function tui(): Promise<number> {
 	const { App } = await import("./ui/app");
 	const { createElement } = await import("react");
 
-	const poller = new SessionsPoller(api);
+	const poller = new SessionsPoller(api, identity, config.scope ?? "mine", !!config.scope);
 	const pool = new WatchPool({ host, token });
 	void poller.start();
 
@@ -218,6 +253,7 @@ async function tui(): Promise<number> {
 			prefix: config.prefix,
 			onExit: shutdown,
 			initialSessionId: positional[0],
+			onScopeChange: (scope) => void writeConfig({ scope }).catch(() => {}),
 		}),
 	);
 	// The renderer owns the process from here.

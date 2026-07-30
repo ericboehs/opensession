@@ -17,6 +17,7 @@ import type { KeyEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Api } from "../client/api";
+import type { SessionScope } from "../client/identity";
 import type { WatchPool } from "../client/pool";
 import { initialSessionState } from "../client/session-store";
 import { flattenGroups, type SessionsPoller } from "../client/sessions-poller";
@@ -41,15 +42,19 @@ export type AppProps = {
 	host: string;
 	user: string;
 	prefix?: string;
-	/** Called on ^b d — the caller stops the renderer and exits the process. */
+	/** Called on quit / ^b d — the caller stops the renderer and exits. */
 	onExit: () => void;
 	/** Session to open on launch (`os <session-id>`). */
 	initialSessionId?: string;
+	/** Persist the sidebar scope, so `^b f` sticks across runs. */
+	onScopeChange?: (scope: SessionScope) => void;
 };
 
 const PANES: Pane[] = ["sidebar", "transcript", "composer"];
 const SPINNER_MS = 120;
 const MESSAGE_MS = 4000;
+/** Window in which a second ctrl+c means "quit" rather than "interrupt again". */
+const QUIT_ARM_MS = 2000;
 const EMPTY_SNAPSHOT: WatchedSnapshot = {
 	state: initialSessionState,
 	connection: "connecting",
@@ -73,6 +78,7 @@ export function App({
 	prefix = DEFAULT_PREFIX,
 	onExit,
 	initialSessionId,
+	onScopeChange,
 }: AppProps) {
 	const { width, height } = useTerminalDimensions();
 	const sessions = useSyncExternalStore(poller.subscribe, poller.getState);
@@ -142,6 +148,30 @@ export function App({
 
 	function note(text: string, kind: "info" | "error" = "info"): void {
 		uiStore.set({ message: { text, kind } });
+	}
+
+	/** When the last ctrl+c landed — a second one inside the window quits. */
+	const quitArmedAt = useRef(0);
+
+	/**
+	 * ctrl+c means two different things and both are right: inside a session it
+	 * interrupts the turn, and at a terminal it's how you get out. So it does
+	 * the interrupt, says what it did, and takes the next ^c as the exit.
+	 */
+	function interruptOrQuit(): void {
+		const now = Date.now();
+		if (now - quitArmedAt.current < QUIT_ARM_MS) {
+			onExit();
+			return;
+		}
+		quitArmedAt.current = now;
+		const target = watchedRef.current;
+		if (target && stateRef.current.isRunning) {
+			target.cancel();
+			note("interrupting the turn… ctrl+c again to quit");
+			return;
+		}
+		note("ctrl+c again to quit (or press q)");
 	}
 
 	function closeActiveTab(): void {
@@ -450,6 +480,20 @@ export function App({
 			case "toggle-zoom":
 				uiStore.set({ zoom: !current.zoom });
 				return;
+			case "cycle-scope": {
+				const scope = poller.cycleScope();
+				onScopeChange?.(scope);
+				// The cursor indexes the visible list, which just changed under it.
+				uiStore.set({ cursor: 0 });
+				note(`showing ${scope} sessions`);
+				return;
+			}
+			case "quit":
+				onExit();
+				return;
+			case "interrupt-or-quit":
+				interruptOrQuit();
+				return;
 		}
 	}
 
@@ -499,6 +543,12 @@ export function App({
 						width={sidebarWidth}
 						spinnerFrame={spinnerFrame}
 						loaded={sessions.loaded}
+						scope={sessions.scope}
+						scopeAuto={sessions.scopeAuto}
+						shown={sessions.sessions.length}
+						matched={sessions.matched}
+						total={sessions.totalSessions}
+						truncated={sessions.truncated}
 						error={sessions.needsAuth ? "run `os login`" : sessions.error}
 					/>
 				) : null}

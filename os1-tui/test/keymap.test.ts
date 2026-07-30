@@ -33,7 +33,7 @@ describe("the prefix", () => {
 	});
 
 	test("an unknown prefix key is swallowed, not typed into the composer", () => {
-		const result = resolveKey(key("q"), state({ prefixArmed: true, mode: "composer" }));
+		const result = resolveKey(key("%"), state({ prefixArmed: true, mode: "composer" }));
 		expect(result.consumed).toBe(true);
 		expect(result.action).toBeUndefined();
 		expect(result.prefixArmed).toBe(false);
@@ -47,19 +47,85 @@ describe("the prefix", () => {
 });
 
 describe("global movement", () => {
-	test("ctrl+arrows switch tabs and panes from any mode", () => {
+	test("alt+arrows switch tabs and panes from any mode", () => {
 		for (const mode of ["nav", "composer", "scroll"] as const) {
-			expect(resolveKey(key("left", { ctrl: true }), state({ mode })).action).toEqual({
-				type: "prev-tab",
-			});
-			expect(resolveKey(key("right", { ctrl: true }), state({ mode })).action).toEqual({
-				type: "next-tab",
-			});
-			expect(resolveKey(key("down", { ctrl: true }), state({ mode })).action).toEqual({
-				type: "focus-pane",
-				direction: "next",
+			for (const alt of [{ meta: true }, { option: true }]) {
+				expect(resolveKey(key("left", alt), state({ mode })).action).toEqual({
+					type: "prev-tab",
+				});
+				expect(resolveKey(key("right", alt), state({ mode })).action).toEqual({
+					type: "next-tab",
+				});
+				expect(resolveKey(key("down", alt), state({ mode })).action).toEqual({
+					type: "focus-pane",
+					direction: "next",
+				});
+			}
+		}
+	});
+
+	test("ctrl+arrows still work where the terminal passes them through", () => {
+		expect(resolveKey(key("left", { ctrl: true }), state()).action).toEqual({
+			type: "prev-tab",
+		});
+		expect(resolveKey(key("up", { ctrl: true }), state()).action).toEqual({
+			type: "focus-pane",
+			direction: "prev",
+		});
+	});
+
+	test("ctrl+letters are NOT movement — they're backspace/newline in a terminal", () => {
+		const composer = state({ mode: "composer", pane: "composer" });
+		for (const name of ["h", "j", "k", "l"]) {
+			const result = resolveKey(key(name, { ctrl: true }), composer);
+			expect(result.action).toBeUndefined();
+			expect(result.consumed).toBe(false);
+		}
+	});
+
+	test("^b o and ^b ; move focus when both modifiers are eaten", () => {
+		expect(resolveKey(key("o"), state({ prefixArmed: true })).action).toEqual({
+			type: "focus-pane",
+			direction: "next",
+		});
+		expect(resolveKey(key(";"), state({ prefixArmed: true })).action).toEqual({
+			type: "focus-pane",
+			direction: "prev",
+		});
+	});
+});
+
+describe("getting out", () => {
+	test("^b q quits, and so does q in nav", () => {
+		expect(resolveKey(key("q"), state({ prefixArmed: true })).action).toEqual({
+			type: "quit",
+		});
+		expect(resolveKey(key("q"), state({ mode: "nav" })).action).toEqual({ type: "quit" });
+	});
+
+	test("q is still a normal character while typing", () => {
+		const result = resolveKey(key("q"), state({ mode: "composer", pane: "composer" }));
+		expect(result.action).toBeUndefined();
+		expect(result.consumed).toBe(false);
+	});
+
+	test("ctrl+c resolves from every mode, typing included", () => {
+		for (const mode of ["nav", "composer", "scroll", "ask", "picker"] as const) {
+			expect(resolveKey(key("c", { ctrl: true }), state({ mode })).action).toEqual({
+				type: "interrupt-or-quit",
 			});
 		}
+	});
+});
+
+describe("sidebar scope", () => {
+	test("f cycles the scope from nav and from the prefix", () => {
+		expect(resolveKey(key("f"), state({ mode: "nav" })).action).toEqual({
+			type: "cycle-scope",
+		});
+		expect(resolveKey(key("f"), state({ prefixArmed: true })).action).toEqual({
+			type: "cycle-scope",
+		});
 	});
 });
 

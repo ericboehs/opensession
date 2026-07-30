@@ -34,7 +34,7 @@ export function Help({ height }: { height: number }) {
 				<box key={index} flexDirection="column" flexGrow={1}>
 					{column.map((row) => (
 						<box key={row.keys} flexDirection="row">
-							<text fg={theme.fg} attributes={TextAttributes.BOLD} width={18} truncate>
+							<text fg={theme.fg} attributes={TextAttributes.BOLD} width={21} truncate>
 								{row.keys}
 							</text>
 							<text fg={theme.dim} flexGrow={1} truncate>
