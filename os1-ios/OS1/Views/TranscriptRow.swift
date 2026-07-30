@@ -134,7 +134,6 @@ struct ToolCallRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 12)
         .onAppear { applyExpansionPreference() }
         .onChange(of: result?.id) { _, _ in applyExpansionPreference() }
         .onChange(of: isLive) { _, _ in applyExpansionPreference() }
