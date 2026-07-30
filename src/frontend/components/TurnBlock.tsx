@@ -12,8 +12,6 @@ import { ClampedBody } from "./MessageBubble";
 import { resolveEntryImageSrc } from "../lib/osBlob";
 import { IconChevronDown } from "./icons";
 import { cn } from "../ui/cn";
-import { Tooltip } from "../ui/tooltip";
-import { fullTime } from "../lib/time";
 import {
   getTurnActivityPref,
   onTurnActivityChanged,
@@ -256,42 +254,35 @@ function TurnMessage({
   sessionId?: string;
 }) {
   return (
-    // Its time comes as a tooltip rather than an inline reveal: a note is
-    // full-column prose with no gutter or footer to hang one off. align="start"
-    // pins the tip to the note's leading edge instead of floating it over the
-    // middle of a wide block, and the popup is pointer-events-none, so
-    // selecting the text still works normally.
-    <Tooltip label={fullTime(entry.timestamp)} align="start">
-      <div
-        className="mx-auto my-2 w-full max-w-[var(--chat-col)] px-1"
-        data-eid={entry.id}
-      >
-        <ClampedBody
-          className="msg-body msg-body-assistant markdown text-dim"
-          content={entry.content}
-          entry={entry}
-          sessionId={sessionId}
-        />
-        {entry.images && entry.images.length > 0 && (
-          <div className="msg-images">
-            {entry.images.map((raw, i) => {
-              const src = resolveEntryImageSrc(raw, sessionId);
-              return (
-                <a
-                  key={i}
-                  href={src}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="md-image-link"
-                >
-                  <img className="md-image" src={src} alt="" loading="lazy" />
-                </a>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </Tooltip>
+    <div
+      className="mx-auto my-2 w-full max-w-[var(--chat-col)] px-1"
+      data-eid={entry.id}
+    >
+      <ClampedBody
+        className="msg-body msg-body-assistant markdown text-dim"
+        content={entry.content}
+        entry={entry}
+        sessionId={sessionId}
+      />
+      {entry.images && entry.images.length > 0 && (
+        <div className="msg-images">
+          {entry.images.map((raw, i) => {
+            const src = resolveEntryImageSrc(raw, sessionId);
+            return (
+              <a
+                key={i}
+                href={src}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="md-image-link"
+              >
+                <img className="md-image" src={src} alt="" loading="lazy" />
+              </a>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
