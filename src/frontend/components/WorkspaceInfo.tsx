@@ -28,6 +28,7 @@ import { getCurrentUser, TEAM } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
+import { Tooltip } from "../ui/tooltip";
 import { cn } from "../ui/cn";
 import type {
 	DiffFile,
@@ -782,6 +783,14 @@ function MichaelReviewCard({
 				reviewedAgo ? `reviewed ${reviewedAgo} ago` : "reviewed recently",
 			].filter(Boolean).join(" · ")
 		: `Run ${AGENT_NAME}'s merge-safety review`;
+	// The score is intentionally compact; the matching GitHub summary comment
+	// retains the reviewer's complete reasoning and is available on hover/focus.
+	const reviewMessage = review
+		? [...(pr.comments || [])]
+				.reverse()
+				.find((comment) => comment.body.trim().startsWith("<!-- os-review -->"))
+				?.body
+		: undefined;
 
 	// Keep the just-started state latched until a later PR refresh observes the
 	// run or its new result; otherwise the button flashes idle after the POST.
@@ -872,34 +881,42 @@ function MichaelReviewCard({
 				)}
 			</div>
 			<div className="grid gap-px rounded-lg bg-panel p-1">
-				<div className="flex items-center gap-2.5 rounded-md px-2 py-2">
-					<div className={cn("shrink-0 font-mono leading-none", scoreTone)}>
-						<span className="text-[20px] font-[750] tracking-[-0.06em]">{score ?? "–"}</span>
-						<span className="ml-0.5 text-[10.5px] font-semibold tracking-normal text-faint">/5</span>
-					</div>
-					<div className="min-w-0 flex-1">
-						<div className="truncate text-[12px] font-semibold text-fg">{verdict}</div>
-						<div className="mt-0.5 truncate text-[10.5px] text-faint">{detail}</div>
-					</div>
+				<Tooltip label={reviewMessage || ""} side="bottom" align="start" multiline>
 					<div
-						className="flex w-12 shrink-0 gap-0.5"
-						role={score ? "meter" : "status"}
-						aria-label={`${AGENT_NAME} merge-safety score`}
-						aria-valuemin={score ? 1 : undefined}
-						aria-valuemax={score ? 5 : undefined}
-						aria-valuenow={score}
+						className={cn(
+							"flex items-center gap-2.5 rounded-md px-2 py-2",
+							reviewMessage && "cursor-help",
+						)}
+						tabIndex={reviewMessage ? 0 : undefined}
 					>
-						{[1, 2, 3, 4, 5].map((step) => (
-							<span
-								key={step}
-								className={cn(
-									"h-1 flex-1 rounded-full",
-									score && step <= score ? meterTone : "bg-active",
-								)}
-							/>
-						))}
+						<div className={cn("shrink-0 font-mono leading-none", scoreTone)}>
+							<span className="text-[20px] font-[750] tracking-[-0.06em]">{score ?? "–"}</span>
+							<span className="ml-0.5 text-[10.5px] font-semibold tracking-normal text-faint">/5</span>
+						</div>
+						<div className="min-w-0 flex-1">
+							<div className="truncate text-[12px] font-semibold text-fg">{verdict}</div>
+							<div className="mt-0.5 truncate text-[10.5px] text-faint">{detail}</div>
+						</div>
+						<div
+							className="flex w-12 shrink-0 gap-0.5"
+							role={score ? "meter" : "status"}
+							aria-label={`${AGENT_NAME} merge-safety score`}
+							aria-valuemin={score ? 1 : undefined}
+							aria-valuemax={score ? 5 : undefined}
+							aria-valuenow={score}
+						>
+							{[1, 2, 3, 4, 5].map((step) => (
+								<span
+									key={step}
+									className={cn(
+										"h-1 flex-1 rounded-full",
+										score && step <= score ? meterTone : "bg-active",
+									)}
+								/>
+							))}
+						</div>
 					</div>
-				</div>
+				</Tooltip>
 				{actionable && (
 					<div className="grid grid-cols-2 gap-px">
 						{canFix && (
