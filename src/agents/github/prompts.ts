@@ -98,6 +98,10 @@ Rules:
 - Be high-signal: keep \`findings\` to genuinely useful, actionable items and lean toward fewer, higher-severity ones; mark true nits as P3. Use [] when there's nothing worth an inline comment.
 - Do not wrap the JSON in prose; the fenced json block is the last thing in your message.`;
 
+const PLAIN_REVIEW_INSTRUCTION = `## Review execution
+
+Perform this as a plain review yourself in this run. Do not invoke skills, slash commands, subagents, the Task tool, or workflows. Use only direct repository inspection and your own reasoning.`;
+
 /**
  * Author-family checklists (Greptile "rise of the overnight agents", 2026):
  * agent-authored PRs match human quality overall but with family-specific
@@ -174,6 +178,7 @@ Your checkout is pinned to the PR's HEAD and both refs are fetched. Run
 
   return [
     base.trim(),
+    PLAIN_REVIEW_INSTRUCTION,
     "",
     header,
     `PR: ${pr.url}  ·  base: ${pr.baseRefName} ← head: ${pr.headRefName}  ·  +${pr.additions}/-${pr.deletions} across ${pr.changedFiles} files.`,
