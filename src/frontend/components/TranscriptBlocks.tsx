@@ -28,7 +28,6 @@ interface Props {
 	onFork?: (entryId: string) => void;
 	/** Called when a Task/Agent block's "Open sub-agent" affordance is clicked. */
 	onOpenSubagent?: (agentId: string, label: string) => void;
-	onOpenEvidence?: (entry: TranscriptEntry, result?: TranscriptEntry) => void;
 	/** Session owner (startedBy) — credited on un-attributed user turns. */
 	owner?: string;
 	/** Lets wire-clamped entries' "Show full message" fetch the full content. */
@@ -60,7 +59,6 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 	live,
 	onFork,
 	onOpenSubagent,
-	onOpenEvidence,
 	owner,
 	sessionId,
 	walkthrough,
@@ -185,7 +183,6 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks({
 						toolResults={toolResults}
 						live={isLiveTail}
 						onOpenSubagent={onOpenSubagent}
-						onOpenEvidence={onOpenEvidence}
 						sessionId={sessionId}
 					/>
 				) : block.kind === "walkthrough" ? (

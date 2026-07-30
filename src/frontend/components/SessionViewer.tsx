@@ -45,10 +45,6 @@ import {
 	type LiveSubagent,
 } from "./ToolCallBlock";
 import { MarkdownBody } from "./MarkdownBody";
-import {
-	ToolEvidencePanel,
-	type ToolEvidence,
-} from "./ToolEvidencePanel";
 import { SubagentPanel, type SubagentRef } from "./SubagentPanel";
 import { ShellPanel } from "./TerminalPanel";
 import { getCurrentUser } from "./UserPicker";
@@ -313,8 +309,7 @@ type PanelTab =
 	| "pr"
 	| "workflows"
 	| "assets"
-	| "reports"
-	| "evidence";
+	| "reports";
 
 const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 const isChromium = /Chrome|Chromium|CriOS|Edg|OPR/.test(navigator.userAgent);
@@ -937,7 +932,6 @@ export function SessionViewer({
 	// call pushes; nested Task calls push further). Non-empty → the right region
 	// shows the sub-agent conversation instead of the Workspace panel.
 	const [subagentStack, setSubagentStack] = useState<SubagentRef[]>([]);
-	const [toolEvidence, setToolEvidence] = useState<ToolEvidence | null>(null);
 	// Phones fold the desktop Workspace panel into the title-opened detail page.
 	// Keeping this state near panelOpen lets the shared diff poll serve either
 	// surface without mounting a second copy of the data hook.
@@ -953,22 +947,6 @@ export function SessionViewer({
 				: [...prev, { agentId, label }],
 		);
 	}, []);
-	const openEvidence = useCallback(
-		(entry: TranscriptEntry, result?: TranscriptEntry) => {
-			setToolEvidence({ entry, result });
-			setPanelTab("evidence");
-			if (window.matchMedia("(max-width: 720px)").matches) {
-				setInfoPageOpen(true);
-			} else {
-				setPanelOpen(true);
-			}
-		},
-		[],
-	);
-	useEffect(() => {
-		setToolEvidence(null);
-		if (panelTab === "evidence") setPanelTab("info");
-	}, [session.id]);
 	// The agent-published walkthrough, rendered inline in the chat as well as in
 	// the Review tab. Keyed on its contents so the object identity only changes
 	// when the walkthrough actually does — the sessions poll hands back a fresh
@@ -1500,8 +1478,7 @@ export function SessionViewer({
 			hasPlain ||
 			workflowRuns.length > 0 ||
 			subagents.length > 0 ||
-			sessionReports.length > 0 ||
-			Boolean(toolEvidence));
+			sessionReports.length > 0);
 	useEffect(() => {
 		if (panelTab === "reports" && sessionReports.length === 0)
 			setPanelTab("info");
@@ -4392,22 +4369,6 @@ export function SessionViewer({
 											liveMedia={liveOverviewMedia}
 										/>
 									</div>
-									{toolEvidence && (
-										<div className="session-info-section">
-											<ToolEvidencePanel
-												evidence={toolEvidence}
-												sessionId={session.id}
-												onOpenChanges={
-													hasWorkspace
-														? () => {
-															setInfoPageOpen(false);
-															onOpenReview?.();
-														}
-														: undefined
-												}
-											/>
-										</div>
-									)}
 									{(workflowRuns.length > 0 || subagents.length > 0) && (
 										<div className="session-info-section">
 											<WorkflowPanel
@@ -4885,7 +4846,6 @@ export function SessionViewer({
 											notes={notes}
 											onFork={canForkSession ? handleFork : undefined}
 											onOpenSubagent={openSubagent}
-											onOpenEvidence={openEvidence}
 											// For automation-owned sessions (e.g. a GitHub PR run), the
 											// automation never *types* a user turn — humans steer them.
 											// So don't credit un-attributed turns to the automation
@@ -5192,14 +5152,6 @@ export function SessionViewer({
 							/>
 						)}
 						<div className="panel-tabs">
-							{toolEvidence && (
-								<button
-									className={`panel-tab ${panelTab === "evidence" ? "active" : ""}`}
-									onClick={() => selectPanelTab("evidence")}
-								>
-									Evidence
-								</button>
-							)}
 							<button
 								className={`panel-tab ${panelTab === "info" ? "active" : ""}`}
 								onClick={() => selectPanelTab("info")}
@@ -5265,15 +5217,7 @@ export function SessionViewer({
 						</div>
 						<div className="panel-body">
 							{/* Plain-only sessions (no code workspace) show just the timeline. */}
-							{panelTab === "evidence" && toolEvidence ? (
-								<ToolEvidencePanel
-									evidence={toolEvidence}
-									sessionId={session.id}
-									onOpenChanges={
-										hasWorkspace ? () => selectPanelTab("changes") : undefined
-									}
-								/>
-							) : panelTab === "info" ? (
+							{panelTab === "info" ? (
 								<div className="px-1">
 									<WorkspaceInfo
 										sessionId={session.id}

@@ -28,7 +28,6 @@ interface Props {
   toolResults: Map<string, TranscriptEntry>;
   live: boolean; // this is the active block of a running stream
   onOpenSubagent?: (agentId: string, label: string) => void;
-  onOpenEvidence?: (entry: TranscriptEntry, result?: TranscriptEntry) => void;
   /** Lets wire-clamped intermediate notes fetch their full content. */
   sessionId?: string;
 }
@@ -51,7 +50,6 @@ export const TurnBlock = React.memo(function TurnBlock({
   toolResults,
   live,
   onOpenSubagent,
-  onOpenEvidence,
   sessionId,
 }: Props) {
   const pathRoots = useToolPathRoots();
@@ -232,7 +230,6 @@ export const TurnBlock = React.memo(function TurnBlock({
                       !toolResults.has(entry.toolUseId)
                     }
                     onOpenSubagent={onOpenSubagent}
-                    onOpenEvidence={onOpenEvidence}
                   />
                 ))}
               </div>
@@ -301,7 +298,6 @@ function TurnMessage({
 function turnBlockPropsEqual(prev: Props, next: Props): boolean {
   if (prev.live !== next.live) return false;
   if (prev.onOpenSubagent !== next.onOpenSubagent) return false;
-  if (prev.onOpenEvidence !== next.onOpenEvidence) return false;
   if (prev.sessionId !== next.sessionId) return false;
   if (prev.items.length !== next.items.length) return false;
   for (let i = 0; i < next.items.length; i++) {

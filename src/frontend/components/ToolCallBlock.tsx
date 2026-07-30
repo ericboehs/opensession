@@ -50,8 +50,6 @@ interface Props {
   pending?: boolean;
   /** For Task/Agent calls with a known sub-agent id: open its conversation. */
   onOpenSubagent?: (agentId: string, label: string) => void;
-  /** Open this exact call/result in the wide evidence pane. */
-  onOpenEvidence?: (entry: TranscriptEntry, result?: TranscriptEntry) => void;
   /** Lets os-blob: image markers (transcript-v2 bounded entries) resolve to
    *  the transcript-image route. Optional — without it markers pass through. */
   sessionId?: string;
@@ -450,7 +448,7 @@ function RunningToolDuration({ entry }: { entry: TranscriptEntry }) {
   );
 }
 
-export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEvidence, sessionId }: Props) {
+export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionId }: Props) {
   const hasMedia = Boolean(result?.images?.length || result?.videos?.length);
   // Default closed for text-only output, but auto-open when media arrives
   // (covers both initial render and the live tool_result streaming in later).
@@ -561,24 +559,6 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, onOpenEv
               title="Open this sub-agent's conversation"
             >
               {subagentLive ? "Watch ↗" : "Open ↗"}
-            </span>
-          )}
-
-          {onOpenEvidence && (
-            <span
-              role="button"
-              tabIndex={0}
-              // Hover-only, so it's dead weight on a phone: at opacity-0 it still
-              // took 71px of a 362px row, breaking the summary off a quarter early
-              // — and left an invisible tap target that ate taps meant for the row.
-              className="hidden flex-shrink-0 rounded border border-line px-1.5 py-px text-[10.5px] text-dim opacity-0 transition-opacity hover:border-line-strong hover:text-fg focus:opacity-100 group-hover:opacity-100 min-[721px]:block"
-              onClick={(event) => {
-                event.stopPropagation();
-                onOpenEvidence(entry, result);
-              }}
-              title="Open input and output in the evidence pane"
-            >
-              Evidence ↗
             </span>
           )}
 
