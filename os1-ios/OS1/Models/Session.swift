@@ -34,6 +34,7 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     var prNumber: Int?
     var startedBy: String?
     var automation: AutomationFlag?
+    var attachedRepos: [AttachedRepo]?
 
     /// True for automation-owned sessions (triage runs, scheduled jobs) —
     /// the bulk of server noise a person's list should hide by default.
@@ -127,6 +128,14 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
         guard let string else { return nil }
         return isoFractional.date(from: string) ?? isoPlain.date(from: string)
     }
+}
+
+struct AttachedRepo: Decodable, Equatable, Hashable, Identifiable {
+    let repo: String
+    let branch: String
+    let dir: String
+
+    var id: String { repo }
 }
 
 extension Session {

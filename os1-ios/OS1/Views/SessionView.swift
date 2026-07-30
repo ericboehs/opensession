@@ -41,6 +41,9 @@ struct SessionView: View {
     /// PR details sheet, opened from the toolbar PR chip.
     @State private var showPrPanel = false
 
+    /// Native counterpart of mobile web's title-opened workspace info page.
+    @State private var showWorktreeInfo = false
+
     init(
         session: Session,
         seed: SessionViewModel.OptimisticSeed? = nil,
@@ -183,7 +186,7 @@ struct SessionView: View {
         .toolbar {
             #if os(iOS)
             ToolbarItem(placement: .principal) {
-                sessionIdentityMenu
+                sessionIdentityButton
             }
             #endif
             // PR chip: number + status dot. Present as soon as either the
@@ -209,9 +212,25 @@ struct SessionView: View {
         .sheet(isPresented: $showPrPanel) {
             PrPanelView(viewModel: viewModel)
         }
+        #if os(iOS)
+        .sheet(isPresented: $showWorktreeInfo) {
+            WorktreeInfoView(
+                viewModel: viewModel,
+                chats: tabs,
+                catalog: catalog
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        #endif
         .task {
             viewModel.start()
             catalog = try? await OS1API.models()
+            #if DEBUG && os(iOS)
+            if ProcessInfo.processInfo.environment["OS1_OPEN_WORKTREE_INFO"] == "1" {
+                showWorktreeInfo = true
+            }
+            #endif
         }
         .onDisappear {
             onSaveComposerDraft?(SessionViewModel.ComposerDraft(
@@ -322,12 +341,11 @@ struct SessionView: View {
     #endif
 
     #if os(iOS)
-    /// The mobile web header is a repo tile with the workspace name over
-    /// `repo · model`. Native navigation supplies the back button and glass;
-    /// this principal menu supplies the same identity and opens model controls.
-    private var sessionIdentityMenu: some View {
-        Menu {
-            modelMenuContents
+    /// Mobile web opens workspace details when its title is tapped. Keep the
+    /// same identity in native navigation and present a SwiftUI details sheet.
+    private var sessionIdentityButton: some View {
+        Button {
+            showWorktreeInfo = true
         } label: {
             HStack(spacing: 8) {
                 RepoTile(name: viewModel.session.effectiveRepo, size: 28)
@@ -357,7 +375,7 @@ struct SessionView: View {
         }
         .buttonStyle(.plain)
         .tint(.primary)
-        .accessibilityLabel("Session settings")
+        .accessibilityLabel("Workspace details")
     }
     #endif
 

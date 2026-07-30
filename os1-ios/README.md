@@ -24,6 +24,10 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   compact tool-call rows, system events, token-level streaming via
   `stream_text` with a cursor bubble, and a horizontally scrollable chat tab
   strip when a workspace/worktree contains multiple sessions.
+- **Workspace details** — tapping the chat title opens a native worktree sheet
+  with repository and branch metadata, local git status, changed files,
+  workspace context, and model/reasoning controls, matching mobile web's info
+  page without embedding the web client.
 - **Prompting** — WS `prompt` frames (the server has no REST prompt endpoint).
   Sending while a run is active queues, exactly like the web UI. Stop button
   sends `cancel` for the watched session.

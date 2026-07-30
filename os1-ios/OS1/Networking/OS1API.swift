@@ -114,6 +114,78 @@ enum OS1API {
         return try await decodeDetached(PrDetails.self, from: data)
     }
 
+    struct GitStatus: Decodable, Sendable, Equatable {
+        let branch: String?
+        let hasUpstream: Bool
+        let ahead: Int
+        let behind: Int
+        let behindBase: Int
+        let baseBranch: String
+        let uncommittedFiles: Int
+    }
+
+    struct DiffFile: Decodable, Sendable, Identifiable, Equatable {
+        let path: String
+        let oldPath: String?
+        let status: String
+        let additions: Int
+        let deletions: Int
+        let binary: Bool?
+
+        var id: String { path }
+    }
+
+    struct SessionDiff: Decodable, Sendable, Equatable {
+        let branch: String?
+        let baseRef: String?
+        let files: [DiffFile]
+        let totalAdditions: Int
+        let totalDeletions: Int
+        let truncated: Bool?
+    }
+
+    struct RepoDiff: Decodable, Sendable, Equatable {
+        let repo: String
+        let dir: String?
+        let primary: Bool
+        let diff: SessionDiff
+    }
+
+    struct SessionDiffResponse: Decodable, Sendable, Equatable {
+        let repos: [RepoDiff]
+    }
+
+    struct WorkspaceOverview: Decodable, Sendable, Equatable {
+        struct Message: Decodable, Sendable, Equatable {
+            let content: String
+            let sessionId: String
+            let at: String
+        }
+
+        let prompt: Message?
+        let lastMessage: Message?
+    }
+
+    static func gitStatus(sessionId: String, repo: String) async throws -> GitStatus? {
+        let encodedRepo = repo.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+            ?? repo
+        let data = try await getData(
+            "/api/sessions/\(sessionId)/git-status?repo=\(encodedRepo)"
+        )
+        let body = String(decoding: data, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if body.isEmpty || body == "null" { return nil }
+        return try await decodeDetached(GitStatus.self, from: data)
+    }
+
+    static func sessionDiff(sessionId: String) async throws -> SessionDiffResponse {
+        try await get("/api/sessions/\(sessionId)/diff")
+    }
+
+    static func workspaceOverview(workspaceId: String) async throws -> WorkspaceOverview {
+        try await get("/api/workspaces/\(workspaceId)/overview")
+    }
+
     /// Archive (or unarchive) a session. Archiving an in-flight session also
     /// stops its run server-side.
     static func setArchived(sessionId: String, archived: Bool) async throws {
