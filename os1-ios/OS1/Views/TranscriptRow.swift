@@ -9,8 +9,8 @@ struct TranscriptRow: View {
     let sessionId: String
     var body: some View {
         switch item {
-        case .toolCall(let use, let result):
-            ToolCallRow(use: use, result: result)
+        case .toolCall(let use, let result, let isLive):
+            ToolCallRow(use: use, result: result, isLive: isLive)
         case .entry(let entry):
             if entry.isUser {
                 userBubble(entry)
@@ -18,7 +18,7 @@ struct TranscriptRow: View {
                 assistantBubble(entry)
             } else if entry.isTool {
                 // Orphan tool_result — same compact treatment.
-                ToolCallRow(use: nil, result: entry)
+                ToolCallRow(use: nil, result: entry, isLive: false)
             } else {
                 systemRow(entry)
             }
@@ -108,6 +108,9 @@ struct TranscriptRow: View {
 struct ToolCallRow: View {
     let use: TranscriptEntry?
     let result: TranscriptEntry?
+    /// Only a stream entry is eligible for the "Expand while running" mode.
+    /// A transcript reload can contain old tool uses with no persisted result.
+    let isLive: Bool
 
     @AppStorage("os1.appearance.turnActivity") private var turnActivity = "collapsed"
     @State private var expanded = false
@@ -134,13 +137,14 @@ struct ToolCallRow: View {
         .padding(.leading, 12)
         .onAppear { applyExpansionPreference() }
         .onChange(of: result?.id) { _, _ in applyExpansionPreference() }
+        .onChange(of: isLive) { _, _ in applyExpansionPreference() }
         .onChange(of: turnActivity) { _, _ in applyExpansionPreference() }
     }
 
     private func applyExpansionPreference() {
         if turnActivity == "expanded" { expanded = true }
         else if turnActivity == "collapsed" { expanded = false }
-        else { expanded = result == nil && use != nil }
+        else { expanded = isLive && result == nil && use != nil }
     }
 
     private var summaryRow: some View {
