@@ -17,7 +17,6 @@ import {
   IconAtSign,
   IconCrosshair,
   IconNote,
-  IconPencil,
   IconStopSquare,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
@@ -766,7 +765,16 @@ export function Composer({
           }}
         >
           {canAttach && (
-            <motion.div layout="position" transition={composerMorph} className="composer-pop-wrap">
+            <motion.div
+              layout="position"
+              transition={composerMorph}
+              className="composer-pop-wrap"
+              style={
+                !minimized && (onSetGoal || onNoteModeChange)
+                  ? { marginRight: -8 }
+                  : undefined
+              }
+            >
               <Tooltip label="Add files or a file reference">
                 <button
                   type="button"
@@ -776,7 +784,7 @@ export function Composer({
                   aria-label="Add"
                   aria-expanded={menu === "add"}
                 >
-                  <IconPlus size={24} />
+                  <IconPlus size={20} />
                 </button>
               </Tooltip>
               {menu === "add" && (
@@ -847,6 +855,7 @@ export function Composer({
                 layout="position"
                 {...composerChipMotion}
                 className="composer-pop-wrap"
+                style={onNoteModeChange ? { marginRight: -8 } : undefined}
               >
                 <Tooltip label={goal ? `Goal: ${goal}` : "Pin a goal for this session"}>
                   <button
@@ -856,7 +865,7 @@ export function Composer({
                     disabled={disabled}
                     aria-pressed={!!goal}
                   >
-                    <IconCrosshair size={24} />
+                    <IconCrosshair size={20} />
                     {goal && <span className="composer-goal-label">Goal</span>}
                   </button>
                 </Tooltip>
@@ -906,7 +915,7 @@ export function Composer({
                     disabled={disabled}
                     aria-pressed={!!noteMode}
                   >
-                    {noteMode ? <IconNote size={24} /> : <IconPencil size={24} />}
+                    <IconNote size={20} />
                     {noteMode && (
                       <span className="composer-goal-label">Note</span>
                     )}
