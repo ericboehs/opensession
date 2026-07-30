@@ -2593,7 +2593,12 @@ export function shouldRetryTransientRun(input: {
   hasAlternativeAccount: boolean;
   attemptIndex: number;
   wedgeRetries: number;
+  providerOverloaded?: boolean;
 }): boolean {
+  // A provider-declared overload is not fixed by restarting this OpenCode
+  // server or repeating the same model request. Let agent-runner try its next
+  // fallback model immediately instead of spending another 90-second window.
+  if (input.providerOverloaded) return false;
   if (!input.livenessWedged) return input.attemptIndex === 0;
   // With an alternative account, markWedged/markCodexWedged has removed the
   // failed one from subsequent picks, so allow two bounded pool-walk retries.
@@ -2993,6 +2998,10 @@ async function* runOpencodeAttempt(
   // ones hang forever (2026-07-10: 20 aborts, all this shape). Drives
   // kill-the-server + one fresh-server retry in the runFailure block.
   let livenessWedged = false;
+  // OpenAI's explicit overload retries are distinct from a silent bridge
+  // wedge: a same-model respawn cannot recover them, so skip that retry and
+  // let the normal model-fallback graph take over.
+  let openaiProviderOverloaded = false;
 
   try {
     // Bridge for Anthropic models — dispatched on bridge.mode in
@@ -3976,6 +3985,18 @@ async function* runOpencodeAttempt(
           .catch(() => {});
         signalDone();
       }
+      if (
+        parsed.providerID === "openai" &&
+        !runFailure &&
+        /(?:our )?servers? (?:are )?(?:currently )?overloaded|overloaded_error/i.test(message)
+      ) {
+        openaiProviderOverloaded = true;
+        runFailure = `OpenAI provider overloaded on account "${bridgeAccountLabel}": ${message.slice(0, 300)}`;
+        engineAbortInFlight = client.session
+          .abort({ path: { id: ocSessionId }, ...q })
+          .catch(() => {});
+        signalDone();
+      }
       // Third-party providers have no account pool to rotate through. Abort a
       // Cerebras quota rejection immediately instead of leaving the UI silent
       // while OpenCode performs several minute-spaced retries. Marking this as
@@ -4634,6 +4655,7 @@ async function* runOpencodeAttempt(
           hasAlternativeAccount: !!wedgeSwitchTo,
           attemptIndex,
           wedgeRetries: turn.wedgeRetries,
+          providerOverloaded: openaiProviderOverloaded,
         });
       if (retryTransient) {
         // A wedged per-session server is unrecoverable for this session — kill

@@ -143,6 +143,18 @@ describe("transient bridge recovery", () => {
       })
     ).toBe(false);
   });
+
+  test("does not respawn a server after an explicit provider overload", () => {
+    expect(
+      shouldRetryTransientRun({
+        livenessWedged: false,
+        hasAlternativeAccount: true,
+        attemptIndex: 0,
+        wedgeRetries: 0,
+        providerOverloaded: true,
+      })
+    ).toBe(false);
+  });
 });
 
 describe("opencodeGateReason (run gate)", () => {
