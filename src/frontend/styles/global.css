@@ -10106,7 +10106,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	overflow: hidden;
 }
 .mention-item-active {
-	background: var(--bg-active);
+	background: var(--bg-hover);
 }
 .mention-repo {
 	flex-shrink: 0;
