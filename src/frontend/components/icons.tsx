@@ -371,6 +371,19 @@ export function IconFile(p: IconProps) {
   );
 }
 
+export function IconNote(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M5.25 4.75H18.75V14.25L13.75 19.25H5.25V4.75Z"
+      />
+      <path {...stroke} d="M13.75 19.25V14.25H18.75" />
+      <path {...stroke} d="M8.25 9H15.75M8.25 12H12.75" />
+    </Svg>
+  );
+}
+
 export function IconPencil(p: IconProps) {
   return (
     <Svg {...p}>

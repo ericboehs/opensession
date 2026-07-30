@@ -16,6 +16,7 @@ import {
   IconPaperclip,
   IconAtSign,
   IconCrosshair,
+  IconNote,
   IconPencil,
   IconStopSquare,
 } from "./icons";
@@ -908,7 +909,7 @@ export function Composer({
                     disabled={disabled}
                     aria-pressed={!!noteMode}
                   >
-                    <IconPencil size={32} />
+                    {noteMode ? <IconNote size={24} /> : <IconPencil size={24} />}
                     {noteMode && (
                       <span className="composer-goal-label">Note</span>
                     )}

@@ -66,7 +66,7 @@ export function NoteBubble({ note }: { note: ChatMessage }) {
 				<UserAvatar name={note.user} size={18} />
 				<span className="text-[12.5px] font-semibold text-fg">{note.user}</span>
 				<span
-					className="text-[10.5px] font-semibold uppercase tracking-wide"
+					className="text-[10.5px] font-semibold"
 					style={{ color: "var(--yellow)" }}
 					title="Team note — the agent doesn't see this"
 				>
