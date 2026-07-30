@@ -632,10 +632,10 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
                               {row.number && <span className="shrink-0 text-[11.5px] text-faint">#{row.number}</span>}
                             </span>
                             <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-faint">
-                              <span className="truncate font-mono">{row.branch}</span>
+                              <span className="truncate">{row.branch}</span>
                             </span>
                           </span>
-                          <span className="justify-self-end font-mono text-[12px] max-[720px]:hidden">
+                          <span className="justify-self-end text-[12px] max-[720px]:hidden">
                             {row.additions !== undefined && (
                               <span className="text-green">+{compactDiff(row.additions)}</span>
                             )}
