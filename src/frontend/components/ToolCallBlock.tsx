@@ -19,6 +19,7 @@ import {
   IconListChecks,
   IconWrench,
   IconCheck,
+  IconChevronDown,
   IconX,
   IconExpand,
 } from "./icons";
@@ -499,17 +500,26 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
           className={cn(
-            "group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-[3px] text-left font-sans",
-            "hover:bg-hover"
+            "group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-[3px] text-left font-sans transition-colors",
+            "hover:bg-hover/40"
           )}
         >
           <span
             className={cn(
               "relative z-[1] flex size-[22px] flex-shrink-0 items-center justify-center",
-              failed ? "text-red" : "text-dim"
+              failed ? "text-red/70" : "text-faint"
             )}
           >
-            <ToolGlyph toolName={toolName} size={20} />
+            <span className="transition-opacity duration-150 group-hover:opacity-0">
+              <ToolGlyph toolName={toolName} size={20} />
+            </span>
+            <IconChevronDown
+              size={20}
+              className={cn(
+                "absolute block text-dim opacity-0 transition-[opacity,transform] duration-150 group-hover:opacity-100",
+                expanded && "rotate-180"
+              )}
+            />
           </span>
 
           {mcp ? (
@@ -517,10 +527,10 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
               <span className="rounded bg-panel px-1.5 py-px text-[12px] leading-4 font-bold tracking-[-0.01em] text-dim">
                 {mcp.server}
               </span>
-              <span className="font-medium text-fg">{mcp.tool}</span>
+              <span className="font-medium text-dim transition-colors group-hover:text-fg">{mcp.tool}</span>
             </span>
           ) : (
-            <span className="flex-shrink-0 text-[14px] leading-5 font-medium text-fg">{toolName}</span>
+            <span className="flex-shrink-0 text-[14px] leading-5 font-medium text-dim transition-colors group-hover:text-fg">{toolName}</span>
           )}
 
           <span className="flex min-w-0 flex-1 items-center gap-2">
