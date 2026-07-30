@@ -82,13 +82,9 @@ function resolveServerSource(config, resourcesPath, homeDir) {
   );
 }
 
-function configForCloudSession(config, cloudSession, cloudUpstream) {
+function configForCloudSession(config, cloudSession) {
   return {
     ...config,
-    cloudUpstream:
-      typeof cloudUpstream === "string" && cloudUpstream.trim()
-        ? cloudUpstream.trim()
-        : "",
     cloudToken:
       typeof cloudSession === "string" && cloudSession.trim()
         ? cloudSession.trim()
@@ -148,23 +144,15 @@ class LocalServerSupervisor {
       typeof this.config.cloudToken === "string" && this.config.cloudToken.trim()
         ? this.config.cloudToken.trim()
         : null;
-    const cloudUpstream =
-      typeof this.config.cloudUpstream === "string" && this.config.cloudUpstream.trim()
-        ? this.config.cloudUpstream.trim()
-        : null;
     if (!cloudToken) {
       throw new Error(
         "Local sessions require GitHub sign-in; switch to cloud mode and sign in first",
       );
     }
-    if (!cloudUpstream) {
-      throw new Error("Local sessions require a hosted OpenSession server URL");
-    }
 
     this.prepared = {
       bunBin,
       cloudToken,
-      cloudUpstream,
       opencodeBin,
       port,
       serverDir: source.serverDir,
@@ -196,20 +184,11 @@ class LocalServerSupervisor {
   spawnServer() {
     if (this.stopping) return;
     const generation = ++this.generation;
-    const {
-      bunBin,
-      cloudToken,
-      cloudUpstream,
-      opencodeBin,
-      port,
-      serverDir,
-      serverEntry,
-      serverKind,
-    } = this.prepared;
+    const { bunBin, cloudToken, opencodeBin, port, serverDir, serverEntry, serverKind } =
+      this.prepared;
     const env = {
       ...process.env,
       HOST: "127.0.0.1",
-      OPENSESSION_CLOUD_UPSTREAM: cloudUpstream,
       OPENSESSION_OPENCODE_BIN: opencodeBin,
       OPENSESSION_PROFILE: "local",
       PORT: String(port),

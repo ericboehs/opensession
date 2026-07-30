@@ -10,23 +10,14 @@ describe("local server cloud identity", () => {
       configForCloudSession(
         { serverDir: "/tmp/server", cloudToken: "stale-setting" },
         " active-cookie ",
-        " https://cloud.example/ ",
       ),
-    ).toEqual({
-      serverDir: "/tmp/server",
-      cloudToken: "active-cookie",
-      cloudUpstream: "https://cloud.example/",
-    });
+    ).toEqual({ serverDir: "/tmp/server", cloudToken: "active-cookie" });
   });
 
   test("clears stale configured credentials when the cookie is absent", () => {
-    expect(
-      configForCloudSession(
-        { cloudToken: "stale-setting", cloudUpstream: "https://stale.example" },
-        null,
-        null,
-      ),
-    ).toEqual({ cloudToken: "", cloudUpstream: "" });
+    expect(configForCloudSession({ cloudToken: "stale-setting" }, null)).toEqual({
+      cloudToken: "",
+    });
   });
 });
 

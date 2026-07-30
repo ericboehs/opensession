@@ -541,7 +541,7 @@ app.whenReady().then(async () => {
       .then((cookies) => cookies[0]?.value || null)
       .catch(() => null);
     localSupervisor = new LocalServerSupervisor({
-      config: configForCloudSession(shellSettings, cloudSession, CLOUD_URL),
+      config: configForCloudSession(shellSettings, cloudSession),
       resourcesPath: process.resourcesPath,
       userDataDir: app.getPath("userData"),
       onState: handleLocalServerState,

@@ -474,7 +474,7 @@ html.wco .sidebar-brand {
    titlebar. Match that optical center without changing the shared web header. */
 html.wco .sidebar-brand > :is(.sidebar-brand-actions, .wco-nav, button) {
 	position: relative;
-	top: 3px;
+	top: 5px;
 }
 /* The whole first row doubles as the titlebar — everything interactive in it
    opts back out so it stays clickable. */
@@ -10106,7 +10106,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	overflow: hidden;
 }
 .mention-item-active {
-	background: var(--bg-active);
+	background: var(--bg-hover);
 }
 .mention-repo {
 	flex-shrink: 0;
