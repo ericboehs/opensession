@@ -28,7 +28,13 @@
 	--color-surface: var(--bg);
 	--color-raised: var(--bg-raised);
 	--color-panel: var(--bg-panel);
-	--color-hover: var(--bg-hover);
+	/* bg-hover is the interaction *wash* (translucent ink, so it reads the same
+	   strength over any surface) — that's what `hover:bg-hover` wants at all of
+	   its call sites. bg-active stays an opaque surface: it's used as one (switch
+	   tracks, meter tracks, avatar fallbacks that put white text on it), not as a
+	   pressed state. Pressed/selected washes are `bg-pressed`. */
+	--color-hover: var(--hover);
+	--color-pressed: var(--hover-strong);
 	--color-active: var(--bg-active);
 
 	/* Borders (border-border reads terribly, so: line) */

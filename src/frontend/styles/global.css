@@ -24,6 +24,17 @@
 	--bg-panel: #292624;
 	--bg-hover: #322e2b;
 	--bg-active: #3a3531;
+	/* Interaction washes. --bg-hover/--bg-active above are absolute *surfaces*:
+	   used as a hover they land as a ~9% step on --bg but barely 2% on
+	   --bg-panel, so the same token gives a heavy wash on the composer and an
+	   invisible one inside panels and popups. These are the *effect* — a
+	   translucent ink that composites to the same strength on whatever surface
+	   it sits on. Use --hover for hover/focus, --hover-strong for pressed and
+	   selected. The surface tokens stay for real surfaces (segmented-control
+	   tracks, chips) and for the scroll-fade box-shadow masks, which need an
+	   opaque colour to hide what slides under them. */
+	--hover: rgba(255, 246, 238, 0.07);
+	--hover-strong: rgba(255, 246, 238, 0.11);
 	--border: #38332f;
 	--border-strong: #4c4640;
 	--top-divider: color-mix(in srgb, var(--border) 68%, transparent);
@@ -91,6 +102,10 @@ html[data-theme="light"] {
 	--bg-panel: #f2f0ec;
 	--bg-hover: #ece9e4;
 	--bg-active: #e4e0d9;
+	/* Warm black ink; a touch lighter than dark's wash because ink on white
+	   reads heavier than the same alpha of white on charcoal. */
+	--hover: rgba(28, 26, 24, 0.055);
+	--hover-strong: rgba(28, 26, 24, 0.095);
 	--border: #e6e2db;
 	--border-strong: #d6cfc6;
 	--text: #1c1a18;
@@ -570,7 +585,7 @@ html.wco .app-body.sidebar-collapsed
 	app-region: no-drag;
 }
 .wco-nav-btn:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 	color: var(--text);
 }
 
@@ -682,7 +697,7 @@ html.wco .app-body.sidebar-collapsed
 	-webkit-tap-highlight-color: transparent;
 }
 .app-logo-button:active {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .app-logo-image {
 	display: block;
@@ -816,7 +831,7 @@ html.wco .app-body.sidebar-collapsed
 }
 .sidebar-nav-item:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .sidebar-nav-item.active {
 	color: var(--text);
@@ -1001,7 +1016,7 @@ html[data-platform="windows"] .workspace-shell {
 .sidebar-toggle-btn:hover,
 .sidebar-reopen:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 /* The re-open control is mounted in the detail pane but only shows while the
@@ -1156,7 +1171,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	cursor: pointer;
 }
 .sidebar-repo-chip-open:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 /* Inline in the header: never let the spacer squeeze it (it's only shown when
    measured to fit). */
@@ -1203,7 +1218,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 }
 .sidebar-repo-chip-x:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 .sidebar-new-btn {
@@ -1220,7 +1235,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 }
 .sidebar-new-btn:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 .sidebar-filter-btn {
@@ -1231,7 +1246,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 .sidebar-filter-btn.active {
 	color: var(--text);
 	border-color: var(--border-strong);
-	background: var(--bg-hover);
+	background: var(--hover-strong);
 }
 /* Needs-input alert bell, muted state: dimmed so "on" reads as the norm. */
 .sidebar-filter-btn.muted {
@@ -1309,7 +1324,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	cursor: pointer;
 }
 .mini-select:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .mini-select-value {
 	display: flex;
@@ -1355,10 +1370,10 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	cursor: pointer;
 }
 .mini-select-item:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .mini-select-item.selected {
-	background: var(--bg-hover);
+	background: var(--hover-strong);
 }
 .mini-select-item-text {
 	flex: 1;
@@ -1531,7 +1546,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 }
 .sidebar-repo-new:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .sidebar-repo-lanes {
 	margin-top: 2px;
@@ -1633,7 +1648,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	cursor: pointer;
 }
 .sidebar-band-toggle:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 	color: var(--text-dim);
 }
 .sidebar-band-name {
@@ -1681,7 +1696,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 }
 .sidebar-band-action:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 .sidebar-group-header {
@@ -1701,7 +1716,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 }
 .sidebar-group-header:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 .sidebar-group-chevron {
@@ -1796,7 +1811,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 }
 .sidebar-auto-cog:hover {
 	color: var(--text);
-	background: var(--bg-active);
+	background: var(--hover-strong);
 }
 @media (hover: hover) {
 	.sidebar-group--automations .sidebar-group-header:hover .sidebar-group-count {
@@ -1863,7 +1878,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 }
 .sidebar-status-group.is-lane-drop-hover {
 	opacity: 1;
-	background: var(--bg-hover);
+	background: var(--hover-strong);
 	border-radius: calc(12px * var(--rf)); corner-shape: var(--cs);
 	box-shadow: inset 0 0 0 1px var(--accent, #6b8afd);
 }
@@ -1901,7 +1916,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	.sidebar-group--review > .sidebar-group-header:hover,
 	.sidebar-repo-group > .sidebar-repo-head:hover,
 	.sidebar-folder-section > .sidebar-folder-header:hover {
-		background: var(--bg-hover);
+		background: var(--hover);
 	}
 }
 
@@ -1998,7 +2013,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	will-change: transform;
 }
 .sidebar-swipe-row > .sidebar-item:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .sidebar-swipe-row > .sidebar-item-selected {
 	background: var(--bg-active);
@@ -2215,7 +2230,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	cursor: pointer;
 }
 .mobile-sheet-item:active {
-	background: var(--bg-active);
+	background: var(--hover-strong);
 }
 .mobile-sheet-item svg {
 	flex: 0 0 auto;
@@ -2246,11 +2261,11 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	padding: 12px 14px;
 }
 .sidebar-item:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .sidebar-item-selected,
 .sidebar-item-selected:hover {
-	background: var(--bg-active);
+	background: var(--hover-strong);
 }
 .sidebar-item-selected .sidebar-item-title {
 	color: var(--text);
@@ -2741,7 +2756,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 }
 .session-tab-split-part:hover,
 .session-tab-split-part:focus-within {
-	background: var(--bg-hover);
+	background: var(--hover);
 	color: var(--text);
 }
 .session-tab-split-part-active {
@@ -2774,7 +2789,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	opacity: 1;
 }
 .session-tab-split-close:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 .session-tab {
@@ -2805,7 +2820,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 }
 .session-tab:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .session-tab-active {
 	color: var(--text);
@@ -2931,7 +2946,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 		font-size: 22px;
 	}
 	.session-tabs .session-tab-new:hover {
-		background: var(--bg-hover);
+		background: var(--hover);
 		color: var(--text);
 	}
 	/* Strip is in flow now, so the transcript just starts below it — no overlay
@@ -3036,7 +3051,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	corner-shape: squircle;
 }
 .sidebar-ctx-menu button:not(.tab-color-swatch):hover {
-	background: var(--bg-hover, rgba(255, 255, 255, 0.06)) !important;
+	background: var(--hover) !important;
 }
 .tab-color-swatch {
 	width: 22px;
@@ -3089,7 +3104,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	color: var(--yellow);
 }
 .session-tab-pin:hover {
-	background: var(--bg-active);
+	background: var(--hover-strong);
 	color: #e3b341;
 }
 
@@ -3127,7 +3142,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	flex-shrink: 0;
 }
 .session-tab-close:hover {
-	background: var(--bg-active);
+	background: var(--hover-strong);
 	color: var(--text);
 }
 
@@ -3160,7 +3175,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 }
 .session-tab-new:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 /* Trailing history button — opens the workspace's archived-chats menu. Same
@@ -3174,7 +3189,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 .session-tab-history:hover,
 .session-tab-history[data-popup-open] {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -3399,7 +3414,7 @@ body.resizing-tab-split {
 	transition: background 0.12s ease, color 0.12s ease;
 }
 .archived-chip:hover:not(:disabled) {
-	background: var(--bg-hover, rgba(127, 127, 127, 0.14));
+	background: var(--hover);
 	color: var(--text);
 }
 .archived-chip:disabled {
@@ -3437,7 +3452,7 @@ html.wco .viewer-branch {
 	margin: -5px -8px;
 }
 .viewer-branch-editable:hover {
-	background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+	background: var(--hover);
 }
 
 /* Inline rename input in the header — sized to sit in place of the title. */
@@ -3546,7 +3561,7 @@ html.wco .viewer-branch {
 .btn-viewer-overflow.active,
 .btn-viewer-overflow:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 /* Squircle user picture (GitHub avatar, initial fallback) — see UserAvatar.tsx.
    Size + font-size come inline from the component; the count badge the
@@ -3780,7 +3795,7 @@ html.wco .viewer-branch {
 .btn-panel-toggle.btn-workspace:hover {
 	border-color: transparent;
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .btn-panel-toggle-icon {
 	font-size: 14px;
@@ -3881,7 +3896,7 @@ html.wco .viewer-branch {
    hover (not red), keeping Delete as the only alarming item in the menu. */
 .btn-viewer-archive:hover:not(:disabled) {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .btn-viewer-archive:disabled {
 	opacity: 0.6;
@@ -3912,7 +3927,7 @@ html.wco .viewer-branch {
 }
 .btn-viewer-newchat:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 /* Session name titling the phone ⋯ menu (WhatsApp/ChatGPT-style header). It's a
@@ -3956,7 +3971,7 @@ html.wco .viewer-branch {
 	color: var(--text-faint);
 }
 .btn-viewer-panelrow:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 @keyframes preview-spin {
@@ -3987,7 +4002,7 @@ html.wco .viewer-branch {
 .btn-viewer-share:hover {
 	color: var(--text);
 	border-color: var(--border-strong);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .btn-viewer-share-done {
 	color: var(--green);
@@ -4169,7 +4184,7 @@ body.resizing-panel .panel-resize::after {
 }
 .panel-tab:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .panel-tab.active {
 	color: var(--text);
@@ -4348,7 +4363,7 @@ body.resizing-panel .panel-resize::after {
 }
 .wi-chip-muted:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 	border-color: var(--border-strong);
 }
 
@@ -4405,7 +4420,7 @@ body.resizing-panel .panel-resize::after {
 	min-width: 0;
 }
 .workspace-info-file:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .workspace-info-file-path {
 	font-family: var(--mono);
@@ -4439,7 +4454,7 @@ body.resizing-panel .panel-resize::after {
 }
 .workspace-info-more:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 /* PR comments — an avatar beside a markdown body with a muted source/time
@@ -4474,7 +4489,7 @@ body.resizing-panel .panel-resize::after {
 .workspace-info-fix:hover {
 	color: var(--text);
 	border-color: var(--text-faint);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 /* One-line row: avatar · title · time. Dense list — the full comment opens in
    the hover popover, never by growing the row. */
@@ -4558,7 +4573,7 @@ img.workspace-info-comment-avatar {
 .workspace-info-comment-add:hover {
 	color: var(--text);
 	border-color: var(--text-faint);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 /* Popover-only: author/time header above the full markdown body. */
 .workspace-info-comment-main {
@@ -5141,7 +5156,7 @@ a.workspace-info-check-row {
 }
 .btn-icon:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 .diff-truncated {
@@ -5277,7 +5292,7 @@ a.workspace-info-check-row {
 	color: var(--text);
 }
 .diff-file-header:hover {
-	background: var(--bg-raised);
+	background: var(--hover);
 }
 .diff-file-caret {
 	color: var(--text-faint);
@@ -5373,7 +5388,7 @@ a.workspace-info-check-row {
 }
 .diff-file-discard:hover {
 	color: var(--red);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .diff-file-discard-armed {
 	color: var(--red);
@@ -5684,7 +5699,7 @@ a.workspace-info-check-row {
 	min-width: 0;
 }
 .diff-file-header:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 .diff-status {
@@ -5931,7 +5946,7 @@ a.workspace-info-check-row {
 	background: var(--topbar-bg);
 }
 .pr-bar-extra:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .pr-bar-extra-main {
 	display: flex;
@@ -6153,7 +6168,7 @@ a.workspace-info-check-row {
 	filter: brightness(1.08);
 }
 .pr-bar-btn-secondary:hover:not(:disabled) {
-	background: var(--bg-hover);
+	background: var(--hover);
 	filter: none;
 }
 .pr-bar-btn:active:not(:disabled) {
@@ -6398,7 +6413,7 @@ a.workspace-info-check-row {
 	text-align: left;
 }
 .pr-checks-summary:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .pr-checks-status {
 	font-size: 13px;
@@ -6446,7 +6461,7 @@ a.workspace-info-check-row {
 	transition: background 0.12s ease;
 }
 .pr-check:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .pr-check-main {
 	display: flex;
@@ -6535,7 +6550,7 @@ a.workspace-info-check-row {
 }
 .pr-comments-add-all:hover,
 .pr-comment-add:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 	color: var(--text);
 }
 .pr-comment-row {
@@ -6771,7 +6786,7 @@ a.workspace-info-check-row {
 	white-space: nowrap;
 }
 .selection-trigger:hover {
-	background: var(--bg-raised);
+	background: var(--hover);
 	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 }
 .selection-compose {
@@ -6885,7 +6900,7 @@ a.workspace-info-check-row {
 	cursor: pointer;
 }
 .btn-open-session:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 .pr-merge-error {
@@ -7046,7 +7061,7 @@ a.workspace-info-check-row {
 	white-space: nowrap;
 }
 .prc-btn:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 	color: var(--text);
 }
 .prc-btn-primary {
@@ -7088,7 +7103,7 @@ a.workspace-info-check-row {
 	transition: background 0.12s ease;
 }
 .prc-summary-row:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .prc-summary-mark {
 	display: inline-flex;
@@ -7130,7 +7145,7 @@ a.workspace-info-check-row {
 	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 }
 .prc-show-more:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 	color: var(--text-dim);
 }
 
@@ -7237,7 +7252,7 @@ a.workspace-info-check-row {
 	cursor: pointer;
 }
 .prc-action:hover:not(:disabled) {
-	background: var(--bg-hover);
+	background: var(--hover);
 	border-color: var(--text-faint);
 }
 .prc-action:disabled {
@@ -7262,7 +7277,7 @@ a.workspace-info-check-row {
 	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 }
 .prc-reviewer:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .prc-reviewer-avatar {
 	width: 20px;
@@ -7313,7 +7328,7 @@ a.workspace-info-check-row {
 	cursor: default;
 }
 .prc-file:not(:disabled):hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .prc-file-icon {
 	flex-shrink: 0;
@@ -7586,7 +7601,7 @@ a.workspace-info-check-row {
 	font: inherit;
 }
 .reviews-row:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .reviews-row.active {
 	background: var(--bg-active);
@@ -7929,7 +7944,7 @@ a.workspace-info-check-row {
 	flex-shrink: 0;
 }
 .reviews-drawer-close:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 	color: var(--text);
 }
 .reviews-drawer-back {
@@ -8271,7 +8286,7 @@ a.workspace-info-check-row {
 		color 0.12s;
 }
 .load-history-btn:hover:not(:disabled) {
-	background: var(--bg-hover);
+	background: var(--hover);
 	color: var(--text);
 }
 .load-history-btn:disabled {
@@ -8318,7 +8333,7 @@ a.workspace-info-check-row {
 }
 .jump-latest:hover {
 	border-color: var(--accent);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .jump-latest-arrow {
 	font-size: 14px;
@@ -9098,7 +9113,7 @@ a.workspace-info-check-row {
 .ask-suggestion:hover {
 	color: var(--text);
 	border-color: var(--border-strong);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 .ask-suggestion-dot {
@@ -9177,7 +9192,7 @@ button.home-whisper-link:hover {
 }
 .home-row:hover {
 	border-color: var(--border-strong);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 .home-row-main {
@@ -9285,7 +9300,7 @@ button.home-whisper-link:hover {
 }
 .pin-btn:hover {
 	color: var(--yellow);
-	background: var(--bg-active);
+	background: var(--hover-strong);
 }
 .pin-active {
 	color: var(--yellow);
@@ -9825,7 +9840,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	cursor: pointer;
 }
 .composer-agents-open:active {
-	background: var(--bg-active, var(--bg-hover));
+	background: var(--hover-strong);
 }
 @media (prefers-reduced-motion: reduce) {
 	.composer-agents-dot { animation: none; }
@@ -9879,7 +9894,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	justify-content: center;
 }
 .composer-queue-action:not(:disabled):hover {
-	background: var(--bg-raised);
+	background: var(--hover);
 	border-color: var(--border);
 	color: var(--text);
 }
@@ -10150,7 +10165,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	overflow: hidden;
 }
 .mention-item-active {
-	background: var(--bg-hover);
+	background: var(--hover-strong);
 }
 .mention-repo {
 	flex-shrink: 0;
@@ -10672,7 +10687,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .btn-back:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 .new-session-form {
@@ -11082,7 +11097,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	font: inherit;
 }
 .automations-row:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .automations-row.active {
 	background: var(--bg-active);
@@ -11170,7 +11185,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	flex-shrink: 0;
 }
 .automations-drawer-close:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 	color: var(--text);
 }
 .automations-drawer-back {
@@ -11530,7 +11545,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .wiki-dir:hover,
 .wiki-file:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .wiki-file-selected,
 .wiki-file-selected:hover {
@@ -11565,7 +11580,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	min-width: 0;
 }
 .wiki-result:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 .wiki-result-title {
@@ -12323,7 +12338,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.session-info-list > button:hover {
 		color: var(--text);
 		border-color: transparent;
-		background: var(--bg-hover);
+		background: var(--hover);
 	}
 	/* The workspace overview (Info-tab content) embedded below the actions:
 	   opening prompt, summary, files changed, chats — the whole-workspace view. */
@@ -13233,7 +13248,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		color: var(--text);
 	}
 	.sidebar-nav-item:hover {
-		background: var(--bg-panel);
+		background: var(--hover);
 	}
 	.sidebar-nav-icon {
 		color: var(--text-dim);
@@ -13620,7 +13635,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .btn-attach:hover:not(:disabled) {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .btn-attach:disabled {
 	opacity: 0.5;
@@ -13646,7 +13661,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .composer-attach-btn:hover:not(:disabled) {
 	color: var(--text);
 	border-color: var(--border-strong);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .composer-attach-btn:disabled {
 	opacity: 0.5;
@@ -13732,8 +13747,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	width: auto;
 	gap: 5px;
 	padding: 0 9px;
-	border-color: var(--accent);
-	background: var(--accent-soft);
 	color: var(--accent);
 }
 .composer-goal-label {
@@ -13921,7 +13934,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 }
 .notes-add:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 	color: var(--text);
 }
 .notes-new-input {
@@ -13957,7 +13970,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	color: var(--text-dim);
 }
 .notes-item:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 	color: var(--text);
 }
 .notes-item-active {
@@ -14102,7 +14115,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	white-space: nowrap;
 }
 .note-share:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 	color: var(--text);
 }
 
@@ -14438,7 +14451,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	transition: background 0.12s, color 0.12s;
 }
 .palette-trigger:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 	color: var(--text);
 }
 .palette-trigger-strong {
@@ -14671,7 +14684,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	user-select: none;
 }
 .palette-mcp-checkbox-compact:hover {
-	background: var(--bg-raised);
+	background: var(--hover);
 	color: var(--text);
 }
 .palette-mcp-checkbox-compact input[type="checkbox"] {
@@ -14680,6 +14693,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 
 .palette-icon-btn {
+	position: relative;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -14691,15 +14705,36 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	color: var(--text-dim);
 	font-size: 14px;
 	cursor: pointer;
-	transition: background 0.12s, border-color 0.12s;
+	transition: color 0.12s;
+}
+/* Hover and on states paint on an inset pseudo-element rather than the button
+   box: the button keeps its 40px pointer target on every viewport, but the wash
+   it paints is 32px — the same visual weight as the model pill and the send
+   button it sits beside in the composer toolbar. Filling all 40px read as a
+   slab twice the size of its 24px glyph. */
+.palette-icon-btn::before {
+	content: "";
+	position: absolute;
+	inset: 4px;
+	z-index: 0;
+	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
+	transition: background 0.12s, box-shadow 0.12s;
+}
+/* Keep the glyph (and the goal/note label) above that wash — the pseudo-element
+   is positioned, so it would otherwise paint over static in-flow content. */
+.palette-icon-btn > * {
+	position: relative;
+	z-index: 1;
 }
 .palette-icon-btn:hover {
-	background: var(--bg-hover);
 	color: var(--text);
 }
-.palette-icon-btn.is-on {
-	border-color: var(--accent);
+.palette-icon-btn:hover::before {
+	background: var(--hover);
+}
+.palette-icon-btn.is-on::before {
 	background: var(--accent-soft);
+	box-shadow: inset 0 0 0 1px var(--accent);
 }
 .palette-icon-btn:disabled {
 	opacity: 0.5;
@@ -14946,7 +14981,7 @@ html[data-theme="light"] .palette-card .palette-create {
 }
 .ss-clear:hover {
 	color: var(--text);
-	background: var(--bg-raised);
+	background: var(--hover);
 }
 
 .ss-results {
@@ -15155,7 +15190,7 @@ html.wco .settings-sidenav {
 }
 .settings-back:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .settings-sidenav-group {
 	display: flex;
@@ -15196,7 +15231,7 @@ html.wco .settings-sidenav {
 }
 .settings-sidenav-item:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .settings-sidenav-item:hover .settings-sidenav-icon,
 .settings-sidenav-item.active .settings-sidenav-icon {
@@ -15367,7 +15402,7 @@ html.wco .settings-sidenav {
 }
 .ui-testbtn:hover:not(:disabled) {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 .ui-testbtn:disabled {
 	opacity: 0.4;
@@ -15510,7 +15545,7 @@ html.wco .settings-sidenav {
 	white-space: nowrap;
 }
 .session-tab-new-menu-item:hover {
-	background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+	background: var(--hover);
 }
 /* Promote button on ask chats (header, next to the ask chip). */
 .viewer-promote-btn {
@@ -15555,7 +15590,7 @@ html.wco .settings-sidenav {
 }
 .viewer-newtab-btn:hover {
 	color: var(--text);
-	background: var(--bg-hover);
+	background: var(--hover);
 }
 
 /* Hover-revealed real timestamps. A message's time is a detail you go looking
@@ -15725,7 +15760,7 @@ html.wco .settings-sidenav {
 }
 .sidebar-ws-action:hover {
 	color: var(--text);
-	background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+	background: var(--hover);
 }
 .sidebar-ws-action.is-on {
 	color: var(--accent);
@@ -16101,7 +16136,7 @@ html.wco .settings-sidenav {
 	transition: color 0.12s, background 0.12s;
 }
 .voice-glyph:hover {
-	background: var(--bg-panel);
+	background: var(--hover);
 	color: var(--text);
 }
 .voice-accept {
@@ -16152,7 +16187,6 @@ html.wco .settings-sidenav {
    while the repo/base/model/effort controls are expanded. */
 .palette-options-btn.is-on {
 	color: var(--accent);
-	background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* ── Lightweight phone inputs ────────────────────────────────────
@@ -17406,7 +17440,7 @@ html.wco .settings-sidenav {
 		border-color 0.14s ease;
 }
 .workspace-info-review-btn:hover {
-	background: var(--bg-hover);
+	background: var(--hover);
 	border-color: var(--text-faint);
 }
 .transcript-settled {
