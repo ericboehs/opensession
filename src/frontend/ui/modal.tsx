@@ -37,7 +37,7 @@ import { IconX } from "../components/icons";
  */
 
 /** Geometry of the dialog shell.
- *  - `centered` — the standard confirm/edit dialog: vertically centered, ~30rem,
+ *  - `centered` — the standard confirm/edit dialog: vertically centered, ~28rem,
  *    padded body, `gap-4` between header/body/footer.
  *  - `palette` — the command-palette shape: anchored near the top of the
  *    viewport (via Base UI's Viewport), wider, and full-bleed. No padding and no
@@ -50,7 +50,7 @@ export type ModalContentProps = Omit<
 	"children"
 > & {
 	children: React.ReactNode;
-	/** Width (a Tailwind width utility). Defaults to ~30rem for `centered` and
+	/** Width (a Tailwind width utility). Defaults to ~28rem for `centered` and
 	 *  min(820px, 100%) for `palette` — override with e.g. "max-w-[34rem]". */
 	widthClassName?: string;
 	/** Element to focus when the dialog opens (Base UI otherwise focuses the
@@ -97,13 +97,13 @@ function Content({
 							widthClassName ?? "w-[min(820px,100%)]",
 						]
 					: [
-							"fixed left-1/2 top-1/2 z-[10001] w-[92vw] -translate-x-1/2 -translate-y-1/2",
-							widthClassName ?? "max-w-[30rem]",
-							"max-h-[85vh] overflow-y-auto overscroll-contain outline-none",
-							// Soft squircle shell — rounder than the menu/popover 14px since
-							// a large surface reads flatter at the same radius.
-							"rounded-[22px] [corner-shape:squircle] border border-line-strong bg-raised",
-							"p-7 shadow-[0_24px_70px_rgba(0,0,0,0.45)]",
+							"fixed left-1/2 top-1/2 z-[10001] w-[90vw] -translate-x-1/2 -translate-y-1/2",
+							widthClassName ?? "max-w-[28rem]",
+							"max-h-[85dvh] overflow-y-auto overscroll-contain outline-none",
+							// Match Tella's restrained Dialog2 shell: lifted surface, soft edge,
+							// and enough radius to read as a modal without becoming a card.
+							"rounded-[16px] [corner-shape:squircle] border border-line bg-raised",
+							"p-6 shadow-[0_18px_50px_rgba(0,0,0,0.20),0_2px_8px_rgba(0,0,0,0.08)]",
 							"flex flex-col gap-4",
 							"origin-center transition-[transform,opacity] duration-150 ease-out",
 							"data-[starting-style]:scale-[0.96] data-[starting-style]:opacity-0",
@@ -128,7 +128,7 @@ function Content({
 					// 10500, the modal tier at 10000) keeps doing so.
 					palette
 						? "z-[6000] bg-black/42 backdrop-blur-[3px] duration-[120ms]"
-						: "z-[10000] bg-black/45 backdrop-blur-[1px] duration-150",
+						: "z-[10000] bg-black/25 backdrop-blur-[1px] duration-150",
 					// `palette-backdrop` rides along purely as a runtime marker:
 					// SessionViewer (⌘P) and Sidebar (archive chord) suppress their
 					// window-level shortcuts via
@@ -181,7 +181,7 @@ function Header({
 	className?: string;
 }) {
 	return (
-		<div className={cn("flex items-start gap-3.5", className)}>
+		<div className={cn("flex items-start gap-3", className)}>
 			{icon && (
 				<span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
 					{icon}
@@ -191,20 +191,20 @@ function Header({
 				{/* Base UI renders Title as <h2> and Description as <p>; preflight
 				    isn't imported (global.css owns resets), so zero their UA margins
 				    or the <h2> top margin reads as phantom padding above the head. */}
-				<BaseDialog.Title className="m-0 text-[19px] font-semibold text-fg">
+				<BaseDialog.Title className="m-0 text-balance text-[18px] font-semibold leading-tight tracking-[-0.01em] text-fg">
 					{title}
 				</BaseDialog.Title>
 				{description && (
-					<BaseDialog.Description className="m-0 mt-1 text-[13.5px] leading-snug text-dim">
+					<BaseDialog.Description className="m-0 mt-2 text-pretty text-base font-medium leading-normal text-dim">
 						{description}
 					</BaseDialog.Description>
 				)}
 			</div>
 			<BaseDialog.Close
 				aria-label="Close"
-				className="-mr-1 -mt-1 shrink-0 rounded-md p-1.5 text-faint outline-none transition-colors hover:text-fg"
+				className="relative -mr-1 -mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md p-0 text-faint outline-none transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-hover hover:text-fg focus-visible:bg-hover focus-visible:text-fg focus-visible:shadow-[0_0_0_3px_var(--accent-soft)]"
 			>
-				<IconX size={18} />
+				<IconX size={20} />
 			</BaseDialog.Close>
 		</div>
 	);
@@ -220,7 +220,7 @@ function Footer({
 	children: React.ReactNode;
 }) {
 	return (
-		<div className={cn("mt-1 flex items-center gap-2.5", className)}>
+		<div className={cn("flex flex-wrap items-center gap-2.5", className)}>
 			{children}
 		</div>
 	);
