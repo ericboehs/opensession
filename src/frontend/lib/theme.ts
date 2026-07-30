@@ -43,7 +43,7 @@ export function applyTheme(pref: ThemePref = getThemePref()) {
 	// the traffic lights) with theme-color, so anything else leaves that strip a
 	// different colour from our own titlebar. Keep in sync with index.html.
 	if (meta)
-		meta.setAttribute("content", eff === "light" ? "#f2f0ec" : "#292624");
+		meta.setAttribute("content", eff === "light" ? "#f6f6f6" : "#222222");
 }
 
 export function setThemePref(pref: ThemePref) {
