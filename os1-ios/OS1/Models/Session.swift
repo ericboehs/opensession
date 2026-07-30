@@ -9,6 +9,7 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     var codexThreadId: String?
     var opencodeSessionId: String?
     var title: String?
+    var titleOverridden: Bool?
     var source: String?
     var repo: String?
     var branch: String?
@@ -35,6 +36,9 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     var startedBy: String?
     var automation: AutomationFlag?
     var attachedRepos: [AttachedRepo]?
+    /// Local-only marker for a just-created row that the sessions endpoint has
+    /// not returned yet. Its id may already be real after create resolves.
+    var isOptimisticPlaceholder: Bool?
 
     /// True for automation-owned sessions (triage runs, scheduled jobs) —
     /// the bulk of server noise a person's list should hide by default.
@@ -165,6 +169,7 @@ extension Session {
         session.createdAt = session.runStartedAt
         session.lastActivity = session.runStartedAt
         session.startedBy = startedBy
+        session.isOptimisticPlaceholder = true
         return session
     }
 

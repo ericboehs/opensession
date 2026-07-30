@@ -117,21 +117,23 @@ struct SessionsListView: View {
                 isPresented: Binding(
                     get: { renamingWorkspace != nil },
                     set: { if !$0 { renamingWorkspace = nil } }
-                )
-            ) {
+                ),
+                presenting: renamingWorkspace
+            ) { workspace in
                 TextField("Workspace name", text: $renameText)
                 Button("Cancel", role: .cancel) {}
                 Button("Rename") {
-                    if let workspace = renamingWorkspace {
-                        viewModel.rename(workspace, to: renameText)
-                    }
+                    viewModel.rename(workspace, to: renameText)
                 }
-                .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            } message: {
+                .disabled(
+                    workspace.projectId != nil
+                        && renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+            } message: { _ in
                 Text("Choose a name for this workspace.")
             }
             .sheet(item: $detailsWorkspace) { workspace in
-                WorktreeInfoSheet(workspace: workspace)
+                WorktreeInfoSheet(workspace: workspace, listViewModel: viewModel)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
@@ -736,7 +738,7 @@ struct SessionsListView: View {
     @ViewBuilder
     private func sessionRow(_ workspace: SidebarWorkspace) -> some View {
         let session = workspace.mainSession
-        let canArchive = workspace.sessions.allSatisfy { !$0.id.hasPrefix("pending-") }
+        let canArchive = !workspace.isOptimistic
         #if os(macOS)
         // Selection drives the detail column; select by id so rows replaced
         // by polling (fresh struct values every refresh) keep the selection.
@@ -761,7 +763,9 @@ struct SessionsListView: View {
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
         .swipeActions(edge: .trailing) { archiveButton(workspace, viaSwipe: true) }
-        .contextMenu { workspaceMenu(workspace) }
+        .contextMenu {
+            if canArchive { workspaceMenu(workspace) }
+        }
         #endif
     }
 
@@ -787,13 +791,14 @@ struct SessionsListView: View {
             }
         }
 
-        if let prURL = workspace.sessions.compactMap(\.prUrl).first.flatMap(URL.init(string:)) {
+        let prLink = workspace.statusSession.prUrl ?? workspace.sessions.compactMap(\.prUrl).first
+        if let prURL = prLink.flatMap(URL.init(string:)) {
             Link(destination: prURL) {
                 Label("Open pull request", systemImage: "arrow.triangle.pull")
             }
         }
 
-        if workspace.sessions.allSatisfy({ !$0.id.hasPrefix("pending-") }) {
+        if !workspace.isOptimistic {
             Divider()
             Button(role: .destructive) {
                 archive(workspace)
@@ -820,7 +825,8 @@ struct SessionsListView: View {
     #endif
 
     /// Trailing swipe (and Mac context-menu) action. Hidden for optimistic
-    /// `pending-` rows — the server doesn't know those ids yet.
+    /// rows — even after create returns a real id, the server may not have
+    /// exposed the session through its cached list yet.
     ///
     /// The swipe variant is `role: .destructive` and skips our own
     /// `withAnimation`: the destructive role tells the List the row is going
@@ -834,7 +840,7 @@ struct SessionsListView: View {
         _ workspace: SidebarWorkspace,
         viaSwipe: Bool = false
     ) -> some View {
-        if workspace.sessions.allSatisfy({ !$0.id.hasPrefix("pending-") }) {
+        if !workspace.isOptimistic {
             Button(role: viaSwipe ? .destructive : nil) {
                 archive(workspace, animated: !viaSwipe)
             } label: {

@@ -459,15 +459,24 @@ struct WorktreeInfoView: View {
 struct WorktreeInfoSheet: View {
     @State private var viewModel: SessionViewModel
     @State private var catalog: ModelCatalog?
-    private let chats: [Session]
+    @Bindable private var listViewModel: SessionsListViewModel
+    private let fallbackWorkspace: SidebarWorkspace
 
-    init(workspace: SidebarWorkspace) {
+    init(workspace: SidebarWorkspace, listViewModel: SessionsListViewModel) {
         _viewModel = State(initialValue: SessionViewModel(session: workspace.mainSession))
-        chats = workspace.sessions
+        self.listViewModel = listViewModel
+        fallbackWorkspace = workspace
     }
 
     var body: some View {
-        WorktreeInfoView(viewModel: viewModel, chats: chats, catalog: catalog)
+        let workspace = SessionsListViewModel.sidebarWorkspaces(
+            in: listViewModel.sessions,
+            workspaceNames: listViewModel.workspaceNames
+        ).first { workspace in
+            workspace.sessions.contains { $0.id == viewModel.session.id }
+        } ?? fallbackWorkspace
+
+        WorktreeInfoView(viewModel: viewModel, chats: workspace.sessions, catalog: catalog)
             .task {
                 viewModel.start()
                 catalog = try? await OS1API.models()

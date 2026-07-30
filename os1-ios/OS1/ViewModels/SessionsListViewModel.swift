@@ -113,6 +113,7 @@ final class SessionsListViewModel {
             chats.sort(by: sessionNaturalOrder)
             guard let main = mainSession(in: chats) else { return nil }
             let named = chats.compactMap(\.projectId).compactMap { workspaceNames[$0] }.first
+            let renamed = chats.first { $0.titleOverridden == true }
             let worktreeName = main.worktreeDir.flatMap {
                 $0.hasPrefix("/home/ubuntu/worktrees/")
                     ? URL(fileURLWithPath: $0).lastPathComponent
@@ -120,7 +121,7 @@ final class SessionsListViewModel {
             }
             return SidebarWorkspace(
                 id: key,
-                title: named ?? main.branch ?? worktreeName ?? main.displayTitle,
+                title: named ?? renamed?.displayTitle ?? main.branch ?? worktreeName ?? main.displayTitle,
                 sessions: chats,
                 mainSession: main
             )
@@ -238,21 +239,29 @@ final class SessionsListViewModel {
 
     func rename(_ workspace: SidebarWorkspace, to proposedName: String) {
         let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
+        if workspace.projectId != nil, name.isEmpty { return }
 
         Task {
             do {
                 if let projectId = workspace.projectId {
                     try await OS1API.renameWorkspace(workspaceId: projectId, name: name)
+                } else if name.isEmpty {
+                    for session in workspace.sessions where session.titleOverridden == true {
+                        try await OS1API.renameSession(sessionId: session.id, title: "")
+                    }
                 } else {
+                    let session = workspace.sessions.first { $0.titleOverridden == true }
+                        ?? workspace.mainSession
                     try await OS1API.renameSession(
-                        sessionId: workspace.mainSession.id,
+                        sessionId: session.id,
                         title: name
                     )
                 }
                 await refresh()
             } catch {
-                self.error = "Couldn't rename workspace: \(error.localizedDescription)"
+                self.error = workspace.projectId == nil
+                    ? "Couldn't rename chat: \(error.localizedDescription)"
+                    : "Couldn't rename workspace: \(error.localizedDescription)"
             }
         }
     }
@@ -393,6 +402,11 @@ struct SidebarWorkspace: Identifiable, Equatable {
     var lane: Session.Lane { statusSession.lane }
     var projectId: String? {
         sessions.compactMap(\.projectId).first { !$0.isEmpty }
+    }
+    var isOptimistic: Bool {
+        sessions.contains {
+            $0.id.hasPrefix("pending-") || $0.isOptimisticPlaceholder == true
+        }
     }
     var effectiveRepo: String { mainSession.effectiveRepo }
     var lastActivityDate: Date {

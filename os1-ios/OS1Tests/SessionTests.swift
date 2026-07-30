@@ -151,6 +151,34 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(workspaces[0].sessions.map(\.id), ["filed", "legacy"])
     }
 
+    func testSidebarManualRenameWinsOverFallbackBranch() throws {
+        let sessions = try JSONDecoder().decode(
+            [Session].self,
+            from: Data(
+                #"[{"id":"first","worktreeDir":"/home/ubuntu/worktrees/feature","branch":"feature"},{"id":"renamed","worktreeDir":"/home/ubuntu/worktrees/feature","branch":"feature","title":"Customer escalation","titleOverridden":true}]"#.utf8
+            )
+        )
+
+        let workspaces = SessionsListViewModel.sidebarWorkspaces(in: sessions)
+
+        XCTAssertEqual(workspaces.first?.title, "Customer escalation")
+    }
+
+    func testOptimisticSessionStaysMarkedAfterReceivingRealId() {
+        let session = Session.optimistic(
+            id: "bks-real",
+            title: "New chat",
+            repo: "backstage",
+            mode: "code",
+            model: nil,
+            effort: nil,
+            fastMode: false,
+            startedBy: "Michiel"
+        )
+
+        XCTAssertTrue(session.isOptimisticPlaceholder == true)
+    }
+
     func testTabSessionsPinStartedHumanChatFirst() throws {
         let sessions = try JSONDecoder().decode(
             [Session].self,
