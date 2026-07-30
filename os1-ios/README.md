@@ -30,7 +30,8 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   page without embedding the web client.
 - **Prompting** — WS `prompt` frames (the server has no REST prompt endpoint).
   Sending while a run is active queues, exactly like the web UI. Stop button
-  sends `cancel` for the watched session.
+  sends `cancel` for the watched session. The floating glass composer uses a
+  progressive material fade so transcript content recedes cleanly beneath it.
 - **AskUserQuestion** — blocking questions render as an inline card with option
   buttons + free-text answer, wired to `answer_question`.
 - **PR chip + panel** — sessions with a pull request show a toolbar chip

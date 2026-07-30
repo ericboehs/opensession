@@ -627,10 +627,28 @@ private struct SessionInputBar: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, horizontalInset)
         .padding(.top, 6)
+        #if os(iOS)
+        .padding(.bottom, 2)
+        .background(alignment: .bottom) {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .mask {
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.7), .black],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                .padding(.top, -28)
+                .ignoresSafeArea(edges: .bottom)
+                .allowsHitTesting(false)
+        }
+        #else
         .padding(.bottom, 8)
+        #endif
         // No bar background: the composer and chips are individual glass
         // elements floating over the transcript, which scrolls beneath them
-        // through the soft scroll-edge fade.
+        // through the soft scroll edge and progressive material fade.
         #if os(macOS)
         .onAppear { installShiftReturnMonitor() }
         .onDisappear { removeShiftReturnMonitor() }
@@ -776,6 +794,12 @@ private struct SessionInputBar: View {
             .padding(.horizontal, 4)
             .padding(.bottom, 3)
         }
+        #if os(iOS)
+        .background(
+            .ultraThinMaterial,
+            in: RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous)
+        )
+        #endif
         .glassSurface(
             in: RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous)
         )
