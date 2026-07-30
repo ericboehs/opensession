@@ -187,7 +187,7 @@ function GoalModal({
 
         <textarea
           ref={inputRef}
-          className="min-h-[120px] w-full resize-y rounded-lg border border-line-strong bg-surface px-4 py-3.5 text-[15px] leading-relaxed text-fg outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
+          className="min-h-[120px] w-full resize-y rounded-lg border border-line-strong bg-surface px-4 py-3.5 text-[15px] leading-relaxed text-fg outline-none"
           value={text}
           rows={3}
           onChange={(e) => setText(e.target.value)}
