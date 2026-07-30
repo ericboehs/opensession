@@ -110,6 +110,7 @@ import {
 	IconDotsHorizontal,
 	IconGlobe,
 	IconHome,
+	IconListChecks,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, Menu } from "../ui/menu";
@@ -717,6 +718,12 @@ interface Props {
 	homeActive: boolean;
 	/** Open the home worktree index. */
 	onOpenHome: () => void;
+	/** True while the Tasks tool is open. */
+	tasksActive: boolean;
+	/** Open the current user's task list. */
+	onOpenTasks: () => void;
+	/** Current open-task count. */
+	taskCount?: number;
 	/** Open one automation's settings (list + detail). Called with the
 	    automation's NAME — session rows only carry the name, not the id. */
 	onOpenAutomation: (name: string) => void;
@@ -1461,6 +1468,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	onOpenNotes,
 	homeActive,
 	onOpenHome,
+	tasksActive,
+	onOpenTasks,
+	taskCount = 0,
 	onOpenAutomation,
 	onOpenPrItem,
 	selectedWorkspaceId = null,
@@ -3377,6 +3387,15 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			active: homeActive,
 			onClick: onOpenHome,
 			title: "Pull request worktrees",
+		},
+		{
+			id: "tasks",
+			label: SIDEBAR_TOOL_LABELS.tasks,
+			icon: <IconListChecks />,
+			active: tasksActive,
+			onClick: onOpenTasks,
+			title: "Your open tasks",
+			count: taskCount,
 		},
 		{
 			id: "catchup",

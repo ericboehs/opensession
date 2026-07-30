@@ -1,5 +1,6 @@
 export const SIDEBAR_TOOL_IDS = [
 	"home",
+	"tasks",
 	"catchup",
 	"prtinder",
 	"supporttinder",
@@ -12,6 +13,7 @@ export type SidebarToolId = (typeof SIDEBAR_TOOL_IDS)[number];
 
 export const SIDEBAR_TOOL_LABELS: Record<SidebarToolId, string> = {
 	home: "Home",
+	tasks: "Tasks",
 	catchup: "Catch up",
 	prtinder: "PR Tinder",
 	supporttinder: "Support Tinder",

@@ -31,6 +31,7 @@ import { SupportPreview } from "./components/SupportPreview";
 import { WorkspacePane } from "./components/WorkspacePane";
 import { Reports } from "./components/Reports";
 import { Analytics } from "./components/Analytics";
+import { Tasks } from "./components/Tasks";
 import { UserGate, getCurrentUser, useAuthStatus } from "./components/UserPicker";
 import { PreviewWait, matchPreviewWaitRoute } from "./components/PreviewWait";
 import { SettingsMenu } from "./components/SettingsMenu";
@@ -166,6 +167,7 @@ type Route =
 	| { view: "reports"; automationId?: string; reportId?: string }
 	// Analytics — sessions/tokens/models/PRs over a date range.
 	| { view: "analytics" }
+	| { view: "tasks" }
 	| { view: "reviews"; id?: string }
 	// PR Tinder — one-at-a-time swipe triage of the repo's open PRs.
 	| { view: "prtinder" }
@@ -260,6 +262,7 @@ function parseRoute(pathname: string): Route {
 			reportId: reportsMatch[2] ? decodeURIComponent(reportsMatch[2]) : undefined,
 		};
 	if (pathname === "/analytics") return { view: "analytics" };
+	if (pathname === "/tasks") return { view: "tasks" };
 	if (pathname === "/new") return { view: "new" };
 	// <base>/automations/<id-or-name>: the automations page with one selected
 	// (its detail drawer open). The segment accepts the automation id or name —
@@ -349,6 +352,8 @@ function routePath(route: Route): string {
 				: `${BASE_PATH}/reports`;
 		case "analytics":
 			return `${BASE_PATH}/analytics`;
+		case "tasks":
+			return `${BASE_PATH}/tasks`;
 		case "new":
 			return route.prompt
 				? `${BASE_PATH}/new?prompt=${encodeURIComponent(route.prompt)}`
@@ -913,14 +918,14 @@ function App() {
 	// The ⌘K command palette. Sessions, PRs, and app actions share one overlay
 	// driven by its own state so it can open over any view.
 	const [searchOpen, setSearchOpen] = useState(false);
-	// The Desk overlay (⌘J / the floating desk button): todo list + standing
-	// concierge session on top of whatever view is open.
+	// The Desk overlay (⌘J / the floating desk button): a standing concierge
+	// session on top of whatever view is open.
 	const [deskOpen, setDeskOpen] = useState(false);
 	const deskOpenRef = useRef(deskOpen);
 	deskOpenRef.current = deskOpen;
-	// Open-todo count for the Desk FAB badge — refreshed on every todos_changed
-	// broadcast (any surface mutating the list: overlay, agent tools, other tabs).
-	const [todoCount, setTodoCount] = useState(0);
+	// Open-task count for the Tasks toolbar entry — refreshed on every
+	// todos_changed broadcast (the Tasks page, agent tools, or another tab).
+	const [taskCount, setTaskCount] = useState(0);
 	useEffect(() => {
 		let stale = false;
 		const load = async () => {
@@ -929,7 +934,7 @@ function App() {
 					`${BASE_PATH}/api/todos?user=${encodeURIComponent(getCurrentUser())}`,
 				);
 				const data = (await res.json()) as { todos?: unknown[] };
-				if (!stale) setTodoCount(data.todos?.length ?? 0);
+				if (!stale) setTaskCount(data.todos?.length ?? 0);
 			} catch {}
 		};
 		void load();
@@ -2321,6 +2326,8 @@ function App() {
 	const topbarTitle: string =
 		route.view === "archived"
 				? "Archived"
+				: route.view === "tasks"
+					? "Tasks"
 				: route.view === "new"
 					? "New session"
 					: route.view === "workspace"
@@ -2441,11 +2448,20 @@ function App() {
 				]
 			: []),
 		{
-			id: "desk",
-			label: "Open Desk",
-			description: "View todos and the standing concierge session",
+			id: "tasks",
+			label: "Tasks",
+			description: "Open your task list",
 			category: "Actions",
 			keywords: ["todos", "tasks"],
+			icon: <IconListChecks size={18} />,
+			run: () => navigate({ view: "tasks" }),
+		},
+		{
+			id: "desk",
+			label: "Open Desk",
+			description: "Open the standing concierge session",
+			category: "Actions",
+			keywords: ["concierge", "assistant"],
 			shortcut: [mod, "J"],
 			icon: <IconDesk size={18} />,
 			run: () => setDeskOpen(true),
@@ -3004,6 +3020,9 @@ function App() {
 							onOpenNotes={() => navigate({ view: "notes", sel: null })}
 							homeActive={route.view === "home"}
 							onOpenHome={() => navigate({ view: "home" })}
+							tasksActive={route.view === "tasks"}
+							onOpenTasks={() => navigate({ view: "tasks" })}
+							taskCount={taskCount}
 							onOpenAutomation={(name) =>
 								navigate({ view: "automations", id: name })
 							}
@@ -3376,6 +3395,11 @@ function App() {
 							/>
 						) : route.view === "analytics" ? (
 							<Analytics />
+						) : route.view === "tasks" ? (
+							<Tasks
+								addHandler={addHandler}
+								onOpenSession={(id) => navigate({ view: "session", id })}
+							/>
 						) : route.view === "notes" ? (
 							<Notes
 								sel={route.sel}
@@ -3580,20 +3604,14 @@ function App() {
 						title="Desk (⌘J)"
 					>
 						<IconDesk size={24} />
-						{todoCount > 0 && (
-							<span className="desk-fab-badge">
-								{todoCount > 9 ? "9+" : todoCount}
-							</span>
-						)}
 					</button>
 				)}
 
-				{/* ⌘J Desk overlay — todo list + standing concierge session. */}
+				{/* ⌘J Desk overlay — standing concierge session. */}
 				<DeskOverlay
 					open={deskOpen}
 					onClose={() => setDeskOpen(false)}
 					phone={isPhone}
-					addHandler={addHandler}
 					onOpenSession={(id) => navigate({ view: "session", id })}
 				/>
 
