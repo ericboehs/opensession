@@ -2629,6 +2629,7 @@ function App() {
 	) => (
 		<SessionViewer
 			key={viewerSession.id}
+			onOpenPr={(repo, branch) => navigate({ view: "pr", repo, branch })}
 			session={viewerSession}
 			focused={focused}
 			hideHeader={splitMode && !focused}
@@ -3348,6 +3349,7 @@ function App() {
 							routeWorkspace ? (
 								<WorkspacePane
 									key={route.id}
+									onOpenPr={(repo, branch) => navigate({ view: "pr", repo, branch })}
 									workspace={routeWorkspace}
 									chats={projectChats}
 									sessions={sessions}
@@ -3377,6 +3379,7 @@ function App() {
 								branch={route.branch}
 								sessions={sessions}
 								onOpenSession={(id) => navigate({ view: "session", id })}
+								onOpenPr={(repo, branch) => navigate({ view: "pr", repo, branch })}
 								send={send}
 								addHandler={addHandler}
 							/>
@@ -3446,6 +3449,7 @@ function App() {
 								selectedId={route.id ?? null}
 								onSelect={(id) => navigate({ view: "reviews", id })}
 								onOpenSession={(id) => navigate({ view: "session", id })}
+								onOpenPr={(repo, branch) => navigate({ view: "pr", repo, branch })}
 								onAddToInput={addToSessionInput}
 								send={send}
 								addHandler={addHandler}

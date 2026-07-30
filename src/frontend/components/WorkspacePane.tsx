@@ -24,6 +24,8 @@ interface Props {
 	send: (msg: any) => void;
 	addHandler: (handler: (msg: WSServerMessage) => void) => () => void;
 	onOpenSession: (id: string) => void;
+	/** Open another PR in the review panel (stack map layer links). */
+	onOpenPr?: (repo: string, branch: string) => void;
 }
 
 /**
@@ -45,6 +47,7 @@ export function WorkspacePane({
 	send,
 	addHandler,
 	onOpenSession,
+	onOpenPr,
 }: Props) {
 	const draftKey = `workspace-home:${workspace.id}`;
 	const [prompt, setPrompt] = useState(() => loadDraft(draftKey).text);
@@ -241,6 +244,7 @@ export function WorkspacePane({
 		return withPanel(
 			<div className="workspace-view-main h-full min-h-0 bg-surface">
 				<PrPanel
+					onOpenPr={onOpenPr}
 					key={`${reviewTarget.repo}:${reviewTarget.branch}`}
 					sessionId={reviewSession?.id || ""}
 					previewTarget={reviewSession ? undefined : reviewTarget}

@@ -37,6 +37,7 @@ import {
   mergePrPreviewApi,
   closePrPreviewApi,
 } from "../lib/api";
+import { prPath } from "../lib/share-link";
 import { toast } from "../ui/toast";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { CommentableDiff, type CommentTarget, type PendingComment } from "./CommentableDiff";
@@ -109,6 +110,10 @@ interface Props {
   sessions?: UnifiedSession[];
   /** Navigate to a session picked from the linked-sessions list. */
   onOpenSessionById?: (id: string) => void;
+  /** Open another PR in this panel — used by the stack map to move between
+   *  layers in-app. Without it the layer rows still link, just via a full
+   *  page load. */
+  onOpenPr?: (repo: string, branch: string) => void;
   /** WS handler hook — resets the new-session form on server errors. */
   addHandler?: (handler: (msg: WSServerMessage) => void) => () => void;
 }
@@ -297,6 +302,7 @@ export function PrPanel({
   previewTarget,
   sessions,
   onOpenSessionById,
+  onOpenPr,
   addHandler,
 }: Props) {
   // Local copy of the linked-PR list so link/unlink applies instantly; the
@@ -1100,7 +1106,7 @@ export function PrPanel({
 
         {/* Where this PR sits in its chain of layers — directly under Git
             status, because it reframes what that status means. */}
-        <StackSection pr={pr} sessionId={sessionId} onLinked={load} />
+        <StackSection pr={pr} sessionId={sessionId} repo={active?.repo} onOpenPr={onOpenPr} onLinked={load} />
 
         {sessionsOpen && (
           <>
@@ -1550,7 +1556,7 @@ export function PrPanel({
           {/* Stack map — where this PR sits in its chain of layers. Above Git
               status because it reframes everything below it: the diff, the
               base branch, and whether a merge is even in order yet. */}
-          <StackCard pr={pr} sessionId={sessionId} onLinked={load} />
+          <StackCard pr={pr} sessionId={sessionId} repo={active?.repo} onOpenPr={onOpenPr} onLinked={load} />
 
           <PrCard title="Git status">
             <GitStatusRows
@@ -2238,10 +2244,15 @@ function PrCard({
 function StackBody({
   pr,
   sessionId,
+  repo,
+  onOpenPr,
   onLinked,
 }: {
   pr: PrDetails;
   sessionId?: string;
+  /** Registered repo id, for building in-app links to the other layers. */
+  repo?: string;
+  onOpenPr?: (repo: string, branch: string) => void;
   onLinked: () => void;
 }) {
   const [linking, setLinking] = useState(false);
@@ -2309,21 +2320,32 @@ function StackBody({
             <span className="shrink-0 text-faint">#{layer.number}</span>
           </>
         );
-        return current ? (
-          <div
-            key={layer.number}
-            className="flex items-center gap-2 rounded-md bg-surface px-2 py-1.5 text-xs font-medium text-fg"
-            aria-current="true"
-          >
-            {body}
-          </div>
-        ) : (
+        if (current)
+          return (
+            <div
+              key={layer.number}
+              className="flex items-center gap-2 rounded-md bg-surface px-2 py-1.5 text-xs font-medium text-fg"
+              aria-current="true"
+            >
+              {body}
+            </div>
+          );
+        // Other layers open in THIS review panel, not on github.com — the PR
+        // title above is already the link out. Falls back to the GitHub URL
+        // only when the repo id is unknown, so a row is never a dead end.
+        const inApp = repo ? prPath(repo, layer.headRefName) : null;
+        return (
           <a
             key={layer.number}
             className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-dim no-underline hover:bg-surface hover:text-fg"
-            href={layer.url}
-            target="_blank"
-            rel="noopener"
+            href={inApp || layer.url}
+            {...(inApp ? {} : { target: "_blank", rel: "noopener" })}
+            onClick={(e) => {
+              // Modified clicks keep native new-tab behavior.
+              if (!inApp || !onOpenPr || e.metaKey || e.ctrlKey || e.shiftKey) return;
+              e.preventDefault();
+              onOpenPr(repo!, layer.headRefName);
+            }}
             title={layer.headRefName}
           >
             {body}
@@ -2353,12 +2375,16 @@ function hasStackToShow(pr: PrDetails, sessionId?: string): boolean {
 function StackCard({
   pr,
   sessionId,
+  repo,
+  onOpenPr,
   onLinked,
 }: {
   pr: PrDetails;
   /** Absent on the session-less /pr/<repo>/<branch> view: the map still
    *  renders there, only the link action needs a chat to act on. */
   sessionId?: string;
+  repo?: string;
+  onOpenPr?: (repo: string, branch: string) => void;
   onLinked: () => void;
 }) {
   if (!hasStackToShow(pr, sessionId)) return null;
@@ -2373,7 +2399,7 @@ function StackCard({
         ) : undefined
       }
     >
-      <StackBody pr={pr} sessionId={sessionId} onLinked={onLinked} />
+      <StackBody pr={pr} sessionId={sessionId} repo={repo} onOpenPr={onOpenPr} onLinked={onLinked} />
     </PrCard>
   );
 }
@@ -2382,10 +2408,14 @@ function StackCard({
 function StackSection({
   pr,
   sessionId,
+  repo,
+  onOpenPr,
   onLinked,
 }: {
   pr: PrDetails;
   sessionId?: string;
+  repo?: string;
+  onOpenPr?: (repo: string, branch: string) => void;
   onLinked: () => void;
 }) {
   if (!hasStackToShow(pr, sessionId)) return null;
@@ -2400,7 +2430,7 @@ function StackSection({
         )}
       </h2>
       <div className="flex max-w-[680px] flex-col gap-1">
-        <StackBody pr={pr} sessionId={sessionId} onLinked={onLinked} />
+        <StackBody pr={pr} sessionId={sessionId} repo={repo} onOpenPr={onOpenPr} onLinked={onLinked} />
       </div>
     </section>
   );

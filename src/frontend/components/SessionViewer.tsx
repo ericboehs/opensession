@@ -297,6 +297,8 @@ interface Props {
 	showPreviewTab?: boolean;
 	/** Open/foreground the Preview view-tab (header Preview button). */
 	onOpenPreviewTab?: () => void;
+	/** Open another PR in the review panel (stack map layer links). */
+	onOpenPr?: (repo: string, branch: string) => void;
 	/** Close the Preview view-tab (its Stop button / tab close). */
 	onClosePreviewTab?: () => void;
 	/** Return from a view-tab (Review/Preview environment/Assets) to this workspace's active chat. */
@@ -544,6 +546,7 @@ export function SessionViewer({
 	videoTitle = null,
 	showPreviewTab = false,
 	onOpenPreviewTab,
+	onOpenPr,
 	onClosePreviewTab,
 	onOpenAssets,
 	onCloseAssets,
@@ -4682,6 +4685,7 @@ export function SessionViewer({
 								</div>
 							) : (
 								<PrPanel
+									onOpenPr={onOpenPr}
 									sessionId={session.id}
 									send={send}
 									addHandler={addHandler}

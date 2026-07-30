@@ -7,6 +7,8 @@ interface Props {
 	branch: string;
 	sessions: UnifiedSession[];
 	onOpenSession: (id: string) => void;
+	/** Open another PR in the review panel (stack map layer links). */
+	onOpenPr?: (repo: string, branch: string) => void;
 	send?: (msg: any) => void;
 	addHandler?: (handler: (msg: WSServerMessage) => void) => () => void;
 }
@@ -21,6 +23,7 @@ export function PrQueuePreview({
 	branch,
 	sessions,
 	onOpenSession,
+	onOpenPr,
 	send,
 	addHandler,
 }: Props) {
@@ -40,6 +43,7 @@ export function PrQueuePreview({
 	return (
 		<div className="h-full min-h-0 bg-surface">
 			<PrPanel
+				onOpenPr={onOpenPr}
 				sessionId={session?.id || ""}
 				previewTarget={session ? undefined : { repo, branch }}
 				reviewCanvas

@@ -10,6 +10,8 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onOpenSession: (id: string) => void;
+  /** Open another PR in the review panel (stack map layer links). */
+  onOpenPr?: (repo: string, branch: string) => void;
   onAddToInput: (id: string, text: string) => void;
   send?: (msg: any) => void;
   addHandler?: (handler: (msg: WSServerMessage) => void) => () => void;
@@ -150,6 +152,7 @@ export function Reviews({
   selectedId,
   onSelect,
   onOpenSession,
+  onOpenPr,
   onAddToInput,
   send,
   addHandler,
@@ -265,6 +268,7 @@ export function Reviews({
         </div>
         <div className="min-h-0 flex-1">
           <PrPanel
+            onOpenPr={onOpenPr}
             key={selected.id}
             sessionId={selected.id}
             onOpenSession={() => onOpenSession(selected.id)}
