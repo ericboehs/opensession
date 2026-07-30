@@ -161,18 +161,30 @@ function StatCell({
   sub,
   title,
   dot,
+  divider,
+  rowDivider,
 }: {
   value: string;
   label: string;
   sub?: string;
   title?: string;
   dot?: "live" | "idle";
+  divider?: string;
+  rowDivider?: string;
 }) {
   return (
     <div
-      className="-ml-px -mt-px min-w-0 border-l border-t border-line px-4 py-2.5 transition-colors group-hover:bg-hover max-[720px]:px-3.5 max-[720px]:py-2"
+      className="relative min-w-0 px-5 py-3 transition-colors group-hover:bg-hover max-[720px]:px-4 max-[720px]:py-2.5"
       title={title}
     >
+      <span
+        aria-hidden="true"
+        className={`absolute inset-y-3 left-0 w-px bg-line ${divider ?? "hidden"}`}
+      />
+      <span
+        aria-hidden="true"
+        className={`absolute inset-x-4 top-0 h-px bg-line ${rowDivider ?? "hidden"}`}
+      />
       <div className="flex items-center gap-1.5">
         {dot && (
           <span
@@ -208,7 +220,7 @@ function OverviewStrip({
       type="button"
       onClick={onOpenAnalytics}
       title="Open Analytics"
-      className="group mt-6 grid w-full cursor-pointer grid-cols-5 overflow-hidden rounded-lg border border-line bg-panel p-0 text-left max-[860px]:grid-cols-3 max-[560px]:grid-cols-2"
+      className="group mt-6 grid w-full cursor-pointer grid-cols-5 overflow-hidden rounded-xl bg-panel p-0 text-left outline-none transition-[background,box-shadow] hover:bg-hover focus-visible:shadow-[0_0_0_3px_var(--accent-soft)] max-[860px]:grid-cols-3 max-[560px]:grid-cols-2"
     >
       <StatCell
         value={fmtCompact(running)}
@@ -219,23 +231,30 @@ function OverviewStrip({
         value={fmtCompact(today.sessions)}
         label="sessions today"
         sub={`${fmtCompact(week.sessions)} · 7d`}
+        divider="block"
       />
       <StatCell
         value={fmtCompact(today.turns)}
         label="turns today"
         sub={`${fmtCompact(week.turns)} · 7d`}
         title={`${today.errors.toLocaleString()} errors today`}
+        divider="block max-[560px]:hidden"
+        rowDivider="hidden max-[560px]:block"
       />
       <StatCell
         value={fmtAgentTime(today.durationMs)}
         label="agent time today"
         sub={`${fmtAgentTime(week.durationMs)} · 7d`}
+        divider="hidden min-[861px]:block max-[560px]:block"
+        rowDivider="hidden max-[860px]:block"
       />
       <StatCell
         value={fmtCompact(today.outputTokens)}
         label="tokens out today"
         sub={`${fmtCompact(week.outputTokens)} · 7d`}
         title={`${today.inputTokens.toLocaleString()} input · ${today.cacheReadTokens.toLocaleString()} cache read today`}
+        divider="block max-[560px]:hidden"
+        rowDivider="hidden max-[860px]:block"
       />
     </button>
   );
