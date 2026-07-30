@@ -139,6 +139,7 @@ import {
 import { SessionRelations, type RelatedSession } from "./SessionRelations";
 import { PixelSpinner } from "./PixelSpinner";
 import { Button } from "../ui/button";
+import { cn } from "../ui/cn";
 import { Menu } from "../ui/menu";
 import { Tooltip } from "../ui/tooltip";
 import { CopyCheck, useCopy } from "../ui/copy";
@@ -3676,13 +3677,18 @@ export function SessionViewer({
 							<span className="grow">{copied ? "Copied" : "Share"}</span>
 						</Menu.Item>
 					) : (
-						<button
-							className={`btn-viewer-share ${copied ? "btn-viewer-share-done" : ""}`}
+						<Button
+							size="md"
+							className={cn(
+								"min-h-8 rounded-[calc(8px*var(--rf))] px-[13px] text-[13px]",
+								"hover:bg-hover",
+								copied && "border-[color-mix(in_srgb,var(--green)_40%,transparent)] bg-green-soft text-green",
+							)}
 							onClick={handleShare}
 							title="Copy a link to this session"
 						>
 							{copied ? "Copied" : "Share"}
-						</button>
+						</Button>
 					);
 				// New chat in this workspace — phone-only, since desktop has the
 				// always-visible + in the tab strip. On a phone the strip (and its
@@ -3729,7 +3735,7 @@ export function SessionViewer({
 						>
 							<IconCopy size={20} />
 							<span className="grow">Copy concise transcript</span>
-							<span className="btn-viewer-shortcut">
+							<span className="ml-auto text-[11px] font-semibold tracking-normal text-faint">
 								{isApple ? "⌘⌥C" : "Ctrl+Alt+C"}
 							</span>
 						</Menu.Item>
@@ -3759,7 +3765,7 @@ export function SessionViewer({
 						>
 							<IconPin size={20} fill={pinned ? "currentColor" : "none"} />
 							<span className="grow">{pinned ? "Unpin tab" : "Pin as tab"}</span>
-							<span className="btn-viewer-shortcut">
+							<span className="ml-auto text-[11px] font-semibold tracking-normal text-faint">
 								{isApple ? "⌘P" : "Ctrl+P"}
 							</span>
 						</Menu.Item>
@@ -3805,7 +3811,7 @@ export function SessionViewer({
 									? "Unarchive session"
 									: "Archive session"}
 						</span>
-						<span className="btn-viewer-shortcut">
+						<span className="ml-auto text-[11px] font-semibold tracking-normal text-faint">
 							{archiveShortcutLabel}
 						</span>
 					</Menu.Item>
@@ -3825,28 +3831,34 @@ export function SessionViewer({
 				) : (
 					<div className="viewer-delete-confirm">
 						{session.worktreeDir && !isAsk && (
-							<button
-								className="btn-delete-wt"
+							<Button
+								variant="danger"
+								size="sm"
+								className="min-h-0 px-3 py-[5px] text-[13px]"
 								onClick={() => handleDelete(true)}
 								disabled={deleting}
 							>
 								{deleting ? "…" : "+ Worktree"}
-							</button>
+							</Button>
 						)}
-						<button
-							className="btn-delete-only"
+						<Button
+							variant="warning"
+							size="sm"
+							className="min-h-0 px-3 py-[5px] text-[13px]"
 							onClick={() => handleDelete(false)}
 							disabled={deleting}
 						>
 							{deleting ? "…" : "Session"}
-						</button>
-						<button
-							className="btn-delete-cancel"
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							className="min-h-0 border-line-strong px-3 py-[5px] text-[13px] text-dim hover:bg-transparent hover:text-fg"
 							onClick={() => setShowDeleteConfirm(false)}
 							disabled={deleting}
 						>
 							Cancel
-						</button>
+						</Button>
 					</div>
 				);
 				// Secondary header controls (Linear/Plain links). Inline on desktop;
@@ -4078,7 +4090,12 @@ export function SessionViewer({
 					<Menu.Root open={overflowOpen} onOpenChange={setOverflowOpen}>
 						<div className="viewer-overflow">
 							<Menu.Trigger
-								className={`btn-viewer-overflow ${overflowOpen ? "active" : ""}`}
+								className={cn(
+									"inline-flex items-center justify-center rounded-[calc(10px*var(--rf))] border border-transparent bg-transparent px-[5px] py-[3px] text-[20px] leading-none text-dim",
+									"hover:bg-hover hover:text-fg",
+									"max-[720px]:h-10 max-[720px]:min-h-10 max-[720px]:w-10 max-[720px]:rounded-full max-[720px]:border-line max-[720px]:bg-bg max-[720px]:p-0 max-[720px]:text-[24px] max-[720px]:text-accent max-[720px]:shadow-[0_2px_12px_rgba(0,0,0,0.1)]",
+									overflowOpen && "bg-hover text-fg max-[720px]:border-[color-mix(in_srgb,var(--accent)_12%,transparent)] max-[720px]:bg-accent-soft max-[720px]:text-accent",
+								)}
 								title="More actions"
 								aria-label="More actions"
 							>
@@ -4148,8 +4165,10 @@ export function SessionViewer({
 									: "Toggle side panel (agents)"
 							}
 						>
-							<button
-								className="btn-panel-toggle btn-workspace"
+							<Button
+								variant="ghost"
+								size="md"
+								className="[.viewer-overflow_+_&]:-ml-1 h-[30px] min-h-[30px] w-auto rounded-[calc(10px*var(--rf))] px-[5px] text-faint hover:bg-hover hover:text-fg max-[720px]:order-2 max-[720px]:min-h-[38px] max-[720px]:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] max-[720px]:px-[7px] max-[720px]:py-[5px] max-[720px]:text-[15px] max-[720px]:text-accent"
 								onClick={() => {
 									// The sub-agent panel and Workspace share the right slot; opening
 									// Workspace closes the sub-agent view.
@@ -4164,8 +4183,8 @@ export function SessionViewer({
 							>
 								{/* Iconic sidebar-right glyph — reads as "right side panel" and
 								    sits level with the play/globe weight beside it. */}
-								<IconSidebarRight className="btn-panel-toggle-icon" size={24} />
-							</button>
+								<IconSidebarRight size={24} />
+							</Button>
 						</Tooltip>
 					)}
 				</div>

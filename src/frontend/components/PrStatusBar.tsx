@@ -16,6 +16,7 @@ import { getCurrentUser } from "./UserPicker";
 import { providerFromUrl } from "../lib/provider";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, Menu } from "../ui/menu";
+import { cn } from "../ui/cn";
 import { PrChecksPopover } from "./PrChecksPopover";
 import {
 	IconArrowDown,
@@ -235,14 +236,33 @@ function PrBarButton({
 	children,
 	...props
 }: PrBarButtonProps) {
+	const tones = {
+		green:
+			"bg-[var(--green)] border-[color-mix(in_srgb,var(--green)_78%,black)]",
+		purple:
+			"bg-[var(--purple)] border-[color-mix(in_srgb,var(--purple)_78%,black)]",
+		red: "bg-[var(--red)] border-[color-mix(in_srgb,var(--red)_78%,black)]",
+		solid:
+			"bg-[var(--text)] text-[var(--bg)] border-[color-mix(in_srgb,var(--text)_84%,transparent)]",
+		secondary: "bg-raised text-fg border-line-strong hover:bg-hover hover:brightness-100",
+	} as const;
 	return (
 		<button
 			type="button"
-			className={`pr-bar-btn pr-bar-btn-${tone}${confirm ? " pr-bar-btn-confirm" : ""}${className ? ` ${className}` : ""}`}
+			className={cn(
+				"inline-flex min-h-[30px] items-center justify-center gap-1.5 rounded-lg border px-2.5 py-[5px] text-[13px] leading-none font-[650] whitespace-nowrap text-white shadow-control transition-[background-color,border-color,color,filter,transform] duration-150 ease-in-out hover:brightness-[1.08] active:scale-[0.98] active:brightness-[0.98] focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2 disabled:cursor-default disabled:opacity-60 disabled:shadow-none",
+				tones[tone],
+				confirm && "outline-2 outline-[color-mix(in_srgb,var(--green)_45%,transparent)] outline-offset-1",
+				className,
+			)}
 			{...props}
 		>
-			{icon && <span className="pr-bar-btn-icon">{icon}</span>}
-			<span className="pr-bar-btn-label">{children}</span>
+			{icon && (
+				<span className="inline-flex size-[18px] shrink-0 items-center justify-center [&_svg]:block [&_svg]:stroke-[1.7]">
+					{icon}
+				</span>
+			)}
+			<span className="inline-flex items-center">{children}</span>
 		</button>
 	);
 }

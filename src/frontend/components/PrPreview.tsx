@@ -31,6 +31,7 @@ import { Composer } from "./Composer";
 import { useCurrentUser } from "./UserPicker";
 import { renderMarkdown } from "../lib/markdown";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
+import { Button } from "../ui/button";
 
 interface Props {
 	/** Registered repo id + the PR's head branch — the preview's key. */
@@ -401,16 +402,17 @@ export function PrPreview({
 									{repo} · {pr.author}
 								</span>
 								{pr.state === "OPEN" && (
-									<button
-										type="button"
-										className={`pr-bar-btn ${confirmClose ? "pr-bar-btn-red" : "pr-bar-btn-secondary"}`}
+									<Button
+										variant={confirmClose ? "danger" : "default"}
+										size="sm"
+										className="min-h-[30px] rounded-[calc(8px*var(--rf))] px-2.5 text-[13px] font-[650] leading-none"
+										icon={!closing && !confirmClose ? <IconX size={16} /> : undefined}
 										disabled={closing}
 										onClick={handleClose}
 										title="Close this PR without merging it"
 									>
-										{!closing && !confirmClose && <IconX size={16} />}
 										{closing ? "Closing…" : confirmClose ? "Confirm close" : "Close"}
-									</button>
+									</Button>
 								)}
 							</div>
 							{closeError && <div className="pr-bar-error mt-2">{closeError}</div>}
