@@ -15584,6 +15584,10 @@ html.wco .settings-sidenav {
 		opacity: 0;
 		transition: opacity 0.12s ease;
 	}
+	.msg-user-own {
+		/* Keeps the timestamp clear of the following transcript block. */
+		margin-bottom: 26px;
+	}
 	.msg-user-row:hover .msg-hover-time,
 	/* The answer and its footer are adjacent .transcript-window siblings
 	   (see TranscriptBlocks), so hovering either one reveals the time. */
@@ -15606,7 +15610,7 @@ html.wco .settings-sidenav {
 .msg-user-row {
 	position: relative;
 	display: flex;
-	justify-content: flex-end;
+	flex-direction: column;
 	min-width: 0;
 }
 .msg-user-row .msg-hover-time {

@@ -527,7 +527,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 		// attribution label.
 		return (
 			<div
-				className="msg msg-user"
+				className={cn("msg msg-user", !fromOther && "msg-user-own")}
 				data-eid={entry.id}
 			>
 				{fromOther && (
@@ -536,22 +536,25 @@ export const MessageBubble = React.memo(function MessageBubble({
 						<MsgTime ts={entry.timestamp} />
 					</div>
 				)}
-				{displayContent && (
-					// Row wrapper anchors the hover time below the bubble. The bubble still
-					// shrink-wraps and hugs the right edge.
+				{Boolean(
+					displayContent || entry.images?.length || entry.videos?.length || entry.files?.length,
+				) && (
+					// One stack anchors the hover time below both the bubble and attachments.
 					<div className="msg-user-row">
 						{!fromOther && <BubbleHoverTime ts={entry.timestamp} />}
-						<ClampedBody
-							className="msg-body msg-body-user markdown"
-							content={displayContent}
-							entry={entry}
-							sessionId={sessionId}
-						/>
+						{displayContent && (
+							<ClampedBody
+								className="msg-body msg-body-user markdown"
+								content={displayContent}
+								entry={entry}
+								sessionId={sessionId}
+							/>
+						)}
+						<EntryImages images={entry.images} sessionId={sessionId} />
+						<EntryVideos videos={entry.videos} />
+						<EntryFiles files={entry.files} />
 					</div>
 				)}
-				<EntryImages images={entry.images} sessionId={sessionId} />
-				<EntryVideos videos={entry.videos} />
-				<EntryFiles files={entry.files} />
 			</div>
 		);
 	}
