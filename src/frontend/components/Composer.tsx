@@ -669,7 +669,10 @@ export function Composer({
           noteMode
             ? {
                 borderColor: "color-mix(in srgb, var(--yellow) 45%, transparent)",
-                background: "color-mix(in srgb, var(--yellow) 5%, var(--panel))",
+                backgroundColor:
+                  "color-mix(in srgb, var(--yellow) 10%, var(--control-surface))",
+                backgroundImage:
+                  "repeating-linear-gradient(45deg, color-mix(in srgb, var(--yellow) 6%, transparent) 0, color-mix(in srgb, var(--yellow) 6%, transparent) 12px, transparent 12px, transparent 24px)",
               }
             : undefined
         }
@@ -893,7 +896,7 @@ export function Composer({
                     disabled={disabled}
                     aria-pressed={!!noteMode}
                   >
-                    <IconPencil size={24} />
+                    <IconPencil size={32} />
                     {noteMode && (
                       <span className="composer-goal-label">Note</span>
                     )}
