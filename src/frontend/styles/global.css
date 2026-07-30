@@ -4750,6 +4750,27 @@ a.workspace-info-check-row {
 	font-size: 12px;
 }
 
+/* Full automated-review preview: a readable long-form scale, bounded by the
+   popover rather than the viewport, with the same theme tokens as markdown. */
+.review-preview-markdown.markdown {
+	font-size: 14px;
+	line-height: 1.5;
+	color: var(--text-dim);
+	overflow-wrap: anywhere;
+}
+.review-preview-markdown.markdown > h3:first-child {
+	margin: 0 0 12px;
+	font-size: 18px;
+	font-weight: 650;
+	line-height: 1.25;
+	letter-spacing: -0.015em;
+	color: var(--text);
+	text-wrap: balance;
+}
+.review-preview-markdown.markdown pre {
+	max-width: 100%;
+}
+
 .workspace-info-section {
 	display: grid;
 	gap: 5px;
