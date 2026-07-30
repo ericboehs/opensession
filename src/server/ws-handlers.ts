@@ -29,6 +29,7 @@ import { deleteQueuedPrompt, persistQueues, promptQueues, queueWithIds, recordSt
 import { transitionRunState } from "./run-state";
 import { abortTurnAndDrain, attachSessionWatchersToEngineTranscript, drainQueue, enqueuePrompt, foldSessionUsage, interruptQueuedPrompt, maybeLaunchSandboxedRun, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, steerQueuedPrompt, watchExternalRunAndDrain } from "./run-session";
 import { sandboxWsClose, sandboxWsMessage, sandboxWsOpen } from "./run-ws";
+import { nodeWsClose, nodeWsMessage, nodeWsOpen } from "./node-ws";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { type Sandbox, hasRemoteWorkspace } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox, sandboxConfig, sandboxesEnabled } from "./sandbox/config";
@@ -402,6 +403,8 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 		// Sandbox transport sockets (run hosts / MCP proxies dialing back)
 		// are not UI clients — run-ws.ts owns them entirely.
 		if (sandboxWsOpen(ws)) return;
+		// Execution-node channels are not UI clients either (node-ws.ts).
+		if (nodeWsOpen(ws)) return;
 		allClients.add(ws);
 		// Hello frame: hands the client this process's bootId so a reconnect
 		// can tell a real restart (bootId changed → "restarted" toast) from a
@@ -424,6 +427,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 	async message(ws, message) {
 		if (sandboxWsMessage(ws, message as any)) return;
+		if (nodeWsMessage(ws, message as any)) return;
 		if (isLocalProfile()) {
 			const identity = await verifiedCloudIdentity();
 			setLocalProfileIdentity(identity);
@@ -2143,6 +2147,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 	close(ws) {
 		if (sandboxWsClose(ws)) return;
+		if (nodeWsClose(ws)) return;
 		closeCloudProxyProtocol(ws, (lane) =>
 			websocketHandlers.close?.(lane, 1000, "cloud proxy disconnected"),
 		);

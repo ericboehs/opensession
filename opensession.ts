@@ -41,6 +41,7 @@ import { startPublicIngress } from "./src/server/public-ingress";
 import { envAlias } from "./src/server/rename-compat";
 import { recordRecoveredRunEvent, restorePromptQueues, resumeDrainedSessions, snapshotActiveSessions } from "./src/server/run-session";
 import { handleSandboxWsUpgrade, timerPoisonRequestCheck } from "./src/server/run-ws";
+import { handleNodeWsUpgrade } from "./src/server/node-ws";
 import { type Sandbox } from "./src/server/sandbox";
 import { findSession, invalidateSessionsCache, recordRunOutcome } from "./src/server/session-cache";
 import { getSessionControl } from "./src/server/session-control";
@@ -385,6 +386,11 @@ const server: import("bun").Server<WSClientData> = hotServe({
 			// network credentials: on a sandbox-less deployment the registry is
 			// empty and every upgrade here is a 403. See src/server/run-ws.ts.
 			if (path.startsWith("/backstage/run-ws/") || path === "/backstage/rpc-ws") {
+				// Execution nodes dial back here (src/server/node-ws.ts). Tailnet-gated
+				// and token-authenticated before the upgrade, like the sandbox routes.
+				const nodeUpgrade = handleNodeWsUpgrade(req, server, path);
+				if (nodeUpgrade) return nodeUpgrade;
+				if (path === "/backstage/node-ws") return undefined as any;
 				return handleSandboxWsUpgrade(req, server, path);
 			}
 

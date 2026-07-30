@@ -138,7 +138,16 @@ export async function connect(opts: ConnectOptions): Promise<number> {
   return 0;
 }
 
-/** Long-running: keeps the node visible to the server. */
+/**
+ * Long-running: holds the channel open and runs what the server asks.
+ *
+ * A WebSocket rather than polling, because the server needs to *push* work. The
+ * node dials out, so nothing has to be reachable on this machine.
+ *
+ * Everything the server sends runs as this user with this user's privileges.
+ * That is the point of attaching a node, and it is why registration is
+ * tailnet-gated and the tool exposing it is interactive-only.
+ */
 export async function nodeRun(): Promise<number> {
   const identity = await readIdentity();
   if (!identity) {
@@ -146,44 +155,96 @@ export async function nodeRun(): Promise<number> {
     return 1;
   }
 
-  info(dim(`heartbeating to ${identity.server} as ${identity.name} (${identity.id})`));
-  let failures = 0;
+  const wsUrl =
+    identity.server.replace(/^http/, "ws") + `/backstage/node-ws?id=${encodeURIComponent(identity.id)}`;
+  let attempt = 0;
+  let stopping = false;
 
-  const beat = async () => {
-    try {
-      const response = await fetch(`${identity.server}/backstage/api/nodes/heartbeat`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${identity.token}`,
-          "x-opensession-node": identity.id,
-        },
-        signal: AbortSignal.timeout(10_000),
+  const connectOnce = () =>
+    new Promise<void>((resolve) => {
+      const socket = new WebSocket(wsUrl, {
+        headers: { authorization: `Bearer ${identity.token}` },
+      } as any);
+      const running = new Map<string, ReturnType<typeof Bun.spawn>>();
+
+      socket.addEventListener("open", async () => {
+        attempt = 0;
+        ok("attached", identity.server);
+        socket.send(JSON.stringify({ t: "hello", capabilities: await detectCapabilities() }));
       });
-      if (response.ok) {
-        if (failures) ok("reconnected");
-        failures = 0;
-        return;
-      }
-      // 401 means the operator revoked this node; retrying forever is wrong.
-      if (response.status === 401) {
-        fail("this node's credential was revoked", "re-run `opensession connect`");
-        process.exit(1);
-      }
-      failures++;
-      warn(`heartbeat returned ${response.status}`);
-    } catch (err) {
-      failures++;
-      // Transient by nature — the tailnet drops, the server restarts. Log the
-      // first one and then stay quiet until it recovers.
-      if (failures === 1) warn("heartbeat failed", (err as Error).message);
-    }
-  };
 
-  await beat();
-  setInterval(beat, HEARTBEAT_MS);
-  // Hold the process open; the interval is the work.
-  await new Promise<void>(() => {});
-  return 0;
+      socket.addEventListener("message", async (event: any) => {
+        let msg: any;
+        try {
+          msg = JSON.parse(String(event.data));
+        } catch {
+          return;
+        }
+        if (msg?.t !== "exec") return;
+
+        const id = String(msg.id);
+        info(dim(`exec ${id}: ${String(msg.command).slice(0, 80)}`));
+        try {
+          const proc = Bun.spawn(["bash", "-lc", String(msg.command)], {
+            cwd: typeof msg.cwd === "string" && msg.cwd ? msg.cwd : undefined,
+            stdout: "pipe",
+            stderr: "pipe",
+          });
+          running.set(id, proc);
+
+          // Stream both pipes as they arrive rather than buffering to the end,
+          // so a long build reports progress instead of going silent.
+          const pump = async (stream: ReadableStream, name: "stdout" | "stderr") => {
+            const decoder = new TextDecoder();
+            for await (const chunk of stream as any) {
+              socket.send(
+                JSON.stringify({ t: "out", id, stream: name, data: decoder.decode(chunk) }),
+              );
+            }
+          };
+          await Promise.all([
+            pump(proc.stdout as ReadableStream, "stdout"),
+            pump(proc.stderr as ReadableStream, "stderr"),
+          ]);
+          const code = await proc.exited;
+          running.delete(id);
+          socket.send(JSON.stringify({ t: "exit", id, code }));
+        } catch (err) {
+          running.delete(id);
+          socket.send(
+            JSON.stringify({ t: "out", id, stream: "stderr", data: String((err as Error).message) }),
+          );
+          socket.send(JSON.stringify({ t: "exit", id, code: -1 }));
+        }
+      });
+
+      socket.addEventListener("close", (event: any) => {
+        // 1008/4401 mean the server rejected us outright — retrying is pointless.
+        if (event?.code === 1008 || event?.code === 4401) {
+          fail("the server refused this node", "its credential may have been revoked");
+          stopping = true;
+        }
+        for (const proc of running.values()) proc.kill();
+        resolve();
+      });
+
+      socket.addEventListener("error", () => {
+        // close always follows; let that path do the reconnect bookkeeping.
+      });
+    });
+
+  info(dim(`attaching to ${identity.server} as ${identity.name} (${identity.id})`));
+
+  while (!stopping) {
+    await connectOnce();
+    if (stopping) break;
+    // Backoff, capped: a node is often someone's laptop and the server may be
+    // restarting or the tailnet may be briefly down.
+    const delay = Math.min(30_000, 1_000 * 2 ** Math.min(attempt++, 5));
+    if (attempt === 1) warn("disconnected — retrying");
+    await new Promise((r) => setTimeout(r, delay));
+  }
+  return 1;
 }
 
 export async function nodeStatus(): Promise<number> {

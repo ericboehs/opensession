@@ -519,6 +519,7 @@ export const SHARED_INPROCESS_SERVERS = [
   "opensession-search",
   "opensession-todos",
   "opensession-notes",
+  "opensession-nodes",
 ];
 
 /**

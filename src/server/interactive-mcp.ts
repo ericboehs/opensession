@@ -14,6 +14,7 @@
  */
 
 import { createSessionsMcpServer } from "../agents/slack/sessions-tools";
+import { createNodesMcpServer } from "../agents/slack/nodes-tools";
 import { createAdminMcpServer } from "../agents/slack/admin-tools";
 import { createHumansMcpServer } from "../agents/slack/humans-tools";
 import { createAskUserMcpServer } from "../agents/slack/ask-tools";
@@ -90,6 +91,11 @@ export function interactiveMcpServers(
 			createdBy,
 			isAdmin: true,
 		}),
+		// Run commands on machines attached with `opensession connect` — the
+		// escape hatch for platform-locked work (Xcode on a Mac, MSVC on
+		// Windows). Interactive-only like its siblings: a node is unsandboxed,
+		// so untrusted automation text must never reach it.
+		"opensession-nodes": createNodesMcpServer(),
 		// Long-running goals: create/list/steer persistent, self-pacing missions.
 		"opensession-goals": createGoalsMcpServer({ createdBy, isAdmin: true }),
 		// Search past sessions' distilled records (session-index.ts). Read-only,
