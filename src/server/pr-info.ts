@@ -5,7 +5,7 @@
  * data; and wired into the shared rate-limit gate (github-limit.ts) so a
  * throttled quota serves stale snapshots instead of errors.
  */
-import { configuredIntegration, configuredServer, defaultRepo } from "./config";
+import { configuredIntegration, configuredRepos, configuredServer, defaultRepo } from "./config";
 import { $ } from "bun";
 import { readFileSync, writeFileSync } from "fs";
 import { audited } from "./audit";
@@ -397,11 +397,23 @@ export async function getPrDiff(
   }
 
   try {
-    const metaRaw = await $`gh pr view ${branch} --repo ${repo} --json number,headRefOid`
+    const metaRaw = await $`gh pr view ${branch} --repo ${repo} --json number,headRefOid,baseRefName`
       .quiet()
       .text();
     const meta = JSON.parse(metaRaw);
-    const patch = await $`gh pr diff ${meta.number} --repo ${repo}`.quiet().text();
+    let patch: string;
+    try {
+      patch = await $`gh pr diff ${meta.number} --repo ${repo}`.quiet().text();
+    } catch (diffErr: any) {
+      // GitHub's API refuses diffs for PRs touching >300 files (HTTP 406,
+      // "diff exceeded the maximum number of files"). Reconstruct the same
+      // merge-base patch from the configured local checkout instead of
+      // leaving big PRs permanently un-diffable (review/autofix depend on
+      // this).
+      const dmsg = String(diffErr?.stderr || diffErr?.message || diffErr);
+      if (!/maximum number of files/i.test(dmsg)) throw diffErr;
+      patch = await localPrDiffPatch(repo, meta);
+    }
     const data = { number: meta.number, headRefOid: meta.headRefOid, patch };
     diffCache.set(key, { data, ts: Date.now() });
     return data;
@@ -416,6 +428,26 @@ export async function getPrDiff(
     diffCache.set(key, { data: null, ts: Date.now() });
     return null;
   }
+}
+
+/** Merge-base patch computed from the repo's local checkout — the fallback
+ *  when GitHub's API refuses the diff (>300 files). Fetches the base branch
+ *  and the PR head ref so both sides exist locally, then diffs exactly what
+ *  `gh pr diff` would have returned. */
+async function localPrDiffPatch(
+  ghRepo: string,
+  meta: { number: number; headRefOid: string; baseRefName: string },
+): Promise<string> {
+  const local = Object.values(configuredRepos()).find(
+    (r) => r.ghRepo?.toLowerCase() === ghRepo.toLowerCase(),
+  )?.repo;
+  if (!local) throw new Error(`no local checkout configured for ${ghRepo}`);
+  const headRef = `pull/${meta.number}/head`;
+  await $`git -C ${local} fetch -q origin ${meta.baseRefName} ${headRef}`.quiet();
+  const base = `origin/${meta.baseRefName}`;
+  return await $`git -C ${local} diff ${base}...${meta.headRefOid}`
+    .quiet()
+    .text();
 }
 
 export interface PrCommentInput {
