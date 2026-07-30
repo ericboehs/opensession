@@ -1,7 +1,7 @@
 name: Release OS1 for iOS (TestFlight)
 
 # Builds, signs and uploads the native SwiftUI OS1 iOS client to TestFlight
-# whenever iOS code lands on master. Signing mirrors the manual path that works
+# whenever iOS code lands on main. Signing mirrors the manual path that works
 # for this team: cloud-managed *distribution* signing is forbidden for our App
 # Store Connect key's role, so we import a stored Apple Distribution cert + the
 # "OS1 App Store" provisioning profile and sign manually (development/automatic
@@ -9,7 +9,7 @@ name: Release OS1 for iOS (TestFlight)
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
       # Build inputs only — docs (AGENTS.md/CLAUDE.md/README.md) land in
       # os1-ios/ constantly and must not each ship a TestFlight build.

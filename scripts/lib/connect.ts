@@ -343,7 +343,7 @@ export async function nodesPair(): Promise<number> {
   info(`  ${bold(result.code)}`);
   info(dim(`  valid for 10 minutes, single use`));
   heading("On the machine you want to attach");
-  info(dim("  curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/master/install.sh | bash"));
+  info(dim("  curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash"));
   info(`  opensession connect --server ${(await localApi()).replace("/backstage/api/nodes", "")} --code ${result.code}`);
   return 0;
 }

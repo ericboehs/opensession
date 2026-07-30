@@ -1,7 +1,7 @@
 name: Release OS¹ for Chrome
 
 # Packs and publishes the internal Chrome extension (os1-chrome/) on every
-# master push that touches it. The signed .crx lands on a GitHub release
+# main push that touches it. The signed .crx lands on a GitHub release
 # tagged os1-chrome-v<version>; the backstage server proxies it to Chrome's
 # extension updater via /api/os1-chrome/updates.xml + /download/<tag>.crx
 # (src/server/routes/os1-update.ts). Releases are marked PRERELEASE on
@@ -10,10 +10,10 @@ name: Release OS¹ for Chrome
 #
 # Versioning is automatic: <major.minor from manifest.json>.<commit count on
 # os1-chrome/>. Chrome only needs the version to increase for clients to
-# update, so merging to master IS the deploy.
+# update, so merging to main IS the deploy.
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - "os1-chrome/**"
       - ".github/workflows/os1-chrome-release.yml"

@@ -2,7 +2,7 @@ name: Release OS1 for macOS (TestFlight)
 
 # Builds, signs and uploads the native SwiftUI OS1 client's macOS target
 # (OS1Mac in os1-ios/project.yml) to TestFlight whenever os1-ios code lands on
-# master — the sibling of os1-ios-testflight.yml, sharing the same app record
+# main — the sibling of os1-ios-testflight.yml, sharing the same app record
 # (dev.tella.os1, universal purchase) and the same Apple Distribution cert.
 #
 # The Mac wrinkle: the App Store .pkg must be signed by a Mac Installer
@@ -17,7 +17,7 @@ name: Release OS1 for macOS (TestFlight)
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
       # Build inputs only — docs (AGENTS.md/CLAUDE.md/README.md) land in
       # os1-ios/ constantly and must not each ship a TestFlight build.

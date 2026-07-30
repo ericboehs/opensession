@@ -12,7 +12,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [master, main]
+    branches: [main]
   workflow_dispatch:
 
 # Nothing here needs to write. A fork PR's token is read-only regardless, but
@@ -66,6 +66,7 @@ jobs:
       #
       # Fixing this means finding the cross-file state (this codebase parks a lot
       # on globalThis) and isolating it. Then delete continue-on-error.
+      #
       # Scoped to the server suite on purpose: `os1-tui/` is a separate package
       # with its own node_modules, so the root sweep can't resolve its imports —
       # and it doesn't need to, because the os1-tui job below gates it properly.

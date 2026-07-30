@@ -13,7 +13,7 @@ and GitHub agents, driving coding sessions through the OpenCode engine
 ## Quickstart
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
 ```
 
 Installs Bun and the OpenCode engine if you do not have them, clones the

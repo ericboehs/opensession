@@ -42,7 +42,7 @@ Pairing code
 On the **machine you want to attach** — install OpenSession, then connect:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
 opensession connect --server http://100.64.12.34:3850 --code WZSU-MMLH
 ```
 
