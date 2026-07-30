@@ -7743,7 +7743,7 @@ function WsHoverCard({
 						href={prChat.prUrl}
 						target="_blank"
 						rel="noopener noreferrer"
-						className={`hovercard-mono shrink-0 text-xs hover:underline hovercard-pr-${prTone(prChat)}`}
+						className={`hovercard-mono shrink-0 text-xs hovercard-pr-${prTone(prChat)}`}
 					>
 						{prChat.prNumber ? `#${prChat.prNumber}` : "PR"} ↗
 					</a>
