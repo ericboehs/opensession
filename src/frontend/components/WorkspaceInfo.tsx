@@ -28,7 +28,6 @@ import { getCurrentUser, TEAM } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
-import { Tooltip } from "../ui/tooltip";
 import { cn } from "../ui/cn";
 import type {
 	DiffFile,
@@ -785,12 +784,16 @@ function MichaelReviewCard({
 		: `Run ${AGENT_NAME}'s merge-safety review`;
 	// The score is intentionally compact; the matching GitHub summary comment
 	// retains the reviewer's complete reasoning and is available on hover/focus.
-	const reviewMessage = review
+	const reviewComment = review
 		? [...(pr.comments || [])]
 				.reverse()
 				.find((comment) => comment.body.trim().startsWith("<!-- os-review -->"))
-				?.body.replace(/^<!-- os-review -->\s*/, "")
 		: undefined;
+	const reviewMessage = reviewComment?.body.replace(/^<!-- os-review -->\s*/, "");
+	const reviewHtml = useMemo(
+		() => (reviewMessage ? renderMarkdown(cleanCommentMarkdown(reviewMessage)) : ""),
+		[reviewMessage],
+	);
 
 	// Keep the just-started state latched until a later PR refresh observes the
 	// run or its new result; otherwise the button flashes idle after the POST.
@@ -881,8 +884,13 @@ function MichaelReviewCard({
 				)}
 			</div>
 			<div className="grid gap-px rounded-lg bg-panel p-1">
-				<Tooltip label={reviewMessage || ""} side="bottom" align="start" multiline>
-					<div
+				<Popover.Root>
+					<Popover.Trigger
+						render={<div />}
+						nativeButton={false}
+						openOnHover={Boolean(reviewMessage)}
+						delay={200}
+						closeDelay={120}
 						className={cn(
 							"flex items-center gap-2.5 rounded-md px-2 py-2",
 							reviewMessage && "cursor-help",
@@ -915,8 +923,36 @@ function MichaelReviewCard({
 								/>
 							))}
 						</div>
-					</div>
-				</Tooltip>
+					</Popover.Trigger>
+					{reviewMessage && (
+						<Popover.Popup
+							side="left"
+							align="start"
+							sideOffset={12}
+							className="flex max-h-[min(680px,calc(100vh-24px),var(--available-height))] w-[min(680px,calc(100vw-24px),var(--available-width))] min-h-0 overflow-hidden"
+						>
+							<div className="flex min-h-0 w-full flex-col">
+								<div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
+									<CommentAvatar author={reviewComment?.author || "tella-butler"} />
+									<div className="min-w-0 flex-1">
+										<div className="truncate text-[13px] font-semibold text-fg">
+											{reviewComment?.author || "tella-butler"}
+										</div>
+										<div className="text-[11.5px] text-faint">
+											Automated review{reviewedAgo ? ` · reviewed ${reviewedAgo} ago` : ""}
+										</div>
+									</div>
+									<span className={cn("shrink-0 font-mono text-[13px] font-semibold", scoreTone)}>
+										{score ?? "–"}/5
+									</span>
+								</div>
+								<div className="min-h-0 overflow-auto px-4 py-3">
+									<MarkdownBody html={reviewHtml} className="markdown review-preview-markdown" />
+								</div>
+							</div>
+						</Popover.Popup>
+					)}
+				</Popover.Root>
 				{actionable && (
 					<div className="grid grid-cols-2 gap-px">
 						{canFix && (
