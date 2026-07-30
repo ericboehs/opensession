@@ -408,10 +408,10 @@ export const MessageBubble = React.memo(function MessageBubble({
 						</button>
 						{workerReport.sessionId && (
 							<a
-								className="shrink-0 text-dim underline decoration-dotted hover:text-fg"
+								className="shrink-0 text-dim hover:text-fg"
 								href={`${BASE_PATH}/session/${workerReport.sessionId}`}
 							>
-								open worker
+								Open worker
 							</a>
 						)}
 						<MsgTime ts={entry.timestamp} />
