@@ -65,6 +65,25 @@ export function connectedNode(id: string): Connection | undefined {
   return connections.get(id);
 }
 
+/**
+ * Drop a live channel immediately.
+ *
+ * Revocation used to only take effect at the next connection attempt, because
+ * authentication happens at upgrade. An already-attached node would have kept
+ * running commands until its socket happened to drop — which for a machine
+ * sitting in an office is "indefinitely". Revoking has to hang up.
+ */
+export function disconnectNode(id: string, reason = "revoked"): boolean {
+  const conn = connections.get(id);
+  if (!conn) return false;
+  try {
+    conn.ws.close(1008, reason);
+  } catch {
+    // Already gone; nodeWsClose does the bookkeeping either way.
+  }
+  return true;
+}
+
 // ── upgrade ──────────────────────────────────────────────────────────────────
 
 /**

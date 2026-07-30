@@ -133,7 +133,7 @@ export async function connect(opts: ConnectOptions): Promise<number> {
   info(dim(`  credential written to ${IDENTITY_PATH} (0600)`));
 
   heading("Next");
-  info(`${bold("opensession node run")}    stay connected (heartbeat every 60s)`);
+  info(`${bold("opensession node run")}    hold the channel open so the server can reach it`);
   info(dim("  run it under a service manager to keep this node attached across reboots"));
   return 0;
 }

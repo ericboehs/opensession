@@ -57,7 +57,7 @@ Connect this machine
 Then keep it attached:
 
 ```sh
-opensession node run     # heartbeat every 60s; hold this open
+opensession node run     # holds the channel open; leave it running
 ```
 
 Run that under a service manager so the node survives a reboot —
@@ -132,8 +132,12 @@ than documented as advice:
    returned exactly once, at registration, and lives in `~/.opensession/node.json`
    (mode 600) on the node. Re-pairing rotates it and invalidates the old one.
 
-Revocation is immediate: `opensession nodes remove` and the next heartbeat gets a
-401, at which point the node agent exits rather than retrying forever.
+Revocation is immediate and it hangs up: `opensession nodes remove` closes any
+live channel as well as deleting the record. Authentication happens at connect
+time, so deleting the record alone would have left an already-attached node
+running commands until its socket happened to drop — which for a machine sitting
+in an office is indefinitely. The agent sees the close, recognises the rejection
+and exits rather than reconnecting.
 
 The two routes a node uses (`register`, `heartbeat`) are exempt from GitHub
 sign-in, because a machine has no browser session — that is what the pairing code

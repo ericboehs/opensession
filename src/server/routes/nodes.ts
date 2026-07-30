@@ -14,6 +14,7 @@
  */
 
 import { requestUser, type RouteContext } from "./context";
+import { disconnectNode } from "../node-ws";
 import {
   createPairing,
   isTailnetAddress,
@@ -125,9 +126,13 @@ export async function handleNodesRoutes(
   // ── remove ──
   const match = path.match(/^\/backstage\/api\/nodes\/(node-[^/]+)$/);
   if (match && req.method === "DELETE") {
-    return removeNode(match[1])
-      ? Response.json({ ok: true })
-      : Response.json({ error: "no such node" }, { status: 404 });
+    if (!removeNode(match[1])) {
+      return Response.json({ error: "no such node" }, { status: 404 });
+    }
+    // Authentication happens at upgrade, so removing the record alone would
+    // leave an already-attached node running commands until its socket dropped.
+    const wasConnected = disconnectNode(match[1]);
+    return Response.json({ ok: true, disconnected: wasConnected });
   }
 
   return undefined;
