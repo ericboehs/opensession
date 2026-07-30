@@ -413,7 +413,7 @@ function FileRow({
 		[theme],
 	);
 	const stats = (
-		<span className="inline-flex shrink-0 items-center gap-1 font-mono text-[11px] font-semibold">
+		<span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold tabular-nums">
 			{file.additions > 0 && (
 				<span className="text-green">+{file.additions}</span>
 			)}
@@ -423,7 +423,7 @@ function FileRow({
 		</span>
 	);
 	const path = (
-		<span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
+		<span className="min-w-0 flex-1 truncate text-left text-[12px]">
 			{dir && <span className="text-dim">{dir}</span>}
 			<span className="text-fg">{base}</span>
 		</span>
@@ -442,7 +442,7 @@ function FileRow({
 			>
 				<span
 					className={cn(
-						"inline-flex size-[18px] shrink-0 items-center justify-center rounded-[4px] font-mono text-[11px] font-bold",
+						"inline-flex size-[18px] shrink-0 items-center justify-center rounded-[4px] text-[11px] font-bold",
 						statusBadgeClass(file.status),
 					)}
 				>
@@ -1678,7 +1678,7 @@ export function WorkspaceInfo({
 								<span>
 									{changed.length} file{changed.length === 1 ? "" : "s"} changed
 								</span>
-								<span className="inline-flex shrink-0 items-center gap-1 font-mono text-[11px] font-semibold">
+								<span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold tabular-nums">
 									{totalAdd > 0 && (
 										<span className="text-green">+{totalAdd}</span>
 									)}
