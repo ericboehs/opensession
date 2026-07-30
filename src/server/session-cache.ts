@@ -27,7 +27,10 @@ const g = globalThis as any;
 
 // Cache sessions with short TTL
 let sessionsCache: { data: UnifiedSession[]; ts: number } | null = null;
-const CACHE_TTL = 2000;
+// The UI polls every 5s and live run changes also arrive over WebSocket. Keep
+// the expensive multi-thousand-file fallback scan out of every poll wave;
+// in-process mutations invalidate this cache immediately.
+const CACHE_TTL = 10_000;
 
 /** Drop the cached list so the next getCachedSessions() re-reads from disk. */
 export function invalidateSessionsCache(): void {

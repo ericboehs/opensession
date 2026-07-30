@@ -140,20 +140,38 @@ async function request<T>(
  * the app-wide re-render) entirely when nothing changed.
  */
 export async function fetchSessionsText(): Promise<string> {
-	return (await fetchSessionsSnapshot()).text;
+	return (await fetchSessionsSnapshot()).text ?? "[]";
 }
 
-export async function fetchSessionsSnapshot(): Promise<{
-	text: string;
+export async function fetchSessionsSnapshot(
+	opts: { etag?: string | null; signal?: AbortSignal } = {},
+): Promise<{
+	text: string | null;
+	etag: string | null;
+	notModified: boolean;
 	cloudUnreachable: boolean;
 }> {
-	const res = await fetch(`${BASE}/sessions`);
+	const res = await fetch(`${BASE}/sessions`, {
+		signal: opts.signal,
+		headers: opts.etag ? { "If-None-Match": opts.etag } : undefined,
+	});
+	const cloudUnreachable =
+		res.headers.get("X-OpenSession-Cloud-Unreachable") === "true";
+	if (res.status === 304) {
+		return {
+			text: null,
+			etag: res.headers.get("ETag") || opts.etag || null,
+			notModified: true,
+			cloudUnreachable,
+		};
+	}
 	if (!res.ok)
 		throw new ApiError(`Failed to fetch sessions: ${res.status}`, res.status);
 	return {
 		text: await res.text(),
-		cloudUnreachable:
-			res.headers.get("X-OpenSession-Cloud-Unreachable") === "true",
+		etag: res.headers.get("ETag"),
+		notModified: false,
+		cloudUnreachable,
 	};
 }
 

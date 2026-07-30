@@ -180,11 +180,18 @@ export async function handleSessionsRoutes(
 				lastRunError: runErrors.get(s.id) || s.lastRunError,
 			}));
 		const { sessions, cloudUnreachable } = await mergedCloudSessions(enriched);
-		return Response.json(sessions.filter((s) => !isLegacySideChat(s)), {
-			headers: cloudUnreachable
-				? { "X-OpenSession-Cloud-Unreachable": "true" }
-				: undefined,
+		const text = JSON.stringify(sessions.filter((s) => !isLegacySideChat(s)));
+		const etag = `"${Bun.hash(text).toString(16)}"`;
+		const headers = new Headers({
+			"Cache-Control": "private, no-cache",
+			ETag: etag,
 		});
+		if (cloudUnreachable)
+			headers.set("X-OpenSession-Cloud-Unreachable", "true");
+		if (req.headers.get("If-None-Match") === etag)
+			return new Response(null, { status: 304, headers });
+		headers.set("Content-Type", "application/json; charset=utf-8");
+		return new Response(text, { headers });
 	}
 
 	// Deliver a follow-up prompt to an existing session. REST shape for the
