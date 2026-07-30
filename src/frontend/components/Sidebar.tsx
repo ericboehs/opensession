@@ -3890,23 +3890,25 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							</span>
 						);
 					})()}
-				{/* A live run always earns its elapsed ticker. The idle "last used"
-				    time is opt-in (Settings → Appearance): revealed on hover by
-				    default, or pinned always. It's shown on hover in every mode —
-				    including while a run is live (the --running modifier keeps it
-				    hidden until then, so the ticker owns the resting slot). */}
+				{/* A live workspace run always earns its elapsed ticker. Idle timestamps
+				    are reserved for standalone chats, so an automation review does not
+				    make its PR workspace look recently active. */}
 				{runStartMs !== null && <RunTicker startMs={runStartMs} />}
 				{snoozeIso && !editing && <SnoozeBadge until={snoozeIso} />}
-				{!isPhone && !snoozeIso && wsTimePref !== "off" && row.lastActivity && (
-					<span
-						className={`sidebar-ws-time${
-							wsTimePref === "hover" ? " sidebar-ws-time--hover" : ""
-						}${runStartMs !== null ? " sidebar-ws-time--running" : ""}`}
-						aria-label={new Date(row.lastActivity).toLocaleString()}
-					>
-						{shortTime(row.lastActivity)}
-					</span>
-				)}
+				{!isPhone &&
+					!row.workspace &&
+					!snoozeIso &&
+					wsTimePref !== "off" &&
+					row.lastActivity && (
+						<span
+							className={`sidebar-ws-time${
+								wsTimePref === "hover" ? " sidebar-ws-time--hover" : ""
+							}${runStartMs !== null ? " sidebar-ws-time--running" : ""}`}
+							aria-label={new Date(row.lastActivity).toLocaleString()}
+						>
+							{shortTime(row.lastActivity)}
+						</span>
+					)}
 				{/* Slack-style pencil: a chat here holds an unsent draft — come back
 				    and finish it. Yields to the hover actions like the count/time. */}
 				{row.chats.some((c) => hasDraft(`chat:${c.id}`)) && (
