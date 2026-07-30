@@ -673,7 +673,7 @@ export function Composer({
                 backgroundColor:
                   "color-mix(in srgb, var(--yellow) 10%, var(--control-surface))",
                 backgroundImage:
-                  "repeating-linear-gradient(45deg, color-mix(in srgb, var(--yellow) 6%, transparent) 0, color-mix(in srgb, var(--yellow) 6%, transparent) 12px, transparent 12px, transparent 24px)",
+                  "linear-gradient(to bottom, transparent 15%, color-mix(in srgb, var(--yellow) 10%, var(--control-surface)) 72%), repeating-linear-gradient(45deg, color-mix(in srgb, var(--yellow) 6%, transparent) 0, color-mix(in srgb, var(--yellow) 6%, transparent) 12px, transparent 12px, transparent 24px)",
               }
             : undefined
         }
