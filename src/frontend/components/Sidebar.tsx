@@ -121,7 +121,7 @@ import {
 	SupportRowCard,
 	useRowHoverCard,
 } from "./SidebarRowCards";
-import { RepoTile, swatchColor, repoLabel } from "./RepoTile";
+import { RepoTile, repoLabel } from "./RepoTile";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { PrRow } from "./PrRow";
 import {
@@ -686,8 +686,6 @@ function FeedFilterMenu({
 		</Menu.Root>
 	);
 }
-
-const personColor = swatchColor;
 
 // Only recognized people get their own "people" section. Sessions whose
 // `startedBy` is something other than a real teammate — test labels
@@ -5748,14 +5746,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 											key={p.name}
 											className={`sidebar-people-row flex items-center gap-[9px] w-full min-w-0 text-left border-0 cursor-pointer rounded-lg pl-[12px] pr-2 py-[5px] max-[720px]:py-2 ${
 												selected
-													? "bg-[color-mix(in_srgb,var(--person-color)_16%,transparent)] hover:bg-[color-mix(in_srgb,var(--person-color)_22%,transparent)]"
+													? "bg-active"
 													: "bg-transparent hover:bg-hover"
 											}`}
-											style={
-												{
-													"--person-color": personColor(p.name),
-												} as React.CSSProperties
-											}
 											onClick={() => {
 												// First click: filter to their lanes AND open the
 												// session the row shows — going back lands on their
@@ -5786,24 +5779,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 												label={`${p.fullName}${localTime ? ` · ${localTime}` : ""}${liveId ? " · viewing now" : ""}`}
 											>
 												<span className="relative shrink-0">
-													<UserAvatar name={p.name} size={22}>
-														{liveId && (
-															<span
-																className="pointer-events-none absolute inset-0 rounded-[32%] ring-2 ring-inset"
-																style={
-																	{
-																		"--tw-ring-color": personColor(p.name),
-																	} as React.CSSProperties
-																}
-															/>
-														)}
-													</UserAvatar>
-													{act?.running && (
-														<span
-															className="absolute -bottom-0.5 -right-0.5 block size-[8px] rounded-full bg-green ring-2 ring-[var(--bg)]"
-															aria-label="Has a running session"
-														/>
-													)}
+													<UserAvatar name={p.name} size={22} />
 												</span>
 											</Tooltip>
 											<span
@@ -5989,20 +5965,15 @@ function FilterPopover({
 	// You first (the default), then teammates, the aggregate Backlog lens, and
 	// "Everyone" last. Owner-focused views retain their own Backlog rows.
 	const meKey = currentUser.toLowerCase();
-	const personDot = (key: string) => (
-		<span
-			className="sidebar-group-dot"
-			style={{ backgroundColor: personColor(key) }}
-		/>
-	);
+	const personAvatar = (name: string) => <UserAvatar name={name} size={16} />;
 	const personOptions: SelectOption[] = [
-		{ value: "me", label: `${currentUser} (you)`, icon: personDot(meKey) },
+		{ value: "me", label: `${currentUser} (you)`, icon: personAvatar(currentUser) },
 		...people
 			.filter(({ key }) => key !== meKey)
 			.map(({ key, label }) => ({
 				value: key,
 				label,
-				icon: personDot(key),
+				icon: personAvatar(label),
 			})),
 		{ value: "unassigned", label: "Unassigned" },
 		{ value: "everyone", label: "Everyone" },
