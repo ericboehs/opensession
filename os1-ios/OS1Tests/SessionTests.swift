@@ -96,6 +96,59 @@ final class SessionTests: XCTestCase {
             SessionsListViewModel.tabSessions(in: sessions, containing: sessions[0]).map(\.id),
             ["filed", "readonly"]
         )
+        XCTAssertEqual(
+            SessionsListViewModel.tabSessions(in: sessions, containing: sessions[1]).map(\.id),
+            ["filed", "readonly"]
+        )
+    }
+
+    func testSidebarCollapsesWorkspaceSessionsIntoOneRow() throws {
+        let sessions = try JSONDecoder().decode(
+            [Session].self,
+            from: Data(
+                #"[{"id":"first","projectId":"prj-1","branch":"feature","createdAt":"2026-07-01T00:00:00Z","lastActivity":"2026-07-01T00:01:00Z","opencodeSessionId":"oc-1"},{"id":"second","projectId":"prj-1","branch":"feature","createdAt":"2026-07-02T00:00:00Z","lastActivity":"2026-07-02T00:01:00Z"},{"id":"other","projectId":"prj-2","branch":"other"}]"#.utf8
+            )
+        )
+
+        let workspaces = SessionsListViewModel.sidebarWorkspaces(
+            in: sessions,
+            workspaceNames: ["prj-1": "Feature workspace"]
+        )
+
+        XCTAssertEqual(workspaces.count, 2)
+        XCTAssertEqual(workspaces[0].title, "Feature workspace")
+        XCTAssertEqual(workspaces[0].sessions.map(\.id), ["first", "second"])
+        XCTAssertEqual(workspaces[0].mainSession.id, "first")
+    }
+
+    func testSidebarDoesNotMergeDistinctWorkspacesSharingAPath() throws {
+        let sessions = try JSONDecoder().decode(
+            [Session].self,
+            from: Data(
+                #"[{"id":"first","projectId":"prj-1","worktreeDir":"/home/ubuntu/worktrees/shared","branch":"feature"},{"id":"second","projectId":"prj-2","worktreeDir":"/home/ubuntu/worktrees/shared","branch":"feature"},{"id":"main-one","projectId":"prj-3","worktreeDir":"/home/ubuntu/projects/tella-backstage"},{"id":"main-two","projectId":"prj-4","worktreeDir":"/home/ubuntu/projects/tella-backstage"}]"#.utf8
+            )
+        )
+
+        let workspaces = SessionsListViewModel.sidebarWorkspaces(in: sessions)
+
+        XCTAssertEqual(workspaces.count, 4)
+        XCTAssertEqual(workspaces.map(\.sessions).map { $0.map(\.id) }, [
+            ["first"], ["second"], ["main-one"], ["main-two"]
+        ])
+    }
+
+    func testSidebarAdoptsProjectlessSiblingUsingTheSameWorktree() throws {
+        let sessions = try JSONDecoder().decode(
+            [Session].self,
+            from: Data(
+                #"[{"id":"filed","projectId":"prj-1","worktreeDir":"/home/ubuntu/worktrees/shared","branch":"feature"},{"id":"legacy","worktreeDir":"/home/ubuntu/worktrees/shared","branch":"feature"}]"#.utf8
+            )
+        )
+
+        let workspaces = SessionsListViewModel.sidebarWorkspaces(in: sessions)
+
+        XCTAssertEqual(workspaces.count, 1)
+        XCTAssertEqual(workspaces[0].sessions.map(\.id), ["filed", "legacy"])
     }
 
     func testTabSessionsPinStartedHumanChatFirst() throws {

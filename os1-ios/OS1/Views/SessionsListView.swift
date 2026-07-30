@@ -421,66 +421,94 @@ struct SessionsListView: View {
         }
     }
 
-    private var filteredSessions: [Session] {
-        var result = viewModel.sessions
+    private var filteredWorkspaces: [SidebarWorkspace] {
+        var workspaces = allSidebarWorkspaces
         if peopleFilter == "mine" {
-            result = result.filter(isMine)
+            workspaces = workspaces.filter { $0.sessions.contains(where: isMine) }
         }
         if repoFilter != "all" {
-            result = result.filter { $0.effectiveRepo == repoFilter }
+            workspaces = workspaces.filter { $0.effectiveRepo == repoFilter }
         }
         let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
         if !query.isEmpty {
-            result = result.filter { session in
-                for term in [session.title, session.effectiveRepo, session.branch, session.id] {
-                    if let term, term.lowercased().contains(query) { return true }
+            workspaces = workspaces.filter { workspace in
+                if workspace.title.lowercased().contains(query) { return true }
+                return workspace.sessions.contains { session in
+                    [session.title, session.effectiveRepo, session.branch, session.id]
+                        .compactMap { $0 }
+                        .contains { $0.lowercased().contains(query) }
                 }
-                return false
             }
         }
         // Decorated sort: parse each row's date once, not once per
         // comparison — this runs on the main thread on every body
         // evaluation, and the list can be thousands of rows with the
         // people filter set to "everyone".
-        return result
-            .map { session in
+        return workspaces
+            .map { workspace in
                 (
-                    session: session,
-                    inProgress: session.lane == .inProgress,
+                    workspace: workspace,
+                    inProgress: workspace.lane == .inProgress,
                     date: sortBy == .updated
-                        ? session.lastActivityDate ?? .distantPast
-                        : Session.parseISO(session.createdAt) ?? .distantPast
+                        ? workspace.lastActivityDate
+                        : workspace.createdDate
                 )
             }
             .sorted {
                 if $0.inProgress != $1.inProgress { return $0.inProgress }
                 return $0.date > $1.date
             }
-            .map(\.session)
+            .map(\.workspace)
+    }
+
+    private var allSidebarWorkspaces: [SidebarWorkspace] {
+        #if os(macOS)
+        // The Mac detail currently has no sibling-tab strip. Preserve its
+        // existing one-chat rows until those tabs have a native Mac surface.
+        viewModel.sessions.filter { $0.sideChatOf == nil }.map {
+            SidebarWorkspace(
+                id: "session:\($0.id)",
+                title: $0.displayTitle,
+                sessions: [$0],
+                mainSession: $0
+            )
+        }
+        #else
+        SessionsListViewModel.sidebarWorkspaces(
+            in: viewModel.sessions,
+            workspaceNames: viewModel.workspaceNames
+        )
+        #endif
     }
 
     private struct SessionGroup: Identifiable {
         let id: String
         let title: String
-        let sessions: [Session]
+        let workspaces: [SidebarWorkspace]
     }
 
     private var groups: [SessionGroup] {
-        let sessions = filteredSessions
+        let workspaces = filteredWorkspaces
         switch groupBy {
         case .recent:
-            return sessions.isEmpty ? [] : [SessionGroup(id: "recent", title: "", sessions: sessions)]
+            return workspaces.isEmpty
+                ? []
+                : [SessionGroup(id: "recent", title: "", workspaces: workspaces)]
         case .repo:
-            let byRepo = Dictionary(grouping: sessions, by: \.effectiveRepo)
+            let byRepo = Dictionary(grouping: workspaces, by: \.effectiveRepo)
             return availableRepos.filter { byRepo[$0] != nil }.map {
-                SessionGroup(id: "repo-\($0)", title: $0, sessions: byRepo[$0]!)
+                SessionGroup(id: "repo-\($0)", title: $0, workspaces: byRepo[$0]!)
             }
         case .status:
             return Session.Lane.allCases.compactMap { lane in
-                let inLane = sessions.filter { $0.lane == lane }
+                let inLane = workspaces.filter { $0.lane == lane }
                 return inLane.isEmpty
                     ? nil
-                    : SessionGroup(id: "lane-\(lane.rawValue)", title: lane.label, sessions: inLane)
+                    : SessionGroup(
+                        id: "lane-\(lane.rawValue)",
+                        title: lane.label,
+                        workspaces: inLane
+                    )
             }
         }
     }
@@ -581,8 +609,10 @@ struct SessionsListView: View {
         // counterpart to iOS's swipe.
         .onDeleteCommand {
             if let selectedSessionID,
-               let session = viewModel.sessions.first(where: { $0.id == selectedSessionID }) {
-                archive(session)
+               let workspace = allSidebarWorkspaces.first(where: {
+                   $0.sessions.contains { $0.id == selectedSessionID }
+               }) {
+                archive(workspace)
             }
         }
     }
@@ -621,31 +651,33 @@ struct SessionsListView: View {
     #endif
 
     @ViewBuilder
-    private func sessionRow(_ session: Session) -> some View {
-        let canArchive = !session.id.hasPrefix("pending-")
+    private func sessionRow(_ workspace: SidebarWorkspace) -> some View {
+        let session = workspace.mainSession
+        let canArchive = workspace.sessions.allSatisfy { !$0.id.hasPrefix("pending-") }
         #if os(macOS)
         // Selection drives the detail column; select by id so rows replaced
         // by polling (fresh struct values every refresh) keep the selection.
         // Archiving is Mac-idiomatic here: hover button on the row, context
         // menu, and the Delete key — swipe also works but isn't the primary.
         SessionRow(
-            session: session,
-            onArchive: canArchive ? { archive(session) } : nil
+            session: workspace.statusSession,
+            title: workspace.title,
+            onArchive: canArchive ? { archive(workspace) } : nil
         )
         .tag(session.id)
-        .swipeActions(edge: .trailing) { archiveButton(session, viaSwipe: true) }
-        .contextMenu { archiveButton(session) }
+        .swipeActions(edge: .trailing) { archiveButton(workspace, viaSwipe: true) }
+        .contextMenu { archiveButton(workspace) }
         #else
         Button {
             path.append(session)
         } label: {
-            SessionRow(session: session)
+            SessionRow(session: workspace.statusSession, title: workspace.title)
         }
         .buttonStyle(.plain)
         .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 12))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
-        .swipeActions(edge: .trailing) { archiveButton(session, viaSwipe: true) }
+        .swipeActions(edge: .trailing) { archiveButton(workspace, viaSwipe: true) }
         #endif
     }
 
@@ -660,10 +692,13 @@ struct SessionsListView: View {
     /// inset-grouped section reflow — visibly morphing iOS 26's
     /// position-dependent corner radii at our curve's pace.
     @ViewBuilder
-    private func archiveButton(_ session: Session, viaSwipe: Bool = false) -> some View {
-        if !session.id.hasPrefix("pending-") {
+    private func archiveButton(
+        _ workspace: SidebarWorkspace,
+        viaSwipe: Bool = false
+    ) -> some View {
+        if workspace.sessions.allSatisfy({ !$0.id.hasPrefix("pending-") }) {
             Button(role: viaSwipe ? .destructive : nil) {
-                archive(session, animated: !viaSwipe)
+                archive(workspace, animated: !viaSwipe)
             } label: {
                 VStack(spacing: 2) {
                     WebIcon(kind: .archive, size: 22, color: .white)
@@ -674,20 +709,22 @@ struct SessionsListView: View {
         }
     }
 
-    private func archive(_ session: Session, animated: Bool = true) {
+    private func archive(_ workspace: SidebarWorkspace, animated: Bool = true) {
         #if os(macOS)
-        if selectedSessionID == session.id { selectedSessionID = nil }
+        if workspace.sessions.contains(where: { $0.id == selectedSessionID }) {
+            selectedSessionID = nil
+        }
         #endif
         if animated {
             // Mac hover button / Delete key / context menu: collapse the row
             // instead of blinking it out.
             withAnimation(.snappy(duration: 0.28)) {
-                viewModel.archive(session)
+                workspace.sessions.forEach(viewModel.archive)
             }
         } else {
             // Swipe path: the List's destructive-role delete animation owns
             // the removal; wrapping the mutation would fight it.
-            viewModel.archive(session)
+            workspace.sessions.forEach(viewModel.archive)
         }
     }
 
@@ -711,8 +748,8 @@ struct SessionsListView: View {
         Group {
             ForEach(groups) { group in
                 Section {
-                    ForEach(group.sessions) { session in
-                        sessionRow(session)
+                    ForEach(group.workspaces) { workspace in
+                        sessionRow(workspace)
                     }
                 } header: {
                     if !group.title.isEmpty {
@@ -735,7 +772,7 @@ struct SessionsListView: View {
                                 .font(.caption.weight(.semibold))
                                 #endif
                                 .foregroundStyle(OS1VisualStyle.textDim)
-                            Text("\(group.sessions.count)")
+                            Text("\(group.workspaces.count)")
                                 #if os(iOS)
                                 .font(.footnote.weight(.medium))
                                 #else
@@ -918,6 +955,7 @@ extension Session.Lane {
 
 struct SessionRow: View {
     let session: Session
+    var title: String? = nil
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// Mac: hover-revealed archive button (nil hides it).
     var onArchive: (() -> Void)? = nil
@@ -993,7 +1031,7 @@ struct SessionRow: View {
     }
 
     private var rowTitle: String {
-        session.displayTitle.replacingOccurrences(
+        (title ?? session.displayTitle).replacingOccurrences(
             of: #"^PR\s*#\d+(:|\s*[—–-])\s*"#,
             with: "",
             options: [.regularExpression, .caseInsensitive]

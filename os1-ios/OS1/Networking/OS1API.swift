@@ -53,6 +53,20 @@ enum OS1API {
         try await get("/api/sessions")
     }
 
+    struct WorkspaceSummary: Decodable, Sendable {
+        let id: String
+        let name: String
+    }
+
+    /// Canonical workspace names for collapsing sibling chats into one row.
+    static func workspaces() async throws -> [WorkspaceSummary] {
+        struct WorkspacesResponse: Decodable, Sendable {
+            let projects: [WorkspaceSummary]
+        }
+        let response: WorkspacesResponse = try await get("/api/projects")
+        return response.projects
+    }
+
     static func transcript(sessionId: String) async throws -> [TranscriptEntry] {
         try await get("/api/sessions/\(sessionId)/transcript")
     }

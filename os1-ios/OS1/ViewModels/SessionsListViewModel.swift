@@ -8,6 +8,7 @@ import Observation
 final class SessionsListViewModel {
     private(set) var sessions: [Session] = []
     private(set) var archivedSessions: [Session] = []
+    private(set) var workspaceNames: [String: String] = [:]
     private(set) var error: String?
     private(set) var hasLoaded = false
 
@@ -49,12 +50,14 @@ final class SessionsListViewModel {
         let current = sessions.first { $0.id == current.id } ?? current
         let belongs: (Session) -> Bool
         if let projectId = current.projectId, !projectId.isEmpty {
-            belongs = { $0.projectId == projectId }
-        } else if let worktreeDir = current.worktreeDir,
-                  worktreeDir.hasPrefix("/home/ubuntu/worktrees/") {
-            // Match the worktree directly even when a writable sibling has
-            // already been filed into a workspace but this read-only row has not.
-            belongs = { $0.worktreeDir == worktreeDir }
+            let dir = isolatedWorktree(for: current)
+            belongs = {
+                $0.projectId == projectId
+                    || (dir != nil && $0.projectId?.isEmpty != false
+                        && isolatedWorktree(for: $0) == dir)
+            }
+        } else if let dir = isolatedWorktree(for: current) {
+            belongs = { isolatedWorktree(for: $0) == dir }
         } else {
             return [current]
         }
@@ -71,11 +74,83 @@ final class SessionsListViewModel {
             let right = $1.createdAt ?? ""
             return left == right ? $0.id < $1.id : left < right
         }
-        let main = tabs.first { !$0.isAutomation && !$0.neverRan }
-            ?? tabs.first { !$0.neverRan }
-            ?? tabs.first
+        let main = mainSession(in: tabs)
         guard let main else { return [] }
         return [main] + tabs.filter { $0.id != main.id }
+    }
+
+    /// One sidebar row per workspace, with isolated worktrees as the fallback
+    /// for legacy projectless rows. A projectless row adopts the one workspace
+    /// already using its worktree, but separate workspaces are never merged
+    /// merely because their paths happen to match.
+    nonisolated static func sidebarWorkspaces(
+        in sessions: [Session],
+        workspaceNames: [String: String] = [:]
+    ) -> [SidebarWorkspace] {
+        let visible = sessions.filter { $0.sideChatOf == nil }
+        let projectKeyByWorktree = Dictionary(grouping: visible.filter {
+            $0.projectId?.isEmpty == false && isolatedWorktree(for: $0) != nil
+        }, by: { isolatedWorktree(for: $0)! }).compactMapValues { chats in
+            let keys = Set(chats.compactMap(\.projectId))
+            return keys.count == 1 ? "workspace:\(keys.first!)" : nil
+        }
+        var order: [String] = []
+        var grouped: [String: [Session]] = [:]
+        for session in visible {
+            let key: String
+            if session.projectId?.isEmpty != false,
+               let dir = isolatedWorktree(for: session),
+               let projectKey = projectKeyByWorktree[dir] {
+                key = projectKey
+            } else {
+                key = workspaceKey(for: session)
+            }
+            if grouped[key] == nil { order.append(key) }
+            grouped[key, default: []].append(session)
+        }
+        return order.compactMap { key in
+            guard var chats = grouped[key] else { return nil }
+            chats.sort(by: sessionNaturalOrder)
+            guard let main = mainSession(in: chats) else { return nil }
+            let named = chats.compactMap(\.projectId).compactMap { workspaceNames[$0] }.first
+            let worktreeName = main.worktreeDir.flatMap {
+                $0.hasPrefix("/home/ubuntu/worktrees/")
+                    ? URL(fileURLWithPath: $0).lastPathComponent
+                    : nil
+            }
+            return SidebarWorkspace(
+                id: key,
+                title: named ?? main.branch ?? worktreeName ?? main.displayTitle,
+                sessions: chats,
+                mainSession: main
+            )
+        }
+    }
+
+    nonisolated private static func workspaceKey(for session: Session) -> String {
+        if let projectId = session.projectId, !projectId.isEmpty {
+            return "workspace:\(projectId)"
+        }
+        if let dir = isolatedWorktree(for: session) { return "worktree:\(dir)" }
+        return "session:\(session.id)"
+    }
+
+    nonisolated private static func isolatedWorktree(for session: Session) -> String? {
+        guard let dir = session.worktreeDir,
+              dir.hasPrefix("/home/ubuntu/worktrees/") else { return nil }
+        return dir
+    }
+
+    nonisolated private static func sessionNaturalOrder(_ left: Session, _ right: Session) -> Bool {
+        let leftDate = left.createdAt ?? ""
+        let rightDate = right.createdAt ?? ""
+        return leftDate == rightDate ? left.id < right.id : leftDate < rightDate
+    }
+
+    nonisolated private static func mainSession(in sessions: [Session]) -> Session? {
+        sessions.first { !$0.isAutomation && !$0.neverRan }
+            ?? sessions.first { !$0.neverRan }
+            ?? sessions.first
     }
 
     /// Just-created sessions rendered before the server's list includes them.
@@ -212,7 +287,12 @@ final class SessionsListViewModel {
 
     func refresh() async {
         do {
+            async let workspaceRequest = try? OS1API.workspaces()
             let all = try await OS1API.sessions()
+            if let workspaces = await workspaceRequest {
+                let nextNames = Dictionary(uniqueKeysWithValues: workspaces.map { ($0.id, $0.name) })
+                if nextNames != workspaceNames { workspaceNames = nextNames }
+            }
             // Snapshot the main-actor state the filter needs, then do the
             // heavy pass (thousands of rows) off the main thread — inline it
             // ran on the main actor every 5s poll and hitched typing.
@@ -274,5 +354,37 @@ final class SessionsListViewModel {
             .sorted { $0.key > $1.key }
             .map(\.session)
         return (active, archived)
+    }
+}
+
+struct SidebarWorkspace: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let sessions: [Session]
+    let mainSession: Session
+
+    var statusSession: Session {
+        let humanSessions = sessions.filter { !$0.isAutomation }
+        let candidates = humanSessions.isEmpty ? sessions : humanSessions
+        return candidates.min { statusRank($0) < statusRank($1) } ?? mainSession
+    }
+
+    var lane: Session.Lane { statusSession.lane }
+    var effectiveRepo: String { mainSession.effectiveRepo }
+    var lastActivityDate: Date {
+        sessions.compactMap(\.lastActivityDate).max() ?? .distantPast
+    }
+    var createdDate: Date {
+        sessions.compactMap { Session.parseISO($0.createdAt) }.min() ?? .distantPast
+    }
+
+    private func statusRank(_ session: Session) -> Int {
+        switch session.lane {
+        case .needsInput: 0
+        case .inProgress: 1
+        case .inReview: 2
+        case .done: 3
+        case .backlog: 4
+        }
     }
 }
