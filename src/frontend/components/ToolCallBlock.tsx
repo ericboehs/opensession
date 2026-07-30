@@ -18,7 +18,6 @@ import {
   IconBranches,
   IconListChecks,
   IconWrench,
-  IconCheck,
   IconChevronDown,
   IconX,
   IconExpand,
@@ -583,13 +582,9 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
             <span className="flex-shrink-0 text-red">
               <IconX size={20} />
             </span>
-          ) : result ? (
-            <span className="flex-shrink-0 text-green opacity-70">
-              <IconCheck size={20} />
-            </span>
-          ) : (
+          ) : !result ? (
             <span className="flex-shrink-0 text-[10.5px] text-faint">—</span>
-          )}
+          ) : null}
         </button>
       </Tooltip>
 
