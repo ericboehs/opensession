@@ -148,6 +148,26 @@ const compactFmt = new Intl.NumberFormat("en", {
   maximumFractionDigits: 1,
 });
 const fmtCompact = (n: number) => compactFmt.format(n);
+const HOME_STATS_CACHE_KEY = "opensession.homeStats.v1";
+
+function readCachedHomeStats(): HomeStats | null {
+  try {
+    const cached = JSON.parse(
+      localStorage.getItem(HOME_STATS_CACHE_KEY) || "null",
+    ) as Partial<HomeStats> | null;
+    return cached?.today && cached.week ? (cached as HomeStats) : null;
+  } catch {
+    return null;
+  }
+}
+
+function cacheHomeStats(stats: HomeStats): void {
+  try {
+    localStorage.setItem(HOME_STATS_CACHE_KEY, JSON.stringify(stats));
+  } catch {
+    // Stats still render when storage is unavailable.
+  }
+}
 
 function fmtAgentTime(ms: number): string {
   const hours = ms / 3_600_000;
@@ -349,13 +369,17 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
   const [showArchived, setShowArchived] = useState(false);
   const [recentPrs, setRecentPrs] = useState<RecentPr[]>([]);
   const [personPrs, setPersonPrs] = useState<RecentPr[]>([]);
-  const [stats, setStats] = useState<HomeStats | null>(null);
+  const [stats, setStats] = useState<HomeStats | null>(readCachedHomeStats);
 
   useEffect(() => {
     let active = true;
     const load = () =>
       fetchHomeStats()
-        .then((data) => active && setStats(data))
+        .then((data) => {
+          if (!active) return;
+          setStats(data);
+          cacheHomeStats(data);
+        })
         .catch(() => {});
     load();
     const timer = setInterval(load, 60_000);
