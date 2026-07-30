@@ -239,14 +239,12 @@ export interface ChatMessage {
 
 /**
  * Cumulative token/cost accounting for a session (mirror of the server type).
- * Cost is the API-equivalent USD spend — authoritative for Claude runs, an
- * approximation for Codex (`costApproximate`). `contextTokens` is the most
- * recent turn's full prompt size, shown against `contextWindow` as the live
- * "how full is the context window" gauge.
+ * Cost is the USD price returned by the engine for each completed provider
+ * message. `contextTokens` is the most recent turn's full prompt size, shown
+ * against `contextWindow` as the live "how full is the context window" gauge.
  */
 export interface SessionUsage {
 	costUsd: number;
-	costApproximate?: boolean;
 	inputTokens: number;
 	outputTokens: number;
 	cacheReadTokens: number;

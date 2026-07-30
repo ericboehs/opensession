@@ -13,7 +13,6 @@
  */
 export interface TurnUsage {
   costUsd?: number;
-  costApproximate?: boolean;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;

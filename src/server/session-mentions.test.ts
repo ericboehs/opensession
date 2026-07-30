@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { sessionMentionsNote } from "./run-session";
+import { foldSessionUsage, sessionMentionsNote } from "./run-session";
 import { wrapContext, stripContext } from "./prompt-context";
 
 describe("sessionMentionsNote exclusion (no double-context)", () => {
@@ -20,6 +20,29 @@ describe("sessionMentionsNote exclusion (no double-context)", () => {
 			new Set(["bks-aaaa-1", "bks-aaaa-2"]),
 		);
 		expect(note).toBeNull();
+	});
+});
+
+describe("foldSessionUsage cost accounting", () => {
+	it("uses the provider-reported amount, including a valid zero", () => {
+		const zeroCostTurn = {
+			costUsd: 0,
+			inputTokens: 1,
+			outputTokens: 2,
+			cacheReadTokens: 3,
+			cacheCreationTokens: 4,
+			contextTokens: 8,
+		};
+		const first = foldSessionUsage(undefined, zeroCostTurn, "opencode/openai/gpt-5.6-sol");
+		const next = foldSessionUsage(
+			first,
+			{ ...zeroCostTurn, costUsd: 0.123456 },
+			"opencode/openai/gpt-5.6-sol",
+		);
+
+		expect(first.costUsd).toBe(0);
+		expect(next.costUsd).toBe(0.123456);
+		expect("costApproximate" in next).toBe(false);
 	});
 });
 

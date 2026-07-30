@@ -4995,8 +4995,7 @@ async function* runOpencodeAttempt(
     const tokens = info?.tokens;
     const usage: TurnUsage | undefined = tokens
       ? {
-          costUsd: info?.cost || undefined,
-          costApproximate: true,
+          costUsd: info?.cost,
           inputTokens: tokens.input || 0,
           outputTokens: tokens.output || 0,
           cacheReadTokens: tokens.cache?.read || 0,
@@ -5771,8 +5770,7 @@ export async function tryReattachOpencodeRun(
       const tokens = info?.tokens;
       const usage: TurnUsage | undefined = tokens
         ? {
-            costUsd: info?.cost || undefined,
-            costApproximate: true,
+            costUsd: info?.cost,
             inputTokens: tokens.input || 0,
             outputTokens: tokens.output || 0,
             cacheReadTokens: tokens.cache?.read || 0,

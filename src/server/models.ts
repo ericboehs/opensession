@@ -1092,42 +1092,10 @@ export function modelLabel(model?: string | null): string {
   return id;
 }
 
-// ── Pricing & context windows (for live cost/context reporting) ──────────────
+// ── Context windows (for live context reporting) ────────────────────────────
 //
-// Per-model price per 1M tokens, matching the public Claude API rate card — the
-// same rates the subscription usage-credits are billed at. Claude runs report an
-// authoritative `total_cost_usd` from the SDK (we use that directly and never
-// recompute); this table is the fallback for Codex/GPT models, which report token
-// counts but no cost. GPT-5.x Codex pricing is a best-effort placeholder — treat
-// Codex cost as approximate. `contextWindow` is the model's token ceiling, used
-// as the denominator for the context-fill gauge.
-
-export interface ModelPricing {
-  /** USD per 1M input tokens (uncached). */
-  input: number;
-  /** USD per 1M output tokens. */
-  output: number;
-  /** USD per 1M cache-read tokens (~0.1× input). */
-  cacheRead: number;
-  /** USD per 1M cache-write tokens (~1.25× input, 5-minute TTL). */
-  cacheWrite: number;
-}
-
-const PRICING: Record<string, ModelPricing> = {
-  // Anthropic rate card ($/1M). Cache read ≈ 0.1× input, cache write ≈ 1.25× input.
-  "claude-fable-5": { input: 10, output: 50, cacheRead: 1.0, cacheWrite: 12.5 },
-  "claude-opus-5": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  "claude-opus-4-8": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  "claude-opus-4-7": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
-  // Codex/GPT — approximate; no authoritative cost from the SDK.
-  "gpt-5.5": { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.5625 },
-  "gpt-5.4": { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.5625 },
-  "gpt-5.4-mini": { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0.3125 },
-  "gpt-5.3-codex-spark": { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0.3125 },
-};
+// USD cost is returned by the engine on each completed provider message. Keep
+// only context ceilings here for the live context-fill gauge.
 
 const CONTEXT_WINDOWS: Record<string, number> = {
   "claude-fable-5": 1_000_000,
@@ -1155,37 +1123,6 @@ function pricingKey(model?: string | null): string {
 export function contextWindowFor(model?: string | null): number {
   const id = pricingKey(model || getDefaultModel());
   return CONTEXT_WINDOWS[id] ?? 0;
-}
-
-/** Whether we have an authoritative price table entry (vs. a passthrough id). */
-export function hasPricing(model?: string | null): boolean {
-  return pricingKey(model) in PRICING;
-}
-
-/**
- * Compute USD cost for a set of token counts at a model's rate. Used for Codex
- * (which reports no cost); for Claude we prefer the SDK's exact `total_cost_usd`.
- * Returns undefined when the model has no known pricing.
- */
-export function priceUsageUsd(
-  model: string | null | undefined,
-  tokens: {
-    input?: number;
-    output?: number;
-    cacheRead?: number;
-    cacheWrite?: number;
-  }
-): number | undefined {
-  const p = PRICING[pricingKey(model)];
-  if (!p) return undefined;
-  const M = 1_000_000;
-  return (
-    ((tokens.input || 0) * p.input +
-      (tokens.output || 0) * p.output +
-      (tokens.cacheRead || 0) * p.cacheRead +
-      (tokens.cacheWrite || 0) * p.cacheWrite) /
-    M
-  );
 }
 
 /** Human list for /model help output. */

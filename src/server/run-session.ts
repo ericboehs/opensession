@@ -892,8 +892,7 @@ export function abortTurnAndDrain(
  * Fold a completed run's usage into a session's cumulative totals. Cost and
  * token counts accumulate; context size (contextTokens/contextWindow) reflects
  * the latest turn rather than a sum — it's the current window fill, not lifetime
- * throughput. `costApproximate` sticks once any Codex run contributes a
- * table-priced (non-authoritative) figure.
+ * throughput.
  */
 export function foldSessionUsage(
 	prev: SessionUsage | undefined,
@@ -912,10 +911,7 @@ export function foldSessionUsage(
 		updatedAt: "",
 	};
 	return {
-		costUsd: base.costUsd + (turn.costUsd || 0),
-		...(base.costApproximate || turn.costApproximate
-			? { costApproximate: true }
-			: {}),
+		costUsd: base.costUsd + (turn.costUsd ?? 0),
 		inputTokens: base.inputTokens + turn.inputTokens,
 		outputTokens: base.outputTokens + turn.outputTokens,
 		cacheReadTokens: base.cacheReadTokens + turn.cacheReadTokens,

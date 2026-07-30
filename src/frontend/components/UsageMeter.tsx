@@ -8,10 +8,8 @@ import { cn } from "../ui/cn";
  * (right of the model pill on desktop, in the mobile chat bar otherwise). Shows
  * the running API-equivalent USD spend for the conversation and a ring gauge of
  * how full the model's context window is; hover (or tap on touch) for a
- * per-token breakdown. Cost is authoritative for Claude runs (the SDK's
- * total_cost_usd — what subscription usage-credits are billed at) and
- * approximate for the other engines — Codex and OpenCode — which price from
- * list rates (marked with ~). Hidden until the first run reports usage.
+ * per-token breakdown. Cost comes directly from the engine's completed
+ * provider messages. Hidden until the first run reports usage.
  */
 
 function fmtUsd(n: number): string {
@@ -114,7 +112,6 @@ export function UsageMeter({
 	const ctx = usage.contextTokens || 0;
 	const frac = window > 0 ? Math.min(ctx / window, 1) : 0;
 	const tone = fillTone(frac);
-	const approx = usage.costApproximate;
 	const totalIn =
 		usage.inputTokens + usage.cacheReadTokens + usage.cacheCreationTokens;
 	const cacheHit =
@@ -135,7 +132,6 @@ export function UsageMeter({
 				aria-label="Conversation cost & context"
 			>
 				<span className="tabular-nums text-fg">
-					{approx ? "~" : ""}
 					{fmtUsd(usage.costUsd)}
 				</span>
 				{window > 0 && <ContextRing frac={frac} tone={tone.stroke} />}
@@ -152,8 +148,8 @@ export function UsageMeter({
 				</div>
 				<div className="space-y-1.5">
 					<Row
-						label={approx ? "Cost (approx.)" : "Cost"}
-						value={`${approx ? "~" : ""}${fmtUsd(usage.costUsd)}`}
+						label="Cost"
+						value={fmtUsd(usage.costUsd)}
 						strong
 					/>
 					{window > 0 && (
@@ -181,12 +177,6 @@ export function UsageMeter({
 						value={fmtTokens(usage.cacheCreationTokens)}
 					/>
 				</div>
-				{approx && (
-					<p className="mt-2 text-[11px] leading-snug text-dim">
-						Cost is estimated from list rates on this engine; native Claude
-						sessions show the exact API-billed amount.
-					</p>
-				)}
 			</Popover.Popup>
 		</Popover.Root>
 	);

@@ -15,16 +15,13 @@ export interface ExternalRef {
 
 /**
  * Cumulative token/cost accounting for a chat session, updated after every run.
- * Cost is the API-equivalent USD spend (authoritative `total_cost_usd` from the
- * Claude SDK; computed from the rate table for Codex). `contextTokens` is the
- * size of the most recent turn's full prompt (input + cache read + cache
- * creation) — the live "how full is the window" number, shown against
- * `contextWindow`. `costApproximate` is set when any run in the session priced
- * cost from the table rather than an authoritative SDK figure (i.e. Codex).
+ * Cost is the USD price returned by the engine for each completed provider
+ * message. `contextTokens` is the size of the most recent turn's full prompt
+ * (input + cache read + cache creation) — the live "how full is the window"
+ * number, shown against `contextWindow`.
  */
 export interface SessionUsage {
   costUsd: number;
-  costApproximate?: boolean;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
