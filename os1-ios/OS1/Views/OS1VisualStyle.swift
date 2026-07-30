@@ -1,6 +1,9 @@
 import SwiftUI
+import Observation
 #if os(macOS)
 import AppKit
+#else
+import UIKit
 #endif
 
 enum OS1VisualStyle {
@@ -101,14 +104,11 @@ struct RepoTile: View {
                     .frame(width: size, height: size)
                     .background(color)
             }
-            if let iconURL {
-                AsyncImage(url: iconURL) { phase in
-                    if case .success(let image) = phase {
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    }
-                }
+            if let iconURL,
+               let image = RepoImageCache.shared.images[iconURL.absoluteString] {
+                image
+                    .resizable()
+                    .scaledToFill()
             }
         }
         .frame(width: size, height: size)
@@ -118,6 +118,60 @@ struct RepoTile: View {
                 style: .continuous
             )
         )
-            .accessibilityLabel(Self.label(for: name))
+        .accessibilityLabel(Self.label(for: name))
+        .task(id: iconURL?.absoluteString) {
+            if let iconURL {
+                await RepoImageCache.shared.ensureLoaded(iconURL)
+            }
+        }
+    }
+}
+
+/// Shared cache prevents scrolling a list from cancelling and restarting repo
+/// image requests, which left recycled tiles on their colored fallback.
+@MainActor
+@Observable
+final class RepoImageCache {
+    static let shared = RepoImageCache()
+
+    private(set) var images: [String: Image] = [:]
+    private var inflight: Set<String> = []
+    private var lastFailureAt: [String: Date] = [:]
+
+    func ensureLoaded(_ url: URL) async {
+        let key = url.absoluteString
+        guard images[key] == nil, !inflight.contains(key) else { return }
+        if let failed = lastFailureAt[key], Date().timeIntervalSince(failed) < 15 {
+            return
+        }
+        inflight.insert(key)
+        defer { inflight.remove(key) }
+
+        var request = ServerConfig.shared.authorizedRequest(url)
+        request.cachePolicy = .returnCacheDataElseLoad
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse,
+               !(200..<300).contains(http.statusCode) {
+                lastFailureAt[key] = Date()
+                return
+            }
+            #if os(macOS)
+            guard let decoded = NSImage(data: data) else {
+                lastFailureAt[key] = Date()
+                return
+            }
+            images[key] = Image(nsImage: decoded)
+            #else
+            guard let decoded = UIImage(data: data) else {
+                lastFailureAt[key] = Date()
+                return
+            }
+            images[key] = Image(uiImage: decoded)
+            #endif
+            lastFailureAt[key] = nil
+        } catch {
+            lastFailureAt[key] = Date()
+        }
     }
 }
