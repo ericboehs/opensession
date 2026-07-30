@@ -87,4 +87,5 @@ it — the only obligations are keeping the notice and not using the project's
 trademarks to imply endorsement.
 
 Contributions are accepted under the same license; see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[CONTRIBUTING.md](CONTRIBUTING.md). Security reports go through
+[SECURITY.md](SECURITY.md).
