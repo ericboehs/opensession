@@ -679,7 +679,7 @@ struct SessionsListView: View {
             SessionRow(session: workspace.statusSession, title: workspace.title)
         }
         .buttonStyle(.plain)
-        .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 12))
+        .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
         .swipeActions(edge: .trailing) { archiveButton(workspace, viaSwipe: true) }
