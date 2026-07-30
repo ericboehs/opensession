@@ -4015,7 +4015,11 @@ export function SessionViewer({
 					    tab strip is hidden, so the affordance to spawn a sibling chat
 					    lives here beside the title (⌘T does the same). With 2+ chats the
 					    strip's own + takes over and this disappears. Phone uses the ⋯
-					    menu's newChatAction instead. */}
+					    menu's newChatAction instead. Square 30px chip: same height and
+					    corner radius as the ⋯ and side-panel buttons at the other end of
+					    the bar. Sized by padding it came out 37×33 — a wide rectangle
+					    around a 13px cross, so the hover chip read larger than every
+					    control beside it. */}
 					{!isPhone && onNewChat && workspaceChats?.length === 1 && (
 						<Tooltip
 							label="New tab in this workspace"
@@ -4023,7 +4027,7 @@ export function SessionViewer({
 						>
 							<button
 								type="button"
-								className="flex-none inline-flex items-center justify-center rounded-md px-1.5 py-1 text-dim transition-colors hover:bg-hover hover:text-fg"
+								className="flex-none inline-flex size-[30px] items-center justify-center rounded-[calc(10px*var(--rf))] text-dim transition-colors hover:bg-hover hover:text-fg"
 								onClick={() => onNewChat("share")}
 								aria-label="New tab"
 							>
