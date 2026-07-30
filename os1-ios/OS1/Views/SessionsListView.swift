@@ -642,7 +642,7 @@ struct SessionsListView: View {
             SessionRow(session: session)
         }
         .buttonStyle(.plain)
-        .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
+        .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 12))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
         .swipeActions(edge: .trailing) { archiveButton(session, viaSwipe: true) }
