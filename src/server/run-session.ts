@@ -53,7 +53,7 @@ import {
 	transcriptLineRunnerNotice,
 	transcriptLineUser,
 } from "./opencode-transcript";
-import { wrapContext, stripContext } from "./prompt-context";
+import { wrapContext, stripContext, isContextOnly } from "./prompt-context";
 import { activeRunRecords, type ActiveRunRecord } from "./run-journal";
 import { registerRunToken, unregisterRunToken } from "./run-rpc";
 import { createSlackPostScanner, linkThreadInIndex } from "./slack-links";
@@ -277,7 +277,10 @@ export function steerQueuedPrompt(
 		queue.splice(index, 0, item);
 		return false;
 	}
-	const attributed = item.user ? `[${item.user}] ${item.content}` : item.content;
+	const attributed =
+		item.user && !isContextOnly(item.content)
+			? `[${item.user}] ${item.content}`
+			: item.content;
 	const images = parseImageDataUrls(item.images || []);
 	if (
 		!steerAgentRun(
@@ -332,7 +335,10 @@ export function interruptQueuedPrompt(
 		queue.splice(index, 0, item);
 		return false;
 	}
-	const attributed = item.user ? `[${item.user}] ${item.content}` : item.content;
+	const attributed =
+		item.user && !isContextOnly(item.content)
+			? `[${item.user}] ${item.content}`
+			: item.content;
 	const images = parseImageDataUrls(item.images || []);
 	if (
 		!isAgentSessionBusy(
@@ -1487,10 +1493,13 @@ async function runSessionPromptInner(
 	// message lands bare in the transcript and the viewer credits it to the
 	// session owner (startedBy). The owner's own turns stay bare (the common
 	// case), automation runs pass no user, and multi-message queue drains
-	// arrive pre-attributed — don't double-prefix those.
+	// arrive pre-attributed — don't double-prefix those. A prompt that is ONLY
+	// injected context (the auto-continue nudge) is nobody's message: attributing
+	// it left a bare "[auto-continue] " stub as the whole transcript entry.
 	if (
 		user &&
 		user !== session.startedBy &&
+		!isContextOnly(content) &&
 		!content.startsWith(`[${user}] `)
 	) {
 		prompt = `[${user}] ${prompt}`;

@@ -522,6 +522,20 @@ export const MessageBubble = React.memo(function MessageBubble({
 		// the current viewer. Falls back to "You" when the owner is unknown.
 		const sender = attribution ? attribution.name : owner;
 		const fromOther = sender && sender !== me ? sender : null;
+		// Nothing to show: an entry that strips down to just its "[Name] "
+		// delivery attribution is plumbing whose body was fenced context (the
+		// auto-continue nudge). Render nothing rather than a label + identity dot
+		// hovering above the next message. New turns no longer take an
+		// attribution at all (see isContextOnly); this also hides the ones
+		// already persisted.
+		if (
+			!displayContent &&
+			!entry.images?.length &&
+			!entry.videos?.length &&
+			!entry.files?.length
+		) {
+			return null;
+		}
 		// Your own settled messages skip the label entirely — the right-aligned
 		// bubble already says "you". Turns sent by someone else keep the
 		// attribution label.
@@ -536,25 +550,21 @@ export const MessageBubble = React.memo(function MessageBubble({
 						<MsgTime ts={entry.timestamp} />
 					</div>
 				)}
-				{Boolean(
-					displayContent || entry.images?.length || entry.videos?.length || entry.files?.length,
-				) && (
-					// One stack anchors the hover time below both the bubble and attachments.
-					<div className="msg-user-row">
-						{!fromOther && <BubbleHoverTime ts={entry.timestamp} />}
-						{displayContent && (
-							<ClampedBody
-								className="msg-body msg-body-user markdown"
-								content={displayContent}
-								entry={entry}
-								sessionId={sessionId}
-							/>
-						)}
-						<EntryImages images={entry.images} sessionId={sessionId} />
-						<EntryVideos videos={entry.videos} />
-						<EntryFiles files={entry.files} />
-					</div>
-				)}
+				{/* One stack anchors the hover time below both the bubble and attachments. */}
+				<div className="msg-user-row">
+					{!fromOther && <BubbleHoverTime ts={entry.timestamp} />}
+					{displayContent && (
+						<ClampedBody
+							className="msg-body msg-body-user markdown"
+							content={displayContent}
+							entry={entry}
+							sessionId={sessionId}
+						/>
+					)}
+					<EntryImages images={entry.images} sessionId={sessionId} />
+					<EntryVideos videos={entry.videos} />
+					<EntryFiles files={entry.files} />
+				</div>
 			</div>
 		);
 	}
