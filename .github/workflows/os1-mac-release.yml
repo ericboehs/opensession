@@ -24,7 +24,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      # SHA-pinned: this job runs with the Developer ID certificate and
+      # notarisation credentials present, so a moved tag on a third-party
+      # action would execute right next to them. (v2.2.0 at time of pinning.)
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
