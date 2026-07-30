@@ -128,7 +128,7 @@ export function UsageMeter({
 				closeDelay={100}
 				className={cn(
 					"group flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium",
-					"text-dim hover:bg-accent-soft hover:text-fg data-[popup-open]:text-fg",
+					"text-dim hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg",
 					"cursor-pointer select-none outline-none transition-colors",
 					className,
 				)}
