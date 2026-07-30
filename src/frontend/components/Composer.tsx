@@ -896,11 +896,8 @@ export function Composer({
                       noteMode
                         ? {
                             width: "auto",
-                            gap: 5,
-                            padding: "0 9px",
-                            borderColor: "var(--yellow)",
-                            background:
-                              "color-mix(in srgb, var(--yellow) 14%, transparent)",
+                            gap: 6,
+                            padding: "0 6px",
                             color: "var(--yellow)",
                           }
                         : undefined
