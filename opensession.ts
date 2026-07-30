@@ -456,12 +456,17 @@ async function loadAgents(): Promise<AgentModule[]> {
 // real restart reloads their code, and that restart is now graceful, below).
 if (!g.__backstageBooted) {
 	const localProfile = isLocalProfile();
+	let detachedAdoption: Promise<number> | undefined;
 	if (!localProfile) {
 	// Detached engine servers (src/server/opencode-detach.ts): opt this — and
 	// only this — process into spawning `opencode serve` in transient systemd
 	// user scopes, so in-flight turns survive a `systemctl restart`. Runner-host
 	// and sandbox contexts never enable it. Kill switch: OPENSESSION_OC_DETACH=0.
 	enableOpencodeServerDetach();
+	// Begin adoption before agents, schedulers, or webhook intake can start a
+	// run. ensureOpencodeServer waits for this promise, preventing a fresh spawn
+	// from racing an older detached server with the same pool key.
+	detachedAdoption = adoptDetachedOpencodeServers();
 
 	// Public dial-back ingress for remote sandboxes (src/server/public-ingress.ts):
 	// a second, isolated listener serving ONLY the run-ws/rpc-ws upgrades +
@@ -570,7 +575,7 @@ if (!g.__backstageBooted) {
 		// entries (tryReattachOpencodeRun) instead of re-prompting their sessions.
 		if (!localProfile) {
 			try {
-				const adopted = await adoptDetachedOpencodeServers();
+				const adopted = await (detachedAdoption ?? adoptDetachedOpencodeServers());
 				if (adopted > 0) {
 					console.log(`[runner] Adopted ${adopted} detached opencode server(s) from before restart`);
 				}

@@ -10,6 +10,8 @@ import {
   buildOpencodeInstructions,
   reconnectSharedInProcessMcp,
   sharedOpencodeEligible,
+  sharedServerKey,
+  opencodeServerDisposition,
   shouldRepairEmptyCompletion,
   shouldRetryTransientRun,
   emptyCompletionRepairPrompt,
@@ -77,6 +79,44 @@ describe("shared server eligibility", () => {
         mcpGrantUser: "Michiel",
       }),
     ).toBe(false);
+  });
+
+  test("separates user GitHub auth from the service-credential pool", () => {
+    expect(sharedServerKey("openai-account", "Kent")).toBe(
+      "shared:openai-account:kent",
+    );
+    expect(sharedServerKey("openai-account", "Kent", "9ranty")).toBe(
+      "shared:openai-account:kent:github-9ranty",
+    );
+  });
+
+  test("drains adopted recovery holds before reusing or replacing them", () => {
+    expect(
+      opencodeServerDisposition({
+        alive: true,
+        sameConfig: true,
+        sharedRequest: false,
+        activeRuns: 0,
+        recoveringRuns: 1,
+      }),
+    ).toBe("drain");
+    expect(
+      opencodeServerDisposition({
+        alive: true,
+        sameConfig: true,
+        sharedRequest: false,
+        activeRuns: 0,
+      }),
+    ).toBe("reuse");
+    expect(
+      opencodeServerDisposition({
+        alive: true,
+        sameConfig: true,
+        sharedRequest: true,
+        activeRuns: 0,
+        recoveringRuns: 1,
+      }),
+    ).toBe("reuse");
   });
 });
 

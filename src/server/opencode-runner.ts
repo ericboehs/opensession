@@ -565,15 +565,23 @@ export function sharedOpencodeEligible(opts: {
   return inprocNames.every((n) => SHARED_INPROCESS_SERVERS.includes(n));
 }
 
-/** Pool key for a shared server: the (bridge account × user) tuple that is
+/** Pool key for a shared server: the (bridge account × user × GitHub auth) tuple that is
  *  baked into the server's spawn env/config and therefore cannot vary
  *  per-prompt. bridgeTag pins the provider auth (meridian account /
  *  seeded-openai account / native bridge / plain API-key providers); the user
  *  pins the per-user external-MCP view (allowedUsers via filterMcpServers)
- *  and the git identity env. */
-export function sharedServerKey(bridgeTag: string, user?: string): string {
+ *  and the git identity env. Runs using the service GitHub credential keep the
+ *  legacy key; an authenticated user's token gets its own pool. */
+export function sharedServerKey(
+  bridgeTag: string,
+  user?: string,
+  githubLogin?: string | null,
+): string {
   const u = (user || "anon").toLowerCase().replace(/[^a-z0-9@._-]/g, "_");
-  return `shared:${bridgeTag}:${u}`;
+  const gh = githubLogin
+    ? `:github-${githubLogin.toLowerCase().replace(/[^a-z0-9._-]/g, "_")}`
+    : "";
+  return `shared:${bridgeTag}:${u}${gh}`;
 }
 
 /** Non-null = the reason this run may not use the opencode engine. */
@@ -1623,6 +1631,9 @@ export interface OpencodeServerEntry {
   /** Config changed while runs were active (shared servers only): removed
    *  from the pool, kept alive until its last run finishes, then killed. */
   draining?: boolean;
+  /** Busy turns observed during boot adoption but not yet claimed by journal
+   *  reattachment. Protects the survivor during the restart recovery gap. */
+  recoveringSessionIds?: Set<string>;
   /** Stable per-server run-rpc token for the michael-* stdio proxies. */
   rpcToken: string;
   /** Stable per-server Meridian proxy API key (meridian-mode servers only) —
@@ -1839,8 +1850,12 @@ function drainServer(key: string, entry: OpencodeServerEntry, reason: string): v
 }
 
 /** Called from a run's finally once activeRuns is decremented. */
+function recoveringRunCount(entry: OpencodeServerEntry): number {
+  return entry.recoveringSessionIds?.size ?? 0;
+}
+
 function reapDrainedServer(entry: OpencodeServerEntry): void {
-  if (!entry.draining || entry.activeRuns > 0) return;
+  if (!entry.draining || entry.activeRuns > 0 || recoveringRunCount(entry) > 0) return;
   drainingServers.delete(entry);
   killServerProc(entry, "drained (config changed)");
 }
@@ -1872,7 +1887,7 @@ const IDLE_SWEEP_MS = 10 * 60 * 1000;
 if (!g.__opencodeIdleSweep) {
   g.__opencodeIdleSweep = setInterval(() => {
     for (const [key, entry] of servers) {
-      if (entry.activeRuns > 0 || entry.draining) continue;
+      if (entry.activeRuns > 0 || recoveringRunCount(entry) > 0 || entry.draining) continue;
       const lastActivity = Math.max(entry.lastUsed, dbLastActivityMs(entry.dbPath) ?? 0);
       if (Date.now() - lastActivity >= idleKillMsFor(entry)) {
         killServer(key, entry, "idle sweep");
@@ -1887,7 +1902,7 @@ if (!g.__opencodeIdleSweep) {
     // attach. Reattach happens seconds after boot, so a still-idle draining
     // entry at 30 minutes is dead weight.
     for (const entry of drainingServers) {
-      if (entry.activeRuns > 0) continue;
+      if (entry.activeRuns > 0 || recoveringRunCount(entry) > 0) continue;
       if (Date.now() - entry.lastUsed >= IDLE_KILL_MS) {
         drainingServers.delete(entry);
         killServerProc(entry, "idle sweep (draining)");
@@ -1905,7 +1920,11 @@ function scheduleIdleKill(key: string): void {
   entry.idleTimer = setTimeout(() => {
     const cur = servers.get(key);
     if (!cur || cur !== entry) return;
-    if (cur.activeRuns > 0 || Date.now() - cur.lastUsed < idleMs) {
+    if (
+      cur.activeRuns > 0 ||
+      recoveringRunCount(cur) > 0 ||
+      Date.now() - cur.lastUsed < idleMs
+    ) {
       scheduleIdleKill(key);
       return;
     }
@@ -2117,6 +2136,26 @@ export function opencodeServerConfigHash(
   ).toString(16);
 }
 
+export function opencodeServerDisposition(input: {
+  alive: boolean;
+  sameConfig: boolean;
+  sharedRequest: boolean;
+  activeRuns: number;
+  recoveringRuns?: number;
+}): "reuse" | "drain" | "replace" {
+  const recovering = (input.recoveringRuns ?? 0) > 0;
+  // A shared server can safely accept a different session while its recovered
+  // sessions finish. A per-session server cannot: its one session is already
+  // occupied by the pre-restart turn.
+  if (input.alive && input.sameConfig && (input.sharedRequest || !recovering)) {
+    return "reuse";
+  }
+  if (input.alive && (recovering || (input.sharedRequest && input.activeRuns > 0))) {
+    return "drain";
+  }
+  return "replace";
+}
+
 export async function ensureOpencodeServer(
   key: string,
   cwd: string,
@@ -2125,6 +2164,10 @@ export async function ensureOpencodeServer(
   extraEnv?: Record<string, string>,
   opts?: { shared?: boolean }
 ): Promise<OpencodeServerEntry> {
+  // Boot starts detached-server adoption before agents/webhooks accept work.
+  // Do not race it: a fresh spawn for a key adoption has not reached yet would
+  // leave the surviving server alive but untracked under the same key.
+  if (detachedAdoptionPromise) await detachedAdoptionPromise.catch(() => {});
   // Per-server DB shard rides extraEnv so it participates in the identity:
   // flipping sharding on/off (or a key collision after a rename) respawns the
   // server rather than silently mixing DB files. Derived from the key, so it's
@@ -2145,12 +2188,21 @@ export async function ensureOpencodeServer(
     const existing = servers.get(key);
     if (existing) {
       const alive = existing.proc.exitCode === null && !existing.proc.killed;
-      if (alive && existing.configHash === configHash) return existing;
+      const recovering = recoveringRunCount(existing) > 0;
+      const disposition = opencodeServerDisposition({
+        alive,
+        sameConfig: existing.configHash === configHash,
+        sharedRequest: !!opts?.shared,
+        activeRuns: existing.activeRuns,
+        recoveringRuns: recoveringRunCount(existing),
+      });
+      if (disposition === "reuse") return existing;
       // Shared servers with runs in flight DRAIN on a config change (a kill
-      // would abort every other session's turn); per-session servers keep
-      // today's immediate respawn (their runs are serial).
-      if (alive && opts?.shared && existing.activeRuns > 0) {
-        drainServer(key, existing, "config changed");
+      // would abort every other session's turn). An adopted per-session server
+      // with a recovery reservation drains too: its pre-restart turn is still
+      // live, so neither reuse nor immediate replacement is safe yet.
+      if (disposition === "drain") {
+        drainServer(key, existing, recovering ? "restart recovery" : "config changed");
       } else {
         killServer(key, existing, alive ? "config changed" : "process died");
       }
@@ -2336,24 +2388,74 @@ function syncDetachedRecord(entry: OpencodeServerEntry): void {
  *  (verified live 2026-07-29) — so probe with each journaled run's cwd and
  *  check that run's engine session specifically. Unreachable server → 0
  *  (the caller stops it, same as an unhealthy adoptee). */
-async function detachedRecordBusyRuns(rec: DetachedServerRecord): Promise<number> {
+async function detachedRecordBusySessionIds(rec: DetachedServerRecord): Promise<string[]> {
   const runs = activeRunRecords().filter(
     (r) => r.serverKey === rec.key && r.claudeSessionId && r.cwd
   );
-  if (!runs.length) return 0;
+  if (!runs.length) return [];
   const client = clientFor({ url: rec.url, password: rec.password } as OpencodeServerEntry);
-  let busy = 0;
+  const busy: string[] = [];
   for (const run of runs) {
     try {
-      const st = await client.session.status({ query: { directory: run.cwd } });
+      const st = await client.session.status({
+        query: { directory: run.cwd },
+        signal: AbortSignal.timeout(3_000),
+      });
       const statuses = st.data as Record<string, { type?: string }> | undefined;
       const mine = statuses?.[run.claudeSessionId!];
-      if (mine && mine.type !== "idle") busy++;
+      if (mine && mine.type !== "idle") busy.push(run.claudeSessionId!);
     } catch {
       // Probe failure = no evidence of a live turn on this instance.
     }
   }
   return busy;
+}
+
+async function probeDetachedRecords(
+  records: DetachedServerRecord[],
+): Promise<Map<string, { healthy: boolean; busySessionIds: string[] }>> {
+  const queue = [...records];
+  const results = new Map<string, { healthy: boolean; busySessionIds: string[] }>();
+  const workers = Array.from({ length: Math.min(8, queue.length) }, async () => {
+    for (;;) {
+      const record = queue.shift();
+      if (!record) return;
+      const [healthy, busySessionIds] = await Promise.all([
+        opencodeServerHealthy(record.url, record.password),
+        detachedRecordBusySessionIds(record),
+      ]);
+      results.set(record.unit, { healthy, busySessionIds });
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+const DETACHED_RECOVERY_GRACE_MS = 5 * 60_000;
+const detachedRecoveryEntries = new Set<OpencodeServerEntry>();
+
+function reserveDetachedRecovery(entry: OpencodeServerEntry, busySessionIds: string[]): void {
+  if (!busySessionIds.length) return;
+  entry.recoveringSessionIds = new Set(busySessionIds);
+  detachedRecoveryEntries.add(entry);
+}
+
+function scheduleDetachedRecoveryExpiry(): void {
+  if (!detachedRecoveryEntries.size) return;
+  const timer = setTimeout(() => {
+    for (const entry of detachedRecoveryEntries) {
+      const unclaimed = recoveringRunCount(entry);
+      if (unclaimed > 0) {
+        entry.recoveringSessionIds?.clear();
+        console.warn(
+          `[opencode-runner] released ${unclaimed} unclaimed recovery reservation(s) for ${entry.key}`,
+        );
+        reapDrainedServer(entry);
+      }
+    }
+    detachedRecoveryEntries.clear();
+  }, DETACHED_RECOVERY_GRACE_MS);
+  (timer as unknown as { unref?: () => void }).unref?.();
 }
 
 /**
@@ -2364,8 +2466,22 @@ async function detachedRecordBusyRuns(rec: DetachedServerRecord): Promise<number
  * registry entry removed). Called from opensession.ts's boot block BEFORE
  * resumeInterruptedRuns; must never throw.
  */
-export async function adoptDetachedOpencodeServers(): Promise<number> {
-  if (!opencodeDetachActive()) return 0;
+let detachedAdoptionPromise: Promise<number> | undefined;
+
+export function adoptDetachedOpencodeServers(): Promise<number> {
+  if (!opencodeDetachActive()) return Promise.resolve(0);
+  detachedAdoptionPromise ??= adoptDetachedOpencodeServersInner().catch((e) => {
+    console.error("[opencode-runner] detached-server adoption failed:", e);
+    return 0;
+  }).finally(() => {
+    // The grace period starts after the full adoption sweep, not while
+    // early entries are still waiting for restart recovery to begin.
+    scheduleDetachedRecoveryExpiry();
+  });
+  return detachedAdoptionPromise;
+}
+
+async function adoptDetachedOpencodeServersInner(): Promise<number> {
   const records = readDetachedRegistry();
   if (!records.length) return 0;
   const byKey = new Map<string, typeof records>();
@@ -2374,6 +2490,9 @@ export async function adoptDetachedOpencodeServers(): Promise<number> {
     if (list) list.push(r);
     else byKey.set(r.key, [r]);
   }
+  // Probe concurrently, mutate the registry serially below. This keeps boot
+  // recovery bounded without racing read-modify-write registry updates.
+  const probes = await probeDetachedRecords(records);
   let adopted = 0;
   for (const [key, recs] of byKey) {
     // Newest per key wins the pool slot; older duplicates are config-change
@@ -2397,8 +2516,8 @@ export async function adoptDetachedOpencodeServers(): Promise<number> {
         [...drainingServers].some((e) => e.proc.unit === r.unit) ||
         [...servers.values()].some((e) => e.proc.unit === r.unit);
       if (tracked) continue;
-      const busyRuns = await detachedRecordBusyRuns(r);
-      if (busyRuns > 0) {
+      const busySessionIds = probes.get(r.unit)?.busySessionIds ?? [];
+      if (busySessionIds.length > 0) {
         const entry: OpencodeServerEntry = {
           proc: adoptedProcHandle(r.unit, r.pid),
           url: r.url,
@@ -2416,11 +2535,12 @@ export async function adoptDetachedOpencodeServers(): Promise<number> {
           lastUsed: Date.now(),
           activeRuns: 0,
         };
+        reserveDetachedRecovery(entry, busySessionIds);
         drainingServers.add(entry);
         // Registry record stays: a further restart re-probes it, and the
         // eventual killServerProc removes it.
         console.log(
-          `[opencode-runner] kept superseded detached server ${r.unit} (${key}) — ${busyRuns} live turn(s), draining`
+          `[opencode-runner] kept superseded detached server ${r.unit} (${key}) — ${busySessionIds.length} live turn(s), draining`
         );
         continue;
       }
@@ -2429,8 +2549,10 @@ export async function adoptDetachedOpencodeServers(): Promise<number> {
       console.log(`[opencode-runner] stopped superseded detached server ${r.unit} (${key})`);
     }
     if (servers.has(key)) continue; // hot reload — the pool entry never died
-    const healthy = await opencodeServerHealthy(newest.url, newest.password);
-    if (!healthy) {
+    const probe = probes.get(newest.unit);
+    const healthy = probe?.healthy ?? false;
+    const busySessionIds = probe?.busySessionIds ?? [];
+    if (!healthy && !busySessionIds.length) {
       stopDetachedUnit(newest.unit);
       removeDetachedRecord(newest.unit);
       continue;
@@ -2443,6 +2565,7 @@ export async function adoptDetachedOpencodeServers(): Promise<number> {
       configHash: newest.configHash,
       key,
       shared: newest.shared,
+      draining: !healthy,
       rpcToken: newest.rpcToken,
       meridianKey: newest.meridianKey,
       meridianPort: newest.meridianPort,
@@ -2456,12 +2579,21 @@ export async function adoptDetachedOpencodeServers(): Promise<number> {
       lastUsed: dbLastActivityMs(newest.dbPath) ?? Date.now(),
       activeRuns: 0,
     };
-    servers.set(key, entry);
-    scheduleIdleKill(key);
-    adopted++;
-    console.log(
-      `[opencode-runner] adopted detached server for ${key} (${newest.unit}, ${newest.url})`
-    );
+    reserveDetachedRecovery(entry, busySessionIds);
+    if (healthy) {
+      servers.set(key, entry);
+      scheduleIdleKill(key);
+      adopted++;
+      console.log(
+        `[opencode-runner] adopted detached server for ${key} (${newest.unit}, ${newest.url})`
+      );
+    } else {
+      drainingServers.add(entry);
+      console.warn(
+        `[opencode-runner] kept unhealthy detached server ${newest.unit} (${key}) — ` +
+          `${busySessionIds.length} live turn(s), draining`,
+      );
+    }
   }
   reapOrphanedDetachedScopes();
   ensureScopeReapTicker();
@@ -2940,6 +3072,19 @@ async function* runOpencodeAttempt(
   // compact per-session server; its core coding tools remain available.
   const compactCerebras = parsed.providerID === "cerebras";
   const shared = !compactCerebras && sharedOpencodeEligible(opts);
+  const policy = opencodeRunPolicy({
+    deniedTools: opts.deniedTools,
+    confirmTools,
+    journalKind: journal?.kind,
+    disableLocalWorkspaceTools: opts.disableLocalWorkspaceTools,
+  });
+  // The GitHub credential is server-level state. Resolve its principal before
+  // provider setup so shared-server reuse (including Meridian's stable proxy
+  // key) addresses the correct service- or user-credential pool.
+  const githubUserLogin =
+    !isLocalProfile() && !policy.unattended && INTERACTIVE_KINDS.has(baseJournalKind(journal?.kind))
+      ? githubUserLoginForRun(user || author?.name)
+      : null;
   const turnId = crypto.randomUUID();
   let ocSessionId = opts.sessionId || "";
   // Set once a terminal path has run (turn finished, or a runFailure we've
@@ -3134,7 +3279,9 @@ async function* runOpencodeAttempt(
         // Stable per-server proxy key so the config hash — and the server —
         // survive across runs; a fresh key is minted only with a fresh server.
         const meridianKey =
-          servers.get(shared ? sharedServerKey(bridgeTag, user) : sessionKey)?.meridianKey ||
+          servers.get(
+            shared ? sharedServerKey(bridgeTag, user, githubUserLogin) : sessionKey,
+          )?.meridianKey ||
           crypto.randomUUID();
         const meridianEnv = meridianAccountEnv(picked, meridianKey);
         serverExtraEnv = {
@@ -3349,20 +3496,10 @@ async function* runOpencodeAttempt(
         serverExtraEnv = { ...(serverExtraEnv || {}), ...awsPointerEnv };
       }
     }
-    const serverKey = shared ? sharedServerKey(bridgeTag, user) : sessionKey;
-    const dirQuery = shared ? { directory: cwd } : undefined;
-    const q = dirQuery ? { query: dirQuery } : {};
-
     // Deny/confirm enforcement (see module doc): every run gets its deny-set
     // (incl. the confirm-listed money-movers) STRIPPED from the model's tool
     // list — config-level `tools` on per-session servers, per-prompt on shared
     // ones. The servers themselves stay mounted, so reads keep working.
-    const policy = opencodeRunPolicy({
-      deniedTools: opts.deniedTools,
-      confirmTools,
-      journalKind: journal?.kind,
-      disableLocalWorkspaceTools: opts.disableLocalWorkspaceTools,
-    });
     // Per-user GitHub auth (opt-in — github-auth.ts): the session owner's own
     // token rides the server env so `gh` acts as them (PRs authored by the
     // human, not the bot). Trust gate: interactive kinds only, and never a
@@ -3371,13 +3508,15 @@ async function* runOpencodeAttempt(
     // deny-set) keep the bot credential. Deterministic per user, so it's safe
     // in the shared-server config hash (a token change drain-respawns, same as
     // an identity change).
-    const githubUserLogin =
-      !isLocalProfile() && !policy.unattended && INTERACTIVE_KINDS.has(baseJournalKind(journal?.kind))
-        ? githubUserLoginForRun(user || author?.name)
-        : null;
     if (githubUserLogin) {
       serverExtraEnv = { ...(serverExtraEnv || {}), ...githubAuthEnv(user || author?.name) };
     }
+
+    const serverKey = shared
+      ? sharedServerKey(bridgeTag, user, githubUserLogin)
+      : sessionKey;
+    const dirQuery = shared ? { directory: cwd } : undefined;
+    const q = dirQuery ? { query: dirQuery } : {};
 
     const { mcp: externalMcp } = buildOpencodeMcpConfig(shared ? undefined : mcpServers, user, [opts.mcpGrantUser, user]);
 
@@ -4992,9 +5131,16 @@ export async function tryReattachOpencodeRun(
   for (const cand of candidates) {
     const candQ = cand.shared ? { query: { directory: run.cwd } } : {};
     try {
-      const sess = await clientFor(cand).session.get({ path: { id: ocSessionId }, ...candQ });
+      const sess = await clientFor(cand).session.get({
+        path: { id: ocSessionId },
+        ...candQ,
+        signal: AbortSignal.timeout(5_000),
+      });
       if (!sess.data) continue;
-      const st = await clientFor(cand).session.status({ ...candQ });
+      const st = await clientFor(cand).session.status({
+        ...candQ,
+        signal: AbortSignal.timeout(5_000),
+      });
       const statuses = st.data as Record<string, { type?: string }> | undefined;
       const mine = statuses?.[ocSessionId];
       if (mine && mine.type !== "idle") {
@@ -5004,6 +5150,15 @@ export async function tryReattachOpencodeRun(
       }
       entry ??= cand;
     } catch {
+      // Adoption already observed a busy journaled turn on this exact server.
+      // If the restart-time probe is now inconclusive, attach conservatively
+      // instead of falling through to a continuation that could double-drive
+      // the still-live original turn.
+      if (cand.recoveringSessionIds?.has(ocSessionId)) {
+        entry = cand;
+        busy = true;
+        break;
+      }
       continue;
     }
   }
@@ -5033,6 +5188,10 @@ export async function tryReattachOpencodeRun(
     for (const key of registeredKeys) activeOpencodeRuns.set(key, abortController);
     detachedRunKeys.add(runKey);
     const server = entry!;
+    if (busy) server.recoveringSessionIds?.delete(ocSessionId!);
+    // Claim only once iteration starts, so a caller failing between receiving
+    // this generator and its first next() cannot leak an active-run hold. The
+    // recovery reservation protects the server until this synchronous step.
     server.activeRuns++;
     server.lastUsed = Date.now();
     // Replace the boot sweep's claimed record with a live one (same runKey)
@@ -5471,7 +5630,10 @@ export async function tryReattachOpencodeRun(
             void (async () => {
               try {
                 if (idle) return;
-                const res = await client.session.status({ ...q });
+                const res = await client.session.status({
+                  ...q,
+                  signal: AbortSignal.timeout(5_000),
+                });
                 const statuses = res.data as Record<string, { type?: string }> | undefined;
                 statusPollFailures = 0;
                 const mine = statuses?.[ocSessionId!];
@@ -5545,7 +5707,11 @@ export async function tryReattachOpencodeRun(
       // Turn over — read the authoritative final assistant message (mirrors
       // the master copy's tail; the seeded dedup keeps pre-restart text from
       // double-appending).
-      const msgs = await client.session.messages({ path: { id: ocSessionId! }, ...q });
+      const msgs = await client.session.messages({
+        path: { id: ocSessionId! },
+        ...q,
+        signal: AbortSignal.timeout(10_000),
+      });
       const list = (msgs.data || []) as Array<{ info: any; parts: any[] }>;
       const lastAssistant = latestTurnAssistant(list);
       const info = lastAssistant?.info;
