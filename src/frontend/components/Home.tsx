@@ -552,9 +552,13 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
                           >
                             <StateIcon state={row.state} />
                           </span>
-                          <span className="flex h-5 w-5 items-center justify-center rounded-sm bg-accent-soft text-[9px] font-bold uppercase text-accent">
-                            {row.repo.slice(0, 2)}
-                          </span>
+                          {person === "all" && row.person ? (
+                            <UserAvatar name={personLabel(row.person)} size={20} />
+                          ) : (
+                            <span className="flex h-5 w-5 items-center justify-center rounded-sm bg-accent-soft text-[9px] font-bold uppercase text-accent">
+                              {row.repo.slice(0, 2)}
+                            </span>
+                          )}
                           <span className="min-w-0">
                             <span className="flex min-w-0 items-baseline gap-2">
                               <span className="truncate text-[14px] text-dim group-hover:text-fg">{row.title}</span>
