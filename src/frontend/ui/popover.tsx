@@ -72,12 +72,23 @@ function Popup({
 	side,
 	align,
 	sideOffset = 8,
+	anchor,
+	initialFocus = false,
 	children,
 }: {
 	className?: string;
 	side?: React.ComponentProps<typeof BasePopover.Positioner>["side"];
 	align?: React.ComponentProps<typeof BasePopover.Positioner>["align"];
 	sideOffset?: number;
+	/** Position against something other than the Trigger — pass the wrapper of a
+	 * control cluster whose popup opens from several places (a caret, a
+	 * right-click, a disabled button), so the popup keeps one anchor no matter
+	 * which of them opened it. */
+	anchor?: React.ComponentProps<typeof BasePopover.Positioner>["anchor"];
+	/** Defaults to false: most popups here are hover preview cards, and yanking
+	 * focus out of the page on hover would be hostile. Pass `true` for a
+	 * click-opened popup that holds controls, so the keyboard reaches them. */
+	initialFocus?: React.ComponentProps<typeof BasePopover.Popup>["initialFocus"];
 	children: React.ReactNode;
 }) {
 	return (
@@ -86,12 +97,12 @@ function Popup({
 				side={side}
 				align={align}
 				sideOffset={sideOffset}
+				anchor={anchor}
 				collisionPadding={8}
 				className="z-[10001] outline-none"
 			>
 				<BasePopover.Popup
-					// A preview card, not a form: don't yank focus into the popup.
-					initialFocus={false}
+					initialFocus={initialFocus}
 					className={cn(
 						"rounded-[14px] [corner-shape:squircle] border border-line-strong bg-panel shadow-[0_10px_30px_rgba(0,0,0,0.32)] outline-none",
 						"origin-[var(--transform-origin)] transition-[transform,opacity] duration-[120ms] ease-out",

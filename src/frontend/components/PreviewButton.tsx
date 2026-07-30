@@ -14,6 +14,7 @@ import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { Menu } from "../ui/menu";
+import { Popover } from "../ui/popover";
 import {
   IconArrowUpRight,
   IconCamera,
@@ -120,15 +121,9 @@ export function PreviewButton({
     if (status?.running) setStarting(false);
   }, [status?.running]);
 
-  // Close the popover on outside click.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  // Dismissal (outside press, Escape) comes from ui/popover — the popup is
+  // portalled, so a hand-rolled "outside click" test against wrapRef would
+  // read every press inside the popup as outside and close it.
 
   if (!previewable || !status) return null;
 
@@ -215,6 +210,10 @@ export function PreviewButton({
       setShot(null);
     }
     setSnapping(false);
+    // Hand over to the snapshot modal. The popup keeps its "Capturing…" label
+    // until the result lands, then steps aside — it is portalled at the popover
+    // layer, above this modal, so leaving it open would cover the screenshot.
+    setOpen(false);
   }
 
   // Shared snapshot preview modal — rendered by both layouts.
@@ -278,8 +277,20 @@ export function PreviewButton({
 
   // Shared dev-services popover — the stop/start control and per-service list.
   // In header mode it also carries the snapshot action (there's no caret for it).
-  const servicesPopover = open && (
-    <div className="absolute right-0 top-[calc(100%+6px)] z-50 min-w-[240px] rounded-[8px] border border-line-strong bg-[var(--bg-elevated,var(--bg-active))] p-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+  // Anchored to the whole control cluster rather than to one trigger, because
+  // every variant can open it from more than one place (caret, right-click, the
+  // disabled button) — `align="end"` then reproduces the old `right-0` edge.
+  const servicesPopup = (
+    <Popover.Popup
+      anchor={wrapRef}
+      side="bottom"
+      align="end"
+      sideOffset={6}
+      // Holds real controls, so let the keyboard in (the hover cards on this
+      // primitive deliberately don't take focus).
+      initialFocus
+      className="min-w-[240px] p-2.5"
+    >
       <div className="mb-2 text-[11px] font-bold tracking-[-0.01em] text-faint">Dev services</div>
       {status.services.length === 0 ? (
         <div className="px-0 py-1 text-xs text-faint">
@@ -345,8 +356,17 @@ export function PreviewButton({
           "Add .opensession/start.sh or configure previewCommand."
         )}
       </div>
-    </div>
+    </Popover.Popup>
   );
+
+  // Right-click and disabled-state paths only OPEN the popup: the caret is a
+  // real Popover.Trigger and owns toggling, so a second toggling opener would
+  // race Base UI's outside-press dismissal (which fires on the press first,
+  // then our handler would reopen what it just closed).
+  const openServices = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    setOpen(true);
+  };
 
   if (variant === "menu") {
     return (
@@ -371,10 +391,6 @@ export function PreviewButton({
   }
 
   if (variant === "action") {
-    const openMenu = (e: React.MouseEvent) => {
-      e.preventDefault();
-      setOpen((v) => !v);
-    };
     const mainClass =
       "flex min-w-0 flex-1 items-center gap-2 rounded-md rounded-r-none px-2.5 py-2 text-left text-[12.5px] font-semibold text-fg no-underline outline-none transition-colors hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:opacity-50 aria-disabled:cursor-default aria-disabled:opacity-50";
     const mainContent = (
@@ -389,51 +405,55 @@ export function PreviewButton({
     );
 
     return (
-      <div className="relative flex min-w-0" ref={wrapRef}>
-        {running ? (
-          <a
-            className={mainClass}
-            href={url}
-            target="_blank"
-            rel="noopener"
-            title={`Open the webapp — ${url}`}
-            onClick={(e) => {
-              if (e.metaKey || e.ctrlKey) {
-                e.preventDefault();
-                copy(url, { toast: "Preview link copied" });
-              } else if (onOpenTab) {
-                e.preventDefault();
-                onOpenTab();
-              }
-            }}
-          >
-            {mainContent}
-          </a>
-        ) : isStarting ? (
-          <button className={mainClass} onClick={stop} disabled={stopping}>
-            {mainContent}
-          </button>
-        ) : !bootable ? (
-          <button className={mainClass} onClick={openMenu} aria-disabled="true">
-            {mainContent}
-          </button>
-        ) : (
-          <button className={mainClass} onClick={start}>
-            {mainContent}
-          </button>
-        )}
-        <button
-          className="flex w-8 shrink-0 items-center justify-center rounded-md rounded-l-none text-faint outline-none transition-colors hover:bg-hover hover:text-fg focus-visible:bg-hover focus-visible:text-fg"
-          onClick={openMenu}
-          title="Dev services"
-          aria-label="Dev services"
-          aria-expanded={open}
-        >
-          <IconChevronDown size={16} />
-        </button>
-        {snapshotModal}
-        {servicesPopover}
-      </div>
+      <Popover.Root open={open} onOpenChange={setOpen}>
+        <div className="relative flex min-w-0" ref={wrapRef}>
+          {running ? (
+            <a
+              className={mainClass}
+              href={url}
+              target="_blank"
+              rel="noopener"
+              title={`Open the webapp — ${url}`}
+              onClick={(e) => {
+                if (e.metaKey || e.ctrlKey) {
+                  e.preventDefault();
+                  copy(url, { toast: "Preview link copied" });
+                } else if (onOpenTab) {
+                  e.preventDefault();
+                  onOpenTab();
+                }
+              }}
+            >
+              {mainContent}
+            </a>
+          ) : isStarting ? (
+            <button className={mainClass} onClick={stop} disabled={stopping}>
+              {mainContent}
+            </button>
+          ) : !bootable ? (
+            <button className={mainClass} onClick={openServices} aria-disabled="true">
+              {mainContent}
+            </button>
+          ) : (
+            <button className={mainClass} onClick={start}>
+              {mainContent}
+            </button>
+          )}
+          <Popover.Trigger
+            render={
+              <button
+                className="flex w-8 shrink-0 items-center justify-center rounded-md rounded-l-none text-faint outline-none transition-colors hover:bg-hover hover:text-fg focus-visible:bg-hover focus-visible:text-fg"
+                title="Dev services"
+                aria-label="Dev services"
+              >
+                <IconChevronDown size={16} />
+              </button>
+            }
+          />
+          {snapshotModal}
+        </div>
+        {servicesPopup}
+      </Popover.Root>
     );
   }
 
@@ -444,243 +464,247 @@ export function PreviewButton({
   // the popover's stop action was right-click-only and nobody found it
   // (Michiel, 2026-07-09).
   if (variant === "header") {
-    const openMenu = (e: React.MouseEvent) => {
-      e.preventDefault();
-      setOpen((v) => !v);
-    };
     const menuCaret = (running || anyRunning || isStarting) && (
       <Tooltip label="Dev services — stop the server, snapshot" side="bottom">
-        <button
-          className={cn(
-            headerIconBase,
-            "-ml-[3px] px-px py-[3px]",
-            open
-              ? "text-green hover:bg-hover hover:text-green"
-              : "text-faint hover:bg-hover hover:text-dim",
-          )}
-          onClick={openMenu}
-          aria-expanded={open}
-          aria-label="Dev services"
-        >
-          <IconChevronDown size={16} />
-        </button>
-      </Tooltip>
-    );
-    return (
-      <div className="relative inline-flex items-center" ref={wrapRef}>
-        {running ? (
-          <Tooltip
-            label={
-              copied
-                ? "Link copied"
-                : "Open the running app — ⌘-click to copy the link, right-click for dev services"
-            }
-            side="bottom"
-          >
-            <a
-              className={cn(headerIconBase, "text-green hover:bg-hover hover:text-green")}
-              href={url}
-              target="_blank"
-              rel="noopener"
-              onContextMenu={openMenu}
-              onClick={(e) => {
-                // ⌘/Ctrl-click copies instead of opening (the same modifier
-                // semantics as StagingLink's globe).
-                if (e.metaKey || e.ctrlKey) {
-                  e.preventDefault();
-                  copy(url, { toast: "Preview link copied" });
-                  return;
-                }
-                // In-app tab everywhere it exists — the tab's toolbar owns
-                // the break-out; a bare anchor here opened the browser and
-                // made the button feel random (tab sometimes, window others).
-                if (onOpenTab) {
-                  e.preventDefault();
-                  onOpenTab();
-                }
-              }}
-            >
-              <CopyCheck copied={copied} size={22} idle={<IconPlayOutline size={22} />} />
-            </a>
-          </Tooltip>
-        ) : isStarting ? (
-          <Tooltip
-            label={stopping ? "Cancelling…" : "Starting the dev server — click to cancel"}
-            side="bottom"
-          >
-            <button
-              className={cn(headerIconBase, "text-yellow hover:bg-hover hover:text-yellow")}
-              onClick={stop}
-              onContextMenu={openMenu}
-              disabled={stopping}
-            >
-              <span className="relative inline-flex items-center justify-center">
-                <span
-                  className="pointer-events-none absolute left-1/2 top-1/2 size-[25px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-transparent border-t-current opacity-90 animate-[preview-spin_0.7s_linear_infinite]"
-                  aria-hidden="true"
-                />
-                <IconPlayOutline size={22} />
-              </span>
-            </button>
-          </Tooltip>
-        ) : !bootable ? (
-          <Tooltip label={`${notBootableHint} — right-click for details`} side="bottom" multiline>
+        <Popover.Trigger
+          render={
             <button
               className={cn(
                 headerIconBase,
-                "cursor-not-allowed text-faint opacity-45 hover:bg-hover hover:text-dim",
+                "-ml-[3px] px-px py-[3px]",
+                open
+                  ? "text-green hover:bg-hover hover:text-green"
+                  : "text-faint hover:bg-hover hover:text-dim",
               )}
-              onClick={openMenu}
-              onContextMenu={openMenu}
-              aria-disabled="true"
+              aria-label="Dev services"
             >
-              <IconPlayOutline size={22} />
+              <IconChevronDown size={16} />
             </button>
-          </Tooltip>
-        ) : (
-          <Tooltip label="Run — start the dev server (right-click for dev services)" side="bottom">
-            <button
-              className={cn(headerIconBase, "text-faint hover:bg-hover hover:text-dim")}
-              onClick={start}
-              onContextMenu={openMenu}
+          }
+        />
+      </Tooltip>
+    );
+    return (
+      <Popover.Root open={open} onOpenChange={setOpen}>
+        <div className="relative inline-flex items-center" ref={wrapRef}>
+          {running ? (
+            <Tooltip
+              label={
+                copied
+                  ? "Link copied"
+                  : "Open the running app — ⌘-click to copy the link, right-click for dev services"
+              }
+              side="bottom"
             >
-              <IconPlayOutline size={22} />
-            </button>
-          </Tooltip>
-        )}
-        {menuCaret}
-        {servicesPopover}
-        {snapshotModal}
-      </div>
+              <a
+                className={cn(headerIconBase, "text-green hover:bg-hover hover:text-green")}
+                href={url}
+                target="_blank"
+                rel="noopener"
+                onContextMenu={openServices}
+                onClick={(e) => {
+                  // ⌘/Ctrl-click copies instead of opening (the same modifier
+                  // semantics as StagingLink's globe).
+                  if (e.metaKey || e.ctrlKey) {
+                    e.preventDefault();
+                    copy(url, { toast: "Preview link copied" });
+                    return;
+                  }
+                  // In-app tab everywhere it exists — the tab's toolbar owns
+                  // the break-out; a bare anchor here opened the browser and
+                  // made the button feel random (tab sometimes, window others).
+                  if (onOpenTab) {
+                    e.preventDefault();
+                    onOpenTab();
+                  }
+                }}
+              >
+                <CopyCheck copied={copied} size={22} idle={<IconPlayOutline size={22} />} />
+              </a>
+            </Tooltip>
+          ) : isStarting ? (
+            <Tooltip
+              label={stopping ? "Cancelling…" : "Starting the dev server — click to cancel"}
+              side="bottom"
+            >
+              <button
+                className={cn(headerIconBase, "text-yellow hover:bg-hover hover:text-yellow")}
+                onClick={stop}
+                onContextMenu={openServices}
+                disabled={stopping}
+              >
+                <span className="relative inline-flex items-center justify-center">
+                  <span
+                    className="pointer-events-none absolute left-1/2 top-1/2 size-[25px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-transparent border-t-current opacity-90 animate-[preview-spin_0.7s_linear_infinite]"
+                    aria-hidden="true"
+                  />
+                  <IconPlayOutline size={22} />
+                </span>
+              </button>
+            </Tooltip>
+          ) : !bootable ? (
+            <Tooltip label={`${notBootableHint} — right-click for details`} side="bottom" multiline>
+              <button
+                className={cn(
+                  headerIconBase,
+                  "cursor-not-allowed text-faint opacity-45 hover:bg-hover hover:text-dim",
+                )}
+                onClick={openServices}
+                onContextMenu={openServices}
+                aria-disabled="true"
+              >
+                <IconPlayOutline size={22} />
+              </button>
+            </Tooltip>
+          ) : (
+            <Tooltip label="Run — start the dev server (right-click for dev services)" side="bottom">
+              <button
+                className={cn(headerIconBase, "text-faint hover:bg-hover hover:text-dim")}
+                onClick={start}
+                onContextMenu={openServices}
+              >
+                <IconPlayOutline size={22} />
+              </button>
+            </Tooltip>
+          )}
+          {menuCaret}
+          {snapshotModal}
+        </div>
+        {servicesPopup}
+      </Popover.Root>
     );
   }
 
   return (
-    <div className="relative inline-flex items-stretch" ref={wrapRef}>
-      {running ? (
-        <a
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <div className="relative inline-flex items-stretch" ref={wrapRef}>
+        {running ? (
+          <a
+            className={cn(
+              splitSegmentBase,
+              "gap-1.5 whitespace-nowrap rounded-l-[7px] px-[11px] py-[5px] text-[13px] font-semibold text-green no-underline",
+              "hover:relative hover:z-[1] hover:border-[rgba(63,185,80,0.5)] hover:bg-[rgba(63,185,80,0.12)] hover:text-green",
+            )}
+            href={url}
+            target="_blank"
+            rel="noopener"
+            title={`Open the webapp — ${url}`}
+            onClick={(e) => {
+              if (onOpenTab && !e.metaKey && !e.ctrlKey) {
+                e.preventDefault();
+                onOpenTab();
+              }
+            }}
+          >
+            <IconPlay size={15} className="opacity-90" />
+            Preview
+            <IconArrowUpRight size={15} className="-ml-px opacity-80" />
+          </a>
+        ) : isStarting ? (
+          <button
+            className={cn(
+              splitSegmentBase,
+              "group gap-1.5 whitespace-nowrap rounded-l-[7px] px-[11px] py-[5px] text-[13px] font-semibold text-dim",
+              "cursor-pointer hover:relative hover:z-[1] hover:border-[rgba(248,81,73,0.4)] hover:bg-[rgba(248,81,73,0.1)] hover:text-red",
+            )}
+            onClick={stop}
+            disabled={stopping}
+            title="Starting the dev server (first build can take a minute) — click to cancel"
+          >
+            <span className={spinnerClass} />
+            <span className="inline group-hover:hidden">
+              {stopping ? "Cancelling…" : "Starting…"}
+            </span>
+            <span className="hidden group-hover:inline">Cancel</span>
+          </button>
+        ) : !bootable ? (
+          <button
+            className={cn(
+              splitSegmentBase,
+              "gap-1.5 whitespace-nowrap rounded-l-[7px] px-[11px] py-[5px] text-[13px] font-semibold text-dim opacity-45",
+              "cursor-not-allowed",
+            )}
+            onClick={openServices}
+            aria-disabled="true"
+            title={`${notBootableHint}.`}
+          >
+            <IconPlay size={15} className="text-accent" />
+            Preview
+          </button>
+        ) : (
+          <button
+            className={cn(
+              splitSegmentBase,
+              "gap-1.5 whitespace-nowrap rounded-l-[7px] px-[11px] py-[5px] text-[13px] font-semibold text-dim",
+              "cursor-pointer hover:relative hover:z-[1] hover:border-accent hover:bg-accent-soft hover:text-fg",
+            )}
+            onClick={start}
+            title="Start the dev server and preview this session"
+          >
+            <IconPlay size={15} className="text-accent" />
+            Preview
+          </button>
+        )}
+        {/* Copy segment — the split's secondary action. Enabled once a previewUrl
+            exists (server up + Caddy fronting it); before that there's no stable
+            URL to hand out, so it sits disabled with a hint. */}
+        <button
           className={cn(
             splitSegmentBase,
-            "gap-1.5 whitespace-nowrap rounded-l-[7px] px-[11px] py-[5px] text-[13px] font-semibold text-green no-underline",
-            "hover:relative hover:z-[1] hover:border-[rgba(63,185,80,0.5)] hover:bg-[rgba(63,185,80,0.12)] hover:text-green",
+            "-ml-px px-2 py-1",
+            running
+              ? "text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))] hover:relative hover:z-[1] hover:border-[rgba(63,185,80,0.5)] hover:bg-[rgba(63,185,80,0.12)] hover:text-green"
+              : "hover:relative hover:z-[1] hover:border-accent hover:bg-accent-soft hover:text-accent",
+            "aria-disabled:cursor-default aria-disabled:opacity-45 aria-disabled:hover:border-line-strong aria-disabled:hover:bg-transparent aria-disabled:hover:text-dim",
           )}
-          href={url}
-          target="_blank"
-          rel="noopener"
-          title={`Open the webapp — ${url}`}
-          onClick={(e) => {
-            if (onOpenTab && !e.metaKey && !e.ctrlKey) {
-              e.preventDefault();
-              onOpenTab();
-            }
+          onClick={() => {
+            if (running) copy(url, { toast: "Preview link copied" });
           }}
+          aria-disabled={!running || undefined}
+          title={running ? `Copy the preview link — ${url}` : "Start the preview first"}
         >
-          <IconPlay size={15} className="opacity-90" />
-          Preview
-          <IconArrowUpRight size={15} className="-ml-px opacity-80" />
-        </a>
-      ) : isStarting ? (
-        <button
-          className={cn(
-            splitSegmentBase,
-            "group gap-1.5 whitespace-nowrap rounded-l-[7px] px-[11px] py-[5px] text-[13px] font-semibold text-dim",
-            "cursor-pointer hover:relative hover:z-[1] hover:border-[rgba(248,81,73,0.4)] hover:bg-[rgba(248,81,73,0.1)] hover:text-red",
-          )}
-          onClick={stop}
-          disabled={stopping}
-          title="Starting the dev server (first build can take a minute) — click to cancel"
-        >
-          <span className={spinnerClass} />
-          <span className="inline group-hover:hidden">
-            {stopping ? "Cancelling…" : "Starting…"}
-          </span>
-          <span className="hidden group-hover:inline">Cancel</span>
+          <CopyCheck copied={copied} size={18} idle={<IconLink size={18} />} />
         </button>
-      ) : !bootable ? (
-        <button
-          className={cn(
-            splitSegmentBase,
-            "gap-1.5 whitespace-nowrap rounded-l-[7px] px-[11px] py-[5px] text-[13px] font-semibold text-dim opacity-45",
-            "cursor-not-allowed",
-          )}
-          onClick={() => setOpen((v) => !v)}
-          aria-disabled="true"
-          title={`${notBootableHint}.`}
-        >
-          <IconPlay size={15} className="text-accent" />
-          Preview
-        </button>
-      ) : (
-        <button
-          className={cn(
-            splitSegmentBase,
-            "gap-1.5 whitespace-nowrap rounded-l-[7px] px-[11px] py-[5px] text-[13px] font-semibold text-dim",
-            "cursor-pointer hover:relative hover:z-[1] hover:border-accent hover:bg-accent-soft hover:text-fg",
-          )}
-          onClick={start}
-          title="Start the dev server and preview this session"
-        >
-          <IconPlay size={15} className="text-accent" />
-          Preview
-        </button>
-      )}
-      {/* Copy segment — the split's secondary action. Enabled once a previewUrl
-          exists (server up + Caddy fronting it); before that there's no stable
-          URL to hand out, so it sits disabled with a hint. */}
-      <button
-        className={cn(
-          splitSegmentBase,
-          "-ml-px px-2 py-1",
-          running
-            ? "text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))] hover:relative hover:z-[1] hover:border-[rgba(63,185,80,0.5)] hover:bg-[rgba(63,185,80,0.12)] hover:text-green"
-            : "hover:relative hover:z-[1] hover:border-accent hover:bg-accent-soft hover:text-accent",
-          "aria-disabled:cursor-default aria-disabled:opacity-45 aria-disabled:hover:border-line-strong aria-disabled:hover:bg-transparent aria-disabled:hover:text-dim",
+        {running && (
+          <button
+            className={cn(
+              splitSegmentBase,
+              "-ml-px px-2 py-1 text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))]",
+              "hover:relative hover:z-[1] hover:border-[rgba(63,185,80,0.5)] hover:bg-[rgba(63,185,80,0.12)] hover:text-green",
+            )}
+            onClick={snap}
+            disabled={snapping}
+            title="Snapshot the preview (headless Chrome screenshot)"
+          >
+            {snapping ? <span className={spinnerClass} /> : <IconCamera size={18} />}
+          </button>
         )}
-        onClick={() => {
-          if (running) copy(url, { toast: "Preview link copied" });
-        }}
-        aria-disabled={!running || undefined}
-        title={running ? `Copy the preview link — ${url}` : "Start the preview first"}
-      >
-        <CopyCheck copied={copied} size={18} idle={<IconLink size={18} />} />
-      </button>
-      {running && (
-        <button
-          className={cn(
-            splitSegmentBase,
-            "-ml-px px-2 py-1 text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))]",
-            "hover:relative hover:z-[1] hover:border-[rgba(63,185,80,0.5)] hover:bg-[rgba(63,185,80,0.12)] hover:text-green",
-          )}
-          onClick={snap}
-          disabled={snapping}
-          title="Snapshot the preview (headless Chrome screenshot)"
-        >
-          {snapping ? <span className={spinnerClass} /> : <IconCamera size={18} />}
-        </button>
-      )}
-      <button
-        className={cn(
-          splitSegmentBase,
-          "-ml-px rounded-r-[7px] px-2 py-1",
-          running
-            ? "text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))]"
-            : "text-dim",
-          open || running
-            ? "relative z-[1] border-[rgba(63,185,80,0.5)] bg-[rgba(63,185,80,0.12)] text-green"
-            : "",
-          !running && "hover:relative hover:z-[1] hover:border-accent hover:bg-accent-soft hover:text-accent",
-          running && !open &&
-            "hover:relative hover:z-[1] hover:border-[rgba(63,185,80,0.5)] hover:bg-[rgba(63,185,80,0.12)] hover:text-green",
-        )}
-        onClick={() => setOpen((v) => !v)}
-        title="Dev server processes"
-        aria-expanded={open}
-      >
-        <IconChevronDown size={16} />
-      </button>
+        <Popover.Trigger
+          render={
+            <button
+              className={cn(
+                splitSegmentBase,
+                "-ml-px rounded-r-[7px] px-2 py-1",
+                running
+                  ? "text-[color:color-mix(in_srgb,var(--green)_72%,var(--text-dim))]"
+                  : "text-dim",
+                open || running
+                  ? "relative z-[1] border-[rgba(63,185,80,0.5)] bg-[rgba(63,185,80,0.12)] text-green"
+                  : "",
+                !running && "hover:relative hover:z-[1] hover:border-accent hover:bg-accent-soft hover:text-accent",
+                running && !open &&
+                  "hover:relative hover:z-[1] hover:border-[rgba(63,185,80,0.5)] hover:bg-[rgba(63,185,80,0.12)] hover:text-green",
+              )}
+              title="Dev server processes"
+            >
+              <IconChevronDown size={16} />
+            </button>
+          }
+        />
 
-      {snapshotModal}
-      {servicesPopover}
-    </div>
+        {snapshotModal}
+      </div>
+      {servicesPopup}
+    </Popover.Root>
   );
 }
