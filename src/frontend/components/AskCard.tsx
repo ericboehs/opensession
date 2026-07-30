@@ -1,6 +1,7 @@
 import { AGENT_NAME } from "../lib/brand";
 import React, { useState } from "react";
 import type { AskQuestion } from "../lib/types";
+import { Button } from "../ui/button";
 
 interface Props {
   questions: AskQuestion[];
@@ -92,9 +93,14 @@ export function AskCard({ questions, onAnswer }: Props) {
       ))}
 
       <div className="ask-card-actions">
-        <button className="btn-send" onClick={submit} disabled={!complete || submitted}>
+        <Button
+          variant="primary"
+          className="min-h-0 rounded-[calc(8px*var(--rf))] px-[18px] py-2.5 text-[13.5px]"
+          onClick={submit}
+          disabled={!complete || submitted}
+        >
           {submitted ? "Sent…" : "Answer"}
-        </button>
+        </Button>
       </div>
     </div>
   );

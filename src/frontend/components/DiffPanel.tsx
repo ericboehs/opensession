@@ -4,6 +4,7 @@ import { API_BASE, fetchDiff, fetchDiffGroups, discardDiffFile } from "../lib/ap
 import { CommentableDiff, type CommentTarget } from "./CommentableDiff";
 import { getCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
+import { Button } from "../ui/button";
 import { PixelSpinner } from "./PixelSpinner";
 import { AGENT_NAME } from "../lib/brand";
 
@@ -196,7 +197,15 @@ export function DiffPanel({ sessionId, isRunning, canSend, send, diff }: Props) 
         <span className="diff-del">−{d.totalDeletions}</span>
         {d.truncated && <span className="diff-truncated">truncated</span>}
         <Tooltip label="Refresh diff">
-          <button className="btn-icon" onClick={reload}>↻</button>
+          <Button
+            variant="ghost"
+            size="xs"
+            className="ml-auto min-h-0 px-1.5 py-0.5 text-sm text-faint hover:text-fg"
+            onClick={reload}
+            aria-label="Refresh diff"
+          >
+            ↻
+          </Button>
         </Tooltip>
       </div>
 
