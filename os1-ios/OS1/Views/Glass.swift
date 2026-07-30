@@ -17,8 +17,10 @@ extension View {
     }
 
     /// Soft progressive fade where transcript content scrolls under the
-    /// floating composer.
+    /// transparent navigation bar and the floating composer. The default
+    /// hard edge blurs content into an opaque-looking band; soft keeps the
+    /// chat visible through both edges.
     func softScrollEdges() -> some View {
-        scrollEdgeEffectStyle(.soft, for: .bottom)
+        scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
     }
 }

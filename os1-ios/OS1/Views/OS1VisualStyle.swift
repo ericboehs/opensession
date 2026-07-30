@@ -97,18 +97,20 @@ struct RepoTile: View {
 
     var body: some View {
         ZStack {
-            if showsFallback {
-                Text(letter)
-                    .font(.system(size: size * 0.6, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .frame(width: size, height: size)
-                    .background(color)
-            }
+            // The fallback letter swatch only stands in while the real icon
+            // loads: many icons (org avatars) carry transparent margins, so a
+            // swatch kept underneath bleeds through as a colored border.
             if let iconURL,
                let image = RepoImageCache.shared.images[iconURL.absoluteString] {
                 image
                     .resizable()
                     .scaledToFill()
+            } else if showsFallback {
+                Text(letter)
+                    .font(.system(size: size * 0.6, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .frame(width: size, height: size)
+                    .background(color)
             }
         }
         .frame(width: size, height: size)

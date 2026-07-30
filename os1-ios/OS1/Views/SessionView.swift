@@ -101,18 +101,11 @@ struct SessionView: View {
                         .padding(.vertical, 8)
                         .frame(maxWidth: contentMaxWidth)
                         .frame(maxWidth: .infinity)
-                        // The floating composer overlays the transcript; this
-                        // keeps the newest message readable without an opaque
-                        // strip at the bottom of the chat.
-                        .padding(.bottom, 112)
                     }
                     // Initial render lands at the bottom and stays pinned while
                     // lazy rows settle. The pin releases when the person scrolls
                     // up to read, so new output does not yank them back.
                     .softScrollEdges()
-                    #if os(iOS)
-                    .ignoresSafeArea(edges: [.top, .bottom])
-                    #endif
                     .defaultScrollAnchor(.bottom)
                     .defaultScrollAnchor(.bottom, for: .sizeChanges)
                     .scrollDismissesKeyboardCompat()
@@ -177,7 +170,12 @@ struct SessionView: View {
             }
         }
         .background(OS1VisualStyle.background.ignoresSafeArea())
-        .overlay(alignment: .bottom) {
+        // Bottom inset, not an overlay: the scroll viewport still extends
+        // beneath the composer (content scrolls under the floating glass),
+        // while the content inset tracks the composer's real height and the
+        // keyboard — a fixed overlay padding hid the newest messages behind
+        // both.
+        .safeAreaInset(edge: .bottom) {
             // A separate view struct on purpose: typing mutates
             // `viewModel.draft` on every keystroke, and any read of it (or
             // `canSend`) inside SessionView.body would re-evaluate this whole
@@ -668,8 +666,9 @@ private struct SessionTabBar: View {
                 .padding(.vertical, 6)
             }
             .scrollIndicators(.hidden)
-            .background(.bar)
-            .overlay(alignment: .bottom) { Divider() }
+            // No bar background or divider: the strip floats over the
+            // transcript, which stays visible through the top scroll-edge
+            // fade — matching the transparent navigation bar above it.
             .onAppear {
                 proxy.scrollTo(activeId, anchor: .center)
             }
