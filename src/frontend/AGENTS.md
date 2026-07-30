@@ -45,6 +45,17 @@ language instead of introducing a new local style for each feature.
   Tailwind palette colors to product UI.
 - Compose classes with `cn()`. Accept and merge `className` in shared
   primitives so callers can adjust layout without copying the component.
+- Paint interaction states with the hover washes — `hover:bg-hover` /
+  `bg-pressed` in Tailwind, `var(--hover)` / `var(--hover-strong)` in
+  `global.css`. They are translucent ink, so one token reads at the same
+  strength on any surface. Do not use `--bg-hover` or `--bg-raised` as a hover:
+  they are absolute surfaces, so they land as a heavy wash on `--bg` and a
+  nearly invisible one on `--bg-panel`, and `--bg-raised` steps the wrong way in
+  one theme. `--bg-hover` stays for the few real surfaces built on it (the
+  segmented-control track, the scroll-fade `box-shadow` masks).
+- Keep a hover wash proportional to the control. A small icon button should
+  paint roughly the box its neighbours do, not its whole 40px target — see
+  `.palette-icon-btn`, which paints on a pseudo-element inset by 4px.
 - Follow the existing spacing, type, radius, border, and icon scales. Prefer a
   nearby shared component or token over a new arbitrary value.
 - Match the surrounding surface before adding visual emphasis. Accent colors,
