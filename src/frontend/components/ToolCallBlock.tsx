@@ -3,8 +3,6 @@ import type { TranscriptEntry } from "../lib/types";
 import { langForFile, langForGrep } from "../lib/lang";
 import { resolveEntryImageSrc } from "../lib/osBlob";
 import { cn } from "../ui/cn";
-import { Tooltip } from "../ui/tooltip";
-import { fullTime } from "../lib/time";
 import { openGalleryFrom } from "./MediaLightbox";
 import {
   IconTerminal,
@@ -490,103 +488,98 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
 
   return (
     <div className="relative" data-eid={entry.id}>
-      {/* The step's own time. A tool row is a dense, fully-packed control
-          with no free space for an inline reveal — and being a short row,
-          the tip lands right by the cursor. */}
-      <Tooltip label={fullTime(entry.timestamp)}>
-        <button
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded(!expanded)}
+        className={cn(
+          "group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-[3px] text-left font-sans transition-colors",
+          "hover:bg-hover/40"
+        )}
+      >
+        <span
           className={cn(
-            "group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1 py-[3px] text-left font-sans transition-colors",
-            "hover:bg-hover/40"
+            "relative z-[1] flex size-[22px] flex-shrink-0 items-center justify-center",
+            failed ? "text-red/70" : "text-faint"
           )}
         >
+          <span className="transition-opacity duration-150 group-hover:opacity-0">
+            <ToolGlyph toolName={toolName} size={20} />
+          </span>
+          <IconChevronDown
+            size={20}
+            className={cn(
+              "absolute block text-dim opacity-0 transition-[opacity,transform] duration-150 group-hover:opacity-100",
+              expanded && "rotate-180"
+            )}
+          />
+        </span>
+
+        {mcp ? (
+          <span className="flex min-w-0 flex-shrink-0 items-baseline gap-1.5 text-[14px] leading-5">
+            <span className="rounded bg-panel px-1.5 py-px text-[12px] leading-4 font-bold tracking-[-0.01em] text-dim">
+              {mcp.server}
+            </span>
+            <span className="font-medium text-dim transition-colors group-hover:text-fg">{mcp.tool}</span>
+          </span>
+        ) : (
+          <span className="flex-shrink-0 text-[14px] leading-5 font-medium text-dim transition-colors group-hover:text-fg">{toolName}</span>
+        )}
+
+        <span className="flex min-w-0 flex-1 items-center gap-2">
           <span
             className={cn(
-              "relative z-[1] flex size-[22px] flex-shrink-0 items-center justify-center",
-              failed ? "text-red/70" : "text-faint"
+              "min-w-0 truncate font-mono text-[12px] leading-4",
+              failed ? "text-red/80" : "text-dim"
             )}
           >
-            <span className="transition-opacity duration-150 group-hover:opacity-0">
-              <ToolGlyph toolName={toolName} size={20} />
-            </span>
-            <IconChevronDown
-              size={20}
-              className={cn(
-                "absolute block text-dim opacity-0 transition-[opacity,transform] duration-150 group-hover:opacity-100",
-                expanded && "rotate-180"
-              )}
-            />
+            {isFileTool ? <PathSummary path={summary} /> : summary}
           </span>
-
-          {mcp ? (
-            <span className="flex min-w-0 flex-shrink-0 items-baseline gap-1.5 text-[14px] leading-5">
-              <span className="rounded bg-panel px-1.5 py-px text-[12px] leading-4 font-bold tracking-[-0.01em] text-dim">
-                {mcp.server}
-              </span>
-              <span className="font-medium text-dim transition-colors group-hover:text-fg">{mcp.tool}</span>
-            </span>
-          ) : (
-            <span className="flex-shrink-0 text-[14px] leading-5 font-medium text-dim transition-colors group-hover:text-fg">{toolName}</span>
-          )}
-
-          <span className="flex min-w-0 flex-1 items-center gap-2">
-            <span
-              className={cn(
-                "min-w-0 truncate font-mono text-[12px] leading-4",
-                failed ? "text-red/80" : "text-dim"
+          {lineStats && (
+            <span className="flex flex-shrink-0 gap-1.5 text-[12px] leading-4">
+              {lineStats.additions > 0 && (
+                <span className="text-green">+{lineStats.additions}</span>
               )}
-            >
-              {isFileTool ? <PathSummary path={summary} /> : summary}
+              {lineStats.deletions > 0 && (
+                <span className="text-red">-{lineStats.deletions}</span>
+              )}
             </span>
-            {lineStats && (
-              <span className="flex flex-shrink-0 gap-1.5 text-[12px] leading-4">
-                {lineStats.additions > 0 && (
-                  <span className="text-green">+{lineStats.additions}</span>
-                )}
-                {lineStats.deletions > 0 && (
-                  <span className="text-red">-{lineStats.deletions}</span>
-                )}
-              </span>
+          )}
+        </span>
+
+        {canOpenSubagent && (
+          <span
+            role="button"
+            tabIndex={0}
+            className={cn(
+              "flex-shrink-0 rounded border border-line px-1.5 py-px text-[10.5px] text-dim opacity-100 transition-opacity hover:border-line-strong hover:text-fg focus:opacity-100",
+              !subagentLive && "md:opacity-0 md:group-hover:opacity-100"
             )}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenSubagent!(agentId!, summary);
+            }}
+            title="Open this sub-agent's conversation"
+          >
+            {subagentLive ? "Watch ↗" : "Open ↗"}
           </span>
+        )}
 
-          {canOpenSubagent && (
-            <span
-              role="button"
-              tabIndex={0}
-              className={cn(
-                "flex-shrink-0 rounded border border-line px-1.5 py-px text-[10.5px] text-dim opacity-100 transition-opacity hover:border-line-strong hover:text-fg focus:opacity-100",
-                !subagentLive && "md:opacity-0 md:group-hover:opacity-100"
-              )}
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenSubagent!(agentId!, summary);
-              }}
-              title="Open this sub-agent's conversation"
-            >
-              {subagentLive ? "Watch ↗" : "Open ↗"}
-            </span>
-          )}
+        {duration && (
+          <span className="flex-shrink-0 text-[10.5px] tabular-nums text-faint">{duration}</span>
+        )}
+        {pending && <RunningToolDuration entry={entry} />}
 
-          {duration && (
-            <span className="flex-shrink-0 text-[10.5px] tabular-nums text-faint">{duration}</span>
-          )}
-          {pending && <RunningToolDuration entry={entry} />}
-
-          {pending ? (
-            <span className="size-[10px] flex-shrink-0 animate-spin rounded-full border-2 border-green-soft border-t-green" />
-          ) : failed ? (
-            <span className="flex-shrink-0 text-red">
-              <IconX size={20} />
-            </span>
-          ) : !result ? (
-            <span className="flex-shrink-0 text-[10.5px] text-faint">—</span>
-          ) : null}
-        </button>
-      </Tooltip>
+        {pending ? (
+          <span className="size-[10px] flex-shrink-0 animate-spin rounded-full border-2 border-green-soft border-t-green" />
+        ) : failed ? (
+          <span className="flex-shrink-0 text-red">
+            <IconX size={20} />
+          </span>
+        ) : !result ? (
+          <span className="flex-shrink-0 text-[10.5px] text-faint">—</span>
+        ) : null}
+      </button>
 
       {expanded && (
         <div
