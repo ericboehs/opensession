@@ -1,6 +1,7 @@
 // How a turn's folded work (tool calls + intermediate assistant messages)
-// displays in the chat: "auto" opens the fold while the turn is running and
-// collapses it when the turn settles; "expanded"/"collapsed" pin one state.
+// displays in the chat: "collapsed" is the default and keeps work folded;
+// "auto" opens the turn fold while it is running, while "expanded" keeps it
+// open. Individual tool rows are separate disclosures and remain closed.
 // Stored server-side per user (ui-prefs) so it follows you across devices —
 // MacBook, iPhone Safari and the installed PWA all have separate localStorage,
 // which is why "I set it but it's still collapsed sometimes" happened. The
@@ -17,15 +18,18 @@ const KEY = "opensession-turn-activity";
 const PREF_KEY = "turn-activity"; // key inside the server-side ui-prefs map
 const CHANGE_EVENT = "opensession-turn-activity-changed";
 const USER_CHANGE_EVENT = "opensession-user-changed";
+const DEFAULT_TURN_ACTIVITY_PREF: TurnActivityPref = "collapsed";
 
 export function getTurnActivityPref(): TurnActivityPref {
 	const v = localStorage.getItem(KEY);
-	return v === "expanded" || v === "collapsed" ? v : "auto";
+	return v === "auto" || v === "expanded" || v === "collapsed"
+		? v
+		: DEFAULT_TURN_ACTIVITY_PREF;
 }
 
 function writeLocal(pref: TurnActivityPref) {
-	// "auto" is the default, so its absence is the stored form.
-	if (pref === "auto") localStorage.removeItem(KEY);
+	// The folded state is the default, so its absence is the stored form.
+	if (pref === DEFAULT_TURN_ACTIVITY_PREF) localStorage.removeItem(KEY);
 	else localStorage.setItem(KEY, pref);
 }
 
@@ -63,7 +67,7 @@ async function hydrate(user: string) {
 		}
 	} else {
 		const local = getTurnActivityPref();
-		if (local !== "auto")
+		if (local !== DEFAULT_TURN_ACTIVITY_PREF)
 			void saveUiPrefsApi(user, { [PREF_KEY]: local }).catch(() => {});
 	}
 }

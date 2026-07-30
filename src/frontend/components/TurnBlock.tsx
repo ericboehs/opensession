@@ -69,12 +69,11 @@ export const TurnBlock = React.memo(function TurnBlock({
     return Boolean(result?.isError);
   });
   // Default fold state follows the per-browser preference (Settings →
-  // Appearance). "auto": open while the turn is still working (thinking /
-  // tool steps in flight, no final answer yet) so you can watch it run, and
-  // collapse the moment it settles and the end message appears — the chat
-  // then reads question → answer. "expanded"/"collapsed" pin one state for
-  // readers who always (or never) want the working visible. Media pins it
-  // open regardless so a screenshot/recording stays visible.
+  // Appearance). The default stays folded, even during a live turn. "auto"
+  // is the opt-in mode that opens only the turn fold while it is working;
+  // ToolCallBlock owns its own disclosure, so this never expands a Bash input
+  // (including generated comment metadata). Media pins the turn open so a
+  // screenshot/recording stays visible.
   const [pref, setPref] = useState(getTurnActivityPref);
   useEffect(
     () => onTurnActivityChanged(() => setPref(getTurnActivityPref())),
