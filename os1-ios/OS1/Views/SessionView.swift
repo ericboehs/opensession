@@ -754,7 +754,7 @@ private struct SessionInputBar: View {
         .padding(.horizontal, horizontalInset)
         .padding(.top, 6)
         #if os(iOS)
-        .padding(.bottom, 2)
+        .padding(.bottom, 8)
         .background(alignment: .bottom) {
             Rectangle()
                 .fill(.ultraThinMaterial)
@@ -929,6 +929,23 @@ private struct SessionInputBar: View {
         .glassSurface(
             in: RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous)
         )
+        #if os(iOS)
+        .overlay {
+            RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous)
+                .stroke(
+                    inputFocused ? Color.accentColor.opacity(0.45) : .clear,
+                    lineWidth: 1
+                )
+                .allowsHitTesting(false)
+        }
+        .contentShape(
+            RoundedRectangle(cornerRadius: composerCornerRadius, style: .continuous)
+        )
+        .simultaneousGesture(
+            TapGesture().onEnded { inputFocused = true }
+        )
+        .animation(.easeOut(duration: 0.15), value: inputFocused)
+        #endif
     }
 
     @ViewBuilder

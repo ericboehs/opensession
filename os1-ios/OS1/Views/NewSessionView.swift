@@ -98,6 +98,10 @@ struct NewSessionView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #if os(iOS)
+        .contentShape(Rectangle())
+        .onTapGesture { promptFocused = true }
+        #endif
     }
 
     /// Lines the placeholder up with the editor's real text origin: the outer
@@ -126,7 +130,28 @@ struct NewSessionView: View {
         selectedModelOption?.fastModeSupported == true
     }
 
+    private var modelChipText: String {
+        let id = model.isEmpty ? catalog?.defaultModel : model
+        #if os(iOS)
+        if id == "dial/opus-fable" { return "Opus/Fable/Oracle" }
+        #endif
+        return catalog?.label(for: id) ?? "Model"
+    }
+
     private var controls: some View {
+        #if os(iOS)
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                AttachImagesButton(images: $images)
+                repoChip
+                modeChip
+                modelChip
+            }
+            .padding(.horizontal, 12)
+        }
+        .scrollIndicators(.hidden)
+        .padding(.vertical, 8)
+        #else
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 AttachImagesButton(images: $images)
@@ -143,6 +168,7 @@ struct NewSessionView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        #endif
     }
 
     private var repoChip: some View {
@@ -199,6 +225,34 @@ struct NewSessionView: View {
 
     private var modelChip: some View {
         Menu {
+            #if os(iOS)
+            if !availableEfforts.isEmpty {
+                Section("Reasoning") {
+                    ForEach(availableEfforts, id: \.self) { level in
+                        Button {
+                            effort = level
+                        } label: {
+                            if effort == level {
+                                Label(EffortLevel.label(level), systemImage: "checkmark")
+                            } else {
+                                Text(EffortLevel.label(level))
+                            }
+                        }
+                    }
+                }
+            }
+            if fastSupported {
+                Button {
+                    fastMode.toggle()
+                } label: {
+                    if fastMode {
+                        Label("Fast mode", systemImage: "checkmark")
+                    } else {
+                        Text("Fast mode")
+                    }
+                }
+            }
+            #endif
             if let catalog {
                 if !catalog.presets.isEmpty {
                     Section("Presets") {
@@ -216,8 +270,7 @@ struct NewSessionView: View {
         } label: {
             chipLabel(
                 icon: "cpu",
-                text: catalog?.label(for: model.isEmpty ? catalog?.defaultModel : model)
-                    ?? "Model"
+                text: modelChipText
             )
         }
         .menuStyle(.button)
@@ -281,19 +334,37 @@ struct NewSessionView: View {
     ) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon)
+                #if os(iOS)
+                .font(.caption2)
+                #else
                 .font(.caption)
+                #endif
             Text(text)
+                #if os(iOS)
+                .font(.caption)
+                #else
                 .font(.callout)
+                #endif
                 .lineLimit(1)
         }
         .foregroundStyle(highlighted ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+        #if os(iOS)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        #else
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
+        #endif
         .background(
             highlighted ? AnyShapeStyle(.tint.opacity(0.15)) : AnyShapeStyle(.fill.tertiary),
             in: Capsule()
         )
+        #if os(iOS)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+        #else
         .contentShape(Capsule())
+        #endif
     }
 
     // ── Data ──────────────────────────────────────────────────────────────

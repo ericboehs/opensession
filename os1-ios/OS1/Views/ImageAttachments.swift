@@ -78,7 +78,7 @@ struct AttachImagesButton: View {
             .font(.system(size: 17, weight: .medium))
             .foregroundStyle(.secondary)
             #if os(iOS)
-            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44)
             #else
             .frame(width: 27, height: 27)
             #endif
