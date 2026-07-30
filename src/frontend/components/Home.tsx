@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { Project, UnifiedSession } from "../lib/types";
 import { fetchHomeStats, fetchRecentPrs, type HomeStats, type RecentPr } from "../lib/api";
+import { prStatusMark, type PrStatusInput } from "../lib/pr-status";
 import { Menu } from "../ui/menu";
 import { useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
+import { RepoTile } from "./RepoTile";
 import {
   IconArchive,
   IconChevronDown,
@@ -21,7 +23,7 @@ interface Props {
   onOpenAnalytics?: () => void;
 }
 
-interface WorktreeRow {
+interface WorktreeRow extends PrStatusInput {
   key: string;
   session?: UnifiedSession;
   title: string;
@@ -64,6 +66,11 @@ function worktreesForSession(session: UnifiedSession): WorktreeRow[] {
           url: pr.url,
           state: pr.state || "OPEN",
           number: pr.number,
+          isDraft: pr.isDraft,
+          reviewDecision: pr.reviewDecision,
+          // Only the primary branch's PR carries a conflict probe.
+          mergeable: primary ? session.prMergeable : undefined,
+          checks: pr.checks,
           additions: primary ? session.prAdditions : undefined,
           deletions: primary ? session.prDeletions : undefined,
           updatedAt: primary ? session.prUpdatedAt || session.lastActivity : session.lastActivity,
@@ -86,6 +93,10 @@ function worktreesForSession(session: UnifiedSession): WorktreeRow[] {
       url: session.prUrl,
       state: session.prState || "OPEN",
       number: session.prNumber,
+      isDraft: session.prIsDraft,
+      reviewDecision: session.prReviewDecision,
+      mergeable: session.prMergeable,
+      checks: session.prChecks,
       additions: session.prAdditions,
       deletions: session.prDeletions,
       updatedAt: session.prUpdatedAt || session.lastActivity,
@@ -323,6 +334,9 @@ export function buildWorktreeRows(recentPrs: RecentPr[], sessions: UnifiedSessio
       url: pr.url,
       state: pr.state,
       number: pr.number,
+      isDraft: pr.isDraft,
+      reviewDecision: pr.reviewDecision,
+      checks: pr.checks,
       additions: pr.additions,
       deletions: pr.deletions,
       updatedAt: pr.updatedAt,
@@ -340,6 +354,10 @@ export function buildWorktreeRows(recentPrs: RecentPr[], sessions: UnifiedSessio
         ...row,
         // GitHub is authoritative; session enrichment can lag behind a merge.
         state: existing?.state ?? row.state,
+        isDraft: existing?.isDraft ?? row.isDraft,
+        reviewDecision: existing?.reviewDecision ?? row.reviewDecision,
+        checks: existing?.checks ?? row.checks,
+        mergeable: row.mergeable ?? existing?.mergeable,
         // Archiving a workspace should not remove its shipped PR from history.
         archived: existing ? false : row.archived,
         person: row.person || existing?.person || null,
@@ -599,7 +617,9 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
                       <span className="text-faint">{rows.length}</span>
                     </div>
                     <div>
-                      {rows.map((row) => (
+                      {rows.map((row) => {
+                        const status = prStatusMark(row);
+                        return (
                         <button
                           key={row.key}
                           className="group grid w-full grid-cols-[22px_24px_minmax(0,1fr)_130px_44px] items-center gap-2 rounded-lg border-0 bg-transparent px-2 py-2.5 text-left text-dim hover:bg-hover hover:text-fg max-[720px]:grid-cols-[22px_24px_minmax(0,1fr)_40px]"
@@ -608,23 +628,13 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
                           }
                           title={`${row.repo} · ${row.branch}`}
                         >
-                          <span
-                            className={
-                              row.state === "MERGED"
-                                ? "text-purple"
-                                : row.state === "CLOSED"
-                                  ? "text-faint"
-                                  : "text-accent"
-                            }
-                          >
+                          <span className={status.className} title={status.label}>
                             <StateIcon state={row.state} />
                           </span>
                           {person === "all" && row.person ? (
                             <UserAvatar name={personLabel(row.person)} size={20} title={personLabel(row.person)} />
                           ) : (
-                            <span className="flex h-5 w-5 items-center justify-center rounded-sm bg-accent-soft text-[9px] font-bold uppercase text-accent">
-                              {row.repo.slice(0, 2)}
-                            </span>
+                            <RepoTile name={row.repo} size={20} />
                           )}
                           <span className="min-w-0">
                             <span className="flex min-w-0 items-baseline gap-2">
@@ -645,7 +655,8 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
                           </span>
                           <span className="justify-self-end text-[12px] text-faint">{compactAge(row.updatedAt)}</span>
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ))}

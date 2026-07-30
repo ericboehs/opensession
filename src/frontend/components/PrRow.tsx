@@ -1,5 +1,6 @@
 import React from "react";
 import type { ReviewQueueItem } from "../lib/review-queue";
+import { prStatusMark } from "../lib/pr-status";
 import { providerFromUrl } from "../lib/provider";
 import { shortTime } from "../lib/time";
 import {
@@ -32,27 +33,14 @@ import { useIsPhone } from "../hooks/useIsPhone";
  * spelled-out status live in the hover card and the context menu.
  */
 
-// The ws rows' PR color language, computed off the queue item's OpenPr:
-// red = blocked (conflict / failing checks / changes requested), yellow =
-// checks running, faint = draft, green = open and healthy.
+// The ws rows' PR color language (prStatusMark), computed off the queue item's
+// OpenPr: red = blocked (conflict / failing checks / changes requested),
+// yellow = checks running, faint = draft, green = open and healthy.
 function PrStateMark({ item, size }: { item: ReviewQueueItem; size: number }) {
-	const pr = item.pr;
-	const conflicting = pr.mergeable === "CONFLICTING";
-	const failed = pr.checks.failed > 0;
-	const pending = pr.checks.pending > 0;
-	const changesRequested =
-		(pr.reviewDecision || "").toUpperCase() === "CHANGES_REQUESTED";
-	const className =
-		conflicting || failed || changesRequested
-			? "text-red"
-			: pending
-				? "text-yellow"
-				: pr.isDraft
-					? "text-faint"
-					: "text-green";
+	const status = prStatusMark(item.pr);
 	return (
-		<span title={item.status || "PR open"}>
-			<IconPullRequest size={size} className={className} />
+		<span title={item.status || status.label}>
+			<IconPullRequest size={size} className={status.className} />
 		</span>
 	);
 }
