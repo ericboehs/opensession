@@ -533,7 +533,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
               {isFileTool ? <PathSummary path={summary} /> : summary}
             </span>
             {lineStats && (
-              <span className="flex flex-shrink-0 gap-1.5 font-mono text-[12px] leading-4">
+              <span className="flex flex-shrink-0 gap-1.5 text-[12px] leading-4">
                 {lineStats.additions > 0 && (
                   <span className="text-green">+{lineStats.additions}</span>
                 )}

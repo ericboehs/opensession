@@ -2452,7 +2452,6 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	background: var(--text-faint);
 }
 .hovercard-branch {
-	font-family: var(--mono);
 	font-size: 11.5px;
 	color: var(--text-dim);
 	white-space: nowrap;
@@ -2463,7 +2462,6 @@ body:is(.resizing-sidebar, .resizing-panel) {
 }
 .hovercard-diff {
 	flex-shrink: 0;
-	font-family: var(--mono);
 	font-size: 11px;
 }
 .hovercard-add {
@@ -11030,10 +11028,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	line-height: 1.5;
 }
 
-.mono-input {
-	font-family: var(--mono);
-}
-
 .automation-form-row {
 	display: flex;
 	gap: 14px;
@@ -11416,7 +11410,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 
 .conn-target {
-	font-family: var(--mono);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -13938,7 +13931,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border: 1px solid var(--border-strong);
 	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
-	font-family: var(--mono);
 	font-size: 13px;
 	outline: none;
 }
@@ -14128,7 +14120,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	background: none;
 	border: none;
 	color: var(--text-faint);
-	font-family: var(--mono);
 	font-size: 11px;
 	cursor: pointer;
 	padding: 1px 0 3px;
@@ -14155,7 +14146,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border: 1px solid var(--border-strong);
 	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
-	font-family: var(--mono);
 	font-size: 13px;
 	line-height: 1.4;
 	outline: none;
@@ -14174,7 +14164,6 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	font-size: 13px;
-	font-family: var(--mono);
 }
 .note-prompt-running .note-prompt-toggle {
 	color: var(--accent);

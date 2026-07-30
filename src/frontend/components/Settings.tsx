@@ -2009,7 +2009,7 @@ function AuditPanel() {
 								className="w-full text-left flex items-baseline gap-2 px-2.5 py-1.5 text-[12px] cursor-pointer hover:bg-hover min-w-0"
 								onClick={() => setExpanded(expanded === i ? null : i)}
 							>
-								<span className="font-mono text-faint shrink-0">{time}</span>
+								<span className="text-faint shrink-0">{time}</span>
 								<span className="text-fg font-medium shrink-0">{t}</span>
 								{e.run_kind ? <span className="text-faint shrink-0">{String(e.run_kind)}</span> : null}
 								<span className="text-dim truncate">{auditSummary(e)}</span>

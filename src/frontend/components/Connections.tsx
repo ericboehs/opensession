@@ -617,7 +617,7 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
               <div key={m.github} className="flex items-center gap-3 border-t border-line px-4 py-2.5">
                 <div className="min-w-0 flex-1">
                   <span className="text-sm font-medium text-fg">{m.name}</span>
-                  <span className="ml-2 font-mono text-xs text-faint">@{m.github}</span>
+                  <span className="ml-2 text-xs text-faint">@{m.github}</span>
                 </div>
                 {account && (
                   <span className="text-[11px] text-faint">

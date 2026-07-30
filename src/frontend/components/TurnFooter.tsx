@@ -254,7 +254,7 @@ function MoreChip({ files }: { files: TouchedFile[] }) {
 
 function LineStats({ additions, deletions }: { additions: number; deletions: number }) {
   return (
-    <span className="flex flex-shrink-0 items-center gap-1 font-mono text-[11px] font-medium">
+    <span className="flex flex-shrink-0 items-center gap-1 text-[11px] font-medium">
       <span className="text-green">+{additions}</span>
       <span className="text-red">-{deletions}</span>
     </span>

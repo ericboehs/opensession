@@ -171,7 +171,7 @@ export function WorkspacePane({
 					{workspace.branch && (
 						<div className="flex items-center gap-2 min-w-0">
 							<span className="text-faint shrink-0">Branch</span>
-							<span className="font-mono text-[12px] truncate">
+							<span className="text-[12px] truncate">
 								{workspace.branch}
 							</span>
 						</div>
@@ -301,7 +301,7 @@ export function WorkspacePane({
 					<div className="text-dim text-[12.5px] mt-1 flex items-center gap-2 flex-wrap">
 						{workspace.repo && <span>{workspace.repo}</span>}
 						{workspace.branch && (
-							<span className="font-mono text-[12px]">{workspace.branch}</span>
+							<span className="text-[12px]">{workspace.branch}</span>
 						)}
 					</div>
 					{chats.length === 0 && (

@@ -1040,8 +1040,8 @@ export function PrPanel({
             <div className="mt-2 flex items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-dim">
               <span className="truncate">
                 <strong>{pr.author}</strong> wants to merge {pr.commits?.length || 0} commit{pr.commits?.length === 1 ? "" : "s"} into
-                {" "}<span className="rounded-sm bg-blue-soft px-1.5 py-0.5 font-mono text-blue">{pr.baseRefName}</span>
-                {" "}from <span className="rounded-sm bg-blue-soft px-1.5 py-0.5 font-mono text-blue">{pr.headRefName}</span>
+                {" "}<span className="rounded-sm bg-blue-soft px-1.5 py-0.5 text-blue">{pr.baseRefName}</span>
+                {" "}from <span className="rounded-sm bg-blue-soft px-1.5 py-0.5 text-blue">{pr.headRefName}</span>
               </span>
             </div>
           </div>
@@ -1162,7 +1162,7 @@ export function PrPanel({
               </button>
             );
           })}
-          <span className="ml-auto mb-3 shrink-0 font-mono text-[11px] max-[720px]:hidden">
+          <span className="ml-auto mb-3 shrink-0 text-[11px] max-[720px]:hidden">
             <span className="text-green">+{pr.additions}</span>{" "}
             <span className="text-red">−{pr.deletions}</span>
           </span>
@@ -1295,7 +1295,7 @@ export function PrPanel({
                         key={`${section.title}-${index}`}
                       >
                         <div className="mb-3 grid grid-cols-[54px_minmax(0,1fr)] gap-4 px-1">
-                          <div className="font-mono text-[10px] text-faint">
+                          <div className="text-[10px] text-faint">
                             {String(index + 1).padStart(2, "0")} / {String(all.length).padStart(2, "0")}
                           </div>
                           <div>
@@ -1502,14 +1502,14 @@ export function PrPanel({
               {pr.author && <span className="font-medium text-dim">{pr.author}</span>}
               <span>#{pr.number}</span>
               <span
-                className="inline-flex items-center gap-1 font-mono text-[11px] text-dim"
+                className="inline-flex items-center gap-1 text-[11px] text-dim"
                 title={`${pr.baseRefName} ← ${pr.headRefName}`}
               >
                 <span className="rounded-sm border border-line bg-surface px-1.5 py-0.5">{pr.baseRefName}</span>
                 <span className="text-faint">←</span>
                 <span className="rounded-sm border border-line bg-surface px-1.5 py-0.5">{pr.headRefName}</span>
               </span>
-              <span className="inline-flex items-center gap-1.5 font-mono text-[11px]">
+              <span className="inline-flex items-center gap-1.5 text-[11px]">
                 <span className="text-green">+{pr.additions}</span>
                 <span className="text-red">−{pr.deletions}</span>
               </span>
@@ -1649,7 +1649,7 @@ export function PrPanel({
             <PrCard
               title={`${files.length} file${files.length === 1 ? "" : "s"} changed`}
               headExtra={
-                <span className="inline-flex items-center gap-1.5 font-mono text-[11px]">
+                <span className="inline-flex items-center gap-1.5 text-[11px]">
                   <span className="text-green">+{pr.additions}</span>
                   <span className="text-red">−{pr.deletions}</span>
                 </span>
@@ -2268,7 +2268,7 @@ function FileRow({ file, onClick }: { file: PrFile; onClick?: () => void }) {
         {dir && <span className="text-faint">{dir}</span>}
         {base}
       </span>
-      <span className="inline-flex shrink-0 items-center gap-1.5 font-mono text-[11px]">
+      <span className="inline-flex shrink-0 items-center gap-1.5 text-[11px]">
         {file.additions > 0 && <span className="text-green">+{file.additions}</span>}
         {file.deletions > 0 && <span className="text-red">−{file.deletions}</span>}
       </span>

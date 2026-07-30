@@ -899,7 +899,7 @@ function MichaelReviewCard({
 						)}
 						tabIndex={reviewMessage ? 0 : undefined}
 					>
-						<div className={cn("shrink-0 font-mono leading-none", scoreTone)}>
+						<div className={cn("shrink-0 leading-none", scoreTone)}>
 							<span className="text-[20px] font-[750] tracking-[-0.06em]">{score ?? "–"}</span>
 							<span className="ml-0.5 text-[10.5px] font-semibold tracking-normal text-faint">/5</span>
 						</div>
@@ -944,7 +944,7 @@ function MichaelReviewCard({
 											Automated review{reviewedAgo ? ` · reviewed ${reviewedAgo} ago` : ""}
 										</div>
 									</div>
-									<span className={cn("shrink-0 font-mono text-[13px] font-semibold", scoreTone)}>
+									<span className={cn("shrink-0 text-[13px] font-semibold", scoreTone)}>
 										{score ?? "–"}/5
 									</span>
 								</div>

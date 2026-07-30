@@ -151,7 +151,7 @@ function WriteChips({ a }: { a: WorkflowAgentSnapshot }) {
 		<>
 			{a.branch && (
 				<Chip title={a.branch}>
-					<span className="font-mono">⑂ {a.branch}</span>
+					<span>⑂ {a.branch}</span>
 				</Chip>
 			)}
 			{a.changed ? (
