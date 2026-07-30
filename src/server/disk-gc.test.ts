@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { diskUsagePct, findTargetCaches, hasEntryNewerThan, worktreesInUse } from "./disk-gc";
@@ -107,11 +107,32 @@ describe("worktreesInUse", () => {
     if (inUse !== null) expect(inUse.size).toBe(0);
   });
 
-  it("detects this process's own cwd as in use", () => {
+  it("ignores a non-build process's cwd", () => {
+    // This test runs under `bun`, which never writes to a cargo target/. Idle
+    // session subprocesses (stdio MCP servers, engine servers) sit in a
+    // worktree for hours the same way; treating them as in-use pinned every
+    // worktree and made the sweep reclaim nothing.
     const cwd = process.cwd();
-    const parent = join(cwd, "..");
-    const inUse = worktreesInUse(parent);
-    if (inUse !== null) expect(inUse.has(cwd)).toBe(true);
+    const inUse = worktreesInUse(join(cwd, ".."));
+    if (inUse !== null) expect(inUse.has(cwd)).toBe(false);
+  });
+
+  it("detects a real build process's cwd as in use", async () => {
+    const wt = join(root, "wt-building");
+    mkdirSync(wt, { recursive: true });
+    // `cargo` is in BUILD_PROCESS_NAMES; sleep under that name stands in for a
+    // build so the test needs no toolchain and leaves nothing to clean up.
+    const fakeCargo = join(root, "cargo");
+    copyFileSync("/bin/sleep", fakeCargo);
+    const proc = Bun.spawn([fakeCargo, "30"], { cwd: wt });
+    try {
+      await Bun.sleep(150);
+      const inUse = worktreesInUse(root);
+      if (inUse !== null) expect(inUse.has(wt)).toBe(true);
+    } finally {
+      proc.kill();
+      await proc.exited;
+    }
   });
 });
 

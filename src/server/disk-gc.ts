@@ -19,7 +19,7 @@
  * over the parent; per-directory sums double-count shared inodes.
  */
 
-import { type Dirent, readdirSync, readlinkSync, statfsSync, statSync } from "node:fs";
+import { type Dirent, readdirSync, readFileSync, readlinkSync, statfsSync, statSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { audit } from "./audit";
@@ -38,6 +38,8 @@ function num(raw: string | undefined, fallback: number): number {
 const COLD_DAYS = num(process.env.OPENSESSION_DISK_GC_COLD_DAYS, 7);
 /** Never touch a cache built this recently, even under pressure. */
 const HOT_HOURS = num(process.env.OPENSESSION_DISK_GC_HOT_HOURS, 24);
+/** Relaxed hot window for the last-resort pass, when HOT_HOURS spared everything. */
+const URGENT_HOT_HOURS = num(process.env.OPENSESSION_DISK_GC_URGENT_HOT_HOURS, 2);
 /** Above this disk usage, start reclaiming stale caches... */
 const PRESSURE_PCT = num(process.env.OPENSESSION_DISK_GC_PRESSURE_PCT, 80);
 /** ...until back under this. */
@@ -80,8 +82,38 @@ export function diskUsagePct(path = "/"): number {
 }
 
 /**
- * Worktree directories that are the cwd of a live process. Removing a cache
- * under an active build breaks that build, so these are always spared.
+ * Process names that actually write into a cargo `target/`. Only these pin a
+ * worktree — see `worktreesInUse`.
+ */
+const BUILD_PROCESS_NAMES = new Set([
+  "cargo",
+  "rustc",
+  "rustdoc",
+  "rust-analyzer",
+  "sccache",
+  "wasm-pack",
+  "wasm-bindgen",
+  "cc",
+  "gcc",
+  "clang",
+  "ld",
+  "lld",
+  "make",
+  "ninja",
+]);
+
+/**
+ * Worktree directories that are the cwd of a live *build* process. Removing a
+ * cache under an active build breaks that build, so these are always spared.
+ *
+ * Deliberately build-aware rather than "any process": long-lived session
+ * subprocesses (stdio MCP servers, engine servers) inherit the session's
+ * worktree as their cwd and sit there for hours without ever building. Treating
+ * those as in-use pinned essentially every worktree in a busy fleet and made
+ * the sweep reclaim nothing — the disk climbed past the pressure threshold with
+ * disk-gc running and logging every hour. A running build is still protected
+ * twice over: its cargo/rustc child matches here, and `hasEntryNewerThan`
+ * spares any target/ touched within HOT_HOURS.
  *
  * Returns null when /proc is unavailable (non-Linux) — callers must treat that
  * as "cannot determine" and skip the sweep entirely rather than guess.
@@ -103,11 +135,27 @@ export function worktreesInUse(root: string): Set<string> | null {
       continue; // process exited, or not ours to inspect
     }
     if (!cwd.startsWith(prefix)) continue;
+    if (!isBuildProcess(pid)) continue;
     const rest = cwd.slice(prefix.length);
     const name = rest.split("/")[0];
     if (name) inUse.add(join(root, name));
   }
   return inUse;
+}
+
+/**
+ * Whether `pid` looks like a build. Unreadable comm counts as a build so an
+ * unknown process errs toward sparing the cache.
+ */
+function isBuildProcess(pid: string): boolean {
+  let comm: string;
+  try {
+    comm = readFileSync(`/proc/${pid}/comm`, "utf8").trim();
+  } catch {
+    return true;
+  }
+  if (!comm) return true;
+  return BUILD_PROCESS_NAMES.has(comm);
 }
 
 /**
@@ -313,6 +361,27 @@ export async function sweepDiskGc(opts: { dryRun?: boolean } = {}): Promise<Disk
       }
       await reclaim(c, "disk-pressure");
     }
+    // Pass 3 — still under pressure with every remaining cache inside the
+    // HOT_HOURS window. On a busy fleet that is the normal case, not an
+    // exception: caches are rebuilt constantly, so a 24h hot window spares all
+    // of them and the sweep frees nothing while the disk keeps climbing. Fall
+    // back to a much shorter window. Nothing has written to these in
+    // URGENT_HOT_HOURS, so no build is in flight; the cost is a rebuild on
+    // resume, cushioned by the shared sccache.
+    if (diskUsagePct() >= PRESSURE_PCT) {
+      const urgentCutoff = now - URGENT_HOT_HOURS * HOUR;
+      console.warn(
+        `[disk-gc] still at ${diskUsagePct().toFixed(1)}% with all caches inside the ` +
+          `${HOT_HOURS}h window — escalating to caches idle >${URGENT_HOT_HOURS}h`,
+      );
+      for (const c of remaining.sort((a, b) => a.mtimeMs - b.mtimeMs)) {
+        if (diskUsagePct() < RELIEF_PCT) break;
+        if (result.reclaimed.includes(c.path)) continue;
+        if (hasEntryNewerThan(c.path, urgentCutoff)) continue;
+        await reclaim(c, `disk-pressure idle>${URGENT_HOT_HOURS}h`);
+      }
+    }
+
     const pct = diskUsagePct();
     if (pct >= PRESSURE_PCT) {
       console.warn(
