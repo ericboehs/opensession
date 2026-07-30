@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { SessionUpgradeError, upgradeSessionApi } from "./api";
+import { fetchRepos, SessionUpgradeError, upgradeSessionApi } from "./api";
 
 const originalFetch = globalThis.fetch;
 
@@ -40,4 +40,34 @@ test("session upgrade keeps structured dirty-worktree failures", async () => {
 		status: 409,
 		uncommittedFiles: ["src/index.ts"],
 	});
+});
+
+test("repository loading recovers from transient server failures", async () => {
+	let calls = 0;
+	globalThis.fetch = (async () => {
+		calls++;
+		if (calls < 3) {
+			return Response.json({ error: "temporarily unavailable" }, { status: 502 });
+		}
+		return Response.json({
+			repos: [
+				{
+					id: "tella-fusion",
+					label: "tella-fusion",
+					defaultBranch: "main",
+					sharedCheckout: false,
+				},
+			],
+		});
+	}) as unknown as typeof fetch;
+
+	await expect(fetchRepos()).resolves.toEqual([
+		{
+			id: "tella-fusion",
+			label: "tella-fusion",
+			defaultBranch: "main",
+			sharedCheckout: false,
+		},
+	]);
+	expect(calls).toBe(3);
 });

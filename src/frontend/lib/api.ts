@@ -564,11 +564,23 @@ export interface RepoInfo {
 	default?: boolean;
 }
 
+const REPO_FETCH_RETRY_DELAYS_MS = [250, 750, 1_500];
+
 export async function fetchRepos(cloud = false): Promise<RepoInfo[]> {
-	const data = await request<{ repos?: RepoInfo[] }>(`/repos${cloud ? "?cloud=1" : ""}`, {
-		label: "Failed to load repositories",
-	});
-	return data?.repos ?? [];
+	for (let attempt = 0; ; attempt++) {
+		try {
+			const data = await request<{ repos?: RepoInfo[] }>(
+				`/repos${cloud ? "?cloud=1" : ""}`,
+				{ label: "Failed to load repositories" },
+			);
+			return data?.repos ?? [];
+		} catch (error) {
+			const retryDelay = REPO_FETCH_RETRY_DELAYS_MS[attempt];
+			const transient = !(error instanceof ApiError) || error.status >= 500;
+			if (!transient || retryDelay === undefined) throw error;
+			await new Promise((resolve) => setTimeout(resolve, retryDelay));
+		}
+	}
 }
 
 export async function registerRepoApi(input: {
