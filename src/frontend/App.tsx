@@ -1859,7 +1859,12 @@ function App() {
 		? sessions
 				.filter(
 					(s) =>
-						liveTab(s) && s.projectId === activeProjectId && !s.sideChatOf,
+						liveTab(s) &&
+						s.projectId === activeProjectId &&
+						!s.sideChatOf &&
+						// Workers stay behind their parent until explicitly opened from the
+						// header's worker menu. The selected worker then gets a temporary tab.
+						(!s.parentSessionId || s.id === currentSession?.id),
 				)
 				.sort(byCreated)
 		: currentSession?.worktreeDir?.startsWith("/home/ubuntu/worktrees/")
@@ -1868,7 +1873,8 @@ function App() {
 						(s) =>
 							liveTab(s) &&
 							s.worktreeDir === currentSession.worktreeDir &&
-							!s.sideChatOf,
+							!s.sideChatOf &&
+							(!s.parentSessionId || s.id === currentSession?.id),
 					)
 					.sort(byCreated)
 			: currentSession
