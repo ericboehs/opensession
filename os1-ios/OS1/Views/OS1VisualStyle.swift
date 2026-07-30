@@ -58,6 +58,7 @@ struct RepoTile: View {
     let name: String
     var size: CGFloat = 18
     var round = false
+    var showsFallback = true
 
     static func label(for name: String) -> String {
         name == "backstage" ? "opensession" : name
@@ -93,11 +94,13 @@ struct RepoTile: View {
 
     var body: some View {
         ZStack {
-            Text(letter)
-                .font(.system(size: size * 0.6, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .frame(width: size, height: size)
-                .background(color)
+            if showsFallback {
+                Text(letter)
+                    .font(.system(size: size * 0.6, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .frame(width: size, height: size)
+                    .background(color)
+            }
             if let iconURL {
                 AsyncImage(url: iconURL) { phase in
                     if case .success(let image) = phase {
