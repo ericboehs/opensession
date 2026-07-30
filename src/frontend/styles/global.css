@@ -8,20 +8,20 @@
 	   deepest surface sits ~#1b, so code blocks/terminals (which stay near-black)
 	   read as inset wells instead of blending in. */
 	--bg: #1d1b19;
-	--bg-raised: #24211f;
+	--bg-raised: #292624;
 	/* Desktop sidebar material: a translucent warm charcoal wash over the native
 	   window/backdrop. */
-	--sidebar-material: rgba(36, 33, 31, 0.66);
+	--sidebar-material: rgba(41, 38, 36, 0.66);
 	--sidebar-material-sheen: rgba(255, 246, 238, 0.035);
-	/* Surface for the session top bar + tab strip. Matches --bg-raised in dark;
-	   in light it's pulled a touch toward white so the bar reads cleaner. */
-	--topbar-bg: #24211f;
+	/* Sidebar, top bars and neutral panels share one surface. Keeping these aliases
+	   together avoids a stack of barely different grays across the app chrome. */
+	--topbar-bg: var(--bg-raised);
 	/* Clean control chips (header Share, PR chip): sit one gentle step above the
 	   topbar so they read as lifted, with a whisper of shadow. Codex-style. */
 	--control-surface: #2d2926;
 	--control-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
 	--composer-shadow: 0 2px 6px rgba(0, 0, 0, 0.16), 0 14px 36px rgba(0, 0, 0, 0.2);
-	--bg-panel: #292624;
+	--bg-panel: var(--bg-raised);
 	--bg-hover: #322e2b;
 	--bg-active: #3a3531;
 	/* Interaction washes. --bg-hover/--bg-active above are absolute *surfaces*:
@@ -90,16 +90,16 @@
    of hardcoded light-on-translucent spots get explicit overrides just below. */
 html[data-theme="light"] {
 	--bg: #ffffff;
-	--bg-raised: #f7f6f4;
-	--sidebar-material: rgba(247, 246, 244, 0.72);
+	--bg-raised: #f2f0ec;
+	--sidebar-material: rgba(242, 240, 236, 0.72);
 	--sidebar-material-sheen: rgba(255, 255, 255, 0.42);
-	--topbar-bg: #fcfbfa;
+	--topbar-bg: var(--bg-raised);
 	/* Pure white, a hair brighter than the warm topbar, + a barely-there shadow —
 	   the clean lifted chip from the Codex reference. */
 	--control-surface: #ffffff;
 	--control-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 	--composer-shadow: 0 2px 6px rgba(0, 0, 0, 0.04), 0 14px 36px rgba(0, 0, 0, 0.08);
-	--bg-panel: #f2f0ec;
+	--bg-panel: var(--bg-raised);
 	--bg-hover: #ece9e4;
 	--bg-active: #e4e0d9;
 	/* Warm black ink; a touch lighter than dark's wash because ink on white
