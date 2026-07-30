@@ -174,11 +174,10 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
         disablePointerDismissal={starting}
       >
         <Modal.Content
-          widthClassName="max-w-[30rem]"
+          widthClassName="max-w-[28rem]"
           initialFocus={needsBranch ? branchRef : undefined}
         >
           <Modal.Header
-            icon={<IconBranches size={22} />}
             title={flavor ? flavorMeta[flavor].title : ""}
             description={flavor ? flavorMeta[flavor].description : undefined}
           />
@@ -217,7 +216,7 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
               </span>
             )}
             <div className="flex-1" />
-            <Button variant="ghost" onClick={() => setFlavor(null)} disabled={starting}>
+            <Button onClick={() => setFlavor(null)} disabled={starting}>
               Cancel
             </Button>
             <Button variant="primary" onClick={start} disabled={!canStart}>
