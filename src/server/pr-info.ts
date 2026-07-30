@@ -412,7 +412,13 @@ export async function getPrDiff(
       // this).
       const dmsg = String(diffErr?.stderr || diffErr?.message || diffErr);
       if (!/maximum number of files/i.test(dmsg)) throw diffErr;
-      patch = await localPrDiffPatch(repo, meta);
+      console.warn(`[pr-info] PR #${meta.number} diff >300 files; using local merge-base diff`);
+      try {
+        patch = await localPrDiffPatch(repo, meta);
+      } catch (localErr: any) {
+        console.warn(`[pr-info] local diff fallback failed: ${String(localErr?.stderr || localErr?.message || localErr).slice(0, 300)}`);
+        throw localErr;
+      }
     }
     const data = { number: meta.number, headRefOid: meta.headRefOid, patch };
     diffCache.set(key, { data, ts: Date.now() });
