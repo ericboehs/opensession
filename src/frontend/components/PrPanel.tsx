@@ -42,6 +42,7 @@ import { CommentableDiff, type CommentTarget, type PendingComment } from "./Comm
 import { SelectionToSession } from "./SelectionToSession";
 import { getCurrentUser } from "./UserPicker";
 import { renderMarkdown, renderPrCommentMarkdown } from "../lib/markdown";
+import { isOutdatedReviewComment } from "../lib/pr-comments";
 import { providerFromUrl, avatarUrl, type Provider } from "../lib/provider";
 import { pollWhileVisible, PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
 import {
@@ -1000,7 +1001,9 @@ export function PrPanel({
   const reviewers = pr.reviewers || [];
   // Bot bookkeeping comments are pure HTML markers — hide them, and strip
   // leading markers from real comments' previews.
-  const comments = (pr.comments || []).filter((c) => stripHtmlComments(c.body));
+  const comments = (pr.comments || []).filter(
+    (c) => stripHtmlComments(c.body) && !isOutdatedReviewComment(c.body),
+  );
 
   if (reviewCanvas) {
     const canMergeAfterReview =

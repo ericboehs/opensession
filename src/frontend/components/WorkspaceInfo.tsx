@@ -37,6 +37,7 @@ import type {
 } from "../lib/types";
 import { formatPrCommentPrompt } from "./PrPanel";
 import { renderMarkdown } from "../lib/markdown";
+import { isOutdatedReviewComment } from "../lib/pr-comments";
 import { MarkdownBody } from "./MarkdownBody";
 import {
 	loadOverview,
@@ -1547,6 +1548,7 @@ export function WorkspaceInfo({
 	// bot pings) so no blank/useless cards show.
 	const comments = (pr?.comments ?? [])
 		.filter((c) => !/vercel/i.test(c.author || ""))
+		.filter((c) => !isOutdatedReviewComment(c.body))
 		.map((c) => ({ ...c, preview: plainComment(c.body) }))
 		.filter((c) => c.preview.length > 0);
 	const changed = files ?? [];
