@@ -36,8 +36,6 @@ struct SessionsListView: View {
     @State private var showSettings = false
     @State private var path = NavigationPath()
     @State private var searchText = ""
-    @State private var showingSearch = false
-    @FocusState private var searchFocused: Bool
     /// Non-nil opens the new-session sheet; carries the per-repo "+" preset.
     @State private var newSessionRequest: NewSessionRequest?
     /// Opening prompts (and images) of just-created sessions, keyed by id —
@@ -258,43 +256,21 @@ struct SessionsListView: View {
                     // circle around it read as a stray border.
                     .sharedBackgroundVisibility(.hidden)
                     ToolbarItem(placement: .topTrailingCompat) {
-                        Button {
-                            withAnimation(.snappy(duration: 0.2)) {
-                                showingSearch.toggle()
-                            }
-                        } label: {
-                            WebIcon(
-                                kind: .search,
-                                size: 24,
-                                color: showingSearch ? OS1VisualStyle.accent : OS1VisualStyle.textDim
-                            )
-                        }
-                        .accessibilityLabel("Search")
-                    }
-                    ToolbarItem(placement: .topTrailingCompat) {
                         filterMenu
                     }
-                }
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    if showingSearch {
-                        inlineSearchField
-                            .transition(.move(edge: .top).combined(with: .opacity))
+                    // New session lives in the top bar; search moved into the
+                    // system bottom search field, which owns the bottom edge.
+                    ToolbarItem(placement: .topTrailingCompat) {
+                        Button {
+                            newSessionRequest = NewSessionRequest()
+                        } label: {
+                            Image(systemName: "plus")
+                                // Neutral, not the red accent: the plus is
+                                // chrome, not an alert.
+                                .foregroundStyle(OS1VisualStyle.text)
+                        }
+                        .accessibilityLabel("New session")
                     }
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    Button {
-                        newSessionRequest = NewSessionRequest()
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 24, weight: .medium))
-                            .foregroundStyle(.white)
-                            .frame(width: 56, height: 56)
-                            .background(OS1VisualStyle.accent, in: Circle())
-                            .shadow(color: .black.opacity(0.28), radius: 12, y: 6)
-                    }
-                    .accessibilityLabel("New session")
-                    .padding(.trailing, 18)
-                    .padding(.bottom, 18)
                 }
                 .sheet(isPresented: $showSettings) {
                     SettingsView()
@@ -314,9 +290,6 @@ struct SessionsListView: View {
                 }
                 .safeAreaInset(edge: .bottom) {
                     errorBanner
-                }
-                .onChange(of: showingSearch) { _, visible in
-                    if visible { searchFocused = true }
                 }
         }
     }
@@ -656,35 +629,6 @@ struct SessionsListView: View {
         return "\(people), grouped by \(groupBy.label), \(repo), sorted by \(sortBy.label)"
     }
 
-    private var inlineSearchField: some View {
-        HStack(spacing: 10) {
-            WebIcon(kind: .search, size: 22, color: OS1VisualStyle.textFaint)
-            TextField("Search sessions", text: $searchText)
-                .textFieldStyle(.plain)
-                .font(.body)
-                .focused($searchFocused)
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(OS1VisualStyle.textFaint)
-                }
-                .accessibilityLabel("Clear search")
-            }
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 44)
-        .background(OS1VisualStyle.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(OS1VisualStyle.border, lineWidth: 0.5)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(OS1VisualStyle.background)
-    }
-
     // ── List body ─────────────────────────────────────────────────────────
 
     #if os(macOS)
@@ -715,6 +659,10 @@ struct SessionsListView: View {
         .background(OS1VisualStyle.background)
         .listSectionSpacing(10)
         .contentMargins(.top, 4, for: .scrollContent)
+        // The system search field: iOS 26 places it at the bottom edge on
+        // iPhone (the Liquid Glass search treatment), replacing the old
+        // toolbar toggle + inline field.
+        .searchable(text: $searchText, prompt: "Search sessions")
         .overlay { emptyFilterOverlay }
         .refreshable {
             await viewModel.refresh()
@@ -1026,6 +974,7 @@ struct SessionsListView: View {
                         .font(.system(size: 12, weight: .medium))
                         .frame(width: 20, height: 20)
                         #endif
+                        .foregroundStyle(OS1VisualStyle.textDim)
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("New session in \(RepoTile.label(for: repo))")

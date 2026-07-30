@@ -207,6 +207,7 @@ struct SessionView: View {
             ToolbarItem(placement: .topTrailingCompat) {
                 Button(action: { onNewSession?() }) {
                     Image(systemName: "plus")
+                        .foregroundStyle(OS1VisualStyle.text)
                 }
                 .accessibilityLabel("New chat")
             }
@@ -670,9 +671,10 @@ private struct SessionTabBar: View {
                 .padding(.vertical, 6)
             }
             .scrollIndicators(.hidden)
-            // No bar background or divider: the strip floats over the
-            // transcript, which stays visible through the top scroll-edge
-            // fade — matching the transparent navigation bar above it.
+            // Translucent material, not an opaque .bar and not nothing: the
+            // transcript ghosts through, but the tab labels stay legible
+            // over busy content.
+            .background(.ultraThinMaterial)
             .onAppear {
                 proxy.scrollTo(activeId, anchor: .center)
             }
