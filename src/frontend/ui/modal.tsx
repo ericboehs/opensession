@@ -29,60 +29,132 @@ import { IconX } from "../components/icons";
  *       </Modal.Footer>
  *     </Modal.Content>
  *   </Modal.Root>
+ *
+ * The command palettes (⌘K search, ⌘N new session) use `variant="palette"` —
+ * the same mechanics in a top-anchored, wider, full-bleed shell whose own rows
+ * carry the padding and dividers. Pair it with `useEnterOnMount()` when the
+ * parent mounts the dialog conditionally.
  */
 
-/** Portal + backdrop + centered, squircle-cornered popup. Children are the
- *  dialog body; pair with Modal.Header / Modal.Footer for the standard shape.
+/** Geometry of the dialog shell.
+ *  - `centered` — the standard confirm/edit dialog: vertically centered, ~30rem,
+ *    padded body, `gap-4` between header/body/footer.
+ *  - `palette` — the command-palette shape: anchored near the top of the
+ *    viewport (via Base UI's Viewport), wider, and full-bleed. No padding and no
+ *    gap, because a palette's rows (search field, scrolling results, hint
+ *    footer) run edge to edge and own their own spacing and dividers. */
+export type ModalVariant = "centered" | "palette";
+
+export type ModalContentProps = Omit<
+	React.ComponentPropsWithoutRef<"div">,
+	"children"
+> & {
+	children: React.ReactNode;
+	/** Width (a Tailwind width utility). Defaults to ~30rem for `centered` and
+	 *  min(820px, 100%) for `palette` — override with e.g. "max-w-[34rem]". */
+	widthClassName?: string;
+	/** Element to focus when the dialog opens (Base UI otherwise focuses the
+	 *  first tabbable). Pass the ref of the field you want the caret in. */
+	initialFocus?: React.RefObject<HTMLElement | null>;
+	variant?: ModalVariant;
+};
+
+/** Portal + backdrop + popup. Children are the dialog body; pair with
+ *  Modal.Header / Modal.Footer for the standard shape. Remaining props land on
+ *  the popup, so a title-less dialog can name itself with `aria-label` and a
+ *  palette can own its own `onKeyDown`.
  *  (Backdrop-dismiss is on by default; pass `disablePointerDismissal` to
  *  Modal.Root for confirmations that demand an explicit choice.) */
 function Content({
 	className,
 	children,
-	/** Max content width (Tailwind width utility). Defaults to a comfortable
-	 *  ~30rem — override with e.g. "max-w-[34rem]" for roomier forms. */
-	widthClassName = "max-w-[30rem]",
+	widthClassName,
 	initialFocus,
-}: {
-	className?: string;
-	children: React.ReactNode;
-	widthClassName?: string;
-	/** Element to focus when the dialog opens (Base UI otherwise focuses the
-	 *  first tabbable). Pass the ref of the field you want the caret in. */
-	initialFocus?: React.RefObject<HTMLElement | null>;
-}) {
+	variant = "centered",
+	...popupProps
+}: ModalContentProps) {
+	const palette = variant === "palette";
+	const popup = (
+		<BaseDialog.Popup
+			// Centered via a single composed transform so the enter/exit
+			// scale (Tailwind writes translate + scale into one transform) keeps
+			// the dialog pinned to the middle while it pops. The palette variant
+			// is laid out by the Viewport instead, so it only owns its own size.
+			className={cn(
+				palette
+					? [
+							// `relative` anchors overlays a palette draws inside itself
+							// (the dictation HUD); `overflow-hidden` keeps the rows'
+							// dividers inside the rounded shell.
+							"relative flex flex-col overflow-hidden outline-none",
+							"rounded-[calc(20px*var(--rf))] border border-line-strong bg-panel",
+							"shadow-[0_24px_70px_rgba(0,0,0,0.45)]",
+							// Drops in from just above its resting place, the way a
+							// palette summoned by a keystroke should.
+							"origin-top transition-[transform,opacity] duration-[130ms] ease-out",
+							"data-[starting-style]:-translate-y-1.5 data-[starting-style]:scale-[0.99] data-[starting-style]:opacity-0",
+							"data-[ending-style]:-translate-y-1.5 data-[ending-style]:scale-[0.99] data-[ending-style]:opacity-0",
+							widthClassName ?? "w-[min(820px,100%)]",
+						]
+					: [
+							"fixed left-1/2 top-1/2 z-[10001] w-[92vw] -translate-x-1/2 -translate-y-1/2",
+							widthClassName ?? "max-w-[30rem]",
+							"max-h-[85vh] overflow-y-auto overscroll-contain outline-none",
+							// Soft squircle shell — rounder than the menu/popover 14px since
+							// a large surface reads flatter at the same radius.
+							"rounded-[22px] [corner-shape:squircle] border border-line-strong bg-raised",
+							"p-7 shadow-[0_24px_70px_rgba(0,0,0,0.45)]",
+							"flex flex-col gap-4",
+							"origin-center transition-[transform,opacity] duration-150 ease-out",
+							"data-[starting-style]:scale-[0.96] data-[starting-style]:opacity-0",
+							"data-[ending-style]:scale-[0.97] data-[ending-style]:opacity-0",
+						],
+				className,
+			)}
+			initialFocus={initialFocus}
+			{...popupProps}
+		>
+			{children}
+		</BaseDialog.Popup>
+	);
 	return (
 		<BaseDialog.Portal>
 			<BaseDialog.Backdrop
 				className={cn(
-					"fixed inset-0 z-[10000] bg-black/45 backdrop-blur-[1px]",
-					"transition-opacity duration-150 ease-out",
+					"fixed inset-0 transition-opacity ease-out",
 					"data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
+					// Palettes sit on their own, lower tier so anything that has
+					// always floated above them (the caret-anchored mention popup at
+					// 10500, the modal tier at 10000) keeps doing so.
+					palette
+						? "z-[6000] bg-black/42 backdrop-blur-[3px] duration-[120ms]"
+						: "z-[10000] bg-black/45 backdrop-blur-[1px] duration-150",
 				)}
 			/>
-			<BaseDialog.Popup
-				// Centered via a single composed transform so the enter/exit
-				// scale (Tailwind writes translate + scale into one transform) keeps
-				// the dialog pinned to the middle while it pops.
-				className={cn(
-					"fixed left-1/2 top-1/2 z-[10001] w-[92vw] -translate-x-1/2 -translate-y-1/2",
-					widthClassName,
-					"max-h-[85vh] overflow-y-auto overscroll-contain outline-none",
-					// Soft squircle shell — rounder than the menu/popover 14px since a
-					// large surface reads flatter at the same radius.
-					"rounded-[22px] [corner-shape:squircle] border border-line-strong bg-raised",
-					"p-7 shadow-[0_24px_70px_rgba(0,0,0,0.45)]",
-					"flex flex-col gap-4",
-					"origin-center transition-[transform,opacity] duration-150 ease-out",
-					"data-[starting-style]:scale-[0.96] data-[starting-style]:opacity-0",
-					"data-[ending-style]:scale-[0.97] data-[ending-style]:opacity-0",
-					className,
-				)}
-				initialFocus={initialFocus}
-			>
-				{children}
-			</BaseDialog.Popup>
+			{palette ? (
+				<BaseDialog.Viewport className="fixed inset-0 z-[6001] flex items-start justify-center px-4 pb-4 pt-[11vh] max-[560px]:pt-[7vh]">
+					{popup}
+				</BaseDialog.Viewport>
+			) : (
+				popup
+			)}
 		</BaseDialog.Portal>
 	);
+}
+
+/** `open` state for a dialog whose PARENT mounts it only while it should be
+ *  open (`{searchOpen && <SessionSearch/>}`). Base UI skips
+ *  [data-starting-style] for a popup that mounts already-open, so the enter
+ *  animation needs one frame at `open={false}` first.
+ *
+ *  Exit animation still can't run under conditional mounting — the parent
+ *  unmounts the tree the moment it closes — but the popup carries the
+ *  [data-ending-style] classes anyway, so it animates out for free if the
+ *  parent ever keeps it mounted. */
+export function useEnterOnMount(): boolean {
+	const [open, setOpen] = React.useState(false);
+	React.useEffect(() => setOpen(true), []);
+	return open;
 }
 
 /** Icon badge + title + one-line description on the left, a close (✕) on the
@@ -150,6 +222,7 @@ export const Modal = {
 	Close: BaseDialog.Close,
 	Title: BaseDialog.Title,
 	Description: BaseDialog.Description,
+	Viewport: BaseDialog.Viewport,
 	Content,
 	Header,
 	Footer,

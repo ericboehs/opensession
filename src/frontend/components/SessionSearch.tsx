@@ -7,6 +7,7 @@ import {
 	type OpenPr,
 } from "../lib/api";
 import { IconPullRequest, IconSearch } from "./icons";
+import { Modal, useEnterOnMount } from "../ui/modal";
 
 export interface CommandPaletteAction {
 	id: string;
@@ -165,16 +166,9 @@ export function SessionSearch({
 	const [snippets, setSnippets] = useState<Map<string, string>>(new Map());
 	const [searching, setSearching] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
-	const cardRef = useRef<HTMLDivElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
-	const previousFocusRef = useRef<HTMLElement | null>(null);
-
-	useEffect(() => {
-		previousFocusRef.current =
-			document.activeElement instanceof HTMLElement ? document.activeElement : null;
-		inputRef.current?.focus();
-		return () => previousFocusRef.current?.focus();
-	}, []);
+	// One frame closed so the palette animates in; App mounts us already-open.
+	const open = useEnterOnMount();
 
 	useEffect(() => {
 		let alive = true;
@@ -340,22 +334,10 @@ export function SessionSearch({
 		el?.scrollIntoView({ block: "nearest" });
 	}, [active, activeKey, results.length]);
 
+	// Result navigation only. Tab cycling, Escape and backdrop dismissal are the
+	// dialog's job now (Modal → Base UI), so this handler no longer duplicates
+	// them. A focused native <select> keeps its own arrow/Enter behavior.
 	function onKeyDown(e: React.KeyboardEvent) {
-		if (e.key === "Tab") {
-			const focusable = Array.from(
-				cardRef.current?.querySelectorAll<HTMLElement>(
-					"input, select, button:not([tabindex='-1'])",
-				) || [],
-			);
-			if (focusable.length === 0) return;
-			const current = focusable.indexOf(document.activeElement as HTMLElement);
-			const next = e.shiftKey
-				? (current - 1 + focusable.length) % focusable.length
-				: (current + 1) % focusable.length;
-			e.preventDefault();
-			focusable[next]?.focus();
-			return;
-		}
 		if (e.target instanceof HTMLSelectElement) return;
 		if (e.key === "ArrowDown") {
 			e.preventDefault();
@@ -368,9 +350,6 @@ export function SessionSearch({
 		} else if (e.key === "Enter") {
 			e.preventDefault();
 			selectResult(results[active]);
-		} else if (e.key === "Escape") {
-			e.preventDefault();
-			onClose();
 		}
 	}
 
@@ -383,18 +362,24 @@ export function SessionSearch({
 	}
 
 	return (
-		<div
-			className="palette-backdrop"
-			onMouseDown={(e) => {
-				if (e.target === e.currentTarget) onClose();
+		<Modal.Root
+			open={open}
+			// Escape and outside presses both land here; App unmounts us in turn.
+			onOpenChange={(next) => {
+				if (!next) onClose();
 			}}
+			// Focus is trapped, but the page isn't inerted or scroll-locked — the
+			// palette has never done either, and inerting would break popups that
+			// portal outside it.
+			modal="trap-focus"
 		>
-			<div
-				ref={cardRef}
-				className="palette-card ss-card"
-				role="dialog"
+			<Modal.Content
+				variant="palette"
+				// .ss-card also scopes the touch rule that hides the keyboard chrome.
+				widthClassName="w-[min(640px,100%)]"
+				className="ss-card h-[min(500px,76vh)] max-[560px]:h-[min(560px,82vh)]"
 				aria-label="Command menu"
-				aria-modal="true"
+				initialFocus={inputRef}
 				onKeyDown={onKeyDown}
 			>
 				<div className="ss-search-row">
@@ -584,7 +569,7 @@ export function SessionSearch({
 						{results.length} result{results.length === 1 ? "" : "s"}
 					</span>
 				</div>
-			</div>
-		</div>
+			</Modal.Content>
+		</Modal.Root>
 	);
 }

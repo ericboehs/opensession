@@ -29,6 +29,7 @@ import { Menu } from "../ui/menu";
 import { IconTile, displayName } from "./BrandTile";
 import { AddRepoDialog } from "./AddRepoDialog";
 import { Tooltip } from "../ui/tooltip";
+import { Modal, useEnterOnMount } from "../ui/modal";
 
 interface Props {
   /** Close the palette (Esc, backdrop click, or after a create without "Create more"). */
@@ -371,10 +372,8 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     skillsFetch: (q) => fetchSkillMentions(q, undefined, repo),
   });
 
-  // Focus the prompt as soon as the palette opens.
-  useEffect(() => {
-    promptRef.current?.focus();
-  }, []);
+  // (The prompt is focused on open by Modal.Content's initialFocus — a mount
+  // effect here would run a frame before the dialog's popup exists.)
 
   // Auto-grow the prompt so a long draft isn't crammed into the resting height.
   // CSS min-height/max-height clamp the field, so it rests tall, grows with the
@@ -613,17 +612,46 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
     ...worktrees.map((wt) => ({ value: wt.branch, label: wt.branch })),
   ];
 
+  // One frame closed so the palette animates in; App mounts us already-open.
+  const open = useEnterOnMount();
+  // Plan mode tints the writing surface and hatches it. Applied here rather
+  // than through a `.palette-card.is-plan-mode` descendant rule now that the
+  // shell is the shared Modal and no longer carries `.palette-card`.
+  const planSurface: React.CSSProperties | undefined = planFirst
+    ? { background: "color-mix(in srgb, var(--bg-panel) 96%, var(--accent))" }
+    : undefined;
+  const planBody: React.CSSProperties | undefined = planFirst
+    ? {
+        backgroundColor: "color-mix(in srgb, var(--bg-panel) 96%, var(--accent))",
+        backgroundImage:
+          "repeating-linear-gradient(45deg, color-mix(in srgb, var(--accent) 5%, transparent) 0, color-mix(in srgb, var(--accent) 5%, transparent) 12px, transparent 12px, transparent 24px)",
+      }
+    : undefined;
+
   return (
-    <div
-      className="palette-backdrop"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !creating) onBack();
+    <Modal.Root
+      open={open}
+      // Escape and outside presses both land here. App's global Esc-closes-a-
+      // palette shortcut can't double-fire: Base UI stops the keydown before it
+      // reaches window, so this is the only close (which matters — closePalette
+      // also pops a /new deep link off history).
+      onOpenChange={(next) => {
+        if (!next) onBack();
       }}
+      // Focus is trapped, but the page is neither inerted nor scroll-locked: the
+      // "@"-mention popup portals to <body>, and inerting would leave it dead.
+      modal="trap-focus"
+      // Mid-create the palette isn't dismissable. An open mention popup also
+      // owns the next click — it lives outside the dialog, so pressing it would
+      // otherwise read as an outside press and close the whole palette.
+      disablePointerDismissal={creating || mentions.open}
     >
-      <div
-        className={`palette-card ${planFirst ? "is-plan-mode" : ""}`}
-        role="dialog"
+      <Modal.Content
+        variant="palette"
         aria-label="New session"
+        // The prompt, not the repo picker Base UI would otherwise land on as the
+        // first tabbable.
+        initialFocus={promptRef}
       >
         {/* Header: repo (left) · create-from (right). The repo picker is
             always visible — on phones the create-from picker hides until the
@@ -724,6 +752,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
         {/* Prompt */}
         <div
           className="palette-body"
+          style={planBody}
           onDrop={(e) => {
             if (e.dataTransfer?.files?.length) {
               e.preventDefault();
@@ -770,7 +799,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
         )}
 
         {/* Footer toolbar */}
-        <div className="palette-footer">
+        <div className="palette-footer" style={planSurface}>
           <div className="palette-footer-left">
             {isPhone && (
               <button
@@ -1079,8 +1108,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
             </div>
           </div>
         </div>
-      </div>
-
-    </div>
+      </Modal.Content>
+    </Modal.Root>
   );
 }
