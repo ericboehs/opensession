@@ -247,13 +247,16 @@ struct SessionsListView: View {
                         } label: {
                             RepoTile(
                                 name: "backstage",
-                                size: 34,
+                                size: 44,
                                 round: true,
                                 showsFallback: false
                             )
                         }
                         .accessibilityLabel("Settings")
                     }
+                    // The bare app tile is the control; the toolbar's glass
+                    // circle around it read as a stray border.
+                    .sharedBackgroundVisibility(.hidden)
                     ToolbarItem(placement: .topTrailingCompat) {
                         Button {
                             withAnimation(.snappy(duration: 0.2)) {
@@ -728,6 +731,9 @@ struct SessionsListView: View {
                 onSaveComposerDraft: { savedSession, draft in
                     let id = resolvedSessionIds[savedSession.id] ?? savedSession.id
                     composerDrafts[id] = draft.isEmpty ? nil : draft
+                },
+                onNewSession: {
+                    newSessionRequest = NewSessionRequest(repo: session.effectiveRepo)
                 }
             )
             .id(session.id)
@@ -987,7 +993,11 @@ struct SessionsListView: View {
                     .frame(width: 7, height: 7)
             }
             if let repo {
+                #if os(iOS)
+                RepoTile(name: repo, size: 24)
+                #else
                 RepoTile(name: repo)
+                #endif
             }
             Text(repo.map { RepoTile.label(for: $0) } ?? title)
                 #if os(iOS)

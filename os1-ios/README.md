@@ -25,9 +25,9 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   `stream_text` with a cursor bubble, and a horizontally scrollable chat tab
   strip when a workspace/worktree contains multiple sessions.
 - **Workspace details** — tapping the chat title opens a native worktree sheet
-  with repository and branch metadata, local git status, changed files,
-  workspace context, and model/reasoning controls, matching mobile web's info
-  page without embedding the web client.
+  with repository and branch metadata, local git status, changed files, pull
+  request status, workspace context, and model/reasoning controls, matching
+  mobile web's info page without embedding the web client.
 - **Prompting** — WS `prompt` frames (the server has no REST prompt endpoint).
   Sending while a run is active queues, exactly like the web UI. Stop button
   sends `cancel` for the watched session. The floating glass composer uses a
@@ -37,10 +37,9 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   a compact single-row iOS toolbar for repository, mode, and model settings.
 - **AskUserQuestion** — blocking questions render as an inline card with option
   buttons + free-text answer, wired to `answer_question`.
-- **PR chip + panel** — sessions with a pull request show a toolbar chip
-  (number + status dot: merged/closed/draft, or the check rollup while open);
-  tapping it opens a read-only panel with state, review decision, conflicts,
-  every check with its status, and reviewers, via
+- **PR panel** — sessions with a pull request expose a row in the title-opened
+  workspace sheet; it opens a read-only panel with state, review decision,
+  conflicts, every check with its status, and reviewers, via
   `GET /api/sessions/:id/pr`. Actions (merge/review) stay on the web UI.
 - **Connection care** — client-initiated pings every 20s (the server never
   pings; required against half-open iOS sockets), auto-reconnect with a banner,

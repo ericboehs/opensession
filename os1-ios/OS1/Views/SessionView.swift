@@ -8,6 +8,8 @@ struct SessionView: View {
     private let tabs: [Session]
     private let onSelectTab: ((Session) -> Void)?
     private let onSaveComposerDraft: ((SessionViewModel.ComposerDraft) -> Void)?
+    /// Opens the new-session composer from the iOS navigation bar.
+    private let onNewSession: (() -> Void)?
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -38,8 +40,10 @@ struct SessionView: View {
     /// Model/effort catalog for the toolbar picker; fetched on first open.
     @State private var catalog: ModelCatalog?
 
-    /// PR details sheet, opened from the toolbar PR chip.
+    /// PR details sheet, opened from the macOS toolbar PR chip.
+    #if os(macOS)
     @State private var showPrPanel = false
+    #endif
 
     /// Native counterpart of mobile web's title-opened workspace info page.
     @State private var showWorktreeInfo = false
@@ -50,7 +54,8 @@ struct SessionView: View {
         tabs: [Session]? = nil,
         composerDraft: SessionViewModel.ComposerDraft? = nil,
         onSelectTab: ((Session) -> Void)? = nil,
-        onSaveComposerDraft: ((SessionViewModel.ComposerDraft) -> Void)? = nil
+        onSaveComposerDraft: ((SessionViewModel.ComposerDraft) -> Void)? = nil,
+        onNewSession: (() -> Void)? = nil
     ) {
         _viewModel = State(initialValue: SessionViewModel(
             session: session,
@@ -60,6 +65,7 @@ struct SessionView: View {
         self.tabs = tabs ?? [session]
         self.onSelectTab = onSelectTab
         self.onSaveComposerDraft = onSaveComposerDraft
+        self.onNewSession = onNewSession
     }
 
     var body: some View {
@@ -95,11 +101,18 @@ struct SessionView: View {
                         .padding(.vertical, 8)
                         .frame(maxWidth: contentMaxWidth)
                         .frame(maxWidth: .infinity)
+                        // The floating composer overlays the transcript; this
+                        // keeps the newest message readable without an opaque
+                        // strip at the bottom of the chat.
+                        .padding(.bottom, 112)
                     }
                     // Initial render lands at the bottom and stays pinned while
                     // lazy rows settle. The pin releases when the person scrolls
                     // up to read, so new output does not yank them back.
                     .softScrollEdges()
+                    #if os(iOS)
+                    .ignoresSafeArea(edges: [.top, .bottom])
+                    #endif
                     .defaultScrollAnchor(.bottom)
                     .defaultScrollAnchor(.bottom, for: .sizeChanges)
                     .scrollDismissesKeyboardCompat()
@@ -164,7 +177,7 @@ struct SessionView: View {
             }
         }
         .background(OS1VisualStyle.background.ignoresSafeArea())
-        .safeAreaInset(edge: .bottom) {
+        .overlay(alignment: .bottom) {
             // A separate view struct on purpose: typing mutates
             // `viewModel.draft` on every keystroke, and any read of it (or
             // `canSend`) inside SessionView.body would re-evaluate this whole
@@ -183,14 +196,25 @@ struct SessionView: View {
         .navigationTitle(viewModel.session.displayTitle)
         #endif
         .inlineTitleBarCompat()
+        #if os(iOS)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        #endif
         .toolbar {
             #if os(iOS)
             ToolbarItem(placement: .principal) {
                 sessionIdentityButton
             }
             #endif
-            // PR chip: number + status dot. Present as soon as either the
-            // fetched details or the sessions-list snapshot know of a PR.
+            #if os(iOS)
+            ToolbarItem(placement: .topTrailingCompat) {
+                Button(action: { onNewSession?() }) {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("New chat")
+            }
+            #else
+            // macOS retains the PR chip in its roomier toolbar; on iOS the
+            // same panel lives in the title-opened workspace sheet.
             if let prNumber = viewModel.prDetails?.number ?? viewModel.session.prNumber {
                 ToolbarItem(placement: .topTrailingCompat) {
                     Button {
@@ -201,6 +225,7 @@ struct SessionView: View {
                     .accessibilityLabel(Text(verbatim: "Pull request #\(prNumber)"))
                 }
             }
+            #endif
             #if os(macOS)
             ToolbarItem(placement: .principal) { macSessionTitle }
             ToolbarItem(placement: .topTrailingCompat) {
@@ -209,9 +234,11 @@ struct SessionView: View {
             }
             #endif
         }
+        #if os(macOS)
         .sheet(isPresented: $showPrPanel) {
             PrPanelView(viewModel: viewModel)
         }
+        #endif
         #if os(iOS)
         .sheet(isPresented: $showWorktreeInfo) {
             WorktreeInfoView(
@@ -348,7 +375,7 @@ struct SessionView: View {
             showWorktreeInfo = true
         } label: {
             HStack(spacing: 8) {
-                RepoTile(name: viewModel.session.effectiveRepo, size: 28)
+                RepoTile(name: viewModel.session.effectiveRepo, size: 32)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 5) {
                         Text(viewModel.session.displayTitle)
@@ -470,6 +497,7 @@ struct SessionTabsView: View {
     let seedForSession: (Session) -> SessionViewModel.OptimisticSeed?
     let composerDraftForSession: (Session) -> SessionViewModel.ComposerDraft?
     let onSaveComposerDraft: (Session, SessionViewModel.ComposerDraft) -> Void
+    let onNewSession: () -> Void
 
     @State private var activeId: String
     @State private var transitionEdge = Edge.trailing
@@ -480,13 +508,15 @@ struct SessionTabsView: View {
         tabs: [Session],
         seedForSession: @escaping (Session) -> SessionViewModel.OptimisticSeed?,
         composerDraftForSession: @escaping (Session) -> SessionViewModel.ComposerDraft?,
-        onSaveComposerDraft: @escaping (Session, SessionViewModel.ComposerDraft) -> Void
+        onSaveComposerDraft: @escaping (Session, SessionViewModel.ComposerDraft) -> Void,
+        onNewSession: @escaping () -> Void
     ) {
         initialSession = session
         self.tabs = tabs
         self.seedForSession = seedForSession
         self.composerDraftForSession = composerDraftForSession
         self.onSaveComposerDraft = onSaveComposerDraft
+        self.onNewSession = onNewSession
         _activeId = State(initialValue: session.id)
     }
 
@@ -513,7 +543,8 @@ struct SessionTabsView: View {
                     composerDraft: composerDraftForSession(session),
                     onSaveComposerDraft: { draft in
                         onSaveComposerDraft(session, draft)
-                    }
+                    },
+                    onNewSession: onNewSession
                 )
                 .transition(conversationTransition)
             }
@@ -740,20 +771,6 @@ private struct SessionInputBar: View {
         .padding(.top, 6)
         #if os(iOS)
         .padding(.bottom, 8)
-        .background(alignment: .bottom) {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .mask {
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.7), .black],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
-                .padding(.top, -28)
-                .ignoresSafeArea(edges: .bottom)
-                .allowsHitTesting(false)
-        }
         #else
         .padding(.bottom, 8)
         #endif

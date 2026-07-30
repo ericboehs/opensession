@@ -13,6 +13,7 @@ struct WorktreeInfoView: View {
     @State private var overview: OS1API.WorkspaceOverview?
     @State private var loading = true
     @State private var loadFailed = false
+    @State private var showPrPanel = false
 
     var body: some View {
         NavigationStack {
@@ -21,6 +22,7 @@ struct WorktreeInfoView: View {
                     hero
                     worktreeSection
                     gitSection
+                    pullRequestSection
                     changesSection
                     overviewSection
                     runSettingsSection
@@ -42,6 +44,9 @@ struct WorktreeInfoView: View {
                 if wasRunning && !isRunning {
                     Task { await loadGitDetails() }
                 }
+            }
+            .sheet(isPresented: $showPrPanel) {
+                PrPanelView(viewModel: viewModel)
             }
         }
     }
@@ -200,6 +205,42 @@ struct WorktreeInfoView: View {
                         .foregroundStyle(OS1VisualStyle.textDim)
                         .padding(12)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var pullRequestSection: some View {
+        if let number = viewModel.prDetails?.number ?? currentSession.prNumber {
+            InfoSection(title: "Pull request") {
+                Button {
+                    showPrPanel = true
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.triangle.pull")
+                            .foregroundStyle(OS1VisualStyle.blue)
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(viewModel.prDetails?.title ?? "Pull request")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(OS1VisualStyle.text)
+                                .lineLimit(1)
+                            Text(viewModel.prDetails?.summary.label ?? "View status and checks")
+                                .font(.caption)
+                                .foregroundStyle(OS1VisualStyle.textDim)
+                        }
+                        Spacer(minLength: 8)
+                        PrChipLabel(number: number, summary: viewModel.prDetails?.summary)
+                            .foregroundStyle(OS1VisualStyle.text)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(OS1VisualStyle.textFaint)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 52)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
     }
