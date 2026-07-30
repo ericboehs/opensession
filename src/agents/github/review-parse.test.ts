@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isCompleteReviewOutput, parseReviewOutput } from "./review";
+import { parseReviewOutput } from "./review";
 
 const canonical = `Reviewed the diff.
 
@@ -67,16 +67,5 @@ describe("parseReviewOutput", () => {
     const out = parseReviewOutput(both);
     expect(out?.summary_markdown).toBe("Real summary.");
     expect(out?.findings?.[0]).toMatchObject({ path: "src/a.ts", body: "Real body." });
-  });
-
-  test("requires a postable verdict and summary", () => {
-    expect(isCompleteReviewOutput(parseReviewOutput(canonical))).toBe(true);
-    expect(isCompleteReviewOutput(null)).toBe(false);
-    expect(isCompleteReviewOutput(parseReviewOutput('{"verdict":"approve"}'))).toBe(false);
-    expect(
-      isCompleteReviewOutput(
-        parseReviewOutput('{"verdict":"thinking","summary_markdown":"Still reviewing."}'),
-      ),
-    ).toBe(false);
   });
 });

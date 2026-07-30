@@ -17,6 +17,7 @@ import { getCurrentUser } from "./UserPicker";
 import { providerFromUrl } from "../lib/provider";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, Menu } from "../ui/menu";
+import { PrChecksPopover } from "./PrChecksPopover";
 import {
 	IconArrowDown,
 	IconArrowUp,
@@ -203,6 +204,8 @@ interface Props {
 	send?: (msg: any) => void;
 	/** Clicking the headline jumps to the PR tab; a chip jumps to that PR. */
 	onOpenPrTab?: (ref?: { repo: string; branch: string }) => void;
+	/** Open the primary PR directly on its Checks tab. */
+	onOpenChecksTab?: () => void;
 	/** Archive via the owning viewer so it can select the neighboring sidebar row. */
 	onArchive?: () => void;
 	/** "header" renders just the PR chip + primary action for the chat header
@@ -494,6 +497,7 @@ export function PrStatusBar({
 	prs,
 	send,
 	onOpenPrTab,
+	onOpenChecksTab,
 	onArchive,
 	variant = "bar",
 	leading,
@@ -767,6 +771,20 @@ export function PrStatusBar({
 					primaryRepo={primaryRepoId}
 					onOpen={onOpenPrTab}
 				/>
+				{headline.key === "running" && pr && (
+					<PrChecksPopover
+						checks={pr.checks}
+						trigger={
+							<button
+								type="button"
+								className={`pr-bar-state pr-bar-state-${headline.tone}`}
+								onClick={onOpenChecksTab}
+							>
+								{headlineLabel}
+							</button>
+						}
+					/>
+				)}
 				{error && (
 					<span className="pr-bar-error" title={error}>
 						{error}
@@ -789,7 +807,20 @@ export function PrStatusBar({
 					onOpenPrTab={() => onOpenPrTab?.()}
 				/>
 			)}
-			{(headline.key !== "no-pr" || siblings.length > 0) && (
+			{headline.key === "running" && pr ? (
+				<PrChecksPopover
+					checks={pr.checks}
+					trigger={
+						<button
+							type="button"
+							className={`pr-bar-state pr-bar-state-${headline.tone}`}
+							onClick={onOpenChecksTab}
+						>
+							{headlineLabel}
+						</button>
+					}
+				/>
+			) : (headline.key !== "no-pr" || siblings.length > 0) && (
 				<Tooltip label="Open the PR tab">
 					<button
 						className={`pr-bar-state pr-bar-state-${headline.tone}`}

@@ -7,7 +7,7 @@
 import { envAlias } from "../../server/rename-compat";
 import { existsSync, readFileSync } from "fs";
 import { BACKSTAGE_CHATS_DIR } from "../../server/paths";
-import { recordRunOutcome, updateSessionFile } from "../../server/session-cache";
+import { updateSessionFile } from "../../server/session-cache";
 import { runAgent } from "../../server/agent-runner";
 import { providerFor, DEFAULT_FALLBACK_MODEL, modelLabel } from "../../server/models";
 import { engineSessionPatch } from "../../server/sessions";
@@ -244,10 +244,6 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
     errorMsg = e.message || String(e);
   }
 
-  await persist(engineSessionId);
-  // GitHub behaviors drive runAgent directly instead of flowing through
-  // runSessionPrompt, so they must settle the visible session themselves.
-  // Without this, journalSet leaves the FSM in `running` after the engine exits.
-  recordRunOutcome(bksId, errorMsg || null);
+  persist(engineSessionId);
   return { bksId, text, error: errorMsg || undefined, model: effectiveModel };
 }

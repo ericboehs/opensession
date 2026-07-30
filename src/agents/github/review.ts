@@ -55,8 +55,6 @@ import { repoForFullName } from "./constants";
 
 const DEFAULT_REPO_DIR = defaultRepo().repo;
 
-const REVIEW_OUTPUT_REPAIR_PROMPT = `Your previous response was only a progress update, not a usable review result. Do not continue investigating unless a missing fact is essential. Synthesize the inspection already completed and end this turn with the required single fenced JSON review object now.`;
-
 export interface PrRef {
   number: number;
   headRef: string;
@@ -308,33 +306,7 @@ export async function runReview(
       onSessionCreated,
     });
 
-    let finalResult = result;
-    let parsed = parseReviewOutput(finalResult.text);
-    // Fable occasionally declares a progress narration complete before it emits
-    // the review contract. Give the same engine session one bounded chance to
-    // turn its completed inspection into a postable verdict.
-    if (!finalResult.error && !isCompleteReviewOutput(parsed)) {
-      console.warn(`[github] PR #${pr.number} review ended without structured output; repairing once`);
-      finalResult = await runGithubAgent({
-        prNumber: pr.number,
-        ghRepo: pr.ghRepo,
-        kind: "review",
-        prompt: REVIEW_OUTPUT_REPAIR_PROMPT,
-        cwd,
-        mode: "ask",
-        model: finalResult.model || reviewModel,
-        branch: pr.headRef,
-        title: `Review · PR #${pr.number} ${details.title}`.slice(0, 100),
-        resume: true,
-        onSessionCreated,
-      });
-      parsed = parseReviewOutput(finalResult.text);
-    }
-    const reviewError =
-      finalResult.error ||
-      (isCompleteReviewOutput(parsed)
-        ? undefined
-        : "The review did not produce the required structured verdict after one continuation.");
+    const parsed = parseReviewOutput(result.text);
     const tob = await testOnBase;
     const secrets = await secretScan;
     // A leaked credential blocks regardless of what the model concluded: the
@@ -345,18 +317,18 @@ export async function runReview(
       parsed.verdict = "request_changes";
       parsed.confidence = Math.min(typeof parsed.confidence === "number" ? parsed.confidence : 2, 2);
     }
-    await postReview(pr, details, parsed, finalResult.text, reviewError, force, finalResult.model, reviewOpts, summaryOnly, testOnBaseSection(tob) + secretScanSection(secrets));
+    await postReview(pr, details, parsed, result.text, result.error, force, result.model, reviewOpts, summaryOnly, testOnBaseSection(tob) + secretScanSection(secrets));
 
     const outcome: ReviewResult = {
       verdict: parsed?.verdict,
       confidence: parsed?.confidence,
       findings: parsed?.findings?.length || 0,
       blocking: reviewBlockingCount(parsed),
-      error: reviewError,
+      error: result.error,
     };
 
     // Per-review telemetry for the Analytics review-quality trend.
-    if (!reviewError) {
+    if (!result.error) {
       audit({
         msg: "review_completed",
         pr_number: pr.number,
@@ -366,13 +338,13 @@ export async function runReview(
         findings: outcome.findings,
         blocking: outcome.blocking,
         is_update: isUpdate,
-        model: finalResult.model,
+        model: result.model,
       });
     }
 
     // Record the SHA as reviewed only on a successful run, so a transient failure
     // (model error/timeout) leaves it eligible for retry on the next delivery.
-    if (!reviewError && pr.headSha) {
+    if (!result.error && pr.headSha) {
       const s = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
       if (!s.reviewedShas.includes(pr.headSha)) s.reviewedShas.push(pr.headSha);
       s.lastReviewedSha = pr.headSha;
@@ -681,16 +653,6 @@ export function parseReviewOutput(text: string): ReviewOutput | null {
     }
   } catch {}
   return null;
-}
-
-/** A review is postable only when it has a supported verdict and a real summary. */
-export function isCompleteReviewOutput(output: ReviewOutput | null): output is ReviewOutput {
-  return (
-    !!output &&
-    (output.verdict === "approve" || output.verdict === "comment" || output.verdict === "request_changes") &&
-    typeof output.summary_markdown === "string" &&
-    output.summary_markdown.trim().length > 0
-  );
 }
 
 // ── Unified-diff line validation ─────────────────────────────

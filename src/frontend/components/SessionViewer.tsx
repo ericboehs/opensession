@@ -599,12 +599,12 @@ export function SessionViewer({
 	// Which PR the Review tab should open on, set by the PR chips in the
 	// Workspace strip (seq lets the same chip re-focus after a manual switch).
 	const [reviewFocus, setReviewFocus] = useState<
-		{ repo: string; branch?: string; seq: number } | undefined
+		{ repo?: string; branch?: string; view?: "checks"; seq: number } | undefined
 	>(undefined);
 	const focusPrInReview = useCallback(
-		(ref?: { repo: string; branch: string }) => {
-			if (ref)
-				setReviewFocus((prev) => ({ ...ref, seq: (prev?.seq ?? 0) + 1 }));
+		(ref?: { repo: string; branch: string }, view?: "checks") => {
+			if (ref || view)
+				setReviewFocus((prev) => ({ ...ref, view, seq: (prev?.seq ?? 0) + 1 }));
 			onOpenReview?.();
 		},
 		[onOpenReview],
@@ -4164,6 +4164,7 @@ export function SessionViewer({
 							prs={session.prs}
 							send={connected ? send : undefined}
 							onOpenPrTab={focusPrInReview}
+							onOpenChecksTab={() => focusPrInReview(undefined, "checks")}
 							onArchive={handleArchive}
 							variant="header"
 							running={isRunningLive}
@@ -4267,6 +4268,10 @@ export function SessionViewer({
 												setInfoPageOpen(false);
 												focusPrInReview(ref);
 											}}
+											onOpenChecksTab={() => {
+												setInfoPageOpen(false);
+												focusPrInReview(undefined, "checks");
+											}}
 											onArchive={handleArchive}
 											running={isRunningLive}
 											refreshTick={gitRefreshTick}
@@ -4315,6 +4320,10 @@ export function SessionViewer({
 											reviewRequestSessionId={effectiveReview?.ownerId}
 											reviewAcceptedFromPr={effectiveReview?.acceptedFromPr}
 											onReviewChange={onReviewChange}
+											onOpenChecks={() => {
+												setInfoPageOpen(false);
+												focusPrInReview(undefined, "checks");
+											}}
 											send={connected ? send : undefined}
 											assets={assetFiles}
 											onOpenAsset={(path) => {
@@ -5162,8 +5171,9 @@ export function SessionViewer({
 								archived={session.archived}
 								prs={session.prs}
 								send={connected ? send : undefined}
-								onOpenPrTab={focusPrInReview}
-								onArchive={handleArchive}
+							onOpenPrTab={focusPrInReview}
+							onOpenChecksTab={() => focusPrInReview(undefined, "checks")}
+							onArchive={handleArchive}
 								running={isRunningLive}
 								refreshTick={gitRefreshTick}
 								// Globe (preview environment) rides inside the strip, left of the
@@ -5287,6 +5297,7 @@ export function SessionViewer({
 										reviewRequestSessionId={effectiveReview?.ownerId}
 										reviewAcceptedFromPr={effectiveReview?.acceptedFromPr}
 										onReviewChange={onReviewChange}
+										onOpenChecks={() => focusPrInReview(undefined, "checks")}
 										send={connected ? send : undefined}
 										assets={assetFiles}
 										onOpenAsset={(path) => {

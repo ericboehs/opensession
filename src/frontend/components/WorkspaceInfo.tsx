@@ -114,6 +114,8 @@ interface Props {
 	onReviewChange?: (sessionId: string, req: ReviewRequestInfo | null) => void;
 	/** Jump to a sibling tab when a status chip / reply row is clicked. */
 	onOpenTab?: (tab: PanelTab) => void;
+	/** Open the current PR directly on its Checks tab. */
+	onOpenChecks?: () => void;
 	/** The session's scratch assets — listed in the Info panel; clicking one
 	    opens the full-width Assets view-tab focused on that file. */
 	assets?: SessionAssetFile[];
@@ -573,10 +575,10 @@ function CheckStatusIcon({ kind }: { kind: CheckVisual }) {
  * useful detail that the one-line PR strip cannot show. */
 function ChecksChip({
 	pr,
-	onOpenTab,
+	onOpenChecks,
 }: {
 	pr: PrDetails;
-	onOpenTab?: (tab: PanelTab) => void;
+	onOpenChecks?: () => void;
 }) {
 	const order: Record<CheckVisual, number> = {
 		failure: 0,
@@ -622,7 +624,7 @@ function ChecksChip({
 					"mt-1.5 inline-flex w-fit cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1 text-[12px] font-semibold leading-[1.35] transition-colors hover:brightness-110",
 					aggregate.className,
 				)}
-				onClick={() => onOpenTab?.("pr")}
+				onClick={onOpenChecks}
 			>
 				<span className="inline-flex items-center opacity-70">{aggregate.icon}</span>
 				{aggregate.label}
@@ -1389,6 +1391,7 @@ export function WorkspaceInfo({
 	reviewAcceptedFromPr,
 	onReviewChange,
 	onOpenTab,
+	onOpenChecks,
 	onAddToInput,
 	onOpenSession,
 	send,
@@ -1600,7 +1603,7 @@ export function WorkspaceInfo({
 						<SandboxBadge sandbox={sandbox} />
 					</div>
 				)}
-				{pr && <ChecksChip pr={pr} onOpenTab={onOpenTab} />}
+				{pr && <ChecksChip pr={pr} onOpenChecks={onOpenChecks} />}
 			</div>
 			{pr?.number && (
 				<MichaelReviewCard

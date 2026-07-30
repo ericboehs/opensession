@@ -83,7 +83,7 @@ interface Props {
    * Review tab on a specific PR. `seq` is bumped per click so clicking the same
    * chip again re-focuses it after the user has switched tabs by hand.
    */
-  focusTarget?: { repo: string; branch?: string; seq: number };
+  focusTarget?: { repo?: string; branch?: string; view?: "checks"; seq: number };
   /** Offer the "Link PR" affordance (session Review tab; off in the Reviews drawer). */
   linkable?: boolean;
   /**
@@ -347,13 +347,16 @@ export function PrPanel({
   // re-render never fights the user's own tab choice.
   useEffect(() => {
     if (!focusTarget) return;
-    const match =
-      targets.find(
-        (t) =>
-          t.repo === focusTarget.repo &&
-          (focusTarget.branch ? t.branch === focusTarget.branch : !t.branch),
-      ) ?? targets.find((t) => t.repo === focusTarget.repo);
-    if (match) setActiveKey(match.key);
+    if (focusTarget.repo) {
+      const match =
+        targets.find(
+          (t) =>
+            t.repo === focusTarget.repo &&
+            (focusTarget.branch ? t.branch === focusTarget.branch : !t.branch),
+        ) ?? targets.find((t) => t.repo === focusTarget.repo);
+      if (match) setActiveKey(match.key);
+    }
+    if (focusTarget.view) setDiffView(focusTarget.view);
   }, [focusTarget?.seq]);
   const loadTargetKey = previewTarget
     ? `preview:${previewTarget.repo}:${previewTarget.branch}`
