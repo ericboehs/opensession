@@ -891,7 +891,19 @@ export function Composer({
                   <button
                     type="button"
                     className="palette-icon-btn composer-note-btn"
-                    style={noteMode ? { color: "var(--yellow)" } : undefined}
+                    style={
+                      noteMode
+                        ? {
+                            width: "auto",
+                            gap: 5,
+                            padding: "0 9px",
+                            borderColor: "var(--yellow)",
+                            background:
+                              "color-mix(in srgb, var(--yellow) 14%, transparent)",
+                            color: "var(--yellow)",
+                          }
+                        : undefined
+                    }
                     {...tapProps(() => onNoteModeChange(!noteMode))}
                     disabled={disabled}
                     aria-pressed={!!noteMode}
