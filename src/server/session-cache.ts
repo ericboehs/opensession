@@ -73,6 +73,15 @@ export function getCachedSessions(): UnifiedSession[] {
 	return data;
 }
 
+/**
+ * Return the last session snapshot without triggering a synchronous disk scan.
+ * Hot-path autocomplete can safely omit optional session suggestions until the
+ * normal sessions refresh repopulates this cache.
+ */
+export function peekCachedSessions(): UnifiedSession[] {
+	return sessionsCache?.data ?? [];
+}
+
 // ── Run-state readers ─────────────────────────────────────────────────────────
 
 /** FSM states in which a session's run is still in flight or pending recovery. */

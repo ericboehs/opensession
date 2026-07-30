@@ -141,7 +141,8 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
     sync();
   }, [value]);
 
-  // Debounced fetch of suggestions for the active mention/skill query.
+  // Fetch immediately: file results are cached server-side, and waiting after
+  // every keystroke made the picker feel sticky despite a warm index.
   useEffect(() => {
     const fetcher = mention?.kind === "skill" ? skillsFetchRef.current : mentionFetchRef.current;
     if (!mention || !fetcher) {
@@ -149,14 +150,18 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
       return;
     }
     const seq = ++fetchSeq.current;
-    const t = setTimeout(async () => {
-      const files = await fetcher(mention.query);
-      if (seq === fetchSeq.current) {
-        setSuggestions(files);
-        setActiveIdx(0);
-      }
-    }, 70);
-    return () => clearTimeout(t);
+    // Never let Enter select rows belonging to the previous query.
+    setSuggestions([]);
+    void fetcher(mention.query)
+      .then((files) => {
+        if (seq === fetchSeq.current) {
+          setSuggestions(files);
+          setActiveIdx(0);
+        }
+      })
+      .catch(() => {
+        if (seq === fetchSeq.current) setSuggestions([]);
+      });
   }, [mention?.query, mention?.start, mention?.kind]);
 
   const open = !!mention && suggestions.length > 0;

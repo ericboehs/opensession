@@ -16,6 +16,7 @@ import type { WorkspaceExec } from "./sandbox/workspace-exec";
 
 const CACHE_TTL_MS = 15_000;
 const cache = new Map<string, { files: string[]; dirs: string[]; at: number }>();
+const loads = new Map<string, Promise<void>>();
 
 // Monotonic-ish clock without Date.now() (which is fine in server code, but a
 // single source keeps it easy to reason about). performance.now() is process
@@ -41,25 +42,40 @@ function deriveDirs(files: string[]): string[] {
 async function loadFiles(dir: string, exec?: WorkspaceExec): Promise<void> {
   const hit = cache.get(dir);
   if (hit && now() - hit.at < CACHE_TTL_MS) return;
-  // --cached: tracked, --others --exclude-standard: untracked but not gitignored.
-  // -z: NUL-separated so paths with spaces/newlines survive.
-  const args = ["ls-files", "--cached", "--others", "--exclude-standard", "-z"];
-  let out: string;
-  if (exec) {
-    const r = await exec(["git", ...args]);
-    if (r.exitCode !== 0) throw new Error(r.stderr.trim() || `git ls-files failed in ${dir}`);
-    out = r.stdout;
-  } else {
-    out = await $`git -C ${dir} ${args}`.quiet().text();
-  }
-  // Drop vendored dependency trees — they're tracked in some repos (backstage
-  // commits node_modules) but are never useful "@"-mention targets and only
-  // crowd out source files in the results.
-  const files = out
-    .split("\0")
-    .filter(Boolean)
-    .filter((f) => !f.startsWith("node_modules/") && !f.includes("/node_modules/"));
-  cache.set(dir, { files, dirs: deriveDirs(files), at: now() });
+  const inflight = loads.get(dir);
+  if (inflight) return inflight;
+
+  const load = (async () => {
+    try {
+      // --cached: tracked, --others --exclude-standard: untracked but not gitignored.
+      // -z: NUL-separated so paths with spaces/newlines survive.
+      const args = ["ls-files", "--cached", "--others", "--exclude-standard", "-z"];
+      let out: string;
+      if (exec) {
+        const r = await exec(["git", ...args]);
+        if (r.exitCode !== 0) throw new Error(r.stderr.trim() || `git ls-files failed in ${dir}`);
+        out = r.stdout;
+      } else {
+        out = await $`git -C ${dir} ${args}`.quiet().text();
+      }
+      // Drop vendored dependency trees — they're tracked in some repos (backstage
+      // commits node_modules) but are never useful "@"-mention targets and only
+      // crowd out source files in the results.
+      const files = out
+        .split("\0")
+        .filter(Boolean)
+        .filter((f) => !f.startsWith("node_modules/") && !f.includes("/node_modules/"));
+      cache.set(dir, { files, dirs: deriveDirs(files), at: now() });
+    } catch (error) {
+      // A transient git/sandbox failure should not make the picker look empty.
+      if (!hit) throw error;
+      cache.set(dir, { ...hit, at: now() });
+    } finally {
+      loads.delete(dir);
+    }
+  })();
+  loads.set(dir, load);
+  return load;
 }
 
 /** Case-insensitive subsequence match returning a score (higher = better) or -1. */

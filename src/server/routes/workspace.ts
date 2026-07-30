@@ -14,9 +14,9 @@ import { isRemoteSandboxProvider, resolveRequestedSandbox } from "../sandbox/con
 import {
 	SESSIONS_DIR,
 	findSession,
-	getCachedSessions,
 	invalidateSessionsCache,
 	isLegacySideChat,
+	peekCachedSessions,
 	touchBackstageSession,
 } from "../session-cache";
 import { attachRepo, switchPrimaryRepo, workspaceOwningWorktree } from "../session-repos";
@@ -31,7 +31,22 @@ import { type Workspace, createWorkspace, deleteWorkspace, getWorkspace, listWor
 import { resolveExternalWorkspace, resolvePlainWorkspace, resolvePrWorkspace } from "../workspace-resolve";
 import { REPOS, createWorktree, createWorktreeForExistingBranch, getRepo, isSharedCheckoutDir, listWorktrees, repoForPath, worktreeHasWork } from "../worktree";
 import { randomUUIDv7 } from "bun";
-import { copyFileSync, existsSync, mkdirSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "fs";
+
+function findBackstageSessionForFileMentions(
+	sessionId: string | null,
+): BackstageSessionFile | undefined {
+	if (!sessionId?.startsWith("bks-") || !/^[a-z0-9-]+$/i.test(sessionId))
+		return undefined;
+	try {
+		const session = JSON.parse(
+			readFileSync(`${SESSIONS_DIR}/${sessionId}.json`, "utf8"),
+		) as BackstageSessionFile;
+		return session.id === sessionId ? session : undefined;
+	} catch {
+		return undefined;
+	}
+}
 
 export async function handleWorkspaceRoutes(
 	ctx: RouteContext,
@@ -56,7 +71,11 @@ export async function handleWorkspaceRoutes(
 		const sessionId = url.searchParams.get("session");
 		const repos: Array<{ repo: string; dir: string; primary: boolean }> =
 			[];
-		const session = sessionId ? findSession(sessionId) : undefined;
+		// Backstage sessions have an owned JSON file, so read their small record
+		// directly instead of refreshing the entire cross-source session catalog.
+		const session =
+			findBackstageSessionForFileMentions(sessionId) ??
+			(sessionId ? findSession(sessionId) : undefined);
 		// Volume-mode sandbox workspaces have no host dir — the primary
 		// repo's `git ls-files` runs through the sandbox exec below.
 		if (
@@ -99,14 +118,23 @@ export async function handleWorkspaceRoutes(
 			repo?: string;
 			kind?: "dir";
 		}> = [];
-		for (const r of repos) {
-			try {
-				for (const f of await searchRepoEntries(
-					r.dir,
-					q,
-					perRepo,
-					r.primary ? primaryExec : undefined,
-				)) {
+		const results = await Promise.all(
+			repos.map(async (r) => {
+				try {
+					return await searchRepoEntries(
+						r.dir,
+						q,
+						perRepo,
+						r.primary ? primaryExec : undefined,
+					);
+				} catch {
+					return [];
+				}
+			}),
+		);
+		for (const [index, entries] of results.entries()) {
+			const r = repos[index];
+			for (const f of entries) {
 					// Folders insert with a trailing slash so the prompt text
 					// (and the agent reading it) can tell them from files.
 					const rel = f.dir ? `${f.path}/` : f.path;
@@ -116,8 +144,7 @@ export async function handleWorkspaceRoutes(
 						repo: multi ? r.repo : undefined,
 						...(f.dir ? { kind: "dir" as const } : {}),
 					});
-				}
-			} catch {}
+			}
 		}
 		// "@"-mentions also surface other sessions (inserted as
 		// @session:<id>) so a prompt can reference them by name — e.g.
@@ -127,7 +154,7 @@ export async function handleWorkspaceRoutes(
 		const ql = q.toLowerCase();
 		const sessionHits =
 			ql.length >= 2
-				? getCachedSessions()
+				? peekCachedSessions()
 						.filter(
 							(s) =>
 								!s.archived && !isLegacySideChat(s) && s.id !== sessionId,
