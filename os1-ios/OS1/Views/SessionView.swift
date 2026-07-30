@@ -548,7 +548,11 @@ struct SessionTabsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
+        // No .clipped() here: this container sits within the safe area, so a
+        // clip cuts the transcript's edge-to-edge rendering at the safe-area
+        // bounds — an opaque-looking nav bar and a dead strip above the home
+        // indicator. Tab-switch slides may draw offscreen; that's invisible
+        // on a full-screen push.
         .safeAreaInset(edge: .top, spacing: 0) {
             if tabs.count > 1 {
                 SessionTabBar(
