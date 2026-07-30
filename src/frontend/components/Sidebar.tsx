@@ -3934,7 +3934,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						tabIndex={0}
 						className={`sidebar-ws-action${pinned ? " is-on" : ""}`}
 						aria-label={pinned ? "Unpin workspace" : "Pin workspace"}
-						onMouseEnter={closeWsHover}
 						onClick={(e) => {
 							e.stopPropagation();
 							toggleRowPin();
@@ -3971,7 +3970,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								tabIndex={0}
 								className="sidebar-ws-action"
 								aria-label="Archive workspace"
-								onMouseEnter={closeWsHover}
 								onClick={(e) => {
 									e.stopPropagation();
 									archiveWorkspaceWithNext(row);
@@ -7614,9 +7612,16 @@ function WsHoverCard({
 	onOpen: (chat: UnifiedSession) => void;
 }) {
 	const cardRef = useRef<HTMLDivElement>(null);
-	const [pos, setPos] = useState<{ left: number; top: number }>(() => ({
+	const [pos, setPos] = useState<{
+		left: number;
+		top: number;
+		side: "left" | "right";
+		arrowY: number;
+	}>(() => ({
 		left: anchor.right + 8,
 		top: anchor.top,
+		side: "right",
+		arrowY: anchor.height / 2,
 	}));
 
 	const ov = useWsOverview(row);
@@ -7630,10 +7635,18 @@ function WsHoverCard({
 		const vw = window.innerWidth;
 		const vh = window.innerHeight;
 		let left = anchor.right + 8;
-		if (left + CARD_W > vw - 8) left = anchor.left - CARD_W - 8;
+		let side: "left" | "right" = "right";
+		if (left + CARD_W > vw - 8) {
+			left = anchor.left - CARD_W - 8;
+			side = "left";
+		}
 		left = Math.max(8, left);
 		const top = Math.min(Math.max(8, anchor.top), vh - h - 8);
-		setPos({ left, top });
+		const arrowY = Math.min(
+			Math.max(18, anchor.top + anchor.height / 2 - top),
+			Math.max(18, h - 18),
+		);
+		setPos({ left, top, side, arrowY });
 	}, [anchor, ov]);
 
 	const { prChat, prReady, prStatusBits } = wsPrInfo(row);
@@ -7641,8 +7654,16 @@ function WsHoverCard({
 	const card = (
 		<div
 			ref={cardRef}
-			className="sidebar-hovercard pointer-events-auto"
-			style={{ left: pos.left, top: pos.top, width: CARD_W }}
+			className="sidebar-hovercard sidebar-hovercard--interactive pointer-events-auto"
+			data-side={pos.side}
+			style={
+				{
+					left: pos.left,
+					top: pos.top,
+					width: CARD_W,
+					"--hovercard-arrow-y": `${pos.arrowY}px`,
+				} as React.CSSProperties
+			}
 			onMouseEnter={onEnter}
 			onMouseLeave={onLeave}
 		>

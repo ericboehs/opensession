@@ -2388,6 +2388,41 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	pointer-events: none;
 	animation: hovercard-in 0.09s ease-out;
 }
+/* Interactive workspace cards need a forgiving pointer path from the row. The
+   transparent bridge spans the 8px offset; the diamond edge gives that path a
+   visible callout point without making the whole gap look filled. */
+.sidebar-hovercard--interactive::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 9px;
+}
+.sidebar-hovercard--interactive::after {
+	content: "";
+	position: absolute;
+	top: var(--hovercard-arrow-y, 18px);
+	width: 10px;
+	height: 10px;
+	background: var(--bg-panel);
+	transform: translateY(-50%) rotate(45deg);
+}
+.sidebar-hovercard--interactive[data-side="right"]::before {
+	left: -9px;
+}
+.sidebar-hovercard--interactive[data-side="right"]::after {
+	left: -6px;
+	border-left: 1px solid var(--border-strong);
+	border-bottom: 1px solid var(--border-strong);
+}
+.sidebar-hovercard--interactive[data-side="left"]::before {
+	right: -9px;
+}
+.sidebar-hovercard--interactive[data-side="left"]::after {
+	right: -6px;
+	border-top: 1px solid var(--border-strong);
+	border-right: 1px solid var(--border-strong);
+}
 @keyframes hovercard-in {
 	from {
 		opacity: 0;
