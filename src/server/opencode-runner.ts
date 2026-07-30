@@ -541,6 +541,10 @@ export const SHARED_INPROCESS_SERVERS = [
 export function sharedOpencodeEligible(opts: {
   journal?: { kind?: string; bksSessionId?: string };
   mcpServers?: string[];
+  /** Session creator whose OAuth grants take precedence for MCP calls. */
+  mcpGrantUser?: string;
+  /** Current prompter; determines the shared server's user-scoped config. */
+  user?: string;
   inProcessMcp?: Record<string, unknown>;
   /** Test-only override (scripts/verify-shared-opencode.ts) for direct
    *  runOpencode calls that pass no journal. Never set from request or
@@ -550,6 +554,10 @@ export function sharedOpencodeEligible(opts: {
   const base = baseJournalKind(opts.journal?.kind);
   if (!INTERACTIVE_KINDS.has(base) && opts.forceSharedServer !== true) return false;
   if (opts.mcpServers) return false;
+  // HTTP MCP grants are baked into the engine server config. A session shared
+  // by someone else must keep its creator's identity on a per-session server
+  // instead of draining the prompter's shared server on every turn.
+  if (opts.mcpGrantUser && !userMatchesAny(opts.mcpGrantUser, [opts.user || ""])) return false;
   const inprocNames = Object.keys(opts.inProcessMcp || {});
   if (inprocNames.length && opencodeMcpFromPrebuiltProxies(opts.inProcessMcp) !== null) {
     return false;

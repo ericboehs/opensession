@@ -9,6 +9,7 @@ import {
   inProcessOpencodeMcpConfigs,
   buildOpencodeInstructions,
   reconnectSharedInProcessMcp,
+  sharedOpencodeEligible,
   shouldRepairEmptyCompletion,
   shouldRetryTransientRun,
   emptyCompletionRepairPrompt,
@@ -54,6 +55,28 @@ describe("parseOpencodeModel", () => {
     expect(parseOpencodeModel("opencode/anthropic")).toBeNull();
     expect(parseOpencodeModel("opencode/anthropic/")).toBeNull();
     expect(parseOpencodeModel("opencode//x")).toBeNull();
+  });
+});
+
+describe("shared server eligibility", () => {
+  test("keeps same-owner aliases on the shared server", () => {
+    expect(
+      sharedOpencodeEligible({
+        journal: { kind: "prompt" },
+        user: "happylinks",
+        mcpGrantUser: "Michiel",
+      }),
+    ).toBe(true);
+  });
+
+  test("keeps cross-owner sessions off the prompter's shared server", () => {
+    expect(
+      sharedOpencodeEligible({
+        journal: { kind: "prompt" },
+        user: "Jaap",
+        mcpGrantUser: "Michiel",
+      }),
+    ).toBe(false);
   });
 });
 
