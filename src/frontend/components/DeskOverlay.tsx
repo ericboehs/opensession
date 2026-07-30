@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import type { TodoItem, WSServerMessage } from "../lib/types";
 import { BASE_PATH } from "../lib/base";
 import { getCurrentUser } from "./UserPicker";
 import { DeskConversation } from "./DeskConversation";
+import { ResponsiveDialog } from "../ui/sheet";
 import { IconCheck, IconDesk, IconExpand, IconX } from "./icons";
 
 /**
@@ -253,7 +253,9 @@ function DeskBody({
 	const done = (todos || []).filter((t) => t.status === "done");
 
 	return (
-		<div ref={rootRef} className="flex h-full min-h-0 flex-col">
+		// flex-1 rather than h-full: on phone the sheet's drag grabber is a
+		// sibling above us, so we take the remainder instead of the whole panel.
+		<div ref={rootRef} className="flex min-h-0 flex-1 flex-col">
 			{/* Header */}
 			<div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
 				<IconDesk size={22} className="text-dim" />
@@ -389,54 +391,31 @@ export function DeskOverlay({
 	addHandler,
 	onOpenSession,
 }: DeskOverlayProps) {
-	// Mount on first summon, never unmount after — see the module doc.
-	const [booted, setBooted] = useState(false);
-	useEffect(() => {
-		if (open) setBooted(true);
-	}, [open]);
-
-	// Esc dismisses. Capture phase so it wins over the app's palette handlers.
-	useEffect(() => {
-		if (!open) return;
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") {
-				e.stopPropagation();
-				onClose();
-			}
-		};
-		window.addEventListener("keydown", onKey, true);
-		return () => window.removeEventListener("keydown", onKey, true);
-	}, [open, onClose]);
-
-	if (!booted) return null;
-
-	return createPortal(
-		<div
-			className={
-				"fixed inset-0 z-[10000] " + (open ? "" : "invisible pointer-events-none")
-			}
-			role="dialog"
-			aria-modal={open || undefined}
-			aria-label="Desk"
-			aria-hidden={!open}
+	return (
+		<ResponsiveDialog
+			open={open}
+			onClose={onClose}
+			phone={phone}
+			label="Desk"
+			// The body stays mounted after the first summon — see the module doc.
+			keepMounted
+			// ⌘J is a HUD toggle, not a dialog: summon-dismiss-summon stays
+			// instant on desktop. The phone sheet animates like every other
+			// sheet, so its drag-to-dismiss has something to follow.
+			desktopTransition="none"
+			// bg-raised on both breakpoints, overriding the sheet's bg-surface:
+			// the Desk's controls are recessed bg-surface inputs, which would
+			// dissolve into a bg-surface panel.
+			sheetClassName="h-[85dvh] bg-raised"
+			modalClassName="h-[540px] max-h-[80vh] max-w-[560px]"
 		>
-			<div className="absolute inset-0 bg-black/45" onClick={onClose} />
-			<div
-				className={
-					phone
-						? "absolute inset-x-0 bottom-0 flex h-[85dvh] flex-col overflow-hidden rounded-t-[22px] [corner-shape:squircle] bg-raised pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_40px_rgba(0,0,0,0.35)]"
-						: "absolute left-1/2 top-1/2 flex h-[540px] max-h-[80vh] w-[92vw] max-w-[560px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[22px] [corner-shape:squircle] border border-line-strong bg-raised shadow-[0_24px_70px_rgba(0,0,0,0.45)]"
-				}
-			>
-				<DeskBody
-					active={open}
-					phone={phone}
-					onClose={onClose}
-					addHandler={addHandler}
-					onOpenSession={onOpenSession}
-				/>
-			</div>
-		</div>,
-		document.body,
+			<DeskBody
+				active={open}
+				phone={phone}
+				onClose={onClose}
+				addHandler={addHandler}
+				onOpenSession={onOpenSession}
+			/>
+		</ResponsiveDialog>
 	);
 }
