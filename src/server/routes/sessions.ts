@@ -57,6 +57,8 @@ import {
 } from "./github-credential";
 import { defaultRepo } from "../config";
 
+let sessionsGzipCache: { hash: string; body: Blob } | null = null;
+
 /**
  * List which of `files` contain `query` (case-insensitive, literal) via
  * ripgrep — the cheap first stage of transcript full-text search. rg exits 1
@@ -181,16 +183,29 @@ export async function handleSessionsRoutes(
 			}));
 		const { sessions, cloudUnreachable } = await mergedCloudSessions(enriched);
 		const text = JSON.stringify(sessions.filter((s) => !isLegacySideChat(s)));
-		const etag = `"${Bun.hash(text).toString(16)}"`;
+		const hash = Bun.hash(text).toString(16);
+		const gzip = (req.headers.get("Accept-Encoding") || "").includes("gzip");
+		const etag = `"${hash}${gzip ? "-gzip" : ""}"`;
 		const headers = new Headers({
 			"Cache-Control": "private, no-cache",
+			"Content-Type": "application/json; charset=utf-8",
 			ETag: etag,
+			Vary: "Accept-Encoding",
 		});
 		if (cloudUnreachable)
 			headers.set("X-OpenSession-Cloud-Unreachable", "true");
+		if (gzip) headers.set("Content-Encoding", "gzip");
 		if (req.headers.get("If-None-Match") === etag)
 			return new Response(null, { status: 304, headers });
-		headers.set("Content-Type", "application/json; charset=utf-8");
+		if (gzip) {
+			if (sessionsGzipCache?.hash !== hash) {
+				sessionsGzipCache = {
+					hash,
+					body: new Blob([Bun.gzipSync(new TextEncoder().encode(text))]),
+				};
+			}
+			return new Response(sessionsGzipCache.body, { headers });
+		}
 		return new Response(text, { headers });
 	}
 
