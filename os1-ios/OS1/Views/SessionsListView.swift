@@ -210,7 +210,12 @@ struct SessionsListView: View {
                         Button {
                             showSettings = true
                         } label: {
-                            RepoTile(name: "backstage", size: 34, round: true)
+                            RepoTile(
+                                name: "backstage",
+                                size: 34,
+                                round: true,
+                                showsFallback: false
+                            )
                         }
                         .accessibilityLabel("Settings")
                     }
