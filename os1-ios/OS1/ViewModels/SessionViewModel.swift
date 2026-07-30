@@ -734,12 +734,14 @@ final class SessionViewModel {
     /// convention) into one collapsible item; orphan results stay standalone.
     enum DisplayItem: Identifiable, Equatable {
         case entry(TranscriptEntry)
-        case toolCall(use: TranscriptEntry, result: TranscriptEntry?)
+        /// `isLive` distinguishes the current stream from incomplete historical
+        /// entries, which may not have a matching result after a reload.
+        case toolCall(use: TranscriptEntry, result: TranscriptEntry?, isLive: Bool)
 
         var id: String {
             switch self {
             case .entry(let entry): entry.id
-            case .toolCall(let use, _): "tool-\(use.id)"
+            case .toolCall(let use, _, _): "tool-\(use.id)"
             }
         }
     }
@@ -763,12 +765,17 @@ final class SessionViewModel {
         let useIds = Set(
             all.filter { $0.type == "tool_use" }.map { $0.toolUseId ?? $0.id }
         )
+        let liveEntryIds = Set(liveEntries.map(\.id))
         var items: [DisplayItem] = []
         for entry in all {
             switch entry.type {
             case "tool_use":
                 let key = entry.toolUseId ?? entry.id
-                items.append(.toolCall(use: entry, result: resultByUseId[key]))
+                items.append(.toolCall(
+                    use: entry,
+                    result: resultByUseId[key],
+                    isLive: liveEntryIds.contains(entry.id)
+                ))
             case "tool_result":
                 // Only orphans render standalone — a result whose use exists
                 // anywhere in the transcript is folded into that item.

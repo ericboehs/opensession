@@ -131,15 +131,38 @@ final class SessionViewModelTests: XCTestCase {
             entry("tr-orphan", "tool_result", text: "lost"),
         ], cursor: .empty))
         XCTAssertEqual(viewModel.displayItems.count, 2)
-        guard case .toolCall(let use, let result) = viewModel.displayItems[0] else {
+        guard case .toolCall(let use, let result, let isLive) = viewModel.displayItems[0] else {
             return XCTFail("expected merged tool call")
         }
         XCTAssertEqual(use.id, "e1")
         XCTAssertEqual(result?.text, "ok")
+        XCTAssertFalse(isLive)
         guard case .entry(let orphan) = viewModel.displayItems[1] else {
             return XCTFail("orphan tool_result should render standalone")
         }
         XCTAssertEqual(orphan.id, "tr-orphan")
+    }
+
+    func testOnlyCurrentStreamToolCallIsLive() {
+        let viewModel = makeViewModel()
+        // An incomplete historical entry must not reopen just because it has no result.
+        viewModel.handle(.transcriptInit(sessionId: "bks-1", entries: [
+            entry("old-tool", "tool_use", toolUseId: "tu-old"),
+        ], cursor: .empty))
+        guard case .toolCall(_, _, let historicalIsLive) = viewModel.displayItems[0] else {
+            return XCTFail("expected historical tool call")
+        }
+        XCTAssertFalse(historicalIsLive)
+
+        viewModel.handle(.streamStart(sessionId: "bks-1"))
+        viewModel.handle(.streamEntry(
+            sessionId: "bks-1",
+            entry: entry("live-tool", "tool_use", toolUseId: "tu-live")
+        ))
+        guard case .toolCall(_, _, let liveIsLive) = viewModel.displayItems.last else {
+            return XCTFail("expected live tool call")
+        }
+        XCTAssertTrue(liveIsLive)
     }
 
     /// A tool call graduates the preceding live text into an ordered
