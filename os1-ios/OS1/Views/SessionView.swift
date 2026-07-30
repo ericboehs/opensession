@@ -156,8 +156,7 @@ struct SessionView: View {
                     SessionTabBar(
                         tabs: tabs,
                         activeId: viewModel.session.id,
-                        onSelect: onSelectTab,
-                        isSelectionEnabled: true
+                        onSelect: onSelectTab
                     )
                 }
                 #endif
@@ -474,7 +473,6 @@ struct SessionTabsView: View {
 
     @State private var activeId: String
     @State private var transitionEdge = Edge.trailing
-    @State private var isTransitioning = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
@@ -506,20 +504,19 @@ struct SessionTabsView: View {
     }
 
     var body: some View {
-        let session = activeSession
-
         ZStack {
-            SessionView(
-                session: session,
-                seed: seedForSession(session),
-                tabs: tabs,
-                composerDraft: composerDraftForSession(session),
-                onSaveComposerDraft: { draft in
-                    onSaveComposerDraft(session, draft)
-                }
-            )
-            .id(session.id)
-            .transition(conversationTransition)
+            ForEach([activeSession]) { session in
+                SessionView(
+                    session: session,
+                    seed: seedForSession(session),
+                    tabs: tabs,
+                    composerDraft: composerDraftForSession(session),
+                    onSaveComposerDraft: { draft in
+                        onSaveComposerDraft(session, draft)
+                    }
+                )
+                .transition(conversationTransition)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
@@ -527,9 +524,8 @@ struct SessionTabsView: View {
             if tabs.count > 1 {
                 SessionTabBar(
                     tabs: tabs,
-                    activeId: session.id,
-                    onSelect: select,
-                    isSelectionEnabled: !isTransitioning
+                    activeId: activeId,
+                    onSelect: select
                 )
             }
         }
@@ -547,27 +543,18 @@ struct SessionTabsView: View {
     }
 
     private func select(_ session: Session) {
-        guard !isTransitioning,
-              session.id != activeId,
+        guard session.id != activeId,
               let targetIndex = tabs.firstIndex(where: { $0.id == session.id })
         else { return }
 
         let currentIndex = tabs.firstIndex(where: { $0.id == activeId }) ?? 0
-        transitionEdge = targetIndex > currentIndex ? .trailing : .leading
-        isTransitioning = true
-        let transitionDuration = reduceMotion ? 0.16 : 0.26
-
         withAnimation(
             reduceMotion
                 ? .easeOut(duration: 0.16)
                 : .snappy(duration: 0.26, extraBounce: 0)
         ) {
+            transitionEdge = targetIndex > currentIndex ? .trailing : .leading
             activeId = session.id
-        }
-
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(transitionDuration))
-            isTransitioning = false
         }
     }
 }
@@ -579,7 +566,6 @@ private struct SessionTabBar: View {
     let tabs: [Session]
     let activeId: String
     let onSelect: (Session) -> Void
-    let isSelectionEnabled: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Namespace private var activeTabIndicator
@@ -640,7 +626,6 @@ private struct SessionTabBar: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .disabled(!isSelectionEnabled && !isActive)
                         .id(session.id)
                         .accessibilityAddTraits(
                             isActive ? .isSelected : []
