@@ -1,5 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
-import { fetchRepos, SessionUpgradeError, upgradeSessionApi } from "./api";
+import {
+	fetchRepos,
+	fetchSessionsSnapshot,
+	SessionUpgradeError,
+	upgradeSessionApi,
+} from "./api";
 
 const originalFetch = globalThis.fetch;
 
@@ -70,4 +75,45 @@ test("repository loading recovers from transient server failures", async () => {
 		},
 	]);
 	expect(calls).toBe(3);
+});
+
+test("session snapshots send validators and accept bodyless 304 responses", async () => {
+	let requestHeaders: Headers | undefined;
+	globalThis.fetch = (async (
+		_input: string | URL | Request,
+		init?: RequestInit,
+	) => {
+		requestHeaders = new Headers(init?.headers);
+		return new Response(null, {
+			status: 304,
+			headers: {
+				ETag: '"sessions-v1"',
+				"X-OpenSession-Cloud-Unreachable": "true",
+			},
+		});
+	}) as unknown as typeof fetch;
+
+	await expect(
+		fetchSessionsSnapshot({ etag: '"sessions-v1"' }),
+	).resolves.toEqual({
+		text: null,
+		etag: '"sessions-v1"',
+		notModified: true,
+		cloudUnreachable: true,
+	});
+	expect(requestHeaders?.get("If-None-Match")).toBe('"sessions-v1"');
+});
+
+test("session snapshots retain response validators on changed data", async () => {
+	globalThis.fetch = (async () =>
+		new Response('[{"id":"session-1"}]', {
+			headers: { ETag: '"sessions-v2"' },
+		})) as unknown as typeof fetch;
+
+	await expect(fetchSessionsSnapshot()).resolves.toEqual({
+		text: '[{"id":"session-1"}]',
+		etag: '"sessions-v2"',
+		notModified: false,
+		cloudUnreachable: false,
+	});
 });

@@ -54,6 +54,9 @@ export function useSessions(pollInterval = 5000) {
   // identity would otherwise re-render the whole app (Sidebar memos, the open
   // SessionViewer's `session` prop, …) for nothing.
   const lastTextRef = useRef<string | null>(null);
+  const etagRef = useRef<string | null>(null);
+  const pollPromiseRef = useRef<Promise<void> | null>(null);
+  const pollAbortRef = useRef<AbortController | null>(null);
   // Optimistically-injected sessions the server hasn't caught up to yet (a
   // just-created workspace/chat). A plain poll replaces the whole array and
   // would drop the injected copy — flashing a loading placeholder until the
@@ -84,42 +87,69 @@ export function useSessions(pollInterval = 5000) {
     });
   }, []);
 
-  const poll = useCallback(async () => {
-    try {
-      const snapshot = await fetchSessionsSnapshot();
-      const { text } = snapshot;
-      if (!mountedRef.current) return;
-      setCloudUnreachable(snapshot.cloudUnreachable);
-      if (text !== lastTextRef.current) {
-        lastTextRef.current = text;
-        applyServer(JSON.parse(text), snapshot.cloudUnreachable);
-      }
-      setLoading(false);
-      setError(null);
-    } catch (e: any) {
-      if (mountedRef.current) {
-        setError(e.message);
+  const poll = useCallback((): Promise<void> => {
+    if (pollPromiseRef.current) return pollPromiseRef.current;
+    const controller = new AbortController();
+    pollAbortRef.current = controller;
+    const promise = (async () => {
+      try {
+        const snapshot = await fetchSessionsSnapshot({
+          etag: etagRef.current,
+          signal: controller.signal,
+        });
+        if (!mountedRef.current) return;
+        setCloudUnreachable(snapshot.cloudUnreachable);
+        if (!snapshot.notModified && snapshot.text !== null) {
+          etagRef.current = snapshot.etag;
+          if (snapshot.text !== lastTextRef.current) {
+            lastTextRef.current = snapshot.text;
+            applyServer(JSON.parse(snapshot.text), snapshot.cloudUnreachable);
+          }
+        }
         setLoading(false);
+        setError(null);
+      } catch (e: any) {
+        if (e?.name === "AbortError") return;
+        if (mountedRef.current) {
+          setError(e.message);
+          setLoading(false);
+        }
       }
-    }
+    })().finally(() => {
+      if (pollPromiseRef.current === promise) pollPromiseRef.current = null;
+      if (pollAbortRef.current === controller) pollAbortRef.current = null;
+    });
+    pollPromiseRef.current = promise;
+    return promise;
   }, [applyServer]);
 
   useEffect(() => {
     mountedRef.current = true;
-    poll();
+    let active = true;
+    let timer: number | undefined;
+    const schedule = () => {
+      if (!active || document.visibilityState === "hidden") return;
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = window.setTimeout(run, pollInterval);
+    };
+    const run = () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = undefined;
+      void poll().finally(schedule);
+    };
+    run();
     // Don't poll while the tab is hidden (backgrounded PWA / other tab) —
     // resync immediately when it becomes visible again.
-    const id = setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      poll();
-    }, pollInterval);
     const onVisibility = () => {
-      if (document.visibilityState === "visible") poll();
+      if (document.visibilityState === "visible") run();
+      else if (timer !== undefined) window.clearTimeout(timer);
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      active = false;
       mountedRef.current = false;
-      clearInterval(id);
+      if (timer !== undefined) window.clearTimeout(timer);
+      pollAbortRef.current?.abort();
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [poll, pollInterval]);
@@ -139,6 +169,7 @@ export function useSessions(pollInterval = 5000) {
       // The list no longer matches the last server response — force the next
       // poll to apply (it reconciles the injected copy, same as before).
       lastTextRef.current = null;
+      etagRef.current = null;
       if (opts?.sticky) stickyRef.current.set(session.id, session);
       setSessions((prev) =>
         prev.some((s) => s.id === session.id)
@@ -152,11 +183,15 @@ export function useSessions(pollInterval = 5000) {
   // Drop a session's sticky status (e.g. its create failed / was abandoned).
   // The session itself stays until the next poll reconciles it away.
   const unstick = useCallback((id: string) => {
-    if (stickyRef.current.delete(id)) lastTextRef.current = null;
+    if (stickyRef.current.delete(id)) {
+      lastTextRef.current = null;
+      etagRef.current = null;
+    }
   }, []);
 
   const patch = useCallback((id: string, patch: Partial<UnifiedSession>) => {
     lastTextRef.current = null;
+    etagRef.current = null;
     if ("archived" in patch) {
       pendingPatchRef.current.set(id, {
         ...pendingPatchRef.current.get(id),
@@ -170,6 +205,7 @@ export function useSessions(pollInterval = 5000) {
 
   const remove = useCallback((id: string) => {
     lastTextRef.current = null;
+    etagRef.current = null;
     stickyRef.current.delete(id);
     pendingPatchRef.current.delete(id);
     setSessions((prev) => prev.filter((s) => s.id !== id));
