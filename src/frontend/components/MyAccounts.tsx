@@ -1,9 +1,20 @@
 import { BASE_PATH } from "../lib/base";
 import React, { useCallback, useEffect, useState } from "react";
-import { cn } from "../ui/cn";
+import { Button } from "../ui/button";
+import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
+import {
+	SettingCard,
+	SettingRow,
+	SettingRowControl,
+	SettingRowDescription,
+	SettingRowText,
+	SettingRowTitle,
+	SettingsGroupLabel,
+	SettingsPanel,
+} from "../ui/settings";
 import { IconTile, displayName } from "./BrandTile";
 import { useCurrentUser } from "./UserPicker";
-import { GithubAccounts, SectionHeading } from "./Connections";
+import { GithubAccounts } from "./Connections";
 
 interface OauthStatus {
 	shared?: { connectedBy?: string };
@@ -113,48 +124,45 @@ export function MyAccountsPanel() {
 	);
 
 	return (
-		<div className="settings-panel">
-			<div className="page-header">
+		<SettingsPanel>
+			<div className="mb-[22px]">
 				<div>
-					<h2 className="page-title">My accounts</h2>
-					<div className="page-sub">
+					<h2 className="m-0 px-2.5 text-[19px] font-semibold tracking-[-0.01em] text-fg">
+						My accounts
+					</h2>
+					<div className="mt-1 px-2.5 text-[12.5px] text-faint">
 						Your personal sign-ins. Sessions act as you where you're
 						connected; otherwise they fall back to the workspace account.
 					</div>
 				</div>
 			</div>
 			{error && (
-				<div className="form-error" onClick={() => setError(null)}>
-					{error}
-				</div>
+				<InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
 			)}
-			<SectionHeading>MCP accounts — tools as yourself</SectionHeading>
+			<SettingsGroupLabel>MCP accounts — tools as yourself</SettingsGroupLabel>
 			{servers === null ? (
-				<div className="loading">Checking connections…</div>
+				<LoadingState>Checking connections…</LoadingState>
 			) : oauthServers.length === 0 ? (
-				<div className="rounded-lg border border-line bg-panel px-4 py-3 text-xs text-dim">
+				<EmptyState placement="card">
 					No OAuth-capable MCP servers configured yet — add one on the
 					Connections page and it shows up here.
-				</div>
+				</EmptyState>
 			) : (
-				<div className="overflow-hidden rounded-lg border border-line bg-panel">
-					{oauthServers.map((s, i) => {
+				<SettingCard>
+					{oauthServers.map((s) => {
 						const st = oauthByName[s.name];
 						const mine = st?.users.some(isMe);
 						return (
-							<div
+							<SettingRow
 								key={s.name}
-								className={cn(
-									"flex items-center gap-3 px-4 py-3",
-									i > 0 && "border-t border-line",
-								)}
+								className="gap-3 py-3"
 							>
 								<IconTile name={s.name} size={30} />
-								<div className="min-w-0 flex-1">
-									<div className="text-sm font-medium text-fg">
+								<SettingRowText>
+									<SettingRowTitle className="text-sm">
 										{displayName(s.name)}
-									</div>
-									<div className="text-xs leading-snug text-dim">
+									</SettingRowTitle>
+									<SettingRowDescription className="mt-0 text-xs leading-snug">
 										{mine
 											? "Connected as you — your sessions use your account"
 											: st?.shared
@@ -162,29 +170,34 @@ export function MyAccountsPanel() {
 												: st?.capable
 													? "Using the workspace key — connect your own account to act as you"
 													: "Not connected — sign in to use these tools as yourself"}
-									</div>
-								</div>
-								{mine ? (
-									<button
-										className="flex-shrink-0 rounded-md border border-line-strong px-3 py-1.5 text-[13px] font-medium text-dim transition-colors hover:border-faint hover:text-fg"
-										onClick={() => disconnect(s.name)}
-									>
-										Disconnect
-									</button>
-								) : (
-									<button
-										className="flex-shrink-0 rounded-md bg-accent px-3 py-1.5 text-[13px] font-semibold text-white transition-[filter] hover:brightness-105"
-										onClick={() => connect(s.name)}
-									>
-										Connect
-									</button>
-								)}
-							</div>
+									</SettingRowDescription>
+								</SettingRowText>
+								<SettingRowControl>
+									{mine ? (
+										<Button
+											size="sm"
+											className="min-h-[30px] px-3 text-[13px]"
+											onClick={() => disconnect(s.name)}
+										>
+											Disconnect
+										</Button>
+									) : (
+										<Button
+											variant="primary"
+											size="sm"
+											className="min-h-[30px] px-3 text-[13px]"
+											onClick={() => connect(s.name)}
+										>
+											Connect
+										</Button>
+									)}
+								</SettingRowControl>
+							</SettingRow>
 						);
 					})}
-				</div>
+				</SettingCard>
 			)}
 			<GithubAccounts personal />
-		</div>
+		</SettingsPanel>
 	);
 }

@@ -1,6 +1,27 @@
 import { BASE_PATH } from "../lib/base";
 import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "../ui/toast";
+import { Button } from "../ui/button";
+import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
+import {
+	SettingCard,
+	SettingRow,
+	SettingRowControl,
+	SettingRowDescription,
+	SettingRowText,
+	SettingRowTitle,
+	SettingsDescription,
+	SettingsField,
+	SettingsForm,
+	SettingsFormActions,
+	SettingsFormRow,
+	SettingsFormTitle,
+	SettingsGroupLabel,
+	SettingsHint,
+	settingsInputClass,
+	SettingsPanel,
+	SettingsTitle,
+} from "../ui/settings";
 
 // Settings → Model providers: third-party OpenCode providers (xai, openrouter,
 // groq, …) — API key + optional baseURL, stored server-side (0600, returned
@@ -73,22 +94,22 @@ export function ModelProvidersPanel() {
 	}
 
 	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">Model providers</h1>
-			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+		<SettingsPanel>
+			<SettingsTitle>Model providers</SettingsTitle>
+			<SettingsDescription className="mb-3.5">
 				Bring your own models: any provider the OpenCode engine supports (xAI,
 				OpenRouter, Groq, Mistral, …) with your API key. Registered model ids
 				show up in the model picker; runs on them authenticate with the stored
 				key. Anthropic and OpenAI run on the subscription bridges — manage
 				those under Accounts.
-			</div>
+			</SettingsDescription>
 
-			<div className="settings-group-label flex items-center justify-between gap-2">
+			<SettingsGroupLabel className="flex items-center justify-between gap-2">
 				<span>Configured providers</span>
-				<button className="btn-small" onClick={() => setShowAdd(true)}>
+				<Button size="xs" onClick={() => setShowAdd(true)}>
 					+ Add provider
-				</button>
-			</div>
+				</Button>
+			</SettingsGroupLabel>
 
 			{showAdd && (
 				<AddProviderForm
@@ -100,25 +121,23 @@ export function ModelProvidersPanel() {
 				/>
 			)}
 
-			<div className="setting-card">
+			<SettingCard>
 				{!providers ? (
-					<div className="px-4 py-3 text-dim text-[12.5px]">
-						Loading providers…
-					</div>
+					<LoadingState placement="row">Loading providers…</LoadingState>
 				) : providers.length === 0 ? (
-					<div className="px-4 py-3 text-dim text-[12.5px]">
+					<EmptyState placement="row">
 						No providers yet — add one to run sessions on models beyond the
 						Anthropic/OpenAI subscriptions.
-					</div>
+					</EmptyState>
 				) : (
 					providers.map((p) => (
-						<div key={p.id} className="setting-row">
+						<SettingRow key={p.id}>
 							<span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-[13px] font-bold text-dim">
 								{p.id.charAt(0).toUpperCase()}
 							</span>
-							<div className="setting-row-text">
-								<div className="setting-row-title">{p.id}</div>
-								<div className="setting-row-desc truncate">
+							<SettingRowText>
+								<SettingRowTitle>{p.id}</SettingRowTitle>
+								<SettingRowDescription className="truncate">
 									{p.apiKeyMasked ? (
 										<span className="font-mono">{p.apiKeyMasked}</span>
 									) : (
@@ -130,7 +149,7 @@ export function ModelProvidersPanel() {
 											<span className="font-mono">{p.baseURL}</span>
 										</>
 									)}
-								</div>
+								</SettingRowDescription>
 								{p.models.length > 0 ? (
 									<div className="mt-1.5 flex flex-wrap gap-1">
 										{p.models.map((m) => (
@@ -149,28 +168,29 @@ export function ModelProvidersPanel() {
 										(opencode/{p.id}/&lt;model&gt;).
 									</div>
 								)}
-							</div>
-							<div className="setting-row-control">
-								<button
-									className="btn-small btn-small-danger"
+							</SettingRowText>
+							<SettingRowControl>
+								<Button
+									size="xs"
+									variant="danger"
 									onClick={() => handleRemove(p)}
 									title="Remove this provider and its picker models"
 								>
 									Remove
-								</button>
-							</div>
-						</div>
+								</Button>
+							</SettingRowControl>
+						</SettingRow>
 					))
 				)}
-			</div>
+			</SettingCard>
 
-			<div className="settings-hint">
+			<SettingsHint>
 				Keys are stored on the server (0600) and only ever shown masked.
 				Changes apply to new session runs immediately, and saved models appear
 				in the picker without a restart. To update a provider, add it again
 				with the same id — the key, base URL and model list are replaced.
-			</div>
-		</div>
+			</SettingsHint>
+		</SettingsPanel>
 	);
 }
 
@@ -223,19 +243,20 @@ function AddProviderForm({
 	}
 
 	return (
-		<div className="automation-form" style={{ marginBottom: 12 }}>
-			<div className="automation-form-title">Add provider</div>
-			<div className="setting-row-desc" style={{ marginTop: -8 }}>
+		<SettingsForm>
+			<SettingsFormTitle>Add provider</SettingsFormTitle>
+			<SettingRowDescription className="-mt-2 mb-3">
 				The provider id must match opencode's slug for it (xai, openrouter,
 				groq, …). Models are registered in the picker as{" "}
 				<code>opencode/&lt;provider&gt;/&lt;model&gt;</code> — list the
 				provider's own model ids, e.g. <code>grok-4</code> for xai.
-			</div>
+			</SettingRowDescription>
 
-			<div className="automation-form-row">
-				<label>
+			<SettingsFormRow>
+				<SettingsField>
 					Provider id
 					<input
+						className={settingsInputClass}
 						value={id}
 						onChange={(e) => setId(e.target.value)}
 						placeholder="xai"
@@ -246,56 +267,56 @@ function AddProviderForm({
 							<option key={p} value={p} />
 						))}
 					</datalist>
-				</label>
-				<label>
+				</SettingsField>
+				<SettingsField>
 					API key
 					<input
-						className="mono-input"
+						className={`${settingsInputClass} font-mono`}
 						type="password"
 						value={apiKey}
 						onChange={(e) => setApiKey(e.target.value)}
 						placeholder="xai-…"
 					/>
-				</label>
-			</div>
-			<div className="automation-form-row">
-				<label>
+				</SettingsField>
+			</SettingsFormRow>
+			<SettingsFormRow>
+				<SettingsField>
 					Base URL (optional)
 					<input
-						className="mono-input"
+						className={`${settingsInputClass} font-mono`}
 						value={baseURL}
 						onChange={(e) => setBaseURL(e.target.value)}
 						placeholder="https://api.x.ai/v1"
 					/>
-				</label>
-				<label>
+				</SettingsField>
+				<SettingsField>
 					Model ids (optional, comma or space separated)
 					<input
-						className="mono-input"
+						className={`${settingsInputClass} font-mono`}
 						value={models}
 						onChange={(e) => setModels(e.target.value)}
 						placeholder={
 							PROVIDER_MODEL_DEFAULTS[cleanId] || "grok-4, grok-4-mini"
 						}
 					/>
-				</label>
-			</div>
+				</SettingsField>
+			</SettingsFormRow>
 
-			{error && <div className="form-error">{error}</div>}
+			{error && <InlineAlert>{error}</InlineAlert>}
 
-			<div className="automation-form-actions">
-				<button className="btn-delete-cancel" onClick={onClose} disabled={saving}>
+			<SettingsFormActions>
+				<Button onClick={onClose} disabled={saving}>
 					Cancel
-				</button>
-				<button
-					className="btn-create"
-					style={{ padding: "8px 22px" }}
+				</Button>
+				<Button
+					variant="primary"
+					className="px-[22px]"
 					onClick={handleSave}
 					disabled={saving || !cleanId || !idValid || !apiKey.trim()}
 				>
 					{saving ? "Saving…" : "Save provider"}
-				</button>
-			</div>
-		</div>
+				</Button>
+			</SettingsFormActions>
+		</SettingsForm>
 	);
 }

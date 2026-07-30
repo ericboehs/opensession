@@ -24,26 +24,32 @@ import { cn } from "./cn";
  *  - press feedback is a whole-button scale tick (Tella: active:scale-97).
  */
 
-type Variant = "default" | "primary" | "ghost" | "danger";
-type Size = "sm" | "md";
+type Variant = "default" | "primary" | "ghost" | "danger" | "warning";
+type Size = "xs" | "sm" | "md" | "lg";
 
 const sizes: Record<Size, string> = {
 	// Heights bracket the app's existing chrome: 32px matches the viewer
 	// header buttons, 26px the chip/inline tier.
+	xs: "min-h-6 px-2.5 text-xs rounded-xs",
 	sm: "min-h-[26px] px-2.5 text-xs rounded-xs",
 	md: "min-h-8 px-3 text-sm rounded-sm",
+	lg: "min-h-9 px-4 text-base rounded-sm",
 };
 
 // Leading icon + label: shave 2px off the icon side (see doc block).
 const iconLeadPad: Record<Size, string> = {
+	xs: "pl-2",
 	sm: "pl-2",
 	md: "pl-2.5",
+	lg: "pl-3.5",
 };
 
 // Icon-only: square hit target, symmetric.
 const iconOnlyPad: Record<Size, string> = {
+	xs: "w-6 px-0",
 	sm: "w-[26px] px-0",
 	md: "w-8 px-0",
+	lg: "w-9 px-0",
 };
 
 const variants: Record<Variant, string> = {
@@ -55,6 +61,7 @@ const variants: Record<Variant, string> = {
 	ghost: "border-transparent text-dim hover:bg-hover hover:text-fg",
 	// Outline red, like the delete-worktree confirm buttons.
 	danger: "border-red text-red hover:bg-red-soft",
+	warning: "border-yellow text-yellow hover:bg-[color-mix(in_srgb,var(--yellow)_12%,transparent)]",
 };
 
 // Leading-icon dimming per variant (icon-only stays full strength).
@@ -63,6 +70,7 @@ const iconDim: Record<Variant, string> = {
 	primary: "opacity-80",
 	ghost: "opacity-60",
 	danger: "opacity-80",
+	warning: "opacity-80",
 };
 
 export type ButtonProps = React.ComponentPropsWithoutRef<"button"> & {
@@ -86,7 +94,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 				ref={ref}
 				className={cn(
 					"inline-flex items-center justify-center gap-1 border whitespace-nowrap select-none",
-					"font-[550] transition active:scale-[0.97]",
+					"font-[550] transition-[color,background-color,border-color,filter,scale] active:scale-[0.96]",
 					"disabled:pointer-events-none disabled:opacity-40",
 					sizes[size],
 					variants[variant],

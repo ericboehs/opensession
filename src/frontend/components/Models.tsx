@@ -3,6 +3,29 @@ import React, { useEffect, useState, useCallback } from "react";
 import { TEAM } from "./UserPicker";
 import { shortModelLabel, splitModelOptions } from "./ModelEffortSelect";
 import { Menu } from "../ui/menu";
+import { Button } from "../ui/button";
+import { InlineAlert } from "../ui/state";
+import {
+	SettingCard,
+	SettingRow,
+	SettingRowControl,
+	SettingRowDescription,
+	SettingRowText,
+	SettingRowTitle,
+	SettingsDescription,
+	SettingsField,
+	SettingsForm,
+	SettingsFormActions,
+	SettingsFormTitle,
+	SettingsGroupLabel,
+	SettingsHint,
+	SettingsPanel,
+	SettingsTitle,
+	settingsInputClass,
+	settingsSelectClass,
+} from "../ui/settings";
+import { Switch } from "../ui/switch";
+import { cn } from "../ui/cn";
 import { IconDotsHorizontal, IconSliders, IconTrash } from "./icons";
 
 // The Settings → Accounts panel: the Claude / Codex subscription accounts
@@ -64,28 +87,28 @@ interface CodexAccountInfo {
 
 export function AccountsPanel() {
 	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">Accounts</h1>
-			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+		<SettingsPanel>
+			<SettingsTitle>Accounts</SettingsTitle>
+			<SettingsDescription className="mb-3.5">
 				The Claude (Anthropic) and Codex (OpenAI) subscription accounts that
 				session runs draw from, plus the model new runs start on. Other model
 				providers with their own API keys live under Model providers.
-			</div>
+			</SettingsDescription>
 
-			<div className="settings-group-label">Default model</div>
-			<div className="setting-card">
+			<SettingsGroupLabel>Default model</SettingsGroupLabel>
+			<SettingCard>
 				<DefaultModelRow />
 				<AutoFallbackRow />
-			</div>
+			</SettingCard>
 
 			<ClaudeAccountsSection />
 			<CodexAccountsSection />
 
-			<div className="settings-hint">
+			<SettingsHint>
 				Changes apply to new session runs immediately (config is read per run) — no restart
 				needed. Per-session model overrides still win over the default.
-			</div>
-		</div>
+			</SettingsHint>
+		</SettingsPanel>
 	);
 }
 
@@ -137,17 +160,17 @@ function DefaultModelRow() {
 		opencodeModels.length > 0 ? `Legacy — ${engine} (direct SDK)` : engine;
 
 	return (
-		<div className="setting-row">
-			<div className="setting-row-text">
-				<div className="setting-row-title">What new sessions run on</div>
-				<div className="setting-row-desc">
+		<SettingRow>
+			<SettingRowText>
+				<SettingRowTitle>What new sessions run on</SettingRowTitle>
+				<SettingRowDescription>
 					{error ||
 						"Sessions and agent runs (Slack, Linear, Plain, automations without their own model) start on this."}
-				</div>
-			</div>
-			<div className="setting-row-control">
+				</SettingRowDescription>
+			</SettingRowText>
+			<SettingRowControl>
 				<select
-					className="ui-select"
+					className={settingsSelectClass}
 					value={current}
 					disabled={!models || saving}
 					onChange={(e) => handleChange(e.target.value)}
@@ -177,8 +200,8 @@ function DefaultModelRow() {
 						</optgroup>
 					)}
 				</select>
-			</div>
-		</div>
+			</SettingRowControl>
+		</SettingRow>
 	);
 }
 
@@ -226,27 +249,23 @@ function AutoFallbackRow() {
 
 	const on = auto ?? true;
 	return (
-		<div className="setting-row">
-			<div className="setting-row-text">
-				<div className="setting-row-title">Auto-switch when out of credits</div>
-				<div className="setting-row-desc">
+		<SettingRow>
+			<SettingRowText>
+				<SettingRowTitle>Auto-switch when out of credits</SettingRowTitle>
+				<SettingRowDescription>
 					{error ||
 						"When a run has an explicit fallback model and the current model runs out of usage credits, keep going on that configured fallback. Off = the run halts and you pick the next model. Either way the switch shows in the chat."}
-				</div>
-			</div>
-			<div className="setting-row-control">
-				<button
-					role="switch"
-					aria-checked={on}
+				</SettingRowDescription>
+			</SettingRowText>
+			<SettingRowControl>
+				<Switch
+					checked={on}
 					aria-label="Auto-switch model when out of credits"
-					className={`ui-switch ${on ? "on" : ""}`}
 					disabled={auto === null || saving}
-					onClick={() => toggle(!on)}
-				>
-					<span className="ui-switch-knob" />
-				</button>
-			</div>
-		</div>
+					onCheckedChange={toggle}
+				/>
+			</SettingRowControl>
+		</SettingRow>
 	);
 }
 
@@ -261,10 +280,10 @@ function SectionHeader({
 	actions: React.ReactNode;
 }) {
 	return (
-		<div className="settings-group-label flex items-center justify-between gap-2">
+		<SettingsGroupLabel className="flex items-center justify-between gap-2">
 			<span>{label}</span>
 			<div className="flex items-center gap-1.5">{actions}</div>
-		</div>
+		</SettingsGroupLabel>
 	);
 }
 
@@ -276,9 +295,43 @@ const rowMenuTriggerClasses =
 function Avatar({ name, className }: { name: string; className: string }) {
 	return (
 		<span
-			className={`w-7 h-7 rounded-md text-white font-bold text-[13px] inline-flex items-center justify-center shrink-0 ${className}`}
+			className={cn(
+				"inline-flex size-7 shrink-0 items-center justify-center rounded-md text-[13px] font-bold text-white",
+				className,
+			)}
 		>
 			{name.charAt(0).toUpperCase()}
+		</span>
+	);
+}
+
+const usageToneClasses = {
+	gray: "bg-line",
+	red: "bg-[#f87171]",
+	yellow: "bg-[#fbbf24]",
+	green: "bg-[#34d399]",
+} as const;
+
+const statusToneClasses = {
+	green: "bg-green-soft text-green",
+	red: "bg-red-soft text-red",
+	yellow: "bg-[rgba(210,153,34,0.15)] text-yellow",
+} as const;
+
+function StatusPill({
+	tone,
+	children,
+	...props
+}: React.ComponentPropsWithoutRef<"span"> & { tone: keyof typeof statusToneClasses }) {
+	return (
+		<span
+			className={cn(
+				"inline-flex min-w-[70px] shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-bold max-[720px]:min-w-0 max-[720px]:px-2",
+				statusToneClasses[tone],
+			)}
+			{...props}
+		>
+			{children}
 		</span>
 	);
 }
@@ -294,16 +347,20 @@ function UsageBar({ label, window: w }: { label: string; window: UsageWindow | n
 	const pct = w?.utilization ?? null;
 	const tone = pct === null ? "gray" : pct >= 90 ? "red" : pct >= 70 ? "yellow" : "green";
 	return (
-		<div className="acct-usage-row">
-			<span className="acct-usage-label">{label}</span>
-			<div className="acct-usage-bar">
+		<div className="mt-2 flex items-center gap-2 text-[11.5px] text-dim">
+			<span className="w-[18px] shrink-0 text-faint">{label}</span>
+			<div className="min-w-10 flex-1 overflow-hidden rounded-xs bg-active h-1.5">
 				<div
-					className={`acct-usage-fill acct-usage-${tone}`}
+					className={cn("h-full rounded-xs transition-[width] duration-300", usageToneClasses[tone])}
 					style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
 				/>
 			</div>
-			<span className="acct-usage-pct">{pct === null ? "—" : `${Math.round(pct)}%`}</span>
-			<span className="acct-usage-reset">{formatReset(w?.resetsAt ?? null)}</span>
+			<span className="w-[34px] shrink-0 text-right tabular-nums">
+				{pct === null ? "—" : `${Math.round(pct)}%`}
+			</span>
+			<span className="w-[132px] shrink-0 whitespace-nowrap text-[10.5px] text-faint">
+				{formatReset(w?.resetsAt ?? null)}
+			</span>
 		</div>
 	);
 }
@@ -325,16 +382,19 @@ function ExtraUsageRow({
 	const pct = extra.monthlyLimit > 0 ? (extra.usedCredits / extra.monthlyLimit) * 100 : null;
 	const tone = pct === null ? "gray" : pct >= 90 ? "red" : pct >= 70 ? "yellow" : "green";
 	return (
-		<div className="acct-usage-row" title="Usage-credits — pay-as-you-go spend past the subscription limits, against this account's monthly credit cap (set at claude.ai)">
-			<span className="acct-usage-label">Credits</span>
-			<div className="acct-usage-bar">
+		<div
+			className="mt-2 flex items-center gap-2 text-[11.5px] text-dim"
+			title="Usage-credits — pay-as-you-go spend past the subscription limits, against this account's monthly credit cap (set at claude.ai)"
+		>
+			<span className="w-[18px] shrink-0 text-faint">Credits</span>
+			<div className="h-1.5 min-w-10 flex-1 overflow-hidden rounded-xs bg-active">
 				<div
-					className={`acct-usage-fill acct-usage-${tone}`}
+					className={cn("h-full rounded-xs transition-[width] duration-300", usageToneClasses[tone])}
 					style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
 				/>
 			</div>
-			<span className="acct-usage-pct">{usd(extra.usedCredits)}</span>
-			<span className="acct-usage-reset">
+			<span className="w-[34px] shrink-0 text-right tabular-nums">{usd(extra.usedCredits)}</span>
+			<span className="w-[132px] shrink-0 whitespace-nowrap text-[10.5px] text-faint">
 				{extra.monthlyLimit > 0 ? `of ${usd(extra.monthlyLimit)}/mo` : "no monthly cap set"}
 				{extra.enabled ? "" : " · off"}
 			</span>
@@ -348,30 +408,30 @@ function ExtraUsageRow({
 function ClaudeStatusPill({ a }: { a: ClaudeAccountInfo }) {
 	if (a.usage?.error && a.usage.errorStatus === 401)
 		return (
-			<span className="status-pill status-red" title={a.usage.error}>
+			<StatusPill tone="red" title={a.usage.error}>
 				Token error
-			</span>
+			</StatusPill>
 		);
 	if (a.usage?.error)
 		return (
-			<span className="status-pill status-yellow" title={a.usage.error}>
+			<StatusPill tone="yellow" title={a.usage.error}>
 				Usage unknown
-			</span>
+			</StatusPill>
 		);
 	if (a.noUsageScope && !a.usage)
 		return (
-			<span className="status-pill status-yellow" title="Add OAuth usage credentials to show dashboard usage.">
+			<StatusPill tone="yellow" title="Add OAuth usage credentials to show dashboard usage.">
 				Usage hidden
-			</span>
+			</StatusPill>
 		);
 	if (a.exhaustedUntil)
 		return (
-			<span className="status-pill status-red" title={`Sidelined until ${a.exhaustedUntil}`}>
+			<StatusPill tone="red" title={`Sidelined until ${a.exhaustedUntil}`}>
 				Limit hit
-			</span>
+			</StatusPill>
 		);
-	if (a.usable) return <span className="status-pill status-green">In rotation</span>;
-	return <span className="status-pill status-yellow">Near limit</span>;
+	if (a.usable) return <StatusPill tone="green">In rotation</StatusPill>;
+	return <StatusPill tone="yellow">Near limit</StatusPill>;
 }
 
 function ClaudeAccountsSection() {
@@ -456,20 +516,20 @@ function ClaudeAccountsSection() {
 				label="Claude accounts"
 				actions={
 					<>
-						<button className="btn-small" onClick={() => load(true)} disabled={refreshing}>
+						<Button size="sm" className="border-line-strong bg-transparent" onClick={() => load(true)} disabled={refreshing}>
 							{refreshing ? "Checking…" : "Refresh usage"}
-						</button>
-						<button className="btn-small" onClick={() => setShowAdd(true)}>
+						</Button>
+						<Button size="sm" className="border-line-strong bg-transparent" onClick={() => setShowAdd(true)}>
 							+ Add account
-						</button>
+						</Button>
 					</>
 				}
 			/>
 
 			{error && (
-				<div className="form-error mb-2" onClick={() => setError(null)}>
+				<InlineAlert className="mb-2" onDismiss={() => setError(null)}>
 					{error}
-				</div>
+				</InlineAlert>
 			)}
 
 			{showAdd && (
@@ -482,7 +542,7 @@ function ClaudeAccountsSection() {
 				/>
 			)}
 
-			<div className="setting-card">
+			<SettingCard>
 				{!accounts ? (
 					<div className="px-4 py-3 text-dim text-[12.5px]">Loading accounts…</div>
 				) : accounts.length === 0 ? (
@@ -493,19 +553,19 @@ function ClaudeAccountsSection() {
 					</div>
 				) : (
 					accounts.map((a) => (
-						<div key={a.id} className="setting-row">
+						<SettingRow key={a.id}>
 							<Avatar name={a.name} className="bg-[#d97757]" />
-							<div className="setting-row-text">
+							<SettingRowText>
 								<div className="flex items-center gap-2 min-w-0">
-									<span className="setting-row-title truncate">{a.name}</span>
+									<SettingRowTitle className="truncate">{a.name}</SettingRowTitle>
 									<ClaudeStatusPill a={a} />
 								</div>
-								<div className="setting-row-desc truncate">
+								<SettingRowDescription className="truncate">
 									{a.email || "unknown email"}
 									{a.plan ? ` · ${a.plan.replace("default_claude_", "")}` : ""}
 									{" · "}
 									<span className="font-mono">{a.tokenMasked}</span>
-								</div>
+								</SettingRowDescription>
 								{a.noUsageScope && !a.usage ? (
 									<div className="text-faint text-[11.5px] mt-1.5">
 										Usage not visible — setup-tokens cannot read the usage endpoint. Add
@@ -535,10 +595,10 @@ function ClaudeAccountsSection() {
 										)}
 									</>
 								)}
-							</div>
-							<div className="setting-row-control flex items-center gap-1.5">
+							</SettingRowText>
+							<SettingRowControl className="flex items-center gap-1.5">
 								<select
-									className="ui-select"
+									className={settingsSelectClass}
 									value={a.owner || ""}
 									onChange={(e) => handleSetOwner(a, e.target.value)}
 									aria-label={`Owner of ${a.name}`}
@@ -580,19 +640,19 @@ function ClaudeAccountsSection() {
 										</Menu.Item>
 									</Menu.Popup>
 								</Menu.Root>
-							</div>
-						</div>
+							</SettingRowControl>
+						</SettingRow>
 					))
 				)}
-			</div>
-			<div className="settings-hint">
+			</SettingCard>
+			<SettingsHint>
 				The usage pool for Claude session runs — each run picks the least-used usable account.
 				A personal account is used first by its owner's runs and never by anyone else's;
 				automations only use the shared pool. For usage bars, setup-tokens need a matching
 				OAuth snapshot such as <code>~/.claude/accounts/team/credentials.json</code>.
 				If that snapshot expires and cannot refresh, log into that account with <code>claude</code>
 				or <code>claude-plan auth</code> again and update the path.
-			</div>
+			</SettingsHint>
 		</>
 	);
 }
@@ -652,16 +712,16 @@ function CodexAccountsSection() {
 			<SectionHeader
 				label="Codex accounts"
 				actions={
-					<button className="btn-small" onClick={() => setShowAdd(true)}>
+					<Button size="sm" className="border-line-strong bg-transparent" onClick={() => setShowAdd(true)}>
 						+ Add account
-					</button>
+					</Button>
 				}
 			/>
 
 			{error && (
-				<div className="form-error mb-2" onClick={() => setError(null)}>
+				<InlineAlert className="mb-2" onDismiss={() => setError(null)}>
 					{error}
-				</div>
+				</InlineAlert>
 			)}
 
 			{showAdd && (
@@ -674,7 +734,7 @@ function CodexAccountsSection() {
 				/>
 			)}
 
-			<div className="setting-card">
+			<SettingCard>
 				{!accounts ? (
 					<div className="px-4 py-3 text-dim text-[12.5px]">Loading accounts…</div>
 				) : accounts.length === 0 ? (
@@ -685,31 +745,28 @@ function CodexAccountsSection() {
 					</div>
 				) : (
 					accounts.map((a) => (
-						<div key={a.id} className="setting-row">
+						<SettingRow key={a.id}>
 							<Avatar name={a.name} className="bg-[#10a37f]" />
-							<div className="setting-row-text">
+							<SettingRowText>
 								<div className="flex items-center gap-2 min-w-0">
-									<span className="setting-row-title truncate">{a.name}</span>
+									<SettingRowTitle className="truncate">{a.name}</SettingRowTitle>
 									{a.exhaustedUntil ? (
-										<span
-											className="status-pill status-red"
-											title={`Sidelined until ${a.exhaustedUntil}`}
-										>
+										<StatusPill tone="red" title={`Sidelined until ${a.exhaustedUntil}`}>
 											Limit hit
-										</span>
+										</StatusPill>
 									) : (
-										<span className="status-pill status-green">In rotation</span>
+										<StatusPill tone="green">In rotation</StatusPill>
 									)}
 								</div>
-								<div className="setting-row-desc truncate">
+								<SettingRowDescription className="truncate">
 									{a.kind === "api_key" ? "API key" : "ChatGPT login"}
 									{" · "}
 									<span className="font-mono">{a.valueMasked}</span>
-								</div>
-							</div>
-							<div className="setting-row-control flex items-center gap-1.5">
+								</SettingRowDescription>
+							</SettingRowText>
+							<SettingRowControl className="flex items-center gap-1.5">
 								<select
-									className="ui-select"
+									className={settingsSelectClass}
 									value={a.owner || ""}
 									onChange={(e) => handleSetOwner(a, e.target.value)}
 									aria-label={`Owner of ${a.name}`}
@@ -747,16 +804,16 @@ function CodexAccountsSection() {
 										</Menu.Item>
 									</Menu.Popup>
 								</Menu.Root>
-							</div>
-						</div>
+							</SettingRowControl>
+						</SettingRow>
 					))
 				)}
-			</div>
-			<div className="settings-hint">
+			</SettingCard>
+			<SettingsHint>
 				The pool for GPT/Codex session runs — runs rotate to the next account when one hits its
 				usage limit. A personal account is used first by its owner's runs and never by anyone
 				else's; automations only use the shared pool.
-			</div>
+			</SettingsHint>
 		</>
 	);
 }
@@ -796,33 +853,33 @@ function AddClaudeAccountForm({ onClose, onAdded }: { onClose: () => void; onAdd
 	}
 
 	return (
-		<div className="automation-form" style={{ marginBottom: 12 }}>
-			<div className="automation-form-title">Add Claude account</div>
-			<div className="setting-row-desc" style={{ marginTop: -8 }}>
+		<SettingsForm className="mb-3 flex flex-col gap-3.5">
+			<SettingsFormTitle className="mb-0">Add Claude account</SettingsFormTitle>
+			<SettingRowDescription className="-mt-2">
 				On any machine, log into the Max account with <code>claude</code>, run{" "}
 				<code>claude setup-token</code>, and paste the one-year token here. It's stored on the
 				VPS (0600) and only ever shown masked. To show usage, also point at that account's
 				<code> credentials.json</code> snapshot from <code>~/.claude/accounts</code>.
-			</div>
+			</SettingRowDescription>
 
-			<div className="automation-form-row">
-				<label>
+			<div className="flex gap-3.5 max-[700px]:flex-col">
+				<SettingsField className="mb-0 flex-1">
 					Name
-					<input value={name} onChange={(e) => setName(e.target.value)} placeholder="team" />
-				</label>
-				<label>
+					<input className={settingsInputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="team" />
+				</SettingsField>
+				<SettingsField className="mb-0 flex-1">
 					Token
 					<input
-						className="mono-input"
+						className={cn(settingsInputClass, "font-mono")}
 						type="password"
 						value={token}
 						onChange={(e) => setToken(e.target.value)}
 						placeholder="sk-ant-oat01-…"
 					/>
-				</label>
-				<label title="Personal sub: this person's runs use the account first, with the shared pool as backup — nobody else's runs touch it. Shared pool = used by everyone and by automations.">
+				</SettingsField>
+				<SettingsField className="mb-0 flex-1" title="Personal sub: this person's runs use the account first, with the shared pool as backup — nobody else's runs touch it. Shared pool = used by everyone and by automations.">
 					Owner
-					<select value={owner} onChange={(e) => setOwner(e.target.value)}>
+					<select className={settingsInputClass} value={owner} onChange={(e) => setOwner(e.target.value)}>
 						<option value="">Shared pool</option>
 						{TEAM.map((n) => (
 							<option key={n} value={n}>
@@ -830,34 +887,34 @@ function AddClaudeAccountForm({ onClose, onAdded }: { onClose: () => void; onAdd
 							</option>
 						))}
 					</select>
-				</label>
-				<label>
+				</SettingsField>
+				<SettingsField className="mb-0 flex-1">
 					Usage credentials path
 					<input
-						className="mono-input"
+						className={cn(settingsInputClass, "font-mono")}
 						value={credentialsPath}
 						onChange={(e) => setCredentialsPath(e.target.value)}
 						placeholder="~/.claude/accounts/team/credentials.json"
 					/>
-				</label>
+				</SettingsField>
 			</div>
 
-			{error && <div className="form-error">{error}</div>}
+			{error && <InlineAlert>{error}</InlineAlert>}
 
-			<div className="automation-form-actions">
-				<button className="btn-delete-cancel" onClick={onClose} disabled={saving}>
+			<SettingsFormActions className="mt-0 gap-2.5">
+				<Button size="sm" className="border-line-strong bg-transparent" onClick={onClose} disabled={saving}>
 					Cancel
-				</button>
-				<button
-					className="btn-create"
-					style={{ padding: "8px 22px" }}
+				</Button>
+				<Button
+					variant="primary"
+					className="min-h-[39px] px-[22px]"
 					onClick={handleAdd}
 					disabled={saving || !name.trim() || !token.trim()}
 				>
 					{saving ? "Validating…" : "Add account"}
-				</button>
-			</div>
-		</div>
+				</Button>
+			</SettingsFormActions>
+		</SettingsForm>
 	);
 }
 
@@ -952,9 +1009,9 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 	const loginPending = login && (login.state === "starting" || login.state === "awaiting_code");
 
 	return (
-		<div className="automation-form" style={{ marginBottom: 12 }}>
-			<div className="automation-form-title">Add Codex account</div>
-			<div className="setting-row-desc" style={{ marginTop: -8 }}>
+		<SettingsForm className="mb-3 flex flex-col gap-3.5">
+			<SettingsFormTitle className="mb-0">Add Codex account</SettingsFormTitle>
+			<SettingRowDescription className="-mt-2">
 				{kind === "device" ? (
 					<>
 						Sign in with ChatGPT from here — no VPS access needed. You'll get a link and a
@@ -970,21 +1027,23 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 				) : (
 					<>For platform billing, paste an OpenAI API key.</>
 				)}
-			</div>
+			</SettingRowDescription>
 
-			<div className="automation-form-row">
-				<label>
+			<div className="flex gap-3.5 max-[700px]:flex-col">
+				<SettingsField className="mb-0 flex-1">
 					Name
 					<input
+						className={settingsInputClass}
 						value={name}
 						onChange={(e) => setName(e.target.value)}
 						placeholder="team"
 						disabled={!!login}
 					/>
-				</label>
-				<label>
+				</SettingsField>
+				<SettingsField className="mb-0 flex-1">
 					Kind
 					<select
+						className={settingsInputClass}
 						value={kind}
 						onChange={(e) => setKind(e.target.value as "device" | "api_key" | "home")}
 						disabled={!!login}
@@ -993,22 +1052,22 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 						<option value="home">ChatGPT login — existing CODEX_HOME directory</option>
 						<option value="api_key">OpenAI API key</option>
 					</select>
-				</label>
+				</SettingsField>
 				{kind !== "device" && (
-					<label>
+					<SettingsField className="mb-0 flex-1">
 						{kind === "api_key" ? "API key" : "CODEX_HOME path"}
 						<input
-							className="mono-input"
+							className={cn(settingsInputClass, "font-mono")}
 							type={kind === "api_key" ? "password" : "text"}
 							value={value}
 							onChange={(e) => setValue(e.target.value)}
 							placeholder={kind === "api_key" ? "sk-…" : "~/.codex-accounts/team"}
 						/>
-					</label>
+					</SettingsField>
 				)}
-				<label title="Personal sub: this person's runs use the account first, with the shared pool as backup — nobody else's runs touch it. Shared pool = used by everyone and by automations.">
+				<SettingsField className="mb-0 flex-1" title="Personal sub: this person's runs use the account first, with the shared pool as backup — nobody else's runs touch it. Shared pool = used by everyone and by automations.">
 					Owner
-					<select value={owner} onChange={(e) => setOwner(e.target.value)} disabled={!!login}>
+					<select className={settingsInputClass} value={owner} onChange={(e) => setOwner(e.target.value)} disabled={!!login}>
 						<option value="">Shared pool</option>
 						{TEAM.map((n) => (
 							<option key={n} value={n}>
@@ -1016,11 +1075,11 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 							</option>
 						))}
 					</select>
-				</label>
+				</SettingsField>
 			</div>
 
 			{login && (
-				<div className="setting-card" style={{ marginTop: 8, padding: "12px 16px" }}>
+				<SettingCard className="mt-2 px-4 py-3">
 					{login.state === "starting" && (
 						<div className="text-dim text-[12.5px]">Starting sign-in…</div>
 					)}
@@ -1049,42 +1108,42 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 						<div className="text-[12.5px]">Signed in — account "{login.name}" added to the pool.</div>
 					)}
 					{login.state === "error" && (
-						<div className="form-error" style={{ whiteSpace: "pre-wrap" }}>
+						<InlineAlert className="whitespace-pre-wrap">
 							{login.error || "Sign-in failed."}{" "}
-							<button className="btn-small" onClick={() => setLogin(null)} style={{ marginLeft: 8 }}>
+							<Button size="sm" className="ml-2 border-line-strong bg-transparent" onClick={() => setLogin(null)}>
 								Try again
-							</button>
-						</div>
+							</Button>
+						</InlineAlert>
 					)}
-				</div>
+				</SettingCard>
 			)}
 
-			{error && <div className="form-error">{error}</div>}
+			{error && <InlineAlert>{error}</InlineAlert>}
 
-			<div className="automation-form-actions">
-				<button className="btn-delete-cancel" onClick={handleCancel} disabled={saving}>
+			<SettingsFormActions className="mt-0 gap-2.5">
+				<Button size="sm" className="border-line-strong bg-transparent" onClick={handleCancel} disabled={saving}>
 					{loginPending ? "Cancel sign-in" : "Cancel"}
-				</button>
+				</Button>
 				{kind === "device" ? (
-					<button
-						className="btn-create"
-						style={{ padding: "8px 22px" }}
+					<Button
+						variant="primary"
+						className="min-h-[39px] px-[22px]"
 						onClick={handleStartDeviceLogin}
 						disabled={saving || !name.trim() || !!loginPending || login?.state === "done"}
 					>
 						{saving ? "Starting…" : loginPending ? "Waiting for sign-in…" : "Start sign-in"}
-					</button>
+					</Button>
 				) : (
-					<button
-						className="btn-create"
-						style={{ padding: "8px 22px" }}
+					<Button
+						variant="primary"
+						className="min-h-[39px] px-[22px]"
 						onClick={handleAdd}
 						disabled={saving || !name.trim() || !value.trim()}
 					>
 						{saving ? "Adding…" : "Add account"}
-					</button>
+					</Button>
 				)}
-			</div>
-		</div>
+			</SettingsFormActions>
+		</SettingsForm>
 	);
 }

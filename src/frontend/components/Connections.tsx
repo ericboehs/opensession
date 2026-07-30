@@ -2,6 +2,21 @@ import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useState, useCallback } from "react";
 import { Menu } from "../ui/menu";
 import { cn } from "../ui/cn";
+import { Button } from "../ui/button";
+import { InlineAlert, LoadingState } from "../ui/state";
+import {
+  SettingsDescription,
+  SettingsField,
+  SettingsForm,
+  SettingsFormActions,
+  SettingsFormRow,
+  SettingsFormTitle,
+  SettingsGroupLabel,
+  SettingsPanel,
+  SettingsTitle,
+  settingsInputClass,
+  settingsSelectClass,
+} from "../ui/settings";
 import { IconDotsHorizontal, IconTrash, IconSliders, IconHistory, IconPlus } from "./icons";
 import { IconTile, displayName } from "./BrandTile";
 import { AGENT_NAME, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
@@ -83,9 +98,9 @@ function StatusChip({ label, dot }: { label: string; dot: string }) {
 
 export function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-2.5 mt-7 text-xs font-bold tracking-[-0.01em] text-faint">
+    <SettingsGroupLabel className="mb-2.5 mt-7 px-0 font-bold tracking-[-0.01em]">
       {children}
-    </div>
+    </SettingsGroupLabel>
   );
 }
 
@@ -219,35 +234,36 @@ export function Connections() {
   }
 
   return (
-    <div className="settings-panel">
-      <div className="page-header">
+    <SettingsPanel>
+      <div className="mb-[22px] flex items-start justify-between gap-4">
         <div>
-          <h2 className="page-title">Connections</h2>
-          <div className="page-sub">
+          <SettingsTitle className="mb-0 px-0 text-[19px] font-semibold tracking-[-0.01em]">
+            Connections
+          </SettingsTitle>
+          <SettingsDescription className="mt-1 px-0 text-faint">
             What {AGENT_NAME} is wired into — inbound agents and the MCP tools every session can use.
-          </div>
+          </SettingsDescription>
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
-          <button
-            className="flex items-center gap-1.5 rounded-md border border-line-strong px-3 py-2 text-[13px] font-medium text-dim transition-colors hover:border-faint hover:text-fg disabled:opacity-40"
+          <Button
+            icon={<IconHistory size={16} className={refreshing ? "animate-spin" : ""} />}
             onClick={() => load(true)}
             disabled={refreshing}
           >
-            <IconHistory size={16} className={refreshing ? "animate-spin" : ""} />
             {refreshing ? "Checking…" : "Re-check"}
-          </button>
-          <button
-            className="flex items-center gap-1 rounded-md bg-accent px-3.5 py-2 text-[13px] font-medium text-white transition-[filter] hover:brightness-110"
+          </Button>
+          <Button
+            variant="primary"
+            icon={<IconPlus size={16} />}
             onClick={() => setShowAdd(true)}
           >
-            <IconPlus size={16} />
             Add MCP server
-          </button>
+          </Button>
         </div>
       </div>
 
       {removeError && (
-        <div className="form-error" onClick={() => setRemoveError(null)}>{removeError}</div>
+        <InlineAlert onDismiss={() => setRemoveError(null)}>{removeError}</InlineAlert>
       )}
 
       {showAdd && (
@@ -261,7 +277,7 @@ export function Connections() {
       )}
 
       {!data ? (
-        <div className="loading">Checking connections…</div>
+        <LoadingState>Checking connections…</LoadingState>
       ) : (
         <>
           <SectionHeading>Agents — how work reaches {AGENT_NAME}</SectionHeading>
@@ -419,13 +435,13 @@ export function Connections() {
 
           <PlainRouter />
 
-          <div className="conn-footnote">
+          <div className="mt-6 text-[12.5px] text-faint">
             Changes apply to new session runs immediately (config is read per run). In a session
             transcript, MCP tool calls show up tagged with their server name.
           </div>
         </>
       )}
-    </div>
+    </SettingsPanel>
   );
 }
 
@@ -546,7 +562,7 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
     <>
       <SectionHeading>GitHub accounts — PRs as yourself</SectionHeading>
       {error && (
-        <div className="form-error" onClick={() => setError(null)}>{error}</div>
+        <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
       )}
       <div className="overflow-hidden rounded-lg border border-line bg-panel">
         <div className="flex items-center gap-3 px-4 py-3">
@@ -564,13 +580,14 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
             dot={active ? "var(--green)" : "var(--yellow)"}
           />
           {active && flowState !== "waiting" && (
-            <button
-              className="flex-shrink-0 rounded-md border border-line-strong px-3 py-1.5 text-[13px] font-medium text-dim transition-colors hover:border-faint hover:text-fg disabled:opacity-40"
+            <Button
+              size="sm"
+              className="flex-shrink-0"
               onClick={startConnect}
               disabled={flowState === "starting"}
             >
               {flowState === "starting" ? "Starting…" : "Connect account"}
-            </button>
+            </Button>
           )}
         </div>
 
@@ -712,23 +729,23 @@ function PlainRouter() {
     <>
       <SectionHeading>Plain triage router — spam gate + model routing</SectionHeading>
       {error && (
-        <div className="form-error" onClick={() => setError(null)}>{error}</div>
+        <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
       )}
-      <div className="conn-card" style={{ maxWidth: 720 }}>
-        <div className="conn-blurb">
+      <div className="min-w-0 max-w-[720px] rounded-lg border border-line bg-panel p-3.5">
+        <div className="mb-2 text-[12.5px] leading-[1.45] text-dim">
           Every new Plain ticket goes through one cheap Haiku call before triage: spam is skipped
           entirely, a very basic ask (simple refund, how-do-I) runs triage on the model below, and
           everything else runs on the triage automation's own model. Router errors fail open to
           full triage. Applies to the next ticket — no restart.
         </div>
-        <div className="conn-detail" style={{ alignItems: "center", gap: 10 }}>
-          <span style={{ whiteSpace: "nowrap" }}>Model for basic tickets:</span>
+        <div className="flex min-w-0 items-center gap-2.5 text-[11.5px] text-faint">
+          <span className="whitespace-nowrap">Model for basic tickets:</span>
           <select
+            className={cn(settingsSelectClass, "min-w-0 flex-1")}
             value={cfg.basicModel}
             disabled={saving}
             onChange={(e) => save({ basicModel: e.target.value })}
             aria-label="Model for basic tickets"
-            style={{ flex: 1, minWidth: 0 }}
           >
             {models.map((m) => (
               <option key={m.id} value={m.id}>{m.label}</option>
@@ -741,24 +758,23 @@ function PlainRouter() {
           rows={12}
           spellCheck={false}
           aria-label="Routing prompt"
-          style={{ width: "100%", fontFamily: "var(--mono, monospace)", fontSize: 12, marginTop: 8 }}
+          className={cn(settingsInputClass, "mt-2 resize-y font-mono text-xs sm:text-xs")}
         />
-        <div className="conn-detail" style={{ alignItems: "center", gap: 10, marginTop: 6 }}>
-          <button
-            className="btn btn-primary"
+        <div className="mt-1.5 flex min-w-0 items-center gap-2.5 text-[11.5px] text-faint">
+          <Button
+            variant="primary"
             disabled={saving || !dirty}
             onClick={() => save({ prompt: draft })}
           >
             {saving ? "Saving…" : "Save prompt"}
-          </button>
-          <button
-            className="btn"
+          </Button>
+          <Button
             disabled={saving || (!cfg.isCustom && !dirty)}
             onClick={() => save({ prompt: "" })}
           >
             Reset to default
-          </button>
-          <span className="conn-target">
+          </Button>
+          <span className="min-w-0 truncate whitespace-nowrap">
             {dirty
               ? "Unsaved changes"
               : savedAt
@@ -825,92 +841,93 @@ function AddMcpForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => 
     name.trim() && (transport === "http" ? url.trim() : command.trim());
 
   return (
-    <div className="automation-form" style={{ marginBottom: 18 }}>
-      <div className="automation-form-title">Add MCP server</div>
+    <SettingsForm className="mb-[18px] flex flex-col gap-3.5">
+      <SettingsFormTitle>Add MCP server</SettingsFormTitle>
 
-      <div className="automation-form-row">
-        <label>
+      <SettingsFormRow>
+        <SettingsField>
           Name
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="github" />
-        </label>
-        <label>
+          <input className={settingsInputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="github" />
+        </SettingsField>
+        <SettingsField>
           Transport
-          <select value={transport} onChange={(e) => setTransport(e.target.value as any)}>
+          <select className={settingsSelectClass} value={transport} onChange={(e) => setTransport(e.target.value as any)}>
             <option value="http">http — remote MCP endpoint</option>
             <option value="stdio">stdio — local command</option>
           </select>
-        </label>
-      </div>
+        </SettingsField>
+      </SettingsFormRow>
 
       {transport === "http" ? (
-        <label>
+        <SettingsField>
           URL
           <input
-            className="mono-input"
+            className={cn(settingsInputClass, "font-mono")}
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://api.example.com/mcp"
           />
-        </label>
+        </SettingsField>
       ) : (
         <>
-          <div className="automation-form-row">
-            <label>
+          <SettingsFormRow>
+            <SettingsField>
               Command
               <input
-                className="mono-input"
+                className={cn(settingsInputClass, "font-mono")}
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
                 placeholder="/home/ubuntu/bin/my-mcp"
               />
-            </label>
-            <label>
+            </SettingsField>
+            <SettingsField>
               Args (space-separated)
               <input
-                className="mono-input"
+                className={cn(settingsInputClass, "font-mono")}
                 value={args}
                 onChange={(e) => setArgs(e.target.value)}
                 placeholder="run /path/to/server.ts"
               />
-            </label>
-          </div>
-          <label>
+            </SettingsField>
+          </SettingsFormRow>
+          <SettingsField>
             Env (KEY=VALUE, one per line — stored in mcp-config.json)
             <textarea
-              className="mono-input"
+              className={cn(settingsInputClass, "resize-y font-mono")}
               value={env}
               onChange={(e) => setEnv(e.target.value)}
               rows={2}
               placeholder={"API_KEY=${MY_API_KEY}"}
             />
-          </label>
+          </SettingsField>
         </>
       )}
 
-      <label>
+      <SettingsField>
         Allowed users (optional, comma-separated — leave blank for everyone)
         <input
+          className={settingsInputClass}
           value={allowedUsers}
           onChange={(e) => setAllowedUsers(e.target.value)}
           placeholder="Alice, Bob"
         />
-      </label>
+      </SettingsField>
 
-      {error && <div className="form-error">{error}</div>}
+      {error && <InlineAlert>{error}</InlineAlert>}
 
-      <div className="automation-form-actions">
-        <button className="btn-delete-cancel" onClick={onClose} disabled={saving}>
+      <SettingsFormActions>
+        <Button onClick={onClose} disabled={saving}>
           Cancel
-        </button>
-        <button
-          className="btn-create"
-          style={{ padding: "8px 22px" }}
+        </Button>
+        <Button
+          variant="primary"
+          size="lg"
           onClick={handleAdd}
           disabled={saving || !valid}
         >
           {saving ? "Adding…" : "Add server"}
-        </button>
-      </div>
-    </div>
+        </Button>
+      </SettingsFormActions>
+    </SettingsForm>
   );
 }

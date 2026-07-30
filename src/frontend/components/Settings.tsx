@@ -99,6 +99,23 @@ import { getCurrentUser } from "./UserPicker";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { BottomSheet } from "../ui/sheet";
 import { cn } from "../ui/cn";
+import { Button } from "../ui/button";
+import {
+	SettingCard,
+	SettingRow as SettingsRow,
+	SettingRowControl,
+	SettingRowDescription,
+	SettingRowText,
+	SettingRowTitle,
+	SettingsDescription,
+	SettingsGroupLabel,
+	SettingsHint,
+	SettingsPanel,
+	SettingsTitle,
+	settingsSelectClass,
+} from "../ui/settings";
+import { Switch } from "../ui/switch";
+import { InlineAlert } from "../ui/state";
 import { Reorder } from "motion/react";
 import {
 	IconChevronDown,
@@ -816,13 +833,13 @@ function SettingRow({
 	control: React.ReactNode;
 }) {
 	return (
-		<div className="setting-row">
-			<div className="setting-row-text">
-				<div className="setting-row-title">{title}</div>
-				<div className="setting-row-desc">{desc}</div>
-			</div>
-			<div className="setting-row-control">{control}</div>
-		</div>
+		<SettingsRow>
+			<SettingRowText>
+				<SettingRowTitle>{title}</SettingRowTitle>
+				<SettingRowDescription>{desc}</SettingRowDescription>
+			</SettingRowText>
+			<SettingRowControl>{control}</SettingRowControl>
+		</SettingsRow>
 	);
 }
 
@@ -836,15 +853,7 @@ function Toggle({
 	label: string;
 }) {
 	return (
-		<button
-			role="switch"
-			aria-checked={checked}
-			aria-label={label}
-			className={`ui-switch ${checked ? "on" : ""}`}
-			onClick={() => onChange(!checked)}
-		>
-			<span className="ui-switch-knob" />
-		</button>
+		<Switch checked={checked} onCheckedChange={onChange} aria-label={label} />
 	);
 }
 
@@ -862,7 +871,7 @@ function Select<T extends string>({
 	return (
 		<span className="relative inline-grid">
 			<select
-				className="ui-select appearance-none !pr-9"
+				className={`${settingsSelectClass} appearance-none !pr-9`}
 				aria-label={label}
 				value={value}
 				onChange={(e) => onChange(e.target.value as T)}
@@ -939,11 +948,11 @@ function NotificationsPanel() {
 	}
 
 	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">Notifications</h1>
+		<SettingsPanel>
+			<SettingsTitle>Notifications</SettingsTitle>
 
-			<div className="settings-group-label">Alerts</div>
-			<div className="setting-card">
+			<SettingsGroupLabel>Alerts</SettingsGroupLabel>
+			<SettingCard>
 				<PushRow />
 				<SettingRow
 					title="Desktop notifications"
@@ -963,15 +972,16 @@ function NotificationsPanel() {
 					title="Completion sound"
 					desc="What plays when a session needs input or finishes."
 					control={
-						<div className="setting-inline">
+						<div className="flex items-center gap-2">
 							<Select
 								label="Completion sound"
 								value={s.sound}
 								options={SOUND_OPTIONS}
 								onChange={(v) => patch({ sound: v })}
 							/>
-							<button
-								className="ui-testbtn"
+							<Button
+								size="xs"
+								variant="ghost"
 								onClick={() => playSound(s.sound)}
 								disabled={s.sound === "none"}
 								title="Play sound"
@@ -991,7 +1001,7 @@ function NotificationsPanel() {
 									/>
 								</svg>
 								Test
-							</button>
+							</Button>
 						</div>
 					}
 				/>
@@ -1007,10 +1017,10 @@ function NotificationsPanel() {
 						/>
 					}
 				/>
-			</div>
+			</SettingCard>
 
-			<div className="settings-group-label">Events</div>
-			<div className="setting-card">
+			<SettingsGroupLabel>Events</SettingsGroupLabel>
+			<SettingCard>
 				<SettingRow
 					title="Needs input"
 					desc="Alert when a session is blocked waiting for your answer."
@@ -1033,8 +1043,8 @@ function NotificationsPanel() {
 						/>
 					}
 				/>
-			</div>
-		</div>
+			</SettingCard>
+		</SettingsPanel>
 	);
 }
 
@@ -1375,23 +1385,23 @@ function PersonalPromptPanel() {
 
 	if (prompt === null)
 		return (
-			<div className="settings-panel">
-				<h1 className="settings-title">Personal prompt</h1>
-				<div className="setting-row-desc">{error || "Loading…"}</div>
-			</div>
+			<SettingsPanel>
+				<SettingsTitle>Personal prompt</SettingsTitle>
+				<SettingRowDescription>{error || "Loading…"}</SettingRowDescription>
+			</SettingsPanel>
 		);
 
 	const dirty = prompt !== savedPrompt;
 	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">Personal prompt</h1>
-			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+		<SettingsPanel>
+			<SettingsTitle>Personal prompt</SettingsTitle>
+			<SettingsDescription className="mb-3.5">
 				Standing instructions added to the system prompt of every session you
 				({user}) start, on top of the built-in ones — tone, preferences, how
 				you like work reported. It follows you across devices and surfaces
 				(same identity as your memory store), and is never given to
 				automations. Leave empty to turn it off.
-			</div>
+			</SettingsDescription>
 			<textarea
 				className="w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-[13px] font-medium text-fg outline-none focus:border-faint"
 				rows={10}
@@ -1416,7 +1426,7 @@ function PersonalPromptPanel() {
 					</span>
 				)}
 			</div>
-		</div>
+		</SettingsPanel>
 	);
 }
 
@@ -1433,22 +1443,22 @@ function MemoryPanel() {
 
 	if (!scopes)
 		return (
-			<div className="settings-panel">
-				<h1 className="settings-title">Memory</h1>
-				<div className="setting-row-desc">{error || "Loading…"}</div>
-			</div>
+			<SettingsPanel>
+				<SettingsTitle>Memory</SettingsTitle>
+				<SettingRowDescription>{error || "Loading…"}</SettingRowDescription>
+			</SettingsPanel>
 		);
 
 	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">Memory</h1>
-			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+		<SettingsPanel>
+			<SettingsTitle>Memory</SettingsTitle>
+			<SettingsDescription className="mb-3.5">
 				Durable facts injected into every matching session: team memory is
 				workspace-wide (shared with {AGENT_NAME} in Slack), repo memory follows
 				the session's repo, people memory follows whoever is prompting.
 				Sessions manage these with the opensession-memory tools ("remember
 				that…"); this page is the same store, maintained by hand.
-			</div>
+			</SettingsDescription>
 			{MEMORY_GROUPS.map((g) => {
 				const inGroup = scopes.filter((s) => s.scope.kind === g.kind);
 				if (!inGroup.length && !g.fixed) return null;
@@ -1466,7 +1476,7 @@ function MemoryPanel() {
 					</div>
 				);
 			})}
-		</div>
+		</SettingsPanel>
 	);
 }
 
@@ -1506,29 +1516,25 @@ function WarmPreviewsPanel() {
 
 	if (!repos)
 		return (
-			<div className="settings-panel">
-				<h1 className="settings-title">Warm deps</h1>
-				<div className="setting-row-desc">{error || "Loading…"}</div>
-			</div>
+			<SettingsPanel>
+				<SettingsTitle>Warm deps</SettingsTitle>
+				<SettingRowDescription>{error || "Loading…"}</SettingRowDescription>
+			</SettingsPanel>
 		);
 
 	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">Warm deps</h1>
-			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+		<SettingsPanel>
+			<SettingsTitle>Warm deps</SettingsTitle>
+			<SettingsDescription className="mb-3.5">
 				Keep a template worktree per repo with node_modules installed,
 				refreshed from its default branch on a schedule. Prebuilt spares of
 				those dep trees are adopted into new session worktrees near-instantly,
 				instead of every session paying a cold install.
-			</div>
+			</SettingsDescription>
 
-			{error && (
-				<div className="form-error" onClick={() => setError(null)}>
-					{error}
-				</div>
-			)}
+			{error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
 
-			<div className="setting-card">
+			<SettingCard>
 				{repos.map((entry) => {
 					const s = entry.state;
 					const status = entry.refreshing
@@ -1586,8 +1592,8 @@ function WarmPreviewsPanel() {
 						/>
 					);
 				})}
-			</div>
-		</div>
+			</SettingCard>
+		</SettingsPanel>
 	);
 }
 
@@ -1646,30 +1652,26 @@ function PreviewPoolPanel() {
 
 	if (!repos)
 		return (
-			<div className="settings-panel">
-				<h1 className="settings-title">Preview pool</h1>
-				<div className="setting-row-desc">{error || "Loading…"}</div>
-			</div>
+			<SettingsPanel>
+				<SettingsTitle>Preview pool</SettingsTitle>
+				<SettingRowDescription>{error || "Loading…"}</SettingRowDescription>
+			</SettingsPanel>
 		);
 
 	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">Preview pool</h1>
-			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+		<SettingsPanel>
+			<SettingsTitle>Preview pool</SettingsTitle>
+			<SettingsDescription className="mb-3.5">
 				Keep dev-server containers pre-booted from a nightly golden image, so
 				the Preview button claims one in seconds instead of paying a cold
 				boot. Claims follow the session's branch (small edits stream in live;
 				big branch jumps reboot the dev server cleanly) and are released on
 				stop or after sitting unwatched.
-			</div>
+			</SettingsDescription>
 
-			{error && (
-				<div className="form-error" onClick={() => setError(null)}>
-					{error}
-				</div>
-			)}
+			{error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
 
-			<div className="setting-card">
+			<SettingCard>
 				{repos.map((entry) => {
 					const counts = {
 						ready: entry.containers.filter((c) => c.state === "ready").length,
@@ -1774,8 +1776,8 @@ function PreviewPoolPanel() {
 						/>
 					);
 				})}
-			</div>
-		</div>
+			</SettingCard>
+		</SettingsPanel>
 	);
 }
 
@@ -1803,29 +1805,25 @@ function PapercutsPanel() {
 
 	if (!repos)
 		return (
-			<div className="settings-panel">
-				<h1 className="settings-title">Papercuts</h1>
-				<div className="setting-row-desc">{error || "Loading…"}</div>
-			</div>
+			<SettingsPanel>
+				<SettingsTitle>Papercuts</SettingsTitle>
+				<SettingRowDescription>{error || "Loading…"}</SettingRowDescription>
+			</SettingsPanel>
 		);
 
 	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">Papercuts</h1>
-			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+		<SettingsPanel>
+			<SettingsTitle>Papercuts</SettingsTitle>
+			<SettingsDescription className="mb-3.5">
 				Small frictions agents log in the moment while working — retried tool
 				calls, flaky commands, misleading errors, undocumented gotchas. None
 				block on their own; together they show where a repo needs sanding
 				down. The nightly Dreaming digest reads them too.
-			</div>
+			</SettingsDescription>
 
-			{error && (
-				<div className="form-error" onClick={() => setError(null)}>
-					{error}
-				</div>
-			)}
+			{error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
 
-			<div className="setting-card">
+			<SettingCard>
 				{repos.map((r) => (
 					<SettingRow
 						key={r.repoId}
@@ -1848,7 +1846,7 @@ function PapercutsPanel() {
 						}
 					/>
 				))}
-			</div>
+			</SettingCard>
 
 			<div className="mt-5 mb-2 flex items-center justify-between">
 				<div className="text-[13px] font-medium text-dim">
@@ -1865,11 +1863,11 @@ function PapercutsPanel() {
 				/>
 			</div>
 			{entries.length === 0 ? (
-				<div className="setting-row-desc">
+				<SettingRowDescription>
 					Nothing logged yet — papercuts appear here as agents hit friction.
-				</div>
+				</SettingRowDescription>
 			) : (
-				<div className="setting-card">
+				<SettingCard>
 					{entries.map((e, i) => (
 						<div
 							key={`${e.ts}-${i}`}
@@ -1890,9 +1888,9 @@ function PapercutsPanel() {
 							</div>
 						</div>
 					))}
-				</div>
+				</SettingCard>
 			)}
-		</div>
+		</SettingsPanel>
 	);
 }
 
@@ -1957,23 +1955,23 @@ function AuditPanel() {
 	}
 
 	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">Audit log</h1>
-			<div className="setting-row-desc" style={{ marginBottom: 14 }}>
+		<SettingsPanel>
+			<SettingsTitle>Audit log</SettingsTitle>
+			<SettingsDescription className="mb-3.5">
 				Every agent run's structured events — prompts, tool decisions, account
 				switches, human confirmations. Read-only; files live under
 				~/.backstage-audit (400-day retention).
-			</div>
+			</SettingsDescription>
 
 			<div className="flex flex-wrap items-center gap-2 mb-3 px-2.5">
-				<select className="ui-select" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date">
+				<select className={settingsSelectClass} value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date">
 					{dates.map((d) => (
 						<option key={d} value={d}>
 							{d}
 						</option>
 					))}
 				</select>
-				<select className="ui-select" value={type} onChange={(e) => setType(e.target.value)} aria-label="Event type">
+				<select className={settingsSelectClass} value={type} onChange={(e) => setType(e.target.value)} aria-label="Event type">
 					<option value="">{all ? "All events" : "Significant events"}</option>
 					{types.map((t) => (
 						<option key={t} value={t}>
@@ -1986,7 +1984,7 @@ function AuditPanel() {
 					include tool firehose
 				</label>
 				<input
-					className="ui-select flex-1 min-w-[140px]"
+					className={`${settingsSelectClass} min-w-[140px] flex-1`}
 					value={q}
 					onChange={(e) => setQ(e.target.value)}
 					placeholder="Search (session id, tool, text…)"
@@ -2038,12 +2036,12 @@ function AuditPanel() {
 
 			{events.length < total && (
 				<div className="mt-2">
-					<button className="btn-small" onClick={loadMore}>
+					<Button size="sm" onClick={loadMore}>
 						Load more ({total - events.length} left)
-					</button>
+					</Button>
 				</div>
 			)}
-		</div>
+		</SettingsPanel>
 	);
 }
 
@@ -2080,9 +2078,9 @@ function ComposerPanel() {
 	}, []);
 
 	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">Composer</h1>
-			<div className="setting-card">
+		<SettingsPanel>
+			<SettingsTitle>Composer</SettingsTitle>
+			<SettingCard>
 				<SettingRow
 					title="Default model"
 					desc="What new sessions you start are preselected to run on. No preference keeps the workspace default. Stored per user, follows you across devices."
@@ -2198,8 +2196,8 @@ function ComposerPanel() {
 						/>
 					}
 				/>
-			</div>
-		</div>
+			</SettingCard>
+		</SettingsPanel>
 	);
 }
 
@@ -2217,10 +2215,10 @@ const IDENTITY_INPUT_CLASS =
  */
 function WorkspacePanel() {
 	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">General</h1>
-			<div className="settings-group-label">Identity</div>
-			<div className="setting-card">
+		<SettingsPanel>
+			<SettingsTitle>General</SettingsTitle>
+			<SettingsGroupLabel>Identity</SettingsGroupLabel>
+			<SettingCard>
 				<SettingRow
 					title="Agent name"
 					desc={
@@ -2268,12 +2266,12 @@ function WorkspacePanel() {
 						</Tooltip>
 					}
 				/>
-			</div>
-			<div className="settings-hint">
+			</SettingCard>
+			<SettingsHint>
 				Changes to the config file apply to new runs without a restart; a
 				settings-write API for these fields is pending.
-			</div>
-		</div>
+			</SettingsHint>
+		</SettingsPanel>
 	);
 }
 
@@ -2333,9 +2331,9 @@ function AppearancePanel() {
 	);
 
 	return (
-		<div className="settings-panel">
-			<h1 className="settings-title">Appearance</h1>
-			<div className="settings-group-label">Theme</div>
+		<SettingsPanel>
+			<SettingsTitle>Appearance</SettingsTitle>
+			<SettingsGroupLabel>Theme</SettingsGroupLabel>
 			<div className="theme-cards" role="radiogroup" aria-label="Theme">
 				{THEME_OPTIONS.map((o) => (
 					<ThemeCard
@@ -2349,16 +2347,16 @@ function AppearancePanel() {
 					/>
 				))}
 			</div>
-			<div className="settings-hint">
+			<SettingsHint>
 				{pref === "system"
 					? "Matches your operating system."
 					: `Always ${pref} mode.`}
-			</div>
+			</SettingsHint>
 
-			<div className="settings-group-label" style={{ marginTop: 22 }}>
+			<SettingsGroupLabel>
 				Chat
-			</div>
-			<div className="setting-card">
+			</SettingsGroupLabel>
+			<SettingCard>
 				<SettingRow
 					title="Tool calls & messages"
 					desc="How each turn's working — tool calls and in-between messages — folds in the chat. Work stays folded by default; expanding a turn does not open its individual tool inputs."
@@ -2375,20 +2373,20 @@ function AppearancePanel() {
 						/>
 					}
 				/>
-			</div>
+			</SettingCard>
 
-			<div className="settings-group-label" style={{ marginTop: 22 }}>
+			<SettingsGroupLabel>
 				Sidebar
-			</div>
-			<div className="setting-card">
-				<div className="setting-row flex-col !items-stretch">
-					<div className="setting-row-text">
-						<div className="setting-row-title">Section order</div>
-						<div className="setting-row-desc">
+			</SettingsGroupLabel>
+			<SettingCard>
+				<SettingsRow className="flex-col !items-stretch">
+					<SettingRowText>
+						<SettingRowTitle>Section order</SettingRowTitle>
+						<SettingRowDescription>
 							Reorder the sections below Tools. Stored per user and follows you
 							across devices.
-						</div>
-					</div>
+						</SettingRowDescription>
+					</SettingRowText>
 					<Reorder.Group
 						as="div"
 						axis="y"
@@ -2408,7 +2406,7 @@ function AppearancePanel() {
 							/>
 						))}
 					</Reorder.Group>
-				</div>
+				</SettingsRow>
 				<SettingRow
 					title="Show last used time"
 					desc="Show when each workspace was last active in the sidebar. A live run always shows its running time regardless."
@@ -2457,8 +2455,8 @@ function AppearancePanel() {
 						}
 					/>
 				))}
-			</div>
-		</div>
+			</SettingCard>
+		</SettingsPanel>
 	);
 }
 
