@@ -76,9 +76,9 @@ jobs:
         env:
           SERVER: ${{ vars.OS1_SERVER_URL || 'https://os.tella.dev/' }}
         run: |
-          jq --arg s "$SERVER" '.opensession.defaultServer = $s' os1-mac/package.json > /tmp/pkg.json
-          mv /tmp/pkg.json os1-mac/package.json
-          jq -r '"default server: " + .opensession.defaultServer' os1-mac/package.json
+          jq --arg s "$SERVER" '.opensession.defaultServer = $s' package.json > /tmp/pkg.json
+          mv /tmp/pkg.json package.json
+          jq -r '"default server: " + .opensession.defaultServer' package.json
 
       - name: Build, sign & notarize
         run: |
