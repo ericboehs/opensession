@@ -1592,7 +1592,7 @@ export function WorkspaceInfo({
 	);
 
 	return (
-		<div className="workspace-info-panel flex flex-col gap-4 px-3 pb-[22px] pt-3">
+		<div className="workspace-info-panel flex flex-col gap-4 px-2 pb-[22px] pt-3">
 			<div className="grid gap-1 px-1">
 				<div className="workspace-info-title selectable text-[17px] font-[680] leading-[1.2] text-fg">
 					{title}
@@ -1824,7 +1824,9 @@ export function WorkspaceInfo({
 					)}
 				</div>
 			) : (
-				<div className="text-[12.5px] text-dim">No overview yet.</div>
+				<div className="text-[12.5px] text-dim">
+					Changes, comments, shared media, and assets will appear here.
+				</div>
 			)}
 		</div>
 	);
