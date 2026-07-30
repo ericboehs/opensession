@@ -220,14 +220,18 @@ export function RestartOverlay({ connected, addHandler }: Props) {
     const restarting = phase === "restarting" || explicit.current;
     return (
       <div
-        className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+14px)] left-1/2 z-[10000] flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-panel px-3.5 py-2 text-[12px] font-medium text-dim shadow-[0_4px_16px_rgba(0,0,0,0.18)]"
+        className="pointer-events-none fixed right-3 top-[calc(env(safe-area-inset-top,0px)+12px)] z-[200] flex items-center gap-2 rounded-md border border-line-strong bg-panel/95 px-3 py-2 text-[12px] font-medium text-fg shadow-control backdrop-blur-md [corner-shape:var(--cs)] max-[720px]:bottom-[calc(env(safe-area-inset-bottom,0px)+84px)] max-[720px]:left-1/2 max-[720px]:right-auto max-[720px]:top-auto max-[720px]:-translate-x-1/2"
         role="status"
         aria-live="polite"
       >
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current opacity-70" />
-        {restarting
-          ? `${PRODUCT_NAME} is restarting…${restartBy ? ` (${restartBy})` : ""}`
-          : "Reconnecting…"}
+        <span
+          aria-hidden
+          className="size-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current/25 border-t-current text-yellow"
+        />
+        <span>{restarting ? `${PRODUCT_NAME} is restarting` : "Connection lost"}</span>
+        <span className="text-faint">
+          {restarting && restartBy ? restartBy : "Retrying"}
+        </span>
       </div>
     );
   }
