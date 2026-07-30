@@ -1823,11 +1823,7 @@ export function WorkspaceInfo({
 						</div>
 					)}
 				</div>
-			) : (
-				<div className="text-[12.5px] text-dim">
-					Changes, comments, shared media, and assets will appear here.
-				</div>
-			)}
+			) : null}
 		</div>
 	);
 }
