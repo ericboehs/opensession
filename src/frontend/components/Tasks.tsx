@@ -244,7 +244,7 @@ export function Tasks({ addHandler, onOpenSession }: TasksProps) {
 						// Empty reads as a soft, borderless well rather than a card with
 						// nothing in it: rounder, one step lighter, no outline.
 						tasks !== null && !open.length
-							? "rounded-xl bg-hover px-4"
+							? "rounded-[22px] bg-raised px-4"
 							: "rounded-lg border border-line bg-panel",
 					)}
 				>
