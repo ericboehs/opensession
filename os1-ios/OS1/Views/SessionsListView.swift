@@ -53,6 +53,11 @@ struct SessionsListView: View {
     /// Surfaced when a background session create fails after the sheet closed.
     @State private var createError: String?
     @State private var showArchived = false
+    #if os(iOS)
+    @State private var renamingWorkspace: SidebarWorkspace?
+    @State private var renameText = ""
+    @State private var detailsWorkspace: SidebarWorkspace?
+    #endif
 
     struct NewSessionRequest: Identifiable {
         let id = UUID()
@@ -106,6 +111,31 @@ struct SessionsListView: View {
             } message: {
                 Text(createError ?? "")
             }
+            #if os(iOS)
+            .alert(
+                "Rename workspace",
+                isPresented: Binding(
+                    get: { renamingWorkspace != nil },
+                    set: { if !$0 { renamingWorkspace = nil } }
+                )
+            ) {
+                TextField("Workspace name", text: $renameText)
+                Button("Cancel", role: .cancel) {}
+                Button("Rename") {
+                    if let workspace = renamingWorkspace {
+                        viewModel.rename(workspace, to: renameText)
+                    }
+                }
+                .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } message: {
+                Text("Choose a name for this workspace.")
+            }
+            .sheet(item: $detailsWorkspace) { workspace in
+                WorktreeInfoSheet(workspace: workspace)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+            #endif
     }
 
     #if os(macOS)
@@ -731,8 +761,63 @@ struct SessionsListView: View {
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
         .swipeActions(edge: .trailing) { archiveButton(workspace, viaSwipe: true) }
+        .contextMenu { workspaceMenu(workspace) }
         #endif
     }
+
+    #if os(iOS)
+    @ViewBuilder
+    private func workspaceMenu(_ workspace: SidebarWorkspace) -> some View {
+        Button {
+            detailsWorkspace = workspace
+        } label: {
+            Label("Worktree details", systemImage: "info.circle")
+        }
+
+        Button {
+            renameText = workspace.title
+            renamingWorkspace = workspace
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+
+        if let link = workspaceLink(workspace) {
+            ShareLink(item: link) {
+                Label("Share link", systemImage: "square.and.arrow.up")
+            }
+        }
+
+        if let prURL = workspace.sessions.compactMap(\.prUrl).first.flatMap(URL.init(string:)) {
+            Link(destination: prURL) {
+                Label("Open pull request", systemImage: "arrow.triangle.pull")
+            }
+        }
+
+        if workspace.sessions.allSatisfy({ !$0.id.hasPrefix("pending-") }) {
+            Divider()
+            Button(role: .destructive) {
+                archive(workspace)
+            } label: {
+                Label("Archive", systemImage: "archivebox")
+            }
+        }
+    }
+
+    private func workspaceLink(_ workspace: SidebarWorkspace) -> URL? {
+        guard let base = ServerConfig.shared.baseURL else { return nil }
+        let session = workspace.mainSession
+        if let projectId = session.projectId, !projectId.isEmpty {
+            return base
+                .appendingPathComponent("workspace")
+                .appendingPathComponent(projectId)
+                .appendingPathComponent("chat")
+                .appendingPathComponent(session.id)
+        }
+        return base
+            .appendingPathComponent("session")
+            .appendingPathComponent(session.id)
+    }
+    #endif
 
     /// Trailing swipe (and Mac context-menu) action. Hidden for optimistic
     /// `pending-` rows — the server doesn't know those ids yet.

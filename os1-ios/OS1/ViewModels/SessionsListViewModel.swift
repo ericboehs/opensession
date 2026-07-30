@@ -236,6 +236,27 @@ final class SessionsListViewModel {
         }
     }
 
+    func rename(_ workspace: SidebarWorkspace, to proposedName: String) {
+        let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        Task {
+            do {
+                if let projectId = workspace.projectId {
+                    try await OS1API.renameWorkspace(workspaceId: projectId, name: name)
+                } else {
+                    try await OS1API.renameSession(
+                        sessionId: workspace.mainSession.id,
+                        title: name
+                    )
+                }
+                await refresh()
+            } catch {
+                self.error = "Couldn't rename workspace: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private func isLocallyArchived(_ id: String) -> Bool {
         guard let entry = locallyArchived[id] else { return false }
         if Date().timeIntervalSince(entry.added) > 30 {
@@ -370,6 +391,9 @@ struct SidebarWorkspace: Identifiable, Equatable {
     }
 
     var lane: Session.Lane { statusSession.lane }
+    var projectId: String? {
+        sessions.compactMap(\.projectId).first { !$0.isEmpty }
+    }
     var effectiveRepo: String { mainSession.effectiveRepo }
     var lastActivityDate: Date {
         sessions.compactMap(\.lastActivityDate).max() ?? .distantPast

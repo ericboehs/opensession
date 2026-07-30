@@ -15,9 +15,9 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   flat single-line workspace rows with live/PR status marks and a running-time
   ticker, larger mobile type, and the web client's warm dark palette, plus
   grouping with the web sidebar's shared, drag-to-reorder repository order,
-  compact toolbar
-  search/filter, swipe-to-archive, restore from the archived list, a floating
-  create button, and pull to refresh.
+  compact toolbar search/filter, long-press worktree actions (details, rename,
+  sharing, pull request, and archive), swipe-to-archive, restore from the
+  archived list, a floating create button, and pull to refresh.
 - **Session view** — live transcript over the `/ws` WebSocket: user/assistant
   messages in the same neutral, repo-aware visual hierarchy as mobile web
   (streaming CommonMark/GFM with links, tables, and highlighted code blocks),

@@ -196,6 +196,22 @@ enum OS1API {
         )
     }
 
+    static func renameWorkspace(workspaceId: String, name: String) async throws {
+        struct RenameResponse: Decodable { let project: WorkspaceSummary? }
+        let _: RenameResponse = try await patch(
+            "/api/projects/\(workspaceId)",
+            body: ["name": name]
+        )
+    }
+
+    static func renameSession(sessionId: String, title: String) async throws {
+        struct RenameResponse: Decodable { let ok: Bool? }
+        let _: RenameResponse = try await put(
+            "/api/sessions/\(sessionId)/title",
+            body: ["title": title]
+        )
+    }
+
     struct AuthStatus: Decodable {
         let authenticated: Bool?
         let login: String?
@@ -280,13 +296,35 @@ enum OS1API {
         _ path: String,
         body: [String: Any]
     ) async throws -> T {
+        try await mutate(path, method: "POST", body: body)
+    }
+
+    private static func put<T: Decodable & Sendable>(
+        _ path: String,
+        body: [String: Any]
+    ) async throws -> T {
+        try await mutate(path, method: "PUT", body: body)
+    }
+
+    private static func patch<T: Decodable & Sendable>(
+        _ path: String,
+        body: [String: Any]
+    ) async throws -> T {
+        try await mutate(path, method: "PATCH", body: body)
+    }
+
+    private static func mutate<T: Decodable & Sendable>(
+        _ path: String,
+        method: String,
+        body: [String: Any]
+    ) async throws -> T {
         let config = ServerConfig.shared
         guard let base = config.baseURL else { throw APIError.notConfigured }
         guard config.isConfigured else { throw APIError.notConfigured }
         guard let url = URL(string: base.absoluteString + path) else { throw APIError.badURL }
 
         var request = config.authorizedRequest(url)
-        request.httpMethod = "POST"
+        request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)

@@ -454,6 +454,28 @@ struct WorktreeInfoView: View {
     }
 }
 
+/// Opens workspace details directly from a list-row context menu while still
+/// giving its model controls the live session socket they use in SessionView.
+struct WorktreeInfoSheet: View {
+    @State private var viewModel: SessionViewModel
+    @State private var catalog: ModelCatalog?
+    private let chats: [Session]
+
+    init(workspace: SidebarWorkspace) {
+        _viewModel = State(initialValue: SessionViewModel(session: workspace.mainSession))
+        chats = workspace.sessions
+    }
+
+    var body: some View {
+        WorktreeInfoView(viewModel: viewModel, chats: chats, catalog: catalog)
+            .task {
+                viewModel.start()
+                catalog = try? await OS1API.models()
+            }
+            .onDisappear { viewModel.stop() }
+    }
+}
+
 private struct InfoSection<Content: View>: View {
     let title: String
     var trailing: AnyView? = nil
