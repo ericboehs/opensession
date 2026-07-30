@@ -1546,9 +1546,7 @@ export function PrPanel({
           {/* Stack map — where this PR sits in its chain of layers. Above Git
               status because it reframes everything below it: the diff, the
               base branch, and whether a merge is even in order yet. */}
-          {sessionId && (
-            <StackCard pr={pr} sessionId={sessionId} onLinked={load} />
-          )}
+          <StackCard pr={pr} sessionId={sessionId} onLinked={load} />
 
           <PrCard title="Git status">
             <GitStatusRows
@@ -2229,7 +2227,9 @@ function StackCard({
   onLinked,
 }: {
   pr: PrDetails;
-  sessionId: string;
+  /** Absent on the session-less /pr/<repo>/<branch> view: the map still
+   *  renders there, only the link action needs a chat to act on. */
+  sessionId?: string;
   onLinked: () => void;
 }) {
   const [linking, setLinking] = useState(false);
@@ -2237,6 +2237,7 @@ function StackCard({
   const stack = pr.stack;
 
   const link = async () => {
+    if (!sessionId) return;
     setLinking(true);
     setError(null);
     try {
@@ -2253,7 +2254,7 @@ function StackCard({
   if (!stack) {
     // Not stacked on GitHub. Only worth a card when this chat sits on another
     // chat's branch — otherwise a standalone PR would grow an empty section.
-    if (!pr.stackBase) return null;
+    if (!pr.stackBase || !sessionId) return null;
     return (
       <PrCard title="Stack">
         <div className="text-xs leading-relaxed text-dim">
