@@ -14829,12 +14829,12 @@ html[data-theme="light"] .palette-card .palette-create {
 	transition: background 0.1s;
 }
 .palette-create-menu-item:hover {
-	background: var(--bg);
+	background: var(--hover);
 }
 .palette-create-menu-check {
 	flex-shrink: 0;
 	margin-top: 1px;
-	color: var(--accent);
+	color: var(--text-dim);
 }
 .palette-create-menu-text {
 	display: flex;
