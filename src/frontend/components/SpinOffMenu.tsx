@@ -219,7 +219,11 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
             <Button onClick={() => setFlavor(null)} disabled={starting}>
               Cancel
             </Button>
-            <Button onClick={start} disabled={!canStart}>
+            <Button
+              className="border-accent bg-accent-soft text-accent hover:border-accent hover:text-accent"
+              onClick={start}
+              disabled={!canStart}
+            >
               {starting ? "Starting…" : "Start session"}
             </Button>
           </Modal.Footer>
