@@ -13,6 +13,9 @@ import {
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { Button } from "../ui/button";
+import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
+import { InlineAlert } from "../ui/state";
 
 interface Props {
   onOpenSession: (sessionId: string) => void;
@@ -89,22 +92,24 @@ export function Actions({ onOpenSession, selectedId, onSelect }: Props) {
     <div className={`automations-page ${sel ? "automations-page-has-detail" : ""}`}>
     <div className="automations-page-main">
     <div className="automations-page-inner">
-      <div className="page-header">
+      <PageHeader
+        className={sel ? "mb-3.5 items-center" : "max-[560px]:mb-5 max-[560px]:flex-col max-[560px]:items-start max-[560px]:gap-3.5"}
+      >
         <div>
-          <h2 className="page-title">Actions</h2>
-          <div className="page-sub">
+          <PageTitle className={sel ? "text-base" : undefined}>Actions</PageTitle>
+          <PageDescription className={sel ? "hidden" : undefined}>
             Run a registered repo script behind a form. Each run opens as a session you can fork.
-          </div>
+          </PageDescription>
         </div>
-        <button className="btn-new-session" onClick={() => setShowForm(true)}>
+        <Button variant="primary" size="lg" className="mt-[18px] px-[18px] text-[13.5px] font-medium" onClick={() => setShowForm(true)}>
           + New action
-        </button>
-      </div>
+        </Button>
+      </PageHeader>
 
       {error && (
-        <div className="form-error" onClick={() => setError(null)}>
+        <InlineAlert onDismiss={() => setError(null)}>
           {error}
-        </div>
+        </InlineAlert>
       )}
 
       {showForm && (
@@ -172,9 +177,9 @@ export function Actions({ onOpenSession, selectedId, onSelect }: Props) {
             </button>
             <span className="automations-drawer-title">{sel.name}</span>
             <div className="automations-drawer-actions">
-              <button className="btn-small btn-small-danger" onClick={() => handleDelete(sel)}>
+              <Button size="sm" variant="danger" onClick={() => handleDelete(sel)}>
                 Delete
-              </button>
+              </Button>
             </div>
             <button
               className="automations-drawer-close"
@@ -316,7 +321,7 @@ function RunForm({
   return (
     <div className="automation-form automation-form-inline">
       {action.inputs.length === 0 && (
-        <div className="page-sub">This action takes no inputs.</div>
+        <div className="mt-1 text-[12.5px] text-faint">This action takes no inputs.</div>
       )}
 
       {action.inputs.map((input) => (
@@ -352,22 +357,22 @@ function RunForm({
               onChange={(e) => setValues((v) => ({ ...v, [input.name]: e.target.value }))}
             />
           )}
-          {input.hint && <span className="page-sub">{input.hint}</span>}
+          {input.hint && <span className="mt-1 text-[12.5px] text-faint">{input.hint}</span>}
         </label>
       ))}
 
       {action.confirm && (
-        <div className="page-sub" style={{ color: "var(--warn, #c47f00)" }}>
+        <div className="mt-1 text-[12.5px] text-yellow">
           ⚠ This action runs against prod. Double-check the values before running.
         </div>
       )}
 
-      {error && <div className="form-error">{error}</div>}
+      {error && <InlineAlert>{error}</InlineAlert>}
 
       <div className="automation-form-actions" style={{ justifyContent: "flex-start" }}>
-        <button className="btn-create" style={{ padding: "8px 22px" }} onClick={run} disabled={busy}>
+        <Button variant="primary" className="px-[22px]" onClick={run} disabled={busy}>
           {busy ? "Starting…" : action.confirm ? "Confirm & run" : "Run"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -535,7 +540,7 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
       )}
 
       {kind === "mcp" && (
-        <div className="page-sub">
+        <div className="mt-1 text-[12.5px] text-faint">
           Each input's variable name must match the tool's argument name. The tool runs on its own
           server with its own credentials.
         </div>
@@ -543,16 +548,21 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
 
       {kind === "repo" && (
         <div className="automation-form-actions" style={{ justifyContent: "flex-start" }}>
-          <button className="btn-small" onClick={detect} disabled={detecting || !scriptPath.trim()}>
+          <Button
+            size="sm"
+            className="border-line-strong bg-transparent"
+            onClick={detect}
+            disabled={detecting || !scriptPath.trim()}
+          >
             {detecting ? "Detecting…" : "Detect inputs from script"}
-          </button>
+          </Button>
         </div>
       )}
 
       <div className="automation-form-title" style={{ fontSize: 14, marginTop: 8 }}>
         Inputs {kind === "mcp" ? "(arg names)" : argMode === "positional" ? "(in order →)" : ""}
       </div>
-      {inputs.length === 0 && <div className="page-sub">No inputs — the script runs with no args.</div>}
+      {inputs.length === 0 && <div className="mt-1 text-[12.5px] text-faint">No inputs — the script runs with no args.</div>}
       {inputs.map((input, idx) => (
         <div className="automation-form-row" key={idx} style={{ alignItems: "flex-end" }}>
           <label>
@@ -593,15 +603,15 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
               onChange={(e) => updateInput(idx, { required: e.target.checked })}
             />
           </label>
-          <button className="btn-small btn-small-danger" onClick={() => removeInput(idx)}>
+          <Button size="sm" variant="danger" onClick={() => removeInput(idx)}>
             ✕
-          </button>
+          </Button>
         </div>
       ))}
       <div className="automation-form-actions" style={{ justifyContent: "flex-start" }}>
-        <button className="btn-small" onClick={addInput}>
+        <Button size="sm" className="border-line-strong bg-transparent" onClick={addInput}>
           + Add input
-        </button>
+        </Button>
       </div>
 
       <label style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -613,15 +623,20 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
         Require a confirm before running (recommended for anything touching prod)
       </label>
 
-      {error && <div className="form-error">{error}</div>}
+      {error && <InlineAlert>{error}</InlineAlert>}
 
       <div className="automation-form-actions">
-        <button className="btn-delete-cancel" onClick={onClose} disabled={saving}>
+        <Button
+          size="sm"
+          className="min-h-7 rounded-md border-line-strong bg-transparent px-3 text-[13px]"
+          onClick={onClose}
+          disabled={saving}
+        >
           Cancel
-        </button>
-        <button
-          className="btn-create"
-          style={{ padding: "8px 22px" }}
+        </Button>
+        <Button
+          variant="primary"
+          className="px-[22px]"
           onClick={handleSave}
           disabled={
             saving ||
@@ -630,7 +645,7 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
           }
         >
           {saving ? "Saving…" : "Create action"}
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import type { UnifiedSession } from "../lib/types";
 import { relativeTime, archiveSessionApi } from "../lib/api";
 import { useCurrentUser } from "./UserPicker";
 import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
 
 interface Props {
   sessions: UnifiedSession[];
@@ -120,14 +121,14 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
 
   return (
     <div className="automations">
-      <div className="page-header">
+      <PageHeader>
         <div>
-          <h2 className="page-title">Archived</h2>
-          <div className="page-sub">
+          <PageTitle>Archived</PageTitle>
+          <PageDescription>
             {archived.length} archived session{archived.length === 1 ? "" : "s"}.
             Done Plain tickets and anything idle for over a week land here
             automatically.
-          </div>
+          </PageDescription>
         </div>
         <input
           className="sidebar-search"
@@ -136,7 +137,7 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-      </div>
+      </PageHeader>
 
       <div className="archived-filters">
         <div className="seg-control" role="group" aria-label="Owner">
@@ -218,7 +219,7 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
                 </span>
               </span>
               <span
-                className="btn-small"
+                className="inline-flex cursor-pointer rounded-sm border border-line-strong px-2.5 py-[3px] text-xs text-dim hover:border-faint hover:text-fg"
                 role="button"
                 onClick={(e) => handleUnarchive(e, s.id)}
               >

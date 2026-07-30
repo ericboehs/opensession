@@ -17,6 +17,9 @@ import {
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { Button } from "../ui/button";
+import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
+import { InlineAlert } from "../ui/state";
 
 type GoalStatus = "active" | "paused" | "done" | "failed";
 
@@ -137,27 +140,32 @@ export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
     <div className={`automations-page ${sel ? "automations-page-has-detail" : ""}`}>
     <div className="automations-page-main">
     <div className="automations-page-inner">
-      <div className="page-header">
+      <PageHeader
+        className={`max-[560px]:mb-5 max-[560px]:flex-col max-[560px]:items-start max-[560px]:gap-3.5 ${
+          sel ? "mb-3.5 items-center" : ""
+        }`}
+      >
         <div>
-          <h2 className="page-title">Goals</h2>
-          <div className="page-sub">
+          <PageTitle className={sel ? "text-[16px]" : undefined}>Goals</PageTitle>
+          <PageDescription className={sel ? "hidden" : undefined}>
             Long-running, self-pacing missions — one managed session that remembers its own
             progress, paces itself, and stops when done.
-          </div>
+          </PageDescription>
         </div>
-        <button
-          className="btn-new-session"
-          style={{ marginTop: 0 }}
-          onClick={() => setShowForm(true)}
-        >
-          + New goal
-        </button>
-      </div>
+        <Button
+					variant="primary"
+					size="lg"
+					className="px-[18px] text-[13.5px] font-medium"
+					onClick={() => setShowForm(true)}
+				>
+					+ New goal
+				</Button>
+      </PageHeader>
 
       {error && (
-        <div className="form-error" onClick={() => setError(null)}>
+        <InlineAlert onDismiss={() => setError(null)}>
           {error}
-        </div>
+        </InlineAlert>
       )}
 
       {showForm && (
@@ -252,29 +260,30 @@ export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
             {!editMode && (
               <div className="automations-drawer-actions">
                 {sel.status === "active" && (
-                  <button
-                    className="btn-small"
+                  <Button
+                    size="sm"
+                    className="border-line-strong bg-transparent"
                     onClick={() => act(() => runGoalApi(sel.id))}
                     disabled={sel.isRunning}
                   >
                     Wake now
-                  </button>
+                  </Button>
                 )}
                 {sel.status === "active" ? (
-                  <button className="btn-small" onClick={() => act(() => pauseGoalApi(sel.id))}>
+                  <Button size="sm" className="border-line-strong bg-transparent" onClick={() => act(() => pauseGoalApi(sel.id))}>
                     Pause
-                  </button>
+                  </Button>
                 ) : (
-                  <button className="btn-small" onClick={() => act(() => resumeGoalApi(sel.id))}>
+                  <Button size="sm" className="border-line-strong bg-transparent" onClick={() => act(() => resumeGoalApi(sel.id))}>
                     Resume
-                  </button>
+                  </Button>
                 )}
-                <button className="btn-small" onClick={() => setEditMode(true)}>
+                <Button size="sm" className="border-line-strong bg-transparent" onClick={() => setEditMode(true)}>
                   Edit
-                </button>
-                <button className="btn-small btn-small-danger" onClick={() => handleDelete(sel)}>
+                </Button>
+                <Button size="sm" variant="danger" onClick={() => handleDelete(sel)}>
                   Delete
-                </button>
+                </Button>
               </div>
             )}
             <button
@@ -658,20 +667,20 @@ function GoalForm({
         </label>
       </div>
 
-      {error && <div className="form-error">{error}</div>}
+      {error && <InlineAlert>{error}</InlineAlert>}
 
       <div className="automation-form-actions">
-        <button className="btn-delete-cancel" onClick={onClose} disabled={saving}>
+        <Button size="md" onClick={onClose} disabled={saving}>
           Cancel
-        </button>
-        <button
-          className="btn-create"
-          style={{ padding: "8px 22px" }}
+        </Button>
+        <Button
+          variant="primary"
+          className="px-[22px] py-2"
           onClick={handleSave}
           disabled={saving || !name.trim() || !mission.trim()}
         >
           {saving ? "Saving…" : initial ? "Save changes" : "Create goal"}
-        </button>
+        </Button>
       </div>
     </div>
   );

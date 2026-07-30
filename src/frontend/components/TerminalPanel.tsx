@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { WSServerMessage } from "../lib/types";
+import { Button } from "../ui/button";
 
 /**
  * Interactive terminals over server-side PTYs in the session's worktree:
@@ -125,44 +126,46 @@ export function ShellPanel({
     <div className="flex flex-col h-full min-h-0">
       <div className="flex items-center gap-1 px-3 pt-1.5 pb-1 shrink-0 flex-wrap">
         {tabs.map((t) => (
-          <span
-            key={t.id}
-            className={`btn-small inline-flex items-center gap-1.5 cursor-pointer select-none ${
-              t.id === activeId ? "!bg-active !text-fg" : ""
-            }`}
-            onClick={() => setActiveId(t.id)}
-          >
-            Terminal {t.n}
-            <span
-              role="button"
+          <div key={t.id} className="inline-flex items-stretch">
+            <Button
+              size="sm"
+              className={`rounded-r-none border-r-0 border-line-strong bg-transparent pr-1.5 shadow-none ${
+                t.id === activeId ? "!bg-active !text-fg" : ""
+              }`}
+              onClick={() => setActiveId(t.id)}
+            >
+              Terminal {t.n}
+            </Button>
+            <Button
+              size="sm"
               aria-label={`Close terminal ${t.n}`}
               title="Close terminal (kills its PTY)"
-              className="opacity-50 hover:opacity-100"
-              onClick={(e) => {
-                e.stopPropagation();
-                closeTab(t.id);
-              }}
+              className={`w-6 rounded-l-none border-line-strong bg-transparent px-0 text-faint shadow-none hover:text-fg ${
+                t.id === activeId ? "!bg-active" : ""
+              }`}
+              onClick={() => closeTab(t.id)}
             >
               ×
-            </span>
-          </span>
+            </Button>
+          </div>
         ))}
         {tabs.length < MAX_SHELL_TABS && (
-          <button
-            className="btn-small"
+          <Button
+            size="sm"
+            className="border-line-strong bg-transparent shadow-none"
             onClick={addTab}
             title="New terminal tab"
             aria-label="New terminal tab"
           >
             +
-          </button>
+          </Button>
         )}
       </div>
       {tabs.length === 0 ? (
         <div className="panel-placeholder">
-          <button className="btn-small" onClick={addTab}>
+          <Button size="sm" className="border-line-strong bg-transparent shadow-none" onClick={addTab}>
             Open a terminal
-          </button>
+          </Button>
         </div>
       ) : (
         // Every tab stays mounted (hidden when inactive) so switching tabs

@@ -5,6 +5,7 @@ import type { SelectedLineRange, FileDiffMetadata, DiffLineAnnotation } from "@p
 import type { DiffFileGroup } from "../lib/types";
 import { IconChevronRight, IconUndo } from "./icons";
 import { Tooltip } from "../ui/tooltip";
+import { Button } from "../ui/button";
 import { useResolvedTheme } from "./CodeHighlight";
 import { PixelSpinner } from "./PixelSpinner";
 
@@ -626,12 +627,24 @@ const CommentForm = React.memo(function CommentForm({
           />
           {error && <div className="diff-comment-error">{error}</div>}
           <div className="diff-comment-actions">
-            <button className="btn-delete-cancel" onClick={onCancel} disabled={sending}>
+            <Button
+              variant="default"
+              size="sm"
+              className="min-h-0 border-line-strong bg-transparent px-3 py-[5px] text-[13px] font-normal shadow-none"
+              onClick={onCancel}
+              disabled={sending}
+            >
               Cancel
-            </button>
-            <button className="btn-send" onClick={submit} disabled={sending || !text.trim()}>
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              className="min-h-0 rounded-[calc(8px*var(--rf))] px-[14px] py-[6px] text-[12.5px] font-medium shadow-none [corner-shape:var(--cs)]"
+              onClick={submit}
+              disabled={sending || !text.trim()}
+            >
               {sending ? "Sending…" : submitLabel}
-            </button>
+            </Button>
           </div>
         </>
       )}

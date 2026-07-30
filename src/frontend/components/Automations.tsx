@@ -20,6 +20,9 @@ import {
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { AGENT_NAME, PUBLIC_BASE_URL, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { Button } from "../ui/button";
+import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
+import { InlineAlert } from "../ui/state";
 
 interface AutomationRun {
   at: string;
@@ -201,26 +204,27 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
     <div className={`automations-page ${sel ? "automations-page-has-detail" : ""}`}>
     <div className="automations-page-main">
     <div className="automations-page-inner">
-      <div className="page-header">
+      <PageHeader
+        className={`max-[560px]:mb-5 max-[560px]:flex-col max-[560px]:items-start max-[560px]:gap-3.5 ${sel ? "mb-3.5 items-center" : ""}`}
+      >
         <div>
-          <h2 className="page-title">Automations</h2>
-          <div className="page-sub">
+          <PageTitle className={sel ? "text-base" : undefined}>Automations</PageTitle>
+          <PageDescription className={sel ? "hidden" : undefined}>
             Scheduled {AGENT_NAME} sessions — cron runs in UTC (server time).
-          </div>
+          </PageDescription>
         </div>
-        <button
-          className="btn-new-session"
-          style={{ marginTop: 0 }}
-          onClick={() => setShowModal(true)}
-        >
-          + New automation
-        </button>
-      </div>
+        <Button
+					variant="primary"
+					size="lg"
+					className="px-[18px] text-[13.5px] font-medium"
+					onClick={() => setShowModal(true)}
+				>
+					+ New automation
+				</Button>
+      </PageHeader>
 
       {error && (
-        <div className="form-error" onClick={() => setError(null)}>
-          {error}
-        </div>
+        <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
       )}
 
       {loading ? (
@@ -307,19 +311,24 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
             </span>
             {!editMode && (
               <div className="automations-drawer-actions">
-                <button
-                  className="btn-small"
+                <Button
+                  size="sm"
+                  className="border-line-strong bg-transparent shadow-none hover:bg-transparent"
                   onClick={() => handleRunNow(sel)}
                   disabled={sel.isRunning}
                 >
                   Run now
-                </button>
-                <button className="btn-small" onClick={() => setEditMode(true)}>
+                </Button>
+                <Button size="sm" className="border-line-strong bg-transparent shadow-none hover:bg-transparent" onClick={() => setEditMode(true)}>
                   Edit
-                </button>
-                <button className="btn-small btn-small-danger" onClick={() => handleDelete(sel)}>
+                </Button>
+                <Button
+                  size="sm"
+                  className="border-line-strong bg-transparent text-dim shadow-none hover:border-red hover:bg-transparent hover:text-red"
+                  onClick={() => handleDelete(sel)}
+                >
                   Delete
-                </button>
+                </Button>
               </div>
             )}
             <button
@@ -713,8 +722,9 @@ function WebhookUrl({ id, secret }: { id: string; secret: string }) {
       <span className="automation-webhook-url" title={url}>
         POST {url.replace(secret, secret.slice(0, 6) + "…")}
       </span>
-      <button
-        className="btn-small shrink-0"
+      <Button
+        size="sm"
+        className="shrink-0 border-line-strong bg-transparent shadow-none hover:bg-transparent"
         onClick={() => {
           navigator.clipboard.writeText(url).then(() => {
             setCopied(true);
@@ -723,7 +733,7 @@ function WebhookUrl({ id, secret }: { id: string; secret: string }) {
         }}
       >
         {copied ? "Copied ✓" : "Copy URL"}
-      </button>
+      </Button>
     </span>
   );
 }
@@ -870,14 +880,15 @@ function TypeChooser({
           placeholder="“every weekday morning, check Sentry for new errors and rank them by impact”"
         />
         <div className="flex items-center gap-2">
-          <button
-            className="btn-create"
-            style={{ padding: "6px 16px" }}
+          <Button
+            variant="primary"
+            size="sm"
+            className="px-4 py-1.5"
             onClick={handleDraft}
             disabled={drafting || description.trim().length < 10}
           >
             {drafting ? "Drafting…" : "Draft it"}
-          </button>
+          </Button>
           {error && <span className="text-red text-[12px]">{error}</span>}
         </div>
       </div>
@@ -906,9 +917,9 @@ function TypeChooser({
       )}
 
       <div className="automation-form-actions">
-        <button className="btn-delete-cancel" onClick={onClose}>
+        <Button size="sm" className="px-3 text-[13px]" onClick={onClose}>
           Cancel
-        </button>
+        </Button>
       </div>
     </>
   );
@@ -1148,9 +1159,9 @@ function AutomationForm({
       {!inline && (
         <div className="flex items-center gap-2">
           {onBack && (
-            <button className="btn-small" onClick={onBack} title="Back to type chooser">
+            <Button size="sm" className="border-line-strong bg-transparent shadow-none hover:bg-transparent" onClick={onBack} title="Back to type chooser">
               ←
-            </button>
+            </Button>
           )}
           <div className="automation-form-title" style={{ marginBottom: 0 }}>
             {initial
@@ -1252,12 +1263,13 @@ function AutomationForm({
       <McpPicker value={mcpServers} onChange={setMcpServers} />
 
       <div>
-        <button
-          className="btn-small"
+        <Button
+          size="sm"
+          className="border-line-strong bg-transparent shadow-none hover:bg-transparent"
           onClick={() => setShowAdvanced(!showAdvanced)}
         >
           {showAdvanced ? "Hide advanced" : "Advanced"}
-        </button>
+        </Button>
       </div>
 
       {showAdvanced && (
@@ -1333,20 +1345,21 @@ function AutomationForm({
         </div>
       )}
 
-      {error && <div className="form-error">{error}</div>}
+      {error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
 
       <div className="automation-form-actions">
-        <button className="btn-delete-cancel" onClick={onClose} disabled={saving}>
+        <Button size="sm" className="px-3 text-[13px]" onClick={onClose} disabled={saving}>
           Cancel
-        </button>
-        <button
-          className="btn-create"
-          style={{ padding: "8px 22px" }}
+        </Button>
+        <Button
+          variant="primary"
+          size="md"
+          className="px-[22px] py-2"
           onClick={handleSave}
           disabled={saving || !name.trim() || !prompt.trim() || !scheduleValid || !watchValid}
         >
           {saving ? "Saving…" : initial ? "Save changes" : "Create automation"}
-        </button>
+        </Button>
       </div>
     </>
   );

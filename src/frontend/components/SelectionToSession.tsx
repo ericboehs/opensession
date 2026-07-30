@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentUser } from "./UserPicker";
+import { Button } from "../ui/button";
 
 interface Props {
   sessionId: string;
@@ -122,12 +123,22 @@ export function SelectionToSession({ sessionId, label, send, children }: Props) 
                 }}
               />
               <div className="selection-actions">
-                <button className="btn-delete-cancel" onClick={dismiss}>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="min-h-0 border-line-strong bg-transparent px-3 py-[5px] text-[13px] font-normal shadow-none"
+                  onClick={dismiss}
+                >
                   Cancel
-                </button>
-                <button className="btn-send" onClick={doSend}>
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="min-h-0 rounded-[calc(8px*var(--rf))] px-[14px] py-[6px] text-[12.5px] font-medium shadow-none [corner-shape:var(--cs)]"
+                  onClick={doSend}
+                >
                   Send to session
-                </button>
+                </Button>
               </div>
             </div>
           ) : (

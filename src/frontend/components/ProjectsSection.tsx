@@ -2,6 +2,7 @@ import { BASE_PATH } from "../lib/base";
 import React, { useCallback, useEffect, useState } from "react";
 import { cn } from "../ui/cn";
 import { Modal } from "../ui/modal";
+import { InlineAlert } from "../ui/state";
 import { IconTile } from "./BrandTile";
 import { IconPlus, IconTrash } from "./icons";
 import { SectionHeading } from "./Connections";
@@ -99,7 +100,7 @@ export function ProjectsSection() {
 		<>
 			<SectionHeading>Projects — sidebar feeds from your MCPs</SectionHeading>
 			{error && (
-				<div className="form-error" onClick={() => setError(null)}>{error}</div>
+				<InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
 			)}
 			<div className="overflow-hidden rounded-lg border border-line bg-panel">
 				{(feeds || []).map((f, i) => (
@@ -391,7 +392,7 @@ function NewProjectModal({
 					<label className={labelCls}>Tile color</label>
 					<input className={inputCls} value={tileBg} onChange={(e) => setTileBg(e.target.value)} />
 
-					{error && <div className="form-error mt-3">{error}</div>}
+					{error && <InlineAlert className="mt-3">{error}</InlineAlert>}
 					{busy && <div className="mt-3 text-xs text-faint">{busy}</div>}
 				</div>
 				<Modal.Footer>

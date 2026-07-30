@@ -14,6 +14,10 @@ import {
 } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { AGENT_NAME, docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { Button } from "../ui/button";
+import { cn } from "../ui/cn";
+import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
+import { InlineAlert } from "../ui/state";
 
 interface Props {
   onOpenSession: (sessionId: string) => void;
@@ -82,21 +86,22 @@ export function Security({ onOpenSession }: Props) {
 
   return (
     <div className="automations">
-      <div className="page-header">
+      <PageHeader>
         <div>
-          <h2 className="page-title">Security</h2>
-          <div className="page-sub">
+          <PageTitle>Security</PageTitle>
+          <PageDescription>
             deepsec scans across the registered repos — findings land as PRs, one per confirmed issue.
-          </div>
+          </PageDescription>
         </div>
-        <button
-          className="btn-new-session"
-          style={{ marginTop: 0 }}
-          onClick={() => setShowNewScan(true)}
-        >
-          + New scan
-        </button>
-      </div>
+        <Button
+					variant="primary"
+					size="lg"
+					className="px-[18px] text-[13.5px] font-medium"
+					onClick={() => setShowNewScan(true)}
+				>
+					+ New scan
+				</Button>
+      </PageHeader>
 
       <div className="flex items-center gap-1.5 mb-4">
         {(
@@ -105,20 +110,21 @@ export function Security({ onOpenSession }: Props) {
             ["profiles", `Profiles ${profiles.length}`],
           ] as Array<[Tab, string]>
         ).map(([t, label]) => (
-          <button
+          <Button
             key={t}
-            className={`btn-small ${tab === t ? "!bg-active !text-fg" : ""}`}
+            size="sm"
+            className={cn(tab === t && "bg-active text-fg")}
             onClick={() => setTab(t)}
           >
             {label}
-          </button>
+          </Button>
         ))}
       </div>
 
       {error && (
-        <div className="form-error" onClick={() => setError(null)}>
+        <InlineAlert className="text-[13px]" onDismiss={() => setError(null)}>
           {error}
-        </div>
+        </InlineAlert>
       )}
 
       {showNewScan && (
@@ -150,9 +156,9 @@ export function Security({ onOpenSession }: Props) {
       ) : tab === "profiles" ? (
         <div className="automation-list">
           <div>
-            <button className="btn-small" onClick={() => setEditProfile("new")}>
+            <Button size="sm" onClick={() => setEditProfile("new")}>
               + Create a profile
-            </button>
+            </Button>
           </div>
           {profiles.length === 0 ? (
             <div className="automations-empty">
@@ -168,11 +174,12 @@ export function Security({ onOpenSession }: Props) {
                 <div className="automation-top">
                   <span className="automation-name">{p.name}</span>
                   <div className="automation-actions">
-                    <button className="btn-small" onClick={() => setEditProfile(p)}>
+                    <Button size="sm" onClick={() => setEditProfile(p)}>
                       Edit
-                    </button>
-                    <button
-                      className="btn-small btn-small-danger"
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
                       onClick={async () => {
                         if (!confirm(`Delete profile "${p.name}"?`)) return;
                         try {
@@ -184,7 +191,7 @@ export function Security({ onOpenSession }: Props) {
                       }}
                     >
                       Delete
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 <div className="automation-prompt">{p.prompt}</div>
@@ -243,12 +250,13 @@ export function Security({ onOpenSession }: Props) {
                     </span>
                   )}
                   <div className="automation-actions">
-                    <button
-                      className="btn-small btn-small-danger"
+                    <Button
+                      size="sm"
+                      variant="danger"
                       onClick={() => handleDeleteScan(s)}
                     >
                       Remove
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
@@ -398,14 +406,16 @@ function NewScanModal({
         </div>
 
         <div className="flex gap-1.5">
-          <button
-            className={`btn-small ${scope === "single" ? "!bg-active !text-fg" : ""}`}
+          <Button
+            size="sm"
+            className={cn(scope === "single" && "bg-active text-fg")}
             onClick={() => setScope("single")}
           >
             Single repo
-          </button>
-          <button
-            className={`btn-small ${scope === "all" ? "!bg-active !text-fg" : ""}`}
+          </Button>
+          <Button
+            size="sm"
+            className={cn(scope === "all" && "bg-active text-fg")}
             onClick={() => {
               setScope("all");
               setInteractive(false);
@@ -413,7 +423,7 @@ function NewScanModal({
             }}
           >
             All repos
-          </button>
+          </Button>
         </div>
 
         {scope === "single" && (
@@ -496,15 +506,15 @@ function NewScanModal({
           </span>
         </label>
 
-        {error && <div className="form-error">{error}</div>}
+        {error && <InlineAlert className="text-[13px]">{error}</InlineAlert>}
 
         <div className="automation-form-actions">
-          <button className="btn-delete-cancel" onClick={onClose} disabled={starting}>
+          <Button size="sm" onClick={onClose} disabled={starting}>
             Cancel
-          </button>
-          <button
-            className="btn-create"
-            style={{ padding: "8px 22px" }}
+          </Button>
+          <Button
+            variant="primary"
+            className="px-[22px] py-2"
             onClick={handleStart}
             disabled={starting || (scope === "single" && !repo)}
           >
@@ -515,7 +525,7 @@ function NewScanModal({
                 : interactive && canInteractive
                   ? "Start interactive session"
                   : "Start scan"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -592,20 +602,20 @@ function ProfileModal({
           />
         </label>
 
-        {error && <div className="form-error">{error}</div>}
+        {error && <InlineAlert className="text-[13px]">{error}</InlineAlert>}
 
         <div className="automation-form-actions">
-          <button className="btn-delete-cancel" onClick={onClose} disabled={saving}>
+          <Button size="sm" onClick={onClose} disabled={saving}>
             Cancel
-          </button>
-          <button
-            className="btn-create"
-            style={{ padding: "8px 22px" }}
+          </Button>
+          <Button
+            variant="primary"
+            className="px-[22px] py-2"
             onClick={handleSave}
             disabled={saving || !name.trim() || !prompt.trim()}
           >
             {saving ? "Saving…" : initial ? "Save changes" : "Create profile"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
