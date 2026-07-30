@@ -1445,15 +1445,13 @@ export function SessionViewer({
 	// The 5s session poll picks up the mode change and re-renders with the full
 	// code affordances (diff/PR tabs, RepoBar).
 	const [promoting, setPromoting] = useState(false);
-	const [promoteError, setPromoteError] = useState<string | null>(null);
 	async function handlePromote() {
 		if (promoting) return;
-		setPromoteError(null);
 		setPromoting(true);
 		try {
 			await promoteChatApi(session.id);
 		} catch (e) {
-			setPromoteError(e instanceof Error ? e.message : "Promote failed");
+			toast(e instanceof Error ? e.message : "Could not switch to code mode");
 			setPromoting(false);
 		}
 	}
@@ -3702,6 +3700,18 @@ export function SessionViewer({
 						<span className="grow">New chat in workspace</span>
 					</Menu.Item>
 				);
+				const promoteAction = isAsk && !hasWorkspace && (
+					<Menu.Item
+						onClick={handlePromote}
+						disabled={promoting}
+						title="Create a worktree for this chat and switch it to code mode"
+					>
+						<IconTerminal size={20} />
+						<span className="grow">
+							{promoting ? "Creating worktree…" : "Switch to code"}
+						</span>
+					</Menu.Item>
+				);
 				// Copy transcript. These normally live on a tab's right-click menu,
 				// but a lone-chat workspace has no tab strip (and phones hide it at
 				// every count), so the only place to grab this chat's full text is the
@@ -3914,26 +3924,7 @@ export function SessionViewer({
 					>
 						<div className="viewer-title">
 					{isAsk ? (
-						<>
-							<span className="source-chip source-ask">ask</span>
-							{!hasWorkspace && (
-								<Tooltip
-									label={
-										promoteError ||
-										"Create a worktree for this chat and switch it to code mode"
-									}
-								>
-									<button
-										type="button"
-										className="flex-none cursor-pointer whitespace-nowrap rounded-md border border-line-strong bg-panel px-2 py-0.5 text-[12px] text-fg hover:border-accent hover:text-accent disabled:cursor-default disabled:opacity-60"
-										onClick={handlePromote}
-										disabled={promoting}
-									>
-										{promoting ? "Creating worktree…" : "Create worktree"}
-									</button>
-								</Tooltip>
-							)}
-						</>
+						<span className="source-chip source-ask">ask</span>
 					) : (
 						// "backstage" is the default origin (web UI) — as a chip it's noise,
 						// and for backstage-repo sessions it read as the repo said twice.
@@ -4103,6 +4094,7 @@ export function SessionViewer({
 								{isPhone && secondaryActions(true)}
 								{(compactHeader || isPhone) && shareAction(true)}
 								{newChatAction}
+								{promoteAction}
 								<PreviewButton
 									session={session}
 									onAttachImage={(img) => setImages((prev) => [...prev, img])}
