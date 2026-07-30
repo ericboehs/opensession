@@ -3383,6 +3383,17 @@ body.resizing-tab-split {
 	   whole top bar; it still shrinks below this when the row runs out of room. */
 	max-width: 420px;
 	font-size: 14px;
+	-webkit-user-select: text;
+	-moz-user-select: text;
+	user-select: text;
+	-webkit-touch-callout: default;
+}
+
+/* The shell makes the surrounding header a native window drag region. Opt the
+   workspace title out so its text remains selectable and copyable. */
+html.wco .viewer-branch {
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
 }
 
 /* Double-clickable to rename — hint it on hover without shifting layout. */
