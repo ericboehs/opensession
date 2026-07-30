@@ -408,7 +408,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 						</button>
 						{workerReport.sessionId && (
 							<a
-								className="shrink-0 text-dim hover:text-fg"
+								className="shrink-0 text-dim no-underline hover:text-fg"
 								href={`${BASE_PATH}/session/${workerReport.sessionId}`}
 							>
 								Open worker
