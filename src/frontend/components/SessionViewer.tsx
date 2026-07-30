@@ -4070,11 +4070,7 @@ export function SessionViewer({
 									name={v.name}
 									size={24}
 									className="presence-avatar"
-								>
-									{v.count > 1 ? (
-										<span className="presence-count">{v.count}</span>
-									) : null}
-								</UserAvatar>
+								/>
 							))}
 						</div>
 					)}
