@@ -470,6 +470,12 @@ html.wco .app {
 html.wco .sidebar-brand {
 	padding-left: max(env(titlebar-area-x, 78px), calc(var(--sidebar-icon-left) - 8px));
 }
+/* AppKit's traffic-light glyphs sit a little below the geometric center of the
+   titlebar. Match that optical center without changing the shared web header. */
+html.wco .sidebar-brand > :is(.sidebar-brand-actions, .wco-nav, button) {
+	position: relative;
+	top: 3px;
+}
 /* The whole first row doubles as the titlebar — everything interactive in it
    opts back out so it stays clickable. */
 html.wco .sidebar-brand,
