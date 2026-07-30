@@ -211,9 +211,9 @@ struct ComposerSettingsView: View {
 
 struct AppearanceSettingsView: View {
     @AppStorage("os1.appearance") private var appearance = "system"
-    @AppStorage("os1.appearance.turnActivity") private var nativeTurnActivity = "auto"
+    @AppStorage("os1.appearance.turnActivity") private var nativeTurnActivity = "collapsed"
 
-    @State private var turnActivity = "auto"
+    @State private var turnActivity = "collapsed"
     @State private var loading = true
     @State private var saving = false
     @State private var error: String?
@@ -279,7 +279,7 @@ struct AppearanceSettingsView: View {
             let prefs = try await SettingsAPI.uiPrefs(user: requestContext.user)
             guard NativePreferences.context() == requestContext else { loading = false; return }
             if ["auto", "expanded", "collapsed"].contains(prefs["turn-activity"]) {
-                turnActivity = prefs["turn-activity"] ?? "auto"
+                turnActivity = prefs["turn-activity"] ?? "collapsed"
                 nativeTurnActivity = turnActivity
             } else {
                 turnActivity = nativeTurnActivity

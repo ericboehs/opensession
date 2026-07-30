@@ -109,7 +109,7 @@ struct ToolCallRow: View {
     let use: TranscriptEntry?
     let result: TranscriptEntry?
 
-    @AppStorage("os1.appearance.turnActivity") private var turnActivity = "auto"
+    @AppStorage("os1.appearance.turnActivity") private var turnActivity = "collapsed"
     @State private var expanded = false
 
     private var isError: Bool {
