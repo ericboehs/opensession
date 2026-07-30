@@ -126,7 +126,19 @@ struct SettingsView: View {
         NavigationLink {
             destination()
         } label: {
-            Label(title, systemImage: icon)
+            Label {
+                Text(title)
+                    .foregroundStyle(OS1VisualStyle.text)
+            } icon: {
+                Image(systemName: icon)
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(OS1VisualStyle.textDim)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        OS1VisualStyle.hover,
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    )
+            }
         }
     }
 
