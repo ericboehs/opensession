@@ -789,7 +789,7 @@ function MichaelReviewCard({
 		? [...(pr.comments || [])]
 				.reverse()
 				.find((comment) => comment.body.trim().startsWith("<!-- os-review -->"))
-				?.body
+				?.body.replace(/^<!-- os-review -->\s*/, "")
 		: undefined;
 
 	// Keep the just-started state latched until a later PR refresh observes the
