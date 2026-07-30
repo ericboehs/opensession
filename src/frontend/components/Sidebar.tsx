@@ -3518,8 +3518,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							>
 								<span className="inline-flex shrink-0 items-center text-faint">
 									<svg
-										width="17"
-										height="17"
+										width="18"
+										height="18"
 										viewBox="0 0 16 16"
 										fill="none"
 										stroke="currentColor"
