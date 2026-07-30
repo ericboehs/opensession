@@ -385,12 +385,16 @@ const server: import("bun").Server<WSClientData> = hotServe({
 			// additionally needs ?host=<hostId>. Plain run-rpc tokens are NOT
 			// network credentials: on a sandbox-less deployment the registry is
 			// empty and every upgrade here is a 403. See src/server/run-ws.ts.
+			// Execution nodes dial back here (src/server/node-ws.ts). Its own block:
+			// nesting it inside the sandbox condition meant it never ran and the
+			// path fell through to the SPA fallback, which answered 200.
+			// Tailnet-gated and token-authenticated before the upgrade.
+			if (path === "/backstage/node-ws") {
+				const rejected = handleNodeWsUpgrade(req, server, path);
+				return rejected ?? (undefined as any);
+			}
+
 			if (path.startsWith("/backstage/run-ws/") || path === "/backstage/rpc-ws") {
-				// Execution nodes dial back here (src/server/node-ws.ts). Tailnet-gated
-				// and token-authenticated before the upgrade, like the sandbox routes.
-				const nodeUpgrade = handleNodeWsUpgrade(req, server, path);
-				if (nodeUpgrade) return nodeUpgrade;
-				if (path === "/backstage/node-ws") return undefined as any;
 				return handleSandboxWsUpgrade(req, server, path);
 			}
 

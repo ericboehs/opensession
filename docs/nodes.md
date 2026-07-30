@@ -7,10 +7,11 @@ with Xcode, a Windows build needs MSVC, and neither can happen on a Linux server
 Sandboxes do not solve this — they are ephemeral Linux containers. A node is a
 persistent machine you own.
 
-> **Status.** Registration, capability detection, pairing, liveness and
-> revocation work today. **Routing sessions to a node is not implemented yet** —
-> a node currently attaches and reports itself, but the server will not dispatch
-> work to it. That is the next phase.
+> **Status.** Attaching a node and running commands on it from a session both
+> work. What does not exist yet is relocating a *whole session* to a node — the
+> agent still thinks on the server and reaches out to the node for individual
+> commands, which is the right shape for "build this over there" and the wrong
+> one for "work entirely over there".
 
 ## Not a tunnel product
 
@@ -62,6 +63,33 @@ opensession node run     # heartbeat every 60s; hold this open
 Run that under a service manager so the node survives a reboot —
 `opensession service install` does the equivalent for the server, and the same
 launchd/systemd mechanics apply.
+
+## Using one from a session
+
+Attached nodes show up as tools in interactive sessions. Ask for what you want:
+
+> Build the iOS app on the Mac and tell me if it compiles.
+
+The agent has two tools:
+
+- **`list_nodes`** — what is attached, what each can do, which are online.
+- **`run_on_node`** — run a command on one and wait for the result.
+
+A node can be named by id, by name, or by a **unique capability** — asking for
+`xcode` resolves to the Mac without the agent knowing its hostname. If a
+capability matches more than one node it says so instead of guessing.
+
+Output streams back as the command runs, so a twenty-minute build reports
+progress rather than going silent, and very long output is trimmed in the middle
+so a build log cannot swallow the agent's context.
+
+If a node is attached but offline — a laptop that went to sleep — the tool says
+exactly that rather than hanging.
+
+**These tools are interactive-only.** Automations never receive them. That is
+deliberate and it is the main safety property: a node is not sandboxed, so the
+difference between "an agent can build on the Mac" and "untrusted ticket text
+can run commands on the Mac" is precisely that gate.
 
 ## Managing them
 
