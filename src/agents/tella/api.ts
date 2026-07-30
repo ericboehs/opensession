@@ -23,6 +23,12 @@ export interface TellaVideo {
 
 /** The tella MCP server exists in config and someone has connected it. */
 export function tellaConfigured(): boolean {
+  // The integration registry marks this module `always: true`, which means it
+  // loads regardless of config and "self-gates internally" — so this function
+  // is where its enable flag has to be honored; the loader never consults it.
+  // Explicit opt-out only: an unset flag falls through to the grant check, so
+  // this can't silently disable the feed the way a truthy-check would.
+  if (process.env.ENABLE_TELLA_MODULE === "false") return false;
   return !!readMcpConfig().mcpServers.tella && hasMcpOauthGrant("tella");
 }
 

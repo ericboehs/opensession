@@ -10,6 +10,7 @@ everything else is optional and talks to the same instance.
 | Electron desktop shell | `os1-mac/` | yes |
 | Native Swift app (iOS + macOS) | `os1-ios/` | yes, with Xcode |
 | Chrome extension | `os1-chrome/` | no — load unpacked |
+| Terminal client (`os`) | `os1-tui/` | yes, one `bun build` |
 
 **All of them let you set the server address**, and the versions in this
 repository default to `http://127.0.0.1:3850` rather than anyone else's
@@ -86,11 +87,32 @@ chrome://extensions → Developer mode → Load unpacked → os1-chrome/
 Set the server in the side panel's Server field. It authenticates with a Bearer
 token and talks to the same REST surface as everything else.
 
+## Terminal client
+
+`os1-tui/` — OpenSession in a terminal. A TUI with a workspace sidebar, live
+transcripts, tabs and tmux keys, for when you are already in a terminal and do
+not want to reach for a browser.
+
+```sh
+os                          # loopback
+os --host os.company.dev    # a specific server (remembered afterwards)
+```
+
+Host resolution is `--host` → `OPENSESSION_HOST` → saved config → loopback.
+
+It is **a client and nothing else**: HTTP plus one WebSocket per watched session.
+It never spawns an agent, never touches a worktree, and imports nothing from the
+server — which is what lets it compile to a standalone binary you can drop on any
+machine that can reach your instance. `opensession tui` is an alias.
+
+Read `os1-tui/AGENTS.md` before changing it.
+
 ## Which to use
 
 Start with the web UI. Add the PWA if you want notifications on your phone. The
 Electron shell is a comfort upgrade, the Swift app is the good phone experience,
-and the Chrome extension is worth it specifically if you debug web front ends.
+the terminal client is the one to reach for if you live in tmux, and the Chrome
+extension is worth it specifically if you debug web front ends.
 
 None of them add capability the web UI lacks — they add ergonomics, native
 integration, and in the extension's case a much better way to point an agent at

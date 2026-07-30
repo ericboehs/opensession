@@ -83,8 +83,9 @@ layer, never in a prompt:
 - money-moving tools are stripped from the model's tool list entirely
 
 If a change touches any of that, say so explicitly in the PR description. If you
-find a way around it, please report it privately rather than opening a public
-issue.
+find a way around it, report it privately — see [SECURITY.md](SECURITY.md), which
+also sets out what counts as a vulnerability here and what is working as
+designed.
 
 ## Reporting bugs
 

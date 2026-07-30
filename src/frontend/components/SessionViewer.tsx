@@ -4091,8 +4091,8 @@ export function SessionViewer({
 								<UserAvatar
 									key={v.name}
 									name={v.name}
-									size={28}
-									className={`presence-avatar ${v.name === me ? "presence-me" : ""}`}
+									size={24}
+									className="presence-avatar"
 								>
 									{v.count > 1 ? (
 										<span className="presence-count">{v.count}</span>
