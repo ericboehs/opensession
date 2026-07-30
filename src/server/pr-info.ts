@@ -697,11 +697,15 @@ export async function mergePr(
   if (pr.state !== "OPEN") return { error: `PR #${pr.number} is ${pr.state.toLowerCase()}, not open` };
   if (pr.isDraft) return { error: `PR #${pr.number} is a draft — mark it ready first` };
 
-  // Stack order: a layer merges into the one below it, so taking this one
-  // while a lower layer is still open would either land the whole chain's
-  // commits at once or strand the layers underneath. GitHub's own stack merge
-  // is how you take several layers deliberately; `force` is the human's
-  // override for the cases we can't see (e.g. the layer below was superseded).
+  // Stack order: a layer merges into the one below it, so it can't land while
+  // a lower layer is still open. GitHub enforces this itself — verified live
+  // against stack #5404 on 2026-07-30, where mergePullRequest answered "must
+  // be merged sequentially using the stack merge API" — so this gate exists
+  // for the message, not the protection: it names the blocking PR instead of
+  // surfacing a raw GraphQL error. `force` skips our check only; GitHub still
+  // refuses, so there is no way to merge a stack out of order from here.
+  // Taking several layers at once needs GitHub's stack merge (`gh stack
+  // merge`), which we don't wire up yet.
   if (!opts.force) {
     const stack = await getPrStack(repo, pr.number, credential);
     const below = stack ? unmergedLayersBelow(stack) : [];

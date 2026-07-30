@@ -327,6 +327,21 @@ if ! command -v gh >/dev/null 2>&1 && [ "$NO_ENGINE" != "1" ]; then
   fi
 fi
 
+# gh-stack backs the "link into a stack" action on stacked pull requests
+# (src/server/pr-stack.ts). Reading a stack needs nothing extra — that's plain
+# GraphQL — so this is best-effort too: without the extension the action fails
+# with an install hint and every other PR surface is unaffected. Extensions are
+# per-user, so a rebuilt box silently loses it; re-running this restores it.
+if command -v gh >/dev/null 2>&1 && [ "$NO_ENGINE" != "1" ]; then
+  if gh extension list 2>/dev/null | grep -q 'gh-stack'; then
+    good "gh-stack present"
+  elif gh extension install github/gh-stack >/dev/null 2>&1; then
+    good "gh-stack installed"
+  else
+    muted "gh-stack not installed (needed only to link stacked PRs) — gh extension install github/gh-stack"
+  fi
+fi
+
 step "Command"
 mkdir -p "$BIN_DIR"
 BUN_BIN="$(command -v bun)"
