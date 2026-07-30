@@ -29,6 +29,7 @@ import { createSessionsMcpServer } from "../agents/slack/sessions-tools";
 import { createSelfImproveMcpServer } from "../agents/slack/self-improve-tools";
 import { audit } from "./audit";
 import { configuredIntegration, personaName } from "./config";
+import { shouldPersistModelSwitch } from "./run-events";
 
 const AUTOMATIONS_DIR = stateDir("automations");
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
@@ -919,6 +920,7 @@ export async function runAutomation(
     // init/done events for persistence.
     const runModel = opencodeAutomationModel(options?.modelOverride || automation.model);
     let effectiveModel = runModel;
+    let selectedModel = runModel;
     let effectiveProvider = providerFor(effectiveModel);
     const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [];
     // Slack messages this run posts (via the slack MCP, or via bash+curl
@@ -979,7 +981,9 @@ export async function runAutomation(
           ...(engineSessionId
             ? engineSessionPatch(effectiveProvider, engineSessionId)
             : {}),
-          ...(effectiveModel ? { model: effectiveModel } : {}),
+          ...(engineSessionId ? { lastEngineProvider: effectiveProvider } : {}),
+          ...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
+          ...(selectedModel ? { model: selectedModel } : {}),
           ...(modelHistory.length ? { modelHistory } : {}),
           // Code-mode runs can rename their auto-generated branch before opening
           // a PR — record the worktree's actual HEAD so PR lookups and the
@@ -1102,11 +1106,14 @@ export async function runAutomation(
         if (to) {
           effectiveModel = to;
           effectiveProvider = providerFor(to);
-          modelHistory.push({
-            model: to,
-            at: new Date().toISOString(),
-            by: `auto-switch — ${modelLabel(event.fromModel)} ${event.switchReason || "out of credits"}`,
-          });
+          if (shouldPersistModelSwitch(event)) {
+            selectedModel = to;
+            modelHistory.push({
+              model: to,
+              at: new Date().toISOString(),
+              by: `auto-switch — ${modelLabel(event.fromModel)} ${event.switchReason || "out of credits"}`,
+            });
+          }
         }
       }
       if (event.type === "done") {

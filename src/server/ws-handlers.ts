@@ -21,7 +21,7 @@ import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
 import { INIT_WIRE_CLAMP_BYTES, clampEntriesForWire, parseTranscriptAsync, parseTranscriptTail, parseTranscriptWindow } from "./jsonl-parser";
-import { accountProviderForModel, interactiveDefaultModel, interactiveFallbackModel, modelLabel, modelPreset, providerFor, resolveModel } from "./models";
+import { accountProviderForModel, interactiveDefaultModel, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
 import { applyNoteUpdate, getNoteState, isValidNoteId } from "./notes";
 import { appendOpencodeTranscript, clearTranscriptStoreDegraded, transcriptLineRunnerNotice } from "./opencode-transcript";
 import { wrapContext } from "./prompt-context";
@@ -43,6 +43,7 @@ import { resumeSessionFeed } from "./session-feed";
 import { type SeqEntry, transcriptStore } from "./transcript-store";
 import { startTranscriptWatch } from "./transcript-watch";
 import { type BackstageSessionFile, type SessionUsage } from "./types";
+import { shouldPersistModelSwitch } from "./run-events";
 import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
 import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
 import { ownedWorktree } from "./chat-workspace";
@@ -1622,6 +1623,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 					let engineSessionId = "";
 					let effectiveModel = model;
+					let selectedModel = model;
 					let effectiveProvider = providerFor(effectiveModel);
 					const modelHistory: NonNullable<
 						BackstageSessionFile["modelHistory"]
@@ -1709,7 +1711,8 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 								...(engineSessionId
 									? { lastEngineProvider: effectiveProvider }
 									: {}),
-								...(effectiveModel ? { model: effectiveModel } : {}),
+								...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
+								...(selectedModel ? { model: selectedModel } : {}),
 								...(modelHistory.length ? { modelHistory } : {}),
 								...headBranchPatch(),
 								lastActivity: new Date().toISOString(),
@@ -1849,10 +1852,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						if (event.type === "init") {
 							engineSessionId = event.sessionId || "";
 							if (event.provider) effectiveProvider = event.provider;
-							// Dial sessions keep `dial/<tier>` stored — init/done report the
-							// preset's resolved MAIN model; adopting it would disengage the
-							// dial next turn. model_switch still adopts (real fallback).
-							if (event.model && !modelPreset(model)) effectiveModel = event.model;
+							if (event.model) effectiveModel = event.model;
 							// Session was persisted/announced before setup — just record
 							// the engine id so the run is resumable while it streams.
 							touchBackstageSession(
@@ -1865,7 +1865,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 									...(engineSessionId
 										? { lastEngineProvider: effectiveProvider }
 										: {}),
-									...(effectiveModel ? { model: effectiveModel } : {}),
+									...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
 								},
 							);
 							// The transcript file didn't exist when viewers sent their
@@ -1886,22 +1886,30 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							if (to) {
 								effectiveModel = to;
 								effectiveProvider = providerFor(to);
-								modelHistory.push({
-									model: to,
-									from: event.fromModel,
-									at: new Date().toISOString(),
-									by: reason,
-								});
-								touchBackstageSession(bksId, {
-									model: to,
-									modelHistory,
-								});
-								emit({
-									type: "model_changed",
-									model: to,
-									from: event.fromModel,
-									by: reason,
-								});
+								if (shouldPersistModelSwitch(event)) {
+									selectedModel = to;
+									modelHistory.push({
+										model: to,
+										from: event.fromModel,
+										at: new Date().toISOString(),
+										by: reason,
+									});
+									touchBackstageSession(bksId, {
+										model: selectedModel,
+										modelHistory,
+									});
+									emit({
+										type: "model_changed",
+										model: to,
+										from: event.fromModel,
+										by: reason,
+									});
+								} else {
+									emit({
+										type: "notice",
+										message: `${modelLabel(event.fromModel)} ${event.switchReason || "fell back"} — using ${modelLabel(to)} for this turn only.`,
+									});
+								}
 							}
 						}
 						if (event.type === "text_chunk") {
@@ -1952,7 +1960,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						if (event.type === "done") {
 							engineSessionId = event.sessionId || engineSessionId;
 							if (event.provider) effectiveProvider = event.provider;
-							if (event.model && !modelPreset(model)) effectiveModel = event.model;
+							if (event.model) effectiveModel = event.model;
 							if (event.usageLimitExhausted)
 								runFailure =
 									event.result || "Usage limit reached on every account";
@@ -1987,7 +1995,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 								...(engineSessionId
 									? { lastEngineProvider: effectiveProvider }
 									: {}),
-								...(effectiveModel ? { model: effectiveModel } : {}),
+								...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
 								...(modelHistory.length ? { modelHistory } : {}),
 								// The opening turn may have switched branches in the
 								// worktree (same sync as runSessionPromptInner's run-end

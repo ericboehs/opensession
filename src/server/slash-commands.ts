@@ -18,7 +18,7 @@ import {
 	providerFor,
 	resolveModel,
 } from "./models";
-import { engineFamily } from "./agent-runner";
+import { engineFamily, isAgentSessionBusy } from "./agent-runner";
 import { userMatchesAny } from "./shared/user-mappings";
 import { syncAgentSessionEngine } from "./agent-session-sync";
 import { touchBackstageSession } from "./session-cache";
@@ -86,6 +86,15 @@ export function handleSlashCommand(
 		].join("\n");
 	}
 	if (text.startsWith("/model ")) {
+		if (
+			isAgentSessionBusy(
+				session.claudeSessionId,
+				session.codexThreadId,
+				session.id,
+			)
+		) {
+			return "Can't change model while this session is running. Stop the run or wait for it to finish, then try again.";
+		}
 		const input = text.slice("/model ".length).trim();
 		const resolved = resolveModel(input);
 		if (!resolved) {

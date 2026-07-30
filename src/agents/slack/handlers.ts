@@ -66,8 +66,8 @@ import { tryGetSessionControl } from "../../server/session-control";
 import { pinForUser } from "../../server/pins";
 import { getUiPrefs } from "../../server/ui-prefs";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
-import { runAgent, cancelAgentRun } from "../../server/agent-runner";
-import type { ImageInput } from "../../server/run-events";
+import { runAgent, cancelAgentRun, isAgentSessionBusy } from "../../server/agent-runner";
+import { shouldPersistModelSwitch, type ImageInput } from "../../server/run-events";
 import {
   registerSessionMcpServers,
   unregisterSessionMcpServers,
@@ -555,6 +555,15 @@ export async function handleModelCommand(
     await sendSlackMessage(
       channel,
       `No session in this thread yet — send the task first, then \`/model ${resolved.id}\`. (New sessions start on \`${getDefaultModel()}\`.)`,
+      threadTs
+    );
+    return true;
+  }
+
+  if (isAgentSessionBusy(session.claudeSessionId, `slack-${sessionKey}`)) {
+    await sendSlackMessage(
+      channel,
+      "Can't change model while this session is running. Stop the run or wait for it to finish, then try again.",
       threadTs
     );
     return true;
@@ -1052,9 +1061,16 @@ export async function processMessage(
       }
 
       if (event.type === "model_switch") {
+        const durable = shouldPersistModelSwitch(event);
+        if (durable && event.toModel) {
+          session.model = event.toModel;
+          await persistSession(session);
+        }
         await sendSlackMessage(
           channel,
-          `:warning: \`${event.fromModel}\` is out of usage on all accounts — continuing on \`${event.toModel}\`.`,
+          durable
+            ? `:warning: \`${event.fromModel}\` is out of usage on all accounts — continuing on \`${event.toModel}\`.`
+            : `:warning: \`${event.fromModel}\` ${event.switchReason || "fell back"} — using \`${event.toModel}\` for this turn only.`,
           threadTs
         ).catch(() => {});
       }

@@ -123,6 +123,8 @@ export function makeFakeEngine(turns: FakeTurn[]): FakeEngine {
         cwd: opts.cwd,
         kind: opts.journal?.kind,
         model,
+        selectedModel: opts.selectedModel,
+        transientFallback: opts.transientFallback,
         startedAt: new Date().toISOString(),
       });
     }

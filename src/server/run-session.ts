@@ -41,7 +41,6 @@ import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { parseTranscriptAsync } from "./jsonl-parser";
 import {
 	contextWindowFor,
-	modelPreset,
 	interactiveFallbackModel,
 	modelLabel,
 	providerFor,
@@ -91,7 +90,7 @@ import { ensureAskCheckout, ensureScratchDir, getRepo, isSharedCheckoutDir, repo
 import { createGoalSelfMcpServer } from "../agents/slack/goal-tools";
 import { sendSlackMessage } from "../agents/slack/slack-api";
 import type { RunHostSpec } from "../runner-host/protocol";
-import type { ImageInput, TurnUsage } from "./run-events";
+import { shouldPersistModelSwitch, type ImageInput, type TurnUsage } from "./run-events";
 import type {
 	SessionUsage,
 	TranscriptEntry,
@@ -536,18 +535,6 @@ const recoveredSlackScanners = new Map<
 	ReturnType<typeof createSlackPostScanner>
 >();
 
-/**
- * A preset session (dial/orchestrator) keeps its preset id as the stored
- * model: the runner's init/done events report the preset's resolved MAIN
- * model, and persisting that would silently disengage the preset (oracle /
- * workers + effort) after the first turn. Genuine fallback switches
- * (model_switch) still overwrite — a preset that fell off its main model is
- * disengaged by design.
- */
-function keepsPresetModel(session: { model?: string }): boolean {
-	return !!modelPreset(session.model);
-}
-
 export function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent): void {
 	const session = findSession(bksSessionId);
 	if (!session) return;
@@ -558,8 +545,12 @@ export function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent
 		// had fallback-minted a new engine session must not leave the session
 		// file pointing at the dead one.
 		if (event.type === "model_switch" && event.toModel) {
-			if (syncAgentSessionEngine(session, { model: event.toModel }))
+			if (
+				shouldPersistModelSwitch(event) &&
+				syncAgentSessionEngine(session, { model: event.toModel })
+			) {
 				invalidateSessionsCache();
+			}
 		} else if (
 			(event.type === "init" || event.type === "done") &&
 			event.sessionId
@@ -567,7 +558,6 @@ export function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent
 			if (
 				syncAgentSessionEngine(session, {
 					engineSessionId: event.sessionId,
-					model: keepsPresetModel(session) ? undefined : event.model || undefined,
 				})
 			)
 				invalidateSessionsCache();
@@ -615,6 +605,8 @@ export function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent
 	if (event.type === "model_switch") {
 		const to = event.toModel || "";
 		if (!to) return;
+		if (!shouldPersistModelSwitch(event)) return;
+		if (session.model === to) return;
 		const reason = `auto-switch — ${modelLabel(event.fromModel)} ${event.switchReason || "out of credits"}`;
 		touchBackstageSession(bksSessionId, {
 			model: to,
@@ -648,7 +640,10 @@ export function recordRecoveredRunEvent(bksSessionId: string, event: StreamEvent
 	const provider = event.provider || providerFor(model);
 	touchBackstageSession(bksSessionId, {
 		...(engineSessionId ? engineSessionPatch(provider, engineSessionId) : {}),
-		...(model && !keepsPresetModel(session) ? { model } : {}),
+		...(engineSessionId && event.provider
+			? { lastEngineProvider: event.provider }
+			: {}),
+		...(event.model ? { lastEngineModel: event.model } : {}),
 	});
 	if (engineSessionId && session.worktreeDir) {
 		attachSessionWatchersToEngineTranscript(
@@ -1291,9 +1286,13 @@ async function runSessionPromptInner(
 	// The engine session id depends on the session's model: codex models resume
 	// the codex thread, claude models the claude session. A missing engine id
 	// just means "first run on this provider" — a fresh thread/session starts.
-	const provider = providerFor(session.model);
+	// Native picker ids still dispatch through OpenCode. Once a session has run,
+	// resume the engine that actually owns its session id rather than inferring a
+	// legacy provider from the unchanged user selection.
+	const provider = session.lastEngineProvider || providerFor(session.model);
 	let effectiveProvider = provider;
 	let effectiveModel = session.model;
+	const modelHistory = [...(session.modelHistory || [])];
 	// Cumulative token/cost accounting — seeded from the session's stored total,
 	// folded per run, persisted + broadcast live (see the `usage_snapshot` and
 	// `done` cases). `usageBase` is the total as of the last *completed* run:
@@ -1770,7 +1769,6 @@ async function runSessionPromptInner(
 							lastEngineProvider: effectiveProvider,
 							...(effectiveModel
 								? {
-										...(keepsPresetModel(session) ? {} : { model: effectiveModel }),
 										lastEngineModel: effectiveModel,
 									}
 								: {}),
@@ -1785,7 +1783,6 @@ async function runSessionPromptInner(
 						// 2026-07-16).
 						syncAgentSessionEngine(session, {
 							engineSessionId: finalSessionId,
-							model: keepsPresetModel(session) ? undefined : effectiveModel || undefined,
 						})
 					) {
 						invalidateSessionsCache();
@@ -1807,34 +1804,44 @@ async function runSessionPromptInner(
 				});
 				break;
 			case "model_switch": {
-				// The primary model ran out of credits pool-wide and the runner
-				// switched this session to a fallback (auto-switch is on). Record it
-				// the same way a manual /model switch is recorded — a persisted
-				// modelHistory entry (durable inline divider on reload) plus a live
-				// model_changed broadcast (pill + divider now) — and move the session
-				// onto the fallback so later prompts don't re-hit the exhausted model.
+				// Every fallback changes the model driving this turn. Only a usage
+				// fallback changes the user's selection; transient infra recovery is
+				// intentionally scoped to this turn.
 				const to = event.toModel || "";
 				const reason = `auto-switch — ${modelLabel(event.fromModel)} ${event.switchReason || "out of credits"}`;
 				if (to) {
 					effectiveModel = to;
 					effectiveProvider = providerFor(to);
 				}
-				if (to && session.source === "backstage") {
+				const persistSwitch = to && shouldPersistModelSwitch(event);
+				if (to && !persistSwitch) {
+					broadcastToSession(sessionId, {
+						type: "notice",
+						message: `${modelLabel(event.fromModel)} ${event.switchReason || "fell back"} — using ${modelLabel(to)} for this turn only.`,
+					});
+				}
+				if (persistSwitch && session.source === "backstage") {
+					modelHistory.push({
+						model: to,
+						from: event.fromModel,
+						at: new Date().toISOString(),
+						by: reason,
+					});
 					touchBackstageSession(session.id, {
 						model: to,
-						modelHistory: [
-							...(session.modelHistory || []),
-							{ model: to, from: event.fromModel, at: new Date().toISOString(), by: reason },
-						],
+						modelHistory,
 					});
 					invalidateSessionsCache();
-				} else if (to && syncAgentSessionEngine(session, { model: to })) {
+				} else if (
+					persistSwitch &&
+					syncAgentSessionEngine(session, { model: to })
+				) {
 					// Keep the slack/linear store's model in step so the next turn
 					// (from the loop or the UI) resumes on the fallback, not the
 					// exhausted model. The new engine id follows via the init event.
 					invalidateSessionsCache();
 				}
-				if (to)
+				if (persistSwitch)
 					broadcastToSession(sessionId, {
 						type: "model_changed",
 						sessionId,
@@ -2008,12 +2015,7 @@ async function runSessionPromptInner(
 			{
 				...engineSessionPatch(effectiveProvider, finalSessionId),
 				lastEngineProvider: effectiveProvider,
-				...(effectiveModel
-					? {
-							...(keepsPresetModel(session) ? {} : { model: effectiveModel }),
-							lastEngineModel: effectiveModel,
-						}
-					: {}),
+				...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
 				...(latestUsage ? { usage: latestUsage } : {}),
 				...(headBranch && headBranch !== session.branch
 					? { branch: headBranch }
@@ -2023,7 +2025,6 @@ async function runSessionPromptInner(
 	} else if (finalSessionId) {
 		syncAgentSessionEngine(session, {
 			engineSessionId: finalSessionId,
-			model: keepsPresetModel(session) ? undefined : effectiveModel || undefined,
 		});
 	}
 

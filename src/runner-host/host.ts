@@ -39,6 +39,7 @@ process.env.BACKSTAGE_RUN_JOURNAL = process.env.OPENSESSION_RUN_JOURNAL;
 
 const { runAgent, cancelAgentRun, steerAgentRun, interruptAndSteerAgentRun } =
   await import("../server/agent-runner");
+const { shouldPersistModelSwitch } = await import("../server/run-events");
 const { readFileSync, writeFileSync, existsSync, unlinkSync } = await import("fs");
 const { writeJsonAtomic } = await import("../server/shared/atomic-write");
 const {
@@ -67,6 +68,9 @@ const meta: RunHostMeta = {
   pid: process.pid,
   bksSessionId: spec.bksSessionId,
   startedAt: new Date().toISOString(),
+  selectedModel: spec.selectedModel ?? spec.model,
+  effectiveModel: spec.model,
+  transientFallback: spec.transientFallback,
 };
 const saveMeta = () => writeJsonAtomic(metaPath, meta);
 saveMeta();
@@ -148,6 +152,9 @@ function sendHello(): void {
       askId,
       input: a.input,
     })),
+    selectedModel: meta.selectedModel,
+    effectiveModel: meta.effectiveModel,
+    transientFallback: meta.transientFallback,
     done: ended ? terminal : undefined,
   });
 }
@@ -409,6 +416,8 @@ try {
     mode: spec.mode,
     mcpGrantUser: spec.mcpGrantUser,
     model: spec.model,
+    selectedModel: spec.selectedModel,
+    transientFallback: spec.transientFallback,
     images: spec.images,
     forkSession: spec.forkSession,
     resumeSessionAt: spec.resumeSessionAt,
@@ -431,6 +440,14 @@ try {
   })) {
     if (event.type === "init" && event.sessionId) {
       meta.engineSessionId = event.sessionId;
+      saveMeta();
+    }
+    if (event.type === "model_switch") {
+      meta.effectiveModel = event.toModel || meta.effectiveModel;
+      meta.transientFallback = event.temporaryFallback === true;
+      if (event.toModel && shouldPersistModelSwitch(event)) {
+        meta.selectedModel = event.toModel;
+      }
       saveMeta();
     }
     if (event.type === "done" || event.type === "error") terminal = event;

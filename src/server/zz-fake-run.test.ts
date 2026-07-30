@@ -150,6 +150,87 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		expect(listed?.lastRunError?.message).toContain("boom");
 	});
 
+	test("transient fallback does not replace the selected Dial preset", async () => {
+		if (!redirected) return;
+		const sid = "bks-zz-transient-fallback";
+		writeSessionFile(sid, { model: "dial/medium" });
+		sessionCache.invalidateSessionsCache();
+		const fake = fakeEngineMod.makeFakeEngine([
+			{ kind: "error", content: "Our servers are currently overloaded" },
+			{ kind: "clean", engineSessionId: "ses_zz_terra", text: ["recovered"] },
+		]);
+		agentRunner.__setEngineForTest(fake.engine);
+
+		await runSession.runSessionPromptAndDrain(sid, "keep going", "Test");
+
+		const data = sessionJson(sid);
+		expect(fake.calls.map((call) => call.model)).toEqual([
+			"opencode/openai/gpt-5.6-sol",
+			"opencode/openai/gpt-5.6-terra",
+		]);
+		expect(data.model).toBe("dial/medium");
+		expect(data.lastEngineModel).toBe("opencode/openai/gpt-5.6-terra");
+		expect(data.modelHistory).toBeUndefined();
+	});
+
+	test("transient fallback does not replace a directly selected model", async () => {
+		if (!redirected) return;
+		const sid = "bks-zz-transient-direct";
+		writeSessionFile(sid, { model: "gpt-5.6-sol" });
+		sessionCache.invalidateSessionsCache();
+		const fake = fakeEngineMod.makeFakeEngine([
+			{ kind: "error", content: "Our servers are currently overloaded" },
+			{ kind: "clean", engineSessionId: "ses_zz_terra_direct", text: ["recovered"] },
+		]);
+		agentRunner.__setEngineForTest(fake.engine);
+
+		await runSession.runSessionPromptAndDrain(sid, "keep going", "Test");
+
+		const data = sessionJson(sid);
+		expect(data.model).toBe("gpt-5.6-sol");
+		expect(data.lastEngineModel).toBe("opencode/openai/gpt-5.6-terra");
+		expect(data.modelHistory).toBeUndefined();
+	});
+
+	test("usage fallback still replaces an unavailable selected model", async () => {
+		if (!redirected) return;
+		const sid = "bks-zz-usage-fallback";
+		writeSessionFile(sid, { model: "dial/medium" });
+		sessionCache.invalidateSessionsCache();
+		const fake = fakeEngineMod.makeFakeEngine([
+			{ kind: "usage_exhausted" },
+			{ kind: "clean", engineSessionId: "ses_zz_terra_usage", text: ["recovered"] },
+		]);
+		agentRunner.__setEngineForTest(fake.engine);
+
+		await runSession.runSessionPromptAndDrain(sid, "keep going", "Test");
+
+		const data = sessionJson(sid);
+		expect(data.model).toBe("opencode/openai/gpt-5.6-terra");
+		expect(data.modelHistory).toHaveLength(1);
+		expect(data.modelHistory[0].by).toContain("out of credits");
+	});
+
+	test("usage exhaustion on a temporary fallback does not replace the viable selection", async () => {
+		if (!redirected) return;
+		const sid = "bks-zz-transient-then-usage";
+		writeSessionFile(sid, { model: "dial/medium" });
+		sessionCache.invalidateSessionsCache();
+		const fake = fakeEngineMod.makeFakeEngine([
+			{ kind: "error", content: "Our servers are currently overloaded" },
+			{ kind: "usage_exhausted" },
+			{ kind: "clean", engineSessionId: "ses_zz_luna", text: ["recovered"] },
+		]);
+		agentRunner.__setEngineForTest(fake.engine);
+
+		await runSession.runSessionPromptAndDrain(sid, "keep going", "Test");
+
+		const data = sessionJson(sid);
+		expect(data.model).toBe("dial/medium");
+		expect(data.lastEngineModel).toBe("opencode/openai/gpt-5.6-luna");
+		expect(data.modelHistory).toBeUndefined();
+	});
+
 	test("prompt queued mid-turn drains as the next turn on the same engine session", async () => {
 		if (!redirected) return;
 		const sid = "bks-zz-queue";

@@ -32,7 +32,7 @@ import {
   type StreamEvent,
 } from "./agent-runner";
 import type { ActiveRunRecord } from "./run-journal";
-import type { ImageInput } from "./run-events";
+import { shouldPersistModelSwitch, type ImageInput } from "./run-events";
 import type { GitIdentity } from "./shared/user-mappings";
 import { providerFor } from "./models";
 import { OPENSESSION_CHATS_DIR } from "./paths";
@@ -432,6 +432,10 @@ export class HostHandle {
   private up = false;
   private endedClean = false;
   private sawTerminal = false;
+  private connectedBefore = false;
+  private reportedSelectedModel?: string;
+  private effectiveModel?: string;
+  private transientFallback = false;
   private handlingAsks = new Set<string>();
   private respawns = 0;
   private readonly ctl: HostRunControl;
@@ -446,6 +450,9 @@ export class HostHandle {
     this.connector =
       launcher.connector?.(dir, spec) ??
       unixSocketConnector(`${dir}/${HOST_SOCK_NAME}`);
+    this.reportedSelectedModel = spec.selectedModel ?? spec.model;
+    this.effectiveModel = spec.model;
+    this.transientFallback = spec.transientFallback === true;
     this.ctl = {
       hostId: spec.hostId,
       bksSessionId: spec.bksSessionId,
@@ -525,6 +532,32 @@ export class HostHandle {
     switch (msg.t) {
       case "hello": {
         if (msg.engineSessionId) this.noteEngineId(msg.engineSessionId);
+        if (msg.effectiveModel) {
+          this.effectiveModel = msg.effectiveModel;
+          this.ctl.steerable = providerFor(msg.effectiveModel) !== "codex";
+        }
+        if (msg.transientFallback !== undefined) {
+          this.transientFallback = msg.transientFallback;
+        }
+        // Unix sockets are live-only, so every reconnect must reconcile from
+        // the host snapshot. WS reconnects replay sequenced event frames; only
+        // a fresh handle after a backstage restart needs snapshot catch-up.
+        if (
+          (!this.spec.wsToken || !this.connectedBefore) &&
+          msg.selectedModel &&
+          msg.selectedModel !== this.reportedSelectedModel
+        ) {
+          const fromModel = this.reportedSelectedModel;
+          this.reportedSelectedModel = msg.selectedModel;
+          this.queue.push({
+            type: "model_switch",
+            fromModel,
+            toModel: msg.selectedModel,
+            switchReason: "out of credits",
+            temporaryFallback: false,
+          });
+        }
+        this.connectedBefore = true;
         for (const ask of msg.pendingAsks || []) this.handleAsk(ask.askId, ask.input);
         if (msg.state === "ended") {
           if (msg.done && !this.sawTerminal) {
@@ -538,6 +571,12 @@ export class HostHandle {
       case "event": {
         const ev = msg.event;
         if (ev.type === "init" && ev.sessionId) this.noteEngineId(ev.sessionId);
+        if (ev.type === "model_switch" && ev.toModel) {
+          this.effectiveModel = ev.toModel;
+          this.transientFallback = ev.temporaryFallback === true;
+          this.ctl.steerable = providerFor(ev.toModel) !== "codex";
+          if (shouldPersistModelSwitch(ev)) this.reportedSelectedModel = ev.toModel;
+        }
         if (ev.type === "done" || ev.type === "error") this.sawTerminal = true;
         this.queue.push(ev);
         break;
@@ -658,7 +697,7 @@ export class HostHandle {
         `[host-client] run host ${this.spec.hostId} died mid-run — respawning to resume ${this.spec.bksSessionId}`
       );
       try {
-        await this.respawn(engineId);
+        await this.respawn(engineId, meta);
         return;
       } catch (e) {
         console.error("[host-client] respawn failed:", e);
@@ -671,7 +710,7 @@ export class HostHandle {
     this.finish();
   }
 
-  private async respawn(engineId: string): Promise<void> {
+  private async respawn(engineId: string, meta?: RunHostMeta | null): Promise<void> {
     const oldDir = this.dir;
     const hostId = `rh-${Bun.randomUUIDv7()}`;
     const dir = this.launcher.newRunDir(hostId);
@@ -680,6 +719,13 @@ export class HostHandle {
       hostId,
       prompt: resumeContinuationPrompt(this.spec.prompt),
       engineSessionId: engineId,
+      model: meta?.effectiveModel ?? this.effectiveModel ?? this.spec.model,
+      selectedModel:
+        meta?.selectedModel ??
+        this.reportedSelectedModel ??
+        this.spec.selectedModel ??
+        this.spec.model,
+      transientFallback: meta?.transientFallback ?? this.transientFallback,
       images: undefined,
       forkSession: undefined,
       resumeSessionAt: undefined,
@@ -694,6 +740,9 @@ export class HostHandle {
     await this.launcher.launch(hostId, dir);
     this.dir = dir;
     this.spec = spec;
+    this.connectedBefore = false;
+    this.effectiveModel = spec.model;
+    this.transientFallback = spec.transientFallback === true;
     this.ctl.hostId = hostId;
     // The old host id's transport registration (WS token/conn) is dead with
     // the old host — swap in a connector for the new id (same wsToken; the

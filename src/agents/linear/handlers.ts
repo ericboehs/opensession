@@ -466,7 +466,10 @@ Help with whatever they're asking. You have a worktree ready at ${session.worktr
               s.issueId,
               s.issueUrl,
               s.participants,
-              s.lastActiveUser
+              s.lastActiveUser,
+              undefined,
+              undefined,
+              s.model
             );
 
             if (result) {

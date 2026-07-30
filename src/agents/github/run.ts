@@ -18,6 +18,7 @@ import { repoForPath } from "../../server/worktree";
 import { prKey } from "./constants";
 import type { BackstageSessionFile } from "../../server/types";
 import { configuredServer } from "../../server/config";
+import { shouldPersistModelSwitch } from "../../server/run-events";
 
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
 
@@ -158,6 +159,7 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
     : "";
 
   let effectiveModel = opts.model || existingSessionFile?.model;
+  let selectedModel = effectiveModel;
   let effectiveProvider = providerFor(effectiveModel);
   const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [
     ...(existingSessionFile?.modelHistory || []),
@@ -181,7 +183,9 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
         ...(engineSessionId
           ? engineSessionPatch(effectiveProvider, engineSessionId)
           : {}),
-        ...(effectiveModel ? { model: effectiveModel } : {}),
+        ...(engineSessionId ? { lastEngineProvider: effectiveProvider } : {}),
+        ...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
+        ...(selectedModel ? { model: selectedModel } : {}),
         ...(modelHistory.length ? { modelHistory } : {}),
         branch: opts.branch,
         worktreeDir: opts.cwd,
@@ -216,7 +220,10 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
       if (event.type === "init") {
         engineSessionId = event.sessionId || engineSessionId;
         if (event.provider) effectiveProvider = event.provider;
-        if (event.model) effectiveModel = event.model;
+        if (event.model) {
+          effectiveModel = event.model;
+          if (!selectedModel) selectedModel = event.model;
+        }
         persist(engineSessionId);
         opts.onSessionCreated?.(bksId);
       } else if (event.type === "text_chunk") {
@@ -226,11 +233,14 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
         if (to) {
           effectiveModel = to;
           effectiveProvider = providerFor(to);
-          modelHistory.push({
-            model: to,
-            at: new Date().toISOString(),
-            by: `auto-switch — ${modelLabel(event.fromModel)} out of credits`,
-          });
+          if (shouldPersistModelSwitch(event)) {
+            selectedModel = to;
+            modelHistory.push({
+              model: to,
+              at: new Date().toISOString(),
+              by: `auto-switch — ${modelLabel(event.fromModel)} ${event.switchReason || "out of credits"}`,
+            });
+          }
         }
       } else if (event.type === "done") {
         engineSessionId = event.sessionId || engineSessionId;

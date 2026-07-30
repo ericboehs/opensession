@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { isLikelyPromptCacheMiss, type TurnUsage } from "./run-events";
+import {
+  isLikelyPromptCacheMiss,
+  shouldPersistModelSwitch,
+  type TurnUsage,
+} from "./run-events";
 
 const usage = (contextTokens: number, cacheReadTokens = 0): TurnUsage => ({
   inputTokens: contextTokens - cacheReadTokens,
@@ -24,5 +28,35 @@ describe("isLikelyPromptCacheMiss", () => {
   test("accepts either a substantial absolute or proportional cache read", () => {
     expect(isLikelyPromptCacheMiss(usage(20_000, 1_024), 2, "anthropic")).toBe(false);
     expect(isLikelyPromptCacheMiss(usage(10_000, 500), 2, "anthropic")).toBe(false);
+  });
+});
+
+describe("shouldPersistModelSwitch", () => {
+  test("keeps infrastructure fallbacks scoped to the current turn", () => {
+    expect(
+      shouldPersistModelSwitch({
+        type: "model_switch",
+        switchReason: "hit a transient engine error",
+        temporaryFallback: true,
+      }),
+    ).toBe(false);
+  });
+
+  test("persists usage fallbacks and legacy model-switch events", () => {
+    expect(
+      shouldPersistModelSwitch({
+        type: "model_switch",
+        switchReason: "out of credits",
+      }),
+    ).toBe(true);
+    expect(shouldPersistModelSwitch({ type: "model_switch" })).toBe(true);
+    expect(
+      shouldPersistModelSwitch({
+        type: "model_switch",
+        switchReason: "out of credits",
+        temporaryFallback: true,
+      }),
+    ).toBe(false);
+    expect(shouldPersistModelSwitch({ type: "done" })).toBe(false);
   });
 });

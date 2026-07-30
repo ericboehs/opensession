@@ -3046,6 +3046,8 @@ async function* runOpencodeAttempt(
       confirmTools,
       aws: !!opts.aws,
       model,
+      selectedModel: opts.selectedModel,
+      transientFallback: opts.transientFallback,
       effort: opts.effort,
       fastMode: opts.fastMode,
       fallbackModel: opts.fallbackModel,
@@ -3980,6 +3982,8 @@ async function* runOpencodeAttempt(
         confirmTools,
         aws: !!opts.aws,
         model,
+        selectedModel: opts.selectedModel,
+        transientFallback: opts.transientFallback,
         effort,
         fastMode: opts.fastMode,
         fallbackModel: opts.fallbackModel,
@@ -4832,6 +4836,7 @@ async function* runOpencodeAttempt(
       }
       turnEvent({ direction: "out", kind: "error", error: runFailure });
       bridgeRunEnd("error", runFailure);
+      reachedTerminal = true;
       yield {
         type: "error",
         content: runFailure,

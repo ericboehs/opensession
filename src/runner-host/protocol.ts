@@ -40,6 +40,8 @@ export interface RunHostSpec {
   /** MCP OAuth identity: the session creator (see agent-runner RunAgentOpts). */
   mcpGrantUser?: string;
   model?: string;
+  selectedModel?: string;
+  transientFallback?: boolean;
   images?: ImageInput[];
   forkSession?: boolean;
   resumeSessionAt?: string;
@@ -90,6 +92,9 @@ export interface RunHostMeta {
   bksSessionId: string;
   startedAt: string;
   engineSessionId?: string;
+  selectedModel?: string;
+  effectiveModel?: string;
+  transientFallback?: boolean;
   /** Terminal done/error StreamEvent once the run generator finished. */
   done?: StreamEvent;
   endedAt?: string;
@@ -122,6 +127,9 @@ type HostToClientPayload =
       /** "ended" = run finished while nobody was attached; `done` has the terminal event. */
       state: "running" | "ended";
       pendingAsks: PendingAskView[];
+      selectedModel?: string;
+      effectiveModel?: string;
+      transientFallback?: boolean;
       done?: StreamEvent;
     }
   | { t: "event"; event: StreamEvent }

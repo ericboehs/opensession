@@ -55,7 +55,7 @@ import { dirname } from "path";
 import { OPENSESSION_CHATS_DIR } from "../../paths";
 import { envAlias, stateDir } from "../../rename-compat";
 import { journalSet, journalClear, type ActiveRunRecord } from "../../run-journal";
-import type { StreamEvent } from "../../run-events";
+import { shouldPersistModelSwitch, type StreamEvent } from "../../run-events";
 import { RESUME_CONTINUATION_PROMPT } from "../../agent-runner";
 import { accountsForRemoteUpload } from "../../claude-accounts";
 import { audit } from "../../audit";
@@ -981,6 +981,8 @@ function recordForSpec(
     confirmTools: spec.confirmTools,
     aws: spec.aws,
     model: spec.model,
+    selectedModel: spec.selectedModel ?? spec.model,
+    transientFallback: spec.transientFallback,
     effort: spec.effort,
     fastMode: spec.fastMode,
     accountId: spec.accountId,
@@ -1108,6 +1110,12 @@ async function* withRunJournal(
     for await (const ev of events) {
       if (ev.type === "init" && ev.sessionId && ev.sessionId !== record.claudeSessionId) {
         record.claudeSessionId = ev.sessionId;
+        journalSet(record);
+      }
+      if (ev.type === "model_switch" && ev.toModel) {
+        record.model = ev.toModel;
+        record.transientFallback = ev.temporaryFallback === true;
+        if (shouldPersistModelSwitch(ev)) record.selectedModel = ev.toModel;
         journalSet(record);
       }
       yield ev;
@@ -1269,15 +1277,28 @@ export async function resumeRemoteSandboxRun(
     // Ended while we were down? meta.json lives in-sandbox only.
     const meta = await driver.exec(`cat ${shellQuoteWord(`${oldDir}/meta.json`)} 2>/dev/null`);
     let done: StreamEvent | undefined;
+    let selectedModel: string | undefined;
     try {
-      done = meta.exitCode === 0 ? JSON.parse(meta.stdout)?.done : undefined;
+      const parsed = meta.exitCode === 0 ? JSON.parse(meta.stdout) : undefined;
+      done = parsed?.done;
+      selectedModel = parsed?.selectedModel;
     } catch {}
     if (done) {
       try {
         rmSync(oldDir, { recursive: true, force: true });
       } catch {}
       const terminal = done;
+      const initialModel = oldSpec.selectedModel ?? oldSpec.model;
       return (async function* () {
+        if (selectedModel && selectedModel !== initialModel) {
+          yield {
+            type: "model_switch",
+            fromModel: initialModel,
+            toModel: selectedModel,
+            switchReason: "out of credits",
+            temporaryFallback: false,
+          } satisfies StreamEvent;
+        }
         yield terminal;
       })();
     }
@@ -1317,6 +1338,8 @@ export async function resumeRemoteSandboxRun(
     cwd: run.cwd,
     mode: run.mode,
     model: run.model,
+    selectedModel: run.selectedModel ?? run.model,
+    transientFallback: run.transientFallback,
     mcpServers: run.mcpServers,
     proxyMcpServers: oldSpec?.proxyMcpServers,
     rpcToken,

@@ -56,6 +56,8 @@ export interface StreamEvent {
    *  failure. Consumers building modelHistory labels should use this instead
    *  of assuming out-of-credits (the 2026-07-17 outage was mislabeled). */
   switchReason?: "out of credits" | "hit a transient engine error";
+  /** The selected model is still viable; this fallback only rescues this turn. */
+  temporaryFallback?: boolean;
   toolName?: string;
   toolInput?: unknown;
   toolUseId?: string;
@@ -95,6 +97,21 @@ export interface StreamEvent {
    * account left to rotate to — the dispatcher's cue to try a fallback model.
    */
   usageLimitExhausted?: boolean;
+}
+
+/**
+ * Usage exhaustion of the selected model changes the session selection so the
+ * next turn does not immediately hit the same dry pool. A temporary fallback
+ * must not rewrite what the user selected, even if a later rung also exhausts.
+ */
+export function shouldPersistModelSwitch(
+  event: Pick<StreamEvent, "type" | "switchReason" | "temporaryFallback">,
+): boolean {
+  return (
+    event.type === "model_switch" &&
+    event.temporaryFallback !== true &&
+    (event.switchReason === undefined || event.switchReason === "out of credits")
+  );
 }
 
 /** A pasted/dropped image, decoded to raw base64 (no `data:` prefix). */

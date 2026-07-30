@@ -61,6 +61,10 @@ export interface RunAgentOpts {
   mcpGrantUser?: string;
   /** Model id; decides the backend. Omitted = default Claude model. */
   model?: string;
+  /** User-selected model retained while a transient fallback drives this turn. */
+  selectedModel?: string;
+  /** Internal recovery marker: the effective model is only a per-turn fallback. */
+  transientFallback?: boolean;
   /** OpenCode reasoning variant for this run; unset = the model default. */
   effort?: string;
   /** Use OpenAI's priority service tier when this is a ChatGPT OAuth Codex run. */
@@ -204,7 +208,10 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
     return;
   }
 
-  let currentOpts = opts;
+  let currentOpts = {
+    ...opts,
+    selectedModel: opts.selectedModel ?? opts.model,
+  };
   let currentModel = primaryModel;
   const exhaustedModels = new Set<string>();
   let consecutiveTransient = 0;
@@ -331,14 +338,15 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
     console.warn(
       `[runner] ${currentModel} ${reason}; falling back to ${hop.id} (${hop.mode})`
     );
-    // Structured cue: interactive sessions turn this into a durable model-switch
-    // divider + model pill update (backstage.ts run loop). Other consumers ignore
-    // it and rely on the human-readable text line below.
+    const transientFallback = !!currentOpts.transientFallback || failure.transient;
+    // Structured cue: usage exhaustion becomes a durable selection change;
+    // transient recovery is explicitly marked as current-turn-only.
     yield {
       type: "model_switch",
       fromModel: currentModel,
       toModel: hop.id,
       switchReason: failure.transient ? "hit a transient engine error" : "out of credits",
+      temporaryFallback: transientFallback,
     };
 
     let prompt = currentOpts.prompt;
@@ -377,6 +385,8 @@ export async function* runAgent(opts: RunAgentOpts): AsyncGenerator<StreamEvent>
     currentOpts = {
       ...currentOpts,
       prompt,
+      selectedModel: transientFallback ? currentOpts.selectedModel : hop.id,
+      transientFallback,
       // Account ids are provider-local. A fallback to another family must not
       // reinterpret the source provider's pin (including a strict cost cap).
       ...(crossProvider ? { accountId: undefined, accountStrict: undefined } : {}),
@@ -697,6 +707,8 @@ export function resumeInterruptedRuns(
             cwd: run.cwd,
             mode: run.mode,
             model: run.model,
+            selectedModel: run.selectedModel,
+            transientFallback: run.transientFallback,
             effort: run.effort,
             fastMode: run.fastMode,
             mcpServers: run.mcpServers,
@@ -796,6 +808,8 @@ export function resumeInterruptedRuns(
           cwd: run.cwd,
           mode: run.mode,
           model: run.model,
+          selectedModel: run.selectedModel,
+          transientFallback: run.transientFallback,
           effort: run.effort,
           fastMode: run.fastMode,
           mcpServers: run.mcpServers,

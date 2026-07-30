@@ -24,6 +24,7 @@ import { createWorktree, getRepo, reviveWorktree, worktreeHeadBranch } from "./w
 import { updateSessionFile } from "./session-cache";
 import { attachSessionWatchersToEngineTranscript } from "./run-session";
 import type { BackstageSessionFile } from "./types";
+import { shouldPersistModelSwitch } from "./run-events";
 
 const g = globalThis as any;
 
@@ -126,6 +127,7 @@ export async function runGoal(goal: Goal): Promise<void> {
 
 		const createdBy = `${goal.name} (goal)`;
 		let effectiveModel = goal.model;
+		let selectedModel = goal.model;
 		let effectiveProvider = providerFor(effectiveModel);
 		// Field-scoped write: creation fields are create-if-absent defaults (the
 		// first wake creates the file, later wakes keep it); each wake owns the
@@ -148,7 +150,8 @@ export async function runGoal(goal: Goal): Promise<void> {
 					...(engineSessionId
 						? { lastEngineProvider: effectiveProvider }
 						: {}),
-					...(effectiveModel ? { model: effectiveModel } : {}),
+					...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
+					...(selectedModel ? { model: selectedModel } : {}),
 					// Actual worktree HEAD wins over the recorded name — the agent may
 					// have switched branches mid-run (see run-session.ts's same sync).
 					branch: goal.mode === "code" ? worktreeHeadBranch(cwd) || branch : "",
@@ -189,7 +192,10 @@ export async function runGoal(goal: Goal): Promise<void> {
 			if (event.type === "init") {
 				engineSessionId = event.sessionId || engineSessionId;
 				if (event.provider) effectiveProvider = event.provider;
-				if (event.model) effectiveModel = event.model;
+				if (event.model) {
+					effectiveModel = event.model;
+					if (!selectedModel) selectedModel = event.model;
+				}
 				await persistSession(engineSessionId);
 				// A goal wake's transcript file is new each wake — attach anyone
 				// already viewing the goal session so the turn streams live.
@@ -207,6 +213,11 @@ export async function runGoal(goal: Goal): Promise<void> {
 				if (to) {
 					effectiveModel = to;
 					effectiveProvider = providerFor(to);
+					if (shouldPersistModelSwitch(event)) {
+						selectedModel = to;
+						const current = getGoal(goal.id) || goal;
+						saveGoal({ ...current, model: to });
+					}
 				}
 			}
 			if (event.type === "done") {
@@ -226,6 +237,7 @@ export async function runGoal(goal: Goal): Promise<void> {
 			...fresh,
 			bksSessionId: bksId,
 			engineSessionId,
+			model: selectedModel || fresh.model,
 			branch: branch || fresh.branch,
 			worktreePath: goal.mode === "code" ? cwd : fresh.worktreePath,
 			wakeCount: wake,

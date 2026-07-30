@@ -24,6 +24,7 @@ import { updateSessionFile } from "./session-cache";
 import type { BackstageSessionFile } from "./types";
 import { configuredIntegration, configuredRepos, defaultRepo } from "./config";
 import { stateDir } from "./rename-compat";
+import { shouldPersistModelSwitch } from "./run-events";
 
 const ACTIONS_DIR = stateDir("actions");
 
@@ -357,6 +358,7 @@ export function runAction(
 
   void (async () => {
     let effectiveModel = model;
+    let selectedModel = model;
     let effectiveProvider = providerFor(model);
     const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [];
     // Field-scoped write: creation fields are create-if-absent defaults (an
@@ -379,7 +381,9 @@ export function runAction(
           ...(engineSessionId
             ? engineSessionPatch(effectiveProvider, engineSessionId)
             : {}),
-          ...(effectiveModel ? { model: effectiveModel } : {}),
+          ...(engineSessionId ? { lastEngineProvider: effectiveProvider } : {}),
+          ...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
+          ...(selectedModel ? { model: selectedModel } : {}),
           ...(modelHistory.length ? { modelHistory } : {}),
           lastActivity: new Date().toISOString(),
         };
@@ -421,11 +425,14 @@ export function runAction(
           if (to) {
             effectiveModel = to;
             effectiveProvider = providerFor(to);
-            modelHistory.push({
-              model: to,
-              at: new Date().toISOString(),
-              by: `auto-switch — ${modelLabel(event.fromModel)} ${event.switchReason || "out of credits"}`,
-            });
+            if (shouldPersistModelSwitch(event)) {
+              selectedModel = to;
+              modelHistory.push({
+                model: to,
+                at: new Date().toISOString(),
+                by: `auto-switch — ${modelLabel(event.fromModel)} ${event.switchReason || "out of credits"}`,
+              });
+            }
           }
         }
         if (event.type === "done") {

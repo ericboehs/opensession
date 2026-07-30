@@ -3,6 +3,7 @@
  */
 import { envAlias } from "../../server/rename-compat";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
+import { shouldPersistModelSwitch } from "../../server/run-events";
 import { runAgent, cancelAgentRun } from "../../server/agent-runner";
 import {
   configuredServer,
@@ -153,7 +154,8 @@ export async function saveSessionInfo(
   participants?: Participant[],
   lastActiveUser?: Participant | null,
   awaitingInitialDirection?: boolean,
-  issueCreator?: Participant | null
+  issueCreator?: Participant | null,
+  model?: string
 ): Promise<void> {
   const sessionFile = `${SESSION_DIR}/${branch}.json`;
 
@@ -187,7 +189,7 @@ export async function saveSessionInfo(
     participants: participants !== undefined ? participants : (existing.participants || []),
     lastActiveUser: lastActiveUser !== undefined ? lastActiveUser : (existing.lastActiveUser || null),
     issueCreator: issueCreator !== undefined ? issueCreator : (existing.issueCreator || null),
-    model: existing.model || undefined,
+    model: model !== undefined ? model : (existing.model || undefined),
     updatedAt: new Date().toISOString(),
   };
   writeJsonAtomic(sessionFile, data);
@@ -421,9 +423,13 @@ export async function runAgentHeadless(
         }
       }
       if (event.type === "model_switch") {
+        const durable = shouldPersistModelSwitch(event);
+        if (durable && event.toModel && session) session.model = event.toModel;
         createAgentActivity(accessToken, linearSessionId, {
           type: "thought",
-          body: `${event.fromModel} is out of usage — continuing this turn on ${event.toModel}. Worktree state carries over.`,
+          body: durable
+            ? `${event.fromModel} is out of usage — continuing this turn on ${event.toModel}. Worktree state carries over.`
+            : `${event.fromModel} ${event.switchReason || "fell back"} — using ${event.toModel} for this turn only. Worktree state carries over.`,
         }).catch(() => {});
       }
 

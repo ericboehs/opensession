@@ -13,7 +13,7 @@ import { makeAskHandler, pendingAsks } from "./asks";
 import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle, relinkAskThreads } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
-import { SESSION_EFFORTS, type SessionEffort, interactiveFallbackModel, modelLabel, modelPreset, providerFor, resolveModel } from "./models";
+import { SESSION_EFFORTS, type SessionEffort, interactiveDefaultModel, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
 import { promptQueues, recordSteer, requeueSteerReceipts } from "./queue-state";
 import { attachSessionWatchersToEngineTranscript, attachSessionWatchersToTranscript, enqueuePrompt, foldSessionUsage, maybeLaunchSandboxedRun, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
@@ -34,6 +34,7 @@ import { createWorktree, ensureAskCheckout, ensureScratchDir, getRepo, listWorkt
 import { broadcastToAll, broadcastToSession } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
 import { existsSync, watch } from "fs";
+import { shouldPersistModelSwitch } from "./run-events";
 
 /** Derive the at-a-glance state + control surface for a session (for the MCP). */
 function buildSummary(s: UnifiedSession): SessionSummary {
@@ -223,7 +224,9 @@ registerSessionControl({
 		// Scratch: repo-less sessions (feed-item workspaces — docs/feeds-design.md).
 		const isScratch = mode === "scratch";
 		const isAsk = !isScratch && mode !== "code";
-		const model = modelInput ? resolveModel(String(modelInput))?.id : undefined;
+		const model =
+			(modelInput ? resolveModel(String(modelInput))?.id : undefined) ||
+			interactiveDefaultModel();
 		// Same validation as the web palette's create_session: unknown efforts
 		// are dropped rather than persisted; images arrive as data URLs.
 		const createEffort =
@@ -372,6 +375,7 @@ registerSessionControl({
 
 		let engineSessionId = "";
 		let effectiveModel = model;
+		let selectedModel = model;
 		let effectiveProvider = providerFor(effectiveModel);
 		const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [];
 		let persisted = false;
@@ -442,7 +446,9 @@ registerSessionControl({
 					...(engineSessionId
 						? engineSessionPatch(effectiveProvider, engineSessionId)
 						: {}),
-					...(effectiveModel ? { model: effectiveModel } : {}),
+					...(engineSessionId ? { lastEngineProvider: effectiveProvider } : {}),
+					...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
+					...(selectedModel ? { model: selectedModel } : {}),
 					...(modelHistory.length ? { modelHistory } : {}),
 					...headBranchPatch(),
 					lastActivity: new Date().toISOString(),
@@ -537,11 +543,7 @@ registerSessionControl({
 					if (event.type === "init") {
 						engineSessionId = event.sessionId || "";
 						if (event.provider) effectiveProvider = event.provider;
-						// Dial-preset sessions keep `dial/<tier>` as their stored model —
-						// init reports the preset's resolved MAIN model, and adopting it
-						// would disengage the dial (oracle + effort) on the next turn.
-						// model_switch below still adopts: a real fallback ends the dial.
-						if (event.model && !modelPreset(model)) effectiveModel = event.model;
+						if (event.model) effectiveModel = event.model;
 						// A sandbox session was persisted before launch and its file has
 						// since been touched with the materialized sandboxId — persist()
 						// is field-scoped now, but the narrower touch stays the clearer
@@ -549,7 +551,7 @@ registerSessionControl({
 						if (persisted)
 							touchBackstageSession(bksId, {
 								...engineSessionPatch(effectiveProvider, engineSessionId),
-								...(effectiveModel ? { model: effectiveModel } : {}),
+								...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
 							});
 						else await persist();
 						// Attach anyone already viewing this fresh chat to its brand-new
@@ -570,23 +572,31 @@ registerSessionControl({
 						if (to) {
 							effectiveModel = to;
 							effectiveProvider = providerFor(to);
-							modelHistory.push({
-								model: to,
-								from: event.fromModel,
-								at: new Date().toISOString(),
-								by: reason,
-							});
-							touchBackstageSession(bksId, {
-								model: to,
-								modelHistory,
-							});
-							broadcastToSession(bksId, {
-								type: "model_changed",
-								sessionId: bksId,
-								model: to,
-								from: event.fromModel,
-								by: reason,
-							});
+							if (shouldPersistModelSwitch(event)) {
+								selectedModel = to;
+								modelHistory.push({
+									model: to,
+									from: event.fromModel,
+									at: new Date().toISOString(),
+									by: reason,
+								});
+								touchBackstageSession(bksId, {
+									model: selectedModel,
+									modelHistory,
+								});
+								broadcastToSession(bksId, {
+									type: "model_changed",
+									sessionId: bksId,
+									model: to,
+									from: event.fromModel,
+									by: reason,
+								});
+							} else {
+								broadcastToSession(bksId, {
+									type: "notice",
+									message: `${modelLabel(event.fromModel)} ${event.switchReason || "fell back"} — using ${modelLabel(to)} for this turn only.`,
+								});
+							}
 						}
 					}
 					if (event.type === "text_chunk") {
@@ -651,8 +661,7 @@ registerSessionControl({
 					if (event.type === "done") {
 						engineSessionId = event.sessionId || engineSessionId;
 						if (event.provider) effectiveProvider = event.provider;
-						// Same dial guard as the init handler above.
-						if (event.model && !modelPreset(model)) effectiveModel = event.model;
+						if (event.model) effectiveModel = event.model;
 						if (event.usageLimitExhausted)
 							runFailure =
 								event.result || "Usage limit reached on every account";
@@ -689,7 +698,8 @@ registerSessionControl({
 						bksId,
 						{
 							...engineSessionPatch(effectiveProvider, engineSessionId),
-							...(effectiveModel ? { model: effectiveModel } : {}),
+							...(engineSessionId ? { lastEngineProvider: effectiveProvider } : {}),
+							...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
 							...(modelHistory.length ? { modelHistory } : {}),
 							// Same run-end branch sync as runSessionPromptInner.
 							...headBranchPatch(),

@@ -24,6 +24,7 @@ import { providerFor, modelLabel } from "./models";
 import { engineSessionPatch } from "./sessions";
 import type { BackstageSessionFile } from "./types";
 import { stateDir } from "./rename-compat";
+import { shouldPersistModelSwitch } from "./run-events";
 
 const SECURITY_DIR = stateDir("security");
 const SCANS_DIR = `${SECURITY_DIR}/scans`;
@@ -290,6 +291,7 @@ export async function executeScan(
 
       let engineSessionId = "";
       let effectiveModel = opts?.model;
+      let selectedModel = opts?.model;
       let effectiveProvider = providerFor(effectiveModel);
       const modelHistory: NonNullable<BackstageSessionFile["modelHistory"]> = [];
       const persistSession = () => {
@@ -299,7 +301,9 @@ export async function executeScan(
           ...(engineSessionId
             ? engineSessionPatch(effectiveProvider, engineSessionId)
             : {}),
-          ...(effectiveModel ? { model: effectiveModel } : {}),
+          ...(engineSessionId ? { lastEngineProvider: effectiveProvider } : {}),
+          ...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
+          ...(selectedModel ? { model: selectedModel } : {}),
           ...(modelHistory.length ? { modelHistory } : {}),
           branch,
           worktreeDir: cwd,
@@ -331,7 +335,10 @@ export async function executeScan(
             engineSessionId = event.sessionId;
           }
           if (event.provider) effectiveProvider = event.provider;
-          if (event.model) effectiveModel = event.model;
+          if (event.model) {
+            effectiveModel = event.model;
+            if (!selectedModel) selectedModel = event.model;
+          }
           persistSession();
         }
         if (event.type === "model_switch") {
@@ -339,11 +346,14 @@ export async function executeScan(
           if (to) {
             effectiveModel = to;
             effectiveProvider = providerFor(to);
-            modelHistory.push({
-              model: to,
-              at: new Date().toISOString(),
-              by: `auto-switch — ${modelLabel(event.fromModel)} ${event.switchReason || "out of credits"}`,
-            });
+            if (shouldPersistModelSwitch(event)) {
+              selectedModel = to;
+              modelHistory.push({
+                model: to,
+                at: new Date().toISOString(),
+                by: `auto-switch — ${modelLabel(event.fromModel)} ${event.switchReason || "out of credits"}`,
+              });
+            }
           }
         }
         if (event.type === "done") {

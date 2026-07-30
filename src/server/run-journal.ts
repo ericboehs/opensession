@@ -44,7 +44,9 @@ export interface ActiveRunRecord {
   deniedTools?: Record<string, string>; // per-run tool denials, preserved across resume
   confirmTools?: Record<string, string>; // per-run human-confirmed tools, preserved across resume
   aws?: boolean; // whether to inject AWS creds, preserved across resume
-  model?: string; // per-session model, preserved across resume (decides the provider)
+  model?: string; // effective model driving the journaled attempt
+  selectedModel?: string; // user selection when model is a transient per-turn fallback
+  transientFallback?: boolean; // model must not replace selectedModel in session state
   effort?: string; // reasoning effort, preserved across resume
   fastMode?: boolean; // OpenAI priority service tier, preserved across resume
   accountId?: string; // pinned provider account, preserved across resume

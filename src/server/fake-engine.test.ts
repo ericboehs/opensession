@@ -13,7 +13,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { __setEngineForTest, runAgent } from "./agent-runner";
-import { __setActiveRunsPathForTest } from "./run-journal";
+import { __setActiveRunsPathForTest, activeRunRecords } from "./run-journal";
 import type { StreamEvent } from "./run-events";
 import { makeFakeEngine } from "./testing/fake-engine";
 
@@ -149,6 +149,38 @@ describe("fake engine through runAgent", () => {
 		expect(last.content).toContain("infrastructure problem");
 		// The walk stopped after the second transient death — no third model burned.
 		expect(fake.calls).toHaveLength(2);
+	});
+
+	test("journals the selected model behind a transient fallback for restart recovery", async () => {
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => (release = resolve));
+		const fake = makeFakeEngine([
+			{ kind: "error", content: "Our servers are currently overloaded" },
+			{ kind: "clean", text: ["recovered"], gate },
+		]);
+		__setEngineForTest(fake.engine);
+		const collecting = collect(
+			runAgent({
+				prompt: "p",
+				cwd: "/tmp",
+				model: "dial/medium",
+				fallbackModel: "claude-opus-5",
+				journal: { bksSessionId: "bks-test-transient-journal", kind: "prompt" },
+			}),
+		);
+		while (fake.calls.length < 2) await Bun.sleep(5);
+
+		const run = activeRunRecords().find(
+			(record) => record.bksSessionId === "bks-test-transient-journal",
+		);
+		release();
+		const events = await collecting;
+
+		expect(run?.model).toBe("opencode/openai/gpt-5.6-terra");
+		expect(run?.selectedModel).toBe("dial/medium");
+		expect(run?.transientFallback).toBe(true);
+		const switchEvent = events.find((event) => event.type === "model_switch");
+		expect(switchEvent?.temporaryFallback).toBe(true);
 	});
 
 	test("script exhaustion fails loud instead of hanging", async () => {

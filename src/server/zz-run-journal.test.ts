@@ -43,7 +43,9 @@ describe("run journal", () => {
 			mcpServers: [],
 			deniedTools: { mcp__danger__delete: "No deletes" },
 			confirmTools: { mcp__stripe__create_refund: "Create a refund" },
-			model: "claude-fable-5",
+			model: "opencode/openai/gpt-5.6-terra",
+			selectedModel: "dial/medium",
+			transientFallback: true,
 			fallbackModel: "gpt-5.5",
 			startedAt: "2026-07-02T00:00:00.000Z",
 		});
@@ -54,6 +56,8 @@ describe("run journal", () => {
 		});
 		expect(run.deniedTools).toEqual({ mcp__danger__delete: "No deletes" });
 		expect(run.fallbackModel).toBe("gpt-5.5");
+		expect(run.selectedModel).toBe("dial/medium");
+		expect(run.transientFallback).toBe(true);
 		// Returned records carry no claim stamp…
 		expect(run.claimedAt).toBeUndefined();
 		// …but the on-disk record survives as CLAIMED (not wiped) until the

@@ -114,7 +114,7 @@ import { dirname, resolve as resolvePath } from "path";
 import { OPENSESSION_CHATS_DIR } from "../paths";
 import { envAlias, stateDir } from "../rename-compat";
 import { journalSet, journalClear, type ActiveRunRecord } from "../run-journal";
-import type { StreamEvent } from "../run-events";
+import { shouldPersistModelSwitch, type StreamEvent } from "../run-events";
 import { RESUME_CONTINUATION_PROMPT } from "../agent-runner";
 import { providerFor } from "../models";
 import { hostRunBusy, hostSteer, hostInterruptSteer, hostCancel } from "../host-registry";
@@ -933,6 +933,8 @@ function recordForSpec(spec: RunHostSpec, sandboxId: string): ActiveRunRecord {
     confirmTools: spec.confirmTools,
     aws: spec.aws,
     model: spec.model,
+    selectedModel: spec.selectedModel ?? spec.model,
+    transientFallback: spec.transientFallback,
     effort: spec.effort,
     fastMode: spec.fastMode,
     accountId: spec.accountId,
@@ -962,6 +964,12 @@ async function* withRunJournal(
     for await (const ev of events) {
       if (ev.type === "init" && ev.sessionId && ev.sessionId !== record.claudeSessionId) {
         record.claudeSessionId = ev.sessionId;
+        journalSet(record);
+      }
+      if (ev.type === "model_switch" && ev.toModel) {
+        record.model = ev.toModel;
+        record.transientFallback = ev.temporaryFallback === true;
+        if (shouldPersistModelSwitch(ev)) record.selectedModel = ev.toModel;
         journalSet(record);
       }
       if (ev.type === "done") sawDone = true;
@@ -1502,7 +1510,18 @@ export async function resumeDockerSandboxRun(
         rmSync(oldDir, { recursive: true, force: true });
       } catch {}
       const done = meta.done;
+      const selectedModel = meta.selectedModel;
+      const initialModel = oldSpec.selectedModel ?? oldSpec.model;
       return (async function* () {
+        if (selectedModel && selectedModel !== initialModel) {
+          yield {
+            type: "model_switch",
+            fromModel: initialModel,
+            toModel: selectedModel,
+            switchReason: "out of credits",
+            temporaryFallback: false,
+          } satisfies StreamEvent;
+        }
         yield done;
       })();
     }
@@ -1544,6 +1563,8 @@ export async function resumeDockerSandboxRun(
     cwd: run.cwd,
     mode: run.mode,
     model: run.model,
+    selectedModel: run.selectedModel ?? run.model,
+    transientFallback: run.transientFallback,
     mcpServers: run.mcpServers,
     proxyMcpServers: oldSpec?.proxyMcpServers,
     rpcToken,
