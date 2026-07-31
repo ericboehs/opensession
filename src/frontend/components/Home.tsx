@@ -14,6 +14,7 @@ import {
   IconFolder,
   IconGitMerge,
   IconPullRequest,
+  IconRepo,
   IconSearch,
   IconX,
 } from "./icons";
@@ -388,6 +389,7 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
   const team = useTeamPresence({ sessions, teamViewing, currentUser });
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("all");
+  const [repo, setRepo] = useState("all");
   const [person, setPerson] = useState(() =>
     currentUser === "Anonymous" ? "all" : currentUser.toLowerCase(),
   );
@@ -457,6 +459,7 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
         if (projectId === "standalone" && row.projectId) return false;
         if (projectId !== "all" && projectId !== "standalone" && row.projectId !== projectId)
           return false;
+        if (repo !== "all" && row.repo !== repo) return false;
         if (person !== "all" && row.person !== person) return false;
         if (!needle) return true;
         return [row.title, row.repo, row.branch, row.author, row.number ? `#${row.number}` : ""]
@@ -464,7 +467,7 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
           .toLowerCase()
           .includes(needle);
       });
-  }, [allWorktrees, person, projectId, query, showArchived]);
+  }, [allWorktrees, person, projectId, query, repo, showArchived]);
 
   const sections = useMemo(() => {
     const definitions: Array<{ state: WorktreeRow["state"]; label: string }> = [
@@ -488,6 +491,11 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
     const represented = new Set(sessions.filter((s) => s.prUrl || s.prs?.some((pr) => pr.url)).map((s) => s.projectId));
     return projects.filter((project) => represented.has(project.id));
   }, [projects, sessions]);
+
+  const repoOptions = useMemo(
+    () => [...new Set(allWorktrees.map((row) => row.repo).filter(Boolean))].sort(),
+    [allWorktrees],
+  );
 
   return (
     <div className="home bg-surface">
@@ -537,7 +545,9 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
 
         <OverviewStrip running={running} stats={stats} onOpenAnalytics={onOpenAnalytics} />
 
-        <div className="mt-7 grid grid-cols-[minmax(180px,1fr)_auto_auto] items-center gap-5 border-b border-line px-2 pb-4 max-[860px]:grid-cols-2 max-[720px]:grid-cols-1 max-[720px]:gap-2.5">
+        <div
+          className={`mt-7 grid ${repoOptions.length > 1 ? "grid-cols-[minmax(180px,1fr)_auto_auto_auto]" : "grid-cols-[minmax(180px,1fr)_auto_auto]"} items-center gap-5 border-b border-line px-2 pb-4 max-[860px]:grid-cols-2 max-[720px]:grid-cols-1 max-[720px]:gap-2.5`}
+        >
           <label className="flex min-w-0 items-center gap-2 text-faint focus-within:text-dim">
             <IconSearch size={20} />
             <input
@@ -566,6 +576,25 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
             </select>
             <IconChevronDown className="pointer-events-none absolute right-0" size={20} />
           </label>
+
+          {repoOptions.length > 1 && (
+            <label className="relative flex items-center gap-2 text-control-label text-dim hover:text-fg">
+              <IconRepo size={20} />
+              <select
+                className="max-w-[190px] cursor-pointer appearance-none border-0 bg-transparent py-1 pl-0 pr-6 text-inherit outline-none"
+                value={repo}
+                onChange={(event) => setRepo(event.target.value)}
+              >
+                <option value="all">In all repos</option>
+                {repoOptions.map((name) => (
+                  <option key={name} value={name}>
+                    In {name}
+                  </option>
+                ))}
+              </select>
+              <IconChevronDown className="pointer-events-none absolute right-0" size={20} />
+            </label>
+          )}
 
           <button
             className={`flex items-center gap-2 border-0 bg-transparent p-1 text-control-label hover:text-fg ${showArchived ? "text-fg" : "text-dim"}`}
