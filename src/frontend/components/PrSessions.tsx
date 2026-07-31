@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import type { UnifiedSession, WSServerMessage } from "../lib/types";
 import { relativeTime } from "../lib/api";
 import { chatPath } from "../lib/share-link";
+import { Button } from "../ui/button";
 import { getCurrentUser } from "./UserPicker";
 
 /**
@@ -165,7 +166,7 @@ export function PrSessionsList({
 						e.preventDefault();
 						onOpenSession?.(s.id);
 					}}
-					className="flex items-center gap-2 px-2 py-1.5 -mx-2 rounded-md text-[13px] text-fg no-underline hover:bg-surface"
+					className="-mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-body text-fg no-underline hover:bg-surface"
 				>
 					<span
 						className={`w-1.5 h-1.5 rounded-full shrink-0 ${
@@ -174,12 +175,12 @@ export function PrSessionsList({
 					/>
 					<span className="truncate">{s.title}</span>
 					{s.id === currentSessionId && (
-						<span className="shrink-0 rounded-full border border-line bg-surface px-1.5 py-px text-[10px] text-faint">
+						<span className="shrink-0 rounded-full border border-line bg-surface px-1.5 py-px text-meta text-faint">
 							current
 						</span>
 					)}
 					{s.archived && (
-						<span className="text-faint text-[11px] shrink-0">archived</span>
+						<span className="shrink-0 text-meta text-faint">archived</span>
 					)}
 					{s.startedBy && (
 						<span className="text-faint text-[12px] shrink-0">{s.startedBy}</span>
@@ -204,13 +205,14 @@ export function PrSessionsList({
 						onChange={(e) => setPrompt(e.target.value)}
 						disabled={starting}
 					/>
-					<button
+					<Button
 						type="submit"
-						className="shrink-0 rounded-sm border border-fg bg-fg px-3 py-2 text-xs font-semibold text-surface disabled:opacity-50"
+						variant="primary"
+						className="shrink-0 text-xs"
 						disabled={starting || !prompt.trim()}
 					>
 						{starting ? "Starting…" : "Start"}
-					</button>
+					</Button>
 				</form>
 			)}
 			{error && <div className="mt-1.5 text-xs text-red">{error}</div>}

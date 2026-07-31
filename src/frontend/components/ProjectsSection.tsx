@@ -1,6 +1,7 @@
 import { BASE_PATH } from "../lib/base";
 import React, { useCallback, useEffect, useState } from "react";
 import { cn } from "../ui/cn";
+import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
 import { InlineAlert } from "../ui/state";
 import { IconTile } from "./BrandTile";
@@ -346,13 +347,14 @@ function NewProjectModal({
 					<label className={labelCls}>Tool args (JSON)</label>
 					<div className="flex gap-2">
 						<input className={inputCls} value={argsText} onChange={(e) => setArgsText(e.target.value)} />
-						<button
-							className="flex-shrink-0 rounded-md bg-accent px-3 py-1.5 text-[13px] font-semibold text-white disabled:opacity-40"
+						<Button
+							variant="primary"
+							className="flex-shrink-0 text-[13px]"
 							onClick={fetchSample}
 							disabled={!server || !tool || !!busy}
 						>
 							Fetch sample
-						</button>
+						</Button>
 					</div>
 
 					{sampleItem && (
@@ -399,18 +401,19 @@ function NewProjectModal({
 					<div className="flex-1" />
 					<Modal.Close
 						render={
-							<button className="rounded-md px-3 py-2 text-[13.5px] font-medium text-dim hover:bg-hover hover:text-fg">
+							<Button variant="ghost">
 								Cancel
-							</button>
+							</Button>
 						}
 					/>
-					<button
-						className="rounded-md bg-accent px-5 py-2 text-[13.5px] font-semibold text-white outline-none hover:brightness-105 disabled:opacity-40"
+					<Button
+						variant="primary"
+						className="px-5"
 						onClick={save}
 						disabled={!canSave || !!busy}
 					>
 						Create project
-					</button>
+					</Button>
 				</Modal.Footer>
 			</Modal.Content>
 		</Modal.Root>

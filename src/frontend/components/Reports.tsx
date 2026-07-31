@@ -10,6 +10,7 @@ import { useIsPhone } from "../hooks/useIsPhone";
 import { BASE_PATH } from "../lib/base";
 import { absoluteLink } from "../lib/share-link";
 import { parseNewSessionLink, type NewSessionPrefill } from "../lib/new-session-link";
+import { Button } from "../ui/button";
 import { CopyCheck, useCopy } from "../ui/copy";
 import { IconChevronLeft, IconChevronRight, IconFile, IconShare } from "./icons";
 
@@ -164,7 +165,7 @@ export function Reports({
 								<span className="min-w-0 flex-1">
 									<span className="block truncate text-sm font-medium text-fg">{group.automationName}</span>
 									<span className="mt-1 block truncate text-xs text-dim">{group.latest.title}</span>
-									<span className="mt-1.5 block text-[11px] text-faint">{formatDate(group.latest.createdAt)} · {group.count} {group.count === 1 ? "report" : "reports"}</span>
+									<span className="mt-1.5 block text-meta text-faint">{formatDate(group.latest.createdAt)} · {group.count} {group.count === 1 ? "report" : "reports"}</span>
 								</span>
 								<IconChevronRight size={16} className="mt-2 shrink-0 text-faint" />
 							</button>
@@ -198,10 +199,8 @@ export function Reports({
 										>
 											{history.map((report) => <option key={report.id} value={report.id}>{formatDate(report.createdAt, true)}</option>)}
 										</select>
-										{selected.sessionId && <button type="button" className="shrink-0 rounded-md border border-line bg-panel px-3 py-1.5 text-xs text-fg cursor-pointer hover:bg-hover" onClick={() => onOpenSession(selected.sessionId!)}>Open run</button>}
-										<button type="button" aria-label="Share report" className="flex shrink-0 items-center justify-center rounded-md border border-line bg-panel px-2.5 py-1.5 text-fg cursor-pointer hover:bg-hover" onClick={shareSelected}>
-											<CopyCheck copied={copied} size={15} idle={<IconShare size={15} />} />
-										</button>
+										{selected.sessionId && <Button size="sm" className="min-h-[30px] shrink-0" onClick={() => onOpenSession(selected.sessionId!)}>Open run</Button>}
+										<Button size="sm" className="min-h-[30px] w-[30px] shrink-0" icon={<CopyCheck copied={copied} size={15} idle={<IconShare size={15} />} />} aria-label="Share report" onClick={shareSelected} />
 									</div>
 								</>
 							)}
@@ -213,10 +212,8 @@ export function Reports({
 									<h2 className="m-0 truncate text-base font-semibold text-fg">{selected.title}</h2>
 									<p className="m-0 mt-1 text-xs text-dim">{formatDate(selected.createdAt, true)}{selected.summary ? ` · ${selected.summary}` : ""}</p>
 								</div>
-								<button type="button" aria-label="Share report" title="Share report" className="flex shrink-0 items-center justify-center rounded-md border border-line bg-panel px-2.5 py-1.5 text-fg cursor-pointer hover:bg-hover" onClick={shareSelected}>
-									<CopyCheck copied={copied} size={15} idle={<IconShare size={15} />} />
-								</button>
-								{selected.sessionId && <button type="button" className="shrink-0 rounded-md border border-line bg-panel px-3 py-1.5 text-xs text-fg cursor-pointer hover:bg-hover" onClick={() => onOpenSession(selected.sessionId!)}>Open run</button>}
+								<Button size="sm" className="min-h-[30px] w-[30px] shrink-0" icon={<CopyCheck copied={copied} size={15} idle={<IconShare size={15} />} />} aria-label="Share report" title="Share report" onClick={shareSelected} />
+								{selected.sessionId && <Button size="sm" className="min-h-[30px] shrink-0" onClick={() => onOpenSession(selected.sessionId!)}>Open run</Button>}
 								<select
 									aria-label="Report history"
 									className="max-w-[190px] shrink-0 rounded-md border border-line bg-panel px-2 py-1.5 text-xs text-fg"

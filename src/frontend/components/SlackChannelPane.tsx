@@ -1,5 +1,6 @@
 import { BASE_PATH } from "../lib/base";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "../ui/button";
 import { IconArrowUp } from "./icons";
 
 interface MessageReaction {
@@ -72,7 +73,7 @@ function MessageText({ text }: { text: string }) {
 	}
 	if (last < text.length) parts.push(text.slice(last));
 	return (
-		<div className="select-text whitespace-pre-wrap break-words text-[13.5px] leading-snug text-fg">
+		<div className="select-text whitespace-pre-wrap break-words text-body leading-snug text-fg">
 			{parts}
 		</div>
 	);
@@ -86,7 +87,7 @@ function ReactionPills({ reactions }: { reactions?: MessageReaction[] }) {
 				<span
 					key={r.name}
 					title={`:${r.name}:`}
-					className="inline-flex items-center gap-1 rounded-full border border-line bg-panel px-1.5 py-0.5 text-[11.5px] leading-none text-dim"
+					className="inline-flex items-center gap-1 rounded-full border border-line bg-panel px-1.5 py-0.5 text-meta leading-none text-dim"
 				>
 					{r.url ? (
 						<img src={r.url} alt={r.name} className="h-[14px] w-[14px]" />
@@ -155,16 +156,16 @@ function MessageRow({
 			)}
 			<div className="min-w-0 flex-1">
 				<div className="flex items-baseline gap-2">
-					<span className="select-text text-[13px] font-semibold text-fg">
+					<span className="select-text text-body font-semibold text-fg">
 						{m.userName}
 					</span>
-					<span className="text-[11px] text-faint">{timeOf(m.ts)}</span>
+					<span className="text-meta text-faint">{timeOf(m.ts)}</span>
 				</div>
 				<MessageText text={m.text} />
 				<ReactionPills reactions={m.reactions} />
 				{depth === 0 && (m.replyCount || 0) > 0 && (
 					<button
-						className="mt-1 text-[11.5px] font-medium text-accent hover:underline"
+						className="mt-1 text-meta font-medium text-accent hover:underline"
 						onClick={toggleThread}
 					>
 						{expanded
@@ -345,13 +346,13 @@ export function SlackChannelPane({
 				<div className="mx-auto w-full max-w-[760px] px-5 py-4">
 					{hasMore && (
 						<div className="mb-3 flex justify-center">
-							<button
-								className="rounded-md border border-line px-3 py-1 text-xs font-medium text-dim hover:border-faint hover:text-fg disabled:opacity-50"
+							<Button
+								size="sm"
 								onClick={loadOlder}
 								disabled={loadingOlder}
 							>
 								{loadingOlder ? "Loading…" : "Load earlier messages"}
-							</button>
+							</Button>
 						</div>
 					)}
 					{loading ? (

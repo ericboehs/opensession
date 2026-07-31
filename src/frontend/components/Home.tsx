@@ -3,6 +3,7 @@ import type { Project, UnifiedSession } from "../lib/types";
 import { fetchHomeStats, fetchRecentPrs, type HomeStats, type RecentPr } from "../lib/api";
 import { prStatusMark, type PrStatusInput } from "../lib/pr-status";
 import { Menu } from "../ui/menu";
+import { Button } from "../ui/button";
 import { useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { RepoTile } from "./RepoTile";
@@ -234,19 +235,19 @@ function StatCell({
         )}
         {!loading && (
           <span
-            className="truncate text-[17px] font-semibold leading-6 tabular-nums text-fg"
+            className="truncate text-section-title font-semibold leading-6 tabular-nums text-fg"
           >
             {value}
           </span>
         )}
       </div>
-      <div className="truncate text-[11px] leading-4 text-dim">{label}</div>
+      <div className="truncate text-meta leading-4 text-dim">{label}</div>
       {loading ? (
         <div className="flex h-4 items-center">
           <span className="h-2.5 w-14 rounded-sm bg-line motion-safe:animate-pulse" />
         </div>
       ) : (
-        sub && <div className="truncate text-[11px] leading-4 text-faint">{sub}</div>
+        sub && <div className="truncate text-meta leading-4 text-faint">{sub}</div>
       )}
     </div>
   );
@@ -491,13 +492,15 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
     <div className="home bg-surface">
       <div className="mx-auto w-full max-w-[1040px] px-5 pb-16 pt-10 max-[720px]:px-4 max-[720px]:pt-5">
         <div className="flex items-center justify-between gap-4 px-2">
-          <h1 className="m-0 text-[24px] font-semibold tracking-[-0.025em] text-fg">Home</h1>
-          <button
-            className="rounded-md border-0 bg-fg px-4 py-2 text-sm font-semibold text-surface transition-opacity hover:opacity-85"
+          <h1 className="m-0 text-page-title font-semibold tracking-[-0.025em] text-fg">Home</h1>
+          <Button
+            variant="primary"
+            size="lg"
+            className="text-control-label"
             onClick={onNewSession}
           >
             Create workspace
-          </button>
+          </Button>
         </div>
 
         <OverviewStrip running={running} stats={stats} onOpenAnalytics={onOpenAnalytics} />
@@ -506,7 +509,7 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
           <label className="flex min-w-0 items-center gap-2 text-faint focus-within:text-dim">
             <IconSearch size={20} />
             <input
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[15px] text-fg outline-none placeholder:text-faint"
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-body text-fg outline-none placeholder:text-faint"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search"
@@ -515,7 +518,7 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
           </label>
 
           <Menu.Root>
-            <Menu.Trigger className="flex min-w-[142px] items-center gap-2 rounded-md border-0 bg-transparent p-1 text-[13.5px] text-dim hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg">
+            <Menu.Trigger className="flex min-w-[142px] items-center gap-2 rounded-md border-0 bg-transparent p-1 text-control-label text-dim hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg">
               {person === "all" ? (
                 <span className="flex h-5 w-5 items-center justify-center rounded-full border border-line text-[10px] font-semibold">
                   ·
@@ -565,7 +568,7 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
             </Menu.Popup>
           </Menu.Root>
 
-          <label className="relative flex items-center gap-2 text-[13.5px] text-dim hover:text-fg">
+          <label className="relative flex items-center gap-2 text-control-label text-dim hover:text-fg">
             <IconFolder size={20} />
             <select
               className="max-w-[190px] cursor-pointer appearance-none border-0 bg-transparent py-1 pl-0 pr-6 text-inherit outline-none"
@@ -584,7 +587,7 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
           </label>
 
           <button
-            className={`flex items-center gap-2 border-0 bg-transparent p-1 text-[13.5px] hover:text-fg ${showArchived ? "text-fg" : "text-dim"}`}
+            className={`flex items-center gap-2 border-0 bg-transparent p-1 text-control-label hover:text-fg ${showArchived ? "text-fg" : "text-dim"}`}
             onClick={() => setShowArchived((value) => !value)}
             aria-pressed={showArchived}
           >
@@ -598,7 +601,7 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
             <div className="text-sm font-medium text-fg">
               {query ? "No matching worktrees" : "No pull request worktrees yet"}
             </div>
-            <div className="mt-1 text-[13px] text-faint">
+            <div className="mt-1 text-body text-faint">
               {query ? "Try another search or project." : "Workspaces with pull requests will appear here."}
             </div>
           </div>
@@ -606,7 +609,7 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
           <div className="pt-7">
             {sections.map((section) => (
               <section key={section.state} className="mb-10">
-                <div className="mb-4 flex items-baseline gap-2 px-2 text-[15px] font-semibold text-fg">
+                <div className="mb-4 flex items-baseline gap-2 px-2 text-item-title font-semibold text-fg">
                   <span>{section.label}</span>
                   <span className="text-[12px] font-medium text-faint">{section.rows.length}</span>
                 </div>
@@ -638,10 +641,10 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
                           )}
                           <span className="min-w-0">
                             <span className="flex min-w-0 items-baseline gap-2">
-                              <span className="truncate text-[14px] text-dim group-hover:text-fg">{row.title}</span>
-                              {row.number && <span className="shrink-0 text-[11.5px] text-faint">#{row.number}</span>}
+                              <span className="truncate text-body text-dim group-hover:text-fg">{row.title}</span>
+                              {row.number && <span className="shrink-0 text-meta text-faint">#{row.number}</span>}
                             </span>
-                            <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-faint">
+                            <span className="flex min-w-0 items-center gap-1.5 text-meta text-faint">
                               <span className="truncate">{row.branch}</span>
                             </span>
                           </span>

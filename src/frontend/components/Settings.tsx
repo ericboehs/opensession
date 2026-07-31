@@ -731,14 +731,14 @@ function MobileSettings({
 					<div className="relative flex h-11 shrink-0 items-center justify-center px-3">
 						{detail && (
 							<button
-								className="absolute left-1 flex items-center gap-0.5 rounded-md border-none bg-transparent px-2 py-2 text-[15px] font-medium text-accent"
+								className="absolute left-1 flex items-center gap-0.5 rounded-md border-none bg-transparent px-2 py-2 text-control-label font-medium text-accent"
 								onClick={() => onShowRoot?.()}
 							>
 								<IconChevronLeft size={22} />
 								Settings
 							</button>
 						)}
-						<span className="text-[16px] font-semibold text-fg">
+						<span className="text-section-title font-semibold text-fg">
 							{detail ? shownLabel : "Settings"}
 						</span>
 						<button
@@ -763,7 +763,7 @@ function MobileSettings({
 						>
 							{groups.map((g) => (
 								<div key={g.group}>
-									<div className="mb-2 mt-5 px-1 text-[13px] font-semibold text-faint">
+									<div className="mb-2 mt-5 px-1 text-control-label font-semibold text-faint">
 										{g.group}
 									</div>
 									<div className="overflow-hidden rounded-2xl border border-line bg-panel">
@@ -776,7 +776,7 @@ function MobileSettings({
 												<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-dim">
 													{s.icon}
 												</span>
-												<span className="min-w-0 flex-1 text-[15px] font-medium text-fg">
+											<span className="min-w-0 flex-1 text-item-title font-medium text-fg">
 													{s.label}
 												</span>
 												<IconChevronRight size={20} className="shrink-0 text-faint" />
@@ -1184,7 +1184,7 @@ function MemoryEntryRow({
 		return (
 			<div className="border-b border-line px-3 py-2.5 last:border-b-0">
 				<textarea
-					className="w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-[13px] font-medium text-fg outline-none focus:border-faint"
+					className="w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-body font-medium text-fg outline-none focus:border-faint"
 					rows={2}
 					value={draft}
 					autoFocus
@@ -1195,22 +1195,23 @@ function MemoryEntryRow({
 					}}
 				/>
 				<div className="mt-1.5 flex gap-2">
-					<button
-						className="rounded-md bg-fg px-3 py-1 text-[12px] font-medium text-bg disabled:opacity-40"
+					<Button
+						variant="primary"
+						size="sm"
 						disabled={busy || !draft.trim()}
 						onClick={save}
 					>
 						Save
-					</button>
-					<button
-						className="rounded-md border border-line-strong px-3 py-1 text-[12px] font-medium text-dim hover:text-fg"
+					</Button>
+					<Button
+						size="sm"
 						onClick={() => {
 							setDraft(entry.text);
 							setEditing(false);
 						}}
 					>
 						Cancel
-					</button>
+					</Button>
 				</div>
 			</div>
 		);
@@ -1218,10 +1219,10 @@ function MemoryEntryRow({
 	return (
 		<div className="group flex items-start gap-2 border-b border-line px-3 py-2.5 last:border-b-0">
 			<div className="min-w-0 flex-1">
-				<div className="text-[13px] font-medium leading-snug text-fg">
+				<div className="text-body font-medium leading-snug text-fg">
 					{entry.text}
 				</div>
-				<div className="mt-0.5 text-[11.5px] font-medium text-faint">
+				<div className="mt-0.5 text-meta font-medium text-faint">
 					{entry.by} · {relativeTime(entry.at)}
 				</div>
 			</div>
@@ -1281,7 +1282,7 @@ function MemoryScopeCard({
 	return (
 		<div className="mb-3 overflow-hidden rounded-lg border border-line bg-panel">
 			<div className="flex items-center justify-between border-b border-line bg-surface px-3 py-2">
-				<div className="text-[12.5px] font-semibold text-fg">
+				<div className="text-supporting font-semibold text-fg">
 					{scoped.scope.label}
 				</div>
 				<button
@@ -1293,7 +1294,7 @@ function MemoryScopeCard({
 				</button>
 			</div>
 			{scoped.entries.length === 0 && !adding && (
-				<div className="px-3 py-2.5 text-[13px] font-medium text-faint">
+				<div className="px-3 py-2.5 text-body font-medium text-faint">
 					No memories yet.
 				</div>
 			)}
@@ -1308,7 +1309,7 @@ function MemoryScopeCard({
 			{adding && (
 				<div className="border-t border-line px-3 py-2.5">
 					<textarea
-						className="w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-[13px] font-medium text-fg outline-none focus:border-faint"
+						className="w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-body font-medium text-fg outline-none focus:border-faint"
 						rows={2}
 						placeholder="A durable, self-contained fact…"
 						value={draft}
@@ -1320,19 +1321,20 @@ function MemoryScopeCard({
 						}}
 					/>
 					<div className="mt-1.5 flex gap-2">
-						<button
-							className="rounded-md bg-fg px-3 py-1 text-[12px] font-medium text-bg disabled:opacity-40"
+						<Button
+							variant="primary"
+							size="sm"
 							disabled={busy || !draft.trim()}
 							onClick={add}
 						>
 							Save
-						</button>
-						<button
-							className="rounded-md border border-line-strong px-3 py-1 text-[12px] font-medium text-dim hover:text-fg"
+						</Button>
+						<Button
+							size="sm"
 							onClick={() => setAdding(false)}
 						>
 							Cancel
-						</button>
+						</Button>
 					</div>
 				</div>
 			)}
@@ -1403,7 +1405,7 @@ function PersonalPromptPanel() {
 				automations. Leave empty to turn it off.
 			</SettingsDescription>
 			<textarea
-				className="w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-[13px] font-medium text-fg outline-none focus:border-faint"
+				className="w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-body font-medium text-fg outline-none focus:border-faint"
 				rows={10}
 				placeholder='e.g. "Keep answers short. Prefer tables for comparisons. Always mention which files you touched."'
 				value={prompt}
@@ -1413,13 +1415,14 @@ function PersonalPromptPanel() {
 				}}
 			/>
 			<div className="mt-2 flex items-center gap-2">
-				<button
-					className="rounded-md bg-fg px-3 py-1 text-[12px] font-medium text-bg disabled:opacity-40"
+				<Button
+					variant="primary"
+					size="sm"
 					disabled={busy || !dirty}
 					onClick={save}
 				>
 					{busy ? "Saving…" : "Save"}
-				</button>
+				</Button>
 				{dirty && !busy && (
 					<span className="text-[12px] font-medium text-faint">
 						Unsaved changes
@@ -1471,7 +1474,7 @@ function MemoryPanel() {
 							<MemoryScopeCard key={s.scope.key} scoped={s} onChanged={reload} />
 						))}
 						{!inGroup.length && (
-							<div className="text-[13px] font-medium text-faint">None yet.</div>
+							<div className="text-body font-medium text-faint">None yet.</div>
 						)}
 					</div>
 				);
@@ -1557,15 +1560,15 @@ function WarmPreviewsPanel() {
 								<div className="flex items-center gap-2">
 									{entry.enabled && (
 										<>
-											<button
-												className="rounded-md border border-line-strong px-3 py-1.5 text-[13px] font-medium text-dim transition-colors hover:border-faint hover:text-fg disabled:opacity-40"
+											<Button
+												size="sm"
 												disabled={entry.refreshing}
 												onClick={() =>
 													apply(refreshWarmTemplateNow(entry.repoId))
 												}
 											>
 												{entry.refreshing ? "Building…" : "Run now"}
-											</button>
+											</Button>
 											<Select
 												label={`Refresh interval for ${entry.repoId}`}
 												value={String(entry.intervalHours)}
@@ -1728,15 +1731,15 @@ function PreviewPoolPanel() {
 												}
 											/>
 											{(entry.config.backend || "docker") === "docker" && (
-												<button
-													className="rounded-md border border-line-strong px-3 py-1.5 text-[13px] font-medium text-dim transition-colors hover:border-faint hover:text-fg disabled:opacity-40"
+												<Button
+													size="sm"
 													disabled={entry.goldenBuilding}
 													onClick={() =>
 														apply(refreshPreviewPoolGolden(entry.repoId))
 													}
 												>
 													{entry.goldenBuilding ? "Building…" : "Rebuild image"}
-												</button>
+												</Button>
 											)}
 											<Select
 												label={`Warm running containers for ${entry.repoId}`}
@@ -1849,7 +1852,7 @@ function PapercutsPanel() {
 			</SettingCard>
 
 			<div className="mt-5 mb-2 flex items-center justify-between">
-				<div className="text-[13px] font-medium text-dim">
+				<div className="text-body font-medium text-dim">
 					Last 30 days · {entries.length} logged
 				</div>
 				<Select
@@ -1873,7 +1876,7 @@ function PapercutsPanel() {
 							key={`${e.ts}-${i}`}
 							className="border-b border-line px-4 py-3 last:border-b-0"
 						>
-							<div className="text-[13px] leading-relaxed text-fg">
+							<div className="text-body leading-relaxed text-fg">
 								{e.message}
 							</div>
 							<div className="mt-1 text-xs text-faint">
@@ -1992,7 +1995,7 @@ function AuditPanel() {
 				/>
 			</div>
 
-			<div className="text-faint text-[11.5px] mb-2 px-2.5">
+			<div className="mb-2 px-2.5 text-meta text-faint">
 				{loading ? "Loading…" : `${events.length} of ${total} events (newest first)`}
 			</div>
 
@@ -2013,7 +2016,7 @@ function AuditPanel() {
 								<span className="text-dim truncate">{auditSummary(e)}</span>
 								{sid && (
 									<a
-										className="text-faint font-mono text-[11px] ml-auto shrink-0 underline"
+										className="ml-auto shrink-0 font-mono text-meta text-faint underline"
 										href={`${BASE_PATH}/session/${sid}`}
 										onClick={(ev) => ev.stopPropagation()}
 									>
@@ -2022,7 +2025,7 @@ function AuditPanel() {
 								)}
 							</button>
 							{expanded === i && (
-								<pre className="m-0 px-3 py-2 text-[11px] leading-relaxed text-dim overflow-x-auto border-t border-line">
+								<pre className="m-0 overflow-x-auto border-t border-line px-3 py-2 text-meta leading-relaxed text-dim">
 									{JSON.stringify(e, null, 2)}
 								</pre>
 							)}
@@ -2030,7 +2033,7 @@ function AuditPanel() {
 					);
 				})}
 				{!loading && events.length === 0 && (
-					<div className="px-3 py-4 text-faint text-[12.5px]">No events match.</div>
+					<div className="px-3 py-4 text-supporting text-faint">No events match.</div>
 				)}
 			</div>
 
@@ -2204,7 +2207,7 @@ function ComposerPanel() {
 // ── Workspace · General ─────────────────────────────────────────────────────
 
 const IDENTITY_INPUT_CLASS =
-	"w-[140px] rounded-md border border-line bg-surface px-2 py-1 text-[13px] font-medium text-dim opacity-70";
+	"w-[140px] rounded-md border border-line bg-surface px-2 py-1 text-control-label font-medium text-dim opacity-70";
 
 /**
  * Instance identity. The source of truth is ~/.backstage/config.json
@@ -2482,10 +2485,10 @@ function SidebarOrderRow({
 			}}
 			className="relative flex min-h-11 touch-none cursor-grab select-none items-center gap-2 border-b border-line bg-surface px-3 first:rounded-t-lg last:rounded-b-lg last:border-b-0 active:cursor-grabbing"
 		>
-			<span className="w-5 text-[11px] tabular-nums text-faint">
+			<span className="w-5 text-meta tabular-nums text-faint">
 				{index + 1}
 			</span>
-			<span className="min-w-0 flex-1 text-[13px] font-medium text-fg">
+			<span className="min-w-0 flex-1 text-body font-medium text-fg">
 				{SIDEBAR_SECTION_LABELS[section]}
 			</span>
 			<span

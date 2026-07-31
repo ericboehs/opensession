@@ -9,6 +9,7 @@ import {
   type AttachedRepo,
 } from "../lib/api";
 import { Menu } from "../ui/menu";
+import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
 import { IconCheck, IconPlus, IconX, IconChevronRight } from "./icons";
 import { RepoTile, repoLabel } from "./RepoTile";
@@ -147,19 +148,19 @@ export function RepoBar({
   }
 
   // Static (non-menu-item) row — current repo when it can't switch, attached rows.
-  const staticRow = "flex items-center gap-2 rounded-md px-2.5 py-2 text-[13px] text-fg";
+  const staticRow = "flex items-center gap-2 rounded-md px-2.5 py-2 text-control-label text-fg";
 
   const trigger =
     variant === "menu-row" ? (
       // ⋯ overflow menu row (phone): matches the other menu items' shape.
       <Menu.Trigger
-        className="flex w-full cursor-pointer items-center gap-[7px] whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-3 py-[7px] text-[13px] font-medium text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg"
+        className="flex w-full cursor-pointer items-center gap-[7px] whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-3 py-[7px] text-control-label font-medium text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg"
         title="Repo — switch or attach another"
       >
         <RepoTile name={primary} size={18} />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-          <span className="text-[10.5px] font-semibold leading-none text-faint">Repository</span>
-          <span className="truncate text-[13px] leading-[1.2] text-fg">
+          <span className="text-meta font-semibold leading-none text-faint">Repository</span>
+          <span className="truncate text-control-label leading-[1.2] text-fg">
             {busy ?? repoLabel(primary)}
             {attached.length > 0 && (
               <span className="text-faint"> +{attached.length}</span>
@@ -170,7 +171,7 @@ export function RepoBar({
       </Menu.Trigger>
     ) : (
       <Menu.Trigger
-        className="-mx-1.5 -my-1 flex min-w-0 shrink-0 cursor-pointer items-center gap-[7px] rounded-md border-0 bg-transparent px-1.5 py-1 text-[14px] font-medium text-fg hover:bg-hover data-[popup-open]:bg-hover"
+        className="-mx-1.5 -my-1 flex min-w-0 shrink-0 cursor-pointer items-center gap-[7px] rounded-md border-0 bg-transparent px-1.5 py-1 text-body font-medium text-fg hover:bg-hover data-[popup-open]:bg-hover"
         title="Repo — click to switch or attach another"
       >
         <RepoTile name={primary} />
@@ -258,13 +259,13 @@ export function RepoBar({
                 )}
               </Menu.Group>
               {!switchable ? (
-                <div className="max-w-[240px] px-2.5 pt-1.5 pb-0.5 text-[11px] leading-snug text-faint">
+                <div className="max-w-[240px] px-2.5 pt-1.5 pb-0.5 text-meta leading-snug text-faint">
                   Ask sessions read the shared checkout — there's no primary repo
                   to switch.
                 </div>
               ) : (
                 hasWork && (
-                  <div className="max-w-[240px] px-2.5 pt-1.5 pb-0.5 text-[11px] leading-snug text-faint">
+                  <div className="max-w-[240px] px-2.5 pt-1.5 pb-0.5 text-meta leading-snug text-faint">
                     Switching keeps your current changes in the {repoLabel(primary)} worktree
                     — they won't move to the new repo.
                   </div>
@@ -275,7 +276,7 @@ export function RepoBar({
         </Menu.Popup>
       </Menu.Root>
       {error && (
-        <span className="max-w-[220px] truncate text-[11px] text-red" title={error}>
+        <span className="max-w-[220px] truncate text-meta text-red" title={error}>
           {error}
         </span>
       )}
@@ -298,21 +299,18 @@ export function RepoBar({
             <div className="flex-1" />
             <Modal.Close
               render={
-                <button
-                  type="button"
-                  className="rounded-md px-3 py-2 text-[13.5px] font-medium text-dim hover:bg-hover hover:text-fg"
-                >
+                <Button variant="ghost">
                   Cancel
-                </button>
+                </Button>
               }
             />
-            <button
-              type="button"
-              className="rounded-md bg-accent px-5 py-2 text-[13.5px] font-semibold text-white outline-none hover:brightness-105"
+            <Button
+              variant="primary"
+              className="px-5"
               onClick={() => confirmTarget && doSwitch(confirmTarget)}
             >
               Switch to {confirmTarget ? repoLabel(confirmTarget) : ""}
-            </button>
+            </Button>
           </Modal.Footer>
         </Modal.Content>
       </Modal.Root>

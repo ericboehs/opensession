@@ -10,6 +10,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { Button } from "../ui/button";
 import { IconX } from "./icons";
 
 type ShellUpdateState = {
@@ -72,12 +73,13 @@ export function DesktopUpdateToast() {
 									: "Downloading the new version of OS¹…"}
 							</div>
 							{downloaded && (
-								<button
-									className="mt-2.5 rounded-md border border-line-strong bg-surface px-2.5 py-1 text-[13px] font-medium hover:bg-hover"
+								<Button
+									size="sm"
+									className="mt-2.5"
 									onClick={() => os1()?.updates?.install()}
 								>
 									Restart to update
-								</button>
+								</Button>
 							)}
 						</div>
 						<button

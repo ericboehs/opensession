@@ -38,6 +38,7 @@ import {
   closePrPreviewApi,
 } from "../lib/api";
 import { prPath } from "../lib/share-link";
+import { Button } from "../ui/button";
 import { toast } from "../ui/toast";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { CommentableDiff, type CommentTarget, type PendingComment } from "./CommentableDiff";
@@ -964,8 +965,9 @@ export function PrPanel({
         {switcher}
         <div className="panel-placeholder panel-error">
           <div>{loadError}</div>
-          <button
-            className="mt-3 rounded-sm border border-line bg-panel px-3 py-1.5 text-xs text-fg hover:bg-hover"
+          <Button
+            size="sm"
+            className="mt-3"
             onClick={() => {
               setLoading(true);
               setLoadError(null);
@@ -973,7 +975,7 @@ export function PrPanel({
             }}
           >
             Retry
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -1040,7 +1042,7 @@ export function PrPanel({
         <header className="flex min-h-[96px] shrink-0 items-center gap-5 px-6 py-4 max-[720px]:min-h-[78px] max-[720px]:px-3">
           <div className="min-w-0 flex-1">
             <a
-              className="block truncate text-[24px] font-semibold tracking-[-0.025em] text-fg no-underline hover:text-accent max-[720px]:text-[18px]"
+              className="block truncate text-page-title font-semibold tracking-[-0.025em] text-fg no-underline hover:text-accent max-[720px]:text-section-title"
               href={pr.url}
               target="_blank"
               rel="noopener"
@@ -1167,16 +1169,16 @@ export function PrPanel({
                 key={key}
                 role="tab"
                 aria-selected={activeTab}
-                className={`flex h-[44px] shrink-0 items-center gap-2 rounded-t-md border px-4 text-[13px] font-medium ${activeTab ? "border-line border-b-surface bg-surface text-fg" : "border-transparent bg-transparent text-dim hover:border-line hover:bg-hover hover:text-fg"}`}
+                className={`flex h-[44px] shrink-0 items-center gap-2 rounded-t-md border px-4 text-control-label font-medium ${activeTab ? "border-line border-b-surface bg-surface text-fg" : "border-transparent bg-transparent text-dim hover:border-line hover:bg-hover hover:text-fg"}`}
                 onClick={() => setDiffView(key)}
               >
                 {icon}
                 {label}
-                <span className="rounded-full bg-active px-2 py-0.5 text-[11px] font-semibold text-dim">{count}</span>
+                <span className="rounded-full bg-active px-2 py-0.5 text-meta font-semibold text-dim">{count}</span>
               </button>
             );
           })}
-          <span className="ml-auto mb-3 shrink-0 text-[11px] max-[720px]:hidden">
+          <span className="ml-auto mb-3 shrink-0 text-meta max-[720px]:hidden">
             <span className="text-green">+{pr.additions}</span>{" "}
             <span className="text-red">−{pr.deletions}</span>
           </span>
@@ -1201,19 +1203,19 @@ export function PrPanel({
               </div>
               <div className="ml-auto flex items-center gap-3">
                 {pending.length > 0 && (
-                  <span className="text-[11px] text-faint">
+                  <span className="text-meta text-faint">
                     {pending.length} pending comment{pending.length === 1 ? "" : "s"}
                   </span>
                 )}
                 <div className="inline-flex rounded-md border border-line bg-panel p-0.5">
                   <button
-                    className={`rounded-sm border-0 px-2.5 py-1 text-[11px] ${diffStyle === "unified" ? "bg-active text-fg" : "bg-transparent text-dim hover:text-fg"}`}
+                    className={`rounded-sm border-0 px-2.5 py-1 text-meta ${diffStyle === "unified" ? "bg-active text-fg" : "bg-transparent text-dim hover:text-fg"}`}
                     onClick={() => changeDiffStyle("unified")}
                   >
                     Unified
                   </button>
                   <button
-                    className={`rounded-sm border-0 px-2.5 py-1 text-[11px] ${diffStyle === "split" ? "bg-active text-fg" : "bg-transparent text-dim hover:text-fg"}`}
+                    className={`rounded-sm border-0 px-2.5 py-1 text-meta ${diffStyle === "split" ? "bg-active text-fg" : "bg-transparent text-dim hover:text-fg"}`}
                     onClick={() => changeDiffStyle("split")}
                   >
                     Split
@@ -1290,11 +1292,11 @@ export function PrPanel({
                 ) : guide ? (
                   <>
                     <div className="mb-7 grid grid-cols-[54px_minmax(0,1fr)] gap-4 px-1">
-                      <div className="text-[11px] font-medium leading-relaxed text-faint">
+                      <div className="text-meta font-medium leading-relaxed text-faint">
                         Review guide
                       </div>
                       <div>
-                        <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em] text-fg">
+                        <h2 className="m-0 text-item-title font-semibold tracking-[-0.01em] text-fg">
                           {guide.sections.length} focused review step{guide.sections.length === 1 ? "" : "s"}
                         </h2>
                         <p className="mt-1 max-w-[680px] text-xs leading-relaxed text-dim">
@@ -1309,12 +1311,12 @@ export function PrPanel({
                         key={`${section.title}-${index}`}
                       >
                         <div className="mb-3 grid grid-cols-[54px_minmax(0,1fr)] gap-4 px-1">
-                          <div className="text-[10px] text-faint">
+                          <div className="text-meta text-faint">
                             {String(index + 1).padStart(2, "0")} / {String(all.length).padStart(2, "0")}
                           </div>
                           <div>
-                            <div className="text-[13px] font-semibold text-fg">{section.title}</div>
-                            <div className="mt-1 text-[11.5px] leading-relaxed text-dim">
+                            <div className="text-body font-semibold text-fg">{section.title}</div>
+                            <div className="mt-1 text-meta leading-relaxed text-dim">
                               {section.explanation}
                             </div>
                           </div>
@@ -1374,7 +1376,7 @@ export function PrPanel({
                     : "No pending comments"}
             </div>
             <div
-              className={`mt-0.5 truncate text-[10px] ${closeError ? "text-red" : "text-faint"}`}
+              className={`mt-0.5 truncate text-meta ${closeError ? "text-red" : "text-faint"}`}
               title={closeError || undefined}
             >
               {closeError || "Comments are sent together when you finish the review"}
@@ -1452,7 +1454,7 @@ export function PrPanel({
                 ).map(([event, label]) => (
                   <button
                     key={event}
-                    className={`rounded-sm border px-2 py-2 text-[11px] ${reviewEvent === event ? "border-green/50 bg-green-soft text-green" : "border-line bg-surface text-dim hover:border-line-strong hover:text-fg"}`}
+                    className={`rounded-sm border px-2 py-2 text-meta ${reviewEvent === event ? "border-green/50 bg-green-soft text-green" : "border-line bg-surface text-dim hover:border-line-strong hover:text-fg"}`}
                     onClick={() => setReviewEvent(event)}
                   >
                     {label}
@@ -1460,7 +1462,7 @@ export function PrPanel({
                 ))}
               </div>
               {reviewEvent === "APPROVE" && canMergeAfterReview && (
-                <label className="mb-3 flex cursor-pointer items-center gap-2 px-0.5 text-[11px] text-dim">
+                <label className="mb-3 flex cursor-pointer items-center gap-2 px-0.5 text-meta text-dim">
                   <input
                     type="checkbox"
                     checked={mergeAfterReview}
@@ -1472,19 +1474,20 @@ export function PrPanel({
               {reviewError && <div className="mb-2 text-xs text-red">{reviewError}</div>}
               {mergeError && <div className="mb-2 text-xs text-red">{mergeError}</div>}
               <div className="flex justify-end gap-2">
-                <button
-                  className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs text-dim hover:bg-hover hover:text-fg"
+                <Button
+                  size="sm"
                   onClick={() => setReviewOpen(false)}
                 >
                   Cancel
-                </button>
-                <button
-                  className="rounded-sm border border-fg bg-fg px-3 py-2 text-xs font-semibold text-surface disabled:opacity-50"
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
                   onClick={handleSubmitReview}
                   disabled={submitting}
                 >
                   {submitting ? "Submitting…" : reviewSubmitLabel}
-                </button>
+                </Button>
               </div>
             </div>
           </>
@@ -1505,7 +1508,7 @@ export function PrPanel({
           {/* Header — title + meta line, Linear-style */}
           <div className="flex flex-col gap-2 rounded-panel border border-line bg-panel px-4 py-4 sm:px-5">
             <a
-              className="text-[18px] font-semibold leading-tight text-fg no-underline hover:text-accent"
+              className="text-section-title font-semibold leading-tight text-fg no-underline hover:text-accent"
               href={pr.url}
               target="_blank"
               rel="noopener"
@@ -1516,14 +1519,14 @@ export function PrPanel({
               {pr.author && <span className="font-medium text-dim">{pr.author}</span>}
               <span>#{pr.number}</span>
               <span
-                className="inline-flex items-center gap-1 text-[11px] text-dim"
+                className="inline-flex items-center gap-1 text-meta text-dim"
                 title={`${pr.baseRefName} ← ${pr.headRefName}`}
               >
                 <span className="rounded-sm border border-line bg-surface px-1.5 py-0.5">{pr.baseRefName}</span>
                 <span className="text-faint">←</span>
                 <span className="rounded-sm border border-line bg-surface px-1.5 py-0.5">{pr.headRefName}</span>
               </span>
-              <span className="inline-flex items-center gap-1.5 text-[11px]">
+              <span className="inline-flex items-center gap-1.5 text-meta">
                 <span className="text-green">+{pr.additions}</span>
                 <span className="text-red">−{pr.deletions}</span>
               </span>
@@ -1668,7 +1671,7 @@ export function PrPanel({
             <PrCard
               title={`${files.length} file${files.length === 1 ? "" : "s"} changed`}
               headExtra={
-                <span className="inline-flex items-center gap-1.5 text-[11px]">
+                <span className="inline-flex items-center gap-1.5 text-meta">
                   <span className="text-green">+{pr.additions}</span>
                   <span className="text-red">−{pr.deletions}</span>
                 </span>
@@ -1740,8 +1743,9 @@ export function PrPanel({
             {diffError ? (
               <>
                 <div>{diffError}</div>
-                <button
-                  className="mt-3 rounded-sm border border-line bg-panel px-3 py-1.5 text-xs text-fg hover:bg-hover"
+                <Button
+                  size="sm"
+                  className="mt-3"
                   onClick={() => {
                     setDiffLoading(true);
                     setDiffError(null);
@@ -1749,7 +1753,7 @@ export function PrPanel({
                   }}
                 >
                   Retry
-                </button>
+                </Button>
               </>
             ) : diffOutOfDate
               ? "The pull request changed while loading. It will refresh automatically."
@@ -1779,7 +1783,7 @@ export function PrPanel({
                   </button>
                 ))}
               </div>
-              <div className="text-right text-[11px] text-faint">
+              <div className="text-right text-meta text-faint">
                 Review — comments stay pending until you submit
                 {reviewDone &&
                   (reviewDone === "submitted" ? (
@@ -1850,14 +1854,14 @@ export function PrPanel({
                   {pending.length} pending comment{pending.length === 1 ? "" : "s"}
                 </span>
                 <button
-                  className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+                  className="rounded-sm border border-line bg-panel px-2.5 py-1 text-meta text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
                   onClick={() => setReviewOpen((o) => !o)}
                 >
                   {reviewOpen ? "Hide" : "Finish review"}
                 </button>
                 {onAddToInput && (
                   <button
-                    className="rounded-sm border border-line bg-panel px-2.5 py-1 text-[11px] text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+                    className="rounded-sm border border-line bg-panel px-2.5 py-1 text-meta text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
                     onClick={() => onAddToInput(formatPendingCommentsPrompt(pending, pr))}
                   >
                     Add to chat
@@ -1884,7 +1888,7 @@ export function PrPanel({
                     ).map(([key, label]) => (
                       <button
                         key={key}
-                        className={`rounded-sm border px-2.5 py-2 text-[11px] ${reviewEvent === key ? "border-green/45 bg-green-soft text-green" : "border-line bg-panel text-dim hover:border-line-strong hover:text-fg"}`}
+                        className={`rounded-sm border px-2.5 py-2 text-meta ${reviewEvent === key ? "border-green/45 bg-green-soft text-green" : "border-line bg-panel text-dim hover:border-line-strong hover:text-fg"}`}
                         onClick={() => setReviewEvent(key)}
                       >
                         {label}
@@ -1892,13 +1896,15 @@ export function PrPanel({
                     ))}
                   </div>
                   {reviewError && <div className="diff-comment-error">{reviewError}</div>}
-                  <button
-                    className="self-start rounded-sm border border-fg bg-fg px-3 py-2 text-xs font-semibold text-surface hover:border-accent hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="self-start"
                     onClick={handleSubmitReview}
                     disabled={submitting}
                   >
                     {submitting ? "Submitting…" : `Submit review (${pending.length})`}
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
@@ -1931,11 +1937,11 @@ function PrDescriptionCard({
         </span>
         <div>
           <div className="text-xs font-semibold text-fg">{author}</div>
-          <div className="text-[10px] text-faint">Opened this pull request</div>
+          <div className="text-meta text-faint">Opened this pull request</div>
         </div>
       </div>
       <div
-        className="markdown px-4 py-4 text-[13px] leading-relaxed text-dim"
+        className="markdown px-4 py-4 text-body leading-relaxed text-dim"
         dangerouslySetInnerHTML={{ __html: descriptionHtml }}
       />
     </article>
@@ -1953,7 +1959,7 @@ function ChecksView({
   return (
     <div className="mx-auto max-w-[760px]">
       <div className="mb-6">
-        <h2 className="m-0 text-[17px] font-semibold tracking-[-0.01em] text-fg">
+        <h2 className="m-0 text-section-title font-semibold tracking-[-0.01em] text-fg">
           Checks
         </h2>
         <p className="mt-1 text-xs text-faint">
@@ -1992,7 +1998,7 @@ function CommitsView({ commits }: { commits: PrCommit[] }) {
   return (
     <div className="mx-auto max-w-[760px]">
       <div className="mb-6">
-        <h2 className="m-0 text-[17px] font-semibold tracking-[-0.01em] text-fg">
+        <h2 className="m-0 text-section-title font-semibold tracking-[-0.01em] text-fg">
           Commits
         </h2>
         <p className="mt-1 text-xs text-faint">
@@ -2014,18 +2020,18 @@ function CommitsView({ commits }: { commits: PrCommit[] }) {
                 <CommitIcon />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium text-fg">{commit.messageHeadline}</div>
+                <div className="text-body font-medium text-fg">{commit.messageHeadline}</div>
                 {commit.messageBody && (
-                  <div className="mt-1 line-clamp-2 whitespace-pre-wrap text-[11px] leading-relaxed text-dim">
+                  <div className="mt-1 line-clamp-2 whitespace-pre-wrap text-meta leading-relaxed text-dim">
                     {commit.messageBody}
                   </div>
                 )}
-                <div className="mt-1.5 text-[10px] text-faint">
+                <div className="mt-1.5 text-meta text-faint">
                   {commit.author}
                   {commit.authoredDate ? ` committed ${new Date(commit.authoredDate).toLocaleString()}` : ""}
                 </div>
               </div>
-              <code className="shrink-0 rounded-sm border border-line bg-surface px-2 py-1 text-[10px] text-dim">
+              <code className="shrink-0 rounded-sm border border-line bg-surface px-2 py-1 text-meta text-dim">
                 {commit.oid.slice(0, 7)}
               </code>
             </article>
@@ -2048,7 +2054,7 @@ function ConversationView({
   return (
     <div className="mx-auto max-w-[760px]">
       <div className="mb-6">
-        <h2 className="m-0 text-[17px] font-semibold tracking-[-0.01em] text-fg">
+        <h2 className="m-0 text-section-title font-semibold tracking-[-0.01em] text-fg">
           Conversation
         </h2>
         <p className="mt-1 text-xs text-faint">
@@ -2085,12 +2091,12 @@ function ConversationView({
                       {comment.author || "Unknown"}
                     </div>
                     {timestamp && (
-                      <div className="text-[10px] text-faint">{timestamp}</div>
+                      <div className="text-meta text-faint">{timestamp}</div>
                     )}
                   </div>
                   {comment.url && (
                     <a
-                      className="text-[11px] text-faint no-underline hover:text-fg"
+                      className="text-meta text-faint no-underline hover:text-fg"
                       href={comment.url}
                       target="_blank"
                       rel="noopener"
@@ -2100,7 +2106,7 @@ function ConversationView({
                   )}
                 </div>
                 <div
-                  className="markdown px-4 py-4 text-[13px] leading-relaxed text-dim"
+                  className="markdown px-4 py-4 text-body leading-relaxed text-dim"
                   dangerouslySetInnerHTML={{ __html: renderPrCommentMarkdown(body) }}
                 />
               </article>
@@ -2190,13 +2196,14 @@ function LinkPrControl({
           if (e.key === "Escape") setOpen(false);
         }}
       />
-      <button
+      <Button
         type="submit"
-        className="rounded-sm border border-fg bg-fg px-3 py-2 text-xs font-semibold text-surface hover:border-accent hover:bg-accent disabled:cursor-not-allowed disabled:border-line disabled:bg-panel disabled:text-faint"
+        variant="primary"
+        size="sm"
         disabled={busy || !val.trim()}
       >
         {busy ? "Linking…" : "Link"}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -2214,7 +2221,7 @@ function PrCard({
   return (
     <div className="rounded-panel border border-line bg-panel">
       <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-faint">{title}</span>
+        <span className="text-meta font-semibold uppercase tracking-[0.08em] text-faint">{title}</span>
         {headExtra}
       </div>
       <div className="flex flex-col gap-2 px-4 py-3 sm:px-5">{children}</div>
@@ -2279,19 +2286,19 @@ function StackBody({
       <>
         <div className="text-xs leading-relaxed text-dim">
           This branch was cut from{" "}
-          <span className="rounded-sm border border-line bg-surface px-1.5 py-0.5 text-[11px]">
+          <span className="rounded-sm border border-line bg-surface px-1.5 py-0.5 text-meta">
             {pr.stackBase}
           </span>{" "}
           but the PRs aren't a stack on GitHub yet — each is still reviewed against the whole chain.
         </div>
         <div className="flex items-center gap-3 pt-1">
-          <button
-            className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-fg transition-transform hover:border-faint active:scale-[0.96] disabled:opacity-60"
+          <Button
+            size="sm"
             onClick={link}
             disabled={linking}
           >
             {linking ? "Linking…" : "Link into a stack"}
-          </button>
+          </Button>
           {error && <span className="text-xs text-red">{error}</span>}
         </div>
       </>
@@ -2352,7 +2359,7 @@ function StackBody({
           </a>
         );
       })}
-      <div className="border-t border-line pt-2 text-[11px] text-faint">
+      <div className="border-t border-line pt-2 text-meta text-faint">
         Bottom of the stack merges into{" "}
         <span className="rounded-sm border border-line bg-surface px-1.5 py-0.5">
           {stack.baseRefName}
@@ -2393,7 +2400,7 @@ function StackCard({
       title="Stack"
       headExtra={
         pr.stack ? (
-          <span className="text-[11px] text-faint">
+          <span className="text-meta text-faint">
             {pr.stack.position} of {pr.stack.size}
           </span>
         ) : undefined
@@ -2501,7 +2508,7 @@ function FileRow({ file, onClick }: { file: PrFile; onClick?: () => void }) {
         {dir && <span className="text-faint">{dir}</span>}
         {base}
       </span>
-      <span className="inline-flex shrink-0 items-center gap-1.5 text-[11px]">
+      <span className="inline-flex shrink-0 items-center gap-1.5 text-meta">
         {file.additions > 0 && <span className="text-green">+{file.additions}</span>}
         {file.deletions > 0 && <span className="text-red">−{file.deletions}</span>}
       </span>

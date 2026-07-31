@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { PlainThread } from "../lib/types";
 import { fetchPlainThreadById, startPlainTriageApi } from "../lib/api";
+import { Button } from "../ui/button";
 import {
 	PlainEntryRow,
 	PlainReplyBox,
@@ -111,7 +112,7 @@ export function ConversationPane({
 					<>
 						<div className="flex items-center gap-2.5 min-w-0">
 							<span
-								className="text-fg font-semibold text-[15px] truncate"
+								className="truncate text-item-title font-semibold text-fg"
 								title={thread?.customer?.email || ""}
 							>
 								{customerLabel}
@@ -139,7 +140,7 @@ export function ConversationPane({
 							</a>
 						</div>
 						{thread?.title && (
-							<div className="text-fg font-semibold text-[18px] mt-2">
+							<div className="mt-2 text-section-title font-semibold text-fg">
 								{thread.title}
 							</div>
 						)}
@@ -166,7 +167,7 @@ export function ConversationPane({
 						{!hideTriage && (
 							<div className="flex items-center gap-3 flex-wrap mt-4 p-3 rounded-lg border border-line bg-panel">
 								<div className="min-w-0 flex-1">
-									<div className="text-fg font-semibold text-[13px]">
+									<div className="text-body font-semibold text-fg">
 										Triage this ticket?
 									</div>
 									<div className="text-dim text-[12px] mt-0.5">
@@ -174,13 +175,14 @@ export function ConversationPane({
 										internal note, and can open a PR for review.
 									</div>
 								</div>
-								<button
-									className="shrink-0 rounded-md bg-accent text-white text-[13px] font-semibold px-3 py-1.5 cursor-pointer border-0 hover:opacity-90 disabled:opacity-50 disabled:cursor-default"
+								<Button
+									variant="primary"
+									className="shrink-0 text-control-label"
 									onClick={handleTriage}
 									disabled={triaging}
 								>
 									{triaging ? "Starting triage… (~30s)" : "Triage this ticket"}
-								</button>
+								</Button>
 								{triageError && (
 									<div className="basis-full text-red text-[12px]">
 										{triageError}

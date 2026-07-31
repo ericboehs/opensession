@@ -20,6 +20,7 @@ import {
   IconStopSquare,
 } from "./icons";
 import { Tooltip } from "../ui/tooltip";
+import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
 import { isSendCombo, sendKeyLabel } from "../lib/send-key";
 import { getSendKeyPref, onSendKeyChanged } from "../lib/send-key-pref";
@@ -187,7 +188,7 @@ function GoalModal({
 
         <textarea
           ref={inputRef}
-          className="min-h-[120px] w-full resize-y rounded-lg border border-line-strong bg-surface px-4 py-3.5 text-[15px] leading-relaxed text-fg outline-none"
+          className="min-h-[120px] w-full resize-y rounded-lg border border-line-strong bg-surface px-4 py-3.5 text-body leading-relaxed text-fg outline-none"
           value={text}
           rows={3}
           onChange={(e) => setText(e.target.value)}
@@ -203,23 +204,22 @@ function GoalModal({
 
         <Modal.Footer>
           {initial && (
-            <button
-              type="button"
-              className="rounded-md px-3 py-2 text-[13.5px] font-medium text-red hover:bg-red-soft"
+            <Button
+              variant="danger"
               onClick={() => onSubmit(null)}
             >
               Clear goal
-            </button>
+            </Button>
           )}
           <div className="flex-1" />
-          <button
-            type="button"
-            className="rounded-md bg-accent px-5 py-2 text-[13.5px] font-semibold text-white outline-none hover:brightness-105 disabled:cursor-default disabled:opacity-40"
+          <Button
+            variant="primary"
+            className="px-5"
             onClick={() => onSubmit(text.trim() || null)}
             disabled={text.trim() === initial.trim()}
           >
             {initial ? "Update goal" : "Set goal"}
-          </button>
+          </Button>
         </Modal.Footer>
       </Modal.Content>
     </Modal.Root>
@@ -683,7 +683,7 @@ export function Composer({
             typing looks identical with the pref on. Sits above the input wrap's
             scroll-fade mask. */}
         {vimEnabled && vim.mode !== "insert" && (
-          <div className="pointer-events-none absolute right-3 top-2 z-[2] select-none rounded-sm border border-line bg-surface px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-dim">
+          <div className="pointer-events-none absolute right-3 top-2 z-[2] select-none rounded-sm border border-line bg-surface px-1.5 py-0.5 text-meta font-semibold tracking-wider text-dim">
             {vim.mode === "normal"
               ? "NORMAL"
               : vim.mode === "visual"
