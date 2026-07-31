@@ -4278,7 +4278,11 @@ export function SessionViewer({
 								// already the 32px square the ⋯ and share buttons use.
 								// text-dim, not text-faint: the share and ⋯ buttons beside it
 								// are dim, and a lighter ink made this read as disabled.
-								className="[.viewer-overflow_+_&]:-ml-1 rounded-[calc(10px*var(--rf))] text-dim hover:bg-hover hover:text-fg max-[720px]:order-2 max-[720px]:h-[38px] max-[720px]:min-h-[38px] max-[720px]:w-[38px] max-[720px]:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] max-[720px]:text-accent"
+								// No negative margin after the ⋯ either: that -4px pull dated
+								// from when both were narrow padded controls, and now that all
+								// three are equal squares it just made this gap 4px where the
+								// share → ⋯ one is the row's 8px.
+								className="rounded-[calc(10px*var(--rf))] text-dim hover:bg-hover hover:text-fg max-[720px]:order-2 max-[720px]:h-[38px] max-[720px]:min-h-[38px] max-[720px]:w-[38px] max-[720px]:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] max-[720px]:text-accent"
 								onClick={() => setPanelOpen(!panelOpen)}
 								aria-label="Toggle side panel"
 								// Iconic sidebar-right glyph — reads as "right side panel".

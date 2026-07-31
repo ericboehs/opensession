@@ -166,7 +166,10 @@ function Face({
 }) {
 	const state = presenceState(member);
 	return (
-		<span className="relative inline-flex">
+		// `flex`, not `inline-flex`: an inline box sits on its parent's baseline
+		// and carries the descender space below it, which makes the face ride
+		// high against anything centred beside it (the pile's "+N").
+		<span className="relative flex">
 			<UserAvatar
 				name={member.person.name}
 				size={size}
@@ -250,17 +253,10 @@ export function TeamFacepile({
 			})}
 			{overflow > 0 && (
 				<span
-					className="relative inline-flex items-center justify-center rounded-[32%] border border-line-strong bg-active text-meta font-semibold tabular-nums text-dim"
-					style={{
-						// The counter is last, so it tucks behind the pile like every
-						// other tile — it carries the overlap as padding so the covered
-						// strip is empty and the "+N" still reads whole.
-						width: size + overlap,
-						height: size,
-						paddingLeft: overlap,
-						marginLeft: -overlap,
-						zIndex: 0,
-					}}
+					// The rest of the team is a count, not another face: no tile, no
+					// border, just the number sitting on the row's centre line.
+					className="ml-1.5 flex items-center text-meta font-semibold tabular-nums text-dim"
+					style={{ height: size }}
 					title={members
 						.slice(shown.length)
 						.map((m) => m.person.fullName)

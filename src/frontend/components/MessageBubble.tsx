@@ -431,7 +431,15 @@ export const MessageBubble = React.memo(function MessageBubble({
 	if (entry.type === "user" && workerReport) {
 		return (
 			<div className="msg" data-eid={entry.id}>
-				<div className="overflow-hidden rounded-lg bg-panel">
+				{/* Folded, this is one quiet line in the transcript — no surface of its
+				    own, like the other collapsible notices. The panel appears only when
+				    there is a report body for it to hold. */}
+				<div
+					className={cn(
+						"overflow-hidden rounded-lg transition-colors",
+						workerReportOpen ? "bg-panel" : "hover:bg-hover",
+					)}
+				>
 					<div className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-dim">
 						<button
 							type="button"
@@ -447,7 +455,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 							>
 								<IconChevronDown size={16} />
 							</span>
-							<span>🤖 Worker report</span>
+							<span>Worker report</span>
 						</button>
 						<MsgTime ts={entry.timestamp} />
 					</div>
@@ -507,7 +515,13 @@ export const MessageBubble = React.memo(function MessageBubble({
 	if (entry.type === "user" && reviewHandoff) {
 		return (
 			<div className="msg" data-eid={entry.id}>
-				<div className="overflow-hidden rounded-lg bg-panel">
+				{/* Same folded-notice treatment as the worker report above. */}
+				<div
+					className={cn(
+						"overflow-hidden rounded-lg transition-colors",
+						reviewHandoffOpen ? "bg-panel" : "hover:bg-hover",
+					)}
+				>
 					<div className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-dim">
 						<button
 							type="button"

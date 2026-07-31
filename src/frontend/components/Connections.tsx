@@ -318,7 +318,7 @@ export function Connections() {
               return (
                 <div
                   key={s.name}
-                  className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-hover"
+                  className="group flex items-start gap-3 px-4 py-3 transition-colors hover:bg-hover"
                 >
                   <IconTile name={s.name} />
                   <div className="min-w-0 flex-1">

@@ -536,7 +536,7 @@ function ClaudeAccountsSection() {
 					</EmptyState>
 				) : (
 					accounts.map((a) => (
-						<SettingRow key={a.id}>
+						<SettingRow key={a.id} className="items-start">
 							<Avatar name={a.name} className="bg-[#d97757]" />
 							<SettingRowText>
 								<div className="flex items-center gap-2 min-w-0">
@@ -729,7 +729,7 @@ function CodexAccountsSection() {
 					</EmptyState>
 				) : (
 					accounts.map((a) => (
-						<SettingRow key={a.id}>
+						<SettingRow key={a.id} className="items-start">
 							<Avatar name={a.name} className="bg-[#10a37f]" />
 							<SettingRowText>
 								<div className="flex items-center gap-2 min-w-0">

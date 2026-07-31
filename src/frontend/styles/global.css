@@ -3680,8 +3680,17 @@ html.wco .viewer-branch {
 /* Squircle user picture (GitHub avatar, initial fallback) — see UserAvatar.tsx.
    Size + font-size come inline from the component; the count badge the
    presence facepile nests inside sits outside the avatar, so no overflow
-   clipping here (the img rounds itself instead). */
+   clipping here (the img rounds itself instead).
+
+   The edge is a translucent hairline drawn *over* the picture rather than a
+   solid border around it. An avatar lands on many surfaces (sidebar rows,
+   hover, selection, Home, menus, overlapping piles), and a fixed gray ring
+   outside the photo reads as a frame on all of them; ink at 14% just defines
+   the photo's own edge and picks up whatever it sits on. The picture and the
+   initial fallback share it via --avatar-edge, since the image covers the
+   container's own shadow. */
 .user-avatar {
+	--avatar-edge: inset 0 0 0 1px color-mix(in srgb, var(--text) 14%, transparent);
 	position: relative;
 	display: inline-flex;
 	align-items: center;
@@ -3689,7 +3698,7 @@ html.wco .viewer-branch {
 	flex-shrink: 0;
 	border-radius: 32%;
 	background: var(--bg-active);
-	border: 1px solid var(--border-strong);
+	box-shadow: var(--avatar-edge);
 	color: var(--text-dim);
 	font-weight: 700;
 	user-select: none;
@@ -3701,6 +3710,7 @@ html.wco .viewer-branch {
 	height: 100%;
 	border-radius: inherit;
 	object-fit: cover;
+	box-shadow: var(--avatar-edge);
 }
 
 /* Small "reviewed" checkmark badge nested over the reviewer's avatar in the
@@ -3732,8 +3742,9 @@ html.wco .viewer-branch {
 .presence-avatar {
 	margin-left: -8px;
 	/* Ring the color of the header behind it (.viewer-header is bg-raised),
-	   so stacked faces read as separate avatars. */
-	box-shadow: 0 0 0 2px var(--bg-raised);
+	   so stacked faces read as separate avatars. Keeps the shared edge — an
+	   outer ring alone would leave the picture itself unbounded. */
+	box-shadow: var(--avatar-edge), 0 0 0 2px var(--bg-raised);
 }
 .presence-avatar:first-child {
 	margin-left: 0;
