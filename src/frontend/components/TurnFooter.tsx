@@ -69,17 +69,10 @@ export const TurnFooter = React.memo(function TurnFooter({
   const rest = files.slice(MAX_CHIPS);
 
   return (
-    <div className="relative mx-auto -mt-2.5 mb-[18px] flex w-full max-w-[var(--chat-col)] flex-wrap items-center gap-x-0.5 gap-y-1.5">
+    <div className="mx-auto -mt-2.5 mb-[18px] flex w-full max-w-[var(--chat-col)] flex-wrap items-center gap-x-0.5 gap-y-1.5">
       {duration && (
         <span className="mr-1.5 text-xs font-medium text-faint">{duration}</span>
       )}
-      {/* When the turn actually happened. Absolutely placed, so revealing it
-          can't shift the buttons out from under the cursor; the background
-          lets it occlude cleanly on the rare row whose file chips reach the
-          right edge. */}
-      <span className="turn-footer-time absolute right-0 top-[3px] bg-bg pl-2 text-xs font-medium text-faint">
-        {fullTime(entry.timestamp)}
-      </span>
       <Tooltip label={copied ? "Copied" : "Copy message"}>
         <button type="button" onClick={doCopy} className={BTN}>
           {copied ? (
@@ -122,6 +115,15 @@ export const TurnFooter = React.memo(function TurnFooter({
         <FileChip key={f.path} file={f} />
       ))}
       {rest.length > 0 && <MoreChip files={rest} />}
+      {/* When the turn actually happened, last in the row: it trails the file
+          chips on the right when there's room and wraps to the line below when
+          there isn't, rather than painting over a chip. It's opacity-toggled
+          rather than mounted on hover (see .turn-footer-time), so its space is
+          always reserved and revealing it never shifts the buttons out from
+          under the cursor. */}
+      <span className="turn-footer-time ml-auto pl-3 text-xs font-medium text-faint">
+        {fullTime(entry.timestamp)}
+      </span>
     </div>
   );
 }, turnFooterPropsEqual);
