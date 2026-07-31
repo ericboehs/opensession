@@ -5,6 +5,9 @@ import { clampSplitRatio } from "../lib/split-tabs";
 type Socket = ReturnType<typeof useWebSocket>;
 export type SplitSide = "left" | "right";
 
+const splitColumns = (ratio: number) =>
+	`${ratio * 100}% 8px minmax(0, 1fr)`;
+
 interface Props {
 	/** Which column holds the focused tab — it owns the shared header chrome. */
 	focusedSide: SplitSide;
@@ -54,7 +57,10 @@ export function SessionSplit({
 		document.body.classList.add("resizing-tab-split");
 		const move = (moveEvent: PointerEvent) => {
 			const rect = root.getBoundingClientRect();
-			setDraftRatio(clampSplitRatio((moveEvent.clientX - rect.left) / rect.width));
+			const next = clampSplitRatio((moveEvent.clientX - rect.left) / rect.width);
+			// Keep Motion's reorder items out of React's layout-projection cycle while
+			// the grid moves, otherwise the right tab visibly trails its pane.
+			root.style.gridTemplateColumns = splitColumns(next);
 		};
 		const cleanup = () => {
 			document.body.classList.remove("resizing-tab-split");
@@ -66,11 +72,15 @@ export function SessionSplit({
 		const stop = (upEvent: PointerEvent) => {
 			const rect = root.getBoundingClientRect();
 			const next = clampSplitRatio((upEvent.clientX - rect.left) / rect.width);
+			root.style.gridTemplateColumns = splitColumns(next);
 			setDraftRatio(next);
 			onRatioChange(next);
 			cleanup();
 		};
-		const cancel = () => cleanup();
+		const cancel = () => {
+			root.style.gridTemplateColumns = splitColumns(draftRatio);
+			cleanup();
+		};
 		stopResizeRef.current = cancel;
 		window.addEventListener("pointermove", move);
 		window.addEventListener("pointerup", stop);
@@ -79,7 +89,7 @@ export function SessionSplit({
 
 	const column = (side: SplitSide, socket: Socket) => (
 		<div
-			className={`session-split-pane ${focusedSide === side ? "session-split-pane-focused" : ""}`}
+			className="session-split-pane"
 			onPointerDownCapture={() => {
 				if (focusedSide !== side) onFocusSide(side);
 			}}
@@ -92,7 +102,7 @@ export function SessionSplit({
 		<div
 			ref={rootRef}
 			className="session-split"
-			style={{ gridTemplateColumns: `${draftRatio * 100}% 8px minmax(0, 1fr)` }}
+			style={{ gridTemplateColumns: splitColumns(draftRatio) }}
 		>
 			{column("left", leftSocket)}
 			<div

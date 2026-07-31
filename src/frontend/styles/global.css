@@ -3380,13 +3380,6 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	flex: 1;
 	min-height: 0;
 }
-.session-split-pane:not(.session-split-pane-focused)::after {
-	content: "";
-	position: absolute;
-	inset: 0;
-	pointer-events: none;
-	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 75%, transparent);
-}
 .session-split-resize {
 	position: relative;
 	z-index: 5;
