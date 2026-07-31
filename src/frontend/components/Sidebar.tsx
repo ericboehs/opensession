@@ -4051,7 +4051,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					</span>
 				)}
 				{localMode && row.chats.some((chat) => chat.local) && !editing && (
-					<span className="shrink-0 rounded-full border border-line px-1.5 py-px text-[9px] font-medium tracking-wide text-faint">
+					<span className="shrink-0 rounded-full border border-line px-1.5 py-px text-meta font-medium tracking-wide text-faint">
 						local
 					</span>
 				)}
@@ -4933,14 +4933,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								// their icon + label.
 								!isPhone && "items-center",
 								!isPhone &&
-									// Compact rows: 13.5px labels and tight padding, with glyphs
+									// Compact rows use control-label type and tight padding, with glyphs
 									// matching the sidebar's standard 22px leading rail.
 									// the utility strip reads lighter than the work lists.
 									// Landed in ffd11ffc (2026-07-24). That commit's comment
 									// credited Michiel with "wayyy too big", but no such
 									// request exists in the session record — don't treat the
 									// current numbers as a stated preference.
-									"w-full gap-[9px] rounded-lg bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[3px] text-[13.5px] font-medium text-dim hover:bg-hover hover:text-fg",
+									"w-full gap-[9px] rounded-lg bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[3px] text-control-label font-medium text-dim hover:bg-hover hover:text-fg",
 								!isPhone && tool.active && "bg-active text-fg",
 							)}
 							onClick={tool.onClick}
@@ -6851,7 +6851,7 @@ function SidebarItem({
 					</span>
 				)}
 				{localMode && session.local && !editing && (
-					<span className="shrink-0 rounded-full border border-line px-1.5 py-px text-[9px] font-medium tracking-wide text-faint">
+					<span className="shrink-0 rounded-full border border-line px-1.5 py-px text-meta font-medium tracking-wide text-faint">
 						local
 					</span>
 				)}
