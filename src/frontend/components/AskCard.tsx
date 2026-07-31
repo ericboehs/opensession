@@ -11,7 +11,21 @@ interface Props {
   onAnswer: (answers: Record<string, string>) => void;
 }
 
-/** Interactive AskUserQuestion card — the agent is waiting on these answers. */
+/**
+ * Interactive AskUserQuestion card — the agent is waiting on these answers.
+ *
+ * Surfaces: one raised card on the transcript, with the choices as control-
+ * surface rows on top of it. Deliberately two surfaces, not the three nested
+ * greys it used to wear (card → section → row), which read as boxes-in-boxes.
+ *
+ * Selection is NEUTRAL, not accent: the accent is red here, and filling a
+ * chosen row with it read as an error/warning rather than a pick. Same reason
+ * the composer keeps its resting border on focus (see .composer in global.css).
+ * A picked row gets a stronger hairline, the pressed wash (a step above the
+ * hover wash, so hovering a row never looks like picking it), and a filled
+ * check indicator — a circle for single-select, a rounded square for
+ * multi-select, so the shape itself says how many answers are allowed.
+ */
 export function AskCard({ questions, onAnswer }: Props) {
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [other, setOther] = useState<Record<string, string>>({});
@@ -50,33 +64,37 @@ export function AskCard({ questions, onAnswer }: Props) {
   }
 
   return (
-    <div className="mx-auto mb-6 mt-2 flex w-full max-w-[var(--chat-col)] flex-col gap-3 rounded-[calc(22px*var(--rf))] bg-raised p-3 shadow-[0_1px_2px_rgba(0,0,0,0.05)] [corner-shape:var(--cs)] sm:p-4">
+    <div className="mx-auto mb-6 mt-2 flex w-full max-w-[var(--chat-col)] flex-col gap-5 rounded-[calc(20px*var(--rf))] border border-line bg-raised p-4 shadow-control [corner-shape:var(--cs)]">
       <div className="flex items-center gap-2">
-        <span className="inline-flex min-h-7 items-center gap-2 rounded-full bg-panel px-2.5 py-1 text-xs font-semibold text-fg">
-          <span
-            aria-hidden="true"
-            className="h-2 w-2 rounded-full bg-green shadow-[0_0_0_3px_var(--green-soft)]"
-          />
+        <span
+          aria-hidden="true"
+          className="h-1.5 w-1.5 shrink-0 rounded-full bg-green shadow-[0_0_0_3px_var(--green-soft)]"
+        />
+        <span className="text-label font-semibold text-dim">
           {AGENT_NAME} needs input
         </span>
       </div>
 
       {questions.map((q) => (
-        <section
-          key={q.question}
-          className="rounded-[calc(16px*var(--rf))] bg-panel p-3.5 [corner-shape:var(--cs)] sm:p-4"
-        >
-          {q.header && (
-            <div className="mb-1.5 text-xs font-semibold text-faint">{q.header}</div>
+        <section key={q.question} className="flex flex-col gap-3">
+          {(q.header || q.multiSelect) && (
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              {q.header && (
+                <span className="text-label font-semibold text-faint">{q.header}</span>
+              )}
+              {q.multiSelect && (
+                <span className="text-meta text-faint">Select all that apply</span>
+              )}
+            </div>
           )}
           <div
-            className="markdown text-[14px] leading-[1.45] text-fg [overflow-wrap:anywhere]"
+            className="markdown text-item-title font-[550] leading-[1.4] text-fg [overflow-wrap:anywhere]"
             dangerouslySetInnerHTML={{ __html: renderMarkdown(q.question) }}
           />
           {q.options?.length ? (
             <div
               aria-label={q.header || "Answer options"}
-              className="mt-3 flex flex-col gap-2"
+              className="flex flex-col gap-1.5"
               role="group"
             >
               {q.options.map((opt) => {
@@ -87,19 +105,22 @@ export function AskCard({ questions, onAnswer }: Props) {
                     type="button"
                     aria-pressed={active}
                     className={cn(
-                      "group flex min-h-11 w-full items-center gap-3 rounded-[calc(13px*var(--rf))] px-3 text-left transition-[background-color,box-shadow] focus-visible:shadow-[0_0_0_3px_var(--accent-soft)] [corner-shape:var(--cs)]",
+                      "focus-ring group flex min-h-11 w-full items-start gap-3 rounded-[calc(12px*var(--rf))] border px-3 py-2.5 text-left transition-[background-color,border-color] [corner-shape:var(--cs)] disabled:opacity-60",
+                      // Selected sits a step above hover (pressed wash vs hover
+                      // wash) so a hovered row is never mistaken for the pick.
                       active
-                        ? "bg-accent-soft text-fg"
-                        : "bg-raised text-fg hover:bg-hover",
+                        ? "border-line-strong bg-pressed"
+                        : "border-line bg-control hover:bg-hover",
                     )}
                     onClick={() => toggle(q, opt.label)}
                     disabled={submitted}
-                    title={opt.description}
                   >
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-semibold leading-5">{opt.label}</span>
+                      <span className="block text-control-label font-semibold leading-5 text-fg">
+                        {opt.label}
+                      </span>
                       {opt.description && (
-                        <span className="mt-0.5 block text-xs leading-[1.4] text-dim">
+                        <span className="mt-0.5 block text-supporting leading-[1.45] text-dim">
                           {opt.description}
                         </span>
                       )}
@@ -107,10 +128,13 @@ export function AskCard({ questions, onAnswer }: Props) {
                     <span
                       aria-hidden="true"
                       className={cn(
-                        "flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-[background-color,color]",
+                        "mt-px flex h-5 w-5 shrink-0 items-center justify-center border transition-[background-color,border-color,color]",
+                        q.multiSelect
+                          ? "rounded-[calc(6px*var(--rf))] [corner-shape:var(--cs)]"
+                          : "rounded-full",
                         active
-                          ? "bg-accent text-white"
-                          : "bg-pressed text-transparent",
+                          ? "border-transparent bg-fg text-bg"
+                          : "border-line-strong text-transparent",
                       )}
                     >
                       <IconCheck size={20} />
@@ -122,7 +146,10 @@ export function AskCard({ questions, onAnswer }: Props) {
           ) : null}
           <input
             aria-label={q.options?.length ? "Custom answer" : "Answer"}
-            className="mt-3 h-11 w-full rounded-[calc(13px*var(--rf))] bg-raised px-3.5 text-base text-fg outline-none transition-shadow placeholder:text-faint focus:shadow-[0_0_0_3px_var(--accent-soft)] sm:text-sm [corner-shape:var(--cs)]"
+            /* No accent ring on focus — same call the composer makes: red read
+               as an error state on a field you're simply typing in. The caret
+               plus the hairline stepping up is the affordance. */
+            className="h-11 w-full rounded-[calc(12px*var(--rf))] border border-line bg-control px-3 text-base text-fg outline-none transition-[border-color] placeholder:text-faint focus:border-line-strong disabled:opacity-60 sm:text-control-label [corner-shape:var(--cs)]"
             placeholder={
               q.options?.length ? "Or type your own answer…" : "Type your answer…"
             }
@@ -139,7 +166,7 @@ export function AskCard({ questions, onAnswer }: Props) {
       <div className="flex justify-end">
         <Button
           variant="primary"
-          className="min-h-10 rounded-[calc(13px*var(--rf))] px-4 text-sm [corner-shape:var(--cs)]"
+          size="lg"
           onClick={submit}
           disabled={!complete || submitted}
         >
