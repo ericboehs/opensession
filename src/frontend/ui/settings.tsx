@@ -28,7 +28,7 @@ export function SettingsHeader({
 }) {
 	return (
 		<header
-			className={cn("mb-5 flex items-start justify-between gap-4", className)}
+			className={cn("mb-5 flex items-start justify-between gap-4 px-4", className)}
 			{...props}
 		>
 			<div className="min-w-0">
@@ -52,27 +52,32 @@ export function SettingsGroupLabel({
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
 		<div
-			className={cn("mb-2 mt-6 text-label font-semibold text-faint", className)}
+			className={cn("mb-2 mt-6 px-4 text-label font-semibold text-faint", className)}
 			{...props}
 		/>
 	);
 }
 
+/** The surface every settings group sits on: a soft fill, no border. The fill
+ * alone separates a group from the page, so a page of settings reads as a few
+ * quiet blocks rather than a stack of outlined boxes. */
+const settingsSurface = "border-0 bg-raised";
+
 export function SettingCard({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <CardList className={className} {...props} />;
+	return <CardList className={cn(settingsSurface, className)} {...props} />;
 }
 
-/** A boxed section for content that isn't a list of rows — an editor, a
- * picker, a filter bar. Draws the same surface SettingCard gives rows, so a
- * page of prose sits in the page's rhythm instead of floating on it. */
+/** A section for content that isn't a list of rows — an editor, a picker, a
+ * filter bar. Same surface SettingCard gives rows, so a page of prose sits in
+ * the page's rhythm instead of floating on it. */
 export function SettingsSection({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <Card className={cn("p-4", className)} {...props} />;
+	return <Card className={cn(settingsSurface, "p-4", className)} {...props} />;
 }
 
 export function SettingRow({
@@ -114,7 +119,7 @@ export function SettingsHint({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("mt-2 text-meta text-faint", className)} {...props} />;
+	return <div className={cn("mt-2 px-4 text-meta text-faint", className)} {...props} />;
 }
 
 export const settingsSelectClass =

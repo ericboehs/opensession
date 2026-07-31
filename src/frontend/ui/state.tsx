@@ -39,7 +39,7 @@ const placements: Record<StatePlacement, string> = {
 	block: "flex flex-col items-center justify-center gap-2 py-10 text-center",
 	// Stands in for a card: borrows SettingCard's surface so the page's rhythm
 	// survives the emptiness.
-	card: "rounded-lg border border-line bg-panel px-4 py-3",
+	card: "rounded-lg bg-raised px-4 py-3",
 	// Lives inside a card's row list: matches SettingRow's padding so it lands
 	// on the same left edge as the rows it replaces.
 	row: "px-4 py-3",

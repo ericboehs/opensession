@@ -115,7 +115,6 @@ import {
 	settingsSelectClass,
 	settingsTextareaClass,
 } from "../ui/settings";
-import { Card } from "../ui/card";
 import { Switch } from "../ui/switch";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import { Reorder } from "motion/react";
@@ -1187,7 +1186,7 @@ function MemoryEntryRow({
 
 	if (editing)
 		return (
-			<div className="border-b border-line px-3 py-2.5 last:border-b-0">
+			<div className="border-b border-line px-4 py-3 last:border-b-0">
 				<textarea
 					className={settingsTextareaClass}
 					rows={2}
@@ -1222,7 +1221,7 @@ function MemoryEntryRow({
 		);
 
 	return (
-		<div className="group flex items-start gap-2 border-b border-line px-3 py-2.5 last:border-b-0">
+		<div className="group flex items-start gap-2 border-b border-line px-4 py-3 last:border-b-0">
 			<div className="min-w-0 flex-1">
 				<div className="text-body font-medium leading-snug text-fg">
 					{entry.text}
@@ -1234,7 +1233,7 @@ function MemoryEntryRow({
 			<div className="flex shrink-0 items-center gap-1">
 				<button
 					aria-label="Edit memory"
-					className="rounded-md p-1 text-faint transition-colors hover:bg-surface hover:text-fg"
+					className="rounded-md p-1 text-faint transition-colors hover:bg-hover hover:text-fg"
 					disabled={busy}
 					onClick={() => {
 						setDraft(entry.text);
@@ -1245,7 +1244,7 @@ function MemoryEntryRow({
 				</button>
 				<button
 					aria-label="Forget memory"
-					className="rounded-md p-1 text-faint transition-colors hover:bg-surface hover:text-red"
+					className="rounded-md p-1 text-faint transition-colors hover:bg-hover hover:text-red"
 					disabled={busy}
 					onClick={remove}
 				>
@@ -1285,21 +1284,21 @@ function MemoryScopeCard({
 	}
 
 	return (
-		<Card className="mb-2 overflow-hidden">
-			<div className="flex items-center justify-between border-b border-line bg-surface px-3 py-2">
+		<SettingsSection className="mb-2 overflow-hidden p-0">
+			<div className="flex items-center justify-between border-b border-line px-4 py-2.5">
 				<div className="text-supporting font-semibold text-fg">
 					{scoped.scope.label}
 				</div>
 				<button
 					aria-label={`Add memory to ${scoped.scope.label}`}
-					className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] font-medium text-dim transition-colors hover:bg-panel hover:text-fg"
+					className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-label font-medium text-dim transition-colors hover:bg-hover hover:text-fg"
 					onClick={() => setAdding((v) => !v)}
 				>
 					<IconPlus size={14} /> Add
 				</button>
 			</div>
 			{scoped.entries.length === 0 && !adding && (
-				<div className="px-3 py-2.5 text-body font-medium text-faint">
+				<div className="px-4 py-3 text-body font-medium text-faint">
 					No memories yet.
 				</div>
 			)}
@@ -1312,7 +1311,7 @@ function MemoryScopeCard({
 				/>
 			))}
 			{adding && (
-				<div className="border-t border-line px-3 py-2.5">
+				<div className="border-t border-line px-4 py-3">
 					<textarea
 						className={settingsTextareaClass}
 						rows={2}
@@ -1343,7 +1342,7 @@ function MemoryScopeCard({
 					</div>
 				</div>
 			)}
-		</Card>
+		</SettingsSection>
 	);
 }
 
@@ -1990,7 +1989,7 @@ function AuditPanel() {
 				description="Every agent run's structured events — prompts, tool decisions, account switches, human confirmations. Read-only; files live under ~/.backstage-audit (400-day retention)."
 			/>
 
-			<div className="mb-3 flex flex-wrap items-center gap-2">
+			<div className="mb-3 flex flex-wrap items-center gap-2 px-4">
 				<select className={settingsSelectClass} value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date">
 					{dates.map((d) => (
 						<option key={d} value={d}>
@@ -2019,7 +2018,7 @@ function AuditPanel() {
 				/>
 			</div>
 
-			<div className="mb-2 text-meta text-faint">
+			<div className="mb-2 px-4 text-meta text-faint">
 				{loading ? "Loading…" : `${events.length} of ${total} events (newest first)`}
 			</div>
 
@@ -2029,9 +2028,9 @@ function AuditPanel() {
 					const t = String(e.kind || e.msg || "event");
 					const sid = typeof e.bks_session_id === "string" ? e.bks_session_id : "";
 					return (
-						<div key={i} className={expanded === i ? "bg-surface" : ""}>
+						<div key={i} className={expanded === i ? "bg-pressed" : ""}>
 							<button
-								className="flex w-full min-w-0 cursor-pointer items-baseline gap-2 px-2.5 py-1.5 text-left text-label hover:bg-hover"
+								className="flex w-full min-w-0 cursor-pointer items-baseline gap-2 px-4 py-1.5 text-left text-label hover:bg-hover"
 								onClick={() => setExpanded(expanded === i ? null : i)}
 							>
 								<span className="text-faint shrink-0">{time}</span>
@@ -2049,7 +2048,7 @@ function AuditPanel() {
 								)}
 							</button>
 							{expanded === i && (
-								<pre className="m-0 overflow-x-auto border-t border-line px-3 py-2 text-meta leading-relaxed text-dim">
+								<pre className="m-0 overflow-x-auto border-t border-line px-4 py-2.5 text-meta leading-relaxed text-dim">
 									{JSON.stringify(e, null, 2)}
 								</pre>
 							)}
