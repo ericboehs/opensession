@@ -1017,19 +1017,19 @@ struct SessionsListView: View {
     }
 
     private func statusLaneHeader(_ group: SessionGroup) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Circle()
                 .fill(group.lane?.color ?? OS1VisualStyle.textFaint)
-                .frame(width: 7, height: 7)
+                .frame(width: 6, height: 6)
             Text(group.title)
-                .font(.footnote.weight(.semibold))
+                .font(.caption.weight(.semibold))
             Text("\(group.workspaces.count)")
-                .font(.caption.monospacedDigit())
+                .font(.caption2.monospacedDigit())
         }
         .foregroundStyle(OS1VisualStyle.textDim)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 6)
-        .listRowInsets(EdgeInsets(top: 0, leading: 22, bottom: 0, trailing: 16))
+        .padding(.top, 4)
+        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
         .accessibilityElement(children: .combine)
