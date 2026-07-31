@@ -3715,6 +3715,7 @@ export function SessionViewer({
 					) : (
 						<Button
 							size="md"
+							variant="ghost"
 							icon={<CopyCheck copied={copied} idle={<IconLink size={20} />} size={20} />}
 							onClick={handleShare}
 							title="Copy a link to this session"
@@ -4976,7 +4977,11 @@ export function SessionViewer({
 
 								{showScrollToBottom && entries.length > 0 && (
 									<button
-										className={`group absolute left-1/2 bottom-6 z-[5] inline-flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full bg-control px-3.5 py-2 text-[12px] font-semibold shadow-[0_1px_6px_rgba(0,0,0,0.12)] transition-[background,color,box-shadow] hover:bg-hover hover:shadow-[0_2px_9px_rgba(0,0,0,0.16)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+										/* The pill floats over the transcript, so the hover wash is
+										   layered as an inset shadow over the opaque control surface —
+										   `bg-hover` would *replace* that surface with translucent ink
+										   and let the messages show through. */
+										className={`group absolute left-1/2 bottom-6 z-[5] inline-flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full bg-control px-3.5 py-2 text-[12px] font-semibold shadow-[inset_0_0_0_999px_transparent,0_1px_6px_rgba(0,0,0,0.12)] transition-[color,box-shadow] hover:shadow-[inset_0_0_0_999px_var(--hover),0_2px_9px_rgba(0,0,0,0.16)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
 											newBelow
 												? "text-accent"
 												: "text-dim hover:text-fg"
