@@ -1797,13 +1797,15 @@ export function WorkspaceInfo({
 							<div className={INFO_LABEL_CLASS}>
 								{media.length} screenshot{media.length === 1 ? "" : "s"}
 							</div>
-							<div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+							<div
+								className={cn(INFO_LIST_CLASS, "grid-cols-2 gap-1 sm:grid-cols-3")}
+							>
 								{media.map((m, i) => (
 									<button
 										key={`${m.sessionId}:${m.at}:${i}`}
 										type="button"
 										onClick={() => openLightbox(media, i)}
-										className="relative aspect-video overflow-hidden rounded-lg border border-line bg-surface transition-colors hover:border-line-strong hover:bg-hover"
+										className="relative aspect-video overflow-hidden rounded-md border border-line bg-surface transition-colors hover:border-line-strong hover:bg-hover"
 										title={[m.chatTitle, new Date(m.at).toLocaleString()]
 											.filter(Boolean)
 											.join(" · ")}
@@ -1847,14 +1849,14 @@ export function WorkspaceInfo({
 							<div className={INFO_LABEL_CLASS}>
 								{assets.length} asset{assets.length === 1 ? "" : "s"}
 							</div>
-							<div className="flex flex-col gap-0.5">
+							<div className={INFO_LIST_CLASS}>
 								{assets.map((a) => (
 									<button
 										key={a.path}
 										type="button"
 										onClick={() => onOpenAsset?.(a.path)}
 										title={`Open ${a.path}`}
-										className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-[12px] text-fg hover:bg-hover"
+										className="flex w-full min-w-0 items-center gap-2 rounded-md px-[7px] py-[5px] text-left text-[12px] text-fg transition-colors hover:bg-hover"
 									>
 										<IconFile size={14} className="shrink-0 text-faint" />
 										<span className="min-w-0 flex-1 truncate">{a.path}</span>
