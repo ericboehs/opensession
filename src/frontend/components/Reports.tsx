@@ -12,7 +12,7 @@ import { absoluteLink } from "../lib/share-link";
 import { parseNewSessionLink, type NewSessionPrefill } from "../lib/new-session-link";
 import { Button } from "../ui/button";
 import { CopyCheck, useCopy } from "../ui/copy";
-import { IconChevronLeft, IconChevronRight, IconFile, IconShare } from "./icons";
+import { IconChevronLeft, IconChevronRight, IconFile, IconLink } from "./icons";
 
 interface Props {
 	selectedAutomationId?: string;
@@ -200,7 +200,7 @@ export function Reports({
 											{history.map((report) => <option key={report.id} value={report.id}>{formatDate(report.createdAt, true)}</option>)}
 										</select>
 										{selected.sessionId && <Button size="sm" className="min-h-[30px] shrink-0" onClick={() => onOpenSession(selected.sessionId!)}>Open run</Button>}
-										<Button size="sm" className="min-h-[30px] w-[30px] shrink-0" icon={<CopyCheck copied={copied} size={15} idle={<IconShare size={15} />} />} aria-label="Share report" onClick={shareSelected} />
+										<Button size="sm" className="min-h-[30px] w-[30px] shrink-0" icon={<CopyCheck copied={copied} size={15} idle={<IconLink size={15} />} />} aria-label="Share report" onClick={shareSelected} />
 									</div>
 								</>
 							)}
@@ -212,7 +212,7 @@ export function Reports({
 									<h2 className="m-0 truncate text-base font-semibold text-fg">{selected.title}</h2>
 									<p className="m-0 mt-1 text-xs text-dim">{formatDate(selected.createdAt, true)}{selected.summary ? ` · ${selected.summary}` : ""}</p>
 								</div>
-								<Button size="sm" className="min-h-[30px] w-[30px] shrink-0" icon={<CopyCheck copied={copied} size={15} idle={<IconShare size={15} />} />} aria-label="Share report" title="Share report" onClick={shareSelected} />
+								<Button size="sm" className="min-h-[30px] w-[30px] shrink-0" icon={<CopyCheck copied={copied} size={15} idle={<IconLink size={15} />} />} aria-label="Share report" title="Share report" onClick={shareSelected} />
 								{selected.sessionId && <Button size="sm" className="min-h-[30px] shrink-0" onClick={() => onOpenSession(selected.sessionId!)}>Open run</Button>}
 								<select
 									aria-label="Report history"
