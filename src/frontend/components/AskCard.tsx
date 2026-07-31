@@ -105,14 +105,12 @@ export function AskCard({ questions, onAnswer }: Props) {
                     key={opt.label}
                     type="button"
                     aria-pressed={active}
-                    className={cn(
-                      "focus-ring group flex min-h-11 w-full items-start gap-3 rounded-[calc(12px*var(--rf))] border bg-control px-3 py-2.5 text-left transition-[background-color,border-color] hover:bg-hover [corner-shape:var(--cs)] disabled:opacity-60",
-                      // A pick doesn't tint the row — the filled indicator says
-                      // it, and the hairline steps up. Washing the row grey
-                      // made the chosen option look dimmed, not chosen, and
-                      // collided with the hover wash on its neighbours.
-                      active ? "border-line-strong" : "border-line",
-                    )}
+                    // No hairline: the row's own surface against the card is the
+                    // edge. And a pick doesn't tint the row — the filled
+                    // indicator says it. Washing the row grey made the chosen
+                    // option look dimmed, not chosen, and collided with the
+                    // hover wash on its neighbours.
+                    className="focus-ring group flex min-h-11 w-full items-start gap-3 rounded-[calc(12px*var(--rf))] bg-control px-3 py-2.5 text-left transition-[background-color] hover:bg-hover [corner-shape:var(--cs)] disabled:opacity-60"
                     onClick={() => toggle(q, opt.label)}
                     disabled={submitted}
                   >
@@ -147,10 +145,16 @@ export function AskCard({ questions, onAnswer }: Props) {
           ) : null}
           <input
             aria-label={q.options?.length ? "Custom answer" : "Answer"}
-            /* No accent ring on focus — same call the composer makes: red read
-               as an error state on a field you're simply typing in. The caret
-               plus the hairline stepping up is the affordance. */
-            className="h-11 w-full rounded-[calc(12px*var(--rf))] border border-line bg-control px-3 text-base text-fg outline-none transition-[border-color] placeholder:text-faint focus:border-line-strong disabled:opacity-60 sm:text-control-label [corner-shape:var(--cs)]"
+            /* border-0 is load-bearing, not tidying: this app deliberately
+               doesn't ship Tailwind's Preflight (see styles/tailwind.css), so
+               an <input> with no border utility keeps the UA's 2px inset
+               border — the dark outline this field used to wear. Any borderless
+               input here has to zero it explicitly.
+
+               No ring on focus either — same call the composer makes: it read
+               as an error state on a field you're simply typing in, and the
+               caret is affordance enough. */
+            className="h-11 w-full rounded-[calc(12px*var(--rf))] border-0 bg-control px-3 text-base text-fg outline-none placeholder:text-faint disabled:opacity-60 sm:text-control-label [corner-shape:var(--cs)]"
             placeholder={
               q.options?.length ? "Or type your own answer…" : "Type your answer…"
             }
@@ -168,9 +172,9 @@ export function AskCard({ questions, onAnswer }: Props) {
         <Button
           variant="primary"
           size="lg"
-          /* The Button primitive's `rounded-sm` is squarer than anything else
-             on the chat surface (the composer is a pill, its send button a
-             circle) — round the CTA to match its neighbours. */
+          /* The chat surface is built from pills (the composer is a pill, its
+             send button a circle), so this CTA goes fully round rather than
+             taking the primitive's standard corner. */
           className="rounded-full px-5 [corner-shape:round]"
           onClick={submit}
           disabled={!complete || submitted}
