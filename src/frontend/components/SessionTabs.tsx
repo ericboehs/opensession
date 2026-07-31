@@ -151,6 +151,59 @@ export function SessionTabs({
 	const stopPointerTracking = useRef<(() => void) | null>(null);
 	const canDragTabs = !isPhone && tabs.length + viewTabs.length > 1;
 
+	// Where the dragged tab will land. Desktop tabs are flat text on the strip's
+	// own background, so a dragged one has no surface to separate it from the
+	// labels it passes — it lifts into a chip (`is-dragging`) and this ghost
+	// marks the gap it left behind. Reorder already opens that gap live; the
+	// ghost just makes an otherwise invisible hole readable.
+	const [dropSlot, setDropSlot] = useState<{
+		key: string;
+		left: number;
+		width: number;
+	} | null>(null);
+	const groupRef = useRef<HTMLDivElement | null>(null);
+	// Unit widths + inter-tab gap, measured once at drag start: they can't change
+	// mid-drag, so the slot's x is arithmetic from the live key order rather than
+	// a re-measure of siblings that are still spring-animating into place.
+	const dragMetrics = useRef<{
+		widths: Map<string, number>;
+		gap: number;
+		key: string;
+	} | null>(null);
+
+	/** Position the ghost at `key`'s slot in the given left-to-right unit order. */
+	function placeDropSlot(keys: string[]) {
+		const metrics = dragMetrics.current;
+		if (!metrics) return;
+		const index = keys.indexOf(metrics.key);
+		if (index < 0) return setDropSlot(null);
+		let left = 0;
+		for (let i = 0; i < index; i++) left += (metrics.widths.get(keys[i]) ?? 0) + metrics.gap;
+		setDropSlot({ key: metrics.key, left, width: metrics.widths.get(metrics.key) ?? 0 });
+	}
+
+	function beginDrag(key: string) {
+		const group = groupRef.current;
+		if (!group) return;
+		// offsetWidth/offsetLeft (layout box) rather than rects: whileDrag's scale
+		// is already applied to the dragged item and would inflate its width.
+		const items = [...group.children].filter(
+			(el): el is HTMLElement => el instanceof HTMLElement && !!el.dataset.tabKey,
+		);
+		const widths = new Map(items.map((el) => [el.dataset.tabKey!, el.offsetWidth] as const));
+		const gap =
+			items.length > 1
+				? Math.max(0, items[1].offsetLeft - (items[0].offsetLeft + items[0].offsetWidth))
+				: 0;
+		dragMetrics.current = { widths, gap, key };
+		placeDropSlot(items.map((el) => el.dataset.tabKey!));
+	}
+
+	function endDrag() {
+		dragMetrics.current = null;
+		setDropSlot(null);
+	}
+
 	function trackPointer(
 		id: string,
 		event: React.PointerEvent,
@@ -302,6 +355,7 @@ export function SessionTabs({
 		const order = orderDraftRef.current;
 		orderDraftRef.current = null;
 		setOrderDraft(null);
+		endDrag();
 		if (order) onReorderTabs(order);
 	}
 
@@ -317,6 +371,7 @@ export function SessionTabs({
 		);
 		orderDraftRef.current = order;
 		setOrderDraft(order);
+		placeDropSlot(units.map((unit) => unit.key));
 	}
 
 	function selectMember(member: TabMember) {
@@ -476,10 +531,19 @@ export function SessionTabs({
 				<Reorder.Group
 					as="div"
 					axis="x"
+					ref={groupRef}
 					className="session-tabs-chatgroup"
 					values={tabUnits.units.map((unit) => unit.key)}
 					onReorder={reorderUnits}
 				>
+					{/* First child so the tabs sliding over it paint on top. */}
+					{dropSlot && (
+						<div
+							className="session-tab-drop-slot"
+							style={{ left: dropSlot.left, width: dropSlot.width }}
+							aria-hidden="true"
+						/>
+					)}
 					{tabUnits.units.map((unit) => {
 						if (unit.members.length === 2) {
 							return (
@@ -487,7 +551,9 @@ export function SessionTabs({
 									as="div"
 									key={unit.key}
 									value={unit.key}
+									data-tab-key={unit.key}
 									dragListener={canDragTabs}
+									onDragStart={() => beginDrag(unit.key)}
 									onDragEnd={commitReorder}
 									whileDrag={{ scale: 1.02, zIndex: 3 }}
 									onClickCapture={(event) => {
@@ -496,7 +562,7 @@ export function SessionTabs({
 											event.preventDefault();
 										}
 									}}
-									className="session-tab-reorder"
+									className={`session-tab-reorder ${dropSlot?.key === unit.key ? "is-dragging" : ""}`}
 								>
 									{splitTabContent(unit.members)}
 								</Reorder.Item>
@@ -513,10 +579,12 @@ export function SessionTabs({
 								as="div"
 								key={key}
 								value={key}
+								data-tab-key={key}
 								dragListener={canDragTabs && editKey !== key}
 								onPointerDown={(event) => {
 									if (canDragTabs && editKey !== key) trackPointer(key, event);
 								}}
+								onDragStart={() => beginDrag(key)}
 								onDragEnd={() => {
 									onSplitDrag?.(null);
 									const point = dragPoint.current;
@@ -524,6 +592,7 @@ export function SessionTabs({
 									if (point && onSplitDrop?.(key, point)) {
 										orderDraftRef.current = null;
 										setOrderDraft(null);
+										endDrag();
 										justDragged.current = true;
 										setTimeout(() => (justDragged.current = false), 0);
 										return;
@@ -537,7 +606,7 @@ export function SessionTabs({
 										e.preventDefault();
 									}
 								}}
-								className="session-tab-reorder"
+								className={`session-tab-reorder ${dropSlot?.key === key ? "is-dragging" : ""}`}
 							>
 								<ContextMenu.Root>
 									<ContextMenu.Trigger
