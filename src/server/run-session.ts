@@ -46,10 +46,8 @@ import {
 	providerFor,
 } from "./models";
 import {
-	appendOpencodeTranscript,
 	isOpencodeSessionId,
 	storeAppendUserLineEarly,
-	transcriptLineRunnerNotice,
 	transcriptLineUser,
 } from "./opencode-transcript";
 import { wrapContext, stripContext, isContextOnly } from "./prompt-context";
@@ -1682,6 +1680,10 @@ async function runSessionPromptInner(
 	// credit/API errors) — recorded on the session after the loop so the sidebar
 	// surfaces it as "Needs input"; null (a clean finish) clears an earlier one.
 	let runFailure: string | null = null;
+	// How recordRunOutcome should word the failure's transcript chip, and
+	// whether the runner already wrote a friendlier one itself (timeouts).
+	let failureNoticeLabel: string | undefined;
+	let failureNoticePersisted = false;
 	// Accumulate the assistant reply so we can mirror it back to a Slack thread
 	// the session posted to (slackReplyTo — e.g. a reply under an automation's
 	// summary message lands here via deliverToSession).
@@ -1910,17 +1912,9 @@ async function runSessionPromptInner(
 				// still needs a human, so treat it as a failure.
 				if (event.usageLimitExhausted) {
 					runFailure = event.result || "Usage limit reached on every account";
-					// Durable system line — the toast is stream-only and lastRunError
-					// only shows on the session card; a reloaded transcript otherwise
-					// just ends with no explanation (same fix as terminal errors below).
-					const engineId = finalSessionId || session.claudeSessionId;
-					if (engineId) {
-						try {
-							appendOpencodeTranscript(engineId, [
-								transcriptLineRunnerNotice(`Run stopped: ${runFailure}`),
-							]);
-						} catch {}
-					}
+					// This one was a clean `done`, not an error — recordRunOutcome
+					// writes the transcript chip below, worded as a stop.
+					failureNoticeLabel = "Run stopped";
 				}
 				// Fold this run's token/cost into the session total and push it live
 				// to viewers (persisted below with the rest of the session patch).
@@ -1964,23 +1958,11 @@ async function runSessionPromptInner(
 				}
 				endedWithError = true;
 				runFailure = event.content || "Run failed";
-				// Persist the terminal failure into the transcript as a system line.
-				// The broadcast below is stream-only and lastRunError only surfaces
-				// on the session card — on reload the transcript just ended mid-turn
-				// with no trace of why (bks-019f7911's 60-min timeout, 2026-07-19).
-				// This is the choke point AFTER agent-runner's rotation/fallback walk,
-				// so only the final, user-facing error lands — one line per dead run.
-				// Skipped when the runner already wrote a friendlier line (timeout).
-				if (!event.noticePersisted) {
-					const engineId = finalSessionId || session.claudeSessionId;
-					if (engineId) {
-						try {
-							appendOpencodeTranscript(engineId, [
-								transcriptLineRunnerNotice(`Run failed: ${runFailure}`),
-							]);
-						} catch {}
-					}
-				}
+				// The transcript chip is written by recordRunOutcome below — this is
+				// the choke point AFTER agent-runner's rotation/fallback walk, so only
+				// the final, user-facing error lands (one line per dead run). Skipped
+				// when the runner already wrote a friendlier line (timeout).
+				if (event.noticePersisted) failureNoticePersisted = true;
 				broadcastToSession(sessionId, {
 					type: "error",
 					sessionId,
@@ -2025,8 +2007,15 @@ async function runSessionPromptInner(
 	}
 
 	// A terminal failure keeps the session in the "Needs input" bucket until a
-	// later run finishes cleanly (which clears it here too).
-	recordRunOutcome(session.id, runFailure);
+	// later run finishes cleanly (which clears it here too), and lands in the
+	// transcript as a system chip. finalSessionId wins over the session file's
+	// id: a run that rotated to a fresh engine session mid-turn must write the
+	// chip into the transcript the conversation actually continues in.
+	recordRunOutcome(session.id, runFailure, {
+		engineSessionId: finalSessionId || session.claudeSessionId || undefined,
+		noticePersisted: failureNoticePersisted,
+		noticeLabel: failureNoticeLabel,
+	});
 
 	// On a clean finish any steered messages already landed in the transcript, so
 	// drop their display-only receipts. But if the run ended in error/abort (e.g.

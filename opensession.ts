@@ -586,14 +586,26 @@ if (!g.__backstageBooted) {
 		const resumedIds = resumeInterruptedRuns(
 			(bksSessionId, terminalEvent) => {
 				if (bksSessionId && terminalEvent) {
+					const failed =
+						terminalEvent.type === "error" ||
+						!!terminalEvent.usageLimitExhausted;
 					recordRunOutcome(
 						bksSessionId,
-						terminalEvent.type === "error" ||
-							terminalEvent.usageLimitExhausted
+						failed
 							? terminalEvent.content ||
 								terminalEvent.result ||
 								"Recovered run failed"
 							: null,
+						// A resumed run can land in a fresh engine session (reattach
+						// failed and the re-prompt rotated), and the error path never
+						// persists that id — so name it here, or the failure chip is
+						// written into the transcript the conversation left behind.
+						{
+							engineSessionId: terminalEvent.sessionId,
+							noticeLabel: terminalEvent.usageLimitExhausted
+								? "Run stopped"
+								: undefined,
+						},
 					);
 				}
 				invalidateSessionsCache();

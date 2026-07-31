@@ -29,6 +29,8 @@ let sessionCache: typeof import("./session-cache");
 let runState: typeof import("./run-state");
 let queueState: typeof import("./queue-state");
 let fakeEngineMod: typeof import("./testing/fake-engine");
+let ocTranscript: typeof import("./opencode-transcript");
+let transcriptStoreMod: typeof import("./transcript-store");
 let restoreChatsDir: (() => void) | null = null;
 let restoreJournal: (() => void) | null = null;
 let redirected = false;
@@ -65,6 +67,8 @@ beforeAll(async () => {
 	runState = await import("./run-state");
 	queueState = await import("./queue-state");
 	fakeEngineMod = await import("./testing/fake-engine");
+	ocTranscript = await import("./opencode-transcript");
+	transcriptStoreMod = await import("./transcript-store");
 
 	// Redirect probe: a session file written to our temp dir must be visible
 	// through findSession, or earlier suite files froze the store elsewhere.
@@ -148,6 +152,66 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		const listed = sessionCache.findSession(sid);
 		expect(listed?.runState).toBe("failed");
 		expect(listed?.lastRunError?.message).toContain("boom");
+	});
+
+	// The failure has to reach the TRANSCRIPT, not just the session card: every
+	// path that records an outcome (opening runs, resumed runs, setup failures)
+	// funnels through recordRunOutcome, so the chip is written there. Before
+	// that centralization only runSessionPromptInner wrote it, and a resumed
+	// run's death left the conversation ending mid-turn with no explanation
+	// (bks-019fb757, 2026-07-31).
+	test("failed run: the failure lands in the transcript as a system chip", () => {
+		if (!redirected) return;
+		// The store is a globalThis singleton — if an earlier suite file opened
+		// it against the real chats dir, skip rather than write to it.
+		const store = transcriptStoreMod.transcriptStore();
+		if (!store.dbPath.startsWith(tmp)) return;
+
+		const sid = "bks-zz-error-chip";
+		const engineId = "ses_zz_error_chip";
+		writeSessionFile(sid);
+		sessionCache.invalidateSessionsCache();
+		ocTranscript.recordBksSessionFor(engineId, sid);
+
+		sessionCache.recordRunOutcome(sid, "boom: unrecoverable test failure", {
+			engineSessionId: engineId,
+		});
+
+		const chip = store
+			.readTail(sid, 50)
+			.entries.find((e) => e.type === "system");
+		expect(chip?.content).toBe("Run failed: boom: unrecoverable test failure");
+	});
+
+	test("usage-limit stop is worded as a stop, and a runner-written notice wins", () => {
+		if (!redirected) return;
+		const store = transcriptStoreMod.transcriptStore();
+		if (!store.dbPath.startsWith(tmp)) return;
+
+		const sid = "bks-zz-stop-chip";
+		const engineId = "ses_zz_stop_chip";
+		writeSessionFile(sid);
+		sessionCache.invalidateSessionsCache();
+		ocTranscript.recordBksSessionFor(engineId, sid);
+
+		sessionCache.recordRunOutcome(sid, "Usage limit reached on every account", {
+			engineSessionId: engineId,
+			noticeLabel: "Run stopped",
+		});
+		// noticePersisted: the runner already wrote its own friendlier line, so
+		// this must not add a second one.
+		sessionCache.recordRunOutcome(sid, "timed out after 60m", {
+			engineSessionId: engineId,
+			noticePersisted: true,
+		});
+
+		const chips = store
+			.readTail(sid, 50)
+			.entries.filter((e) => e.type === "system");
+		expect(chips).toHaveLength(1);
+		expect(chips[0].content).toBe(
+			"Run stopped: Usage limit reached on every account",
+		);
 	});
 
 	test("transient fallback does not replace the selected Dial preset", async () => {

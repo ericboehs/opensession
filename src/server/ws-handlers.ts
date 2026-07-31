@@ -1642,6 +1642,8 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					// Terminal failure the opening run died on — recorded after the
 					// loop so the fresh session surfaces as "Needs input".
 					let runFailure: string | null = null;
+					// The runner already wrote its own, friendlier transcript line.
+					let failureNoticePersisted = false;
 					// Actual worktree HEAD when it drifted from the recorded branch
 					// (the agent switched/renamed branches during the opening turn).
 					const headBranchPatch = () => {
@@ -1991,6 +1993,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						}
 						if (event.type === "error") {
 							runFailure = event.content || "Run failed";
+							if (event.noticePersisted) failureNoticePersisted = true;
 							emit({ type: "error", message: event.content });
 						}
 					}
@@ -2019,7 +2022,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						// above (persist() writes the base file without it).
 						if (latestUsage)
 							touchBackstageSession(bksId, { usage: latestUsage });
-					recordRunOutcome(bksId, runFailure);
+					recordRunOutcome(bksId, runFailure, {
+						engineSessionId,
+						noticePersisted: failureNoticePersisted,
+					});
 					} finally {
 						unmarkSessionStarting(bksId);
 						// Safety net for throws before the worktree block's own finally

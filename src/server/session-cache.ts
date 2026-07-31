@@ -303,13 +303,52 @@ export const runErrors: Map<string, { message: string; at: string }> =
 	(g.__runErrors ??= new Map());
 
 /**
+ * Write the terminal failure into the transcript as a system chip, so a
+ * reloaded conversation explains itself instead of just stopping mid-turn.
+ * Lives here because recordRunOutcome is the one choke point every failure
+ * path already funnels through — the resumed-run (opensession.ts), opening-run
+ * (ws-handlers/session-control-wiring) and setup-failure paths all recorded
+ * `lastRunError` but wrote no transcript line, so for those the banner was the
+ * only trace the run had died (bks-019fb757, 2026-07-31).
+ *
+ * `require` rather than a static import: opencode-transcript lazily requires
+ * this module back (its own cycle-breaker), and the transcript write must be
+ * synchronous so it lands before the client re-reads the transcript.
+ * Never throws — a dead transcript store must not break outcome recording.
+ */
+function persistRunFailureNotice(
+	engineSessionId: string | null | undefined,
+	message: string,
+	label: string,
+): void {
+	if (!engineSessionId) return;
+	try {
+		const m = require("./opencode-transcript") as typeof import("./opencode-transcript");
+		m.appendOpencodeTranscript(engineSessionId, [
+			m.transcriptLineRunnerNotice(`${label}: ${message}`),
+		]);
+	} catch {}
+}
+
+/**
  * Record how a session's run ended: an error message when it died on a terminal
  * failure, or null for a clean finish (which clears any earlier failure). The
- * enriched /api/sessions list exposes this as `lastRunError`.
+ * enriched /api/sessions list exposes this as `lastRunError`, and a failure also
+ * lands in the transcript as a system chip.
+ *
+ * `opts.noticePersisted` skips that chip for callers whose runner already wrote
+ * a friendlier line (timeouts); `opts.engineSessionId` overrides the session
+ * file's id for a run that rotated to a fresh engine session mid-turn;
+ * `opts.noticeLabel` re-words it for stops that were not errors.
  */
 export function recordRunOutcome(
 	sessionId: string,
 	errorMessage: string | null,
+	opts?: {
+		noticePersisted?: boolean;
+		engineSessionId?: string;
+		noticeLabel?: string;
+	},
 ): void {
 	const session = findSession(sessionId);
 	const id = session?.id || sessionId;
@@ -322,6 +361,12 @@ export function recordRunOutcome(
 		runErrors.set(id, entry);
 		if (session?.source === "backstage")
 			touchBackstageSession(id, { lastRunError: entry });
+		if (!opts?.noticePersisted)
+			persistRunFailureNotice(
+				opts?.engineSessionId || session?.claudeSessionId,
+				errorMessage,
+				opts?.noticeLabel || "Run failed",
+			);
 		// A worker that dies can't report back, and its parent is usually idle
 		// (spawn_task returns immediately), so nothing polls either — the server
 		// says it instead. Fire-and-forget, dynamic import to keep this module

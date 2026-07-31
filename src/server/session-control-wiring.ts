@@ -383,6 +383,8 @@ registerSessionControl({
 		// Terminal failure the opening run died on — recorded after the loop so
 		// the fresh session surfaces as "Needs input".
 		let runFailure: string | null = null;
+		// The runner already wrote its own, friendlier transcript line.
+		let failureNoticePersisted = false;
 		// Actual worktree HEAD when it drifted from the recorded branch (the
 		// agent switched/renamed branches during the opening turn).
 		const headBranchPatch = () => {
@@ -686,6 +688,7 @@ registerSessionControl({
 					}
 					if (event.type === "error") {
 						runFailure = event.content || "Run failed";
+						if (event.noticePersisted) failureNoticePersisted = true;
 						broadcastToSession(bksId, {
 							type: "error",
 							message: event.content,
@@ -707,7 +710,10 @@ registerSessionControl({
 					);
 				if (latestUsage)
 					touchBackstageSession(bksId, { usage: latestUsage });
-				recordRunOutcome(bksId, runFailure);
+				recordRunOutcome(bksId, runFailure, {
+					engineSessionId,
+					noticePersisted: failureNoticePersisted,
+				});
 				broadcastToSession(bksId, { type: "stream_done", sessionId: bksId });
 				broadcastToSession(bksId, {
 					type: "session_status",
