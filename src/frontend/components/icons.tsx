@@ -1004,14 +1004,18 @@ export function IconChart(p: IconProps) {
   );
 }
 
-// iconic-pro `dots-horizontal` — ⋯ more options. (Was hand-drawn at 6/12/18
-// with r=1.3, which sat wider and heavier than the set's own 8/12/16 r=1.)
+// ⋯ more options. Deliberately NOT iconic-pro's `dots-horizontal` geometry
+// (8/12/16 at r=1): that spans only 10 of the 24 grid, where every stroke
+// glyph in this set draws ~14.5, so at a shared pixel size it renders visibly
+// smaller than the icons beside it. Widened to 6/12/18 so the mark spans 14.6
+// units — matching the set — with r=1.3 (≈1.7× the 1.5 stroke), which is what
+// a filled dot needs to read at the same weight as a stroked line.
 export function IconDotsHorizontal(p: IconProps) {
   return (
     <Svg {...p}>
-      <circle cx="8" cy="12" r="1" fill="currentColor" />
-      <circle cx="12" cy="12" r="1" fill="currentColor" />
-      <circle cx="16" cy="12" r="1" fill="currentColor" />
+      <circle cx="6" cy="12" r="1.3" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.3" fill="currentColor" />
+      <circle cx="18" cy="12" r="1.3" fill="currentColor" />
     </Svg>
   );
 }
