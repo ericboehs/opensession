@@ -1094,7 +1094,7 @@ function ReviewerChip({
 		<Menu.Root>
 			<Menu.Trigger
 				className={cn(
-					ACTION_BUTTON_CLASS,
+					"inline-flex w-fit min-w-0 items-center gap-1 rounded-sm border border-line bg-control py-1.5 pl-2 pr-2.5 text-left text-[12.5px] font-[550] whitespace-nowrap text-dim shadow-control outline-none transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg active:scale-[0.96] data-[popup-open]:border-line-strong data-[popup-open]:bg-hover",
 					accepted ? "text-green" : req ? "text-yellow" : "",
 				)}
 				title={
@@ -1118,7 +1118,7 @@ function ReviewerChip({
 						<IconBell size={20} />
 					</span>
 				)}
-				<span className="min-w-0 flex-1 truncate">
+				<span className="min-w-0 truncate">
 					{accepted
 						? `Reviewed by ${accepted.by}`
 						: req
