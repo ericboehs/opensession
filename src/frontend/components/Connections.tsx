@@ -1,6 +1,7 @@
 import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useState, useCallback } from "react";
 import { Menu } from "../ui/menu";
+import { Card, CardList } from "../ui/card";
 import { cn } from "../ui/cn";
 import { Button } from "../ui/button";
 import { InlineAlert, LoadingState } from "../ui/state";
@@ -89,7 +90,7 @@ function LockIcon({ size = 12 }: { size?: number }) {
 
 function StatusChip({ label, dot }: { label: string; dot: string }) {
   return (
-    <span className="flex flex-shrink-0 items-center gap-1.5 text-xs text-dim">
+    <span className="flex flex-shrink-0 items-center gap-1.5 text-label text-dim">
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: dot }} />
       {label}
     </span>
@@ -237,7 +238,7 @@ export function Connections() {
     <SettingsPanel>
       <div className="mb-[22px] flex items-start justify-between gap-4">
         <div>
-          <SettingsTitle className="mb-0 px-0 text-[19px] font-semibold tracking-[-0.01em]">
+          <SettingsTitle className="mb-0 px-0 text-section-title font-semibold tracking-[-0.01em]">
             Connections
           </SettingsTitle>
           <SettingsDescription className="mt-1 px-0 text-faint">
@@ -286,13 +287,13 @@ export function Connections() {
               const ok = health?.status === "operational";
               const count = typeof health?.activeSessions === "number" ? health.activeSessions : null;
               return (
-                <div
+                <Card
                   key={name}
-                  className="flex flex-col gap-2 rounded-lg border border-line bg-panel p-3.5"
+                  className="flex flex-col gap-2 p-3.5"
                 >
                   <div className="flex items-center gap-2.5">
                     <IconTile name={name} size={30} />
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
+                    <span className="min-w-0 flex-1 truncate text-body font-medium text-fg">
                       {displayName(name)}
                     </span>
                     <StatusChip
@@ -300,41 +301,38 @@ export function Connections() {
                       dot={ok ? "var(--green)" : "var(--red)"}
                     />
                   </div>
-                  <div className="text-xs leading-snug text-dim">
+                  <div className="text-label leading-snug text-dim">
                     {AGENT_BLURBS[name] || "Inbound agent"}
                   </div>
                   {count !== null && (
-                    <div className="text-xs text-faint">
+                    <div className="text-label text-faint">
                       {count.toLocaleString()} active session{count === 1 ? "" : "s"}
                     </div>
                   )}
-                </div>
+                </Card>
               );
             })}
           </div>
 
           <SectionHeading>MCP servers — tools inside every session</SectionHeading>
-          <div className="overflow-hidden rounded-lg border border-line bg-panel">
-            {data.mcpServers.map((s, i) => {
+          <CardList>
+            {data.mcpServers.map((s) => {
               const meta = STATUS_META[s.status];
               const restricted = !!s.allowedUsers?.length;
               return (
                 <div
                   key={s.name}
-                  className={cn(
-                    "group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-hover/50",
-                    i > 0 && "border-t border-line",
-                  )}
+                  className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-hover/50"
                 >
                   <IconTile name={s.name} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-fg">
+                      <span className="truncate text-body font-medium text-fg">
                         {displayName(s.name)}
                       </span>
                       {restricted && (
                         <span
-                          className="flex flex-shrink-0 items-center gap-1 rounded-full bg-active px-1.5 py-0.5 text-[10.5px] font-medium text-dim"
+                          className="flex flex-shrink-0 items-center gap-1 rounded-full bg-active px-1.5 py-0.5 text-meta font-medium text-dim"
                           title={`Only these people's sessions get this server: ${s.allowedUsers!.join(", ")}`}
                         >
                           <LockIcon /> {s.allowedUsers!.join(", ")}
@@ -342,7 +340,7 @@ export function Connections() {
                       )}
                       {(oauthByName[s.name]?.shared || oauthByName[s.name]?.users.length) ? (
                         <span
-                          className="flex flex-shrink-0 items-center gap-1 rounded-full bg-active px-1.5 py-0.5 text-[10.5px] font-medium text-green"
+                          className="flex flex-shrink-0 items-center gap-1 rounded-full bg-active px-1.5 py-0.5 text-meta font-medium text-green"
                           title={[
                             oauthByName[s.name]?.shared
                               ? `Workspace grant${oauthByName[s.name]!.shared!.connectedBy ? ` (by ${oauthByName[s.name]!.shared!.connectedBy})` : ""}`
@@ -362,15 +360,15 @@ export function Connections() {
                         </span>
                       ) : null}
                     </div>
-                    <div className="truncate text-xs text-dim">
+                    <div className="truncate text-label text-dim">
                       {MCP_BLURBS[s.name] || "MCP server"}
                     </div>
-                    <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-faint">
+                    <div className="mt-0.5 flex items-center gap-1.5 text-meta text-faint">
                       <span className="rounded bg-active px-1.5 py-px font-mono">{s.transport}</span>
                       <span className="truncate font-mono" title={s.target}>{s.target}</span>
                     </div>
                     {meta.bad && s.detail && (
-                      <div className="mt-1 truncate font-mono text-[11px] text-red" title={s.detail}>
+                      <div className="mt-1 truncate font-mono text-meta text-red" title={s.detail}>
                         {s.detail}
                       </div>
                     )}
@@ -429,13 +427,13 @@ export function Connections() {
                 </div>
               );
             })}
-          </div>
+          </CardList>
 
           <ProjectsSection />
 
           <PlainRouter />
 
-          <div className="mt-6 text-[12.5px] text-faint">
+          <div className="mt-6 text-supporting text-faint">
             Changes apply to new session runs immediately (config is read per run). In a session
             transcript, MCP tool calls show up tagged with their server name.
           </div>
@@ -564,12 +562,12 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
       {error && (
         <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
       )}
-      <div className="overflow-hidden rounded-lg border border-line bg-panel">
+      <CardList>
         <div className="flex items-center gap-3 px-4 py-3">
           <IconTile name="github" size={30} />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-fg">Per-user GitHub auth</div>
-            <div className="text-xs leading-snug text-dim">
+            <div className="text-body font-medium text-fg">Per-user GitHub auth</div>
+            <div className="text-label leading-snug text-dim">
               {active
                 ? "Interactive sessions of a connected teammate open PRs as their own GitHub account. Everyone else (and all automations) keeps the bot."
                 : "Off — sessions open PRs as the bot account. Opt in via config: integrations.github { userPrAuth: true, oauthClientId } in ~/.opensession/config.json."}
@@ -592,20 +590,20 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
         </div>
 
         {flow && (
-          <div className="border-t border-line px-4 py-3 text-sm">
+          <div className="px-4 py-3 text-body">
             Enter code{" "}
-            <span className="rounded bg-active px-2 py-0.5 font-mono text-[15px] font-bold tracking-[0.12em] text-fg">
+            <span className="rounded bg-active px-2 py-0.5 font-mono text-item-title font-bold tracking-[0.12em] text-fg">
               {flow.userCode}
             </span>{" "}
             at{" "}
             <a href={flow.verificationUri} target="_blank" rel="noreferrer" className="text-accent underline">
               {flow.verificationUri}
             </a>
-            <span className="ml-2 text-xs text-dim">
+            <span className="ml-2 text-label text-dim">
               Sign in as the account you want to connect — waiting for GitHub…
             </span>
             <button
-              className="ml-3 text-xs text-faint underline"
+              className="ml-3 text-label text-faint underline"
               onClick={() => {
                 setFlow(null);
                 setFlowState("idle");
@@ -617,7 +615,7 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
         )}
 
         {justConnected && (
-          <div className="border-t border-line px-4 py-2.5 text-xs text-dim">
+          <div className="px-4 py-2.5 text-label text-dim">
             Connected <span className="font-medium text-fg">@{justConnected}</span>. Their new
             session runs now open PRs as this account.
           </div>
@@ -631,13 +629,13 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
               (a) => a.login.toLowerCase() === m.github.toLowerCase(),
             );
             return (
-              <div key={m.github} className="flex items-center gap-3 border-t border-line px-4 py-2.5">
+              <div key={m.github} className="flex items-center gap-3 px-4 py-2.5">
                 <div className="min-w-0 flex-1">
-                  <span className="text-sm font-medium text-fg">{m.name}</span>
-                  <span className="ml-2 text-xs text-faint">@{m.github}</span>
+                  <span className="text-body font-medium text-fg">{m.name}</span>
+                  <span className="ml-2 text-label text-faint">@{m.github}</span>
                 </div>
                 {account && (
-                  <span className="text-[11px] text-faint">
+                  <span className="text-meta text-faint">
                     since {new Date(account.connectedAt).toLocaleDateString()}
                   </span>
                 )}
@@ -647,7 +645,7 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
                 />
                 {m.connected && m.canManage && (
                   <button
-                    className="text-xs text-faint underline hover:text-red"
+                    className="text-label text-faint underline hover:text-red"
                     onClick={() => disconnect(m.github)}
                   >
                     Disconnect
@@ -656,7 +654,7 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
               </div>
             );
           })}
-      </div>
+      </CardList>
     </>
   );
 }
@@ -731,14 +729,14 @@ function PlainRouter() {
       {error && (
         <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
       )}
-      <div className="min-w-0 max-w-[720px] rounded-lg border border-line bg-panel p-3.5">
-        <div className="mb-2 text-[12.5px] leading-[1.45] text-dim">
+      <Card className="min-w-0 max-w-[720px] p-3.5">
+        <div className="mb-2 text-supporting leading-[1.45] text-dim">
           Every new Plain ticket goes through one cheap Haiku call before triage: spam is skipped
           entirely, a very basic ask (simple refund, how-do-I) runs triage on the model below, and
           everything else runs on the triage automation's own model. Router errors fail open to
           full triage. Applies to the next ticket — no restart.
         </div>
-        <div className="flex min-w-0 items-center gap-2.5 text-[11.5px] text-faint">
+        <div className="flex min-w-0 items-center gap-2.5 text-meta text-faint">
           <span className="whitespace-nowrap">Model for basic tickets:</span>
           <select
             className={cn(settingsSelectClass, "min-w-0 flex-1")}
@@ -758,9 +756,9 @@ function PlainRouter() {
           rows={12}
           spellCheck={false}
           aria-label="Routing prompt"
-          className={cn(settingsInputClass, "mt-2 resize-y font-mono text-xs sm:text-xs")}
+          className={cn(settingsInputClass, "mt-2 resize-y font-mono text-body")}
         />
-        <div className="mt-1.5 flex min-w-0 items-center gap-2.5 text-[11.5px] text-faint">
+        <div className="mt-1.5 flex min-w-0 items-center gap-2.5 text-meta text-faint">
           <Button
             variant="primary"
             disabled={saving || !dirty}
@@ -784,7 +782,7 @@ function PlainRouter() {
                   : "Using the built-in default"}
           </span>
         </div>
-      </div>
+      </Card>
     </>
   );
 }

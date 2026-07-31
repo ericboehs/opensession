@@ -3,6 +3,7 @@ import { BASE_PATH } from "../lib/base";
 import { DEFAULT_DOC_TITLE, docTitle } from "../lib/brand";
 import type { TodoItem, WSServerMessage } from "../lib/types";
 import { Button } from "../ui/button";
+import { Card, CardList } from "../ui/card";
 import { cn } from "../ui/cn";
 import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
 import { EmptyState } from "../ui/state";
@@ -41,7 +42,7 @@ function TaskRow({
 }) {
 	const done = task.status === "done";
 	return (
-		<li className="group flex min-h-11 items-center gap-3 border-b border-line px-3 py-2.5 last:border-b-0 sm:px-4">
+		<li className="group flex min-h-11 items-center gap-3 px-3 py-2.5 sm:px-4">
 			<button
 				type="button"
 				className={cn(
@@ -58,17 +59,17 @@ function TaskRow({
 			<div className="min-w-0 flex-1">
 				<div
 					className={cn(
-						"text-sm font-medium text-fg",
+						"text-body font-medium text-fg",
 						done && "text-dim line-through",
 					)}
 				>
 					{task.text}
 				</div>
 				{task.note && (
-					<div className="mt-0.5 text-xs text-faint">{task.note}</div>
+					<div className="mt-0.5 text-label text-faint">{task.note}</div>
 				)}
 				{(task.due || (task.remindAt && !done) || task.source.sessionId) && (
-					<div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-faint">
+					<div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-label text-faint">
 						{task.due && <span>Due {task.due}</span>}
 						{task.remindAt && !done && (
 							<span className={cn(task.remindedAt && "line-through")}>
@@ -222,7 +223,7 @@ export function Tasks({ addHandler, onOpenSession }: TasksProps) {
 					}}
 				>
 					<input
-						className="min-h-10 min-w-0 flex-1 rounded-md border border-line bg-control px-3 text-sm text-fg outline-none placeholder:text-faint focus:border-line-strong"
+						className="min-h-10 min-w-0 flex-1 rounded-md border border-line bg-control px-3 text-control-label text-fg outline-none placeholder:text-faint focus:border-line-strong"
 						value={draft}
 						placeholder="Add a task"
 						onChange={(event) => setDraft(event.target.value)}
@@ -236,49 +237,46 @@ export function Tasks({ addHandler, onOpenSession }: TasksProps) {
 					</Button>
 				</form>
 
-				{error && <div className="mb-3 text-sm text-red">{error}</div>}
+				{error && <div className="mb-3 text-body text-red">{error}</div>}
 
-				<div
-					className={cn(
-						"overflow-hidden",
-						// Empty reads as a soft, borderless well rather than a card with
-						// nothing in it: rounder, one step lighter, no outline.
-						tasks !== null && !open.length
-							? "rounded-[22px] bg-raised px-4"
-							: "rounded-lg border border-line bg-panel",
-					)}
-				>
-					{tasks === null ? (
-						<div className="px-4 py-8 text-center text-sm text-dim">
+				{tasks === null ? (
+					<Card>
+						<div className="px-4 py-8 text-center text-body text-dim">
 							Loading…
 						</div>
-					) : open.length ? (
-						<ul className="m-0 list-none p-0">
-							{open.map((task) => (
-								<TaskRow
-									key={task.id}
-									task={task}
-									onToggle={toggle}
-									onDrop={drop}
-									onOpenSession={onOpenSession}
-								/>
-							))}
-						</ul>
-					) : (
+					</Card>
+				) : open.length ? (
+					<CardList as="ul" className="m-0 list-none p-0">
+						{open.map((task) => (
+							<TaskRow
+								key={task.id}
+								task={task}
+								onToggle={toggle}
+								onDrop={drop}
+								onOpenSession={onOpenSession}
+							/>
+						))}
+					</CardList>
+				) : (
+					<div
+						// Empty reads as a soft, borderless well rather than a card with
+						// nothing in it: rounder, one step lighter, no outline.
+						className="overflow-hidden rounded-[22px] bg-raised px-4"
+					>
 						<EmptyState
 							icon={<IconListChecks size={22} />}
 							title="Nothing on your list"
 						>
 							Add a task when something needs your attention.
 						</EmptyState>
-					)}
-				</div>
+					</div>
+				)}
 
 				{done.length > 0 && (
 					<div className="mt-5">
 						<button
 							type="button"
-							className="mb-2 flex min-h-10 items-center gap-2 text-sm font-medium text-dim hover:text-fg"
+							className="mb-2 flex min-h-10 items-center gap-2 text-control-label font-medium text-dim hover:text-fg"
 							onClick={() => setShowDone((current) => !current)}
 							aria-expanded={showDone}
 						>
@@ -286,7 +284,7 @@ export function Tasks({ addHandler, onOpenSession }: TasksProps) {
 							<span className="text-faint">{done.length}</span>
 						</button>
 						{showDone && (
-							<ul className="m-0 list-none overflow-hidden rounded-lg border border-line bg-panel p-0">
+							<CardList as="ul" className="m-0 list-none p-0">
 								{done.map((task) => (
 									<TaskRow
 										key={task.id}
@@ -296,7 +294,7 @@ export function Tasks({ addHandler, onOpenSession }: TasksProps) {
 										onOpenSession={onOpenSession}
 									/>
 								))}
-							</ul>
+							</CardList>
 						)}
 					</div>
 				)}

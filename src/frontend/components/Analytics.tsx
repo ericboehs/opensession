@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import { docTitle } from "../lib/brand";
 import { fetchAnalytics } from "../lib/api";
 import type { AnalyticsSummary } from "../lib/types";
+import { Card } from "../ui/card";
 
 /**
  * Analytics: what happened on/because of OpenSession over a date range —
@@ -212,9 +213,9 @@ function BarChart({ labels, series, values, mode, height = 190, formatValue = fm
 					className="pointer-events-none absolute top-1 z-10 -translate-x-1/2 rounded-md border border-line bg-panel px-2.5 py-2 shadow-lg"
 					style={{ left: tooltipLeft }}
 				>
-					<div className="mb-1 text-[11px] font-semibold text-fg">{shortDate(labels[hover])}</div>
+					<div className="mb-1 text-meta font-semibold text-fg">{shortDate(labels[hover])}</div>
 					{tooltipRows.map((r) => (
-						<div key={r.label} className="flex items-center gap-1.5 whitespace-nowrap text-[11px] leading-4.5">
+						<div key={r.label} className="flex items-center gap-1.5 whitespace-nowrap text-meta leading-4.5">
 							<span className="size-2 shrink-0 rounded-[2px]" style={{ background: r.color }} />
 							<span className="text-dim">{r.label}</span>
 							<span className="ml-auto pl-3 font-medium tabular-nums text-fg">{formatValue(r.value)}</span>
@@ -231,7 +232,7 @@ function Legend({ series }: { series: Series[] }) {
 	return (
 		<div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
 			{series.map((s) => (
-				<span key={s.label} className="flex items-center gap-1.5 text-[11px] text-dim">
+				<span key={s.label} className="flex items-center gap-1.5 text-meta text-dim">
 					<span className="size-2.5 rounded-[3px]" style={{ background: s.color }} />
 					{s.label}
 				</span>
@@ -252,22 +253,22 @@ function ChartCard({
 	children: React.ReactNode;
 }) {
 	return (
-		<section className="min-w-0 rounded-lg border border-line bg-panel p-4">
-			<h3 className="m-0 text-sm font-semibold text-fg">{title}</h3>
-			{subtitle && <p className="m-0 mb-2 mt-0.5 text-xs text-dim">{subtitle}</p>}
+		<Card as="section" className="min-w-0 p-4">
+			<h3 className="m-0 text-item-title font-semibold text-fg">{title}</h3>
+			{subtitle && <p className="m-0 mb-2 mt-0.5 text-supporting text-dim">{subtitle}</p>}
 			{series && <Legend series={series} />}
 			{children}
-		</section>
+		</Card>
 	);
 }
 
 function StatTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
 	return (
-		<div className="min-w-0 rounded-lg border border-line bg-panel px-4 py-3">
-			<div className="text-xs text-dim">{label}</div>
-			<div className="mt-0.5 text-[22px] font-semibold leading-7 text-fg">{value}</div>
-			{sub && <div className="mt-0.5 truncate text-[11px] text-faint">{sub}</div>}
-		</div>
+		<Card className="min-w-0 px-4 py-3">
+			<div className="text-label text-dim">{label}</div>
+			<div className="mt-0.5 text-page-title font-semibold leading-7 text-fg">{value}</div>
+			{sub && <div className="mt-0.5 truncate text-meta text-faint">{sub}</div>}
+		</Card>
 	);
 }
 
@@ -404,7 +405,7 @@ export function Analytics() {
 	}, [data]);
 
 	const dateInput =
-		"rounded-md border border-line bg-panel px-2 py-1.5 text-xs text-fg [color-scheme:inherit]";
+		"rounded-md border border-line bg-panel px-2 py-1.5 text-control-label text-fg [color-scheme:inherit]";
 
 	return (
 		<div className="analytics-viz flex min-h-0 flex-1 flex-col overflow-y-auto bg-bg">
@@ -412,8 +413,8 @@ export function Analytics() {
 			<div className="mx-auto w-full max-w-[1080px] px-4 pb-10 pt-5 md:px-6">
 				<header className="flex flex-wrap items-end justify-between gap-3">
 					<div>
-						<h1 className="m-0 text-lg font-semibold tracking-[-0.02em] text-fg">Analytics</h1>
-						<p className="m-0 mt-1 text-xs text-dim">
+						<h1 className="m-0 text-section-title font-semibold tracking-[-0.02em] text-fg">Analytics</h1>
+						<p className="m-0 mt-1 text-supporting text-dim">
 							What happened on OpenSession — sessions, tokens, models, PRs.
 						</p>
 					</div>
@@ -423,7 +424,7 @@ export function Analytics() {
 								<button
 									key={p.label}
 									type="button"
-									className={`cursor-pointer rounded-[5px] border-0 px-2.5 py-1 text-xs font-medium ${
+									className={`cursor-pointer rounded-[5px] border-0 px-2.5 py-1 text-control-label font-medium ${
 										activePresetDays === p.days ? "bg-active text-fg" : "bg-transparent text-dim hover:text-fg"
 									}`}
 									onClick={() => {
@@ -458,9 +459,9 @@ export function Analytics() {
 					</div>
 				</header>
 
-				{error && <p className="mt-4 text-sm text-red">{error}</p>}
+				{error && <p className="mt-4 text-body text-red">{error}</p>}
 				{!data && !error && (
-					<div className="flex h-60 items-center justify-center text-sm text-dim">Loading analytics…</div>
+					<div className="flex h-60 items-center justify-center text-body text-dim">Loading analytics…</div>
 				)}
 
 				{data && derived && (
@@ -536,9 +537,9 @@ export function Analytics() {
 								title="Factory health"
 								subtitle="Merged PRs in range: agent (OpenSession sessions) vs everything else"
 							>
-								<table className="w-full border-collapse text-xs">
+								<table className="w-full border-collapse text-label">
 									<thead>
-										<tr className="text-left text-[11px] text-faint">
+										<tr className="text-left text-meta text-faint">
 											<th className="pb-1.5 font-medium">Metric</th>
 											<th className="pb-1.5 text-right font-medium">Agent PRs</th>
 											<th className="pb-1.5 text-right font-medium">Other PRs</th>
@@ -587,9 +588,9 @@ export function Analytics() {
 										title="Review quality trend"
 										subtitle={`Earlier vs recent half of the range (split at ${shortDate(derived.splitDate)}) — is the reviewer getting better?`}
 									>
-										<table className="w-full border-collapse text-xs">
+										<table className="w-full border-collapse text-label">
 											<thead>
-												<tr className="text-left text-[11px] text-faint">
+												<tr className="text-left text-meta text-faint">
 													<th className="pb-1.5 font-medium">Metric</th>
 													<th className="pb-1.5 text-right font-medium">Earlier</th>
 													<th className="pb-1.5 text-right font-medium">Recent</th>
@@ -621,7 +622,7 @@ export function Analytics() {
 												})()}
 											</tbody>
 										</table>
-										<p className="m-0 mt-2 text-[11px] text-faint">
+										<p className="m-0 mt-2 text-meta text-faint">
 											Addressed = author acted on the finding · pushback = author explicitly rejected it · reviews-run
 											metrics collect from Jul 28 on. High addressed rate + low pushback/missed bugs = healthier reviews.
 										</p>
@@ -634,7 +635,7 @@ export function Analytics() {
 							<ChartCard title="Models" subtitle="Output tokens and turns per model">
 								<div className="flex flex-col gap-2">
 									{data.models.slice(0, 8).map((m, i) => (
-										<div key={m.model} className="flex items-center gap-3 text-xs">
+										<div key={m.model} className="flex items-center gap-3 text-label">
 											<span className="w-[42%] truncate text-fg" title={m.model}>
 												{m.model}
 											</span>
@@ -654,9 +655,9 @@ export function Analytics() {
 								</div>
 							</ChartCard>
 							<ChartCard title="Repos" subtitle="OpenSession's share of PRs, per repo">
-								<table className="w-full border-collapse text-xs">
+								<table className="w-full border-collapse text-label">
 									<thead>
-										<tr className="text-left text-[11px] text-faint">
+										<tr className="text-left text-meta text-faint">
 											<th className="pb-1.5 font-medium">Repo</th>
 											<th className="pb-1.5 text-right font-medium">Opened</th>
 											<th className="pb-1.5 text-right font-medium">Merged</th>
@@ -686,9 +687,9 @@ export function Analytics() {
 						<div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
 							<ChartCard title="People" subtitle="Sessions and turns per person">
 								<div className="overflow-x-auto">
-									<table className="w-full border-collapse text-xs">
+									<table className="w-full border-collapse text-label">
 										<thead>
-											<tr className="text-left text-[11px] text-faint">
+											<tr className="text-left text-meta text-faint">
 												<th className="pb-1.5 font-medium">Person</th>
 												<th className="pb-1.5 text-right font-medium">Created</th>
 												<th className="pb-1.5 text-right font-medium">Active</th>
@@ -712,9 +713,9 @@ export function Analytics() {
 							</ChartCard>
 							<ChartCard title="Automations" subtitle="Runs, turns and errors per automation">
 								<div className="overflow-x-auto">
-									<table className="w-full border-collapse text-xs">
+									<table className="w-full border-collapse text-label">
 										<thead>
-											<tr className="text-left text-[11px] text-faint">
+											<tr className="text-left text-meta text-faint">
 												<th className="pb-1.5 font-medium">Automation</th>
 												<th className="pb-1.5 text-right font-medium">Runs</th>
 												<th className="pb-1.5 text-right font-medium">Turns</th>
@@ -757,7 +758,7 @@ export function Analytics() {
 													href={pr.url}
 													target="_blank"
 													rel="noopener noreferrer"
-													className="-mx-2 flex items-center gap-2.5 rounded-md px-2 py-1.5 text-xs no-underline hover:bg-hover"
+													className="-mx-2 flex items-center gap-2.5 rounded-md px-2 py-1.5 text-label no-underline hover:bg-hover"
 												>
 													<span
 														className="size-2 shrink-0 rounded-full"
@@ -778,7 +779,7 @@ export function Analytics() {
 									{data.prs.length > 12 && (
 										<button
 											type="button"
-											className="mt-2 cursor-pointer rounded-md border border-line bg-transparent px-2.5 py-1 text-xs text-dim hover:bg-hover hover:text-fg"
+											className="mt-2 cursor-pointer rounded-md border border-line bg-transparent px-2.5 py-1 text-control-label text-dim hover:bg-hover hover:text-fg"
 											onClick={() => setShowAllPrs((v) => !v)}
 										>
 											{showAllPrs ? "Show fewer" : `Show all ${fmtInt(data.prs.length)}`}

@@ -1,5 +1,6 @@
 import { BASE_PATH } from "../lib/base";
 import React, { useCallback, useEffect, useState } from "react";
+import { CardList } from "../ui/card";
 import { cn } from "../ui/cn";
 import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
@@ -72,8 +73,8 @@ function suggestMap(sample: Record<string, any>) {
 // ── component ────────────────────────────────────────────────────────────────
 
 const inputCls =
-	"w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-[13px] text-fg outline-none focus:border-faint";
-const labelCls = "mb-1 mt-3 block text-[11.5px] font-semibold text-faint";
+	"w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-control-label text-fg outline-none focus:border-faint";
+const labelCls = "mb-1 mt-3 block text-meta font-semibold text-faint";
 
 export function ProjectsSection() {
 	const [feeds, setFeeds] = useState<FeedDescriptor[] | null>(null);
@@ -103,16 +104,16 @@ export function ProjectsSection() {
 			{error && (
 				<InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
 			)}
-			<div className="overflow-hidden rounded-lg border border-line bg-panel">
-				{(feeds || []).map((f, i) => (
+			<CardList>
+				{(feeds || []).map((f) => (
 					<div
 						key={f.id}
-						className={cn("group flex items-center gap-3 px-4 py-3", i > 0 && "border-t border-line")}
+						className="group flex items-center gap-3 px-4 py-3"
 					>
 						<IconTile name={f.id} size={30} />
 						<div className="min-w-0 flex-1">
-							<div className="text-sm font-medium text-fg">{f.title}</div>
-							<div className="truncate text-xs text-dim">
+							<div className="text-body font-medium text-fg">{f.title}</div>
+							<div className="truncate text-label text-dim">
 								{f.fromConfig ? "Config project" : "Built-in"} · ref {f.refKind}
 								{f.mcpServers?.length ? ` · MCP: ${f.mcpServers.join(", ")}` : ""}
 							</div>
@@ -129,15 +130,12 @@ export function ProjectsSection() {
 					</div>
 				))}
 				<button
-					className={cn(
-						"flex w-full items-center gap-2 px-4 py-3 text-[13px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg",
-						(feeds?.length || 0) > 0 && "border-t border-line",
-					)}
+					className="flex w-full items-center gap-2 px-4 py-3 text-control-label font-medium text-dim transition-colors hover:bg-hover hover:text-fg"
 					onClick={() => setOpen(true)}
 				>
 					<IconPlus size={16} /> New project
 				</button>
-			</div>
+			</CardList>
 			<NewProjectModal
 				open={open}
 				onClose={() => setOpen(false)}
@@ -349,7 +347,7 @@ function NewProjectModal({
 						<input className={inputCls} value={argsText} onChange={(e) => setArgsText(e.target.value)} />
 						<Button
 							variant="primary"
-							className="flex-shrink-0 text-[13px]"
+							className="flex-shrink-0 text-control-label"
 							onClick={fetchSample}
 							disabled={!server || !tool || !!busy}
 						>
@@ -360,7 +358,7 @@ function NewProjectModal({
 					{sampleItem && (
 						<>
 							<label className={labelCls}>Sample item (items path: “{path || "(root)"}”)</label>
-							<pre className="max-h-28 overflow-auto rounded-md border border-line bg-surface p-2 text-[11px] leading-snug text-dim">{sampleItem}</pre>
+							<pre className="max-h-28 overflow-auto rounded-md border border-line bg-surface p-2 text-meta leading-snug text-dim">{sampleItem}</pre>
 						</>
 					)}
 
@@ -395,7 +393,7 @@ function NewProjectModal({
 					<input className={inputCls} value={tileBg} onChange={(e) => setTileBg(e.target.value)} />
 
 					{error && <InlineAlert className="mt-3">{error}</InlineAlert>}
-					{busy && <div className="mt-3 text-xs text-faint">{busy}</div>}
+					{busy && <div className="mt-3 text-label text-faint">{busy}</div>}
 				</div>
 				<Modal.Footer>
 					<div className="flex-1" />
