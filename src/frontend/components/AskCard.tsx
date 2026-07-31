@@ -14,17 +14,18 @@ interface Props {
 /**
  * Interactive AskUserQuestion card — the agent is waiting on these answers.
  *
- * Surfaces: one raised card on the transcript, with the choices as control-
- * surface rows on top of it. Deliberately two surfaces, not the three nested
- * greys it used to wear (card → section → row), which read as boxes-in-boxes.
+ * Surfaces: one raised card on the transcript — no outline of its own, the
+ * surface step is the edge — with the choices as control-surface rows on top
+ * of it. Deliberately two surfaces, not the three nested greys it used to wear
+ * (card → section → row), which read as boxes-in-boxes.
  *
  * Selection is NEUTRAL, not accent: the accent is red here, and filling a
  * chosen row with it read as an error/warning rather than a pick. Same reason
  * the composer keeps its resting border on focus (see .composer in global.css).
- * A picked row gets a stronger hairline, the pressed wash (a step above the
- * hover wash, so hovering a row never looks like picking it), and a filled
- * check indicator — a circle for single-select, a rounded square for
- * multi-select, so the shape itself says how many answers are allowed.
+ * It also doesn't tint the row at all — the filled indicator carries it, with
+ * the hairline stepping up. The indicator is a circle for single-select and a
+ * rounded square for multi-select, so the shape says how many answers are
+ * allowed.
  */
 export function AskCard({ questions, onAnswer }: Props) {
   const [selected, setSelected] = useState<Record<string, string[]>>({});
@@ -64,7 +65,7 @@ export function AskCard({ questions, onAnswer }: Props) {
   }
 
   return (
-    <div className="mx-auto mb-6 mt-2 flex w-full max-w-[var(--chat-col)] flex-col gap-5 rounded-[calc(20px*var(--rf))] border border-line bg-raised p-4 shadow-control [corner-shape:var(--cs)]">
+    <div className="mx-auto mb-6 mt-2 flex w-full max-w-[var(--chat-col)] flex-col gap-5 rounded-[calc(20px*var(--rf))] bg-raised p-4 [corner-shape:var(--cs)]">
       <div className="flex items-center gap-2">
         <span
           aria-hidden="true"
@@ -105,12 +106,12 @@ export function AskCard({ questions, onAnswer }: Props) {
                     type="button"
                     aria-pressed={active}
                     className={cn(
-                      "focus-ring group flex min-h-11 w-full items-start gap-3 rounded-[calc(12px*var(--rf))] border px-3 py-2.5 text-left transition-[background-color,border-color] [corner-shape:var(--cs)] disabled:opacity-60",
-                      // Selected sits a step above hover (pressed wash vs hover
-                      // wash) so a hovered row is never mistaken for the pick.
-                      active
-                        ? "border-line-strong bg-pressed"
-                        : "border-line bg-control hover:bg-hover",
+                      "focus-ring group flex min-h-11 w-full items-start gap-3 rounded-[calc(12px*var(--rf))] border bg-control px-3 py-2.5 text-left transition-[background-color,border-color] hover:bg-hover [corner-shape:var(--cs)] disabled:opacity-60",
+                      // A pick doesn't tint the row — the filled indicator says
+                      // it, and the hairline steps up. Washing the row grey
+                      // made the chosen option look dimmed, not chosen, and
+                      // collided with the hover wash on its neighbours.
+                      active ? "border-line-strong" : "border-line",
                     )}
                     onClick={() => toggle(q, opt.label)}
                     disabled={submitted}
@@ -167,6 +168,10 @@ export function AskCard({ questions, onAnswer }: Props) {
         <Button
           variant="primary"
           size="lg"
+          /* The Button primitive's `rounded-sm` is squarer than anything else
+             on the chat surface (the composer is a pill, its send button a
+             circle) — round the CTA to match its neighbours. */
+          className="rounded-full px-5 [corner-shape:round]"
           onClick={submit}
           disabled={!complete || submitted}
         >
