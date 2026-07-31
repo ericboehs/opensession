@@ -3891,6 +3891,18 @@ export function SessionViewer({
 						</Button>
 					</div>
 				);
+				// Scheduled automations title their chats "<automation> — <timestamp>",
+				// so naming the automation again beside that title reads as the same
+				// words twice. Fall back to the generic label there — the chip still
+				// marks the chat as automated and still links to its settings.
+				const automationLabel =
+					session.automation &&
+					(workspaceName || session.title || "")
+						.trim()
+						.toLowerCase()
+						.startsWith(session.automation.trim().toLowerCase())
+						? "Automation"
+						: session.automation;
 				// Secondary header controls (Linear/Plain links). Inline on desktop;
 				// on phones they fold into the ⋯ menu so the single top bar holds only
 				// ⋯ + the Workspace toggle beside the centered title. The code
@@ -3898,21 +3910,17 @@ export function SessionViewer({
 				// of the panel toggle on desktop; PR status rides its own row.
 				const secondaryActions = (inMenu: boolean) => (
 					<>
-						{session.automation && (inMenu ? (
+						{/* The automation that produced this chat rides in the title row
+						    beside the workspace name on desktop — it names the chat, it
+						    isn't an action. .viewer-title is hidden on phones, so the ⋯
+						    menu keeps carrying it there. */}
+						{session.automation && inMenu && (
 							<Menu.Item
 								render={<a href={`${BASE_PATH}/automations/${encodeURIComponent(session.automationId || session.automation)}`} />}
 							>
-								<span className="grow">Automation</span>
+								<span className="grow">{automationLabel}</span>
 							</Menu.Item>
-						) : (
-							<a
-								href={`${BASE_PATH}/automations/${encodeURIComponent(session.automationId || session.automation)}`}
-								className="session-link"
-								title={`Open ${session.automation} settings`}
-							>
-								Automation
-							</a>
-						))}
+						)}
 						{session.linearIssue?.url && (inMenu ? (
 							<Menu.Item
 								render={<a href={session.linearIssue.url} target="_blank" rel="noopener" />}
@@ -3965,7 +3973,11 @@ export function SessionViewer({
 						ref={headerRef}
 					>
 						<div className="viewer-title">
-					{isAsk ? (
+					{/* Automation runs skip the "ask" chip: the automation chip after
+					    the title already says where the chat came from, and ask/code is
+					    the automation's own setting rather than something about this
+					    run — two origin chips on one row just read as noise. */}
+					{isAsk && !session.automation ? (
 						<span className="source-chip source-ask">ask</span>
 					) : (
 						// "backstage" is the default origin (web UI) — as a chip it's noise,
@@ -4039,6 +4051,20 @@ export function SessionViewer({
 						>
 							{workspaceName || session.title}
 						</span>
+					)}
+					{/* Which automation produced this chat, next to the name it produced
+					    — the same slot the source chips claim, so origin always reads on
+					    the left. Links to the automation's settings. The name is capped
+					    and ellipsized because automation names run long ("App Changelog
+					    Draft (Mac + Windows releases)") and the title matters more. */}
+					{session.automation && (
+						<a
+							href={`${BASE_PATH}/automations/${encodeURIComponent(session.automationId || session.automation)}`}
+							className="source-chip source-automation"
+							title={`Automation — open ${session.automation} settings`}
+						>
+							{automationLabel}
+						</a>
 					)}
 					{/* Sandbox badge: this session's runs execute inside an isolated
 					    container (docker/daytona/e2b). Renders nothing for host sessions

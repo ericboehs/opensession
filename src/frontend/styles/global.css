@@ -3482,6 +3482,27 @@ body.resizing-tab-split {
 	background: rgba(210, 153, 34, 0.18);
 	color: #e3b341;
 }
+/* Which automation produced a chat, shown beside its title. Deliberately the
+   quiet neutral the CLI chip uses — it names the chat's origin, it shouldn't
+   outshout the title. It's a link to the automation's settings, so it hints on
+   hover. */
+.source-automation {
+	background: var(--bg-active);
+	color: var(--text-dim);
+	text-decoration: none;
+	/* Truncate only when the name is genuinely long — shrinking with the row
+	   ellipsized it while there was still free space beside it. The title next
+	   to it carries its own cap, so it absorbs the squeeze instead. */
+	max-width: 160px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	transition: background 0.12s ease, color 0.12s ease;
+}
+.source-automation:hover {
+	background: var(--hover);
+	color: var(--text);
+}
 
 /* Archived chip in the viewer header doubles as an unarchive button — give it a
    touch more room than the read-only source chips, and hint the click. */
