@@ -1,23 +1,10 @@
-import React, { Suspense, lazy, useState } from "react";
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import markUrl from "../os1-mac/build/icon-512.png";
-import {
-	IconBranches,
-	IconCheck,
-	IconCopy,
-	IconPullRequest,
-	IconRepo,
-	IconSparkle,
-	IconStack,
-	IconTerminal,
-} from "../src/frontend/components/icons";
+import { IconCheck, IconCopy, IconRepo, IconTerminal } from "../src/frontend/components/icons";
+import productUiUrl from "./product-ui.webp";
 import "./site.css";
-
-const TellaBackground = lazy(() =>
-	import("./TellaBackground").then((module) => ({
-		default: module.TellaBackground,
-	})),
-);
+import { TellaBackground } from "./TellaBackground";
 
 const installCommand =
 	"curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash";
@@ -30,182 +17,16 @@ function Mark({ small = false }: { small?: boolean }) {
 	);
 }
 
-function Avatar({ name, tone }: { name: string; tone: string }) {
-	return (
-		<span className={`avatar avatar-${tone}`} title={name} aria-label={name}>
-			{name.slice(0, 1)}
-		</span>
-	);
-}
-
-function Presence() {
-	return (
-		<div className="presence" aria-label="Kent, Michiel, and Louise are here">
-			<div className="avatar-stack" aria-hidden="true">
-				<Avatar name="Kent" tone="blue" />
-				<Avatar name="Michiel" tone="violet" />
-				<Avatar name="Louise" tone="coral" />
-			</div>
-			<span>3 here</span>
-		</div>
-	);
-}
-
-function ToolRow({
-	icon,
-	label,
-	detail,
-	active = false,
-}: {
-	icon: React.ReactNode;
-	label: string;
-	detail: string;
-	active?: boolean;
-}) {
-	return (
-		<div className={`tool-row${active ? " tool-row-active" : ""}`}>
-			<span className="tool-icon">{icon}</span>
-			<div>
-				<strong>{label}</strong>
-				<span>{detail}</span>
-			</div>
-			{active ? <span className="working-dot" /> : <IconCheck size={20} />}
-		</div>
-	);
-}
-
 function ProductPreview() {
 	return (
-		<div className="preview-wrap" aria-label="Sample multiplayer OpenSession workspace">
-			<div className="preview-window">
-				<div className="window-bar">
-					<div className="window-controls" aria-hidden="true">
-						<span />
-						<span />
-						<span />
-					</div>
-					<div className="window-title">
-						<Mark small />
-						<span>OpenSession</span>
-					</div>
-					<span className="sample-label">Sample workspace</span>
-				</div>
-
-				<div className="workspace-shell">
-					<aside className="workspace-sidebar">
-						<button className="new-session" type="button">
-							<span>+</span> New session
-						</button>
-						<p className="sidebar-label">Workspaces</p>
-						<div className="workspace-row workspace-row-active">
-							<span className="repo-tile"><IconRepo size={20} /></span>
-							<div>
-								<strong>Multiplayer invites</strong>
-								<span>tella-fusion</span>
-							</div>
-							<span className="live-dot" />
-						</div>
-						<div className="workspace-row">
-							<span className="repo-tile repo-tile-green"><IconRepo size={20} /></span>
-							<div>
-								<strong>Billing webhooks</strong>
-								<span>api</span>
-							</div>
-							<span className="row-count">2</span>
-						</div>
-						<div className="workspace-row">
-							<span className="repo-tile repo-tile-gold"><IconRepo size={20} /></span>
-							<div>
-								<strong>Mobile composer</strong>
-								<span>opensession</span>
-							</div>
-						</div>
-						<div className="sidebar-bottom">
-							<Avatar name="Kent" tone="blue" />
-							<div><strong>Kent</strong><span>Online</span></div>
-						</div>
-					</aside>
-
-					<main className="workspace-main">
-						<header className="session-header">
-							<div>
-								<strong>Multiplayer workspace invitations</strong>
-								<span><IconBranches size={20} /> feature/invite-presence</span>
-							</div>
-							<Presence />
-						</header>
-						<div className="session-tabs" role="tablist" aria-label="Workspace views">
-							<span className="session-tab session-tab-active">Chat</span>
-							<span className="session-tab">Review <b>1</b></span>
-							<span className="session-tab">Preview</span>
-						</div>
-
-						<section className="conversation">
-							<div className="message message-user">
-								<div className="message-author">
-									<Avatar name="Kent" tone="blue" />
-									<strong>Kent</strong>
-									<span>10:42</span>
-								</div>
-								<p>Add multiplayer presence to project workspaces. Have another agent cover the tests, then open a PR.</p>
-							</div>
-
-							<div className="message message-agent">
-								<div className="message-author">
-									<span className="agent-avatar"><IconSparkle size={20} /></span>
-									<strong>Michael</strong>
-									<span>Agent</span>
-								</div>
-								<p>I found the existing presence channel and workspace header. I’m wiring those together while a focused worker adds the coverage.</p>
-								<div className="tool-stack">
-									<ToolRow icon={<IconTerminal size={20} />} label="Read workspace presence" detail="4 files" />
-									<ToolRow icon={<IconStack size={20} />} label="Delegated tests" detail="Worker agent · 3m" active />
-									<ToolRow icon={<IconPullRequest size={20} />} label="Opened pull request" detail="#1842 · Ready for review" />
-								</div>
-							</div>
-
-							<div className="collaborator-note">
-								<Avatar name="Michiel" tone="violet" />
-								<p><strong>Michiel joined</strong> and opened the Review tab</p>
-								<span>now</span>
-							</div>
-						</section>
-
-						<div className="composer-preview">
-							<span>Ask Michael to change anything...</span>
-							<kbd>⌘ Enter</kbd>
-						</div>
-					</main>
-
-					<aside className="activity-rail">
-						<div className="rail-heading"><span>Working together</span><Presence /></div>
-						<div className="people-list">
-							<div><Avatar name="Michiel" tone="violet" /><p><strong>Michiel</strong><span>Reviewing changes</span></p><i className="presence-dot" /></div>
-							<div><Avatar name="Louise" tone="coral" /><p><strong>Louise</strong><span>Watching session</span></p><i className="presence-dot" /></div>
-						</div>
-
-						<p className="rail-label">Agent team</p>
-						<div className="agent-card">
-							<span className="agent-avatar"><IconSparkle size={20} /></span>
-							<p><strong>Michael</strong><span>Implementing presence</span></p>
-							<span className="working-dot" />
-						</div>
-						<div className="agent-card">
-							<span className="agent-avatar agent-avatar-muted"><IconStack size={20} /></span>
-							<p><strong>Test worker</strong><span>12 tests passed</span></p>
-							<IconCheck size={20} />
-						</div>
-
-						<p className="rail-label">Pull request</p>
-						<div className="pr-card">
-							<div><IconPullRequest size={20} /><strong>#1842</strong><span className="ready-pill">Ready</span></div>
-							<p>Show presence in workspace headers</p>
-							<div className="checks"><IconCheck size={20} /> All checks passed</div>
-						</div>
-					</aside>
-				</div>
-			</div>
-		</div>
+		<figure className="preview-wrap">
+			<img
+				className="product-preview"
+				src={productUiUrl}
+				alt="OpenSession workspace showing parallel agent work in a shared coding session"
+			/>
+			<figcaption>Actual OpenSession web interface</figcaption>
+		</figure>
 	);
 }
 
@@ -251,9 +72,7 @@ function LandingPage() {
 		<>
 			<section className="hero">
 				<div className="gradient-fallback" aria-hidden="true" />
-				<Suspense fallback={null}>
-					<TellaBackground />
-				</Suspense>
+				<TellaBackground />
 				<div className="hero-wash" aria-hidden="true" />
 
 				<header className="site-header page-width">

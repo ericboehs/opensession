@@ -14,6 +14,7 @@ Deploy the contents of `.website-dist/` as a static site. The build always
 emits stable `index.html` and `opensession-social.png` paths; scripts, styles,
 and the in-page icon remain content-hashed.
 
-The hero uses Tella's curated `Cotton candy` ShaderGradient preset. Its values
-live in `TellaBackground.tsx` and match the preset in tella-fusion's
-`packages/core/webapp/src/shared/Background.res`.
+The hero uses Tella's six-second green-yellow Spring video background from
+tella-fusion's `packages/core/webapp/src/shared/Assets.res`. The product image
+is a sanitized capture of the real OpenSession web interface rather than a
+separate marketing mock.
