@@ -3056,7 +3056,7 @@ function App() {
 						<Button
 							variant="primary"
 							size="lg"
-							className="rounded-md bg-red px-5 py-2.5 font-semibold shadow-none"
+							className="rounded-md border-0 bg-red px-5 py-2.5 font-semibold shadow-none"
 							onClick={() => {
 								const confirmation = runningCloseConfirmation;
 								setRunningCloseConfirmation(null);

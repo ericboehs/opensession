@@ -1189,7 +1189,7 @@ export function PrPanel({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className={`rounded-sm border-0 px-3 py-1.5 text-xs ${diffView === "diff" ? "bg-active text-fg" : "hover:bg-transparent"}`}
+                  className={`rounded-sm border-0 px-3 py-1.5 text-xs font-medium ${diffView === "diff" ? "bg-active text-fg" : "hover:bg-transparent"}`}
                   onClick={() => setDiffView("diff")}
                 >
                   All changes
@@ -1197,7 +1197,7 @@ export function PrPanel({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className={`rounded-sm border-0 px-3 py-1.5 text-xs ${diffView === "guide" ? "bg-active text-fg" : "hover:bg-transparent"}`}
+                  className={`rounded-sm border-0 px-3 py-1.5 text-xs font-medium ${diffView === "guide" ? "bg-active text-fg" : "hover:bg-transparent"}`}
                   onClick={() => setDiffView("guide")}
                 >
                   Review guide
@@ -1213,7 +1213,7 @@ export function PrPanel({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className={`rounded-sm border-0 px-2.5 py-1 text-meta ${diffStyle === "unified" ? "bg-active text-fg" : "hover:bg-transparent"}`}
+                    className={`rounded-sm border-0 px-2.5 py-1 text-meta font-medium ${diffStyle === "unified" ? "bg-active text-fg" : "hover:bg-transparent"}`}
                     onClick={() => changeDiffStyle("unified")}
                   >
                     Unified
@@ -1221,7 +1221,7 @@ export function PrPanel({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className={`rounded-sm border-0 px-2.5 py-1 text-meta ${diffStyle === "split" ? "bg-active text-fg" : "hover:bg-transparent"}`}
+                    className={`rounded-sm border-0 px-2.5 py-1 text-meta font-medium ${diffStyle === "split" ? "bg-active text-fg" : "hover:bg-transparent"}`}
                     onClick={() => changeDiffStyle("split")}
                   >
                     Split
