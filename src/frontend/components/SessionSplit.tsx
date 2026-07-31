@@ -3,25 +3,32 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import { clampSplitRatio } from "../lib/split-tabs";
 
 type Socket = ReturnType<typeof useWebSocket>;
+export type SplitSide = "left" | "right";
 
 interface Props {
-	leftId: string;
-	rightId: string;
-	focusedId: string;
+	/** Which column holds the focused tab — it owns the shared header chrome. */
+	focusedSide: SplitSide;
 	ratio: number;
-	onFocus: (id: string) => void;
+	onFocusSide: (side: SplitSide) => void;
 	onRatioChange: (ratio: number) => void;
-	renderPane: (id: string, socket: Socket, focused: boolean) => React.ReactNode;
+	/**
+	 * A whole column: its own tab bar above its own pane. Each side gets its own
+	 * socket so both panes stay live, not just the focused one.
+	 */
+	renderColumn: (side: SplitSide, socket: Socket, focused: boolean) => React.ReactNode;
 }
 
+/**
+ * Two side-by-side columns with a draggable divider. The split runs the full
+ * height of the detail pane — each column carries its own tab bar, so the two
+ * sides are independent tab strips rather than two panes sharing one strip.
+ */
 export function SessionSplit({
-	leftId,
-	rightId,
-	focusedId,
+	focusedSide,
 	ratio,
-	onFocus,
+	onFocusSide,
 	onRatioChange,
-	renderPane,
+	renderColumn,
 }: Props) {
 	const leftSocket = useWebSocket();
 	const rightSocket = useWebSocket();
@@ -70,20 +77,24 @@ export function SessionSplit({
 		window.addEventListener("pointercancel", cancel);
 	}
 
+	const column = (side: SplitSide, socket: Socket) => (
+		<div
+			className={`session-split-pane ${focusedSide === side ? "session-split-pane-focused" : ""}`}
+			onPointerDownCapture={() => {
+				if (focusedSide !== side) onFocusSide(side);
+			}}
+		>
+			{renderColumn(side, socket, focusedSide === side)}
+		</div>
+	);
+
 	return (
 		<div
 			ref={rootRef}
 			className="session-split"
 			style={{ gridTemplateColumns: `${draftRatio * 100}% 8px minmax(0, 1fr)` }}
 		>
-			<div
-				className={`session-split-pane ${focusedId === leftId ? "session-split-pane-focused" : ""}`}
-				onPointerDownCapture={() => {
-					if (focusedId !== leftId) onFocus(leftId);
-				}}
-			>
-				{renderPane(leftId, leftSocket, focusedId === leftId)}
-			</div>
+			{column("left", leftSocket)}
 			<div
 				className="session-split-resize"
 				role="separator"
@@ -91,14 +102,7 @@ export function SessionSplit({
 				aria-label="Resize split tabs"
 				onPointerDown={startResize}
 			/>
-			<div
-				className={`session-split-pane ${focusedId === rightId ? "session-split-pane-focused" : ""}`}
-				onPointerDownCapture={() => {
-					if (focusedId !== rightId) onFocus(rightId);
-				}}
-			>
-				{renderPane(rightId, rightSocket, focusedId === rightId)}
-			</div>
+			{column("right", rightSocket)}
 		</div>
 	);
 }

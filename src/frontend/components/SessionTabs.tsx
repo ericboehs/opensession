@@ -9,7 +9,6 @@ import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { copySessionTranscript } from "../lib/transcript-copy";
 import { IconHistory, IconPencil, IconPlus, IconRestore } from "./icons";
 import { useIsPhone } from "../hooks/useIsPhone";
-import type { TabSplit } from "../lib/split-tabs";
 
 /**
  * The tab strip is scoped to ONE Workspace: it shows the sibling chats of the
@@ -58,9 +57,13 @@ interface Props {
 	 * Receives the reordered session ids; the parent persists it per-workspace.
 	 */
 	onReorderTabs: (orderedIds: string[]) => void;
-	/** One persisted two-chat group rendered as a single combined tab. */
-	split?: TabSplit | null;
-	onSeparateSplit?: () => void;
+	/**
+	 * Render even when this bar holds a single tab. A split shows one bar per
+	 * pane, and each keeps its "+" however few tabs it has.
+	 */
+	alwaysShow?: boolean;
+	/** Show the archived-chats menu — only the rightmost bar does. */
+	showHistory?: boolean;
 	/** Dragging below the strip previews a left/right split over the content. */
 	onSplitDrag?: (id: string | null, point?: { x: number; y: number }) => void;
 	/** Return true when the drop created a split instead of committing a reorder. */
@@ -112,8 +115,8 @@ export function SessionTabs({
 	onSelect,
 	onSetColor,
 	onReorderTabs,
-	split,
-	onSeparateSplit,
+	alwaysShow,
+	showHistory = true,
 	onSplitDrag,
 	onSplitDrop,
 	viewTabs,
@@ -307,43 +310,18 @@ export function SessionTabs({
 		sync();
 		return () => observer.disconnect();
 	}, [tabs.length, viewTabs.length]);
-	const tabUnits = React.useMemo(() => {
-		const visibleSplit = isPhone ? null : split;
-		const splitIds = visibleSplit
-			? new Set([visibleSplit.leftId, visibleSplit.rightId])
-			: null;
-		const resolveMember = (id: string): TabMember | null => {
-			const session = orderedTabs.find((candidate) => candidate.id === id);
-			if (session) return { kind: "chat", id, session };
-			const view = viewTabs.find((candidate) => candidate.id === id);
-			return view ? { kind: "view", id, view } : null;
-		};
-		const splitMembers = visibleSplit
-			? [resolveMember(visibleSplit.leftId), resolveMember(visibleSplit.rightId)].filter(
-					(member): member is TabMember => !!member,
-				)
-			: [];
-		let splitInserted = false;
-		const units = orderedTabs.flatMap((session) => {
-			if (!splitIds?.has(session.id) || splitMembers.length !== 2) {
-				return [
-					{
-						key: session.id,
-						members: [{ kind: "chat", id: session.id, session } as TabMember],
-					},
-				];
-			}
-			if (splitInserted) return [];
-			splitInserted = true;
-			return [
-				{
-					key: `split:${splitMembers[0].id}:${splitMembers[1].id}`,
-					members: splitMembers,
-				},
-			];
-		});
-		return { units, splitMembers };
-	}, [isPhone, orderedTabs, split, viewTabs]);
+	// One unit per chat tab. Units are a holdover from the combined split tab
+	// (a pair used to share one unit); the drag code keys off `unit.key`, so the
+	// shape stays even though every unit now holds exactly one member.
+	const tabUnits = React.useMemo(
+		() => ({
+			units: orderedTabs.map((session) => ({
+				key: session.id,
+				members: [{ kind: "chat", id: session.id, session } as TabMember],
+			})),
+		}),
+		[orderedTabs],
+	);
 
 	// Drop: hand the new order to the parent (which persists it and feeds it back
 	// as the next `tabs`), swallow the trailing click, then release the draft.
@@ -384,72 +362,6 @@ export function SessionTabs({
 		else onCloseView(member.view.id);
 	}
 
-	function splitTabContent(members: TabMember[]) {
-		const groupActive = members.some((member) => member.id === activeTopId);
-		return (
-			<ContextMenu.Root>
-				<ContextMenu.Trigger
-					render={
-						<div
-							role="tab"
-							aria-selected={groupActive}
-							className={`session-tab session-tab-split ${groupActive ? "session-tab-active" : ""}`}
-						/>
-					}
-				>
-					{members.map((member) => {
-						const session = member.kind === "chat" ? member.session : null;
-						const label = member.kind === "chat" ? member.session.title : member.view.label;
-						return (
-							<div
-								key={member.id}
-								className={`session-tab-split-part ${member.id === activeTopId ? "session-tab-split-part-active" : ""}`}
-								title={label}
-							>
-								<button
-									type="button"
-									className="session-tab-split-select"
-									onClick={(event) => {
-										event.stopPropagation();
-										selectMember(member);
-									}}
-								>
-									{session?.waitingForInput ? (
-										<span className="session-tab-dot session-tab-dot-waiting" />
-									) : session?.isRunning ? (
-										<span className="session-tab-dot" />
-									) : member.kind === "view" && member.view.dotClass ? (
-										<span className={`panel-tab-dot ${member.view.dotClass}`} />
-									) : null}
-									{member.kind === "view" && member.view.icon ? (
-										<span className="session-tab-vicon" aria-hidden="true">
-											{member.view.icon}
-										</span>
-									) : (
-										<span className="session-tab-title">{label}</span>
-									)}
-								</button>
-								<button
-									type="button"
-									className="session-tab-split-close"
-									aria-label={`Close ${label}`}
-									onClick={(event) => {
-										event.stopPropagation();
-										closeMember(member);
-									}}
-								>
-									×
-								</button>
-							</div>
-						);
-					})}
-				</ContextMenu.Trigger>
-				<ContextMenu.Popup className="min-w-[190px]">
-					<ContextMenu.Item onClick={onSeparateSplit}>Separate tabs</ContextMenu.Item>
-				</ContextMenu.Popup>
-			</ContextMenu.Root>
-		);
-	}
 
 	function commitRename() {
 		if (editKey !== null) onRename(editKey, draft.trim());
@@ -474,7 +386,7 @@ export function SessionTabs({
 	// button lives next to the session title in the header instead. But once a
 	// non-chat pane (Review) is open, the strip appears so it has somewhere to
 	// live — a lone code chat then reads as [chat][Review].
-	if (tabs.length <= 1 && viewTabs.length === 0) return null;
+	if (!alwaysShow && tabs.length <= 1 && viewTabs.length === 0) return null;
 
 	// New-tab "+" — plain-click shares the workspace worktree; right-click offers
 	// the stacked/ask modes.
@@ -497,7 +409,7 @@ export function SessionTabs({
 	// History: every archived (closed) chat of this workspace, in one list.
 	// Clicking a row opens the chat read-only-ish (it gets a tab while viewed);
 	// the ⟲ restores it into the strip for good.
-	const historyMenu = archived.length > 0 && (
+	const historyMenu = showHistory && archived.length > 0 && (
 		<Menu.Root>
 			<Menu.Trigger className="session-tab session-tab-history" aria-label="Archived chats" title="Archived chats">
 				<IconHistory size={ctrlIconSize} />
@@ -545,29 +457,6 @@ export function SessionTabs({
 						/>
 					)}
 					{tabUnits.units.map((unit) => {
-						if (unit.members.length === 2) {
-							return (
-								<Reorder.Item
-									as="div"
-									key={unit.key}
-									value={unit.key}
-									data-tab-key={unit.key}
-									dragListener={canDragTabs}
-									onDragStart={() => beginDrag(unit.key)}
-									onDragEnd={commitReorder}
-									whileDrag={{ scale: 1.02, zIndex: 3 }}
-									onClickCapture={(event) => {
-										if (justDragged.current) {
-											event.stopPropagation();
-											event.preventDefault();
-										}
-									}}
-									className={`session-tab-reorder ${dropSlot?.key === unit.key ? "is-dragging" : ""}`}
-								>
-									{splitTabContent(unit.members)}
-								</Reorder.Item>
-							);
-						}
 						const member = unit.members[0];
 						if (member.kind !== "chat") return null;
 						const session = member.session;
@@ -734,19 +623,9 @@ export function SessionTabs({
 						);
 					})}
 				</Reorder.Group>
-				{tabUnits.splitMembers.length === 2 &&
-					tabUnits.splitMembers.every((member) => member.kind === "view") && (
-						<div className="session-tab-reorder">
-							{splitTabContent(tabUnits.splitMembers)}
-						</div>
-					)}
 				{/* Non-chat panes (Review, …) ride at the END of the strip: the main
 				    chat leads, sibling chats follow, panes close the row. */}
-				{viewTabs
-					.filter(
-						(view) => !tabUnits.splitMembers.some((member) => member.id === view.id),
-					)
-					.map((v) => (
+				{viewTabs.map((v) => (
 					<motion.div
 						key={v.id}
 						role="tab"

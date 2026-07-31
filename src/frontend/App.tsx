@@ -39,7 +39,7 @@ import { TitleBar } from "./components/TitleBar";
 import { Settings, type SettingsSectionKey } from "./components/Settings";
 import { SessionTabs, type ViewTab } from "./components/SessionTabs";
 import type { SubagentRef } from "./components/SubagentPane";
-import { SessionSplit } from "./components/SessionSplit";
+import { SessionSplit, type SplitSide } from "./components/SessionSplit";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
 import { UpdatePill } from "./components/UpdatePill";
@@ -134,7 +134,8 @@ import {
 	getTabSplit,
 	onTabSplitChanged,
 	saveTabSplit,
-	splitIsLive,
+	resolveSplit,
+	type ResolvedSplit,
 	type TabSplit,
 } from "./lib/split-tabs";
 import {
@@ -1992,64 +1993,196 @@ function App() {
 	const focusedTopTabId = activeViewTabShown
 		? viewTabs.find((tab) => tab.active)?.id ?? null
 		: currentSession?.id ?? null;
+	// Every tab in the strip, in bar order: chats first, then the view panes.
+	const stripTabIds = [
+		...projectChats.map((chat) => chat.id),
+		...viewTabs.map((tab) => tab.id),
+	];
 	const storedTabSplit = tabOrderKey ? getTabSplit(tabOrderKey) : null;
-	const tabSplit = splitIsLive(
-		storedTabSplit,
-		[
-			...projectChats.map((chat) => chat.id),
-			...viewTabs.map((tab) => tab.id),
-		],
-	)
-		? storedTabSplit
-		: null;
-	const activeTabSplit =
-		!isPhone &&
-		currentSession &&
-		tabSplit &&
-		focusedTopTabId &&
-		(tabSplit.leftId === focusedTopTabId || tabSplit.rightId === focusedTopTabId)
-			? tabSplit
-			: null;
+	// The split projected onto the tabs that exist right now. Null once either
+	// bar runs out of tabs — that's what collapses the strip back to one bar.
+	const tabSplit = isPhone ? null : resolveSplit(storedTabSplit, stripTabIds);
+	const activeTabSplit = currentSession ? tabSplit : null;
+	const toStoredSplit = (split: ResolvedSplit): TabSplit => ({
+		right: split.right,
+		leftActive: split.leftActive,
+		rightActive: split.rightActive,
+		ratio: split.ratio,
+	});
+	/** Which bar owns a tab. The left bar is every tab's default home. */
+	const sideOf = (id: string): SplitSide =>
+		activeTabSplit?.right.includes(id) ? "right" : "left";
+	// The focused bar is whichever holds the routed tab, so its active tab is
+	// the one the URL already reflects; the other bar's is remembered below.
+	const focusedSide: SplitSide = focusedTopTabId ? sideOf(focusedTopTabId) : "left";
+	const activeIdFor = (side: SplitSide): string | null => {
+		if (!activeTabSplit) return focusedTopTabId;
+		if (side === focusedSide) return focusedTopTabId;
+		return side === "left" ? activeTabSplit.leftActive : activeTabSplit.rightActive;
+	};
+	// Remember each bar's active tab so refocusing the other bar restores what
+	// was open there rather than snapping to its first tab.
+	useEffect(() => {
+		if (!tabOrderKey || !activeTabSplit || !focusedTopTabId) return;
+		const stored =
+			focusedSide === "left" ? activeTabSplit.leftActive : activeTabSplit.rightActive;
+		if (stored === focusedTopTabId) return;
+		saveTabSplit(tabOrderKey, {
+			...toStoredSplit(activeTabSplit),
+			...(focusedSide === "left"
+				? { leftActive: focusedTopTabId }
+				: { rightActive: focusedTopTabId }),
+		});
+	});
 
+	/**
+	 * Which bar a dragged tab would land in: the pane's left/right half when
+	 * there is no split yet (the drop that creates one), or the column actually
+	 * under the pointer once there is. Null when the drop would be a no-op.
+	 */
 	function splitSideAt(
 		draggedId: string,
 		point: { x: number; y: number },
-	): "left" | "right" | null {
-		if (
-			isPhone ||
-			activeTabSplit ||
-			!currentSession ||
-			focusedTopTabId === draggedId ||
-			![...projectChats.map((chat) => chat.id), ...viewTabs.map((tab) => tab.id)].includes(
-				draggedId,
-			)
-		)
-			return null;
+	): SplitSide | null {
+		if (isPhone || !currentSession || !stripTabIds.includes(draggedId)) return null;
 		const pane = detailPaneRef.current?.getBoundingClientRect();
+		if (!pane || point.x < pane.left || point.x > pane.right || point.y > pane.bottom)
+			return null;
+		if (activeTabSplit) {
+			const side: SplitSide =
+				point.x < pane.left + pane.width * activeTabSplit.ratio ? "left" : "right";
+			// Dropping a tab back into the bar it already lives in changes nothing.
+			return side === sideOf(draggedId) ? null : side;
+		}
+		// No split yet: the drop has to clear the strip, and needs a tab to leave
+		// behind — splitting off the only tab would just move the whole bar over.
 		const strip = detailPaneRef.current
 			?.querySelector<HTMLElement>(".session-tabs")
 			?.getBoundingClientRect();
-		if (
-			!pane ||
-			!strip ||
-			point.y < strip.bottom + 8 ||
-			point.y > pane.bottom ||
-			point.x < pane.left ||
-			point.x > pane.right
-		)
-			return null;
+		if (!strip || point.y < strip.bottom + 8 || stripTabIds.length < 2) return null;
 		return point.x < pane.left + pane.width / 2 ? "left" : "right";
 	}
 
-	function createTabSplit(draggedId: string, side: "left" | "right") {
-		if (!tabOrderKey || !focusedTopTabId || focusedTopTabId === draggedId) return;
-		const next: TabSplit = {
-			leftId: side === "left" ? draggedId : focusedTopTabId,
-			rightId: side === "right" ? draggedId : focusedTopTabId,
-			ratio: 0.5,
-		};
-		saveTabSplit(tabOrderKey, next);
+	/** Move a tab into `side`'s bar, creating or collapsing the split as needed. */
+	function moveTabToSide(draggedId: string, side: SplitSide) {
+		if (!tabOrderKey) return;
 		setSplitDropSide(null);
+		const right = activeTabSplit
+			? side === "right"
+				? [...activeTabSplit.right, draggedId]
+				: activeTabSplit.right.filter((id) => id !== draggedId)
+			: // First split: the dragged tab takes the half it was dropped on, alone.
+				side === "right"
+				? [draggedId]
+				: stripTabIds.filter((id) => id !== draggedId);
+		// A bar that would hold every tab (or none) is just one bar again.
+		if (!right.length || right.length === stripTabIds.length) {
+			clearTabSplit(tabOrderKey);
+			return;
+		}
+		saveTabSplit(tabOrderKey, {
+			...(activeTabSplit ? toStoredSplit(activeTabSplit) : { ratio: 0.5 }),
+			right,
+			...(side === "right" ? { rightActive: draggedId } : { leftActive: draggedId }),
+		});
+	}
+
+	/**
+	 * One tab bar. `side` is null when there is no split (a single bar owning
+	 * every tab); otherwise the bar renders only its own side's tabs, keeps its
+	 * own active tab and its own "+", and only the rightmost bar carries the
+	 * archived-chats menu.
+	 */
+	function renderTabBar(side: SplitSide | null) {
+		const ids =
+			side && activeTabSplit
+				? side === "left"
+					? activeTabSplit.left
+					: activeTabSplit.right
+				: null;
+		const inBar = ids ? new Set(ids) : null;
+		const barChats = inBar
+			? projectChats.filter((chat) => inBar.has(chat.id))
+			: projectChats;
+		const barActive = side ? activeIdFor(side) : focusedTopTabId;
+		const barViews = (inBar ? viewTabs.filter((tab) => inBar.has(tab.id)) : viewTabs).map(
+			(tab) => (side ? { ...tab, active: tab.id === barActive } : tab),
+		);
+		return (
+			<SessionTabs
+				tabs={barChats}
+				archived={archivedChats}
+				activeId={
+					barActive && barChats.some((chat) => chat.id === barActive)
+						? barActive
+						: null
+				}
+				alwaysShow={!!side}
+				showHistory={side !== "left"}
+				colors={tabColors}
+				onSelect={(s) => {
+					setActiveViewTab(null);
+					navigate({ view: "session", id: s.id });
+				}}
+				onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
+				onReorderTabs={(ids) => saveTabOrder(tabOrderKey, ids)}
+				onSplitDrag={(id, point) => {
+					setSplitDropSide(id && point ? splitSideAt(id, point) : null);
+				}}
+				onSplitDrop={(id, point) => {
+					const target = splitSideAt(id, point);
+					setSplitDropSide(null);
+					if (!target) return false;
+					moveTabToSide(id, target);
+					return true;
+				}}
+				viewTabs={barViews}
+				onSelectView={selectViewTab}
+				onCloseView={(id) => {
+					if (id.startsWith("subagent:"))
+						closeSubagentTab(id.slice("subagent:".length));
+					else if (id.startsWith("staging:")) closeStagingTab();
+					else if (id.startsWith("assets:")) closeAssetsTab();
+					else if (id.startsWith("preview:")) closePreviewTab();
+					else {
+						const closingTab = id.startsWith("conversation:")
+							? ("conversation" as const)
+							: id.startsWith("video:")
+								? ("video" as const)
+								: ("review" as const);
+						if (closingTab === "conversation") closeConversationTab();
+						else if (closingTab === "video") closeVideoTab();
+						else closeReviewTab();
+						// Drop the tab suffix; the URL replace re-runs the seeding
+						// effect, so arm its one-shot suppress (a close with no
+						// suffix causes no replace and needs none).
+						if (route.view === "workspace" && route.tab === closingTab) {
+							suppressWsSeedRef.current = true;
+							navigate({ view: "workspace", id: route.id }, { replace: true });
+						}
+					}
+				}}
+				onNewChat={(mode) => handleNewChat(mode, side)}
+				onRename={async (id, title) => {
+					try {
+						await renameSessionApi(id, title);
+					} catch (e) {
+						console.error("Rename failed:", e);
+					}
+					refresh();
+				}}
+				onClose={closeChat}
+				onToast={showToast}
+				onRestore={async (s) => {
+					try {
+						await archiveSessionApi(s.id, false);
+					} catch (e) {
+						console.error("Restore failed:", e);
+					}
+					refresh();
+				}}
+			/>
+		);
 	}
 	// The strip's history menu: archived (closed) chats of the same workspace,
 	// newest activity first. The open chat is excluded — if it's archived it
@@ -2138,7 +2271,10 @@ function App() {
 	// strip and its + are hidden/hover-revealed) both call this. It creates the
 	// sibling chat instantly (browser-tab feel): shares the workspace worktree by
 	// default, or stacks/asks. No engine run until the first prompt.
-	const handleNewChat = async (mode: "share" | "stack" | "ask") => {
+	const handleNewChat = async (
+		mode: "share" | "stack" | "ask",
+		side: SplitSide | null = null,
+	) => {
 		const src = currentSession || mainChat(naturalChats);
 		if (!src) {
 			// "+" on an empty workspace (chat-less route): no sibling to clone —
@@ -2160,7 +2296,15 @@ function App() {
 			return;
 		}
 		try {
-			await createNewChatFrom(src, mode);
+			const id = await createNewChatFrom(src, mode);
+			// A chat born in the right bar belongs to it; the left bar is the
+			// default home, so a left-bar "+" needs no assignment.
+			if (side === "right" && tabOrderKey && activeTabSplit)
+				saveTabSplit(tabOrderKey, {
+					...toStoredSplit(activeTabSplit),
+					right: [...activeTabSplit.right, id],
+					rightActive: id,
+				});
 		} catch (e) {
 			console.error("New chat failed:", e);
 		}
@@ -2224,12 +2368,10 @@ function App() {
 			!s.isRunning &&
 			!s.queuedCount;
 		const wasOpen = currentSession?.id === s.id;
-		if (
-			tabSplit &&
-			tabOrderKey &&
-			(tabSplit.leftId === s.id || tabSplit.rightId === s.id)
-		)
-			clearTabSplit(tabOrderKey);
+		// No split bookkeeping here: a closed tab stops being live, so the split
+		// resolves without it, and collapses on its own once a bar is emptied.
+		// Leaving the id in the record means restoring the chat later puts it
+		// back in the bar it was closed from.
 		const next = wasOpen ? projectChats.find((c) => c.id !== s.id) : null;
 		let replacementId: string | null = null;
 		if (wasOpen && !next) {
@@ -3353,85 +3495,7 @@ function App() {
 								<span className="detail-topbar-title">{topbarTitle}</span>
 							)}
 						</div>
-						<SessionTabs
-							tabs={projectChats}
-							archived={archivedChats}
-							activeId={activeViewTab ? null : currentSession?.id || null}
-							colors={tabColors}
-							onSelect={(s) => {
-								setActiveViewTab(null);
-								navigate({ view: "session", id: s.id });
-							}}
-							onSetColor={(key, color) => setTabColors(setTabColor(key, color))}
-							onReorderTabs={(ids) => saveTabOrder(tabOrderKey, ids)}
-							split={tabSplit}
-							onSeparateSplit={() => tabOrderKey && clearTabSplit(tabOrderKey)}
-							onSplitDrag={(id, point) => {
-								setSplitDropSide(id && point ? splitSideAt(id, point) : null);
-							}}
-							onSplitDrop={(id, point) => {
-								const side = splitSideAt(id, point);
-								setSplitDropSide(null);
-								if (!side) return false;
-								createTabSplit(id, side);
-								return true;
-							}}
-							viewTabs={viewTabs}
-							onSelectView={selectViewTab}
-							onCloseView={(id) => {
-								if (
-									tabSplit &&
-									tabOrderKey &&
-									(tabSplit.leftId === id || tabSplit.rightId === id)
-								)
-									clearTabSplit(tabOrderKey);
-								if (id.startsWith("staging:")) closeStagingTab();
-								else if (id.startsWith("assets:")) closeAssetsTab();
-								else if (id.startsWith("preview:")) closePreviewTab();
-								else {
-									const closingTab = id.startsWith("conversation:")
-										? ("conversation" as const)
-										: id.startsWith("video:")
-											? ("video" as const)
-											: ("review" as const);
-									if (closingTab === "conversation") closeConversationTab();
-									else if (closingTab === "video") closeVideoTab();
-									else closeReviewTab();
-									// Drop the tab suffix; the URL replace re-runs the
-									// seeding effect, so arm its one-shot suppress (a close
-									// with no suffix causes no replace and needs none).
-									if (
-										route.view === "workspace" &&
-										route.tab === closingTab
-									) {
-										suppressWsSeedRef.current = true;
-										navigate(
-											{ view: "workspace", id: route.id },
-											{ replace: true },
-										);
-									}
-								}
-							}}
-							onNewChat={handleNewChat}
-							onRename={async (id, title) => {
-								try {
-									await renameSessionApi(id, title);
-								} catch (e) {
-									console.error("Rename failed:", e);
-								}
-								refresh();
-							}}
-							onClose={closeChat}
-							onToast={showToast}
-							onRestore={async (s) => {
-								try {
-									await archiveSessionApi(s.id, false);
-								} catch (e) {
-									console.error("Restore failed:", e);
-								}
-								refresh();
-							}}
-						/>
+						{!activeTabSplit && renderTabBar(null)}
 						{splitDropSide && (
 							<div
 								className={`tab-split-drop-preview tab-split-drop-preview-${splitDropSide}`}
@@ -3591,11 +3655,11 @@ function App() {
 							currentSession ? (
 								activeTabSplit ? (
 									<SessionSplit
-										leftId={activeTabSplit.leftId}
-										rightId={activeTabSplit.rightId}
-										focusedId={focusedTopTabId || currentSession.id}
+										focusedSide={focusedSide}
 										ratio={activeTabSplit.ratio}
-										onFocus={(id) => {
+										onFocusSide={(side) => {
+											const id = activeIdFor(side);
+											if (!id) return;
 											if (viewTabKind(id)) selectViewTab(id);
 											else {
 												setActiveViewTab(null);
@@ -3604,12 +3668,22 @@ function App() {
 										}}
 										onRatioChange={(ratio) =>
 											tabOrderKey &&
-											saveTabSplit(tabOrderKey, { ...activeTabSplit, ratio })
+											saveTabSplit(tabOrderKey, {
+												...toStoredSplit(activeTabSplit),
+												ratio,
+											})
 										}
-										renderPane={(id, socket, focused) => {
+										renderColumn={(side, socket, focused) => {
+											const id = activeIdFor(side);
 											const session =
-												sessions.find((candidate) => candidate.id === id) ?? currentSession;
-											return renderSessionPane(session, socket, focused, true, id);
+												sessions.find((candidate) => candidate.id === id) ??
+												currentSession;
+											return (
+												<>
+													{renderTabBar(side)}
+													{renderSessionPane(session, socket, focused, true, id ?? session.id)}
+												</>
+											);
 										}}
 									/>
 								) : (

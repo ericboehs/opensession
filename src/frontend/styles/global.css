@@ -2830,76 +2830,6 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	line-height: 0;
 }
 
-/* A split is one reorderable tab unit containing two independently focusable
-   chats. The small inset treatment mirrors Figma's paired-tab chip while still
-   fitting the existing flat desktop strip. */
-.session-tab-split {
-	gap: 2px;
-	max-width: min(360px, 55vw);
-	padding: 2px;
-}
-.session-tab-split-part {
-	display: flex;
-	min-width: 0;
-	align-items: center;
-	gap: 6px;
-	padding: 5px 7px;
-	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
-	color: var(--text-dim);
-	cursor: pointer;
-	outline: none;
-}
-.session-tab-split-select {
-	display: inline-flex;
-	min-width: 0;
-	flex: 1 1 auto;
-	align-items: center;
-	gap: 6px;
-	padding: 0;
-	border: 0;
-	background: transparent;
-	color: inherit;
-	font: inherit;
-	cursor: pointer;
-}
-.session-tab-split-part:hover,
-.session-tab-split-part:focus-within {
-	background: var(--hover);
-	color: var(--text);
-}
-.session-tab-split-part-active {
-	background: var(--bg-active);
-	color: var(--text);
-}
-.session-tab-split-part + .session-tab-split-part {
-	border-left: 1px solid var(--border);
-}
-.session-tab-split-close {
-	display: inline-flex;
-	width: 16px;
-	height: 16px;
-	flex: 0 0 auto;
-	align-items: center;
-	justify-content: center;
-	padding: 0;
-	border: 0;
-	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
-	background: transparent;
-	color: inherit;
-	font-family: inherit;
-	font-size: 15px;
-	line-height: 1;
-	cursor: pointer;
-	opacity: 0;
-}
-.session-tab-split-part:hover .session-tab-split-close,
-.session-tab-split-part-active .session-tab-split-close {
-	opacity: 1;
-}
-.session-tab-split-close:hover {
-	background: var(--hover);
-}
-
 .session-tab {
 	display: inline-flex;
 	align-items: center;
@@ -3018,16 +2948,6 @@ body:is(.resizing-sidebar, .resizing-panel) {
 		color: var(--text);
 		background: transparent;
 		box-shadow: inset 0 -3px 0 var(--accent);
-	}
-	.session-tabs .session-tab-split:not(.session-tab-new):not(.session-tab-history),
-	.session-tabs .session-tab-split.session-tab-active:not(.session-tab-new):not(.session-tab-history) {
-		align-self: center;
-		height: 34px;
-		padding: 2px;
-		border: 1px solid var(--border);
-		border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
-		background: var(--bg-panel);
-		box-shadow: none;
 	}
 	/* Colored / waiting states have no pill to tint in the flat layout, so their
 	   cue moves to the underline: the swatch color, or the accent for a waiting
@@ -3432,10 +3352,20 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	overflow: hidden;
 }
 .session-split-pane {
+	display: flex;
+	flex-direction: column;
 	min-width: 0;
 	min-height: 0;
 	position: relative;
 	overflow: hidden;
+}
+/* Bar sits at the column's top at its natural height; the pane takes the rest. */
+.session-split-pane > .session-tabs {
+	flex-shrink: 0;
+}
+.session-split-pane > :not(.session-tabs) {
+	flex: 1;
+	min-height: 0;
 }
 .session-split-pane:not(.session-split-pane-focused)::after {
 	content: "";
