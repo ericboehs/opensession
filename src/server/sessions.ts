@@ -29,6 +29,12 @@ import { isLockHeld, readPrState, type LastReviewState } from "../agents/github/
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg, botGhToken } from "./github-limit";
 import { fetchWithTimeout } from "./shared/fetch-with-timeout";
 import { writeJsonAtomic } from "./shared/atomic-write";
+import {
+  cachedReviewTeamLogins,
+  fetchReviewTeamLogins,
+  reviewRequestPersonKeys,
+  type ReviewRequestRef,
+} from "./github-review-requests";
 import type {
   UnifiedSession,
   SlackSessionFile,
@@ -927,13 +933,13 @@ function reviewMutationKey(
 // sidebar's PR queue silently vanishes (2026-07-22). ts stays 0 so the first
 // access still refreshes immediately; the snapshot only serves as stale data.
 const PR_CACHE_FILE = `${HOME}/.opensession-pr-cache.json`;
-const PR_CACHE_VERSION = 3;
+const PR_CACHE_VERSION = 4;
 const probeEtags = new Map<string, string>(); // ghRepo → last seen ETag
 const lastFullRefresh = new Map<string, number>(); // repo id → epoch ms
 try {
   const parsed = JSON.parse(readFileSync(PR_CACHE_FILE, "utf8"));
   const raw: Record<string, Record<string, PrInfo>> =
-    (parsed?.version === 2 || parsed?.version === PR_CACHE_VERSION) && parsed?.repos
+    ([2, 3, PR_CACHE_VERSION].includes(parsed?.version)) && parsed?.repos
       ? parsed.repos
       : parsed;
   prCache.data = new Map(
@@ -942,8 +948,9 @@ try {
       new Map(Object.entries(byBranch)),
     ]),
   );
-  // Version 2 snapshots used smaller history windows. Keep their stale rows
-  // available, but skip refresh timestamps so the expanded window refills now.
+  // Older snapshots either used smaller history windows or predate expanded
+  // team review requests. Keep their stale rows available, but skip refresh
+  // timestamps so the current shape refills immediately.
   if (parsed?.version === PR_CACHE_VERSION) {
     const now = Date.now();
     for (const repo of prRepos()) {
@@ -1151,6 +1158,22 @@ export function applyPrWebhookToBulkCache(
 		prCache.data.set(repoId, byBranch);
 	}
 	const prev = byBranch.get(branch);
+	const owner = ghRepo.split("/")[0] || "";
+	const reviewRequests: ReviewRequestRef[] = [
+		...(Array.isArray(pr.requested_reviewers) ? pr.requested_reviewers : []),
+		...(Array.isArray(pr.requested_teams) ? pr.requested_teams : []),
+	];
+	const requestedTeamSlugs = reviewRequests
+		.map((request) => request.slug?.toLowerCase())
+		.filter((slug): slug is string => !!slug);
+	const teamLoginsBySlug = new Map<string, string[]>();
+	for (const slug of requestedTeamSlugs) {
+		const logins = cachedReviewTeamLogins(owner, slug);
+		if (logins) teamLoginsBySlug.set(slug, logins);
+	}
+	const unresolvedTeam = requestedTeamSlugs.some(
+		(slug) => !teamLoginsBySlug.has(slug),
+	);
 	byBranch.set(branch, {
 		url: pr.html_url || prev?.url || "",
 		state:
@@ -1178,11 +1201,12 @@ export function applyPrWebhookToBulkCache(
 				: pr.mergeable === false
 					? "CONFLICTING"
 					: prev?.mergeable || "UNKNOWN",
-		reviewRequested: Array.isArray(pr.requested_reviewers)
-			? pr.requested_reviewers
-					.map((r: any) => githubLoginToPersonKey(r?.login))
-					.filter((p: string | undefined): p is string => !!p)
-			: prev?.reviewRequested || [],
+		reviewRequested: [
+			...new Set([
+				...reviewRequestPersonKeys(reviewRequests, teamLoginsBySlug, pr.user?.login),
+				...(unresolvedTeam ? prev?.reviewRequested || [] : []),
+			]),
+		],
 		reviewedBy: prev?.reviewedBy || [],
 		assignees: Array.isArray(pr.assignees)
 			? pr.assignees.map((a: any) => a?.login).filter((l: any): l is string => !!l)
@@ -1190,6 +1214,33 @@ export function applyPrWebhookToBulkCache(
 		sessionRef: sessionRefFromPrBody(pr.body) ?? prev?.sessionRef,
 	});
 	schedulePrCachePersist();
+	if (unresolvedTeam) {
+		void Promise.all(
+			requestedTeamSlugs.map((slug) => fetchReviewTeamLogins(owner, slug)),
+		).then((teamLogins) => {
+			const current = byBranch?.get(branch);
+			if (!current || current.number !== pr.number) return;
+			const hydratedTeams = new Map<string, string[]>();
+			for (const [index, slug] of requestedTeamSlugs.entries()) {
+				const logins = teamLogins[index];
+				if (logins) hydratedTeams.set(slug, logins);
+			}
+			const resolved = reviewRequestPersonKeys(
+				reviewRequests,
+				hydratedTeams,
+				pr.user?.login,
+			);
+			current.reviewRequested = [
+				...new Set([
+					...resolved,
+					...(teamLogins.some((logins) => logins === null)
+						? current.reviewRequested
+						: []),
+				]),
+			];
+			schedulePrCachePersist();
+		});
+	}
 }
 
 // Rate-limit backoff is shared across ALL GitHub callers (github-limit.ts):
@@ -1423,6 +1474,23 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
         continue;
       }
       reviewAuthoritativeRepos.add(repo.id);
+      const owner = repo.ghRepo.split("/")[0] || "";
+      const requestedTeamSlugs = [
+        ...new Set(
+          openPrs.flatMap((pr) =>
+            (pr.reviewRequests || [])
+              .map((request) => request.slug?.toLowerCase())
+              .filter((slug): slug is string => !!slug),
+          ),
+        ),
+      ];
+      const teamLoginsBySlug = new Map<string, string[]>();
+      await Promise.all(
+        requestedTeamSlugs.map(async (slug) => {
+          const logins = await fetchReviewTeamLogins(owner, slug);
+          if (logins) teamLoginsBySlug.set(slug, logins);
+        }),
+      );
       // sort:updated-desc, not gh's default creation order: a PR created long
       // ago that merges today must enter this window immediately, or the sweep
       // drops its row and the session renders as having no PR at all.
@@ -1471,11 +1539,11 @@ async function refreshPrCacheInner(): Promise<Set<string>> {
         checks: { total: 0, passed: 0, failed: 0, pending: 0 },
         headRefOid: pr.headRefOid || undefined,
         mergeable: pr.mergeable || "UNKNOWN",
-        // Individual review requests only — team requests ("Infra reviewers")
-        // have no login and we can't cheaply resolve their membership.
-        reviewRequested: (pr.reviewRequests || [])
-          .map((r) => githubLoginToPersonKey(r.login))
-          .filter((p): p is string => !!p),
+        reviewRequested: reviewRequestPersonKeys(
+          pr.reviewRequests || [],
+          teamLoginsBySlug,
+          pr.author?.login,
+        ),
         reviewedBy: reviewedByNumber.get(pr.number) || [],
         assignees: (pr.assignees || [])
           .map((a) => a.login)
