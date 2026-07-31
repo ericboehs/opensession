@@ -131,7 +131,7 @@ export function Reports({
 					<div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-lg bg-surface text-dim">
 						<IconFile size={24} />
 					</div>
-					<h1 className="m-0 text-xl font-semibold text-fg">Reports</h1>
+					<h1 className="m-0 text-page-title font-semibold text-fg">Reports</h1>
 					<p className="mt-2 text-sm leading-6 text-dim">
 						Recurring automation reports will collect here, with the latest result and full history in one place.
 					</p>
@@ -150,7 +150,7 @@ export function Reports({
 			{showList && (
 				<aside className={`flex min-h-0 flex-col bg-panel ${isPhone ? "w-full flex-1" : "w-[300px] shrink-0 border-r border-line"}`}>
 					<div className="border-b border-line px-4 py-4">
-						<h1 className="m-0 text-lg font-semibold tracking-[-0.02em] text-fg">Reports</h1>
+						<h1 className="m-0 text-section-title font-semibold tracking-[-0.02em] text-fg">Reports</h1>
 						<p className="m-0 mt-1 text-xs text-dim">Recurring intelligence, organized by automation</p>
 					</div>
 					<div className="min-h-0 flex-1 overflow-y-auto p-2">

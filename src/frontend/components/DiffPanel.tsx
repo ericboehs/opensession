@@ -269,7 +269,7 @@ function DiffEmptyState({ isRunning }: { isRunning: boolean }) {
         <path d="M13 18v5a4 4 0 0 0 4 4h5" />
       </svg>
       <div className="flex flex-col gap-1">
-        <div className="text-lg font-medium text-dim">No file changes yet</div>
+        <div className="text-item-title font-medium text-dim">No file changes yet</div>
         <div className="text-sm text-faint">Changes appear here.</div>
       </div>
       {isRunning && (
