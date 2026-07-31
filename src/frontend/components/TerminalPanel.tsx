@@ -229,6 +229,9 @@ function ShellView({
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.open(hostRef.current);
+      // Both fit addons account for padding on the terminal element itself.
+      // Padding the host instead makes xterm fit against the wrong width.
+      term.element?.classList.add("pl-4", "pt-2", "pb-1.5");
       fit.fit();
 
       send({ type: "term_start", sessionId, termId, cols: term.cols, rows: term.rows });
@@ -298,7 +301,7 @@ function ShellView({
   return (
     <div
       ref={hostRef}
-      className={`flex-1 min-h-0 px-3 pb-1.5 ${visible ? "" : "hidden"}`}
+      className={`flex-1 min-h-0 overflow-hidden bg-surface ${visible ? "" : "hidden"}`}
     />
   );
 }
