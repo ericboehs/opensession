@@ -177,7 +177,10 @@ The script:
 2. `bun install --frozen-lockfile` only when the lockfile changed,
 3. syncs `opensession.service` to `/etc/systemd/system/` when it changed
    (the deployed unit is a copy, not a symlink),
-4. waits up to `MAX_DRAIN_WAIT` (480s) for `activeRuns == 0` on
+4. when Caddy is installed, syncs the Tailscale boot-order/retry drop-in from
+   `deploy/systemd/caddy.service.d/opensession.conf` and recovers Caddy if it
+   was left failed by the tailnet-IP bind race,
+5. waits up to `MAX_DRAIN_WAIT` (480s) for `activeRuns == 0` on
    `/opensession/api/health`, then `systemctl restart opensession` and a
    post-restart health gate.
 

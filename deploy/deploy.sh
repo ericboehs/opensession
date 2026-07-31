@@ -54,6 +54,25 @@ if ! cmp -s "$REPO_DIR/opensession.service" /etc/systemd/system/opensession.serv
   systemctl daemon-reload
 fi
 
+# Tella's Caddy listener binds directly to the host's Tailscale IP. At boot,
+# Caddy can otherwise race tailscaled, fail with EADDRNOTAVAIL, and remain down
+# forever because the package unit has no restart policy. Keep the host drop-in
+# in source control and recover a currently failed Caddy when it first ships.
+CADDY_DROPIN_SOURCE="$REPO_DIR/deploy/systemd/caddy.service.d/opensession.conf"
+CADDY_DROPIN_PATH="/etc/systemd/system/caddy.service.d/opensession.conf"
+if systemctl cat caddy.service >/dev/null 2>&1 \
+  && ! cmp -s "$CADDY_DROPIN_SOURCE" "$CADDY_DROPIN_PATH"; then
+  echo "[deploy] Caddy Tailscale boot override changed — syncing drop-in + daemon-reload"
+  install -d -m 0755 "$(dirname "$CADDY_DROPIN_PATH")"
+  install -m 0644 "$CADDY_DROPIN_SOURCE" "$CADDY_DROPIN_PATH"
+  systemctl daemon-reload
+
+  if ! systemctl is-active --quiet caddy.service; then
+    echo "[deploy] Caddy is not active — restarting after installing boot override"
+    systemctl restart caddy.service
+  fi
+fi
+
 # Drain-aware restart: wait until the service reports no in-flight runs, so the
 # restart kills as few runs / background tasks / subagents as possible. Anything
 # still running after the cap is caught by the graceful SIGTERM drain + the run
