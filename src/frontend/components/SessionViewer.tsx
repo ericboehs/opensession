@@ -3701,9 +3701,11 @@ export function SessionViewer({
 			)}
 			{!hideHeader && (() => {
 				// Share rides inline on a wide header but tucks into the ⋯ overflow
-				// menu when it gets narrow. Inline it's a bare text chip (the header
-				// is already dense with icons); in the menu it takes a leading icon
-				// so it lines up with the other icon+label rows.
+				// menu when it gets narrow. Both spellings use the link glyph, since
+				// the action copies a link rather than opening a share sheet. Inline
+				// it's icon-only (the header is dense, and the glyph carries it); in
+				// the menu it keeps a label so it lines up with the other rows. The
+				// copied confirmation is CopyCheck's green checkmark in both.
 				const shareAction = (inMenu: boolean) =>
 					inMenu ? (
 						<Menu.Item onClick={handleShare} title="Copy a link to this session">
@@ -3713,16 +3715,11 @@ export function SessionViewer({
 					) : (
 						<Button
 							size="md"
-							className={cn(
-								"min-h-8 rounded-[calc(8px*var(--rf))] px-[13px] text-[13px]",
-								"hover:bg-hover",
-								copied && "border-[color-mix(in_srgb,var(--green)_40%,transparent)] bg-green-soft text-green",
-							)}
+							icon={<CopyCheck copied={copied} idle={<IconLink size={20} />} size={20} />}
 							onClick={handleShare}
 							title="Copy a link to this session"
-						>
-							{copied ? "Copied" : "Share"}
-						</Button>
+							aria-label="Share"
+						/>
 					);
 				// New chat in this workspace — phone-only, since desktop has the
 				// always-visible + in the tab strip. On a phone the strip (and its
