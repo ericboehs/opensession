@@ -1125,7 +1125,7 @@ function ReviewerChip({
 		<Menu.Root>
 			<Menu.Trigger
 				className={cn(
-					"inline-flex w-fit min-w-0 items-center gap-1 rounded-md border border-line bg-control py-1.5 pl-2 pr-2.5 text-left text-[12.5px] font-[550] whitespace-nowrap text-dim shadow-control outline-none transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg active:scale-[0.96] data-[popup-open]:border-line-strong data-[popup-open]:bg-hover",
+					"inline-flex w-fit min-w-0 items-center gap-1 rounded-[calc(10px*var(--rf))] border border-line bg-control py-1.5 pl-2 pr-2.5 text-left text-[12.5px] font-[550] whitespace-nowrap text-dim shadow-control outline-none transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg active:scale-[0.96] data-[popup-open]:border-line-strong data-[popup-open]:bg-hover",
 					needsMyReview
 						? "border-red/30 bg-red-soft text-red hover:border-red/50 hover:text-red"
 						: accepted
