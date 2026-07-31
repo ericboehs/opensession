@@ -14,6 +14,7 @@ import { adoptDetachedOpencodeServers } from "./src/server/opencode-runner";
 import { startAccountHealthMonitor } from "./src/server/account-health";
 import { startDiskGc } from "./src/server/disk-gc";
 import { startTodoReminderTicker } from "./src/server/todos";
+import { startGeneratedTitleSweep } from "./src/server/generated-titles";
 import { kickTranscriptBackfillOnce } from "./src/server/transcript-backfill";
 import { makeAskHandler } from "./src/server/asks";
 import { ensureConfiguredAutomations, getWebhookRoutes, setEventSessionCallback, startScheduler } from "./src/server/automations";
@@ -552,6 +553,12 @@ if (!g.__backstageBooted) {
 
 	// Desk todo reminders: push + Slack DM when a remindAt passes (todos.ts)
 	startTodoReminderTicker();
+
+	// Re-try sidebar titles whose one-shot died in flight (a restart, or an
+	// engine-spawn outage) — without this they stay raw forever.
+	startGeneratedTitleSweep(() => {
+		invalidateSessionsCache();
+	});
 
 	// Transcript v2 (docs/transcript-v2-design.md §8): one-time full backfill of
 	// legacy transcripts into transcripts.db. The helper self-gates (marker

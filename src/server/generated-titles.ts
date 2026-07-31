@@ -8,23 +8,35 @@
  * Generation is a one-shot Haiku call (see generateSessionTitle), fired in the
  * background at session creation so it never blocks the create path.
  */
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { BACKSTAGE_CHATS_DIR } from "./paths";
 import { opencodeOneShot } from "./opencode-oneshot";
+import { getTitleOverride } from "./title-overrides";
 
 const REGISTRY_PATH = `${BACKSTAGE_CHATS_DIR}/generated-titles.json`;
 
 let cache: Record<string, string> | null = null;
+let cacheMtimeMs = 0;
+let lastStatAt = 0;
 
 function load(): Record<string, string> {
-	if (cache) return cache;
+	// Re-read when the file changed underneath us. A restart overlaps two
+	// processes (the outgoing one keeps finishing title calls while draining),
+	// and this module used to cache the map for the process lifetime — so a
+	// sibling's titles stayed invisible until the next restart, and our next
+	// whole-map write silently dropped them. Stat at most once a second:
+	// getAllSessions calls this once per session, thousands of times a scan.
+	const now = Date.now();
+	if (cache && now - lastStatAt < 1000) return cache;
+	lastStatAt = now;
 	try {
-		cache = existsSync(REGISTRY_PATH)
-			? JSON.parse(readFileSync(REGISTRY_PATH, "utf-8"))
-			: {};
+		const mtime = existsSync(REGISTRY_PATH) ? statSync(REGISTRY_PATH).mtimeMs : 0;
+		if (cache && mtime === cacheMtimeMs) return cache;
+		cache = mtime ? JSON.parse(readFileSync(REGISTRY_PATH, "utf-8")) : {};
+		cacheMtimeMs = mtime;
 	} catch {
-		cache = {};
+		cache ??= {};
 	}
 	return cache!;
 }
@@ -32,6 +44,9 @@ function load(): Record<string, string> {
 function save(registry: Record<string, string>): void {
 	cache = registry;
 	writeJsonAtomic(REGISTRY_PATH, registry);
+	try {
+		cacheMtimeMs = statSync(REGISTRY_PATH).mtimeMs;
+	} catch {}
 }
 
 export function getGeneratedTitle(id: string): string | undefined {
@@ -39,9 +54,15 @@ export function getGeneratedTitle(id: string): string | undefined {
 }
 
 function setGeneratedTitle(id: string, title: string): void {
-	const registry = { ...load() };
-	registry[id] = title;
-	save(registry);
+	// Merge over what is on disk right now, not just over our cache: save()
+	// rewrites the WHOLE map, so persisting a stale cache would delete every
+	// title a sibling process stored since we last read.
+	let onDisk: Record<string, string> = {};
+	try {
+		if (existsSync(REGISTRY_PATH))
+			onDisk = JSON.parse(readFileSync(REGISTRY_PATH, "utf-8"));
+	} catch {}
+	save({ ...onDisk, ...load(), [id]: title });
 }
 
 /** Trim a raw model output into a clean short title, or "" if unusable. */
@@ -99,6 +120,105 @@ export async function ensureGeneratedTitle(
 
 	const title = sanitizeTitle(out);
 	if (!title) return null;
-	setGeneratedTitle(id, title);
+	try {
+		setGeneratedTitle(id, title);
+	} catch (e) {
+		// A `void ensureGeneratedTitle(...)` caller would surface a write failure
+		// (disk full) as an unhandled rejection — a missing title is not worth that.
+		console.warn(`[generated-titles] could not persist title for ${id}:`, e);
+		return null;
+	}
 	return title;
+}
+
+/* ------------------------------------------------------------------ *
+ * Back-fill sweep
+ *
+ * Generation is fire-and-forget at session creation, and the only retry is
+ * the session's NEXT prompt (run-session.ts). So any interruption while the
+ * one-shot is in flight — the ~10-16s Haiku call — strands the title FOREVER
+ * for a chat the user never prompts again. Two real triggers, both measured
+ * over the week of 2026-07-24..31: 228 service restarts (every backend edit
+ * needs one, and a session created within ~15s of one loses its call), and a
+ * 40-minute window on 07-27 10:17-10:57 where no opencode server would spawn
+ * at all, so every queued one-shot parked until the restart killed it.
+ *
+ * This sweep closes that hole: anything still wearing its raw first-line
+ * title gets another chance, so a lost title is a delay, not a permanent
+ * scar. It is deliberately conservative — see eligibility below.
+ * ------------------------------------------------------------------ */
+
+const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+const SWEEP_FIRST_DELAY_MS = 3 * 60 * 1000; // let the engine warm up first
+const SWEEP_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+const SWEEP_BATCH = 10; // one-shots serialize on a shared server; stay polite
+
+/**
+ * Sessions still wearing a raw first-line title that we could summarize.
+ *
+ * Eligibility mirrors the create-path gating, erring towards skipping: only
+ * interactive `bks-<uuid>` chats (so `bks-ghpr-*` review/auto-fix sessions
+ * keep their deliberate names), never desk/goal/automation sessions, never a
+ * manual rename, and never a title carrying the " · " prefix convention that
+ * marks a deliberately-composed name.
+ */
+function sweepCandidates(): Array<{ id: string; title: string }> {
+	const cutoff = Date.now() - SWEEP_MAX_AGE_MS;
+	const out: Array<{ id: string; title: string; created: number }> = [];
+	let files: string[] = [];
+	try {
+		files = readdirSync(BACKSTAGE_CHATS_DIR);
+	} catch {
+		return [];
+	}
+	for (const f of files) {
+		if (!f.endsWith(".json") || !/^bks-[0-9a-f]{8}-/.test(f)) continue;
+		const id = f.slice(0, -5);
+		if (getGeneratedTitle(id) || getTitleOverride(id)) continue;
+		let d: any;
+		try {
+			d = JSON.parse(readFileSync(`${BACKSTAGE_CHATS_DIR}/${f}`, "utf-8"));
+		} catch {
+			continue;
+		}
+		if (!d || typeof d !== "object") continue;
+		if (d.desk || d.goalId || d.automationId) continue;
+		const title = typeof d.title === "string" ? d.title.trim() : "";
+		if (!title || title === "New chat" || title.includes(" · ")) continue;
+		const created = Date.parse(d.createdAt ?? "");
+		if (!Number.isFinite(created) || created < cutoff) continue;
+		out.push({ id, title, created });
+	}
+	// Newest first: those are the ones visible in the sidebar right now.
+	out.sort((a, b) => b.created - a.created);
+	return out.slice(0, SWEEP_BATCH).map(({ id, title }) => ({ id, title }));
+}
+
+let sweepTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Periodically re-try titles that were lost mid-flight. */
+export function startGeneratedTitleSweep(onChange?: () => void): void {
+	if (sweepTimer) return;
+
+	const sweep = async () => {
+		const candidates = sweepCandidates();
+		if (!candidates.length) return;
+		let filled = 0;
+		for (const { id, title } of candidates) {
+			// Summarize the stored first-line title, exactly like run-session's
+			// retry — never a later message, which would rename the chat after
+			// the fact.
+			try {
+				if (await ensureGeneratedTitle(id, title)) filled++;
+			} catch {}
+		}
+		if (filled > 0) {
+			console.log(`[generated-titles] back-filled ${filled} title(s)`);
+			onChange?.();
+		}
+	};
+
+	sweepTimer = setInterval(() => void sweep(), SWEEP_INTERVAL_MS);
+	setTimeout(() => void sweep(), SWEEP_FIRST_DELAY_MS);
+	console.log("[generated-titles] back-fill sweep started (10m interval)");
 }
