@@ -2312,7 +2312,7 @@ function App() {
 	const handleNewChatRef = useRef(handleNewChat);
 	handleNewChatRef.current = handleNewChat;
 
-	// ⌘⇧T reopens what you just archived, browser-style. Every archive path
+	// ⌘Z (legacy ⌘⇧T) reopens what you just archived. Every archive path
 	// pushes the chats it tucked away as one entry, so a press undoes one
 	// action: closing a tab brings that chat back, archiving a workspace brings
 	// the whole row back. Ids only — the session objects go stale on the next
@@ -2456,7 +2456,7 @@ function App() {
 
 	// The newest undo entry that's still restorable, resolved against the live
 	// list: an entry whose chats were unarchived elsewhere (or deleted) falls
-	// through to the one below it, so ⌘⇧T never no-ops on a ghost.
+	// through to the one below it, so ⌘Z never no-ops on a ghost.
 	const restorableArchived: UnifiedSession[] = (() => {
 		if (!archiveUndo.length) return [];
 		const wanted = new Set(archiveUndo.flat());
@@ -2475,7 +2475,7 @@ function App() {
 	const restorableArchivedRef = useRef(restorableArchived);
 	restorableArchivedRef.current = restorableArchived;
 
-	// ⌘⇧T (and the palette's "Reopen closed chat"): undo the last archive and
+	// ⌘Z (and the palette's "Reopen closed chat"): undo the last archive and
 	// land on what came back. The entry is only dropped once the server agrees,
 	// so a failed restore stays retryable.
 	const reopenLastArchived = async () => {
@@ -2498,7 +2498,8 @@ function App() {
 
 	// Tab shortcuts matching the strip's context-menu hints: ⌘⌥C copies the
 	// concise transcript, ⌘W closes (archives) the tab, ⌘T opens a new tab
-	// (sibling chat) in the workspace, and ⌘⇧T reopens the chat you just closed.
+	// (sibling chat) in the workspace, and ⌘Z (or the legacy ⌘⇧T) reopens what
+	// you just archived — a chat, or a whole workspace row.
 	// Refs keep this mount-once listener reading fresh state. A browser that
 	// reserves these for itself (Chrome) never delivers the keydown — there the
 	// browser tab opens/closes as always, and the palette's "Reopen closed chat"
@@ -2512,6 +2513,21 @@ function App() {
 					e.preventDefault();
 					void reopenLastArchivedRef.current();
 				}
+				// ⌘⇧Z is redo everywhere else, so it deliberately falls through.
+				return;
+			}
+			// ⌘Z undoes the last archive. Unlike the archive chords, every
+			// editable keeps it — including the composer textarea, where undoing
+			// what you typed is exactly what ⌘Z should do. Sits above the
+			// no-open-session bail because archiving the workspace you were in
+			// can leave you on Home with nothing selected.
+			if (!e.altKey && e.key.toLowerCase() === "z") {
+				const editable = (e.target as HTMLElement | null)?.closest(
+					"input, textarea, select, [contenteditable='true'], [contenteditable='']",
+				);
+				if (editable) return;
+				e.preventDefault();
+				void reopenLastArchivedRef.current();
 				return;
 			}
 			const s = currentSessionRef.current;
@@ -2649,7 +2665,7 @@ function App() {
 								: `Bring back "${restorableArchived[0].title || "the chat you just archived"}"`,
 						category: "Actions" as const,
 						keywords: ["unarchive", "restore", "undo", "closed", "reopen"],
-						shortcut: [mod, appleShortcuts ? "⇧" : "Shift", "T"],
+						shortcut: [mod, "Z"],
 						icon: <IconUnarchive size={18} />,
 						run: () => void reopenLastArchived(),
 					},
@@ -3391,7 +3407,7 @@ function App() {
 											showToast(
 												`Archived · stopped ${stopped} running turn${stopped === 1 ? "" : "s"}`,
 											);
-										// One entry for the whole row, so ⌘⇧T brings the
+										// One entry for the whole row, so ⌘Z brings the
 										// workspace back in a single press.
 										rememberArchived(chats.map((c) => c.id));
 									} catch (e) {
@@ -3637,7 +3653,7 @@ function App() {
 												chats.map((c) => archiveSessionApi(c.id, true)),
 											);
 											// Swiping through the deck archives fast — one entry per
-											// card keeps ⌘⇧T an undo of the last swipe, not of the
+											// card keeps ⌘Z an undo of the last swipe, not of the
 											// whole session.
 											rememberArchived(chats.map((c) => c.id));
 										} catch (e) {
