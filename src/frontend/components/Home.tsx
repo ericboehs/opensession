@@ -494,7 +494,7 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
         <div className="flex items-center justify-between gap-4 px-2">
           <h1 className="m-0 text-page-title font-semibold tracking-[-0.025em] text-fg">Home</h1>
           <Button
-            variant="primary"
+            variant="ink"
             size="lg"
             className="text-control-label"
             onClick={onNewSession}

@@ -176,7 +176,7 @@ export function ConversationPane({
 									</div>
 								</div>
 								<Button
-									variant="primary"
+									variant="ink"
 									className="shrink-0 text-control-label"
 									onClick={handleTriage}
 									disabled={triaging}

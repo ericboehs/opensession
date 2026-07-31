@@ -27,6 +27,7 @@ import { cn } from "./cn";
 type Variant =
 	| "default"
 	| "primary"
+	| "ink"
 	| "ghost"
 	| "success"
 	| "danger"
@@ -73,6 +74,17 @@ const variants: Record<Variant, string> = {
 		"bg-control border-line text-dim shadow-control hover:text-fg hover:border-line-strong",
 	primary:
 		"bg-accent border-transparent text-white shadow-control hover:brightness-110",
+	// Solid ink: the heaviest weight, for the one dominant action on a surface
+	// (a page header's CTA, a panel's single call to action). Reaching for the
+	// brand accent at that size makes the red shout; ink carries the same
+	// emphasis and keeps the accent meaningful elsewhere.
+	//
+	// It is `bg-fg`/`text-bg` rather than a literal black so it flips with the
+	// theme — near-black plate with a light label in light mode, near-white
+	// with a dark label in dark. `brightness-110` (what `primary` uses) is
+	// invisible on #1a1a1a, so the hover mixes the fill toward the page
+	// instead, which reads in both themes.
+	ink: "bg-fg border-transparent text-bg shadow-control hover:bg-[color-mix(in_srgb,var(--text)_86%,var(--bg))]",
 	ghost: "border-transparent text-dim hover:bg-hover hover:text-fg",
 	// Outline green, mirroring `danger` — the affirmative half of the pair
 	// (approve a review, merge, confirm). Green is the second-most reached-for
@@ -88,6 +100,7 @@ const variants: Record<Variant, string> = {
 const iconDim: Record<Variant, string> = {
 	default: "opacity-60",
 	primary: "opacity-80",
+	ink: "opacity-80",
 	ghost: "opacity-60",
 	success: "opacity-80",
 	danger: "opacity-80",
