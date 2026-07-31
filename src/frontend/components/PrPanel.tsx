@@ -1186,18 +1186,22 @@ export function PrPanel({
           {(diffView === "diff" || diffView === "guide") && (
             <div className="sticky top-0 z-[7] flex h-[54px] items-center border-b border-line bg-surface/95 px-6 backdrop-blur max-[720px]:px-2">
               <div className="inline-flex rounded-md border border-line bg-panel p-0.5">
-                <button
-                  className={`rounded-sm border-0 px-3 py-1.5 text-xs ${diffView === "diff" ? "bg-active text-fg" : "bg-transparent text-dim hover:text-fg"}`}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`rounded-sm border-0 px-3 py-1.5 text-xs ${diffView === "diff" ? "bg-active text-fg" : "hover:bg-transparent"}`}
                   onClick={() => setDiffView("diff")}
                 >
                   All changes
-                </button>
-                <button
-                  className={`rounded-sm border-0 px-3 py-1.5 text-xs ${diffView === "guide" ? "bg-active text-fg" : "bg-transparent text-dim hover:text-fg"}`}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`rounded-sm border-0 px-3 py-1.5 text-xs ${diffView === "guide" ? "bg-active text-fg" : "hover:bg-transparent"}`}
                   onClick={() => setDiffView("guide")}
                 >
                   Review guide
-                </button>
+                </Button>
               </div>
               <div className="ml-auto flex items-center gap-3">
                 {pending.length > 0 && (
@@ -1206,18 +1210,22 @@ export function PrPanel({
                   </span>
                 )}
                 <div className="inline-flex rounded-md border border-line bg-panel p-0.5">
-                  <button
-                    className={`rounded-sm border-0 px-2.5 py-1 text-meta ${diffStyle === "unified" ? "bg-active text-fg" : "bg-transparent text-dim hover:text-fg"}`}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={`rounded-sm border-0 px-2.5 py-1 text-meta ${diffStyle === "unified" ? "bg-active text-fg" : "hover:bg-transparent"}`}
                     onClick={() => changeDiffStyle("unified")}
                   >
                     Unified
-                  </button>
-                  <button
-                    className={`rounded-sm border-0 px-2.5 py-1 text-meta ${diffStyle === "split" ? "bg-active text-fg" : "bg-transparent text-dim hover:text-fg"}`}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={`rounded-sm border-0 px-2.5 py-1 text-meta ${diffStyle === "split" ? "bg-active text-fg" : "hover:bg-transparent"}`}
                     onClick={() => changeDiffStyle("split")}
                   >
                     Split
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1445,13 +1453,14 @@ export function PrPanel({
                     ["REQUEST_CHANGES", "Request changes"],
                   ] as Array<[ReviewEvent, string]>
                 ).map(([event, label]) => (
-                  <button
+                  <Button
                     key={event}
-                    className={`rounded-sm border px-2 py-2 text-meta ${reviewEvent === event ? "border-green/50 bg-green-soft text-green" : "border-line bg-surface text-dim hover:border-line-strong hover:text-fg"}`}
+                    size="sm"
+                    className={`rounded-sm px-2 py-2 text-meta shadow-none ${reviewEvent === event ? "border-green/50 bg-green-soft text-green hover:border-green/50 hover:text-green" : "bg-surface"}`}
                     onClick={() => setReviewEvent(event)}
                   >
                     {label}
-                  </button>
+                  </Button>
                 ))}
               </div>
               {reviewEvent === "APPROVE" && canMergeAfterReview && (
@@ -1765,15 +1774,17 @@ export function PrPanel({
                     ["guide", "Guide"],
                   ] as Array<["diff" | "guide", string]>
                 ).map(([key, label]) => (
-                  <button
+                  <Button
                     key={key}
+                    variant="ghost"
+                    size="sm"
                     role="tab"
                     aria-selected={diffView === key}
-                    className={`rounded-sm px-2.5 py-1 text-xs font-medium ${diffView === key ? "bg-panel text-fg shadow-sm" : "text-faint hover:text-fg"}`}
+                    className={`rounded-sm border-0 px-2.5 py-1 text-xs font-medium ${diffView === key ? "bg-panel text-fg shadow-sm" : "text-faint hover:bg-transparent"}`}
                     onClick={() => setDiffView(key)}
                   >
                     {label}
-                  </button>
+                  </Button>
                 ))}
               </div>
               <div className="text-right text-meta text-faint">
@@ -1881,13 +1892,14 @@ export function PrPanel({
                         ["REQUEST_CHANGES", "Request changes"],
                       ] as Array<[ReviewEvent, string]>
                     ).map(([key, label]) => (
-                      <button
+                      <Button
                         key={key}
-                        className={`rounded-sm border px-2.5 py-2 text-meta ${reviewEvent === key ? "border-green/45 bg-green-soft text-green" : "border-line bg-panel text-dim hover:border-line-strong hover:text-fg"}`}
+                        size="sm"
+                        className={`rounded-sm px-2.5 py-2 text-meta shadow-none ${reviewEvent === key ? "border-green/45 bg-green-soft text-green hover:border-green/45 hover:text-green" : "bg-panel"}`}
                         onClick={() => setReviewEvent(key)}
                       >
                         {label}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                   {reviewError && <div className="diff-comment-error">{reviewError}</div>}
@@ -2160,17 +2172,18 @@ function LinkPrControl({
 
   if (!open)
     return (
-      <button
+      <Button
+        size="sm"
         className={
           variant === "tab"
-            ? "inline-flex items-center rounded-sm border border-dashed border-line bg-transparent px-2.5 py-1 text-xs text-faint hover:border-line-strong hover:text-fg"
-            : "rounded-sm border border-line bg-panel px-3 py-2 text-xs text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+            ? "rounded-sm border-dashed bg-transparent px-2.5 py-1 text-xs text-faint shadow-none"
+            : "rounded-sm bg-panel px-3 py-2 text-xs shadow-none hover:bg-hover"
         }
         onClick={() => setOpen(true)}
         title="Link another PR to this session"
       >
         {variant === "tab" ? "+" : "Link PR…"}
-      </button>
+      </Button>
     );
 
   return (

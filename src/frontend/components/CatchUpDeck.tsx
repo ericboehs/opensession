@@ -22,6 +22,7 @@ import {
 	type ProviderAccountOption,
 } from "../lib/api";
 import { loadDraft, saveDraft } from "../lib/drafts";
+import { Button } from "../ui/button";
 import type { FileAttachment } from "../lib/images";
 import { getReads, isUnread, markRead } from "../lib/reads";
 import { TranscriptBlocks } from "./TranscriptBlocks";
@@ -291,15 +292,18 @@ export function CatchUpDeck({
 			{/* Action bar (works without gestures; mirrors the screenshot). */}
 			{!done && (
 				<div className="flex w-full max-w-[860px] items-stretch gap-2.5 px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
-					<button
-						className="flex-1 rounded-lg border border-line bg-panel px-4 py-3 text-sm font-semibold text-dim hover:bg-surface hover:text-fg"
+					<Button
+						size="lg"
+						className="flex-1 rounded-lg bg-panel px-4 py-3 text-sm font-semibold shadow-none hover:bg-surface"
 						onClick={() => act("keep")}
 						title="Keep unread (↑)"
 					>
 						Keep Unread
-					</button>
-					<button
-						className="flex items-center justify-center rounded-lg border border-red/40 bg-red-soft px-4 py-3 text-sm font-semibold text-red hover:border-red/70"
+					</Button>
+					<Button
+						variant="danger"
+						size="lg"
+						className="rounded-lg border-red/40 bg-red-soft px-4 py-3 text-sm font-semibold hover:border-red/70 hover:bg-red-soft"
 						onClick={() => act("archive")}
 						title="Archive (←)"
 						aria-label="Archive"
@@ -309,14 +313,16 @@ export function CatchUpDeck({
 							<path d="M3.25 5.75v6.5a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1v-6.5" />
 							<path d="M6.5 8.5h3" strokeLinecap="round" />
 						</svg>
-					</button>
-					<button
-						className="flex-1 rounded-lg bg-green px-4 py-3 text-sm font-semibold text-white hover:opacity-90"
+					</Button>
+					<Button
+						variant="primary"
+						size="lg"
+						className="flex-1 rounded-lg bg-green px-4 py-3 text-sm font-semibold shadow-none hover:brightness-100 hover:opacity-90"
 						onClick={() => act("read")}
 						title="Mark as read (→)"
 					>
 						Mark as Read
-					</button>
+					</Button>
 				</div>
 			)}
 		</div>
@@ -716,12 +722,13 @@ function CaughtUp({ total, onExit }: { total: number; onExit: () => void }) {
 					? `You went through ${total} workspace${total === 1 ? "" : "s"}.`
 					: "Nothing unread right now."}
 			</div>
-			<button
-				className="mt-2 rounded-lg bg-panel px-4 py-2.5 text-sm font-semibold text-fg hover:bg-surface"
+			<Button
+				size="lg"
+				className="mt-2 rounded-lg border-transparent bg-panel px-4 py-2.5 text-sm font-semibold text-fg shadow-none hover:bg-surface"
 				onClick={onExit}
 			>
 				Done
-			</button>
+			</Button>
 		</div>
 	);
 }
