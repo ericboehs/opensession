@@ -343,7 +343,7 @@ function CommentCard({
 				<span className="min-w-0 flex-1 truncate text-[12.5px] font-[550] leading-[1.35] text-fg">
 					{title}
 				</span>
-				<span className="shrink-0 text-[11.5px] text-faint">
+				<span className="shrink-0 text-meta text-faint">
 					{relTime(comment.createdAt)}
 				</span>
 				{addBtn}
@@ -358,11 +358,11 @@ function CommentCard({
 					{avatar}
 					<div className="flex min-h-0 flex-1 flex-col">
 						<div className="mb-1.5 flex min-w-0 items-baseline justify-between gap-2">
-							<span className="min-w-0 truncate text-[11.5px] font-semibold text-faint">
+							<span className="min-w-0 truncate text-meta font-semibold text-faint">
 								{comment.author}
 							</span>
 							{comment.createdAt && (
-								<span className="shrink-0 text-[11.5px] text-faint">
+								<span className="shrink-0 text-meta text-faint">
 									{relTime(comment.createdAt)}
 								</span>
 							)}
@@ -641,7 +641,7 @@ function ChecksChip({
 					<span className="text-[12px] font-semibold text-fg">
 						{checks.length} check{checks.length === 1 ? "" : "s"}
 					</span>
-					<span className="inline-flex gap-2 text-[11.5px] font-semibold">
+					<span className="inline-flex gap-2 text-meta font-semibold">
 						{sum.passed > 0 && <span className="text-green">{sum.passed} passed</span>}
 						{sum.failed > 0 && <span className="text-red">{sum.failed} failed</span>}
 						{sum.pending > 0 && (
@@ -848,12 +848,12 @@ function MichaelReviewCard({
 			<div className="flex items-center gap-2 px-1">
 				<div className={INFO_LABEL_CLASS}>{AGENT_NAME} score</div>
 				{active ? (
-					<span className="ml-auto inline-flex items-center gap-1 text-[10.5px] font-semibold text-accent">
+					<span className="ml-auto inline-flex items-center gap-1 text-meta font-semibold text-accent">
 						<span className="size-1.5 animate-pulse rounded-full bg-accent" />
 						Reviewing
 					</span>
 				) : stale ? (
-					<span className="ml-auto text-[10.5px] font-semibold text-faint">Stale</span>
+					<span className="ml-auto text-meta font-semibold text-faint">Stale</span>
 				) : null}
 				{actionable && (
 					<Menu.Root>
@@ -876,7 +876,7 @@ function MichaelReviewCard({
 									>
 										<div className="min-w-0">
 											<div className="font-semibold text-fg">{action.label}</div>
-											<div className="mt-0.5 text-[11.5px] leading-[1.35] text-faint">
+											<div className="mt-0.5 text-meta leading-[1.35] text-faint">
 												{action.hint}
 											</div>
 										</div>
@@ -903,11 +903,11 @@ function MichaelReviewCard({
 					>
 						<div className={cn("shrink-0 leading-none", scoreTone)}>
 							<span className="text-[20px] font-[750] tracking-[-0.06em]">{score ?? "–"}</span>
-							<span className="ml-0.5 text-[10.5px] font-semibold tracking-normal text-faint">/5</span>
+							<span className="ml-0.5 text-meta font-semibold tracking-normal text-faint">/5</span>
 						</div>
 						<div className="min-w-0 flex-1">
 							<div className="truncate text-[12px] font-semibold text-fg">{verdict}</div>
-							<div className="mt-0.5 truncate text-[10.5px] text-faint">{detail}</div>
+							<div className="mt-0.5 truncate text-meta text-faint">{detail}</div>
 						</div>
 						<div
 							className="flex w-12 shrink-0 gap-0.5"
@@ -942,7 +942,7 @@ function MichaelReviewCard({
 										<div className="truncate text-[13px] font-semibold text-fg">
 											{reviewComment?.author || "tella-butler"}
 										</div>
-										<div className="text-[11.5px] text-faint">
+										<div className="text-meta text-faint">
 											Automated review{reviewedAgo ? ` · reviewed ${reviewedAgo} ago` : ""}
 										</div>
 									</div>
@@ -1669,7 +1669,7 @@ export function WorkspaceInfo({
 	return (
 		<div className="workspace-info-panel flex flex-col gap-4 px-2 pb-[22px] pt-3">
 			<div className="grid gap-1 px-1">
-				<div className="workspace-info-title selectable text-[17px] font-[680] leading-[1.2] text-fg">
+				<div className="workspace-info-title selectable text-item-title font-[680] leading-[1.2] text-fg">
 					{title}
 				</div>
 				{meta && <div className="text-[12px] leading-[1.35] text-faint">{meta}</div>}

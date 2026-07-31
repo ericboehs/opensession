@@ -1009,16 +1009,21 @@ export function IconChart(p: IconProps) {
 // smaller than the stroke glyphs beside it, which draw ~14.5.
 //
 // Sized against the text `⋯` this replaced in the session header, measured by
-// rasterising it at 20px in the app font: 15.5px total span, ~2.4px dots. At
-// size 22 this geometry gives 15.3px and 2.5px. An ellipsis carries far less
-// ink than a stroke glyph, so it needs to run slightly WIDER than their 14.5
-// units to hold equal presence — matching their span makes it look shrunken.
+// rasterising it at 20px in the app font: 15.5px total span, ~2.4px dots. An
+// ellipsis carries far less ink than a stroke glyph, so it needs to run
+// slightly WIDER than their 14.5 units to hold equal presence — matching
+// their span makes it look shrunken.
+//
+// r=1.5 puts each dot at 3 units, 2× the set's 1.5 stroke. A filled dot reads
+// lighter than a continuous stroke of the same width (there's simply less of
+// it), so matching the stroke width 1:1 leaves the mark looking thin next to
+// the glyphs beside it.
 export function IconDotsHorizontal(p: IconProps) {
   return (
     <Svg {...p}>
-      <circle cx="5" cy="12" r="1.35" fill="currentColor" />
-      <circle cx="12" cy="12" r="1.35" fill="currentColor" />
-      <circle cx="19" cy="12" r="1.35" fill="currentColor" />
+      <circle cx="5" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="19" cy="12" r="1.5" fill="currentColor" />
     </Svg>
   );
 }

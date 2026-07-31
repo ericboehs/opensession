@@ -4181,21 +4181,32 @@ export function SessionViewer({
 					<Menu.Root open={overflowOpen} onOpenChange={setOverflowOpen}>
 						<div className="viewer-overflow">
 							<Menu.Trigger
+								// Rendered AS the Button primitive rather than restyled to
+								// look like one, so the box, radius, hover wash, transition
+								// and press scale are identical to the share and side-panel
+								// buttons by construction instead of by hand-matching.
+								render={
+									<Button
+										variant="ghost"
+										size="md"
+										icon={<IconDotsHorizontal size={22} />}
+									/>
+								}
 								className={cn(
-									// Square 32px box with a real glyph inside, matching the
-									// share and side-panel buttons beside it. This used to
-									// render a bare `⋯` character, so its height was whatever
-									// the text line box measured (28px) rather than a hit area.
-									"inline-flex h-8 w-8 items-center justify-center rounded-[calc(10px*var(--rf))] border border-transparent bg-transparent p-0 text-dim",
-									"hover:bg-hover hover:text-fg",
-									"max-[720px]:h-10 max-[720px]:min-h-10 max-[720px]:w-10 max-[720px]:rounded-full max-[720px]:border-line max-[720px]:bg-bg max-[720px]:p-0 max-[720px]:text-accent max-[720px]:shadow-[0_2px_12px_rgba(0,0,0,0.1)]",
+									// global.css turns on the squircle via
+									// `[class*="rounded-"]:not([class*="rounded-full"])`. That
+									// `:not` is a substring test on the whole class attribute,
+									// so the mobile `rounded-full` below disqualifies this
+									// element at EVERY width and it renders plain-round while
+									// its neighbours are squircles. Set it back explicitly,
+									// and keep a true circle on mobile.
+									"[corner-shape:squircle] max-[720px]:[corner-shape:round]",
+									"max-[720px]:h-10 max-[720px]:min-h-10 max-[720px]:w-10 max-[720px]:rounded-full max-[720px]:border-line max-[720px]:bg-bg max-[720px]:text-accent max-[720px]:shadow-[0_2px_12px_rgba(0,0,0,0.1)]",
 									overflowOpen && "bg-hover text-fg max-[720px]:border-[color-mix(in_srgb,var(--accent)_12%,transparent)] max-[720px]:bg-accent-soft max-[720px]:text-accent",
 								)}
 								title="More actions"
 								aria-label="More actions"
-							>
-								<IconDotsHorizontal size={22} />
-							</Menu.Trigger>
+							/>
 							<Menu.Popup
 								align="end"
 								sideOffset={6}

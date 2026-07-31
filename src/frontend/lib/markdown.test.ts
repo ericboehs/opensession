@@ -1,5 +1,11 @@
-import { describe, expect, it } from "bun:test";
-import { renderMarkdown, renderPrCommentMarkdown } from "./markdown";
+import { afterEach, describe, expect, it } from "bun:test";
+import {
+  renderMarkdown,
+  renderPrCommentMarkdown,
+  setSessionTitles,
+} from "./markdown";
+
+afterEach(() => setSessionTitles([]));
 
 describe("renderMarkdown session links", () => {
   it("turns a session-id codespan into a link", () => {
@@ -57,7 +63,7 @@ describe("renderMarkdown session links", () => {
       'data-session-id="bks-019f9608-ab20-7000-b98e-4de52d5fe436"',
     );
     // the ~90-char URL is the href, never the chip's (nowrap) label
-    expect(html).toContain(">bks-019f9608-ab20-7000-b98e-4de52d5fe436</a>");
+    expect(html).toContain(">bks-019f9608…</a>");
     expect(html).toContain(`href="${url}"`);
     expect(html).not.toContain(`>${url}</a>`);
   });
@@ -80,6 +86,57 @@ describe("renderMarkdown session links", () => {
   it("still opens external links in a new tab", () => {
     const html = renderMarkdown("See [GitHub](https://github.com/tella/x).");
     expect(html).toContain('target="_blank"');
+  });
+});
+
+describe("session chip labels", () => {
+  const id = "bks-019f24b5-f31d-7000-a48f-31a9e829c4ae";
+
+  it("labels a chip with the session's title once registered", () => {
+    setSessionTitles([[id, "Fix the sidebar hover states"]]);
+    const html = renderMarkdown(`Delegated to \`${id}\`.`);
+    expect(html).toContain(">Fix the sidebar hover states</a>");
+    expect(html).toContain(`data-session-id="${id}"`);
+    // the full id stays reachable in the tooltip
+    expect(html).toContain(`title="Open Fix the sidebar hover states (${id})"`);
+    expect(html).not.toContain("data-session-label");
+  });
+
+  it("falls back to a shortened id, marked for monospace", () => {
+    const html = renderMarkdown(`Delegated to \`${id}\`.`);
+    expect(html).toContain(">bks-019f24b5…</a>");
+    expect(html).toContain('data-session-label="id"');
+    expect(html).toContain(`title="Open session ${id}"`);
+  });
+
+  it("keeps short legacy slug ids whole", () => {
+    const html = renderMarkdown("Delegated to `bks-worker-two`.");
+    expect(html).toContain(">bks-worker-two</a>");
+  });
+
+  it("truncates a long title", () => {
+    setSessionTitles([
+      [id, "A very long session title that would eat the whole sentence"],
+    ]);
+    const html = renderMarkdown(`Delegated to \`${id}\`.`);
+    expect(html).toContain(">A very long session title that would…</a>");
+  });
+
+  it("re-labels already-rendered markdown when titles arrive", () => {
+    const src = `Delegated to \`${id}\`.`;
+    expect(renderMarkdown(src)).toContain(">bks-019f24b5…</a>");
+    setSessionTitles([[id, "Late title"]]);
+    expect(renderMarkdown(src)).toContain(">Late title</a>");
+  });
+
+  it("ignores blank titles and unrelated sessions", () => {
+    setSessionTitles([
+      [id, "   "],
+      ["bks-someone-else", "Other"],
+    ]);
+    expect(renderMarkdown(`Delegated to \`${id}\`.`)).toContain(
+      ">bks-019f24b5…</a>",
+    );
   });
 });
 

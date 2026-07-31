@@ -30,10 +30,65 @@ const SESSION_ID_EXACT = /^bks-[a-z0-9][a-z0-9-]{5,}$/i;
 const SESSION_ID_BARE =
   /bks-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
-function sessionLink(id: string): string {
+// Chip labels. A raw `bks-<uuid>` is 40 characters of noise in the middle of a
+// sentence, so a chip shows the referenced session's own title when we know it.
+// The app shell registers the titles it already polls (App.tsx); anything not in
+// that list — archived, deleted, not yet polled — falls back to a shortened id.
+let sessionTitles = new Map<string, string>();
+const SESSION_TITLE_MAX = 38;
+const SESSION_ID_SHORT = 12; // `bks-019fb3ad`
+
+/** Register id → title for session chips. Cheap no-op when nothing changed. */
+export function setSessionTitles(
+  entries: Iterable<readonly [string, string | null | undefined]>,
+): void {
+  const next = new Map<string, string>();
+  for (const [id, title] of entries) {
+    const t = String(title ?? "").trim();
+    if (id && t) next.set(id, t);
+  }
+  if (next.size === sessionTitles.size) {
+    let same = true;
+    for (const [id, t] of next) {
+      if (sessionTitles.get(id) !== t) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return; // the common case: a poll that only moved lastActivity
+  }
+  sessionTitles = next;
+  // Labels are baked into the cached HTML, so it has to go when they change.
+  mdCache.clear();
+}
+
+function shortSessionId(id: string): string {
+  // Legacy `bks-<slug>` ids are already short and cutting them mid-word reads
+  // worse than showing the whole thing; only uuid-shaped ids get abbreviated.
+  return id.length <= 20 ? id : `${id.slice(0, SESSION_ID_SHORT)}…`;
+}
+
+function sessionLink(id: string, href?: string): string {
+  const title = sessionTitles.get(id);
+  const label = title
+    ? title.length > SESSION_TITLE_MAX
+      ? `${title.slice(0, SESSION_TITLE_MAX - 1).trimEnd()}…`
+      : title
+    : shortSessionId(id);
+  // The label is lossy either way (truncated title, abbreviated id), so the
+  // full id always stays in the tooltip. data-session-label marks the id
+  // fallback for the monospace treatment.
+  const tip = title ? `Open ${title} (${id})` : `Open session ${id}`;
+  // With an href it's a real link (cmd/middle-click open a tab); without one
+  // the delegated click handler is the only way in, so it needs the button role
+  // and a tab stop.
+  const anchor = href
+    ? `href="${attr(href)}" `
+    : `role="button" tabindex="0" `;
   return (
-    `<a class="session-link" data-session-id="${attr(id)}" role="button" ` +
-    `tabindex="0" title="Open session ${attr(id)}">${attr(id)}</a>`
+    `<a ${anchor}class="session-link" data-session-id="${attr(id)}"` +
+    `${title ? "" : ' data-session-label="id"'} title="${attr(tip)}">` +
+    `${attr(label)}</a>`
   );
 }
 
@@ -121,15 +176,9 @@ md.use({
       if (internal) {
         // A pasted session/chat URL auto-links with the whole ~90-char URL as
         // its text, which ran straight past the message bubble's edge inside
-        // the nowrap chip. Label it with the session id instead — the same
-        // chip a bare `bks-…` in prose gets.
+        // the nowrap chip. Label it like a bare `bks-…` in prose instead.
         if (internal.sessionId && isBareUrlLink(token)) {
-          return (
-            `<a href="${attr(token.href)}" class="session-link" ` +
-            `data-session-id="${attr(internal.sessionId)}" ` +
-            `title="Open session ${attr(internal.sessionId)}">` +
-            `${attr(internal.sessionId)}</a>`
-          );
+          return sessionLink(internal.sessionId, token.href);
         }
         // Same app: navigate in place. Session/chat URLs get the session-link
         // chip + data-session-id so the delegated handler (SessionViewer)

@@ -1,12 +1,14 @@
 import "./lib/storage-migrate"; // must run before any lib reads its pref keys
 import { BASE_PATH, stripBasePath } from "./lib/base";
 import { DEFAULT_REPO_ID } from "./lib/brand";
+import { setSessionTitles } from "./lib/markdown";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Sidebar, type SidebarHandle } from "./components/Sidebar";
 import { Tooltip, TooltipProvider } from "./ui/tooltip";
 import { ToastHost, toast } from "./ui/toast";
 import { Modal } from "./ui/modal";
+import { Button } from "./ui/button";
 import { suppressLayoutAnimations } from "./ui/motion";
 import { SessionViewer } from "./components/SessionViewer";
 import { NewSession } from "./components/NewSession";
@@ -518,6 +520,13 @@ function App() {
 			}),
 		[addHandler],
 	);
+	// Session-reference chips in transcripts (`bks-…`) label themselves with the
+	// referenced session's title. markdown.ts renders to an HTML string rather
+	// than React nodes, so it can't read this from context — hand it the titles
+	// we already poll. No-ops unless a title actually changed.
+	useEffect(() => {
+		setSessionTitles(sessions.map((s) => [s.id, s.title] as const));
+	}, [sessions]);
 	// Register the service worker at boot, not just when enabling push: it also
 	// caches the app shell (sw.js), so a cold start on a flaky tailnet paints
 	// the app instead of white-screening.

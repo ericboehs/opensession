@@ -8980,19 +8980,22 @@ a.workspace-info-check-row {
 	color: inherit;
 }
 
-/* A session id rendered by markdown.ts as a clickable link into that session
-   (e.g. an orchestrator jumping into the worker it spawned). Reads as a
-   monospace accent chip with an open-in affordance. Scoped on the chip's
-   data-session-id attribute: bare .session-link is ALSO the viewer header's
-   Linear/Plain pills (which carry their own literal ↗), and an unscoped rule
-   here clobbered them into mono accent chips with a second arrow. */
+/* A session reference rendered by markdown.ts as a clickable link into that
+   session (e.g. an orchestrator jumping into the worker it spawned). Labelled
+   with the session's title where we know it, so it reads as prose: a quiet
+   outlined chip in the running text colour, with a dim open-in affordance.
+   Deliberately not accent-coloured — a cross-reference is a destination, not
+   an alert, and the accent chip read as an error inside a sentence. Scoped on
+   the chip's data-session-id attribute: bare .session-link is ALSO the viewer
+   header's Linear/Plain pills (which carry their own literal ↗), and an
+   unscoped rule here clobbered them into mono accent chips with a second
+   arrow. */
 .session-link[data-session-id] {
-	font-family: var(--mono);
 	font-size: 0.9em;
-	background: var(--accent-soft);
-	border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
-	color: var(--accent);
-	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
+	background: transparent;
+	border: 1px solid var(--border);
+	color: var(--text);
+	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 0.5px 6px;
 	cursor: pointer;
 	text-decoration: none;
@@ -9001,19 +9004,27 @@ a.workspace-info-check-row {
 		background 0.12s ease,
 		border-color 0.12s ease;
 }
+/* No title on hand, so the label is a shortened id — monospace, like any other
+   identifier in the transcript. */
+.session-link[data-session-id][data-session-label="id"] {
+	font-family: var(--mono);
+}
 .session-link[data-session-id]::after {
 	content: " ↗";
-	opacity: 0.55;
+	color: var(--text-faint);
 }
 .session-link[data-session-id]:hover {
-	background: color-mix(in srgb, var(--accent) 18%, transparent);
-	border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+	background: var(--hover);
+	border-color: var(--border-strong);
+	/* the chip lights up instead — .markdown a:hover would underline it, which
+	   reads as a text link striking through the chip's own border */
+	text-decoration: none;
 }
-/* A full `bks-<uuid>` chip is wider than a phone-width message bubble, so on
-   narrow screens the nowrap above pushed it past the bubble's edge. Let it
-   fold there; box-decoration-break keeps each fragment a proper chip. Wider
-   viewports keep nowrap — with room to spare, an id splitting across lines at
-   its hyphens reads worse than moving the whole chip down a line. */
+/* A chip can still outgrow a phone-width message bubble (a long title, or a
+   `bks-<uuid>` fallback), where the nowrap above pushed it past the bubble's
+   edge. Let it fold there; box-decoration-break keeps each fragment a proper
+   chip. Wider viewports keep nowrap — with room to spare, a label splitting
+   across lines reads worse than moving the whole chip down a line. */
 @media (max-width: 560px) {
 	.session-link[data-session-id] {
 		white-space: normal;
