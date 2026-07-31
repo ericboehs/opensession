@@ -4991,6 +4991,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								<TeamPresencePopover
 									members={team}
 									onOpenSession={onSelect}
+									// The faces ring themselves in whatever the row is
+									// painted with, so the pile separates on both states.
+									ring={tool.active ? "var(--bg-active)" : "var(--bg-raised)"}
 									className="absolute right-2.5 top-1/2 -translate-y-1/2"
 								/>
 							</div>
