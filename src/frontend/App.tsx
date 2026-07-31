@@ -3298,6 +3298,8 @@ function App() {
 							onOpenReports={() => navigate({ view: "reports" })}
 							analyticsActive={route.view === "analytics"}
 							onOpenAnalytics={() => navigate({ view: "analytics" })}
+							deskActive={deskOpen}
+							onOpenDesk={() => setDeskOpen(true)}
 							noteActivity={noteActivity}
 							onSelect={(s) => navigate({ view: "session", id: s.id })}
 							onOpenReview={openReviewForSession}
@@ -3792,18 +3794,8 @@ function App() {
 					</button>
 				)}
 
-				{/* The Desk trigger — desktop: floating bottom-right; phones: a second
-				    FAB beside the new-session + on the root page (see .desk-fab). */}
-				{(!isPhone || !mobileDetail) && (
-					<button
-						className="desk-fab"
-						onClick={() => setDeskOpen(true)}
-						aria-label="Open Desk"
-						title="Desk (⌘J)"
-					>
-						<IconDesk size={24} />
-					</button>
-				)}
+				{/* The Desk's triggers are ⌘J, the command palette, and the sidebar's
+				    Desk tool — which is off until someone turns it on in Settings. */}
 
 				{/* ⌘J Desk overlay — standing concierge session. */}
 				<DeskOverlay

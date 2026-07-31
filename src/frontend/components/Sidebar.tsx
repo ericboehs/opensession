@@ -117,6 +117,7 @@ import {
 	IconStatusRing,
 	IconTrash,
 	IconChart,
+	IconDesk,
 	IconFile,
 	IconDotsHorizontal,
 	IconGlobe,
@@ -758,6 +759,10 @@ interface Props {
 	analyticsActive: boolean;
 	/** Open the Analytics view (sessions/tokens/models/PRs over time). */
 	onOpenAnalytics: () => void;
+	/** True while the Desk overlay is open. */
+	deskActive: boolean;
+	/** Summon the Desk overlay (the ⌘J concierge session). */
+	onOpenDesk: () => void;
 	/** Latest team note per session (unread-note dots on workspace rows). */
 	noteActivity?: Record<string, { lastTs: number; lastUser: string }>;
 	onSelect: (session: UnifiedSession) => void;
@@ -1493,6 +1498,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	onOpenReports,
 	analyticsActive,
 	onOpenAnalytics,
+	deskActive,
+	onOpenDesk,
 	noteActivity = {},
 	onSelect,
 	onOpenReview,
@@ -3534,6 +3541,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			active: notesActive,
 			onClick: onOpenNotes,
 			title: `Shared notes and documentation (${NOTES_SHORTCUT_HINT})`,
+		},
+		{
+			id: "desk",
+			label: SIDEBAR_TOOL_LABELS.desk,
+			icon: <IconDesk />,
+			// The Desk is an overlay rather than a route, so it stays lit while
+			// it's up the same way an open page does.
+			active: deskActive,
+			onClick: onOpenDesk,
+			title: "Your standing concierge session (⌘J)",
 		},
 	];
 	const visibleTools = tools.filter(
