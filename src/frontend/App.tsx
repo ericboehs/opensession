@@ -3034,10 +3034,10 @@ function App() {
 				disablePointerDismissal
 			>
 				<Modal.Content widthClassName="max-w-[34rem]" className="gap-5">
-					<Modal.Title className="m-0 text-[26px] font-semibold tracking-[-0.03em] text-fg">
+					<Modal.Title className="m-0 text-page-title font-semibold tracking-[-0.03em] text-fg">
 						Close running chat{runningCloseConfirmation?.runningCount === 1 ? "" : "s"}?
 					</Modal.Title>
-					<Modal.Description className="m-0 text-[17px] leading-relaxed text-dim">
+					<Modal.Description className="m-0 text-body leading-relaxed text-dim">
 						{runningCloseConfirmation?.runningCount === 1
 							? "This chat is currently running. Closing it will cancel its current run."
 							: `These ${runningCloseConfirmation?.runningCount ?? 0} chats are currently running. Closing them will cancel their current runs.`}
@@ -3045,17 +3045,18 @@ function App() {
 					<Modal.Footer className="mt-3 justify-end gap-3">
 						<Modal.Close
 							render={
-								<button
-									type="button"
-									className="rounded-md border border-line-strong px-5 py-2.5 text-[16px] font-medium text-fg outline-none transition-[background-color,transform] duration-150 ease-out hover:bg-hover active:scale-[0.96]"
+								<Button
+									size="lg"
+									className="rounded-md border-line-strong bg-transparent px-5 py-2.5 font-medium text-fg shadow-none hover:bg-hover"
 								>
 									Cancel
-								</button>
+								</Button>
 							}
 						/>
-						<button
-							type="button"
-							className="rounded-md bg-red px-5 py-2.5 text-[16px] font-semibold text-white outline-none transition-[filter,transform] duration-150 ease-out hover:brightness-110 active:scale-[0.96]"
+						<Button
+							variant="primary"
+							size="lg"
+							className="rounded-md bg-red px-5 py-2.5 font-semibold shadow-none"
 							onClick={() => {
 								const confirmation = runningCloseConfirmation;
 								setRunningCloseConfirmation(null);
@@ -3064,7 +3065,7 @@ function App() {
 						>
 							<span>Close anyway</span>
 							<span className="ml-5 text-[14px] font-medium opacity-70">⌘↵</span>
-						</button>
+						</Button>
 					</Modal.Footer>
 				</Modal.Content>
 			</Modal.Root>
