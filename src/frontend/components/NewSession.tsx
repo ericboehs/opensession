@@ -629,8 +629,11 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const planBody: React.CSSProperties | undefined = planFirst
     ? {
         backgroundColor: "color-mix(in srgb, var(--bg-panel) 96%, var(--accent))",
+        // The hatch fades out downwards, same as the composer's note mode: the
+        // flat tint is layered back over the stripes so the writing surface
+        // settles into the footer instead of hatching all the way to the edge.
         backgroundImage:
-          "repeating-linear-gradient(45deg, color-mix(in srgb, var(--accent) 5%, transparent) 0, color-mix(in srgb, var(--accent) 5%, transparent) 12px, transparent 12px, transparent 24px)",
+          "linear-gradient(to bottom, transparent 15%, color-mix(in srgb, var(--bg-panel) 96%, var(--accent)) 72%), repeating-linear-gradient(45deg, color-mix(in srgb, var(--accent) 5%, transparent) 0, color-mix(in srgb, var(--accent) 5%, transparent) 12px, transparent 12px, transparent 24px)",
       }
     : undefined;
 
