@@ -3034,7 +3034,7 @@ function App() {
 				disablePointerDismissal
 			>
 				<Modal.Content widthClassName="max-w-[34rem]" className="gap-5">
-					<Modal.Title className="m-0 text-[26px] font-semibold tracking-[-0.03em] text-fg">
+					<Modal.Title className="m-0 text-page-title font-semibold tracking-[-0.03em] text-fg">
 						Close running chat{runningCloseConfirmation?.runningCount === 1 ? "" : "s"}?
 					</Modal.Title>
 					<Modal.Description className="m-0 text-body leading-relaxed text-dim">

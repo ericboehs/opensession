@@ -902,7 +902,7 @@ function MichaelReviewCard({
 						tabIndex={reviewMessage ? 0 : undefined}
 					>
 						<div className={cn("shrink-0 leading-none", scoreTone)}>
-							<span className="text-[20px] font-[750] tracking-[-0.06em]">{score ?? "–"}</span>
+							<span className="text-section-title font-[750] tracking-[-0.06em]">{score ?? "–"}</span>
 							<span className="ml-0.5 text-meta font-semibold tracking-normal text-faint">/5</span>
 						</div>
 						<div className="min-w-0 flex-1">

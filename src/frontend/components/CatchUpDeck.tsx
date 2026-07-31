@@ -716,7 +716,7 @@ function CaughtUp({ total, onExit }: { total: number; onExit: () => void }) {
 	return (
 		<div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
 			<div className="text-4xl">✨</div>
-			<div className="text-lg font-semibold text-fg">All caught up</div>
+			<div className="text-item-title font-semibold text-fg">All caught up</div>
 			<div className="max-w-xs text-sm text-dim">
 				{total > 0
 					? `You went through ${total} workspace${total === 1 ? "" : "s"}.`

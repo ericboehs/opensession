@@ -1121,7 +1121,7 @@ export function PrPanel({
                   Sessions on this PR
                 </span>
                 <button
-                  className="ml-auto border-0 bg-transparent text-lg text-faint hover:text-fg"
+                  className="ml-auto border-0 bg-transparent text-item-title text-faint hover:text-fg"
                   onClick={() => setSessionsOpen(false)}
                   aria-label="Close"
                 >
@@ -1432,7 +1432,7 @@ export function PrPanel({
               <div className="mb-3 flex items-center">
                 <span className="text-sm font-semibold text-fg">Finish review for #{pr.number}</span>
                 <button
-                  className="ml-auto border-0 bg-transparent text-lg text-faint hover:text-fg"
+                  className="ml-auto border-0 bg-transparent text-item-title text-faint hover:text-fg"
                   onClick={() => setReviewOpen(false)}
                   aria-label="Close"
                 >
