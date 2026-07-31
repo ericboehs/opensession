@@ -49,6 +49,7 @@
 	/* Accent + status */
 	--color-accent: var(--accent);
 	--color-accent-soft: var(--accent-soft);
+	--color-focus-ring: var(--accent);
 	--color-green: var(--green);
 	--color-green-soft: var(--green-soft);
 	--color-yellow: var(--yellow);
@@ -95,6 +96,55 @@
 	--text-xs: 12px;
 	--text-sm: 13px;
 	--text-base: 14px;
+
+	/* Semantic type roles. Migrate by purpose rather than by nearest number:
+	   10.5/11/11.5px -> text-meta (timestamps, status, secondary metadata)
+	   12px            -> text-label (field labels, compact menu headings)
+	   12.5px          -> text-supporting (descriptions, hints, empty states)
+	   13/13.5px       -> text-control-label for chrome; text-body for prose
+	   14px             -> text-body (default interface copy)
+	   15px             -> text-item-title (row/card titles and prominent values)
+	   19px             -> text-section-title (in-page headings)
+	   24px             -> text-page-title (top-level settings titles)
+	   Intentional display values such as the 22px analytics stat stay explicit. */
+	--text-meta: 11px;
+	--text-label: 12px;
+	--text-supporting: 12.5px;
+	--text-control-label: 13px;
+	--text-body: 14px;
+	--text-item-title: 15px;
+	--text-section-title: 19px;
+	--text-page-title: 24px;
+
+	/* Interaction geometry: `hit-target` uses 40px for pointer layouts and
+	   expands to the WCAG-friendly 44px touch convention on coarse pointers. */
+	--spacing-hit-target: 40px;
+	--spacing-hit-target-touch: 44px;
+}
+
+/* One keyboard-focus treatment for raw controls. It intentionally does not
+   animate, so focus is immediate and reduced-motion needs no special case. */
+@utility focus-ring {
+	&:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
+	@media (forced-colors: active) {
+		&:focus-visible {
+			outline-color: Highlight;
+		}
+	}
+}
+
+@utility hit-target {
+	min-inline-size: var(--spacing-hit-target);
+	min-block-size: var(--spacing-hit-target);
+
+	@media (pointer: coarse) {
+		min-inline-size: var(--spacing-hit-target-touch);
+		min-block-size: var(--spacing-hit-target-touch);
+	}
 }
 
 @supports (corner-shape: squircle) {
