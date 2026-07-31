@@ -5,6 +5,9 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("os1", {
   desktop: true,
+  // Capability flag rather than `desktop` alone: the remotely served frontend
+  // must stay opaque in older shell builds that do not provide native material.
+  materialBackdrop: true,
   setBadge: (count) => ipcRenderer.send("os1:set-badge", Number(count) || 0),
   clearBadge: () => ipcRenderer.send("os1:set-badge", 0),
   // App auto-update (Squirrel.Mac, driven by main.js). `onState(cb)` reports

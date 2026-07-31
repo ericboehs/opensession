@@ -51,6 +51,7 @@ let localMode = false;
 let localSupervisor = null;
 let localPageLoaded = false;
 let localRecoveryTimer = null;
+let windowReady = false;
 
 function loadShellSettings() {
   try {
@@ -301,7 +302,7 @@ function openDeepLink(raw) {
 function showWindow() {
   if (!win || win.isDestroyed()) {
     if (appReady) createWindow();
-  } else {
+  } else if (windowReady) {
     win.show();
     win.focus();
   }
@@ -355,16 +356,21 @@ function handleLocalServerState({ state, detail, logFile }) {
 
 function createWindow(initialStatus = null) {
   const state = loadWindowState();
+  windowReady = false;
   win = new BrowserWindow({
     ...state,
     minWidth: 700,
     minHeight: 480,
-    // Opaque window. The transparent+vibrancy setup was removed 2026-07-22 to
-    // chase whole-window flashes: a transparent window has no opaque backing
-    // store, so any frame Chromium's compositor drops (occlusion eviction,
-    // wake, resize, GPU reset) punches through to the raw desktop blur. The
-    // color matches the frontend's dark --bg so pre-paint frames blend in.
-    backgroundColor: "#1b1b1b",
+    // The web app keeps its workspace opaque and reveals this native material
+    // only through the sidebar and narrow outer gutter. Unlike the original
+    // vibrancy pass, the renderer does not add CSS backdrop filters on top.
+    transparent: true,
+    backgroundColor: "#00000000",
+    vibrancy: "sidebar",
+    visualEffectState: "followWindow",
+    // Do not expose the raw material before Chromium has painted its first
+    // frame; this avoids a bright launch flash when the system is in light mode.
+    show: false,
     // The frontend already lays itself out for Window Controls Overlay (its PWA
     // manifest declares display_override: window-controls-overlay).
     titleBarStyle: "hidden",
@@ -381,6 +387,14 @@ function createWindow(initialStatus = null) {
     },
   });
 
+  const createdWindow = win;
+  createdWindow.once("ready-to-show", () => {
+    if (createdWindow.isDestroyed() || win !== createdWindow) return;
+    windowReady = true;
+    createdWindow.show();
+    createdWindow.focus();
+  });
+
   win.on("close", (e) => {
     saveWindowState();
     if (!quitting) {
@@ -389,6 +403,7 @@ function createWindow(initialStatus = null) {
     }
   });
   win.on("closed", () => {
+    windowReady = false;
     win = null;
   });
 

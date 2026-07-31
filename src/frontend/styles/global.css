@@ -473,10 +473,46 @@ a {
 html.wco .app {
 	border-top: none;
 }
-/* (The shell used to supply a vibrancy backdrop revealed through a transparent
-   canvas here; removed 2026-07-22 together with the shell's transparent window
-   while chasing whole-window flashes — the app now paints its normal opaque
-   --bg everywhere, in the shell too.) */
+/* Updated macOS shell builds supply one native visual-effect surface beneath
+   Chromium. Reveal it only through the structural chrome: the sidebar and the
+   narrow gutter around the opaque workspace. The shell capability flag keeps
+   PWAs and older opaque shell builds on the normal solid surfaces. Native
+   vibrancy provides the blur, so this deliberately adds no backdrop-filter. */
+@media (min-width: 721px) {
+	html.material-backdrop,
+	html.material-backdrop body,
+	html.material-backdrop #root,
+	html.material-backdrop .app {
+		background: transparent;
+	}
+
+	html.material-backdrop .app-body {
+		background:
+			linear-gradient(
+				180deg,
+				var(--sidebar-material-sheen),
+				transparent 180px
+			),
+			var(--sidebar-material);
+	}
+
+	/* The app-body owns the material behind both regions. Painting it again on
+	   the child sidebar would double the wash and make it darker than the gutter. */
+	html.material-backdrop .sidebar-container {
+		background: transparent;
+	}
+}
+
+@media (min-width: 721px) and (prefers-reduced-transparency: reduce) {
+	html.material-backdrop,
+	html.material-backdrop body,
+	html.material-backdrop #root,
+	html.material-backdrop .app,
+	html.material-backdrop .app-body,
+	html.material-backdrop .sidebar-container {
+		background: var(--bg-raised);
+	}
+}
 /* Sidebar top row clears the traffic lights. env(titlebar-area-x) is the
    controls' right edge on macOS; it drops to 0 in fullscreen (lights hidden)
    and on Windows (controls on the right), where the default padding wins. */

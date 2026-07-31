@@ -67,6 +67,12 @@
       document.documentElement.dataset.platform = /win/i.test(platform)
         ? "windows" : /mac/i.test(platform) ? "mac" : "linux";
 
+      // Only updated desktop-shell builds provide a native visual-effect
+      // backdrop. The capability check keeps the remotely served UI opaque in
+      // older shells, which expose `desktop` but still use an opaque window.
+      if (window.os1 && window.os1.materialBackdrop === true)
+        document.documentElement.classList.add("material-backdrop");
+
       // Window Controls Overlay detection → `html.wco` (drives the titlebar
       // band + drag region in global.css). JS instead of the display-mode
       // media query because Electron (the OS¹ desktop shell) exposes the WCO
