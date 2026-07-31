@@ -963,7 +963,7 @@ function CtxItem({
 				<span
 					style={{
 						color: "var(--text-faint)",
-						fontSize: 12,
+						fontSize: 13,
 						flexShrink: 0,
 						marginLeft: 12,
 					}}
@@ -4765,7 +4765,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				: items.filter((i) => i.lane === feed.attentionLane).length
 			: 0;
 		const noMatches = (
-			<div className="px-3 py-2 text-[12px] text-faint">
+			<div className="px-3 py-2 text-label text-faint">
 				No items match the filters
 			</div>
 		);
@@ -5050,7 +5050,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						aria-expanded={workspacesOpen}
 						title={workspacesOpen ? "Collapse workspaces" : "Expand workspaces"}
 					>
-						<span className="sidebar-workspace-title shrink-0 text-[12px] font-semibold tracking-[-0.01em] text-faint" ref={titleRef}>
+						<span className="sidebar-workspace-title shrink-0 text-label font-semibold tracking-[-0.01em] text-faint" ref={titleRef}>
 							{filter.person === "me"
 								? "Workspaces"
 								: filter.person === "unassigned"
