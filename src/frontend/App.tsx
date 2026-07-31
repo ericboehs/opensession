@@ -2018,6 +2018,7 @@ function App() {
 		rightActive: split.rightActive,
 		ratio: split.ratio,
 	});
+	const otherSide = (side: SplitSide): SplitSide => (side === "left" ? "right" : "left");
 	/** Which bar owns a tab. The left bar is every tab's default home. */
 	const sideOf = (id: string): SplitSide =>
 		activeTabSplit?.right.includes(id) ? "right" : "left";
@@ -2126,7 +2127,7 @@ function App() {
 						? barActive
 						: null
 				}
-				alwaysShow={!!side}
+				inSplit={!!side}
 				showHistory={side !== "left"}
 				colors={tabColors}
 				onSelect={(s) => {
@@ -2145,6 +2146,8 @@ function App() {
 					moveTabToSide(id, target);
 					return true;
 				}}
+				onMoveAcross={side ? (id) => moveTabToSide(id, otherSide(side)) : undefined}
+				moveAcrossSide={side ? otherSide(side) : undefined}
 				viewTabs={barViews}
 				onSelectView={selectViewTab}
 				onCloseView={(id) => {
@@ -3527,6 +3530,20 @@ function App() {
 						{splitDropSide && (
 							<div
 								className={`tab-split-drop-preview tab-split-drop-preview-${splitDropSide}`}
+								// Once there IS a split, the preview outlines the column the
+								// tab would join at its real width — the even halves it
+								// defaults to are only right for the drop that creates one.
+								style={
+									activeTabSplit
+										? ({
+												"--split-preview-share": `${
+													(splitDropSide === "left"
+														? activeTabSplit.ratio
+														: 1 - activeTabSplit.ratio) * 100
+												}%`,
+											} as React.CSSProperties)
+										: undefined
+								}
 								aria-hidden="true"
 							/>
 						)}

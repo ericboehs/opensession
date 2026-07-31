@@ -3417,7 +3417,9 @@ body.resizing-tab-split {
 	top: calc(var(--desktop-header-h) + 44px);
 	bottom: 8px;
 	z-index: 25;
-	width: calc(50% - 12px);
+	/* Half the pane for the drop that CREATES a split; App.tsx overrides the
+	   share with the target column's real ratio once one exists. */
+	width: calc(var(--split-preview-share, 50%) - 12px);
 	pointer-events: none;
 	border: 2px solid var(--accent);
 	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);

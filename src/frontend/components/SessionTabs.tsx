@@ -58,16 +58,25 @@ interface Props {
 	 */
 	onReorderTabs: (orderedIds: string[]) => void;
 	/**
-	 * Render even when this bar holds a single tab. A split shows one bar per
-	 * pane, and each keeps its "+" however few tabs it has.
+	 * This bar is one column of a split. It renders even when it holds a single
+	 * tab (each column keeps its "+" however few tabs it has), and its tabs stay
+	 * draggable at any count — the drop target is the other column, so a bar
+	 * holding one tab must still be able to hand it over.
 	 */
-	alwaysShow?: boolean;
+	inSplit?: boolean;
 	/** Show the archived-chats menu — only the rightmost bar does. */
 	showHistory?: boolean;
 	/** Dragging below the strip previews a left/right split over the content. */
 	onSplitDrag?: (id: string | null, point?: { x: number; y: number }) => void;
 	/** Return true when the drop created a split instead of committing a reorder. */
 	onSplitDrop?: (id: string, point: { x: number; y: number }) => boolean;
+	/**
+	 * Hand a tab to the split's other column (the tab context menu's spelling of
+	 * the cross-bar drag). Only set on a bar that is part of a split.
+	 */
+	onMoveAcross?: (id: string) => void;
+	/** Where `onMoveAcross` lands — it names the menu item. */
+	moveAcrossSide?: "left" | "right";
 	/**
 	 * Non-chat "view" tabs (Review, Preview, …) shown after the chat tabs.
 	 * Each is bound to a session; selecting one foregrounds that
@@ -115,10 +124,12 @@ export function SessionTabs({
 	onSelect,
 	onSetColor,
 	onReorderTabs,
-	alwaysShow,
+	inSplit,
 	showHistory = true,
 	onSplitDrag,
 	onSplitDrop,
+	onMoveAcross,
+	moveAcrossSide,
 	viewTabs,
 	onSelectView,
 	onCloseView,
@@ -152,7 +163,10 @@ export function SessionTabs({
 	const justDragged = useRef(false);
 	const dragPoint = useRef<{ x: number; y: number } | null>(null);
 	const stopPointerTracking = useRef<(() => void) | null>(null);
-	const canDragTabs = !isPhone && tabs.length + viewTabs.length > 1;
+	// A lone tab has nowhere to go WITHIN its own bar — but in a split it can
+	// still be dragged into the other column, so the count only gates a single
+	// unsplit strip.
+	const canDragTabs = !isPhone && (inSplit || tabs.length + viewTabs.length > 1);
 
 	// Where the dragged tab will land. Desktop tabs are flat text on the strip's
 	// own background, so a dragged one has no surface to separate it from the
@@ -386,7 +400,7 @@ export function SessionTabs({
 	// button lives next to the session title in the header instead. But once a
 	// non-chat pane (Review) is open, the strip appears so it has somewhere to
 	// live — a lone code chat then reads as [chat][Review].
-	if (!alwaysShow && tabs.length <= 1 && viewTabs.length === 0) return null;
+	if (!inSplit && tabs.length <= 1 && viewTabs.length === 0) return null;
 
 	// New-tab "+" — plain-click shares the workspace worktree; right-click offers
 	// the stacked/ask modes.
@@ -576,6 +590,14 @@ export function SessionTabs({
 										>
 											<span className="grow">Rename chat</span>
 										</ContextMenu.Item>
+										{/* The cross-bar drag, spelled out: a bar down to its last
+								    tab has no room to show a drag, and this is also the
+								    only way back for someone who never found the gesture. */}
+										{onMoveAcross && (
+											<ContextMenu.Item onClick={() => onMoveAcross(key)}>
+												<span className="grow">Move to {moveAcrossSide} side</span>
+											</ContextMenu.Item>
+										)}
 										<ContextMenu.Separator />
 										<ContextMenu.Item onClick={() => void copySessionTranscript(session, "concise", onToast)}>
 											<span className="grow">Copy concise transcript</span>
