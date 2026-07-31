@@ -4266,6 +4266,13 @@ export function SessionViewer({
 											onArchive={handleArchive}
 											running={isRunningLive}
 											refreshTick={gitRefreshTick}
+											leading={
+												<StagingLink
+													session={session}
+													variant="header"
+													refreshTick={gitRefreshTick}
+												/>
+											}
 										/>
 									</div>
 								)}
@@ -4322,31 +4329,6 @@ export function SessionViewer({
 												setSelectedAssetPath(path);
 												onOpenAssets?.();
 											}}
-											previewActions={
-												<>
-													<PreviewButton
-														session={session}
-														onAttachImage={(img) =>
-															setImages((prev) => [...prev, img])
-														}
-														onStatusChange={setPreviewStatus}
-														onOpenTab={
-															onOpenPreviewTab
-																? () => {
-																	setInfoPageOpen(false);
-																	onOpenPreviewTab();
-																}
-																: undefined
-														}
-														variant="action"
-													/>
-													<StagingLink
-														session={session}
-														refreshTick={gitRefreshTick}
-														variant="action"
-													/>
-												</>
-											}
 											onOpenTab={(tab) => {
 												setSubagentStack([]);
 												if (tab === "changes" || tab === "pr") {

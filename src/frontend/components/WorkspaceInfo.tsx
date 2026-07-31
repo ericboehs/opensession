@@ -1,6 +1,6 @@
 import { AGENT_NAME } from "../lib/brand";
 import { BASE_PATH } from "../lib/base";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { parsePatchFiles } from "@pierre/diffs";
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
@@ -53,7 +53,6 @@ import {
 	IconChevronDown,
 	IconClock,
 	IconFile,
-	IconGlobe,
 	IconPlay,
 	IconPullRequest,
 	IconSparkle,
@@ -135,9 +134,6 @@ interface Props {
 	liveMediaCount: number;
 	/** Images visible in the chat UI before the transcript-backed overview catches up. */
 	liveMedia?: WorkspaceMediaItem[];
-	/** Preview controls supplied by the mobile workspace page. When present they
-	    replace the panel's generic staging action in the Actions grid. */
-	previewActions?: ReactNode;
 }
 
 const INFO_LABEL_CLASS = "px-1 text-[12px] font-[650] tracking-[-0.01em] text-faint";
@@ -1400,7 +1396,6 @@ export function WorkspaceInfo({
 	liveMedia = [],
 	assets = [],
 	onOpenAsset,
-	previewActions,
 }: Props) {
 	const chatsKey = chats.map((c) => c.id).join(",");
 	const cacheKey = workspaceId || `chats:${chatsKey}`;
@@ -1600,6 +1595,13 @@ export function WorkspaceInfo({
 					{title}
 				</div>
 				{meta && <div className="text-[12px] leading-[1.35] text-faint">{meta}</div>}
+				<ReviewerChip
+					sessionId={sessionId}
+					reviewRequest={reviewRequest}
+					requestSessionId={reviewRequestSessionId}
+					acceptedFromPr={reviewAcceptedFromPr}
+					onReviewChange={onReviewChange}
+				/>
 				{sandbox && (
 					<div className="mt-1 flex flex-wrap items-center gap-1.5">
 						<SandboxBadge sandbox={sandbox} />
@@ -1626,45 +1628,6 @@ export function WorkspaceInfo({
 					onReload={reloadStatus}
 				/>
 			)}
-			<div className={INFO_SECTION_CLASS}>
-				<div className={INFO_LABEL_CLASS}>Actions</div>
-				<div className="grid grid-cols-2 gap-0.5 rounded-lg bg-panel p-1">
-					{previewActions}
-					{repo && (
-						<button
-							type="button"
-							className={ACTION_BUTTON_CLASS}
-							onClick={() => onOpenTab?.("pr")}
-							title="Open the full-width review"
-						>
-							<span className={ACTION_ICON_CLASS}>
-								<IconPullRequest size={18} />
-							</span>
-							<span className="min-w-0 flex-1 truncate">Review changes</span>
-						</button>
-					)}
-					{!previewActions && prState === "OPEN" && pr?.staging?.url && (
-						<button
-							type="button"
-							className={ACTION_BUTTON_CLASS}
-							onClick={() => onOpenTab?.("staging")}
-							title="Open the preview environment"
-						>
-							<span className={ACTION_ICON_CLASS}>
-								<IconGlobe size={18} />
-							</span>
-							<span className="min-w-0 flex-1 truncate">Preview</span>
-						</button>
-					)}
-					<ReviewerChip
-						sessionId={sessionId}
-						reviewRequest={reviewRequest}
-						requestSessionId={reviewRequestSessionId}
-						acceptedFromPr={reviewAcceptedFromPr}
-						onReviewChange={onReviewChange}
-					/>
-				</div>
-			</div>
 			{hasBody ? (
 				<div className="grid gap-4">
 					{comments.length > 0 && (
