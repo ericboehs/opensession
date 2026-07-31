@@ -276,7 +276,7 @@ export function LineStats({
   );
 }
 
-/** Tiny colored file-type badge (linguist-ish hues, muted for white text). */
+/** Compact colored file-type badge (linguist-ish hues, muted for white text). */
 function ExtBadge({ name }: { name: string }) {
   const dot = name.lastIndexOf(".");
   const ext = dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toLowerCase() : "";
@@ -284,7 +284,7 @@ function ExtBadge({ name }: { name: string }) {
   const label = (ext || "?").slice(0, 3).toUpperCase();
   return (
     <span
-      className="flex h-4 w-[18px] flex-shrink-0 items-center justify-center rounded-[4px] text-[7px] font-bold leading-none text-white"
+      className="flex h-5 min-w-5 flex-shrink-0 items-center justify-center rounded-[4px] px-0.5 text-meta font-bold leading-none text-white"
       style={{ background: color }}
     >
       {label}

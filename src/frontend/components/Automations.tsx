@@ -216,7 +216,7 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
         <Button
 					variant="primary"
 					size="lg"
-					className="px-[18px] text-[13.5px] font-medium"
+					className="px-[18px] text-control-label font-medium"
 					onClick={() => setShowModal(true)}
 				>
 					+ New automation
@@ -634,7 +634,7 @@ function TriggerGraph({ runs, compact }: { runs: AutomationRun[]; compact?: bool
         })}
       </svg>
       {!compact && (
-        <span className="text-faint text-[10px] leading-none pb-px">
+        <span className="pb-px text-meta leading-none text-faint">
           {total} run{total === 1 ? "" : "s"} · last {GRAPH_DAYS}d
         </span>
       )}
@@ -905,7 +905,7 @@ function TypeChooser({
               >
                 <div className="flex items-baseline gap-2 mb-1">
                   <span className="text-fg text-[13px] font-medium">{t.name}</span>
-                  <span className="text-faint text-[10px] tracking-[-0.01em] ml-auto shrink-0">
+                  <span className="ml-auto shrink-0 text-meta tracking-[-0.01em] text-faint">
                     {CATEGORY_LABELS[t.category] || t.category}
                   </span>
                 </div>
@@ -1191,7 +1191,7 @@ function AutomationForm({
             placeholder="C0123456789 (channel id)"
             className="mono-input"
           />
-          <span className="text-faint text-[11.5px] leading-snug mt-1">
+          <span className="mt-1 text-meta leading-snug text-faint">
             Invite @michael to the channel first — the bot only receives messages
             for channels it's a member of. One run per top-level message; thread
             replies don't re-trigger. Channel id is in the channel's “About” tab.
@@ -1238,7 +1238,7 @@ function AutomationForm({
                 ))}
               </select>
             </label>
-            <div className="text-faint text-[11.5px]">
+            <div className="text-meta text-faint">
               Every automation also gets a secret webhook URL you can POST to —
               shown on its card after creation.
             </div>

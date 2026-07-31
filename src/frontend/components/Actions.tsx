@@ -102,7 +102,7 @@ export function Actions({ onOpenSession, selectedId, onSelect }: Props) {
             Run a registered repo script behind a form. Each run opens as a session you can fork.
           </PageDescription>
         </div>
-        <Button variant="primary" size="lg" className="mt-[18px] px-[18px] text-[13.5px] font-medium" onClick={() => setShowForm(true)}>
+        <Button variant="primary" size="lg" className="mt-[18px] px-[18px] text-control-label font-medium" onClick={() => setShowForm(true)}>
           + New action
         </Button>
       </PageHeader>

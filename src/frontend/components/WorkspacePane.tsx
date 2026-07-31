@@ -207,7 +207,7 @@ export function WorkspacePane({
 					</div>
 				</div>
 				<div className="mt-4">
-					<div className="text-faint text-[11.5px] font-semibold uppercase tracking-wide">
+					<div className="text-meta font-semibold uppercase tracking-wide text-faint">
 						Chats
 					</div>
 					{chats.length === 0 ? (
@@ -299,7 +299,7 @@ export function WorkspacePane({
 		<div className="workspace-view-main flex flex-col h-full min-h-0">
 			<div className="flex-1 min-h-0 overflow-y-auto">
 				<div className="w-full max-w-[760px] mx-auto px-5 py-6">
-					<div className="text-fg font-semibold text-[18px]">
+					<div className="text-section-title font-semibold text-fg">
 						{workspace.name}
 					</div>
 					<div className="text-dim text-[12.5px] mt-1 flex items-center gap-2 flex-wrap">

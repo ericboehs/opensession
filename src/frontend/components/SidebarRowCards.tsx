@@ -303,7 +303,7 @@ export function SupportRowCard({
 					{labels.map((l) => (
 						<span
 							key={l.id}
-							className="rounded-sm border border-line bg-surface px-1.5 py-0.5 text-[10.5px] text-dim"
+							className="rounded-sm border border-line bg-surface px-1.5 py-0.5 text-meta text-dim"
 						>
 							{l.icon ? `${l.icon} ` : ""}
 							{l.name}

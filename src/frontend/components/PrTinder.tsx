@@ -722,12 +722,12 @@ function SwipeCard({
 					<span>·</span>
 					<span>{ageLabel(pr.createdAt)} old</span>
 					{pr.isDraft && (
-						<span className="rounded border border-yellow/50 px-1.5 py-px text-[10px] font-bold tracking-[-0.01em] text-yellow">
+						<span className="rounded border border-yellow/50 px-1.5 py-px text-meta font-bold tracking-[-0.01em] text-yellow">
 							Draft
 						</span>
 					)}
 				</div>
-				<div className="mt-1 text-[15px] font-semibold leading-snug text-fg">
+				<div className="mt-1 text-item-title font-semibold leading-snug text-fg">
 					{pr.title}
 				</div>
 				<div className="mt-2 flex flex-wrap items-center gap-1.5">

@@ -177,7 +177,7 @@ function WriteChips({ a }: { a: WorkflowAgentSnapshot }) {
 
 function DetailPre({ text }: { text: string }) {
 	return (
-		<pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-surface p-2 font-mono text-[11.5px] leading-relaxed text-dim">
+		<pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-surface p-2 font-mono text-meta leading-relaxed text-dim">
 			{text}
 		</pre>
 	);
@@ -377,7 +377,7 @@ function WorkflowsEmptyState() {
 					].map((s) => (
 						<div
 							key={s}
-							className="rounded-sm border border-line bg-surface px-2.5 py-2 font-mono text-[11.5px] leading-relaxed text-dim"
+							className="rounded-sm border border-line bg-surface px-2.5 py-2 font-mono text-meta leading-relaxed text-dim"
 						>
 							{s}
 						</div>

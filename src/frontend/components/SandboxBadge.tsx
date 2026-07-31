@@ -30,7 +30,7 @@ export function SandboxBadge({
 	return (
 		<Tooltip label={label} multiline>
 			<span
-				className="flex flex-none cursor-default items-center gap-1 rounded-md border border-line bg-surface px-1.5 py-0.5 text-[11.5px] font-medium text-dim"
+				className="flex flex-none cursor-default items-center gap-1 rounded-md border border-line bg-surface px-1.5 py-0.5 text-meta font-medium text-dim"
 				data-testid="sandbox-badge"
 			>
 				<IconBox size={20} className="text-faint" />

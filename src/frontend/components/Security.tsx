@@ -96,7 +96,7 @@ export function Security({ onOpenSession }: Props) {
         <Button
 					variant="primary"
 					size="lg"
-					className="px-[18px] text-[13.5px] font-medium"
+					className="px-[18px] text-control-label font-medium"
 					onClick={() => setShowNewScan(true)}
 				>
 					+ New scan
@@ -450,7 +450,7 @@ function NewScanModal({
             ))}
           </select>
           {profiles.length === 0 && (
-            <span className="text-faint text-[11.5px] mt-1">
+            <span className="mt-1 text-meta text-faint">
               No scan profiles yet — profiles customize how scans analyze your
               code. Create one under Security → Profiles.
             </span>
@@ -479,7 +479,7 @@ function NewScanModal({
             <option value="weekly">Weekly</option>
           </select>
           {!singleRepo && (
-            <span className="text-faint text-[11.5px] mt-1">
+            <span className="mt-1 text-meta text-faint">
               Recurring and interactive scans support one repository at a time.
             </span>
           )}

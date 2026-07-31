@@ -73,7 +73,7 @@ export const WorkBlock = React.memo(function WorkBlock({
           · {items.length} step{items.length === 1 ? "" : "s"}
         </span>
         {failures > 0 && !live && (
-          <span className="flex-shrink-0 text-[11.5px] text-red/80">· {failures} failed</span>
+          <span className="flex-shrink-0 text-meta text-red/80">· {failures} failed</span>
         )}
         {!expanded && last && (
           <span className="min-w-0 truncate font-mono text-[11px] text-faint">

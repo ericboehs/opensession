@@ -146,7 +146,7 @@ export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
         }`}
       >
         <div>
-          <PageTitle className={sel ? "text-[16px]" : undefined}>Goals</PageTitle>
+          <PageTitle className={sel ? "text-item-title" : undefined}>Goals</PageTitle>
           <PageDescription className={sel ? "hidden" : undefined}>
             Long-running, self-pacing missions — one managed session that remembers its own
             progress, paces itself, and stops when done.
@@ -155,7 +155,7 @@ export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
         <Button
 					variant="primary"
 					size="lg"
-					className="px-[18px] text-[13.5px] font-medium"
+					className="px-[18px] text-control-label font-medium"
 					onClick={() => setShowForm(true)}
 				>
 					+ New goal

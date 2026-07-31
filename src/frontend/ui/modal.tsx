@@ -191,7 +191,7 @@ function Header({
 				{/* Base UI renders Title as <h2> and Description as <p>; preflight
 				    isn't imported (global.css owns resets), so zero their UA margins
 				    or the <h2> top margin reads as phantom padding above the head. */}
-				<BaseDialog.Title className="m-0 text-balance text-[18px] font-semibold leading-tight tracking-[-0.01em] text-fg">
+				<BaseDialog.Title className="m-0 text-balance text-section-title font-semibold leading-tight tracking-[-0.01em] text-fg">
 					{title}
 				</BaseDialog.Title>
 				{description && (

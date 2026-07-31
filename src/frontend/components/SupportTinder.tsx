@@ -577,13 +577,13 @@ function SwipeCard({
 					)}
 					{prio && (
 						<span
-							className={`rounded border px-1.5 py-px text-[10px] font-bold tracking-[-0.01em] ${prio.cls}`}
+							className={`rounded border px-1.5 py-px text-meta font-bold tracking-[-0.01em] ${prio.cls}`}
 						>
 							{prio.label}
 						</span>
 					)}
 				</div>
-				<div className="mt-1 text-[15px] font-semibold leading-snug text-fg">
+				<div className="mt-1 text-item-title font-semibold leading-snug text-fg">
 					{thread.title || "(no subject)"}
 				</div>
 			</div>

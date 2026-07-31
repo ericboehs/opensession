@@ -439,7 +439,7 @@ function RunningToolDuration({ entry }: { entry: TranscriptEntry }) {
   return (
     <span
       data-tool-duration
-      className="hidden flex-shrink-0 text-[10.5px] tabular-nums text-faint group-hover:block"
+      className="hidden flex-shrink-0 text-meta tabular-nums text-faint group-hover:block"
     >
       {formatToolDuration(durationMs)}
     </span>
@@ -554,7 +554,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
             role="button"
             tabIndex={0}
             className={cn(
-              "flex-shrink-0 rounded border border-line px-1.5 py-px text-[10.5px] text-dim opacity-100 transition-opacity hover:border-line-strong hover:text-fg focus:opacity-100",
+              "flex-shrink-0 rounded border border-line px-1.5 py-px text-meta text-dim opacity-100 transition-opacity hover:border-line-strong hover:text-fg focus:opacity-100",
               !subagentLive && "md:opacity-0 md:group-hover:opacity-100"
             )}
             onClick={(e) => {
@@ -568,7 +568,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
         )}
 
         {duration && (
-          <span className="flex-shrink-0 text-[10.5px] tabular-nums text-faint">{duration}</span>
+          <span className="flex-shrink-0 text-meta tabular-nums text-faint">{duration}</span>
         )}
         {pending && <RunningToolDuration entry={entry} />}
 
@@ -579,7 +579,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
             <IconX size={20} />
           </span>
         ) : !result ? (
-          <span className="flex-shrink-0 text-[10.5px] text-faint">—</span>
+          <span className="flex-shrink-0 text-meta text-faint">—</span>
         ) : null}
       </button>
 
@@ -596,7 +596,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
               {resultContent && (
                 <div
                   className={cn(
-                    "px-2.5 pb-1 pt-1.5 text-[10px] font-bold tracking-[-0.01em]",
+                    "px-2.5 pb-1 pt-1.5 text-meta font-bold tracking-[-0.01em]",
                     failed ? "text-red" : "text-faint"
                   )}
                 >

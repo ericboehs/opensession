@@ -347,7 +347,7 @@ export function PreviewButton({
           Copy preview link
         </button>
       )}
-      <div className="mt-1.5 text-center text-[10.5px] text-faint">
+      <div className="mt-1.5 text-center text-meta text-faint">
         {running || anyRunning ? (
           "Stops this worktree's dev process group only."
         ) : bootable ? (

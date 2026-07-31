@@ -205,7 +205,7 @@ const SNOOZE_OPTIONS: { label: string; seconds: number }[] = [
 ];
 
 const actionPill =
-	"text-[11.5px] font-semibold px-2 py-0.5 rounded-full border cursor-pointer bg-transparent text-dim border-line hover:text-fg hover:border-line-strong disabled:opacity-50 disabled:cursor-default";
+	"cursor-pointer rounded-full border border-line bg-transparent px-2 py-0.5 text-meta font-semibold text-dim hover:border-line-strong hover:text-fg disabled:cursor-default disabled:opacity-50";
 
 /**
  * Quick thread actions mirroring Plain's own inbox: status (Todo / Snoozed /
@@ -574,7 +574,7 @@ export function PlainReplyBox({
 						key={k}
 						type="button"
 						className={cn(
-							"text-[11.5px] font-semibold px-2 py-0.5 rounded-full border cursor-pointer",
+							"cursor-pointer rounded-full border px-2 py-0.5 text-meta font-semibold",
 							kind === k
 								? "bg-active text-fg border-line-strong"
 								: "bg-transparent text-faint border-line hover:text-dim",
@@ -585,7 +585,7 @@ export function PlainReplyBox({
 					</button>
 				))}
 				{sent && (
-					<span className="text-green text-[11.5px] font-semibold">Sent ✓</span>
+					<span className="text-meta font-semibold text-green">Sent ✓</span>
 				)}
 			</div>
 			<textarea
@@ -611,7 +611,7 @@ export function PlainReplyBox({
 						{error}
 					</span>
 				) : (
-					<span className="text-faint text-[11.5px] truncate">
+					<span className="truncate text-meta text-faint">
 						{kind === "note"
 							? `Posted as ${currentUser} (via ${PRODUCT_NAME})`
 							: `Sends via Plain, signed “${currentUser.split(/\s+/)[0]}”`}

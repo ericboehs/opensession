@@ -66,7 +66,7 @@ export function NoteBubble({ note }: { note: ChatMessage }) {
 				<UserAvatar name={note.user} size={18} />
 				<span className="text-[12.5px] font-semibold text-fg">{note.user}</span>
 				<span
-					className="text-[10.5px] font-semibold"
+					className="text-meta font-semibold"
 					style={{ color: "var(--yellow)" }}
 					title="Team note — the agent doesn't see this"
 				>
@@ -75,7 +75,7 @@ export function NoteBubble({ note }: { note: ChatMessage }) {
 				<span className="text-[11px] text-faint">{noteTime(note.ts)}</span>
 			</div>
 			{note.text && (
-				<div className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-fg">
+				<div className="whitespace-pre-wrap text-body leading-relaxed text-fg">
 					<NoteText text={note.text} />
 				</div>
 			)}

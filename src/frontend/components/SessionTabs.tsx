@@ -418,7 +418,7 @@ export function SessionTabs({
 				{archived.map((s) => (
 					<Menu.Item key={s.id} onClick={() => onSelect(s)}>
 						<span className="min-w-0 flex-1 truncate">{s.title}</span>
-						<span className="shrink-0 text-[11.5px] text-faint">{relativeTime(s.lastActivity)}</span>
+						<span className="shrink-0 text-meta text-faint">{relativeTime(s.lastActivity)}</span>
 						<button
 							type="button"
 							className="flex shrink-0 cursor-pointer items-center rounded-sm border-0 bg-transparent p-0.5 text-dim hover:text-fg"

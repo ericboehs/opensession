@@ -324,7 +324,7 @@ function UsageBar({ label, window: w }: { label: string; window: UsageWindow | n
 	const pct = w?.utilization ?? null;
 	const tone = pct === null ? "gray" : pct >= 90 ? "red" : pct >= 70 ? "yellow" : "green";
 	return (
-		<div className="mt-2 flex items-center gap-2 text-[11.5px] text-dim">
+		<div className="mt-2 flex items-center gap-2 text-meta text-dim">
 			<span className="w-11 shrink-0 truncate text-faint">{label}</span>
 			<div className="min-w-10 flex-1 overflow-hidden rounded-xs bg-active h-1.5">
 				<div
@@ -335,7 +335,7 @@ function UsageBar({ label, window: w }: { label: string; window: UsageWindow | n
 			<span className="w-[34px] shrink-0 text-right tabular-nums">
 				{pct === null ? "—" : `${Math.round(pct)}%`}
 			</span>
-			<span className="w-[132px] shrink-0 whitespace-nowrap text-[10.5px] text-faint">
+			<span className="w-[132px] shrink-0 whitespace-nowrap text-meta text-faint">
 				{formatReset(w?.resetsAt ?? null)}
 			</span>
 		</div>
@@ -360,7 +360,7 @@ function ExtraUsageRow({
 	const tone = pct === null ? "gray" : pct >= 90 ? "red" : pct >= 70 ? "yellow" : "green";
 	return (
 		<div
-			className="mt-2 flex items-center gap-2 text-[11.5px] text-dim"
+			className="mt-2 flex items-center gap-2 text-meta text-dim"
 			title="Usage-credits — pay-as-you-go spend past the subscription limits, against this account's monthly credit cap (set at claude.ai)"
 		>
 			<span className="w-11 shrink-0 truncate text-faint">Credits</span>
@@ -371,7 +371,7 @@ function ExtraUsageRow({
 				/>
 			</div>
 			<span className="w-[34px] shrink-0 text-right tabular-nums">{usd(extra.usedCredits)}</span>
-			<span className="w-[132px] shrink-0 whitespace-nowrap text-[10.5px] text-faint">
+			<span className="w-[132px] shrink-0 whitespace-nowrap text-meta text-faint">
 				{extra.monthlyLimit > 0 ? `of ${usd(extra.monthlyLimit)}/mo` : "no monthly cap set"}
 				{extra.enabled ? "" : " · off"}
 			</span>
@@ -550,7 +550,7 @@ function ClaudeAccountsSection() {
 									<span className="font-mono">{a.tokenMasked}</span>
 								</SettingRowDescription>
 								{a.noUsageScope && !a.usage ? (
-									<div className="text-faint text-[11.5px] mt-1.5">
+									<div className="mt-1.5 text-meta text-faint">
 										Usage not visible — setup-tokens cannot read the usage endpoint. Add
 										a Claude OAuth credentials path for this account to show usage.
 									</div>
@@ -563,16 +563,16 @@ function ClaudeAccountsSection() {
 										))}
 										<ExtraUsageRow extra={a.usage?.extraUsage} />
 										{a.usage?.source === "meridian" && (
-											<div className="text-faint text-[11.5px] mt-1.5">
+											<div className="mt-1.5 text-meta text-faint">
 												Observed via the Meridian bridge (rate-limit events from live
 												runs) — the token can’t read the usage endpoint directly.
 											</div>
 										)}
 										{a.usage?.error && (
-											<div className="text-red text-[11.5px] mt-1.5">{a.usage.error}</div>
+											<div className="mt-1.5 text-meta text-red">{a.usage.error}</div>
 										)}
 										{a.credentialsPath && (
-											<div className="text-faint text-[11.5px] mt-1.5 truncate">
+											<div className="mt-1.5 truncate text-meta text-faint">
 												Usage credentials: <code>{a.credentialsPath}</code>
 											</div>
 										)}

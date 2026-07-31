@@ -145,7 +145,7 @@ export function PrChecksPopover({
 					<span className="text-[12px] font-semibold text-fg">
 						{sorted.length} check{sorted.length === 1 ? "" : "s"}
 					</span>
-					<span className="inline-flex gap-2 text-[11.5px] font-semibold">
+					<span className="inline-flex gap-2 text-meta font-semibold">
 						{summary.passed > 0 && <span className="text-green">{summary.passed} passed</span>}
 						{summary.failed > 0 && <span className="text-red">{summary.failed} failed</span>}
 						{summary.pending > 0 && <span className="text-yellow">{summary.pending} running</span>}
