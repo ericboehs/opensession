@@ -158,11 +158,14 @@ function Face({
 	size,
 	status,
 	selected,
+	ring,
 }: {
 	member: TeamMember;
 	size: number;
 	status?: boolean;
 	selected?: boolean;
+	/** Colour of the gap a piled face cuts into the one behind it. */
+	ring?: string;
 }) {
 	const state = presenceState(member);
 	return (
@@ -174,13 +177,19 @@ function Face({
 				name={member.person.name}
 				size={size}
 				className={cn(status && state === "away" && "opacity-45 grayscale")}
-				// An outline follows the squircle radius and paints outside the box,
-				// so the picked face reads as ringed rather than boxed.
-				style={
-					selected
+				style={{
+					// The ring paints the row's own colour just outside the picture,
+					// so the face in front cuts a clean gap into the one behind it
+					// instead of the two running together. It layers on top of the
+					// avatar's own hairline (--avatar-edge) rather than replacing it:
+					// without that edge a light photo dissolves into a light gap.
+					...(ring ? { boxShadow: `var(--avatar-edge), 0 0 0 2px ${ring}` } : null),
+					// An outline follows the squircle radius and paints outside the
+					// box, so the picked face reads as ringed rather than boxed.
+					...(selected
 						? { outline: "2px solid var(--accent)", outlineOffset: "1px" }
-						: undefined
-				}
+						: null),
+				}}
 			/>
 			{status && <StatusDot state={state} />}
 		</span>
@@ -195,6 +204,7 @@ export function TeamFacepile({
 	members,
 	size = 22,
 	max = 6,
+	ring = "var(--bg)",
 	selectedKey,
 	onSelect,
 	className,
@@ -202,6 +212,8 @@ export function TeamFacepile({
 	members: TeamMember[];
 	size?: number;
 	max?: number;
+	/** What the pile is painted on: each face rings itself in it to separate. */
+	ring?: string;
 	selectedKey?: string | null;
 	onSelect?: (member: TeamMember) => void;
 	className?: string;
@@ -214,8 +226,9 @@ export function TeamFacepile({
 	}
 	const overflow = members.length - shown.length;
 	// A shoulder's worth of overlap: enough to read as one group, shallow
-	// enough that every face stays a face rather than a sliver.
-	const overlap = Math.round(size * 0.16);
+	// enough that every face stays a face rather than a sliver. Two of those
+	// pixels go to the ring, so the tuck reads as a gap, not a collision.
+	const overlap = Math.round(size * 0.26);
 	return (
 		<div className={cn("flex items-center", className)}>
 			{shown.map((m, i) => {
@@ -233,7 +246,7 @@ export function TeamFacepile({
 				if (!onSelect)
 					return (
 						<span key={m.key} className="relative" style={style} title={label}>
-							<Face member={m} size={size} />
+							<Face member={m} size={size} ring={ring} />
 						</span>
 					);
 				return (
@@ -247,7 +260,7 @@ export function TeamFacepile({
 						aria-label={label}
 						onClick={() => onSelect(m)}
 					>
-						<Face member={m} size={size} selected={selected} />
+						<Face member={m} size={size} ring={ring} selected={selected} />
 					</button>
 				);
 			})}
@@ -277,12 +290,15 @@ export function TeamPresencePopover({
 	members,
 	size = 20,
 	max = 4,
+	ring,
 	onOpenSession,
 	className,
 }: {
 	members: TeamMember[];
 	size?: number;
 	max?: number;
+	/** Colour of the row the pile sits on — the faces ring themselves in it. */
+	ring?: string;
 	onOpenSession?: (session: UnifiedSession) => void;
 	className?: string;
 }) {
