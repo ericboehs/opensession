@@ -205,6 +205,34 @@ export function SessionTabs({
 		return out;
 	}, [tabs, orderDraft]);
 	const activeTopId = activeId ?? viewTabs.find((tab) => tab.active)?.id ?? null;
+
+	// With enough tabs the strip overflows and scrolls, so the tab that just
+	// became active can sit outside the visible window — opening a Review pane
+	// would foreground a tab you can't see. Nudge it just inside the edge (not
+	// centered) so its neighbours stay as context. Keyed on the selection only:
+	// re-running as sibling tabs come and go would yank the strip back while
+	// someone is scrolled away reading it.
+	const scrollRef = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		const box = scrollRef.current;
+		if (!box || !activeTopId) return;
+		const tab = box.querySelector<HTMLElement>('[aria-selected="true"]');
+		if (!tab) return;
+		const view = box.getBoundingClientRect();
+		const rect = tab.getBoundingClientRect();
+		// Clear the edge fade so the tab doesn't come to rest under it.
+		const pad = 28;
+		const shortLeft = rect.left - (view.left + pad);
+		const shortRight = rect.right - (view.right - pad);
+		const by = shortLeft < 0 ? shortLeft : shortRight > 0 ? shortRight : 0;
+		if (!by) return;
+		box.scrollBy({
+			left: by,
+			behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+				? "auto"
+				: "smooth",
+		});
+	}, [activeTopId]);
 	const tabUnits = React.useMemo(() => {
 		const visibleSplit = isPhone ? null : split;
 		const splitIds = visibleSplit
@@ -423,7 +451,7 @@ export function SessionTabs({
 
 	return (
 		<div className="session-tabs" role="tablist">
-			<div className="session-tabs-scroll">
+			<div className="session-tabs-scroll" ref={scrollRef}>
 				<Reorder.Group
 					as="div"
 					axis="x"
