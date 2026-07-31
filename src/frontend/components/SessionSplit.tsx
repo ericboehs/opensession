@@ -5,8 +5,11 @@ import { clampSplitRatio } from "../lib/split-tabs";
 type Socket = ReturnType<typeof useWebSocket>;
 export type SplitSide = "left" | "right";
 
+// The middle column is the divider hairline itself — no gutter around it. Its
+// grab area is a wider overlay (see .session-split-resize::after) so pointing at
+// it stays easy without a channel of background between the two panes.
 const splitColumns = (ratio: number) =>
-	`${ratio * 100}% 8px minmax(0, 1fr)`;
+	`${ratio * 100}% 1px minmax(0, 1fr)`;
 
 interface Props {
 	/** Which column holds the focused tab — it owns the shared header chrome. */

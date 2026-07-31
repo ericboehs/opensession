@@ -3380,24 +3380,31 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	flex: 1;
 	min-height: 0;
 }
+/* The divider between the columns IS the seam — one hairline on the same token
+   as every other divider, with the panes butted straight onto it. It used to be
+   a 2px bar floating in an 8px gutter, which read as two borders with a channel
+   of background between them, and left each tab bar's baseline hairline dying
+   3px short of the seam instead of running into it. */
 .session-split-resize {
 	position: relative;
 	z-index: 5;
+	background: var(--border);
 	cursor: col-resize;
 	touch-action: none;
+	transition: background 0.12s ease;
 }
+/* Grab area only: wider than the hairline, spilling over both panes without
+   taking any layout width of its own. */
 .session-split-resize::after {
 	content: "";
 	position: absolute;
 	top: 0;
 	bottom: 0;
-	left: 3px;
-	width: 2px;
-	background: var(--border);
-	transition: background 0.12s ease;
+	left: -4px;
+	right: -4px;
 }
-.session-split-resize:hover::after,
-body.resizing-tab-split .session-split-resize::after {
+.session-split-resize:hover,
+body.resizing-tab-split .session-split-resize {
 	background: var(--accent);
 }
 body.resizing-tab-split {
