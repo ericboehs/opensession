@@ -1125,7 +1125,7 @@ function ReviewerChip({
 		<Menu.Root>
 			<Menu.Trigger
 				className={cn(
-					"mt-1.5 inline-flex w-fit min-w-0 items-center gap-1 rounded-[calc(10px*var(--rf))] border border-line bg-control py-1.5 pl-2 pr-2.5 text-left text-[12.5px] font-[550] whitespace-nowrap text-dim shadow-control outline-none transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg active:scale-[0.96] data-[popup-open]:border-line-strong data-[popup-open]:bg-hover",
+					"mt-1.5 inline-flex w-fit min-w-0 items-center gap-1 rounded-[calc(10px*var(--rf))] border border-line bg-control py-1 pl-2 pr-2.5 text-left text-[12.5px] font-[550] whitespace-nowrap text-dim shadow-control outline-none transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg active:scale-[0.96] data-[popup-open]:border-line-strong data-[popup-open]:bg-hover",
 					needsMyReview
 						? "border-red/30 bg-red-soft text-red hover:border-red/50 hover:text-red"
 						: accepted
@@ -1149,7 +1149,7 @@ function ReviewerChip({
 				}
 			>
 				{needsMyReview ? (
-					<span className={cn(ACTION_ICON_CLASS, "text-red")}>
+					<span className={cn(ACTION_ICON_CLASS, "text-red opacity-80")}>
 						<IconBell size={20} />
 					</span>
 				) : accepted ? (
@@ -1178,7 +1178,9 @@ function ReviewerChip({
 									? `Review: ${pendingOthers.map(displayPerson).join(", ")}`
 									: "Request review"}
 				</span>
-				<IconChevronDown size={14} className="shrink-0 text-faint" />
+				{/* Inherit the chip's own tone at low strength — a fixed grey caret
+				    reads as a dead spot next to a red/green/yellow label. */}
+				<IconChevronDown size={14} className="shrink-0 opacity-55" />
 			</Menu.Trigger>
 			<Menu.Popup align="start" sideOffset={6} className="min-w-[200px]">
 				{needsMyReview && onReviewPr && (
