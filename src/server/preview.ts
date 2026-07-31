@@ -54,6 +54,13 @@ import {
   releasePoolPreview,
   resumePoolSyncIfNeeded,
 } from "./preview-pool";
+import {
+  previewScopeSystemdArgs,
+  previewScopeUnit,
+  stopUserScope,
+  systemdUserEnv,
+  systemdUserScopesAvailable,
+} from "./systemd-scopes";
 
 export interface PreviewService {
   /** Friendly label, e.g. "Webapp". */
@@ -577,30 +584,53 @@ export async function startPreview(worktreeDir: string): Promise<PreviewStatus> 
       `/tmp/backstage-preview-${basename(worktreeDir)}.log`,
       "a",
     );
-    // setsid puts the bring-up in its own process group (pgid = pid): the
-    // dev server and everything under it inherit that group, so a cancel
-    // (stopPreview mid-start) can kill the whole tree with one signal — and
-    // can never hit backstage's own group. The group is also written to
-    // .ports/dev-pgid so stop works across backstage restarts (ensure-up.sh's
-    // inner `just dev` overwrites it with its own detached group — either way
-    // the file points at the group that outlives the bring-up).
+    // Prefer a resource-controlled user scope. It contains the entire preview
+    // tree (Next/Turbopack, workflow, email, compilers) and survives a server
+    // restart without sharing opensession.service's memory budget. `setsid`
+    // remains inside it as the portable stop fallback and writes dev-pgid for
+    // older previews / hosts without a reachable user manager.
+    const innerCmd = [
+      "setsid",
+      "bash",
+      "-c",
+      `mkdir -p .ports && echo $$ > .ports/dev-pgid; ${cmd}`,
+    ];
+    const scoped = systemdUserScopesAvailable();
+    const unit = previewScopeUnit(worktreeDir);
+    const spawnCmd = scoped
+      ? [
+          "systemd-run",
+          "--user",
+          "--scope",
+          "--collect",
+          "--quiet",
+          `--unit=${unit}`,
+          ...previewScopeSystemdArgs(),
+          "--property=TimeoutStopSec=5",
+          "--",
+          ...innerCmd,
+        ]
+      : innerCmd;
     const proc = Bun.spawn(
-      ["setsid", "bash", "-c", `mkdir -p .ports && echo $$ > .ports/dev-pgid; ${cmd}`],
+      spawnCmd,
       {
         cwd: worktreeDir,
-        env: env as Record<string, string>,
+        env: {
+          ...(env as Record<string, string>),
+          ...(scoped ? systemdUserEnv(env) : {}),
+        },
         stdout: log,
         stderr: log,
         stdin: "ignore",
       },
     );
-    startPgids.set(worktreeDir, proc.pid);
+    if (!scoped) startPgids.set(worktreeDir, proc.pid);
     // Don't hold the event loop open on it, and clear the flag when it exits
     // (success flips to running via polling; failure/exit stops "starting").
     proc.unref();
     proc.exited.then(() => {
       starting.delete(worktreeDir);
-      startPgids.delete(worktreeDir);
+      if (!scoped) startPgids.delete(worktreeDir);
       try {
         closeSync(log);
       } catch {}
@@ -644,6 +674,9 @@ export async function stopPreview(worktreeDir: string): Promise<PreviewStatus> {
   }
   const ports = readPorts(worktreeDir);
   const pgids = new Set<number>();
+  // New host previews have a deterministic transient scope, so this also
+  // catches a bring-up that has not written dev-pgid or opened a port yet.
+  stopUserScope(previewScopeUnit(worktreeDir));
   // An in-flight bring-up has nothing listening yet, so the port scan below
   // can't see it — kill its dedicated process group (set up via setsid in
   // startPreview) so cancelling mid-start actually stops the build/dev server.

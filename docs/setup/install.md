@@ -148,6 +148,15 @@ what the code actually reads, by feature:
 | `OPENSESSION_MCP_CONFIG` | `<checkout>/mcp-config.json` | MCP config path override |
 | `SUGGEST_BRANCH_MODEL`, `NOTE_EDIT_MODEL`, `MONITOR_ANSWER_MODEL`, `DRAFT_AUTOMATION_MODEL` | `claude-haiku-4-5` | per-feature cheap-task models |
 
+**Linux systemd resource controls** — detached engines default to
+`MemoryHigh=6G`, `MemoryMax=12G`, `MemorySwapMax=1G`, and `TasksMax=1024`;
+host previews default to 8G/12G/1G/768 plus `CPUQuota=600%`. Tune them with
+`OPENSESSION_ENGINE_MEMORY_HIGH`, `OPENSESSION_ENGINE_MEMORY_MAX`,
+`OPENSESSION_ENGINE_SWAP_MAX`, `OPENSESSION_ENGINE_TASKS_MAX`, and the matching
+`OPENSESSION_PREVIEW_*` variables (`MEMORY_HIGH`, `MEMORY_MAX`, `SWAP_MAX`,
+`TASKS_MAX`, `CPU_QUOTA`). Limits cover the whole transient scope, including
+agent-started compilers, MCP proxies, and dev servers—not only `opencode`.
+
 **Integrations** — each has its own page with the full list:
 
 | Feature | Vars | Page |

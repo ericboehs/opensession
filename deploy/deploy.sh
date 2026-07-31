@@ -15,8 +15,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="${OPENSESSION_REPO_DIR:-$(dirname "$SCRIPT_DIR")}"
 HEALTH_URL="${OPENSESSION_HEALTH_URL:-http://127.0.0.1:3850/api/health}"
 SERVICE_USER="${OPENSESSION_SERVICE_USER:-$(stat -c '%U' "$REPO_DIR")}"
+SERVICE_UID="${OPENSESSION_SERVICE_UID:-$(id -u "$SERVICE_USER")}"
+SERVICE_GROUP="${OPENSESSION_SERVICE_GROUP:-$(id -gn "$SERVICE_USER")}"
+SERVICE_HOME_DIR="${OPENSESSION_SERVICE_HOME_DIR:-$(getent passwd "$SERVICE_USER" | cut -d: -f6)}"
 TARGET_SHA="${1:-origin/main}"
 MAX_DRAIN_WAIT="${MAX_DRAIN_WAIT:-480}"   # wait up to 8 min for idle before forcing the restart
+
+case "$SERVICE_HOME_DIR" in
+  ""|"/")
+    echo "[deploy] ERROR: unsafe home directory for service user $SERVICE_USER: '$SERVICE_HOME_DIR'" >&2
+    exit 1
+    ;;
+esac
 
 run_as_service_user() { runuser -u "$SERVICE_USER" -- "$@"; }
 
@@ -52,6 +62,30 @@ if ! cmp -s "$REPO_DIR/opensession.service" /etc/systemd/system/opensession.serv
   echo "[deploy] opensession.service changed — syncing unit + daemon-reload"
   cp "$REPO_DIR/opensession.service" /etc/systemd/system/opensession.service
   systemctl daemon-reload
+fi
+
+# Host safety fuses: the coordinator gets its own ceiling, while detached
+# engine/preview scopes share a bounded user slice. The per-scope limits are
+# passed by the application at systemd-run time; this persistent parent catches
+# many individually healthy scopes accumulating until the box becomes inert.
+OPENSESSION_RESOURCE_SOURCE="$REPO_DIR/deploy/systemd/opensession.service.d/resources.conf"
+OPENSESSION_RESOURCE_PATH="/etc/systemd/system/opensession.service.d/resources.conf"
+if ! cmp -s "$OPENSESSION_RESOURCE_SOURCE" "$OPENSESSION_RESOURCE_PATH"; then
+  echo "[deploy] OpenSession resource override changed — syncing drop-in + daemon-reload"
+  install -d -m 0755 "$(dirname "$OPENSESSION_RESOURCE_PATH")"
+  install -m 0644 "$OPENSESSION_RESOURCE_SOURCE" "$OPENSESSION_RESOURCE_PATH"
+  systemctl daemon-reload
+fi
+
+OPENSESSION_SLICE_SOURCE="$REPO_DIR/deploy/systemd/user/opensession.slice"
+OPENSESSION_SLICE_PATH="$SERVICE_HOME_DIR/.config/systemd/user/opensession.slice"
+if ! cmp -s "$OPENSESSION_SLICE_SOURCE" "$OPENSESSION_SLICE_PATH"; then
+  echo "[deploy] OpenSession user slice changed — syncing aggregate resource budget"
+  install -d -m 0755 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$(dirname "$OPENSESSION_SLICE_PATH")"
+  install -m 0644 -o "$SERVICE_USER" -g "$SERVICE_GROUP" \
+    "$OPENSESSION_SLICE_SOURCE" "$OPENSESSION_SLICE_PATH"
+  run_as_service_user env XDG_RUNTIME_DIR="/run/user/$SERVICE_UID" systemctl --user daemon-reload
+  run_as_service_user env XDG_RUNTIME_DIR="/run/user/$SERVICE_UID" systemctl --user start opensession.slice
 fi
 
 # Tella's Caddy listener binds directly to the host's Tailscale IP. At boot,

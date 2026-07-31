@@ -1,0 +1,10 @@
+[Unit]
+Description=OpenSession detached engines and previews aggregate resource budget
+
+[Slice]
+# Keep enough headroom for the OS, SSH/SSM, Caddy, Docker, and the main
+# OpenSession service even if many independent engine scopes grow together.
+MemoryHigh=72G
+MemoryMax=88G
+MemorySwapMax=4G
+TasksMax=8192

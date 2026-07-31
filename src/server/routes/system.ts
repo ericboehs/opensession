@@ -52,7 +52,130 @@ function systemStats(): Record<string, unknown> {
 			},
 			load: { "1m": load1, "5m": load5, "15m": load15, cores: cpus().length },
 			processes: processCensus(),
+			cgroups: cgroupCensus(),
 		};
+	} catch (e) {
+		return { error: String((e as Error)?.message || e) };
+	}
+}
+
+interface CgroupMemorySnapshot {
+	unit: string;
+	currentGb: number;
+	peakGb: number | null;
+	anonGb: number;
+	fileGb: number;
+	highGb: number | null;
+	maxGb: number | null;
+	tasks: number | null;
+	oom: number;
+	oomKill: number;
+}
+
+const gb = (bytes: number): number => +(bytes / 1e9).toFixed(2);
+
+function readCgroupNumber(path: string): number | null {
+	try {
+		const value = readFileSync(path, "utf8").trim();
+		if (!value || value === "max") return null;
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? parsed : null;
+	} catch {
+		return null;
+	}
+}
+
+function readCgroupMap(path: string): Record<string, number> {
+	const values: Record<string, number> = {};
+	try {
+		for (const line of readFileSync(path, "utf8").split("\n")) {
+			const [key, raw] = line.trim().split(/\s+/, 2);
+			const parsed = Number(raw);
+			if (key && Number.isFinite(parsed)) values[key] = parsed;
+		}
+	} catch {}
+	return values;
+}
+
+function cgroupSnapshot(dir: string): CgroupMemorySnapshot | null {
+	const current = readCgroupNumber(`${dir}/memory.current`);
+	if (current == null) return null;
+	const peak = readCgroupNumber(`${dir}/memory.peak`);
+	const high = readCgroupNumber(`${dir}/memory.high`);
+	const max = readCgroupNumber(`${dir}/memory.max`);
+	const tasks = readCgroupNumber(`${dir}/pids.current`);
+	const stat = readCgroupMap(`${dir}/memory.stat`);
+	const events = readCgroupMap(`${dir}/memory.events`);
+	return {
+		unit: dir.slice(dir.lastIndexOf("/") + 1),
+		currentGb: gb(current),
+		peakGb: peak == null ? null : gb(peak),
+		anonGb: gb(stat.anon || 0),
+		fileGb: gb(stat.file || 0),
+		highGb: high == null ? null : gb(high),
+		maxGb: max == null ? null : gb(max),
+		tasks,
+		oom: events.oom || 0,
+		oomKill: events.oom_kill || 0,
+	};
+}
+
+function collectScopeDirs(root: string, out: string[], depth = 0): void {
+	if (depth > 5) return;
+	try {
+		for (const entry of readdirSync(root, { withFileTypes: true })) {
+			if (!entry.isDirectory()) continue;
+			const path = `${root}/${entry.name}`;
+			if (/^opensession-(?:oc|preview)-.*\.scope$/.test(entry.name)) {
+				out.push(path);
+				continue;
+			}
+			collectScopeDirs(path, out, depth + 1);
+		}
+	} catch {}
+}
+
+function summarizeScopes(scopes: CgroupMemorySnapshot[]): Record<string, unknown> {
+	const sorted = scopes.sort((a, b) => b.currentGb - a.currentGb);
+	return {
+		count: sorted.length,
+		currentGb: +sorted.reduce((sum, scope) => sum + scope.currentGb, 0).toFixed(2),
+		anonGb: +sorted.reduce((sum, scope) => sum + scope.anonGb, 0).toFixed(2),
+		fileGb: +sorted.reduce((sum, scope) => sum + scope.fileGb, 0).toFixed(2),
+		oomKills: sorted.reduce((sum, scope) => sum + scope.oomKill, 0),
+		top: sorted.slice(0, 5),
+	};
+}
+
+let cgroupCache: { at: number; data: Record<string, unknown> } | null = null;
+
+/** cgroup v2 resource accounting for the coordinator and detached fleets.
+ * Includes anon vs file cache so a reclaimable compiler cache is not mistaken
+ * for the anonymous-memory exhaustion that wedged the host on 2026-07-31. */
+function cgroupCensus(): Record<string, unknown> {
+	if (cgroupCache && Date.now() - cgroupCache.at < 60_000) return cgroupCache.data;
+	try {
+		const uid = typeof process.getuid === "function" ? process.getuid() : 1000;
+		const userRoot = `/sys/fs/cgroup/user.slice/user-${uid}.slice/user@${uid}.service`;
+		const dirs: string[] = [];
+		collectScopeDirs(userRoot, dirs);
+		const snapshots = dirs
+			.map(cgroupSnapshot)
+			.filter((snapshot): snapshot is CgroupMemorySnapshot => snapshot != null);
+		const selfRelative = readFileSync("/proc/self/cgroup", "utf8")
+			.split("\n")
+			.find((line) => line.startsWith("0::"))
+			?.slice(3);
+		const data = {
+			coordinator: selfRelative ? cgroupSnapshot(`/sys/fs/cgroup${selfRelative}`) : null,
+			user: cgroupSnapshot(userRoot),
+			engines: summarizeScopes(snapshots.filter((scope) => scope.unit.startsWith("opensession-oc-"))),
+			previews: summarizeScopes(
+				snapshots.filter((scope) => scope.unit.startsWith("opensession-preview-")),
+			),
+		};
+		cgroupCache = { at: Date.now(), data };
+		return data;
 	} catch (e) {
 		return { error: String((e as Error)?.message || e) };
 	}

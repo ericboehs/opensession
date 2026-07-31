@@ -180,7 +180,10 @@ The script:
 4. when Caddy is installed, syncs the Tailscale boot-order/retry drop-in from
    `deploy/systemd/caddy.service.d/opensession.conf` and recovers Caddy if it
    was left failed by the tailnet-IP bind race,
-5. waits up to `MAX_DRAIN_WAIT` (480s) for `activeRuns == 0` on
+5. installs the coordinator resource override and the `opensession.slice`
+   aggregate budget for detached engine/preview scopes, preventing one session
+   or an accumulation of scopes from exhausting the host,
+6. waits up to `MAX_DRAIN_WAIT` (480s) for `activeRuns == 0` on
    `/opensession/api/health`, then `systemctl restart opensession` and a
    post-restart health gate.
 

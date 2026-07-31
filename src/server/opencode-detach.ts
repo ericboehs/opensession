@@ -35,6 +35,12 @@ import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync } f
 import type { Subprocess } from "bun";
 import { envAlias } from "./rename-compat";
 import { writeJsonAtomic } from "./shared/atomic-write";
+import {
+  engineScopeSystemdArgs,
+  stopUserScope,
+  systemdUserEnv,
+  systemdUserScopesAvailable,
+} from "./systemd-scopes";
 
 const HOME = process.env.HOME || "/home/ubuntu";
 
@@ -82,9 +88,6 @@ export function bunProcHandle(proc: Subprocess<"ignore", "pipe" | number, "pipe"
 
 const g = globalThis as any;
 
-const UID = typeof process.getuid === "function" ? process.getuid() : 1000;
-export const SYSTEMD_USER_RUNTIME = `/run/user/${UID}`;
-
 /** Opt this process into detached engine spawns. Called ONLY from
  *  opensession.ts's boot block — the runner-host and in-sandbox contexts keep
  *  direct children (no user manager there, and their lifecycle is their own). */
@@ -95,29 +98,14 @@ export function enableOpencodeServerDetach(): void {
 export function opencodeDetachActive(): boolean {
   if (envAlias("OPENSESSION_OC_DETACH", "BACKSTAGE_OC_DETACH") === "0") return false;
   if (g.__opencodeDetachEnabled !== true) return false;
-  return existsSync(`${SYSTEMD_USER_RUNTIME}/systemd/private`) && !!Bun.which("systemd-run");
-}
-
-function systemdEnv(): Record<string, string> {
-  return {
-    PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
-    XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || SYSTEMD_USER_RUNTIME,
-  };
+  return systemdUserScopesAvailable();
 }
 
 /** Ask the user manager to stop a scope. --no-block: never wedge a kill path
  *  on the manager; the scope's own TimeoutStopSec (set at spawn) handles the
  *  SIGTERM→SIGKILL escalation. Safe on already-gone units. */
 export function stopDetachedUnit(unit: string): void {
-  try {
-    Bun.spawn({
-      cmd: ["systemctl", "--user", "stop", "--no-block", `${unit}.scope`],
-      env: systemdEnv(),
-      stdin: "ignore",
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-  } catch {}
+  stopUserScope(unit);
 }
 
 // ── Registry ─────────────────────────────────────────────────────────────────
@@ -297,7 +285,7 @@ function scopeMainPid(unit: string): number | null {
   try {
     const shown = Bun.spawnSync({
       cmd: ["systemctl", "--user", "show", `${unit}.scope`, "-p", "ControlGroup", "--value"],
-      env: systemdEnv(),
+      env: systemdUserEnv(),
     });
     const cg = shown.stdout.toString().trim();
     if (!cg.startsWith("/")) return null;
@@ -335,7 +323,7 @@ export function reapUnregisteredScopes(knownUnits: Set<string>, graceMs = 5 * 60
         "systemctl", "--user", "list-units", "--plain", "--no-legend",
         "--type=scope", "opensession-oc-*.scope",
       ],
-      env: systemdEnv(),
+      env: systemdUserEnv(),
     }).stdout.toString();
   } catch {
     return 0;
@@ -387,6 +375,7 @@ export async function spawnDetachedOpencodeServer(opts: {
         "--collect",
         "--quiet",
         `--unit=${unit}`,
+        ...engineScopeSystemdArgs(),
         // SIGTERM→SIGKILL escalation for scope stops (meridian swallows TERM).
         "--property=TimeoutStopSec=5",
         "--",
@@ -396,7 +385,7 @@ export async function spawnDetachedOpencodeServer(opts: {
         `--port=${port}`,
       ],
       cwd: opts.cwd,
-      env: { ...opts.env, XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || SYSTEMD_USER_RUNTIME },
+      env: { ...opts.env, ...systemdUserEnv(opts.env) },
       stdin: "ignore",
       stdout: fd,
       stderr: fd,
