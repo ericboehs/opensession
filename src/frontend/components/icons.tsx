@@ -1004,13 +1004,14 @@ export function IconChart(p: IconProps) {
   );
 }
 
-// ⋯ more options.
+// iconic-pro `dots-horizontal` — ⋯ more options. (Was hand-drawn at 6/12/18
+// with r=1.3, which sat wider and heavier than the set's own 8/12/16 r=1.)
 export function IconDotsHorizontal(p: IconProps) {
   return (
     <Svg {...p}>
-      <circle cx="6" cy="12" r="1.3" fill="currentColor" />
-      <circle cx="12" cy="12" r="1.3" fill="currentColor" />
-      <circle cx="18" cy="12" r="1.3" fill="currentColor" />
+      <circle cx="8" cy="12" r="1" fill="currentColor" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" />
+      <circle cx="16" cy="12" r="1" fill="currentColor" />
     </Svg>
   );
 }

@@ -127,6 +127,7 @@ import {
 	IconArrowUp,
 	IconArrowUpToLine,
 	IconCrosshair,
+	IconDotsHorizontal,
 	IconPin,
 	IconPullRequest,
 	IconLink,
@@ -4151,18 +4152,19 @@ export function SessionViewer({
 						<div className="viewer-overflow">
 							<Menu.Trigger
 								className={cn(
-									// Square 32px box so it matches the icon buttons beside it —
-									// as a bare `⋯` character its height would otherwise be
-									// whatever the text line box measures (28px), not a hit area.
-									"inline-flex h-8 w-8 items-center justify-center rounded-[calc(10px*var(--rf))] border border-transparent bg-transparent p-0 text-[20px] leading-none text-dim",
+									// Square 32px box with a real glyph inside, matching the
+									// share and side-panel buttons beside it. This used to
+									// render a bare `⋯` character, so its height was whatever
+									// the text line box measured (28px) rather than a hit area.
+									"inline-flex h-8 w-8 items-center justify-center rounded-[calc(10px*var(--rf))] border border-transparent bg-transparent p-0 text-dim",
 									"hover:bg-hover hover:text-fg",
-									"max-[720px]:h-10 max-[720px]:min-h-10 max-[720px]:w-10 max-[720px]:rounded-full max-[720px]:border-line max-[720px]:bg-bg max-[720px]:p-0 max-[720px]:text-[24px] max-[720px]:text-accent max-[720px]:shadow-[0_2px_12px_rgba(0,0,0,0.1)]",
+									"max-[720px]:h-10 max-[720px]:min-h-10 max-[720px]:w-10 max-[720px]:rounded-full max-[720px]:border-line max-[720px]:bg-bg max-[720px]:p-0 max-[720px]:text-accent max-[720px]:shadow-[0_2px_12px_rgba(0,0,0,0.1)]",
 									overflowOpen && "bg-hover text-fg max-[720px]:border-[color-mix(in_srgb,var(--accent)_12%,transparent)] max-[720px]:bg-accent-soft max-[720px]:text-accent",
 								)}
 								title="More actions"
 								aria-label="More actions"
 							>
-								⋯
+								<IconDotsHorizontal size={22} />
 							</Menu.Trigger>
 							<Menu.Popup
 								align="end"
@@ -4233,14 +4235,16 @@ export function SessionViewer({
 								size="md"
 								// No height/width overrides: the primitive's icon-only box is
 								// already the 32px square the ⋯ and share buttons use.
-								className="[.viewer-overflow_+_&]:-ml-1 rounded-[calc(10px*var(--rf))] text-faint hover:bg-hover hover:text-fg max-[720px]:order-2 max-[720px]:h-[38px] max-[720px]:min-h-[38px] max-[720px]:w-[38px] max-[720px]:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] max-[720px]:text-[15px] max-[720px]:text-accent"
+								// text-dim, not text-faint: the share and ⋯ buttons beside it
+								// are dim, and a lighter ink made this read as disabled.
+								className="[.viewer-overflow_+_&]:-ml-1 rounded-[calc(10px*var(--rf))] text-dim hover:bg-hover hover:text-fg max-[720px]:order-2 max-[720px]:h-[38px] max-[720px]:min-h-[38px] max-[720px]:w-[38px] max-[720px]:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] max-[720px]:text-accent"
 								onClick={() => setPanelOpen(!panelOpen)}
 								aria-label="Toggle side panel"
 								// Iconic sidebar-right glyph — reads as "right side panel".
 								// Passed as `icon` (not children) so the primitive uses its
 								// icon-only square; as a child it counts as a label and gets
 								// the text button's px-3, which made it 50px wide.
-								icon={<IconSidebarRight size={24} />}
+								icon={<IconSidebarRight size={22} />}
 							/>
 						</Tooltip>
 					)}
