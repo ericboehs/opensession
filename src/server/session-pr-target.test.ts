@@ -73,4 +73,23 @@ describe("sessionPrBranch", () => {
 			sessionPrBranch({ id: "bks-ask" } as UnifiedSession, null),
 		).toBeNull();
 	});
+
+	// A workspace can hold chats from several repos; the branch belongs to one.
+	test("never inherits a branch from another repo", () => {
+		expect(
+			sessionPrBranch({ id: "bks-ask", repo: "backstage" } as UnifiedSession, {
+				...workspace,
+				repo: "tella-fusion",
+			}),
+		).toBeNull();
+	});
+
+	test("inherits when both sides name the same repo", () => {
+		expect(
+			sessionPrBranch({ id: "bks-ask", repo: "tella-fusion" } as UnifiedSession, {
+				...workspace,
+				repo: "tella-fusion",
+			}),
+		).toBe("add-lottie-primitive");
+	});
 });
