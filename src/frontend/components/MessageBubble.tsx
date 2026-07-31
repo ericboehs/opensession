@@ -14,6 +14,7 @@ import {
 } from "../lib/humanReply";
 import { useCurrentUser } from "./UserPicker";
 import { Tooltip } from "../ui/tooltip";
+import { Button } from "../ui/button";
 import { BASE_PATH } from "../lib/base";
 import { resolveEntryImageSrc } from "../lib/osBlob";
 import { fullTime, shortTime } from "../lib/time";
@@ -110,17 +111,18 @@ export function ClampedBody({
 				</pre>
 			)}
 			{isLong && (
-				<button
-					type="button"
+				<Button
+					variant="ghost"
+					size="xs"
 					onClick={showAll ? () => setShowAll(false) : expand}
-					className="mt-1 cursor-pointer rounded-md border-0 bg-transparent px-2 py-1 text-left font-sans text-[12px] font-medium text-dim hover:bg-hover/40 hover:text-fg"
+					className="mt-1 min-h-0 justify-start whitespace-normal rounded-md border-0 px-2 py-1 text-left font-sans text-label font-medium hover:bg-hover/40"
 				>
 					{fetching
 						? "Loading…"
 						: showAll
 							? "Collapse"
 							: `Show full message · ${sizeLabel(fullLength)}`}
-				</button>
+				</Button>
 			)}
 		</>
 	);
@@ -441,11 +443,12 @@ export const MessageBubble = React.memo(function MessageBubble({
 					)}
 				>
 					<div className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-dim">
-						<button
-							type="button"
+						<Button
+							variant="ghost"
+							size="xs"
 							aria-expanded={workerReportOpen}
 							onClick={() => setWorkerReportOpen((open) => !open)}
-							className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-1 py-0.5 text-left font-sans text-xs font-medium text-dim hover:text-fg"
+							className="min-h-0 min-w-0 flex-1 justify-start gap-1.5 whitespace-normal rounded-md border-0 px-1 py-0.5 text-left font-sans text-xs font-medium hover:bg-transparent"
 						>
 							<span
 								className={cn(
@@ -456,7 +459,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 								<IconChevronDown size={16} />
 							</span>
 							<span>Worker report</span>
-						</button>
+						</Button>
 						<MsgTime ts={entry.timestamp} />
 					</div>
 					{workerReportOpen && (
@@ -523,11 +526,12 @@ export const MessageBubble = React.memo(function MessageBubble({
 					)}
 				>
 					<div className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-dim">
-						<button
-							type="button"
+						<Button
+							variant="ghost"
+							size="xs"
 							aria-expanded={reviewHandoffOpen}
 							onClick={() => setReviewHandoffOpen((open) => !open)}
-							className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-1 py-0.5 text-left font-sans text-xs font-medium text-dim hover:text-fg"
+							className="min-h-0 min-w-0 flex-1 justify-start gap-1.5 whitespace-normal rounded-md border-0 px-1 py-0.5 text-left font-sans text-xs font-medium hover:bg-transparent"
 						>
 							<span
 								className={cn(
@@ -541,7 +545,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 								🔍 Review findings
 								{reviewHandoff.prNumber ? ` · PR #${reviewHandoff.prNumber}` : ""}
 							</span>
-						</button>
+						</Button>
 						<MsgTime ts={entry.timestamp} />
 					</div>
 					{reviewHandoffOpen && (

@@ -70,6 +70,7 @@ import {
 import { isNoteUnread, onNoteReadsChanged } from "../lib/note-reads";
 import { usePeople } from "../lib/people";
 import { TeamPresencePopover, useTeamPresence } from "./TeamPresence";
+import { Button } from "../ui/button";
 import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { providerFromUrl } from "../lib/provider";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
@@ -7139,10 +7140,12 @@ function MobileActionSheet({
 							{MINE_STATUS_META.map((m) => {
 								const on = pinnedLane(session) === m.key;
 								return (
-									<button
+									<Button
+										variant="ghost"
+										size="xs"
 										key={m.key}
 										type="button"
-										className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-[13px]"
+										className="min-h-0 gap-1.5 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
 										style={{
 											borderColor: on ? m.dotColor : "var(--border)",
 											color: on ? "var(--text)" : "var(--text-dim)",
@@ -7162,12 +7165,14 @@ function MobileActionSheet({
 											}}
 										/>
 										{m.label}
-									</button>
+									</Button>
 								);
 							})}
-							<button
+							<Button
+										variant="ghost"
+										size="xs"
 								type="button"
-								className="rounded-md border px-2 py-1 text-[13px]"
+								className="min-h-0 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
 								style={{
 									borderColor: !pinnedLane(session)
 										? "var(--text-dim)"
@@ -7182,7 +7187,7 @@ function MobileActionSheet({
 								}}
 							>
 								Auto
-							</button>
+							</Button>
 						</div>
 					</div>
 				)}
@@ -8209,10 +8214,12 @@ function WsMobileSheet({
 									{MINE_STATUS_META.map((m) => {
 										const on = sharedManual === m.key;
 										return (
-											<button
+											<Button
+										variant="ghost"
+										size="xs"
 												key={m.key}
 												type="button"
-												className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-[13px]"
+												className="min-h-0 gap-1.5 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
 												style={{
 													borderColor: on ? m.dotColor : "var(--border)",
 													color: on ? "var(--text)" : "var(--text-dim)",
@@ -8234,12 +8241,14 @@ function WsMobileSheet({
 													}}
 												/>
 												{m.label}
-											</button>
+											</Button>
 										);
 									})}
-									<button
+									<Button
+										variant="ghost"
+										size="xs"
 										type="button"
-										className="rounded-md border px-2 py-1 text-[13px]"
+										className="min-h-0 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
 										style={{
 											borderColor: !anyManual
 												? "var(--text-dim)"
@@ -8249,7 +8258,7 @@ function WsMobileSheet({
 										onClick={closing(() => onSetStatus(null))}
 									>
 										Auto
-									</button>
+									</Button>
 								</div>
 							</div>
 						);
@@ -8266,10 +8275,12 @@ function WsMobileSheet({
 						</div>
 						<div className="flex flex-wrap gap-1.5">
 							{snoozePresets().map((p) => (
-								<button
+								<Button
+										variant="ghost"
+										size="xs"
 									key={p.label}
 									type="button"
-									className="rounded-md border px-2 py-1 text-[13px]"
+									className="min-h-0 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
 									style={{
 										borderColor: "var(--border)",
 										color: "var(--text-dim)",
@@ -8280,12 +8291,14 @@ function WsMobileSheet({
 									}}
 								>
 									{p.label}
-								</button>
+								</Button>
 							))}
 							{snoozeUntil && (
-								<button
+								<Button
+										variant="ghost"
+										size="xs"
 									type="button"
-									className="rounded-md border px-2 py-1 text-[13px]"
+									className="min-h-0 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
 									style={{
 										borderColor: "var(--text-dim)",
 										color: "var(--text)",
@@ -8296,7 +8309,7 @@ function WsMobileSheet({
 									}}
 								>
 									Unsnooze
-								</button>
+								</Button>
 							)}
 						</div>
 					</div>
