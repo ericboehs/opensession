@@ -7699,6 +7699,11 @@ function wsPrInfo(row: WsCardRow) {
 	return { prChat, branch, prReady, prStatusBits };
 }
 
+/** Stills rendered in the hover card's filmstrip. The strip scrolls, so this
+ *  is only a bound on how many images a hover preview loads; the rest are a
+ *  "+N" away in the lightbox. */
+const MAX_HOVERCARD_MEDIA = 8;
+
 // The info half of the workspace card: branch + diff + status mark, title,
 // blocked-question callout, latest-message description, media thumbnails.
 // Rendered inside the hover card (desktop) and the long-press sheet (mobile).
@@ -7768,13 +7773,17 @@ function WsOverviewInfo({
 			)}
 
 			{media.length > 0 && (
-				<div className="mt-2 flex gap-1.5">
-					{media.slice(0, 4).map((m, i) => (
+				// A filmstrip, like the info panel's screenshots: a 62px square
+				// crop of a 1440px screenshot is a grey band of text, not a
+				// picture of anything. Whole frames, scrolled sideways — and
+				// everything is reachable instead of hidden behind a "+3".
+				<div className="mt-2 flex snap-x snap-mandatory gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+					{media.slice(0, MAX_HOVERCARD_MEDIA).map((m, i) => (
 						<button
 							key={`${m.sessionId}:${m.at}:${i}`}
 							type="button"
 							onClick={() => openLightbox(media, i)}
-							className="relative block h-[58px] w-[62px] shrink-0 overflow-hidden rounded-sm border border-line bg-surface p-0"
+							className="relative block aspect-video w-[124px] shrink-0 snap-start overflow-hidden rounded-sm border border-line bg-surface p-0"
 							title={[m.chatTitle, new Date(m.at).toLocaleString()]
 								.filter(Boolean)
 								.join(" · ")}
@@ -7784,7 +7793,7 @@ function WsOverviewInfo({
 									src={m.src}
 									alt=""
 									loading="lazy"
-									className="h-full w-full object-cover"
+									className="h-full w-full object-contain"
 								/>
 							) : (
 								<>
@@ -7793,18 +7802,19 @@ function WsOverviewInfo({
 										muted
 										playsInline
 										preload="metadata"
-										className="h-full w-full object-cover"
+										className="h-full w-full object-contain"
 									/>
 									<span className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-white drop-shadow">
 										▶
 									</span>
 								</>
 							)}
-							{i === 3 && media.length > 4 && (
-								<span className="absolute inset-0 grid place-items-center bg-black/55 text-xs font-semibold text-white">
-									+{media.length - 4}
-								</span>
-							)}
+							{i === MAX_HOVERCARD_MEDIA - 1 &&
+								media.length > MAX_HOVERCARD_MEDIA && (
+									<span className="absolute inset-0 grid place-items-center bg-black/55 text-xs font-semibold text-white">
+										+{media.length - MAX_HOVERCARD_MEDIA + 1}
+									</span>
+								)}
 						</button>
 					))}
 				</div>

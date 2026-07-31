@@ -1799,15 +1799,29 @@ export function WorkspaceInfo({
 							<div className={INFO_LABEL_CLASS}>
 								{media.length} screenshot{media.length === 1 ? "" : "s"}
 							</div>
+							{/* A filmstrip, not a grid of crops. A screenshot in a
+							    three-up grid is 154px wide: object-cover then throws
+							    away everything but a slice of the middle, and the tile
+							    reads as a grey band of text rather than a picture of
+							    something. Give each still most of the panel's width
+							    instead and scroll sideways between them — the next one
+							    peeking past the edge is the affordance. */}
 							<div
-								className={cn(INFO_LIST_CLASS, "grid-cols-2 gap-1 sm:grid-cols-3")}
+								// The same panel surface the neighbouring lists sit on
+								// (INFO_LIST_CLASS), but laid out as a scroller — spelled
+								// out rather than composed, so its overflow isn't fighting
+								// that constant's `overflow-hidden`.
+								className="flex snap-x snap-mandatory gap-1 overflow-x-auto overflow-y-hidden rounded-lg bg-panel p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 							>
 								{media.map((m, i) => (
 									<button
 										key={`${m.sessionId}:${m.at}:${i}`}
 										type="button"
 										onClick={() => openLightbox(media, i)}
-										className="relative aspect-video overflow-hidden rounded-md border border-line bg-surface transition-colors hover:border-line-strong hover:bg-hover"
+										className={cn(
+											"relative aspect-video shrink-0 snap-start overflow-hidden rounded-md border border-line bg-surface transition-colors hover:border-line-strong hover:bg-hover",
+											media.length === 1 ? "w-full" : "w-[76%]",
+										)}
 										title={[m.chatTitle, new Date(m.at).toLocaleString()]
 											.filter(Boolean)
 											.join(" · ")}
@@ -1817,7 +1831,9 @@ export function WorkspaceInfo({
 												src={m.src}
 												alt=""
 												loading="lazy"
-												className="h-full w-full object-cover"
+												// contain, not cover: a screenshot is only worth
+												// showing if the whole frame is there.
+												className="h-full w-full object-contain"
 											/>
 										) : (
 											<>
@@ -1829,7 +1845,7 @@ export function WorkspaceInfo({
 													muted
 													playsInline
 													preload="metadata"
-													className="h-full w-full object-cover"
+													className="h-full w-full object-contain"
 												/>
 												{/* Dark translucent disc so the wedge reads on any
 												    frame (a bare white glyph vanishes on light
