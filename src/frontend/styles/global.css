@@ -3632,14 +3632,26 @@ html.wco .viewer-branch {
 	}
 }
 
+/* Icon buttons sit in a tight cluster (the same 2px this row already uses on
+   phones, and what the sidebar's back/forward/search cluster uses) so they
+   read as one control group rather than three separate buttons. The row also
+   carries labelled items — the Linear/Plain links, the presence facepile, the
+   PR chip — which need real breathing room, so they space themselves below
+   rather than the row spacing everything alike. */
 .viewer-header-actions {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 2px;
 	flex-shrink: 0;
 }
-.viewer-overflow + .btn-panel-toggle.btn-workspace {
-	margin-left: -4px;
+.viewer-header-actions .session-link,
+.viewer-header-actions .presence {
+	margin-right: 6px;
+}
+/* The PR chip sits mid-cluster (after the globe, before the panel toggle), so
+   it needs the gap on both sides rather than just a trailing one. */
+.viewer-header-actions .pr-head {
+	margin-inline: 6px;
 }
 
 /* Narrow (non-phone) top bar: give the title room first. Drop the "by X" line
@@ -3968,10 +3980,15 @@ html.wco .viewer-branch {
 	color: var(--accent);
 	background: var(--accent-soft);
 }
-/* Staging globe rides a touch smaller than the other code icons — trim its
-   hitarea to match the reduced glyph so the box hugs it rather than floating. */
+/* The staging globe rides in the header's icon cluster, 2px from the ⋯, so it
+   takes the same 32px square box as the share / ⋯ / panel buttons rather than
+   the padding-derived 35×31 it used to size itself to. Its glyph stays a touch
+   smaller than theirs, and its state colouring (dim → amber → green, accent on
+   hover) is its own — that's what the control communicates. */
 .staging-icon {
-	padding: 2px 4px;
+	width: 32px;
+	height: 32px;
+	padding: 0;
 }
 /* Staging: amber (dimmed) while the deploy builds, green once Ready. */
 .staging-icon.is-building {
