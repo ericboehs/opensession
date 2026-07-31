@@ -76,7 +76,7 @@ const variants: Record<Variant, string> = {
 	ghost: "border-transparent text-dim hover:bg-hover hover:text-fg",
 	// Outline green, mirroring `danger` — the affirmative half of the pair
 	// (approve a review, merge, confirm). Green is the second-most reached-for
-	// button colour in the app after the accent, so it earns a variant rather
+	// button color in the app after the accent, so it earns a variant rather
 	// than a bespoke class each time.
 	success: "border-green text-green hover:bg-green-soft",
 	// Outline red, like the delete-worktree confirm buttons.

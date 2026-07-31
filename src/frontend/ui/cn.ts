@@ -1,5 +1,36 @@
 import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
+
+/**
+ * The semantic type scale from styles/tailwind.css. tailwind-merge only ships
+ * knowledge of the stock `text-*` sizes (xs/sm/base/lg/…), and `text-*` is an
+ * ambiguous prefix — it spells both font-size and text color. Anything it
+ * doesn't recognise as a size it therefore files under color, which meant
+ * `cn("… text-white …", "text-control-label")` dropped the `text-white` as a
+ * conflicting color and left the label inheriting the surface's text color.
+ * That is exactly what turned the primary CTA on Home into dark-on-red.
+ *
+ * Registering the scale here keeps size and color in separate conflict groups,
+ * so a caller can restyle a primitive's type without silently unstyling it.
+ */
+const semanticFontSizes = [
+	"meta",
+	"supporting",
+	"control-label",
+	"label",
+	"body",
+	"item-title",
+	"section-title",
+	"page-title",
+] as const;
+
+const twMerge = extendTailwindMerge({
+	extend: {
+		classGroups: {
+			"font-size": [{ text: [...semanticFontSizes] }],
+		},
+	},
+});
 
 /**
  * Class combiner for the ui/ layer: clsx for conditionals, tailwind-merge so
