@@ -285,12 +285,21 @@ export function SettingsMenu({
 				</div>
 			) : user ? (
 				/* Avatar-only trigger for the desktop shell's chrome row — the name
-				   and connection state stay in the menu itself. */
+				   stays in the menu itself. The avatar carries the connection dot,
+				   which is the only place this variant reports the live connection
+				   (the menu suppresses its status row for triggers that show it). */
 				<Menu.Trigger
 					aria-label="Account menu"
 					className="flex shrink-0 items-center rounded-md border-none bg-transparent p-1 text-fg hover:bg-hover data-[popup-open]:bg-hover"
 				>
-					<UserAvatar name={currentUser} size={24} />
+					<span className="relative inline-flex shrink-0">
+						<UserAvatar name={currentUser} size={24} />
+						<span
+							className="app-logo-status"
+							style={{ background: connected ? "var(--green)" : "var(--red)" }}
+							title={connected ? "Connected" : "Reconnecting…"}
+						/>
+					</span>
 				</Menu.Trigger>
 			) : top ? (
 				<Menu.Trigger
