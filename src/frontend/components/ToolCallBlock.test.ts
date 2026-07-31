@@ -6,6 +6,7 @@ import {
   toolFamily,
   toolLineStats,
   toolSummary,
+  visibleResultContent,
 } from "./ToolCallBlock";
 
 const roots = [
@@ -151,4 +152,15 @@ test("tool duration uses the result timestamp or a live clock", () => {
     60_000
   );
   expect(toolDurationMs(entry)).toBeNull();
+});
+
+test("image reads show the image without the redundant engine acknowledgement", () => {
+  expect(visibleResultContent("Image read successfully", true, false)).toBe("");
+  expect(visibleResultContent("Image read successfully.", true, false)).toBe("");
+  expect(visibleResultContent("Image is 1600 x 900", true, false)).toBe(
+    "Image is 1600 x 900"
+  );
+  expect(visibleResultContent("Image read successfully", true, true)).toBe(
+    "Image read successfully"
+  );
 });

@@ -464,6 +464,8 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
   const duration = stepDuration(entry, result);
   const failed = Boolean(result?.isError);
   const inputNode = expanded ? toolInputNode(canonical, entry.toolInput) : null;
+  const resultContent = visibleResultContent(result?.content, hasMedia, failed);
+  const mediaOnly = hasMedia && !resultContent && !inputNode;
 
   // A Task/Agent call whose sub-agent transcript we can open in the sidebar.
   // Claude-SDK results carry a structured agentId; opencode's task tool only
@@ -583,32 +585,47 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
 
       {expanded && (
         <div
-          className="relative z-[1] mb-1.5 ml-[30px] mt-0.5 overflow-hidden rounded-lg bg-panel"
+          className={cn(
+            "relative z-[1] mb-1.5 ml-[30px] mt-0.5",
+            mediaOnly ? "overflow-visible" : "overflow-hidden rounded-lg bg-panel"
+          )}
         >
           {inputNode && <div className="p-1.5">{inputNode}</div>}
-          {result && (result.content || result.images?.length || result.videos?.length) && (
+          {result && (resultContent || result.images?.length || result.videos?.length) && (
             <>
+              {resultContent && (
+                <div
+                  className={cn(
+                    "px-2.5 pb-1 pt-1.5 text-[10px] font-bold tracking-[-0.01em]",
+                    failed ? "text-red" : "text-faint"
+                  )}
+                >
+                  {failed ? "Error" : "Output"}
+                </div>
+              )}
               <div
                 className={cn(
-                  "px-2.5 pb-1 pt-1.5 text-[10px] font-bold tracking-[-0.01em]",
-                  failed ? "text-red" : "text-faint"
+                  resultContent && "px-1.5 pb-1.5",
+                  failed && "[&_.tool-pre]:text-red/75"
                 )}
               >
-                {failed ? "Error" : "Output"}
-              </div>
-              <div className={cn("px-1.5 pb-1.5", failed && "[&_.tool-pre]:text-red/75")}>
-                {result.content && (
+                {resultContent && (
                   <div className="tool-code-surface">
-                    {renderResultContent(canonical, entry.toolInput, result.content)}
+                    {renderResultContent(canonical, entry.toolInput, resultContent)}
                   </div>
                 )}
                 {result.images && result.images.length > 0 && (
-                  <div className="tool-result-images">
+                  <div className={cn("tool-result-images", !resultContent && "!mt-0")}>
                     {result.images.map((raw, i) => {
                       const src = resolveEntryImageSrc(raw, sessionId);
                       return (
                         <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="md-image-link">
-                          <img className="md-image" src={src} alt="" loading="lazy" />
+                          <img
+                            className={cn("md-image", !resultContent && "!my-0")}
+                            src={src}
+                            alt=""
+                            loading="lazy"
+                          />
                         </a>
                       );
                     })}
@@ -642,6 +659,17 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
       )}
     </div>
   );
+}
+
+/** Drop engine acknowledgements when the media itself is the useful result. */
+export function visibleResultContent(
+  content: string | undefined,
+  hasMedia: boolean,
+  failed: boolean
+): string {
+  if (!content) return "";
+  if (!failed && hasMedia && /^Image read successfully\.?$/.test(content.trim())) return "";
+  return content;
 }
 
 /**
