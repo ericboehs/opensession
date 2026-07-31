@@ -64,6 +64,21 @@ function sessionMatchesPr(
 	primaryOnly = false,
 ): boolean {
 	if (sessionRepo(session) === pr.repo && session.branch === pr.branch) return true;
+	// A `github-pr-review` chat checks the PR out on a derived `<head>-os-review`
+	// branch, so its own branch never equals the PR's head and the comparison
+	// above can't see it. The server resolves the real head (sessionPrBranch) and
+	// records it as this session's `primary` PR ref — so that ref, and only that
+	// ref, still counts as owning the PR's branch. Attached/linked/discovered
+	// refs stay secondary and fall through to the check below.
+	if (
+		(session.prs || []).some(
+			(ref) =>
+				ref.source === "primary" &&
+				ref.repo === pr.repo &&
+				ref.branch === pr.branch,
+		)
+	)
+		return true;
 	if (primaryOnly) return false;
 	return (
 		(session.prs || []).some(

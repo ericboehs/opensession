@@ -279,6 +279,53 @@ describe("buildReviewQueue", () => {
 		expect(item.sessionId).toBe("primary");
 	});
 
+	test("links a review chat parked on its derived -os-review branch", () => {
+		const target = pr({ number: 15, branch: "add-timeline-range" });
+		const [item] = buildReviewQueue(
+			[target],
+			[
+				session({
+					id: "bks-ghpr-15-review",
+					branch: "add-timeline-range-os-review",
+					automation: "github-pr-review",
+					prs: [
+						{
+							repo: "tella-fusion",
+							branch: "add-timeline-range",
+							source: "primary",
+						},
+					],
+				}),
+			],
+			"Michiel",
+			"happylinks",
+		);
+		expect(item.sessionId).toBe("bks-ghpr-15-review");
+	});
+
+	test("keeps a secondary PR ref out of the primary link", () => {
+		const target = pr({ number: 16, branch: "linked-elsewhere" });
+		const [item] = buildReviewQueue(
+			[target],
+			[
+				session({
+					id: "linked-only",
+					branch: "something-else",
+					prs: [
+						{
+							repo: "tella-fusion",
+							branch: "linked-elsewhere",
+							source: "linked",
+						},
+					],
+				}),
+			],
+			"Michiel",
+			"happylinks",
+		);
+		expect(item.sessionId).toBeNull();
+	});
+
 	test("does not route an open PR through an archived session", () => {
 		const [item] = buildReviewQueue(
 			[pr({ number: 11, branch: "archived" })],
