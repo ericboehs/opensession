@@ -45,7 +45,7 @@ import {
 	type LiveSubagent,
 } from "./ToolCallBlock";
 import { MarkdownBody } from "./MarkdownBody";
-import { SubagentPanel, type SubagentRef } from "./SubagentPanel";
+import { SubagentPane, type SubagentRef } from "./SubagentPane";
 import { ShellPanel } from "./TerminalPanel";
 import { getCurrentUser, useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
@@ -303,7 +303,23 @@ interface Props {
 	onClosePreviewTab?: () => void;
 	/** Return from a view-tab (Review/Preview environment/Assets) to this workspace's active chat. */
 	onOpenWorkspace?: () => void;
+	/**
+	 * Whether the sub-agent pane (a Task drill-in from this chat's transcript,
+	 * full-width) is foregrounded — driven by the top tab strip's sub-agent
+	 * view-tab (App state).
+	 */
+	showSubagent?: boolean;
+	/** Breadcrumb of opened sub-agents; the last entry is the one shown. */
+	subagentStack?: SubagentRef[];
+	/** Open/foreground a sub-agent (a Task call's "Watch" affordance). */
+	onOpenSubagent?: (sessionId: string, agentId: string, label: string) => void;
+	/** Pop back to the sub-agent that spawned the current one. */
+	onSubagentBack?: (sessionId: string) => void;
 }
+
+// Stable identity for "no sub-agent open", so the default prop doesn't hand
+// the memoized transcript a fresh array on every render.
+const NO_SUBAGENTS: SubagentRef[] = [];
 
 type PanelTab =
 	| "info"
@@ -551,6 +567,10 @@ export function SessionViewer({
 	onOpenAssets,
 	onCloseAssets,
 	onOpenWorkspace,
+	showSubagent = false,
+	subagentStack = NO_SUBAGENTS,
+	onOpenSubagent,
+	onSubagentBack,
 }: Props) {
 	const [localRepos, setLocalRepos] = useState<
 		Awaited<ReturnType<typeof fetchRepos>> | null | undefined
@@ -645,14 +665,16 @@ export function SessionViewer({
 			recorded: false,
 		};
 	}
-	// A full-width view-tab (Review, Staging, or Assets) takes over the chat
-	// column, so the chat DOM isn't mounted while any is up — the scroll /
+	// A full-width view-tab (Review, Staging, Assets, a sub-agent) takes over the
+	// chat column, so the chat DOM isn't mounted while any is up — the scroll /
 	// history / scroll-restore effects below must bail in all cases.
+	const subagentOpen = showSubagent && subagentStack.length > 0;
 	const chatHidden =
 		showReview ||
 		showStaging ||
 		showAssets ||
 		showPreviewTab ||
+		subagentOpen ||
 		(showConversation && !!conversationThreadId) ||
 		(showVideo && !!videoPanel);
 	const [cachedTranscript] = useState(() => peekCachedTranscriptView(session.id));
@@ -932,10 +954,9 @@ export function SessionViewer({
 	// (the top tab strip's Review view-tab) and passed in as `showReview`; the
 	// open triggers call onOpenReview. Only meaningful on a code session
 	// (hasWorkspace) — App only offers the Review tab there.
-	// Sub-agent sidebar: a breadcrumb stack of opened sub-agents (clicking a Task
-	// call pushes; nested Task calls push further). Non-empty → the right region
-	// shows the sub-agent conversation instead of the Workspace panel.
-	const [subagentStack, setSubagentStack] = useState<SubagentRef[]>([]);
+	// Sub-agents open as their own view-tab (App owns the breadcrumb stack, like
+	// every other tab) — a sub-agent run is a conversation, so it gets the chat
+	// column rather than the right sidebar.
 	// Phones fold the desktop Workspace panel into the title-opened detail page.
 	// Keeping this state near panelOpen lets the shared diff poll serve either
 	// surface without mounting a second copy of the data hook.
@@ -944,13 +965,11 @@ export function SessionViewer({
 	// Stable identity so the memoized TranscriptBlocks bails out on unrelated
 	// re-renders (e.g. toggling the workspace panel) instead of re-rendering the
 	// whole transcript.
-	const openSubagent = useCallback((agentId: string, label: string) => {
-		setSubagentStack((prev) =>
-			prev.some((s) => s.agentId === agentId)
-				? prev
-				: [...prev, { agentId, label }],
-		);
-	}, []);
+	const openSubagent = useCallback(
+		(agentId: string, label: string) =>
+			onOpenSubagent?.(session.id, agentId, label),
+		[onOpenSubagent, session.id],
+	);
 	// The agent-published walkthrough, rendered inline in the chat as well as in
 	// the Review tab. Keyed on its contents so the object identity only changes
 	// when the walkthrough actually does — the sessions poll hands back a fresh
@@ -3333,25 +3352,9 @@ export function SessionViewer({
 
 	const [overflowOpen, setOverflowOpen] = useState(false);
 	// Left-edge swipe on phones pops the topmost overlay before the page stack:
-	// the sub-agent sheet and the info page register as
-	// higher-priority back-swipe layers, so the gesture closes them instead of
-	// popping the whole session back to the sidebar (App's layer, priority 0).
-	const panelPaneRef = useRef({
-		get current() {
-			// Whichever right-panel sheet is mounted (workspace or sub-agent).
-			return document.querySelector<HTMLElement>(".viewer-panel");
-		},
-	}).current;
-	useBackSwipe({
-		active:
-			isPhone && subagentStack.length > 0,
-		onBack: () => {
-			setSubagentStack([]);
-			setPanelOpen(false);
-		},
-		paneRef: panelPaneRef,
-		priority: 1,
-	});
+	// the info page registers as a higher-priority back-swipe layer, so the
+	// gesture closes it instead of popping the whole session back to the
+	// sidebar (App's layer, priority 0).
 	const infoPageRef = useRef<HTMLDivElement | null>(null);
 	const infoHeroNameRef = useRef<HTMLDivElement | null>(null);
 	useBackSwipe({
@@ -4196,16 +4199,7 @@ export function SessionViewer({
 								variant="ghost"
 								size="md"
 								className="[.viewer-overflow_+_&]:-ml-1 h-[30px] min-h-[30px] w-auto rounded-[calc(10px*var(--rf))] px-[5px] text-faint hover:bg-hover hover:text-fg max-[720px]:order-2 max-[720px]:min-h-[38px] max-[720px]:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] max-[720px]:px-[7px] max-[720px]:py-[5px] max-[720px]:text-[15px] max-[720px]:text-accent"
-								onClick={() => {
-									// The sub-agent panel and Workspace share the right slot; opening
-									// Workspace closes the sub-agent view.
-									if (subagentStack.length > 0) {
-										setSubagentStack([]);
-										setPanelOpen(true);
-									} else {
-										setPanelOpen(!panelOpen);
-									}
-								}}
+								onClick={() => setPanelOpen(!panelOpen)}
 								aria-label="Toggle side panel"
 							>
 								{/* Iconic sidebar-right glyph — reads as "right side panel" and
@@ -4356,7 +4350,6 @@ export function SessionViewer({
 												onOpenAssets?.();
 											}}
 											onOpenTab={(tab) => {
-												setSubagentStack([]);
 												if (tab === "changes" || tab === "pr") {
 													setInfoPageOpen(false);
 													onOpenReview?.();
@@ -4650,6 +4643,19 @@ export function SessionViewer({
 								selectedPath={selectedAssetPath}
 								showTree={false}
 								onOpenNewSession={onOpenNewSession}
+							/>
+						</div>
+					) : subagentOpen ? (
+						// A sub-agent's conversation, full-width like Review — it reads
+						// as a conversation, so it gets the chat column instead of being
+						// squeezed into the right sidebar. Nested Task calls push onto
+						// the same tab's breadcrumb.
+						<div className="viewer-review-main">
+							<SubagentPane
+								sessionId={session.id}
+								stack={subagentStack}
+								onOpenSubagent={openSubagent}
+								onBack={() => onSubagentBack?.(session.id)}
 							/>
 						</div>
 					) : showConversation && conversationThreadId ? (
@@ -5081,35 +5087,16 @@ export function SessionViewer({
 					)}
 				</div>
 
-				{/* Right region: a sub-agent conversation takes precedence over the
-            Workspace panel when one is open. Portaled to an app-level slot so it
-            opens as a full-height column beside the left sidebar (not just below
-            the chat header). */}
+				{/* Right region: the Workspace panel. Portaled to an app-level slot so
+            it opens as a full-height column beside the left sidebar (not just
+            below the chat header). */}
 				{(() => {
 				const rightRegion = (
 					<>
-				{(subagentStack.length > 0 ||
-					(!isPhone && panelAvailable && panelOpen)) && (
-					<div
-						className="panel-overlay"
-						onClick={() =>
-							subagentStack.length > 0
-								? setSubagentStack([])
-								: setPanelOpen(false)
-						}
-					/>
+				{!isPhone && panelAvailable && panelOpen && (
+					<div className="panel-overlay" onClick={() => setPanelOpen(false)} />
 				)}
-				{subagentStack.length > 0 ? (
-					<SubagentPanel
-						sessionId={session.id}
-						stack={subagentStack}
-						onOpenSubagent={openSubagent}
-						onBack={() => setSubagentStack((prev) => prev.slice(0, -1))}
-						onClose={() => setSubagentStack([])}
-						style={panelStyle}
-						resizeHandle={panelResizeHandle}
-					/>
-				) : !isPhone && panelAvailable && panelOpen ? (
+				{!isPhone && panelAvailable && panelOpen ? (
 					<div className="viewer-panel" style={panelStyle}>
 						{panelResizeHandle}
 						{/* Phones open this panel as a full-width bottom sheet, so it

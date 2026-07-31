@@ -37,7 +37,7 @@ interface Props {
 	/** Sub-agents the session spawned directly (task tool) — rendered as their
 	 *  own card above the workflow runs. */
 	subagents?: SessionSubagentSnapshot[];
-	/** Opens a sub-agent's conversation in the SubagentPanel sidebar. */
+	/** Opens a sub-agent's conversation in its own view tab. */
 	onOpenSubagent?: (agentId: string, label: string) => void;
 }
 
@@ -261,7 +261,7 @@ export function WorkflowPanel({
  *  sessions / Claude-SDK Task agents) — one card in the same visual grammar as
  *  a workflow run: StatusMark rows with agent-type/model chips, tokens and
  *  duration. Clicking a row opens the sub-agent's real conversation in the
- *  SubagentPanel sidebar (the id doubles as the fetchSubagent key). */
+ *  sub-agent view tab (the id doubles as the fetchSubagent key). */
 function SubagentsCard({
 	subagents,
 	now,

@@ -11,6 +11,10 @@ const VIEW_TABS = [
 	"staging",
 	"assets",
 	"preview",
+	// A sub-agent drill-in opened from a chat's transcript. Transient: its
+	// breadcrumb stack only lives in memory, so this one is never persisted
+	// (saveActiveViewTab drops it) — a reload would restore an empty tab.
+	"subagent",
 ] as const;
 
 export type ActiveViewTab = (typeof VIEW_TABS)[number] | null;
@@ -43,6 +47,9 @@ export function saveActiveViewTab(
 	tab: ActiveViewTab,
 ): void {
 	if (!workspaceId) return;
+	// Sub-agent tabs are transient — leave the workspace's remembered pane
+	// alone rather than restoring a tab whose stack is gone.
+	if (tab === "subagent") return;
 	const map = read();
 	map[workspaceId] = tab;
 	try {

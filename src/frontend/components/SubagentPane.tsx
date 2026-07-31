@@ -17,21 +17,17 @@ interface Props {
   onOpenSubagent: (agentId: string, label: string) => void;
   /** Pop back to the parent sub-agent in the stack. */
   onBack: () => void;
-  /** Close the panel entirely. */
-  onClose: () => void;
-  /** Panel width override (the shared right-sidebar --panel-w var). */
-  style?: React.CSSProperties;
-  /** Drag handle for resizing, rendered on the panel's left edge. */
-  resizeHandle?: React.ReactNode;
 }
 
 /**
- * Right sidebar showing a sub-agent's conversation, mirroring the Workspace
- * panel. Fetches over REST and, while the parent session is still running,
- * polls so a live sub-agent's transcript fills in. Sub-agents that spawn their
- * own sub-agents are navigable via the breadcrumb stack.
+ * A sub-agent's conversation, rendered full-width as its own view tab beside
+ * the chat tabs — a sub-agent run is a conversation, so it reads like one
+ * instead of being squeezed into the right sidebar. Fetches over REST and,
+ * while the parent session is still running, polls so a live sub-agent's
+ * transcript fills in. Sub-agents that spawn their own sub-agents are
+ * navigable via the breadcrumb stack.
  */
-export function SubagentPanel({ sessionId, stack, onOpenSubagent, onBack, onClose, style, resizeHandle }: Props) {
+export function SubagentPane({ sessionId, stack, onOpenSubagent, onBack }: Props) {
   const current = stack[stack.length - 1];
   const [data, setData] = useState<SubagentTranscript | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -93,8 +89,7 @@ export function SubagentPanel({ sessionId, stack, onOpenSubagent, onBack, onClos
     : null;
 
   return (
-    <div className="viewer-panel subagent-panel" style={style}>
-      {resizeHandle}
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="subagent-head">
         <div className="subagent-head-top">
           <span className="subagent-chip">sub-agent</span>
@@ -109,10 +104,8 @@ export function SubagentPanel({ sessionId, stack, onOpenSubagent, onBack, onClos
               {modelLabel}
             </span>
           )}
+          {/* No close button: the tab's × owns that, like Review and Assets. */}
           {data?.sessionRunning && <span className="subagent-live-dot" title="Session running" />}
-          <button className="panel-close" onClick={onClose} aria-label="Close sub-agent panel">
-            ✕
-          </button>
         </div>
         {stack.length > 1 && (
           <button className="subagent-back" onClick={onBack}>

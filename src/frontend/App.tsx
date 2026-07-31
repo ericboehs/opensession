@@ -38,6 +38,7 @@ import { SettingsMenu } from "./components/SettingsMenu";
 import { TitleBar } from "./components/TitleBar";
 import { Settings, type SettingsSectionKey } from "./components/Settings";
 import { SessionTabs, type ViewTab } from "./components/SessionTabs";
+import type { SubagentRef } from "./components/SubagentPane";
 import { SessionSplit } from "./components/SessionSplit";
 import { RestartOverlay } from "./components/RestartOverlay";
 import { MediaLightboxHost } from "./components/MediaLightbox";
@@ -183,6 +184,10 @@ type Route =
 	| { view: "settings"; section?: SettingsSectionKey }
 	| { view: "archived" }
 	| { view: "catchup" };
+
+// Stable empty stack, so a chat with no sub-agent open hands the same array
+// identity down every render (the transcript memo compares props by identity).
+const NO_SUBAGENTS: SubagentRef[] = [];
 
 // Route views that render as a tool section inside the Settings surface.
 const TOOL_VIEWS = [
@@ -837,6 +842,7 @@ function App() {
 	const stagingActive = activeViewTab === "staging";
 	const assetsActive = activeViewTab === "assets";
 	const previewLiveActive = activeViewTab === "preview";
+	const subagentSelected = activeViewTab === "subagent";
 	// Workspaces whose Review / Conversation / Preview environment view-tab is
 	// present in the strip; empty by default (a tab is added when its pane is
 	// first opened).
@@ -868,6 +874,13 @@ function App() {
 	);
 	const [assetsOpen, setAssetsOpen] = useState<Set<string>>(
 		() => new Set(getActiveViewTabKeys("assets")),
+	);
+	// Sub-agent drill-ins, keyed by the chat they were opened from (a sub-agent
+	// belongs to one chat's run). The value is a breadcrumb stack — a Task call
+	// inside a sub-agent pushes another entry. In-memory only, like the tab
+	// itself: the transcript is re-fetched whenever it's reopened.
+	const [subagentTabs, setSubagentTabs] = useState<Record<string, SubagentRef[]>>(
+		{},
 	);
 	// Bumped when the per-workspace tab order changes (a drag-drop commit, or a
 	// storage push from another tab) so the strip re-derives `projectChats` in
@@ -1541,7 +1554,28 @@ function App() {
 					},
 				]
 			: [];
-	// Review leftmost, then Conversation, Preview environment, Preview, Assets.
+	// The sub-agent view-tab: a Task drill-in from the open chat's transcript.
+	// Bound to that chat rather than the workspace, so switching to a sibling
+	// chat hides it — and switching back brings its breadcrumb along. Only the
+	// OPEN chat's tab is ever built, so the id's session always matches the
+	// pane the split machinery resolves it to.
+	const subagentStack = currentSession
+		? (subagentTabs[currentSession.id] ?? NO_SUBAGENTS)
+		: NO_SUBAGENTS;
+	const subagentActive = subagentSelected && subagentStack.length > 0;
+	const subagentViewTabs: ViewTab[] =
+		currentSession && subagentStack.length > 0
+			? [
+					{
+						id: `subagent:${currentSession.id}`,
+						label: subagentStack[subagentStack.length - 1].label,
+						active: subagentActive,
+						dotClass: null,
+					},
+				]
+			: [];
+	// Review leftmost, then Conversation, Preview environment, Preview, Assets,
+	// and the sub-agent drill-in last (it comes and goes with the chat).
 	const viewTabs: ViewTab[] = [
 		...reviewViewTabs,
 		...conversationViewTabs,
@@ -1549,8 +1583,10 @@ function App() {
 		...stagingViewTabs,
 		...previewViewTabs,
 		...assetsViewTabs,
+		...subagentViewTabs,
 	];
 	function viewTabKind(id: string): Exclude<ActiveViewTab, null> | null {
+		if (id.startsWith("subagent:")) return "subagent";
 		if (id.startsWith("staging:")) return "staging";
 		if (id.startsWith("assets:")) return "assets";
 		if (id.startsWith("preview:")) return "preview";
@@ -1710,6 +1746,48 @@ function App() {
 		}
 		if (assetsActive) setActiveViewTab(null);
 	}
+	// Open (or foreground) a chat's sub-agent tab — the transcript's "Watch"
+	// drill-in on a Task call. A Task call inside the sub-agent pushes onto the
+	// same tab's breadcrumb instead of opening a second one. Stable identity:
+	// it reaches the memoized transcript as a prop, and the tab is never
+	// persisted, so it needs nothing from the render scope.
+	const openSubagent = React.useCallback(
+		(sessionId: string, agentId: string, label: string) => {
+			setSubagentTabs((prev) => {
+				const stack = prev[sessionId] ?? NO_SUBAGENTS;
+				if (stack.some((s) => s.agentId === agentId)) return prev;
+				return { ...prev, [sessionId]: [...stack, { agentId, label }] };
+			});
+			setActiveViewTabState("subagent");
+		},
+		[],
+	);
+	const popSubagent = React.useCallback((sessionId: string) => {
+		setSubagentTabs((prev) => {
+			const stack = prev[sessionId];
+			if (!stack?.length) return prev;
+			const next = { ...prev };
+			if (stack.length === 1) delete next[sessionId];
+			else next[sessionId] = stack.slice(0, -1);
+			return next;
+		});
+	}, []);
+	const closeSubagentTab = React.useCallback((sessionId: string) => {
+		setSubagentTabs((prev) => {
+			if (!prev[sessionId]) return prev;
+			const next = { ...prev };
+			delete next[sessionId];
+			return next;
+		});
+		// Same commit as the close, like every other closeXTab — the effect
+		// below only has to catch the chat-switch case.
+		setActiveViewTabState((cur) => (cur === "subagent" ? null : cur));
+	}, []);
+	// Dropping the last breadcrumb (or switching to a chat with no sub-agent
+	// open) leaves nothing to show — fall back to the chat itself.
+	useEffect(() => {
+		if (subagentSelected && subagentStack.length === 0) setActiveViewTabState(null);
+	}, [subagentSelected, subagentStack.length]);
 	// Sidebar PR row → the PR's ONE workspace (resolve-or-create server-side,
 	// adopt-don't-duplicate), landing in its main/last-open chat (Review only
 	// leads when the workspace has no chats — the workspace-landing effect
@@ -1905,7 +1983,13 @@ function App() {
 			.map((id) => byId.get(id))
 			.filter((s): s is UnifiedSession => !!s);
 	})();
-	const focusedTopTabId = activeViewTab
+	// A sub-agent tab whose stack just went away (its chat switched, or the tab
+	// was closed) is no longer in the strip, and the chat is what's rendered —
+	// so treat it as no view tab rather than leaving the strip with nothing lit
+	// for the frame before the reset effect below runs.
+	const activeViewTabShown: ActiveViewTab =
+		subagentSelected && subagentStack.length === 0 ? null : activeViewTab;
+	const focusedTopTabId = activeViewTabShown
 		? viewTabs.find((tab) => tab.active)?.id ?? null
 		: currentSession?.id ?? null;
 	const storedTabSplit = tabOrderKey ? getTabSplit(tabOrderKey) : null;
@@ -2695,6 +2779,15 @@ function App() {
 					? viewTabKind(surfaceId) === "preview"
 					: focused && previewLiveActive
 			}
+			// The sub-agent drill-in, opened from this pane's own transcript.
+			showSubagent={
+				splitMode
+					? viewTabKind(surfaceId) === "subagent"
+					: focused && subagentActive
+			}
+			subagentStack={subagentTabs[viewerSession.id] ?? NO_SUBAGENTS}
+			onOpenSubagent={openSubagent}
+			onSubagentBack={popSubagent}
 			onOpenReview={openReview}
 			onOpenStaging={openStaging}
 			onCloseStaging={closeStagingTab}

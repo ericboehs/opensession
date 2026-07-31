@@ -8,8 +8,8 @@ import { TranscriptBlocks } from "./TranscriptBlocks";
 /**
  * The workflow-agent drill-in: one workflow agent's FULL conversation — every
  * tool call it made, not just its final text — rendered with the same
- * TranscriptBlocks the main thread and SubagentPanel use, behind a
- * breadcrumb-back header (mirrors SubagentPanel's pattern).
+ * TranscriptBlocks the main thread and SubagentPane use, behind a
+ * breadcrumb-back header (mirrors SubagentPane's pattern).
  *
  * Source: GET /api/workflows/:runId/agents/:seq/transcript →
  * { entries: TranscriptEntry[] }, read off the agent's opencode session
