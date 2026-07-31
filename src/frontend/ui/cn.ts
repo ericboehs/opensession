@@ -12,6 +12,11 @@ import { extendTailwindMerge } from "tailwind-merge";
  *
  * Registering the scale here keeps size and color in separate conflict groups,
  * so a caller can restyle a primitive's type without silently unstyling it.
+ *
+ * Adding a `--text-*` token to styles/tailwind.css? Add it to this list too.
+ * A token that is missing here still works as a font-size — it just quietly
+ * takes the color off whatever it is applied to, which is easy to miss in dark
+ * mode where the inherited color is close to the intended one.
  */
 const semanticFontSizes = [
 	"meta",
