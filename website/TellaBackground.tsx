@@ -12,7 +12,7 @@ export function TellaBackground() {
 			aria-hidden="true"
 		>
 			<source
-				src="https://ucarecdn.com/ab5e84d3-00af-456a-b821-da86f7b23be8/"
+				src="https://ucarecdn.com/f2866028-02b6-4217-baeb-908da0806fea/"
 				type="video/mp4"
 			/>
 		</video>
