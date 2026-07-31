@@ -6,15 +6,14 @@ import { cn } from "../ui/cn";
 import { Button } from "../ui/button";
 import { InlineAlert, LoadingState } from "../ui/state";
 import {
-  SettingsDescription,
   SettingsField,
   SettingsForm,
   SettingsFormActions,
   SettingsFormRow,
   SettingsFormTitle,
   SettingsGroupLabel,
+  SettingsHeader,
   SettingsPanel,
-  SettingsTitle,
   settingsInputClass,
   settingsSelectClass,
 } from "../ui/settings";
@@ -98,11 +97,7 @@ function StatusChip({ label, dot }: { label: string; dot: string }) {
 }
 
 export function SectionHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <SettingsGroupLabel className="mb-2.5 mt-7 px-0 font-bold tracking-[-0.01em]">
-      {children}
-    </SettingsGroupLabel>
-  );
+  return <SettingsGroupLabel>{children}</SettingsGroupLabel>;
 }
 
 export function Connections() {
@@ -236,32 +231,28 @@ export function Connections() {
 
   return (
     <SettingsPanel>
-      <div className="mb-[22px] flex items-start justify-between gap-4">
-        <div>
-          <SettingsTitle className="mb-0 px-0 text-section-title font-semibold tracking-[-0.01em]">
-            Connections
-          </SettingsTitle>
-          <SettingsDescription className="mt-1 px-0 text-faint">
-            What {AGENT_NAME} is wired into — inbound agents and the MCP tools every session can use.
-          </SettingsDescription>
-        </div>
-        <div className="flex flex-shrink-0 items-center gap-2">
-          <Button
-            icon={<IconHistory size={16} className={refreshing ? "animate-spin" : ""} />}
-            onClick={() => load(true)}
-            disabled={refreshing}
-          >
-            {refreshing ? "Checking…" : "Re-check"}
-          </Button>
-          <Button
-            variant="primary"
-            icon={<IconPlus size={16} />}
-            onClick={() => setShowAdd(true)}
-          >
-            Add MCP server
-          </Button>
-        </div>
-      </div>
+      <SettingsHeader
+        title="Connections"
+        description={`What ${AGENT_NAME} is wired into — inbound agents and the MCP tools every session can use.`}
+        actions={
+          <>
+            <Button
+              icon={<IconHistory size={16} className={refreshing ? "animate-spin" : ""} />}
+              onClick={() => load(true)}
+              disabled={refreshing}
+            >
+              {refreshing ? "Checking…" : "Re-check"}
+            </Button>
+            <Button
+              variant="primary"
+              icon={<IconPlus size={16} />}
+              onClick={() => setShowAdd(true)}
+            >
+              Add MCP server
+            </Button>
+          </>
+        }
+      />
 
       {removeError && (
         <InlineAlert onDismiss={() => setRemoveError(null)}>{removeError}</InlineAlert>

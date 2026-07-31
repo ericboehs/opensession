@@ -10,6 +10,7 @@ import {
 	SettingRowText,
 	SettingRowTitle,
 	SettingsGroupLabel,
+	SettingsHeader,
 	SettingsPanel,
 } from "../ui/settings";
 import { IconTile, displayName } from "./BrandTile";
@@ -125,17 +126,10 @@ export function MyAccountsPanel() {
 
 	return (
 		<SettingsPanel>
-			<div className="mb-[22px]">
-				<div>
-					<h2 className="m-0 px-2.5 text-[19px] font-semibold tracking-[-0.01em] text-fg">
-						My accounts
-					</h2>
-					<div className="mt-1 px-2.5 text-[12.5px] text-faint">
-						Your personal sign-ins. Sessions act as you where you're
-						connected; otherwise they fall back to the workspace account.
-					</div>
-				</div>
-			</div>
+			<SettingsHeader
+				title="My accounts"
+				description="Your personal sign-ins. Sessions act as you where you're connected; otherwise they fall back to the workspace account."
+			/>
 			{error && (
 				<InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
 			)}

@@ -10,17 +10,16 @@ import {
 	SettingRowDescription,
 	SettingRowText,
 	SettingRowTitle,
-	SettingsDescription,
 	SettingsField,
 	SettingsForm,
 	SettingsFormActions,
 	SettingsFormRow,
 	SettingsFormTitle,
 	SettingsGroupLabel,
+	SettingsHeader,
 	SettingsHint,
 	settingsInputClass,
 	SettingsPanel,
-	SettingsTitle,
 } from "../ui/settings";
 
 // Settings → Model providers: third-party OpenCode providers (xai, openrouter,
@@ -95,14 +94,10 @@ export function ModelProvidersPanel() {
 
 	return (
 		<SettingsPanel>
-			<SettingsTitle>Model providers</SettingsTitle>
-			<SettingsDescription className="mb-3.5">
-				Bring your own models: any provider the OpenCode engine supports (xAI,
-				OpenRouter, Groq, Mistral, …) with your API key. Registered model ids
-				show up in the model picker; runs on them authenticate with the stored
-				key. Anthropic and OpenAI run on the subscription bridges — manage
-				those under Accounts.
-			</SettingsDescription>
+			<SettingsHeader
+				title="Model providers"
+				description="Bring your own models: any provider the OpenCode engine supports (xAI, OpenRouter, Groq, Mistral, …) with your API key. Registered model ids show up in the model picker; runs on them authenticate with the stored key. Anthropic and OpenAI run on the subscription bridges — manage those under Accounts."
+			/>
 
 			<SettingsGroupLabel className="flex items-center justify-between gap-2">
 				<span>Configured providers</span>

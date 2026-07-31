@@ -12,15 +12,14 @@ import {
 	SettingRowDescription,
 	SettingRowText,
 	SettingRowTitle,
-	SettingsDescription,
 	SettingsField,
 	SettingsForm,
 	SettingsFormActions,
 	SettingsFormTitle,
 	SettingsGroupLabel,
+	SettingsHeader,
 	SettingsHint,
 	SettingsPanel,
-	SettingsTitle,
 	settingsInputClass,
 	settingsSelectClass,
 } from "../ui/settings";
@@ -88,12 +87,10 @@ interface CodexAccountInfo {
 export function AccountsPanel() {
 	return (
 		<SettingsPanel>
-			<SettingsTitle>Accounts</SettingsTitle>
-			<SettingsDescription className="mb-3.5">
-				The Claude (Anthropic) and Codex (OpenAI) subscription accounts that
-				session runs draw from, plus the model new runs start on. Other model
-				providers with their own API keys live under Model providers.
-			</SettingsDescription>
+			<SettingsHeader
+				title="Accounts"
+				description="The Claude (Anthropic) and Codex (OpenAI) subscription accounts that session runs draw from, plus the model new runs start on. Other model providers with their own API keys live under Model providers."
+			/>
 
 			<SettingsGroupLabel>Default model</SettingsGroupLabel>
 			<SettingCard>

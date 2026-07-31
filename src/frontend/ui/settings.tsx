@@ -1,5 +1,5 @@
 import * as React from "react";
-import { CardList } from "./card";
+import { Card, CardList } from "./card";
 import { cn } from "./cn";
 
 export function SettingsPanel({
@@ -9,26 +9,41 @@ export function SettingsPanel({
 	return <div className={cn("w-full max-w-[720px]", className)} {...props} />;
 }
 
-export function SettingsTitle({
+/**
+ * A settings page's header: its title, an optional sentence of context, and
+ * optional actions on the right. Every panel opens with one, so pages share a
+ * top rhythm no matter who wrote them. The h1 hides inside the phone sheet,
+ * which already names the section in its own nav bar.
+ */
+export function SettingsHeader({
+	title,
+	description,
+	actions,
 	className,
 	...props
-}: React.ComponentPropsWithoutRef<"h1">) {
+}: Omit<React.ComponentPropsWithoutRef<"header">, "title"> & {
+	title: React.ReactNode;
+	description?: React.ReactNode;
+	actions?: React.ReactNode;
+}) {
 	return (
-		<h1
-			className={cn(
-				"m-0 mb-5 px-2.5 text-page-title font-bold tracking-[-0.02em] text-fg [.settings-sheet_&]:hidden",
-				className,
-			)}
+		<header
+			className={cn("mb-5 flex items-start justify-between gap-4", className)}
 			{...props}
-		/>
+		>
+			<div className="min-w-0">
+				<h1 className="m-0 text-page-title font-bold tracking-[-0.02em] text-fg [.settings-sheet_&]:hidden">
+					{title}
+				</h1>
+				{description && (
+					<p className="m-0 mt-1.5 text-supporting leading-relaxed text-dim [.settings-sheet_&]:mt-0">
+						{description}
+					</p>
+				)}
+			</div>
+			{actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+		</header>
 	);
-}
-
-export function SettingsDescription({
-	className,
-	...props
-}: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("px-2.5 text-supporting text-dim", className)} {...props} />;
 }
 
 export function SettingsGroupLabel({
@@ -37,7 +52,7 @@ export function SettingsGroupLabel({
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
 		<div
-			className={cn("mb-2 mt-[22px] px-2.5 text-label font-semibold text-faint", className)}
+			className={cn("mb-2 mt-6 text-label font-semibold text-faint", className)}
 			{...props}
 		/>
 	);
@@ -48,6 +63,16 @@ export function SettingCard({
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
 	return <CardList className={className} {...props} />;
+}
+
+/** A boxed section for content that isn't a list of rows — an editor, a
+ * picker, a filter bar. Draws the same surface SettingCard gives rows, so a
+ * page of prose sits in the page's rhythm instead of floating on it. */
+export function SettingsSection({
+	className,
+	...props
+}: React.ComponentPropsWithoutRef<"div">) {
+	return <Card className={cn("p-4", className)} {...props} />;
 }
 
 export function SettingRow({
@@ -89,7 +114,7 @@ export function SettingsHint({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("mt-2 px-2.5 text-meta text-faint", className)} {...props} />;
+	return <div className={cn("mt-2 text-meta text-faint", className)} {...props} />;
 }
 
 export const settingsSelectClass =
@@ -138,6 +163,11 @@ export function SettingsField({
 
 export const settingsInputClass =
 	"w-full rounded-sm border border-line-strong bg-raised px-2.5 py-2 text-body text-fg outline-none placeholder:text-faint focus:border-accent";
+
+/** Multi-line text entry inside settings — memory entries, the personal
+ *  prompt. One class so every editor in settings reads the same. */
+export const settingsTextareaClass =
+	"w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-body font-medium text-fg outline-none placeholder:text-faint focus:border-faint";
 
 export function SettingsFormActions({
 	className,

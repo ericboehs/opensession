@@ -107,15 +107,17 @@ import {
 	SettingRowDescription,
 	SettingRowText,
 	SettingRowTitle,
-	SettingsDescription,
 	SettingsGroupLabel,
+	SettingsHeader,
 	SettingsHint,
 	SettingsPanel,
-	SettingsTitle,
+	SettingsSection,
 	settingsSelectClass,
+	settingsTextareaClass,
 } from "../ui/settings";
+import { Card } from "../ui/card";
 import { Switch } from "../ui/switch";
-import { InlineAlert } from "../ui/state";
+import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import { Reorder } from "motion/react";
 import {
 	IconChevronDown,
@@ -949,7 +951,10 @@ function NotificationsPanel() {
 
 	return (
 		<SettingsPanel>
-			<SettingsTitle>Notifications</SettingsTitle>
+			<SettingsHeader
+				title="Notifications"
+				description="How and when this device tells you a session needs you."
+			/>
 
 			<SettingsGroupLabel>Alerts</SettingsGroupLabel>
 			<SettingCard>
@@ -1184,7 +1189,7 @@ function MemoryEntryRow({
 		return (
 			<div className="border-b border-line px-3 py-2.5 last:border-b-0">
 				<textarea
-					className="w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-body font-medium text-fg outline-none focus:border-faint"
+					className={settingsTextareaClass}
 					rows={2}
 					value={draft}
 					autoFocus
@@ -1280,7 +1285,7 @@ function MemoryScopeCard({
 	}
 
 	return (
-		<div className="mb-3 overflow-hidden rounded-lg border border-line bg-panel">
+		<Card className="mb-2 overflow-hidden">
 			<div className="flex items-center justify-between border-b border-line bg-surface px-3 py-2">
 				<div className="text-supporting font-semibold text-fg">
 					{scoped.scope.label}
@@ -1309,7 +1314,7 @@ function MemoryScopeCard({
 			{adding && (
 				<div className="border-t border-line px-3 py-2.5">
 					<textarea
-						className="w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-body font-medium text-fg outline-none focus:border-faint"
+						className={settingsTextareaClass}
 						rows={2}
 						placeholder="A durable, self-contained fact…"
 						value={draft}
@@ -1338,7 +1343,7 @@ function MemoryScopeCard({
 					</div>
 				</div>
 			)}
-		</div>
+		</Card>
 	);
 }
 
@@ -1385,50 +1390,56 @@ function PersonalPromptPanel() {
 		}
 	}
 
+	const header = (
+		<SettingsHeader
+			title="Personal prompt"
+			description={`Standing instructions added to the system prompt of every session you (${user}) start, on top of the built-in ones — tone, preferences, how you like work reported. It follows you across devices and surfaces (same identity as your memory store), and is never given to automations. Leave empty to turn it off.`}
+		/>
+	);
+
 	if (prompt === null)
 		return (
 			<SettingsPanel>
-				<SettingsTitle>Personal prompt</SettingsTitle>
-				<SettingRowDescription>{error || "Loading…"}</SettingRowDescription>
+				{header}
+				{error ? (
+					<InlineAlert>{error}</InlineAlert>
+				) : (
+					<LoadingState>Loading your prompt…</LoadingState>
+				)}
 			</SettingsPanel>
 		);
 
 	const dirty = prompt !== savedPrompt;
 	return (
 		<SettingsPanel>
-			<SettingsTitle>Personal prompt</SettingsTitle>
-			<SettingsDescription className="mb-3.5">
-				Standing instructions added to the system prompt of every session you
-				({user}) start, on top of the built-in ones — tone, preferences, how
-				you like work reported. It follows you across devices and surfaces
-				(same identity as your memory store), and is never given to
-				automations. Leave empty to turn it off.
-			</SettingsDescription>
-			<textarea
-				className="w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-body font-medium text-fg outline-none focus:border-faint"
-				rows={10}
-				placeholder='e.g. "Keep answers short. Prefer tables for comparisons. Always mention which files you touched."'
-				value={prompt}
-				onChange={(e) => setPrompt(e.target.value)}
-				onKeyDown={(e) => {
-					if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save();
-				}}
-			/>
-			<div className="mt-2 flex items-center gap-2">
-				<Button
-					variant="primary"
-					size="sm"
-					disabled={busy || !dirty}
-					onClick={save}
-				>
-					{busy ? "Saving…" : "Save"}
-				</Button>
-				{dirty && !busy && (
-					<span className="text-[12px] font-medium text-faint">
-						Unsaved changes
-					</span>
-				)}
-			</div>
+			{header}
+			<SettingsSection>
+				<textarea
+					className={settingsTextareaClass}
+					rows={10}
+					placeholder='e.g. "Keep answers short. Prefer tables for comparisons. Always mention which files you touched."'
+					value={prompt}
+					onChange={(e) => setPrompt(e.target.value)}
+					onKeyDown={(e) => {
+						if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save();
+					}}
+				/>
+				<div className="mt-3 flex items-center gap-2">
+					<Button
+						variant="primary"
+						size="sm"
+						disabled={busy || !dirty}
+						onClick={save}
+					>
+						{busy ? "Saving…" : "Save"}
+					</Button>
+					{dirty && !busy && (
+						<span className="text-label font-medium text-faint">
+							Unsaved changes
+						</span>
+					)}
+				</div>
+			</SettingsSection>
 		</SettingsPanel>
 	);
 }
@@ -1444,37 +1455,39 @@ function MemoryPanel() {
 	}
 	useEffect(reload, []);
 
+	const header = (
+		<SettingsHeader
+			title="Memory"
+			description={`Durable facts injected into every matching session: team memory is workspace-wide (shared with ${AGENT_NAME} in Slack), repo memory follows the session's repo, people memory follows whoever is prompting. Sessions manage these with the opensession-memory tools ("remember that…"); this page is the same store, maintained by hand.`}
+		/>
+	);
+
 	if (!scopes)
 		return (
 			<SettingsPanel>
-				<SettingsTitle>Memory</SettingsTitle>
-				<SettingRowDescription>{error || "Loading…"}</SettingRowDescription>
+				{header}
+				{error ? (
+					<InlineAlert>{error}</InlineAlert>
+				) : (
+					<LoadingState>Loading memory…</LoadingState>
+				)}
 			</SettingsPanel>
 		);
 
 	return (
 		<SettingsPanel>
-			<SettingsTitle>Memory</SettingsTitle>
-			<SettingsDescription className="mb-3.5">
-				Durable facts injected into every matching session: team memory is
-				workspace-wide (shared with {AGENT_NAME} in Slack), repo memory follows
-				the session's repo, people memory follows whoever is prompting.
-				Sessions manage these with the opensession-memory tools ("remember
-				that…"); this page is the same store, maintained by hand.
-			</SettingsDescription>
+			{header}
 			{MEMORY_GROUPS.map((g) => {
 				const inGroup = scopes.filter((s) => s.scope.kind === g.kind);
 				if (!inGroup.length && !g.fixed) return null;
 				return (
-					<div key={g.kind} className="mb-5">
-						<div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-faint">
-							{g.title}
-						</div>
+					<div key={g.kind}>
+						<SettingsGroupLabel>{g.title}</SettingsGroupLabel>
 						{inGroup.map((s) => (
 							<MemoryScopeCard key={s.scope.key} scoped={s} onChanged={reload} />
 						))}
 						{!inGroup.length && (
-							<div className="text-body font-medium text-faint">None yet.</div>
+							<EmptyState placement="card">Nothing remembered yet.</EmptyState>
 						)}
 					</div>
 				);
@@ -1517,23 +1530,28 @@ function WarmPreviewsPanel() {
 		p.then((r) => setRepos(r.repos)).catch((e) => setError(e.message));
 	}
 
+	const header = (
+		<SettingsHeader
+			title="Warm deps"
+			description="Keep a template worktree per repo with node_modules installed, refreshed from its default branch on a schedule. Prebuilt spares of those dep trees are adopted into new session worktrees near-instantly, instead of every session paying a cold install."
+		/>
+	);
+
 	if (!repos)
 		return (
 			<SettingsPanel>
-				<SettingsTitle>Warm deps</SettingsTitle>
-				<SettingRowDescription>{error || "Loading…"}</SettingRowDescription>
+				{header}
+				{error ? (
+					<InlineAlert>{error}</InlineAlert>
+				) : (
+					<LoadingState>Loading repos…</LoadingState>
+				)}
 			</SettingsPanel>
 		);
 
 	return (
 		<SettingsPanel>
-			<SettingsTitle>Warm deps</SettingsTitle>
-			<SettingsDescription className="mb-3.5">
-				Keep a template worktree per repo with node_modules installed,
-				refreshed from its default branch on a schedule. Prebuilt spares of
-				those dep trees are adopted into new session worktrees near-instantly,
-				instead of every session paying a cold install.
-			</SettingsDescription>
+			{header}
 
 			{error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
 
@@ -1653,24 +1671,28 @@ function PreviewPoolPanel() {
 		p.then((r) => setRepos(r.repos)).catch((e) => setError(e.message));
 	}
 
+	const header = (
+		<SettingsHeader
+			title="Preview pool"
+			description="Keep dev-server containers pre-booted from a nightly golden image, so the Preview button claims one in seconds instead of paying a cold boot. Claims follow the session's branch (small edits stream in live; big branch jumps reboot the dev server cleanly) and are released on stop or after sitting unwatched."
+		/>
+	);
+
 	if (!repos)
 		return (
 			<SettingsPanel>
-				<SettingsTitle>Preview pool</SettingsTitle>
-				<SettingRowDescription>{error || "Loading…"}</SettingRowDescription>
+				{header}
+				{error ? (
+					<InlineAlert>{error}</InlineAlert>
+				) : (
+					<LoadingState>Loading repos…</LoadingState>
+				)}
 			</SettingsPanel>
 		);
 
 	return (
 		<SettingsPanel>
-			<SettingsTitle>Preview pool</SettingsTitle>
-			<SettingsDescription className="mb-3.5">
-				Keep dev-server containers pre-booted from a nightly golden image, so
-				the Preview button claims one in seconds instead of paying a cold
-				boot. Claims follow the session's branch (small edits stream in live;
-				big branch jumps reboot the dev server cleanly) and are released on
-				stop or after sitting unwatched.
-			</SettingsDescription>
+			{header}
 
 			{error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
 
@@ -1806,26 +1828,32 @@ function PapercutsPanel() {
 		};
 	}, [repoFilter]);
 
+	const header = (
+		<SettingsHeader
+			title="Papercuts"
+			description="Small frictions agents log in the moment while working — retried tool calls, flaky commands, misleading errors, undocumented gotchas. None block on their own; together they show where a repo needs sanding down. The nightly Dreaming digest reads them too."
+		/>
+	);
+
 	if (!repos)
 		return (
 			<SettingsPanel>
-				<SettingsTitle>Papercuts</SettingsTitle>
-				<SettingRowDescription>{error || "Loading…"}</SettingRowDescription>
+				{header}
+				{error ? (
+					<InlineAlert>{error}</InlineAlert>
+				) : (
+					<LoadingState>Loading papercuts…</LoadingState>
+				)}
 			</SettingsPanel>
 		);
 
 	return (
 		<SettingsPanel>
-			<SettingsTitle>Papercuts</SettingsTitle>
-			<SettingsDescription className="mb-3.5">
-				Small frictions agents log in the moment while working — retried tool
-				calls, flaky commands, misleading errors, undocumented gotchas. None
-				block on their own; together they show where a repo needs sanding
-				down. The nightly Dreaming digest reads them too.
-			</SettingsDescription>
+			{header}
 
 			{error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
 
+			<SettingsGroupLabel>Repos</SettingsGroupLabel>
 			<SettingCard>
 				{repos.map((r) => (
 					<SettingRow
@@ -1851,10 +1879,8 @@ function PapercutsPanel() {
 				))}
 			</SettingCard>
 
-			<div className="mt-5 mb-2 flex items-center justify-between">
-				<div className="text-body font-medium text-dim">
-					Last 30 days · {entries.length} logged
-				</div>
+			<SettingsGroupLabel className="flex items-center justify-between gap-2">
+				Last 30 days · {entries.length} logged
 				<Select
 					label="Filter papercuts by repo"
 					value={repoFilter}
@@ -1864,11 +1890,11 @@ function PapercutsPanel() {
 					]}
 					onChange={setRepoFilter}
 				/>
-			</div>
+			</SettingsGroupLabel>
 			{entries.length === 0 ? (
-				<SettingRowDescription>
+				<EmptyState placement="card">
 					Nothing logged yet — papercuts appear here as agents hit friction.
-				</SettingRowDescription>
+				</EmptyState>
 			) : (
 				<SettingCard>
 					{entries.map((e, i) => (
@@ -1879,7 +1905,7 @@ function PapercutsPanel() {
 							<div className="text-body leading-relaxed text-fg">
 								{e.message}
 							</div>
-							<div className="mt-1 text-xs text-faint">
+							<div className="mt-1 text-meta text-faint">
 								{[
 									e.repo,
 									e.by,
@@ -1959,14 +1985,12 @@ function AuditPanel() {
 
 	return (
 		<SettingsPanel>
-			<SettingsTitle>Audit log</SettingsTitle>
-			<SettingsDescription className="mb-3.5">
-				Every agent run's structured events — prompts, tool decisions, account
-				switches, human confirmations. Read-only; files live under
-				~/.backstage-audit (400-day retention).
-			</SettingsDescription>
+			<SettingsHeader
+				title="Audit log"
+				description="Every agent run's structured events — prompts, tool decisions, account switches, human confirmations. Read-only; files live under ~/.backstage-audit (400-day retention)."
+			/>
 
-			<div className="flex flex-wrap items-center gap-2 mb-3 px-2.5">
+			<div className="mb-3 flex flex-wrap items-center gap-2">
 				<select className={settingsSelectClass} value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date">
 					{dates.map((d) => (
 						<option key={d} value={d}>
@@ -1982,7 +2006,7 @@ function AuditPanel() {
 						</option>
 					))}
 				</select>
-				<label className="flex items-center gap-1.5 text-[12px] text-dim cursor-pointer">
+				<label className="flex cursor-pointer items-center gap-1.5 text-label text-dim">
 					<input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
 					include tool firehose
 				</label>
@@ -1995,19 +2019,19 @@ function AuditPanel() {
 				/>
 			</div>
 
-			<div className="mb-2 px-2.5 text-meta text-faint">
+			<div className="mb-2 text-meta text-faint">
 				{loading ? "Loading…" : `${events.length} of ${total} events (newest first)`}
 			</div>
 
-			<div className="flex flex-col border border-line rounded-panel overflow-hidden bg-surface">
+			<SettingCard>
 				{events.map((e, i) => {
 					const time = String(e.time || "").slice(11, 19);
 					const t = String(e.kind || e.msg || "event");
 					const sid = typeof e.bks_session_id === "string" ? e.bks_session_id : "";
 					return (
-						<div key={i} className={`border-b border-line last:border-b-0 ${expanded === i ? "bg-panel" : ""}`}>
+						<div key={i} className={expanded === i ? "bg-surface" : ""}>
 							<button
-								className="w-full text-left flex items-baseline gap-2 px-2.5 py-1.5 text-[12px] cursor-pointer hover:bg-hover min-w-0"
+								className="flex w-full min-w-0 cursor-pointer items-baseline gap-2 px-2.5 py-1.5 text-left text-label hover:bg-hover"
 								onClick={() => setExpanded(expanded === i ? null : i)}
 							>
 								<span className="text-faint shrink-0">{time}</span>
@@ -2033,9 +2057,9 @@ function AuditPanel() {
 					);
 				})}
 				{!loading && events.length === 0 && (
-					<div className="px-3 py-4 text-supporting text-faint">No events match.</div>
+					<EmptyState placement="row">No events match.</EmptyState>
 				)}
-			</div>
+			</SettingCard>
 
 			{events.length < total && (
 				<div className="mt-2">
@@ -2082,7 +2106,10 @@ function ComposerPanel() {
 
 	return (
 		<SettingsPanel>
-			<SettingsTitle>Composer</SettingsTitle>
+			<SettingsHeader
+				title="Composer"
+				description="How the message box behaves when you write and send."
+			/>
 			<SettingCard>
 				<SettingRow
 					title="Default model"
@@ -2219,7 +2246,10 @@ const IDENTITY_INPUT_CLASS =
 function WorkspacePanel() {
 	return (
 		<SettingsPanel>
-			<SettingsTitle>General</SettingsTitle>
+			<SettingsHeader
+				title="General"
+				description="Workspace-wide settings, shared by everyone on this instance."
+			/>
 			<SettingsGroupLabel>Identity</SettingsGroupLabel>
 			<SettingCard>
 				<SettingRow
@@ -2335,26 +2365,31 @@ function AppearancePanel() {
 
 	return (
 		<SettingsPanel>
-			<SettingsTitle>Appearance</SettingsTitle>
+			<SettingsHeader
+				title="Appearance"
+				description="How this app looks on this device, and what the sidebar shows."
+			/>
 			<SettingsGroupLabel>Theme</SettingsGroupLabel>
-			<div className="theme-cards" role="radiogroup" aria-label="Theme">
-				{THEME_OPTIONS.map((o) => (
-					<ThemeCard
-						key={o.value}
-						option={o.value}
-						active={pref === o.value}
-						onClick={() => {
-							setThemePref(o.value);
-							setPref(o.value);
-						}}
-					/>
-				))}
-			</div>
-			<SettingsHint>
-				{pref === "system"
-					? "Matches your operating system."
-					: `Always ${pref} mode.`}
-			</SettingsHint>
+			<SettingsSection>
+				<div className="theme-cards" role="radiogroup" aria-label="Theme">
+					{THEME_OPTIONS.map((o) => (
+						<ThemeCard
+							key={o.value}
+							option={o.value}
+							active={pref === o.value}
+							onClick={() => {
+								setThemePref(o.value);
+								setPref(o.value);
+							}}
+						/>
+					))}
+				</div>
+				<div className="mt-3 text-meta text-faint">
+					{pref === "system"
+						? "Matches your operating system."
+						: `Always ${pref} mode.`}
+				</div>
+			</SettingsSection>
 
 			<SettingsGroupLabel>
 				Chat
