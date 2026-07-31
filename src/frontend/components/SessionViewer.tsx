@@ -4591,7 +4591,7 @@ export function SessionViewer({
 					)}
 					{session.goal && (
 						<span
-							className="inline-flex max-w-full items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-line bg-panel px-3 py-[3px] text-[12px] text-dim"
+							className="inline-flex max-w-full items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-line bg-panel px-3 py-[3px] text-label text-dim"
 							title="Cleared with /goal clear"
 						>
 							🎯 {session.goal}
@@ -4599,7 +4599,7 @@ export function SessionViewer({
 					)}
 					{session.loop && (
 						<span
-							className="inline-flex max-w-full items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-line bg-panel px-3 py-[3px] text-[12px] text-dim"
+							className="inline-flex max-w-full items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-line bg-panel px-3 py-[3px] text-label text-dim"
 							title={`"${session.loop.prompt}" — stop with /loop stop`}
 						>
 							⟳ every {session.loop.intervalMinutes}m —{" "}
@@ -4920,7 +4920,7 @@ export function SessionViewer({
 											{/* Segmented: a page at a time, or the whole backlog in
 											    one go for readers who'd otherwise click a hundred
 											    times to reach the first message. */}
-											<div className="flex items-stretch overflow-hidden rounded-full border border-line bg-raised text-[12px] text-dim">
+											<div className="flex items-stretch overflow-hidden rounded-full border border-line bg-raised text-label text-dim">
 												<button
 													className="cursor-pointer px-3.5 py-[5px] transition-[background,color] hover:bg-hover hover:text-fg disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
 													disabled={loadingHistory}
@@ -5040,7 +5040,7 @@ export function SessionViewer({
 										   layered as an inset shadow over the opaque control surface —
 										   `bg-hover` would *replace* that surface with translucent ink
 										   and let the messages show through. */
-										className={`group absolute left-1/2 bottom-6 z-[5] inline-flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full bg-control px-3.5 py-2 text-[12px] font-semibold shadow-[inset_0_0_0_999px_transparent,0_1px_6px_rgba(0,0,0,0.12)] transition-[color,box-shadow] hover:shadow-[inset_0_0_0_999px_var(--hover),0_2px_9px_rgba(0,0,0,0.16)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+										className={`group absolute left-1/2 bottom-6 z-[5] inline-flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full bg-control px-3.5 py-2 text-label font-semibold shadow-[inset_0_0_0_999px_transparent,0_1px_6px_rgba(0,0,0,0.12)] transition-[color,box-shadow] hover:shadow-[inset_0_0_0_999px_var(--hover),0_2px_9px_rgba(0,0,0,0.16)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
 											newBelow
 												? "text-accent"
 												: "text-dim hover:text-fg"
@@ -5066,13 +5066,13 @@ export function SessionViewer({
 								) : (
 									<>
 										{forkFrom && (
-											<div className="mb-2 flex items-center justify-between gap-3 rounded-[14px] border border-[color-mix(in_srgb,var(--accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-3 py-[7px] text-[12.5px] text-fg">
+											<div className="mb-2 flex items-center justify-between gap-3 rounded-[14px] border border-[color-mix(in_srgb,var(--accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-3 py-[7px] text-supporting text-fg">
 												<span>
 													⑂ Forking a new session from the selected message — type
 													the new direction.
 												</span>
 												<button
-													className="cursor-pointer bg-transparent text-[12px] text-dim hover:text-fg"
+													className="cursor-pointer bg-transparent text-label text-dim hover:text-fg"
 													onClick={() => setForkFrom(null)}
 												>
 											Cancel

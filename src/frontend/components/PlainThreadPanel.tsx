@@ -377,7 +377,7 @@ export function PlainThreadActions({
 					</Menu.Trigger>
 					<Menu.Popup align="start">
 						{users === null ? (
-							<div className="px-2.5 py-1.5 text-faint text-[12px]">
+							<div className="px-2.5 py-1.5 text-faint text-label">
 								Loading…
 							</div>
 						) : (
@@ -507,7 +507,7 @@ export function PlainThreadActions({
 				</button>
 			</div>
 			{error && (
-				<span className="text-red text-[12px] truncate" title={error}>
+				<span className="text-red text-label truncate" title={error}>
 					{error}
 				</span>
 			)}
@@ -607,7 +607,7 @@ export function PlainReplyBox({
 			/>
 			<div className="flex items-center gap-2 min-w-0">
 				{error ? (
-					<span className="text-red text-[12px] truncate" title={error}>
+					<span className="text-red text-label truncate" title={error}>
 						{error}
 					</span>
 				) : (
@@ -619,7 +619,7 @@ export function PlainReplyBox({
 				)}
 				<button
 					type="button"
-					className="ml-auto shrink-0 rounded-md bg-accent text-white text-[12.5px] font-semibold px-2.5 py-1 cursor-pointer border-0 hover:opacity-90 disabled:opacity-50 disabled:cursor-default"
+					className="ml-auto shrink-0 rounded-md bg-accent text-white text-supporting font-semibold px-2.5 py-1 cursor-pointer border-0 hover:opacity-90 disabled:opacity-50 disabled:cursor-default"
 					onClick={handleSend}
 					disabled={sending || !text.trim()}
 					title="Send (⌘↵)"
@@ -665,7 +665,7 @@ export function PlainWaitingBanner({
 	return (
 		<div
 			className={cn(
-				"flex items-center gap-2 rounded-md border border-yellow/40 bg-yellow/10 px-2.5 py-1.5 text-[12.5px] text-fg",
+				"flex items-center gap-2 rounded-md border border-yellow/40 bg-yellow/10 px-2.5 py-1.5 text-supporting text-fg",
 				className,
 			)}
 		>
@@ -721,7 +721,7 @@ function PlainAttachments({
 						title={`${a.fileName}${a.sizeBytes ? ` — ${fileSize(a.sizeBytes)}` : ""}`}
 						className={cn(
 							"block rounded-md border border-line overflow-hidden hover:border-line-strong",
-							!isImage && "px-2 py-1 text-[12px] text-dim hover:text-fg",
+							!isImage && "px-2 py-1 text-label text-dim hover:text-fg",
 						)}
 					>
 						{isImage ? (

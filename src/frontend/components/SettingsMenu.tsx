@@ -153,11 +153,11 @@ function SettingsSheet({
 									<div className="flex w-full items-center gap-3 border-x-0 border-b border-t-0 border-solid border-line px-3.5 py-3">
 										<Avatar name={currentUser} />
 										<span className="flex min-w-0 flex-1 flex-col leading-tight">
-											<span className="text-[15px] font-medium text-fg">
+											<span className="text-item-title font-medium text-fg">
 												{currentUser}
 											</span>
 											{githubAuth.login && (
-												<span className="text-[12px] text-faint">
+												<span className="text-label text-faint">
 													Signed in with GitHub · @{githubAuth.login}
 												</span>
 											)}
@@ -165,7 +165,7 @@ function SettingsSheet({
 									</div>
 									{!githubAuth.local && (
 										<button
-											className="flex w-full items-center gap-3 border-none bg-transparent px-3.5 py-3 text-left text-[15px] font-medium text-dim active:bg-hover"
+											className="flex w-full items-center gap-3 border-none bg-transparent px-3.5 py-3 text-left text-item-title font-medium text-dim active:bg-hover"
 											onClick={() => void signOut()}
 										>
 											Sign out
@@ -188,7 +188,7 @@ function SettingsSheet({
 												}}
 											>
 												<Avatar name={name} />
-												<span className="min-w-0 flex-1 text-[15px] font-medium text-fg">
+												<span className="min-w-0 flex-1 text-item-title font-medium text-fg">
 													{name}
 												</span>
 												{name === currentUser && (
@@ -211,7 +211,7 @@ function SettingsSheet({
 									<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-dim">
 										<IconGear size={22} />
 									</span>
-									<span className="min-w-0 flex-1 text-[15px] font-medium text-fg">
+									<span className="min-w-0 flex-1 text-item-title font-medium text-fg">
 										Settings
 									</span>
 									<IconChevronRight size={20} className="shrink-0 text-faint" />
@@ -315,7 +315,7 @@ export function SettingsMenu({
 							title={connected ? "Connected" : "Reconnecting…"}
 						/>
 					</span>
-					<span className="text-[15px] font-semibold leading-none tracking-[-0.01em]">
+					<span className="text-item-title font-semibold leading-none tracking-[-0.01em]">
 						{PRODUCT_NAME}
 					</span>
 					{/* A smaller chevron, hugged to the wordmark and vertically centered.

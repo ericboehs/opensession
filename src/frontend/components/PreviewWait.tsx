@@ -120,7 +120,7 @@ export function PreviewWait({ sessionId }: { sessionId: string }) {
 						className="h-5 w-5 animate-spin rounded-full border-2 border-line-strong border-t-accent"
 						aria-hidden="true"
 					/>
-					<div className="text-[15px] font-semibold text-fg">
+					<div className="text-item-title font-semibold text-fg">
 						Starting the dev server…
 					</div>
 					{who && (
@@ -135,7 +135,7 @@ export function PreviewWait({ sessionId }: { sessionId: string }) {
 				</>
 			) : (
 				<>
-					<div className="text-[15px] font-semibold text-fg">
+					<div className="text-item-title font-semibold text-fg">
 						{state === "gone"
 							? "Session not found"
 							: "The dev server didn't come up"}

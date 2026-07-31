@@ -1095,7 +1095,7 @@ export function Composer({
               <button
                 key={key}
                 type="button"
-                className={`h-8 flex-1 select-none rounded-md border border-line bg-surface text-[12px] font-semibold text-dim active:bg-panel ${
+                className={`h-8 flex-1 select-none rounded-md border border-line bg-surface text-label font-semibold text-dim active:bg-panel ${
                   key === "Escape" && vim.mode !== "insert"
                     ? "border-accent text-fg"
                     : ""
