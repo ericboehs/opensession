@@ -48,6 +48,9 @@ struct SessionsListView: View {
     /// Temp IDs remain aliases through the outgoing view's onDisappear so a
     /// draft edited while session creation resolves is saved under the real ID.
     @State private var resolvedSessionIds: [String: String] = [:]
+    /// Loaded transcripts for recently visited mobile conversations. The
+    /// cache is bounded and cached view models disconnect while off-screen.
+    @State private var sessionPageCache = SessionViewModelCache()
     /// Surfaced when a background session create fails after the sheet closed.
     @State private var createError: String?
     @State private var showArchived = false
@@ -88,6 +91,9 @@ struct SessionsListView: View {
             }
             .onDisappear {
                 viewModel.stopPolling()
+            }
+            .onChange(of: sessionCacheScope) {
+                sessionPageCache.removeAll()
             }
             #if os(macOS)
             // File > New Session (Cmd+N) from the app's menu commands.
@@ -360,6 +366,7 @@ struct SessionsListView: View {
         switch result {
         case .success(let id):
             viewModel.resolveOptimistic(tempId: tempId, realId: id)
+            sessionPageCache.remove(sessionId: tempId)
             resolvedSessionIds[tempId] = id
             if let seed = optimisticSeeds.removeValue(forKey: tempId) {
                 optimisticSeeds[id] = seed
@@ -387,6 +394,7 @@ struct SessionsListView: View {
             #endif
         case .failure(let error):
             viewModel.removeOptimistic(tempId)
+            sessionPageCache.remove(sessionId: tempId)
             optimisticSeeds[tempId] = nil
             #if os(macOS)
             if selectedSessionID == tempId { selectedSessionID = nil }
@@ -674,8 +682,14 @@ struct SessionsListView: View {
                     in: viewModel.sessions,
                     containing: session
                 ),
-                seedForSession: { optimisticSeeds[$0.id] },
-                composerDraftForSession: { composerDrafts[$0.id] },
+                viewModelForSession: {
+                    sessionPageCache.viewModel(
+                        for: $0,
+                        scope: sessionCacheScope,
+                        seed: optimisticSeeds[$0.id],
+                        composerDraft: composerDrafts[$0.id]
+                    )
+                },
                 onSaveComposerDraft: { savedSession, draft in
                     let id = resolvedSessionIds[savedSession.id] ?? savedSession.id
                     composerDrafts[id] = draft.isEmpty ? nil : draft
@@ -808,6 +822,9 @@ struct SessionsListView: View {
     }
 
     private func archive(_ workspace: SidebarWorkspace, animated: Bool = true) {
+        workspace.sessions.forEach {
+            sessionPageCache.remove(sessionId: $0.id)
+        }
         #if os(macOS)
         if workspace.sessions.contains(where: { $0.id == selectedSessionID }) {
             selectedSessionID = nil
@@ -824,6 +841,14 @@ struct SessionsListView: View {
             // the removal; wrapping the mutation would fight it.
             workspace.sessions.forEach(viewModel.archive)
         }
+    }
+
+    private var sessionCacheScope: SessionViewModelCache.Scope {
+        let config = ServerConfig.shared
+        return SessionViewModelCache.Scope(
+            serverURL: config.baseURLString,
+            token: config.token
+        )
     }
 
     private var listSections: some View {

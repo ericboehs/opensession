@@ -23,7 +23,9 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   (streaming CommonMark/GFM with links, tables, and highlighted code blocks),
   compact tool-call rows, system events, token-level streaming via
   `stream_text` with a cursor bubble, and a horizontally scrollable chat tab
-  strip when a workspace/worktree contains multiple sessions.
+  strip when a workspace/worktree contains multiple sessions. A bounded cache
+  keeps recently visited conversations loaded while their off-screen sockets
+  remain disconnected, so returning to a page does not show a loading screen.
 - **Workspace details** — tapping the chat title opens a native worktree sheet
   with repository and branch metadata, local git status, changed files, pull
   request status, workspace context, and model/reasoning controls, matching
@@ -89,6 +91,7 @@ OS1/
   ViewModels/
     SessionsListViewModel.swift  5s polling
     SessionViewModel.swift       watch/stream/prompt/ask state machine
+    SessionViewModelCache.swift  Bounded recently visited conversation cache
   Views/
     OS1VisualStyle.swift      Shared web palette, chat width, and repo tile
     SessionsListView.swift   List + status rows + settings sheet

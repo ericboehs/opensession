@@ -68,6 +68,19 @@ struct SessionView: View {
         self.onNewSession = onNewSession
     }
 
+    init(
+        viewModel: SessionViewModel,
+        tabs: [Session],
+        onSaveComposerDraft: ((SessionViewModel.ComposerDraft) -> Void)? = nil,
+        onNewSession: (() -> Void)? = nil
+    ) {
+        _viewModel = State(initialValue: viewModel)
+        self.tabs = tabs
+        self.onSelectTab = nil
+        self.onSaveComposerDraft = onSaveComposerDraft
+        self.onNewSession = onNewSession
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             Group {
@@ -250,20 +263,24 @@ struct SessionView: View {
         }
         #endif
         .task {
-            viewModel.start()
+            let owner = UUID()
+            viewModel.start(owner: owner)
+            defer { viewModel.stop(owner: owner) }
             catalog = try? await OS1API.models()
             #if DEBUG && os(iOS)
             if ProcessInfo.processInfo.environment["OS1_OPEN_WORKTREE_INFO"] == "1" {
                 showWorktreeInfo = true
             }
             #endif
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3_600))
+            }
         }
         .onDisappear {
             onSaveComposerDraft?(SessionViewModel.ComposerDraft(
                 text: viewModel.draft,
                 images: viewModel.attachedImages
             ))
-            viewModel.stop()
         }
         .onChange(of: scenePhase) { _, phase in
             // Backgrounding leaves the socket half-open more often than not;
@@ -488,13 +505,12 @@ struct SessionView: View {
 
 #if os(iOS)
 /// Keeps the tab strip anchored while sibling conversations move horizontally
-/// according to their order. Each conversation still owns a fresh view model
-/// and socket, just as it did when tab changes replaced the navigation path.
+/// according to their order. Recently visited conversations reuse their loaded
+/// view model; SessionView still disconnects each socket while it is off-screen.
 struct SessionTabsView: View {
     let initialSession: Session
     let tabs: [Session]
-    let seedForSession: (Session) -> SessionViewModel.OptimisticSeed?
-    let composerDraftForSession: (Session) -> SessionViewModel.ComposerDraft?
+    let viewModelForSession: (Session) -> SessionViewModel
     let onSaveComposerDraft: (Session, SessionViewModel.ComposerDraft) -> Void
     let onNewSession: () -> Void
 
@@ -505,15 +521,13 @@ struct SessionTabsView: View {
     init(
         session: Session,
         tabs: [Session],
-        seedForSession: @escaping (Session) -> SessionViewModel.OptimisticSeed?,
-        composerDraftForSession: @escaping (Session) -> SessionViewModel.ComposerDraft?,
+        viewModelForSession: @escaping (Session) -> SessionViewModel,
         onSaveComposerDraft: @escaping (Session, SessionViewModel.ComposerDraft) -> Void,
         onNewSession: @escaping () -> Void
     ) {
         initialSession = session
         self.tabs = tabs
-        self.seedForSession = seedForSession
-        self.composerDraftForSession = composerDraftForSession
+        self.viewModelForSession = viewModelForSession
         self.onSaveComposerDraft = onSaveComposerDraft
         self.onNewSession = onNewSession
         _activeId = State(initialValue: session.id)
@@ -536,10 +550,8 @@ struct SessionTabsView: View {
         ZStack {
             ForEach([activeSession]) { session in
                 SessionView(
-                    session: session,
-                    seed: seedForSession(session),
+                    viewModel: viewModelForSession(session),
                     tabs: tabs,
-                    composerDraft: composerDraftForSession(session),
                     onSaveComposerDraft: { draft in
                         onSaveComposerDraft(session, draft)
                     },

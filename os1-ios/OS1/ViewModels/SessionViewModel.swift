@@ -12,7 +12,7 @@ final class SessionViewModel {
         case reconnecting(String?)
     }
 
-    let session: Session
+    private(set) var session: Session
 
     private(set) var entries: [TranscriptEntry] = []
     /// Ephemeral entries from the live engine stream (tool calls mid-run).
@@ -90,11 +90,14 @@ final class SessionViewModel {
     /// Injection seam for tests; production always builds a real OS1Socket.
     private let socketFactory: @MainActor () -> any SessionSocket
     private var reconnectTask: Task<Void, Never>?
+    /// Multiple views can briefly overlap during a reversed tab transition.
+    /// The connection stays alive until the last mounted view releases it.
+    private var viewOwners: Set<UUID> = []
     /// Foreground liveness probe (see `appDidBecomeActive`).
     private var resyncProbeTask: Task<Void, Never>?
     /// When the last server frame arrived — any frame counts.
     private var lastEventAt = Date.distantPast
-    private var stopped = false
+    private var stopped = true
     /// stream_done arrived; the durable entry lands via the next transcript_append.
     private var streamEnded = true
     /// Optimistic local user messages, removed once the server echoes them back.
@@ -116,6 +119,10 @@ final class SessionViewModel {
     /// shows twice: in the transcript AND in the live bubble. Mirrors the
     /// web viewer's landedStreamTextRef.
     private var landedStreamTexts: [String] = []
+    /// Assistant entries newly discovered by the last resync. Restricting
+    /// partial-response reconciliation to these avoids matching an unrelated
+    /// historical response that happens to start with the same words.
+    private var resyncAssistantCandidates: [TranscriptEntry] = []
     /// Stream text is coalesced here and flushed to `liveText` at ~8Hz:
     /// every liveText change re-parses the whole bubble's markdown and
     /// re-anchors the scroll view, so per-chunk updates burn a full layout
@@ -191,6 +198,34 @@ final class SessionViewModel {
         return found
     }
 
+    /// Reconcile a cached partial response after reconnecting. Only a finished
+    /// stream is eligible: while a run is active, an older assistant message
+    /// may legitimately begin with the same words as the current response.
+    private func reconcileFinishedLiveText() {
+        guard streamEnded || !isRunning else { return }
+        defer { resyncAssistantCandidates = [] }
+        guard !liveText.isEmpty || !pendingLiveText.isEmpty else { return }
+
+        flushLiveTextNow()
+        for entry in resyncAssistantCandidates where !entry.text.isEmpty {
+            liveText = liveText.replacingOccurrences(of: entry.text, with: "")
+        }
+        let residual = liveText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !residual.isEmpty,
+           resyncAssistantCandidates.contains(where: {
+               $0.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                       .hasPrefix(residual)
+           }) {
+            // The app disconnected mid-block; the snapshot now carries the
+            // completed response whose prefix is the cached streaming text.
+            liveText = ""
+        }
+        if liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            liveText = ""
+            isStreaming = false
+        }
+    }
+
     /// Seed for a just-created session: the opening prompt (and images) render
     /// immediately while the server is still persisting the session file.
     struct OptimisticSeed {
@@ -254,13 +289,55 @@ final class SessionViewModel {
         }
     }
 
+    /// A cached conversation may be reopened from an older list-row snapshot.
+    /// Keep its loaded transcript while refreshing title/worktree/PR metadata.
+    func updateSessionSnapshot(_ session: Session) {
+        guard session.id == self.session.id else { return }
+        self.session = session
+        guard stopped else { return }
+
+        if let running = session.isRunning {
+            isRunning = running
+            runStartedAt = running ? session.runStartedDate : nil
+            if !running {
+                streamEnded = true
+                isStreaming = false
+            }
+        }
+        queuedCount = session.queuedCount ?? 0
+        model = session.model ?? ""
+        effort = session.effort ?? ""
+        fastMode = session.fastMode ?? false
+    }
+
     func start() {
+        viewOwners.removeAll()
+        startConnection()
+    }
+
+    func start(owner: UUID) {
+        let wasInactive = viewOwners.isEmpty
+        viewOwners.insert(owner)
+        if wasInactive { startConnection() }
+    }
+
+    private func startConnection() {
         stopped = false
         connect()
         loadPr()
     }
 
     func stop() {
+        viewOwners.removeAll()
+        stopConnection()
+    }
+
+    func stop(owner: UUID) {
+        guard viewOwners.remove(owner) != nil else { return }
+        if viewOwners.isEmpty { stopConnection() }
+    }
+
+    private func stopConnection() {
         stopped = true
         reconnectTask?.cancel()
         resyncProbeTask?.cancel()
@@ -495,6 +572,15 @@ final class SessionViewModel {
             // identical message retired the fresh chip and blinked the
             // message out until its real echo landed.
             let knownIds = Set(entries.map(\.id))
+            resyncAssistantCandidates = if isRunning && knownIds.isEmpty {
+                // First-load snapshots are all "new" locally; none can be
+                // attributed to the current stream safely.
+                []
+            } else {
+                newEntries.filter {
+                    $0.isAssistant && !knownIds.contains($0.id)
+                }
+            }
             for candidate in newEntries
             where candidate.isUser && !knownIds.contains(candidate.id) {
                 for chip in queuedItems + steeredItems + deliveringItems
@@ -525,20 +611,9 @@ final class SessionViewModel {
             // A rev-mismatch reply to load_history comes back as a fresh init.
             loadingEarlier = false
             rebuildDisplayItems()
-            // A resync init (reconnect, foreground re-watch) can include
-            // assistant blocks that are still sitting in the live bubble —
-            // strip them or the same text renders twice.
-            if !liveText.isEmpty || !pendingLiveText.isEmpty {
-                flushLiveTextNow()
-                for entry in newEntries.suffix(12)
-                where entry.isAssistant && !entry.text.isEmpty {
-                    liveText = liveText.replacingOccurrences(of: entry.text, with: "")
-                }
-                if liveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    liveText = ""
-                    if streamEnded { isStreaming = false }
-                }
-            }
+            // A reconnect can include the durable form of a cached live
+            // response. Reconcile only once that stream is known finished.
+            reconcileFinishedLiveText()
 
         case .transcriptHistory(let id, let older, let cursor) where id == session.id:
             let known = Set(entries.map(\.id))
@@ -586,6 +661,7 @@ final class SessionViewModel {
             liveText = ""
             liveEntries = []
             landedStreamTexts = []
+            resyncAssistantCandidates = []
             isStreaming = true
             streamEnded = false
             rebuildDisplayItems()
@@ -634,9 +710,10 @@ final class SessionViewModel {
                 streamEnded = true
                 isStreaming = false
                 flushLiveTextNow()
-                // liveText is NOT cleared here: the durable entry usually lands
-                // via transcript_append a beat later (1s file watcher) and the
-                // strip there clears it — wiping now blinks the reply out.
+                reconcileFinishedLiveText()
+                // Unmatched liveText is not cleared here: the durable entry
+                // usually lands via transcript_append a beat later (1s file
+                // watcher) and the strip there clears it. Wiping now blinks.
                 // A finished run often just opened or pushed to a PR — refresh
                 // the chip/panel (served from the server's PR cache, so cheap).
                 loadPr()

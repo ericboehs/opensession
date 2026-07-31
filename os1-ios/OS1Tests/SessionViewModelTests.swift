@@ -7,6 +7,9 @@ import XCTest
 /// every "text renders twice" bug has lived — each case here pins one of them.
 @MainActor
 final class SessionViewModelTests: XCTestCase {
+    private let serverA = SessionViewModelCache.Scope(serverURL: "server-a", token: "token-a")
+    private let serverB = SessionViewModelCache.Scope(serverURL: "server-b", token: "token-b")
+
     private func makeViewModel() -> SessionViewModel {
         SessionViewModel(session: Session(id: "bks-1"))
     }
@@ -15,6 +18,134 @@ final class SessionViewModelTests: XCTestCase {
         _ id: String, _ type: String, text: String? = nil, toolUseId: String? = nil
     ) -> TranscriptEntry {
         TranscriptEntry(id: id, type: type, content: text, toolUseId: toolUseId)
+    }
+
+    func testPageCacheReusesLoadedConversationAndRefreshesSessionSnapshot() {
+        let cache = SessionViewModelCache(capacity: 2)
+        let first = cache.viewModel(for: Session(id: "bks-1", title: "Old"), scope: serverA)
+        first.handle(.transcriptInit(
+            sessionId: "bks-1",
+            entries: [entry("e1", "assistant", text: "Already loaded")],
+            cursor: .empty
+        ))
+
+        let reopened = cache.viewModel(
+            for: Session(id: "bks-1", title: "Updated"),
+            scope: serverA
+        )
+
+        XCTAssertTrue(first === reopened)
+        XCTAssertFalse(reopened.isLoadingConversation)
+        XCTAssertEqual(reopened.entries.map(\.id), ["e1"])
+        XCTAssertEqual(reopened.session.title, "Updated")
+    }
+
+    func testPageCacheEvictsLeastRecentlyUsedConversation() {
+        let cache = SessionViewModelCache(capacity: 2)
+        _ = cache.viewModel(for: Session(id: "bks-1"), scope: serverA)
+        _ = cache.viewModel(for: Session(id: "bks-2"), scope: serverA)
+        _ = cache.viewModel(for: Session(id: "bks-1"), scope: serverA)
+        _ = cache.viewModel(for: Session(id: "bks-3"), scope: serverA)
+
+        XCTAssertEqual(cache.cachedSessionIds, ["bks-1", "bks-3"])
+    }
+
+    func testPageCacheDoesNotCrossServerScope() {
+        let cache = SessionViewModelCache(capacity: 2)
+        let first = cache.viewModel(for: Session(id: "bks-1"), scope: serverA)
+        let otherServer = cache.viewModel(for: Session(id: "bks-1"), scope: serverB)
+
+        XCTAssertFalse(first === otherServer)
+        XCTAssertEqual(cache.cachedSessionIds, ["bks-1"])
+    }
+
+    func testCachedConversationReconcilesOperationalStateWhileStopped() {
+        let cache = SessionViewModelCache(capacity: 2)
+        let first = cache.viewModel(
+            for: Session(
+                id: "bks-1", model: "old", effort: "low",
+                fastMode: false, isRunning: true, queuedCount: 2
+            ),
+            scope: serverA
+        )
+        first.stop()
+
+        let reopened = cache.viewModel(
+            for: Session(
+                id: "bks-1", model: "new", effort: "high",
+                fastMode: true, isRunning: false, queuedCount: 0
+            ),
+            scope: serverA
+        )
+
+        XCTAssertFalse(reopened.isRunning)
+        XCTAssertEqual(reopened.queuedCount, 0)
+        XCTAssertEqual(reopened.model, "new")
+        XCTAssertEqual(reopened.effort, "high")
+        XCTAssertTrue(reopened.fastMode)
+    }
+
+    func testResyncDropsCachedPartialPrefixOfOffscreenCompletion() {
+        let viewModel = makeViewModel()
+        viewModel.handle(.sessionStatus(sessionId: "bks-1", isRunning: true))
+        viewModel.handle(.streamStart(sessionId: "bks-1"))
+        viewModel.handle(.streamText(sessionId: "bks-1", text: "Partial repl"))
+        viewModel.stop()
+        viewModel.updateSessionSnapshot(Session(id: "bks-1", isRunning: false))
+
+        var snapshot = [entry(
+            "e1", "assistant", text: "Partial reply completed off-screen"
+        )]
+        snapshot += (2...20).map {
+            entry("e\($0)", $0.isMultiple(of: 2) ? "user" : "assistant", text: "Later \($0)")
+        }
+
+        viewModel.handle(.transcriptInit(
+            sessionId: "bks-1",
+            entries: snapshot,
+            cursor: .empty
+        ))
+
+        XCTAssertEqual(viewModel.liveText, "")
+        XCTAssertFalse(viewModel.isStreaming)
+        XCTAssertEqual(viewModel.entries.count, 20)
+    }
+
+    func testActiveResyncKeepsLiveTextMatchingHistoricalPrefix() {
+        let viewModel = makeViewModel()
+        viewModel.handle(.sessionStatus(sessionId: "bks-1", isRunning: true))
+        viewModel.handle(.streamStart(sessionId: "bks-1"))
+        viewModel.handle(.streamText(sessionId: "bks-1", text: "I can help"))
+
+        viewModel.handle(.transcriptInit(
+            sessionId: "bks-1",
+            entries: [entry("old", "assistant", text: "I can help with the old task")],
+            cursor: .empty
+        ))
+        viewModel.handle(.streamDone(sessionId: "bks-1"))
+        viewModel.handle(.sessionStatus(sessionId: "bks-1", isRunning: false))
+
+        XCTAssertEqual(viewModel.liveText, "I can help")
+    }
+
+    func testOverlappingViewOwnersKeepSocketAliveUntilLastRelease() {
+        let socket = MockSocket()
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1"),
+            socketFactory: { socket }
+        )
+        let outgoing = UUID()
+        let incoming = UUID()
+
+        viewModel.start(owner: outgoing)
+        viewModel.start(owner: incoming)
+        viewModel.stop(owner: outgoing)
+
+        XCTAssertEqual(socket.connectCount, 1)
+        XCTAssertEqual(socket.disconnectCount, 0)
+
+        viewModel.stop(owner: incoming)
+        XCTAssertEqual(socket.disconnectCount, 1)
     }
 
     func testTranscriptInitPopulatesEntries() {
@@ -768,13 +899,14 @@ private final class MockSocket: SessionSocket {
     }
 
     private(set) var connectCount = 0
+    private(set) var disconnectCount = 0
     private(set) var watched: [String] = []
     private(set) var prompts: [PromptCall] = []
     private(set) var steeredQueueIds: [String] = []
     private(set) var deletedQueueIds: [String] = []
 
     func connect() { connectCount += 1 }
-    func disconnect() {}
+    func disconnect() { disconnectCount += 1 }
     func watch(sessionId: String) { watched.append(sessionId) }
     func loadHistory(sessionId: String, beforeOffset: Int, beforeRev: String?) {}
     func loadHistory(sessionId: String, beforeSeq: Int) {}
