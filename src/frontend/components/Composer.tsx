@@ -784,7 +784,7 @@ export function Composer({
                   aria-label="Add"
                   aria-expanded={menu === "add"}
                 >
-                  <IconPlus size={24} />
+                  <IconPlus size={22} />
                 </button>
               </Tooltip>
               {menu === "add" && (
@@ -865,7 +865,7 @@ export function Composer({
                     disabled={disabled}
                     aria-pressed={!!goal}
                   >
-                    <IconCrosshair size={24} />
+                    <IconCrosshair size={22} />
                     {goal && <span className="composer-goal-label">Goal</span>}
                   </button>
                 </Tooltip>
@@ -915,7 +915,7 @@ export function Composer({
                     disabled={disabled}
                     aria-pressed={!!noteMode}
                   >
-                    <IconNote size={24} />
+                    <IconNote size={22} />
                     {noteMode && (
                       <span className="composer-goal-label">Note</span>
                     )}
