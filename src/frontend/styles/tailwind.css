@@ -83,6 +83,15 @@
 	--font-sans: var(--sans);
 	--font-mono: var(--mono);
 	--radius-panel: var(--radius);
+	/* The corner every button and chip in the chrome shares. global.css authors
+	   it as `calc(10px * var(--rf))` on .btn-viewer-pin / .btn-panel-toggle /
+	   .btn-viewer-newchat and friends; naming it here lets the Button primitive
+	   and any Tailwind-authored control land on the same corner instead of
+	   re-deriving it with an arbitrary value. Because it is built from --rf it
+	   tracks the squircle bump on its own (8.5px round → 13.5px squircle), and
+	   global.css gives every `rounded-*` class `corner-shape: squircle`, so it
+	   needs no entry in the @supports block below. */
+	--radius-control: calc(10px * var(--rf));
 
 	/* global.css sets html { font-size: 14px }, which silently shrinks every
 	   rem-based utility to 87.5% of its px design value (p-3 → 10.5px). Anchor

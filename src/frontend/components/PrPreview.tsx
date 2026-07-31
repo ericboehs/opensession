@@ -405,7 +405,7 @@ export function PrPreview({
 									<Button
 										variant={confirmClose ? "danger" : "default"}
 										size="sm"
-										className="min-h-[30px] rounded-[calc(8px*var(--rf))] px-2.5 text-[13px] font-[650] leading-none"
+										className="min-h-[30px] px-2.5 text-[13px] font-[650] leading-none"
 										icon={!closing && !confirmClose ? <IconX size={16} /> : undefined}
 										disabled={closing}
 										onClick={handleClose}

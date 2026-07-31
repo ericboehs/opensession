@@ -629,7 +629,7 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
       <div className="automation-form-actions">
         <Button
           size="sm"
-          className="min-h-7 rounded-md border-line-strong bg-transparent px-3 text-[13px]"
+          className="min-h-7 border-line-strong bg-transparent px-3 text-[13px]"
           onClick={onClose}
           disabled={saving}
         >

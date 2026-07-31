@@ -1382,38 +1382,33 @@ export function PrPanel({
           </div>
           <div className="pointer-events-auto ml-3 flex shrink-0 gap-2">
             {onOpenSession && (
-              <button
-                className="rounded-sm border border-line bg-transparent px-3 py-2 text-xs text-dim hover:bg-hover hover:text-fg"
-                onClick={onOpenSession}
-              >
+              <Button className="text-xs" onClick={onOpenSession}>
                 Open workspace
-              </button>
+              </Button>
             )}
             {/* Close lives here rather than at the foot of the Conversation tab:
                 the bar is the one chrome visible from every sub-tab, and burying
                 the only close affordance under a long comment list meant people
                 went to GitHub for it. Two-click confirm, same as merge. */}
             {pr.state === "OPEN" && (
-              <button
-                className={`rounded-sm border px-3 py-2 text-xs font-semibold ${
-                  confirmClose
-                    ? "border-red bg-red text-surface"
-                    : "border-red/40 bg-transparent text-red hover:border-red hover:bg-red-soft"
-                }`}
+              <Button
+                variant="danger"
+                className={`text-xs ${confirmClose ? "bg-red text-surface hover:bg-red" : ""}`}
                 onClick={handleClose}
                 disabled={closing}
                 title="Close this pull request without merging — the branch and its commits stay available"
               >
                 {closing ? "Closing…" : confirmClose ? "Confirm close" : "Close"}
-              </button>
+              </Button>
             )}
             {pr.state === "OPEN" && !pr.isDraft && (
-              <button
-                className="rounded-sm border border-green/40 bg-green-soft px-3 py-2 text-xs font-semibold text-green hover:border-green"
+              <Button
+                variant="success"
+                className="text-xs"
                 onClick={() => setReviewOpen(true)}
               >
                 Finish review
-              </button>
+              </Button>
             )}
           </div>
         </div>

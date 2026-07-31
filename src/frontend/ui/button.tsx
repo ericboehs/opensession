@@ -24,16 +24,31 @@ import { cn } from "./cn";
  *  - press feedback is a whole-button scale tick (Tella: active:scale-97).
  */
 
-type Variant = "default" | "primary" | "ghost" | "danger" | "warning";
+type Variant =
+	| "default"
+	| "primary"
+	| "ghost"
+	| "success"
+	| "danger"
+	| "warning";
 type Size = "xs" | "sm" | "md" | "lg";
 
 const sizes: Record<Size, string> = {
 	// Heights bracket the app's existing chrome: 32px matches the viewer
 	// header buttons, 26px the chip/inline tier.
-	xs: "min-h-6 px-2.5 text-xs rounded-xs",
-	sm: "min-h-[26px] px-2.5 text-xs rounded-xs",
-	md: "min-h-8 px-3 text-sm rounded-sm",
-	lg: "min-h-9 px-4 text-base rounded-sm",
+	//
+	// One radius across every size: `rounded-control`, the corner the rest of
+	// the chrome already uses (global.css authors it as `calc(10px*var(--rf))`
+	// on .btn-viewer-pin / .btn-panel-toggle / .btn-viewer-newchat). The
+	// `rounded-xs`/`rounded-sm` this used to ship read visibly squarer than the
+	// buttons it sat beside — enough that call sites kept patching it back out
+	// by hand. Holding one corner across the scale is also what makes the four
+	// sizes read as one family: it goes pill on the short sizes, exactly as the
+	// ~26px chrome buttons already do, and stays a soft rect on lg.
+	xs: "min-h-6 px-2.5 text-xs rounded-control",
+	sm: "min-h-[26px] px-2.5 text-xs rounded-control",
+	md: "min-h-8 px-3 text-sm rounded-control",
+	lg: "min-h-9 px-4 text-base rounded-control",
 };
 
 // Leading icon + label: shave 2px off the icon side (see doc block).
@@ -59,6 +74,11 @@ const variants: Record<Variant, string> = {
 	primary:
 		"bg-accent border-transparent text-white shadow-control hover:brightness-110",
 	ghost: "border-transparent text-dim hover:bg-hover hover:text-fg",
+	// Outline green, mirroring `danger` — the affirmative half of the pair
+	// (approve a review, merge, confirm). Green is the second-most reached-for
+	// button colour in the app after the accent, so it earns a variant rather
+	// than a bespoke class each time.
+	success: "border-green text-green hover:bg-green-soft",
 	// Outline red, like the delete-worktree confirm buttons.
 	danger: "border-red text-red hover:bg-red-soft",
 	warning: "border-yellow text-yellow hover:bg-[color-mix(in_srgb,var(--yellow)_12%,transparent)]",
@@ -69,6 +89,7 @@ const iconDim: Record<Variant, string> = {
 	default: "opacity-60",
 	primary: "opacity-80",
 	ghost: "opacity-60",
+	success: "opacity-80",
 	danger: "opacity-80",
 	warning: "opacity-80",
 };

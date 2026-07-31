@@ -216,15 +216,11 @@ export function SpinOffMenu({ session, entries, send, connected }: Props) {
               </span>
             )}
             <div className="flex-1" />
-            <Button
-              className="rounded-[8px] [corner-shape:squircle]"
-              onClick={() => setFlavor(null)}
-              disabled={starting}
-            >
+            <Button onClick={() => setFlavor(null)} disabled={starting}>
               Cancel
             </Button>
             <Button
-              className="rounded-[8px] [corner-shape:squircle] border-accent bg-accent-soft text-accent hover:border-accent hover:text-accent"
+              className="border-accent bg-accent-soft text-accent hover:border-accent hover:text-accent"
               onClick={start}
               disabled={!canStart}
             >
