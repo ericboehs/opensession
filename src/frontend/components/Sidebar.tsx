@@ -4064,9 +4064,13 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								row.chats.some((c) => c.id === v.sessionId),
 						);
 						if (!viewers.length) return null;
+						// Faces sit side by side rather than stacked: an overlapped pile
+						// needs an opaque ring the color of what's behind it, and a row's
+						// backdrop varies (sidebar material, hover ink, selected, waiting),
+						// so any fixed ring reads as a hard frame on most of them.
 						return (
 							<span
-								className="flex shrink-0 items-center -space-x-1.5"
+								className="flex shrink-0 items-center gap-0.5"
 								aria-label={`Viewing: ${viewers.map((v) => v.user).join(", ")}`}
 							>
 								{viewers.slice(0, 3).map((v) => (
@@ -4075,7 +4079,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 										name={v.user}
 										size={16}
 										title={`${v.user} is here`}
-										className="ring-2 ring-[var(--bg)]"
 									/>
 								))}
 							</span>
