@@ -372,6 +372,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 		[entry.type, entry.content],
 	);
 	const [workerReportOpen, setWorkerReportOpen] = useState(false);
+	const [reviewHandoffOpen, setReviewHandoffOpen] = useState(false);
 
 	if (entry.type === "user" && recoveryNotice) {
 		return (
@@ -454,19 +455,36 @@ export const MessageBubble = React.memo(function MessageBubble({
 		return (
 			<div className="msg" data-eid={entry.id}>
 				<div className="overflow-hidden rounded-lg bg-panel">
-					<div className="flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-dim">
-						<span>
-							🔍 Review findings
-							{reviewHandoff.prNumber ? ` · PR #${reviewHandoff.prNumber}` : ""}
-						</span>
+					<div className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-dim">
+						<button
+							type="button"
+							aria-expanded={reviewHandoffOpen}
+							onClick={() => setReviewHandoffOpen((open) => !open)}
+							className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-1 py-0.5 text-left font-sans text-xs font-medium text-dim hover:text-fg"
+						>
+							<span
+								className={cn(
+									"shrink-0 text-faint transition-transform duration-150",
+									!reviewHandoffOpen && "-rotate-90",
+								)}
+							>
+								<IconChevronDown size={16} />
+							</span>
+							<span>
+								🔍 Review findings
+								{reviewHandoff.prNumber ? ` · PR #${reviewHandoff.prNumber}` : ""}
+							</span>
+						</button>
 						<MsgTime ts={entry.timestamp} />
 					</div>
-					<ClampedBody
-						className="msg-body markdown px-3.5 py-2.5"
-						content={reviewHandoff.body}
-						entry={entry}
-						sessionId={sessionId}
-					/>
+					{reviewHandoffOpen && (
+						<ClampedBody
+							className="msg-body markdown px-3.5 py-2.5"
+							content={reviewHandoff.body}
+							entry={entry}
+							sessionId={sessionId}
+						/>
+					)}
 				</div>
 			</div>
 		);
