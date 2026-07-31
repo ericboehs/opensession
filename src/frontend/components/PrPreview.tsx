@@ -399,7 +399,7 @@ export function PrPreview({
 								<a className="pr-number" href={pr.url} target="_blank" rel="noopener">
 									#{pr.number}
 								</a>
-								<span className="text-faint text-[12px]">
+								<span className="text-faint text-label">
 									{repo} · {pr.author}
 								</span>
 								{pr.state === "OPEN" && (

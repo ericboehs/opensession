@@ -202,7 +202,7 @@ export function AssetsPanel({
 		return (
 			<div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-1 px-6 text-center">
 				<div className="text-[13px] text-dim">No assets yet</div>
-				<div className="max-w-[360px] text-[12px] text-faint">
+				<div className="max-w-[360px] text-label text-faint">
 					Ask the agent to save a visualization, report, or demo page here —
 					it writes files with opensession-assets' write_asset and they
 					preview live in this tab.
@@ -243,7 +243,7 @@ export function AssetsPanel({
 				<>
 					<div className="flex items-center gap-2 border-b border-line px-3 py-1.5">
 						<span
-							className="min-w-0 flex-1 truncate text-[12px] text-fg"
+							className="min-w-0 flex-1 truncate text-label text-fg"
 							title={file.path}
 						>
 							{file.path}
@@ -320,7 +320,7 @@ export function AssetsPanel({
 							</div>
 						) : kind === "markdown" ? (
 							text === null ? (
-								<div className="p-4 text-[12px] text-faint">Loading…</div>
+								<div className="p-4 text-label text-faint">Loading…</div>
 							) : (
 								<MarkdownBody
 									className="markdown px-4 py-3 text-[13px]"
@@ -329,15 +329,15 @@ export function AssetsPanel({
 							)
 						) : kind === "text" ? (
 							text === null ? (
-								<div className="p-4 text-[12px] text-faint">Loading…</div>
+								<div className="p-4 text-label text-faint">Loading…</div>
 							) : (
-								<pre className="whitespace-pre-wrap break-words px-4 py-3 font-mono text-[12px] leading-[1.5] text-fg">
+								<pre className="whitespace-pre-wrap break-words px-4 py-3 font-mono text-label leading-[1.5] text-fg">
 									{text}
 									{file.size > TEXT_CAP ? "\n… (truncated preview)" : ""}
 								</pre>
 							)
 						) : (
-							<div className="flex h-full items-center justify-center text-[12px] text-faint">
+							<div className="flex h-full items-center justify-center text-label text-faint">
 								No inline preview for this file type — use Download.
 							</div>
 						)}

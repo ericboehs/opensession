@@ -592,7 +592,7 @@ function NotePane({
 			</div>
 
 			{backlinks.length > 0 && (
-				<div className="flex items-baseline gap-1.5 flex-wrap px-[18px] py-1.5 border-t border-line text-[12px]">
+				<div className="flex items-baseline gap-1.5 flex-wrap px-[18px] py-1.5 border-t border-line text-label">
 					<span className="text-faint shrink-0">Linked from</span>
 					{backlinks.map((b) => (
 						<button

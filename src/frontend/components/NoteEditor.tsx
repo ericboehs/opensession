@@ -162,13 +162,13 @@ const noteHighlight = HighlightStyle.define([
 		tag: t.heading1,
 		color: "var(--text)",
 		fontWeight: "700",
-		fontSize: "1.25em",
+		fontSize: "19px",
 	},
 	{
 		tag: t.heading2,
 		color: "var(--text)",
 		fontWeight: "700",
-		fontSize: "1.12em",
+		fontSize: "19px",
 	},
 	{
 		tag: [t.heading3, t.heading4, t.heading5, t.heading6],

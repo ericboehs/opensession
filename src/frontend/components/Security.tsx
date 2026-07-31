@@ -209,7 +209,7 @@ export function Security({ onOpenSession }: Props) {
               <div className="text-fg text-[13px] font-medium mb-1.5">Recurring</div>
               <div className="flex flex-col gap-1">
                 {recurring.map((r) => (
-                  <div key={r.id} className="flex items-baseline gap-2 text-[12.5px] text-dim min-w-0">
+                  <div key={r.id} className="flex items-baseline gap-2 text-supporting text-dim min-w-0">
                     <span className={r.enabled ? "text-green" : "text-faint"}>●</span>
                     <span className="text-fg truncate">{r.name}</span>
                     <span className="font-mono text-faint shrink-0">{r.schedule}</span>
@@ -268,7 +268,7 @@ export function Security({ onOpenSession }: Props) {
                   {s.sessions.map((ref) => (
                     <div
                       key={ref.repo + ref.sessionId}
-                      className="flex items-baseline gap-2 text-[12px] text-dim min-w-0"
+                      className="flex items-baseline gap-2 text-label text-dim min-w-0"
                     >
                       {ref.status === "running" ? (
                         <span className="text-yellow shrink-0">●</span>
@@ -331,7 +331,7 @@ function StatusPill({ status }: { status: SecurityScan["status"] }) {
           ? "Interactive"
           : "Error";
   return (
-    <span className={`text-[12px] font-medium shrink-0 ${cls}`}>
+    <span className={`text-label font-medium shrink-0 ${cls}`}>
       ● {label}
     </span>
   );
@@ -498,7 +498,7 @@ function NewScanModal({
           />
           <span>
             Interactive mode
-            <span className="block text-dim text-[12px] font-medium mt-0.5">
+            <span className="block text-dim text-label font-medium mt-0.5">
               Instead of scanning end to end, {AGENT_NAME} collaborates with you in a
               session to tailor the threat model to your preferences before
               running the scan.

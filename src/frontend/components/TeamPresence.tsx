@@ -307,8 +307,8 @@ export function TeamPresencePopover({
 			</Popover.Trigger>
 			<Popover.Popup align="end" side="bottom" sideOffset={8} initialFocus className="w-[290px] p-1.5">
 				<div className="flex items-baseline justify-between px-2 pb-1 pt-1.5">
-					<span className="text-[12px] font-semibold text-faint">Team</span>
-					<span className="text-[12px] text-faint">
+					<span className="text-label font-semibold text-faint">Team</span>
+					<span className="text-label text-faint">
 						{active > 0 ? `${active} here now` : "Nobody here now"}
 					</span>
 				</div>

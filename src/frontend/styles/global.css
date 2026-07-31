@@ -662,7 +662,7 @@ html.wco .app-body.sidebar-collapsed
 	display: flex;
 	align-items: center;
 	gap: 9px;
-	font-size: 15px;
+	font-size: 14px;
 	font-weight: 600;
 	color: var(--text);
 	text-decoration: none;
@@ -688,7 +688,7 @@ html.wco .app-body.sidebar-collapsed
 	border: 1px solid rgba(255, 40, 40, 0.22);
 	color: #ff2a2a;
 	font-weight: 800;
-	font-size: 17px;
+	font-size: 19px;
 	text-shadow:
 		0 0 6px rgba(255, 30, 30, 0.85),
 		0 0 2px rgba(255, 90, 90, 0.9);
@@ -1148,7 +1148,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	visibility: visible;
 }
 .sidebar-workspace-title {
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	color: var(--text-faint);
@@ -1226,7 +1226,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	width: 17px;
 	height: 17px;
 	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
-	font-size: 10px;
+	font-size: 11px;
 }
 .sidebar-repo-chip-name {
 	color: var(--text-dim);
@@ -1262,7 +1262,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	color: var(--text-dim);
 	border: none;
 	border-radius: calc(11px * var(--rf)); corner-shape: var(--cs);
-	font-size: 20px;
+	font-size: 19px;
 	line-height: 1;
 	font-weight: 500;
 	flex-shrink: 0;
@@ -1559,7 +1559,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	border-radius: 999px;
 	background: var(--blue);
 	color: #fff;
-	font-size: 10px;
+	font-size: 11px;
 	font-weight: 600;
 	line-height: 16px;
 	text-align: center;
@@ -1659,7 +1659,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
    label (revealed on hover), and the count / any actions live on the right. */
 .sidebar-band-label,
 .sidebar-mine-label {
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	color: var(--text-faint);
@@ -1814,7 +1814,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	margin-left: auto;
 	padding-right: 4px;
 	color: var(--text-faint);
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 500;
 }
 /* In the status lanes the count rides directly behind its label (like the repo
@@ -1980,7 +1980,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	align-items: center;
 	justify-content: center;
 	border-radius: calc(9px * var(--rf)); corner-shape: var(--cs);
-	font-size: 15px;
+	font-size: 14px;
 	line-height: 1;
 	color: var(--text-faint);
 	/* Long titles run under this spot — opaque row-hover bg with a soft left
@@ -2260,7 +2260,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	gap: 13px;
 	width: 100%;
 	padding: 15px 14px;
-	font-size: 16px;
+	font-size: 13px;
 	background: none;
 	border: none;
 	border-radius: calc(11px * var(--rf)); corner-shape: var(--cs);
@@ -2397,7 +2397,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	align-items: center;
 	gap: 4px;
 	margin-top: 3px;
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--text-faint);
 	white-space: nowrap;
 	overflow: hidden;
@@ -2414,7 +2414,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	margin-left: auto;
 	padding-left: 10px;
 	min-width: 40px;
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--text-faint);
 	white-space: nowrap;
 	flex-shrink: 0;
@@ -2506,7 +2506,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	background: var(--text-faint);
 }
 .hovercard-branch {
-	font-size: 11.5px;
+	font-size: 11px;
 	color: var(--text-dim);
 	white-space: nowrap;
 	overflow: hidden;
@@ -2534,7 +2534,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 
 .hovercard-state {
 	margin-top: 3px;
-	font-size: 11.5px;
+	font-size: 11px;
 	font-weight: 500;
 }
 .hovercard-state-accent {
@@ -2574,7 +2574,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 .hovercard-row {
 	display: flex;
 	gap: 8px;
-	font-size: 11.5px;
+	font-size: 11px;
 	line-height: 1.35;
 }
 .hovercard-label {
@@ -2591,7 +2591,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 }
 .hovercard-mono {
 	font-family: var(--mono);
-	font-size: 0.95em;
+	font-size: inherit;
 }
 
 .hovercard-pr {
@@ -2849,7 +2849,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	background: var(--bg-panel);
 	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 	color: var(--text-dim);
-	font-size: 12.5px;
+	font-size: 13px;
 	cursor: pointer;
 	white-space: nowrap;
 	transition:
@@ -2971,7 +2971,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 		padding: 3px 5px;
 		border: 1px solid transparent;
 		border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
-		font-size: 22px;
+		font-size: 19px;
 	}
 	.session-tabs .session-tab-new:hover {
 		background: var(--hover);
@@ -3218,7 +3218,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	background: transparent;
 	color: var(--text-dim);
-	font-size: 15px;
+	font-size: 14px;
 	line-height: 1;
 	font-family: inherit;
 	cursor: pointer;
@@ -3251,7 +3251,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	   that stays smaller than a tab pill rather than towering over the strip. */
 	justify-content: center;
 	padding: 6px 9px;
-	font-size: 15px;
+	font-size: 14px;
 	line-height: 1;
 	font-family: inherit;
 	color: var(--text-dim);
@@ -3323,7 +3323,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 .detail-empty-sub {
 	color: var(--text-dim);
 	margin-top: 6px;
-	font-size: 13.5px;
+	font-size: 13px;
 }
 
 .btn-new-session {
@@ -3333,7 +3333,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	border: none;
 	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 9px 18px;
-	font-size: 13.5px;
+	font-size: 13px;
 	font-weight: 500;
 }
 .btn-new-session:hover {
@@ -3458,7 +3458,7 @@ body.resizing-tab-split {
 }
 
 .source-chip {
-	font-size: 10.5px;
+	font-size: 11px;
 	font-weight: 700;
 	letter-spacing: -0.01em;
 	padding: 2px 8px;
@@ -3589,7 +3589,7 @@ html.wco .viewer-branch {
 	align-items: center;
 	gap: 5px;
 	color: var(--text-faint);
-	font-size: 12.5px;
+	font-size: 13px;
 	flex-shrink: 0;
 }
 
@@ -3599,7 +3599,7 @@ html.wco .viewer-branch {
 	gap: 6px;
 	background: var(--green-soft);
 	color: var(--green);
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 	padding: 3px 10px;
 	border-radius: 99px;
@@ -3669,7 +3669,7 @@ html.wco .viewer-branch {
 	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	padding: 3px 5px;
-	font-size: 20px;
+	font-size: 19px;
 	line-height: 1;
 }
 .btn-viewer-overflow.active,
@@ -3761,7 +3761,7 @@ html.wco .viewer-branch {
 	right: -3px;
 	background: var(--accent);
 	color: #fff;
-	font-size: 9px;
+	font-size: 11px;
 	border-radius: 99px;
 	padding: 0 3.5px;
 	line-height: 1.3;
@@ -4051,7 +4051,7 @@ html.wco .viewer-branch {
 	margin-bottom: 2px;
 	border-bottom: 1px solid var(--border);
 	color: var(--text-dim);
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	overflow: hidden;
@@ -4073,7 +4073,7 @@ html.wco .viewer-branch {
 	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 8px 12px;
-	font-size: 13.5px;
+	font-size: 13px;
 	font-weight: 500;
 }
 .btn-viewer-panelrow > svg:first-child {
@@ -4370,14 +4370,14 @@ body.resizing-panel .panel-resize::after {
 .workspace-info-kicker,
 .workspace-info-label {
 	color: var(--text-faint);
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 650;
 	letter-spacing: -0.01em;
 }
 
 .workspace-info-title {
 	color: var(--text);
-	font-size: 17px;
+	font-size: 19px;
 	font-weight: 680;
 	line-height: 1.2;
 	overflow-wrap: anywhere;
@@ -4385,7 +4385,7 @@ body.resizing-panel .panel-resize::after {
 
 .workspace-info-meta {
 	color: var(--text-faint);
-	font-size: 12px;
+	font-size: 13px;
 	line-height: 1.35;
 }
 
@@ -4408,7 +4408,7 @@ body.resizing-panel .panel-resize::after {
 	   their viewbox (sub-¼px offsets at most), so no nudges are needed. */
 	padding: 5.5px 11px;
 	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 600;
 	line-height: 1.35;
 	border: 1px solid transparent;
@@ -4538,7 +4538,7 @@ body.resizing-panel .panel-resize::after {
 }
 .workspace-info-file-path {
 	font-family: var(--mono);
-	font-size: 12px;
+	font-size: 13px;
 	display: flex;
 	align-items: baseline;
 	min-width: 0;
@@ -4561,7 +4561,7 @@ body.resizing-panel .panel-resize::after {
 	background: var(--bg-surface);
 	border: none;
 	color: var(--text-faint);
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 	text-align: left;
 	cursor: pointer;
@@ -4591,7 +4591,7 @@ body.resizing-panel .panel-resize::after {
 	border: 1px solid var(--border-strong);
 	background: var(--bg-surface);
 	color: var(--text-dim);
-	font-size: 11.5px;
+	font-size: 11px;
 	font-weight: 650;
 	letter-spacing: -0.01em;
 	cursor: pointer;
@@ -4630,7 +4630,7 @@ body.resizing-panel .panel-resize::after {
 	display: grid;
 	place-items: center;
 	color: #fff;
-	font-size: 10px;
+	font-size: 11px;
 	font-weight: 680;
 }
 /* Real GitHub avatar variant (author's logo) — fill the same 18px tile. */
@@ -4642,7 +4642,7 @@ img.workspace-info-comment-avatar {
 	flex: 1;
 	min-width: 0;
 	color: var(--text);
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 550;
 	line-height: 1.35;
 	white-space: nowrap;
@@ -4652,11 +4652,11 @@ img.workspace-info-comment-avatar {
 .workspace-info-comment-time {
 	flex: none;
 	color: var(--text-faint);
-	font-size: 11.5px;
+	font-size: 11px;
 }
 .workspace-info-comment-author {
 	color: var(--text-faint);
-	font-size: 11.5px;
+	font-size: 11px;
 	font-weight: 600;
 	white-space: nowrap;
 	overflow: hidden;
@@ -4762,7 +4762,7 @@ img.workspace-info-comment-avatar {
 	flex: 1;
 	overflow: auto;
 	min-height: 0;
-	font-size: 12px;
+	font-size: 13px;
 }
 
 /* Checks hover overview — the full per-check list floated off the checks chip
@@ -4791,14 +4791,14 @@ img.workspace-info-comment-avatar {
 	background: var(--bg-surface);
 }
 .workspace-info-checks-title {
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 	color: var(--text);
 }
 .workspace-info-checks-summary {
 	display: inline-flex;
 	gap: 8px;
-	font-size: 11.5px;
+	font-size: 11px;
 	font-weight: 600;
 }
 .workspace-info-checks-list {
@@ -4831,7 +4831,7 @@ a.workspace-info-check-row {
 }
 .workspace-info-check-status {
 	flex-shrink: 0;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 500;
 	color: var(--text-dim);
 }
@@ -4895,7 +4895,7 @@ a.workspace-info-check-row {
 :is(.workspace-info-comment-md, .workspace-info-comment-pop-body)
 	.markdown
 	:where(h1, h2, h3, h4, h5, h6) {
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 700;
 	color: var(--text);
 	margin: 9px 0 3px;
@@ -4920,7 +4920,7 @@ a.workspace-info-check-row {
 :is(.workspace-info-comment-md, .workspace-info-comment-pop-body)
 	.markdown
 	:where(table) {
-	font-size: 12px;
+	font-size: 13px;
 }
 
 /* Full automated-review preview: a readable long-form scale, bounded by the
@@ -4933,7 +4933,7 @@ a.workspace-info-check-row {
 }
 .review-preview-markdown.markdown > h3:first-child {
 	margin: 0 0 12px;
-	font-size: 18px;
+	font-size: 19px;
 	font-weight: 650;
 	line-height: 1.25;
 	letter-spacing: -0.015em;
@@ -4975,7 +4975,7 @@ a.workspace-info-check-row {
 	margin-left: 1px;
 	cursor: default;
 	padding: 3px 8px;
-	font-size: 11.5px;
+	font-size: 11px;
 }
 .wi-git-rows {
 	display: grid;
@@ -4997,7 +4997,7 @@ a.workspace-info-check-row {
 }
 .wi-git-label {
 	color: var(--text-dim);
-	font-size: 13.5px;
+	font-size: 13px;
 	line-height: 1.3;
 }
 .wi-git-row .wi-git-btn {
@@ -5010,7 +5010,7 @@ a.workspace-info-check-row {
 }
 .wi-git-error {
 	color: var(--red);
-	font-size: 11.5px;
+	font-size: 11px;
 	margin-top: 2px;
 }
 
@@ -5049,7 +5049,7 @@ a.workspace-info-check-row {
 	gap: 8px;
 }
 .subagent-chip {
-	font-size: 10.5px;
+	font-size: 11px;
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	color: var(--accent);
@@ -5060,7 +5060,7 @@ a.workspace-info-check-row {
 }
 .subagent-title {
 	font-weight: 600;
-	font-size: 13.5px;
+	font-size: 13px;
 	color: var(--text);
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -5082,7 +5082,7 @@ a.workspace-info-check-row {
 	background: none;
 	border: none;
 	color: var(--text-dim);
-	font-size: 12px;
+	font-size: 13px;
 	padding: 0;
 	max-width: 100%;
 	overflow: hidden;
@@ -5095,7 +5095,7 @@ a.workspace-info-check-row {
 .subagent-desc {
 	margin-top: 6px;
 	color: var(--text-dim);
-	font-size: 12px;
+	font-size: 13px;
 	line-height: 1.4;
 }
 .subagent-body {
@@ -5125,7 +5125,7 @@ a.workspace-info-check-row {
 	gap: 10px;
 	padding: 10px 14px;
 	border-bottom: 1px solid var(--border);
-	font-size: 12.5px;
+	font-size: 13px;
 	position: sticky;
 	top: 0;
 	background: var(--bg-raised);
@@ -5148,7 +5148,7 @@ a.workspace-info-check-row {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-	font-size: 12px;
+	font-size: 13px;
 	white-space: nowrap;
 	color: var(--text-dim);
 	background: none;
@@ -5182,7 +5182,7 @@ a.workspace-info-check-row {
 	gap: 6px;
 }
 .pr-link-input {
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--text);
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
@@ -5195,7 +5195,7 @@ a.workspace-info-check-row {
 	border-color: var(--accent);
 }
 .pr-link-submit {
-	font-size: 12px;
+	font-size: 13px;
 	white-space: nowrap;
 	color: var(--text);
 	background: var(--bg-panel);
@@ -5225,7 +5225,7 @@ a.workspace-info-check-row {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-	font-size: 12px;
+	font-size: 13px;
 	white-space: nowrap;
 	color: var(--text-dim);
 	background: none;
@@ -5243,7 +5243,7 @@ a.workspace-info-check-row {
 	border-color: var(--border);
 }
 .diff-repo-tab-count {
-	font-size: 10.5px;
+	font-size: 11px;
 	color: var(--text-faint);
 	background: color-mix(in srgb, var(--text-faint) 20%, transparent);
 	border-radius: 999px;
@@ -5274,7 +5274,7 @@ a.workspace-info-check-row {
 }
 
 .diff-truncated {
-	font-size: 10.5px;
+	font-size: 11px;
 	font-weight: 700;
 	color: var(--yellow);
 	background: rgba(210, 153, 34, 0.15);
@@ -5308,7 +5308,7 @@ a.workspace-info-check-row {
 	gap: 7px;
 	margin-right: auto;
 	color: var(--text-faint);
-	font-size: 12px;
+	font-size: 13px;
 }
 .diff-groups-ready::before {
 	content: "";
@@ -5326,7 +5326,7 @@ a.workspace-info-check-row {
 	border: none;
 	color: var(--text-faint);
 	font-family: var(--sans);
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 500;
 	cursor: pointer;
 	padding: 2px 4px;
@@ -5367,14 +5367,14 @@ a.workspace-info-check-row {
 }
 .diff-file-group-count {
 	color: var(--text-faint);
-	font-size: 11.5px;
+	font-size: 11px;
 }
 .diff-file-group-stats {
 	display: flex;
 	gap: 8px;
 	margin-left: auto;
 	font-family: var(--mono);
-	font-size: 11.5px;
+	font-size: 11px;
 }
 .diff-file-group-files {
 	display: flex;
@@ -5424,7 +5424,7 @@ a.workspace-info-check-row {
 	cursor: text;
 	user-select: text;
 	font-family: var(--mono);
-	font-size: 12.5px;
+	font-size: 13px;
 }
 /* The dir (left, low-signal) absorbs truncation with an ellipsis; the base
    (filename) stays whole and only clips in the pathological no-dir case — the
@@ -5449,7 +5449,7 @@ a.workspace-info-check-row {
 	gap: 3px;
 	color: var(--text-faint);
 	font-family: var(--sans);
-	font-size: 11.5px;
+	font-size: 11px;
 	flex-shrink: 0;
 }
 .diff-file-comments::before {
@@ -5463,7 +5463,7 @@ a.workspace-info-check-row {
 	gap: 8px;
 	margin-left: auto;
 	font-family: var(--mono);
-	font-size: 12px;
+	font-size: 13px;
 	flex-shrink: 0;
 }
 .diff-file-header:hover .diff-file-stats,
@@ -5553,17 +5553,17 @@ a.workspace-info-check-row {
 }
 .diff-comment-actions .btn-send {
 	padding: 6px 14px;
-	font-size: 12.5px;
+	font-size: 13px;
 }
 
 .diff-comment-error {
 	color: var(--red);
-	font-size: 12px;
+	font-size: 13px;
 }
 
 .diff-comment-disabled {
 	color: var(--text-faint);
-	font-size: 12.5px;
+	font-size: 13px;
 }
 
 .diff-comment-confirmation {
@@ -5571,13 +5571,13 @@ a.workspace-info-check-row {
 	color: var(--green);
 	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	padding: 6px 12px;
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 600;
 }
 
 .diff-comment-hint {
 	color: var(--text-faint);
-	font-size: 11.5px;
+	font-size: 11px;
 	text-align: center;
 	padding-bottom: 8px;
 }
@@ -5626,7 +5626,7 @@ a.workspace-info-check-row {
 }
 .diff-image-empty {
 	padding: 12px;
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--text-dim);
 }
 
@@ -5653,7 +5653,7 @@ a.workspace-info-check-row {
 	background: none;
 	border: none;
 	color: var(--text-faint);
-	font-size: 11.5px;
+	font-size: 11px;
 	padding: 2px 4px;
 	cursor: pointer;
 }
@@ -5743,7 +5743,7 @@ a.workspace-info-check-row {
 	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	padding: 7px 10px;
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 500;
 	cursor: pointer;
 	white-space: nowrap;
@@ -5762,7 +5762,7 @@ a.workspace-info-check-row {
 	border: none;
 	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 9px 12px;
-	font-size: 13.5px;
+	font-size: 13px;
 	font-weight: 600;
 	cursor: pointer;
 }
@@ -5848,7 +5848,7 @@ a.workspace-info-check-row {
 
 .diff-file-path {
 	font-family: var(--mono);
-	font-size: 12px;
+	font-size: 13px;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -5860,13 +5860,13 @@ a.workspace-info-check-row {
 .diff-file-stats {
 	display: flex;
 	gap: 6px;
-	font-size: 11.5px;
+	font-size: 11px;
 	flex-shrink: 0;
 }
 
 .diff-chevron {
 	color: var(--text-faint);
-	font-size: 10px;
+	font-size: 11px;
 	flex-shrink: 0;
 }
 
@@ -5874,7 +5874,7 @@ a.workspace-info-check-row {
 	margin: 0;
 	border-top: 1px solid var(--border);
 	font-family: var(--mono);
-	font-size: 11.5px;
+	font-size: 11px;
 	line-height: 1.55;
 	overflow-x: auto;
 	max-height: 480px;
@@ -5937,7 +5937,7 @@ a.workspace-info-check-row {
 /* First-load placeholder line ("Checking status…") — the strip holds its place
    immediately instead of popping in once /pr + /git-status resolve. */
 .pr-bar-checking {
-	font-size: 13.5px;
+	font-size: 13px;
 	font-weight: 650;
 	color: var(--text-dim);
 	animation: pr-bar-checking-pulse 1.6s ease-in-out infinite;
@@ -5970,7 +5970,7 @@ a.workspace-info-check-row {
 	color: var(--text-dim);
 	background: var(--control-surface);
 	box-shadow: var(--control-shadow);
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 600;
 	font-variant-numeric: tabular-nums;
 	text-decoration: none;
@@ -6071,7 +6071,7 @@ a.workspace-info-check-row {
 	padding: 4px 12px;
 	background: none;
 	border: none;
-	font-size: 12.5px;
+	font-size: 13px;
 	text-align: left;
 	cursor: pointer;
 }
@@ -6132,7 +6132,7 @@ a.workspace-info-check-row {
 .pr-num-chip.pr-sib-chip {
 	padding: 2px 6px;
 	min-height: 22px;
-	font-size: 11.5px;
+	font-size: 11px;
 	font-weight: 600;
 	border-radius: calc(6px * var(--rf));
 	corner-shape: var(--cs);
@@ -6141,7 +6141,7 @@ a.workspace-info-check-row {
 .pr-bar .pr-num-chip.pr-sib-chip {
 	min-height: 24px;
 	padding: 0 7px;
-	font-size: 12px;
+	font-size: 13px;
 }
 .pr-sib-dot {
 	width: 7px;
@@ -6176,7 +6176,7 @@ a.workspace-info-check-row {
 	background: none;
 	border: none;
 	padding: 0;
-	font-size: 13.5px;
+	font-size: 13px;
 	font-weight: 650;
 	cursor: pointer;
 	white-space: nowrap;
@@ -6296,7 +6296,7 @@ a.workspace-info-check-row {
 
 .pr-bar-error {
 	color: var(--red);
-	font-size: 11.5px;
+	font-size: 11px;
 	max-width: 180px;
 	white-space: nowrap;
 	overflow: hidden;
@@ -6304,7 +6304,7 @@ a.workspace-info-check-row {
 }
 .pr-bar-prompted {
 	color: var(--text-dim);
-	font-size: 12px;
+	font-size: 13px;
 	white-space: nowrap;
 }
 
@@ -6456,7 +6456,7 @@ a.workspace-info-check-row {
 }
 
 .pr-title {
-	font-size: 14.5px;
+	font-size: 14px;
 	font-weight: 650;
 	color: var(--text);
 	text-decoration: none;
@@ -6470,14 +6470,14 @@ a.workspace-info-check-row {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px 14px;
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text-dim);
 	align-items: center;
 }
 
 .pr-branch {
 	font-family: var(--mono);
-	font-size: 11.5px;
+	font-size: 11px;
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
 	padding: 2px 8px;
@@ -6545,7 +6545,7 @@ a.workspace-info-check-row {
 .pr-checks-counts {
 	display: flex;
 	gap: 10px;
-	font-size: 12px;
+	font-size: 13px;
 	font-variant-numeric: tabular-nums;
 }
 .check-success-text {
@@ -6569,7 +6569,7 @@ a.workspace-info-check-row {
 	gap: 8px;
 	padding: 4px 6px;
 	color: var(--text);
-	font-size: 13.5px;
+	font-size: 13px;
 	border-top: 0;
 	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	transition: background 0.12s ease;
@@ -6617,7 +6617,7 @@ a.workspace-info-check-row {
 
 .pr-check-duration {
 	color: var(--text-faint);
-	font-size: 11.5px;
+	font-size: 11px;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -6652,7 +6652,7 @@ a.workspace-info-check-row {
 	color: var(--text-faint);
 	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	padding: 3px 7px;
-	font-size: 11.5px;
+	font-size: 11px;
 	white-space: nowrap;
 	cursor: pointer;
 }
@@ -6660,7 +6660,7 @@ a.workspace-info-check-row {
 	margin-right: 0;
 	border-color: transparent;
 	background: transparent;
-	font-size: 12.5px;
+	font-size: 13px;
 }
 .pr-comments-add-all:hover,
 .pr-comment-add:hover {
@@ -6691,7 +6691,7 @@ a.workspace-info-check-row {
 	align-items: center;
 	gap: 5px;
 	min-width: 0;
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text);
 }
 .pr-comment-author {
@@ -6704,7 +6704,7 @@ a.workspace-info-check-row {
 	margin-left: 0;
 	color: var(--text-faint);
 	text-decoration: none;
-	font-size: 16px;
+	font-size: 19px;
 }
 .pr-comment-row .pr-comment-link:hover {
 	color: var(--text);
@@ -6716,7 +6716,7 @@ a.workspace-info-check-row {
 	text-overflow: ellipsis;
 	display: block;
 	color: var(--text-faint);
-	font-size: 12.5px;
+	font-size: 13px;
 	line-height: 1.25;
 }
 .pr-comment-add {
@@ -6742,7 +6742,7 @@ a.workspace-info-check-row {
 	align-items: center;
 	gap: 8px;
 	padding: 4px 8px;
-	font-size: 13.5px;
+	font-size: 13px;
 	color: var(--text);
 }
 /* A state dot, not a step marker: the old hollow 11px ring read as an
@@ -6781,7 +6781,7 @@ a.workspace-info-check-row {
 	background: none;
 	border: none;
 	color: var(--text-dim);
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 600;
 	padding: 2px 0 2px 8px;
 	cursor: pointer;
@@ -6796,7 +6796,7 @@ a.workspace-info-check-row {
 }
 .pr-git-note {
 	padding: 2px 0 6px 19px;
-	font-size: 11.5px;
+	font-size: 11px;
 	color: var(--text-faint);
 }
 .pr-git-note-error {
@@ -6805,12 +6805,12 @@ a.workspace-info-check-row {
 
 /* Placeholder identity for a branch with no PR yet (mirrors Conductor). */
 .pr-no-pr-title {
-	font-size: 15.5px;
+	font-size: 14px;
 	font-weight: 600;
 	color: var(--text-faint);
 }
 .pr-no-pr-desc {
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text-faint);
 	margin-top: -6px;
 }
@@ -6828,7 +6828,7 @@ a.workspace-info-check-row {
 	margin: 0;
 	padding: 4px 12px 12px;
 	font-family: var(--sans);
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text-dim);
 	white-space: pre-wrap;
 	word-break: break-word;
@@ -6839,7 +6839,7 @@ a.workspace-info-check-row {
 /* Markdown-rendered PR description (inherits .markdown for headings/lists/code). */
 .pr-body-md {
 	padding: 0;
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text-faint);
 	line-height: 1.42;
 	word-break: break-word;
@@ -6849,7 +6849,7 @@ a.workspace-info-check-row {
 .pr-body-md h1,
 .pr-body-md h2,
 .pr-body-md h3 {
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text-faint);
 	font-weight: 500;
 	margin: 0.8em 0 0.15em;
@@ -6883,7 +6883,7 @@ a.workspace-info-check-row {
 	background: none;
 	border: 0;
 	font-family: var(--sans);
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 500;
 	color: var(--text-dim);
 	cursor: pointer;
@@ -6913,7 +6913,7 @@ a.workspace-info-check-row {
 	background: transparent;
 	border: none;
 	color: var(--text);
-	font-size: 12.5px;
+	font-size: 13px;
 	font-family: var(--sans);
 	cursor: pointer;
 	white-space: nowrap;
@@ -6929,7 +6929,7 @@ a.workspace-info-check-row {
 	padding: 10px;
 }
 .selection-quote {
-	font-size: 11.5px;
+	font-size: 11px;
 	color: var(--text-faint);
 	border-left: 2px solid var(--border-strong);
 	padding-left: 8px;
@@ -6960,11 +6960,11 @@ a.workspace-info-check-row {
 }
 .selection-actions .btn-send {
 	padding: 6px 14px;
-	font-size: 12.5px;
+	font-size: 13px;
 }
 .selection-sent {
 	padding: 8px 14px;
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--accent);
 	white-space: nowrap;
 }
@@ -7038,7 +7038,7 @@ a.workspace-info-check-row {
 
 .pr-merge-error {
 	color: var(--red);
-	font-size: 12.5px;
+	font-size: 13px;
 	background: var(--red-soft);
 	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	padding: 8px 10px;
@@ -7053,7 +7053,7 @@ a.workspace-info-check-row {
 	gap: 5px;
 }
 .prc-title {
-	font-size: 15px;
+	font-size: 14px;
 	font-weight: 650;
 	letter-spacing: -0.012em;
 	line-height: 1.3;
@@ -7068,7 +7068,7 @@ a.workspace-info-check-row {
 	align-items: center;
 	flex-wrap: wrap;
 	gap: 8px;
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--text-faint);
 	font-variant-numeric: tabular-nums;
 }
@@ -7125,7 +7125,7 @@ a.workspace-info-check-row {
 	min-height: 22px;
 }
 .prc-card-title {
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 	letter-spacing: -0.005em;
 	color: var(--text-faint);
@@ -7157,16 +7157,16 @@ a.workspace-info-check-row {
 }
 .prc-chevron {
 	color: var(--text-faint);
-	font-size: 10px;
+	font-size: 11px;
 }
 .prc-checks-rollup {
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 }
 .prc-checks-counts {
 	display: inline-flex;
 	gap: 8px;
-	font-size: 11.5px;
+	font-size: 11px;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -7186,7 +7186,7 @@ a.workspace-info-check-row {
 	color: var(--text-dim);
 	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	padding: 4px 10px;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 550;
 	line-height: 18px;
 	cursor: pointer;
@@ -7255,14 +7255,14 @@ a.workspace-info-check-row {
 .prc-summary-label {
 	flex: 1;
 	min-width: 0;
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 600;
 }
 
 /* Head-right diffstat label (not a button). */
 .prc-head-diffstat {
 	margin-left: auto;
-	font-size: 11.5px;
+	font-size: 11px;
 }
 
 /* "Show all N files" expander at the foot of a long files card. */
@@ -7270,7 +7270,7 @@ a.workspace-info-check-row {
 	background: none;
 	border: none;
 	padding: 5px 6px;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 550;
 	color: var(--text-faint);
 	cursor: pointer;
@@ -7284,7 +7284,7 @@ a.workspace-info-check-row {
 
 /* Check rows sit denser inside a card than in the legacy checks panel. */
 .prc-card-body .pr-check {
-	font-size: 12.5px;
+	font-size: 13px;
 	padding: 3px 6px;
 }
 .prc-card-body .pr-checks-group {
@@ -7304,7 +7304,7 @@ a.workspace-info-check-row {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-	font-size: 13.5px;
+	font-size: 13px;
 	font-weight: 600;
 }
 .prc-state svg {
@@ -7379,7 +7379,7 @@ a.workspace-info-check-row {
 	color: var(--text);
 	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	padding: 3px 10px;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 550;
 	white-space: nowrap;
 	cursor: pointer;
@@ -7394,7 +7394,7 @@ a.workspace-info-check-row {
 }
 .prc-git-note {
 	padding: 4px 6px;
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--accent);
 }
 .prc-git-note-error {
@@ -7425,7 +7425,7 @@ a.workspace-info-check-row {
 	justify-content: center;
 	background: var(--bg-active);
 	color: var(--text-dim);
-	font-size: 10px;
+	font-size: 11px;
 	font-weight: 700;
 }
 .prc-reviewer-name {
@@ -7470,7 +7470,7 @@ a.workspace-info-check-row {
 .prc-file-name {
 	flex: 1;
 	min-width: 0;
-	font-size: 12.5px;
+	font-size: 13px;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -7484,7 +7484,7 @@ a.workspace-info-check-row {
 	display: inline-flex;
 	gap: 6px;
 	flex-shrink: 0;
-	font-size: 11.5px;
+	font-size: 11px;
 	font-weight: 600;
 	font-variant-numeric: tabular-nums;
 }
@@ -7540,7 +7540,7 @@ a.workspace-info-check-row {
 	background: transparent;
 	color: var(--text-dim);
 	font: inherit;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 	padding: 3px 10px;
 	border-radius: calc(var(--rf, 8px) - 2px);
@@ -7561,7 +7561,7 @@ a.workspace-info-check-row {
 	align-items: center;
 	gap: 10px;
 	padding: 18px 4px;
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text-dim);
 }
 .pr-guide-section {
@@ -7581,7 +7581,7 @@ a.workspace-info-check-row {
 	margin-bottom: 6px;
 }
 .pr-guide-expl {
-	font-size: 12.5px;
+	font-size: 13px;
 	line-height: 1.55;
 	color: var(--text-dim);
 	max-width: 60ch;
@@ -7594,7 +7594,7 @@ a.workspace-info-check-row {
 	margin-left: auto;
 	background: var(--accent);
 	color: #fff;
-	font-size: 10.5px;
+	font-size: 11px;
 	font-weight: 600;
 	border-radius: 99px;
 	padding: 1px 7px;
@@ -7631,7 +7631,7 @@ a.workspace-info-check-row {
 	margin-bottom: 12px;
 }
 .reviews-title {
-	font-size: 18px;
+	font-size: 19px;
 	font-weight: 650;
 	letter-spacing: -0.01em;
 	margin: 0;
@@ -7699,7 +7699,7 @@ a.workspace-info-check-row {
 	border-bottom-color: var(--accent);
 }
 .reviews-tab-count {
-	font-size: 11.5px;
+	font-size: 11px;
 	font-weight: 600;
 	color: var(--text-dim);
 	background: var(--bg-active);
@@ -7763,7 +7763,7 @@ a.workspace-info-check-row {
 	display: flex;
 	align-items: center;
 	gap: 7px;
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 500;
 }
 .rv-state-label {
@@ -7803,7 +7803,7 @@ a.workspace-info-check-row {
 	white-space: nowrap;
 }
 .rv-num {
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text-faint);
 	flex-shrink: 0;
 	font-variant-numeric: tabular-nums;
@@ -7832,7 +7832,7 @@ a.workspace-info-check-row {
 	display: flex;
 	align-items: center;
 	gap: 12px;
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--text-faint);
 	min-width: 0;
 }
@@ -7841,7 +7841,7 @@ a.workspace-info-check-row {
 	align-items: center;
 	gap: 4px;
 	font-family: var(--mono);
-	font-size: 11.5px;
+	font-size: 11px;
 	color: var(--text-dim);
 	overflow: hidden;
 	min-width: 0;
@@ -7890,12 +7890,12 @@ a.workspace-info-check-row {
 	display: inline-flex;
 	align-items: center;
 	gap: 7px;
-	font-size: 12.5px;
+	font-size: 13px;
 }
 .rv-checks-empty,
 .rv-dim {
 	color: var(--text-faint);
-	font-size: 12.5px;
+	font-size: 13px;
 }
 .rv-check-dot {
 	width: 8px;
@@ -7958,7 +7958,7 @@ a.workspace-info-check-row {
 
 /* Review decision */
 .rv-review {
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 550;
 	white-space: nowrap;
 }
@@ -7981,7 +7981,7 @@ a.workspace-info-check-row {
 .rv-diffstat {
 	display: inline-flex;
 	gap: 7px;
-	font-size: 12px;
+	font-size: 13px;
 	font-variant-numeric: tabular-nums;
 	font-family: var(--mono);
 }
@@ -8025,14 +8025,14 @@ a.workspace-info-check-row {
 	background: var(--bg-active);
 }
 .rv-author-name {
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text-dim);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 .rv-c-updated {
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text-faint);
 	white-space: nowrap;
 	font-variant-numeric: tabular-nums;
@@ -8100,7 +8100,7 @@ a.workspace-info-check-row {
 .reviews-drawer-title {
 	flex: 1;
 	min-width: 0;
-	font-size: 13.5px;
+	font-size: 13px;
 	font-weight: 600;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -8125,7 +8125,7 @@ a.workspace-info-check-row {
 	padding: 14px 16px 0;
 }
 .reviews-has-detail .reviews-title {
-	font-size: 16px;
+	font-size: 19px;
 }
 .reviews-has-detail .reviews-tabs {
 	overflow-x: auto;
@@ -8147,7 +8147,7 @@ a.workspace-info-check-row {
 	display: none;
 }
 .reviews-has-detail .rv-checks-label {
-	font-size: 12px;
+	font-size: 13px;
 }
 
 @media (max-width: 1180px) {
@@ -8407,7 +8407,7 @@ a.workspace-info-check-row {
 }
 .load-history-btn {
 	font: inherit;
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--text-dim);
 	background: var(--bg-raised);
 	border: 1px solid var(--border);
@@ -8517,7 +8517,7 @@ a.workspace-info-check-row {
 	display: flex;
 	align-items: center;
 	gap: 7px;
-	font-size: 10.5px;
+	font-size: 11px;
 	font-weight: 600;
 	margin-bottom: 5px;
 	letter-spacing: -0.01em;
@@ -8638,7 +8638,7 @@ a.workspace-info-check-row {
 	margin-top: 2px;
 	padding: 5px 0;
 	color: var(--text-dim);
-	font-size: 12.5px;
+	font-size: 13px;
 }
 
 .msg-busy-inline .pulse-dot {
@@ -8664,7 +8664,7 @@ a.workspace-info-check-row {
 	/* Center the pill as a flex item in the .msg flex column. */
 	align-self: center;
 	color: var(--text-faint);
-	font-size: 11.5px;
+	font-size: 11px;
 	line-height: 1.45;
 	text-align: center;
 	background: var(--bg-panel);
@@ -8754,7 +8754,7 @@ a.workspace-info-check-row {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 500;
 	color: var(--text-dim);
 	line-height: 1.3;
@@ -8912,19 +8912,19 @@ a.workspace-info-check-row {
 	color: var(--text-dim);
 }
 .restart-title {
-	font-size: 15px;
+	font-size: 14px;
 	font-weight: 600;
 	color: var(--text);
 }
 .restart-sub {
-	font-size: 12.5px;
+	font-size: 13px;
 	line-height: 1.5;
 	color: var(--text-dim);
 }
 /* Session attribution on the restart card ("Triggered by …"). */
 .restart-by {
 	margin-top: 6px;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 500;
 	line-height: 1.4;
 	color: var(--text-dim);
@@ -8961,13 +8961,13 @@ a.workspace-info-check-row {
 	margin: 2px 0 8px;
 	overflow-x: auto;
 	font-family: var(--mono);
-	font-size: 12px;
+	font-size: 13px;
 	line-height: 1.55;
 }
 
 .markdown code {
 	font-family: var(--mono);
-	font-size: 0.9em;
+	font-size: inherit;
 	background: rgba(255, 255, 255, 0.06);
 	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	padding: 1.5px 5px;
@@ -8976,7 +8976,7 @@ a.workspace-info-check-row {
 .markdown pre code {
 	background: none;
 	padding: 0;
-	font-size: 12px;
+	font-size: 13px;
 	color: inherit;
 }
 
@@ -8991,7 +8991,7 @@ a.workspace-info-check-row {
    unscoped rule here clobbered them into mono accent chips with a second
    arrow. */
 .session-link[data-session-id] {
-	font-size: 0.9em;
+	font-size: inherit;
 	background: transparent;
 	border: 1px solid var(--border);
 	color: var(--text);
@@ -9057,14 +9057,14 @@ a.workspace-info-check-row {
 	color: var(--text);
 }
 .markdown h1 {
-	font-size: 15.5px;
+	font-size: 14px;
 }
 .markdown h2 {
-	font-size: 14.5px;
+	font-size: 14px;
 }
 .markdown h3,
 .markdown h4 {
-	font-size: 13.5px;
+	font-size: 13px;
 }
 
 .markdown > :first-child {
@@ -9084,14 +9084,14 @@ a.workspace-info-check-row {
 .markdown table {
 	border-collapse: collapse;
 	margin: 2px 0 10px;
-	font-size: 12.5px;
+	font-size: 13px;
 	display: block;
 	overflow-x: auto;
 	max-width: 100%;
 }
 .markdown th {
 	text-align: left;
-	font-size: 10.5px;
+	font-size: 11px;
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	color: var(--text-faint);
@@ -9136,7 +9136,7 @@ a.workspace-info-check-row {
 .markdown .md-details > summary::before {
 	content: "›";
 	color: var(--text-faint);
-	font-size: 17px;
+	font-size: 19px;
 	line-height: 1;
 	transition: transform 0.12s ease;
 }
@@ -9178,7 +9178,7 @@ a.workspace-info-check-row {
 }
 
 .home-greeting {
-	font-size: 24px;
+	font-size: 19px;
 	font-weight: 600;
 	letter-spacing: -0.02em;
 	margin-bottom: 18px;
@@ -9201,7 +9201,7 @@ a.workspace-info-check-row {
 	background: none;
 	border: none;
 	color: var(--text);
-	font-size: 14.5px;
+	font-size: 14px;
 	line-height: 1.5;
 	resize: none;
 	outline: none;
@@ -9254,7 +9254,7 @@ a.workspace-info-check-row {
 	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	background: var(--red-soft);
 	color: var(--red);
-	font-size: 12.5px;
+	font-size: 13px;
 	text-align: center;
 }
 
@@ -9274,7 +9274,7 @@ a.workspace-info-check-row {
 	border: 1px solid var(--border);
 	border-radius: 99px;
 	color: var(--text-dim);
-	font-size: 12px;
+	font-size: 13px;
 	padding: 5px 12px;
 	max-width: 100%;
 	white-space: nowrap;
@@ -9301,7 +9301,7 @@ a.workspace-info-check-row {
 	align-items: center;
 	gap: 8px;
 	margin-top: 28px;
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text-faint);
 }
 .home-whisper-part {
@@ -9335,7 +9335,7 @@ button.home-whisper-link:hover {
 }
 
 .home-section-title {
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 700;
 	letter-spacing: -0.01em;
 	color: var(--text-faint);
@@ -9382,7 +9382,7 @@ button.home-whisper-link:hover {
 }
 
 .home-row-title {
-	font-size: 13.5px;
+	font-size: 13px;
 	font-weight: 500;
 	white-space: nowrap;
 	overflow: hidden;
@@ -9407,7 +9407,7 @@ button.home-whisper-link:hover {
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	font-size: 11.5px;
+	font-size: 11px;
 	color: var(--text-faint);
 	min-width: 0;
 }
@@ -9464,7 +9464,7 @@ button.home-whisper-link:hover {
 
 .pin-btn {
 	color: var(--text-faint);
-	font-size: 15px;
+	font-size: 14px;
 	padding: 4px 6px;
 	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	flex-shrink: 0;
@@ -9511,14 +9511,14 @@ button.home-whisper-link:hover {
 
 .spinoff-form-title {
 	font-weight: 600;
-	font-size: 13.5px;
+	font-size: 13px;
 }
 
 .spinoff-form label {
 	display: flex;
 	flex-direction: column;
 	gap: 5px;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 500;
 	color: var(--text-dim);
 }
@@ -9550,7 +9550,7 @@ button.home-whisper-link:hover {
 
 .spinoff-note {
 	color: var(--text-faint);
-	font-size: 11.5px;
+	font-size: 11px;
 }
 
 /* automation webhook row */
@@ -9565,7 +9565,7 @@ button.home-whisper-link:hover {
 }
 
 .automation-webhook-label {
-	font-size: 10.5px;
+	font-size: 11px;
 	font-weight: 700;
 	letter-spacing: -0.01em;
 	color: var(--text-faint);
@@ -9590,7 +9590,7 @@ button.home-whisper-link:hover {
 	overflow-y: auto;
 	padding: 12px 14px 24px;
 	font-family: var(--mono);
-	font-size: 11.5px;
+	font-size: 11px;
 	line-height: 1.55;
 	background: #08080a;
 }
@@ -9630,7 +9630,7 @@ button.home-whisper-link:hover {
 .tool-pre {
 	margin: 0;
 	font-family: var(--mono);
-	font-size: 11.5px;
+	font-size: 11px;
 	line-height: 1.5;
 	white-space: pre-wrap;
 	word-break: break-word;
@@ -9746,7 +9746,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 10px 14px;
-	font-size: 13.5px;
+	font-size: 13px;
 	line-height: 1.5;
 	resize: vertical;
 	min-height: 44px;
@@ -9765,7 +9765,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	border: none;
 	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 10px 18px;
-	font-size: 13.5px;
+	font-size: 13px;
 	font-weight: 500;
 }
 .btn-send:disabled {
@@ -9821,7 +9821,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 }
 .composer-queue-title {
 	color: var(--text-faint);
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 650;
 }
 /* Compact running-agents flap — same tuck-under-the-composer trick as the
@@ -9904,7 +9904,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 }
 .composer-agents-name {
 	color: var(--text-dim);
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 650;
 	overflow: hidden;
 	white-space: nowrap;
@@ -9942,7 +9942,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	height: 16px;
 	border-radius: 999px;
 	border: 1px solid var(--border);
-	font-size: 10px;
+	font-size: 11px;
 	font-weight: 650;
 }
 .composer-agents-step.is-current .composer-agents-step-mark {
@@ -9958,7 +9958,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 4px 12px;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 550;
 }
 .composer-agents-tallies span {
@@ -9978,7 +9978,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	max-height: 108px;
 	overflow-y: auto;
 	list-style: none;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 500;
 }
 .composer-agents-list li {
@@ -10006,7 +10006,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	border-radius: 999px;
 	background: var(--bg-hover);
 	color: var(--text);
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 	cursor: pointer;
 }
@@ -10147,7 +10147,7 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 	background: var(--bg-raised);
 	border: 1px solid var(--border);
 	color: var(--text-dim);
-	font-size: 10px;
+	font-size: 11px;
 	font-weight: 700;
 	line-height: 16px;
 	text-align: center;
@@ -10330,7 +10330,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	padding: 6px 9px;
 	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	cursor: pointer;
-	font-size: 12.5px;
+	font-size: 13px;
 	line-height: 1.3;
 	white-space: nowrap;
 	overflow: hidden;
@@ -10340,7 +10340,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .mention-repo {
 	flex-shrink: 0;
-	font-size: 10.5px;
+	font-size: 11px;
 	font-weight: 600;
 	color: var(--accent);
 	background: color-mix(in srgb, var(--accent) 14%, transparent);
@@ -10355,7 +10355,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .mention-dir {
 	color: var(--text-faint);
-	font-size: 11.5px;
+	font-size: 11px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	direction: rtl;
@@ -10403,7 +10403,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: 999px;
 	padding: 3px 9px 3px 9px;
 	color: var(--text-dim);
-	font-size: 12px;
+	font-size: 13px;
 	max-width: 240px;
 	transition:
 		border-color 0.15s,
@@ -10420,7 +10420,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border: none;
 	outline: none;
 	color: inherit;
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 500;
 	cursor: pointer;
 	max-width: 180px;
@@ -10432,7 +10432,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	opacity: 0.7;
 }
 .composer-model-chevron {
-	font-size: 9px;
+	font-size: 11px;
 	color: var(--text-faint);
 	pointer-events: none;
 }
@@ -10443,7 +10443,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	background: var(--accent);
 	color: #fff;
 	border: none;
-	font-size: 15px;
+	font-size: 14px;
 	font-weight: 600;
 	line-height: 1;
 	display: inline-flex;
@@ -10575,7 +10575,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: 999px;
 	background: var(--yellow);
 	color: #fff;
-	font-size: 10px;
+	font-size: 11px;
 	font-weight: 700;
 	line-height: 15px;
 	text-align: center;
@@ -10592,7 +10592,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	font-size: 13px;
 }
 .composer-schedule-head {
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 500;
 	color: var(--text-faint);
 	padding: 6px 9px 4px;
@@ -10604,7 +10604,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .composer-schedule-err {
 	color: var(--red);
-	font-size: 12px;
+	font-size: 13px;
 	padding: 4px 9px 2px;
 }
 /* Pending scheduled messages, listed above the picks with a cancel affordance. */
@@ -10621,7 +10621,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	align-items: baseline;
 	gap: 8px;
 	padding: 5px 9px;
-	font-size: 12px;
+	font-size: 13px;
 	min-width: 0;
 }
 .composer-schedule-pin {
@@ -10641,7 +10641,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border: none;
 	background: none;
 	color: var(--text-faint);
-	font-size: 12px;
+	font-size: 13px;
 	cursor: pointer;
 }
 .composer-schedule-pcancel:hover {
@@ -10676,20 +10676,20 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	gap: 12px;
 }
 .composer-schedule-modal-title {
-	font-size: 17px;
+	font-size: 19px;
 	font-weight: 600;
 	color: var(--text);
 }
 .composer-schedule-modal-tz {
 	margin-top: 3px;
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text-dim);
 }
 .composer-schedule-modal-close {
 	border: none;
 	background: none;
 	color: var(--text-faint);
-	font-size: 15px;
+	font-size: 14px;
 	line-height: 1;
 	cursor: pointer;
 	padding: 2px 4px;
@@ -10795,7 +10795,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 
 .busy-elapsed {
 	color: var(--text-faint);
-	font-size: 12px;
+	font-size: 13px;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -10809,7 +10809,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-faint);
 	padding: 5px 12px;
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 500;
 	cursor: pointer;
 	transition:
@@ -10887,7 +10887,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .new-session-form .branch-suggesting {
 	font-weight: 500;
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--text-dim);
 	opacity: 0.8;
 }
@@ -10900,7 +10900,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 10px 12px;
-	font-size: 13.5px;
+	font-size: 13px;
 	outline: none;
 }
 .new-session-form select:focus,
@@ -10944,7 +10944,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 
 .create-note {
 	color: var(--text-faint);
-	font-size: 12.5px;
+	font-size: 13px;
 	text-align: center;
 }
 
@@ -10977,7 +10977,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 
 .page-sub {
 	color: var(--text-faint);
-	font-size: 12.5px;
+	font-size: 13px;
 	margin-top: 4px;
 }
 
@@ -11002,7 +11002,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	cursor: pointer;
 	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	padding: 4px 10px;
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 500;
 	color: var(--text-faint);
 	white-space: nowrap;
@@ -11072,7 +11072,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-dim);
 	padding: 3px 10px;
-	font-size: 12px;
+	font-size: 13px;
 }
 .btn-small:hover {
 	color: var(--text);
@@ -11135,7 +11135,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 6px 14px;
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--text-faint);
 }
 
@@ -11180,14 +11180,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 
 .automation-form-title {
 	font-weight: 600;
-	font-size: 14.5px;
+	font-size: 14px;
 }
 
 .automation-form label {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 500;
 	color: var(--text-dim);
 	flex: 1;
@@ -11201,7 +11201,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text);
 	padding: 8px 11px;
-	font-size: 13.5px;
+	font-size: 13px;
 	outline: none;
 }
 .automation-form input:focus,
@@ -11291,7 +11291,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	text-overflow: ellipsis;
 }
 .automations-row-trigger {
-	font-size: 11.5px;
+	font-size: 11px;
 	font-family: var(--mono);
 	color: var(--text-faint);
 	white-space: nowrap;
@@ -11306,7 +11306,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	flex-shrink: 0;
 	width: 84px;
 	text-align: right;
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--text-faint);
 }
 
@@ -11330,7 +11330,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .automations-drawer-title {
 	min-width: 0;
-	font-size: 13.5px;
+	font-size: 13px;
 	font-weight: 600;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -11393,7 +11393,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	gap: 8px;
 }
 .automations-drawer-section-label {
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 	color: var(--text-faint);
 }
@@ -11431,7 +11431,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	display: none;
 }
 .automations-page-has-detail .page-title {
-	font-size: 16px;
+	font-size: 19px;
 }
 .automations-page-has-detail .page-header {
 	align-items: center;
@@ -11472,7 +11472,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		order: -1;
 	}
 	.automations-row-name {
-		font-size: 14.5px;
+		font-size: 14px;
 	}
 	.automations-row-graph,
 	.automations-row-next {
@@ -11502,7 +11502,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 
 .conn-section-title {
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 700;
 	letter-spacing: -0.01em;
 	color: var(--text-faint);
@@ -11573,7 +11573,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 
 .conn-blurb {
 	color: var(--text-dim);
-	font-size: 12.5px;
+	font-size: 13px;
 	line-height: 1.45;
 	margin-bottom: 8px;
 }
@@ -11582,7 +11582,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	font-size: 11.5px;
+	font-size: 11px;
 	color: var(--text-faint);
 	min-width: 0;
 }
@@ -11605,7 +11605,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .conn-error {
 	margin-top: 8px;
 	color: var(--red);
-	font-size: 11.5px;
+	font-size: 11px;
 	font-family: var(--mono);
 }
 
@@ -11616,7 +11616,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: calc(5px * var(--rf)); corner-shape: var(--cs);
 	color: var(--text-faint);
 	padding: 2px 9px;
-	font-size: 11.5px;
+	font-size: 11px;
 }
 .conn-remove:hover {
 	color: var(--red);
@@ -11626,7 +11626,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .conn-footnote {
 	margin-top: 24px;
 	color: var(--text-faint);
-	font-size: 12.5px;
+	font-size: 13px;
 }
 .conn-footnote code {
 	font-family: var(--mono);
@@ -11727,7 +11727,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .wiki-chevron {
 	display: inline-block;
 	width: 13px;
-	font-size: 9px;
+	font-size: 11px;
 	color: var(--text-faint);
 }
 
@@ -11761,7 +11761,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .wiki-result-snippet {
 	color: var(--text-dim);
-	font-size: 12px;
+	font-size: 13px;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -11795,7 +11795,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 
 .wiki-doc-path {
 	font-family: var(--mono);
-	font-size: 11.5px;
+	font-size: 11px;
 	color: var(--text-faint);
 	margin-bottom: 16px;
 }
@@ -11806,15 +11806,15 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	line-height: 1.65;
 }
 .wiki-doc h1 {
-	font-size: 22px;
+	font-size: 19px;
 	margin: 0 0 14px;
 }
 .wiki-doc h2 {
-	font-size: 17px;
+	font-size: 19px;
 	margin: 22px 0 10px;
 }
 .wiki-doc h3 {
-	font-size: 15px;
+	font-size: 14px;
 	margin: 18px 0 8px;
 }
 .wiki-doc img {
@@ -11841,7 +11841,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border: 1px solid var(--border);
 	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	padding: 1px 5px;
-	font-size: 12.5px;
+	font-size: 13px;
 }
 .wiki-welcome-hint {
 	font-size: 13px;
@@ -11870,7 +11870,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 
 .user-gate-card h2 {
 	margin: 0 0 20px;
-	font-size: 17px;
+	font-size: 19px;
 }
 
 .user-gate-grid {
@@ -12303,7 +12303,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		font-size: 10px;
+		font-size: 11px;
 		font-weight: 500;
 		line-height: 1.1;
 		/* A touch lighter than the name so the subtitle recedes (Slack-header). */
@@ -12401,7 +12401,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		font-size: 15px;
+		font-size: 14px;
 		font-weight: 650;
 		letter-spacing: -0.01em;
 		color: var(--text);
@@ -12426,7 +12426,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 	}
 	.session-info-name {
-		font-size: 20px;
+		font-size: 19px;
 		font-weight: 600;
 		letter-spacing: -0.02em;
 		line-height: 1.2;
@@ -12527,7 +12527,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.header-chatbar-sep {
 		flex-shrink: 0;
 		/* Bigger middot between repo · model · cost. */
-		font-size: 20px;
+		font-size: 19px;
 		line-height: 1;
 		color: var(--text-dim);
 	}
@@ -12542,14 +12542,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.header-chatbar-model {
 		min-width: 0;
 		max-width: 45vw;
-		font-size: 12px;
+		font-size: 13px;
 		font-weight: 500;
 		color: var(--text-dim);
 	}
 	/* Cost meter in the metadata row matches the model's dim subtitle — same
 	   size + color — with a smaller context ring and no button padding. */
 	.header-chatbar .chatbar-usage {
-		font-size: 12px;
+		font-size: 13px;
 		padding: 0;
 		gap: 4px;
 	}
@@ -12704,7 +12704,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	   44pt minimum touch target, with legible labels. */
 	.viewer-header-actions button,
 	.viewer-header-actions .session-link {
-		font-size: 12.5px;
+		font-size: 13px;
 		padding: 7px 11px;
 		min-height: 38px;
 		display: inline-flex;
@@ -12718,7 +12718,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		height: 40px;
 		min-height: 40px;
 		padding: 0;
-		font-size: 24px;
+		font-size: 19px;
 		border-radius: 50%;
 		border-color: var(--border);
 		/* White floating bubble matching the Back bubble + title pill. */
@@ -12742,7 +12742,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		color: var(--accent);
 		background: color-mix(in srgb, var(--accent) 12%, transparent);
 		padding: 5px 7px;
-		font-size: 15px;
+		font-size: 14px;
 	}
 	.viewer-header-actions .btn-workspace.active {
 		background: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -12882,17 +12882,17 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		padding: 24px 14px 8vh;
 	}
 	.home-greeting {
-		font-size: 21px;
+		font-size: 19px;
 	}
 	.home-row {
 		padding: 12px 11px;
 		gap: 8px;
 	}
 	.home-row-title {
-		font-size: 15px;
+		font-size: 14px;
 	}
 	.home-row-meta {
-		font-size: 12.5px;
+		font-size: 13px;
 	}
 	.status-pill {
 		min-width: 0;
@@ -12995,18 +12995,18 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	}
 	.sidebar-item-title,
 	.sidebar-item-rename {
-		font-size: 15px;
+		font-size: 14px;
 	}
 	.sidebar-item-meta,
 	.sidebar-item-inline-meta {
-		font-size: 12.5px;
+		font-size: 13px;
 	}
 	/* Pinned session tabs. */
 	.session-tab {
 		padding: 6px 10px;
 	}
 	.session-tab-title {
-		font-size: 13.5px;
+		font-size: 13px;
 	}
 	/* A one-chat workspace's tab strip is pure chrome on a phone: a single tab
 	   repeating the title in the top bar, plus a "+" that's hover-revealed and
@@ -13113,10 +13113,10 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		order: 3;
 		height: 34px;
 		padding: 0 18px;
-		font-size: 15px;
+		font-size: 14px;
 	}
 	.app-title {
-		font-size: 16px;
+		font-size: 14px;
 	}
 
 	/* Hamburger: bigger bars and a 44px tap target. */
@@ -13134,7 +13134,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.composer-send {
 		width: 40px;
 		height: 40px;
-		font-size: 17px;
+		font-size: 19px;
 	}
 	.composer-send svg {
 		width: 24px;
@@ -13176,19 +13176,19 @@ html[data-theme="light"] .composer-hl .cmp-fence {
      fully inside. */
 @media (max-width: 720px) {
 	.sidebar-nav-item {
-		font-size: 16px;
+		font-size: 14px;
 		padding: 10px 8px;
 	}
 	.sidebar-workspace-title {
-		font-size: 15px;
+		font-size: 14px;
 	}
 	.sidebar-band-label {
-		font-size: 15px;
+		font-size: 14px;
 	}
 	/* Group rows (automations, status lanes, Pinned/Archived/Open PRs) are tap
-	   targets just like workspace rows — same 16px text, taller rows. */
+	   targets just like workspace rows, with taller rows. */
 	.sidebar-group-header {
-		font-size: 16px;
+		font-size: 14px;
 		padding: 11px 8px 11px 6px;
 	}
 	.sidebar-independent-section > .sidebar-band-label {
@@ -13199,7 +13199,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	}
 	.sidebar-ws-time,
 	.sidebar-ws-ticker {
-		font-size: 12px;
+		font-size: 13px;
 	}
 	.sidebar-ws-row .sidebar-ws-ticker {
 		flex: 0 0 28px;
@@ -13210,7 +13210,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	}
 	.sidebar-item-title,
 	.sidebar-item-rename {
-		font-size: 16px;
+		font-size: 14px;
 	}
 	.sidebar-item-meta,
 	.sidebar-item-inline-meta {
@@ -13270,7 +13270,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	.sidebar-new-btn {
 		width: 38px;
 		height: 38px;
-		font-size: 22px;
+		font-size: 19px;
 	}
 	.sidebar-filter-btn {
 		min-width: 38px;
@@ -13280,11 +13280,11 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	/* Inline icon buttons (copy, expand, …) inside diff / message headers. */
 	.btn-icon {
 		padding: 8px 10px;
-		font-size: 15px;
+		font-size: 14px;
 	}
 	.pin-btn {
 		padding: 8px 10px;
-		font-size: 16px;
+		font-size: 13px;
 	}
 
 	/* Segmented pickers (Ask/Code mode, sort, …). */
@@ -13446,7 +13446,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 		margin-bottom: 0;
 	}
 	.sidebar-workspace-title {
-		font-size: 15px;
+		font-size: 14px;
 		font-weight: 700;
 	}
 
@@ -13527,7 +13527,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--text-dim);
 	background: var(--bg-panel);
 	border: 1px solid var(--border);
@@ -13777,7 +13777,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);
 	background: color-mix(in srgb, var(--accent) 16%, transparent);
 	color: var(--accent);
-	font-size: 9.5px;
+	font-size: 11px;
 	font-weight: 700;
 	letter-spacing: 0.02em;
 }
@@ -13791,11 +13791,11 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text);
 }
 .composer-file-sub {
-	font-size: 10.5px;
+	font-size: 11px;
 	color: var(--text-faint);
 }
 .composer-file-remove {
@@ -13806,7 +13806,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border: none;
 	background: none;
 	color: var(--text-faint);
-	font-size: 15px;
+	font-size: 14px;
 	line-height: 1;
 	cursor: pointer;
 	padding: 0;
@@ -13831,7 +13831,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	color: var(--accent);
 }
 .composer-goal-label {
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 500;
 }
 .composer-menu {
@@ -13860,7 +13860,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	gap: 9px;
 	width: 100%;
 	text-align: left;
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text);
 	background: none;
 	border: none;
@@ -13893,7 +13893,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: calc(14px * var(--rf)); corner-shape: var(--cs);
 	background: color-mix(in srgb, var(--accent) 12%, transparent);
 	border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text);
 }
 .fork-banner-cancel {
@@ -13901,14 +13901,14 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	background: none;
 	color: var(--text-dim);
 	cursor: pointer;
-	font-size: 12px;
+	font-size: 13px;
 }
 .fork-banner-cancel:hover {
 	color: var(--text);
 }
 
 .queue-count {
-	font-size: 11.5px;
+	font-size: 11px;
 	color: var(--accent);
 	font-weight: 600;
 }
@@ -13923,7 +13923,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	align-items: center;
 	gap: 8px;
 	margin-top: 8px;
-	font-size: 11.5px;
+	font-size: 11px;
 	color: var(--text-dim);
 }
 
@@ -14008,7 +14008,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	background: none;
 	border: none;
 	color: var(--text-dim);
-	font-size: 16px;
+	font-size: 19px;
 	line-height: 1;
 	cursor: pointer;
 	padding: 2px 6px;
@@ -14039,7 +14039,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .notes-empty {
 	padding: 6px 14px;
 	color: var(--text-faint);
-	font-size: 12px;
+	font-size: 13px;
 }
 .notes-item {
 	display: flex;
@@ -14068,7 +14068,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 .notes-item-pin,
 .notes-item-del {
 	opacity: 0;
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--text-faint);
 	padding: 0 2px;
 }
@@ -14108,7 +14108,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .note-pane-id {
 	font-family: var(--mono);
-	font-size: 12px;
+	font-size: 13px;
 	color: var(--text-faint);
 }
 .note-presence {
@@ -14122,7 +14122,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: 50%;
 	background: var(--purple);
 	color: #fff;
-	font-size: 10px;
+	font-size: 11px;
 	font-weight: 700;
 	display: inline-flex;
 	align-items: center;
@@ -14156,7 +14156,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	padding: 1px 7px;
 	margin: 0 1px;
 	border-radius: calc(11px * var(--rf)); corner-shape: var(--cs);
-	font-size: 12px;
+	font-size: 13px;
 	font-family: var(--sans);
 	cursor: pointer;
 	white-space: nowrap;
@@ -14188,7 +14188,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	background: var(--bg-panel);
 	border: 1px solid var(--border-strong);
 	color: var(--text-dim);
-	font-size: 12px;
+	font-size: 13px;
 	font-family: var(--sans);
 	padding: 4px 10px;
 	border-radius: calc(7px * var(--rf)); corner-shape: var(--cs);
@@ -14264,7 +14264,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .note-prompt-error {
 	color: var(--red);
-	font-size: 12px;
+	font-size: 13px;
 	margin-top: 4px;
 }
 
@@ -14290,7 +14290,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 
 /* Note tabs in the tab bar + drag-reorder affordances */
 .session-tab-note .session-tab-glyph {
-	font-size: 12px;
+	font-size: 13px;
 	margin-right: 2px;
 }
 .session-tab-dragging {
@@ -14334,7 +14334,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	white-space: nowrap;
 }
 .plain-status {
-	font-size: 10.5px;
+	font-size: 11px;
 	font-weight: 700;
 	letter-spacing: -0.01em;
 	padding: 2px 7px;
@@ -14356,7 +14356,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	color: var(--amber, #d29922);
 }
 .plain-open {
-	font-size: 11.5px;
+	font-size: 11px;
 	font-weight: 600;
 	color: var(--accent);
 	text-decoration: none;
@@ -14424,15 +14424,15 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 }
 .plain-actor {
 	font-weight: 700;
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text);
 }
 .plain-time {
-	font-size: 10.5px;
+	font-size: 11px;
 	color: var(--text-faint);
 }
 .plain-kind-badge {
-	font-size: 9.5px;
+	font-size: 11px;
 	font-weight: 700;
 	letter-spacing: -0.01em;
 	color: var(--text-faint);
@@ -14445,7 +14445,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-color: color-mix(in srgb, var(--amber, #d29922) 40%, var(--border));
 }
 .plain-subject {
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 600;
 	color: var(--text);
 }
@@ -14610,7 +14610,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	resize: none;
 	color: var(--text);
 	font-family: var(--sans);
-	font-size: 15px;
+	font-size: 14px;
 	line-height: 1.55;
 }
 .palette-textarea::placeholder {
@@ -14626,7 +14626,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	background: var(--red-soft);
 	color: var(--red);
-	font-size: 12.5px;
+	font-size: 13px;
 }
 
 .palette-footer {
@@ -14667,7 +14667,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	border-radius: 999px;
 	padding: 5px 11px;
 	color: var(--text-dim);
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 500;
 	max-width: 180px;
 	transition: border-color 0.12s, color 0.12s;
@@ -14716,7 +14716,7 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	right: -4px;
 	background: var(--accent);
 	color: var(--bg-panel);
-	font-size: 10px;
+	font-size: 11px;
 	font-weight: 600;
 	min-width: 16px;
 	height: 16px;
@@ -14928,7 +14928,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	font-weight: 600;
 }
 .palette-create-menu-desc {
-	font-size: 11.5px;
+	font-size: 11px;
 	color: var(--text-dim);
 }
 
@@ -14973,8 +14973,14 @@ html[data-theme="light"] .palette-card .palette-create {
 	outline: none;
 	color: var(--text);
 	font-family: var(--sans);
-	font-size: 16px;
+	font-size: 14px;
 	line-height: 1.4;
+}
+@media (max-width: 720px) {
+	/* Keep focused text inputs at the iOS no-zoom floor. */
+	.ss-search-input {
+		font-size: 16px;
+	}
 }
 .ss-search-input::placeholder {
 	color: var(--text-faint);
@@ -15012,7 +15018,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	border: 1px solid var(--border-strong);
 	border-radius: 999px;
 	background: var(--bg-raised);
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text-dim);
 	cursor: pointer;
 	transition: border-color 0.12s, color 0.12s;
@@ -15036,7 +15042,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	font-weight: 500;
 }
 .ss-pill-caret {
-	font-size: 8px;
+	font-size: 11px;
 	color: var(--text-faint);
 }
 .ss-pill-select {
@@ -15055,7 +15061,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	border: none;
 	background: none;
 	color: var(--text-faint);
-	font-size: 12.5px;
+	font-size: 13px;
 	cursor: pointer;
 	padding: 4px 6px;
 	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
@@ -15074,7 +15080,7 @@ html[data-theme="light"] .palette-card .palette-create {
 .ss-group-heading {
 	padding: 10px 10px 5px;
 	color: var(--text-faint);
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 }
 .ss-empty {
@@ -15140,7 +15146,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	flex: 1;
 }
 .ss-item-title {
-	font-size: 13.5px;
+	font-size: 13px;
 	font-weight: 500;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -15148,7 +15154,7 @@ html[data-theme="light"] .palette-card .palette-create {
 }
 /* Transcript snippet shown under the title for a conversation-only match. */
 .ss-item-snippet {
-	font-size: 11.5px;
+	font-size: 11px;
 	line-height: 1.35;
 	color: var(--text-dim);
 	overflow: hidden;
@@ -15160,7 +15166,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	font-size: 11.5px;
+	font-size: 11px;
 	color: var(--text-faint);
 	overflow: hidden;
 	white-space: nowrap;
@@ -15188,7 +15194,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	color: #d29922;
 }
 .ss-item-status {
-	font-size: 11.5px;
+	font-size: 11px;
 	color: var(--text-faint);
 	flex-shrink: 0;
 }
@@ -15199,7 +15205,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	gap: 16px;
 	padding: 8px 14px;
 	border-top: 1px solid var(--border);
-	font-size: 11.5px;
+	font-size: 11px;
 	color: var(--text-faint);
 }
 .ss-hint-count {
@@ -15216,7 +15222,7 @@ html[data-theme="light"] .palette-card .palette-create {
 	border-radius: calc(4px * var(--rf)); corner-shape: var(--cs);
 	background: var(--bg-raised);
 	font-family: var(--sans);
-	font-size: 10.5px;
+	font-size: 11px;
 	color: var(--text-dim);
 }
 
@@ -15349,7 +15355,7 @@ html.wco .settings-sidenav {
 	align-self: flex-start;
 }
 .settings-title {
-	font-size: 24px;
+	font-size: 19px;
 	font-weight: 700;
 	letter-spacing: -0.02em;
 	color: var(--text);
@@ -15357,7 +15363,7 @@ html.wco .settings-sidenav {
 	padding: 0 10px;
 }
 .settings-group-label {
-	font-size: 12px;
+	font-size: 13px;
 	font-weight: 600;
 	color: var(--text-faint);
 	margin: 22px 0 8px;
@@ -15412,7 +15418,7 @@ html.wco .settings-sidenav {
 	color: var(--text);
 }
 .setting-row-desc {
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--text-dim);
 	margin-top: 2px;
 }
@@ -15631,7 +15637,7 @@ html.wco .settings-sidenav {
 /* Promote button on ask chats (header, next to the ask chip). */
 .viewer-promote-btn {
 	flex: 0 0 auto;
-	font-size: 12px;
+	font-size: 13px;
 	padding: 2px 8px;
 	border-radius: calc(6px * var(--rf)); corner-shape: var(--cs);
 	border: 1px solid var(--border-strong);
@@ -15739,7 +15745,7 @@ html.wco .settings-sidenav {
 /* Short per-message timestamp in the label row (hover for the full time). */
 .msg-time {
 	margin-left: 6px;
-	font-size: 10.5px;
+	font-size: 11px;
 	font-weight: 500;
 	color: var(--text-faint);
 	letter-spacing: 0;
@@ -15897,7 +15903,7 @@ html.wco .settings-sidenav {
 	   min-width box — leaving them ~20px short of the header icons. Pin the
 	   digits to the box's right edge so they land flush under those icons. */
 	justify-content: flex-end;
-	font-size: 10.5px;
+	font-size: 11px;
 	color: var(--text-faint);
 }
 .sidebar-group-count + .sidebar-ws-time {
@@ -15936,7 +15942,7 @@ html.wco .settings-sidenav {
 	/* Same as .sidebar-ws-time: this is a flex box on touch, so pin the digits
 	   to the right edge (text-align:right is ignored on a flex container). */
 	justify-content: flex-end;
-	font-size: 10.5px;
+	font-size: 11px;
 	font-variant-numeric: tabular-nums;
 	color: var(--yellow);
 }
@@ -15987,7 +15993,7 @@ html.wco .settings-sidenav {
 	display: inline-flex;
 	gap: 5px;
 	padding-right: 16px;
-	font-size: 10.5px;
+	font-size: 11px;
 	font-variant-numeric: tabular-nums;
 }
 .sidebar-ws-diff-add {
@@ -16022,7 +16028,7 @@ html.wco .settings-sidenav {
 	align-items: center;
 	gap: 4px;
 	margin-left: auto;
-	font-size: 10.5px;
+	font-size: 11px;
 	font-variant-numeric: tabular-nums;
 	color: var(--text-faint);
 }
@@ -16229,7 +16235,7 @@ html.wco .settings-sidenav {
 	color: var(--accent);
 }
 .voice-status {
-	font-size: 13.5px;
+	font-size: 13px;
 	font-weight: 500;
 	color: var(--text-dim);
 	flex-shrink: 0;
@@ -16259,7 +16265,7 @@ html.wco .settings-sidenav {
 	background: var(--red-soft);
 	color: var(--red);
 	border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
-	font-size: 12.5px;
+	font-size: 13px;
 	font-weight: 500;
 	padding: 7px 11px;
 	border-radius: calc(10px * var(--rf)); corner-shape: var(--cs);

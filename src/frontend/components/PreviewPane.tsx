@@ -65,7 +65,7 @@ export function PreviewPane({
 					className={`h-2 w-2 shrink-0 rounded-full ${url ? "bg-green-500" : "animate-pulse bg-amber-400"}`}
 					aria-hidden="true"
 				/>
-				<div className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-dim">
+				<div className="min-w-0 flex-1 truncate text-supporting font-medium text-dim">
 					{url ?? (status?.starting || !status ? "Starting the dev server…" : "Preview stopped")}
 				</div>
 				<Button
@@ -84,7 +84,7 @@ export function PreviewPane({
 					Open in browser
 				</Button>
 				<button
-					className="rounded-md border border-line-strong px-2.5 py-1 text-[12px] font-medium text-dim transition-colors hover:border-red-400 hover:text-red-500 disabled:opacity-40"
+					className="rounded-md border border-line-strong px-2.5 py-1 text-label font-medium text-dim transition-colors hover:border-red-400 hover:text-red-500 disabled:opacity-40"
 					disabled={stopping || (!status?.running && !status?.starting)}
 					onClick={stop}
 					title="Stop the dev server and release its container"
@@ -110,7 +110,7 @@ export function PreviewPane({
 					<div className="text-[14px] font-semibold text-fg">
 						{status?.starting || !status ? "Starting the dev server…" : "Preview is not running"}
 					</div>
-					<div className="max-w-sm text-[12.5px] font-medium leading-relaxed text-dim">
+					<div className="max-w-sm text-supporting font-medium leading-relaxed text-dim">
 						{status?.starting || !status
 							? "Warm claims serve in seconds; a big branch jump can take a minute to compile."
 							: "It may have been stopped or released — close and reopen this tab to start it again."}

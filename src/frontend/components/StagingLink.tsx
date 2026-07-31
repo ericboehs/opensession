@@ -123,7 +123,7 @@ export function StagingLink({
 		if (variant === "action") {
 			return (
 				<span
-					className="flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12.5px] font-semibold text-faint"
+					className="flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-supporting font-semibold text-faint"
 					title="Preview environment starting… the link appears once it's up"
 				>
 					<span className="inline-flex size-5 shrink-0 items-center justify-center">
@@ -236,7 +236,7 @@ export function StagingLink({
 				rel="noopener"
 				onClick={onClick}
 				aria-disabled={building || undefined}
-				className={`flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12.5px] font-semibold no-underline outline-none transition-colors hover:bg-hover focus-visible:bg-hover ${building ? "cursor-default text-faint" : "text-fg"}`}
+				className={`flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-supporting font-semibold no-underline outline-none transition-colors hover:bg-hover focus-visible:bg-hover ${building ? "cursor-default text-faint" : "text-fg"}`}
 				title={`${tooltip("⌘-click to copy the link")} — ${href}`}
 			>
 				<span className="inline-flex size-5 shrink-0 items-center justify-center text-faint">

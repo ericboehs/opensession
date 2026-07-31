@@ -98,7 +98,7 @@ function DeskBody({
 			{/* Header */}
 			<div className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
 				<IconDesk size={22} className="text-dim" />
-				<span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-fg">
+				<span className="min-w-0 flex-1 truncate text-item-title font-semibold text-fg">
 					Desk
 				</span>
 				<Button

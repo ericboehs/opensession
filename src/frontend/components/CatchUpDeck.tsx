@@ -486,7 +486,7 @@ function CardBody({
 				onClick={onOpen}
 				title="Open the full session"
 			>
-				<span className="line-clamp-1 text-[15px] font-semibold text-fg">
+				<span className="line-clamp-1 text-item-title font-semibold text-fg">
 					{card.name}
 				</span>
 				<span className="text-xs text-faint">{meta}</span>

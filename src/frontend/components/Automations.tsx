@@ -377,7 +377,7 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
                     </span>
                   )}
                   {sel.enabled && sel.nextRunAt && (
-                    <span className="text-faint text-[12px] ml-auto shrink-0">
+                    <span className="text-faint text-label ml-auto shrink-0">
                       next run {formatNext(sel.nextRunAt)}
                     </span>
                   )}
@@ -489,7 +489,7 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
                 <div>
                   <div className="automations-drawer-section-label mb-1.5">Activity</div>
                   {sel.lastRunAt ? (
-                    <div className="text-dim text-[12.5px]">
+                    <div className="text-dim text-supporting">
                       last run {relativeTime(sel.lastRunAt)}
                       {sel.lastTrigger ? ` via ${sel.lastTrigger}` : ""}
                       {sel.lastRunStatus === "ok" && <span className="auto-status-ok"> ✓</span>}
@@ -513,7 +513,7 @@ export function Automations({ onOpenSession, selectedId, onSelect }: Props) {
                       )}
                     </div>
                   ) : (
-                    <div className="text-faint text-[12.5px]">No runs yet.</div>
+                    <div className="text-faint text-supporting">No runs yet.</div>
                   )}
                   {(sel.runs?.length ?? 0) > 0 && (
                     <>
@@ -564,7 +564,7 @@ function eventLabel(key: string): string {
 /** Left column of the drawer's Configuration grid. */
 function DetailKey({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-faint text-[12px] leading-[1.7] whitespace-nowrap">{children}</span>
+    <span className="text-faint text-label leading-[1.7] whitespace-nowrap">{children}</span>
   );
 }
 
@@ -663,7 +663,7 @@ function RunLedger({
   return (
     <div className="mt-2.5 border-t border-line pt-2 flex flex-col gap-1">
       {runs.map((r) => (
-        <div key={r.sessionId + r.at} className="flex items-baseline gap-2 text-[12px] text-dim min-w-0">
+        <div key={r.sessionId + r.at} className="flex items-baseline gap-2 text-label text-dim min-w-0">
           {r.status === "running" ? (
             <span className="text-yellow shrink-0">●</span>
           ) : r.status === "ok" ? (
@@ -695,7 +695,7 @@ function RunLedger({
           </a>
           {r.status !== "running" && (
             <button
-              className="automation-session-link shrink-0 bg-transparent border-none p-0 font-[inherit] text-[12px]"
+              className="automation-session-link shrink-0 bg-transparent border-none p-0 font-[inherit] text-label"
               title={
                 r.trigger === "event" || r.trigger === "webhook"
                   ? "Start a fresh run replaying this run's triggering event"
@@ -852,7 +852,7 @@ function TypeChooser({
           onClick={() => onPick(null, "classic")}
         >
           <div className="text-fg text-[14px] font-medium mb-1">Classical automation</div>
-          <div className="text-dim text-[12.5px] leading-snug">
+          <div className="text-dim text-supporting leading-snug">
             Trigger {AGENT_NAME} sessions based on schedules, internal events, and webhooks.
           </div>
         </button>
@@ -861,7 +861,7 @@ function TypeChooser({
           onClick={() => onPick(null, "watch")}
         >
           <div className="text-fg text-[14px] font-medium mb-1">Watch a channel</div>
-          <div className="text-dim text-[12.5px] leading-snug">
+          <div className="text-dim text-supporting leading-snug">
             {AGENT_NAME} triages every incoming message in a Slack channel, using the
             channel's memory as standing context.
           </div>
@@ -869,7 +869,7 @@ function TypeChooser({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <div className="text-dim text-[12px]">Or describe it and {AGENT_NAME} drafts the automation:</div>
+        <div className="text-dim text-label">Or describe it and {AGENT_NAME} drafts the automation:</div>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -889,13 +889,13 @@ function TypeChooser({
           >
             {drafting ? "Drafting…" : "Draft it"}
           </Button>
-          {error && <span className="text-red text-[12px]">{error}</span>}
+          {error && <span className="text-red text-label">{error}</span>}
         </div>
       </div>
 
       {templates.length > 0 && (
         <div>
-          <div className="text-dim text-[12px] mb-1.5">Or start from a template. Everything stays editable:</div>
+          <div className="text-dim text-label mb-1.5">Or start from a template. Everything stays editable:</div>
           <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(200px,1fr))]">
             {templates.map((t) => (
               <button
@@ -909,7 +909,7 @@ function TypeChooser({
                     {CATEGORY_LABELS[t.category] || t.category}
                   </span>
                 </div>
-                <div className="text-dim text-[12px] leading-snug">{t.description}</div>
+                <div className="text-dim text-label leading-snug">{t.description}</div>
               </button>
             ))}
           </div>
@@ -972,11 +972,11 @@ function McpPicker({
     <div className="flex flex-col gap-1.5">
       <div className="flex items-baseline gap-2">
         <span className="text-fg text-[13px] font-medium">MCPs</span>
-        <span className="text-dim text-[12px]">
+        <span className="text-dim text-label">
           Select which connectors this automation's runs can use
         </span>
         <a
-          className="text-dim text-[12px] underline ml-auto shrink-0"
+          className="text-dim text-label underline ml-auto shrink-0"
           href={`${BASE_PATH}/settings`}
         >
           Manage MCPs
@@ -1030,7 +1030,7 @@ function McpPicker({
             </label>
           ))}
           {shown.length === 0 && (
-            <div className="px-3 py-2 text-faint text-[12px]">No connectors match.</div>
+            <div className="px-3 py-2 text-faint text-label">No connectors match.</div>
           )}
         </div>
       </div>
@@ -1201,7 +1201,7 @@ function AutomationForm({
         <div className="flex flex-col gap-1.5">
           <div>
             <span className="text-fg text-[13px] font-medium">Triggers</span>
-            <span className="text-dim text-[12px] ml-2">
+            <span className="text-dim text-label ml-2">
               Run the automation when any of these conditions are met
             </span>
           </div>

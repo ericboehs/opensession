@@ -178,7 +178,7 @@ export function RepoBar({
         <span className="max-w-[180px] truncate">{busy ?? repoLabel(primary)}</span>
         {attached.length > 0 && (
           <span
-            className="text-[12px] text-dim"
+            className="text-label text-dim"
             title={attached.map((r) => r.repo).join(", ")}
           >
             +{attached.length}
@@ -193,7 +193,7 @@ export function RepoBar({
         {trigger}
         <Menu.Popup align="start" sideOffset={6} className="min-w-[230px]">
           {!repos.length ? (
-            <div className="px-2.5 py-2 text-[12px] text-faint">Loading…</div>
+            <div className="px-2.5 py-2 text-label text-faint">Loading…</div>
           ) : (
             <>
               {switchable ? (
@@ -253,7 +253,7 @@ export function RepoBar({
                     </Menu.Item>
                   ))
                 ) : (
-                  <div className="px-2.5 py-1.5 text-[12px] text-faint">
+                  <div className="px-2.5 py-1.5 text-label text-faint">
                     No more repos to attach
                   </div>
                 )}

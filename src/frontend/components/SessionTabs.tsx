@@ -104,7 +104,7 @@ const isApple = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
 /** Right-aligned keyboard-shortcut hint on a menu row. */
 function MenuHint({ label }: { label: string }) {
-	return <span className="shrink-0 pl-4 text-[12px] text-faint">{label}</span>;
+	return <span className="shrink-0 pl-4 text-label text-faint">{label}</span>;
 }
 
 export function SessionTabs({

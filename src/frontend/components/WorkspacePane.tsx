@@ -161,10 +161,10 @@ export function WorkspacePane({
 	const infoPanel = !isPhone && (
 		<aside className="viewer-panel">
 			<div className="flex-1 min-h-0 overflow-y-auto p-4">
-				<div className="text-fg font-semibold text-[15px] leading-snug">
+				<div className="text-fg font-semibold text-item-title leading-snug">
 					{workspace.name}
 				</div>
-				<div className="text-dim text-[12.5px] mt-2 flex flex-col gap-1.5">
+				<div className="text-dim text-supporting mt-2 flex flex-col gap-1.5">
 					{workspace.repo && (
 						<div className="flex items-center gap-2 min-w-0">
 							<span className="text-faint shrink-0">Repo</span>
@@ -174,7 +174,7 @@ export function WorkspacePane({
 					{workspace.branch && (
 						<div className="flex items-center gap-2 min-w-0">
 							<span className="text-faint shrink-0">Branch</span>
-							<span className="text-[12px] truncate">
+							<span className="text-label truncate">
 								{workspace.branch}
 							</span>
 						</div>
@@ -211,7 +211,7 @@ export function WorkspacePane({
 						Chats
 					</div>
 					{chats.length === 0 ? (
-						<div className="text-dim text-[12.5px] mt-1.5">
+						<div className="text-dim text-supporting mt-1.5">
 							None yet — the composer below starts the first one
 							{workspace.branch ? " on the PR's branch" : ""}.
 						</div>
@@ -302,10 +302,10 @@ export function WorkspacePane({
 					<div className="text-section-title font-semibold text-fg">
 						{workspace.name}
 					</div>
-					<div className="text-dim text-[12.5px] mt-1 flex items-center gap-2 flex-wrap">
+					<div className="text-dim text-supporting mt-1 flex items-center gap-2 flex-wrap">
 						{workspace.repo && <span>{workspace.repo}</span>}
 						{workspace.branch && (
-							<span className="text-[12px]">{workspace.branch}</span>
+							<span className="text-label">{workspace.branch}</span>
 						)}
 					</div>
 					{chats.length === 0 && (
