@@ -4,7 +4,7 @@ import { TEAM } from "./UserPicker";
 import { shortModelLabel, splitModelOptions } from "./ModelEffortSelect";
 import { Menu } from "../ui/menu";
 import { Button } from "../ui/button";
-import { InlineAlert } from "../ui/state";
+import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
 import {
 	SettingCard,
 	SettingRow,
@@ -20,12 +20,13 @@ import {
 	SettingsHeader,
 	SettingsHint,
 	SettingsPanel,
+	rowMenuTriggerClasses,
 	settingsInputClass,
 	settingsSelectClass,
 } from "../ui/settings";
 import { Switch } from "../ui/switch";
 import { cn } from "../ui/cn";
-import { IconDotsHorizontal, IconSliders, IconTrash } from "./icons";
+import { IconDotsHorizontal, IconHistory, IconPlus, IconSliders, IconTrash } from "./icons";
 
 // The Settings → Accounts panel: the Claude / Codex subscription accounts
 // session runs draw from, plus the default model new runs start on. Everything
@@ -268,27 +269,6 @@ function AutoFallbackRow() {
 
 // ── Shared bits ────────────────────────────────────────────────────────────
 
-/** Group heading with right-aligned actions (Refresh / Add). */
-function SectionHeader({
-	label,
-	actions,
-}: {
-	label: string;
-	actions: React.ReactNode;
-}) {
-	return (
-		<SettingsGroupLabel className="flex items-center justify-between gap-2">
-			<span>{label}</span>
-			<div className="flex items-center gap-1.5">{actions}</div>
-		</SettingsGroupLabel>
-	);
-}
-
-/** ⋯ trigger for a row's overflow actions — always visible (setting rows have
- * no hover-group), lights up while its menu is open. */
-const rowMenuTriggerClasses =
-	"flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-faint transition-[color,background] hover:bg-active hover:text-fg data-[popup-open]:bg-active data-[popup-open]:text-fg";
-
 function Avatar({ name, className }: { name: string; className: string }) {
 	return (
 		<span
@@ -345,7 +325,7 @@ function UsageBar({ label, window: w }: { label: string; window: UsageWindow | n
 	const tone = pct === null ? "gray" : pct >= 90 ? "red" : pct >= 70 ? "yellow" : "green";
 	return (
 		<div className="mt-2 flex items-center gap-2 text-[11.5px] text-dim">
-			<span className="w-[18px] shrink-0 text-faint">{label}</span>
+			<span className="w-11 shrink-0 truncate text-faint">{label}</span>
 			<div className="min-w-10 flex-1 overflow-hidden rounded-xs bg-active h-1.5">
 				<div
 					className={cn("h-full rounded-xs transition-[width] duration-300", usageToneClasses[tone])}
@@ -383,7 +363,7 @@ function ExtraUsageRow({
 			className="mt-2 flex items-center gap-2 text-[11.5px] text-dim"
 			title="Usage-credits — pay-as-you-go spend past the subscription limits, against this account's monthly credit cap (set at claude.ai)"
 		>
-			<span className="w-[18px] shrink-0 text-faint">Credits</span>
+			<span className="w-11 shrink-0 truncate text-faint">Credits</span>
 			<div className="h-1.5 min-w-10 flex-1 overflow-hidden rounded-xs bg-active">
 				<div
 					className={cn("h-full rounded-xs transition-[width] duration-300", usageToneClasses[tone])}
@@ -509,19 +489,25 @@ function ClaudeAccountsSection() {
 
 	return (
 		<>
-			<SectionHeader
-				label="Claude accounts"
+			<SettingsGroupLabel
 				actions={
 					<>
-						<Button size="sm" className="border-line-strong bg-transparent" onClick={() => load(true)} disabled={refreshing}>
+						<Button
+							size="sm"
+							icon={<IconHistory size={16} className={refreshing ? "animate-spin" : ""} />}
+							onClick={() => load(true)}
+							disabled={refreshing}
+						>
 							{refreshing ? "Checking…" : "Refresh usage"}
 						</Button>
-						<Button size="sm" className="border-line-strong bg-transparent" onClick={() => setShowAdd(true)}>
-							+ Add account
+						<Button size="sm" icon={<IconPlus size={16} />} onClick={() => setShowAdd(true)}>
+							Add account
 						</Button>
 					</>
 				}
-			/>
+			>
+				Claude accounts
+			</SettingsGroupLabel>
 
 			{error && (
 				<InlineAlert className="mb-2" onDismiss={() => setError(null)}>
@@ -541,13 +527,13 @@ function ClaudeAccountsSection() {
 
 			<SettingCard>
 				{!accounts ? (
-					<div className="px-4 py-3 text-dim text-[12.5px]">Loading accounts…</div>
+					<LoadingState placement="row">Loading accounts…</LoadingState>
 				) : accounts.length === 0 ? (
-					<div className="px-4 py-3 text-dim text-[12.5px]">
+					<EmptyState placement="row">
 						No accounts yet — runs use the VPS's own Claude login. Add Max-account tokens
 						(<code>claude setup-token</code>) and runs pick the least-used one, rotating when
 						one hits its limit.
-					</div>
+					</EmptyState>
 				) : (
 					accounts.map((a) => (
 						<SettingRow key={a.id}>
@@ -706,14 +692,15 @@ function CodexAccountsSection() {
 
 	return (
 		<>
-			<SectionHeader
-				label="Codex accounts"
+			<SettingsGroupLabel
 				actions={
-					<Button size="sm" className="border-line-strong bg-transparent" onClick={() => setShowAdd(true)}>
-						+ Add account
+					<Button size="sm" icon={<IconPlus size={16} />} onClick={() => setShowAdd(true)}>
+						Add account
 					</Button>
 				}
-			/>
+			>
+				Codex accounts
+			</SettingsGroupLabel>
 
 			{error && (
 				<InlineAlert className="mb-2" onDismiss={() => setError(null)}>
@@ -733,13 +720,13 @@ function CodexAccountsSection() {
 
 			<SettingCard>
 				{!accounts ? (
-					<div className="px-4 py-3 text-dim text-[12.5px]">Loading accounts…</div>
+					<LoadingState placement="row">Loading accounts…</LoadingState>
 				) : accounts.length === 0 ? (
-					<div className="px-4 py-3 text-dim text-[12.5px]">
+					<EmptyState placement="row">
 						No accounts yet — Codex runs use the VPS's own <code>codex login</code> (~/.codex).
 						Add an OpenAI API key, or a CODEX_HOME directory holding a ChatGPT-plan{" "}
 						<code>auth.json</code>, and runs rotate across the pool.
-					</div>
+					</EmptyState>
 				) : (
 					accounts.map((a) => (
 						<SettingRow key={a.id}>
@@ -899,12 +886,11 @@ function AddClaudeAccountForm({ onClose, onAdded }: { onClose: () => void; onAdd
 			{error && <InlineAlert>{error}</InlineAlert>}
 
 			<SettingsFormActions className="mt-0 gap-2.5">
-				<Button size="sm" className="border-line-strong bg-transparent" onClick={onClose} disabled={saving}>
+				<Button onClick={onClose} disabled={saving}>
 					Cancel
 				</Button>
 				<Button
 					variant="primary"
-					className="min-h-[39px] px-[22px]"
 					onClick={handleAdd}
 					disabled={saving || !name.trim() || !token.trim()}
 				>
@@ -1076,55 +1062,57 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 			</div>
 
 			{login && (
-				<SettingCard className="mt-2 px-4 py-3">
-					{login.state === "starting" && (
-						<div className="text-dim text-[12.5px]">Starting sign-in…</div>
-					)}
+				// A well inside the form (which is itself raised), so the live
+				// sign-in stands apart from the fields without another border.
+				<div className="mt-2 rounded-md bg-surface px-4 py-3 text-supporting">
+					{login.state === "starting" && <div className="text-dim">Starting sign-in…</div>}
 					{login.state === "awaiting_code" && (
 						<>
-							<div className="text-[12.5px]" style={{ marginBottom: 6 }}>
+							<div>
 								1. Open{" "}
-								<a href={login.url} target="_blank" rel="noreferrer">
+								<a
+									href={login.url}
+									target="_blank"
+									rel="noreferrer"
+									className="text-accent underline"
+								>
 									{login.url}
 								</a>{" "}
 								and sign in to the ChatGPT account.
 							</div>
-							<div className="text-[12.5px]">2. Enter this one-time code (expires in 15 min):</div>
-							<div
-								className="font-mono"
-								style={{ fontSize: 22, letterSpacing: 2, margin: "8px 0 4px" }}
-							>
+							<div className="mt-1.5">2. Enter this one-time code (expires in 15 min):</div>
+							<div className="my-2 font-mono text-page-title font-bold tracking-[0.12em] text-fg">
 								{login.code}
 							</div>
-							<div className="text-dim text-[12.5px]">
+							<div className="text-dim">
 								Waiting for the sign-in to complete… this panel updates by itself.
 							</div>
 						</>
 					)}
 					{login.state === "done" && (
-						<div className="text-[12.5px]">Signed in — account "{login.name}" added to the pool.</div>
+						<div>Signed in — account "{login.name}" added to the pool.</div>
 					)}
 					{login.state === "error" && (
-						<InlineAlert className="whitespace-pre-wrap">
-							{login.error || "Sign-in failed."}{" "}
-							<Button size="sm" className="ml-2 border-line-strong bg-transparent" onClick={() => setLogin(null)}>
-								Try again
-							</Button>
+						<InlineAlert
+							className="whitespace-pre-wrap"
+							onRetry={() => setLogin(null)}
+							retryLabel="Try again"
+						>
+							{login.error || "Sign-in failed."}
 						</InlineAlert>
 					)}
-				</SettingCard>
+				</div>
 			)}
 
 			{error && <InlineAlert>{error}</InlineAlert>}
 
 			<SettingsFormActions className="mt-0 gap-2.5">
-				<Button size="sm" className="border-line-strong bg-transparent" onClick={handleCancel} disabled={saving}>
+				<Button onClick={handleCancel} disabled={saving}>
 					{loginPending ? "Cancel sign-in" : "Cancel"}
 				</Button>
 				{kind === "device" ? (
 					<Button
 						variant="primary"
-						className="min-h-[39px] px-[22px]"
 						onClick={handleStartDeviceLogin}
 						disabled={saving || !name.trim() || !!loginPending || login?.state === "done"}
 					>
@@ -1133,7 +1121,6 @@ function AddCodexAccountForm({ onClose, onAdded }: { onClose: () => void; onAdde
 				) : (
 					<Button
 						variant="primary"
-						className="min-h-[39px] px-[22px]"
 						onClick={handleAdd}
 						disabled={saving || !name.trim() || !value.trim()}
 					>

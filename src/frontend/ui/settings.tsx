@@ -46,15 +46,29 @@ export function SettingsHeader({
 	);
 }
 
+/**
+ * The label above a group of settings, with optional actions on its right —
+ * the group's own "add"/"refresh" buttons. Pages kept re-deriving that row
+ * (a flex override here, a local `SectionHeader` there), which is how the
+ * groups drifted apart; the slot keeps one shape.
+ */
 export function SettingsGroupLabel({
+	actions,
 	className,
+	children,
 	...props
-}: React.ComponentPropsWithoutRef<"div">) {
+}: React.ComponentPropsWithoutRef<"div"> & { actions?: React.ReactNode }) {
 	return (
 		<div
-			className={cn("mb-2 mt-6 px-4 text-label font-semibold text-faint", className)}
+			className={cn(
+				"mb-2 mt-6 flex min-h-6 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-4 text-label font-semibold text-faint",
+				className,
+			)}
 			{...props}
-		/>
+		>
+			<span className="min-w-0">{children}</span>
+			{actions && <div className="flex shrink-0 items-center gap-1.5">{actions}</div>}
+		</div>
 	);
 }
 
@@ -80,18 +94,30 @@ export function SettingsSection({
 	return <Card className={cn(settingsSurface, "p-4", className)} {...props} />;
 }
 
+/**
+ * One setting: its label and description on the left, its control on the
+ * right. On a narrow screen the control drops to its own line instead of
+ * squeezing the label into a two-word column — `flex-wrap` plus the text's
+ * min width is what decides that, and the control's `ml-auto` keeps it
+ * right-aligned once it lands there.
+ */
 export function SettingRow({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("flex items-center gap-4 px-4 py-3.5", className)} {...props} />;
+	return (
+		<div
+			className={cn("flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3.5", className)}
+			{...props}
+		/>
+	);
 }
 
 export function SettingRowText({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("min-w-0 flex-1", className)} {...props} />;
+	return <div className={cn("min-w-0 flex-1 max-sm:min-w-[55%]", className)} {...props} />;
 }
 
 export function SettingRowTitle({
@@ -112,8 +138,13 @@ export function SettingRowControl({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("shrink-0", className)} {...props} />;
+	return <div className={cn("ml-auto shrink-0", className)} {...props} />;
 }
+
+/** The ⋯ trigger for a row's overflow menu — quiet until hovered or open.
+ *  Shared so a row's actions look the same on every settings page. */
+export const rowMenuTriggerClasses =
+	"flex size-7 shrink-0 items-center justify-center rounded-md text-faint transition-[color,background] hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg";
 
 export function SettingsHint({
 	className,
@@ -122,8 +153,19 @@ export function SettingsHint({
 	return <div className={cn("mt-2 px-4 text-meta text-faint", className)} {...props} />;
 }
 
-export const settingsSelectClass =
-	"cursor-pointer rounded-sm border border-line bg-raised px-2.5 py-1.5 text-control-label text-fg outline-none focus:border-accent disabled:cursor-default disabled:opacity-40";
+/**
+ * One recipe behind every field in settings — select, input, textarea. They
+ * had drifted into three (two radii, two fills, two focus colors), so a form
+ * looked assembled from parts. The fill is the page's own surface so a field
+ * reads as a well cut into the group it sits in.
+ */
+const settingsFieldClass =
+	"rounded-md border border-line bg-surface text-fg outline-none placeholder:text-faint focus:border-accent disabled:cursor-default disabled:opacity-40";
+
+export const settingsSelectClass = cn(
+	settingsFieldClass,
+	"cursor-pointer px-2.5 py-1.5 text-control-label",
+);
 
 export function SettingsForm({
 	className,
@@ -131,10 +173,7 @@ export function SettingsForm({
 }: React.ComponentPropsWithoutRef<"div">) {
 	return (
 		<div
-			className={cn(
-				"mb-3 flex flex-col gap-3.5 rounded-lg border border-line-strong bg-panel p-[18px]",
-				className,
-			)}
+			className={cn(settingsSurface, "mb-3 flex flex-col gap-3.5 rounded-lg p-[18px]", className)}
 			{...props}
 		/>
 	);
@@ -166,13 +205,11 @@ export function SettingsField({
 	);
 }
 
-export const settingsInputClass =
-	"w-full rounded-sm border border-line-strong bg-raised px-2.5 py-2 text-body text-fg outline-none placeholder:text-faint focus:border-accent";
+export const settingsInputClass = cn(settingsFieldClass, "w-full px-2.5 py-2 text-body");
 
 /** Multi-line text entry inside settings — memory entries, the personal
  *  prompt. One class so every editor in settings reads the same. */
-export const settingsTextareaClass =
-	"w-full resize-y rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-body font-medium text-fg outline-none placeholder:text-faint focus:border-faint";
+export const settingsTextareaClass = cn(settingsInputClass, "resize-y");
 
 export function SettingsFormActions({
 	className,

@@ -112,6 +112,7 @@ import {
 	SettingsHint,
 	SettingsPanel,
 	SettingsSection,
+	settingsInputClass,
 	settingsSelectClass,
 	settingsTextareaClass,
 } from "../ui/settings";
@@ -767,7 +768,7 @@ function MobileSettings({
 									<div className="mb-2 mt-5 px-1 text-control-label font-semibold text-faint">
 										{g.group}
 									</div>
-									<div className="overflow-hidden rounded-2xl border border-line bg-panel">
+									<div className="overflow-hidden rounded-2xl bg-raised">
 										{g.items.map((s) => (
 											<button
 												key={s.key}
@@ -1231,25 +1232,26 @@ function MemoryEntryRow({
 				</div>
 			</div>
 			<div className="flex shrink-0 items-center gap-1">
-				<button
+				<Button
+					size="sm"
+					variant="ghost"
 					aria-label="Edit memory"
-					className="rounded-md p-1 text-faint transition-colors hover:bg-hover hover:text-fg"
+					icon={<IconPencil size={16} />}
 					disabled={busy}
 					onClick={() => {
 						setDraft(entry.text);
 						setEditing(true);
 					}}
-				>
-					<IconPencil size={15} />
-				</button>
-				<button
+				/>
+				<Button
+					size="sm"
+					variant="ghost"
 					aria-label="Forget memory"
-					className="rounded-md p-1 text-faint transition-colors hover:bg-hover hover:text-red"
+					className="hover:text-red"
+					icon={<IconTrash size={16} />}
 					disabled={busy}
 					onClick={remove}
-				>
-					<IconTrash size={15} />
-				</button>
+				/>
 			</div>
 		</div>
 	);
@@ -1289,13 +1291,15 @@ function MemoryScopeCard({
 				<div className="text-supporting font-semibold text-fg">
 					{scoped.scope.label}
 				</div>
-				<button
+				<Button
+					size="sm"
+					variant="ghost"
 					aria-label={`Add memory to ${scoped.scope.label}`}
-					className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-label font-medium text-dim transition-colors hover:bg-hover hover:text-fg"
+					icon={<IconPlus size={16} />}
 					onClick={() => setAdding((v) => !v)}
 				>
-					<IconPlus size={14} /> Add
-				</button>
+					Add
+				</Button>
 			</div>
 			{scoped.entries.length === 0 && !adding && (
 				<div className="px-4 py-3 text-body font-medium text-faint">
@@ -2005,9 +2009,9 @@ function AuditPanel() {
 						</option>
 					))}
 				</select>
-				<label className="flex cursor-pointer items-center gap-1.5 text-label text-dim">
-					<input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
-					include tool firehose
+				<label className="flex cursor-pointer items-center gap-2 text-label text-dim">
+					<Switch checked={all} onCheckedChange={setAll} />
+					Include tool firehose
 				</label>
 				<input
 					className={`${settingsSelectClass} min-w-[140px] flex-1`}
@@ -2232,8 +2236,7 @@ function ComposerPanel() {
 
 // ── Workspace · General ─────────────────────────────────────────────────────
 
-const IDENTITY_INPUT_CLASS =
-	"w-[140px] rounded-md border border-line bg-surface px-2 py-1 text-control-label font-medium text-dim opacity-70";
+const IDENTITY_INPUT_CLASS = cn(settingsInputClass, "w-[140px]");
 
 /**
  * Instance identity. The source of truth is ~/.backstage/config.json
@@ -2432,7 +2435,7 @@ function AppearancePanel() {
 							sidebarOrderRef.current = next;
 							setSidebarOrderState(next);
 						}}
-						className="mt-2 rounded-lg border border-line bg-surface"
+						className="mt-2 overflow-hidden rounded-lg bg-surface"
 					>
 						{sidebarOrder.map((section, index) => (
 							<SidebarOrderRow

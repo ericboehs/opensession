@@ -1,6 +1,5 @@
 import { BASE_PATH } from "../lib/base";
 import React, { useCallback, useEffect, useState } from "react";
-import { CardList } from "../ui/card";
 import { cn } from "../ui/cn";
 import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
@@ -8,6 +7,7 @@ import { InlineAlert } from "../ui/state";
 import { IconTile } from "./BrandTile";
 import { IconPlus, IconTrash } from "./icons";
 import { SectionHeading } from "./Connections";
+import { SettingCard, rowMenuTriggerClasses } from "../ui/settings";
 import type { FeedDescriptor } from "../lib/types";
 
 /**
@@ -104,7 +104,7 @@ export function ProjectsSection() {
 			{error && (
 				<InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
 			)}
-			<CardList>
+			<SettingCard>
 				{(feeds || []).map((f) => (
 					<div
 						key={f.id}
@@ -120,7 +120,10 @@ export function ProjectsSection() {
 						</div>
 						{f.fromConfig && (
 							<button
-								className="flex h-7 w-7 items-center justify-center rounded-md text-faint opacity-0 transition-opacity hover:bg-active hover:text-red group-hover:opacity-100"
+								className={cn(
+									rowMenuTriggerClasses,
+									"opacity-0 transition-[color,opacity,background] hover:text-red group-hover:opacity-100",
+								)}
 								onClick={() => remove(f.id)}
 								aria-label={`Remove ${f.title}`}
 							>
@@ -135,7 +138,7 @@ export function ProjectsSection() {
 				>
 					<IconPlus size={16} /> New project
 				</button>
-			</CardList>
+			</SettingCard>
 			<NewProjectModal
 				open={open}
 				onClose={() => setOpen(false)}

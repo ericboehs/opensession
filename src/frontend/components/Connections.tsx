@@ -1,11 +1,11 @@
 import { BASE_PATH } from "../lib/base";
 import React, { useEffect, useState, useCallback } from "react";
 import { Menu } from "../ui/menu";
-import { Card, CardList } from "../ui/card";
 import { cn } from "../ui/cn";
 import { Button } from "../ui/button";
 import { InlineAlert, LoadingState } from "../ui/state";
 import {
+  SettingCard,
   SettingsField,
   SettingsForm,
   SettingsFormActions,
@@ -14,6 +14,8 @@ import {
   SettingsGroupLabel,
   SettingsHeader,
   SettingsPanel,
+  SettingsSection,
+  rowMenuTriggerClasses,
   settingsInputClass,
   settingsSelectClass,
 } from "../ui/settings";
@@ -96,8 +98,14 @@ function StatusChip({ label, dot }: { label: string; dot: string }) {
   );
 }
 
-export function SectionHeading({ children }: { children: React.ReactNode }) {
-  return <SettingsGroupLabel>{children}</SettingsGroupLabel>;
+export function SectionHeading({
+  children,
+  actions,
+}: {
+  children: React.ReactNode;
+  actions?: React.ReactNode;
+}) {
+  return <SettingsGroupLabel actions={actions}>{children}</SettingsGroupLabel>;
 }
 
 export function Connections() {
@@ -278,10 +286,7 @@ export function Connections() {
               const ok = health?.status === "operational";
               const count = typeof health?.activeSessions === "number" ? health.activeSessions : null;
               return (
-                <Card
-                  key={name}
-                  className="flex flex-col gap-2 p-3.5"
-                >
+                <SettingsSection key={name} className="flex flex-col gap-2 p-3.5">
                   <div className="flex items-center gap-2.5">
                     <IconTile name={name} size={30} />
                     <span className="min-w-0 flex-1 truncate text-body font-medium text-fg">
@@ -300,20 +305,20 @@ export function Connections() {
                       {count.toLocaleString()} active session{count === 1 ? "" : "s"}
                     </div>
                   )}
-                </Card>
+                </SettingsSection>
               );
             })}
           </div>
 
           <SectionHeading>MCP servers — tools inside every session</SectionHeading>
-          <CardList>
+          <SettingCard>
             {data.mcpServers.map((s) => {
               const meta = STATUS_META[s.status];
               const restricted = !!s.allowedUsers?.length;
               return (
                 <div
                   key={s.name}
-                  className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-hover/50"
+                  className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-hover"
                 >
                   <IconTile name={s.name} />
                   <div className="min-w-0 flex-1">
@@ -367,7 +372,10 @@ export function Connections() {
                   <StatusChip label={meta.label} dot={meta.dot} />
                   <Menu.Root>
                     <Menu.Trigger
-                      className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-faint opacity-0 transition-[color,opacity,background] hover:bg-active hover:text-fg group-hover:opacity-100 data-[popup-open]:bg-active data-[popup-open]:text-fg data-[popup-open]:opacity-100"
+                      className={cn(
+                        rowMenuTriggerClasses,
+                        "opacity-0 transition-[color,opacity,background] group-hover:opacity-100 data-[popup-open]:opacity-100",
+                      )}
                       aria-label={`Manage ${s.name}`}
                     >
                       <IconDotsHorizontal size={18} />
@@ -418,7 +426,7 @@ export function Connections() {
                 </div>
               );
             })}
-          </CardList>
+          </SettingCard>
 
           <ProjectsSection />
 
@@ -553,7 +561,7 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
       {error && (
         <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
       )}
-      <CardList>
+      <SettingCard>
         <div className="flex items-center gap-3 px-4 py-3">
           <IconTile name="github" size={30} />
           <div className="min-w-0 flex-1">
@@ -593,15 +601,17 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
             <span className="ml-2 text-label text-dim">
               Sign in as the account you want to connect — waiting for GitHub…
             </span>
-            <button
-              className="ml-3 text-label text-faint underline"
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-2"
               onClick={() => {
                 setFlow(null);
                 setFlowState("idle");
               }}
             >
               Cancel
-            </button>
+            </Button>
           </div>
         )}
 
@@ -635,17 +645,18 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
                   dot={m.connected ? "var(--green)" : "var(--line-strong, var(--text-faint))"}
                 />
                 {m.connected && m.canManage && (
-                  <button
-                    className="text-label text-faint underline hover:text-red"
+                  <Button
+                    size="sm"
+                    className="hover:border-red hover:text-red"
                     onClick={() => disconnect(m.github)}
                   >
                     Disconnect
-                  </button>
+                  </Button>
                 )}
               </div>
             );
           })}
-      </CardList>
+      </SettingCard>
     </>
   );
 }
@@ -720,7 +731,7 @@ function PlainRouter() {
       {error && (
         <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
       )}
-      <Card className="min-w-0 max-w-[720px] p-3.5">
+      <SettingsSection className="min-w-0 max-w-[720px]">
         <div className="mb-2 text-supporting leading-[1.45] text-dim">
           Every new Plain ticket goes through one cheap Haiku call before triage: spam is skipped
           entirely, a very basic ask (simple refund, how-do-I) runs triage on the model below, and
@@ -773,7 +784,7 @@ function PlainRouter() {
                   : "Using the built-in default"}
           </span>
         </div>
-      </Card>
+      </SettingsSection>
     </>
   );
 }
@@ -910,7 +921,6 @@ function AddMcpForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => 
         </Button>
         <Button
           variant="primary"
-          size="lg"
           onClick={handleAdd}
           disabled={saving || !valid}
         >

@@ -18,9 +18,12 @@ import {
 	SettingsGroupLabel,
 	SettingsHeader,
 	SettingsHint,
+	rowMenuTriggerClasses,
 	settingsInputClass,
 	SettingsPanel,
 } from "../ui/settings";
+import { Menu } from "../ui/menu";
+import { IconDotsHorizontal, IconPlus, IconTrash } from "./icons";
 
 // Settings → Model providers: third-party OpenCode providers (xai, openrouter,
 // groq, …) — API key + optional baseURL, stored server-side (0600, returned
@@ -99,11 +102,14 @@ export function ModelProvidersPanel() {
 				description="Bring your own models: any provider the OpenCode engine supports (xAI, OpenRouter, Groq, Mistral, …) with your API key. Registered model ids show up in the model picker; runs on them authenticate with the stored key. Anthropic and OpenAI run on the subscription bridges — manage those under Accounts."
 			/>
 
-			<SettingsGroupLabel className="flex items-center justify-between gap-2">
-				<span>Configured providers</span>
-				<Button size="xs" onClick={() => setShowAdd(true)}>
-					+ Add provider
-				</Button>
+			<SettingsGroupLabel
+				actions={
+					<Button size="sm" icon={<IconPlus size={16} />} onClick={() => setShowAdd(true)}>
+						Add provider
+					</Button>
+				}
+			>
+				Configured providers
 			</SettingsGroupLabel>
 
 			{showAdd && (
@@ -165,14 +171,23 @@ export function ModelProvidersPanel() {
 								)}
 							</SettingRowText>
 							<SettingRowControl>
-								<Button
-									size="xs"
-									variant="danger"
-									onClick={() => handleRemove(p)}
-									title="Remove this provider and its picker models"
-								>
-									Remove
-								</Button>
+								<Menu.Root>
+									<Menu.Trigger
+										className={rowMenuTriggerClasses}
+										aria-label={`Manage ${p.id}`}
+									>
+										<IconDotsHorizontal size={18} />
+									</Menu.Trigger>
+									<Menu.Popup align="end" sideOffset={4}>
+										<Menu.Item
+											onClick={() => handleRemove(p)}
+											className="text-red data-[highlighted]:bg-red-soft"
+										>
+											<IconTrash size={16} />
+											Remove provider
+										</Menu.Item>
+									</Menu.Popup>
+								</Menu.Root>
 							</SettingRowControl>
 						</SettingRow>
 					))
@@ -305,7 +320,6 @@ function AddProviderForm({
 				</Button>
 				<Button
 					variant="primary"
-					className="px-[22px]"
 					onClick={handleSave}
 					disabled={saving || !cleanId || !idValid || !apiKey.trim()}
 				>

@@ -147,16 +147,11 @@ export function MyAccountsPanel() {
 						const st = oauthByName[s.name];
 						const mine = st?.users.some(isMe);
 						return (
-							<SettingRow
-								key={s.name}
-								className="gap-3 py-3"
-							>
+							<SettingRow key={s.name} className="gap-3">
 								<IconTile name={s.name} size={30} />
 								<SettingRowText>
-									<SettingRowTitle className="text-sm">
-										{displayName(s.name)}
-									</SettingRowTitle>
-									<SettingRowDescription className="mt-0 text-xs leading-snug">
+									<SettingRowTitle>{displayName(s.name)}</SettingRowTitle>
+									<SettingRowDescription>
 										{mine
 											? "Connected as you — your sessions use your account"
 											: st?.shared
@@ -168,20 +163,14 @@ export function MyAccountsPanel() {
 								</SettingRowText>
 								<SettingRowControl>
 									{mine ? (
-										<Button
-											size="sm"
-											className="min-h-[30px] px-3 text-[13px]"
-											onClick={() => disconnect(s.name)}
-										>
+										<Button size="sm" onClick={() => disconnect(s.name)}>
 											Disconnect
 										</Button>
 									) : (
-										<Button
-											variant="primary"
-											size="sm"
-											className="min-h-[30px] px-3 text-[13px]"
-											onClick={() => connect(s.name)}
-										>
+										// Not `primary`: one red button per row would make a list of
+										// unconnected servers shout, and the GitHub rows below use the
+										// same neutral Connect.
+										<Button size="sm" onClick={() => connect(s.name)}>
 											Connect
 										</Button>
 									)}
