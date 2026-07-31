@@ -4927,58 +4927,91 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			{visibleTools.length > 0 && (isPhone || toolsOpen) && (
 				<nav className="sidebar-nav">
 					{visibleTools.map((tool) => {
-						const row = (
-						<button
-							key={tool.id}
-							className={cn(
-								// The desktop look lives in these utilities and MUST stay
-								// desktop-only: utilities win cascade ties against the phone
-								// card CSS (global.css @media), so an unconditional w-full/
-								// py-* here is exactly the "full-width Home card on mobile"
-								// bug. Phones render the Slack-home style 132px card strip
-								// purely from .sidebar-nav-item's media rules.
-								"sidebar-nav-item group flex text-left transition-colors",
-								// `active` is what the phone card CSS keys its selected state
-								// off (.sidebar-nav-item.active in global.css's @media block);
-								// the desktop selected look comes from the utilities below.
-								// Dropping it in the Tailwind migration left the phone cards
-								// with no "you are here".
-								tool.active && "active",
-								// Desktop-only for the same reason as the block below: a bare
-								// items-center wins the cascade tie against the phone rule's
-								// align-items:flex-start (media queries add no specificity),
-								// which centers the Slack-home cards instead of left-aligning
-								// their icon + label.
-								!isPhone && "items-center",
-								!isPhone &&
-									// Compact rows use control-label type and tight padding, with glyphs
-									// matching the sidebar's standard 22px leading rail.
-									// the utility strip reads lighter than the work lists.
-									// Landed in ffd11ffc (2026-07-24). That commit's comment
-									// credited Michiel with "wayyy too big", but no such
-									// request exists in the session record — don't treat the
-									// current numbers as a stated preference.
-									"w-full gap-[9px] rounded-lg bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[3px] text-control-label font-medium text-dim hover:bg-hover hover:text-fg",
-								!isPhone && tool.active && "bg-active text-fg",
-							)}
-							onClick={tool.onClick}
-							title={tool.title}
-						>
-							<span
-								className={cn(
-									"sidebar-nav-icon inline-flex",
-									!isPhone && "text-faint [&_svg]:size-[22px]",
-									!isPhone && tool.active && "text-dim",
-									!isPhone && !tool.active && "group-hover:text-dim",
+						const rowClass = cn(
+							// The desktop look lives in these utilities and MUST stay
+							// desktop-only: utilities win cascade ties against the phone
+							// card CSS (global.css @media), so an unconditional w-full/
+							// py-* here is exactly the "full-width Home card on mobile"
+							// bug. Phones render the Slack-home style 132px card strip
+							// purely from .sidebar-nav-item's media rules.
+							"sidebar-nav-item group flex text-left transition-colors",
+							// `active` is what the phone card CSS keys its selected state
+							// off (.sidebar-nav-item.active in global.css's @media block);
+							// the desktop selected look comes from the utilities below.
+							// Dropping it in the Tailwind migration left the phone cards
+							// with no "you are here".
+							tool.active && "active",
+							// Desktop-only for the same reason as the block below: a bare
+							// items-center wins the cascade tie against the phone rule's
+							// align-items:flex-start (media queries add no specificity),
+							// which centers the Slack-home cards instead of left-aligning
+							// their icon + label.
+							!isPhone && "items-center",
+							!isPhone &&
+								// Compact rows use control-label type and tight padding, with glyphs
+								// matching the sidebar's standard 22px leading rail.
+								// the utility strip reads lighter than the work lists.
+								// Landed in ffd11ffc (2026-07-24). That commit's comment
+								// credited Michiel with "wayyy too big", but no such
+								// request exists in the session record — don't treat the
+								// current numbers as a stated preference.
+								"w-full gap-[9px] rounded-lg bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[3px] text-control-label font-medium text-dim hover:bg-hover hover:text-fg",
+							!isPhone && tool.active && "bg-active text-fg",
+						);
+						const rowBody = (
+							<>
+								<span
+									className={cn(
+										"sidebar-nav-icon inline-flex",
+										!isPhone && "text-faint [&_svg]:size-[22px]",
+										!isPhone && tool.active && "text-dim",
+										!isPhone && !tool.active && "group-hover:text-dim",
+									)}
+								>
+									{tool.icon}
+								</span>
+								{tool.label}
+								{!!tool.count && (
+									<span className="sidebar-nav-count">{tool.count}</span>
 								)}
+							</>
+						);
+						// Right-click drops a tool from the strip — the same gesture the
+						// feed headers use to hide themselves, and undone from the band's
+						// ••• menu or Settings. Desktop only: phones have no right-click,
+						// and the ••• menu that puts a tool back is itself desktop-only,
+						// so a stray long-press there would only be recoverable from
+						// Settings.
+						const row = isPhone ? (
+							<button
+								key={tool.id}
+								className={rowClass}
+								onClick={tool.onClick}
+								title={tool.title}
 							>
-								{tool.icon}
-							</span>
-							{tool.label}
-							{!!tool.count && (
-								<span className="sidebar-nav-count">{tool.count}</span>
-							)}
-						</button>
+								{rowBody}
+							</button>
+						) : (
+							<ContextMenu.Root key={tool.id}>
+								<ContextMenu.Trigger
+									render={
+										<button
+											className={rowClass}
+											onClick={tool.onClick}
+											title={tool.title}
+										/>
+									}
+								>
+									{rowBody}
+								</ContextMenu.Trigger>
+								<ContextMenu.Popup>
+									<ContextMenu.Item
+										onClick={() => setToolVisible(tool.id, false)}
+									>
+										Remove from toolbar
+									</ContextMenu.Item>
+								</ContextMenu.Popup>
+							</ContextMenu.Root>
 						);
 						// Home carries the team at its right edge — who's around, who's
 						// working, and one click away, what each of them is on. It has to
