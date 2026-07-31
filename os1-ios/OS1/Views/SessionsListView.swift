@@ -257,6 +257,12 @@ struct SessionsListView: View {
                             )
                         }
                         .accessibilityLabel("Settings")
+                        // Hiding the glass background leaves the padding the
+                        // capsule reserved, so the bare tile sat at ~34pt while
+                        // every visible thing under it — repo icons, status
+                        // dots, PR glyphs — starts at 20pt. Pull it back onto
+                        // that column.
+                        .padding(.leading, -14)
                     }
                     // The bare app tile is the control; the toolbar's glass
                     // circle around it read as a stray border.
