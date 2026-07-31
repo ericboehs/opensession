@@ -282,12 +282,24 @@ function Avatar({ name, className }: { name: string; className: string }) {
 	);
 }
 
+/**
+ * A meter's fill. Normal usage is neutral ink, not green: an account that is
+ * fine already says so in its "In rotation" pill, and three green bars per
+ * account across nine accounts turned the whole page into colour with nothing
+ * to look at. Colour here means "this one is running out" — so the two
+ * accounts near a limit are the only things that catch the eye.
+ */
 const usageToneClasses = {
-	gray: "bg-line",
-	red: "bg-[#f87171]",
-	yellow: "bg-[#fbbf24]",
-	green: "bg-[#34d399]",
+	unknown: "bg-line",
+	high: "bg-red",
+	warn: "bg-yellow",
+	normal: "bg-faint",
 } as const;
+
+/** Utilization → tone. Shared so a meter and its neighbours can't drift. */
+function usageTone(pct: number | null): keyof typeof usageToneClasses {
+	return pct === null ? "unknown" : pct >= 90 ? "high" : pct >= 70 ? "warn" : "normal";
+}
 
 const statusToneClasses = {
 	green: "bg-green-soft text-green",
@@ -313,32 +325,94 @@ function StatusPill({
 	);
 }
 
+/**
+ * "resets in 3h". An account reports three or four windows, so the absolute
+ * timestamp this used to print ("resets Sat, Aug 1, 05:00 PM") was repeated
+ * down the whole page — the single noisiest thing on it, for the least useful
+ * reading. What a person wants from a limit is how long until it frees up; the
+ * exact time stays one hover away.
+ */
 function formatReset(resetsAt: string | null): string {
-	if (!resetsAt) return "";
-	const d = new Date(resetsAt);
-	if (isNaN(d.getTime())) return "";
-	return `resets ${d.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
+	const d = resetsAt ? new Date(resetsAt) : null;
+	if (!d || isNaN(d.getTime())) return "";
+	const mins = Math.round((d.getTime() - Date.now()) / 60_000);
+	if (mins <= 0) return "resets now";
+	if (mins < 60) return `resets in ${mins}m`;
+	const hours = Math.round(mins / 60);
+	if (hours < 24) return `resets in ${hours}h`;
+	return `resets in ${Math.round(hours / 24)}d`;
+}
+
+function absoluteReset(resetsAt: string | null): string | undefined {
+	const d = resetsAt ? new Date(resetsAt) : null;
+	if (!d || isNaN(d.getTime())) return undefined;
+	return `Resets ${d.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
+}
+
+/**
+ * The meters under an account share one grid, so labels, bars, values and
+ * reset times line up down their columns however many windows the account
+ * reports. Each meter used to be its own flex row carrying hard-coded column
+ * widths (w-11 / w-[34px] / w-[132px]) — nothing was actually aligned, and a
+ * label longer than 44px was simply truncated.
+ */
+function MeterGroup({ children }: { children: React.ReactNode }) {
+	return (
+		<div className="mt-2 grid max-w-[420px] grid-cols-[46px_minmax(0,1fr)_auto_minmax(88px,auto)] items-center gap-x-2.5 gap-y-1.5 text-meta">
+			{children}
+		</div>
+	);
+}
+
+/** One row of MeterGroup's grid: label, bar, value, note. */
+function Meter({
+	label,
+	labelTitle,
+	pct,
+	value,
+	note,
+	noteTitle,
+}: {
+	label: string;
+	labelTitle?: string;
+	/** 0-100, or null when the value is unknown — the track renders empty. */
+	pct: number | null;
+	value: React.ReactNode;
+	note?: React.ReactNode;
+	noteTitle?: string;
+}) {
+	return (
+		<>
+			<span className="truncate text-faint" title={labelTitle}>
+				{label}
+			</span>
+			<div className="h-1.5 overflow-hidden rounded-full bg-active">
+				<div
+					className={cn(
+						"h-full rounded-full transition-[width] duration-300",
+						usageToneClasses[usageTone(pct)],
+					)}
+					style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
+				/>
+			</div>
+			<span className="text-right tabular-nums text-dim">{value}</span>
+			<span className="truncate text-faint" title={noteTitle}>
+				{note}
+			</span>
+		</>
+	);
 }
 
 function UsageBar({ label, window: w }: { label: string; window: UsageWindow | null }) {
 	const pct = w?.utilization ?? null;
-	const tone = pct === null ? "gray" : pct >= 90 ? "red" : pct >= 70 ? "yellow" : "green";
 	return (
-		<div className="mt-2 flex items-center gap-2 text-meta text-dim">
-			<span className="w-11 shrink-0 truncate text-faint">{label}</span>
-			<div className="min-w-10 flex-1 overflow-hidden rounded-xs bg-active h-1.5">
-				<div
-					className={cn("h-full rounded-xs transition-[width] duration-300", usageToneClasses[tone])}
-					style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
-				/>
-			</div>
-			<span className="w-[34px] shrink-0 text-right tabular-nums">
-				{pct === null ? "—" : `${Math.round(pct)}%`}
-			</span>
-			<span className="w-[132px] shrink-0 whitespace-nowrap text-meta text-faint">
-				{formatReset(w?.resetsAt ?? null)}
-			</span>
-		</div>
+		<Meter
+			label={label}
+			pct={pct}
+			value={pct === null ? "—" : `${Math.round(pct)}%`}
+			note={formatReset(w?.resetsAt ?? null)}
+			noteTitle={absoluteReset(w?.resetsAt ?? null)}
+		/>
 	);
 }
 
@@ -357,25 +431,16 @@ function ExtraUsageRow({
 	const usd = (cents: number) =>
 		`$${(cents / 100).toLocaleString([], { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 	const pct = extra.monthlyLimit > 0 ? (extra.usedCredits / extra.monthlyLimit) * 100 : null;
-	const tone = pct === null ? "gray" : pct >= 90 ? "red" : pct >= 70 ? "yellow" : "green";
 	return (
-		<div
-			className="mt-2 flex items-center gap-2 text-meta text-dim"
-			title="Usage-credits — pay-as-you-go spend past the subscription limits, against this account's monthly credit cap (set at claude.ai)"
-		>
-			<span className="w-11 shrink-0 truncate text-faint">Credits</span>
-			<div className="h-1.5 min-w-10 flex-1 overflow-hidden rounded-xs bg-active">
-				<div
-					className={cn("h-full rounded-xs transition-[width] duration-300", usageToneClasses[tone])}
-					style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
-				/>
-			</div>
-			<span className="w-[34px] shrink-0 text-right tabular-nums">{usd(extra.usedCredits)}</span>
-			<span className="w-[132px] shrink-0 whitespace-nowrap text-meta text-faint">
-				{extra.monthlyLimit > 0 ? `of ${usd(extra.monthlyLimit)}/mo` : "no monthly cap set"}
-				{extra.enabled ? "" : " · off"}
-			</span>
-		</div>
+		<Meter
+			label="Credits"
+			labelTitle="Usage-credits — pay-as-you-go spend past the subscription limits, against this account's monthly credit cap (set at claude.ai)"
+			pct={pct}
+			value={usd(extra.usedCredits)}
+			note={`${extra.monthlyLimit > 0 ? `of ${usd(extra.monthlyLimit)}/mo` : "no monthly cap"}${
+				extra.enabled ? "" : " · off"
+			}`}
+		/>
 	);
 }
 
@@ -544,9 +609,8 @@ function ClaudeAccountsSection() {
 									<ClaudeStatusPill a={a} />
 								</div>
 								<SettingRowDescription className="truncate">
-									{a.email || "unknown email"}
-									{a.plan ? ` · ${a.plan.replace("default_claude_", "")}` : ""}
-									{" · "}
+									{a.email ? `${a.email} · ` : ""}
+									{a.plan ? `${a.plan.replace("default_claude_", "")} · ` : ""}
 									<span className="font-mono">{a.tokenMasked}</span>
 								</SettingRowDescription>
 								{a.noUsageScope && !a.usage ? (
@@ -556,12 +620,14 @@ function ClaudeAccountsSection() {
 									</div>
 								) : (
 									<>
-										<UsageBar label="5h" window={a.usage?.fiveHour ?? null} />
-										<UsageBar label="7d" window={a.usage?.sevenDay ?? null} />
-										{(a.usage?.scopedLimits ?? []).map((s) => (
-											<UsageBar key={s.label} label={s.label} window={s} />
-										))}
-										<ExtraUsageRow extra={a.usage?.extraUsage} />
+										<MeterGroup>
+											<UsageBar label="5h" window={a.usage?.fiveHour ?? null} />
+											<UsageBar label="7d" window={a.usage?.sevenDay ?? null} />
+											{(a.usage?.scopedLimits ?? []).map((s) => (
+												<UsageBar key={s.label} label={s.label} window={s} />
+											))}
+											<ExtraUsageRow extra={a.usage?.extraUsage} />
+										</MeterGroup>
 										{a.usage?.source === "meridian" && (
 											<div className="mt-1.5 text-meta text-faint">
 												Observed via the Meridian bridge (rate-limit events from live
@@ -570,11 +636,6 @@ function ClaudeAccountsSection() {
 										)}
 										{a.usage?.error && (
 											<div className="mt-1.5 text-meta text-red">{a.usage.error}</div>
-										)}
-										{a.credentialsPath && (
-											<div className="mt-1.5 truncate text-meta text-faint">
-												Usage credentials: <code>{a.credentialsPath}</code>
-											</div>
 										)}
 									</>
 								)}
