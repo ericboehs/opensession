@@ -254,9 +254,22 @@ function MoreChip({ files }: { files: TouchedFile[] }) {
   );
 }
 
-function LineStats({ additions, deletions }: { additions: number; deletions: number }) {
+export function LineStats({
+  additions,
+  deletions,
+  className,
+}: {
+  additions: number;
+  deletions: number;
+  className?: string;
+}) {
   return (
-    <span className="flex flex-shrink-0 items-center gap-1 text-[11px] font-medium">
+    <span
+      className={cn(
+        "flex flex-shrink-0 items-center gap-1 text-[11px] font-medium",
+        className
+      )}
+    >
       <span className="text-green">+{additions}</span>
       <span className="text-red">-{deletions}</span>
     </span>

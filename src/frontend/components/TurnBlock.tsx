@@ -16,7 +16,7 @@ import {
   getTurnActivityPref,
   onTurnActivityChanged,
 } from "../lib/turn-activity";
-import { collectTouchedFiles } from "./TurnFooter";
+import { collectTouchedFiles, LineStats } from "./TurnFooter";
 
 interface Props {
   /** The folded part of one assistant turn: tool_use + intermediate assistant
@@ -109,6 +109,10 @@ export const TurnBlock = React.memo(function TurnBlock({
   }
   const editedFiles = collectTouchedFiles(tools);
   const editedFilesLabel = summarizeEditedFiles(editedFiles.map((file) => file.path));
+  // Whether the turn actually wrote code, at a glance: the ± totals across
+  // every file it touched, in the same green/red as the footer's file chips.
+  const additions = editedFiles.reduce((n, f) => n + f.additions, 0);
+  const deletions = editedFiles.reduce((n, f) => n + f.deletions, 0);
 
   const countsLabel = [
     tools.length > 0 &&
@@ -186,6 +190,13 @@ export const TurnBlock = React.memo(function TurnBlock({
           <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-faint">
             · {editedFilesLabel}
           </span>
+        )}
+        {additions + deletions > 0 && (
+          <LineStats
+            additions={additions}
+            deletions={deletions}
+            className="text-[12px] leading-4"
+          />
         )}
         {live && !expanded && lastTool && !editedFilesLabel && (
           <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-faint">
