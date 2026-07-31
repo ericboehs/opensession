@@ -1005,17 +1005,20 @@ export function IconChart(p: IconProps) {
 }
 
 // ⋯ more options. Deliberately NOT iconic-pro's `dots-horizontal` geometry
-// (8/12/16 at r=1): that spans only 10 of the 24 grid, where every stroke
-// glyph in this set draws ~14.5, so at a shared pixel size it renders visibly
-// smaller than the icons beside it. Widened to 6/12/18 so the mark spans 14.6
-// units — matching the set — with r=1.3 (≈1.7× the 1.5 stroke), which is what
-// a filled dot needs to read at the same weight as a stroked line.
+// (8/12/16 at r=1): that spans only 10 of the 24 grid and renders visibly
+// smaller than the stroke glyphs beside it, which draw ~14.5.
+//
+// Sized against the text `⋯` this replaced in the session header, measured by
+// rasterising it at 20px in the app font: 15.5px total span, ~2.4px dots. At
+// size 22 this geometry gives 15.3px and 2.5px. An ellipsis carries far less
+// ink than a stroke glyph, so it needs to run slightly WIDER than their 14.5
+// units to hold equal presence — matching their span makes it look shrunken.
 export function IconDotsHorizontal(p: IconProps) {
   return (
     <Svg {...p}>
-      <circle cx="6" cy="12" r="1.3" fill="currentColor" />
-      <circle cx="12" cy="12" r="1.3" fill="currentColor" />
-      <circle cx="18" cy="12" r="1.3" fill="currentColor" />
+      <circle cx="5" cy="12" r="1.35" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.35" fill="currentColor" />
+      <circle cx="19" cy="12" r="1.35" fill="currentColor" />
     </Svg>
   );
 }
