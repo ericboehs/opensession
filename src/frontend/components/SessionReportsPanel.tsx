@@ -109,7 +109,7 @@ export function SessionReportsPanel({
 					</select>
 				)}
 				{selected.summary && (
-					<p className="m-0 mt-2 text-label leading-5 text-dim">
+					<p className="m-0 mt-2 text-[12px] leading-5 text-dim">
 						{selected.summary}
 					</p>
 				)}

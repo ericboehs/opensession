@@ -104,7 +104,7 @@ export function ClampedBody({
 			) : (
 				<pre
 					className={
-						"my-1 max-h-[70vh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface p-3 font-mono text-label leading-relaxed text-fg"
+						"my-1 max-h-[70vh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface p-3 font-mono text-[12px] leading-relaxed text-fg"
 					}
 				>
 					{shown}

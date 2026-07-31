@@ -142,7 +142,7 @@ export function PrChecksPopover({
 				className="flex max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))] flex-col overflow-hidden p-0"
 			>
 				<div className="flex items-baseline justify-between gap-2.5 border-b border-line bg-surface px-3 py-[9px]">
-					<span className="text-label font-semibold text-fg">
+					<span className="text-[12px] font-semibold text-fg">
 						{sorted.length} check{sorted.length === 1 ? "" : "s"}
 					</span>
 					<span className="inline-flex gap-2 text-meta font-semibold">
@@ -162,7 +162,7 @@ export function PrChecksPopover({
 								<span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">
 									{check.name}
 								</span>
-								<span className="shrink-0 text-label font-medium text-dim">
+								<span className="shrink-0 text-[12px] font-medium text-dim">
 									{status.label}
 								</span>
 							</>

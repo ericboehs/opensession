@@ -102,23 +102,28 @@
 	--radius-md: 6px;
 	--radius-lg: 12px;
 	--radius-xl: 15px;
-	--text-xs: 13px;
+	--text-xs: 12px;
 	--text-sm: 13px;
 	--text-base: 14px;
 
 	/* Semantic type roles. Migrate by purpose rather than by nearest number:
-	   11px -> text-meta (timestamps, status, secondary metadata)
-	   13px -> text-label / text-supporting / text-control-label (interface copy)
-	   14px -> text-body / text-item-title (content and item titles)
-	   19px -> text-section-title / text-page-title (all headings) */
+	   10.5/11/11.5px -> text-meta (timestamps, status, secondary metadata)
+	   12px            -> text-label (field labels, compact menu headings)
+	   12.5px          -> text-supporting (descriptions, hints, empty states)
+	   13/13.5px       -> text-control-label for chrome; text-body for prose
+	   14px             -> text-body (default interface copy)
+	   15px             -> text-item-title (row/card titles and prominent values)
+	   19px             -> text-section-title (in-page headings)
+	   24px             -> text-page-title (top-level settings titles)
+	   Intentional display values such as the 22px analytics stat stay explicit. */
 	--text-meta: 11px;
-	--text-label: 13px;
-	--text-supporting: 13px;
+	--text-label: 12px;
+	--text-supporting: 12.5px;
 	--text-control-label: 13px;
 	--text-body: 14px;
-	--text-item-title: 14px;
+	--text-item-title: 15px;
 	--text-section-title: 19px;
-	--text-page-title: 19px;
+	--text-page-title: 24px;
 
 	/* Interaction geometry: `hit-target` uses 40px for pointer layouts and
 	   expands to the WCAG-friendly 44px touch convention on coarse pointers. */

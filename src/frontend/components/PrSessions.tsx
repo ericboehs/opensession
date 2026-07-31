@@ -183,9 +183,9 @@ export function PrSessionsList({
 						<span className="shrink-0 text-meta text-faint">archived</span>
 					)}
 					{s.startedBy && (
-						<span className="text-faint text-label shrink-0">{s.startedBy}</span>
+						<span className="text-faint text-[12px] shrink-0">{s.startedBy}</span>
 					)}
-					<span className="text-faint text-label shrink-0 ml-auto">
+					<span className="text-faint text-[12px] shrink-0 ml-auto">
 						{relativeTime(s.lastActivity)}
 					</span>
 				</a>

@@ -118,7 +118,7 @@ export function ConversationPane({
 								{customerLabel}
 							</span>
 							{thread?.customer?.name && thread?.customer?.email && (
-								<span className="text-faint text-label truncate">
+								<span className="text-faint text-[12px] truncate">
 									{thread.customer.email}
 								</span>
 							)}
@@ -170,7 +170,7 @@ export function ConversationPane({
 									<div className="text-body font-semibold text-fg">
 										Triage this ticket?
 									</div>
-									<div className="text-dim text-label mt-0.5">
+									<div className="text-dim text-[12px] mt-0.5">
 										Runs the Plain triage automation: investigates, posts an
 										internal note, and can open a PR for review.
 									</div>
@@ -184,7 +184,7 @@ export function ConversationPane({
 									{triaging ? "Starting triage… (~30s)" : "Triage this ticket"}
 								</Button>
 								{triageError && (
-									<div className="basis-full text-red text-label">
+									<div className="basis-full text-red text-[12px]">
 										{triageError}
 									</div>
 								)}

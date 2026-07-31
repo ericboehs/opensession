@@ -288,7 +288,7 @@ function GithubSignIn({
                     width: "100%",
                     background: "none",
                     border: "none",
-                    fontSize: 13,
+                    fontSize: 12,
                     opacity: 0.6,
                     textDecoration: "underline",
                     cursor: "pointer",
@@ -314,11 +314,11 @@ function GithubSignIn({
               {flow.verificationUri.replace(/^https:\/\//, "")}
             </a>
             <br />
-            <span style={{ fontSize: 13, opacity: 0.7 }}>Waiting for GitHub…</span>
+            <span style={{ fontSize: 12, opacity: 0.7 }}>Waiting for GitHub…</span>
           </p>
         )}
         {error && (
-          <p style={{ marginTop: 10, fontSize: 13, color: "var(--red)" }}>{error}</p>
+          <p style={{ marginTop: 10, fontSize: 12, color: "var(--red)" }}>{error}</p>
         )}
       </div>
     </div>

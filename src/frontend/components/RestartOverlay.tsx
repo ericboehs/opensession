@@ -220,7 +220,7 @@ export function RestartOverlay({ connected, addHandler }: Props) {
     const restarting = phase === "restarting" || explicit.current;
     return (
       <div
-        className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom,0px)+14px)] left-1/2 z-[200] flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-line-strong bg-panel/95 px-3.5 py-2 text-label font-medium text-fg shadow-control backdrop-blur-md"
+        className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom,0px)+14px)] left-1/2 z-[200] flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-line-strong bg-panel/95 px-3.5 py-2 text-[12px] font-medium text-fg shadow-control backdrop-blur-md"
         role="status"
         aria-live="polite"
       >

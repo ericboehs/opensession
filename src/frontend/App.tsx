@@ -3750,6 +3750,7 @@ function App() {
 							<Home
 								sessions={sessions}
 								projects={projects}
+								teamViewing={teamViewing}
 								onSelect={(s) => navigate({ view: "session", id: s.id })}
 								onNewSession={() => openPalette()}
 								onOpenAnalytics={() => navigate({ view: "analytics" })}

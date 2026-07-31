@@ -392,7 +392,7 @@ export function PreviewButton({
 
   if (variant === "action") {
     const mainClass =
-      "flex min-w-0 flex-1 items-center gap-2 rounded-md rounded-r-none px-2.5 py-2 text-left text-supporting font-semibold text-fg no-underline outline-none transition-colors hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:opacity-50 aria-disabled:cursor-default aria-disabled:opacity-50";
+      "flex min-w-0 flex-1 items-center gap-2 rounded-md rounded-r-none px-2.5 py-2 text-left text-[12.5px] font-semibold text-fg no-underline outline-none transition-colors hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:opacity-50 aria-disabled:cursor-default aria-disabled:opacity-50";
     const mainContent = (
       <>
         <span className="inline-flex size-5 shrink-0 items-center justify-center text-faint">

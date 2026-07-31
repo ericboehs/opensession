@@ -323,18 +323,18 @@ export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
                     </span>
                   )}
                   {sel.status === "active" && sel.nextWakeAt && (
-                    <span className="text-faint text-label ml-auto shrink-0" title={sel.nextWakeAt}>
+                    <span className="text-faint text-[12px] ml-auto shrink-0" title={sel.nextWakeAt}>
                       next wake {formatNext(sel.nextWakeAt)}
                     </span>
                   )}
                 </div>
                 {sel.status === "paused" && sel.pauseReason && (
-                  <div className="text-dim text-supporting leading-snug">
+                  <div className="text-dim text-[12.5px] leading-snug">
                     Paused — {sel.pauseReason}
                   </div>
                 )}
                 {(sel.status === "done" || sel.status === "failed") && sel.doneReason && (
-                  <div className="text-dim text-supporting leading-snug">
+                  <div className="text-dim text-[12.5px] leading-snug">
                     {sel.status === "done" ? "Done" : "Failed"} — {sel.doneReason}
                   </div>
                 )}
@@ -412,7 +412,7 @@ export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
 
                 <div>
                   <div className="automations-drawer-section-label mb-1.5">Activity</div>
-                  <div className="text-dim text-supporting mb-2">
+                  <div className="text-dim text-[12.5px] mb-2">
                     wake #{sel.wakeCount}
                     {sel.maxWakes ? ` of ${sel.maxWakes}` : ""}
                     {sel.lastRunAt && (
@@ -440,7 +440,7 @@ export function Goals({ onOpenSession, selectedId, onSelect }: Props) {
 /** Left column of the drawer's Configuration grid. */
 function DetailKey({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-faint text-label leading-[1.7] whitespace-nowrap">{children}</span>
+    <span className="text-faint text-[12px] leading-[1.7] whitespace-nowrap">{children}</span>
   );
 }
 
@@ -472,7 +472,7 @@ function GoalLedger({ id }: { id: string }) {
         border: "1px solid var(--border)",
         borderRadius: 8,
         fontFamily: "var(--mono)",
-        fontSize: 13,
+        fontSize: 12,
         lineHeight: 1.5,
       }}
     >

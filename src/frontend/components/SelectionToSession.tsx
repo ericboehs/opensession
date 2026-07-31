@@ -134,7 +134,7 @@ export function SelectionToSession({ sessionId, label, send, children }: Props) 
                 <Button
                   variant="primary"
                   size="sm"
-                  className="min-h-0 px-[14px] py-[6px] text-supporting font-medium shadow-none"
+                  className="min-h-0 px-[14px] py-[6px] text-[12.5px] font-medium shadow-none"
                   onClick={doSend}
                 >
                   Send to session

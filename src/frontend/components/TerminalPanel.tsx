@@ -212,7 +212,7 @@ function ShellView({
 
       const cs = getComputedStyle(document.documentElement);
       const term = new Terminal({
-        fontSize: 13,
+        fontSize: 12.5,
         fontFamily:
           cs.getPropertyValue("--mono").trim() ||
           "ui-monospace, SFMono-Regular, Menlo, monospace",

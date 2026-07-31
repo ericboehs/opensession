@@ -9,7 +9,7 @@ import { cn } from "./cn";
  *
  * These three states were saying the same thing four different ways: the
  * `.loading`/`.empty` classes (centred, faint, 40px of air), one-off inline
- * divs (`px-4 py-3 text-dim text-supporting`), the `.form-error` box, and
+ * divs (`px-4 py-3 text-dim text-[12.5px]`), the `.form-error` box, and
  * bespoke bordered panels. Same meaning, four appearances — so a surface
  * looked different depending on which one its author reached for.
  *

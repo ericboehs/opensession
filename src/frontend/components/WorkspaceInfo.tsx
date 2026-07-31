@@ -141,12 +141,12 @@ interface Props {
 	liveMedia?: WorkspaceMediaItem[];
 }
 
-const INFO_LABEL_CLASS = "px-1 text-label font-[650] tracking-[-0.01em] text-faint";
+const INFO_LABEL_CLASS = "px-1 text-[12px] font-[650] tracking-[-0.01em] text-faint";
 const INFO_SECTION_CLASS = "grid gap-[5px]";
 const INFO_LIST_CLASS =
 	"grid gap-px overflow-hidden rounded-lg bg-panel p-1";
 const INFO_MORE_BUTTON_CLASS =
-	"cursor-pointer bg-panel px-[9px] py-[7px] text-left text-label font-semibold text-faint transition-colors hover:bg-hover hover:text-fg";
+	"cursor-pointer bg-panel px-[9px] py-[7px] text-left text-[12px] font-semibold text-faint transition-colors hover:bg-hover hover:text-fg";
 
 function statusBadgeClass(status: DiffFile["status"]): string {
 	switch (statusClass(status)) {
@@ -164,7 +164,7 @@ function statusBadgeClass(status: DiffFile["status"]): string {
 }
 
 const ACTION_BUTTON_CLASS =
-	"flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-supporting font-semibold text-fg outline-none transition-colors hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:opacity-50";
+	"flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12.5px] font-semibold text-fg outline-none transition-colors hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:opacity-50";
 const ACTION_ICON_CLASS =
 	"inline-flex size-5 shrink-0 items-center justify-center text-faint [&_svg]:block";
 
@@ -340,7 +340,7 @@ function CommentCard({
 				aria-label={`Comment by ${comment.author}`}
 			>
 				{avatar}
-				<span className="min-w-0 flex-1 truncate text-supporting font-[550] leading-[1.35] text-fg">
+				<span className="min-w-0 flex-1 truncate text-[12.5px] font-[550] leading-[1.35] text-fg">
 					{title}
 				</span>
 				<span className="shrink-0 text-meta text-faint">
@@ -426,7 +426,7 @@ function FileRow({
 		</span>
 	);
 	const path = (
-		<span className="min-w-0 flex-1 truncate text-left text-label">
+		<span className="min-w-0 flex-1 truncate text-left text-[12px]">
 			{dir && <span className="text-dim">{dir}</span>}
 			<span className="text-fg">{base}</span>
 		</span>
@@ -469,7 +469,7 @@ function FileRow({
 							{path}
 							{stats}
 						</div>
-						<div className="min-h-0 flex-1 overflow-auto text-label">
+						<div className="min-h-0 flex-1 overflow-auto text-[12px]">
 							<FileDiff fileDiff={meta} options={options} disableWorkerPool />
 						</div>
 					</div>
@@ -623,7 +623,7 @@ function ChecksChip({
 				closeDelay={120}
 				type="button"
 				className={cn(
-					"mt-1.5 inline-flex w-fit cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1 text-label font-semibold leading-[1.35] transition-colors hover:brightness-110",
+					"mt-1.5 inline-flex w-fit cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1 text-[12px] font-semibold leading-[1.35] transition-colors hover:brightness-110",
 					aggregate.className,
 				)}
 				onClick={onOpenChecks}
@@ -638,7 +638,7 @@ function ChecksChip({
 				className="flex max-h-[min(560px,70vh,var(--available-height))] w-[min(440px,calc(100vw-24px))] flex-col overflow-hidden p-0"
 			>
 				<div className="flex items-baseline justify-between gap-2.5 border-b border-line bg-surface px-3 py-[9px]">
-					<span className="text-label font-semibold text-fg">
+					<span className="text-[12px] font-semibold text-fg">
 						{checks.length} check{checks.length === 1 ? "" : "s"}
 					</span>
 					<span className="inline-flex gap-2 text-meta font-semibold">
@@ -665,7 +665,7 @@ function ChecksChip({
 								<span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">
 									{check.name}
 								</span>
-								<span className="shrink-0 text-label font-medium text-dim">
+								<span className="shrink-0 text-[12px] font-medium text-dim">
 									{status.label}
 								</span>
 							</>
@@ -906,7 +906,7 @@ function MichaelReviewCard({
 							<span className="ml-0.5 text-meta font-semibold tracking-normal text-faint">/5</span>
 						</div>
 						<div className="min-w-0 flex-1">
-							<div className="truncate text-label font-semibold text-fg">{verdict}</div>
+							<div className="truncate text-[12px] font-semibold text-fg">{verdict}</div>
 							<div className="mt-0.5 truncate text-meta text-faint">{detail}</div>
 						</div>
 						<div
@@ -1125,7 +1125,7 @@ function ReviewerChip({
 		<Menu.Root>
 			<Menu.Trigger
 				className={cn(
-					"mt-1.5 inline-flex w-fit min-w-0 items-center gap-1 rounded-[calc(10px*var(--rf))] border border-line bg-control py-1 pl-2 pr-2.5 text-left text-supporting font-[550] whitespace-nowrap text-dim shadow-control outline-none transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg active:scale-[0.96] data-[popup-open]:border-line-strong data-[popup-open]:bg-hover",
+					"mt-1.5 inline-flex w-fit min-w-0 items-center gap-1 rounded-[calc(10px*var(--rf))] border border-line bg-control py-1 pl-2 pr-2.5 text-left text-[12.5px] font-[550] whitespace-nowrap text-dim shadow-control outline-none transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg active:scale-[0.96] data-[popup-open]:border-line-strong data-[popup-open]:bg-hover",
 					needsMyReview
 						? "border-red/30 bg-red-soft text-red hover:border-red/50 hover:text-red"
 						: accepted
@@ -1672,7 +1672,7 @@ export function WorkspaceInfo({
 				<div className="workspace-info-title selectable text-item-title font-[680] leading-[1.2] text-fg">
 					{title}
 				</div>
-				{meta && <div className="text-label leading-[1.35] text-faint">{meta}</div>}
+				{meta && <div className="text-[12px] leading-[1.35] text-faint">{meta}</div>}
 				<ReviewerChip
 					sessionId={sessionId}
 					reviewRequest={reviewRequest}
@@ -1713,7 +1713,7 @@ export function WorkspaceInfo({
 				<div className="grid gap-4">
 					{comments.length > 0 && (
 						<div className={INFO_SECTION_CLASS}>
-							<div className="flex items-center justify-between gap-2 px-1 text-label font-[650] tracking-[-0.01em] text-faint">
+							<div className="flex items-center justify-between gap-2 px-1 text-[12px] font-[650] tracking-[-0.01em] text-faint">
 								<span>
 									{comments.length} PR comment{comments.length === 1 ? "" : "s"}
 								</span>
@@ -1759,7 +1759,7 @@ export function WorkspaceInfo({
 					)}
 					{changed.length > 0 && (
 						<div className={INFO_SECTION_CLASS}>
-							<div className="flex items-center justify-between gap-2 px-1 text-label font-[650] tracking-[-0.01em] text-faint">
+							<div className="flex items-center justify-between gap-2 px-1 text-[12px] font-[650] tracking-[-0.01em] text-faint">
 								<span>
 									{changed.length} file{changed.length === 1 ? "" : "s"} changed
 								</span>
@@ -1874,7 +1874,7 @@ export function WorkspaceInfo({
 										type="button"
 										onClick={() => onOpenAsset?.(a.path)}
 										title={`Open ${a.path}`}
-										className="flex w-full min-w-0 items-center gap-2 rounded-md px-[7px] py-[5px] text-left text-label text-fg transition-colors hover:bg-hover"
+										className="flex w-full min-w-0 items-center gap-2 rounded-md px-[7px] py-[5px] text-left text-[12px] text-fg transition-colors hover:bg-hover"
 									>
 										<IconFile size={14} className="shrink-0 text-faint" />
 										<span className="min-w-0 flex-1 truncate">{a.path}</span>

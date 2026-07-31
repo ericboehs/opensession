@@ -287,10 +287,40 @@ function ExtBadge({ name }: { name: string }) {
       className="flex h-5 min-w-5 flex-shrink-0 items-center justify-center rounded-[4px] px-0.5 text-meta font-bold leading-none text-white"
       style={{ background: color }}
     >
-      {label}
+      {EXT_GLYPHS[ext] ?? label}
     </span>
   );
 }
+
+/**
+ * ReScript's brandmark — the bar-and-dot "R" from rescript-lang.org, cropped to
+ * its own bounds so it optically centres in the badge rather than sitting in the
+ * logo's own square (the badge already draws that part). Filled with
+ * `currentColor` so it picks up the badge's white.
+ *
+ * 10px in the 20px badge: the mark is solid ink edge to edge, so it reads
+ * heavier than a letter pair with its side bearings at the same size.
+ */
+function ReScriptMark() {
+  return (
+    <svg width="10" height="10" viewBox="64.9 60.6 134.6 134.6" fill="currentColor" aria-hidden="true">
+      <path d="M65.318 87.582c0-9.422 0-14.135 1.84-17.74a16.802 16.802 0 0 1 7.355-7.364c3.6-1.831 8.313-1.831 17.74-1.831h23.564v109.398c0 7.842 0 11.765-1.282 14.854a16.823 16.823 0 0 1-9.11 9.108c-3.091 1.282-7.014 1.282-14.853 1.282-7.842 0-11.765 0-14.854-1.282a16.817 16.817 0 0 1-9.11-9.108c-1.282-3.091-1.282-7.014-1.282-14.854l-.008-82.463Z" />
+      <circle cx="169.41" cy="91.333" r="29.683" />
+    </svg>
+  );
+}
+
+/**
+ * Extensions whose language has a mark worth drawing instead of letters. The
+ * default "first three letters" rule serves ReScript badly — ".res"/".resi"
+ * both truncate to a wide "RES" slab, and it's the dominant extension in our
+ * ReScript codebases, so a turn footer full of edits read as a row of red
+ * word-blocks.
+ */
+const EXT_GLYPHS: Record<string, React.ReactNode> = {
+  res: <ReScriptMark />,
+  resi: <ReScriptMark />,
+};
 
 const EXT_COLORS: Record<string, string> = {
   ts: "#3178c6",
@@ -318,8 +348,10 @@ const EXT_COLORS: Record<string, string> = {
   java: "#b07219",
   sql: "#e38c00",
   svg: "#d97706",
-  res: "#ed5051",
-  resi: "#ed5051",
+  // Linguist's ReScript red (#ed5051) is the loudest hue in this map and only
+  // clears 3.6:1 against the white label — darkened to sit with its neighbours.
+  res: "#c93a3c",
+  resi: "#c93a3c",
 };
 
 /**

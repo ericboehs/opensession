@@ -254,7 +254,7 @@ export function Actions({ onOpenSession, selectedId, onSelect }: Props) {
             <div>
               <div className="automations-drawer-section-label mb-1.5">Activity</div>
               {sel.lastRunAt ? (
-                <div className="text-dim text-supporting">
+                <div className="text-dim text-[12.5px]">
                   last run {relativeTime(sel.lastRunAt)}
                   {sel.lastRunSessionId && (
                     <>
@@ -273,7 +273,7 @@ export function Actions({ onOpenSession, selectedId, onSelect }: Props) {
                   )}
                 </div>
               ) : (
-                <div className="text-faint text-supporting">No runs yet.</div>
+                <div className="text-faint text-[12.5px]">No runs yet.</div>
               )}
             </div>
           </div>
@@ -286,7 +286,7 @@ export function Actions({ onOpenSession, selectedId, onSelect }: Props) {
 /** Left column of the drawer's Configuration grid. */
 function DetailKey({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-faint text-label leading-[1.7] whitespace-nowrap">{children}</span>
+    <span className="text-faint text-[12px] leading-[1.7] whitespace-nowrap">{children}</span>
   );
 }
 
@@ -322,7 +322,7 @@ function RunForm({
   return (
     <div className="automation-form automation-form-inline">
       {action.inputs.length === 0 && (
-        <div className="mt-1 text-supporting text-faint">This action takes no inputs.</div>
+        <div className="mt-1 text-[12.5px] text-faint">This action takes no inputs.</div>
       )}
 
       {action.inputs.map((input) => (
@@ -358,12 +358,12 @@ function RunForm({
               onChange={(e) => setValues((v) => ({ ...v, [input.name]: e.target.value }))}
             />
           )}
-          {input.hint && <span className="mt-1 text-supporting text-faint">{input.hint}</span>}
+          {input.hint && <span className="mt-1 text-[12.5px] text-faint">{input.hint}</span>}
         </label>
       ))}
 
       {action.confirm && (
-        <div className="mt-1 text-supporting text-yellow">
+        <div className="mt-1 text-[12.5px] text-yellow">
           ⚠ This action runs against prod. Double-check the values before running.
         </div>
       )}
@@ -541,7 +541,7 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
       )}
 
       {kind === "mcp" && (
-        <div className="mt-1 text-supporting text-faint">
+        <div className="mt-1 text-[12.5px] text-faint">
           Each input's variable name must match the tool's argument name. The tool runs on its own
           server with its own credentials.
         </div>
@@ -563,7 +563,7 @@ function ActionForm({ onClose, onCreated }: { onClose: () => void; onCreated: ()
       <div className="automation-form-title" style={{ fontSize: 14, marginTop: 8 }}>
         Inputs {kind === "mcp" ? "(arg names)" : argMode === "positional" ? "(in order →)" : ""}
       </div>
-      {inputs.length === 0 && <div className="mt-1 text-supporting text-faint">No inputs — the script runs with no args.</div>}
+      {inputs.length === 0 && <div className="mt-1 text-[12.5px] text-faint">No inputs — the script runs with no args.</div>}
       {inputs.map((input, idx) => (
         <div className="automation-form-row" key={idx} style={{ alignItems: "flex-end" }}>
           <label>

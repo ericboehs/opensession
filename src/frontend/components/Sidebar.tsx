@@ -958,7 +958,7 @@ function CtxItem({
 				<span
 					style={{
 						color: "var(--text-faint)",
-						fontSize: 13,
+						fontSize: 12,
 						flexShrink: 0,
 						marginLeft: 12,
 					}}
@@ -4748,7 +4748,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 				: items.filter((i) => i.lane === feed.attentionLane).length
 			: 0;
 		const noMatches = (
-			<div className="px-3 py-2 text-label text-faint">
+			<div className="px-3 py-2 text-[12px] text-faint">
 				No items match the filters
 			</div>
 		);
@@ -4974,9 +4974,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								<TeamPresencePopover
 									members={team}
 									onOpenSession={onSelect}
-									// The faces ring themselves in whatever the row is
-									// painted with, so the pile separates on both states.
-									ring={tool.active ? "var(--bg-active)" : "var(--bg-raised)"}
 									className="absolute right-2.5 top-1/2 -translate-y-1/2"
 								/>
 							</div>
@@ -5000,7 +4997,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						aria-expanded={workspacesOpen}
 						title={workspacesOpen ? "Collapse workspaces" : "Expand workspaces"}
 					>
-						<span className="sidebar-workspace-title shrink-0 text-label font-semibold tracking-[-0.01em] text-faint" ref={titleRef}>
+						<span className="sidebar-workspace-title shrink-0 text-[12px] font-semibold tracking-[-0.01em] text-faint" ref={titleRef}>
 							{filter.person === "me"
 								? "Workspaces"
 								: filter.person === "unassigned"
@@ -7174,7 +7171,6 @@ function MobileActionSheet({
 							<Button
 								variant="ghost"
 								size="xs"
-								type="button"
 								className="min-h-0 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
 								style={{
 									borderColor: !pinnedLane(session)
@@ -7790,7 +7786,9 @@ function WsOverviewInfo({
 						<button
 							key={`${m.sessionId}:${m.at}:${i}`}
 							type="button"
-							onClick={() => openLightbox(media, i)}
+							onClick={(event) =>
+								openLightbox(media, i, event.currentTarget)
+							}
 							className="relative block aspect-video w-[124px] shrink-0 snap-start overflow-hidden rounded-sm border border-line bg-surface p-0"
 							title={[m.chatTitle, new Date(m.at).toLocaleString()]
 								.filter(Boolean)
@@ -8250,7 +8248,6 @@ function WsMobileSheet({
 									<Button
 										variant="ghost"
 										size="xs"
-										type="button"
 										className="min-h-0 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
 										style={{
 											borderColor: !anyManual
@@ -8300,7 +8297,6 @@ function WsMobileSheet({
 								<Button
 									variant="ghost"
 									size="xs"
-									type="button"
 									className="min-h-0 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
 									style={{
 										borderColor: "var(--text-dim)",

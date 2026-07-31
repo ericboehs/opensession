@@ -639,7 +639,7 @@ const CommentForm = React.memo(function CommentForm({
             <Button
               variant="primary"
               size="sm"
-              className="min-h-0 px-[14px] py-[6px] text-supporting font-medium shadow-none"
+              className="min-h-0 px-[14px] py-[6px] text-[12.5px] font-medium shadow-none"
               onClick={submit}
               disabled={sending || !text.trim()}
             >

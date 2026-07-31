@@ -64,7 +64,7 @@ export function NoteBubble({ note }: { note: ChatMessage }) {
 		>
 			<div className="mb-1 flex items-center gap-2">
 				<UserAvatar name={note.user} size={18} />
-				<span className="text-supporting font-semibold text-fg">{note.user}</span>
+				<span className="text-[12.5px] font-semibold text-fg">{note.user}</span>
 				<span
 					className="text-meta font-semibold"
 					style={{ color: "var(--yellow)" }}

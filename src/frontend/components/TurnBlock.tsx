@@ -176,18 +176,18 @@ export const TurnBlock = React.memo(function TurnBlock({
           </span>
         )}
         {duration && !live && (
-          <span className="flex-shrink-0 text-label leading-4 text-faint">{duration}</span>
+          <span className="flex-shrink-0 text-[12px] leading-4 text-faint">{duration}</span>
         )}
         {countsLabel && (
-          <span className="flex-shrink-0 text-label leading-4 text-faint">· {countsLabel}</span>
+          <span className="flex-shrink-0 text-[12px] leading-4 text-faint">· {countsLabel}</span>
         )}
         {failures > 0 && !live && (
-          <span className="flex-shrink-0 text-label leading-4 text-red/80">
+          <span className="flex-shrink-0 text-[12px] leading-4 text-red/80">
             · {failures} failed
           </span>
         )}
         {!expanded && editedFilesLabel && (
-          <span className="min-w-0 truncate font-mono text-label leading-4 text-faint">
+          <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-faint">
             · {editedFilesLabel}
           </span>
         )}
@@ -195,11 +195,11 @@ export const TurnBlock = React.memo(function TurnBlock({
           <LineStats
             additions={additions}
             deletions={deletions}
-            className="text-label leading-4"
+            className="text-[12px] leading-4"
           />
         )}
         {live && !expanded && lastTool && !editedFilesLabel && (
-          <span className="min-w-0 truncate font-mono text-label leading-4 text-faint">
+          <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-faint">
             {toolDisplayName(lastTool.toolName)}:{" "}
             {toolSummary(
               lastTool.toolName || "Tool",
