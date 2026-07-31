@@ -69,7 +69,10 @@ export function RepoTile({
 	}
 	if (failedFor !== name) {
 		return (
-			<span className="repo-tile repo-tile--img" style={style}>
+			<span
+				className={`repo-tile repo-tile--img${name === "backstage" ? " repo-tile--app-icon" : ""}`}
+				style={style}
+			>
 				<img
 					src={`/repo-icon/${encodeURIComponent(name)}.png`}
 					alt=""

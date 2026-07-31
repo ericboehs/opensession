@@ -1409,6 +1409,11 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	object-fit: cover;
 	border-radius: inherit;
 }
+.repo-tile--app-icon img {
+	/* The app icon fills its source canvas; GitHub's Tella avatar includes
+	   transparent breathing room. Match their optical size inside equal tiles. */
+	transform: scale(0.8);
+}
 
 .sidebar-list {
 	flex: none;
