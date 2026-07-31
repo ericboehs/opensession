@@ -233,6 +233,27 @@ export function SessionTabs({
 				: "smooth",
 		});
 	}, [activeTopId]);
+
+	// Flag whether the strip actually has anywhere to scroll, which gates its
+	// edge fades. Those are driven by a CSS scroll timeline, and a timeline that
+	// goes INACTIVE (closing a tab, widening the pane until everything fits)
+	// holds its last value instead of reverting — without this gate a strip that
+	// no longer scrolls keeps a stale fade dimming its first tab. Written
+	// straight to the DOM rather than through state: it's presentation only, and
+	// re-rendering the strip on every step of a pane drag would be wasteful.
+	useEffect(() => {
+		const box = scrollRef.current;
+		if (!box) return;
+		const sync = () =>
+			box.toggleAttribute("data-overflow", box.scrollWidth - box.clientWidth > 1);
+		// The box catches pane resizes; its children catch the content growing
+		// (a tab added, or a title that got longer).
+		const observer = new ResizeObserver(sync);
+		observer.observe(box);
+		for (const child of box.children) observer.observe(child);
+		sync();
+		return () => observer.disconnect();
+	}, [tabs.length, viewTabs.length]);
 	const tabUnits = React.useMemo(() => {
 		const visibleSplit = isPhone ? null : split;
 		const splitIds = visibleSplit

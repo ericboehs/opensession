@@ -2733,11 +2733,13 @@ body:is(.resizing-sidebar, .resizing-panel) {
    CSS scroll timeline drives the two widths, so there are no JS scroll listeners
    and no React re-renders, and each fade appears only when content really is
    past that edge. The mask sits on the scroller's own box, which is what puts
-   the fade at the tabs' edge instead of under the pinned "+". With no overflow
-   the timeline is inactive, both widths stay at their 0px initial values and the
-   mask is a no-op; browsers without scroll-driven animations never get a mask.
-   The fades track scroll position rather than elapsed time, so they're left
-   active under prefers-reduced-motion. */
+   the fade at the tabs' edge instead of under the pinned "+". The mask hangs off
+   [data-overflow] (set by SessionTabs) rather than on the timeline alone,
+   because a scroll timeline that goes inactive HOLDS its last value instead of
+   reverting: without that gate, a strip that stopped overflowing would keep a
+   stale fade dimming its first tab. Browsers without scroll-driven animations
+   never get a mask at all. The fades track scroll position rather than elapsed
+   time, so they're left active under prefers-reduced-motion. */
 @property --tabs-fade-start {
 	syntax: "<length>";
 	inherits: false;
@@ -2765,7 +2767,7 @@ body:is(.resizing-sidebar, .resizing-panel) {
 	}
 }
 @supports (animation-timeline: scroll()) {
-	.session-tabs-scroll {
+	.session-tabs-scroll[data-overflow] {
 		mask-image: linear-gradient(
 			to right,
 			transparent 0,
@@ -2773,6 +2775,8 @@ body:is(.resizing-sidebar, .resizing-panel) {
 			#000 calc(100% - var(--tabs-fade-end)),
 			transparent 100%
 		);
+	}
+	.session-tabs-scroll {
 		animation:
 			session-tabs-fade-start 1ms both,
 			session-tabs-fade-end 1ms both; /* inert — the scroll timeline drives progress */
