@@ -69,6 +69,7 @@ import {
 } from "../lib/reads";
 import { isNoteUnread, onNoteReadsChanged } from "../lib/note-reads";
 import { usePeople } from "../lib/people";
+import { TeamPresencePopover, useTeamPresence } from "./TeamPresence";
 import { chatPath, absoluteLink, copyToClipboard } from "../lib/share-link";
 import { providerFromUrl } from "../lib/provider";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
@@ -1672,6 +1673,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const meUser = currentUser;
 	// Team directory (GET /api/people) — the always-on People band roster.
 	const roster = usePeople();
+	// The same roster with live status attached, for the Home entry's face pile.
+	const team = useTeamPresence({ sessions, teamViewing, currentUser });
 	// Per-person latest session + any-running, keyed by lowercased first name —
 	// what a People row shows when the person isn't live right now.
 	const personActivity = useMemo(() => {
@@ -4902,7 +4905,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			)}
 			{visibleTools.length > 0 && (isPhone || toolsOpen) && (
 				<nav className="sidebar-nav">
-					{visibleTools.map((tool) => (
+					{visibleTools.map((tool) => {
+						const row = (
 						<button
 							key={tool.id}
 							className={cn(
@@ -4954,7 +4958,23 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								<span className="sidebar-nav-count">{tool.count}</span>
 							)}
 						</button>
-					))}
+						);
+						// Home carries the team at its right edge — who's around, who's
+						// working, and one click away, what each of them is on. It has to
+						// be a sibling of the row, not a child: a button can't nest one.
+						// Phones render the tools as a card strip, where there's no room.
+						if (tool.id !== "home" || isPhone || team.length === 0) return row;
+						return (
+							<div key={tool.id} className="relative">
+								{row}
+								<TeamPresencePopover
+									members={team}
+									onOpenSession={onSelect}
+									className="absolute right-2.5 top-1/2 -translate-y-1/2"
+								/>
+							</div>
+						);
+					})}
 				</nav>
 			)}
 			</div>

@@ -2,11 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import type { Project, UnifiedSession } from "../lib/types";
 import { fetchHomeStats, fetchRecentPrs, type HomeStats, type RecentPr } from "../lib/api";
 import { prStatusMark, type PrStatusInput } from "../lib/pr-status";
-import { Menu } from "../ui/menu";
 import { Button } from "../ui/button";
+import { useIsPhone } from "../hooks/useIsPhone";
 import { useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { RepoTile } from "./RepoTile";
+import { TeamFacepile, useTeamPresence } from "./TeamPresence";
 import {
   IconArchive,
   IconChevronDown,
@@ -14,6 +15,7 @@ import {
   IconGitMerge,
   IconPullRequest,
   IconSearch,
+  IconX,
 } from "./icons";
 
 interface Props {
@@ -22,6 +24,8 @@ interface Props {
   onSelect: (session: UnifiedSession) => void;
   onNewSession: () => void;
   onOpenAnalytics?: () => void;
+  /** Who's viewing what right now (global presence), for the team face pile. */
+  teamViewing?: Array<{ user: string; sessionId: string }>;
 }
 
 interface WorktreeRow extends PrStatusInput {
@@ -378,8 +382,10 @@ export function buildWorktreeRows(recentPrs: RecentPr[], sessions: UnifiedSessio
   );
 }
 
-export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalytics }: Props) {
+export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalytics, teamViewing }: Props) {
   const currentUser = useCurrentUser();
+  const isPhone = useIsPhone();
+  const team = useTeamPresence({ sessions, teamViewing, currentUser });
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("all");
   const [person, setPerson] = useState(() =>
@@ -483,29 +489,55 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
     return projects.filter((project) => represented.has(project.id));
   }, [projects, sessions]);
 
-  const people = useMemo(
-    () => [...new Set(allWorktrees.map((row) => row.person).filter((value): value is string => !!value))].sort(),
-    [allWorktrees],
-  );
-
   return (
     <div className="home bg-surface">
       <div className="mx-auto w-full max-w-[1040px] px-5 pb-16 pt-10 max-[720px]:px-4 max-[720px]:pt-5">
         <div className="flex items-center justify-between gap-4 px-2">
           <h1 className="m-0 text-page-title font-semibold tracking-[-0.025em] text-fg">Home</h1>
-          <Button
-            variant="ink"
-            size="lg"
-            className="text-control-label"
-            onClick={onNewSession}
-          >
-            Create workspace
-          </Button>
+          <div className="flex min-w-0 items-center gap-3">
+            {/* The team, as the person filter: a face picks whose worktrees
+                this page shows, and the picked one says so in words next to
+                the pile. Clicking the picked face (or the ✕) goes back to
+                everyone. */}
+            {team.length > 0 && (
+              <div className="flex min-w-0 items-center gap-2.5">
+                <TeamFacepile
+                  members={team}
+                  size={isPhone ? 24 : 27}
+                  max={isPhone ? 4 : 8}
+                  selectedKey={person === "all" ? null : person}
+                  onSelect={(member) =>
+                    setPerson((current) => (current === member.key ? "all" : member.key))
+                  }
+                />
+                {person === "all" ? (
+                  <span className="text-control-label text-faint max-[860px]:hidden">Everyone</span>
+                ) : (
+                  <button
+                    className="flex items-center gap-1 rounded-md border-0 bg-transparent p-1 text-control-label text-dim hover:bg-hover hover:text-fg max-[860px]:hidden"
+                    onClick={() => setPerson("all")}
+                    title="Show everyone"
+                  >
+                    <span className="truncate">{personLabel(person)}</span>
+                    <IconX size={15} />
+                  </button>
+                )}
+              </div>
+            )}
+            <Button
+              variant="ink"
+              size="lg"
+              className="text-control-label"
+              onClick={onNewSession}
+            >
+              Create workspace
+            </Button>
+          </div>
         </div>
 
         <OverviewStrip running={running} stats={stats} onOpenAnalytics={onOpenAnalytics} />
 
-        <div className="mt-7 grid grid-cols-[minmax(180px,1fr)_auto_auto_auto] items-center gap-5 border-b border-line px-2 pb-4 max-[860px]:grid-cols-2 max-[720px]:grid-cols-1 max-[720px]:gap-2.5">
+        <div className="mt-7 grid grid-cols-[minmax(180px,1fr)_auto_auto] items-center gap-5 border-b border-line px-2 pb-4 max-[860px]:grid-cols-2 max-[720px]:grid-cols-1 max-[720px]:gap-2.5">
           <label className="flex min-w-0 items-center gap-2 text-faint focus-within:text-dim">
             <IconSearch size={20} />
             <input
@@ -516,57 +548,6 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
               spellCheck={false}
             />
           </label>
-
-          <Menu.Root>
-            <Menu.Trigger className="flex min-w-[142px] items-center gap-2 rounded-md border-0 bg-transparent p-1 text-control-label text-dim hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg">
-              {person === "all" ? (
-                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-line text-[10px] font-semibold">
-                  ·
-                </span>
-              ) : (
-                <UserAvatar name={personLabel(person)} size={20} />
-              )}
-              <span className="min-w-0 flex-1 truncate text-left">
-                {person === "all" ? "All people" : personLabel(person)}
-              </span>
-              <IconChevronDown className="shrink-0" size={20} />
-            </Menu.Trigger>
-            <Menu.Popup align="end" sideOffset={6} className="min-w-[250px]">
-              <Menu.RadioGroup value={person} onValueChange={(value) => setPerson(String(value))}>
-                {["all", ...people].map((name) => {
-                  const label = name === "all" ? "All people" : personLabel(name);
-                  return (
-                    <Menu.RadioItem
-                      key={name}
-                      value={name}
-                      closeOnClick
-                      className="gap-2.5 px-2 py-2"
-                    >
-                      {name === "all" ? (
-                        <span className="flex h-6 w-6 items-center justify-center rounded-full border border-line text-[11px] font-semibold">
-                          ·
-                        </span>
-                      ) : (
-                        <UserAvatar name={label} size={24} />
-                      )}
-                      <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
-                      {person === name && (
-                        <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden>
-                          <path
-                            d="M3.5 8.5l3 3 6-7"
-                            stroke="currentColor"
-                            strokeWidth="1.6"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      )}
-                    </Menu.RadioItem>
-                  );
-                })}
-              </Menu.RadioGroup>
-            </Menu.Popup>
-          </Menu.Root>
 
           <label className="relative flex items-center gap-2 text-control-label text-dim hover:text-fg">
             <IconFolder size={20} />
@@ -599,10 +580,18 @@ export function Home({ sessions, projects, onSelect, onNewSession, onOpenAnalyti
         {sections.length === 0 ? (
           <div className="px-2 py-16 text-center">
             <div className="text-sm font-medium text-fg">
-              {query ? "No matching worktrees" : "No pull request worktrees yet"}
+              {query
+                ? "No matching worktrees"
+                : person === "all"
+                  ? "No pull request worktrees yet"
+                  : `Nothing open for ${personLabel(person)}`}
             </div>
             <div className="mt-1 text-body text-faint">
-              {query ? "Try another search or project." : "Workspaces with pull requests will appear here."}
+              {query
+                ? "Try another search or project."
+                : person === "all"
+                  ? "Workspaces with pull requests will appear here."
+                  : "Pick another face, or clear the filter to see everyone."}
             </div>
           </div>
         ) : (
