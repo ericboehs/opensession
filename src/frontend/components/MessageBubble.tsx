@@ -112,7 +112,7 @@ export function ClampedBody({
 				<button
 					type="button"
 					onClick={showAll ? () => setShowAll(false) : expand}
-					className="mt-1 cursor-pointer border-0 bg-transparent p-0 text-left font-sans text-[12px] font-medium text-dim hover:text-fg"
+					className="mt-1 cursor-pointer rounded-md border-0 bg-transparent px-2 py-1 text-left font-sans text-[12px] font-medium text-dim hover:bg-hover/40 hover:text-fg"
 				>
 					{fetching
 						? "Loading…"
