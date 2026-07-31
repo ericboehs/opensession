@@ -14,6 +14,7 @@ import {
 import { getCurrentUser } from "./UserPicker";
 import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
 import { Button } from "../ui/button";
+import { PageSection } from "../ui/page";
 import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
 import { InlineAlert } from "../ui/state";
 
@@ -91,7 +92,7 @@ export function Actions({ onOpenSession, selectedId, onSelect }: Props) {
   return (
     <div className={`automations-page ${sel ? "automations-page-has-detail" : ""}`}>
     <div className="automations-page-main">
-    <div className="automations-page-inner">
+    <PageSection>
       <PageHeader
         className={sel ? "mb-3.5 items-center" : "max-[560px]:mb-5 max-[560px]:flex-col max-[560px]:items-start max-[560px]:gap-3.5"}
       >
@@ -159,7 +160,7 @@ export function Actions({ onOpenSession, selectedId, onSelect }: Props) {
           ))}
         </div>
       )}
-    </div>
+    </PageSection>
     </div>
 
       {sel && (

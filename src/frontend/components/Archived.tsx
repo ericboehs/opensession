@@ -3,7 +3,7 @@ import type { UnifiedSession } from "../lib/types";
 import { relativeTime, archiveSessionApi } from "../lib/api";
 import { useCurrentUser } from "./UserPicker";
 import { docTitle, DEFAULT_DOC_TITLE } from "../lib/brand";
-import { PageDescription, PageHeader, PageTitle } from "../ui/page-header";
+import { PageLayout } from "../ui/page";
 
 interface Props {
   sessions: UnifiedSession[];
@@ -120,16 +120,15 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
   }
 
   return (
-    <div className="automations">
-      <PageHeader>
-        <div>
-          <PageTitle>Archived</PageTitle>
-          <PageDescription>
-            {archived.length} archived session{archived.length === 1 ? "" : "s"}.
-            Done Plain tickets and anything idle for over a week land here
-            automatically.
-          </PageDescription>
-        </div>
+    <PageLayout
+      title="Archived"
+      description={
+        <>
+          {archived.length} archived session{archived.length === 1 ? "" : "s"}. Done Plain
+          tickets and anything idle for over a week land here automatically.
+        </>
+      }
+      actions={
         <input
           className="sidebar-search"
           style={{ maxWidth: 260 }}
@@ -137,64 +136,65 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-      </PageHeader>
-
-      <div className="archived-filters">
-        <div className="seg-control" role="group" aria-label="Owner">
-          <button
-            className={`seg-control-btn${owner === "mine" ? " active" : ""}`}
-            onClick={() => setOwner("mine")}
-          >
-            My archived
-          </button>
-          <button
-            className={`seg-control-btn${owner === "everyone" ? " active" : ""}`}
-            onClick={() => setOwner("everyone")}
-          >
-            Everyone
-          </button>
-        </div>
-        {repos.length > 1 && (
-          <div className="seg-control" role="group" aria-label="Repo">
+      }
+      filters={
+        <>
+          <div className="seg-control" role="group" aria-label="Owner">
             <button
-              className={`seg-control-btn${repo === "all" ? " active" : ""}`}
-              onClick={() => setRepo("all")}
+              className={`seg-control-btn${owner === "mine" ? " active" : ""}`}
+              onClick={() => setOwner("mine")}
             >
-              All repos
+              My archived
             </button>
-            {repos.map((name) => (
-              <button
-                key={name}
-                className={`seg-control-btn${repo === name ? " active" : ""}`}
-                onClick={() => setRepo(name)}
-              >
-                {name}
-              </button>
-            ))}
+            <button
+              className={`seg-control-btn${owner === "everyone" ? " active" : ""}`}
+              onClick={() => setOwner("everyone")}
+            >
+              Everyone
+            </button>
           </div>
-        )}
-        <div className="seg-control" role="group" aria-label="Reason">
-          <button
-            className={`seg-control-btn${reason === "all" ? " active" : ""}`}
-            onClick={() => setReason("all")}
-          >
-            All
-          </button>
-          <button
-            className={`seg-control-btn${reason === "auto" ? " active" : ""}`}
-            onClick={() => setReason("auto")}
-          >
-            Auto-archived
-          </button>
-          <button
-            className={`seg-control-btn${reason === "manual" ? " active" : ""}`}
-            onClick={() => setReason("manual")}
-          >
-            Manual
-          </button>
-        </div>
-      </div>
-
+          {repos.length > 1 && (
+            <div className="seg-control" role="group" aria-label="Repo">
+              <button
+                className={`seg-control-btn${repo === "all" ? " active" : ""}`}
+                onClick={() => setRepo("all")}
+              >
+                All repos
+              </button>
+              {repos.map((name) => (
+                <button
+                  key={name}
+                  className={`seg-control-btn${repo === name ? " active" : ""}`}
+                  onClick={() => setRepo(name)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="seg-control" role="group" aria-label="Reason">
+            <button
+              className={`seg-control-btn${reason === "all" ? " active" : ""}`}
+              onClick={() => setReason("all")}
+            >
+              All
+            </button>
+            <button
+              className={`seg-control-btn${reason === "auto" ? " active" : ""}`}
+              onClick={() => setReason("auto")}
+            >
+              Auto-archived
+            </button>
+            <button
+              className={`seg-control-btn${reason === "manual" ? " active" : ""}`}
+              onClick={() => setReason("manual")}
+            >
+              Manual
+            </button>
+          </div>
+        </>
+      }
+    >
       {archived.length === 0 ? (
         <div className="automations-empty">
           <p>Nothing archived{search || owner === "mine" || repo !== "all" ? " matches" : " yet"}.</p>
@@ -232,6 +232,6 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
           )}
         </div>
       )}
-    </div>
+    </PageLayout>
   );
 }
