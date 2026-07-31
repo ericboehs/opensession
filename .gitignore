@@ -14,6 +14,7 @@ mcp-config.json.bak
 node_modules/@openai/codex-linux-x64/
 node_modules/.bin/codex
 .frontend-dist/
+.website-dist/
 node_modules
 __pycache__/
 *.pyc
