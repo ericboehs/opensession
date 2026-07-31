@@ -68,6 +68,18 @@ describe("worker report detection", () => {
 		expect(parseWorkerReport(`<!--os:worker-report:${id}-->\nDone.`)?.sessionId).toBe(id);
 	});
 
+	it("drops a stacked notice sentinel the card would render as raw HTML", () => {
+		// A worker whose whole job was a workflow reports the workflow's own
+		// nudge back, so the turn carries both sentinels.
+		const parsed = parseWorkerReport(
+			`<!--os:worker-report:${id}--><!--os:workflow-notice:wf-1-->\n✅ Workflow "crop-modal-review" finished`,
+		);
+		expect(parsed).toEqual({
+			sessionId: id,
+			body: '✅ Workflow "crop-modal-review" finished',
+		});
+	});
+
 	it("leaves ordinary turns alone", () => {
 		expect(parseWorkerReport("Please review the worker output")).toBeNull();
 		expect(parseWorkerReport("[Kent] worker bks-1 looks stuck")).toBeNull();

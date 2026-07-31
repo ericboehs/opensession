@@ -94,6 +94,21 @@ const ATTR_PREFIX_RE = /^\[[^\]\n]{1,80}\]\s*/;
 const WORKER_ATTR_RE = /^\[worker\s+([^\]\s]+)\]\s*/;
 const WORKER_SENTINEL_RE = /^<!--os:worker-report(?::([^\s>]+))?-->\s*/;
 
+/**
+ * Notices stack: a worker whose whole job was a workflow reports back with the
+ * workflow nudge as its body, so the turn carries both sentinels and the
+ * matching parser only consumes its own. The markdown renderer escapes HTML,
+ * so anything left over renders as a literal `<!--os:…-->` line at the top of
+ * the card — plumbing the reader never has a use for.
+ */
+const LEADING_SENTINEL_RE = /^\s*<!--os:[a-z-]+(?::[^\s>]+)?-->\s*/;
+
+function stripLeadingSentinels(text: string): string {
+  let out = text;
+  while (LEADING_SENTINEL_RE.test(out)) out = out.replace(LEADING_SENTINEL_RE, "");
+  return out;
+}
+
 export function parseWorkerReport(
   content?: string,
 ): { sessionId: string | null; body: string } | null {
@@ -111,7 +126,7 @@ export function parseWorkerReport(
     text = text.slice(sentinel[0].length);
   }
   if (!attr && !sentinel) return null;
-  return { sessionId, body: text.trim() };
+  return { sessionId, body: stripLeadingSentinels(text).trim() };
 }
 
 /**

@@ -2707,13 +2707,15 @@ export function SessionViewer({
 		setForkFrom(messageId);
 	}, []);
 
-	// Session-id links (rendered by markdown.ts into message/tool HTML via
-	// dangerouslySetInnerHTML, so they can't carry React handlers) navigate on a
-	// delegated click — e.g. jump from an orchestrator into the worker it spawned.
+	// Session-id links navigate on a delegated click — e.g. jump from an
+	// orchestrator into the worker it spawned. Delegated because markdown.ts
+	// renders its session chips into message/tool HTML via
+	// dangerouslySetInnerHTML, where they can't carry React handlers; anything
+	// else in the transcript opts in the same way, by carrying data-session-id.
 	const handleMessagesClick = useCallback(
 		(e: React.MouseEvent) => {
 			const el = (e.target as HTMLElement).closest?.(
-				".session-link",
+				"[data-session-id]",
 			) as HTMLElement | null;
 			const id = el?.dataset.sessionId;
 			if (!id || !onOpenSession) return;

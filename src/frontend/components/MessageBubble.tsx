@@ -449,23 +449,34 @@ export const MessageBubble = React.memo(function MessageBubble({
 							</span>
 							<span>🤖 Worker report</span>
 						</button>
-						{workerReport.sessionId && (
-							<a
-								className="shrink-0 text-dim no-underline hover:text-fg"
-								href={`${BASE_PATH}/session/${workerReport.sessionId}`}
-							>
-								Open worker
-							</a>
-						)}
 						<MsgTime ts={entry.timestamp} />
 					</div>
 					{workerReportOpen && (
-						<ClampedBody
-							className="msg-body markdown px-3.5 py-2.5"
-							content={workerReport.body}
-							entry={entry}
-							sessionId={sessionId}
-						/>
+						<>
+							<ClampedBody
+								className="msg-body markdown px-3.5 py-2.5"
+								content={workerReport.body}
+								entry={entry}
+								sessionId={sessionId}
+							/>
+							{/* Part of the report, not the collapsed row: the header stays
+							    title + time like every other folded notice, and the jump to
+							    the worker reads as the end of what it reported. The
+							    data-session-id is what the transcript's delegated click
+							    handler navigates on, so it opens in place — the href is
+							    there for cmd-click and copy-link. */}
+							{workerReport.sessionId && (
+								<div className="px-3.5 pb-2.5">
+									<a
+										className="text-xs text-dim no-underline hover:text-fg"
+										data-session-id={workerReport.sessionId}
+										href={`${BASE_PATH}/session/${workerReport.sessionId}`}
+									>
+										Open worker
+									</a>
+								</div>
+							)}
+						</>
 					)}
 				</div>
 			</div>
