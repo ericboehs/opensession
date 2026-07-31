@@ -24,7 +24,7 @@ import {
   clearTranscriptStoreDegraded,
 } from "./opencode-transcript";
 import { configuredRepos, defaultRepo, githubBotLogins } from "./config";
-import { sessionPrBranch } from "./session-pr-target";
+import { prWorkspaceReader, sessionPrBranch } from "./session-pr-target";
 import { isLockHeld, readPrState, type LastReviewState } from "../agents/github/state";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg, botGhToken } from "./github-limit";
 import { fetchWithTimeout } from "./shared/fetch-with-timeout";
@@ -1949,9 +1949,12 @@ export function getAllSessions(): UnifiedSession[] {
     string,
     Array<{ repo: string; branch: string; pr: PrInfo }>
   >();
+  // Chats with no branch of their own inherit their workspace's, so every chat
+  // in a workspace resolves to the same PR. Read each workspace once.
+  const workspaceOf = prWorkspaceReader();
   if (prsBySession.size > 0)
     for (const session of allSessions) {
-      const branch = sessionPrBranch(session);
+      const branch = sessionPrBranch(session, workspaceOf(session));
       if (!branch) continue;
       const repoId = session.repo || defaultRepo().id;
       if (branch === configuredRepos()[repoId]?.defaultBranch) continue;
@@ -1963,7 +1966,7 @@ export function getAllSessions(): UnifiedSession[] {
       else discoveredByBranch.set(key, [...found]);
     }
   for (const session of allSessions) {
-    const primaryBranch = sessionPrBranch(session);
+    const primaryBranch = sessionPrBranch(session, workspaceOf(session));
     if (primaryBranch) {
       const sessionRepoId = session.repo || defaultRepo().id;
       const pr = prsByRepo.get(sessionRepoId)?.get(primaryBranch);

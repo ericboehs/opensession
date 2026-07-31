@@ -37,4 +37,40 @@ describe("sessionPrBranch", () => {
 			sessionPrBranch(session, { ...workspace, prNumber: undefined }),
 		).toBe("add-lottie-primitive-os-review");
 	});
+
+	// An ask-style chat shares its workspace's checkout but stores no branch of
+	// its own, so without the fallback it showed "Create PR" beside a sibling
+	// tab on the same workspace's connected PR.
+	test("a branchless chat inherits its workspace's branch", () => {
+		expect(
+			sessionPrBranch(
+				{ id: "bks-ask", branch: null } as unknown as UnifiedSession,
+				workspace,
+			),
+		).toBe("add-lottie-primitive");
+	});
+
+	test("inherits from a workspace with no PR of its own yet", () => {
+		expect(
+			sessionPrBranch({ id: "bks-ask" } as UnifiedSession, {
+				...workspace,
+				prNumber: undefined,
+			}),
+		).toBe("add-lottie-primitive");
+	});
+
+	test("stays branchless when the workspace owns no branch", () => {
+		expect(
+			sessionPrBranch({ id: "bks-ask" } as UnifiedSession, {
+				...workspace,
+				branch: undefined,
+			}),
+		).toBeNull();
+	});
+
+	test("an explicit null workspace opts out of inheriting", () => {
+		expect(
+			sessionPrBranch({ id: "bks-ask" } as UnifiedSession, null),
+		).toBeNull();
+	});
 });
