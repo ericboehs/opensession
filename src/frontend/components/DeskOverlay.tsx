@@ -4,6 +4,7 @@ import { getCurrentUser } from "./UserPicker";
 import { DeskConversation } from "./DeskConversation";
 import { ResponsiveDialog } from "../ui/sheet";
 import { IconDesk, IconExpand, IconX } from "./icons";
+import { Button } from "../ui/button";
 
 /**
  * The Desk — a summonable overlay (⌘J / the floating desk button) on top of
@@ -100,13 +101,15 @@ function DeskBody({
 				<span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-fg">
 					Desk
 				</span>
-				<button
-					className="shrink-0 rounded-md px-1.5 py-0.5 text-[12px] font-medium text-faint hover:bg-surface hover:text-fg"
+				<Button
+					variant="ghost"
+					size="xs"
+					className="shrink-0 text-faint"
 					onClick={clearChat}
 					title="Clear the chat here — the full transcript stays in the expanded session"
 				>
 					Clear
-				</button>
+				</Button>
 				{sessionId && (
 					<button
 						className="flex shrink-0 items-center rounded-md p-1 text-faint hover:bg-surface hover:text-fg"

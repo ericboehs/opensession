@@ -3,6 +3,7 @@ import type { PreviewStatus } from "../lib/api";
 import { startPreviewApi, stopPreviewApi } from "../lib/api";
 import type { UnifiedSession } from "../lib/types";
 import { withPreviewPath } from "../lib/preview-url";
+import { Button } from "../ui/button";
 
 /**
  * Full-width Preview view-tab (a sibling of Review/Preview environment/Assets): the
@@ -67,21 +68,21 @@ export function PreviewPane({
 				<div className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-dim">
 					{url ?? (status?.starting || !status ? "Starting the dev server…" : "Preview stopped")}
 				</div>
-				<button
-					className="rounded-md border border-line-strong px-2.5 py-1 text-[12px] font-medium text-dim transition-colors hover:border-faint hover:text-fg disabled:opacity-40"
+				<Button
+					size="sm"
 					disabled={!url}
 					onClick={() => setReloadNonce((n) => n + 1)}
 				>
 					Reload
-				</button>
-				<button
-					className="rounded-md border border-line-strong px-2.5 py-1 text-[12px] font-medium text-dim transition-colors hover:border-faint hover:text-fg disabled:opacity-40"
+				</Button>
+				<Button
+					size="sm"
 					disabled={!url}
 					onClick={() => url && window.open(url, `preview-${session.id}`, "noopener")}
 					title="Open in a separate browser window"
 				>
 					Open in browser
-				</button>
+				</Button>
 				<button
 					className="rounded-md border border-line-strong px-2.5 py-1 text-[12px] font-medium text-dim transition-colors hover:border-red-400 hover:text-red-500 disabled:opacity-40"
 					disabled={stopping || (!status?.running && !status?.starting)}

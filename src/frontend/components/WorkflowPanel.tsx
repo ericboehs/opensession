@@ -7,6 +7,7 @@ import type {
 } from "../../server/workflow-types";
 import type { SessionSubagentSnapshot } from "../lib/api";
 import { cn } from "../ui/cn";
+import { Button } from "../ui/button";
 import { friendlyModelSlug, opencodeModelParts } from "./ModelEffortSelect";
 import { WorkflowAgentTranscript } from "./WorkflowAgentTranscript";
 
@@ -551,12 +552,14 @@ function RunCard({
 					</div>
 				</div>
 				{run.status === "running" && (
-					<button
-						className="shrink-0 rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-red transition-colors hover:border-line-strong hover:bg-panel"
+					<Button
+						variant="danger"
+						size="sm"
+						className="shrink-0"
 						onClick={() => onCancel(run.runId)}
 					>
 						Stop
-					</button>
+					</Button>
 				)}
 			</div>
 			{(run.agents.length > 0 ||
@@ -751,13 +754,14 @@ const AgentRow = React.memo(function AgentRow({
 							    just what it said at the end. Available even while it runs
 							    (the transcript view polls). */}
 							{a.status !== "pending" && (
-								<button
-									className="flex items-center gap-1 self-start rounded-sm border border-line bg-surface px-2 py-1 text-[11px] font-medium text-fg transition-colors hover:border-line-strong hover:bg-hover"
+								<Button
+									size="xs"
+									className="self-start"
 									onClick={() => onOpenConversation(a.seq)}
 								>
 									View conversation
 									<span className="text-faint">→</span>
-								</button>
+								</Button>
 							)}
 							<div className="text-[11px] font-medium text-faint">Prompt</div>
 							<DetailPre text={promptText} />

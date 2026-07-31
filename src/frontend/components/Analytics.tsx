@@ -3,6 +3,7 @@ import { docTitle } from "../lib/brand";
 import { fetchAnalytics } from "../lib/api";
 import type { AnalyticsSummary } from "../lib/types";
 import { Card } from "../ui/card";
+import { Button } from "../ui/button";
 
 /**
  * Analytics: what happened on/because of OpenSession over a date range —
@@ -777,13 +778,13 @@ export function Analytics() {
 										})}
 									</div>
 									{data.prs.length > 12 && (
-										<button
-											type="button"
-											className="mt-2 cursor-pointer rounded-md border border-line bg-transparent px-2.5 py-1 text-control-label text-dim hover:bg-hover hover:text-fg"
+										<Button
+											size="sm"
+											className="mt-2 text-control-label"
 											onClick={() => setShowAllPrs((v) => !v)}
 										>
 											{showAllPrs ? "Show fewer" : `Show all ${fmtInt(data.prs.length)}`}
-										</button>
+										</Button>
 									)}
 								</ChartCard>
 							</div>

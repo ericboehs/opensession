@@ -23,6 +23,7 @@ import {
 } from "../lib/api";
 import type { WSServerMessage } from "../lib/types";
 import { parseNewSessionLink, type NewSessionPrefill } from "../lib/new-session-link";
+import { Button } from "../ui/button";
 import { MarkdownBody } from "./MarkdownBody";
 
 /** Lives in SessionViewer (not the panel) so the tab button can show/hide on
@@ -218,13 +219,15 @@ export function AssetsPanel({
 					<span className="text-[11px] font-medium uppercase tracking-wide text-faint">
 						Files · {files.length}
 					</span>
-					<button
-						className="rounded-sm px-1.5 py-0.5 text-[11px] text-faint hover:bg-hover hover:text-fg"
+					<Button
+						variant="ghost"
+						size="xs"
+						className="text-faint"
 						onClick={refresh}
 						title="Refresh the file list"
 					>
 						Refresh
-					</button>
+					</Button>
 				</div>
 				<div className="min-h-0 flex-1 overflow-y-auto px-1 pb-1.5">
 					<AssetsTree

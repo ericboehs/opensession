@@ -375,8 +375,9 @@ export function PrPreview({
 					) : loadError && !pr ? (
 						<div className="panel-placeholder panel-error">
 							<div>{loadError}</div>
-							<button
-								className="mt-3 rounded-sm border border-line bg-panel px-3 py-1.5 text-xs text-fg hover:bg-hover"
+							<Button
+								size="sm"
+								className="mt-3"
 								onClick={() => {
 									setLoading(true);
 									setLoadError(null);
@@ -384,7 +385,7 @@ export function PrPreview({
 								}}
 							>
 								Retry
-							</button>
+							</Button>
 						</div>
 					) : !pr ? (
 						<div className="panel-placeholder">
@@ -549,8 +550,9 @@ export function PrPreview({
 												: diffError || "No text diff is available for this PR."}
 										</div>
 										{!diffLoading && diffError && (
-											<button
-												className="mt-3 rounded-sm border border-line bg-panel px-3 py-1.5 text-xs text-fg hover:bg-hover"
+											<Button
+												size="sm"
+												className="mt-3"
 												onClick={() => {
 													setDiffLoading(true);
 													setDiffError(null);
@@ -558,7 +560,7 @@ export function PrPreview({
 												}}
 											>
 												Retry
-											</button>
+											</Button>
 										)}
 									</div>
 								) : guideLoading ? (

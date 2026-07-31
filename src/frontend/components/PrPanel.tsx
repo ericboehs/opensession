@@ -1846,19 +1846,21 @@ export function PrPanel({
                 <span className="font-medium text-fg">
                   {pending.length} pending comment{pending.length === 1 ? "" : "s"}
                 </span>
-                <button
-                  className="rounded-sm border border-line bg-panel px-2.5 py-1 text-meta text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+                <Button
+                  size="sm"
+                  className="text-meta"
                   onClick={() => setReviewOpen((o) => !o)}
                 >
                   {reviewOpen ? "Hide" : "Finish review"}
-                </button>
+                </Button>
                 {onAddToInput && (
-                  <button
-                    className="rounded-sm border border-line bg-panel px-2.5 py-1 text-meta text-dim hover:border-line-strong hover:bg-hover hover:text-fg"
+                  <Button
+                    size="sm"
+                    className="text-meta"
                     onClick={() => onAddToInput(formatPendingCommentsPrompt(pending, pr))}
                   >
                     Add to chat
-                  </button>
+                  </Button>
                 )}
               </div>
 
