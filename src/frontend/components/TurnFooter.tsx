@@ -298,12 +298,14 @@ function ExtBadge({ name }: { name: string }) {
  * logo's own square (the badge already draws that part). Filled with
  * `currentColor` so it picks up the badge's white.
  *
- * 10px in the 20px badge: the mark is solid ink edge to edge, so it reads
- * heavier than a letter pair with its side bearings at the same size.
+ * Drawn at 8px because that's the measured cap height of the letter badges it
+ * sits beside (11px/700 -apple-system in a 20px box), and the mark is solid ink
+ * edge to edge where a letter pair has side bearings — matching the box rather
+ * than the ink made it read a quarter taller than every neighbour.
  */
 function ReScriptMark() {
   return (
-    <svg width="10" height="10" viewBox="64.9 60.6 134.6 134.6" fill="currentColor" aria-hidden="true">
+    <svg width="8" height="8" viewBox="64.9 60.6 134.6 134.6" fill="currentColor" aria-hidden="true">
       <path d="M65.318 87.582c0-9.422 0-14.135 1.84-17.74a16.802 16.802 0 0 1 7.355-7.364c3.6-1.831 8.313-1.831 17.74-1.831h23.564v109.398c0 7.842 0 11.765-1.282 14.854a16.823 16.823 0 0 1-9.11 9.108c-3.091 1.282-7.014 1.282-14.853 1.282-7.842 0-11.765 0-14.854-1.282a16.817 16.817 0 0 1-9.11-9.108c-1.282-3.091-1.282-7.014-1.282-14.854l-.008-82.463Z" />
       <circle cx="169.41" cy="91.333" r="29.683" />
     </svg>
