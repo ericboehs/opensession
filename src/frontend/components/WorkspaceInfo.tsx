@@ -24,7 +24,7 @@ import {
 	pollWhileVisible,
 	PR_WEBHOOK_FALLBACK_POLL_MS,
 } from "../lib/poll";
-import { getCurrentUser, TEAM } from "./UserPicker";
+import { getCurrentUser, TEAM, useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { Menu } from "../ui/menu";
 import { Popover } from "../ui/popover";
@@ -38,6 +38,7 @@ import type {
 import { formatPrCommentPrompt } from "./PrPanel";
 import { renderMarkdown } from "../lib/markdown";
 import { isOutdatedReviewComment } from "../lib/pr-comments";
+import { personKey } from "../lib/review-queue";
 import { MarkdownBody } from "./MarkdownBody";
 import {
 	loadOverview,
@@ -108,6 +109,10 @@ interface Props {
 	reviewRequestSessionId?: string;
 	/** The request is complete because its reviewer submitted a GitHub review. */
 	reviewAcceptedFromPr?: boolean;
+	/** Person keys GitHub still lists as reviewers on this workspace's PR. */
+	reviewGithubPending?: string[];
+	/** GitHub is waiting on the current user's review of this workspace's PR. */
+	reviewMyReviewNeeded?: boolean;
 	/** Optimistically push a reviewer pick / sign-off into the app-level session
 	    list, so the sidebar's review bands + the other chip instance flip at once
 	    instead of waiting up to a poll (~5s) for the change to round-trip. */
@@ -1024,6 +1029,12 @@ function MichaelReviewCard({
 	);
 }
 
+/** A person key from the PR's GitHub reviewer list ("kent") as the roster spells
+    it ("Kent"), falling back to the raw key for someone off the team list. */
+function displayPerson(person: string): string {
+	return TEAM.find((name) => personKey(name) === person) || person;
+}
+
 /** The reviewer action: pick a teammate to flag this
 		session as "needs review" — it jumps into a Needs-review band at the top of
 		their sidebar and buzzes their registered devices. Re-pick to hand off,
@@ -1034,6 +1045,9 @@ function ReviewerChip({
 	reviewRequest,
 	requestSessionId,
 	acceptedFromPr,
+	githubPending,
+	myReviewNeeded,
+	onReviewPr,
 	onReviewChange,
 }: {
 	sessionId: string;
@@ -1044,10 +1058,19 @@ function ReviewerChip({
 	    request (none exists) targets the open `sessionId`. */
 	requestSessionId?: string;
 	acceptedFromPr?: boolean;
+	/** Person keys still on the PR's GitHub reviewer list (the author is dropped
+	    server-side). Read-only display input: GitHub owns this set and clears it
+	    when the reviewer submits, so it never folds into `req`. */
+	githubPending?: string[];
+	/** GitHub is waiting on the current user's review. */
+	myReviewNeeded?: boolean;
+	/** Open the PR review canvas — offered when a review is waiting on you. */
+	onReviewPr?: () => void;
 	/** Optimistically mirror a pick / sign-off into the app-level session list so
 	    every other surface (sidebar bands, the sibling chip) updates immediately. */
 	onReviewChange?: (sessionId: string, req: ReviewRequestInfo | null) => void;
 }) {
+	const currentUser = useCurrentUser();
 	const [req, setReq] = useState(reviewRequest ?? null);
 	// Follow the polled session as it refreshes (another viewer may re-assign or
 	// sign off). Track accepted's timestamp too so the sign-off lands live.
@@ -1058,6 +1081,14 @@ function ReviewerChip({
 	// The chat that owns an existing request; a brand-new one anchors to the open chat.
 	const owner = (req && requestSessionId) || sessionId;
 	const accepted = req?.accepted ?? null;
+	// An ask pointed at YOU wins over every other state — from GitHub or from
+	// the internal registry, the sidebar files both under "Needs review", so the
+	// chip has to agree. GitHub outranks a stale sign-off: a re-request there
+	// puts the PR back in your queue whatever the registry says.
+	const me = personKey(currentUser);
+	const needsMyReview =
+		!!myReviewNeeded || (!!req && !accepted && personKey(req.to) === me);
+	const pendingOthers = (githubPending || []).filter((person) => person !== me);
 
 	function pick(name: string | null) {
 		const prev = req;
@@ -1095,17 +1126,33 @@ function ReviewerChip({
 			<Menu.Trigger
 				className={cn(
 					"inline-flex w-fit min-w-0 items-center gap-1 rounded-md border border-line bg-control py-1.5 pl-2 pr-2.5 text-left text-[12.5px] font-[550] whitespace-nowrap text-dim shadow-control outline-none transition-[color,background-color,border-color,scale] hover:border-line-strong hover:text-fg active:scale-[0.96] data-[popup-open]:border-line-strong data-[popup-open]:bg-hover",
-					accepted ? "text-green" : req ? "text-yellow" : "",
+					needsMyReview
+						? "border-red/30 bg-red-soft text-red hover:border-red/50 hover:text-red"
+						: accepted
+							? "text-green"
+							: req || pendingOthers.length > 0
+								? "text-yellow"
+								: "",
 				)}
 				title={
-					accepted
-						? `Reviewed by ${accepted.by}`
-						: req
+					needsMyReview
+						? req
 							? `Review requested by ${req.by}`
-							: "Ask a teammate to review this session"
+							: "Your review was requested on GitHub"
+						: accepted
+							? `Reviewed by ${accepted.by}`
+							: req
+								? `Review requested by ${req.by}`
+								: pendingOthers.length > 0
+									? "Requested on GitHub"
+									: "Ask a teammate to review this session"
 				}
 			>
-				{accepted ? (
+				{needsMyReview ? (
+					<span className={cn(ACTION_ICON_CLASS, "text-red")}>
+						<IconBell size={20} />
+					</span>
+				) : accepted ? (
 					<UserAvatar name={accepted.by} size={20}>
 						<span className="absolute -bottom-px -right-px grid size-4 place-items-center rounded-full border border-panel bg-green text-white shadow-[0_0_0_1px_var(--bg-panel)] [&_svg]:size-3">
 							<IconCheck size={12} />
@@ -1113,21 +1160,36 @@ function ReviewerChip({
 					</UserAvatar>
 				) : req ? (
 					<UserAvatar name={req.to} size={20} />
+				) : pendingOthers.length > 0 ? (
+					<UserAvatar name={displayPerson(pendingOthers[0]!)} size={20} />
 				) : (
 					<span className={ACTION_ICON_CLASS}>
 						<IconBell size={20} />
 					</span>
 				)}
 				<span className="min-w-0 truncate">
-					{accepted
-						? `Reviewed by ${accepted.by}`
-						: req
-							? `Review: ${req.to}`
-							: "Request review"}
+					{needsMyReview
+						? "Needs your review"
+						: accepted
+							? `Reviewed by ${accepted.by}`
+							: req
+								? `Review: ${req.to}`
+								: pendingOthers.length > 0
+									? `Review: ${pendingOthers.map(displayPerson).join(", ")}`
+									: "Request review"}
 				</span>
 				<IconChevronDown size={14} className="shrink-0 text-faint" />
 			</Menu.Trigger>
 			<Menu.Popup align="start" sideOffset={6} className="min-w-[200px]">
+				{needsMyReview && onReviewPr && (
+					<>
+						<Menu.Item onClick={onReviewPr}>
+							<IconPullRequest size={20} className="text-dim" />
+							<span className="min-w-0 flex-1 truncate">Review PR</span>
+						</Menu.Item>
+						<Menu.Separator />
+					</>
+				)}
 				{req &&
 					(accepted ? (
 						<Menu.Item
@@ -1398,6 +1460,8 @@ export function WorkspaceInfo({
 	reviewRequest,
 	reviewRequestSessionId,
 	reviewAcceptedFromPr,
+	reviewGithubPending,
+	reviewMyReviewNeeded,
 	onReviewChange,
 	onOpenTab,
 	onOpenChecks,
@@ -1612,6 +1676,9 @@ export function WorkspaceInfo({
 					reviewRequest={reviewRequest}
 					requestSessionId={reviewRequestSessionId}
 					acceptedFromPr={reviewAcceptedFromPr}
+					githubPending={reviewGithubPending}
+					myReviewNeeded={reviewMyReviewNeeded}
+					onReviewPr={onOpenTab ? () => onOpenTab("pr") : undefined}
 					onReviewChange={onReviewChange}
 				/>
 				{sandbox && (

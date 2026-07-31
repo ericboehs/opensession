@@ -47,7 +47,7 @@ import {
 import { MarkdownBody } from "./MarkdownBody";
 import { SubagentPanel, type SubagentRef } from "./SubagentPanel";
 import { ShellPanel } from "./TerminalPanel";
-import { getCurrentUser } from "./UserPicker";
+import { getCurrentUser, useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
 import { peopleMentionMatches } from "../lib/people";
 import {
@@ -75,7 +75,7 @@ import {
 	PR_WEBHOOK_FALLBACK_POLL_MS,
 } from "../lib/poll";
 import { useBackSwipe } from "../hooks/useBackSwipe";
-import { prReviewCompletion } from "../lib/review-queue";
+import { personKey, prReviewCompletion } from "../lib/review-queue";
 import { Composer } from "./Composer";
 import { ComposerAgents } from "./ComposerAgents";
 import { UsageMeter } from "./UsageMeter";
@@ -2711,23 +2711,45 @@ export function SessionViewer({
 		setShowAllContextChats(false);
 	}, [session.id]);
 
+	const currentUser = useCurrentUser();
 	// The review request is stored per chat, but the sidebar's "Awaiting/Needs
 	// review" bands group by workspace — so a request set on a sibling chat lit
 	// the band while the open chat's Reviewer chip read empty. Surface the
 	// workspace's request in the chip: the open chat's own if it has one, else a
 	// sibling's, carrying the owner id so clear/re-assign target the right chat.
+	// GitHub's own review requests ride alongside: the sidebar's "Needs review"
+	// band lights up for those too (review-queue's `requested` source), so the
+	// chip has to know about them or a PR waiting on you reads as an empty
+	// "Request review". Person keys, workspace-wide, author already dropped
+	// server-side; GitHub clears the set once the reviewer submits. Open PRs
+	// only — the cached reviewer list outlives a close/merge, and the sidebar's
+	// band (built from the open-PR list) drops those rows the moment they land.
 	const effectiveReview = useMemo(() => {
 		const owner = session.reviewRequest
 			? session
 			: (workspaceChats || []).find((c) => c.reviewRequest);
-		if (!owner?.reviewRequest) return null;
-		const completion = prReviewCompletion(owner.reviewRequest, owner);
+		const request = owner?.reviewRequest ?? null;
+		const completion =
+			owner && request ? prReviewCompletion(request, owner) : null;
+		const githubPending = [
+			...new Set(
+				[session, ...(workspaceChats || [])]
+					.filter((c) => c.prState === "OPEN")
+					.flatMap((c) =>
+						(c.prReviewRequested || []).map((person) => person.toLowerCase()),
+					),
+			),
+		];
 		return {
-			req: completion
-				? { ...owner.reviewRequest, accepted: completion }
-				: owner.reviewRequest,
-			ownerId: owner.id,
+			req: request
+				? completion
+					? { ...request, accepted: completion }
+					: request
+				: null,
+			ownerId: owner?.id ?? session.id,
 			acceptedFromPr: !!completion,
+			githubPending,
+			myReviewNeeded: githubPending.includes(personKey(currentUser)),
 		};
 	}, [
 		session.reviewRequest,
@@ -2735,7 +2757,9 @@ export function SessionViewer({
 		session.prReviewedBy,
 		session.prReviewRequested,
 		session.prUpdatedAt,
+		session.prState,
 		workspaceChats,
+		currentUser,
 	]);
 
 	// Returns true when the message was consumed, so the (uncontrolled)
@@ -4317,6 +4341,8 @@ export function SessionViewer({
 											reviewRequest={effectiveReview?.req ?? null}
 											reviewRequestSessionId={effectiveReview?.ownerId}
 											reviewAcceptedFromPr={effectiveReview?.acceptedFromPr}
+											reviewGithubPending={effectiveReview?.githubPending}
+											reviewMyReviewNeeded={effectiveReview?.myReviewNeeded}
 											onReviewChange={onReviewChange}
 											onOpenChecks={() => {
 												setInfoPageOpen(false);
@@ -5237,6 +5263,8 @@ export function SessionViewer({
 										reviewRequest={effectiveReview?.req ?? null}
 										reviewRequestSessionId={effectiveReview?.ownerId}
 										reviewAcceptedFromPr={effectiveReview?.acceptedFromPr}
+										reviewGithubPending={effectiveReview?.githubPending}
+										reviewMyReviewNeeded={effectiveReview?.myReviewNeeded}
 										onReviewChange={onReviewChange}
 										onOpenChecks={() => focusPrInReview(undefined, "checks")}
 										send={connected ? send : undefined}

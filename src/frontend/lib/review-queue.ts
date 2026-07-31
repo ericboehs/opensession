@@ -132,6 +132,15 @@ function classify(
 }
 
 /**
+ * The person key a display name maps to ("Kent de Bruin" → "kent") — the same
+ * normalization the server applies when it turns GitHub logins into the person
+ * keys carried by `prReviewRequested` / `prReviewedBy`.
+ */
+export function personKey(name: string): string {
+	return name.trim().split(/\s+/)[0]?.toLowerCase() || "";
+}
+
+/**
  * Build one actionable row per open PR. Source is about why the PR belongs in
  * this person's inbox; bucket is about what they can do with it right now.
  */
@@ -141,7 +150,7 @@ export function buildReviewQueue(
 	currentUser: string,
 	githubLogin: string | null,
 ): ReviewQueueItem[] {
-	const me = currentUser.trim().split(/\s+/)[0]?.toLowerCase() || "";
+	const me = personKey(currentUser);
 	const github = githubLogin?.toLowerCase() || "";
 	const seen = new Set<string>();
 	const items: ReviewQueueItem[] = [];
