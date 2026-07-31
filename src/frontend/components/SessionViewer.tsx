@@ -3716,7 +3716,9 @@ export function SessionViewer({
 						<Button
 							size="md"
 							variant="ghost"
-							icon={<CopyCheck copied={copied} idle={<IconLink size={20} />} size={20} />}
+							// 22 = the icon scale's "standard standalone" step, so it reads
+							// level with the ⋯ and side-panel glyphs beside it.
+							icon={<CopyCheck copied={copied} idle={<IconLink size={22} />} size={22} />}
 							onClick={handleShare}
 							title="Copy a link to this session"
 							aria-label="Share"
@@ -4149,7 +4151,10 @@ export function SessionViewer({
 						<div className="viewer-overflow">
 							<Menu.Trigger
 								className={cn(
-									"inline-flex items-center justify-center rounded-[calc(10px*var(--rf))] border border-transparent bg-transparent px-[5px] py-[3px] text-[20px] leading-none text-dim",
+									// Square 32px box so it matches the icon buttons beside it —
+									// as a bare `⋯` character its height would otherwise be
+									// whatever the text line box measures (28px), not a hit area.
+									"inline-flex h-8 w-8 items-center justify-center rounded-[calc(10px*var(--rf))] border border-transparent bg-transparent p-0 text-[20px] leading-none text-dim",
 									"hover:bg-hover hover:text-fg",
 									"max-[720px]:h-10 max-[720px]:min-h-10 max-[720px]:w-10 max-[720px]:rounded-full max-[720px]:border-line max-[720px]:bg-bg max-[720px]:p-0 max-[720px]:text-[24px] max-[720px]:text-accent max-[720px]:shadow-[0_2px_12px_rgba(0,0,0,0.1)]",
 									overflowOpen && "bg-hover text-fg max-[720px]:border-[color-mix(in_srgb,var(--accent)_12%,transparent)] max-[720px]:bg-accent-soft max-[720px]:text-accent",
@@ -4226,14 +4231,17 @@ export function SessionViewer({
 							<Button
 								variant="ghost"
 								size="md"
-								className="[.viewer-overflow_+_&]:-ml-1 h-[30px] min-h-[30px] w-auto rounded-[calc(10px*var(--rf))] px-[5px] text-faint hover:bg-hover hover:text-fg max-[720px]:order-2 max-[720px]:min-h-[38px] max-[720px]:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] max-[720px]:px-[7px] max-[720px]:py-[5px] max-[720px]:text-[15px] max-[720px]:text-accent"
+								// No height/width overrides: the primitive's icon-only box is
+								// already the 32px square the ⋯ and share buttons use.
+								className="[.viewer-overflow_+_&]:-ml-1 rounded-[calc(10px*var(--rf))] text-faint hover:bg-hover hover:text-fg max-[720px]:order-2 max-[720px]:h-[38px] max-[720px]:min-h-[38px] max-[720px]:w-[38px] max-[720px]:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] max-[720px]:text-[15px] max-[720px]:text-accent"
 								onClick={() => setPanelOpen(!panelOpen)}
 								aria-label="Toggle side panel"
-							>
-								{/* Iconic sidebar-right glyph — reads as "right side panel" and
-								    sits level with the play/globe weight beside it. */}
-								<IconSidebarRight size={24} />
-							</Button>
+								// Iconic sidebar-right glyph — reads as "right side panel".
+								// Passed as `icon` (not children) so the primitive uses its
+								// icon-only square; as a child it counts as a label and gets
+								// the text button's px-3, which made it 50px wide.
+								icon={<IconSidebarRight size={24} />}
+							/>
 						</Tooltip>
 					)}
 				</div>
