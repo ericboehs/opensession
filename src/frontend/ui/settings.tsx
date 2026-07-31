@@ -61,7 +61,9 @@ export function SettingsGroupLabel({
 	return (
 		<div
 			className={cn(
-				"mb-2 mt-6 flex min-h-6 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-4 text-label font-semibold text-faint",
+				// mt-9: a group's card and the hint under it read as one block, so
+				// the space above the next label is what separates the groups.
+				"mb-2 mt-9 flex min-h-6 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 px-4 text-label font-semibold text-faint",
 				className,
 			)}
 			{...props}
@@ -74,8 +76,14 @@ export function SettingsGroupLabel({
 
 /** The surface every settings group sits on: a soft fill, no border. The fill
  * alone separates a group from the page, so a page of settings reads as a few
- * quiet blocks rather than a stack of outlined boxes. */
-const settingsSurface = "border-0 bg-raised";
+ * quiet blocks rather than a stack of outlined boxes.
+ *
+ * The corner is authored in the chrome's own language — `calc(Npx * var(--rf))`,
+ * which global.css bumps under `corner-shape: squircle` — rather than the flat
+ * `rounded-lg` Card ships. A squircle at a flat radius reads visibly squarer
+ * than the panels around it; 12px × --rf lands these blocks on the same softness
+ * as the rest of the app's large surfaces. */
+const settingsSurface = "rounded-[calc(12px*var(--rf))] border-0 bg-raised";
 
 export function SettingCard({
 	className,
@@ -100,6 +108,12 @@ export function SettingsSection({
  * squeezing the label into a two-word column — `flex-wrap` plus the text's
  * min width is what decides that, and the control's `ml-auto` keeps it
  * right-aligned once it lands there.
+ *
+ * Rows are centered, which is right while the text is a title and one line of
+ * description. A row that grows past that (an account with usage bars) should
+ * pass `items-start`: an avatar and a control floating in the middle of a tall
+ * row read as unanchored, and top-aligning ties them to the title they belong
+ * to.
  */
 export function SettingRow({
 	className,
