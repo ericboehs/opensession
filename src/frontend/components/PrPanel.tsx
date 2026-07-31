@@ -38,6 +38,7 @@ import {
   closePrPreviewApi,
 } from "../lib/api";
 import { prPath } from "../lib/share-link";
+import { useIsPhone } from "../hooks/useIsPhone";
 import { Button } from "../ui/button";
 import { toast } from "../ui/toast";
 import type { FileDiffMetadata } from "@pierre/diffs";
@@ -1088,23 +1089,20 @@ export function PrPanel({
           </div>
         </header>
 
-        <section className="shrink-0 px-6 pb-4 max-[720px]:px-3">
-          <h2 className="m-0 mb-1 text-xs font-semibold text-dim">Git status</h2>
-          <div className="max-w-[680px]">
-            <GitStatusRows
-              git={git}
-              pr={pr}
-              sessionId={sessionId}
-              repo={active?.repo}
-              send={send}
-              onRefresh={load}
-              onMerge={handleMerge}
-              merging={merging}
-              confirmMerge={confirmMerge}
-            />
-            {mergeError && <div className="pr-git-note pr-git-note-error">{mergeError}</div>}
-          </div>
-        </section>
+        {/* Only the branch work that is still outstanding — the PR verdict and
+            its Merge button belong to the session header's status bar, which is
+            on screen whether or not the workspace panel is open. */}
+        <GitDivergenceStrip
+          git={git}
+          pr={pr}
+          sessionId={sessionId}
+          repo={active?.repo}
+          send={send}
+          onRefresh={load}
+          onMerge={handleMerge}
+          merging={merging}
+          confirmMerge={confirmMerge}
+        />
 
         {/* Where this PR sits in its chain of layers — directly under Git
             status, because it reframes what that status means. */}
@@ -2612,6 +2610,219 @@ export function CheckRow({ check }: { check: PrCheck }) {
 }
 
 /**
+ * The local/remote work a branch still owes: conflicts to resolve, base
+ * commits to pull, local commits to push, a dirty tree to commit. Shared by
+ * the workspace panel's Git status rows and the review canvas's divergence
+ * strip so both name the task — and ask Michael for it — identically.
+ *
+ * Push is a direct server-side `git push`; the judgment calls (resolve
+ * conflicts, update from base, commit stray changes) prompt the session —
+ * Michael does the work, not a bare button.
+ */
+/** Status-dot colours for a Git status row — the state, not a step marker. */
+type GitDotTone = "green" | "yellow" | "red" | "blue" | "purple" | "muted";
+
+type GitTask = {
+  key: "conflicts" | "behind" | "ahead" | "dirty";
+  label: string;
+  action: string;
+  tone: Extract<GitDotTone, "red" | "yellow" | "blue">;
+  run: "push" | { label: string; prompt: string };
+};
+
+function gitTasks(
+  git: GitStatusInfo | null,
+  pr: PrDetails | null,
+  base: string,
+): GitTask[] {
+  const tasks: GitTask[] = [];
+  if (pr && deriveStatus(pr).key === "conflicts")
+    tasks.push({
+      key: "conflicts",
+      label: `Conflicts with ${base}`,
+      action: "Resolve",
+      tone: "red",
+      run: {
+        label: "resolve the conflicts",
+        prompt: `The PR has merge conflicts with ${base}. Rebase this branch on the latest origin/${base}, resolve the conflicts, and push.`,
+      },
+    });
+  // Only a real feature branch can be behind its base, and a merged PR has
+  // stopped caring.
+  if (
+    git &&
+    git.branch &&
+    git.branch !== base &&
+    pr?.state !== "MERGED" &&
+    git.behindBase > 0
+  )
+    tasks.push({
+      key: "behind",
+      label: `${git.behindBase} commit${git.behindBase === 1 ? "" : "s"} behind ${base}`,
+      action: "Pull",
+      tone: "yellow",
+      run: {
+        label: `update from ${base}`,
+        prompt: `Update this branch with the latest origin/${base} (rebase preferred), resolve any conflicts, and push.`,
+      },
+    });
+  if (git && git.ahead > 0)
+    tasks.push({
+      key: "ahead",
+      label: `${git.ahead} commit${git.ahead === 1 ? "" : "s"} ahead of remote`,
+      action: "Push",
+      tone: "blue",
+      run: "push",
+    });
+  if (git && git.uncommittedFiles > 0)
+    tasks.push({
+      key: "dirty",
+      label: `${git.uncommittedFiles} uncommitted file${git.uncommittedFiles === 1 ? "" : "s"}`,
+      action: "Commit",
+      tone: "yellow",
+      run: {
+        label: "commit the changes",
+        prompt: "Commit and push the current work in the worktree.",
+      },
+    });
+  return tasks;
+}
+
+/** Runs a {@link GitTask} and holds the transient push/prompt/error feedback. */
+function useGitTaskRunner({
+  sessionId,
+  repo,
+  send,
+  onRefresh,
+}: {
+  sessionId: string;
+  repo?: string;
+  send?: (msg: any) => void;
+  onRefresh: () => Promise<void> | void;
+}) {
+  const [pushing, setPushing] = useState(false);
+  const [prompted, setPrompted] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function promptSession(label: string, content: string) {
+    if (!send) return;
+    send({ type: "prompt", sessionId, user: getCurrentUser(), content });
+    setPrompted(label);
+    setTimeout(() => setPrompted(null), 6000);
+  }
+
+  async function push() {
+    if (pushing) return;
+    setPushing(true);
+    setError(null);
+    try {
+      await gitPushApi(sessionId, repo);
+      await onRefresh();
+    } catch (e: any) {
+      setError(e.message || "Push failed");
+    } finally {
+      setPushing(false);
+    }
+  }
+
+  function run(task: GitTask) {
+    if (task.run === "push") void push();
+    else promptSession(task.run.label, task.run.prompt);
+  }
+
+  /** A prompt-driven task needs a live session socket; Push never does. */
+  function runnable(task: GitTask) {
+    return task.run === "push" || !!send;
+  }
+
+  return { run, runnable, promptSession, pushing, prompted, error };
+}
+
+/**
+ * Branch divergence for the review canvas: only the work that needs doing,
+ * with each action sitting next to the sentence that explains it.
+ *
+ * The canvas used to carry a full "Git status" card here, which restated the
+ * PR verdict and its Merge button a third time on one screen — the session
+ * header's PrStatusBar carries the verdict plus the primary action whether the
+ * workspace panel is open or closed, and the panel's own Git status section
+ * says it again. What the canvas can usefully add is the local/remote
+ * divergence, so that is all it shows, and only while something is outstanding.
+ *
+ * Phone is the exception: the session header drops the PR status bar at that
+ * width, so the verdict and Merge would have nowhere else to live and the
+ * strip takes them back.
+ */
+function GitDivergenceStrip({
+  git,
+  pr,
+  sessionId,
+  repo,
+  send,
+  onRefresh,
+  onMerge,
+  merging,
+  confirmMerge,
+}: {
+  git: GitStatusInfo | null;
+  pr: PrDetails | null;
+  sessionId: string;
+  repo?: string;
+  send?: (msg: any) => void;
+  onRefresh: () => Promise<void> | void;
+  onMerge?: () => void;
+  merging?: boolean;
+  confirmMerge?: boolean;
+}) {
+  const runner = useGitTaskRunner({ sessionId, repo, send, onRefresh });
+  const isPhone = useIsPhone();
+  const base = pr?.baseRefName || git?.baseBranch || "main";
+  const tasks = gitTasks(git, pr, base).filter(runner.runnable);
+  const verdict =
+    isPhone && pr && pr.state === "OPEN" && !pr.isDraft && onMerge
+      ? deriveStatus(pr)
+      : null;
+  if (!verdict && tasks.length === 0 && !runner.prompted && !runner.error)
+    return null;
+
+  return (
+    <section className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-6 pb-4 max-[720px]:px-3">
+      {verdict && (
+        <span className="inline-flex items-center gap-2 text-xs text-dim">
+          <span className={`pr-git-dot pr-git-dot-${verdict.tone}`} aria-hidden />
+          {verdict.qualifier || verdict.label}
+          <Button
+            size="xs"
+            onClick={onMerge}
+            disabled={merging}
+            title="Squash and merge this pull request"
+          >
+            {merging ? "Merging…" : confirmMerge ? "Confirm merge" : "Merge"}
+          </Button>
+        </span>
+      )}
+      {tasks.map((task) => (
+        <span key={task.key} className="inline-flex items-center gap-2 text-xs text-dim">
+          <span className={`pr-git-dot pr-git-dot-${task.tone}`} aria-hidden />
+          {task.label}
+          <Button
+            size="xs"
+            onClick={() => runner.run(task)}
+            disabled={task.run === "push" && runner.pushing}
+          >
+            {task.run === "push" && runner.pushing ? "Pushing…" : task.action}
+          </Button>
+        </span>
+      ))}
+      {runner.prompted && (
+        <span className="text-xs text-faint">Asked Michael to {runner.prompted} ✓</span>
+      )}
+      {runner.error && <span className="text-xs text-red">{runner.error}</span>}
+    </section>
+  );
+}
+
+/**
  * Local/remote discrepancy rows for the Status card: each gets a line with one
  * action on the right. Push is a direct server-side `git push`; the judgment
  * calls (create the PR, resolve conflicts, update from base, commit stray
@@ -2638,58 +2849,33 @@ function GitStatusRows({
   merging?: boolean;
   confirmMerge?: boolean;
 }) {
-  const [pushing, setPushing] = useState(false);
-  const [prompted, setPrompted] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const runner = useGitTaskRunner({ sessionId, repo, send, onRefresh });
+  const { prompted, error } = runner;
 
   const base = pr?.baseRefName || git?.baseBranch || "main";
-
-  function promptSession(label: string, content: string) {
-    if (!send) return;
-    send({ type: "prompt", sessionId, user: getCurrentUser(), content });
-    setPrompted(label);
-    setTimeout(() => setPrompted(null), 6000);
-  }
-
-  async function handlePush() {
-    if (pushing) return;
-    setPushing(true);
-    setError(null);
-    try {
-      await gitPushApi(sessionId, repo);
-      await onRefresh();
-    } catch (e: any) {
-      setError(e.message || "Push failed");
-    } finally {
-      setPushing(false);
-    }
-  }
+  const tasks = gitTasks(git, pr, base);
+  const task = (key: GitTask["key"]) => tasks.find((t) => t.key === key);
 
   const rows: Array<{
     key: string;
     label: string;
+    tone: GitDotTone;
     action?: React.ReactNode;
   }> = [];
 
   if (pr) {
     const status = deriveStatus(pr);
+    const conflicts = task("conflicts");
     const resolveAction =
-      status.key === "conflicts" && send ? (
-        <button
-          className="pr-git-action"
-          onClick={() =>
-            promptSession(
-              "resolve the conflicts",
-              `The PR has merge conflicts with ${base}. Rebase this branch on the latest origin/${base}, resolve the conflicts, and push.`,
-            )
-          }
-        >
-          Resolve
+      conflicts && runner.runnable(conflicts) ? (
+        <button className="pr-git-action" onClick={() => runner.run(conflicts)}>
+          {conflicts.action}
         </button>
       ) : undefined;
     rows.push({
       key: "pr-status",
       label: status.qualifier || status.label,
+      tone: status.tone,
       action:
         resolveAction ||
         (pr.state === "OPEN" && !pr.isDraft && onMerge ? (
@@ -2710,25 +2896,15 @@ function GitStatusRows({
   // itself, not a merged PR): a reassuring green "up to date" when in sync, and
   // a prominent yellow "N behind" with a one-click Update (rebase) when not.
   if (git && git.branch && git.branch !== base && pr?.state !== "MERGED") {
-    const behind = git.behindBase;
+    const behind = task("behind");
     rows.push({
       key: "base-sync",
-      label:
-        behind > 0
-          ? `${behind} commit${behind === 1 ? "" : "s"} behind ${base}`
-          : `Up to date with ${base}`,
+      label: behind ? behind.label : `Up to date with ${base}`,
+      tone: behind ? behind.tone : "green",
       action:
-        behind > 0 && send ? (
-          <button
-            className="pr-git-action"
-            onClick={() =>
-              promptSession(
-                "update from " + base,
-                `Update this branch with the latest origin/${base} (rebase preferred), resolve any conflicts, and push.`,
-              )
-            }
-          >
-            Pull
+        behind && runner.runnable(behind) ? (
+          <button className="pr-git-action" onClick={() => runner.run(behind)}>
+            {behind.action}
           </button>
         ) : undefined,
     });
@@ -2738,11 +2914,12 @@ function GitStatusRows({
     rows.push({
       key: "no-pr",
       label: "No pull request",
+      tone: "muted",
       action: send && (
         <button
           className="pr-git-action"
           onClick={() =>
-            promptSession(
+            runner.promptSession(
               "create a PR",
               "Commit any remaining work, push the branch, and open a PR for it.",
             )
@@ -2753,33 +2930,20 @@ function GitStatusRows({
       ),
     });
   }
-  if (git && git.ahead > 0) {
+  for (const key of ["ahead", "dirty"] as const) {
+    const t = task(key);
+    if (!t || !runner.runnable(t)) continue;
     rows.push({
-      key: "ahead",
-      label: `${git.ahead} commit${git.ahead === 1 ? "" : "s"} ahead of remote`,
+      key,
+      label: t.label,
+      tone: t.tone,
       action: (
         <button
           className="pr-git-action"
-          onClick={handlePush}
-          disabled={pushing}
+          onClick={() => runner.run(t)}
+          disabled={t.run === "push" && runner.pushing}
         >
-          {pushing ? "Pushing…" : "Push"}
-        </button>
-      ),
-    });
-  }
-  if (git && git.uncommittedFiles > 0) {
-    rows.push({
-      key: "dirty",
-      label: `${git.uncommittedFiles} uncommitted file${git.uncommittedFiles === 1 ? "" : "s"}`,
-      action: send && (
-        <button
-          className="pr-git-action"
-          onClick={() =>
-            promptSession("commit the changes", "Commit and push the current work in the worktree.")
-          }
-        >
-          Commit
+          {t.run === "push" && runner.pushing ? "Pushing…" : t.action}
         </button>
       ),
     });
@@ -2793,7 +2957,7 @@ function GitStatusRows({
           key={row.key}
           className="pr-git-row"
         >
-          <span className="pr-git-dot" aria-hidden />
+          <span className={`pr-git-dot pr-git-dot-${row.tone}`} aria-hidden />
           <span className="pr-git-label">{row.label}</span>
           {row.action}
         </div>

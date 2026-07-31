@@ -1280,13 +1280,25 @@ function GitStatusRows({
 										? "Review required"
 										: "Ready to merge";
 
+	// The dot carries the state, so it has to agree with the headline above.
+	const prTone =
+		prStatus === "Ready to merge"
+			? "green"
+			: prStatus === "Merged"
+				? "purple"
+				: prStatus === "Checks running" || prStatus === "Review required"
+					? "yellow"
+					: prStatus === "Closed" || prStatus === "Draft"
+						? "muted"
+						: "red";
+
 	return (
 		<div className={INFO_SECTION_CLASS}>
 			<div className={INFO_LABEL_CLASS}>Git status</div>
 			<div className={INFO_LIST_CLASS}>
 				{prStatus && (
 					<div className="pr-git-row py-2">
-						<span className="pr-git-dot" aria-hidden />
+						<span className={`pr-git-dot pr-git-dot-${prTone}`} aria-hidden />
 						<span className="pr-git-label">{prStatus}</span>
 						{pr?.mergeable === "CONFLICTING" && send ? (
 							<button type="button" className="pr-git-action" onClick={resolveConflicts}>
@@ -1311,7 +1323,7 @@ function GitStatusRows({
 				)}
 				{ahead > 0 && (
 					<div className="pr-git-row py-2">
-						<span className="pr-git-dot" aria-hidden />
+						<span className="pr-git-dot pr-git-dot-blue" aria-hidden />
 						<span className="pr-git-label">
 							{ahead} commit{ahead === 1 ? "" : "s"} ahead of remote
 						</span>
@@ -1327,7 +1339,7 @@ function GitStatusRows({
 				)}
 				{behindCount > 0 && (
 					<div className="pr-git-row py-2">
-						<span className="pr-git-dot" aria-hidden />
+						<span className="pr-git-dot pr-git-dot-yellow" aria-hidden />
 						<span className="pr-git-label">
 							{behindCount} commit{behindCount === 1 ? "" : "s"} behind{" "}
 							{behindWhat}
@@ -1351,7 +1363,7 @@ function GitStatusRows({
 				)}
 				{dirty > 0 && (
 					<div className="pr-git-row py-2">
-						<span className="pr-git-dot" aria-hidden />
+						<span className="pr-git-dot pr-git-dot-yellow" aria-hidden />
 						<span className="pr-git-label">
 							{dirty} uncommitted file{dirty === 1 ? "" : "s"}
 						</span>

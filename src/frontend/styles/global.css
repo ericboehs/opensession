@@ -6781,12 +6781,31 @@ a.workspace-info-check-row {
 	font-size: 13.5px;
 	color: var(--text);
 }
+/* A state dot, not a step marker: the old hollow 11px ring read as an
+   unchecked radio, so a stack of them looked like a checklist that never
+   completes. Small and filled with the row's own state colour instead. */
 .pr-git-dot {
-	width: 11px;
-	height: 11px;
+	width: 6px;
+	height: 6px;
+	margin-inline: 2px;
 	border-radius: 50%;
-	border: 1.5px solid var(--text-faint);
+	background: var(--text-faint);
 	flex-shrink: 0;
+}
+.pr-git-dot-green {
+	background: var(--green);
+}
+.pr-git-dot-yellow {
+	background: var(--yellow);
+}
+.pr-git-dot-red {
+	background: var(--red);
+}
+.pr-git-dot-blue {
+	background: var(--blue);
+}
+.pr-git-dot-purple {
+	background: var(--purple);
 }
 .pr-git-label {
 	flex: 1;
