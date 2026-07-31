@@ -8665,6 +8665,33 @@ a.workspace-info-check-row {
 	padding: 6px 14px;
 }
 
+/* A failed run reads as a failure. Everything the server and runner write
+   lands in this one faint pill, so "switched account and retried" and "your
+   run died 40 minutes ago" used to be typographically identical — the line
+   that needs a human was the easiest one to scroll past. Toned notices get
+   their colour, a glyph, and left-aligned text so a wrapped failure reads as
+   a sentence rather than a centered banner. */
+.msg-system-text[data-tone] {
+	display: inline-flex;
+	align-items: flex-start;
+	gap: 6px;
+	text-align: left;
+}
+.msg-system-glyph {
+	flex: none;
+	/* Optical: line-height 1.45 on 11.5px text leaves the cap sitting ~2px
+	   below the box top; nudge the glyph down to sit on the first line. */
+	margin-top: 2px;
+}
+.msg-system-text[data-tone="error"] {
+	color: var(--red);
+	background: var(--red-soft);
+}
+.msg-system-text[data-tone="warn"] {
+	color: var(--yellow);
+	background: color-mix(in srgb, var(--yellow) 12%, transparent);
+}
+
 .app-title-wrap {
 	display: flex;
 	align-items: center;

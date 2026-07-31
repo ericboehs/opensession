@@ -18,6 +18,7 @@ import { BASE_PATH } from "../lib/base";
 import { resolveEntryImageSrc } from "../lib/osBlob";
 import { fullTime, shortTime } from "../lib/time";
 import { IconChevronDown } from "./icons";
+import { noticeTone, stripNoticeGlyph } from "../lib/notice-tone";
 import { cn } from "../ui/cn";
 
 // Only this much of a message is markdown-parsed eagerly. marked is
@@ -163,6 +164,47 @@ function CollapsibleSystemNotice({
 					/>
 				</div>
 			)}
+		</div>
+	);
+}
+
+/** Triangle-alert glyph for a toned notice; inherits the pill's colour. */
+function NoticeGlyph() {
+	return (
+		<svg
+			className="msg-system-glyph"
+			width="12"
+			height="12"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2.2"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+			aria-hidden="true"
+		>
+			<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+			<path d="M12 9v4" />
+			<path d="M12 17h.01" />
+		</svg>
+	);
+}
+
+/** An operational line from the server/runner. A failed run reads as a
+ *  failure — the transcript used to give a dead session and an account
+ *  rotation the same faint grey pill. */
+function SystemNotice({ entry }: { entry: TranscriptEntry }) {
+	const tone = noticeTone(entry.content);
+	return (
+		<div className="msg msg-system" data-eid={entry.id}>
+			<span
+				className="msg-system-text"
+				data-tone={tone === "info" ? undefined : tone}
+				role={tone === "error" ? "alert" : undefined}
+			>
+				{tone !== "info" && <NoticeGlyph />}
+				<span>{stripNoticeGlyph(entry.content)}</span>
+			</span>
 		</div>
 	);
 }
@@ -503,11 +545,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 	}
 
 	if (entry.type === "system") {
-		return (
-			<div className="msg msg-system" data-eid={entry.id}>
-				<span className="msg-system-text">{entry.content}</span>
-			</div>
-		);
+		return <SystemNotice entry={entry} />;
 	}
 
 	if (entry.type === "user" && humanReply) {
