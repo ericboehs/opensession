@@ -18,7 +18,10 @@ export type NoticeTone = "error" | "warn" | "info";
 const ERROR_PATTERNS: RegExp[] = [
 	// run-session.ts, both terminal-failure choke points.
 	/^run (failed|stopped):/,
-	// opencode-runner.ts wall-clock cutoff (both the primary and reattach path).
+	// The per-turn time limit (turnTimeoutNotice in opencode-config.ts). The
+	// second form is the wording used before 2026-07-31 — transcripts keep it
+	// forever, so it keeps its colour.
+	/^stopped after \d/,
 	/^turn stopped after \d+ minutes?\b/,
 	// A sandbox workspace that has no host checkout to fall back to.
 	/\bno host fallback\b/,

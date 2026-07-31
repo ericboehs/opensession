@@ -251,6 +251,8 @@ import {
 } from "./codex-accounts";
 import {
   opencodeTurnTimeoutMs,
+  turnTimeoutError,
+  turnTimeoutNotice,
   readOpencodeBridgeConfig,
   opencodeProviderOptions,
 } from "./opencode-config";
@@ -4478,18 +4480,12 @@ async function* runOpencodeAttempt(
     const turnTimeout = opencodeTurnTimeoutMs();
     const turnDeadline = setTimeout(() => {
       if (!runFailure) {
-        runFailure =
-          `opencode turn exceeded the ${Math.round(turnTimeout / 60_000)}-minute wall-clock limit ` +
-          "(turnTimeoutMinutes in ~/.opensession-opencode.json) — aborting the turn";
+        runFailure = turnTimeoutError(turnTimeout);
         // Persist the cutoff as a durable system line: without one the
         // transcript just ends mid-tool-call and the reader can't tell why
         // (bks-019f7911 died silently after a 60-min build-out, 2026-07-19).
         appendOpencodeTranscript(ocSessionId, [
-          transcriptLineRunnerNotice(
-            `Turn stopped after ${Math.round(turnTimeout / 60_000)} minutes — it hit the ` +
-              "wall-clock limit (turnTimeoutMinutes in ~/.opensession-opencode.json). " +
-              "Work up to here is saved; send a message to continue."
-          ),
+          transcriptLineRunnerNotice(turnTimeoutNotice(turnTimeout)),
         ]);
         failureNoticePersisted = true;
       }
@@ -5614,16 +5610,10 @@ export async function tryReattachOpencodeRun(
       const turnDeadline = busy
         ? setTimeout(() => {
             if (!runFailure) {
-              runFailure =
-                `opencode turn exceeded the ${Math.round(opencodeTurnTimeoutMs() / 60_000)}-minute ` +
-                "wall-clock limit (turnTimeoutMinutes in ~/.opensession-opencode.json) — aborting the turn";
+              runFailure = turnTimeoutError();
               // Same durable cutoff notice as the primary turn path above.
               appendOpencodeTranscript(ocSessionId!, [
-                transcriptLineRunnerNotice(
-                  `Turn stopped after ${Math.round(opencodeTurnTimeoutMs() / 60_000)} minutes — it hit the ` +
-                    "wall-clock limit (turnTimeoutMinutes in ~/.opensession-opencode.json). " +
-                    "Work up to here is saved; send a message to continue."
-                ),
+                transcriptLineRunnerNotice(turnTimeoutNotice()),
               ]);
               failureNoticePersisted = true;
             }

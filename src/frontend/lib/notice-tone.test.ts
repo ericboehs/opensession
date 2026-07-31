@@ -10,8 +10,15 @@ describe("noticeTone", () => {
 		expect(noticeTone("Run stopped: Usage limit reached on every account")).toBe("error");
 		// SessionViewer's live `error` event, which prefixes its own glyph.
 		expect(noticeTone("⚠ Run failed: Session is busy")).toBe("error");
-		// opencode-runner.ts wall-clock cutoff — the "stopped after 180 minutes"
-		// line, whose wording shares nothing with the lastRunError message.
+		// The per-turn time limit (turnTimeoutNotice/turnTimeoutError).
+		expect(
+			noticeTone(
+				"Stopped after 3 hours — the limit for a single turn. " +
+					"Everything up to here is saved; send a message to continue.",
+			),
+		).toBe("error");
+		expect(noticeTone("Stopped after 90 minutes — the limit for a single turn.")).toBe("error");
+		// The pre-2026-07-31 wording, still sitting in older transcripts.
 		expect(
 			noticeTone(
 				"Turn stopped after 180 minutes — it hit the wall-clock limit " +

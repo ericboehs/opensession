@@ -234,6 +234,34 @@ export function opencodeTurnTimeoutMs(): number {
   return mins * 60_000;
 }
 
+/** "3 hours" / "90 minutes" — the limit as a person would say it. */
+function turnLimitLabel(ms: number): string {
+  const mins = Math.max(1, Math.round(ms / 60_000));
+  if (mins % 60 !== 0) return `${mins} minutes`;
+  const hours = mins / 60;
+  return `${hours} hour${hours === 1 ? "" : "s"}`;
+}
+
+/* Both cutoff messages live here, next to the setting they describe, because
+ * the deadline fires from two places (a fresh turn and a reattached one) and
+ * the two copies had already drifted apart in wording. They speak to whoever
+ * opens the session, not to whoever configured it: the turn is over, the work
+ * is safe, here's how to carry on. `turnTimeoutMinutes` is documented in this
+ * module rather than recited in the message. */
+
+/** Durable transcript line when a turn is cut off at its deadline. */
+export function turnTimeoutNotice(ms = opencodeTurnTimeoutMs()): string {
+  return (
+    `Stopped after ${turnLimitLabel(ms)} — the limit for a single turn. ` +
+    "Everything up to here is saved; send a message to continue."
+  );
+}
+
+/** The same cutoff as a run failure (session list, header banner, Slack). */
+export function turnTimeoutError(ms = opencodeTurnTimeoutMs()): string {
+  return `Stopped after ${turnLimitLabel(ms)} — the limit for a single turn.`;
+}
+
 export const DEFAULT_BRIDGE_MAX_REQUESTS_PER_HOUR = 300;
 
 /** Rolling per-account request ceiling for the native Anthropic bridge. */
