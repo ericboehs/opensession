@@ -317,7 +317,7 @@ export function CatchUpDeck({
 					<Button
 						variant="primary"
 						size="lg"
-						className="flex-1 rounded-lg bg-green px-4 py-3 text-sm font-semibold shadow-none hover:brightness-100 hover:opacity-90"
+						className="flex-1 rounded-lg border-0 bg-green px-4 py-3 text-sm font-semibold shadow-none hover:brightness-100 hover:opacity-90"
 						onClick={() => act("read")}
 						title="Mark as read (→)"
 					>
@@ -724,7 +724,7 @@ function CaughtUp({ total, onExit }: { total: number; onExit: () => void }) {
 			</div>
 			<Button
 				size="lg"
-				className="mt-2 rounded-lg border-transparent bg-panel px-4 py-2.5 text-sm font-semibold text-fg shadow-none hover:bg-surface"
+				className="mt-2 rounded-lg border-0 bg-panel px-4 py-2.5 text-sm font-semibold text-fg shadow-none hover:bg-surface"
 				onClick={onExit}
 			>
 				Done
