@@ -31,6 +31,7 @@ import {
 	getRecentPrs,
 	getRecentPrsForPerson,
 	markCachedPrClosed,
+	markCachedPrMerged,
 	markCachedPrReviewed,
 } from "../sessions";
 import { githubLoginToPersonKey } from "../shared/user-mappings";
@@ -519,6 +520,7 @@ export async function handlePrRoutes(
 				credential,
 			);
 			if ("error" in result) return Response.json(result, { status: 502 });
+			markCachedPrMerged(repo.ghRepo, branch);
 			invalidateSessionsCache();
 			return Response.json(result);
 		} catch (e: any) {
@@ -686,6 +688,10 @@ export async function handlePrRoutes(
 				credential,
 			);
 			if ("error" in result) return Response.json(result, { status: 502 });
+			// Patch the bulk PR cache before dropping the sessions cache: the
+			// rebuild reads that cache stale-while-revalidate, so without this the
+			// row stays green/open until the throttled sweep or a webhook lands.
+			markCachedPrMerged(target.ghRepo, target.branch);
 			invalidateSessionsCache(); // refresh prState in the sessions list
 			return Response.json(result);
 		} catch (e: any) {

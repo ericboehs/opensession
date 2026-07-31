@@ -899,9 +899,17 @@ const PR_CACHE_TTL = 60_000;
 // queries stop returning it (see the carry-forward in refreshPrCacheInner).
 const PR_CARRY_FORWARD_MS = 180 * 24 * 60 * 60 * 1000;
 let prRefreshPromise: Promise<Set<string>> | null = null;
-const prCloseState: { generation: number; closed: Map<string, number> } = ((
-	globalThis as any
-).__opensessionPrCloseState ??= { generation: 0, closed: new Map() });
+const prCloseState: {
+	generation: number;
+	closed: Map<string, number>;
+	merged: Map<string, number>;
+} = ((globalThis as any).__opensessionPrCloseState ??= {
+	generation: 0,
+	closed: new Map(),
+	merged: new Map(),
+});
+// A hot reload can hand back an object parked before `merged` existed.
+prCloseState.merged ??= new Map();
 type CachedReviewMutation = {
 	generation: number;
 	person: string;
@@ -1013,6 +1021,35 @@ export function markCachedPrClosed(ghRepo: string, number: number): void {
 }
 
 /**
+ * Keep the repo-wide PR queue coherent after a human merges a PR in OS1 — the
+ * merge counterpart of markCachedPrClosed. Without it the row keeps its
+ * pre-merge OPEN state (green "ready to merge" instead of purple "Done") until
+ * the throttled bulk sweep or a GitHub webhook catches up, because
+ * getPrsByRepo is stale-while-revalidate: invalidating the sessions cache
+ * rebuilds the list off the same unrefreshed PR data.
+ */
+export function markCachedPrMerged(ghRepo: string, branch: string): void {
+	const repoId = prRepos().find((repo) => repo.ghRepo === ghRepo)?.id;
+	if (!repoId) return;
+	const byBranch = prCache.data.get(repoId);
+	const pr = byBranch?.get(branch);
+	if (!byBranch || !pr) return;
+	prCloseState.generation++;
+	prCloseState.merged.set(
+		closeTombstoneKey(ghRepo, pr.number),
+		prCloseState.generation,
+	);
+	byBranch.set(branch, {
+		...pr,
+		state: "MERGED",
+		isDraft: false,
+		updatedAt: new Date().toISOString(),
+	});
+	prCache.ts = Date.now();
+	persistPrCache(prCache.data);
+}
+
+/**
  * Keep the sidebar's repo-wide PR cache coherent after a review submitted in
  * OS1. The bulk GitHub sweep is intentionally throttled and can otherwise keep
  * a completed request visible for up to 30 minutes.
@@ -1066,18 +1103,23 @@ function applyPrCloseTombstones(
 	data: Map<string, Map<string, PrInfo>>,
 	refreshGeneration: number,
 ): void {
-	for (const [key, closeGeneration] of prCloseState.closed) {
-		// A refresh that began after this close is authoritative. Earlier refreshes
-		// retain the tombstone so their pre-close OPEN result cannot win the race.
-		if (closeGeneration <= refreshGeneration) prCloseState.closed.delete(key);
-	}
+	for (const tombstones of [prCloseState.closed, prCloseState.merged])
+		for (const [key, generation] of tombstones) {
+			// A refresh that began after this close/merge is authoritative. Earlier
+			// refreshes retain the tombstone so their pre-close OPEN result cannot
+			// win the race.
+			if (generation <= refreshGeneration) tombstones.delete(key);
+		}
 	for (const repo of prRepos()) {
 		const byBranch = data.get(repo.id);
 		if (!byBranch) continue;
 		for (const [branch, pr] of byBranch) {
-			if (!prCloseState.closed.has(closeTombstoneKey(repo.ghRepo, pr.number)))
-				continue;
-			byBranch.set(branch, { ...pr, state: "CLOSED" });
+			const key = closeTombstoneKey(repo.ghRepo, pr.number);
+			// Merged wins: GitHub reports a merged PR as closed too.
+			if (prCloseState.merged.has(key))
+				byBranch.set(branch, { ...pr, state: "MERGED", isDraft: false });
+			else if (prCloseState.closed.has(key))
+				byBranch.set(branch, { ...pr, state: "CLOSED" });
 		}
 	}
 }
