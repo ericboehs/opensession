@@ -2990,9 +2990,14 @@ body:is(.resizing-sidebar, .resizing-panel) {
    text smears over every tab it passes. Two halves fix that:
    1. The dragged wrapper lifts into a chip — opaque fill + hairline + shadow —
       so it reads as picked up and always stays legible over its neighbours.
-   2. A ghost marks the gap it will drop into. Reorder already opens that gap
-      live, but an empty hole between two bare labels reads as nothing; the
-      ghost gives it an edge. It slides between slots as the order changes. */
+   2. A caret marks where it will drop. Reorder already opens that gap live,
+      but an empty hole between two bare labels reads as nothing. The element
+      spans the whole landing slot (so it slides with the live reorder) and
+      paints only a thin rule at its leading edge — an insertion mark, not a
+      second chip competing with the tab in hand. It sits ABOVE the dragged
+      chip: the chip follows the pointer while the slot snaps to whole
+      positions, so the two coincide exactly at every swap — a caret painted
+      underneath would vanish at precisely the moment the order changes. */
 .session-tab-reorder.is-dragging {
 	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	background: var(--bg-panel);
@@ -3003,14 +3008,22 @@ body:is(.resizing-sidebar, .resizing-panel) {
 }
 .session-tab-drop-slot {
 	position: absolute;
-	top: 7px;
-	bottom: 7px;
-	border: 1px dashed var(--border-strong);
-	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
-	background: var(--hover);
+	top: 8px;
+	bottom: 8px;
+	z-index: 5;
 	pointer-events: none;
 	animation: tab-drop-slot-in 0.12s ease-out;
 	transition: left 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+.session-tab-drop-slot::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	width: 2px;
+	border-radius: 1px;
+	background: var(--accent);
 }
 @keyframes tab-drop-slot-in {
 	from {
