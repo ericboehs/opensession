@@ -878,6 +878,24 @@ export function IconEye(p: IconProps) {
   );
 }
 
+/** IconEye with a slash — "hidden from view" (the sidebar's Hide action). */
+export function IconEyeOff(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M9.75 6.15C10.47 5.89 11.22 5.75 12 5.75C17 5.75 20.75 12 20.75 12C20.75 12 19.79 13.6 18.25 15.09"
+      />
+      <path
+        {...stroke}
+        d="M15.4 17.66C14.35 18.05 13.21 18.25 12 18.25C7 18.25 3.25 12 3.25 12C3.25 12 4.72 9.55 7.11 7.86"
+      />
+      <path {...stroke} d="M10.41 10.41A2.25 2.25 0 0 0 13.59 13.59" />
+      <path {...stroke} d="M4.75 4.75L19.25 19.25" />
+    </Svg>
+  );
+}
+
 export function IconFlame(p: IconProps) {
   return (
     <Svg {...p}>

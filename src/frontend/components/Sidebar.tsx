@@ -50,6 +50,14 @@ import {
 	setSnooze,
 	snoozePresets,
 } from "../lib/snoozes";
+import {
+	clearHide,
+	clearHides,
+	getHides,
+	onHidesChanged,
+	partitionHidden,
+	setHide,
+} from "../lib/hides";
 import { Reorder } from "motion/react";
 import { getRecents, onRecentsChanged } from "../lib/recents";
 import {
@@ -98,6 +106,7 @@ import {
 	IconPlus,
 	IconPullRequest,
 	IconEye,
+	IconEyeOff,
 	IconStack,
 	IconPin,
 	IconLink,
@@ -1588,6 +1597,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const [snoozes, setSnoozesState] = useState<Record<string, string>>(
 		getSnoozes,
 	);
+	// Per-user sidebar hides (row key → ISO hidden-at). The personal
+	// counterpart to Archive, which is global: a hidden row leaves only THIS
+	// user's sidebar, and the chat keeps running for everyone else.
+	const [hides, setHidesState] = useState<Record<string, string>>(getHides);
 	// Drag-to-reorder in the Pinned band. onReorder fires continuously during a
 	// drag, so the in-flight order lives in local state (pinOrderDraft) and only
 	// commits to the pins store on drop — mirroring the composer queue's pattern.
@@ -1825,6 +1838,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 
 	useEffect(() => onPinsChanged(() => setPins(getPins())), []);
 	useEffect(() => onSnoozesChanged(() => setSnoozesState(getSnoozes())), []);
+	useEffect(() => onHidesChanged(() => setHidesState(getHides())), []);
 	// Per-user lanes (lib/lanes.ts). mineStatus/pinnedLane read the lib cache
 	// directly; this state exists to re-render (and re-derive the memos below)
 	// when your lanes change.
@@ -2255,7 +2269,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		MINE_STATUS_META.map((m) => [m.key, m.dotColor]),
 	) as Record<MineStatus, string>;
 
-	const wsRows = useMemo(() => {
+	const allWsRows = useMemo(() => {
 		const rows: WsRow[] = [];
 		const byWs = new Map<string, UnifiedSession[]>();
 		const solo: UnifiedSession[] = [];
@@ -2403,6 +2417,44 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return rows;
 		// `lanes` feeds mineStatus/pinnedLane (read via the lib cache).
 	}, [filtered, sessions, projects, selectedId, reads, search, filter, lanes, noteActivity, noteReadsRev, activeReviewPrKeys]);
+
+	// ── Hidden rows ─────────────────────────────────────────────────────────
+	// "Hide from my sidebar" is the personal counterpart to Archive: archiving
+	// is global (archive.ts), so it's the wrong tool when a teammate is still
+	// working in the chat. A hide drops the row from THIS user's sidebar only,
+	// and every band below derives from `wsRows` — so hiding removes it from
+	// pins, lanes, review and snoozed in one go.
+	//
+	// The one exception: a hidden row resurfaces while any of its chats is
+	// blocked on a question, so a hide can never swallow work waiting on you.
+	// Resurfacing consumes the entry (see the sweep below), which keeps the
+	// rule "it came back because it needed me, and stays back until I hide it
+	// again" instead of flickering as questions get asked and answered.
+	const { hiddenKeys: hiddenRowKeys, resurfaced: resurfacedRows } = useMemo(
+		() => partitionHidden(allWsRows, hides),
+		[allWsRows, hides],
+	);
+	const wsRows = useMemo(
+		() => allWsRows.filter((r) => !hiddenRowKeys.has(r.key)),
+		[allWsRows, hiddenRowKeys],
+	);
+	/** Hidden rows, for the Hidden band's restore list — newest activity first. */
+	const hiddenWsRows = useMemo(
+		() =>
+			allWsRows
+				.filter((r) => hiddenRowKeys.has(r.key))
+				.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || "")),
+		[allWsRows, hiddenRowKeys],
+	);
+	// Consume the hide of any row that just resurfaced (blocked on a question),
+	// marking its chats unread so the return reads as fresh activity — the same
+	// shape as the snooze wake above. Idempotent: clearHides ignores keys that
+	// another tab already dropped.
+	useEffect(() => {
+		if (!resurfacedRows.length) return;
+		for (const r of resurfacedRows) r.chats.forEach((c) => markUnread(c.id));
+		clearHides(resurfacedRows.map((r) => r.key));
+	}, [resurfacedRows]);
 
 	// Automations keep their own collapsible band, one group per automation —
 	// hundreds of one-shot runs would drown the Workspaces list otherwise.
@@ -2880,6 +2932,39 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const next =
 			idx >= 0 ? (rest[Math.min(idx, rest.length - 1)] ?? null) : (rest[0] ?? null);
 		onArchiveWorkspace(row.chats, next?.chats[0] ?? null);
+	}
+
+	/**
+	 * Hide a row from THIS user's sidebar, leaving the chats untouched for
+	 * everyone else (the point of the feature — see `hiddenRowKeys`). Drops the
+	 * row's pins and any snooze first: a pinned-but-hidden row would snap to the
+	 * top of Pinned the moment it resurfaced, and a snooze wake would resurface
+	 * a row the user just hid. Lane membership is deliberately kept, so a
+	 * restored row returns to where it was.
+	 */
+	function hideRow(row: WsRow) {
+		const pinnedKeys = [
+			row.key,
+			...row.chats.flatMap((c) => [c.id, ...(c.aliasIds || [])]),
+		].filter((k, i, a) => pins.includes(k) && a.indexOf(k) === i);
+		if (pinnedKeys.length) {
+			let next = pins;
+			for (const k of pinnedKeys) next = togglePin(k);
+			setPins(next);
+		}
+		clearSnooze(row.key);
+		// Keep something open if the row being hidden owns the active chat.
+		if (row.chats.some((c) => c.id === selectedId)) {
+			const candidates = wsRowOrder.filter((r) => r.chats.length > 0);
+			const idx = candidates.findIndex((r) => r.key === row.key);
+			const rest = candidates.filter((r) => r.key !== row.key);
+			const next =
+				idx >= 0
+					? (rest[Math.min(idx, rest.length - 1)] ?? null)
+					: (rest[0] ?? null);
+			if (next) onSelect(next.chats[0]);
+		}
+		setHide(row.key);
 	}
 
 	// Archive just the open chat and pick what becomes active. We resolve the open
@@ -3655,6 +3740,90 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									</span>
 								</button>
 							)}
+						</div>
+					);
+				})()
+			: null;
+
+	// "Hidden" is Archived's personal twin, and renders as its sibling: same
+	// collapsible shape, but these rows are only hidden for you — the chats are
+	// live and still in everyone else's sidebar. It appears only when you've
+	// hidden something, so it costs no chrome for people who never use it.
+	const hiddenBand =
+		hiddenWsRows.length > 0
+			? (() => {
+					const open = isOpen("hidden");
+					return (
+						<div className="sidebar-status-group">
+							<button
+								className="sidebar-group-header flex w-full items-center gap-[9px] rounded-md px-[10px] py-1 text-[14px] font-medium text-dim transition-colors hover:bg-hover hover:text-fg"
+								onClick={() => toggleGroup("hidden")}
+							>
+								<span className="inline-flex shrink-0 items-center text-faint">
+									<IconEyeOff size={18} />
+								</span>
+								<span className="sidebar-group-name">Hidden</span>
+								<span className="sidebar-group-count">
+									{hiddenWsRows.length}
+								</span>
+								<IconChevronDown
+									className="sidebar-group-chevron"
+									size={22}
+									style={{ transform: open ? "none" : "rotate(-90deg)" }}
+								/>
+							</button>
+							{open &&
+								hiddenWsRows.map((r) => (
+									<button
+										key={r.key}
+										className="sidebar-item sidebar-ws-row sidebar-archived-row"
+										onClick={() => onSelect(r.chats[0])}
+										aria-label={r.name}
+									>
+										<span className="sidebar-rail">
+											<span className="sidebar-item-status sidebar-status-idle" />
+										</span>
+										<span
+											className="sidebar-item-title"
+											style={{ color: "var(--text-dim)" }}
+										>
+											{stripPrTitlePrefix(r.name)}
+										</span>
+										{!isPhone && r.lastActivity && (
+											<span className="sidebar-ws-time">
+												{shortTime(r.lastActivity)}
+											</span>
+										)}
+										<span className="sidebar-ws-actions">
+											<Tooltip
+												label={
+													r.chats.length > 1
+														? `Restore workspace (${r.chats.length} chats) to my sidebar`
+														: "Restore to my sidebar"
+												}
+											>
+												<span
+													role="button"
+													tabIndex={0}
+													className="sidebar-ws-action"
+													aria-label="Restore to my sidebar"
+													onClick={(e) => {
+														e.stopPropagation();
+														clearHide(r.key);
+													}}
+													onKeyDown={(e) => {
+														if (e.key === "Enter" || e.key === " ") {
+															e.stopPropagation();
+															clearHide(r.key);
+														}
+													}}
+												>
+													<IconEye size={21} />
+												</span>
+											</Tooltip>
+										</span>
+									</button>
+								))}
 						</div>
 					);
 				})()
@@ -5075,6 +5244,16 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					// nothing to archive, so it keeps Delete as its only removal.
 					if (menuRow && chats.length > 0) {
 						entries.push({ kind: "sep" });
+						// Hide sits above Archive as the gentler removal: Archive is
+						// global (it ends the work for the whole team), Hide only
+						// clears it off your own sidebar while a teammate keeps
+						// working in it.
+						entries.push({
+							kind: "item",
+							icon: <IconEyeOff size={20} />,
+							label: "Hide from my sidebar",
+							onClick: () => hideRow(menuRow),
+						});
 						entries.push({
 							kind: "item",
 							icon: <IconArchive size={20} />,
@@ -5588,6 +5767,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									.map((d) => renderFeedBand(d, false)),
 							]}
 				</div>
+
+				{hiddenBand && <div className="sidebar-group">{hiddenBand}</div>}
 
 				{archivedBand && (
 					<div className="sidebar-group">{archivedBand}</div>

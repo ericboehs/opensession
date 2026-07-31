@@ -2420,6 +2420,30 @@ export async function saveSnoozesApi(
 		: snoozes;
 }
 
+// ── Hides (per-user sidebar hides) ──
+
+export async function fetchHides(
+	user: string,
+): Promise<Record<string, string>> {
+	const body = await request<{ hides?: Record<string, string> }>(
+		`/hides?user=${encodeURIComponent(user)}`,
+		{ label: "Failed to fetch hides" },
+	);
+	return body?.hides && typeof body.hides === "object" ? body.hides : {};
+}
+
+export async function saveHidesApi(
+	user: string,
+	hides: Record<string, string>,
+): Promise<Record<string, string>> {
+	const body = await request<{ hides?: Record<string, string> }>("/hides", {
+		method: "PUT",
+		body: { user, hides },
+		label: "Failed to save hides",
+	});
+	return body?.hides && typeof body.hides === "object" ? body.hides : hides;
+}
+
 // ── Tab colors (per-user session tab colors) ──
 
 export async function fetchTabColors(

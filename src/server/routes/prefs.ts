@@ -13,6 +13,7 @@ import { getReads as getUserReads, setReads as setUserReads } from "../reads";
 import { addSessionMemory, describeScope, forgetSessionMemory, listAllMemory, updateMemoryEntry } from "../session-memory";
 import { getLanes as getUserLanes, setLanes as setUserLanes } from "../lanes";
 import { getSnoozes as getUserSnoozes, setSnoozes as setUserSnoozes } from "../snoozes";
+import { getHides as getUserHides, setHides as setUserHides } from "../hides";
 import { getTabColors as getUserTabColors, setTabColors as setUserTabColors } from "../tab-colors";
 import { getUiPrefs, patchUiPrefs } from "../ui-prefs";
 import { getPersonalPrompt, setPersonalPrompt } from "../personal-prompts";
@@ -333,6 +334,32 @@ export async function handlePrefsRoutes(
 		return Response.json({
 			snoozes: setUserSnoozes(body.user, body.snoozes),
 		});
+	}
+
+	// ── Per-user sidebar hides ──
+	// The personal counterpart to archiving (which is global, see archive.ts):
+	// hiding a row drops it from THIS user's sidebar while the chat keeps
+	// running for everyone else. Same per-user model as pins: GET reads a
+	// user's hide map; PUT replaces it wholesale.
+	if (path === "/backstage/api/hides" && req.method === "GET") {
+		const user = url.searchParams.get("user") || "Anonymous";
+		return Response.json({ hides: getUserHides(user) });
+	}
+
+	if (path === "/backstage/api/hides" && req.method === "PUT") {
+		const body = await req.json().catch(() => null);
+		if (
+			!body ||
+			typeof body.user !== "string" ||
+			typeof body.hides !== "object" ||
+			body.hides === null
+		) {
+			return Response.json(
+				{ error: "user (string) and hides (object) are required" },
+				{ status: 400 },
+			);
+		}
+		return Response.json({ hides: setUserHides(body.user, body.hides) });
 	}
 
 	// ── Per-user session tab colors ──

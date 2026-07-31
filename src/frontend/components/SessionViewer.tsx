@@ -82,6 +82,7 @@ import { UsageMeter } from "./UsageMeter";
 import { SchedulePromptButton } from "./SchedulePrompt";
 import type { FileAttachment } from "../lib/images";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
+import { unhideForChat } from "../lib/hides";
 import { withPreviewPath } from "../lib/preview-url";
 import { DiffPanel, useSessionDiff } from "./DiffPanel";
 import { RepoBar } from "./RepoBar";
@@ -2875,6 +2876,9 @@ export function SessionViewer({
 						...(contextChats.length ? { contextChats } : {}),
 					},
 		);
+		// Prompting in a chat you'd hidden from your sidebar brings its row back
+		// — you're working in it again (see lib/hides.ts).
+		unhideForChat(session);
 		if (!isBusy) {
 			setIsRunningLive(true);
 			onRunningChange?.(session.id, true);
