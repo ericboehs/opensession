@@ -22,7 +22,10 @@ export function PageTitle({
 }: React.ComponentPropsWithoutRef<"h2">) {
 	return (
 		<h2
-			className={cn("m-0 text-[19px] font-semibold tracking-[-0.01em] text-fg", className)}
+			className={cn(
+				"m-0 text-section-title font-semibold tracking-[-0.01em] text-fg",
+				className,
+			)}
 			{...props}
 		/>
 	);
@@ -32,5 +35,5 @@ export function PageDescription({
 	className,
 	...props
 }: React.ComponentPropsWithoutRef<"div">) {
-	return <div className={cn("mt-1 text-[12.5px] text-faint", className)} {...props} />;
+	return <div className={cn("mt-1 text-supporting text-faint", className)} {...props} />;
 }

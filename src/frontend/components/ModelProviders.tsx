@@ -127,7 +127,7 @@ export function ModelProvidersPanel() {
 				) : (
 					providers.map((p) => (
 						<SettingRow key={p.id}>
-							<span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-[13px] font-bold text-dim">
+							<span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-active text-control-label font-bold text-dim">
 								{p.id.charAt(0).toUpperCase()}
 							</span>
 							<SettingRowText>
@@ -150,7 +150,7 @@ export function ModelProvidersPanel() {
 										{p.models.map((m) => (
 											<span
 												key={m}
-												className="rounded-sm bg-active px-1.5 py-px font-mono text-[11px] text-dim"
+												className="rounded-sm bg-active px-1.5 py-px font-mono text-meta text-dim"
 												title={m}
 											>
 												{m.split("/").slice(2).join("/")}
@@ -158,7 +158,7 @@ export function ModelProvidersPanel() {
 										))}
 									</div>
 								) : (
-									<div className="mt-1 text-[11.5px] text-faint">
+									<div className="mt-1 text-meta text-faint">
 										No picker models — its models are type-in only
 										(opencode/{p.id}/&lt;model&gt;).
 									</div>

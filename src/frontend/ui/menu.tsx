@@ -20,7 +20,7 @@ function Trigger({
 }: Omit<React.ComponentProps<typeof BaseMenu.Trigger>, "className"> & {
 	className?: string;
 }) {
-	return <BaseMenu.Trigger {...props} className={cn(className)} />;
+	return <BaseMenu.Trigger {...props} className={cn("focus-ring", className)} />;
 }
 
 // Shared popup chrome for both the click-menu and the right-click context menu:
@@ -95,7 +95,7 @@ function ContextPopup({
 /** Shared row styling for anything that behaves like a menu item. Highlight
  * via Base UI's data-highlighted so keyboard navigation lights rows up too. */
 const itemClasses =
-	"flex w-full cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-fg outline-none data-[highlighted]:bg-hover";
+	"flex w-full cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-control-label text-fg outline-none data-[highlighted]:bg-hover";
 
 function Item({
 	className,
@@ -151,7 +151,7 @@ function GroupLabel({ className, ...props }: { className?: string; children?: Re
 		<BaseMenu.GroupLabel
 			{...props}
 			className={cn(
-				"px-2 pb-1 text-[11px] font-semibold tracking-[-0.01em] text-faint",
+				"px-2 pb-1 text-meta font-semibold tracking-[-0.01em] text-faint",
 				className,
 			)}
 		/>

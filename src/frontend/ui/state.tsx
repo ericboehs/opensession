@@ -66,9 +66,9 @@ export function EmptyState({
 	return (
 		<div className={cn(placements[placement], className)} {...props}>
 			{block && icon && <span className="text-faint">{icon}</span>}
-			{title && <div className="text-[13px] font-medium text-fg">{title}</div>}
+			{title && <div className="text-control-label font-medium text-fg">{title}</div>}
 			{children && (
-				<div className={cn("text-[12.5px] leading-snug text-dim", block && "max-w-[46ch]")}>
+				<div className={cn("text-supporting leading-snug text-dim", block && "max-w-[46ch]")}>
 					{children}
 				</div>
 			)}
@@ -95,7 +95,7 @@ export function LoadingState({
 			{...props}
 		>
 			{/* div, not span: PixelSpinner renders a grid div. */}
-			<div className="inline-flex items-center gap-2 text-[12.5px] text-faint">
+			<div className="inline-flex items-center gap-2 text-supporting text-faint">
 				{spinner && <PixelSpinner className="shrink-0" />}
 				{children}
 			</div>
@@ -155,7 +155,7 @@ export function InlineAlert({
 			{onRetry && (
 				<button
 					type="button"
-					className="shrink-0 self-center whitespace-nowrap text-[12.5px] font-medium underline underline-offset-2 opacity-80 transition-opacity hover:opacity-100"
+					className="focus-ring shrink-0 self-center whitespace-nowrap text-supporting font-medium underline underline-offset-2 opacity-80 transition-opacity hover:opacity-100"
 					onClick={(e) => {
 						e.stopPropagation();
 						onRetry();
@@ -170,7 +170,7 @@ export function InlineAlert({
 					aria-label="Dismiss"
 					// Visually 24px so it sits inside the box's 10px padding; the
 					// pseudo-element takes the hit area out to 40px.
-					className="relative -mr-1 flex size-6 shrink-0 items-center justify-center rounded-control opacity-60 transition-opacity hover:opacity-100 before:absolute before:-inset-2 before:content-['']"
+					className="focus-ring relative -mr-1 flex size-6 shrink-0 items-center justify-center rounded-control opacity-60 transition-opacity hover:opacity-100 before:absolute before:-inset-2 before:content-['']"
 					onClick={(e) => {
 						e.stopPropagation();
 						onDismiss();

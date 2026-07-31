@@ -70,11 +70,11 @@ export function ModelMenuRow({
 
 	return (
 		<Menu.Root>
-			<Menu.Trigger className="flex w-full cursor-pointer items-center gap-[7px] whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-3 py-[7px] text-[13px] font-medium text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg">
+			<Menu.Trigger className="flex w-full cursor-pointer items-center gap-[7px] whitespace-nowrap rounded-[10px] border border-line-strong bg-transparent px-3 py-[7px] text-control-label font-medium text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg">
 				<IconSparkle size={18} className="shrink-0 text-faint" />
 				<span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-					<span className="text-[10.5px] font-semibold leading-none text-faint">Model</span>
-					<span className="truncate text-[13px] leading-[1.2] text-fg">{label}</span>
+					<span className="text-meta font-semibold leading-none text-faint">Model</span>
+					<span className="truncate text-control-label leading-[1.2] text-fg">{label}</span>
 				</span>
 				<IconChevronRight size={16} className="shrink-0 text-faint" />
 			</Menu.Trigger>
