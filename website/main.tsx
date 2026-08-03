@@ -33,18 +33,18 @@ function ProductPreview() {
 const features = [
 	{
 		number: "01",
-		title: "Multiplayer by default",
-		body: "Work in the same sessions, see who is present, and review agent output together instead of passing transcripts around.",
+		title: "Run agents in parallel",
+		body: "Fan work out across models and focused child sessions. Each task keeps its own context and progress, then reports back to the main thread.",
 	},
 	{
 		number: "02",
-		title: "An agent team, not one chat",
-		body: "Delegate focused tasks to parallel agents, keep their progress visible, and bring the results back into one workspace.",
+		title: "Collaborate in every session",
+		body: "Teammates can watch live, answer questions, steer runs, and review agent output together from the web, desktop, or phone.",
 	},
 	{
 		number: "03",
-		title: "Your infrastructure",
-		body: "Run in git worktrees or isolated sandboxes on machines you control, with your models, tools, and integrations.",
+		title: "Ship from your own stack",
+		body: "Run in git worktrees or isolated sandboxes on machines you control, using your existing model accounts, tools, and integrations.",
 	},
 ];
 
@@ -81,7 +81,7 @@ function LandingPage() {
 						<span>OpenSession</span>
 					</a>
 					<nav aria-label="Main navigation">
-						<a href="#why">Why OpenSession</a>
+						<a href="#why">How it works</a>
 						<a href="https://github.com/tellahq/opensession">GitHub</a>
 						<a className="nav-cta" href="#install">Get started</a>
 					</nav>
@@ -89,10 +89,10 @@ function LandingPage() {
 
 				<div className="hero-content page-width" id="top">
 					<div className="hero-copy">
-						<p className="eyebrow"><span /> Open source. Multiplayer by default.</p>
-						<h1>Your team and its agents, in one workspace.</h1>
+						<p className="eyebrow"><span /> Open source. Built for agent teams.</p>
+						<h1>Run your coding agents. Together.</h1>
 						<p className="hero-description">
-							OpenSession is the multiplayer command center for coding agents. Start, steer, review, and ship work together, on your own infrastructure.
+							Use Claude, Codex, and other models side by side. Start parallel sessions, bring in teammates, and keep every prompt, diff, review, and PR moving from desktop or phone.
 						</p>
 						<div className="hero-actions">
 							<a className="button button-primary" href="#install">Get started</a>
@@ -103,9 +103,9 @@ function LandingPage() {
 						<div className="proof-line" aria-label="OpenSession highlights">
 							<span>Apache-2.0</span>
 							<i />
-							<span>Bring your own models</span>
+							<span>Use your existing subscriptions</span>
 							<i />
-							<span>Web, desktop, and mobile</span>
+							<span>Worktrees and sandboxes</span>
 						</div>
 					</div>
 					<ProductPreview />
@@ -115,8 +115,8 @@ function LandingPage() {
 			<main>
 				<section className="why-section page-width" id="why">
 					<div className="section-intro">
-						<p className="section-kicker">Built for the whole team</p>
-						<h2>Agent work is already collaborative. Your tools should be too.</h2>
+						<p className="section-kicker">One place for the whole agent loop</p>
+						<h2>Agents move faster when the whole team can see the work.</h2>
 					</div>
 					<div className="feature-grid">
 						{features.map((feature) => (
@@ -133,8 +133,8 @@ function LandingPage() {
 					<div className="install-card">
 						<div className="install-copy">
 							<p className="section-kicker section-kicker-dark">Start on your own machine</p>
-							<h2>One command to your first session.</h2>
-							<p>The installer adds Bun and OpenCode when needed, then walks you through the models and integrations you want to connect.</p>
+							<h2>Running in under a minute.</h2>
+							<p>The installer adds Bun and OpenCode when needed, then connects the model subscriptions and integrations you already use.</p>
 						</div>
 						<CopyCommand />
 						<div className="install-meta">
@@ -151,7 +151,7 @@ function LandingPage() {
 
 			<footer className="site-footer page-width">
 				<a className="brand brand-footer" href="#top"><Mark small /><span>OpenSession</span></a>
-				<p>Open-source infrastructure for teams and their agents.</p>
+				<p>The open-source workspace for teams building with agents.</p>
 				<nav aria-label="Footer navigation">
 					<a href="https://github.com/tellahq/opensession">GitHub</a>
 					<a href="https://github.com/tellahq/opensession/tree/main/docs/setup">Docs</a>
