@@ -8,6 +8,8 @@ let home: string;
 let priorHome: string | undefined;
 let priorChatsDir: string | undefined;
 let priorCodexHome: string | undefined;
+let priorConfig: string | undefined;
+let priorGhBackoff: number | undefined;
 
 beforeAll(async () => {
 	priorHome = process.env.HOME;
@@ -15,6 +17,34 @@ beforeAll(async () => {
 	process.env.HOME = home;
 	mkdirSync(join(home, ".backstage-chats"), { recursive: true });
 	mkdirSync(join(home, ".slack-sessions"), { recursive: true });
+	// The PR-cache assertions need a repo that actually carries a ghRepo:
+	// prRepos() filters those out, and the only BUILT-IN repo is `opensession`
+	// with an empty ghRepo (the registry became config-driven), so with no
+	// config there are no PR repos at all — markCachedPrReviewed can't resolve
+	// its ghRepo argument to a repo id and returns without mutating anything.
+	// OPENSESSION_CONFIG is re-read per call (getConfig caches on path+mtime),
+	// so setting it here reaches modules other test files already loaded.
+	writeFileSync(
+		join(home, "config.json"),
+		JSON.stringify({
+			repos: {
+				backstage: {
+					repo: "/home/ubuntu/projects/tella-backstage",
+					ghRepo: "tellahq/backstage",
+					label: "Backstage",
+				},
+			},
+		}),
+	);
+	priorConfig = process.env.OPENSESSION_CONFIG;
+	process.env.OPENSESSION_CONFIG = join(home, "config.json");
+	// Close the GitHub gate for the whole file. Without it the PR cache's
+	// SWR refresh fires a real `gh` call on first access and replaces the
+	// seeded snapshot with live data — a network call from a unit test, and a
+	// race that makes the cached-review assertion pass or fail on timing.
+	priorGhBackoff = (
+		await import("./github-limit")
+	).__setGhBackoffForTest(Date.now() + 60 * 60_000);
 	// The HOME override only reaches paths.ts / codex-accounts.ts if nothing
 	// evaluated them yet — and bun test file order guarantees nothing
 	// (another test file importing the server graph poisons the cached
@@ -33,6 +63,11 @@ beforeAll(async () => {
 afterAll(async () => {
 	if (priorHome === undefined) delete process.env.HOME;
 	else process.env.HOME = priorHome;
+	if (priorConfig === undefined) delete process.env.OPENSESSION_CONFIG;
+	else process.env.OPENSESSION_CONFIG = priorConfig;
+	if (priorGhBackoff !== undefined) {
+		(await import("./github-limit")).__setGhBackoffForTest(priorGhBackoff);
+	}
 	if (priorChatsDir !== undefined) {
 		(await import("./paths")).__setChatsDirForTest(priorChatsDir);
 	}

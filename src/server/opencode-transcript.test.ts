@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, readFileSync, existsSync } from "fs";
+import { mkdtempSync, rmSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { Database } from "bun:sqlite";
@@ -38,7 +38,49 @@ const {
   opencodeOpenTaskSnapshot,
   opencodeTurnLooksCompleted,
 } = mod;
-const { parseTranscript, parseJsonlLines } = await import("./jsonl-parser");
+const { parseJsonlLines } = await import("./jsonl-parser");
+const { TranscriptStore, transcriptStore, __setTranscriptStoreForTest } = await import(
+  "./transcript-store"
+);
+const { __setChatsDirForTest } = await import("./paths");
+
+// Since the 2026-07-23 mirror retirement (35bb2767, transcript-v2 design §11)
+// the three transcript WRITERS below — appendOpencodeTranscript,
+// ensureOpencodeTranscriptFile, backfillOpencodeTranscriptGap — no longer
+// touch the per-oc-session jsonl file. They resolve the UNIFIED session id
+// through the oc→bks map and write into the transcript store; mirror files on
+// disk are a frozen read-only archive. So the writer tests below seed a
+// mapping and read the store back, the same way zz-opencode-mirror.test.ts
+// does. The READER helpers (readOpencodeTranscript, hasOpencodeTranscript,
+// the parse/line builders) still work off SQLite + jsonl and are unchanged.
+//
+// Three seams have to move together, all for the same reason as in
+// zz-opencode-mirror.test.ts: the store singleton (force-replaced — the
+// writer calls transcriptStore(), which this file cannot inject into), the
+// oc→bks map PATH (module-scoped, so redirect it on `mod`'s cache-busted
+// instance, which is the one the writers under test read), and the map's
+// in-memory STATE (parked on globalThis, so a map already loaded from the
+// real file would otherwise flush our test entries into it on the next write
+// from any code in this process).
+const priorBksMapPath = mod.__setOpencodeBksMapPathForTest(join(scratch, "bks-map.json"));
+const priorBksMapState = mod.__setOpencodeBksMapStateForTest();
+const priorChatsDir = __setChatsDirForTest(scratch);
+// The store's import-first gate reads OpenCode's SQLite through the BARE
+// opencode-transcript module, not this file's cache-busted `mod` — and the
+// bare one resolves its db path at ITS load, which in a full `bun test` run
+// happened under the real env, long before this file set BACKSTAGE_OPENCODE_DB.
+// Left alone the legacy-import test then probes the real ~/.opensession
+// database, finds no ses_testabc123, and imports nothing (passes in isolation,
+// fails in the suite). The live-binding seams repoint it whoever loaded first.
+const bare = await import("./opencode-transcript");
+const priorBareDb = bare.__setOpencodeDbPathForTest(dbPath);
+const priorBareTranscriptsDir = bare.__setOpencodeTranscriptsDirForTest(transcriptsDir);
+const scratchStore = new TranscriptStore(join(scratch, "transcripts.db"));
+const priorStore = __setTranscriptStoreForTest(scratchStore);
+const { recordBksSessionFor, backfillOpencodeTranscriptGap } = mod;
+
+/** Every stored entry for a unified session, in ascending seq order. */
+const entriesFor = (unifiedId: string) => transcriptStore().readTail(unifiedId, 200).entries;
 
 const SES = "ses_testabc123";
 
@@ -81,6 +123,15 @@ afterAll(() => {
   else process.env.BACKSTAGE_OPENCODE_DB = priorDb;
   if (priorTranscriptsDir === undefined) delete process.env.BACKSTAGE_OPENCODE_TRANSCRIPTS_DIR;
   else process.env.BACKSTAGE_OPENCODE_TRANSCRIPTS_DIR = priorTranscriptsDir;
+  // Hand the singleton back intact before `scratch` disappears — restoring
+  // only the path bindings would leave a live store pointed at a removed db.
+  __setTranscriptStoreForTest(priorStore);
+  scratchStore.close();
+  __setChatsDirForTest(priorChatsDir);
+  bare.__setOpencodeDbPathForTest(priorBareDb);
+  bare.__setOpencodeTranscriptsDirForTest(priorBareTranscriptsDir);
+  mod.__setOpencodeBksMapPathForTest(priorBksMapPath);
+  mod.__restoreOpencodeBksMapStateForTest(priorBksMapState);
   rmSync(scratch, { recursive: true, force: true });
 });
 
@@ -380,17 +431,17 @@ describe("persisted transcript file", () => {
     });
   });
 
-  test("appended claude-shape lines round-trip through parseTranscript", () => {
+  test("appended claude-shape lines land in the store as parsed entries", () => {
     const id = "ses_roundtrip";
+    const bks = "bks-roundtrip";
+    recordBksSessionFor(id, bks);
     appendOpencodeTranscript(id, [
       transcriptLineUser("hello there", "u1", "2026-07-08T00:00:00.000Z"),
       transcriptLineToolUse("tu1", "bash", { command: "ls" }, "2026-07-08T00:00:01.000Z"),
       transcriptLineToolResult("tu1", "file.txt", false, "2026-07-08T00:00:02.000Z"),
       transcriptLineAssistantText("done!", "a1", "2026-07-08T00:00:03.000Z"),
     ]);
-    const path = getOpencodeTranscriptPath(id);
-    expect(existingOpencodeTranscriptPath(id)).toBe(path);
-    const entries = parseTranscript(path);
+    const entries = entriesFor(bks);
     expect(entries.map((e) => e.type)).toEqual([
       "user",
       "tool_use",
@@ -401,29 +452,44 @@ describe("persisted transcript file", () => {
     expect(entries[1]).toMatchObject({ toolName: "bash", toolUseId: "tu1" });
     expect(entries[2]).toMatchObject({ id: "tr-tu1", content: "file.txt" });
     expect(entries[3]).toMatchObject({ id: "a1", content: "done!" });
+    // The mirror is retired: nothing was written to the per-oc jsonl path.
+    expect(existingOpencodeTranscriptPath(id)).toBeNull();
+    expect(existsSync(getOpencodeTranscriptPath(id))).toBe(false);
   });
 
-  test("ensureOpencodeTranscriptFile seeds a fresh file with handoff entries, preserving ids", () => {
+  test("an unmapped engine session drops the batch instead of throwing", () => {
+    // §3: no unified session mapped ⇒ skip with a warn + degraded mark. A
+    // transcript write must never take the run down, and it must never guess
+    // an owner — the §8 re-import heals the session once it IS mapped.
+    const id = "ses_unmapped";
+    expect(() =>
+      appendOpencodeTranscript(id, [
+        transcriptLineUser("into the void", "u-void", "2026-07-08T00:00:00.000Z"),
+      ]),
+    ).not.toThrow();
+    expect(entriesFor("bks-unmapped")).toHaveLength(0);
+  });
+
+  test("ensureOpencodeTranscriptFile ignores its seed and writes no mirror file", () => {
+    // Post-retirement this is purely the store's import-first gate: the
+    // `_seed` parameter survives only so pre-restart runner closures keep
+    // their arity, and the entries it carries are deliberately dropped (the
+    // import reads the same sources directly). Pinned because silently
+    // storing them would double every cross-engine handoff.
     const id = "ses_seeded";
-    const seed: TranscriptEntry[] = [
+    recordBksSessionFor(id, "bks-seeded");
+    ensureOpencodeTranscriptFile(id, [
       { id: "orig-1", type: "user", content: "old turn", timestamp: "2026-07-07T00:00:00.000Z" },
       { id: "orig-2", type: "assistant", content: "old reply", timestamp: "2026-07-07T00:00:01.000Z" },
-    ];
-    ensureOpencodeTranscriptFile(id, seed);
-    const entries = parseTranscript(getOpencodeTranscriptPath(id));
-    expect(entries.map((e) => e.id)).toEqual(["orig-1", "orig-2"]);
-    // Second ensure is a no-op (file exists).
-    ensureOpencodeTranscriptFile(id, [
-      { id: "other", type: "user", content: "x", timestamp: "2026-07-07T00:00:02.000Z" },
-    ]);
-    expect(parseTranscript(getOpencodeTranscriptPath(id))).toHaveLength(2);
+    ] as TranscriptEntry[]);
+    expect(entriesFor("bks-seeded")).toHaveLength(0);
+    expect(existsSync(getOpencodeTranscriptPath(id))).toBe(false);
   });
 
-  test("ensureOpencodeTranscriptFile backfills legacy sessions from SQLite", () => {
+  test("ensureOpencodeTranscriptFile imports legacy sessions from SQLite", () => {
+    recordBksSessionFor(SES, "bks-legacy-import");
     ensureOpencodeTranscriptFile(SES);
-    const path = getOpencodeTranscriptPath(SES);
-    expect(existsSync(path)).toBe(true);
-    const entries = parseTranscript(path);
+    const entries = entriesFor("bks-legacy-import");
     expect(entries.map((e) => e.type)).toEqual([
       "user",
       "tool_use",
@@ -431,7 +497,6 @@ describe("persisted transcript file", () => {
       "assistant",
     ]);
     expect(entries[0].content).toBe("Remember the codeword: PELICAN.");
-    expect(readFileSync(path, "utf-8")).toContain("PELICAN");
   });
 
   test("transcriptLineForEntry skips system entries and tool_results without ids", () => {
@@ -445,27 +510,42 @@ describe("persisted transcript file", () => {
 });
 
 describe("backfillOpencodeTranscriptGap", () => {
-  const { backfillOpencodeTranscriptGap, opencodeTranscriptUuids } = mod;
+  const { backfillOpencodeTranscriptGap } = mod;
   const GAP_SES = "ses_gaptest";
   test("appends only missing assistant/tool lines, never user lines, and seeds dedup", () => {
-    // Own session (the shared fixture's file is already fully backfilled by
-    // the ensure test above). Store state: user text + tool pair + final
-    // assistant text.
+    // Own session. The steps below are in the order production runs them,
+    // which matters now that the store's import-first gate is in the picture:
+    // the gate fires at RUN START, when OpenCode's SQLite holds only PRIOR
+    // turns. Seeding this turn's rows before the gate instead (as the
+    // pre-v2 fixture did, when appends went to a jsonl file and the gate
+    // didn't exist) makes the import pull in the turn's user message, which
+    // the live pump then writes again under its own random uuid — two user
+    // bubbles for one prompt, an artifact of the fixture rather than
+    // anything the runner can produce.
+    const BKS = "bks-gaptest";
+    recordBksSessionFor(GAP_SES, BKS);
     const db = new Database(dbPath);
-    const t0 = 1783600000000;
     db.query("INSERT INTO session VALUES (?, 'p', 't', 1, 1)").run(GAP_SES);
-    const ins = db.query("INSERT INTO message VALUES (?, ?, ?, ?, ?)");
+    db.close();
+    ensureOpencodeTranscriptFile(GAP_SES);
+    expect(entriesFor(BKS)).toHaveLength(0);
+
+    // OpenCode persists the turn as it executes: user text, tool pair, and
+    // the final assistant text.
+    const db2 = new Database(dbPath);
+    const t0 = 1783600000000;
+    const ins = db2.query("INSERT INTO message VALUES (?, ?, ?, ?, ?)");
     ins.run("gm_1", GAP_SES, t0, t0, JSON.stringify({ role: "user", time: { created: t0 } }));
     ins.run("gm_2", GAP_SES, t0 + 1000, t0 + 1000, JSON.stringify({ role: "assistant", time: { created: t0 + 1000 } }));
-    const insP = db.query("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)");
+    const insP = db2.query("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)");
     insP.run("gprt_u1", "gm_1", GAP_SES, t0, t0, JSON.stringify({ type: "text", text: "do the thing" }));
     insP.run("gprt_tool", "gm_2", GAP_SES, t0 + 800, t0 + 800,
       JSON.stringify({ type: "tool", tool: "bash", state: { status: "completed", input: { command: "ls" }, output: "file.txt" } }));
     insP.run("gprt_a1", "gm_2", GAP_SES, t0 + 1000, t0 + 1000,
       JSON.stringify({ type: "text", text: "all done" }));
-    db.close();
+    db2.close();
 
-    // Simulate the restart gap: the live mirror wrote the user line and the
+    // Simulate the restart gap: the live pump stored the user line and the
     // pre-restart tool pair, then the process died before the assistant text.
     appendOpencodeTranscript(GAP_SES, [
       transcriptLineUser("do the thing", undefined, "2026-07-08T00:00:00.000Z"),
@@ -473,23 +553,26 @@ describe("backfillOpencodeTranscriptGap", () => {
       transcriptLineToolResult("gprt_tool", "file.txt", false, "2026-07-08T00:00:02.000Z"),
     ]);
     const seen = backfillOpencodeTranscriptGap(GAP_SES);
-    const lines = readFileSync(getOpencodeTranscriptPath(GAP_SES), "utf-8").trim().split("\n");
-    // Exactly one line appended: the assistant text. The tool pair was
-    // already mirrored (uuid dedup) and the SQLite user entry must NOT
-    // duplicate the runner-written user line (random uuid, still one bubble).
-    expect(lines.length).toBe(4);
-    const added = JSON.parse(lines[lines.length - 1]);
-    expect(added.uuid).toBe("gprt_a1");
-    expect(added.message.content[0].text).toBe("all done");
-    // Seeds cover file + store uuids for the live pump's dedup sets.
+    // The assistant text is what the gap cost us; the SQLite user entry must
+    // NOT duplicate the runner-written user line (random uuid, one bubble),
+    // and the tool pair re-upserts onto the rows already there rather than
+    // appending a second copy (§1 upsert semantics — the frozen mirror file
+    // no longer supplies uuids to dedup against, so the tool lines are
+    // recomputed from SQLite on every reattach and land on the same ids).
+    const entries = entriesFor(BKS);
+    expect(entries.map((e) => e.type)).toEqual([
+      "user",
+      "tool_use",
+      "tool_result",
+      "assistant",
+    ]);
+    expect(entries[3].content).toBe("all done");
+    // Seeds cover the uuids the live pump must not re-append after the gap.
     expect(seen.has("gprt_a1")).toBe(true);
     expect(seen.has("gprt_tool-use")).toBe(true);
     expect(seen.has("gprt_tool-result")).toBe(true);
-    // Idempotent: a second backfill appends nothing.
+    // Idempotent: a second backfill adds no rows.
     backfillOpencodeTranscriptGap(GAP_SES);
-    expect(
-      readFileSync(getOpencodeTranscriptPath(GAP_SES), "utf-8").trim().split("\n").length
-    ).toBe(4);
-    expect(opencodeTranscriptUuids(GAP_SES).size).toBe(4);
+    expect(entriesFor(BKS)).toHaveLength(4);
   });
 });

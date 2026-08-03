@@ -61,6 +61,22 @@ export function ghBackoffUntil(): number {
   return ghRateLimited() ? state.backoffUntil : 0;
 }
 
+/**
+ * Test seam (bun tests only): open or clear the backoff window WITHOUT
+ * persisting it. Tests that seed a PR-cache snapshot need the gate closed, or
+ * a live `gh` refresh lands mid-test and replaces the snapshot with whatever
+ * GitHub actually returns — which is also a real network call from a unit
+ * test. noteGhRateLimited is the wrong tool for that: it writes the backoff to
+ * disk, and `stateDir` resolves against the HOME captured at module load, so a
+ * test would pause the running server's GitHub polling for an hour. Returns
+ * the previous value so afterAll can restore it.
+ */
+export function __setGhBackoffForTest(untilEpochMs: number): number {
+  const prev = state.backoffUntil;
+  state.backoffUntil = untilEpochMs;
+  return prev;
+}
+
 /** True when a gh CLI / API error message is a rate-limit rejection. */
 export function isGhRateLimitMsg(msg: string): boolean {
   return /rate limit|secondary limit|abuse detection/i.test(msg);
