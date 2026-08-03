@@ -26,7 +26,7 @@
  */
 import { Database } from "bun:sqlite";
 import { execSync } from "child_process";
-import { appendFileSync, existsSync, readdirSync, statSync, unlinkSync } from "fs";
+import { appendFileSync, existsSync, readdirSync, rmdirSync, statSync, unlinkSync } from "fs";
 import { configuredIntegration, personaName } from "../src/server/config";
 
 const HOME = process.env.HOME || "/home/ubuntu";
@@ -34,6 +34,7 @@ const DRY = process.argv.includes("--dry-run");
 const MAIN_DB = `${HOME}/.local/share/opencode/opencode.db`;
 const OPENAI_DATA_ROOT = `${HOME}/.opensession-opencode/openai-data`;
 const SHARD_DIR = `${HOME}/.opensession-chats/opencode/db`;
+const MERIDIAN_SESSION_ROOT = `${HOME}/.opensession-opencode/meridian-sessions`;
 const AUDIT_DIR = `${HOME}/.opensession-audit`;
 const SHARD_RETENTION_DAYS = 14;
 const SIZE_ALERT_BYTES = 2 * 1024 ** 3; // post-GC alert threshold
@@ -157,6 +158,51 @@ function vacuumIfIdle(path: string): "vacuumed" | "skipped-live" | "skipped-dry"
   }
 }
 
+/** Per-(server key x account) Meridian session stores (MERIDIAN_SESSION_ROOT in
+ *  opencode-runner.ts). One directory per server key, so `bks-*` per-session
+ *  servers mint one each and never revisit it — drop the ones whose store has
+ *  not been written in SHARD_RETENTION_DAYS. Losing a cold store costs nothing:
+ *  a conversation that old is not resuming, and if it did, Meridian would
+ *  replay it into a fresh SDK session exactly as it does for an evicted entry. */
+function gcMeridianSessionStores(): number {
+  let removed = 0;
+  const cutoff = Date.now() - SHARD_RETENTION_DAYS * 864e5;
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir)) {
+      const p = `${dir}/${name}`;
+      let st: ReturnType<typeof statSync>;
+      try {
+        st = statSync(p);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) {
+        walk(p);
+        // Prune the key directory once its account subdirs are gone.
+        try {
+          if (readdirSync(p).length === 0 && !DRY) rmdirSync(p);
+        } catch {}
+        continue;
+      }
+      if (name !== "sessions.json" || st.mtimeMs > cutoff) continue;
+      try {
+        if (!DRY) {
+          unlinkSync(p);
+          try {
+            rmdirSync(dir);
+          } catch {}
+        }
+        removed++;
+        log(`  meridian store GC${DRY ? " (dry)" : ""}: ${p.slice(MERIDIAN_SESSION_ROOT.length + 1)} (idle > ${SHARD_RETENTION_DAYS}d)`);
+      } catch {}
+    }
+  };
+  try {
+    walk(MERIDIAN_SESSION_ROOT);
+  } catch {}
+  return removed;
+}
+
 function gcShards(): number {
   let removed = 0;
   const cutoff = Date.now() - SHARD_RETENTION_DAYS * 864e5;
@@ -225,7 +271,12 @@ for (const path of discoverDbs()) {
   if (!DRY && after > SIZE_ALERT_BYTES) oversized.push(`${path} (${(after / 1e9).toFixed(1)}GB, ${vac})`);
 }
 const shardRemoved = gcShards();
-audit({ shard_dbs_removed: shardRemoved, dry_run: DRY || undefined });
+const meridianStoresRemoved = gcMeridianSessionStores();
+audit({
+  shard_dbs_removed: shardRemoved,
+  meridian_session_stores_removed: meridianStoresRemoved,
+  dry_run: DRY || undefined,
+});
 if (oversized.length) {
   await slackWarn(
     `engine DB(s) still over ${(SIZE_ALERT_BYTES / 1e9).toFixed(0)}GB after nightly GC — ` +
