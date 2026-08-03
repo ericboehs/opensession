@@ -51,6 +51,30 @@ export const ORPHANED_STEER_PROMPT =
 	"done or you are genuinely blocked on input only the human can give.";
 
 /**
+ * Auto-retry nudge for turns terminated by an engine-bridge wedge (subagent
+ * stall / liveness guard: a NEW provider request hung with zero output while
+ * established streams kept flowing). The engine state is preserved, so the
+ * session can simply continue — but the reattach-path guard has no retry
+ * machinery and the primary path surfaces the error once its bounded retry is
+ * spent, leaving the session parked on "send again to continue" until a human
+ * does (2026-08-03: repeated wedged @oracle-fable / worker-task turns).
+ * run-session.ts fires ONE continuation per distinct failure text; the prompt
+ * teaches graceful degradation so a second wedge doesn't strand the task.
+ */
+export const WEDGE_RETRY_PROMPT =
+	"[auto-continue] Your previous turn was cut short by an engine stall: a " +
+	"sub-agent/provider request produced no output and was aborted. Your work " +
+	"and conversation state are preserved. Re-attempt the interrupted step now. " +
+	"If a task/oracle consult stalls again or the same failure repeats, proceed " +
+	"without it, note explicitly that you skipped it, and finish the task.";
+
+/** Failure text of a mid-turn engine wedge (stall guards, silent bridge). */
+export function isWedgeFailure(runFailure: string | null | undefined): boolean {
+	if (!runFailure) return false;
+	return /wedged|produced no output|went silent/i.test(runFailure);
+}
+
+/**
  * Fenced context appended to a prompt that was delivered by ABORTING the
  * running turn (busy-send interrupt). The engine has no mid-turn steer (see
  * "why opencode stops": every busy-send is an abort, and the truncated turn

@@ -136,7 +136,9 @@ import {
 	AUTO_CONTINUE_PROMPT,
 	AUTO_CONTINUE_USER,
 	INTERRUPT_STEER_NOTE,
+	isWedgeFailure,
 	ORPHANED_STEER_PROMPT,
+	WEDGE_RETRY_PROMPT,
 } from "./auto-continue";
 import { selectQueueBatch } from "./queue-hold";
 
@@ -156,6 +158,12 @@ const autoContinueNudged: Set<string> = (g.__autoContinueNudged ??= new Set());
 // a redelivery turn that fails on the same tail doesn't loop, while a NEW
 // stranded message is always eligible. Cleared on any clean turn.
 const orphanRedeliveredTails: Map<string, string> = (g.__orphanRedeliveredTails ??=
+	new Map());
+
+// Per-session wedge failure already auto-retried once (see the wedge branch of
+// maybeQueueAutoContinue) — keyed by failure text so the SAME wedge twice in a
+// row parks for the human instead of looping. Cleared on any clean turn.
+const wedgeRetriedFailures: Map<string, string> = (g.__wedgeRetriedFailures ??=
 	new Map());
 
 // Sessions whose current queue head was delivered by aborting the running
@@ -1356,12 +1364,43 @@ export function maybeQueueAutoContinue(opts: {
 				);
 				return true;
 			}
+			// A mid-turn engine wedge is the runner's failure, not the user's or
+			// the model's — the engine state is preserved and a fresh turn
+			// usually just works (the wedge is per-request). Auto-retry ONCE per
+			// distinct failure text: wedge → retry; the same wedge again → park
+			// with the error for the human. A clean turn clears the key.
+			if (isWedgeFailure(runFailure)) {
+				const failKey = `wedge:${(runFailure || "").slice(0, 200)}`;
+				if (wedgeRetriedFailures.get(sessionId) !== failKey) {
+					wedgeRetriedFailures.set(sessionId, failKey);
+					audit({
+						msg: "wedge_auto_retry",
+						bks_session_id: sessionId,
+						error: (runFailure || "").slice(0, 300),
+					});
+					broadcastToSession(sessionId, {
+						type: "notice",
+						message:
+							"Turn was cut short by an engine stall — auto-continuing (state preserved).",
+					});
+					enqueuePrompt(
+						sessionId,
+						{
+							content: wrapContext(WEDGE_RETRY_PROMPT),
+							user: AUTO_CONTINUE_USER,
+						},
+						{ front: true },
+					);
+					return true;
+				}
+			}
 		}
 		return suppressed("ended_with_error");
 	}
 	// A clean turn responded to everything in history — reset the redelivery
-	// once-guard so a future stranded tail is eligible again.
+	// and wedge-retry once-guards so future failures are eligible again.
 	orphanRedeliveredTails.delete(sessionId);
+	wedgeRetriedFailures.delete(sessionId);
 	if (runFailure) return suppressed("run_failure");
 	if (session.source !== "backstage") return suppressed(`source_${session.source}`);
 	if (session.automation) return suppressed("automation_session");
