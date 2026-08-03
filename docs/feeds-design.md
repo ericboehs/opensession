@@ -1,5 +1,7 @@
 # Feeds: external objects as first-class workspace sources
 
+> Design history — describes the state when written.
+
 Status: Phase 0 core LANDED 2026-07-28 (595d7eb6 backend contract + Tella
 provider, 5cbcd284 sidebar bands + Video tab; verified live). Remaining
 Phase-0 follow-ups: Tella MCP mount for tella-ref sessions (server is OAuth
@@ -60,7 +62,7 @@ extracting.
   priority lanes + row actions; kill the hardcoded `renderPlainProject`
   splice; conversation panel becomes a registered panel kind bound to
   `{kind:"plain"}` refs; compat: keep reading+writing `plainThreadId`.
-  ALSO (Michiel 2026-07-28): make the Phase-0 "video" view-tab fully generic —
+  ALSO (decided 2026-07-28): make the Phase-0 "video" view-tab fully generic —
   a web-panel tab driven by a panel registry (seed: `refWebPanel` in
   FeedWebPane.tsx), not a hardcoded `"video"` ActiveViewTab value/label. Keep
   the 13 `/api/plain/*` mutation routes as-is (strangler). If Plain fits
@@ -106,7 +108,7 @@ page over the embed — note Safari/3p-cookie caveat in the PR); scoped
 sessions run on per-session opencode servers (allowlist ⇒ not
 shared-pool-eligible) — acceptable, same as automations.
 
-## Full build-out (Michiel's standing goal, 2026-07-28)
+## Full build-out (standing goal, 2026-07-28)
 
 "Make it easy to connect any MCP (sign in per user too), and easy to create
 projects like plain/tella and link MCPs to them; custom code per project via
@@ -124,7 +126,7 @@ plugins." Workstreams:
   grant (workspace fallback) — per-viewer feeds, per-user 60s cache. The
   REST client + TELLA_API_KEY are retired. Proof session (bks-019fac65…):
   exactly one external server visible, get_video + list_videos called
-  successfully on Michiel's grant.
+  successfully on the requesting user's grant.
 - **W2b — fresh-auth MCP relay (LANDED c79a70ba)**: AuthKit access tokens
   live ~5 min; static header injection 401'd mid-turn (bks-019fac84 — the
   agent hand-rolled an MCP client and read the token store in response).
@@ -140,7 +142,7 @@ plugins." Workstreams:
   no user ⇒ shared grant only, fail-closed like allowedUsers. Caveat: token
   rotation changes the per-run config hash ⇒ shared-server drain-respawn,
   same as GitHub user tokens.
-- **Sharing/identity decisions (Michiel 2026-07-29, landed 869c0c36)**:
+- **Sharing/identity decisions (decided 2026-07-29, landed 869c0c36)**:
   sessions have no per-session auth (whole team can open/prompt). MCP grant
   identity per run: session CREATOR first → prompter's own grant → workspace
   grant, so a shared session reads the same objects for everyone

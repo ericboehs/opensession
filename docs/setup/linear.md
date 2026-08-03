@@ -14,7 +14,9 @@ implementation completes.
 | `LINEAR_WEBHOOK_SECRET` | webhooks | HMAC verification is **fail-closed**: unset/empty secret means every webhook is rejected with 401, not accepted |
 | `LINEAR_API_KEY` | optional | NOT used by the Linear agent itself — it's the Plain agent's fallback auth for creating/searching Linear issues when the OAuth token store is empty (`src/agents/plain/api.ts`) |
 
-Disable the agent entirely with `ENABLE_LINEAR_AGENT=false` (default ON — see
+The agent is off unless enabled: `integrations.linear.enabled: true` in
+`~/.opensession/config.json`, or the `ENABLE_LINEAR_AGENT` env flag (which
+wins when set — see
 [integrations-misc.md](integrations-misc.md#boot-guards)).
 
 ## OAuth app setup
@@ -63,5 +65,6 @@ Everything else is acked and ignored. There are no hardcoded team or bot user
 IDs — team ids are fetched per issue. Session state is persisted to disk so
 in-flight Linear sessions survive restarts.
 
-Worktrees are cut at `<paths.worktreesDir>/<repo>-<branch>` against whichever
-repo the session resolves to, so nothing here is repo-specific.
+Worktrees are cut at `<paths.worktreesDir>/<wtPrefix>-<branch>` against the
+instance's default repo (`src/agents/linear/session.ts` uses
+`defaultRepo()`), so nothing here is hardcoded to a particular repository.

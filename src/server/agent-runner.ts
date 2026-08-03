@@ -677,7 +677,7 @@ export function resumeInterruptedRuns(
       journalClear(run.runKey);
       continue;
     }
-    // Sandboxed runs (docs/sandboxes-plan.md Phases 1+3): the sandbox — and
+    // Sandboxed runs (the sandbox rollout plan Phases 1+3): the sandbox — and
     // often the in-sandbox run host itself — outlives a backstage restart.
     // Reattach/relaunch through the provider instead of running in-process;
     // the sandbox modules are imported lazily so these paths stay completely

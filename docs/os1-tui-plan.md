@@ -1,5 +1,7 @@
 # os1-tui — a herdr-style TUI client for OpenSession
 
+> Design history — describes the state when written.
+
 Status: **built** (2026-07-30) — see `os1-tui/README.md` for the shipped
 surface and `os1-tui/AGENTS.md` for the build loop. Phases 0–3 and 5 landed in
 one pass; phase 4 (diff pane, PR panel, terminal pane) is still open, and splits
@@ -8,7 +10,7 @@ were dropped deliberately — tabs only, per review.
 ## What it is
 
 A terminal client for an OpenSession server. It is *only* a client: it opens
-HTTP + one WebSocket to a server (`os --host os.tella.dev`), lists that user's
+HTTP + one WebSocket to a server (`os --host os.example.dev`), lists that user's
 sessions, streams their transcripts, and sends prompts. It never spawns agents,
 never touches a worktree locally, never imports `src/server/*`.
 
@@ -109,12 +111,12 @@ with no token at all. `os login` / `os logout` / `os whoami` cover the rest.
 │   ├ ⣾ tui plan    │  ▸ edit  os1-tui/src/client/socket.ts             │
 │   ├ ✓ sidebar fix │                                                   │
 │   └ ? auth gate   │  Wired the reconnect backoff. Two things left:    │
-│ ● tella-fusion 1  │  …                                                │
+│ ● frontend-app 1  │  …                                                │
 │   └ ⣾ upload race │                                                   │
 │   feeds        0  ├───────────────────────────────────────────────────┤
 │                   │ > _                                               │
 ├───────────────────┴───────────────────────────────────────────────────┤
-│ os.tella.dev  michiel  opus-5  ⣾1 ?1  ^b ? help                       │
+│ os.example.dev  alice  opus-5  ⣾1 ?1  ^b ? help                       │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 

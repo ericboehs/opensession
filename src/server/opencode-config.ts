@@ -1,8 +1,8 @@
 /**
  * Config for the OpenCode engine's Anthropic subscription bridge
- * (docs/sandboxes-plan.md, Workstream E item 4).
+ * (the sandbox rollout plan, Workstream E item 4).
  *
- * File: ~/.backstage-opencode.json — missing or `enabled: false` means NO
+ * File: ~/.opensession-opencode.json (legacy ~/.backstage-opencode.json still read) — missing or `enabled: false` means NO
  * bridge of any kind ever starts and `opencode/anthropic/*` models fail with a
  * clear error. The opencode engine itself needs no config: it activates only
  * for models explicitly prefixed `opencode/` (nothing defaults to it).

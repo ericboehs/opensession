@@ -239,7 +239,7 @@ export interface UnifiedSession {
   linearIssue?: { identifier: string; title: string; url?: string };
   slackThread?: { channel: string; threadTs: string };
   mcpServers?: string[]; // External MCP servers loaded for this session
-  /** Sandbox opt-in (docs/sandboxes-plan.md): mirrors the session file's field.
+  /** Sandbox opt-in (see docs/self-hosting-sandboxes.md): mirrors the session file's field.
    *  Runs route through the named provider when config + kill-switch allow;
    *  `sandboxId` is set once a provider materializes the sandbox (Phase 1+).
    *  `workspace` records how the workspace was materialized: "volume" means it
@@ -473,7 +473,7 @@ export interface BackstageSessionFile {
   /** Slack threads this session posted to (see UnifiedSession.slackThreads). */
   slackThreads?: Array<{ channel: string; threadTs: string }>;
   mcpServers?: string[]; // External MCP servers to load for this session; empty = none (minimal context)
-  /** Sandbox opt-in (docs/sandboxes-plan.md): recorded at create time when the
+  /** Sandbox opt-in (see docs/self-hosting-sandboxes.md): recorded at create time when the
    *  creator asked for a sandbox. `provider` is the effective provider id at
    *  creation ("local" until a real provider is configured); `sandboxId` is
    *  set once a provider materializes a sandbox for the session (Phase 1+);

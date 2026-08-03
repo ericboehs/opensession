@@ -1,5 +1,5 @@
 /**
- * Sandbox provider registry (Phase 0 of docs/sandboxes-plan.md).
+ * Sandbox provider registry (Phase 0 of the sandbox rollout plan).
  *
  * `getSandboxProvider()` resolves the provider for a run: an explicit spec
  * wins, otherwise the config file (~/.opensession-sandbox.json) decides, and the

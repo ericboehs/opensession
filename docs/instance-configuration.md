@@ -11,17 +11,25 @@ point.
 - `repos` is authoritative when present. Repository behavior such as dependency
   installation, preview startup, warm-cache markers, AWS profile names,
   deployment tracking, and security-scan guidance lives on each repo entry.
+  A repo entry can also carry an `icon` — a PNG served as the repo's tile icon
+  (absolute path, or relative to the checkout); unset falls back to the GitHub
+  org avatar (`src/server/routes/static-assets.ts`).
 - `identity.team` owns commit attribution, GitHub/Slack/Linear mappings,
   per-user connector access, and the team web-sign-in allowlist. There is no
   built-in company roster. `identity.defaultTimezone` controls the fallback
   used for team-local scheduling and defaults to `UTC`.
 - `branding` and `persona` are injected into the frontend and prompt builders.
   The frontend bootstrap also receives the public base URL, default repo id,
-  and configured GitHub bot logins.
+  configured GitHub bot logins, and the Plain workspace id.
 - Integrations are off unless `integrations.<name>.enabled` is true (or an
   explicit enable/disable environment variable is set). Integration-specific
   values such as OAuth callbacks, GitHub/Plain mention handles, Slack
-  workspace metadata, and Linear team keys live in the same section.
+  workspace metadata, and Linear team keys live in the same section. Plain
+  additionally takes `integrations.plain.workspaceId` (your `w_…` workspace
+  id, used for deep links into app.plain.com; unset hides the UI's "open in
+  Plain" affordances) and `integrations.plain.apiUrl` (the GraphQL endpoint
+  for direct API calls, defaulting to Plain's hosted
+  `https://core-api.uk.plain.com/graphql/v1`).
 - Company routines are data. `integrations.seeds.actions` and
   `integrations.seeds.automations` create records only when
   `integrations.seeds.enabled` is true. Existing persisted records are never

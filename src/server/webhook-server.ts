@@ -5,8 +5,11 @@
  * Agents register their routes via the AgentModule interface.
  */
 import type { AgentModule } from "../agents/types";
+import { configuredServer } from "./config";
 
-const WEBHOOK_PORT = parseInt(process.env.WEBHOOK_PORT || "3848");
+// Env WEBHOOK_PORT wins, then config server.webhookPort, then 3848 —
+// configuredServer() already resolves that precedence.
+const WEBHOOK_PORT = configuredServer().webhookPort;
 const WEBHOOK_HOST = "127.0.0.1";
 
 /** Combined route table: "POST /slack/events" → handler */

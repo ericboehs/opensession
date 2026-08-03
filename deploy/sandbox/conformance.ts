@@ -1,5 +1,5 @@
 /**
- * Sandbox provider CONFORMANCE suite (docs/sandboxes-plan.md §5 Phase 3.3) —
+ * Sandbox provider CONFORMANCE suite (the sandbox rollout plan, Phase 3.3) —
  * the verify.ts checks parameterized over providers. Run MANUALLY:
  *
  *   bun run deploy/sandbox/conformance.ts [docker-socket] [docker-ws] [daytona] [e2b] [box] [modal] [lambda-microvm]
@@ -14,7 +14,7 @@
  * - docker-socket / docker-ws ALWAYS run (docker is the self-host default —
  *   this host must keep them fully green).
  * - daytona / e2b run ONLY when credentials are configured — the suite lifts
- *   them from the LIVE ~/.backstage-sandbox.json provider blocks (or
+ *   them from the LIVE ~/.opensession-sandbox.json provider blocks (or
  *   DAYTONA_API_KEY / E2B_API_KEY). Without credentials the section prints
  *   `SKIPPED: no credentials` and does NOT fake success; a key-holder gets
  *   the full matrix. Remote entries create at most ONE smallest-size sandbox
@@ -28,7 +28,7 @@
  * Everything is sbxtest-prefixed; the run journal, sandbox config, chat-store
  * dir AND repo-registry config are redirected to a scratch dir BEFORE any
  * src/server import, so nothing here touches the live server's config,
- * active-runs.json, or ~/.backstage-chats (state files, sandbox-runs, and the
+ * active-runs.json, or ~/.opensession-chats (state files, sandbox-runs, and the
  * disable-* kill switches all resolve under the scratch dir). API keys are
  * read from the live config file but only ever written into the scratch
  * config — never logged.
@@ -192,7 +192,7 @@ await Bun.write(
 // — the permanent setup — the publicIngress Caddy path routes (docs/
 // self-hosting-sandboxes.md), which forward ONLY /backstage/run-ws/*,
 // /backstage/rpc-ws and /ingress-health; the remote probe uses the last one.
-//   SBX_CONF_LISTEN_PORT=3860 SBX_CONF_PUBLIC_BASE=wss://michael.tella.dev \
+//   SBX_CONF_LISTEN_PORT=3860 SBX_CONF_PUBLIC_BASE=wss://sessions.example.com \
 //     bun run deploy/sandbox/conformance.ts daytona
 const LISTEN_PORT = parseInt(process.env.SBX_CONF_LISTEN_PORT || "0", 10) || 0;
 const PUBLIC_BASE = (process.env.SBX_CONF_PUBLIC_BASE || "").replace(/\/+$/, "");
@@ -290,7 +290,7 @@ const entries: Entry[] = [
   {
     name: "daytona",
     providerId: "daytona",
-    skip: daytonaKey ? null : "SKIPPED: no credentials (set daytona.apiKey in ~/.backstage-sandbox.json or DAYTONA_API_KEY)",
+    skip: daytonaKey ? null : "SKIPPED: no credentials (set daytona.apiKey in ~/.opensession-sandbox.json or DAYTONA_API_KEY)",
     config: {
       provider: "daytona",
       callbackBaseUrl: remoteBase,
@@ -310,7 +310,7 @@ const entries: Entry[] = [
   {
     name: "e2b",
     providerId: "e2b",
-    skip: e2bKey ? null : "SKIPPED: no credentials (set e2b.apiKey in ~/.backstage-sandbox.json or E2B_API_KEY)",
+    skip: e2bKey ? null : "SKIPPED: no credentials (set e2b.apiKey in ~/.opensession-sandbox.json or E2B_API_KEY)",
     config: {
       provider: "e2b",
       callbackBaseUrl: remoteBase,
@@ -326,7 +326,7 @@ const entries: Entry[] = [
   {
     name: "box",
     providerId: "box",
-    skip: boxKey ? null : "SKIPPED: no credentials (set box.apiKey in ~/.backstage-sandbox.json or BOX_API_KEY)",
+    skip: boxKey ? null : "SKIPPED: no credentials (set box.apiKey in ~/.opensession-sandbox.json or BOX_API_KEY)",
     config: {
       provider: "box",
       callbackBaseUrl: remoteBase,

@@ -166,7 +166,7 @@ Two rules keep this honest:
 ## Tests
 
 ```bash
-bun test          # 49 tests, no server and no terminal required
+bun test          # no server and no terminal required
 bun run typecheck
 ```
 

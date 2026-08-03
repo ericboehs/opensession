@@ -5,9 +5,9 @@ the OpenCode engine — a per-session `opencode serve` process driven over
 HTTP+SSE by `src/server/opencode-runner.ts` (one-shots go through
 `src/server/opencode-oneshot.ts` on a shared tool-less server). Model ids
 look like `opencode/<provider>/<model>`; bare native ids (`claude-sonnet-5`,
-`gpt-5.5`) are mapped onto that form at dispatch (`toOpencodeModel`).
+`gpt-5.6-sol`) are mapped onto that form at dispatch (`toOpencodeModel`).
 After changing engine/runner code, restart with `systemctl restart opensession`
-([install.md](install.md#8-frontend-rebuilds-vs-restart)).
+([install.md](install.md#10-frontend-rebuilds-vs-restart)).
 
 Binary resolution: `OPENSESSION_OPENCODE_BIN` → `Bun.which("opencode")` → an
 nvm fallback path.
@@ -41,15 +41,16 @@ schema from `src/server/opencode-config.ts`:
 
 `opencode/anthropic/*` models get Claude subscription capacity through
 **Meridian** — the bundled opencode-with-claude / `@rynfar/meridian` stack
-(pinned in package.json), injected as an OpenCode plugin. This is the mode we
-use: flat Max-subscription quota, verified live. `accounts` optionally
-restricts which Claude accounts serve it. Per-account `CLAUDE_CONFIG_DIR`
-isolation pins the selected account.
+(pinned in package.json), injected as an OpenCode plugin. This is the default
+mode when the bridge is enabled: flat Max-subscription quota. `accounts`
+optionally restricts which Claude accounts serve it. Per-account
+`CLAUDE_CONFIG_DIR` isolation pins the selected account.
 
 Other `bridge.mode` values exist as non-default escape hatches: `"native"`
 (the in-repo `src/server/anthropic-bridge.ts`, a loopback-only
 Anthropic-Messages endpoint on the official Claude Agent SDK — designated
-accounts only, bills to extra-usage credits; the only remaining consumer of
+accounts only, bills to extra-usage credits; alongside the flag-gated
+experimental claude-direct engine adapter it is the last consumer of
 `@anthropic-ai/claude-agent-sdk`) and `"off"`.
 
 ### Claude accounts
@@ -63,13 +64,13 @@ accounts only, bills to extra-usage credits; the only remaining consumer of
   "accounts": [
     {
       "id": "acc-…",
-      "name": "michiel-max",
+      "name": "alice-max",
       "token": "sk-ant-…",
       "email": "optional",
       "plan": "optional",
       "createdAt": "ISO date",
-      "owner": "Michiel",
-      "credentialsPath": "/home/ubuntu/.claude/accounts/michiel/credentials.json"
+      "owner": "Alice",
+      "credentialsPath": "/home/user/.claude/accounts/alice/credentials.json"
     }
   ]
 }
@@ -104,7 +105,7 @@ the host `codex login` can never be invalidated):
 {
   "accounts": [
     { "id": "…", "name": "key-1", "kind": "api_key", "value": "sk-…", "createdAt": "…" },
-    { "id": "…", "name": "plan-1", "kind": "home", "value": "/home/ubuntu/.codex-homes/plan-1", "createdAt": "…" }
+    { "id": "…", "name": "plan-1", "kind": "home", "value": "/home/user/.codex-homes/plan-1", "createdAt": "…" }
   ]
 }
 ```
@@ -123,26 +124,28 @@ on rate limits.
 - **Fallback auto-switch**: `~/.opensession-model-fallback.json`
   (`{ "auto": boolean }`, default true) — whether interactive sessions
   auto-fall-back when their model's pool is exhausted. The built-in fallback
-  order: claude-opus-4-8 → claude-fable-5 → claude-sonnet-5 → gpt-5.5 →
-  gpt-5.4 → claude-sonnet-4-6 → claude-haiku-4-5 → gpt-5.4-mini →
-  gpt-5.3-codex-spark (a session's configured `preferredFallbackModel` is
-  tried first). Every fallback is mapped onto opencode too.
+  order: gpt-5.6-sol → gpt-5.6-terra → gpt-5.6-luna → claude-opus-5 →
+  claude-sonnet-5 → claude-sonnet-4-6 → claude-haiku-4-5 (a session's
+  configured `preferredFallbackModel` is tried first). Every fallback is
+  mapped onto opencode too.
 - **Cheap-task models**: several features run small classifier prompts on
   haiku by default via `opencodeOneShot`, each overridable by env where it's
-  read: `SUGGEST_BRANCH_MODEL`, `NOTE_EDIT_MODEL`, `MONITOR_ANSWER_MODEL`,
-  `SCHEDULE_WHEN_MODEL`, `DRAFT_AUTOMATION_MODEL`,
-  `SLACK_MENTION_INTENT_MODEL`, `PLAIN_SPAM_CHECK_MODEL`,
-  `PLAIN_REFUND_INTENT_MODEL`, `PLAIN_TOPISSUES_QUOTE_MODEL` (all default
+  read: `SUGGEST_BRANCH_MODEL`, `NOTE_EDIT_MODEL`, `SCHEDULE_WHEN_MODEL`,
+  `DRAFT_AUTOMATION_MODEL`, `SLACK_MENTION_INTENT_MODEL`,
+  `PLAIN_SPAM_CHECK_MODEL`, `PLAIN_REFUND_INTENT_MODEL` (all default
   `claude-haiku-4-5`; native ids map onto opencode at dispatch), plus
   `OPENSESSION_ONESHOT_MODEL` as the one-shot default.
 
 ## Run gate + least privilege
 
 The engine is deny-by-default on run kind (`opencodeGateReason`):
-interactive kinds (`prompt`, `goal`, `create`, `linear`, `slack`) and
-unattended kinds (`automation`, `plain`, `action`, `security-scan`,
-`github-*`) are allowed; anything else — including runs with no journal
-kind — is refused. Unattended runs get the least-privilege treatment:
-denied/confirm tools are STRIPPED from the model's tool list via OpenCode's
-`tools` config (`opencodeRunPolicy`); interactive runs drop
-confirm-listed MCP servers entirely (no per-call approval bridge exists).
+interactive kinds (`prompt`, `goal`, `create`, `linear`, `slack`,
+`workflow`) and unattended kinds (`automation`, `plain`, `action`,
+`security-scan`, `github-*`) are allowed; anything else — including runs
+with no journal kind — is refused. Denied and confirm-listed tools are
+STRIPPED from the model's tool list via OpenCode's `tools` config
+(`opencodeRunPolicy`) — there is no per-call approval card on this engine,
+so a confirm tool is never callable; the run's guidance differs by type
+(unattended runs are told to post the proposed action in their internal
+note, interactive runs to ask the human in the session). The rest of the
+MCP server stays mounted, so reads keep working.

@@ -6,7 +6,7 @@
 // burst of keystrokes doesn't re-shell `git ls-files` on every character —
 // only the in-memory filter runs.
 //
-// Sandbox-aware (docs/sandboxes-plan.md Phase 2): callers may pass a
+// Sandbox-aware (the sandbox rollout plan Phase 2): callers may pass a
 // WorkspaceExec (workspaceExecFor) so `git ls-files` runs inside the
 // session's sandbox — required for volume-mode workspaces, which have no
 // host copy of the worktree. Omitted = the host path, unchanged.

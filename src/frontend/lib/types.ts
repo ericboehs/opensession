@@ -395,7 +395,7 @@ export interface UnifiedSession {
 	modelHistory?: Array<{ model: string; from?: string; at: string; by?: string }>;
 	/** Cumulative token/cost accounting for this session's runs. */
 	usage?: SessionUsage;
-	/** Sandbox opt-in (docs/sandboxes-plan.md): the session's runs execute in an
+	/** Sandbox opt-in (the sandbox rollout plan): the session's runs execute in an
 	 *  isolated container via the named provider. `sandboxId` is set once the
 	 *  provider materialized it; `workspace: "volume"` means the workspace lives
 	 *  ONLY inside the sandbox (no host worktree). Mirrors the session file. */

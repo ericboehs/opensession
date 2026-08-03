@@ -114,9 +114,9 @@ your own.
 ## 4. Secrets: `~/.opensession.env`
 
 Bun auto-loads a `.env` in the working directory for manual runs; the
-systemd unit (`opensession.service`) instead loads
-`EnvironmentFile=/home/ubuntu/.opensession.env`. Use that as your single
-secrets file.
+systemd unit (`opensession.service`) instead loads `~/.opensession.env` via
+`EnvironmentFile=` (the path is rendered for your box by
+`opensession service install`). Use that as your single secrets file.
 
 Everything is optional in the sense that the server boots without it — but
 integrations degrade (or must be disabled) without their vars. Inventory of
@@ -127,26 +127,26 @@ what the code actually reads, by feature:
 | Var | Default | Purpose |
 | --- | --- | --- |
 | `HOST` | `127.0.0.1` | bind address for the main server. Bind to a Tailscale IP to share it with your team — there is no auth layer (see the [trust model](README.md#trust-model-read-this)) |
-| `PORT` | `3850` | main server (UI + API at `/opensession/`) |
+| `PORT` | `3850` | main server (UI + API at the server root) |
 | `WEBHOOK_PORT` | `3848` | second HTTP server for inbound webhooks |
 | `OPENSESSION_UI_BASE` | `http://127.0.0.1:<port>` | public base URL used in links posted to Slack/Linear/notes |
 | `OPENSESSION_CONFIG` | `~/.opensession/config.json` | config-file path override |
 | `SHUTDOWN_DRAIN_MS` | `60000` | graceful-shutdown drain window for in-flight runs |
 | `OPENSESSION_CHATS_DIR` | `~/.opensession-chats` | session store override (mostly a test seam) |
-| `OPENSESSION_WORKTREES_DIR` | `/home/ubuntu/worktrees` | where session worktrees are created |
+| `OPENSESSION_WORKTREES_DIR` | `~/.opensession/worktrees` | where session worktrees are created |
 | `OPENSESSION_DEV` | unset | `1` = dev frontend build only; does NOT disable agent loops (a second naive instance double-sends) |
 
 **Engines and models** (details: [engines.md](engines.md))
 
 | Var | Default | Purpose |
 | --- | --- | --- |
-| `OPENSESSION_CLAUDE_BIN` | `/home/ubuntu/.local/bin/claude` | claude CLI the Agent SDK spawns |
+| `OPENSESSION_CLAUDE_BIN` | `claude` found on `PATH` | Claude Code CLI the Meridian bridge spawns for Anthropic models |
 | `OPENSESSION_CLAUDE_ACCOUNTS_PATH` | `~/.opensession-claude-accounts.json` | Claude account store override |
 | `OPENSESSION_OPENCODE_BIN` / `OPENSESSION_OPENCODE_CONFIG` | see engines.md | OpenCode binary / config path |
 | `OPENSESSION_MODEL` | `claude-fable-5` | default model (below the UI override file) |
 | `OPENSESSION_FALLBACK_MODEL` | unset | global fallback model; `none` disables |
 | `OPENSESSION_MCP_CONFIG` | `<checkout>/mcp-config.json` | MCP config path override |
-| `SUGGEST_BRANCH_MODEL`, `NOTE_EDIT_MODEL`, `MONITOR_ANSWER_MODEL`, `DRAFT_AUTOMATION_MODEL` | `claude-haiku-4-5` | per-feature cheap-task models |
+| `SUGGEST_BRANCH_MODEL`, `NOTE_EDIT_MODEL`, `DRAFT_AUTOMATION_MODEL` | `claude-haiku-4-5` | per-feature cheap-task models |
 
 **Linux systemd resource controls** — detached engines default to
 `MemoryHigh=6G`, `MemoryMax=12G`, `MemorySwapMax=1G`, and `TasksMax=1024`;
@@ -164,13 +164,13 @@ agent-started compilers, MCP proxies, and dev servers—not only `opencode`.
 | Slack | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `ALLOWED_SLACK_USER_ID`, `WORKTREE_HOOK_SECRET`, `SLACK_MENTION_INTENT_MODEL`, `SCHEDULE_WHEN_MODEL` | [slack.md](slack.md) |
 | GitHub | `GITHUB_API_TOKEN`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_BOT_LOGIN`, `GITHUB_MENTION_HANDLES` | [github.md](github.md) |
 | Linear | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET`, `LINEAR_API_KEY` | [linear.md](linear.md) |
-| Plain | `PLAIN_API_KEY`, `PLAIN_WEBHOOK_SECRET`, `PLAIN_API_URL`, `PLAIN_*_MODEL` ×3 | [plain.md](plain.md) |
+| Plain | `PLAIN_API_KEY`, `PLAIN_WEBHOOK_SECRET`, `PLAIN_*_MODEL` ×2 | [plain.md](plain.md) |
 | Stripe | `STRIPE_WEBHOOK_SECRET` | [integrations-misc.md](integrations-misc.md#stripe) |
-| Grafana | `GRAFANA_URL`, `GRAFANA_SERVICE_ACCOUNT_TOKEN`, `LOKI_DATASOURCE_UID`, `SLACK_EXPORT_FAILURE_CHANNEL`, `SLACK_UPLOAD_FAILURE_CHANNEL` | [integrations-misc.md](integrations-misc.md#grafana-poller) |
+| Grafana | `GRAFANA_URL`, `GRAFANA_SERVICE_ACCOUNT_TOKEN`, `LOKI_DATASOURCE_UID` | [integrations-misc.md](integrations-misc.md#grafana-poller) |
 | Voice | `OPENAI_API_KEY`, `GROQ_API_KEY`, `WHISPER_CLI`, `WHISPER_MODEL` | [integrations-misc.md](integrations-misc.md#voice--transcription) |
 | Sandboxes | `E2B_API_KEY`, `DAYTONA_API_KEY`, `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`, `OPENSESSION_SANDBOX_CONFIG` | [self-hosting-sandboxes](../self-hosting-sandboxes.md) |
 | AWS runs | `AGENT_AWS_REGION` | [integrations-misc.md](integrations-misc.md#aws-creds-for-runs-agent_aws_region) |
-| Previews | `PREVIEW_HOST`, `TELLA_LOCAL_ENSURE_UP` | Caddy-fronted live previews (`src/server/preview.ts`) |
+| Previews | `PREVIEW_HOST` | Caddy-fronted live previews (`src/server/preview.ts`) |
 
 **Feature flags** — `ENABLE_SLACK_AGENT`, `ENABLE_LINEAR_AGENT`,
 `ENABLE_PLAIN_AGENT`, `ENABLE_GITHUB_AGENT`, `ENABLE_STRIPE_AGENT`,
@@ -180,9 +180,8 @@ enables (not `1`). The env flag wins when set, otherwise
 [integrations-misc.md](integrations-misc.md#boot-guards).
 
 Not for operators: `BKS_RPC_*` / `BKS_RUN_WS_*` / `BKS_MCP_SERVER` (set by
-OpenSession for its own runner-host/MCP-proxy subprocesses),
-`OPENSESSION_FORCE_LIMIT` and `OPENSESSION_RUN_JOURNAL` (dev/test seams),
-`OPENSESSION_BG_HOLD_MAX_MS` (tuning).
+OpenSession for its own runner-host/MCP-proxy subprocesses), and
+`OPENSESSION_FORCE_LIMIT` / `OPENSESSION_RUN_JOURNAL` (dev/test seams).
 
 Note: agent subprocesses do **not** inherit this env file — runs get a
 minimal env (PATH, HOME, LANG, OPENSESSION_MODEL) by design, and MCP servers
@@ -243,7 +242,7 @@ elsewhere). Per server: `{ "type": "http", "url": … }` or
 own `env` block or URL, never the process env. Two OpenSession-specific
 fields:
 
-- `allowedUsers: ["Grant", "michiel@tella.to"]` — optional per-user gate;
+- `allowedUsers: ["Alice", "alice@example.com"]` — optional per-user gate;
   only runs whose user matches (through the identity table) see the server.
   Automation runs have no user, so restricted servers are invisible to them
   (fail-closed). Stripped before the config reaches the SDK.
@@ -292,7 +291,8 @@ automatically).
 Unit choices worth knowing (comments in the file itself):
 
 - `ExecStart=bun run opensession.ts` — stable production runtime, see below.
-- `EnvironmentFile=/home/ubuntu/.opensession.env` — your secrets file.
+- `EnvironmentFile=<your home>/.opensession.env` — your secrets file (the
+  path is stamped in by `opensession service install`).
 - `TimeoutStopSec=80` — must stay above `SHUTDOWN_DRAIN_MS` (60s) plus
   buffer, or systemd SIGKILLs mid-drain.
 - `KillMode=mixed` — SIGTERM hits only the bun parent so it can drain

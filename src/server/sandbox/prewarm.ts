@@ -1,7 +1,7 @@
 /**
  * Warm-on-typing sandbox PREWARM pool for sandbox providers (Daytona and the
  * local Firecracker MicroVM today) — the background-agents pattern from
- * docs/sandboxes-plan.md's backlog: "sandbox provisioning starts when the
+ * the sandbox rollout plan's backlog: "sandbox provisioning starts when the
  * user begins typing".
  *
  * Preparation is provider-specific. Daytona warms its sandbox runner; the

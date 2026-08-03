@@ -15,11 +15,14 @@ This is also where your disk goes, so it is worth understanding.
 ~/worktrees/myapp-ask-checkout   shared, read-only, for ask-mode sessions
 ```
 
-`worktreesDir` in `~/.opensession/config.json` decides where they live
-(`OPENSESSION_WORKTREES_DIR` overrides it). One directory per session branch.
+`paths.worktreesDir` in `~/.opensession/config.json` decides where they live
+(`OPENSESSION_WORKTREES_DIR` overrides it; the default is
+`~/.opensession/worktrees`). One directory per session branch.
 
-Creating a worktree runs the repo's `depsInstall` command if you configured one,
-so a session starts with dependencies already installed rather than spending its
+Creating a worktree installs dependencies — a repo-owned
+`.opensession/setup.sh` or your configured `worktreeSetup`/`depsInstall`
+command when present, plain `bun install` when there is a `package.json` — so a
+session starts with dependencies already installed rather than spending its
 first two minutes on `bun install`.
 
 ## Modes
@@ -59,8 +62,8 @@ If you do not need sessions to edit the running server, do not use this mode.
 
 A background sweep (`src/server/disk-gc.ts`) runs hourly:
 
-- **Cold caches** — dependency caches and build output in worktrees untouched for
-  more than 7 days are reclaimed unconditionally.
+- **Cold caches** — Rust `target/` build caches in worktrees untouched for more
+  than 7 days are reclaimed unconditionally.
 - **Disk pressure** — above 80% usage it reclaims the stalest caches until back
   under 70%, oldest first, and never touches a cache built in the last few hours.
 
@@ -70,20 +73,23 @@ deleter safe to run at all:
 - It reads `/proc` to check whether anything is using a path, and **skips the
   entire sweep** if it cannot — it would rather reclaim nothing than delete a
   directory out from under a live build.
-- It only ever removes *regenerable* things: caches, `node_modules`, build
-  output. It does not delete worktrees, branches or commits.
+- It only ever removes *regenerable* things — today that means Rust `target/`
+  build caches. It does not delete worktrees, branches or commits, and it
+  deliberately leaves `node_modules` alone (hardlinked into a shared store, so
+  deleting a worktree's copy frees almost nothing).
 
 Disable with `OPENSESSION_DISK_GC=0`.
 
-Merged branches are swept separately when their session is archived, and a
-removed worktree can be revived — the branch still exists, so reopening the
-session re-creates the directory.
+Worktrees of archived sessions are swept separately after two weeks idle —
+never with uncommitted changes or unpushed commits — and a removed worktree can
+be revived: the branch still exists, so reopening the session re-creates the
+directory.
 
 ## What does not clean up
 
 **Worktrees for sessions you never archived.** They are cheap individually and
 expensive in aggregate. `opensession doctor` will not nag you about this; check
-`~/worktrees` occasionally.
+your worktrees directory occasionally.
 
 **The repository's own history.** If a clone is large, every worktree shares it
 — that part is fine. What is not shared is anything the build produces.

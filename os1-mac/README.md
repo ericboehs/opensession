@@ -7,8 +7,8 @@ shell so its same-origin API and WebSocket requests stay local. The app only
 owns the window, navigation policy, local process lifecycle, notifications,
 dock badge and deep links.
 
-The shell lives in `os1-mac/` inside the Backstage repository so native window
-changes and their frontend counterparts can ship together.
+The shell lives in `os1-mac/` inside the OpenSession repository so native
+window changes and their frontend counterparts can ship together.
 
 ## Development
 
@@ -46,7 +46,7 @@ directory:
 ```json
 {
   "localMode": true,
-  "serverDir": "/Users/ada/code/backstage"
+  "serverDir": "/Users/ada/code/opensession"
 }
 ```
 
@@ -61,14 +61,14 @@ output is appended to `local-server.log` in the same user-data directory.
 
 The local server supplies backend code only. It never builds or serves its
 frontend; shell documents and assets are proxied from the configured cloud
-upstream (default `https://os.tella.dev`) while the browser origin remains the
-loopback server. The sidecar is frozen at the shell's release (auto-update
+upstream (the distribution's `opensession.defaultServer`, or `OS1_CLOUD_URL`)
+while the browser origin remains the loopback server. The sidecar is frozen at the shell's release (auto-update
 keeps it current); a source checkout tracks whatever you pull.
 
 ### Iterating on the frontend before it ships
 
 The shell renders whatever the server serves. To test unmerged OpenSession
-frontend changes against **live production data**, run this from the Backstage
+frontend changes against **live production data**, run this from the
 repository root:
 
 ```sh
@@ -106,7 +106,8 @@ empty local state, optionally rsync'd from prod.
   quit.
 - `src/preload.js` — exposes `window.os1` (`desktop`, `setBadge`, `clearBadge`)
   for the frontend to feature-detect and mirror its app badge to the dock.
-- `src/offline.html` — retry screen for when the tailnet is unreachable.
+- `src/offline.html` — retry screen for when the configured server is
+  unreachable.
 - **The web app's service worker is deliberately blocked** (request to `sw.js`
   cancelled + registrations cleared at boot). Its jobs — Web Push, app-shell
   cache, PWA badge — don't function in Electron anyway, and its Cache Storage
@@ -129,13 +130,14 @@ allowed navigation origin); the device-flow fallback link works too. The
 
 - `os1://…` opens the app and maps to the active server
   (e.g. `os1://session/abc` → `/session/abc`). In local mode, incoming
-  `https://os.tella.dev/…` universal links preserve their path on the local
+  universal links for the cloud host preserve their path on the local
   origin.
 - **Universal links** (plain `https://os.tella.dev/…` links opening the app,
-  e.g. from Slack): the server side is done — OpenSession serves
+  e.g. from Slack — Tella's host; see the rebrand note under Signing & release):
+  the server side is done — OpenSession serves
   `/.well-known/apple-app-site-association` for app IDs
   `6GUXT43C8B.dev.tella.os1` (the iOS + Mac App Store pair) and
-  `6GUXT43C8B.dev.tella.os1.shell` (this shell; backstage PR #67). Signed CI
+  `6GUXT43C8B.dev.tella.os1.shell` (this shell). Signed CI
   builds install the
   Developer ID profile from the `OS1_PROVISIONING_PROFILE_BASE64` repository
   secret and sign the top-level app with `build/entitlements.mac.applinks.plist`;
@@ -162,9 +164,8 @@ secrets; nothing in the shell depends on Tella's values.
 
 CI (`../.github/workflows/os1-mac-release.yml`) builds, signs, notarizes and
 publishes a GitHub Release on every `v*` tag. Manual "Run workflow" does a dry
-run with artifacts attached to the run. Repository secrets mirror
-[tellahq/tella-mac](https://github.com/tellahq/tella-mac)
-(`Docs/ReleaseAutomation.md` there documents how each value is produced):
+run with artifacts attached to the run. Repository secrets (the values below
+are Tella's — supply your own):
 
 | Secret | Value |
 |---|---|
@@ -192,11 +193,11 @@ otherwise adds roughly 49 MB to the installed app.
 ## Auto-update
 
 The packaged app keeps itself current via Electron's built-in Squirrel.Mac
-updater. It polls `https://os.tella.dev/api/os1-mac/update?version=<installed>`
+updater. It polls `<cloud server>/api/os1-mac/update?version=<installed>`
 on launch and every 4 hours — served by `src/server/routes/os1-update.ts` in
 this repository, which serves the latest GitHub release in Squirrel's static
 JSON feed format and proxies the signed arm64 zip out of it (Squirrel can't
-reach the private repo itself). When an update is found Squirrel downloads it
+reach a private GitHub repo itself). When an update is found Squirrel downloads it
 in the background; the web frontend shows a persistent bottom-right toast
 (`DesktopUpdateToast`, driven by `window.os1.updates` from `src/preload.js`)
 that flips to "Restart to update" once the download is staged, and restarting

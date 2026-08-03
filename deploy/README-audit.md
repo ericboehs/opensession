@@ -1,49 +1,47 @@
 # OpenSession audit logs
 
-OpenSession keeps a structured audit trail of every agent run, modeled on
-`tellahq/incident-agent` (`src/audit.ts` there, `src/server/audit.ts` here).
+OpenSession keeps a structured audit trail of every agent run
+(`src/server/audit.ts`): one JSON line per event, in a daily file.
 
 ## What gets logged
 
-Every `runClaude` invocation emits `claude_turn_event` JSON lines to
-`~/.opensession-audit/audit-YYYY-MM-DD.jsonl`:
+Every engine run (`src/server/opencode-runner.ts`) emits `claude_turn_event`
+JSON lines (the event name predates the single-engine consolidation and is
+kept for log continuity) to `~/.opensession-audit/audit-YYYY-MM-DD.jsonl`.
+Every line carries the run key, session id, run kind, mode, and model; the
+main event kinds:
 
-- `user_prompt` (direction `in`) — run key, backstage session, run kind
-  (interactive / automation / resume), mode, cwd, MCP allowlist, denied
-  tools, AWS-creds flag.
+- `user_prompt` (direction `in`) — cwd, the run's MCP servers, and (on
+  least-privilege unattended runs) the denied tools stripped from the
+  model's tool list.
 - `assistant_text` / `assistant_thinking` — what the model said/thought.
 - `tool_use` — tool name + input snippet; `tool_result` — output + `is_error`.
-- `permission_decision` — every canUseTool deny (denied tools, headless
-  AskUserQuestion) and AskUserQuestion outcomes.
-- `result` — subtype, duration, turns, token usage, cost.
-- `error` / `cancelled` / `account_switch`.
-- `bg_task_started` / `bg_task_done` (direction `in`) — background task
-  (Agent/Bash `run_in_background`) lifecycle: task id, description, final
-  status. `bg_task_hold` / `bg_task_hold_expired` (direction `out`) — the run
-  reached a turn boundary with tasks still in flight and held the query open
-  (finishing would kill them with the CLI process), or gave up after
-  `OPENSESSION_BG_HOLD_MAX_MS` (default 20 min) without task activity.
+- `permission_decision` — every permission-ask outcome: tool, allow/deny,
+  and why (unattended auto-reject, interactive auto-approve, human decision).
+- `result` — subtype, token usage, cost.
+- `error` / `cancelled` / `account_switch`, plus run-lifecycle events such
+  as `steer_injected`, `reattach`, `context_rebuild`, and `provider_retry`.
 
 Bodies are stored as sha256 + bounded snippet (300 bytes; 500 for tool
-inputs), like incident-agent: small logs, but every entry can be reconciled
-against the full Claude session jsonl on disk. Local files are pruned after
-400 days to match incident-agent's CloudWatch retention.
+inputs): small logs, but every entry can be reconciled against the full
+engine transcript on disk. Local files are pruned after 400 days, matching
+the retention in the example CloudWatch shipping config.
 
-## Shipping to CloudWatch (one-time setup, needs admin)
+## Shipping to CloudWatch (optional, one-time setup, needs admin)
 
-incident-agent ships stdout via Docker's `awslogs` driver. OpenSession runs as
-a systemd unit that hard-denies IMDS (`opensession.service`), so the app can
-never hold AWS credentials — instead the standalone amazon-cloudwatch-agent
-(its own systemd service, IMDS allowed) tails the audit files into the
-`/tella/backstage/prod` log group.
+OpenSession runs as a systemd unit that hard-denies IMDS
+(`opensession.service`), so the app itself can never hold AWS credentials —
+instead the standalone amazon-cloudwatch-agent (its own systemd service,
+IMDS allowed) tails the audit files into a log group. The example config
+`deploy/cloudwatch-agent-backstage.json` ships to `/opensession/prod`; edit
+its `file_path` to your audit dir (the default is `~/.opensession-audit/`,
+written as an absolute path) and pick your own log group name.
 
-The `michael-ai` instance role only has `ReadOnlyAccess` + SSM by default.
-The audit-log write policy (scoped to `log-group:/tella/backstage/*`) is
-managed in Terraform: `tellahq/shared-infra`, `components.tfcomponent.hcl`,
-component `michael_instance_profile` → `inline_policies.backstage-audit-logs`
-(added in shared-infra#55).
+Give the instance role write access to that log group only
+(`logs:CreateLogGroup`/`CreateLogStream`/`PutLogEvents` scoped to it) —
+keep the rest of the role least-privilege.
 
-Then install and start the agent on the VPS (needs sudo):
+Then install and start the agent on the host (needs sudo):
 
 ```bash
 wget https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/$(dpkg --print-architecture)/latest/amazon-cloudwatch-agent.deb
@@ -55,11 +53,11 @@ sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
   -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.d/backstage.json
 ```
 
-Verify (the VPS is in eu-west-2 — unlike the rest of Tella — and the agent
-ships to the instance's own region, so the log group lives there):
+Verify (the agent ships to the instance's own region, so the log group
+lives there — even if the rest of your infrastructure is elsewhere):
 
 ```bash
-aws logs tail /tella/backstage/prod --region eu-west-2 --since 10m
+aws logs tail /opensession/prod --region <instance-region> --since 10m
 ```
 
 ## Querying

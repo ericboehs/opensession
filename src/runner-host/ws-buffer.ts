@@ -1,6 +1,6 @@
 /**
  * ws-buffer — host-side frame buffering for the WS run transport (the
- * TODO(ws-buffer-ack) in host.ts; docs/sandboxes-plan.md §5 Phase 3).
+ * TODO(ws-buffer-ack) in host.ts; the sandbox rollout plan §5 Phase 3).
  *
  * The unix-socket transport is deliberately live-only and does NOT use this.
  * In WS mode (remote sandboxes / docker-ws), host.ts stamps every outbound

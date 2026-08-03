@@ -1,4 +1,4 @@
-# backstage-runner — prebaked image for the Docker sandbox provider (sandboxes-plan.md §5 Phase 1)
+# backstage-runner — prebaked image for the Docker sandbox provider (the sandbox rollout plan §5 Phase 1)
 #
 # Contains the exact toolchain a Backstage runner needs to execute an agent run
 # inside a container: bun (pinned to host), node LTS, git, gh, ripgrep, the Claude
@@ -129,7 +129,7 @@ COPY --chown=ubuntu:ubuntu package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 # App source at the identical absolute path (worktrees are bind-mounted separately).
-COPY --chown=ubuntu:ubuntu tsconfig.json backstage.ts ./
+COPY --chown=ubuntu:ubuntu tsconfig.json backstage.ts opensession.ts ./
 COPY --chown=ubuntu:ubuntu src ./src
 
 WORKDIR /home/ubuntu

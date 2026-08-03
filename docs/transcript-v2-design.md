@@ -1,13 +1,15 @@
 # Transcript v2 — owned event-log store, seq protocol, engine adapter
 
+> Design history — describes the state when written.
+
 Status: SHIPPED + ACTIVE + MIRROR RETIREMENT EXECUTED (activated 2026-07-23 10:27 UTC; full
 migration of 3,201 legacy sessions / 219,371 entries completed 10:34 UTC, failed=0; mirror
 writes, the OPENSESSION_TRANSCRIPT_V2/OPENSESSION_MIRROR_WRITE flags, and the dual-write
-drift tail probe DELETED later the same day on Michiel's "everything is v2 now" — see §11
+drift tail probe DELETED later the same day on the owner's "everything is v2 now" — see §11
 for what remains). Sections below §11 describe the shipped design; flag-gating language in
 §3-§8 is historical (v2 is unconditional now).
-Owner: Michael session, approved by Michiel ("fully rewrite it", "migrate the old sessions if
-possible"). Revision 2 incorporated the 4-lens code-grounded critique (15 agents, 11 confirmed
+Owner: an agent session, with instance-owner approval ("fully rewrite it", "migrate the old
+sessions if possible"). Revision 2 incorporated the 4-lens code-grounded critique (15 agents, 11 confirmed
 serious findings); a post-implementation 5-lens adversarial review (14 agents) produced 4 more
 confirmed fixes (os-blob resolver, WS drift check + degraded marker, delete purge, id fan-out)
 landed as 5e593471/2051f17e/820335f0/7d8afa41. Kill switch: OPENSESSION_TRANSCRIPT_V2=0 +
@@ -49,7 +51,7 @@ engine becomes a replaceable adapter.**
    watch, mergedSessionTranscript try/catches into the legacy merge, and the /entry route falls
    through to the legacy scan.
 4. **Dual-write, never cut-over-and-delete.** ~~The mirror jsonl keeps being written exactly as
-   today, by every current writer.~~ RETIRED 2026-07-23 (§11, Michiel-authorized): mirror writes
+   today, by every current writer.~~ RETIRED 2026-07-23 (§11, owner-authorized): mirror writes
    are deleted; the store is the only writer. Every legacy READ path stays functional (import/
    re-import for never-imported + external sessions, frozen-archive reads).
 5. **No `git reset/checkout/add -A`** in this shared checkout; stage specific files; commit+push
@@ -287,7 +289,7 @@ probe → commit specific files.
 
 1. All WPs landed, tsc clean, tests green (socket probed after), review workflow passed,
    committed+pushed.
-2. Add `OPENSESSION_TRANSCRIPT_V2=1` to `/home/ubuntu/.opensession.env` (keep window short).
+2. Add `OPENSESSION_TRANSCRIPT_V2=1` to `~/.opensession.env` (keep window short).
 3. Announce + `sudo systemctl restart opensession` (graceful; detached servers keep turns).
 4. Verify: health; reattach/`[runner] Resumed` lines; probe turn writes rows to transcripts.db;
    UI watch gets `v2:true`; a legacy (linear) session still loads via old path; steer receipt
@@ -297,7 +299,7 @@ probe → commit specific files.
 ## 11. Mirror retirement — EXECUTED 2026-07-23
 
 The retirement ran in two passes the same day: the prep pass below (ported consumers, flag,
-force-reload), then the deletion pass (Michiel: "everything is v2 now") which removed the old
+force-reload), then the deletion pass (the owner's "everything is v2 now") which removed the old
 code paths outright. Current state:
 
 **Deleted (permanently):**
@@ -308,8 +310,8 @@ code paths outright. Current state:
   batch still flows transcriptLineForEntry → parseJsonlLines → appendTranscriptEvents, which is
   now internal normalization plumbing rather than a file format.
 - `OPENSESSION_MIRROR_WRITE` (never flipped; deletion superseded it) and
-  `OPENSESSION_TRANSCRIPT_V2` (originally "default ON, =0 kill switch"; Michiel removed the
-  kill switch too — v2 is unconditional, `transcriptV2Enabled` no longer exists). The env line
+  `OPENSESSION_TRANSCRIPT_V2` (originally "default ON, =0 kill switch"; the kill switch was
+  removed too — v2 is unconditional, `transcriptV2Enabled` no longer exists). The env line
   in ~/.opensession.env is inert.
 - The §8 dual-write reconciliation: v2MirrorTailInStore (the 256KB tail probe + codex-rollout
   carve-out) and the "explained growth → refresh watermark" pass. v2TranscriptHasDrift is now:
@@ -347,7 +349,7 @@ Historical record of the prep pass:
   hydrates clamped rows to full forms via getFullEntry, so exact-text matching holds), legacy
   merge otherwise. Every caller passes a full session; `id` stays optional.
 - **Plain sessions**: no port needed — see §3 (no `plain-` unified ids exist anywhere; gates
-  kept as defensive dead code). The legacy @michael plain loop's turns live on in OpenCode's
+  kept as defensive dead code). The legacy Plain @-mention loop's turns live on in OpenCode's
   SQLite; nothing UI-facing reads their mirror files.
 - **Watcher-feeds-store** (file-watcher.ts feedTranscriptStore): the legacy watch's incremental
   parse also upserts into the store (flag on AND session already imported — the feed never runs

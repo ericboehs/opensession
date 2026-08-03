@@ -26,6 +26,7 @@ are never overwritten.
 | `code-cleanup-sweep` | Weekly dead-code and duplication pass, as a PR | — |
 | `docs-spell-check` | Weekly typo and broken-link pass over docs, as a PR | — |
 | `production-error-sweep` | Weekday triage of new production errors | an error-tracking MCP |
+| `nightly-reflection` | Nightly retro over yesterday's audit log; may open one fix PR and refine its own prompt (`selfImprove`) | — |
 
 `github-pr-review` and `instance-health` are offered during `opensession
 onboard`. The PR review one is the highest-leverage thing here: it is the

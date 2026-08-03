@@ -247,7 +247,7 @@ export function NewSession({ onBack, send, addHandler, connected, prefillPrompt,
   const [showOptions, setShowOptions] = useState(false);
   const optionsVisible = !isPhone || showOptions;
 
-  // Sandbox provider picker (docs/sandboxes-plan.md): isolate this session's
+  // Sandbox provider picker (the sandbox rollout plan): isolate this session's
   // workspace in the selected environment. Remote/MicroVM OpenCode sessions
   // keep the model engine on Host and expose only explicit workspace methods.
   // "" = Host (no sandbox, the default); otherwise an explicit provider id

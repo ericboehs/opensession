@@ -1275,7 +1275,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				const repo = getRepo(
 					typeof msg.repo === "string" ? msg.repo : undefined,
 				);
-				// Sandbox opt-in (docs/sandboxes-plan.md): boolean true = the
+				// Sandbox opt-in (the sandbox rollout plan): boolean true = the
 				// config's default provider (legacy toggle behavior); a string
 				// names an explicit provider (including "modal" / "lambda-microvm"),
 				// validated against the current config. Forks never sandbox —
@@ -1440,7 +1440,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							if (branch)
 								branch = await resolveUniqueBranch(branch, repo.id);
 							wtPath = worktreePathFor(branch, repo.id);
-							// Volume-mode sandbox (docs/sandboxes-plan.md Phase 2): the
+							// Volume-mode sandbox (the sandbox rollout plan Phase 2): the
 							// workspace is cloned into a per-session volume INSIDE the
 							// sandbox — skip host createWorktree entirely. The session
 							// keeps the canonical path; the provider's ensure()

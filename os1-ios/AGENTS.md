@@ -15,14 +15,17 @@ WS protocol notes) — keep it updated alongside changes.
 - Deployment targets live in `project.yml` (iOS 26.0; don't trust stale docs).
 - Pure SwiftUI. SwiftStreamingMarkdown is the deliberate exception to the
   no-third-party-dependencies default; discuss any additional dependency first.
-- Both targets share the `dev.tella.os1` bundle id (one App Store Connect
-  record, universal purchase). The Electron shell uses `dev.tella.os1.shell`;
-  two Mac apps must never share a bundle id.
+- Both targets share one bundle id (one App Store Connect record, universal
+  purchase) — Tella ships `dev.tella.os1`, set in `project.yml`; forks rebrand
+  to their own team id and bundle-id prefix. The Electron shell uses a
+  distinct `.shell`-suffixed id (Tella: `dev.tella.os1.shell`); two Mac apps
+  must never share a bundle id.
 
-## Building and testing (from the Linux VPS)
+## Building and testing (from a non-Mac host)
 
-There is no Xcode on the Linux host. Verify every change on the Mac build node
-over SSH (`ssh tella-mac-node`, Xcode 26.6):
+A Linux host has no Xcode. Verify every change on a Mac build node over SSH —
+the commands below show how Tella does it (`ssh tella-mac-node`, Xcode 26.6);
+substitute your own Mac's hostname:
 
 ```sh
 rsync -a --delete os1-ios/ tella-mac-node:/tmp/os1-check/os1-ios/
@@ -48,16 +51,17 @@ ssh tella-mac-node '
 
 ## Using the Mac node beyond builds
 
-`tella-mac-node` is a full Mac with a logged-in GUI session — use it whenever
+A build node with a logged-in GUI session is a full Mac — use it whenever
 a task needs real Apple hardware, not just for compiles:
 
 - **Run the actual app.** `ServerConfig` honors `OS1_SERVER` / `OS1_TOKEN`
   env overrides (nothing persisted), so a built Mac app launches
-  pre-configured straight from SSH. The server is tailnet-only; reverse-tunnel
-  it: `ssh -R 13850:127.0.0.1:3850 tella-mac-node '…'` and launch with
+  pre-configured straight from SSH. If the server isn't reachable from the
+  Mac (a private/VPN-only instance), reverse-tunnel it:
+  `ssh -R 13850:127.0.0.1:3850 <mac-node> '…'` and launch with
   `OS1_SERVER=http://127.0.0.1:13850 OS1_TOKEN=<token>
   <build>/OS1.app/Contents/MacOS/OS1` (tokens:
-  `~/.opensession-web-sessions.json` on the VPS). On the iOS simulator the
+  `~/.opensession-web-sessions.json` on the server host). On the iOS simulator the
   same overrides inject via `SIMCTL_CHILD_*`.
 - **Profile it.** `sample <pid> 15 -file out.txt` gives per-thread call
   graphs — enough to see exactly what runs on the main thread; `xctrace
@@ -75,10 +79,11 @@ source alone.
 
 ## Releasing
 
-Pushing to `master` with changes under `os1-ios/**` auto-triggers the
+Pushing to `main` with changes under `os1-ios/**` auto-triggers the
 TestFlight workflows (`.github/workflows/os1-ios-testflight.yml` and
-`os1-mac-testflight.yml`). There is no separate release step — treat every
-push as shipping to TestFlight.
+`os1-mac-testflight.yml`; markdown-only changes are excluded from the path
+filter). There is no separate release step — treat every push as shipping to
+TestFlight.
 
 ## Performance invariants (learned the hard way — don't regress)
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build + tag the backstage-runner image (sandboxes-plan.md §5 Phase 1).
+# Build + tag the backstage-runner image (sandbox rollout Phase 1).
 #
 #   backstage-runner:latest        (moving tag)
 #   backstage-runner:<git-sha>     (immutable, current HEAD short sha)

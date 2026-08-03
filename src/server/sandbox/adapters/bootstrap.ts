@@ -1,6 +1,6 @@
 /**
  * bootstrap — shared runtime for the REMOTE sandbox adapters (Daytona, E2B;
- * docs/sandboxes-plan.md §5 Phase 3). Everything here is provider-agnostic:
+ * the sandbox rollout plan §5 Phase 3). Everything here is provider-agnostic:
  * the adapters implement the small `RemoteDriver` wire (shell exec, detached
  * exec, file write, wake) and get, in return:
  *

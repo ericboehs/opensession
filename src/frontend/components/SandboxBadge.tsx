@@ -3,7 +3,7 @@ import { Tooltip } from "../ui/tooltip";
 import { IconBox } from "./icons";
 
 /**
- * Small "this session runs in a sandbox" badge (docs/sandboxes-plan.md Phase 4):
+ * Small "this session runs in a sandbox" badge (the sandbox rollout plan Phase 4):
  * provider name + workspace mode, rendered purely from the session's `sandbox`
  * field — no live container polling from the frontend (state that isn't on the
  * session object is deliberately not shown). Renders nothing for plain host

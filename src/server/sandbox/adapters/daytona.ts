@@ -1,6 +1,6 @@
 /**
  * DaytonaProvider — remote sandbox adapter over the Daytona API
- * (docs/sandboxes-plan.md §5 Phase 3).
+ * (the sandbox rollout plan §5 Phase 3).
  *
  * LICENSING: the Daytona *platform* is AGPL-3.0, but it is consumed here
  * purely over its HTTP API via the official TypeScript SDK `@daytonaio/sdk`

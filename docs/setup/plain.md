@@ -12,16 +12,25 @@ never replies to the customer itself.
 | --- | --- | --- |
 | `PLAIN_API_KEY` | API calls | constructs the `PlainClient` (`src/agents/plain/api.ts`); also read by the thread-status archive sweep (`src/server/plain-archive.ts`, no-op without it) |
 | `PLAIN_WEBHOOK_SECRET` | webhooks | **fail-closed**: unset/empty → every webhook 401s |
-| `PLAIN_API_URL` | optional | GraphQL endpoint for the top-issues rollup; default `https://core-api.uk.plain.com/graphql/v1` |
 | `PLAIN_SPAM_CHECK_MODEL` | optional | pre-triage router model, default `claude-haiku-4-5` |
 | `PLAIN_REFUND_INTENT_MODEL` | optional | refund-approval classifier model, default `claude-haiku-4-5` |
-| `PLAIN_TOPISSUES_QUOTE_MODEL` | optional | top-issues quote extraction, default `claude-haiku-4-5` |
+
+Config keys (`integrations.plain` in `~/.opensession/config.json`, read by
+`src/server/config.ts`):
+
+| Key | Notes |
+| --- | --- |
+| `apiUrl` | GraphQL endpoint for direct API calls (the archive sweep); default `https://core-api.uk.plain.com/graphql/v1` |
+| `workspaceId` | your Plain workspace id (`w_…`) for deep links into app.plain.com; unset hides the UI's "open in Plain" affordances |
+| `mentionHandle` | the `@handle` in Plain notes that wakes the mention flow (default: `persona.name`, lowercased) |
+| `linearTeamKey` | Linear team the agent files issues under (`src/agents/plain/api.ts`) |
 
 The Plain MCP server (which gives runs their Plain tools) is configured
 separately in `mcp-config.json` with its own `PLAIN_API_KEY` in the server's
-`env` block — see [install.md](install.md#5-mcp-configjson).
+`env` block — see [install.md](install.md#7-mcp-configjson).
 
-Disable the agent with `ENABLE_PLAIN_AGENT=false` (default ON — see
+The agent is off unless enabled: `integrations.plain.enabled: true` in
+config, or the `ENABLE_PLAIN_AGENT` env flag (which wins when set — see
 [integrations-misc.md](integrations-misc.md#boot-guards)).
 
 ## Webhook intake
@@ -35,9 +44,10 @@ Consumed events (`src/agents/plain/handlers.ts`):
 - `thread.thread_created` — gated, then fires the triage automation (below)
 - `thread.thread_status_transitioned` to `DONE` — archives the OpenSession
   sessions linked to that thread
-- `thread.note_created` containing `@michael` — runs the mention flow, but
-  only when the note author is a human teammate (`actorType === "user"`);
-  customer/bot/system notes are ignored
+- `thread.note_created` containing the mention handle
+  (`integrations.plain.mentionHandle`, default `@<persona.name>`) — runs the
+  mention flow, but only when the note author is a human teammate
+  (`actorType === "user"`); customer/bot/system notes are ignored
 
 Before triage fires, outbound threads are filtered out (teammate follow-ups
 and Linear "close the loop" messages also emit `thread_created`): the
@@ -51,21 +61,23 @@ surviving ticket runs through the spam/basic/full router
 ## The triage automation (least-privilege model)
 
 Automations are JSON files in `~/.opensession-automations/<id>.json`
-(`src/server/automations.ts`). The Plain agent seeds a triage automation on
-startup, keyed to event `plain:thread_created`, create-if-absent so your UI
-edits survive restarts (`src/agents/plain/triage-automation.ts`). Its shape
-is the reference for scoping any automation:
+(`src/server/automations.ts`). Nothing is seeded automatically: triage fires
+for whatever enabled automation subscribes to the `plain:thread_created`
+event. Create one from the "Support ticket triage" template in the
+Automations UI (`src/server/automation-templates.ts`), or ship it as config
+via `integrations.seeds.automations` (created once, create-if-absent). Its
+shape is the reference for scoping any automation:
 
 - **`mode: "code"`** — runs in an isolated worktree with Write/Edit, so it
   can implement a fix and open a PR (never merge; PRs are the human gate).
   Use `mode: "ask"` for automations that only need to read.
 - **`mcpServers` allowlist** — the run only sees the named MCP servers.
-  Triage ships with: `plain`, `workos`, `tinybird`, `linear`, `sentry`,
-  `stripe`, `TellaInternalSupportMCP`, `grafana`, `slack` (that exact list is
-  Tella's; trim it to what you run).
+  The triage template suggests `plain`, `workos`, `tinybird`, `linear`,
+  `sentry`, `stripe` — trim it to what you actually run.
 - **Denied tools** — every automation run hard-denies customer-facing and
-  identity-mutating tools in `canUseTool` (`AUTOMATION_DENIED_TOOLS`,
-  `src/server/automations.ts`): the Plain thread writes
+  identity-mutating tools (`AUTOMATION_DENIED_TOOLS` in
+  `src/server/automations.ts`, enforced by stripping the tools from the
+  model's tool list — `opencodeRunPolicy`): the Plain thread writes
   (`mcp__plain__reply_to_thread`, `mark_thread_done`, `mark_thread_todo`,
   `snooze_thread`) and the WorkOS write/impersonation set (create/delete/
   update user+org+membership, revoke, invitations, password-reset and
@@ -80,8 +92,9 @@ is the reference for scoping any automation:
 
 ## Internal-notes-in-English convention
 
-Baked into the prompts (`src/agents/plain/prompts.ts` and
-`triage-prompt.ts`): internal notes and draft replies are always written in
+Baked into the prompts (`src/agents/plain/prompts.ts` and the triage
+template in `src/server/automation-templates.ts`): internal notes and draft
+replies are always written in
 English regardless of the customer's language, with the customer's language
 noted so the team can translate before sending. Keep the same rule in any
 automation prompts you store in `~/.opensession-automations/`.

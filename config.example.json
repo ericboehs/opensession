@@ -2,7 +2,7 @@
   "_comments": [
     "Copy to ~/.opensession/config.json or point OPENSESSION_CONFIG at it.",
     "Environment variables override config values. Repositories are authoritative: when `repos` is present, only those entries are registered.",
-    "The zero-config hosted default registers this OpenSession checkout as a shared `opensession` repo. Set `repos` for real team projects.",
+    "With no `repos` configured, a server install registers this OpenSession checkout itself as a shared `opensession` repo. Set `repos` for real team projects.",
     "External integrations and instance seed routines are opt-in (`enabled: true`)."
   ],
   "server": {

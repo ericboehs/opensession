@@ -1,6 +1,6 @@
 /**
  * E2bProvider — remote sandbox adapter over the E2B API
- * (docs/sandboxes-plan.md §5 Phase 3).
+ * (the sandbox rollout plan §5 Phase 3).
  *
  * LICENSING: the `e2b` JS SDK (pinned 2.32.0) is **MIT** (verified from the
  * npm `license` field, 2026-07-08); E2B's platform/infra repo is Apache-2.0.

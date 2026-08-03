@@ -6,7 +6,7 @@
  * origin/<base> is refreshed with a throttled fetch so "behind main" is honest
  * without hammering the remote from every open panel.
  *
- * Sandbox-aware (docs/sandboxes-plan.md Phase 2): callers may pass a
+ * Sandbox-aware (sandbox rollout Phase 2): callers may pass a
  * WorkspaceExec (workspaceExecFor) so every git command — including fetch,
  * pull and push, which then use the sandbox's mounted read-only creds — runs
  * inside the session's sandbox. Omitted = the host path, unchanged.

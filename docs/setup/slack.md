@@ -18,7 +18,9 @@ flow anywhere in the Slack agent.
 | `SLACK_MENTION_INTENT_MODEL` | no | mention intent-router model, default `claude-haiku-4-5` |
 | `SCHEDULE_WHEN_MODEL` | no | natural-language schedule parsing, default `claude-haiku-4-5` |
 
-Disable the agent with `ENABLE_SLACK_AGENT=false` (default ON — see
+The agent is off unless enabled: `integrations.slack.enabled: true` in
+`~/.opensession/config.json`, or the `ENABLE_SLACK_AGENT` env flag (which
+wins when set — see
 [integrations-misc.md](integrations-misc.md#boot-guards)).
 
 ## Event intake: HTTP Events API
@@ -75,10 +77,10 @@ it to read.
 
 - DMs and mentions are ignored unless the sender matches
   `ALLOWED_SLACK_USER_ID` — **except** mentions in worktree channels or
-  channels linked to a OpenSession session, where the whole team can drive.
+  channels linked to an OpenSession session, where the whole team can drive.
 - `isAdmin = !ALLOWED_SLACK_USER_ID || sender === ALLOWED_SLACK_USER_ID`.
   Admin unlocks the mutating tools of the in-process MCP servers
-  (`michael-admin` self-management, session control, goals, human-asks);
+  (`opensession-admin` self-management, session control, goals, human-asks);
   non-admins keep the read-only subsets.
 - Leaving it unset makes every workspace member an admin. Set it.
 
@@ -94,9 +96,10 @@ it to read.
 
 ## Channel memory
 
-`src/agents/slack/memory.ts`, stored under `~/.michael-memory/`, one JSON
-file per scope, injected into the system prompt each run and edited via the
-admin `remember`/`list_memory`/`forget` tools:
+`src/agents/slack/memory.ts`, stored under `~/.michael-memory/` (a legacy
+directory name kept for state compatibility), one JSON file per scope,
+injected into the system prompt each run and edited via the admin
+`remember`/`list_memory`/`forget` tools:
 
 - public channel → shared `workspace.json`
 - private channel → isolated `channel-<id>.json` + read-only workspace view
@@ -113,10 +116,10 @@ message is skipped rather than misdelivered:
 | `integrations.slack.workspaceId` | building `app.slack.com` deep links in session labels |
 | `integrations.slack.channelNames` | channel-id→name map for rendering transcripts |
 | `integrations.github.docsSyncChannel` | where docs-sync announces its PRs |
-| `SLACK_EXPORT_FAILURE_CHANNEL` / `SLACK_UPLOAD_FAILURE_CHANNEL` | Grafana-poller failure cards ([integrations-misc.md](integrations-misc.md#grafana-poller)) |
+| `grafanaPoll.slackChannel` (per-automation poll config) | Grafana-poller failure cards ([integrations-misc.md](integrations-misc.md#grafana-poller)) |
 
 Identity mapping (Slack id → person, for attribution and per-user MCP
-gating) is **not** hardcoded anymore: it derives from `identity.team` /
+gating) is **not** hardcoded: it derives from `identity.team` /
 `identity.slackNames` in `~/.opensession/config.json`
-([install.md](install.md#3-opensessionconfigjson)); with no config file you get
-Tella's built-in roster.
+([install.md](install.md#5-opensessionconfigjson)); with no configured team
+the mapping tables are empty and attribution/gating become no-ops.

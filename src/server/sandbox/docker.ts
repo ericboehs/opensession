@@ -1,5 +1,5 @@
 /**
- * DockerProvider — the Docker sandbox backend (docs/sandboxes-plan.md §5
+ * DockerProvider — the Docker sandbox backend (the sandbox rollout plan §5
  * Phase 1, "bind-mount mode").
  *
  * One long-lived container per session (`bks-sbx-<sessionId>`, image
@@ -51,7 +51,7 @@
  *  - ~/.backstage-audit is mounted rw so in-container runs land in the same
  *    audit log stream as host runs (appendFileSync, O_APPEND).
  *
- * Phase 2 additions (docs/sandboxes-plan.md §5 Phase 2):
+ * Phase 2 additions (the sandbox rollout plan, Phase 2):
  *  - VOLUME workspaces (config `workspace: "volume"`, new sandboxes only): the
  *    workspace is a per-session named volume (`<name>-ws`) mounted at the
  *    session's canonical worktree path, cloned from the repo's origin INSIDE
@@ -1282,7 +1282,7 @@ export class DockerProvider implements SandboxProvider {
     }
     // A main checkout must never be bind-mounted rw into a sandbox as its
     // workspace: shared checkouts (backstage self-hosting) and repo mainlines
-    // stay host-only forever (docs/sandboxes-plan.md §7.2). This also catches
+    // stay host-only forever (the sandbox rollout plan, §7.2). This also catches
     // the "falsy worktreeDir defaulted to the main checkout" session shape.
     if (isMainCheckout(cwd)) {
       throw new Error(

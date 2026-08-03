@@ -2,8 +2,8 @@
 
 The GitHub integration has three parts: a PAT the PR agent posts with, a
 webhook intake on the [webhook server](install.md#webhook-server), and the
-`gh` CLI for PR operations from sessions. The deploy pipeline (last section)
-is Tella-specific and replaceable.
+`gh` CLI for PR operations from sessions. The deploy script (last section)
+is optional and replaceable.
 
 ## The bot account (machine user)
 
@@ -14,10 +14,13 @@ access to the repos the agent works on. Everything bot-shaped hangs off it:
 1. its PAT is `GITHUB_API_TOKEN` (scoping below),
 2. the box's `gh` CLI is signed in as it (`gh auth login`),
 3. its SSH key is what `git push` uses from session worktrees,
-4. `GITHUB_BOT_LOGIN=<its login>` — the self-trigger guard (skip our own
-   comments/pushes/reviews) keys on this,
-5. `GITHUB_MENTION_HANDLES=<handles>` — which `@name`s in PR comments wake
-   the mention flow (default `michael,tella-butler`; set your own).
+4. its login goes in `policy.githubBotLogins` in `~/.opensession/config.json`
+   (the `GITHUB_BOT_LOGIN` env var is merged in too; the first configured
+   login is the bot) — the self-trigger guard (skip our own comments/pushes/
+   reviews) keys on this,
+5. `integrations.github.mentionHandles` (or `GITHUB_MENTION_HANDLES` env) —
+   which `@name`s in PR comments wake the mention flow (default: your
+   `persona.name` plus the bot login).
 
 Using one account for all four keeps attribution coherent: PRs, comments,
 reviews, and pushes all read as the same bot. A GitHub App would avoid
@@ -48,12 +51,12 @@ fine-grained "Pull requests: read+write" + "Issues: read+write") for the
 target repo. The agent is loaded even without the token — it just warns and
 can't post (`src/agents/github/index.ts` startup).
 
-Related env vars (`src/agents/github/`):
+Related settings (`src/agents/github/`, resolved in `src/server/config.ts`):
 
-| Var | Default | Meaning |
+| Setting | Default | Meaning |
 | --- | --- | --- |
-| `GITHUB_BOT_LOGIN` | `tella-butler` | the GitHub account the token posts as; used to skip the bot's own comments/pushes (self-trigger guard) |
-| `GITHUB_MENTION_HANDLES` | `michael,tella-butler` | comma-separated handles; a PR comment matching `@<handle>` triggers the mention flow |
+| `policy.githubBotLogins` (config) / `GITHUB_BOT_LOGIN` (env, merged in) | none | the GitHub account the token posts as; used to skip the bot's own comments/pushes (self-trigger guard) |
+| `integrations.github.mentionHandles` (config) / `GITHUB_MENTION_HANDLES` (env, wins) | `<persona.name>,<bot login>` | handles (comma-separated in the env var); a PR comment matching `@<handle>` triggers the mention flow |
 
 ## gh CLI auth is separate
 
@@ -68,10 +71,9 @@ auth for the CLI.
 ## Webhook intake
 
 The webhook server (`src/server/webhook-server.ts`) listens on
-`127.0.0.1:${WEBHOOK_PORT}` (default 3848; also settable via
-`server.webhookPort` in `~/.opensession/config.json`). You need a
-TLS-terminating proxy in front of it for GitHub to reach it — Tella uses
-Caddy on a public hostname.
+`127.0.0.1:${WEBHOOK_PORT}` (default 3848). You need a
+TLS-terminating proxy in front of it for GitHub to reach it — Tella, for
+example, uses Caddy on a public hostname.
 
 - Route: `POST /github/webhook` (registered by the Slack agent,
   `src/agents/slack/index.ts`, which forwards PR events to the github agent).
@@ -85,7 +87,7 @@ the code consumes (`src/agents/github/webhook.ts`):
 
 | Event | What happens |
 | --- | --- |
-| `issue_comment`, `pull_request_review_comment` (action `created`) | if the body matches a `GITHUB_MENTION_HANDLES` handle: intent-classified → whole-PR action (review / autofix / simplify / adversarial) or a conversational reply run in a PR-branch worktree |
+| `issue_comment`, `pull_request_review_comment` (action `created`) | if the body matches a configured mention handle: intent-classified → whole-PR action (review / autofix / simplify / adversarial) or a conversational reply run in a PR-branch worktree |
 | `pull_request` action `labeled` | labels `os-review` / `os-auto-fix` / `os-simplify` / `os-adversarial` trigger the corresponding behavior (the legacy `michael-*` names are accepted as aliases — `src/agents/github/constants.ts`; create the labels on your repo first); auto-fix also merges the current base into conflicting PR branches and resolves the conflicts without force-pushing |
 | `pull_request` `opened`/`reopened`/`synchronize`/`ready_for_review` | auto-review, if the PR is non-draft and either carries `os-review` or the review automation is enabled |
 | `pull_request` action `closed` + merged | notifies linked sessions; fires the docs-sync automation on `github:pr_merged` |
@@ -106,12 +108,13 @@ run for the **default repo only**.
 - Auto-review on every PR push is **off by default**: the github agent seeds
   a "review" automation disabled (label-only mode). Enable it in the
   Automations UI. Not an env var.
-- The docs-sync automation is seeded **enabled** and fires on merge. Set
+- The docs-sync automation is seeded (enabled, fires on merge) **only when
+  you set a prompt** in `integrations.github.docsSyncPrompt`. Set
   `integrations.github.docsSyncChannel` to have it announce its PRs in a Slack
-  channel; leave it unset and it still runs, just silently.
+  channel; leave the channel unset and it still runs, just silently.
 - Mention replies are always on while the agent is loaded.
-- Disable the whole agent with `ENABLE_GITHUB_AGENT=false` (default is ON;
-  only the literal string `false` disables — see
+- The agent itself is off unless enabled: `integrations.github.enabled: true`
+  in config, or the `ENABLE_GITHUB_AGENT` env flag (which wins when set — see
   [integrations-misc.md](integrations-misc.md#boot-guards)).
 
 Prompts and `pr-info.ts` defaults are config-driven (they interpolate the
@@ -156,7 +159,7 @@ What turns on (`src/server/github-auth.ts`, `web-auth.ts`, `routes/auth.ts`):
   `createdByLogin` on new sessions, and a one-time boot migration backfills
   it onto existing ones.
 - **PRs as the owner**: signing in also stores the person's OAuth token
-  (scope `repo read:org`, `~/.opensession-github-auth.json`, 0600). The
+  (scope `repo`, `~/.opensession-github-auth.json`, 0600). The
   runner injects it as `GH_TOKEN`/`GITHUB_TOKEN` into interactive,
   non-least-privilege runs only — automations, unattended kinds, and any
   run carrying a deny-set keep the bot credential, fail-closed. Manage
@@ -184,7 +187,7 @@ The script:
    aggregate budget for detached engine/preview scopes, preventing one session
    or an accumulation of scopes from exhausting the host,
 6. waits up to `MAX_DRAIN_WAIT` (480s) for `activeRuns == 0` on
-   `/opensession/api/health`, then `systemctl restart opensession` and a
+   `/api/health`, then `systemctl restart opensession` and a
    post-restart health gate.
 
 The drain-aware contract — ff-only pull → conditional install → idle wait →

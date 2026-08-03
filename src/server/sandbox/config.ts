@@ -1,5 +1,5 @@
 /**
- * Sandbox configuration (Phase 0 of docs/sandboxes-plan.md).
+ * Sandbox configuration (sandbox rollout Phase 0).
  *
  * `~/.opensession-sandbox.json` (dual-read fallback to `~/.backstage-sandbox.json`)
  * picks the provider, e.g.
@@ -49,7 +49,7 @@ export interface SandboxRepoOverride {
   image?: string;
 }
 
-/** Where a docker sandbox's workspace lives (docs/sandboxes-plan.md Phase 2):
+/** Where a docker sandbox's workspace lives (sandbox rollout Phase 2):
  *  "bind" (default) bind-mounts the existing host worktree at its identical
  *  path; "volume" clones the repo into a per-session volume INSIDE the
  *  container — no host worktree at all, so destroy() deletes the workspace

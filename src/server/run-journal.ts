@@ -60,7 +60,7 @@ export interface ActiveRunRecord {
    *  restart REATTACH to a detached server that survived (adoption via the
    *  opencode-detach registry) instead of re-prompting a fresh one. */
   serverKey?: string;
-  /** Sandbox the run executes in (docs/sandboxes-plan.md Phase 1+); absent = host process */
+  /** Sandbox the run executes in (the sandbox rollout plan Phase 1+); absent = host process */
   sandboxId?: string;
   /** Provider owning sandboxId, so resume-after-restart can reattach via provider.get() */
   sandboxProvider?: string;

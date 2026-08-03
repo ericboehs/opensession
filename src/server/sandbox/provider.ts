@@ -1,5 +1,5 @@
 /**
- * Sandbox seam (Phase 0 of docs/sandboxes-plan.md): the interfaces every
+ * Sandbox seam (Phase 0 of the sandbox rollout plan): the interfaces every
  * execution backend implements. A "sandbox" is where a session's work happens —
  * today that's a git worktree on this host (LocalProvider, src/server/sandbox/
  * local.ts); later it can be a Docker container per session, or a remote
@@ -15,7 +15,7 @@
  * Phase 0 is zero behavior change: nothing in backstage.ts threads a Sandbox
  * handle yet — `runSessionPromptInner` still computes a bare `cwd` itself.
  * Threading the handle through the prompt/create paths is the documented
- * Phase 1 TODO (see docs/sandboxes-plan.md §5 Phase 1).
+ * Phase 1 TODO (see the sandbox rollout plan §5 Phase 1).
  */
 
 import type { StreamEvent } from "../run-events";

@@ -50,14 +50,15 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   plus server/GitHub/token configuration and a connection test. Cross-device
   composer and chat preferences refresh at launch and when the app foregrounds.
 
-## Getting a token
+## Signing in
 
-The server accepts `Authorization: Bearer <token>` everywhere, including the
-WebSocket upgrade. Tokens are the `opensession_auth` cookie values minted at
-web sign-in, stored server-side in `~/.opensession-web-sessions.json`. Grab
-yours from the browser cookie (or that file) and paste it into Settings.
-In-app GitHub device-flow sign-in (`POST /api/auth/device`) is the planned
-replacement for the paste step.
+Settings has in-app GitHub device-flow sign-in (`GitHubAuth.swift` —
+`POST /api/auth/device`, then `/api/auth/device/poll` with `native: true`;
+the server mints a web-session token and returns it in the poll body). The
+token is kept in the keychain and rides as `Authorization: Bearer <token>`
+everywhere, including the WebSocket upgrade. Pasting a token manually still
+works as a fallback: tokens are the `opensession_auth` cookie values minted
+at web sign-in, stored server-side in `~/.opensession-web-sessions.json`.
 
 ## Build
 
@@ -78,14 +79,22 @@ Then run the `OS1` scheme on iOS 26+.
 OS1/
   OS1App.swift               App entry; forces Settings on first run
   NativePreferences.swift    Cross-device preference hydration/cache
+  NativeNotifications.swift  Local notifications for finished/blocked runs
+  PlatformCompat.swift       iOS/macOS API bridging shims
   Models/
     Session.swift            Tolerant subset of the server's UnifiedSession
     TranscriptEntry.swift    Transcript entry (REST + WS frames)
     AskQuestion.swift        Pending AskUserQuestion
+    AttachedImage.swift      Composer image attachments
+    ModelCatalog.swift       Model/reasoning options from /api/models
+    PrDetails.swift          PR panel payload
+    SettingsModels.swift     Settings payloads (tools/personal/workspace)
   Networking/
     ServerConfig.swift       URL/name (UserDefaults) + token (keychain)
     Keychain.swift           Minimal Security wrapper
+    GitHubAuth.swift         GitHub device-flow sign-in
     OS1API.swift             REST reads (sessions, transcript, health)
+    SettingsAPI.swift        Settings reads/writes
     ServerEvent.swift        WS frame parsing (unknown types -> .ignored)
     OS1Socket.swift          WebSocket: bearer auth, ping loop, typed events
   ViewModels/
@@ -96,10 +105,16 @@ OS1/
     OS1VisualStyle.swift      Shared web palette, chat width, and repo tile
     SessionsListView.swift   List + status rows + settings sheet
     SessionView.swift        Transcript, streaming bubble, ask card, input bar
+    NewSessionView.swift     Full-height create-session editor
     TranscriptRow.swift      Per-entry-type rendering + streaming markdown
+    MarkdownBody.swift       Streaming/durable markdown rendering
     AskQuestionCard.swift    Options + free text answer
+    PrPanel.swift            Read-only pull-request panel
+    WorktreeInfoView.swift   Workspace details sheet
     SettingsView.swift       Native settings index + connection controls
     Native*SettingsViews.swift  Native Tools, Personal, Workspace panels
+    MacSettings.swift        macOS settings window
+    Glass · ImageAttachments · UserAvatar · WebIcon  smaller shared views
 ```
 
 ## Protocol notes (from the server source)
@@ -117,9 +132,6 @@ OS1/
 
 ## Next milestones
 
-- GitHub device-flow sign-in (no token pasting)
-- Resume cursors (`sinceOffset`/`sinceRev`) for cheap reconnects, and
-  `load_history` paging for older transcript
-- Create session, queue management (edit/delete/steer queued prompts)
+- Resume cursors (`sinceOffset`/`sinceRev`) for cheap reconnects
 - Image attachments in assistant markdown
-- Push-style updates for the sessions list, PR status on rows
+- Push-style updates for the sessions list (it polls today)

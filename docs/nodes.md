@@ -111,7 +111,7 @@ can pick the right one:
 | `xcode` | `xcodebuild -version` succeeds — the stub without full Xcode fails this |
 | `swift` | `swift` on PATH |
 | `msbuild` | `msbuild` on PATH (Windows) |
-| `docker`, `rust`, `go`, `bun` | the binary on PATH |
+| `docker`, `rust`, `go`, `bun` | the tool's binary on PATH (`cargo` for rust) |
 
 ## Security
 

@@ -1,7 +1,7 @@
 # `backstage-runner` image
 
-Prebaked container image for the **Docker sandbox provider** (see
-`docs/sandboxes-plan.md` §3–§5, Phase 1). One container per session runs the
+Prebaked container image for the **Docker sandbox provider** (operator guide:
+`docs/self-hosting-sandboxes.md`). One container per session runs the
 existing runner-host entry inside an isolated filesystem/env/network, with the
 session's git worktree **bind-mounted at its identical host path**.
 
@@ -10,16 +10,14 @@ session's git worktree **bind-mounted at its identical host path**.
 | Component | Purpose | Pin |
 | --- | --- | --- |
 | `bun` | runs the runner bundle + Bun `$` exec | `1.3.14` (host) |
-| Node.js LTS | native-dep builds, tooling | `20.x` |
+| Node.js LTS | native-dep builds, tooling | `24.x` |
 | `git`, `gh` | clone / status / diff / push / PR | apt latest |
 | `ripgrep` | @-mention file search | apt |
 | `python3`, `build-essential` | worktree `bun install` native deps | apt |
-| `just`, `direnv`, `lsof` | tella-local `ensure-up.sh` → `just dev` chain (in-sandbox previews) | apt |
-| Claude Code CLI | Claude Agent SDK spawns it as a child | `2.1.204` (host); build FAILS on version mismatch |
-| `opencode` | opencode-first engine direction — runs in-sandbox | `1.17.15` (host), npm -g, build asserts version |
+| `just`, `direnv`, `lsof` | common repo dev-server bring-up chains (in-sandbox previews) | apt / pinned release |
+| Claude Code CLI | baked at the identical host CLI path for session-resume parity | `2.1.218` (host); build FAILS on version mismatch |
+| `opencode` | the engine — runs in-sandbox | `1.17.15` (host), npm -g, build asserts version |
 | runner bundle | `/home/ubuntu/projects/tella-backstage` (`src/`, `backstage.ts`, `tsconfig.json`) + `node_modules` | from lockfile |
-| vendored codex binary | `@openai/codex-linux-x64` (musl, ~223 MB) — Codex exec/app-server | via `bun.lock` |
-| `@anthropic-ai/claude-agent-sdk` | Claude engine | via `bun.lock` |
 | minimal `~/.claude/settings.json` | so `settingSources:["user"]` doesn't error | `{}` |
 
 Runs as uid **1000** user `ubuntu` (matches the host uid) so bind-mounted
@@ -29,12 +27,14 @@ baked ENTRYPOINT.
 
 ## Why path parity matters
 
-The runner config is hardcoded to host absolute paths:
-`pathToClaudeCodeExecutable = /home/ubuntu/.local/bin/claude`, the runner bundle
-at `/home/ubuntu/projects/tella-backstage`, and the session worktree
+The runner config points at host absolute paths: the claude CLI at
+`/home/ubuntu/.local/bin/claude`, the runner bundle at
+`/home/ubuntu/projects/tella-backstage`, and the session worktree
 bind-mounted at its **same** host path. The image reproduces every one of those
 absolute paths exactly. If any drifts, the in-container runner can't find the
-CLI, the SDK, the codex binary, or the worktree. Do not "tidy" these paths.
+CLI, its dependencies, or the worktree. Do not "tidy" these paths — and if your
+host's username/home/checkout path differs, edit them in the Dockerfile and
+rebuild (see docs/self-hosting-sandboxes.md "Path parity is load-bearing").
 
 ## Build
 
@@ -46,18 +46,19 @@ Tags `backstage-runner:latest` and `backstage-runner:<git-sha>` from the repo
 root context. Override the name with `IMAGE=... deploy/sandbox/build.sh`.
 
 Version pins are `ARG`s in the Dockerfile (`BUN_VERSION`, `CLAUDE_VERSION`,
-`NODE_MAJOR`) — override per build with `--build-arg` if needed.
+`NODE_MAJOR`, `OPENCODE_VERSION`) — override per build with `--build-arg` if
+needed.
 
 ## Runtime design (Phase 1 — DockerProvider)
 
 `src/server/sandbox/docker.ts` runs one container per session
 (`bks-sbx-<sessionId>`, labels `backstage.sandbox=1` +
 `backstage.session=<id>`, `--init`, `--restart no`, `--cpus`/`--memory` from
-`~/.backstage-sandbox.json`, defaults 4 / 8g). A run is the same runner-host
+`~/.opensession-sandbox.json`, defaults 4 / 8g). A run is the same runner-host
 entry the systemd path uses (`src/runner-host/host.ts`), `docker exec -d`'d
 into the container; its unix socket + spec/meta/journal/log live in a
-bind-mounted per-session run dir (`~/.backstage-chats/sandbox-runs/<id>`), so
-backstage drives it with the normal HostHandle machinery and can reattach
+bind-mounted per-session run dir (`~/.opensession-chats/sandbox-runs/<id>`), so
+the server drives it with the normal HostHandle machinery and can reattach
 after a restart. Idle containers are `docker stop`ped after
 `idleStopMinutes` (default 30) and restarted on the next turn.
 
@@ -69,14 +70,16 @@ Mounts (rationale in the docker.ts header):
 | session worktree at identical path | rw | diff/files/status/push/preview unchanged host-side |
 | main checkout `.git` at identical path | rw | worktrees aren't self-contained (`rev-parse --git-common-dir`); accepted Phase 1 tradeoff |
 | host `~/.claude/projects/<munged-cwd>` | rw | engine transcripts stay host-visible (viewer tail, resume continuity) |
-| `~/.backstage-chats/backstage-rpc.sock` | rw | michael-* stdio proxies; goes stale across a backstage restart until the container restarts |
+| `~/.opensession-chats/backstage-rpc.sock` | rw | opensession-* stdio proxies (socket filename kept for protocol compat); goes stale across a server restart until the container restarts |
 | `~/.ssh`, `~/.gitconfig`, `~/.config/gh` | ro | git push / PR parity — interactive-level ambient trust, same as host runs today; automations are refused in Phase 1 |
-| `mcp-config.json`, `~/.backstage-claude-accounts.json` | ro | external MCP servers + in-container account-pool selection |
-| `~/.backstage-audit` | rw | one audit jsonl stream for host + sandboxed runs |
+| `mcp-config.json`, `~/.opensession-claude-accounts.json` | ro | external MCP servers + in-container account-pool selection |
+| `~/.opensession-audit` | rw | one audit jsonl stream for host + sandboxed runs |
 
 Known Phase 1 caveats: external MCP servers now spawn inside the container
-(host-only deps won't start); codex account homes aren't mounted (Claude
-first); `aws: true` can't mint creds inside (IMDS blocked).
+(host-only deps won't start); native Codex account homes are never mounted —
+the capability matrix keeps GPT (Codex) runs host-only, and GPT-in-a-sandbox
+goes through `opencode/openai/*` models; `aws: true` can't mint creds inside
+(IMDS blocked).
 
 ## Phase 2 — exec-routed surfaces, volume workspaces, preview ports
 
@@ -87,7 +90,7 @@ first); `aws: true` can't mint creds inside (IMDS blocked).
   kill-switch absent + container **running**; a stopped container is never
   started for a read). With bind mounts this is redundant by design — it's
   the seam volume workspaces and Phase 3 remote providers run through.
-- **Volume workspaces** (`~/.backstage-sandbox.json` → `"workspace":
+- **Volume workspaces** (`~/.opensession-sandbox.json` → `"workspace":
   "volume"`, default `"bind"`): new sandboxes whose canonical worktree path
   has no host dir get a per-session `<name>-ws` volume mounted at that path
   and cloned **inside** the container from the repo's origin (ro-mounted
@@ -120,12 +123,12 @@ the same Caddy tailnet-HTTPS origin as host previews.
 
 **HTTPS-port namespace (the old collision TODO, fixed).** Host previews key
 their Caddy route as `webappPort + 6000` (9100-9999) — safe on the host
-because the tella-fusion port allocator enforces webapp-port uniqueness with
+because a host-side port allocator can enforce webapp-port uniqueness with
 lsof, but blind to container netns: a sandbox and a host session (or two
 sandboxes) can hold the same webapp port number. Sandbox routes therefore use
 a dedicated allocated range **[20000, 28000)**, keyed by
 `(sandboxId, containerPort)` and persisted in
-`~/.backstage-chats/sandbox-preview-ports.json`
+`~/.opensession-chats/sandbox-preview-ports.json`
 (src/server/sandbox/preview-ports.ts): host-vs-sandbox collisions are
 impossible by range disjointness, sandbox-vs-sandbox by the allocator's
 uniqueness probe. Allocations survive restarts/recreations (stable preview
@@ -136,10 +139,10 @@ every sandbox container publishes the `previewPorts` set (default 3 ports,
 3300-3302) at create. `startSandboxPreview` picks the worktree's existing
 `.ports.conf` WEBAPP_PORT when it's one of them, else the first published
 port nothing listens on, and seeds/rewrites `.ports.conf` so the dev flow
-adopts it (tella-fusion's dev-services.sh sources an existing `.ports.conf`
-and keeps free ports — inside the fresh netns ours always are). **Range
+adopts it (a repo dev script that sources an existing `.ports.conf` and keeps
+free ports will keep ours — inside the fresh netns they always are). **Range
 exhaustion** (every published port busy) refuses to start; the fallback is
-widening `previewPorts` in `~/.backstage-sandbox.json` and letting the
+widening `previewPorts` in `~/.opensession-sandbox.json` and letting the
 container be recreated (stop it or change the attach set — mounts/ports are
 create-time).
 
@@ -158,29 +161,30 @@ differ):
    `BACKSTAGE_BOOT_MODE` (`fresh` | `snapshot-restore`; host previews always
    say `fresh`) in its env. It should bring the dev server up on
    `$WEBAPP_PORT` (exec your server so stop's process-group kill reaches it).
-2. else the repo's configured `previewCommand` (config.json `repos` entry;
-   tella-fusion's is the tella-local `ensure-up.sh`), invoked with the
-   worktree path as `$1`. A configured absolute path that doesn't exist in
-   the current environment falls through to rung 3.
-3. else the tella-local `ensure-up.sh` (tella-fusion worktrees only) if the
-   environment carries it.
+2. else the repo's configured `previewCommand` (an instance-config `repos`
+   entry — e.g. a repo-specific ensure-up script kept outside the repo),
+   invoked with the worktree path as `$1`. A configured absolute path that
+   doesn't exist in the current environment (e.g. a host path the sandbox
+   image doesn't carry) is skipped instead of failing.
 
 No rung resolves → the status reports `bootable: false` and the UI renders a
 disabled Start explaining what to add. Host previews additionally inject the
 short-lived instance-role AWS creds from aws-creds.ts into the bring-up: the
-backstage service cgroup denies IMDS (IPAddressDeny) for every child, which
-otherwise breaks tella-fusion's `aws` preflight and prebuilt-WASM install.
+service cgroup denies IMDS (IPAddressDeny) for every child, which otherwise
+breaks bring-ups that need AWS access (e.g. an `aws` preflight or an
+S3-backed prebuilt-artifact install).
 
 `<worktree>/.opensession/setup.sh` is the sibling one-shot hook: it runs once
 per workspace materialization (first ensure of the sandbox, cwd = workspace,
 same `BACKSTAGE_BOOT_MODE` env), is **skipped on snapshot restore** (the
 restored container layer already carries its effects), is never retried once
-settled (log: `~/.backstage-chats/sandbox-runs/<session>/workspace-setup.log`),
+settled (log: `~/.opensession-chats/sandbox-runs/<session>/workspace-setup.log`),
 and never blocks the session on failure. Keep both scripts convention-level:
 no framework, no arguments beyond env. Host previews honor setup.sh too, with
 one asymmetry: there is no workspace-materialization moment on the host, so it
 runs (and settles, success or not) as part of the FIRST repo-script preview
-start, stamped per worktree under `~/.backstage-chats/preview-setup/`.
+start, stamped per worktree under `~/.backstage-chats/preview-setup/` (path
+literal in preview.ts).
 
 **`.tunnels.env` contract** (adopted from background-agents): when a preview
 starts, backstage writes `<worktree>/.tunnels.env` — dotenv, consumable by
@@ -195,20 +199,20 @@ Stale files are removed whenever ensure() (re)starts the container and on
 preview stop; each start rewrites the file whole. It's kept out of session
 diffs via the repo's `.git/info/exclude`.
 
-**tella-local `ensure-up.sh` in-container.** The skill dir
-(`~/.claude/skills/tella-local`, or `TELLA_LOCAL_ENSURE_UP`'s dir) is mounted
-read-only at its identical path in every sandbox. Dependency audit of the
-script + `just dev` chain: bash/coreutils/curl/python3/git (baked), `just`,
-`direnv` (hard dep — `direnv exec . just dev`), `lsof` (dev-services port
-probes) now baked. Deliberately NOT installed: the **aws CLI**
-(`ensure-aws-sso.sh` self-skips without it) and **temporal** (`just dev` =
-webapp only; temporal/instant services are Postgres/Redis-class — out of
-image scope, the webapp points at whatever its bind-mounted `.env.local`
-points at, seeded host-side). Caveat: the prebuilt-WASM S3 install
-(`install-*-wasm*.mjs`, JS SDK) needs AWS creds the container doesn't have
-(minimal env, IMDS blocked) — for tella-fusion, run the WASM install
-host-side once per worktree (any host preview does it) before relying on an
-in-sandbox bring-up.
+**External `previewCommand` scripts in-container.** When a repo's configured
+`previewCommand` is an absolute path outside the repo, its directory is
+mounted read-only at its identical path in every sandbox
+(`externalPreviewCommandDirs` in preview.ts), so the same bring-up script
+works host-side and in-sandbox. The image bakes the common dev-chain deps
+such scripts tend to need — bash/coreutils/curl/python3/git, plus `just`,
+`direnv` (`direnv exec . just dev` chains) and `lsof` (port probes).
+Deliberately NOT installed: the **aws CLI** and heavyweight backing services
+(Postgres/Redis-class daemons are out of image scope — the dev server points
+at whatever its bind-mounted env files point at, seeded host-side). Caveat:
+anything in the bring-up that needs cloud credentials fails inside the
+container (minimal env, IMDS blocked). Example from Tella's setup: their
+webapp's prebuilt-WASM S3 install has to run host-side once per worktree
+(any host preview does it) before an in-sandbox bring-up can rely on it.
 
 **Post-prompt snapshots.** When `snapshots.enabled`, a successfully completed
 sandboxed run schedules a `docker commit` snapshot (same helper as the
@@ -247,17 +251,18 @@ preview-domain URL, no preview-port slot consumed, and no image rebuild /
 container recreation to roll it out. The UI signals where a shell landed via
 `term_ready` (dim `[shell inside docker sandbox — <cwd>]` banner).
 
-Terminal code is reached through backstage.ts's WS handlers, which do NOT
-hot-apply — a real restart is needed after changing it.
+Terminal code is reached through the server's WebSocket handlers
+(`src/server/ws-handlers.ts`), which do NOT hot-apply — a real restart is
+needed after changing it.
 
 ## Phase 3 — WS transport + remote adapters
 
-- **WS transport** (`~/.backstage-sandbox.json` → `"transport": "ws"` +
+- **WS transport** (`~/.opensession-sandbox.json` → `"transport": "ws"` +
   `"callbackBaseUrl": "ws://<reachable-host>:3850"`): the in-sandbox run host
-  DIALS OUT to backstage's `/backstage/run-ws/<hostId>` route (token-authed,
+  DIALS OUT to the server's `/opensession/run-ws/<hostId>` route (token-authed,
   same NDJSON protocol, one JSON message per WS text frame) instead of
-  serving a unix socket, and the michael-* MCP proxies dial
-  `/backstage/rpc-ws`. Docker containers created in ws mode don't mount the
+  serving a unix socket, and the opensession-* MCP proxies dial
+  `/opensession/rpc-ws`. Docker containers created in ws mode don't mount the
   rpc socket. `callbackBaseUrl` must be reachable FROM the sandbox (Tailscale
   URL for self-hosters; 127.0.0.1 never works). For remote providers that
   means the PUBLIC internet: enable the isolated `publicIngress` listener
@@ -346,10 +351,8 @@ hot-apply — a real restart is needed after changing it.
   (the build asserts the installed version and fails on drift).
 - **opencode bump** on the host (`opencode --version` changes) → bump
   `OPENCODE_VERSION` (same parity rule; build asserts it).
-- **Codex SDK bump** (`@openai/codex-sdk` in `package.json`, which pulls a new
-  vendored codex binary) → rebuild so the new binary is baked.
-- **Lockfile change** (`bun.lock`) — any dependency add/upgrade, incl. the Claude
-  Agent SDK → rebuild (the deps layer re-installs).
+- **Lockfile change** (`bun.lock`) — any dependency add/upgrade → rebuild
+  (the deps layer re-installs).
 - **Bun bump** on the host → bump `BUN_VERSION` to keep parity.
 - Source changes to `src/` / `backstage.ts` that the runner-host path uses →
   rebuild (fast: only the final COPY layers change). In particular ANY change

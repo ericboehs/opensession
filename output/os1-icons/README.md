@@ -18,6 +18,11 @@ cleanest mark and the most legible at 16 px.
   and an unpadded icns/dock PNG draws visibly oversized next to other Dock
   icons). Source iconset in `fallback-os1-meridian.iconset/`.
 
+Only the sources are tracked (`generate.ts`, `pad.swift`,
+`build-fallbacks.sh`, the `.icon` package); the rendered artifacts above —
+`previews/`, the `.icns`, `icon-512-padded.png`, the iconset — are gitignored
+and rebuilt with the commands below.
+
 The `.icon` package holds `icon.json` + one SVG layer in a single
 `mode: "combined"` glass group (`specular: true`, translucency 0.3) — one
 unified glass object, no per-lobe inflation.

@@ -225,7 +225,7 @@ Useful paths:
 | `~/.opensession/config.json` | instance config (re-read on change) |
 | `~/.opensession.env` | secrets, loaded by the service |
 | `~/.opensession-chats/` | session store |
-| `~/worktrees/` | per-session git worktrees |
+| `~/.opensession/worktrees/` | per-session git worktrees |
 
 All of these live under the service user's `$HOME`; on Ubuntu's default EC2
 user (the setup this guide uses) that resolves to `/home/ubuntu`.

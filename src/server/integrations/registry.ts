@@ -66,7 +66,6 @@ export const INTEGRATIONS: IntegrationSpec[] = [
     env: [
       { name: "PLAIN_API_KEY", required: true, description: "API key for thread reads/writes" },
       { name: "PLAIN_WEBHOOK_SECRET", description: "verifies inbound webhook signatures" },
-      { name: "PLAIN_API_URL", description: "override the Plain API base URL" },
     ],
     load: async () => {
       const { PlainAgent } = await import("../../agents/plain/index");
@@ -157,8 +156,6 @@ export const INTEGRATIONS: IntegrationSpec[] = [
         description: "service account token",
       },
       { name: "LOKI_DATASOURCE_UID", description: "Loki datasource to query" },
-      { name: "SLACK_EXPORT_FAILURE_CHANNEL", description: "channel for export failures" },
-      { name: "SLACK_UPLOAD_FAILURE_CHANNEL", description: "channel for upload failures" },
     ],
     load: async (ctx) => {
       const { GrafanaPollerAgent } = await import("../../agents/grafana-poller/index");

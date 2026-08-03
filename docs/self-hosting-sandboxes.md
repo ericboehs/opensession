@@ -1,10 +1,9 @@
 # Self-hosting sandboxes
 
 How to run OpenSession sessions inside isolated sandboxes on your own
-infrastructure. Companion to `docs/sandboxes-plan.md` (the architecture and
-phase plan) and `deploy/sandbox/README.md` (the runner image + provider
-internals). This page is the operator's view: what to install, the full
-config schema, the provider guides, and the safety switches.
+infrastructure. Companion to `deploy/sandbox/README.md` (the runner image +
+provider internals). This page is the operator's view: what to install, the
+full config schema, the provider guides, and the safety switches.
 
 **Default = no sandboxes.** With no config file, every session runs on the
 host exactly as before. Sandboxes are opt-in per session (the "Run in
@@ -111,7 +110,9 @@ still typing*, so the sandbox is ready when you hit send.
 you use them, and an untouched one is destroyed after `ttlMinutes`. Default is
 deliberately 2.
 
-Off by default. Docker starts fast enough locally that it does not need this.
+Inert until a provider with prewarm support is configured (a Daytona/E2B API
+key, or the local Firecracker MicroVM provider) — then it defaults on. Docker
+starts fast enough locally that it does not need this.
 
 ### Snapshots
 
@@ -138,8 +139,9 @@ creating from a snapshot — sizing lives in the snapshot itself.
 Honest status, because these are the newest parts:
 
 - **Snapshot restore is best-effort.** A restored workspace can hold stale git
-  refs; `refreshRefs` exists for exactly that. If a session starts confused
-  about what branch it is on, suspect this first.
+  refs; the `quickSyncOnRestore` setting (a non-destructive `git fetch` +
+  `git status` after a volume restore, default on) exists for exactly that. If
+  a session starts confused about what branch it is on, suspect this first.
 - **Prewarm accounting** across restarts is imperfect — orphaned prewarms are
   reaped, but you may briefly pay for a sandbox nobody adopted.
 - **The MicroVM backend is experimental** and not certified. It is the fastest
@@ -188,7 +190,8 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 
   // Container ports published for previews (docker -p 127.0.0.1::<port> at
   // container create → random loopback host port; preview.ts routes the
-  // same Caddy tailnet-HTTPS front at the published port). Default none.
+  // same Caddy tailnet-HTTPS front at the published port).
+  // Default [3300, 3301, 3302].
   "previewPorts": [3300],
   // Allow startPreview to launch the dev-server bring-up INSIDE the
   // sandbox. Default false: only port-mapping + Caddy routing are active
@@ -209,7 +212,7 @@ to `provider: "local"` (today's host behavior). Env override for the path:
 
   // Per-repo overrides (keys = repo ids from the repos registry).
   "perRepo": {
-    "tella-fusion": { "provider": "docker", "image": "backstage-runner:latest" }
+    "my-app": { "provider": "docker", "image": "backstage-runner:latest" }
   },
 
   // ── Transport (how the in-sandbox run host talks to backstage) ─────
@@ -240,7 +243,8 @@ to `provider: "local"` (today's host behavior). Env override for the path:
   "daytona": {
     "apiKey": "dtn_…",         // falls back to DAYTONA_API_KEY
     "apiUrl": "…",             // optional (self-hosted Daytona)
-    "target": "…"              // optional region/target
+    "target": "…",             // optional region/target
+    "snapshot": "…"            // optional org snapshot to create sandboxes from
   },
   "e2b": {
     "apiKey": "e2b_…",         // falls back to E2B_API_KEY
@@ -272,7 +276,9 @@ to `provider: "local"` (today's host behavior). Env override for the path:
     // outbound WebSocket does not count as endpoint activity.
     "idleSuspendSeconds": 3600,
     "suspendedDurationSeconds": 3600, // only used with idleSuspendSeconds
-    "logGroup": "/aws/lambda/microvms/opensession"
+    "logGroup": "/aws/lambda/microvms/opensession",
+    "ingressConnectorArn": "…",       // optional VPC connectors
+    "egressConnectorArn": "…"
   },
   // Local Firecracker. Build this credential-free golden separately from the
   // preview-pool golden; the latter contains an app and may contain app creds.
@@ -288,14 +294,15 @@ to `provider: "local"` (today's host behavior). Env override for the path:
   // https URL (GitHub PAT / x-access-token).
   "cloneCredential": { "type": "https-token", "token": "ghp_…" },
 
-  // Warm-on-typing prewarm pool (remote providers; src/server/sandbox/
-  // prewarm.ts): typing a new-session prompt with daytona/e2b selected
-  // starts the runner bootstrap immediately; the session create ADOPTS the
-  // warmed sandbox, cutting first-turn sandbox latency from ~30-45s+ to
-  // seconds. Absent block = these defaults, with `enabled` true whenever a
-  // remote provider is configured.
+  // Warm-on-typing prewarm pool (src/server/sandbox/prewarm.ts): typing a
+  // new-session prompt with a prewarm-capable provider selected (daytona,
+  // microvm — e2b has no prewarm adapter yet) starts the runner bootstrap
+  // immediately; the session create ADOPTS the warmed sandbox, cutting
+  // first-turn sandbox latency from ~30-45s+ to seconds. Absent block =
+  // these defaults, with `enabled` true whenever a daytona/e2b API key or
+  // the microvm provider is configured.
   "prewarm": {
-    "enabled": true,           // default: true iff daytona/e2b has an API key
+    "enabled": true,           // default: see above
     "ttlMinutes": 10,          // destroy an untouched prewarm after N minutes
     "maxLive": 2               // max live prewarms across all repos (paid compute)
   },
@@ -363,7 +370,7 @@ tailnet and carries the whole app — never expose it. Instead,
 | Path | What |
 | --- | --- |
 | `/opensession/run-ws/<hostId>` | WS upgrade — the run host's event stream |
-| `/opensession/rpc-ws?host=…` | WS upgrade — the michael-* MCP proxy channel |
+| `/opensession/rpc-ws?host=…` | WS upgrade — the opensession-* MCP proxy channel |
 | `/ingress-health` | bare `200 ok` (monitors/probes) |
 
 Every other path is a **bodyless 404** — no app routes, no API, no frontend,

@@ -52,7 +52,7 @@
  * Everything is sbxtest-prefixed and cleaned up at the end. Safe to run next
  * to the live server: the run journal AND the sandbox config are redirected
  * to the scratch dir BEFORE any module import, so nothing here can leak into
- * ~/.backstage-chats/active-runs.json or flip the live sandbox config.
+ * ~/.opensession-chats/active-runs.json or flip the live sandbox config.
  */
 
 const SCRATCH = `${process.env.HOME || homedir()}/.sandbox-verify-scratch`;
@@ -60,7 +60,7 @@ const SCRATCH = `${process.env.HOME || homedir()}/.sandbox-verify-scratch`;
 // the journal path at module load, and sandbox/config.ts resolves its config
 // PATH at module load. The scratch config (written below) turns on the docker
 // provider + volume workspace mode + a preview port WITHOUT touching the live
-// ~/.backstage-sandbox.json.
+// ~/.opensession-sandbox.json.
 process.env.BACKSTAGE_RUN_JOURNAL = `${SCRATCH}/active-runs.json`;
 process.env.BACKSTAGE_SANDBOX_CONFIG = `${SCRATCH}/sandbox-config.json`;
 // The repo registry is config-driven now (REPOS is a read-only Proxy over

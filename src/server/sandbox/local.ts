@@ -1,6 +1,6 @@
 /**
  * LocalProvider — today's behavior behind the Sandbox interface (Phase 0 of
- * docs/sandboxes-plan.md). The "sandbox" is just the host: `ensure` resolves a
+ * the sandbox rollout plan). The "sandbox" is just the host: `ensure` resolves a
  * workspace exactly the way the existing session paths do (delegating to
  * worktree.ts — never duplicating its git logic), `exec` runs on the host via
  * Bun's `$`, and `launchRun` is the current in-process `runAgent` path.

@@ -139,9 +139,10 @@ them too.
 `"false"` disables them. A fresh install with no credentials started every agent
 loop against nothing.
 
-**Fix:** onboarding writes an explicit value for every integration. The
-asymmetry itself is preserved (it is long-standing behaviour) but is now pinned
-by a test so it cannot drift silently.
+**Fix:** onboarding writes an explicit value for every integration, and the
+flag semantics have since been flipped fail-closed: only the literal `"true"`
+enables (any other value disables; unset defers to config), pinned by a test so
+it cannot drift silently.
 
 ### 8. There was no way to *run* anything
 
@@ -350,7 +351,7 @@ Not a bug, but the biggest gap between "installed" and "useful". Automations are
 per-instance data rather than source, so a new operator got a healthy server and
 a blank page.
 
-**Fix:** `recipes/automations/` ships six generic recipes, off by default, with
+**Fix:** `recipes/automations/` ships seven generic recipes, off by default, with
 `opensession automations list|add|remove`; onboarding offers the two
 highest-leverage ones. They install through the existing
 `integrations.seeds.automations` path, so the CLI never needs to know how

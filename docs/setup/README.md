@@ -41,7 +41,7 @@ OpenSession is a self-hosted agent-infrastructure server. One Bun process serves
 
 A second small HTTP server (the webhook server, default port 3848) receives
 GitHub/Linear/Plain/Stripe webhooks; the main server (default 3850) serves the
-UI and API at `/opensession/`.
+UI and API at the root of your instance URL.
 
 ## Minimum requirements
 
@@ -51,15 +51,17 @@ UI and API at `/opensession/`.
 - [Bun](https://bun.sh) — runtime, package manager, and bundler. No Node/Vite.
   The installer brings its own; you only need it up front for a manual install.
 - `git`, and the [`gh` CLI](https://cli.github.com) for PR operations.
-- The `claude` CLI (Claude Code) — the Claude engine shells out to it
-  (`OPENSESSION_CLAUDE_BIN`, default `/home/ubuntu/.local/bin/claude`).
+- The `opencode` binary — the engine that runs every agent turn. The installer
+  installs it by default (`--no-engine` opts out).
+- The `claude` CLI (Claude Code) — the bundled Meridian bridge shells out to
+  it for Anthropic models (`OPENSESSION_CLAUDE_BIN`, default: `claude` found
+  on `PATH`).
 - **Tailscale** — the recommended way to expose the UI at all. The installer
   installs it by default (`--no-tailscale` opts out); joining a network is a
   separate step that needs your account.
 - Optional: **Docker** (sandboxed sessions —
   [self-hosting-sandboxes](../self-hosting-sandboxes.md)), **Caddy** (TLS for
-  live previews), `opencode` binary (OpenCode engine), `whisper.cpp`/Groq/OpenAI
-  key (voice dictation).
+  live previews), `whisper.cpp`/Groq/OpenAI key (voice dictation).
 
 ## Trust model (read this)
 
@@ -75,7 +77,7 @@ never expose it publicly. [networking.md](networking.md) covers how.
 sign-in: every `/api/*` request and the UI WebSocket require a session cookie,
 only logins listed in `identity.team` may sign in, and the verified identity
 overrides any client-claimed user. Tella's own deployment runs with this on. See
-[github.md](github.md#per-user-github-auth--web-sign-in).
+[github.md](github.md#per-user-github-auth-prs-as-the-session-owner).
 
 Turning it on does **not** make the server safe to expose publicly. It protects
 the UI and API; it does not change the fact that a session executes arbitrary
@@ -102,6 +104,7 @@ when adding anything that touches this.
 | Page | Covers |
 | --- | --- |
 | [install.md](install.md) | installer → onboarding → env vars → config.json → accounts → systemd → health |
+| [../instance-configuration.md](../instance-configuration.md) | everything instance-specific in `~/.opensession/config.json` — repos, identity, branding, policy, seeds |
 | [networking.md](networking.md) | **keeping it private** — Tailscale, SSH tunnels, verifying exposure |
 | [ec2.md](ec2.md) | provisioning a clean EC2 box, networking, SSH debugging |
 | [../../recipes/README.md](../../recipes/README.md) | bundled automation recipes, and what belongs in the repo |
@@ -116,3 +119,10 @@ when adding anything that touches this.
 | [../worktrees.md](../worktrees.md) | how sessions map to git worktrees, and where the disk goes |
 | [../clients.md](../clients.md) | web UI, PWA, Electron shell, Swift app, Chrome extension |
 | [../extending.md](../extending.md) | MCP servers, recipes, integrations, providers, skills |
+
+The remaining files in `docs/` are not setup guides:
+[feeds-design.md](../feeds-design.md), [transcript-v2-design.md](../transcript-v2-design.md),
+and [os1-tui-plan.md](../os1-tui-plan.md) are design-history documents (each is
+banner-labeled as such); [install-papercuts.md](../install-papercuts.md) is the
+running log of install friction; [chat-performance.md](../chat-performance.md)
+is the frontend chat-render performance contract.

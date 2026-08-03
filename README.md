@@ -16,9 +16,10 @@ and GitHub agents, driving coding sessions through the OpenCode engine
 curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
 ```
 
-Installs Bun and the OpenCode engine if you do not have them, clones the
-source to `~/.opensession/src`, puts an `opensession` command on your `PATH`,
-and walks you through configuration. Takes under a minute on a fresh box.
+Installs Bun, the OpenCode engine, and the Tailscale client if you do not
+have them, clones the source to `~/.opensession/src`, puts an `opensession`
+command on your `PATH`, and walks you through configuration. Takes under a
+minute on a fresh box.
 
 ```sh
 opensession start      # run it
@@ -27,11 +28,7 @@ opensession update     # pull, reinstall, restart
 opensession --help     # everything else
 ```
 
-Other ways in:
-
-```sh
-bun add -g github:tellahq/opensession     # or npm i -g, once published
-```
+Or run it straight from a checkout:
 
 ```sh
 git clone https://github.com/tellahq/opensession.git
@@ -40,7 +37,8 @@ bun run setup                             # same wizard, without the installer
 ```
 
 The installer accepts `--dir`, `--channel <ref>`, `--no-engine`,
-`--no-modify-path`, `--yes` and `--uninstall`; `--help` lists them.
+`--no-tailscale`, `--no-modify-path`, `--yes` and `--uninstall`; `--help`
+lists them all.
 
 Then read the real setup guide — secrets, accounts, integrations, systemd:
 
@@ -69,8 +67,9 @@ Then read the real setup guide — secrets, accounts, integrations, systemd:
 
 Repositories, identity, branding, public URLs, integration enablement,
 deployment policy, client endpoints, action seeds, and automation seeds are
-instance configuration. The source defaults to a local, single-repository
-OpenSession install.
+instance configuration
+([docs/instance-configuration.md](docs/instance-configuration.md)). The source
+defaults to a local, single-repository OpenSession install.
 
 ## macOS app
 

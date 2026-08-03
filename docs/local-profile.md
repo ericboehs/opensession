@@ -50,7 +50,7 @@ and is never used as a fallback.
 ## Start OpenSession
 
 ```sh
-git clone https://github.com/tellahq/backstage.git opensession
+git clone https://github.com/tellahq/opensession.git
 cd opensession
 bun install
 OPENSESSION_PROFILE=local bun run opensession.ts

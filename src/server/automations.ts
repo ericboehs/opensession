@@ -174,7 +174,7 @@ export interface Automation {
   /** false = soft pin (pool fallback); unset/true = hard pin (cost cap). */
   accountStrict?: boolean;
   /**
-   * Run this automation's sessions inside a sandbox (docs/sandboxes-plan.md).
+   * Run this automation's sessions inside a sandbox (the sandbox rollout plan).
    * Schema-only for now: create/update REJECT `sandbox: true` — automation
    * sandboxing lands in a later phase (interactive sessions dogfood first,
    * and the Phase 1 mount set carries interactive-level ambient trust that

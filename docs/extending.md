@@ -96,8 +96,9 @@ This is a boot path, so it needs a real restart.
 
 ## 4. Sandbox providers — run sessions somewhere else
 
-`src/server/sandbox/adapters/` holds one file per provider (Docker, Daytona,
-E2B, Modal, Box, Lambda MicroVM). Implement the `SandboxProvider` contract —
+`src/server/sandbox/` holds one file per provider — Docker (and the local host
+runner) at the root, with Daytona, E2B, Modal, Box and the MicroVM / Lambda
+MicroVM adapters under `adapters/`. Implement the `SandboxProvider` contract —
 create, exec, destroy, plus the dial-back plumbing for remote compute — and
 register it.
 

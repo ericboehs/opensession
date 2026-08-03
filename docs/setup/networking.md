@@ -225,7 +225,7 @@ Nothing is exposed; the tunnel exists only while the SSH session does.
 Turn on real authentication first. `integrations.github` adds GitHub sign-in:
 every `/api/*` request and the UI WebSocket require a session cookie, and only
 logins listed in `identity.team` can sign in. See
-[github.md](github.md#per-user-github-auth--web-sign-in).
+[github.md](github.md#per-user-github-auth-prs-as-the-session-owner).
 
 Even then, prefer keeping the network boundary. Sign-in protects the UI and
 API; it is not a reason to put an agent runner on the public internet.

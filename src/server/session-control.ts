@@ -74,7 +74,7 @@ export interface CreateSessionOpts {
   /** Display name credited as the creator. */
   user?: string;
   /**
-   * Ask for a sandboxed session (docs/sandboxes-plan.md). `true` = the config
+   * Ask for a sandboxed session (the sandbox rollout plan). `true` = the config
    * default provider; a provider id (including "modal" / "lambda-microvm")
    * picks one explicitly and must be configured (~/.opensession-sandbox.json),
    * else the create fails with a clear error.
