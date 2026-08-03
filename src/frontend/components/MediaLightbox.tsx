@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type WorkspaceMediaItem } from "../lib/api";
 import { IconChevronLeft, IconChevronRight, IconX } from "./icons";
 
@@ -32,15 +34,122 @@ export interface LightboxItem {
 interface LightboxState {
 	items: LightboxItem[];
 	index: number;
+	id: number;
+	origin?: HTMLElement;
+	originIndex: number;
+	useHeroTransition: boolean;
 }
 
-let host: ((s: LightboxState) => void) | null = null;
+interface LightboxRequest {
+	items: LightboxItem[];
+	index: number;
+	origin?: HTMLElement;
+}
+
+interface ViewTransitionHandle {
+	finished: Promise<void>;
+	skipTransition(): void;
+}
+
+type ViewTransitionDocument = Document & {
+	startViewTransition?: (update: () => void) => ViewTransitionHandle;
+};
+
+const HERO_TRANSITION_NAME = "lightbox-media";
+let nextLightboxId = 0;
+let host: ((request: LightboxRequest) => void) | null = null;
+
+const LIGHTBOX_TRANSITION_CSS = `
+html[data-lightbox-transition="opening"]::view-transition-old(root),
+html[data-lightbox-transition="closing"]::view-transition-new(root) {
+  animation: none;
+}
+
+html[data-lightbox-transition="opening"]::view-transition-new(root) {
+  animation: lightbox-root-in 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+html[data-lightbox-transition="closing"]::view-transition-old(root) {
+  animation: lightbox-root-out 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+::view-transition-group(${HERO_TRANSITION_NAME}) {
+  z-index: 401;
+  animation-duration: 360ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+::view-transition-old(${HERO_TRANSITION_NAME}),
+::view-transition-new(${HERO_TRANSITION_NAME}) {
+  mix-blend-mode: normal;
+}
+
+@keyframes lightbox-root-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes lightbox-root-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+`;
+
+function mediaElement(origin?: Element | null): HTMLElement | undefined {
+	if (!(origin instanceof HTMLElement)) return undefined;
+	if (origin.matches("img, video")) return origin;
+	return origin.querySelector<HTMLElement>("img, video") || origin;
+}
+
+function canMorphFrom(origin?: HTMLElement): origin is HTMLElement {
+	if (!origin?.isConnected) return false;
+	const rect = origin.getBoundingClientRect();
+	return (
+		rect.width > 0 &&
+		rect.height > 0 &&
+		rect.right > 0 &&
+		rect.bottom > 0 &&
+		rect.left < window.innerWidth &&
+		rect.top < window.innerHeight
+	);
+}
+
+function setTransitionName(element: HTMLElement, name: string): () => void {
+	const previous = element.style.viewTransitionName;
+	let restored = false;
+	element.style.viewTransitionName = name;
+	return () => {
+		if (restored) return;
+		restored = true;
+		element.style.viewTransitionName = previous;
+	};
+}
+
+function markTransition(phase: "opening" | "closing", id: number): () => void {
+	const root = document.documentElement;
+	const token = String(id);
+	root.dataset.lightboxTransition = phase;
+	root.dataset.lightboxTransitionId = token;
+	return () => {
+		if (root.dataset.lightboxTransitionId !== token) return;
+		delete root.dataset.lightboxTransition;
+		delete root.dataset.lightboxTransitionId;
+	};
+}
+
+function supportsHeroTransition(): boolean {
+	return (
+		typeof (document as ViewTransitionDocument).startViewTransition === "function" &&
+		!window.matchMedia("(prefers-reduced-motion: reduce)").matches
+	);
+}
 
 export function openLightbox(
 	items: (LightboxItem | WorkspaceMediaItem)[],
 	index: number,
+	origin?: Element | null,
 ) {
-	host?.({ items, index });
+	host?.({ items, index, origin: mediaElement(origin) });
 }
 
 /** Every piece of chat media currently in the DOM, in document order —
@@ -56,15 +165,65 @@ export function openGalleryFrom(el: Element) {
 		src: (n as HTMLImageElement | HTMLVideoElement).src,
 	}));
 	if (items.length === 0) return;
-	openLightbox(items, Math.max(0, nodes.indexOf(el)));
+	openLightbox(items, Math.max(0, nodes.indexOf(el)), el);
 }
 
 export function MediaLightboxHost() {
 	const [state, setState] = useState<LightboxState | null>(null);
+	const activeTransition = useRef<ViewTransitionHandle | null>(null);
+	const activeSourceCleanup = useRef<(() => void) | null>(null);
 	useEffect(() => {
-		host = setState;
+		const open = (request: LightboxRequest) => {
+			const id = ++nextLightboxId;
+			const origin = mediaElement(request.origin);
+			const next: LightboxState = {
+				...request,
+				id,
+				origin,
+				originIndex: request.index,
+				useHeroTransition: false,
+			};
+			const item = request.items[request.index];
+			if (item?.kind !== "image" || !canMorphFrom(origin) || !supportsHeroTransition()) {
+				setState(next);
+				return;
+			}
+
+			activeTransition.current?.skipTransition();
+			activeSourceCleanup.current?.();
+			const restoreOrigin = setTransitionName(origin, HERO_TRANSITION_NAME);
+			activeSourceCleanup.current = restoreOrigin;
+			const clearTransitionMark = markTransition("opening", id);
+			try {
+				const transition = (document as ViewTransitionDocument).startViewTransition!(() => {
+					// The source belongs only to the old snapshot. Removing its name before
+					// React mounts the destination avoids duplicate named elements.
+					restoreOrigin();
+					if (activeSourceCleanup.current === restoreOrigin) {
+						activeSourceCleanup.current = null;
+					}
+					flushSync(() => setState({ ...next, useHeroTransition: true }));
+				});
+				activeTransition.current = transition;
+				const finish = () => {
+					if (activeTransition.current === transition) activeTransition.current = null;
+					clearTransitionMark();
+				};
+				void transition.finished.then(finish, finish);
+			} catch {
+				restoreOrigin();
+				if (activeSourceCleanup.current === restoreOrigin) {
+					activeSourceCleanup.current = null;
+				}
+				clearTransitionMark();
+				setState(next);
+			}
+		};
+		host = open;
 		return () => {
-			if (host === setState) host = null;
+			if (host === open) host = null;
+			activeTransition.current?.skipTransition();
+			activeSourceCleanup.current?.();
 		};
 	}, []);
 	// Delegated capture-phase listener: intercept plain left-clicks on any
@@ -91,14 +250,99 @@ export function MediaLightboxHost() {
 		document.addEventListener("click", onClick, true);
 		return () => document.removeEventListener("click", onClick, true);
 	}, []);
-	if (!state) return null;
-	return (
+
+	function close(current: LightboxState, allowHeroTransition = true) {
+		const item = current.items[current.index];
+		const origin = current.origin;
+		const canReturn =
+			allowHeroTransition &&
+			current.useHeroTransition &&
+			current.index === current.originIndex &&
+			item?.kind === "image" &&
+			canMorphFrom(origin) &&
+			supportsHeroTransition();
+
+		if (!canReturn) {
+			// Native transitions don't need Motion's lifecycle. If the source has
+			// disappeared (for example, a hover card closed), opt back into the
+			// fallback for one frame so the viewer still leaves gracefully.
+			activeTransition.current?.skipTransition();
+			activeTransition.current = null;
+			activeSourceCleanup.current?.();
+			activeSourceCleanup.current = null;
+			if (document.documentElement.dataset.lightboxTransitionId === String(current.id)) {
+				delete document.documentElement.dataset.lightboxTransition;
+				delete document.documentElement.dataset.lightboxTransitionId;
+			}
+			setState({ ...current, useHeroTransition: false });
+			requestAnimationFrame(() => {
+				setState((latest) => (latest?.id === current.id ? null : latest));
+			});
+			return;
+		}
+
+		activeTransition.current?.skipTransition();
+		activeSourceCleanup.current?.();
+		activeSourceCleanup.current = null;
+		const clearTransitionMark = markTransition("closing", current.id);
+		let restoreOrigin: (() => void) | undefined;
+		try {
+			const transition = (document as ViewTransitionDocument).startViewTransition!(() => {
+				// The target belongs only to the old snapshot; name the source after
+				// that capture so it becomes the destination in the new snapshot.
+				restoreOrigin = setTransitionName(origin, HERO_TRANSITION_NAME);
+				activeSourceCleanup.current = restoreOrigin;
+				flushSync(() => setState(null));
+			});
+			activeTransition.current = transition;
+			const finish = () => {
+				restoreOrigin?.();
+				if (activeSourceCleanup.current === restoreOrigin) {
+					activeSourceCleanup.current = null;
+				}
+				if (activeTransition.current === transition) activeTransition.current = null;
+				clearTransitionMark();
+			};
+			void transition.finished.then(finish, finish);
+		} catch {
+			restoreOrigin?.();
+			if (activeSourceCleanup.current === restoreOrigin) {
+				activeSourceCleanup.current = null;
+			}
+			clearTransitionMark();
+			setState(null);
+		}
+	}
+
+	const lightbox = state ? (
 		<MediaLightbox
+			key={state.id}
 			items={state.items}
 			index={state.index}
-			onIndex={(index) => setState({ ...state, index })}
-			onClose={() => setState(null)}
+			onIndex={(index) =>
+				setState((latest) =>
+					latest?.id === state.id ? { ...latest, index } : latest,
+				)
+			}
+			onClose={(allowHeroTransition) => close(state, allowHeroTransition)}
+			useHeroTransition={state.useHeroTransition}
+			heroTransitionName={
+				state.useHeroTransition && state.index === state.originIndex
+					? HERO_TRANSITION_NAME
+					: undefined
+			}
 		/>
+	) : null;
+
+	return (
+		<>
+			<style>{LIGHTBOX_TRANSITION_CSS}</style>
+			{state?.useHeroTransition ? (
+				lightbox
+			) : (
+				<AnimatePresence initial={false}>{lightbox}</AnimatePresence>
+			)}
+		</>
 	);
 }
 
@@ -169,9 +413,13 @@ const DOUBLE_TAP_SCALE = 2.5;
 function ZoomableImage({
 	src,
 	onTapBackdrop,
+	onZoomChange,
+	viewTransitionName,
 }: {
 	src: string;
 	onTapBackdrop: () => void;
+	onZoomChange: (zoomed: boolean) => void;
+	viewTransitionName?: string;
 }) {
 	const wrapRef = useRef<HTMLDivElement>(null);
 	const imgRef = useRef<HTMLImageElement>(null);
@@ -189,6 +437,7 @@ function ZoomableImage({
 	} | null>(null);
 	const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
 	const [zoomed, setZoomed] = useState(false);
+	const zoomedRef = useRef(false);
 
 	function apply(animate = false) {
 		const img = imgRef.current;
@@ -196,7 +445,12 @@ function ZoomableImage({
 		const { s, tx, ty } = t.current;
 		img.style.transition = animate ? "transform 0.18s ease-out" : "none";
 		img.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
-		setZoomed(s > 1);
+		const nextZoomed = s > 1;
+		if (nextZoomed !== zoomedRef.current) {
+			zoomedRef.current = nextZoomed;
+			setZoomed(nextZoomed);
+			onZoomChange(nextZoomed);
+		}
 	}
 
 	/** The img's layout (untransformed) viewport rect — transform-origin is 0 0,
@@ -391,6 +645,7 @@ function ZoomableImage({
 				alt=""
 				draggable={false}
 				className="min-h-0 min-w-0 max-h-full max-w-full rounded-md object-contain [transform-origin:0_0]"
+				style={{ viewTransitionName }}
 			/>
 		</div>
 	);
@@ -401,16 +656,40 @@ function MediaLightbox({
 	index,
 	onIndex,
 	onClose,
+	useHeroTransition,
+	heroTransitionName,
 }: {
 	items: LightboxItem[];
 	index: number;
 	onIndex: (i: number) => void;
-	onClose: () => void;
+	onClose: (allowHeroTransition?: boolean) => void;
+	useHeroTransition: boolean;
+	heroTransitionName?: string;
 }) {
 	const item = items[index];
 	const many = items.length > 1;
-	const prev = () => onIndex((index - 1 + items.length) % items.length);
-	const next = () => onIndex((index + 1) % items.length);
+	const [imageZoomed, setImageZoomed] = useState(false);
+	const dialogRef = useRef<HTMLDivElement>(null);
+	const closeRef = useRef<HTMLButtonElement>(null);
+	const reduceMotion = useReducedMotion();
+	const prev = () => {
+		setImageZoomed(false);
+		onIndex((index - 1 + items.length) % items.length);
+	};
+	const next = () => {
+		setImageZoomed(false);
+		onIndex((index + 1) % items.length);
+	};
+	const requestClose = () => onClose(!imageZoomed);
+
+	useEffect(() => {
+		const previousFocus = document.activeElement as HTMLElement | null;
+		const frame = requestAnimationFrame(() => closeRef.current?.focus({ preventScroll: true }));
+		return () => {
+			cancelAnimationFrame(frame);
+			if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+		};
+	}, []);
 
 	// Capture-phase so the arrows/Escape don't also drive whatever is behind
 	// the modal (composer, session viewer shortcuts).
@@ -418,7 +697,7 @@ function MediaLightbox({
 		function onKey(e: KeyboardEvent) {
 			if (e.key === "Escape") {
 				e.stopPropagation();
-				onClose();
+				requestClose();
 			} else if (e.key === "ArrowLeft" && many) {
 				e.stopPropagation();
 				e.preventDefault();
@@ -427,6 +706,26 @@ function MediaLightbox({
 				e.stopPropagation();
 				e.preventDefault();
 				next();
+			} else if (e.key === "Tab") {
+				const focusable = Array.from(
+					dialogRef.current?.querySelectorAll<HTMLElement>(
+						'a[href], button:not([disabled]), video[controls], [tabindex]:not([tabindex="-1"])',
+					) || [],
+				).filter((element) => element.getClientRects().length > 0);
+				if (focusable.length === 0) {
+					e.preventDefault();
+					return;
+				}
+				const first = focusable[0];
+				const last = focusable[focusable.length - 1];
+				const active = document.activeElement;
+				if (e.shiftKey && (active === first || !dialogRef.current?.contains(active))) {
+					e.preventDefault();
+					last.focus();
+				} else if (!e.shiftKey && (active === last || !dialogRef.current?.contains(active))) {
+					e.preventDefault();
+					first.focus();
+				}
 			}
 		}
 		window.addEventListener("keydown", onKey, true);
@@ -447,16 +746,25 @@ function MediaLightbox({
 		"z-10 grid h-10 w-10 shrink-0 place-items-center rounded-full border-0 bg-white/10 p-0 text-white hover:bg-white/20";
 
 	return (
-		<div
+		<motion.div
+			ref={dialogRef}
 			className="fixed inset-0 z-[400] flex flex-col bg-black/85"
+			role="dialog"
+			aria-modal="true"
+			aria-label={item.kind === "image" ? "Image preview" : "Video preview"}
+			initial={useHeroTransition ? false : { opacity: 0 }}
+			animate={{ opacity: 1 }}
+			exit={useHeroTransition ? { opacity: 1 } : { opacity: 0 }}
+			transition={useHeroTransition ? { duration: 0 } : { duration: 0.16, ease: "easeOut" }}
 			onMouseDown={(e) => {
-				if (e.target === e.currentTarget) onClose();
+				if (e.target === e.currentTarget) requestClose();
 			}}
 		>
 			<button
+				ref={closeRef}
 				type="button"
 				className={`${navBtn} absolute right-3 top-3`}
-				onClick={onClose}
+				onClick={requestClose}
 				aria-label="Close"
 			>
 				<IconX size={22} />
@@ -465,7 +773,7 @@ function MediaLightbox({
 			<div
 				className="flex min-h-0 flex-1 items-center justify-center gap-3 px-3 pb-2 pt-14 sm:px-4"
 				onMouseDown={(e) => {
-					if (e.target === e.currentTarget) onClose();
+					if (e.target === e.currentTarget) requestClose();
 				}}
 			>
 				{many && (
@@ -478,19 +786,49 @@ function MediaLightbox({
 						<IconChevronLeft size={24} />
 					</button>
 				)}
-				{item.kind === "image" ? (
-					<ZoomableImage key={item.src} src={item.src} onTapBackdrop={onClose} />
-				) : (
-					<video
-						key={item.src}
-						src={item.src}
-						controls
-						autoPlay
-						muted
-						playsInline
-						className="min-h-0 min-w-0 max-h-full max-w-full rounded-md"
-					/>
-				)}
+				<motion.div
+					className="flex min-h-0 min-w-0 flex-1 self-stretch"
+					initial={
+						useHeroTransition
+							? false
+							: { opacity: 0, scale: reduceMotion ? 1 : 0.96 }
+					}
+					animate={{ opacity: 1, scale: 1 }}
+					exit={
+						useHeroTransition
+							? { opacity: 1, scale: 1 }
+							: { opacity: 0, scale: reduceMotion ? 1 : 0.985 }
+					}
+					transition={
+						useHeroTransition
+							? { duration: 0 }
+							: reduceMotion
+								? { duration: 0.14, ease: "easeOut" }
+								: { type: "spring", duration: 0.28, bounce: 0 }
+					}
+				>
+					{item.kind === "image" ? (
+						<ZoomableImage
+							key={item.src}
+							src={item.src}
+							onTapBackdrop={requestClose}
+							onZoomChange={setImageZoomed}
+							viewTransitionName={heroTransitionName}
+						/>
+					) : (
+						<div className="flex min-h-0 min-w-0 flex-1 items-center justify-center self-stretch">
+							<video
+								key={item.src}
+								src={item.src}
+								controls
+								autoPlay
+								muted
+								playsInline
+								className="min-h-0 min-w-0 max-h-full max-w-full rounded-md"
+							/>
+						</div>
+					)}
+				</motion.div>
 				{many && (
 					<button
 						type="button"
@@ -506,7 +844,7 @@ function MediaLightbox({
 			<div
 				className="z-10 flex items-center justify-center gap-3 px-4 pb-4 pt-1 text-xs text-white/70"
 				onMouseDown={(e) => {
-					if (e.target === e.currentTarget) onClose();
+					if (e.target === e.currentTarget) requestClose();
 				}}
 			>
 				{many && (
@@ -533,6 +871,6 @@ function MediaLightbox({
 					</a>
 				)}
 			</div>
-		</div>
+		</motion.div>
 	);
 }

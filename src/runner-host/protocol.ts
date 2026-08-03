@@ -26,6 +26,7 @@ import { fileURLToPath } from "url";
 
 import type { StreamEvent, ImageInput } from "../server/run-events";
 import type { GitIdentity } from "../server/shared/user-mappings";
+import type { McpScope } from "../server/runner-shared";
 
 /** Everything a host needs to drive one run — a serializable RunAgentOpts. */
 export interface RunHostSpec {
@@ -45,8 +46,9 @@ export interface RunHostSpec {
   images?: ImageInput[];
   forkSession?: boolean;
   resumeSessionAt?: string;
-  /** mcp-config.json allowlist (automation scoping); omitted = all servers. */
-  mcpServers?: string[];
+  /** MCP scope for the run: an allowlist, [] for none, or "all". Optional
+   *  for back-compat with specs sent before McpScope; absent reads as "all". */
+  mcpServers?: McpScope;
   /**
    * opensession-* in-process servers to expose via the RPC proxy (mcp-proxy.ts →
    * backstage-rpc.sock). Names must match what the backstage-side builder

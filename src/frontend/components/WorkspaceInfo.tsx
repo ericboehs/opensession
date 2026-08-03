@@ -1829,7 +1829,9 @@ export function WorkspaceInfo({
 									<button
 										key={`${m.sessionId}:${m.at}:${i}`}
 										type="button"
-										onClick={() => openLightbox(media, i)}
+										onClick={(event) =>
+											openLightbox(media, i, event.currentTarget)
+										}
 										className={cn(
 											"relative aspect-video shrink-0 snap-start overflow-hidden rounded-md border border-line bg-surface transition-colors hover:border-line-strong hover:bg-hover",
 											media.length === 1 ? "w-full" : "w-[76%]",

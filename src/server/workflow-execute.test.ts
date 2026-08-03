@@ -243,7 +243,7 @@ describe("runAgentCollect", () => {
 				},
 			],
 		]);
-		const res = await runAgentCollect({ prompt: "p", cwd: "/tmp" });
+		const res = await runAgentCollect({ prompt: "p", cwd: "/tmp", mcpServers: [] });
 		expect(res.text).toBe("hello world");
 		expect(res.engineSessionId).toBe("oc-abc");
 		expect(res.model).toBe("opencode/openai/gpt-5.5");
@@ -258,7 +258,7 @@ describe("runAgentCollect", () => {
 				{ type: "error", content: "engine exploded" },
 			],
 		]);
-		const res = await runAgentCollect({ prompt: "p", cwd: "/tmp" });
+		const res = await runAgentCollect({ prompt: "p", cwd: "/tmp", mcpServers: [] });
 		expect(res.error).toBe("engine exploded");
 	});
 
@@ -267,7 +267,7 @@ describe("runAgentCollect", () => {
 			yield { type: "init", sessionId: "oc-1" } as StreamEvent;
 			throw new Error("boom");
 		});
-		const res = await runAgentCollect({ prompt: "p", cwd: "/tmp" });
+		const res = await runAgentCollect({ prompt: "p", cwd: "/tmp", mcpServers: [] });
 		expect(res.error).toBe("boom");
 	});
 
@@ -304,7 +304,7 @@ describe("runAgentCollect", () => {
 				},
 			],
 		]);
-		const res = await runAgentCollect({ prompt: "p", cwd: "/tmp" });
+		const res = await runAgentCollect({ prompt: "p", cwd: "/tmp", mcpServers: [] });
 		expect(res.text).toBe("the complete fresh reply");
 		expect(res.model).toBe("opencode/anthropic/claude-sonnet-5");
 		expect(res.engineSessionId).toBe("oc-b");
@@ -322,7 +322,7 @@ describe("runAgentCollect", () => {
 				{ type: "done", model: "m-2" },
 			],
 		]);
-		const res = await runAgentCollect({ prompt: "p", cwd: "/tmp" });
+		const res = await runAgentCollect({ prompt: "p", cwd: "/tmp", mcpServers: [] });
 		expect(res.text).toBe("fresh");
 	});
 
@@ -334,7 +334,7 @@ describe("runAgentCollect", () => {
 			await hang;
 		});
 		const ac = new AbortController();
-		const p = runAgentCollect({ prompt: "p", cwd: "/tmp" }, ac.signal);
+		const p = runAgentCollect({ prompt: "p", cwd: "/tmp", mcpServers: [] }, ac.signal);
 		await Bun.sleep(10);
 		ac.abort();
 		const res = await p;
@@ -363,7 +363,9 @@ describe("workflowExecutor", () => {
 		expect(calls[0].cwd).toBe("/tmp/wf-test");
 		expect(calls[0].user).toBe("michiel");
 		expect(calls[0].journal).toEqual({ kind: "workflow" });
-		expect(calls[0].mcpServers).toBeUndefined();
+		// Workflow workers keep the full connector set, now spelled out rather
+		// than inherited from an omitted field (McpScope).
+		expect(calls[0].mcpServers).toBe("all");
 		expect(calls[0].inProcessMcp).toBeUndefined();
 		expect(calls[0].deniedTools).toBeUndefined();
 	});

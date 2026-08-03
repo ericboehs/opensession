@@ -8,6 +8,7 @@
  * cache in session-cache.ts.
  */
 
+import type { McpScope } from "./runner-shared";
 import { randomUUIDv7 } from "bun";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import {
@@ -1024,7 +1025,7 @@ export async function maybeLaunchSandboxedRun(
 		cwd: string;
 		user?: string;
 		images?: ImageInput[];
-		mcpServers?: string[];
+		mcpServers?: McpScope;
 		isAutomationSession: boolean;
 	},
 ): Promise<(AsyncGenerator<StreamEvent> & { freshEngine?: boolean }) | null> {
@@ -1120,7 +1121,7 @@ export async function maybeLaunchSandboxedRun(
 			mode: session.mode,
 			model: session.model,
 			images: opts.images,
-			mcpServers: opts.mcpServers,
+			mcpServers: opts.mcpServers ?? "all",
 			proxyMcpServers,
 			rpcToken,
 			reposNote: await buildSessionNote(session, opts.user),
@@ -1171,7 +1172,7 @@ export async function maybeLaunchSandboxedRun(
 				effort: session.effort,
 				fastMode: session.fastMode,
 				images: opts.images,
-				mcpServers: opts.mcpServers,
+				mcpServers: opts.mcpServers ?? "all",
 				inProcessMcp,
 				disableLocalWorkspaceTools: true,
 				reposNote,
@@ -1741,7 +1742,7 @@ async function runSessionPromptInner(
 		cwd,
 		user,
 		images,
-		mcpServers,
+		mcpServers: mcpServers ?? "all",
 		isAutomationSession,
 	});
 
@@ -1814,7 +1815,7 @@ async function runSessionPromptInner(
 			switchHandoff && switchHandoffEntries.length
 				? switchHandoffEntries
 				: undefined,
-		mcpServers,
+		mcpServers: mcpServers ?? "all",
 		// Self-management tools for normal sessions; withheld from automation
 		// sessions (and their interactive resumes) — same gate as deniedTools above.
 		// Exception: a selfImprove automation's sessions keep their scoped pair

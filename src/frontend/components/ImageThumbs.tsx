@@ -18,10 +18,11 @@ export function ImageThumbs({ images, onRemove, disabled }: Props) {
           <button
             type="button"
             className="composer-image-preview"
-            onClick={() =>
+            onClick={(event) =>
               openLightbox(
                 images.map((image) => ({ kind: "image", src: image })),
                 i,
+                event.currentTarget,
               )
             }
             aria-label="Open image preview"

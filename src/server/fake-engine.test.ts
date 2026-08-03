@@ -49,6 +49,7 @@ describe("fake engine through runAgent", () => {
 			runAgent({
 				prompt: "do the thing",
 				cwd: "/tmp",
+				mcpServers: [],
 				model: "claude-sonnet-5",
 				fallbackModel: "none",
 			}),
@@ -77,6 +78,7 @@ describe("fake engine through runAgent", () => {
 			runAgent({
 				prompt: "p",
 				cwd: "/tmp",
+				mcpServers: [],
 				model: "claude-sonnet-5",
 				fallbackModel: "none",
 			}),
@@ -95,6 +97,7 @@ describe("fake engine through runAgent", () => {
 			runAgent({
 				prompt: "keep going",
 				cwd: "/tmp",
+				mcpServers: [],
 				model: "claude-sonnet-5",
 				fallbackModel: "claude-opus-4-8",
 				journal: { bksSessionId: "bks-test-hop", kind: "prompt" },
@@ -139,6 +142,7 @@ describe("fake engine through runAgent", () => {
 			runAgent({
 				prompt: "p",
 				cwd: "/tmp",
+				mcpServers: [],
 				model: "claude-sonnet-5",
 				fallbackModel: "claude-opus-4-8",
 				journal: { bksSessionId: "bks-test-breaker", kind: "prompt" },
@@ -163,6 +167,7 @@ describe("fake engine through runAgent", () => {
 			runAgent({
 				prompt: "p",
 				cwd: "/tmp",
+				mcpServers: [],
 				model: "dial/medium",
 				fallbackModel: "claude-opus-5",
 				journal: { bksSessionId: "bks-test-transient-journal", kind: "prompt" },
@@ -187,7 +192,7 @@ describe("fake engine through runAgent", () => {
 		const fake = makeFakeEngine([]);
 		__setEngineForTest(fake.engine);
 		const events = await collect(
-			runAgent({ prompt: "p", cwd: "/tmp", model: "claude-sonnet-5", fallbackModel: "none" }),
+			runAgent({ prompt: "p", cwd: "/tmp", model: "claude-sonnet-5", fallbackModel: "none", mcpServers: [] }),
 		);
 		expect(events.at(-1)!.type).toBe("error");
 		expect(events.at(-1)!.content).toContain("script exhausted");

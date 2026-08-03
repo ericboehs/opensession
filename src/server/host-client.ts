@@ -24,6 +24,7 @@
  * no restart needed; new runs go back in-process (old hosts finish normally).
  */
 
+import type { McpScope } from "./runner-shared";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "fs";
 import {
   runAgent,
@@ -85,7 +86,7 @@ export interface HostedRunOpts {
   images?: ImageInput[];
   forkSession?: boolean;
   resumeSessionAt?: string;
-  mcpServers?: string[];
+  mcpServers?: McpScope;
   /** opensession-* servers to expose through the RPC proxy (interactive runs only). */
   proxyMcpServers?: string[];
   reposNote?: string;
@@ -131,7 +132,7 @@ export async function* runAgentHosted(opts: HostedRunOpts): AsyncGenerator<Strea
     images: opts.images,
     forkSession: opts.forkSession,
     resumeSessionAt: opts.resumeSessionAt,
-    mcpServers: opts.mcpServers,
+    mcpServers: opts.mcpServers ?? "all",
     inProcessMcp: opts.fallbackInProcessMcp?.(),
     reposNote: opts.reposNote,
     deniedTools: opts.deniedTools,
@@ -164,7 +165,7 @@ async function spawnHostRun(opts: HostedRunOpts): Promise<HostHandle> {
     images: opts.images,
     forkSession: opts.forkSession,
     resumeSessionAt: opts.resumeSessionAt,
-    mcpServers: opts.mcpServers,
+    mcpServers: opts.mcpServers ?? "all",
     proxyMcpServers: opts.proxyMcpServers,
     rpcToken,
     reposNote: opts.reposNote,

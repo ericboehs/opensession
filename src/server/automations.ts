@@ -1061,7 +1061,7 @@ export async function runAutomation(
       cwd,
       mode: automation.mode,
       model: runModel,
-      mcpServers: automation.mcpServers,
+      mcpServers: automation.mcpServers ?? "all",
       inProcessMcp,
       deniedTools: AUTOMATION_DENIED_TOOLS,
       // No onAskUser here, so confirm tools deny with "propose it for a human"

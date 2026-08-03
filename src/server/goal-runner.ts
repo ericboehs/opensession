@@ -174,7 +174,7 @@ export async function runGoal(goal: Goal): Promise<void> {
 			cwd,
 			mode: goal.mode,
 			model: goal.model,
-			mcpServers: goal.mcpServers,
+			mcpServers: goal.mcpServers ?? "all",
 			inProcessMcp: goalMcpServers(bksId, goal.id, createdBy),
 			confirmTools: STRIPE_CONFIRM_TOOLS,
 			aws: true,

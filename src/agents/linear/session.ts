@@ -371,6 +371,8 @@ export async function runAgentHeadless(
 
   try {
     for await (const event of runAgent({
+      // Interactive Linear sessions get the full connector set, as before.
+      mcpServers: "all",
       prompt,
       sessionId: claudeSessionId || undefined,
       cwd: worktreeDir,

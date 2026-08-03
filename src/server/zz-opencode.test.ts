@@ -71,6 +71,22 @@ describe("shared server eligibility", () => {
     ).toBe(true);
   });
 
+  test('"all" is the wide default, not an allowlist that forfeits the pool', () => {
+    // The eligibility check predates McpScope, when "every server" was spelled
+    // `undefined` and any VALUE meant a restriction. Reading a truthy "all" as
+    // a restriction would push every pooled interactive run onto its own
+    // server — the amnesiac-turn-2 failure the pool exists to avoid.
+    expect(
+      sharedOpencodeEligible({ journal: { kind: "prompt" }, mcpServers: "all" }),
+    ).toBe(true);
+    expect(
+      sharedOpencodeEligible({ journal: { kind: "prompt" }, mcpServers: ["grafana"] }),
+    ).toBe(false);
+    expect(
+      sharedOpencodeEligible({ journal: { kind: "prompt" }, mcpServers: [] }),
+    ).toBe(false);
+  });
+
   test("keeps cross-owner sessions off the prompter's shared server", () => {
     expect(
       sharedOpencodeEligible({
@@ -388,7 +404,7 @@ describe("automation runs and per-user MCP servers (fail closed)", () => {
   // (brex is the restricted server as of 2026-07-09); with no restricted server
   // configured the loop is empty and only the metadata-strip assertion bites.
   test("allowedUsers-restricted servers are hidden from user-less runs", () => {
-    const unrestricted = filterMcpServers(undefined, undefined);
+    const unrestricted = filterMcpServers("all", undefined);
     let mcpConfig: any = {};
     try {
       mcpConfig = JSON.parse(

@@ -421,7 +421,7 @@ try {
     images: spec.images,
     forkSession: spec.forkSession,
     resumeSessionAt: spec.resumeSessionAt,
-    mcpServers: spec.mcpServers,
+    mcpServers: spec.mcpServers ?? "all",
     inProcessMcp: proxyMcpConfigs(),
     reposNote: spec.reposNote,
     deniedTools: spec.deniedTools,

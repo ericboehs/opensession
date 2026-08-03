@@ -89,7 +89,7 @@ function makeLocalSandbox(cwd: string): Sandbox {
         images: spec.images,
         forkSession: spec.forkSession,
         resumeSessionAt: spec.resumeSessionAt,
-        mcpServers: spec.mcpServers,
+        mcpServers: spec.mcpServers ?? "all",
         inProcessMcp: cb?.inProcessMcp?.(),
         reposNote: spec.reposNote,
         deniedTools: spec.deniedTools,

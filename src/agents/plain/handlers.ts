@@ -133,6 +133,11 @@ async function runWorkTurn(
       cwd,
       mode: "code",
       model: toOpencodeModel(getDefaultModel()),
+      // Every configured connector, as this loop has always run. Untrusted
+      // ticket text reaches it, so the containment is the deny-set below +
+      // per-server allowedUsers — not the mount list. Narrow this to the
+      // servers triage actually calls if that stops feeling like enough.
+      mcpServers: "all",
       // Kind "plain" = unattended on the opencode engine: untrusted customer
       // ticket text, so the deny-set below is stripped at the tool-list layer.
       // Kind-only journal (no bksSessionId) — this loop tracks its own engine

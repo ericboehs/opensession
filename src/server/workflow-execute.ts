@@ -479,6 +479,9 @@ export const workflowExecutor: WorkflowExecutor = {
 				user: ctx.user,
 				...(write ? { author: gitIdentityFor(ctx.user) } : {}),
 				journal: { kind: "workflow" },
+				// Workflow workers keep the full connector set they had before
+				// McpScope; scope it per workflow if that becomes a cost.
+				mcpServers: "all",
 			};
 			let prompt = `${write ? WRITE_PREAMBLE : WORKER_PREAMBLE}\n\n${req.prompt}`;
 

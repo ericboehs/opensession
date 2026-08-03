@@ -19,13 +19,28 @@ import { configuredPaths } from "./config";
 export const CLAUDE_CODE_BIN = configuredPaths().claudeBin;
 
 /**
+ * What MCP surface a run gets. There is no implicit default: `"all"` is a
+ * decision a caller has to write down, exactly like an allowlist is.
+ *
+ * This used to be `string[] | undefined`, where omitting the field meant every
+ * configured connector. That default is how the github PR flows silently
+ * mounted ~430 external tool schemas on 1,410 sessions to serve the ~20 that
+ * ever called one (2026-08-03) — nobody chose it, they just didn't pass the
+ * argument. Spelling `"all"` out costs a caller five characters and makes the
+ * wide grant reviewable in a diff.
+ *
+ * `[]` is a third, distinct meaning: no external servers at all.
+ */
+export type McpScope = "all" | string[];
+
+/**
  * Resolve the MCP servers for a run: all configured, or just the allowlist,
  * minus any server whose per-user `allowedUsers` list excludes `user`. The
  * `allowedUsers` field is stripped from every entry before it reaches an
  * engine (it's our metadata, not MCP config).
  */
 export function filterMcpServers(
-  allowlist?: string[],
+  scope: McpScope,
   user?: string,
   /** OAuth grant identities in priority order (default: [user]). The
    *  allowedUsers VISIBILITY gate below always uses `user` (the prompter) —
@@ -37,6 +52,7 @@ export function filterMcpServers(
     grantUsers ?? user,
   );
   const out: Record<string, unknown> = {};
+  const allowlist = scope === "all" ? undefined : scope;
   const names = allowlist ?? Object.keys(all);
   for (const name of names) {
     const cfg = all[name] as any;

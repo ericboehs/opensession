@@ -7149,8 +7149,9 @@ function MobileActionSheet({
 								);
 							})}
 							<Button
-								variant="ghost"
-								size="xs"
+										variant="ghost"
+										size="xs"
+								type="button"
 								className="min-h-0 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
 								style={{
 									borderColor: !pinnedLane(session)
@@ -8194,8 +8195,8 @@ function WsMobileSheet({
 										const on = sharedManual === m.key;
 										return (
 											<Button
-												variant="ghost"
-												size="xs"
+										variant="ghost"
+										size="xs"
 												key={m.key}
 												type="button"
 												className="min-h-0 gap-1.5 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
@@ -8226,6 +8227,7 @@ function WsMobileSheet({
 									<Button
 										variant="ghost"
 										size="xs"
+										type="button"
 										className="min-h-0 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
 										style={{
 											borderColor: !anyManual
@@ -8254,8 +8256,8 @@ function WsMobileSheet({
 						<div className="flex flex-wrap gap-1.5">
 							{snoozePresets().map((p) => (
 								<Button
-									variant="ghost"
-									size="xs"
+										variant="ghost"
+										size="xs"
 									key={p.label}
 									type="button"
 									className="min-h-0 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
@@ -8273,8 +8275,9 @@ function WsMobileSheet({
 							))}
 							{snoozeUntil && (
 								<Button
-									variant="ghost"
-									size="xs"
+										variant="ghost"
+										size="xs"
+									type="button"
 									className="min-h-0 whitespace-normal rounded-md px-2 py-1 text-control-label font-medium"
 									style={{
 										borderColor: "var(--text-dim)",

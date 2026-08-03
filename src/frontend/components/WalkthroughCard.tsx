@@ -117,9 +117,21 @@ export function WalkthroughCard({
 										<figcaption className="mb-1 text-[11px] font-medium text-dim">
 											{side === "before" ? "Before" : "After"}
 										</figcaption>
+									<button
+										type="button"
+										className="block w-full cursor-zoom-in rounded-md border-0 bg-transparent p-0 outline-none focus-visible:shadow-[0_0_0_3px_var(--accent-soft)]"
+										aria-label={`Open ${side} image preview`}
+										onClick={(event) =>
+											openLightbox(
+												gallery.items,
+												gallery.at.get(`${i}:${side}`) ?? 0,
+												event.currentTarget,
+											)
+										}
+									>
 										<img
 											className={cn(
-												"w-full cursor-zoom-in rounded-md border border-line",
+												"w-full rounded-md border border-line",
 												// In the chat the card sits in the message flow, so
 												// cap the stills (full size lives one click away in
 												// the lightbox) instead of pushing the conversation
@@ -129,13 +141,8 @@ export function WalkthroughCard({
 											src={mediaUrl(shot[side]!)}
 											alt={`${shot.caption || "change"} — ${side}`}
 											loading="lazy"
-											onClick={() =>
-												openLightbox(
-													gallery.items,
-													gallery.at.get(`${i}:${side}`) ?? 0,
-												)
-											}
 										/>
+									</button>
 									</figure>
 								),
 						)}

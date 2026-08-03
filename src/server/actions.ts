@@ -406,7 +406,7 @@ export function runAction(
         cwd,
         mode: "code",
         model,
-        ...(mcpServers ? { mcpServers } : {}),
+        mcpServers: mcpServers ?? "all",
         // Action runs change prod state by design — only Stripe stays gated.
         confirmTools: STRIPE_CONFIRM_TOOLS,
         aws: useAws,

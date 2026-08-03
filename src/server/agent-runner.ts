@@ -32,7 +32,7 @@ import {
   resolveModel,
   toOpencodeModel,
 } from "./models";
-import { isTransientRunError, TOOL_RESULT_ENVELOPE_RE } from "./runner-shared";
+import { isTransientRunError, TOOL_RESULT_ENVELOPE_RE, type McpScope } from "./runner-shared";
 import {
   hostRunBusy,
   hostSteer,
@@ -69,7 +69,13 @@ export interface RunAgentOpts {
   effort?: string;
   /** Use OpenAI's priority service tier when this is a ChatGPT OAuth Codex run. */
   fastMode?: boolean;
-  mcpServers?: string[];
+  /**
+   * External MCP servers this run may mount. REQUIRED and with no implicit
+   * default: pass an allowlist, `[]` for none, or `"all"` to mount every
+   * configured connector — a wide grant a reviewer can see in the diff. See
+   * McpScope for why "just omit it" is no longer an option.
+   */
+  mcpServers: McpScope;
   /**
    * In-process SDK MCP servers (opensession-sessions / opensession-admin) for trusted
    * interactive runs only — never automations. Claude receives them directly;
@@ -711,7 +717,7 @@ export function resumeInterruptedRuns(
             transientFallback: run.transientFallback,
             effort: run.effort,
             fastMode: run.fastMode,
-            mcpServers: run.mcpServers,
+            mcpServers: run.mcpServers ?? "all",
             inProcessMcp: run.bksSessionId
               ? inProcessMcpFor?.(run.bksSessionId, run.user)
               : undefined,
@@ -812,7 +818,7 @@ export function resumeInterruptedRuns(
           transientFallback: run.transientFallback,
           effort: run.effort,
           fastMode: run.fastMode,
-          mcpServers: run.mcpServers,
+          mcpServers: run.mcpServers ?? "all",
           inProcessMcp: run.bksSessionId
             ? inProcessMcpFor?.(run.bksSessionId, run.user)
             : undefined,

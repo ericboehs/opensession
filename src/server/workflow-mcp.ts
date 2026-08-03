@@ -187,7 +187,7 @@ export function createWorkflowMcpHost(
 	const gated = confirmGatedServers();
 	const configured =
 		opts.configuredForTest ??
-		(filterMcpServers(opts.allowlist, opts.user) as Record<string, unknown>);
+		(filterMcpServers(opts.allowlist ?? "all", opts.user) as Record<string, unknown>);
 	const allowed = workflowMcpServers(configured) as Record<string, any>;
 	const denied = opts.deniedTools || {};
 

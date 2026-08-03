@@ -1011,6 +1011,8 @@ export async function processMessage(
     // unset = all configured servers, gated per-user by filterMcpServers
     // inside the runner.
     for await (const event of runAgent({
+      // Interactive Slack runs get the full connector set, as before.
+      mcpServers: "all",
       prompt: runPrompt,
       images,
       sessionId: session.claudeSessionId || undefined,

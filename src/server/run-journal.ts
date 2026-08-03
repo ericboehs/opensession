@@ -4,6 +4,7 @@
  * agent-runner.resumeInterruptedRuns resumes on boot. All engines journal
  * through these functions.
  */
+import type { McpScope } from "./runner-shared";
 import { existsSync, readFileSync } from "fs";
 import { OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias } from "./rename-compat";
@@ -39,7 +40,9 @@ export interface ActiveRunRecord {
   promptEntryId?: string; // uuid of the prompt's user transcript line — a boot re-run reuses it so the store upserts instead of duplicating the bubble
   cwd: string;
   mode?: "ask" | "code" | "scratch";
-  mcpServers?: string[]; // per-run MCP allowlist, preserved across resume
+  // Per-run MCP scope, preserved across resume. Optional for back-compat:
+  // records journaled before McpScope omitted it to mean "all".
+  mcpServers?: McpScope;
   user?: string; // per-run user, preserved across resume (gates per-user MCP servers)
   deniedTools?: Record<string, string>; // per-run tool denials, preserved across resume
   confirmTools?: Record<string, string>; // per-run human-confirmed tools, preserved across resume

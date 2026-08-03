@@ -681,6 +681,8 @@ export async function runClaudeDirectSmokeTurn(
         prompt,
         cwd,
         mode: "ask",
+        // Smoke probe: no connectors needed to prove the engine answers.
+        mcpServers: [],
         journal: { bksSessionId: sessionId, kind: "claude-direct-smoke" },
       },
       SMOKE_MODEL

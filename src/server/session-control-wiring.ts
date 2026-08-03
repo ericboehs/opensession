@@ -496,7 +496,7 @@ registerSessionControl({
 								cwd: wtPath,
 								user,
 								images,
-								mcpServers: effectiveMcpServers,
+								mcpServers: effectiveMcpServers ?? "all",
 								isAutomationSession: false,
 							})
 						: null;
@@ -527,7 +527,7 @@ registerSessionControl({
 					fastMode: createFastMode || undefined,
 					images,
 					fallbackModel: interactiveFallbackModel(model),
-					mcpServers: effectiveMcpServers,
+					mcpServers: effectiveMcpServers ?? "all",
 					reposNote:
 						[
 							buildBranchNote({

@@ -167,6 +167,7 @@ import {
 } from "./opencode-detach";
 import {
   filterMcpServers,
+  type McpScope,
   isClaudeUsageLimitError,
   isClaudeSubscriptionError,
   isClaudeBridgeLaunchError,
@@ -538,8 +539,11 @@ export const SHARED_INPROCESS_SERVERS = [
  *  - non-interactive kinds (automations & friends): their least-privilege MCP
  *    allowlist is enforced at the CONFIG level and must stay that way for
  *    untrusted-text runs;
- *  - any run carrying an explicit mcpServers allowlist (e.g. an interactive
- *    resume of an automation session) — same reason;
+ *  - any run carrying an explicit mcpServers ALLOWLIST (e.g. an interactive
+ *    resume of an automation session) — same reason. `"all"` is not an
+ *    allowlist: it is the wide default every pooled interactive run gets, so
+ *    it stays eligible (this check predates McpScope, when "all" was spelled
+ *    `undefined` — reading it as a restriction would empty the shared pool);
  *  - runner-host runs whose inProcessMcp arrived as prebuilt stdio proxies
  *    (their rpc token is baked into the proxy env, one per run spec);
  *  - runs carrying an in-process server outside SHARED_INPROCESS_SERVERS
@@ -547,7 +551,7 @@ export const SHARED_INPROCESS_SERVERS = [
  */
 export function sharedOpencodeEligible(opts: {
   journal?: { kind?: string; bksSessionId?: string };
-  mcpServers?: string[];
+  mcpServers?: McpScope;
   /** Session creator whose OAuth grants take precedence for MCP calls. */
   mcpGrantUser?: string;
   /** Current prompter; determines the shared server's user-scoped config. */
@@ -560,7 +564,7 @@ export function sharedOpencodeEligible(opts: {
 }): boolean {
   const base = baseJournalKind(opts.journal?.kind);
   if (!INTERACTIVE_KINDS.has(base) && opts.forceSharedServer !== true) return false;
-  if (opts.mcpServers) return false;
+  if (opts.mcpServers && opts.mcpServers !== "all") return false;
   // HTTP MCP grants are baked into the engine server config. A session shared
   // by someone else must keep its creator's identity on a per-session server
   // instead of draining the prompter's shared server on every turn.
@@ -1180,13 +1184,13 @@ const ASK_EXTERNAL_DIR_PERMISSIONS: Record<string, "allow" | "deny"> = {
  * stripped from the model's tool list via opencodeRunPolicy instead.
  */
 export function buildOpencodeMcpConfig(
-  allowlist: string[] | undefined,
+  scope: McpScope,
   user: string | undefined,
   /** OAuth grant identities in priority order (session creator first — a
    *  shared session's MCP calls run as its creator; Michiel 2026-07-29). */
   grantUsers?: Array<string | undefined>,
 ): { mcp: Record<string, Record<string, unknown>> } {
-  const filtered = filterMcpServers(allowlist, user, grantUsers) as Record<string, any>;
+  const filtered = filterMcpServers(scope, user, grantUsers) as Record<string, any>;
   const mcp: Record<string, Record<string, unknown>> = {};
   for (const [name, cfg] of Object.entries(filtered)) {
     if (cfg.type === "http" || cfg.type === "sse" || cfg.url) {
@@ -3718,7 +3722,7 @@ async function* runOpencodeAttempt(
     const dirQuery = shared ? { directory: cwd } : undefined;
     const q = dirQuery ? { query: dirQuery } : {};
 
-    const { mcp: externalMcp } = buildOpencodeMcpConfig(shared ? undefined : mcpServers, user, [opts.mcpGrantUser, user]);
+    const { mcp: externalMcp } = buildOpencodeMcpConfig(shared ? "all" : mcpServers, user, [opts.mcpGrantUser, user]);
 
     // Session context (ask guardrails, repos note, managing-Michael notes).
     // Per-session servers deliver it via an instructions FILE in the config;
