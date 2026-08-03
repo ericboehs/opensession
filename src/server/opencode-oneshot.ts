@@ -173,7 +173,10 @@ export async function opencodeOneShot(
           account = picked;
           stickyAccounts.set(serverKey, picked.id);
           const meridianKey = peekOpencodeServer(serverKey)?.meridianKey || crypto.randomUUID();
-          const meridianEnv = meridianAccountEnv(picked, meridianKey);
+          // Own session store, like every other server key — one-shots are the
+          // chattiest client on the box and were a top contender for the shared
+          // store's lock contention (see MERIDIAN_SESSION_ROOT).
+          const meridianEnv = meridianAccountEnv(picked, meridianKey, serverKey);
           extraEnv = {
             ...meridianEnv,
             ...(localProfile ? { XDG_DATA_HOME: localOpencodeDataRoot("anthropic") } : {}),

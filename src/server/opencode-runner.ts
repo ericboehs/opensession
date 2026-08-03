@@ -819,6 +819,56 @@ export function meridianStackInfo(): MeridianStackInfo {
 export const MERIDIAN_CFG_ROOT = `${stateDir("opencode")}/meridian-cfg`;
 
 /**
+ * Private Meridian session-mapping store per (server key × account).
+ *
+ * Meridian's default is ONE `~/.cache/meridian/sessions.json` shared by every
+ * proxy process (getStorePath in the bundle). Its read-modify-write is atomic
+ * WITHIN a process but has no cross-process safety: the advisory lock gives up
+ * after a single retry and writes anyway, and every writer renames through the
+ * same fixed `sessions.json.tmp`. With ~24 servers live that store is a shared
+ * mutable file with no mutual exclusion — measured over 11 days of server logs:
+ * 1462 "could not acquire lock, proceeding without", 167 ENOENT renames, 14
+ * stale-lock recovery failures. Losing a mapping makes Meridian classify a
+ * mid-conversation request as diverged and replay the whole history into a
+ * fresh SDK session (a silent context rebuild — see makeContextRebuildWatcher).
+ * One writer per directory removes the whole class by construction.
+ *
+ * accountId is in the path because `bks-*` and oneshot server keys are
+ * account-independent: without it, an account rotation would inherit mappings
+ * pointing into another account's CLAUDE_CONFIG_DIR.
+ */
+export const MERIDIAN_SESSION_ROOT = `${stateDir("opencode")}/meridian-sessions`;
+
+export function meridianSessionDir(serverKey: string, accountId: string): string {
+  return `${MERIDIAN_SESSION_ROOT}/${serverKey.replace(/[^A-Za-z0-9._-]/g, "_")}/${accountId}`;
+}
+
+/**
+ * One-time seed of a fresh per-key store from the legacy shared file, so live
+ * conversations survive the cutover respawn instead of each paying one forced
+ * full-history replay.
+ *
+ * Safe because the keys are opaque, globally-unique opencode `ses_*` ids (638/638
+ * verified on this host) with no proxy/account/cwd scoping: a copy preserves
+ * exactly the lookups this server will perform, and entries belonging to other
+ * servers are never looked up. A copied entry can't cause a WRONG resume either
+ * — Meridian only reuses one whose stored messageHashes match the incoming
+ * conversation, and if its claudeSessionId belongs to another account's config
+ * dir the SDK throws, the entry is evicted as stale, and the request replays:
+ * exactly the cost of having had no entry at all.
+ */
+function seedMeridianSessionDir(dir: string): void {
+  try {
+    if (existsSync(`${dir}/sessions.json`)) return;
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const legacy = `${HOME}/.cache/meridian/sessions.json`;
+    if (existsSync(legacy)) writeFileSync(`${dir}/sessions.json`, readFileSync(legacy));
+  } catch (e) {
+    console.warn("[opencode-runner] meridian session-store seed failed:", e);
+  }
+}
+
+/**
  * Install the opencode-fingerprint scrub as a Meridian PROXY plugin so it runs
  * SERVER-SIDE (in the proxy's onRequest pipeline) rather than only in the v1
  * OpenCode `experimental.chat.system.transform` hook. Why this exists: the
@@ -875,7 +925,11 @@ export function ensureMeridianProxyScrub(): void {
  * own shell tools via `env` — the same exposure class as claude-runner, whose
  * SDK subprocess (and its Bash children) carry CLAUDE_CODE_OAUTH_TOKEN today.
  */
-export function meridianAccountEnv(account: ClaudeAccount, meridianKey: string): Record<string, string> {
+export function meridianAccountEnv(
+  account: ClaudeAccount,
+  meridianKey: string,
+  serverKey: string,
+): Record<string, string> {
   const cfgDir = `${MERIDIAN_CFG_ROOT}/${account.id}`;
   mkdirSync(cfgDir, { recursive: true, mode: 0o700 });
   return {
@@ -897,8 +951,19 @@ export function meridianAccountEnv(account: ClaudeAccount, meridianKey: string):
     // Meridian's bundled/platform/PATH probing.
     MERIDIAN_CLAUDE_PATH: CLAUDE_CODE_BIN,
     // Keep non-core schemas out of Anthropic's stable prompt prefix. Meridian
-    // makes deferred tools discoverable through the Agent SDK's ToolSearch.
+    // marks everything but opencode's core tools deferrable and lets the Agent
+    // SDK's ToolSearch surface them on demand. NOTE: upstream this saved
+    // nothing until the `tools: []` → `--tools ""` patch below (patches/), which
+    // is what actually keeps ToolSearch itself enabled — without it every
+    // "deferred" schema still rode every request (243k-token first prompts).
     MERIDIAN_DEFER_TOOL_THRESHOLD: "15",
+    // Private session-mapping store (see MERIDIAN_SESSION_ROOT). Deterministic
+    // per key+account, so it rides the server config hash without churning it.
+    MERIDIAN_SESSION_DIR: meridianSessionDir(serverKey, account.id),
+    // Meridian's own cap is 10k entries with no TTL, and it rewrites the whole
+    // file on every request. A per-key store holds a handful of sessions; 200
+    // keeps the rewrite cheap with a wide margin.
+    MERIDIAN_MAX_STORED_SESSIONS: "200",
     // Meridian collapses every *opus* model id to the SDK's `opus` alias and
     // pins the concrete version itself (1.51.0 pins claude-opus-4-8, which
     // predates Opus 5). This env var wins over Meridian's pin, so all opus
@@ -3407,12 +3472,15 @@ async function* runOpencodeAttempt(
         bridgeTag = `anthropic-${picked.id}`;
         // Stable per-server proxy key so the config hash — and the server —
         // survive across runs; a fresh key is minted only with a fresh server.
+        const meridianServerKey = shared
+          ? sharedServerKey(bridgeTag, user, githubUserLogin)
+          : sessionKey;
         const meridianKey =
-          servers.get(
-            shared ? sharedServerKey(bridgeTag, user, githubUserLogin) : sessionKey,
-          )?.meridianKey ||
-          crypto.randomUUID();
-        const meridianEnv = meridianAccountEnv(picked, meridianKey);
+          servers.get(meridianServerKey)?.meridianKey || crypto.randomUUID();
+        const meridianEnv = meridianAccountEnv(picked, meridianKey, meridianServerKey);
+        // First run on this key+account inherits the legacy shared store, so the
+        // cutover respawn costs no forced replays (see seedMeridianSessionDir).
+        seedMeridianSessionDir(meridianEnv.MERIDIAN_SESSION_DIR);
         // Repointing XDG_DATA_HOME hides gh's installed extensions from the
         // run unless gh's data dir is linked in (see linkGhDataDir).
         if (isLocalProfile()) linkGhDataDir(localOpencodeDataRoot("anthropic"));

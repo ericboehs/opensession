@@ -1,0 +1,18 @@
+diff --git a/dist/cli-7df5eg5d.js b/dist/cli-7df5eg5d.js
+index ca4a412a41d803ca72f6fea0f143dadd88cced50..6c2acb7e99f1a7654deddc49f4f07e4e9349134a 100644
+--- a/dist/cli-7df5eg5d.js
++++ b/dist/cli-7df5eg5d.js
+@@ -17890,11 +17890,11 @@ function buildQueryOptions(ctx, abortController) {
+       allowDangerouslySkipPermissions: true,
+       ...resolveSystemPrompt(systemContext, passthrough, settingSources, codeSystemPrompt, clientSystemPrompt, cwdNote),
+       ...passthrough ? {
+-        tools: [],
++        tools: hasDeferredTools ? ["ToolSearch"] : [],
+         settingSources: [],
+         disallowedTools: [...allBlockedTools],
+         ...passthroughMcp ? {
+-          allowedTools: [...passthroughMcp.toolNames],
++          allowedTools: hasDeferredTools ? ["ToolSearch", ...passthroughMcp.toolNames] : [...passthroughMcp.toolNames],
+           mcpServers: { [PASSTHROUGH_MCP_NAME]: passthroughMcp.server }
+         } : {}
+       } : {
