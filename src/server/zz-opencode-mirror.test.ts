@@ -4,8 +4,23 @@
  * writer path is covered by opencode-transcript.test.ts; this covers the
  * mirror specifically, including the bks-019f46d2 regression: the turn's
  * user entry must come from the SPEC at dispatch/init time (with full text)
- * and must land in the file of EVERY engine session the turn touches (an
- * account rotation mid-turn starts a fresh one), without duplicates.
+ * and must land in the UNIFIED transcript store for every engine session the
+ * turn touches (an account rotation mid-turn starts a fresh one), without
+ * duplicates.
+ *
+ * Since the 2026-07-23 mirror retirement (35bb2767, transcript-v2 design §11)
+ * the per-oc-session JSONL mirror file this test used to read
+ * (getOpencodeTranscriptPath + parseTranscript) is a frozen, never-written
+ * archive — appendOpencodeTranscript now writes ONLY into the transcript
+ * store (transcript-store.ts), keyed by the UNIFIED backstage session id
+ * (spec.bksSessionId), not by the opencode engine session id. So these
+ * assertions read the store by unified id instead of a per-oc-session file.
+ * That also changes what "account rotation" means to assert: every oc id a
+ * rotation touches maps onto the SAME unified session (spec.bksSessionId
+ * never changes mid-turn), so there is one continuous transcript to check —
+ * not two separate per-oc files — and each test below uses its own
+ * bksSessionId to stay isolated from the others, the same way the old
+ * per-oc-file tests were isolated by using distinct oc ids.
  */
 import { describe, test, expect, afterAll } from "bun:test";
 import { mkdtempSync, rmSync } from "fs";
@@ -13,27 +28,74 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { withOpencodeTranscriptMirror } from "./sandbox/adapters/bootstrap";
 import {
-  getOpencodeTranscriptPath,
   __setOpencodeTranscriptsDirForTest,
+  __setOpencodeDbPathForTest,
+  __setOpencodeBksMapPathForTest,
+  __setOpencodeBksMapStateForTest,
+  __restoreOpencodeBksMapStateForTest,
 } from "./opencode-transcript";
-import { parseTranscript } from "./jsonl-parser";
+import { __setChatsDirForTest } from "./paths";
+import {
+  TranscriptStore,
+  transcriptStore,
+  __setTranscriptStoreForTest,
+} from "./transcript-store";
 import { RESUME_CONTINUATION_PROMPT } from "./agent-runner";
 import type { StreamEvent } from "./run-events";
 import type { RunHostSpec } from "../runner-host/protocol";
 
-// __setOpencodeTranscriptsDirForTest repoints the LIVE OPENCODE_TRANSCRIPTS_DIR
-// binding, so bootstrap.ts's own (already-cached, possibly earlier-imported-
-// with-the-real-value) bare import of ./opencode-transcript picks the scratch
-// dir up too — unlike a plain env-var-before-import, which only affects
-// whichever test file happens to trigger the FIRST bare import of
-// ./opencode-transcript in the whole `bun test` process (order-dependent,
-// and this file previously read/wrote the developer's real transcript
-// mirror dir when run as part of the full suite).
+// The mirror's writer path (opencode-transcript.ts's storeAppendLines) calls
+// the transcriptStore() SINGLETON, not an injectable instance — unlike the
+// other transcript-store tests, which construct their own
+// `new TranscriptStore(tempPath)` and never touch the singleton (invariant 8:
+// one writer), this file has no way to inject a different store into the
+// writer under test. So it force-replaces the singleton itself (below, via
+// __setTranscriptStoreForTest) with one backed by a scratch DB instead of the
+// live transcripts.db. __setOpencodeTranscriptsDirForTest/
+// __setOpencodeDbPathForTest do the same for the two on-disk seams the
+// store's import-first gate still reads (the frozen mirror archive +
+// OpenCode's own SQLite fallback probe), and __setChatsDirForTest covers any
+// other OPENSESSION_CHATS_DIR reads reachable from that gate — together they
+// make sure a fresh unified session never picks up stray real data.
+//
+// recordBksSessionFor (called on every init) writes the oc→unified mapping
+// through a THIRD globalThis-parked seam, OPENCODE_BKS_MAP_PATH — not
+// derived from OPENSESSION_CHATS_DIR, so __setChatsDirForTest doesn't touch
+// it. __setOpencodeBksMapPathForTest redirects the path; the in-memory map
+// itself is also parked on globalThis (same shape as transcriptStore()), so
+// __setOpencodeBksMapStateForTest swaps it for a blank one too — otherwise a
+// map already loaded from the real file before this module's redirect took
+// effect would still be sitting there after afterAll restores the real
+// path, and the next in-process write from ANY code would flush our test
+// entries into it.
 const scratch = mkdtempSync(join(tmpdir(), "bks-oc-mirror-"));
-const priorTranscriptsDir = __setOpencodeTranscriptsDirForTest(scratch);
+const priorTranscriptsDir = __setOpencodeTranscriptsDirForTest(
+  join(scratch, "mirror-archive"),
+);
+const priorOpencodeDb = __setOpencodeDbPathForTest(join(scratch, "opencode.db"));
+const priorChatsDir = __setChatsDirForTest(scratch);
+const priorBksMapPath = __setOpencodeBksMapPathForTest(join(scratch, "bks-map.json"));
+const priorBksMapState = __setOpencodeBksMapStateForTest();
+
+const expectedDbPath = join(scratch, "transcripts.db");
+// Unlike zz-fake-run.test.ts's redirect probe, this doesn't need to skip when
+// an earlier test file has already warmed the singleton: __setTranscriptStoreForTest
+// force-replaces it (transcriptStore()'s `??=` can't), so the writer under
+// test always lands in our scratch DB regardless of load order. Saving the
+// previous store lets afterAll hand the singleton back intact — restoring
+// only the path bindings and deleting `scratch` out from under a still-live
+// singleton would leave it pointed at a removed database.
+const scratchStore = new TranscriptStore(expectedDbPath);
+const priorStore = __setTranscriptStoreForTest(scratchStore);
 
 afterAll(() => {
+  __setTranscriptStoreForTest(priorStore);
+  scratchStore.close();
   __setOpencodeTranscriptsDirForTest(priorTranscriptsDir);
+  __setOpencodeDbPathForTest(priorOpencodeDb);
+  __setChatsDirForTest(priorChatsDir);
+  __setOpencodeBksMapPathForTest(priorBksMapPath);
+  __restoreOpencodeBksMapStateForTest(priorBksMapState);
   rmSync(scratch, { recursive: true, force: true });
 });
 
@@ -59,10 +121,12 @@ async function drain(gen: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
   return out;
 }
 
-const entriesOf = (oc: string) => parseTranscript(getOpencodeTranscriptPath(oc));
+/** Every stored entry for a unified session, in ascending seq order. */
+const entriesFor = (unifiedId: string) => transcriptStore().readTail(unifiedId, 200).entries;
 
 describe("withOpencodeTranscriptMirror", () => {
   test("two turns: both user prompts present with full text, in order, no dupes", async () => {
+    const bks = "bks-two-turns";
     const oc = "ses_mirror_two_turns";
     // Turn 1: fresh session — engine id arrives via init.
     await drain(
@@ -72,7 +136,7 @@ describe("withOpencodeTranscriptMirror", () => {
           { type: "text_chunk", text: "first answer" } as StreamEvent,
           { type: "done", sessionId: oc, result: "first answer" } as StreamEvent,
         ]),
-        spec({ prompt: "first question" }),
+        spec({ bksSessionId: bks, prompt: "first question" }),
       ),
     );
     // Turn 2: resumed session — engine id known at dispatch; the user entry
@@ -83,16 +147,16 @@ describe("withOpencodeTranscriptMirror", () => {
         { type: "init", sessionId: oc } as StreamEvent,
         { type: "text_chunk", text: "second answer" } as StreamEvent,
       ]),
-      spec({ prompt: "second question", engineSessionId: oc }),
+      spec({ bksSessionId: bks, prompt: "second question", engineSessionId: oc }),
     );
     // Pull nothing yet — the generator body runs on first next(); one tick in.
     const first = await turn2.next();
-    const midTurn = entriesOf(oc).filter((e) => e.type === "user");
+    const midTurn = entriesFor(bks).filter((e) => e.type === "user");
     expect(midTurn.map((e) => e.content)).toContain("second question");
     while (!(await turn2.next()).done) {}
     void first;
 
-    const entries = entriesOf(oc);
+    const entries = entriesFor(bks);
     const texts = entries.map((e) => [e.type, e.content]);
     expect(texts).toEqual([
       ["user", "first question"],
@@ -102,8 +166,9 @@ describe("withOpencodeTranscriptMirror", () => {
     ]);
   });
 
-  test("account rotation: the prompt lands in BOTH engine sessions' files", async () => {
-    const s = spec({ prompt: "rotate me" });
+  test("account rotation: the prompt survives in the unified store, no dupes", async () => {
+    const bks = "bks-rotation";
+    const s = spec({ bksSessionId: bks, prompt: "rotate me" });
     await drain(
       withOpencodeTranscriptMirror(
         stream([
@@ -115,17 +180,22 @@ describe("withOpencodeTranscriptMirror", () => {
         s,
       ),
     );
-    const a = entriesOf("ses_rot_a");
-    const b = entriesOf("ses_rot_b");
-    expect(a.filter((e) => e.type === "user").map((e) => e.content)).toEqual(["rotate me"]);
-    // The file the session ends up pointing at MUST open with the user turn.
-    expect(b[0]?.type).toBe("user");
-    expect(b[0]?.content).toBe("rotate me");
-    expect(b.filter((e) => e.type === "user")).toHaveLength(1);
+    // Both engine sessions map onto the SAME unified session (spec.bksSessionId
+    // never changes across a rotation), so there's one continuous transcript,
+    // not two per-oc files. The prompt must open it and survive the rotation
+    // intact: written at attempt 1's init, then upserted — not duplicated —
+    // at attempt 2's init via the deterministic `${hostId}-prompt` uuid. This
+    // is the store-level equivalent of the original bks-019f46d2 bug (the
+    // prompt only ever landed in attempt 1's file).
+    const entries = entriesFor(bks);
+    expect(entries[0]).toMatchObject({ type: "user", content: "rotate me" });
+    expect(entries.filter((e) => e.type === "user")).toHaveLength(1);
+    expect(entries.map((e) => e.type)).toEqual(["user", "assistant", "assistant"]);
   });
 
-  test("runner_notice events persist as system entries after the rotation", async () => {
-    const s = spec({ prompt: "notice me" });
+  test("runner_notice events persist as system entries across a rotation", async () => {
+    const bks = "bks-notice";
+    const s = spec({ bksSessionId: bks, prompt: "notice me" });
     await drain(
       withOpencodeTranscriptMirror(
         stream([
@@ -137,21 +207,19 @@ describe("withOpencodeTranscriptMirror", () => {
         s,
       ),
     );
-    // The notice fired between the two inits, so it lands in the FIRST file;
-    // what matters is it parses back as a system chip, not a user bubble.
-    const a = entriesOf("ses_notice_a");
-    expect(a.map((e) => [e.type, e.content])).toEqual([
+    // One unified transcript again; what matters is the notice parses back
+    // as a system chip (not a user bubble), landing between the prompt and
+    // the post-rotation reply.
+    const entries = entriesFor(bks);
+    expect(entries.map((e) => [e.type, e.content])).toEqual([
       ["user", "notice me"],
       ["system", "usage limit; switching accounts"],
-    ]);
-    const b = entriesOf("ses_notice_b");
-    expect(b.map((e) => [e.type, e.content])).toEqual([
-      ["user", "notice me"],
       ["assistant", "answer after rotation"],
     ]);
   });
 
   test("synthetic resume-continuation prompt is not a user entry", async () => {
+    const bks = "bks-resume";
     const oc = "ses_mirror_resume";
     await drain(
       withOpencodeTranscriptMirror(
@@ -159,17 +227,23 @@ describe("withOpencodeTranscriptMirror", () => {
           { type: "init", sessionId: oc } as StreamEvent,
           { type: "text_chunk", text: "resumed output" } as StreamEvent,
         ]),
-        spec({ prompt: RESUME_CONTINUATION_PROMPT, engineSessionId: oc, journalKind: "prompt-resume" }),
+        spec({
+          bksSessionId: bks,
+          prompt: RESUME_CONTINUATION_PROMPT,
+          engineSessionId: oc,
+          journalKind: "prompt-resume",
+        }),
       ),
     );
-    const entries = entriesOf(oc);
+    const entries = entriesFor(bks);
     expect(entries.filter((e) => e.type === "user")).toHaveLength(0);
     expect(entries.filter((e) => e.type === "assistant")).toHaveLength(1);
   });
 
   test("re-delivery with the same hostId upserts instead of duplicating", async () => {
+    const bks = "bks-redeliver";
     const oc = "ses_mirror_redeliver";
-    const s = spec({ prompt: "once only", engineSessionId: oc });
+    const s = spec({ bksSessionId: bks, prompt: "once only", engineSessionId: oc });
     await drain(
       withOpencodeTranscriptMirror(
         stream([{ type: "init", sessionId: oc } as StreamEvent]),
@@ -183,24 +257,30 @@ describe("withOpencodeTranscriptMirror", () => {
         s,
       ),
     );
-    const users = entriesOf(oc).filter((e) => e.type === "user");
+    const users = entriesFor(bks).filter((e) => e.type === "user");
     expect(users).toHaveLength(1);
     expect(users[0]?.content).toBe("once only");
   });
 
   test("tool use/result mirror as tool entries (not empty user bubbles)", async () => {
+    const bks = "bks-tools";
     const oc = "ses_mirror_tools";
     await drain(
       withOpencodeTranscriptMirror(
         stream([
           { type: "init", sessionId: oc } as StreamEvent,
-          { type: "tool_use", toolUseId: "prt_1", toolName: "bash", toolInput: { command: "ls" } } as StreamEvent,
+          {
+            type: "tool_use",
+            toolUseId: "prt_1",
+            toolName: "bash",
+            toolInput: { command: "ls" },
+          } as StreamEvent,
           { type: "tool_result", toolUseId: "prt_1", content: "file.txt" } as StreamEvent,
         ]),
-        spec({ prompt: "list files" }),
+        spec({ bksSessionId: bks, prompt: "list files" }),
       ),
     );
-    const entries = entriesOf(oc);
+    const entries = entriesFor(bks);
     expect(entries.map((e) => e.type)).toEqual(["user", "tool_use", "tool_result"]);
     // No plain-text user entry beyond the prompt (the empty-user-bubble bug).
     const userTexts = entries.filter((e) => e.type === "user").map((e) => e.content);
@@ -213,7 +293,10 @@ describe("withOpencodeTranscriptMirror", () => {
       { type: "text_chunk", text: "hi" } as StreamEvent,
     ];
     const out = await drain(
-      withOpencodeTranscriptMirror(stream(events), spec({ model: "claude-sonnet-5", prompt: "x" })),
+      withOpencodeTranscriptMirror(
+        stream(events),
+        spec({ bksSessionId: "bks-passthrough", model: "claude-sonnet-5", prompt: "x" }),
+      ),
     );
     expect(out).toHaveLength(2);
   });
