@@ -131,20 +131,20 @@ export function isClaudeSubscriptionError(message: string): boolean {
 }
 
 /**
- * The Meridian bridge could not start Claude Code for this account at all. The
- * agent SDK spawns the native binary per account and it either exited straight
- * away ("Claude Code native binary at <path> exists but failed to launch.") or
- * was missing outright. In practice this is the shape a signed-out account
- * takes: the binary itself is fine — every other account keeps running on it —
- * but this one has no credentials to launch with.
+ * The Meridian bridge could not start Claude Code for a run at all — the agent
+ * SDK spawns the native binary and it either exited immediately ("Claude Code
+ * native binary at <path> exists but failed to launch.") or was missing.
  *
- * Account-level and stone dead on retry, yet opencode's ai-sdk classes it
- * retryable, so left uncaught it becomes ~13 backoff retries against the same
- * broken account over ~2h16m and then a turn that sits idle until the
- * wall-clock deadline and reports "Stopped after 3 hours" (2026-07-31 →
- * 08-03: six such turns, all the 3-hourly health monitor landing on one of
- * three signed-out accounts). Callers treat it exactly like
- * isClaudeSubscriptionError: sideline the account and rotate off it at once.
+ * This is a spawn-time failure on THIS box, not a verdict on the account: the
+ * runs it hit (2026-08-01/03) were on michael-tella-dev and Michiel-com, both
+ * healthy and serving other sessions at that moment, and the binary launches
+ * fine by hand. Treat it as a wedge — sideline briefly, respawn, retry — not
+ * as an account-level fault.
+ *
+ * Worth catching because opencode's ai-sdk classes it retryable and nothing
+ * else matches the string: uncaught it becomes ~13 backoff retries over ~2h16m
+ * against a proxy that can't spawn, and then a turn that idles to the
+ * wall-clock deadline and reports "Stopped after 3 hours".
  */
 export function isClaudeBridgeLaunchError(message: string): boolean {
   const s = message.toLowerCase();

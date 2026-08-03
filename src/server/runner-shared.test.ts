@@ -15,9 +15,10 @@ describe("isClaudeBridgeLaunchError", () => {
     ).toBe(true);
   });
 
-  test("does not claim faults that belong to another rotation lane", () => {
-    // Usage limits and subscription faults have their own classifiers, and a
-    // model's own words about a launch must never sideline the account.
+  test("does not claim faults that belong to another recovery lane", () => {
+    // Usage limits and subscription faults are account-level and own their own
+    // (much longer) sideline; a model's own words about a launch must never
+    // wedge the account either.
     expect(isClaudeBridgeLaunchError("Claude AI usage limit reached")).toBe(false);
     expect(
       isClaudeBridgeLaunchError("Claude Max subscription issue. Check your subscription status."),

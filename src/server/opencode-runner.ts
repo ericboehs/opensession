@@ -4135,27 +4135,40 @@ async function* runOpencodeAttempt(
         error: message.slice(0, 500),
       });
       const subIssue = isClaudeSubscriptionError(message);
-      const launchIssue = isClaudeBridgeLaunchError(message);
       if (
         parsed.providerID === "anthropic" &&
         pickedMeridian &&
         !runFailure &&
-        (isClaudeUsageLimitError(message, true) || subIssue || launchIssue)
+        (isClaudeUsageLimitError(message, true) || subIssue)
       ) {
-        // All three faults are account-level and dead on retry: opencode would
-        // keep retrying the same capped/subscription-broken/signed-out account
-        // until the 90s liveness guard, burning the turn. Sideline + rotate
-        // immediately via the usage-limit machinery (usageLimitHit drives
-        // markExhausted and the account rotation downstream). Landing elsewhere
-        // in the pool is the only thing that recovers any of them.
+        // Both faults are account-level and dead on retry: opencode would keep
+        // retrying the same capped/subscription-broken account until the 90s
+        // liveness guard, burning the turn. Sideline + rotate immediately via
+        // the usage-limit machinery (usageLimitHit drives markExhausted and the
+        // account rotation downstream). Landing elsewhere in the pool is the
+        // only thing that recovers a subscription-broken account.
         usageLimitHit = true;
         runFailure = `${
-          subIssue
-            ? "Claude subscription issue"
-            : launchIssue
-              ? "Claude Code failed to launch (account signed out?)"
-              : "Claude usage limit"
+          subIssue ? "Claude subscription issue" : "Claude usage limit"
         } on account "${bridgeAccountLabel}": ${message.slice(0, 300)}`;
+        engineAbortInFlight = client.session
+          .abort({ path: { id: ocSessionId }, ...q })
+          .catch(() => {});
+        signalDone();
+      }
+      // The bridge couldn't spawn Claude Code for this run at all. Retrying the
+      // same wedged proxy is what burns the turn (2026-08-01/03: 13 backoff
+      // retries over ~2h16m, then three idle hours to the wall-clock cap), so
+      // take the wedge lane on the FIRST one: brief sideline, drain-respawn,
+      // one bounded retry — possibly on another account. Deliberately NOT the
+      // usage-limit lane: the accounts this hit were healthy and in heavy use
+      // elsewhere at the time, so an hours-long sideline would punish a good
+      // account for what is a spawn-time failure on this box.
+      if (pickedMeridian && !runFailure && isClaudeBridgeLaunchError(message)) {
+        livenessWedged = true;
+        runFailure =
+          `opencode could not launch Claude Code on account "${bridgeAccountLabel}": ` +
+          `${message.slice(0, 300)}`;
         engineAbortInFlight = client.session
           .abort({ path: { id: ocSessionId }, ...q })
           .catch(() => {});
