@@ -9,18 +9,57 @@ import { existsSync, readFileSync } from "fs";
 import { BACKSTAGE_CHATS_DIR } from "../../server/paths";
 import { recordRunOutcome, updateSessionFile } from "../../server/session-cache";
 import { runAgent } from "../../server/agent-runner";
+import { listAutomations } from "../../server/automations";
 import { providerFor, DEFAULT_FALLBACK_MODEL, modelLabel } from "../../server/models";
 import { engineSessionPatch } from "../../server/sessions";
 import { STRIPE_CONFIRM_TOOLS } from "../../server/runner-shared";
 import { gitIdentityFor, type GitIdentity } from "../../server/shared/user-mappings";
 import { resolvePrWorkspace } from "../../server/workspace-resolve";
 import { repoForPath } from "../../server/worktree";
-import { prKey } from "./constants";
+import { PR_EVENT_KEY, prKey } from "./constants";
 import type { BackstageSessionFile } from "../../server/types";
 import { configuredServer } from "../../server/config";
 import { shouldPersistModelSwitch } from "../../server/run-events";
 
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
+
+/**
+ * Default external MCP servers for a PR flow, used when the review automation
+ * doesn't pin its own list (see githubFlowMcpServers). Everything else in
+ * mcp-config is withheld: these runs read a diff, the repo, and CI, and
+ * mounting the full connector set put ~430 external tool schemas in front of
+ * every one of them.
+ *
+ * Measured over the retained audit window (1,410 github-* sessions): only ~20
+ * sessions (1.4%) ever called an external MCP tool at all, and the calls
+ * concentrate in grafana (149 calls / 7 sessions — checking Loki + Prometheus
+ * for a change under review) and linear (13 / 8 — pulling the issue a PR
+ * references). The tail this drops by default is stripe (16 / 3),
+ * TellaInternalSupportMCP (11 / 3) and plain (3 / 2); a run that needs one of
+ * those reports it can't reach it instead of silently costing every other run
+ * the schemas.
+ */
+export const DEFAULT_GITHUB_FLOW_MCP_SERVERS = ["grafana", "linear"];
+
+/**
+ * Which MCP servers this PR flow mounts — configurable, not baked in. The
+ * review automation (eventKey `github:pull_request`) is already the config
+ * surface for these runs' prompt, model and on/off switch (resolveReviewConfig
+ * in webhook.ts); its `mcpServers` field now steers their connectors too, so
+ * the list is editable in Settings → Automations (the form has an MCP picker)
+ * and through opensession-admin, with no deploy.
+ *
+ * Unset on the automation → the lean default above. Explicitly set to `[]` →
+ * no external servers at all, which is a legitimate choice here (built-ins,
+ * the repo and gh cover the job). Note this is NOT the same as the runner's
+ * `undefined`, which means "every server" — that distinction is why the
+ * default is applied here rather than by passing the automation's value
+ * straight through.
+ */
+export function githubFlowMcpServers(): string[] {
+  const automation = listAutomations().find((a) => a.eventKey === PR_EVENT_KEY);
+  return automation?.mcpServers ?? DEFAULT_GITHUB_FLOW_MCP_SERVERS;
+}
 
 /**
  * All chats for one PR (its review/autofix/simplify/adversarial/mention runs,
@@ -215,6 +254,7 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
       aws: true,
       author: opts.author,
       fallbackModel: DEFAULT_FALLBACK_MODEL,
+      mcpServers: githubFlowMcpServers(),
       journal: { bksSessionId: bksId, kind: `github-${opts.kind}` },
     })) {
       if (event.type === "init") {

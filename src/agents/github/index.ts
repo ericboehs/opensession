@@ -22,6 +22,7 @@ import {
   DOCS_SYNC_AUTOMATION_NAME,
 } from "./constants";
 import { DEFAULT_REVIEW_PROMPT } from "./prompts";
+import { DEFAULT_GITHUB_FLOW_MCP_SERVERS } from "./run";
 import { setGithubSessionInvalidate, resolveReviewConfig } from "./webhook";
 import { listPrStates, activeCodeLoops, clearPendingMention, updatePrState } from "./state";
 import { feedbackStats } from "./feedback";
@@ -56,7 +57,20 @@ const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || "";
 /** Seed the review automation (disabled) if it doesn't exist yet. Keyed on eventKey. */
 function ensureReviewAutomation(): void {
   const existing = listAutomations().find((a) => a.eventKey === PR_EVENT_KEY);
-  if (existing) return;
+  if (existing) {
+    // One-time backfill: this record predates PR flows reading `mcpServers`
+    // (githubFlowMcpServers in run.ts). Leaving it unset changes no behavior —
+    // unset already resolves to the same default — but the Automations UI
+    // renders unset as "all connectors", which would now be a lie. Write the
+    // effective list so the settings screen matches what the runs actually get.
+    if (existing.mcpServers === undefined) {
+      saveAutomation({ ...existing, mcpServers: [...DEFAULT_GITHUB_FLOW_MCP_SERVERS] });
+      console.log(
+        `[github] Backfilled review automation MCP allowlist: ${DEFAULT_GITHUB_FLOW_MCP_SERVERS.join(", ")}`,
+      );
+    }
+    return;
+  }
   const created = createAutomation({
     name: REVIEW_AUTOMATION_NAME,
     prompt: DEFAULT_REVIEW_PROMPT,
@@ -64,6 +78,7 @@ function ensureReviewAutomation(): void {
     mode: "ask",
     createdBy: `${personaName()} (github agent)`,
     eventKey: PR_EVENT_KEY,
+    mcpServers: [...DEFAULT_GITHUB_FLOW_MCP_SERVERS],
   });
   if ("error" in created) {
     console.error(`[github] Failed to seed review automation:`, created.error);
