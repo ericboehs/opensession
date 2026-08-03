@@ -149,7 +149,7 @@ export async function handleSlackChannelRoutes(
 				if (!m.text) continue;
 				// User-first: app-relayed posts carry BOTH user and bot_id (a
 				// person's own message via an app) — the person wins, otherwise
-				// Michiel's posts render as the bot.
+				// their posts render as the bot.
 				const text = await renderSlackText(
 					m.text,
 					resolveSlackUser,

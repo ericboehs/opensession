@@ -10,14 +10,14 @@ import {
 } from "./ToolCallBlock";
 
 const roots = [
-  { dir: "/home/ubuntu/projects/tella-backstage" },
-  { dir: "/home/ubuntu/worktrees/fusion-x", label: "tella-fusion" },
+  { dir: "/home/user/projects/tella-backstage" },
+  { dir: "/home/user/worktrees/fusion-x", label: "tella-fusion" },
 ];
 
 // The engine emits lowercase ids with camelCase inputs; transcripts from the
 // Claude-SDK era use "Read"/"file_path". Both have to render the same.
 test("opencode and Claude-SDK file reads summarize identically", () => {
-  const path = "/home/ubuntu/projects/tella-backstage/package.json";
+  const path = "/home/user/projects/tella-backstage/package.json";
   expect(toolSummary("read", { filePath: path, limit: 40 }, "Using read", roots)).toBe(
     "package.json"
   );
@@ -28,13 +28,13 @@ test("opencode and Claude-SDK file reads summarize identically", () => {
 
 test("paths render relative to the session's worktrees", () => {
   expect(
-    toolSummary("read", { filePath: "/home/ubuntu/worktrees/fusion-x/src/App.res" }, "", roots)
+    toolSummary("read", { filePath: "/home/user/worktrees/fusion-x/src/App.res" }, "", roots)
   ).toBe("tella-fusion:src/App.res");
   // Outside every worktree, only $HOME collapses.
-  expect(toolSummary("read", { filePath: "/home/ubuntu/notes.md" }, "", roots)).toBe("~/notes.md");
+  expect(toolSummary("read", { filePath: "/home/user/notes.md" }, "", roots)).toBe("~/notes.md");
   expect(toolSummary("read", { filePath: "/etc/hosts" }, "", roots)).toBe("/etc/hosts");
   // No roots (evidence pane, previews outside a session) — absolute, tidied.
-  expect(toolSummary("read", { filePath: "/home/ubuntu/projects/x/a.ts" }, "")).toBe(
+  expect(toolSummary("read", { filePath: "/home/user/projects/x/a.ts" }, "")).toBe(
     "~/projects/x/a.ts"
   );
 });
@@ -47,7 +47,7 @@ test("bash, grep and glob summaries drop their plumbing", () => {
   expect(
     toolSummary(
       "grep",
-      { pattern: "foo", path: "/home/ubuntu/projects/tella-backstage/src", include: "*.ts" },
+      { pattern: "foo", path: "/home/user/projects/tella-backstage/src", include: "*.ts" },
       "",
       roots
     )

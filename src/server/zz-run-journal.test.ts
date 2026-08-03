@@ -21,14 +21,14 @@ let oldForceLimit: string | undefined;
 
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "backstage-run-journal-test-"));
-	oldForceLimit = process.env.MICHAEL_FORCE_LIMIT;
+	oldForceLimit = process.env.OPENSESSION_FORCE_LIMIT;
 	oldJournal = mod.__setActiveRunsPathForTest(join(dir, "active-runs.json"));
 });
 
 afterEach(() => {
 	mod.__setActiveRunsPathForTest(oldJournal);
-	if (oldForceLimit === undefined) delete process.env.MICHAEL_FORCE_LIMIT;
-	else process.env.MICHAEL_FORCE_LIMIT = oldForceLimit;
+	if (oldForceLimit === undefined) delete process.env.OPENSESSION_FORCE_LIMIT;
+	else process.env.OPENSESSION_FORCE_LIMIT = oldForceLimit;
 	rmSync(dir, { recursive: true, force: true });
 });
 
@@ -71,7 +71,7 @@ describe("run journal", () => {
 	});
 
 	it("emits recovered run stream events during restart resume", async () => {
-		process.env.MICHAEL_FORCE_LIMIT = "1";
+		process.env.OPENSESSION_FORCE_LIMIT = "1";
 		mod.journalSet({
 			runKey: "run-2",
 			bksSessionId: "bks-2",

@@ -115,7 +115,7 @@ final class SessionsListViewModel {
             let named = chats.compactMap(\.projectId).compactMap { workspaceNames[$0] }.first
             let renamed = chats.first { $0.titleOverridden == true }
             let worktreeName = main.worktreeDir.flatMap {
-                $0.hasPrefix("/home/ubuntu/worktrees/")
+                $0.contains("/worktrees/")
                     ? URL(fileURLWithPath: $0).lastPathComponent
                     : nil
             }
@@ -138,7 +138,7 @@ final class SessionsListViewModel {
 
     nonisolated private static func isolatedWorktree(for session: Session) -> String? {
         guard let dir = session.worktreeDir,
-              dir.hasPrefix("/home/ubuntu/worktrees/") else { return nil }
+              dir.contains("/worktrees/") else { return nil }
         return dir
     }
 

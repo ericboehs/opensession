@@ -1,5 +1,5 @@
 import { chmodSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
-import { OPENSESSION_CHATS_DIR } from "./paths";
+import { homeDir, OPENSESSION_CHATS_DIR } from "./paths";
 import { existsSync } from "fs";
 import {
 	slackIdToFirstName,
@@ -46,7 +46,7 @@ import type {
   OsReviewSummary,
 } from "./types";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 const SLACK_SESSIONS_DIR = `${HOME}/.slack-sessions`;
 const LINEAR_SESSIONS_DIR = `${HOME}/.linear-sessions`;
 const CLI_SESSIONS_DIR = `${HOME}/.claude/sessions`;

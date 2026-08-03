@@ -1251,7 +1251,7 @@ function App() {
 	const wsKeyFor = (s: UnifiedSession | null | undefined): string | null =>
 		s
 			? s.projectId ||
-				(s.worktreeDir?.startsWith("/home/ubuntu/worktrees/")
+				(s.worktreeDir?.includes("/worktrees/")
 					? s.worktreeDir
 					: s.id)
 			: null;
@@ -1490,7 +1490,7 @@ function App() {
 				]
 			: [];
 	// Feed descriptors (panel templates, labels) into the module cache that
-	// refWebPanel reads — without this only hardcoded fallbacks resolve.
+	// refWebPanel reads — without this the panel has no descriptors to resolve.
 	const [, setFeedMetaTick] = useState(0);
 	useEffect(() => {
 		void ensureFeedMeta().then(() => setFeedMetaTick((t) => t + 1));
@@ -1960,7 +1960,7 @@ function App() {
 						(!s.parentSessionId || s.id === currentSession?.id),
 				)
 				.sort(byCreated)
-		: currentSession?.worktreeDir?.startsWith("/home/ubuntu/worktrees/")
+		: currentSession?.worktreeDir?.includes("/worktrees/")
 			? sessions
 					.filter(
 						(s) =>
@@ -1978,7 +1978,7 @@ function App() {
 	// Empty ⇒ a lone standalone chat, which has nothing to reorder.
 	const tabOrderKey = activeProjectId
 		? activeProjectId
-		: currentSession?.worktreeDir?.startsWith("/home/ubuntu/worktrees/")
+		: currentSession?.worktreeDir?.includes("/worktrees/")
 			? currentSession.worktreeDir
 			: "";
 	// Apply the user's saved left-to-right order (drag-drop). Unknown/new chats
@@ -2205,7 +2205,7 @@ function App() {
 					(s) =>
 						s.archived && s.projectId === activeProjectId && !s.sideChatOf,
 				)
-			: currentSession?.worktreeDir?.startsWith("/home/ubuntu/worktrees/")
+			: currentSession?.worktreeDir?.includes("/worktrees/")
 				? sessions.filter(
 						(s) =>
 							s.archived &&

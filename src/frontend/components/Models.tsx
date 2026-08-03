@@ -532,7 +532,7 @@ function ClaudeAccountsSection() {
 	async function handleSetCredentialsPath(a: ClaudeAccountInfo) {
 		const current =
 			a.credentialsPath ||
-			`/home/ubuntu/.claude/accounts/${a.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}/credentials.json`;
+			`~/.claude/accounts/${a.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}/credentials.json`;
 		const credentialsPath = prompt(
 			"Path to this account's Claude OAuth credentials.json for usage polling. Leave empty to clear it.",
 			current,

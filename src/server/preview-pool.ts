@@ -50,7 +50,7 @@ import {
 import { join } from "node:path";
 import { getAgentAwsEnv } from "./aws-creds";
 import { configuredRepos, type Repo } from "./config";
-import { OPENSESSION_CHATS_DIR } from "./paths";
+import { homeDir, OPENSESSION_CHATS_DIR } from "./paths";
 import { isLocalProfile } from "./profile";
 import { sandboxConfig } from "./sandbox/config";
 
@@ -149,8 +149,9 @@ function clampInt(v: unknown, min: number, max: number, dflt: number): number {
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-/** In-container workspace path (inside the golden image's FS). */
-const WORKSPACE = "/home/ubuntu/preview-workspace";
+/** In-container workspace path (inside the golden image's FS — the images
+ *  are built with the same home layout as the host, see bootstrap.ts). */
+const WORKSPACE = `${homeDir()}/preview-workspace`;
 const CONTAINER_PORT = 3300;
 const POOL_LABEL = "bks-preview-pool";
 /** Untracked marker a claim drops in the workspace — tells the container's
@@ -510,7 +511,7 @@ async function spawnMicrovmClone(repo: Repo): Promise<PoolContainer | null> {
     await fetch(path, { method: "DELETE" }).catch(() => {});
     res = await fetch(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(route) }).catch(() => null);
   }
-  const bootSha = (await mvmAgent(c, { command: `git -C /home/ubuntu/preview-workspace rev-parse HEAD` })).out.trim();
+  const bootSha = (await mvmAgent(c, { command: `git -C ${WORKSPACE} rev-parse HEAD` })).out.trim();
   const previewUrl = `https://${host}:${httpsPort}`;
   patchContainer(repo.id, name, { state: "ready", bootSha, previewUrl });
   c.state = "ready";
@@ -662,7 +663,7 @@ async function poolUnfreeze(c: PoolContainer): Promise<boolean> {
 async function poolRestartDev(c: PoolContainer): Promise<void> {
   if (isMicrovm(c)) {
     await mvmAgent(c, {
-      command: `pkill -TERM -f 'start.sh|dev-services|next dev|concurrently' 2>/dev/null; sleep 3; pkill -KILL -f 'next dev|rescript' 2>/dev/null; cd ${WORKSPACE} && : > /tmp/boot.log && (setpriv --reuid 1000 --regid 1000 --init-groups env HOME=/home/ubuntu USER=ubuntu PATH=/usr/local/sbin:/usr/local/bin:/usr/local/bun/bin:/usr/sbin:/usr/bin:/sbin:/bin WEBAPP_PORT=${CONTAINER_PORT} BACKSTAGE_BOOT_MODE=snapshot-restore bash .opensession/start.sh < /dev/null > /tmp/boot.log 2>&1 &) && echo relaunched`,
+      command: `pkill -TERM -f 'start.sh|dev-services|next dev|concurrently' 2>/dev/null; sleep 3; pkill -KILL -f 'next dev|rescript' 2>/dev/null; cd ${WORKSPACE} && : > /tmp/boot.log && (setpriv --reuid 1000 --regid 1000 --init-groups env HOME=${homeDir()} USER=ubuntu PATH=/usr/local/sbin:/usr/local/bin:/usr/local/bun/bin:/usr/sbin:/usr/bin:/sbin:/bin WEBAPP_PORT=${CONTAINER_PORT} BACKSTAGE_BOOT_MODE=snapshot-restore bash .opensession/start.sh < /dev/null > /tmp/boot.log 2>&1 &) && echo relaunched`,
       timeoutMs: 30_000,
     }, true);
     return;
@@ -919,7 +920,7 @@ async function warmRoutesPool(repo: Repo, c: PoolContainer): Promise<void> {
  * image: each sandbox pays the full provision once (toolchain + clone + deps
  * + WASM + boot, ~5-10 min) and then lives warm — `ready` running, `paused`
  * stopped-with-disk (restart ≈30-60s on warm caches). Path parity with the
- * docker image is kept by creating /home/ubuntu/preview-workspace via sudo,
+ * docker image is kept by creating the same workspace path via sudo,
  * so every shared boot/converge script works unchanged.
  */
 async function spawnDaytonaWarm(repo: Repo): Promise<void> {

@@ -17,11 +17,11 @@
 
 import { existsSync, readFileSync } from "fs";
 import { getDefaultModel, providerFor, resolveModel } from "../models";
-import { OPENSESSION_CHATS_DIR } from "../paths";
+import { homeDir, OPENSESSION_CHATS_DIR } from "../paths";
 import { envAlias, stateDir } from "../rename-compat";
 import type { SandboxProviderId } from "./provider";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 // Env-overridable so the verify suite (and unit tests) can point a scratch
 // config at a scratch docker setup without touching the live file (which is
 // read fresh per run). Read per call, not at module load, so a test can flip
@@ -235,7 +235,7 @@ export interface SandboxConfig {
   transport?: SandboxTransport;
   /**
    * Base URL sandboxes dial back to for the WS transport, e.g.
-   * "ws://100.65.135.7:3850" (or https://… — normalized to wss). Default is
+   * "ws://100.x.y.z:3850" (or https://… — normalized to wss). Default is
    * derived from the server's bind (HOST:PORT env). MUST be reachable FROM the
    * sandbox: for remote providers that means a publicly/tailnet-reachable URL
    * (self-hosters: your Tailscale ts.net URL or a tunnel); a 127.0.0.1 bind

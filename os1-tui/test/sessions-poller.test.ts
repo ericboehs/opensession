@@ -17,7 +17,7 @@ import { fakeServer, fakeSession } from "./fakes";
 
 const HOST = "http://server";
 
-const MINE = fakeSession({ id: "bks-mine", title: "my session", startedBy: "Michiel" });
+const MINE = fakeSession({ id: "bks-mine", title: "my session", startedBy: "Alice" });
 const TEAMMATE = fakeSession({ id: "bks-jaap", title: "jaap's session", startedBy: "Jaap" });
 const AUTOMATION = fakeSession({
 	id: "bks-auto",
@@ -28,7 +28,7 @@ const AUTOMATION = fakeSession({
 
 async function poll(
 	sessions = [MINE, TEAMMATE, AUTOMATION],
-	identity: Identity = { name: "Michiel Westerbeek", login: "happylinks", user: "ubuntu" },
+	identity: Identity = { name: "Alice Smith", login: "asmith", user: "ubuntu" },
 	scope: "mine" | "team" | "all" = "mine",
 	explicit = false,
 ) {
@@ -40,12 +40,12 @@ async function poll(
 }
 
 describe("identity matching", () => {
-	const tokens = identityTokens({ name: "Michiel Westerbeek", login: "happylinks" });
+	const tokens = identityTokens({ name: "Alice Smith", login: "asmith" });
 
 	test("a first name matches the full name it came from", () => {
-		expect(startedByMe("Michiel", tokens)).toBe(true);
-		expect(startedByMe("michiel westerbeek", tokens)).toBe(true);
-		expect(startedByMe("happylinks", tokens)).toBe(true);
+		expect(startedByMe("Alice", tokens)).toBe(true);
+		expect(startedByMe("alice smith", tokens)).toBe(true);
+		expect(startedByMe("asmith", tokens)).toBe(true);
 	});
 
 	test("it does not match a teammate whose name merely starts the same", () => {
@@ -58,11 +58,11 @@ describe("identity matching", () => {
 	test("placeholder users claim nothing", () => {
 		const anonymous = identityTokens({ user: "ubuntu" });
 		expect(anonymous.size).toBe(0);
-		expect(startedByMe("Michiel", anonymous)).toBe(false);
+		expect(startedByMe("Alice", anonymous)).toBe(false);
 	});
 
 	test("automation runs are out of every scope but `all`", () => {
-		const tokens = identityTokens({ name: "Michiel Westerbeek" });
+		const tokens = identityTokens({ name: "Alice Smith" });
 		expect(inScope(AUTOMATION, "mine", tokens)).toBe(false);
 		expect(inScope(AUTOMATION, "team", tokens)).toBe(false);
 		expect(inScope(AUTOMATION, "all", tokens)).toBe(true);
@@ -110,7 +110,7 @@ describe("the poller's scope", () => {
 		const many = Array.from({ length: 260 }, (_, i) =>
 			fakeSession({
 				id: `bks-${i}`,
-				startedBy: "Michiel",
+				startedBy: "Alice",
 				lastActivity: new Date(Date.now() - i * 60_000).toISOString(),
 			}),
 		);

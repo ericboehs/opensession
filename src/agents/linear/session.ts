@@ -18,6 +18,7 @@ import {
   removeWorktree,
 } from "../../server/worktree";
 import { unlinkSync } from "fs";
+import { homeDir } from "../../server/paths";
 import { gitIdentityFor, gitIdentityEnv } from "../../server/shared/user-mappings";
 import { createAgentActivity } from "./api";
 import type { LinearTokens } from "./oauth";
@@ -498,8 +499,8 @@ ${participantsLine ? `\n${participantsLine}\n` : ""}
       stderr: "pipe",
       env: {
         ...process.env,
-        PATH: "/home/ubuntu/.cargo/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.local/bin:/home/ubuntu/bin:/home/ubuntu/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        HOME: "/home/ubuntu",
+        PATH: `${homeDir()}/.cargo/bin:${homeDir()}/.bun/bin:${homeDir()}/.local/bin:${homeDir()}/bin:${homeDir()}/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
+        HOME: homeDir(),
       },
     });
 

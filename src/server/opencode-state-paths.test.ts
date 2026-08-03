@@ -22,7 +22,7 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import { OPENSESSION_CHATS_DIR } from "./paths";
+import { homeDir, OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
 import {
   MERIDIAN_CFG_ROOT,
@@ -47,7 +47,7 @@ import {
 import { containerStateDirFixups } from "./sandbox/docker";
 import { REMOTE_HOME, REMOTE_OPENAI_SEED_DIR } from "./sandbox/adapters/bootstrap";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 
 describe("opencode engine state paths (rename-compat consistency)", () => {
   it("instructions/state dir lives under the resolved chat store", () => {
@@ -121,7 +121,7 @@ describe("shard DB path derivation (pinned)", () => {
   // change here orphans every existing shard DB (sessions silently lose
   // their engine history) — must be deliberate, with a migration.
   it("derives stable paths from pool keys", () => {
-    const home = process.env.HOME || "/home/ubuntu";
+    const home = homeDir();
     expect(shardDbPathForKey("bks-ghpr-5024-review")).toBe(
       `${home}/.opensession-chats/opencode/db/bks-ghpr-5024-review.db`,
     );

@@ -31,6 +31,7 @@
  * the OPENSESSION_OC_DETACH=0 kill switch is off. Every failure inside the
  * detached spawn path falls back to a plain direct-child spawn.
  */
+import { homeDir } from "./paths";
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync } from "fs";
 import type { Subprocess } from "bun";
 import { envAlias } from "./rename-compat";
@@ -42,7 +43,7 @@ import {
   systemdUserScopesAvailable,
 } from "./systemd-scopes";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 
 /** One process handle shape for both pools: a live Bun child (direct spawn,
  *  or the systemd-run waiter of a just-detached spawn) and an ADOPTED scope

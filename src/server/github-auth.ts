@@ -36,13 +36,14 @@
  * (runner) or a 403 (web mutation routes).
  */
 
+import { homeDir } from "./paths";
 import { chmodSync, readFileSync } from "fs";
 import { audit } from "./audit";
 import { configuredIdentity, getConfig } from "./config";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { fetchWithTimeout } from "./shared/fetch-with-timeout";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 
 /** Env override is for tests/sandboxes; read per call so it can change. */
 function storePath(): string {

@@ -3,12 +3,13 @@
  * run with (mcp-config.json). Targets are sanitized — never expose URL
  * query strings (they can embed tokens) or env values.
  */
+import { homeDir } from "./paths";
 import { existsSync, readFileSync, copyFileSync, watchFile } from "fs";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { configuredPaths } from "./config";
 import { mcpOauthStatus, mcpSharedGrantHeader, mcpUserGrantHeader, mcpUserGrantToken, oauthPresetFor } from "./mcp-oauth";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 // mcp-config.json location. BACKSTAGE_MCP_CONFIG env → config
 // `paths.mcpConfig` → this repo's checkout — unchanged when neither is set.
 const CONFIG_PATH = configuredPaths().mcpConfig;
@@ -205,7 +206,7 @@ export function addMcpServer(input: AddMcpInput): { ok: true } | { error: string
 /**
  * Set (or clear, with an empty/undefined list) the per-user allowlist on an
  * existing MCP server. Lets you restrict a server after it's been added — e.g.
- * lock `brex` down to Michiel + Grant — without re-entering its secrets.
+ * lock a sensitive server down to specific teammates — without re-entering its secrets.
  */
 export function setMcpAllowedUsers(
   name: string,

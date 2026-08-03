@@ -43,8 +43,8 @@ async function mount(
 			api={api}
 			poller={poller}
 			pool={pool}
-			host="os.tella.dev"
-			user="michiel"
+			host="os.example.dev"
+			user="alice"
 			onExit={() => {
 				exited = true;
 			}}
@@ -95,8 +95,8 @@ describe("first paint", () => {
 		expect(frame).toContain("backstage"); // workspace group header
 		expect(frame).toContain("wire the socket");
 		expect(frame).toContain("fix the sidebar");
-		expect(frame).toContain("os.tella.dev");
-		expect(frame).toContain("michiel");
+		expect(frame).toContain("os.example.dev");
+		expect(frame).toContain("alice");
 		// Nothing open yet.
 		expect(frame).toContain("no session open");
 	});
@@ -216,7 +216,7 @@ describe("sending", () => {
 		await app.flush();
 
 		const prompt = ws.sentOfType("prompt")[0]!;
-		expect(prompt).toMatchObject({ content: "ship it", busyMode: "queue", user: "michiel" });
+		expect(prompt).toMatchObject({ content: "ship it", busyMode: "queue", user: "alice" });
 		// Cleared, and the status bar reports what happened.
 		expect(app.frame()).toContain("sent");
 	});
@@ -463,7 +463,7 @@ describe("degraded states", () => {
 		const pool = new WatchPool({ host: HOST, factory: fakeWsFactory });
 		await poller.start();
 		const harness = await testRender(
-			<App api={api} poller={poller} pool={pool} host="os.tella.dev" user="michiel" onExit={() => {}} />,
+			<App api={api} poller={poller} pool={pool} host="os.example.dev" user="alice" onExit={() => {}} />,
 			{ width: 100, height: 20 },
 		);
 		await harness.flush();

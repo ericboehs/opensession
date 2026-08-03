@@ -23,7 +23,7 @@ import { FRONTEND_SRC, IS_DEV, SPA_HEADERS, frontend, scheduleFrontendRebuild, s
 import { configuredIntegration } from "./src/server/config";
 import { initHumanAsks } from "./src/server/human-asks";
 import { interactiveMcpServers } from "./src/server/interactive-mcp";
-import { OPENSESSION_CHATS_DIR } from "./src/server/paths";
+import { homeDir, OPENSESSION_CHATS_DIR } from "./src/server/paths";
 import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import {
 	isLocalProfile,
@@ -86,7 +86,7 @@ import {
 
 const PORT = parseInt(process.env.PORT || "3850");
 const HOST = process.env.HOST || "127.0.0.1";
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 const SESSIONS_DIR = OPENSESSION_CHATS_DIR;
 
 if (isLocalProfile() && !isLoopbackHostname(HOST)) {

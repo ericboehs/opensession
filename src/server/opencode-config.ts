@@ -71,12 +71,13 @@
  * atomic rename + chmod 0600 because the file holds API keys.
  */
 
+import { homeDir } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { chmodSync, existsSync, readFileSync } from "fs";
 import { isLocalProfile } from "./profile";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 
 /** Bridge-config file path (exported for the state-path regression test). */
 export function configPath(): string {

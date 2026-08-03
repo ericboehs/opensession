@@ -30,12 +30,12 @@ import { randomBytes, timingSafeEqual } from "crypto";
 import { audit } from "./audit";
 import { configuredIdentity } from "./config";
 import { githubUserAuthActive } from "./github-auth";
-import { OPENSESSION_CHATS_DIR } from "./paths";
+import { homeDir, OPENSESSION_CHATS_DIR } from "./paths";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { githubLoginFor } from "./shared/user-mappings";
 import { isLocalProfile } from "./profile";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 /** Env override is for tests; read once at first use (the map loads lazily). */
 function sessionsPath(): string {
   return process.env.OPENSESSION_WEB_SESSIONS_STORE || `${HOME}/.opensession-web-sessions.json`;

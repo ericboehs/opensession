@@ -8,8 +8,8 @@
  * yours.
  *
  * Matching is by *name token*, deliberately not by substring. `startedBy` is a
- * display name the web UI wrote ("Michiel"), while the token we hold may be a
- * full name ("Michiel Westerbeek"), a GitHub login ("happylinks") or the unix
+ * display name the web UI wrote ("Alice"), while the token we hold may be a
+ * full name ("Alice Smith"), a GitHub login ("asmith") or the unix
  * user. Exact token equality is what keeps "John" from matching "Johnny".
  */
 

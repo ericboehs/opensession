@@ -17,6 +17,7 @@
  * schema drift after an opencode upgrade, corrupt rows) degrades to [] so a
  * transcript read can never take a prompt path down.
  */
+import { homeDir } from "./paths";
 import { envAlias } from "./rename-compat";
 import {
   existsSync,
@@ -40,7 +41,7 @@ import {
 } from "./jsonl-parser";
 import { transcriptStore } from "./transcript-store";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 
 /** The opencode SQLite store for the HOME opencode-runner passes through. */
 export let OPENCODE_DB_PATH =

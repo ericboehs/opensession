@@ -14,12 +14,13 @@
  * modules. See config.example.json at the repo root for the full schema.
  */
 
+import { homeDir } from "./paths";
 import { readFileSync, statSync } from "fs";
 import { resolve as resolvePath } from "path";
 import { envAlias, statePath } from "./rename-compat";
 import { isLocalProfile, localProfileRoot } from "./profile";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 const OPENSESSION_ROOT = resolvePath(import.meta.dir, "../..");
 
 export function configPath(): string {
@@ -74,6 +75,9 @@ export interface RepoSection {
   sharedCheckout?: boolean;
   /** Marks this repo as the instance default (see defaultRepo()). */
   default?: boolean;
+  /** PNG served as the repo's tile icon (absolute path, or relative to the
+   *  checkout); unset = the GitHub org avatar. */
+  icon?: string;
   previewCommand?: string;
   /** One-time setup command run in a fresh worktree before depsInstall. */
   worktreeSetup?: string;
@@ -204,6 +208,8 @@ export interface Repo {
   sharedCheckout?: boolean;
   /** Instance default repo (defaultRepo()). */
   default?: boolean;
+  /** Tile-icon PNG path (see RepoSection.icon). */
+  icon?: string;
   /** Dev-server bring-up command for previews. */
   previewCommand?: string;
   worktreeSetup?: string;
@@ -302,6 +308,7 @@ function parseRepoSection(v: unknown): RepoSection | undefined {
     ghRepo: str(o.ghRepo),
     sharedCheckout: bool(o.sharedCheckout),
     default: bool(o.default),
+    icon: str(o.icon),
     previewCommand: str(o.previewCommand),
     worktreeSetup: str(o.worktreeSetup),
     depsInstall: str(o.depsInstall),
@@ -534,6 +541,7 @@ export function configuredRepos(): Record<string, Repo> {
           description: entry.description,
           sharedCheckout: entry.sharedCheckout,
           default: entry.default,
+          icon: entry.icon,
           previewCommand: entry.previewCommand,
           worktreeSetup: entry.worktreeSetup,
           depsInstall: entry.depsInstall,
@@ -644,4 +652,20 @@ export function configuredIntegration(
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+/** Plain workspace id (`integrations.plain.workspaceId`) for deep links into
+ *  app.plain.com. Null when unset — consumers hide their "open in Plain"
+ *  affordances. */
+export function plainWorkspaceId(): string | null {
+  const v = configuredIntegration("plain").workspaceId;
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+/** Plain GraphQL endpoint (`integrations.plain.apiUrl`). */
+export function plainApiUrl(): string {
+  const v = configuredIntegration("plain").apiUrl;
+  return typeof v === "string" && v.trim()
+    ? v.trim()
+    : "https://core-api.uk.plain.com/graphql/v1";
 }

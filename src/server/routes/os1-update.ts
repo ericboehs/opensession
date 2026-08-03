@@ -23,6 +23,7 @@
  * ignores prereleases, so the two release streams can share the repo.
  */
 
+import { homeDir } from "../paths";
 import { existsSync, mkdirSync, readdirSync, rmSync } from "fs";
 import { $ } from "bun";
 import type { RouteContext } from "./context";
@@ -31,7 +32,7 @@ import { configuredIntegration, configuredServer } from "../config";
 const updates = () => configuredIntegration("updates");
 const releaseRepo = () =>
 	typeof updates().releaseRepo === "string" ? updates().releaseRepo as string : "";
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 const CACHE_DIR = `${HOME}/.opensession-os1-mac-updates`;
 const LATEST_TTL_MS = 5 * 60 * 1000;
 

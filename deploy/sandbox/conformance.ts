@@ -34,7 +34,7 @@
  * config — never logged.
  */
 
-const SCRATCH = `${process.env.HOME || "/home/ubuntu"}/.sandbox-conformance-scratch`;
+const SCRATCH = `${process.env.HOME || homedir()}/.sandbox-conformance-scratch`;
 process.env.BACKSTAGE_RUN_JOURNAL = `${SCRATCH}/active-runs.json`;
 process.env.BACKSTAGE_SANDBOX_CONFIG = `${SCRATCH}/sandbox-config.json`;
 // Provider state files + sandbox-runs dirs land under BACKSTAGE_CHATS_DIR —
@@ -47,6 +47,7 @@ process.env.BACKSTAGE_CHATS_DIR = `${SCRATCH}/chats`;
 // repos over the built-in defaults.
 process.env.BACKSTAGE_CONFIG = `${SCRATCH}/backstage-config.json`;
 
+import { homedir } from "os";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 
 const { getSandboxProvider } = await import("../../src/server/sandbox/index");
@@ -64,7 +65,7 @@ type Sandbox = import("../../src/server/sandbox/provider").Sandbox;
 type PortMap = import("../../src/server/sandbox/provider").PortMap;
 
 const RUN_TS = Date.now().toString(36);
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = process.env.HOME || homedir();
 
 // ── result plumbing ───────────────────────────────────────────────────────────
 

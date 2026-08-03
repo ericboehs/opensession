@@ -6,6 +6,7 @@ import { Composer } from "./Composer";
 import { ConversationPane } from "./ConversationPane";
 import { FeedWebPane, refWebPanel } from "./FeedWebPane";
 import { SlackChannelPane } from "./SlackChannelPane";
+import { plainThreadUrl } from "./PlainThreadPanel";
 import { PrPanel } from "./PrPanel";
 import { useCurrentUser } from "./UserPicker";
 import { useIsPhone } from "../hooks/useIsPhone";
@@ -156,7 +157,7 @@ export function WorkspacePane({
 	}
 
 	// The workspace's standing right sidebar: a workspace is a first-class
-	// surface, so it always shows one — even chat-less (Michiel 2026-07-24).
+	// surface, so it always shows one — even chat-less.
 	// Compact info: identity, linkage (repo/branch/PR/ticket), and its chats.
 	const infoPanel = !isPhone && (
 		<aside className="viewer-panel">
@@ -190,7 +191,7 @@ export function WorkspacePane({
 							<span className="text-faint shrink-0">Ticket</span>
 							<a
 								className="truncate text-dim hover:text-fg"
-								href={`https://app.plain.com/workspace/w_01J7WXJG68TFDV9RD1C4JE3W6F/thread/${workspace.plainThreadId}/`}
+								href={plainThreadUrl(workspace.plainThreadId)}
 								target="_blank"
 								rel="noreferrer"
 							>

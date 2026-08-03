@@ -22,6 +22,7 @@
  * __backstageBooted guard, same as goal-runner's ticker.
  */
 
+import { homeDir } from "./paths";
 import { getCachedSessions, isLegacySideChat } from "./session-cache";
 import { mergedSessionTranscriptAsync } from "./sessions";
 import { opencodeOneShot } from "./opencode-oneshot";
@@ -36,7 +37,7 @@ import type { TranscriptEntry, UnifiedSession } from "./types";
 
 const g = globalThis as any;
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 const DB_PATH =
 	process.env.OPENSESSION_SEARCH_DB || `${HOME}/.opensession-search.db`;
 

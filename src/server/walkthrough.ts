@@ -6,9 +6,9 @@
  *
  * Media the agent recorded lives in its worktree or /tmp, both of which are
  * pruned, so publishing STAGES copies under the composer-uploads dir
- * (~/.opensession-chats/uploads/walkthrough/<sessionId>/) — inside
- * /home/ubuntu, so the existing /backstage/media route streams them to the
- * chat and the Review tab with no new endpoint.
+ * (~/.opensession-chats/uploads/walkthrough/<sessionId>/) — under the home
+ * dir, so the existing /backstage/media route streams them to the chat and
+ * the Review tab with no new endpoint.
  *
  * The walkthrough is also mirrored into the GitHub PR description as a
  * marker-delimited managed section (re-publish replaces it, human edits around

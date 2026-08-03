@@ -77,7 +77,7 @@ export function createPublishMcpServer(ctx: PublishToolContext) {
           ? resolve(args.dir)
           : resolve(worktree || process.cwd(), args.dir);
         // A session may only publish out of its own checkout — otherwise
-        // "publish /home/ubuntu" is a one-call exfiltration of the whole box
+        // "publish $HOME" is a one-call exfiltration of the whole box
         // onto a team-visible URL.
         if (worktree && !dir.startsWith(resolve(worktree))) {
           return text(

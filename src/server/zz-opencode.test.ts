@@ -672,7 +672,7 @@ describe("buildOpencodeInstructions", () => {
       isAsk: false,
       bksSessionId: "abc-123",
       user: "michiel",
-      author: { name: "Michiel Westerbeek", email: "happylinks@gmail.com" },
+      author: { name: "Michiel Westerbeek", email: "alice@example.com" },
     });
     expect(s).toContain("Started by Michiel Westerbeek in [this");
     expect(s).toContain("--assignee happylinks");

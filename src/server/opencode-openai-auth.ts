@@ -90,6 +90,7 @@
  * refresh token into opencode.
  */
 
+import { homeDir } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
 import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "fs";
 import {
@@ -103,7 +104,7 @@ import { isLocalProfile } from "./profile";
 import { userMatchesAny } from "./shared/user-mappings";
 import { localCodexAccount, localOpencodeDataRoot } from "./local-engine-auth";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 export const OPENAI_DATA_ROOT = isLocalProfile()
   ? localOpencodeDataRoot("openai")
   : `${stateDir("opencode")}/openai-data`;

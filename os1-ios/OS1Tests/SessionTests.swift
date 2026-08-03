@@ -173,7 +173,7 @@ final class SessionTests: XCTestCase {
             model: nil,
             effort: nil,
             fastMode: false,
-            startedBy: "Michiel"
+            startedBy: "Alice"
         )
 
         XCTAssertTrue(session.isOptimisticPlaceholder == true)

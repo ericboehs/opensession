@@ -17,7 +17,7 @@ describe("prompt-context", () => {
   });
 
   it("strips a fenced block, leaving only the human message", () => {
-    const prompt = `${wrapContext("You are Michael in Ask mode…\n\n## Model routing\n…")}\n\nWhat were the three constraints?`;
+    const prompt = `${wrapContext("You are an assistant in Ask mode…\n\n## Model routing\n…")}\n\nWhat were the three constraints?`;
     expect(stripContext(prompt)).toBe("What were the three constraints?");
   });
 

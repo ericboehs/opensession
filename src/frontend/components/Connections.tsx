@@ -877,7 +877,7 @@ function AddMcpForm({ onClose, onAdded }: { onClose: () => void; onAdded: () => 
                 className={cn(settingsInputClass, "font-mono")}
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
-                placeholder="/home/ubuntu/bin/my-mcp"
+                placeholder="~/bin/my-mcp"
               />
             </SettingsField>
             <SettingsField>

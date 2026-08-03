@@ -111,7 +111,7 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync } from "fs";
 import { dirname, resolve as resolvePath } from "path";
-import { OPENSESSION_CHATS_DIR } from "../paths";
+import { homeDir, OPENSESSION_CHATS_DIR } from "../paths";
 import { envAlias, stateDir } from "../rename-compat";
 import { journalSet, journalClear, type ActiveRunRecord } from "../run-journal";
 import { shouldPersistModelSwitch, type StreamEvent } from "../run-events";
@@ -157,7 +157,7 @@ import type {
   SandboxStatus,
 } from "./provider";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 const CONTAINER_PREFIX = "bks-sbx-";
 const DEFAULT_IMAGE = "backstage-runner:latest";
 const DEFAULT_CPUS = 4;

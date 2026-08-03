@@ -8,6 +8,7 @@
  * explicit opensession-workspace methods cross the control API.
  */
 
+import { homeDir } from "../../paths";
 import { getRepo } from "../../worktree";
 import { sandboxConfig, sandboxProviderConfigured } from "../config";
 import type {
@@ -71,7 +72,7 @@ function workspacePath(sessionId: string): string {
   const safe = sessionId
     .replace(/[^a-zA-Z0-9_.-]+/g, "-")
     .replace(/^[^a-zA-Z0-9]+/, "");
-  return `/home/ubuntu/microvm-workspaces/${safe}`;
+  return `${homeDir()}/microvm-workspaces/${safe}`;
 }
 
 async function run(

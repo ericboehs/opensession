@@ -188,7 +188,7 @@ import {
 import { audit, summarizeText } from "./audit";
 import { gitIdentityEnv, githubLoginFor, userMatchesAny, type GitIdentity } from "./shared/user-mappings";
 import { githubAuthEnv, githubUserLoginForRun } from "./github-auth";
-import { OPENSESSION_CHATS_DIR } from "./paths";
+import { homeDir, OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, stateDir } from "./rename-compat";
 import { isLocalProfile } from "./profile";
 import {
@@ -275,7 +275,7 @@ import {
   type ClaudeAccount,
 } from "./claude-accounts";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 const UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||
   configuredServer().publicBaseUrl;
@@ -1359,6 +1359,28 @@ export function opencodeMcpFromPrebuiltProxies(
   return out;
 }
 
+/** Untracked instance-local instructions: `AGENTS.local.md` / `CLAUDE.local.md`
+ *  at the session's working-directory root. OpenCode natively loads only the
+ *  tracked AGENTS.md (findUp), so operator-private guidance — deployment
+ *  hostnames, org access grants, incident history — would otherwise have to
+ *  live in the tracked file. Both names are read (in that order) so either
+ *  convention works; content is appended verbatim to the run's instructions. */
+export function readLocalInstructions(dir: string | undefined): string | undefined {
+  if (!dir) return undefined;
+  const parts: string[] = [];
+  for (const name of ["AGENTS.local.md", "CLAUDE.local.md"]) {
+    const path = join(dir, name);
+    try {
+      if (!existsSync(path)) continue;
+      const text = readFileSync(path, "utf8").trim();
+      if (text) parts.push(text);
+    } catch {
+      // Unreadable local file — never fail the run over optional instructions.
+    }
+  }
+  return parts.length ? parts.join("\n\n") : undefined;
+}
+
 /** Session context (ask guardrails, repos note, managing-Michael notes) —
  *  delivered via an instructions file, OpenCode's system-prompt append
  *  channel. Sibling of buildCodexDeveloperInstructions with engine-accurate
@@ -1392,6 +1414,10 @@ export function buildOpencodeInstructions(input: {
    *  (command-policy.ts) — tell the agent so a refusal reads as policy, not
    *  as a broken tool. */
   commandPolicyGated?: boolean;
+  /** Untracked instance-local instructions (readLocalInstructions) — appended
+   *  verbatim so operator-private guidance never has to live in the tracked
+   *  AGENTS.md. */
+  localInstructions?: string;
   /** The Dial: tells a dial-preset run about its oracle subagent. Only set for
    *  dial runs — other sessions never learn the oracle agents exist. */
   dialOracle?: {
@@ -1409,8 +1435,8 @@ export function buildOpencodeInstructions(input: {
   };
 }): string {
   const parts: string[] = [];
-  // Unconditional, every run: a customer-PII PDF was uploaded to gofile.io on
-  // 2026-07-09 when Slack file delivery failed and could not be deleted after.
+  // Unconditional, every run: uploads to public hosts are public and
+  // unrecoverable, and files an agent handles can contain customer PII.
   parts.push(
     "## Data handling — never upload to public hosts\nNEVER upload files or data to public " +
       "file-sharing hosts or pastebins (gofile.io, transfer.sh, 0x0.st, catbox.moe, file.io, " +
@@ -1715,6 +1741,9 @@ export function buildOpencodeInstructions(input: {
         "the exact command and why in your note/report and let a human run it."
     );
   }
+  // Instance-local operator instructions last: they're the deployment's own
+  // additions and may refine anything above.
+  if (input.localInstructions?.trim()) parts.push(input.localInstructions.trim());
   return parts.join("\n\n");
 }
 
@@ -3144,11 +3173,32 @@ function makeSubagentStallGuard(
         ) {
           childSessions.add(info.id);
         }
+        // Session bookkeeping is not progress — fall through to the type
+        // filter below (the envelope carries a top-level sessionID, so
+        // without this these events would keep resetting the clock).
       }
+      // Only genuine content flow counts as family activity. Housekeeping
+      // events (session.updated/status ticks, permission traffic) and retry
+      // parts must NOT reset the silence clock: a child whose provider
+      // request is stuck in opencode's silent retry backoff emits exactly
+      // those the whole time it hangs — 2026-08-03 bks-019fc798 sat 25 min
+      // on a wedged @oracle-fable with the guard armed but never firing.
+      if (
+        ev?.type !== "message.part.updated" &&
+        ev?.type !== "message.part.delta" &&
+        ev?.type !== "message.updated"
+      ) {
+        return;
+      }
+      if (p?.part?.type === "retry") return;
       const sid = p?.part?.sessionID ?? p?.info?.sessionID ?? p?.sessionID;
       if (sid && (sid === ocSessionId || childSessions.has(sid))) {
         lastFamilyEventAt = Date.now();
       }
+    },
+    /** Parent or any (transitive) task-child session id. */
+    isFamily(sid: unknown): boolean {
+      return sid === ocSessionId || (typeof sid === "string" && childSessions.has(sid));
     },
     /** Call for every parent tool part update (tracks open task tools). */
     noteTool(part: any) {
@@ -3827,6 +3877,10 @@ async function* runOpencodeAttempt(
       // Per-session servers boot in `cwd`, so their environment block is
       // already right; only the pool needs the correction.
       cwd: shared ? cwd : undefined,
+      // Untracked AGENTS.local.md / CLAUDE.local.md at the session's cwd.
+      // Rides the same channel as the rest (per-session instructions file /
+      // shared per-prompt `system`), so it reaches every run either way.
+      localInstructions: readLocalInstructions(cwd),
       inProcessMcp: opts.inProcessMcp,
       bksSessionId: journal?.bksSessionId,
       user,
@@ -4661,15 +4715,23 @@ async function* runOpencodeAttempt(
       switch (ev?.type) {
         case "message.part.updated": {
           const part = p?.part;
-          if (!part || part.sessionID !== ocSessionId) return;
-          if (part.type === "tool") stallGuard.noteTool(part);
+          if (!part) return;
           if (part.type === "retry") {
-            noteProviderRetry(
-              Number(part.attempt) || 0,
-              String(part.error?.data?.message || part.error?.name || "")
-            );
+            // Family-wide, not parent-only: while a task tool is open the
+            // parent is blocked on its child, so a child's provider retries
+            // ARE the parent turn's stall — parent-only filtering left both
+            // stall guards blind to 25 min of wedged @oracle-fable retries
+            // (2026-08-03 bks-019fc798).
+            if (stallGuard.isFamily(part.sessionID)) {
+              noteProviderRetry(
+                Number(part.attempt) || 0,
+                String(part.error?.data?.message || part.error?.name || "")
+              );
+            }
             return;
           }
+          if (part.sessionID !== ocSessionId) return;
+          if (part.type === "tool") stallGuard.noteTool(part);
           if (part.type === "text" && !part.synthetic && part.time?.end && !emittedText.has(part.id)) {
             emittedText.add(part.id);
             if (compactionMsgs.has(part.messageID)) {
@@ -4777,8 +4839,10 @@ async function* runOpencodeAttempt(
         }
         case "session.status": {
           // Belt-and-braces sibling of the RetryPart handler (older/newer
-          // servers may emit one or both shapes).
-          if (p?.sessionID !== ocSessionId) return;
+          // servers may emit one or both shapes). Family-wide for the same
+          // reason as the retry-part path: a task child's retries are the
+          // parent turn's stall.
+          if (!stallGuard.isFamily(p?.sessionID)) return;
           const st = p?.status;
           if (st?.type === "retry") {
             noteProviderRetry(Number(st.attempt) || 0, String(st.message || ""));

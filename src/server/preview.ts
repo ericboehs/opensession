@@ -264,7 +264,7 @@ const g = globalThis as unknown as {
 // httpsPort -> webappPort we've already configured (survives --hot reloads).
 const previewRoutes: Map<number, number> = (g.__previewRoutes ??= new Map());
 
-/** This machine's tailnet hostname (e.g. michael.taila5d766.ts.net). */
+/** This machine's tailnet hostname (e.g. example-host.your-tailnet.ts.net). */
 export async function previewHost(): Promise<string> {
   if (g.__previewHost) return g.__previewHost;
   let host = process.env.PREVIEW_HOST || "";

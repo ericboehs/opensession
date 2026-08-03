@@ -18,6 +18,7 @@
  * files use `.opensession-boundary-*`; both are unique per run.
  */
 
+import { homedir } from "os";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { getSandboxProvider } from "../../src/server/sandbox";
@@ -32,7 +33,7 @@ import {
 import type { Sandbox } from "../../src/server/sandbox/provider";
 import { OPENSESSION_CHATS_DIR } from "../../src/server/paths";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = process.env.HOME || homedir();
 const DEFAULT_SERVER = "http://127.0.0.1:3850";
 // This suite certifies the sandbox boundary, not model-specific tool-calling.
 // Keep the default on a model that reliably emits OpenCode tool calls; use

@@ -18,6 +18,7 @@
  * sts:AssumeRole of a tighter role instead of vending the instance creds.
  */
 
+import { homeDir } from "./paths";
 import { mkdirSync, renameSync, writeFileSync } from "fs";
 import { configuredIntegration } from "./config";
 
@@ -143,7 +144,7 @@ export async function getAgentAwsEnv(): Promise<Record<string, string>> {
  * blocked for the mint helper too) — the run proceeds without AWS and `aws`
  * calls error visibly, same contract as getAgentAwsEnv.
  */
-const CREDS_DIR = `${process.env.HOME || "/home/ubuntu"}/.opensession-aws`;
+const CREDS_DIR = `${homeDir()}/.opensession-aws`;
 const CREDS_FILE = `${CREDS_DIR}/agent-credentials`;
 const FILE_REFRESH_MS = 10 * 60_000;
 

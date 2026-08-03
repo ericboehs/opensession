@@ -31,7 +31,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
-import { OPENSESSION_CHATS_DIR } from "./paths";
+import { homeDir, OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias } from "./rename-compat";
 import { audit } from "./audit";
 import { tryGetSessionControl } from "./session-control";
@@ -46,7 +46,7 @@ import {
 } from "../agents/slack/slack-api";
 import { configuredServer, personaName, productName } from "./config";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 const STORE = `${OPENSESSION_CHATS_DIR}/human-asks.json`;
 const UI_BASE =
   envAlias("OPENSESSION_UI_BASE", "MICHAEL_UI_BASE") ||

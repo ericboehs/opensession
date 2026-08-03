@@ -380,7 +380,7 @@ export async function handleAgentSession(
             });
           } else {
             session.isPlanning = false;
-            effectivePrompt = `You are Michael, working on Linear ticket ${session.issueIdentifier} (${session.issueUrl}).
+            effectivePrompt = `You are ${personaName()}, working on Linear ticket ${session.issueIdentifier} (${session.issueUrl}).
 
 **Title:** ${session.issueTitle}
 **Description:** ${session.issueDescription}

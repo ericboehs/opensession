@@ -8,7 +8,7 @@
  * feed-item context injection.
  *
  * Per-user: pass the requesting user and the call runs on THEIR grant
- * (workspace grant as fallback) — so the Tella band shows what the signed-in
+ * (workspace grant as fallback) — so a feed band shows what the signed-in
  * viewer's account can see.
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";

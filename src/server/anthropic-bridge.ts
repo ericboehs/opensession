@@ -66,6 +66,7 @@
  *  - The SDK's own built-in tools are disallowed; only client tools exist.
  */
 
+import { homeDir } from "./paths";
 import { stateDir } from "./rename-compat";
 import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
@@ -75,7 +76,7 @@ import { CLAUDE_CODE_BIN } from "./runner-shared";
 import { bridgePort, bridgeMaxRequestsPerHour, readOpencodeBridgeConfig } from "./opencode-config";
 import { mkdirSync } from "fs";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 // Empty, dedicated cwd for the SDK subprocess: the bridge never touches files
 // (every tool is a blocked passthrough), so no worktree must ever be visible.
 export const BRIDGE_CWD = `${stateDir("opencode")}/bridge-cwd`;

@@ -11,16 +11,17 @@
  * original container as-is.
  */
 
+import { homeDir } from "./paths";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { unlink } from "node:fs/promises";
 
 const WHISPER_CLI =
 	process.env.WHISPER_CLI ||
-	join(process.env.HOME || "/home/ubuntu", "tools/whisper.cpp/build/bin/whisper-cli");
+	join(homeDir(), "tools/whisper.cpp/build/bin/whisper-cli");
 const WHISPER_MODEL =
 	process.env.WHISPER_MODEL ||
-	join(process.env.HOME || "/home/ubuntu", "tools/whisper.cpp/models/ggml-small-q5_1.bin");
+	join(homeDir(), "tools/whisper.cpp/models/ggml-small-q5_1.bin");
 
 /** Max clip we accept — dictation, not podcasts. */
 export const MAX_AUDIO_BYTES = 25 * 1024 * 1024;

@@ -702,7 +702,7 @@ function FeedFilterMenu({
 // Only recognized people get their own "people" section. Sessions whose
 // `startedBy` is something other than a real teammate — test labels
 // ("proof-test", "image-test"), action/integration names ("Slack",
-// "Make Michiel editor (action)"), or empty — are hidden rather than shown as
+// "Make Alice editor (action)"), or empty — are hidden rather than shown as
 // stray sections. The agent persona counts as a person here.
 const KNOWN_PEOPLE = new Set([...TEAM, AGENT_NAME].map((n) => n.toLowerCase()));
 
@@ -1911,7 +1911,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		};
 	}, [projectMenu]);
 
-	// The Archived row counts *my* archived sessions (Michiel's scope), and honors
+	// The Archived row counts *my* archived sessions (the current user's), and honors
 	// the active repo filter — same lens as the archived page it opens.
 	const archivedCount = useMemo(() => {
 		const user = currentUser.toLowerCase();
@@ -2399,7 +2399,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const byWorktree = new Map<string, UnifiedSession[]>();
 		const loose: UnifiedSession[] = [];
 		for (const s of solo) {
-			if (s.worktreeDir?.startsWith("/home/ubuntu/worktrees/")) {
+			if (s.worktreeDir?.includes("/worktrees/")) {
 				const list = byWorktree.get(s.worktreeDir) || [];
 				list.push(s);
 				byWorktree.set(s.worktreeDir, list);
@@ -2722,8 +2722,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// Feed workspaces (repo-less, externalRefs — Tella videos, PostHog
 	// dashboards) are represented by their feed band's rows. They only join
 	// the status lanes when they demand attention (running / needs input) —
-	// an idle one in Backlog is a duplicate of its feed row (Michiel
-	// 2026-07-29).
+	// an idle one in Backlog is a duplicate of its feed row.
 	const feedRefKinds = useMemo(
 		() => new Set(feeds.map((f) => f.refKind)),
 		[feeds],
@@ -4875,7 +4874,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 								// matching the sidebar's standard 22px leading rail.
 								// the utility strip reads lighter than the work lists.
 								// Landed in ffd11ffc (2026-07-24). That commit's comment
-								// credited Michiel with "wayyy too big", but no such
+								// credited a "wayyy too big" complaint, but no such
 								// request exists in the session record — don't treat the
 								// current numbers as a stated preference.
 								"w-full gap-[9px] rounded-lg bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[3px] text-control-label font-medium text-dim hover:bg-hover hover:text-fg",
@@ -7492,7 +7491,7 @@ function WsPrStatusMark({
 	if (!chat) {
 		// Rows that can never have a PR — feed/scratch workspaces (repo-less
 		// chats, no workspace branch/PR) — get an empty alignment slot, not a
-		// misleading git glyph (Michiel 2026-07-29).
+		// misleading git glyph.
 		const canPr =
 			chats.some((c) => c.branch || c.prUrl || c.repo) ||
 			!!workspace?.branch ||

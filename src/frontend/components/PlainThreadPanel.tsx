@@ -25,7 +25,7 @@ import { renderMarkdown } from "../lib/markdown";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { useCurrentUser } from "./UserPicker";
 import { cn } from "../ui/cn";
-import { PRODUCT_NAME } from "../lib/brand";
+import { PLAIN_WORKSPACE_ID, PRODUCT_NAME } from "../lib/brand";
 
 interface Props {
 	sessionId: string;
@@ -41,10 +41,12 @@ export const STATUS_LABEL: Record<string, string> = {
 	DONE: "Done",
 };
 
-/** Workspace of the Plain app the tickets live in (for "open in Plain" links). */
-const PLAIN_WORKSPACE_ID = "w_01J7WXJG68TFDV9RD1C4JE3W6F";
+/** Deep link into the Plain app, or "" when the instance has no configured
+ *  Plain workspace id (integrations.plain.workspaceId) — links hide. */
 export function plainThreadUrl(threadId: string): string {
-	return `https://app.plain.com/workspace/${PLAIN_WORKSPACE_ID}/thread/${threadId}/`;
+	return PLAIN_WORKSPACE_ID
+		? `https://app.plain.com/workspace/${PLAIN_WORKSPACE_ID}/thread/${threadId}/`
+		: "";
 }
 
 function timeOf(iso: string): string {

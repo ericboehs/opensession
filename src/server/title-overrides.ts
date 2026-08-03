@@ -7,9 +7,9 @@
  */
 import { readFileSync, existsSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
-import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { homeDir, BACKSTAGE_CHATS_DIR } from "./paths";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 const REGISTRY_PATH = `${BACKSTAGE_CHATS_DIR}/title-overrides.json`;
 
 let cache: Record<string, string> | null = null;

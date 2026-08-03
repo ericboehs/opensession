@@ -15,6 +15,7 @@
  * Mirrors the flat-file pattern in pins.ts / models.ts. Team-internal, no auth.
  */
 
+import { homeDir } from "./paths";
 import {
   existsSync,
   mkdirSync,
@@ -27,7 +28,7 @@ import { randomUUID } from "crypto";
 import type { AttachedRepo, ExternalRef } from "./types";
 import { stateDir } from "./rename-compat";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 const WORKSPACES_DIR_LEGACY = `${HOME}/.backstage-projects`;
 /**
  * Dual-read chain: `~/.opensession-workspaces` (primary) → `~/.backstage-workspaces`

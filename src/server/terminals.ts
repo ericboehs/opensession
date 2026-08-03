@@ -40,6 +40,7 @@
  * hot-apply — changes here need a real restart to take effect.
  */
 
+import { homeDir } from "./paths";
 import { existsSync } from "fs";
 import type { RemotePtyHandle, RemotePtyIo } from "./sandbox/adapters/daytona";
 
@@ -65,7 +66,7 @@ const pendingStarts: Map<unknown, Map<string, object>> = (g.__backstageTermPendi
 /** Bound accidental PTY pile-up per client (each shell tab is one PTY). */
 const MAX_TERMINALS_PER_SOCKET = 8;
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 
 function setTerm(ws: unknown, termId: string, entry: TermEntry): void {
   let m = terms.get(ws);

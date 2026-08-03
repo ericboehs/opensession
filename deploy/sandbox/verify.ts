@@ -55,7 +55,7 @@
  * ~/.backstage-chats/active-runs.json or flip the live sandbox config.
  */
 
-const SCRATCH = `${process.env.HOME || "/home/ubuntu"}/.sandbox-verify-scratch`;
+const SCRATCH = `${process.env.HOME || homedir()}/.sandbox-verify-scratch`;
 // MUST happen before importing any src/server module — claude-runner resolves
 // the journal path at module load, and sandbox/config.ts resolves its config
 // PATH at module load. The scratch config (written below) turns on the docker
@@ -70,6 +70,7 @@ process.env.BACKSTAGE_SANDBOX_CONFIG = `${SCRATCH}/sandbox-config.json`;
 // built-in defaults.
 process.env.BACKSTAGE_CONFIG = `${SCRATCH}/backstage-config.json`;
 
+import { homedir } from "os";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 
 const { DockerProvider, containerNameFor, snapshotRepoForSandbox, snapshotSandboxImage, sweepIdleSandboxes } =

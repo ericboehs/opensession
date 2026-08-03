@@ -12,12 +12,13 @@
  * kept in memory; the UI reads it via the /api/claude-accounts routes.
  */
 
+import { homeDir } from "./paths";
 import { chmodSync, existsSync, readFileSync } from "fs";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { userMatchesAny } from "./shared/user-mappings";
 import { envAlias, stateDir } from "./rename-compat";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 // The env override is a test seam — bun tests point it at a temp store so they
 // never read (or clobber) the real account pool. Resolved per call, not at
 // module load, so the override works regardless of import order.

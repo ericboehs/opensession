@@ -44,7 +44,7 @@ export function Archived({ sessions, onSelect, onChanged }: Props) {
   const currentUser = useCurrentUser();
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  // Michiel's scope: default to *my* archived sessions, and inherit the sidebar's
+  // Scope: default to *my* archived sessions, and inherit the sidebar's
   // repo filter — both still adjustable here.
   const [owner, setOwner] = useState<OwnerFilter>("mine");
   const [repo, setRepo] = useState<string>(sidebarRepo);

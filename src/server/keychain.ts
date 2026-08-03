@@ -55,13 +55,14 @@
  *     agent's shell does not have today.
  */
 
+import { homeDir } from "./paths";
 import { existsSync, readFileSync, chmodSync } from "node:fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { audit } from "./audit";
 import { resolveTeammate } from "./shared/user-mappings";
 import { registerAsk, registerAskDomainHandler, type HumanAsk } from "./human-asks";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 
 /**
  * Resolved per call, never captured at module load. Tests point

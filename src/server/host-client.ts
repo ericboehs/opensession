@@ -36,7 +36,7 @@ import type { ActiveRunRecord } from "./run-journal";
 import { shouldPersistModelSwitch, type ImageInput } from "./run-events";
 import type { GitIdentity } from "./shared/user-mappings";
 import { providerFor } from "./models";
-import { OPENSESSION_CHATS_DIR } from "./paths";
+import { homeDir, OPENSESSION_CHATS_DIR } from "./paths";
 import { envAlias, statePath } from "./rename-compat";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import {
@@ -219,7 +219,7 @@ async function launchHostUnit(hostId: string, dir: string): Promise<void> {
     // Same env the backstage service runs with; MCP servers and account pools
     // load their own credentials the same way they do for in-process runs.
     "-p", `EnvironmentFile=${ENV_FILE}`,
-    ...env(`HOME=${process.env.HOME || "/home/ubuntu"}`),
+    ...env(`HOME=${homeDir()}`),
     ...env(`PATH=${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}`),
     ...env("NODE_ENV=production"),
     // New env names primary; the deprecated old names ride along so an

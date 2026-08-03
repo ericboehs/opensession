@@ -29,6 +29,7 @@
  * points that see persisted state (run-rpc, the runner's inProcessMcp checks).
  */
 
+import { homedir } from "os";
 import { existsSync } from "fs";
 
 // Parked on globalThis so `bun --hot` reloads keep the one-time-warn sets and
@@ -74,7 +75,7 @@ export function envAlias(newKey: string, oldKey: string): string | undefined {
  * window, so a long-lived process never needs to see the rename happen.
  */
 export function statePath(newRel: string, oldRel: string): string {
-	const home = process.env.HOME || "/home/ubuntu";
+	const home = process.env.HOME || homedir();
 	const cacheKey = `${home}|${newRel}`;
 	const cached = resolvedPaths.get(cacheKey);
 	if (cached) return cached;

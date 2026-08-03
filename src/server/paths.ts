@@ -15,10 +15,16 @@
  */
 
 import { existsSync } from "fs";
+import { homedir } from "os";
 import { envAlias, stateDir } from "./rename-compat";
 import { isLocalProfile, localProfileRoot } from "./profile";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+/** The current user's home directory ($HOME wins so tests can repoint it). */
+export function homeDir(): string {
+  return process.env.HOME || homedir();
+}
+
+const HOME = homeDir();
 const CHATS_LEGACY = `${HOME}/.backstage-sessions`;
 
 function resolveChatsDir(): string {

@@ -25,6 +25,7 @@
  *   bun scripts/migrate-workspaces.ts --home /tmp/copy   # test against a copy
  */
 
+import { homedir } from "os";
 import {
   existsSync,
   mkdirSync,
@@ -39,7 +40,7 @@ const args = process.argv.slice(2);
 const DRY = args.includes("--dry-run");
 const homeIdx = args.indexOf("--home");
 const HOME =
-  homeIdx >= 0 ? args[homeIdx + 1] : process.env.HOME || "/home/ubuntu";
+  homeIdx >= 0 ? args[homeIdx + 1] : process.env.HOME || homedir();
 
 const PROJECTS_OLD = `${HOME}/.backstage-projects`;
 const WORKSPACES_NEW = `${HOME}/.backstage-workspaces`;

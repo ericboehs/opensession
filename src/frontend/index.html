@@ -26,7 +26,16 @@
     // wrong palette. Mirrors src/frontend/lib/theme.ts — keep the key in sync.
     (function () {
       try {
-        var p = localStorage.getItem("michael-theme");
+        var p = localStorage.getItem("opensession-theme");
+        if (p === null) {
+          // Migrate the pre-rename key once: adopt it, then drop it.
+          var legacy = localStorage.getItem("michael-theme");
+          if (legacy !== null) {
+            p = legacy;
+            localStorage.setItem("opensession-theme", legacy);
+            localStorage.removeItem("michael-theme");
+          }
+        }
         var eff = (p === "light" || p === "dark") ? p
           : (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
         var h = document.documentElement;

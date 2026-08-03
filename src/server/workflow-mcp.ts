@@ -26,6 +26,7 @@
  * A script can therefore never reach a tool the run that authored it couldn't.
  */
 
+import { homeDir } from "./paths";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
 	StdioClientTransport,
@@ -37,7 +38,7 @@ import { readFileSync } from "fs";
 import { filterMcpServers, STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { WORKFLOW_LIMITS } from "./workflow-types";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 
 /** Servers dropped wholesale: any server owning a confirm-gated (money-moving)
  *  tool. Derived from the catalog so adding a tool there closes the hole here

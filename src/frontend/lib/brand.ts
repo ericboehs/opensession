@@ -25,6 +25,7 @@ type InstanceBrand = {
 	publicBaseUrl?: string;
 	githubBotLogins?: string[];
 	defaultRepoId?: string;
+	plainWorkspaceId?: string;
 };
 
 const INSTANCE: InstanceBrand =
@@ -48,7 +49,15 @@ export const PUBLIC_BASE_URL =
 export const GITHUB_BOT_LOGINS = new Set(
 	(INSTANCE.githubBotLogins || []).map((login) => login.toLowerCase()),
 );
+/** Primary GitHub bot login (first policy.githubBotLogins entry) for display
+ *  fallbacks; empty string when the instance has no bot. */
+export const GITHUB_BOT_NAME = (INSTANCE.githubBotLogins || [])[0] || "";
 export const DEFAULT_REPO_ID = INSTANCE.defaultRepoId || "opensession";
+
+/** Plain workspace id for deep links into app.plain.com (server:
+ *  `integrations.plain.workspaceId`). Null when the instance has none —
+ *  consumers hide their "open in Plain" affordances. */
+export const PLAIN_WORKSPACE_ID = INSTANCE.plainWorkspaceId || null;
 
 /** Default document.title when no view-specific title applies. */
 export const DEFAULT_DOC_TITLE = PRODUCT_NAME;

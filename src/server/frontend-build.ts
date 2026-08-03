@@ -13,7 +13,7 @@ import { activeRunRecords } from "./run-journal";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { broadcastToAll } from "./ws-hub";
 import { isLocalProfile } from "./profile";
-import { configuredServer, defaultRepo, githubBotLogins, personaName, productMark, productName } from "./config";
+import { configuredServer, defaultRepo, githubBotLogins, personaName, plainWorkspaceId, productMark, productName } from "./config";
 
 const g = globalThis as any;
 
@@ -146,6 +146,7 @@ export async function buildFrontend(): Promise<string> {
 		publicBaseUrl: configuredServer().publicBaseUrl,
 		githubBotLogins: githubBotLogins(),
 		defaultRepoId: defaultRepo().id,
+		plainWorkspaceId: plainWorkspaceId() || undefined,
 	}).replace(/</g, "\\u003c");
 	const htmlProductName = productName()
 		.replaceAll("&", "&amp;")

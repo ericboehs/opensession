@@ -1,4 +1,4 @@
-import { AGENT_NAME } from "../lib/brand";
+import { AGENT_NAME, GITHUB_BOT_NAME } from "../lib/brand";
 import { BASE_PATH } from "../lib/base";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parsePatchFiles } from "@pierre/diffs";
@@ -937,10 +937,10 @@ function MichaelReviewCard({
 						>
 							<div className="flex min-h-0 w-full flex-col">
 								<div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-									<CommentAvatar author={reviewComment?.author || "tella-butler"} />
+									<CommentAvatar author={reviewComment?.author || GITHUB_BOT_NAME || AGENT_NAME} />
 									<div className="min-w-0 flex-1">
 										<div className="truncate text-[13px] font-semibold text-fg">
-											{reviewComment?.author || "tella-butler"}
+											{reviewComment?.author || GITHUB_BOT_NAME || AGENT_NAME}
 										</div>
 										<div className="text-meta text-faint">
 											Automated review{reviewedAgo ? ` · reviewed ${reviewedAgo} ago` : ""}

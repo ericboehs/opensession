@@ -30,11 +30,12 @@
  * except the shared audit log and the octest transcript file (removed after).
  */
 
-const SCRATCH = `${process.env.HOME || "/home/ubuntu"}/.octest-verify-scratch`;
+const SCRATCH = `${process.env.HOME || homedir()}/.octest-verify-scratch`;
 // Before any src/server import (journal + sandbox config resolve at load).
 process.env.BACKSTAGE_RUN_JOURNAL = `${SCRATCH}/active-runs.json`;
 process.env.BACKSTAGE_SANDBOX_CONFIG = `${SCRATCH}/sandbox-config.json`;
 
+import { homedir } from "os";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 
 const { DockerProvider, containerNameFor } = await import("../../src/server/sandbox/docker");
@@ -46,7 +47,7 @@ const { BACKSTAGE_CHATS_DIR } = await import("../../src/server/paths");
 type RunHostSpec = import("../../src/runner-host/protocol").RunHostSpec;
 type StreamEvent = import("../../src/server/run-events").StreamEvent;
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = process.env.HOME || homedir();
 const SESSION_ID = `octest-${Date.now().toString(36)}`;
 const CONTAINER = containerNameFor(SESSION_ID);
 const MAIN = `${SCRATCH}/main-repo`;

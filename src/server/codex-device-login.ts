@@ -14,11 +14,12 @@
  * the child process or lose the URL/code mid-flow.
  */
 
+import { homeDir } from "./paths";
 import { spawn, type ChildProcess } from "child_process";
 import { existsSync, mkdirSync } from "fs";
 import { addCodexAccount, listCodexAccounts, type CodexAccountPublic } from "./codex-accounts";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 const ACCOUNTS_DIR = `${HOME}/.codex-accounts`;
 // The device code expires in 15 minutes; give the CLI a minute of grace.
 const LOGIN_TIMEOUT_MS = 16 * 60 * 1000;

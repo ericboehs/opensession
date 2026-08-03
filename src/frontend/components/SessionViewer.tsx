@@ -20,7 +20,7 @@ import {
 	measureChatPerf,
 	recordChatPerf,
 } from "../lib/chat-performance";
-import { AGENT_NAME, DEFAULT_DOC_TITLE } from "../lib/brand";
+import { AGENT_NAME, DEFAULT_DOC_TITLE, PLAIN_WORKSPACE_ID } from "../lib/brand";
 import {
 	isGitHubAttribution,
 	parseHumanReply,
@@ -361,10 +361,12 @@ const RESUME_GROWTH_WINDOW_MS = 8_000;
 const JUMP_PAGE_ENTRIES = 400;
 const JUMP_MAX_ENTRIES = 4_000;
 
-/** Workspace of the Plain app the tickets live in (for the "jump into Plain" link). */
-const PLAIN_WORKSPACE_ID = "w_01J7WXJG68TFDV9RD1C4JE3W6F";
+/** Deep link into the Plain app (the "jump into Plain" link), or "" when the
+ *  instance has no configured Plain workspace id — the link hides. */
 function plainThreadUrl(threadId: string): string {
-	return `https://app.plain.com/workspace/${PLAIN_WORKSPACE_ID}/thread/${threadId}/`;
+	return PLAIN_WORKSPACE_ID
+		? `https://app.plain.com/workspace/${PLAIN_WORKSPACE_ID}/thread/${threadId}/`
+		: "";
 }
 
 function modelIsCodex(id: string, models: ModelOption[]): boolean {
@@ -3982,7 +3984,7 @@ export function SessionViewer({
 								{session.linearIssue.identifier}
 							</a>
 						))}
-						{hasPlain && (inMenu ? (
+						{hasPlain && plainUrl && (inMenu ? (
 							<Menu.Item render={<a href={plainUrl} target="_blank" rel="noopener" />}>
 								<span className="grow">Plain ↗</span>
 							</Menu.Item>

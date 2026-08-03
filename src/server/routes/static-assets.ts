@@ -75,11 +75,9 @@ export async function handleStaticAssetsRoutes(
 		);
 	}
 
-	// Per-repo icons for the RepoTile UI: the repo's GitHub org avatar, fetched
-	// server-side and cached; the backstage/opensession repo wears the OS1 mac
-	// app icon (os1-mac/build/icon-512.png, same file as /mac-app-icon.png)
-	// instead of the shared org avatar. Unregistered ids 404 — the client falls
-	// back to its colored letter tile.
+	// Per-repo icons for the RepoTile UI: a repo's configured `icon` PNG when
+	// set, else the repo's GitHub org avatar, fetched server-side and cached.
+	// Unregistered ids 404 — the client falls back to its colored letter tile.
 	const repoIcon = path.match(/^\/backstage\/repo-icon\/([\w.-]+)\.png$/);
 	if (repoIcon && req.method === "GET") {
 		const id = repoIcon[1];
@@ -106,26 +104,23 @@ export async function handleStaticAssetsRoutes(
 				});
 			}
 		}
-		if (id === "tella") {
-			return new Response(Bun.file(`${FRONTEND_SRC}/tella-icon.png`), {
-				headers: {
-					"Content-Type": "image/png",
-					"Cache-Control": "public, max-age=86400",
-				},
-			});
-		}
-		if (id === "backstage") {
-			return new Response(
-				Bun.file(`${FRONTEND_SRC}/../../os1-mac/build/icon-512.png`),
-				{
+		// A repo's optional `icon` (absolute path, or relative to its checkout)
+		// overrides the org-avatar default below.
+		const repo = configuredRepos()[id];
+		if (repo?.icon) {
+			const iconPath = repo.icon.startsWith("/")
+				? repo.icon
+				: `${repo.repo}/${repo.icon}`;
+			if (existsSync(iconPath)) {
+				return new Response(Bun.file(iconPath), {
 					headers: {
 						"Content-Type": "image/png",
 						"Cache-Control": "public, max-age=3600, must-revalidate",
 					},
-				},
-			);
+				});
+			}
 		}
-		const owner = configuredRepos()[id]?.ghRepo?.split("/")[0];
+		const owner = repo?.ghRepo?.split("/")[0];
 		if (!owner) return new Response("Not found", { status: 404 });
 		const icon = await ownerAvatar(owner);
 		if (!icon) return new Response("Not found", { status: 404 });

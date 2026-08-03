@@ -241,7 +241,7 @@ export function IconHash(p: IconProps) {
   );
 }
 
-// Filled play triangle — starts Tella Local (replaces the raw "▶" glyph). The
+// Filled play triangle — starts the local app preview (replaces the raw "▶" glyph). The
 // round linejoin softens the tips so it matches the stroke set's rounding.
 export function IconPlay(p: IconProps) {
   return (
@@ -982,7 +982,7 @@ export function IconStatusRing(p: IconProps) {
   );
 }
 
-// Tella's iconic-pro `trending-up` glyph, used for Analytics in tella-fusion.
+// iconic-pro `trending-up` glyph, used for Analytics.
 export function IconChart(p: IconProps) {
   return (
     <Svg {...p}>

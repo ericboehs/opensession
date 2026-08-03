@@ -5,12 +5,12 @@
  */
 import { readdirSync, readFileSync, existsSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
-import { BACKSTAGE_CHATS_DIR } from "./paths";
+import { plainApiUrl } from "./config";
+import { homeDir, BACKSTAGE_CHATS_DIR } from "./paths";
 import type { BackstageSessionFile } from "./types";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 const SESSIONS_DIR = BACKSTAGE_CHATS_DIR;
-const PLAIN_API = "https://core-api.uk.plain.com/graphql/v1";
 
 function activePlainSessions(): Array<{ path: string; data: BackstageSessionFile }> {
   if (!existsSync(SESSIONS_DIR)) return [];
@@ -69,7 +69,7 @@ async function fetchThreadStatus(threadId: string): Promise<string | null> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10_000);
-    const res = await fetch(PLAIN_API, {
+    const res = await fetch(plainApiUrl(), {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({

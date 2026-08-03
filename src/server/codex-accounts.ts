@@ -16,12 +16,13 @@
  * accounts sidelined for a cool-off when a run hits a rate/usage limit.
  */
 
+import { homeDir } from "./paths";
 import { chmodSync, existsSync, readFileSync, readdirSync } from "fs";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { stateDir } from "./rename-compat";
 import { userMatchesAny } from "./shared/user-mappings";
 
-let HOME = process.env.HOME || "/home/ubuntu";
+let HOME = homeDir();
 let STORE_PATH = stateDir("codex-accounts.json");
 const DEFAULT_EXHAUST_MS = 60 * 60 * 1000;
 // Bridge-wedge sideline: much shorter than a usage-limit window — wedges

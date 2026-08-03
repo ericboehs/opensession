@@ -5,14 +5,13 @@ import { feedForRefKind } from "../lib/feeds-meta";
 /**
  * The generic web panel for feed-item workspaces (docs/feeds-design.md): a
  * full-width iframe of the item's embeddable page with escape-hatch links to
- * the real thing. Rendered as the Video view-tab of Tella-backed workspaces
+ * the real thing. Rendered as the feed view-tab of feed-backed workspaces
  * (and by WorkspacePane on their chat-less route).
  *
- * Per-kind knowledge (which URL embeds, which links to offer) lives in
- * refWebPanel below — the Phase-1 panel registry candidate. Tella's view/edit
- * pages send `frame-ancestors 'none'`, so the embed page is what iframes;
- * Editor opens in a new tab until tella-fusion grows a frame-ancestors
- * carve-out for os.tella.dev.
+ * Per-kind knowledge (which URL embeds, which links to offer) comes entirely
+ * from the feed descriptors' `panel` templates (lib/feeds-meta.ts) — provider
+ * pages that block framing declare an embeddable page as the
+ * `embedUrlTemplate` and offer the rest as header links.
  */
 
 export interface RefWebPanel {
@@ -36,8 +35,8 @@ function fillTemplate(template: string, id: string): string {
 /**
  * The web panel spec for a ref, or null when the kind has none. Driven by
  * the feed descriptors' `panel` templates (lib/feeds-meta.ts — config and
- * code feeds alike declare them); the tella fallback only covers a cold
- * meta cache on first paint.
+ * code feeds alike declare them); a kind whose descriptor hasn't loaded yet
+ * (cold meta cache on first paint) has no panel until the meta fetch lands.
  */
 export function refWebPanel(ref: ExternalRef): RefWebPanel | null {
 	const feed = feedForRefKind(ref.kind);
@@ -53,17 +52,6 @@ export function refWebPanel(ref: ExternalRef): RefWebPanel | null {
 				label: l.label,
 				href: fillTemplate(l.hrefTemplate, ref.id),
 			})),
-		};
-	}
-	if (ref.kind === "tella") {
-		return {
-			label: "Video",
-			refId: ref.id,
-			embedUrl: `https://www.tella.tv/video/${encodeURIComponent(ref.id)}/embed`,
-			links: [
-				{ label: "Open editor", href: `https://www.tella.tv/video/${encodeURIComponent(ref.id)}/edit` },
-				{ label: "View page", href: ref.url || `https://www.tella.tv/video/${encodeURIComponent(ref.id)}/view` },
-			],
 		};
 	}
 	return null;

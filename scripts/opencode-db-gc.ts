@@ -24,12 +24,13 @@
  * Runs from cron (04:00 UTC daily); safe to run by hand any time:
  *   bun scripts/opencode-db-gc.ts --dry-run
  */
+import { homeDir } from "../src/server/paths";
 import { Database } from "bun:sqlite";
 import { execSync } from "child_process";
 import { appendFileSync, existsSync, readdirSync, rmdirSync, statSync, unlinkSync } from "fs";
 import { configuredIntegration, personaName } from "../src/server/config";
 
-const HOME = process.env.HOME || "/home/ubuntu";
+const HOME = homeDir();
 const DRY = process.argv.includes("--dry-run");
 const MAIN_DB = `${HOME}/.local/share/opencode/opencode.db`;
 const OPENAI_DATA_ROOT = `${HOME}/.opensession-opencode/openai-data`;

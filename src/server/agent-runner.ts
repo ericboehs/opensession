@@ -131,7 +131,7 @@ export interface RunAgentOpts {
   author?: GitIdentity | null;
   /**
    * The run's user (prompt author / UI user). Gates per-user MCP servers
-   * (mcp-config.json `allowedUsers`) — e.g. `brex` is limited to Michiel + Grant.
+   * (mcp-config.json `allowedUsers`) — e.g. a server restricted to specific teammates.
    * Omitted = anonymous, which sees only unrestricted servers.
    */
   user?: string;

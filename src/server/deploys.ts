@@ -32,6 +32,7 @@
  * is running so nothing accumulates unseen.
  */
 
+import { homeDir } from "./paths";
 import { existsSync, mkdirSync, readFileSync, rmSync, cpSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Subprocess } from "bun";
@@ -251,7 +252,7 @@ export async function launchDeploy(
         // A deliberately minimal environment, like agent subprocesses get:
         // a published app must never inherit the server's tokens.
         PATH: process.env.PATH || "/usr/bin:/bin",
-        HOME: process.env.HOME || "/home/ubuntu",
+        HOME: homeDir(),
         LANG: process.env.LANG || "C.UTF-8",
         PORT: String(d.port),
         DATA_DIR: dataDir(id),
