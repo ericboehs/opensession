@@ -130,6 +130,28 @@ export function isClaudeSubscriptionError(message: string): boolean {
   );
 }
 
+/**
+ * The Meridian bridge could not start Claude Code for this account at all. The
+ * agent SDK spawns the native binary per account and it either exited straight
+ * away ("Claude Code native binary at <path> exists but failed to launch.") or
+ * was missing outright. In practice this is the shape a signed-out account
+ * takes: the binary itself is fine — every other account keeps running on it —
+ * but this one has no credentials to launch with.
+ *
+ * Account-level and stone dead on retry, yet opencode's ai-sdk classes it
+ * retryable, so left uncaught it becomes ~13 backoff retries against the same
+ * broken account over ~2h16m and then a turn that sits idle until the
+ * wall-clock deadline and reports "Stopped after 3 hours" (2026-07-31 →
+ * 08-03: six such turns, all the 3-hourly health monitor landing on one of
+ * three signed-out accounts). Callers treat it exactly like
+ * isClaudeSubscriptionError: sideline the account and rotate off it at once.
+ */
+export function isClaudeBridgeLaunchError(message: string): boolean {
+  const s = message.toLowerCase();
+  if (!s.includes("claude code native binary")) return false;
+  return s.includes("failed to launch") || s.includes("not found");
+}
+
 export function isCodexUsageLimitError(message: string): boolean {
   const s = message.toLowerCase();
   return (

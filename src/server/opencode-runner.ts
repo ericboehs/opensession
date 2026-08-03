@@ -169,6 +169,7 @@ import {
   filterMcpServers,
   isClaudeUsageLimitError,
   isClaudeSubscriptionError,
+  isClaudeBridgeLaunchError,
   isCodexUsageLimitError,
   isTransientRunError,
   CLAUDE_CODE_BIN,
@@ -2835,6 +2836,32 @@ const SUBAGENT_STALL_MS = (() => {
   return Number.isFinite(n) && n > 0 ? Math.max(120_000, n) : 600_000;
 })();
 
+/**
+ * Provider-retry stall guard. A turn whose provider requests keep failing makes
+ * zero progress, but opencode retries internally with a backoff that grows to
+ * ~35 minutes — so the run just sits there looking busy. Nothing else catches
+ * it: the 90s liveness guard only watches for the turn's FIRST output, and the
+ * subagent guard above needs an open task tool. Left alone it burns to the
+ * wall-clock deadline and reports "Stopped after 3 hours", which reads as "your
+ * work took too long" when in fact the last 2-3 hours were dead air (every
+ * turn-timeout in the audit log between 2026-07-31 and 08-03 had this shape:
+ * 12-13 consecutive retries, no output at all after the first few minutes).
+ *
+ * Firing needs BOTH a streak of retries with no output between them and enough
+ * elapsed time, because ordinary turns are legitimately quiet for a while — a
+ * 15-minute Bash call emits nothing either. Any real output resets the streak,
+ * so a retry that recovers never accumulates. The stall routes into the wedge
+ * lane: sideline the account, drain-respawn the server, retry once.
+ * Tuning / kill switch: OPENSESSION_PROVIDER_STALL_MS (0 disables; floor 5 min).
+ */
+const PROVIDER_STALL_MS = (() => {
+  const raw = process.env.OPENSESSION_PROVIDER_STALL_MS;
+  if (raw === "0") return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.max(300_000, n) : 900_000;
+})();
+const PROVIDER_STALL_MIN_RETRIES = 3;
+
 function makeSubagentStallGuard(
   ocSessionId: string,
   onStall: (info: { quietMs: number; openTaskIds: string[] }) => void
@@ -4077,8 +4104,12 @@ async function* runOpencodeAttempt(
         .catch(() => {});
       signalDone();
     });
+    // Consecutive provider retries with no output between them (PROVIDER_STALL_MS).
+    let providerRetryStreak = 0;
+    let providerRetryStreakAt = 0;
     const push = (ev: StreamEvent) => {
       sawFirstOutput = true;
+      providerRetryStreak = 0;
       pending.push(ev);
       wake?.();
     };
@@ -4104,21 +4135,26 @@ async function* runOpencodeAttempt(
         error: message.slice(0, 500),
       });
       const subIssue = isClaudeSubscriptionError(message);
+      const launchIssue = isClaudeBridgeLaunchError(message);
       if (
         parsed.providerID === "anthropic" &&
         pickedMeridian &&
         !runFailure &&
-        (isClaudeUsageLimitError(message, true) || subIssue)
+        (isClaudeUsageLimitError(message, true) || subIssue || launchIssue)
       ) {
-        // Both faults are account-level and dead on retry: opencode would keep
-        // retrying the same capped/subscription-broken account until the 90s
-        // liveness guard, burning the turn. Sideline + rotate immediately via
-        // the usage-limit machinery (usageLimitHit drives markExhausted and the
-        // account rotation downstream). Landing elsewhere in the pool is the
-        // only thing that recovers a subscription-broken account.
+        // All three faults are account-level and dead on retry: opencode would
+        // keep retrying the same capped/subscription-broken/signed-out account
+        // until the 90s liveness guard, burning the turn. Sideline + rotate
+        // immediately via the usage-limit machinery (usageLimitHit drives
+        // markExhausted and the account rotation downstream). Landing elsewhere
+        // in the pool is the only thing that recovers any of them.
         usageLimitHit = true;
         runFailure = `${
-          subIssue ? "Claude subscription issue" : "Claude usage limit"
+          subIssue
+            ? "Claude subscription issue"
+            : launchIssue
+              ? "Claude Code failed to launch (account signed out?)"
+              : "Claude usage limit"
         } on account "${bridgeAccountLabel}": ${message.slice(0, 300)}`;
         engineAbortInFlight = client.session
           .abort({ path: { id: ocSessionId }, ...q })
@@ -4166,6 +4202,39 @@ async function* runOpencodeAttempt(
       ) {
         usageLimitHit = true;
         runFailure = `Cerebras rate limit: ${message.slice(0, 300)}`;
+        engineAbortInFlight = client.session
+          .abort({ path: { id: ocSessionId }, ...q })
+          .catch(() => {});
+        signalDone();
+      }
+      // Generic stall backstop for every provider the branches above didn't
+      // classify (PROVIDER_STALL_MS): retries piling up with nothing streamed
+      // between them means the turn is going nowhere, so end it in the wedge
+      // lane rather than letting it idle out the wall-clock deadline. Checked
+      // last so a classified fault keeps its own, more specific message.
+      if (providerRetryStreak === 0) providerRetryStreakAt = Date.now();
+      providerRetryStreak++;
+      const stalledMs = Date.now() - providerRetryStreakAt;
+      if (
+        PROVIDER_STALL_MS &&
+        !runFailure &&
+        !idle &&
+        !abortController.signal.aborted &&
+        providerRetryStreak >= PROVIDER_STALL_MIN_RETRIES &&
+        stalledMs >= PROVIDER_STALL_MS
+      ) {
+        livenessWedged = true;
+        runFailure =
+          `opencode ${parsed.providerID} run made no progress for ${Math.round(stalledMs / 60_000)} min ` +
+          `on account "${bridgeAccountLabel}": ${providerRetryStreak} provider retries with no output ` +
+          `in between (last: ${message.slice(0, 200)}); aborting`;
+        turnEvent({
+          direction: "out",
+          kind: "provider_stall",
+          retry_attempt: providerRetryStreak,
+          quiet_ms: stalledMs,
+          error: message.slice(0, 200),
+        });
         engineAbortInFlight = client.session
           .abort({ path: { id: ocSessionId }, ...q })
           .catch(() => {});
