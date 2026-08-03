@@ -1237,6 +1237,100 @@ export async function maybeLaunchSandboxedRun(
 }
 
 
+/**
+ * Announce-then-stop guard: the instruction-layer fix (28731464) still lets
+ * an occasional turn end cleanly on a plan sentence ("Now let me read the
+ * exact code…") — including after substantial tool use. The session then sits
+ * idle until the human types "continue" (seen 2026-07-10 bks-019f4b70,
+ * 2026-07-12 bks-019f533e, and repeatedly after 5-8 tool calls in 2026-07-29
+ * bks-019fad64). Queue ONE auto-continue per human prompt when a clean
+ * interactive turn ends on an announced next action; the drain delivers it as
+ * the next turn. Never for automation sessions or over a user Stop.
+ *
+ * Queue-hold: queued messages are a promise to deliver at FULL completion,
+ * so when the turn ends still announcing work while something is queued,
+ * the nudge fires ahead of the queue (front + solo drain) — regardless of
+ * tool use — and the user's messages stay parked until a turn ends without
+ * announcing more. When messages are waiting, turns doing real work reset
+ * the nudge budget so a genuinely working agent holds the queue as long as it
+ * needs; without a queue, the budget remains one nudge per human prompt so a
+ * model cannot loop indefinitely by using one tool before each announcement.
+ *
+ * Shared with the session-creation path: a chat's OPENING turn runs its own
+ * event loop (session-control-wiring.ts, run kind "create") and bypasses
+ * runSessionPromptInner entirely, so a first turn that announced and stopped
+ * just parked — the guard only existed on follow-up turns (2026-08-03
+ * bks-019fc695 ended turn 1 on "…Let me examine that commit." and sat idle).
+ * Callers own delivery: the prompt path drains via runSessionPromptAndDrain,
+ * the create path arms watchExternalRunAndDrain when this returns true.
+ */
+export function maybeQueueAutoContinue(opts: {
+	sessionId: string;
+	assistantText: string;
+	toolUseCount: number;
+	endedWithError: boolean;
+	runFailure: string | null;
+	/** Skip the lookup when the caller already holds the session. */
+	session?: UnifiedSession | null;
+}): boolean {
+	const { sessionId, assistantText, toolUseCount, endedWithError, runFailure } = opts;
+	const session = opts.session ?? findSession(sessionId);
+	if (!session) return false;
+	const queuedBehind = (promptQueues.get(sessionId) || []).filter(
+		(m) => m.user !== AUTO_CONTINUE_USER,
+	).length;
+	if (queuedBehind > 0 && toolUseCount > 0) autoContinueNudged.delete(sessionId);
+	// A turn whose TAIL is a fabricated tool transcript (the model narrated a
+	// tool call as text and stopped — bks-019fad97, 2026-07-29) is the same
+	// stall in a worse costume: it believes work is in flight that was never
+	// started. Tail-only so a mid-turn fabrication the runner already steered
+	// past doesn't re-trigger at the end of an otherwise clean turn.
+	const endedOnFabricatedTranscript = looksLikeFabricatedToolTranscript(
+		assistantText.slice(-2000),
+	);
+	if (
+		endedWithError ||
+		runFailure ||
+		session.source !== "backstage" ||
+		session.automation ||
+		stoppedSessions.has(sessionId) ||
+		autoContinueNudged.has(sessionId) ||
+		!(announcesNextAction(assistantText) || endedOnFabricatedTranscript)
+	)
+		return false;
+	autoContinueNudged.add(sessionId);
+	audit({
+		msg: "auto_continue_nudge",
+		bks_session_id: sessionId,
+		tail: assistantText.trim().slice(-200),
+		...(queuedBehind > 0 ? { queued_held: queuedBehind } : {}),
+		...(endedOnFabricatedTranscript ? { fabricated_tail: true } : {}),
+	});
+	broadcastToSession(sessionId, {
+		type: "notice",
+		message: endedOnFabricatedTranscript
+			? "Turn ended on a narrated (never-executed) tool call — auto-continuing with a correction."
+			: queuedBehind > 0
+				? `Still mid-task — auto-continuing first; ${queuedBehind} queued message${queuedBehind === 1 ? "" : "s"} deliver once the agent fully finishes.`
+				: "Turn ended on an announced next step without doing it — auto-continuing.",
+	});
+	// Fenced so the transcript never shows it as a user bubble: the parsers
+	// strip <backstage:context> from user text and skip the then-empty entry,
+	// while the engine still sees the full instruction. The notice above (and
+	// the audit event) are the human-visible trace.
+	enqueuePrompt(
+		sessionId,
+		{
+			content: wrapContext(
+				endedOnFabricatedTranscript ? AUTO_CONTINUE_FABRICATED_PROMPT : AUTO_CONTINUE_PROMPT,
+			),
+			user: AUTO_CONTINUE_USER,
+		},
+		{ front: true },
+	);
+	return true;
+}
+
 /** Run a prompt against an existing session, broadcasting to all watchers. */
 export async function runSessionPrompt(
 	sessionId: string,
@@ -2042,76 +2136,16 @@ async function runSessionPromptInner(
 		).catch(() => {});
 	}
 
-	// Announce-then-stop guard: the instruction-layer fix (28731464) still lets
-	// an occasional turn end cleanly on a plan sentence ("Now let me read the
-	// exact code…") — including after substantial tool use. The session then
-	// sits idle until the human types "continue" (seen 2026-07-10 bks-019f4b70,
-	// 2026-07-12 bks-019f533e, and repeatedly after 5-8 tool calls in 2026-07-29
-	// bks-019fad64). Queue ONE auto-continue per human prompt when a clean
-	// interactive turn ends on an announced next action; the drain watcher
-	// delivers it as the next turn. Never for automation sessions or over a user
-	// Stop.
-	//
-	// Queue-hold: queued messages are a promise to deliver at FULL completion,
-	// so when the turn ends still announcing work while something is queued,
-	// the nudge fires ahead of the queue (front + solo drain) — regardless of
-	// tool use — and the user's messages stay parked until a turn ends without
-	// announcing more. When messages are waiting, turns doing real work reset
-	// the nudge budget so a genuinely working agent holds the queue as long as it
-	// needs; without a queue, the budget remains one nudge per human prompt so a
-	// model cannot loop indefinitely by using one tool before each announcement.
-	const queuedBehind = (promptQueues.get(sessionId) || []).filter(
-		(m) => m.user !== AUTO_CONTINUE_USER,
-	).length;
-	if (queuedBehind > 0 && toolUseCount > 0) autoContinueNudged.delete(sessionId);
-	// A turn whose TAIL is a fabricated tool transcript (the model narrated a
-	// tool call as text and stopped — bks-019fad97, 2026-07-29) is the same
-	// stall in a worse costume: it believes work is in flight that was never
-	// started. Tail-only so a mid-turn fabrication the runner already steered
-	// past doesn't re-trigger at the end of an otherwise clean turn.
-	const endedOnFabricatedTranscript = looksLikeFabricatedToolTranscript(
-		assistantText.slice(-2000),
-	);
-	if (
-		!endedWithError &&
-		!runFailure &&
-		session.source === "backstage" &&
-		!isAutomationSession &&
-		!stoppedSessions.has(sessionId) &&
-		!autoContinueNudged.has(sessionId) &&
-		(announcesNextAction(assistantText) || endedOnFabricatedTranscript)
-	) {
-		autoContinueNudged.add(sessionId);
-		audit({
-			msg: "auto_continue_nudge",
-			bks_session_id: sessionId,
-			tail: assistantText.trim().slice(-200),
-			...(queuedBehind > 0 ? { queued_held: queuedBehind } : {}),
-			...(endedOnFabricatedTranscript ? { fabricated_tail: true } : {}),
-		});
-		broadcastToSession(sessionId, {
-			type: "notice",
-			message: endedOnFabricatedTranscript
-				? "Turn ended on a narrated (never-executed) tool call — auto-continuing with a correction."
-				: queuedBehind > 0
-					? `Still mid-task — auto-continuing first; ${queuedBehind} queued message${queuedBehind === 1 ? "" : "s"} deliver once the agent fully finishes.`
-					: "Turn ended on an announced next step without doing it — auto-continuing.",
-		});
-		// Fenced so the transcript never shows it as a user bubble: the parsers
-		// strip <backstage:context> from user text and skip the then-empty entry,
-		// while the engine still sees the full instruction. The notice above (and
-		// the audit event) are the human-visible trace.
-		enqueuePrompt(
-			sessionId,
-			{
-				content: wrapContext(
-					endedOnFabricatedTranscript ? AUTO_CONTINUE_FABRICATED_PROMPT : AUTO_CONTINUE_PROMPT,
-				),
-				user: AUTO_CONTINUE_USER,
-			},
-			{ front: true },
-		);
-	}
+	// Announce-then-stop guard (shared with the create path — see
+	// maybeQueueAutoContinue). runSessionPromptAndDrain delivers what it queues.
+	maybeQueueAutoContinue({
+		sessionId,
+		session,
+		assistantText,
+		toolUseCount,
+		endedWithError,
+		runFailure,
+	});
 
 	// The session just finished a turn; if nothing's queued it's idle now, so fire
 	// any "when_done" / "on_pr" human asks waiting on this session. Idempotent.

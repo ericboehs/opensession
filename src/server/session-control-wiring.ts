@@ -15,7 +15,7 @@ import { onSessionIdle as onHumanAsksSessionIdle, relinkAskThreads } from "./hum
 import { interactiveMcpServers } from "./interactive-mcp";
 import { SESSION_EFFORTS, type SessionEffort, interactiveDefaultModel, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
 import { promptQueues, recordSteer, requeueSteerReceipts } from "./queue-state";
-import { attachSessionWatchersToEngineTranscript, attachSessionWatchersToTranscript, enqueuePrompt, foldSessionUsage, maybeLaunchSandboxedRun, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
+import { attachSessionWatchersToEngineTranscript, attachSessionWatchersToTranscript, enqueuePrompt, foldSessionUsage, maybeLaunchSandboxedRun, maybeQueueAutoContinue, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { parseImageDataUrls } from "./uploads";
 import { type Sandbox } from "./sandbox";
@@ -385,6 +385,10 @@ registerSessionControl({
 		let runFailure: string | null = null;
 		// The runner already wrote its own, friendlier transcript line.
 		let failureNoticePersisted = false;
+		// The opening turn's reply and tool count, for the shared
+		// announce-then-stop guard (maybeQueueAutoContinue) below.
+		let assistantText = "";
+		let toolUseCount = 0;
 		// Actual worktree HEAD when it drifted from the recorded branch (the
 		// agent switched/renamed branches during the opening turn).
 		const headBranchPatch = () => {
@@ -602,6 +606,7 @@ registerSessionControl({
 						}
 					}
 					if (event.type === "text_chunk") {
+						assistantText += event.text;
 						broadcastToSession(bksId, {
 							type: "stream_text",
 							sessionId: bksId,
@@ -609,6 +614,7 @@ registerSessionControl({
 						});
 					}
 					if (event.type === "tool_use") {
+						toolUseCount++;
 						broadcastToSession(bksId, {
 							type: "stream_tool_use",
 							sessionId: bksId,
@@ -720,6 +726,22 @@ registerSessionControl({
 					sessionId: bksId,
 					isRunning: false,
 				});
+				// An opening turn announce-then-stops exactly like a later one, and
+				// this path bypasses runSessionPromptInner (see createMentionsNote
+				// above) — so run the shared guard here too. Nothing wraps this run
+				// in runSessionPromptAndDrain, so a queued nudge needs the drain
+				// watcher to deliver it.
+				if (
+					maybeQueueAutoContinue({
+						sessionId: bksId,
+						assistantText,
+						toolUseCount,
+						endedWithError: !!runFailure,
+						runFailure,
+					})
+				) {
+					watchExternalRunAndDrain(bksId);
+				}
 				if (!promptQueues.get(bksId)?.length) {
 					onHumanAsksSessionIdle(bksId);
 				}
