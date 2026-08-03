@@ -178,24 +178,54 @@ export type ClientToHostMsg =
  * complete JSON line. Malformed lines are logged and skipped (a torn line can
  * only happen on a crash mid-write, and losing one message beats killing the
  * connection).
+ *
+ * Buffers BYTES, not a string. Decoding each chunk on arrival splits multi-byte
+ * UTF-8 sequences at chunk boundaries — the socket cuts wherever it likes — and
+ * each half decodes to U+FFFD, so `café` arrived as `caf<?><?>` and any line
+ * carrying non-ASCII was silently corrupted (or dropped, when the replacement
+ * chars landed inside JSON syntax). Accumulating the raw bytes and decoding
+ * once per complete line makes the boundary invisible. Scanning each chunk from
+ * where the last line ended also keeps a line assembled from many chunks linear
+ * rather than re-scanning the whole pending buffer per chunk.
  */
 export function ndjsonReader(
   onMsg: (msg: any) => void,
   label: string
 ): (data: Buffer | string) => void {
-  let buf = "";
+  let fragments: Buffer[] = [];
+  let fragmentBytes = 0;
+  const emit = (line: Buffer) => {
+    const text = line.toString();
+    if (!text.trim()) return;
+    try {
+      onMsg(JSON.parse(text));
+    } catch (e) {
+      console.error(`[${label}] dropping malformed NDJSON line:`, e);
+    }
+  };
   return (data) => {
-    buf += data.toString();
-    let idx: number;
-    while ((idx = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, idx);
-      buf = buf.slice(idx + 1);
-      if (!line.trim()) continue;
-      try {
-        onMsg(JSON.parse(line));
-      } catch (e) {
-        console.error(`[${label}] dropping malformed NDJSON line:`, e);
+    const chunk = typeof data === "string" ? Buffer.from(data) : data;
+    let start = 0;
+    for (;;) {
+      const newline = chunk.indexOf(10, start);
+      if (newline < 0) {
+        if (start < chunk.length) {
+          const fragment = Buffer.from(chunk.subarray(start));
+          fragments.push(fragment);
+          fragmentBytes += fragment.length;
+        }
+        return;
       }
+      const tail = chunk.subarray(start, newline);
+      if (fragments.length) {
+        const line = Buffer.concat([...fragments, tail], fragmentBytes + tail.length);
+        fragments = [];
+        fragmentBytes = 0;
+        emit(line);
+      } else {
+        emit(tail);
+      }
+      start = newline + 1;
     }
   };
 }

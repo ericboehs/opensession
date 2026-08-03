@@ -10,6 +10,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 // ws-buffer has no src/server deps — safe to import at load time.
+import { ndjsonReader } from "../runner-host/protocol";
 import { WsFrameBuffer, replayStartFor } from "../runner-host/ws-buffer";
 
 // run-ws → run-rpc → paths resolves BACKSTAGE_CHATS_DIR (and HOME) at module
@@ -93,6 +94,35 @@ function dialHost(hostId: string, token: string) {
       until(() => inbox.filter((m) => m.t === "ack")[after], 5_000),
   };
 }
+
+describe("ndjsonReader", () => {
+  test("preserves UTF-8 split across chunks and handles multiple lines", () => {
+    const messages: any[] = [];
+    const read = ndjsonReader((message) => messages.push(message), "test");
+    const input = Buffer.from(
+      `${JSON.stringify({ text: "café" })}\n${JSON.stringify({ ok: true })}\n`,
+    );
+    // Cut the chunk INSIDE the two-byte é. Decoding per-chunk turns each half
+    // into U+FFFD and silently corrupts the line.
+    const split = input.indexOf(Buffer.from("é")) + 1;
+    read(input.subarray(0, split));
+    read(input.subarray(split));
+    expect(messages).toEqual([{ text: "café" }, { ok: true }]);
+  });
+
+  test("assembles a large line spread over many chunks", () => {
+    const messages: any[] = [];
+    const read = ndjsonReader((message) => messages.push(message), "test");
+    const line = Buffer.from(
+      JSON.stringify({ image: "x".repeat(2 * 1024 * 1024) }) + "\n",
+    );
+    for (let offset = 0; offset < line.length; offset += 64 * 1024) {
+      read(line.subarray(offset, offset + 64 * 1024));
+    }
+    expect(messages).toHaveLength(1);
+    expect(messages[0].image.length).toBe(2 * 1024 * 1024);
+  });
+});
 
 // ── ws-buffer unit behavior ───────────────────────────────────────────────────
 
