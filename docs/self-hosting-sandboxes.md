@@ -65,15 +65,19 @@ the runner, not your checkout.
 
 ### Path parity is load-bearing (do not "tidy" it)
 
-The image reproduces the host's absolute paths exactly: the runner bundle at
-`/home/ubuntu/projects/tella-backstage`, the claude CLI at
-`/home/ubuntu/.local/bin/claude`, uid-1000 user `ubuntu`, and the session
-worktree bind-mounted at its **identical host path**. That parity is what
-lets diff/status/push/preview/@-mentions and Claude session resume work
-unchanged (resume state is keyed by cwd). If your host's `$HOME` or checkout
-path differs, **rebuild the image with matching paths**. This is the one place
-the `/home/ubuntu` coupling is intrinsic rather than lazy: the parity is the
-mechanism, not a default nobody got round to extracting.
+The image reproduces **your host's** absolute paths exactly: the runner
+bundle at your checkout path, the claude CLI at your host's CLI path, a
+uid-1000 user matching the host user, and the session worktree bind-mounted
+at its **identical host path**. That parity is what lets
+diff/status/push/preview/@-mentions and Claude session resume work unchanged
+(resume state is keyed by cwd). The concrete paths baked into the shipped
+`deploy/sandbox/Dockerfile` (`/home/ubuntu/projects/tella-backstage`,
+`/home/ubuntu/.local/bin/claude`, user `ubuntu`) are a **rebuild-time input
+that must match your host**, not a universal truth — if your host's `$HOME`,
+username, or checkout path differs, edit those paths in the Dockerfile and
+rebuild the image to match. This is the one place the home-directory coupling
+is intrinsic rather than lazy: the parity is the mechanism, not a default
+nobody got round to extracting.
 
 ## Images, warm pools and snapshots
 
@@ -219,7 +223,7 @@ to `provider: "local"` (today's host behavior). Env override for the path:
   // FROM the sandbox: your Tailscale ts.net URL or a tunnel for remote
   // providers; 127.0.0.1 never works. http(s):// is normalized to ws(s)://.
   // Default derives from the server's HOST:PORT bind.
-  "callbackBaseUrl": "ws://100.65.135.7:3850",
+  "callbackBaseUrl": "ws://<your-tailnet-ip>:3850",
 
   // Isolated PUBLIC dial-back listener for remote providers — see the
   // "Public dial-back ingress" section below. When enabled with a

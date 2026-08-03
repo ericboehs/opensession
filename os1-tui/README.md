@@ -112,7 +112,7 @@ default; `f` widens it:
 The scope is in the sidebar's top-left with a `shown/total` count, and it sticks
 across runs (`~/.opensession/tui.json`). "Mine" is matched against `startedBy`
 by name token — the display name the server knows your login by, your GitHub
-login, or the local `user` — so `Michiel` matches `Michiel Westerbeek` while
+login, or the local `user` — so `Ada` matches `Ada Lovelace` while
 `John` never matches `Johnny`. If the scope you asked for is empty and you
 haven't picked one yourself, it widens on its own rather than showing you an
 empty sidebar. The list is capped at the 200 most recent; the rest are one

@@ -227,6 +227,9 @@ Useful paths:
 | `~/.opensession-chats/` | session store |
 | `~/worktrees/` | per-session git worktrees |
 
+All of these live under the service user's `$HOME`; on Ubuntu's default EC2
+user (the setup this guide uses) that resolves to `/home/ubuntu`.
+
 To run it in the foreground and watch it directly:
 
 ```bash

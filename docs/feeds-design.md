@@ -5,8 +5,12 @@ provider, 5cbcd284 sidebar bands + Video tab; verified live). Remaining
 Phase-0 follow-ups: Tella MCP mount for tella-ref sessions (server is OAuth
 2.1 at https://api.tella.com/mcp — needs interactive auth, not the API key),
 frame-ancestors carve-out PR in tella-fusion so the Editor itself can iframe
-(embed page iframes today), tella:video_created webhook → automation. Owner:
-Michiel; implementation: Michael sessions.
+(embed page iframes today), tella:video_created webhook → automation.
+
+Note: the Tella MCP/feed provider used throughout this doc is an **optional
+example integration** — the first reference implementation of the package
+contract, not a required part of OpenSession. Instances without a Tella
+account simply don't configure it.
 
 ## Thesis
 

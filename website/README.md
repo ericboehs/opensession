@@ -14,7 +14,6 @@ Deploy the contents of `.website-dist/` as a static site. The build always
 emits stable `index.html` and `opensession-social.png` paths; scripts, styles,
 and the in-page icon remain content-hashed.
 
-The hero uses the seventh animated background on the picker's second page from
-tella-fusion's `packages/core/webapp/src/shared/Assets.res`. The product image
+The hero uses animated background artwork from Tella. The product image
 is a sanitized capture of the real OpenSession web interface rather than a
 separate marketing mock.

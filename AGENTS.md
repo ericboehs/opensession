@@ -1,42 +1,46 @@
 Default to using Bun instead of Node.js.
 
+OpenSession was born as Tella's internal agent server, code-named "backstage" —
+that history explains the `bks-`/`prj-` id prefixes, the internal `/backstage/*`
+route literals, and other protocol-compat residue you'll see below.
+
+Instance-private operator instructions (deployment hostnames, org access
+grants, incident history) belong in an untracked `AGENTS.local.md` or
+`CLAUDE.local.md` next to this file — the runner appends it to every engine
+run (`readLocalInstructions` in src/server/opencode-runner.ts), and Claude
+Code auto-loads `CLAUDE.local.md`. Keep anything you wouldn't publish there,
+never here.
+
 ## Public repositories require confirmation
 
 NEVER publish changes to an open-source or public repository without explicit
 user confirmation in the current conversation. A request to investigate,
 implement, or prepare a change is not permission to publish it. This covers
-every kind of write — issues and comments included, not just forks/branches/PRs
-(a run opened vercel-labs/deepsec#114 on 2026-07-19 and a fork+PR on a
-third-party repo on 2026-07-21). Local edits and commits are allowed, but
-before writing anything to a public/open-source repository, stop and ask the
-user. This rule overrides bias-to-action and generic commit/push/PR defaults;
-automatic PR creation applies only to Tella's private repositories.
+every kind of write — issues and comments included, not just forks/branches/PRs.
+Local edits and commits are allowed, but before writing anything to a
+public/open-source repository, stop and ask the user. This rule overrides
+bias-to-action and generic commit/push/PR defaults; automatic PR creation
+applies only to your registered first-party repositories.
 
-Enforcement is credential scope since 2026-07-26 (this replaced the earlier
-gh-guard PATH shims, removed the same day): the bot (`tella-butler`) runs on a
-fine-grained PAT with resource owner `tellahq` (no Administration/Secrets, no
-gists, cannot fork or create repos outside the org), and per-user tokens are
-GitHub App user tokens limited to the app's tellahq installation. Any GitHub
-write outside tellahq — issues, PRs, forks, pushes, gists, from ANY code path
-including raw API calls and CLI/tmux sessions — fails at GitHub's side with
-403 "Resource not accessible". The PAT expires 2027-07-27 and lives in
-`~/.config/gh/hosts.yml` + `GITHUB_API_TOKEN` in `~/.slack-agent.env` /
-`~/.opensession.env`. Caveat: `gh auth switch` to another hosts.yml account
-would sidestep the scoping — keep unscoped human logins out of the VPS
-hosts.yml.
+Enforce this with credential scope, not just prompts: run the bot on a
+fine-grained token whose resource owner is your org (no Administration/Secrets,
+no gists, cannot fork or create repos outside the org), and give teammates
+GitHub App user tokens limited to the app's installation on that org — then
+any GitHub write outside the org, from ANY code path including raw API calls
+and CLI/tmux sessions, fails at GitHub's side with 403 "Resource not
+accessible". The same rule is injected into every engine run via
+`buildOpencodeInstructions` (opencode-runner.ts).
 
 ## Data handling — never upload to public hosts
 
-NEVER upload files or data to public file-sharing hosts or pastebins (gofile.io,
-transfer.sh, 0x0.st, catbox.moe, file.io, tmpfiles, pastebin, and the like) — no
-exceptions, no matter how delivery of a file is failing. Anything uploaded there
-is public and unrecoverable, and our files routinely contain customer PII
-(2026-07-09 incident: a customer-PII PDF went to gofile.io and couldn't be
-deleted afterwards). Deliver files only through channels we control: Slack file
-upload, the session UI, email via our own tooling, or a commit/PR in a private
-repo. If every controlled channel fails, stop and report the failure instead of
-escalating to a third-party host. The same rule is injected into every engine
-run via `buildOpencodeInstructions` (opencode-runner.ts).
+NEVER upload files or data to public file-sharing hosts or pastebins — no
+exceptions, no matter how delivery of a file is failing. Anything uploaded
+there is public and unrecoverable, and session files routinely contain
+customer data. Deliver files only through channels you control: Slack file
+upload, the session UI, email via your own tooling, or a commit/PR in a
+private repo. If every controlled channel fails, stop and report the failure
+instead of escalating to a third-party host. The same rule is injected into
+every engine run via `buildOpencodeInstructions` (opencode-runner.ts).
 
 ## The five client apps — resolve which one BEFORE working
 
@@ -106,7 +110,7 @@ opensession.ts — if you add such a module, add it to that import list.
 ## OpenSession dev workflow (self-hosting — read this first)
 
 Naming: OPENSESSION_* env vars, `~/.opensession-*` state. URLs are prefix-less
-since 2026-07-10: the app serves at the bare domain root (https://os.tella.dev),
+since 2026-07-10: the app serves at the bare domain root (your instance URL),
 old `/opensession` + `/backstage` page URLs 301 there, and prefixed non-page
 traffic (WS upgrades incl. sandbox dial-back run-ws/rpc-ws, API calls) still
 normalizes silently onto the internal `/backstage/*` route literals — keep that
@@ -118,9 +122,8 @@ MCP servers are named `opensession-*` (renamed from `michael-*` 2026-07-09;
 `canonicalMcpServerId` in rename-compat normalizes legacy ids from persisted
 runs — keep using the new names at definition sites).
 
-OpenSession runs itself from this main checkout
-(`/home/ubuntu/projects/tella-backstage`). OpenSession code sessions do **not**
-get their own worktree
+OpenSession runs itself from its main checkout. OpenSession code sessions do
+**not** get their own worktree
 (`sharedCheckout` in `src/server/worktree.ts`); they all work in this one shared
 checkout on `master`. That's intentional wild-west iteration. The rules that keep
 it from descending into chaos:
@@ -134,7 +137,7 @@ it from descending into chaos:
   uncommitted edits in this tree; only commit your own. High-traffic files
   (`global.css`, `opensession.ts`, `App.tsx`) are sweep magnets: even a specific
   `git add` on one of them can pick up another session's uncommitted hunks
-  (it's happened three times: 2c89f14, 5a372890, and Kent's title commit). For
+  (it has happened repeatedly). For
   those files use `git add -p` to stage only your hunks, and check
   `git diff --cached` before committing.
 - **Commit + push frequently.** Un-pushed work is the only thing a sync can't
@@ -210,11 +213,9 @@ before planning or editing:
 
 - Use `bun run opensession.ts` to start the server
 - Server binds 127.0.0.1:3850 — not publicly accessible
-- Access at `https://os.tella.dev/` — tailnet-only (public DNS A record on the
-  Tailscale IP; Caddy terminates TLS with a lego-issued cert, DNS-01 via Vercel,
-  renewed by lego-renew.timer — see /etc/lego). Old `/opensession` +
-  `/backstage` page URLs 301 to the prefix-less form on the same host; the
-  ts.net `:8443` entry keeps serving, so old bookmarks land fine.
+- Access at your instance URL — however you front 127.0.0.1:3850 (reverse
+  proxy, VPN/tailnet, SSH tunnel). Old `/opensession` + `/backstage` page URLs
+  301 to the prefix-less form on the same host.
 - Bun automatically loads .env, so don't use dotenv
 - HTML imports for frontend bundling (no Vite)
 - All session file access is read-only (never modify ~/.slack-sessions/ or ~/.linear-sessions/) — sole exception: `src/server/agent-session-sync.ts`, the surgical engine-id/model sync interactive runs use when a fallback/rotation mints a new engine session for a slack/linear-source session (see that module's doc before widening it)
@@ -240,7 +241,7 @@ Automation runs (especially event-triggered ones like Plain ticket triage) proce
 
 - Agent subprocesses get a minimal env (PATH, HOME, LANG, OPENSESSION_MODEL) — no tokens from ~/.opensession.env. MCP servers receive their own credentials via mcp-config.json per-server `env` or load it themselves (workos-mcp wrapper).
 - Each automation has an optional `mcpServers` allowlist (per-automation field, settable via the API); runs only see those servers. Triage uses six (`plain`, `workos`, `tinybird`, `linear`, `sentry`, `stripe`) so it can look up the customer, analytics, billing, related issues and errors while investigating.
-- Stripe is money-moving, so it gets a third enforcement tier beyond allow/deny: the tools in `STRIPE_CONFIRM_TOOLS` (runner-shared.ts: create_refund, cancel/update_subscription, and the raw-API mutators stripe_api_execute + stripe_api_write since they can hit any permitted endpoint — keep this list in sync with mcp.stripe.com's live catalog). The MCP uses a restricted key (write on Refunds + Subscriptions + Invoices only — invoice voiding included; read on core billing resources, nothing else — Stripe enforces this ceiling server-side; Subscriptions write was verified live 2026-07-21 after a drift where it was missing). On the opencode engine there is no per-call approval card, so the confirm tools are STRIPPED from the model's tool list on every run — the server stays mounted and Stripe reads keep working. Guidance differs by run type: unattended runs get post-the-proposal-in-your-note wording, interactive runs get ask-the-human-in-this-session wording (until 2026-07-26 interactive runs dropped the whole server, which blanked Stripe reads in dispute-investigation replays for no security gain — money-movers were never reachable either way, and the restricted key's write ceiling is enforced by Stripe server-side).
+- Stripe is money-moving, so it gets a third enforcement tier beyond allow/deny: the tools in `STRIPE_CONFIRM_TOOLS` (runner-shared.ts: create_refund, cancel/update_subscription, and the raw-API mutators stripe_api_execute + stripe_api_write since they can hit any permitted endpoint — keep this list in sync with mcp.stripe.com's live catalog). The MCP uses a restricted key (write on Refunds + Subscriptions + Invoices only — invoice voiding included; read on core billing resources, nothing else — Stripe enforces this ceiling server-side). On the opencode engine there is no per-call approval card, so the confirm tools are STRIPPED from the model's tool list on every run — the server stays mounted and Stripe reads keep working. Guidance differs by run type: unattended runs get post-the-proposal-in-your-note wording, interactive runs get ask-the-human-in-this-session wording (dropping the whole server from interactive runs was tried and reverted: it blanked Stripe reads in dispute-investigation replays for no security gain — money-movers were never reachable either way, and the restricted key's write ceiling is enforced by Stripe server-side).
 - Automation runs hard-deny *customer-facing and identity-mutating* tools (enforced for direct runs and interactive resumes of automation sessions): Plain thread writes (reply_to_thread, mark_thread_done/todo, snooze_thread) and the WorkOS write/destructive subset (create/delete/update user+org, revoke, invitations, password/verification emails, impersonation URLs). Reads stay allowed; suggested customer replies go in an internal Plain note. Linear (incl. issue creation) and Sentry are internal, so their writes are allowed — that's the "spin off work" affordance.
 - Everything runs on the **opencode engine** (single engine since 2026-07-09; the legacy Claude/Codex SDK runners are deleted). runAutomation maps the automation's model tier onto opencode at dispatch (`opencodeAutomationModel` — claude-X → opencode/anthropic/claude-X, unset → opencode/anthropic/claude-sonnet-5). Deny-sets are enforced by STRIPPING the tools from the model's tool list via OpenCode's `tools` config (`opencodeRunPolicy` in opencode-runner.ts, `<server>_<tool>` ids verified live), and the Stripe confirm tools fold into that deny-set with the post-in-note message — automations get Stripe reads, never the money-movers. opensession-admin/opensession-sessions and per-user (`allowedUsers`) servers stay out of automation runs. The run gate (`opencodeGateReason`) is deny-by-default on journal kind: interactive kinds (prompt/goal/create/linear/slack), unattended kinds (automation/plain/action/security-scan/github-*), everything else refused.
 - `mode` is per-automation: "ask" runs read-only on the main checkout (no worktree, no Write/Edit); "code" gets an isolated worktree with Write/Edit and can open PRs (never merge — PRs are the human gate). Triage runs in code mode: it can implement a fix in its worktree and open a PR for review, or recommend the fix in the note. Code mode still carries every other scoping (MCP allowlist, denied customer/identity writes, IMDS blocked, minimal env) — only the worktree + write tools differ from ask.
@@ -248,10 +249,10 @@ Automation runs (especially event-triggered ones like Plain ticket triage) proce
 
 ## Per-user MCP servers (`allowedUsers`)
 
-An MCP server in `mcp-config.json` can carry an optional `allowedUsers: string[]`. When set (non-empty), only runs whose **user** resolves to one of those people get that server's tools; everyone else's sessions never see it. Omitted/empty = available to everyone (the default, unchanged behavior). Entries are matched by `userMatchesAny` (src/server/shared/user-mappings.ts) through the same identity table as commit attribution, so `"Grant"` matches a run user of `grant` / `9ranty` / `grant@tella.com` / their Slack id. Example: `brex` is scoped to Michiel + Grant.
+An MCP server in `mcp-config.json` can carry an optional `allowedUsers: string[]`. When set (non-empty), only runs whose **user** resolves to one of those people get that server's tools; everyone else's sessions never see it. Omitted/empty = available to everyone (the default, unchanged behavior). Entries are matched by `userMatchesAny` (src/server/shared/user-mappings.ts) through the same identity table as commit attribution, so a teammate's name matches a run user given as their short name, a nickname, their email, or their Slack id. Example use: scope a finance/expenses MCP server to the one or two people who should see it.
 
 - Enforcement is at the runner layer, not the prompt: `filterMcpServers(allowlist, user)` (runner-shared.ts, consumed by `buildOpencodeMcpConfig` in opencode-runner.ts) drops a restricted server the run's user isn't cleared for, and strips the `allowedUsers` field before the config reaches the engine. Both allowlist (per-automation least-privilege) and the per-user gate apply.
-- The `user` is threaded from the run paths (`runSessionPrompt`, both `create_session` paths, goal wakes, the Slack/Linear loops) through `runAgent` → `runOpencode`, and is journaled on the `ActiveRunRecord` so a resume after a restart keeps the same visibility. **Automation runs pass no user**, so a `allowedUsers`-restricted server is invisible to them — untrusted ticket text can never reach `brex`, even if the automation's own `mcpServers` allowlist names it (fail-closed).
+- The `user` is threaded from the run paths (`runSessionPrompt`, both `create_session` paths, goal wakes, the Slack/Linear loops) through `runAgent` → `runOpencode`, and is journaled on the `ActiveRunRecord` so a resume after a restart keeps the same visibility. **Automation runs pass no user**, so a `allowedUsers`-restricted server is invisible to them — untrusted ticket text can never reach a restricted server, even if the automation's own `mcpServers` allowlist names it (fail-closed).
 - Manage it from the Connections UI (the Add-MCP form has an "Allowed users" field; each server card has a Restrict/Edit-access button → `PUT /api/connections/mcp/:name` with `{allowedUsers}`), or via opensession-admin (`add_mcp_server`'s `allowedUsers`, and `set_mcp_allowed_users` to change it on an existing server). Backing helpers: `addMcpServer` / `setMcpAllowedUsers` in src/server/connections.ts.
 - **A change to the runner-layer filtering needs a real `systemctl restart`**
   (see "Frontend rebuilds & restarts"). Adding/removing/re-scoping a server in
@@ -299,28 +300,28 @@ cookie; the app's registered callback URL must literally be
 `<publicBaseUrl>/api/auth/callback`), and the **device flow** stays as the
 fallback (the "use a device code" link — needed on the iOS PWA, where a
 redirect can return into Safari instead of the PWA, and works without the
-secret). GitHub side: one org-owned **GitHub App** (since 2026-07-26; was an
-OAuth App) with "Enable Device Flow" checked, the callback URL set, and
-installed on tellahq → All repositories, installable only on that account.
-GitHub App user tokens are what scopes teammates' tokens to tellahq (see the
-public-repos section): they can't reach public/third-party repos, they expire
-~8h, and github-auth.ts refreshes them via a rotating refresh token (20-min
-ticker parked on globalThis + refresh-on-boot; getters never hand out an
-expired token — runs fall back to the bot credential, web mutations 403 to
-"connect your account"). A refresh rotates the token string, which changes
-the shared-server config hash → drain-respawn at next run start, by design.
+secret). GitHub side: one org-owned **GitHub App** with "Enable Device Flow"
+checked, the callback URL set, and installed on your org → All repositories,
+installable only on that account. GitHub App user tokens are what scopes
+teammates' tokens to your org (see the public-repos section): they can't
+reach public/third-party repos, they expire ~8h, and github-auth.ts refreshes
+them via a rotating refresh token (20-min ticker parked on globalThis +
+refresh-on-boot; getters never hand out an expired token — runs fall back to
+the bot credential, web mutations 403 to "connect your account"). A refresh
+rotates the token string, which changes the shared-server config hash →
+drain-respawn at next run start, by design.
 
 ## Self-management tools (Slack + interactive OpenSession sessions)
 
-The `opensession-admin` in-process MCP server (src/agents/slack/admin-tools.ts) lets Michael manage his own setup from Slack: channel memory (remember/list_memory/forget) and — gated to the trusted user (`isAdmin` = no `ALLOWED_SLACK_USER_ID` set, or sender matches it) — automations (list/create/update/delete/run) and MCP connections (list/add/remove). It is wired ONLY into interactive Slack runs (handlers.ts `processMessage`); automation runs never go through there, so they never receive these tools. Do not add `opensession-admin` to automation/`runAgent` paths — that would let untrusted ticket text reconfigure Michael. Channel memory is scoped in src/agents/slack/memory.ts (public channel → shared `workspace` store; private channel/DM → isolated, with read-only workspace view) and auto-injected into the system prompt each run.
+The `opensession-admin` in-process MCP server (src/agents/slack/admin-tools.ts) lets the agent manage its own setup from Slack: channel memory (remember/list_memory/forget) and — gated to the trusted user (`isAdmin` = no `ALLOWED_SLACK_USER_ID` set, or sender matches it) — automations (list/create/update/delete/run) and MCP connections (list/add/remove). It is wired ONLY into interactive Slack runs (handlers.ts `processMessage`); automation runs never go through there, so they never receive these tools. Do not add `opensession-admin` to automation/`runAgent` paths — that would let untrusted ticket text reconfigure the agent. Channel memory is scoped in src/agents/slack/memory.ts (public channel → shared `workspace` store; private channel/DM → isolated, with read-only workspace view) and auto-injected into the system prompt each run.
 
-Both `opensession-admin` and `opensession-sessions` are ALSO available inside **interactive OpenSession sessions** (web UI + loops), not just Slack: opensession.ts's `interactiveMcpServers(user, sessionId)` builds them and passes them as `inProcessMcp` from the interactive run paths (`runSessionPrompt`, both `create_session` paths). They're withheld from automation runs **and** from interactive resumes of automation-owned sessions (gated on `!isAutomationSession`, the same gate as `deniedTools`) — untrusted ticket text must never reach these tools. OpenSession is Tailscale- and team-gated and already exposes all of this through its UI, so interactive users are treated as `isAdmin: true` there. The in-process servers are built with our own `src/server/inprocess-mcp.ts` (a thin @modelcontextprotocol/sdk wrapper) and reach opencode runs as stdio MCP proxies that forward to the in-process tools through OpenSession's run-RPC socket; the Slack loop registers its own slack-context server set per run via `registerSessionMcpServers` (run-rpc.ts) so those proxies execute the right context. The runner adds short "Managing Michael" context when these tools are present so the session knows they exist.
+Both `opensession-admin` and `opensession-sessions` are ALSO available inside **interactive OpenSession sessions** (web UI + loops), not just Slack: opensession.ts's `interactiveMcpServers(user, sessionId)` builds them and passes them as `inProcessMcp` from the interactive run paths (`runSessionPrompt`, both `create_session` paths). They're withheld from automation runs **and** from interactive resumes of automation-owned sessions (gated on `!isAutomationSession`, the same gate as `deniedTools`) — untrusted ticket text must never reach these tools. OpenSession is network- and team-gated and already exposes all of this through its UI, so interactive users are treated as `isAdmin: true` there. The in-process servers are built with our own `src/server/inprocess-mcp.ts` (a thin @modelcontextprotocol/sdk wrapper) and reach opencode runs as stdio MCP proxies that forward to the in-process tools through OpenSession's run-RPC socket; the Slack loop registers its own slack-context server set per run via `registerSessionMcpServers` (run-rpc.ts) so those proxies execute the right context. The runner adds short "Managing Michael" context when these tools are present so the session knows they exist.
 
-The `opensession-sessions` in-process MCP (src/agents/slack/sessions-tools.ts) is a sibling, wired the same way (interactive runs only — Slack and OpenSession sessions per above — never automations). It lets Michael see and steer every *other* OpenSession session: read tools `list_sessions` (with a `waiting` filter for sessions blocked on an AskUserQuestion) and `get_session` (state + pending question + transcript tail) are open to any whitelisted user; the control tools — `answer_session_question` (resolves a paused question), `send_to_session` (steer/queue/start a turn), `cancel_session`, `create_session` — are gated to the trusted user via `isAdmin`. The tools don't touch in-process state directly; they go through the `SessionControl` registry (src/server/session-control.ts) that opensession.ts populates at startup with the same helpers (`runSessionPromptAndDrain`, `steerAgentRun`, `makeAskHandler`, the `pendingAsks`/`promptQueues` maps) the WebSocket handlers use — so steering from here behaves exactly like a human in the web UI, and a future autonomous monitor (src/agents/loops) can call the same registry directly without the MCP. Sessions whose runs aren't owned by this process (CLI/tmux) are surfaced as `observe-only` and can't be steered/cancelled. Do NOT wire `opensession-sessions` into automation/`runAgent` paths — cross-session control from untrusted ticket text would be a privilege-escalation path. (Sole carve-out: `automation.selfImprove` below, which grants the spawn_task suite only — never answer/send/cancel/create.)
+The `opensession-sessions` in-process MCP (src/agents/slack/sessions-tools.ts) is a sibling, wired the same way (interactive runs only — Slack and OpenSession sessions per above — never automations). It lets the agent see and steer every *other* OpenSession session: read tools `list_sessions` (with a `waiting` filter for sessions blocked on an AskUserQuestion) and `get_session` (state + pending question + transcript tail) are open to any whitelisted user; the control tools — `answer_session_question` (resolves a paused question), `send_to_session` (steer/queue/start a turn), `cancel_session`, `create_session` — are gated to the trusted user via `isAdmin`. The tools don't touch in-process state directly; they go through the `SessionControl` registry (src/server/session-control.ts) that opensession.ts populates at startup with the same helpers (`runSessionPromptAndDrain`, `steerAgentRun`, `makeAskHandler`, the `pendingAsks`/`promptQueues` maps) the WebSocket handlers use — so steering from here behaves exactly like a human in the web UI, and a future autonomous monitor (src/agents/loops) can call the same registry directly without the MCP. Sessions whose runs aren't owned by this process (CLI/tmux) are surfaced as `observe-only` and can't be steered/cancelled. Do NOT wire `opensession-sessions` into automation/`runAgent` paths — cross-session control from untrusted ticket text would be a privilege-escalation path. (Sole carve-out: `automation.selfImprove` below, which grants the spawn_task suite only — never answer/send/cancel/create.)
 
 **Papercuts is the one deliberate exception** to "no in-process servers for automations": `opensession-papercuts` (src/agents/slack/papercuts-tools.ts, store in src/server/papercuts.ts → ~/.opensession-papercuts) is an append-only friction log with no reads of anything sensitive and no control surface, so automation runs DO carry it (automations.ts registers the instances per run). Two invariants keep that safe: the run-rpc interactive builder (interactive-mcp.ts) fails closed for automation-owned sessions — a registered automation run token can never resolve the admin/sessions siblings through the socket — and the "Managing Michael" instructions block is gated on `opensession-sessions` presence, not on any in-process server. Per-repo toggle (default on) in Settings → Papercuts; entries mirror into the audit log so the digest/Dreaming sees them. Keep new additions to automation runs held to the same bar: append-only, nothing sensitive readable, no control surface — anything more stays interactive-only.
 
-**Self-improving automations (`automation.selfImprove`) are the second, human-set exception** (Michiel-authorized 2026-07-10; first user: the nightly Dreaming reflection). A flagged automation's runs — and thread-reply resumes of its sessions (run-session.ts + the run-rpc fallback builder both honor the flag) — additionally carry two scoped servers: `opensession-sessions` in `automationSelf` shape (sessions-tools.ts — list/get reads plus the `spawn_task`/`task_status`/`cancel_task` suite ONLY; the answer/send/cancel/create controls on other sessions stay isAdmin-gated and are never included) and `opensession-self` (src/agents/slack/self-improve-tools.ts — read own record + `update_own_prompt`, own automation only, timestamped backup + `automation_self_update` audit event, length floor against degenerate rewrites; schedule/model/mode/repo stay human-only via `updateAutomationPromptSelf` in automations.ts). Containment: spawned children go through the same createSession path (PR-gated, spawn-depth ≤ 2), and the flag is settable only by humans (API/UI) — never grant it to automations triggered by untrusted event/ticket text (Plain triage, channel watches); it's meant for introspective/scheduled ones whose input is our own telemetry.
+**Self-improving automations (`automation.selfImprove`) are the second, human-set exception** (human-authorized per instance; first user: the nightly Dreaming reflection). A flagged automation's runs — and thread-reply resumes of its sessions (run-session.ts + the run-rpc fallback builder both honor the flag) — additionally carry two scoped servers: `opensession-sessions` in `automationSelf` shape (sessions-tools.ts — list/get reads plus the `spawn_task`/`task_status`/`cancel_task` suite ONLY; the answer/send/cancel/create controls on other sessions stay isAdmin-gated and are never included) and `opensession-self` (src/agents/slack/self-improve-tools.ts — read own record + `update_own_prompt`, own automation only, timestamped backup + `automation_self_update` audit event, length floor against degenerate rewrites; schedule/model/mode/repo stay human-only via `updateAutomationPromptSelf` in automations.ts). Containment: spawned children go through the same createSession path (PR-gated, spawn-depth ≤ 2), and the flag is settable only by humans (API/UI) — never grant it to automations triggered by untrusted event/ticket text (Plain triage, channel watches); it's meant for introspective/scheduled ones whose input is our own telemetry.
 
 ## Model routing and delegation
 
@@ -337,8 +338,8 @@ How to delegate from an OpenSession session:
   the worker's task.
 - For workers that only need filesystem/code access, pass `mcpServers: []` so
   unrelated external MCP startup does not slow or block them.
-- Set `repo` to the registered repo id the worker should inspect or edit, such
-  as `backstage` or `tella-fusion`.
+- Set `repo` to the registered repo id the worker should inspect or edit
+  (one of the repos registered in your config — see "Multi-repo sessions").
 - Use `mode: "ask"` for read-only investigation on the main checkout.
 - Use `mode: "code"` plus a branch name for implementation work that can edit
   files or open a PR.
@@ -351,9 +352,9 @@ How to delegate from an OpenSession session:
 
 Engine notes: the opencode engine has no mid-turn steer — a busy send queues
 and delivers as the next turn. Anthropic models run through the bundled
-Meridian bridge on the Claude-subscription account pool; OpenAI models run on
-the ChatGPT-OAuth codex-accounts pool. One-shot utility calls (titles, branch
-names, intent classifiers) go through `opencodeOneShot`
+Meridian bridge on your configured Anthropic account pool; OpenAI models run
+on your configured OpenAI (ChatGPT-OAuth) account pool. One-shot utility calls
+(titles, branch names, intent classifiers) go through `opencodeOneShot`
 (src/server/opencode-oneshot.ts) on a shared tool-less server. Runner code is
 runner internals — changes need a real restart.
 
@@ -374,7 +375,7 @@ tie-breaker. Do not ship mediocre output just because it was cheaper to produce.
 
 ## Multi-repo sessions
 
-A session is no longer single-repo. Beyond its primary `project`/`worktreeDir`/`branch`, it can **attach** secondary repos (`attachedRepos: {project,branch,dir}[]` on the session file + `UnifiedSession`). The registered repos live in `PROJECTS` (`src/server/worktree.ts`): tella-fusion, backstage (sharedCheckout), gitops, infra, shared-infra, tella-mac, tella-windows, gstreamer, gst-plugins-rs — each with a `defaultBranch` and `ghRepo` (`owner/name` for the gh CLI). All but backstage use the normal worktree+PR flow.
+A session is no longer single-repo. Beyond its primary `project`/`worktreeDir`/`branch`, it can **attach** secondary repos (`attachedRepos: {project,branch,dir}[]` on the session file + `UnifiedSession`). The registered repos live in `PROJECTS` (`src/server/worktree.ts`) — the repos registered in your config, each with a `defaultBranch` and `ghRepo` (`owner/name` for the gh CLI). All but the self-hosted OpenSession repo (`sharedCheckout`) use the normal worktree+PR flow.
 
 - **Attaching** creates (or reuses) an *isolated* worktree via `prepareAttachedWorktree` (never another repo's shared main checkout — that's the "parked on a random branch / collisions" trap). Default branch = the session's primary branch, so cross-repo PRs line up. Two entry points, both hitting `POST /api/sessions/:id/attach-repo` → `attachRepo()` in opensession.ts: the `opensession-repos` in-process MCP server (`attach_repo`/`list_repos`, src/agents/slack/repos-tools.ts — wired in `interactiveMcpServers` exactly like the other sibling servers, interactive runs only, never automations) and the `RepoBar` UI in the session viewer. Detach via `POST /api/sessions/:id/detach-repo` (POST, not DELETE — a DELETE on `/sessions/:id/...` is swallowed by the generic session-delete route).
 - **Agent awareness**: `runSessionPrompt` passes `reposNote` (built by `buildReposNote`) through `runAgent`; the opencode runner injects it via the per-session instructions file (OpenCode's system-append channel — see buildOpencodeInstructions). It lists primary + attached repos with their worktree paths so the agent cd's into the right isolated checkout. Only present when the session has attached repos.

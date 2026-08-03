@@ -4,6 +4,11 @@
 # Local MCP config contains live API tokens — use mcp-config.example.json as a template
 mcp-config.json
 
+# Instance-local operator instructions (appended to every engine run by
+# readLocalInstructions in src/server/opencode-runner.ts) — never tracked
+AGENTS.local.md
+CLAUDE.local.md
+
 # Slack data caches
 .users_cache.json
 .channels_cache.json

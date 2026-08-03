@@ -12,6 +12,12 @@ Most of these were found by **running the installer on a bare Ubuntu EC2 box**,
 not by reading the code. That distinction matters — the first four were
 invisible from the repository.
 
+OpenSession grew up on Tella's own instance, so several entries below cite
+instance-specific details — "Tella's box", `/home/ubuntu/projects/tella-backstage`,
+a particular nvm path. Read those as examples from the original deployment
+(the bugs they illustrate were generic); none of them are requirements of an
+install.
+
 ---
 
 ## History audit (July 2026)

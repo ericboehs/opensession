@@ -35,7 +35,7 @@ the Claude Code or Codex CLI credentials the local engine runs on.
 To hack on the server itself, a source checkout overrides the sidecar:
 
 ```sh
-git clone https://github.com/tellahq/backstage ~/os1/server
+git clone https://github.com/tellahq/opensession ~/os1/server
 cd ~/os1/server
 bun install
 ```
@@ -153,6 +153,12 @@ allowed navigation origin); the device-flow fallback link works too. The
   that proves too fiddly, `os1://` links remain the reliable path.
 
 ## Signing & release
+
+This section (and the universal-links app IDs above) documents **Tella's own
+release setup** — Apple team `6GUXT43C8B` and the `dev.tella.os1.*` bundle ids.
+If you fork, rebrand those identifiers to your own namespace (your Apple team
+id, your bundle id prefix, your server URL) and supply your own signing
+secrets; nothing in the shell depends on Tella's values.
 
 CI (`../.github/workflows/os1-mac-release.yml`) builds, signs, notarizes and
 publishes a GitHub Release on every `v*` tag. Manual "Run workflow" does a dry
