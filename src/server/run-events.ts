@@ -30,6 +30,57 @@ export function isLikelyPromptCacheMiss(
   return usage.cacheReadTokens < 1_024 && usage.cacheReadTokens / usage.contextTokens < 0.05;
 }
 
+/** Prompt size + cache reuse of one completed model step, for the rebuild
+ *  detector below. */
+export interface StepPromptUsage {
+  contextTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+}
+
+/**
+ * Did the layer BELOW opencode silently rebuild this conversation's context
+ * between two steps of the same turn?
+ *
+ * Anthropic models run through the bundled Meridian bridge onto Claude Agent
+ * SDK sessions, and two things down there can replace the conversation without
+ * opencode (or us) ever seeing it: the SDK auto-compacting its session near the
+ * context limit, and Meridian classifying a request as diverged and replaying
+ * the history into a fresh SDK session. Both look identical from here — the
+ * next step reads NOTHING from the prompt cache and writes a new prefix, after
+ * the previous step read a large one. The model gets handed a rewritten
+ * conversation mid-task, which is a decent way to end up re-orienting and
+ * stopping (2026-08-03 bks-019fc695: 262k → 94k between step 5 and 6, then the
+ * turn ended on "Let me examine that commit."; 32 rebuilds across 6.4k steps in
+ * the three days before that).
+ *
+ * Deliberately conservative — a cold cache on a turn's FIRST step is ordinary
+ * (expiry, a rotation to another account, a fresh server), so this only fires
+ * with a warm predecessor inside the same attempt. Callers keep per-attempt
+ * state, so a rotation's fresh pump starts with no predecessor and can't
+ * trigger it.
+ */
+export function isContextRebuildStep(
+  previous: StepPromptUsage | undefined,
+  current: StepPromptUsage,
+): boolean {
+  if (!previous || previous.cacheReadTokens < 50_000) return false;
+  return current.cacheReadTokens === 0 && current.cacheCreationTokens > 20_000;
+}
+
+/** Human-readable line for a detected rebuild — the durable transcript note. */
+export function contextRebuildNotice(
+  previous: StepPromptUsage,
+  current: StepPromptUsage,
+): string {
+  const k = (n: number) => `${Math.round(n / 1000)}k`;
+  return (
+    `The engine rebuilt this conversation's context mid-turn (${k(previous.contextTokens)} → ` +
+    `${k(current.contextTokens)} tokens, prompt cache cold). The model continued from a ` +
+    "rewritten context and may have lost detail from earlier in the turn."
+  );
+}
+
 export interface StreamEvent {
   type:
     | "init"

@@ -176,7 +176,10 @@ import {
   looksLikeFabricatedToolTranscript,
 } from "./runner-shared";
 import {
+  contextRebuildNotice,
+  isContextRebuildStep,
   isLikelyPromptCacheMiss,
+  type StepPromptUsage,
   type StreamEvent,
   type ImageInput,
   type TurnUsage,
@@ -2358,6 +2361,100 @@ export function meridianQuotaEndpoints(): { accountId: string; url: string; key:
 }
 registerMeridianQuotaProvider(meridianQuotaEndpoints);
 
+/**
+ * Why a context rebuild happened, straight from Meridian's own per-request
+ * telemetry (`GET /telemetry/requests`, same auth as the quota endpoint).
+ * `lineageType` is the bridge's verdict on the request we just observed:
+ *  - "continuation" → Meridian resumed the right SDK session and the rewrite
+ *    came from BELOW it: the Claude Agent SDK compacted its own session.
+ *  - anything else ("new"/"diverged"/"undo") mid-conversation → Meridian threw
+ *    the SDK session away and replayed the history into a fresh one.
+ * Joined on the step's cache-creation count, which is unique enough to pin the
+ * exact request on a shared server serving several sessions at once. Best
+ * effort: telemetry is in-memory per proxy, so a respawn loses it.
+ */
+async function meridianLineageForStep(
+  cacheCreationTokens: number,
+): Promise<{ lineageType?: string; sdkSessionId?: string; messageCount?: number; toolCount?: number } | undefined> {
+  const since = Date.now() - 120_000;
+  for (const ep of meridianQuotaEndpoints().slice(0, 6)) {
+    try {
+      const res = await fetch(`${ep.url}/telemetry/requests?limit=25&since=${since}`, {
+        headers: { "x-api-key": ep.key },
+        signal: AbortSignal.timeout(3_000),
+      });
+      if (!res.ok) continue;
+      const rows = (await res.json()) as any[];
+      const hit = Array.isArray(rows)
+        ? rows.find((r) => Number(r?.cacheCreationInputTokens) === cacheCreationTokens)
+        : undefined;
+      if (hit)
+        return {
+          lineageType: hit.lineageType,
+          sdkSessionId: hit.sdkSessionId,
+          messageCount: hit.messageCount,
+          toolCount: hit.toolCount,
+        };
+    } catch {
+      // Best effort — a dead/slow proxy just means no verdict on this one.
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Per-attempt watcher for silent context rebuilds under the engine (see
+ * isContextRebuildStep). Fed every `message.updated`; fires at most once per
+ * completed step, and never on an attempt's first step (no warm predecessor →
+ * a cold cache is ordinary), which is also what keeps an account rotation's
+ * fresh pump from tripping it.
+ */
+function makeContextRebuildWatcher(opts: {
+  ocSessionId: string;
+  model: string;
+  turnEvent: (e: Record<string, unknown>) => void;
+  onDetected: (notice: string) => void;
+}) {
+  const scored = new Set<string>();
+  let previous: StepPromptUsage | undefined;
+  return (info: any): void => {
+    const tokens = info?.tokens;
+    if (info?.role !== "assistant" || !tokens || scored.has(info.id)) return;
+    const current: StepPromptUsage = {
+      cacheReadTokens: tokens.cache?.read || 0,
+      cacheCreationTokens: tokens.cache?.write || 0,
+      contextTokens: (tokens.input || 0) + (tokens.cache?.read || 0) + (tokens.cache?.write || 0),
+    };
+    // Tokens land when the step completes; earlier updates are all-zero.
+    if (current.contextTokens < 1_000) return;
+    scored.add(info.id);
+    const rebuilt = isContextRebuildStep(previous, current);
+    const prior = previous;
+    previous = current;
+    if (!rebuilt || !prior) return;
+    const notice = contextRebuildNotice(prior, current);
+    console.warn(`[opencode-runner] ${opts.ocSessionId}: ${notice}`);
+    opts.onDetected(notice);
+    // The verdict costs a loopback round-trip, so it rides after the notice.
+    void meridianLineageForStep(current.cacheCreationTokens).then((lineage) => {
+      opts.turnEvent({
+        direction: "out",
+        kind: "context_rebuild",
+        model: opts.model,
+        prev_context_tokens: prior.contextTokens,
+        context_tokens: current.contextTokens,
+        cache_creation_tokens: current.cacheCreationTokens,
+        // "continuation" = the Agent SDK compacted below Meridian; anything
+        // else = Meridian replayed into a fresh SDK session.
+        lineage_type: lineage?.lineageType,
+        sdk_session_id: lineage?.sdkSessionId,
+        engine_message_count: lineage?.messageCount,
+        tool_count: lineage?.toolCount,
+      });
+    });
+  };
+}
+
 // ── Detached servers: registry sync + boot adoption ──────────────────────────
 
 /** Mirror a detached entry's live identity into the adoption registry. Called
@@ -4080,6 +4177,16 @@ async function* runOpencodeAttempt(
     // fires on creation, before their text parts complete) — their text
     // becomes a "context compacted" system chip, not assistant output.
     const compactionMsgs = new Set<string>();
+    // Silent context rebuilds under the engine (Agent SDK autocompaction /
+    // Meridian replay) — invisible to opencode, so we detect them from the
+    // per-step prompt-cache numbers and leave a durable line in the transcript.
+    const watchContextRebuild = makeContextRebuildWatcher({
+      ocSessionId,
+      model,
+      turnEvent,
+      onDetected: (notice) =>
+        appendOpencodeTranscript(ocSessionId, [transcriptLineRunnerNotice(notice)]),
+    });
     const startedTools = new Set<string>();
     const finishedTools = new Set<string>();
     let envelopeLeakSteers = 0;
@@ -4462,6 +4569,7 @@ async function* runOpencodeAttempt(
           const info = p?.info;
           if (info?.sessionID !== ocSessionId) return;
           if (isCompactionMessageInfo(info)) compactionMsgs.add(info.id);
+          else watchContextRebuild(info);
           return;
         }
         // opencode renamed this event: pre-1.17 servers emit
@@ -5369,6 +5477,15 @@ export async function tryReattachOpencodeRun(
       // mid-compaction can miss the flag — worst case that one summary
       // renders as a plain assistant bubble, the pre-fix behavior.
       const compactionMsgs = new Set<string>();
+      // Same rebuild watch as the primary pump — a reattached turn is served by
+      // the same bridge and can have its context rewritten mid-flight too.
+      const watchContextRebuild = makeContextRebuildWatcher({
+        ocSessionId: ocSessionId!,
+        model,
+        turnEvent,
+        onDetected: (notice) =>
+          appendOpencodeTranscript(ocSessionId!, [transcriptLineRunnerNotice(notice)]),
+      });
       const startedTools = new Set<string>();
       const finishedTools = new Set<string>();
       let envelopeLeakSteers = 0;
@@ -5637,6 +5754,7 @@ export async function tryReattachOpencodeRun(
             const info = p?.info;
             if (info?.sessionID !== ocSessionId) return;
             if (isCompactionMessageInfo(info)) compactionMsgs.add(info.id);
+            else watchContextRebuild(info);
             return;
           }
           case "permission.updated":
