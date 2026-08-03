@@ -240,6 +240,71 @@ describe("opencodeToolResultImages", () => {
       },
     })).toEqual([]);
   });
+
+  describe("inside a sandboxed run host", () => {
+    // BKS_RUN_WS_URL marks a run host that dialed OUT over WS — a sandbox,
+    // whose filesystem the media route cannot reach.
+    let prior: string | undefined;
+    beforeAll(() => {
+      prior = process.env.BKS_RUN_WS_URL;
+      process.env.BKS_RUN_WS_URL = "wss://example.invalid/opensession/run-ws/rh-test";
+    });
+    afterAll(() => {
+      if (prior === undefined) delete process.env.BKS_RUN_WS_URL;
+      else process.env.BKS_RUN_WS_URL = prior;
+    });
+
+    const dataUrl = "data:image/png;base64,aGVsbG8=";
+
+    test("carries the attachment inline instead of an unservable media path", () => {
+      expect(opencodeToolResultImages({
+        type: "tool",
+        tool: "read",
+        state: {
+          status: "completed",
+          // A path only the sandbox can resolve — /backstage/media would 404.
+          input: { filePath: "/workspace/build/shot.png" },
+          attachments: [{ type: "file", mime: "image/png", url: dataUrl }],
+        },
+      })).toEqual([dataUrl]);
+    });
+
+    test("does not require the path allowlist the host branch enforces", () => {
+      // The allowlist exists because the host branch hands the path to the
+      // media route. Inline bytes are self-contained, so a sandbox path that
+      // would fail that check still renders.
+      expect(opencodeToolResultImages({
+        type: "tool",
+        tool: "read",
+        state: {
+          status: "completed",
+          input: { filePath: "/etc/whatever.png" },
+          attachments: [{ type: "file", mime: "image/png", url: dataUrl }],
+        },
+      })).toEqual([dataUrl]);
+    });
+
+    test("drops an attachment whose url is missing, foreign, or oversized", () => {
+      const state = (url: unknown) => ({
+        status: "completed",
+        input: { filePath: "/workspace/shot.png" },
+        attachments: [{ type: "file", mime: "image/png", url }],
+      });
+      // No url at all.
+      expect(opencodeToolResultImages({ type: "tool", tool: "read", state: state(undefined) as any }))
+        .toEqual([]);
+      // Not the data: URL we expect for the declared mime — never hand the
+      // browser an arbitrary URL sourced from tool state.
+      expect(opencodeToolResultImages({ type: "tool", tool: "read", state: state("https://evil.example/x.png") as any }))
+        .toEqual([]);
+      expect(opencodeToolResultImages({ type: "tool", tool: "read", state: state("data:image/svg+xml;base64,PHN2Zz4=") as any }))
+        .toEqual([]);
+      // Past the transport bound.
+      const huge = `data:image/png;base64,${"A".repeat(33 * 1024 * 1024)}`;
+      expect(opencodeToolResultImages({ type: "tool", tool: "read", state: state(huge) as any }))
+        .toEqual([]);
+    });
+  });
 });
 
 describe("readOpencodeTranscript (SQLite)", () => {

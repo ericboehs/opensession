@@ -912,14 +912,61 @@ const LOCAL_IMAGE_MIMES = new Set([
 ]);
 
 /**
+ * True when this runner is a SANDBOXED run host. Such a host dials back to
+ * backstage over the WS transport (BKS_RUN_WS_URL); a local host serves a unix
+ * socket and shares backstage's filesystem. The distinction matters for any
+ * path we hand to the browser: only a local host's paths are reachable by the
+ * media route. Read per call rather than at module load so tests can flip it.
+ */
+function inSandboxedRunHost(): boolean {
+  return !!process.env.BKS_RUN_WS_URL;
+}
+
+// Leave ample room under public-ingress's 64 MiB WS ceiling for the event
+// envelope and the rest of the tool output. OpenCode/provider image limits are
+// far lower in normal operation; this is a transport safety bound, not an
+// expected size. The frame also has to survive the host's replay ring
+// (ws-buffer keeps one oversized frame alongside its normal byte budget).
+const MAX_INLINE_TOOL_IMAGE_BYTES = 32 * 1024 * 1024;
+
+/**
  * OpenCode's Read tool persists image bytes as a base64 file attachment on the
- * tool state. The transcript must not copy those bytes, so use the attachment
- * only as proof that Read returned an image and render its original local path
- * through the authenticated media route instead.
+ * tool state. Where those bytes come from in the transcript depends on who can
+ * still reach the file afterwards:
+ *
+ *  - **Local runs** keep the bytes OUT of the transcript. The attachment is
+ *    proof that Read returned an image; the original local path renders
+ *    through the authenticated media route. The path is allowlisted (under
+ *    /tmp or $HOME, no traversal, image extension) because it reaches the
+ *    browser as a media-route argument.
+ *  - **Sandboxed runs** have no such option: the path names a file inside the
+ *    sandbox, which the host's media route cannot serve, so the transcript
+ *    used to carry a URL that always 404'd. There the immutable base64
+ *    snapshot OpenCode already captured IS the only copy, so carry it inline,
+ *    bounded by MAX_INLINE_TOOL_IMAGE_BYTES. The transcript store externalizes
+ *    large entries into its blob table, so the entry itself stays bounded.
  */
 export function opencodeToolResultImages(part: PartData): string[] {
   if (part.type !== "tool" || part.state?.status !== "completed") return [];
   if (part.tool !== "read" && part.tool !== "view_image") return [];
+  const attachment = part.state.attachments?.find(
+    (candidate) =>
+      candidate?.type === "file" &&
+      typeof candidate.mime === "string" &&
+      LOCAL_IMAGE_MIMES.has(candidate.mime.toLowerCase()),
+  );
+  if (!attachment) return [];
+
+  if (inSandboxedRunHost()) {
+    const mime = attachment.mime!.toLowerCase();
+    const url = attachment.url;
+    return typeof url === "string" &&
+      url.startsWith(`data:${mime};base64,`) &&
+      Buffer.byteLength(url) <= MAX_INLINE_TOOL_IMAGE_BYTES
+      ? [url]
+      : [];
+  }
+
   const input = part.state.input;
   if (!input || typeof input !== "object") return [];
   const values = input as Record<string, unknown>;
@@ -936,15 +983,7 @@ export function opencodeToolResultImages(part: PartData): string[] {
   ) {
     return [];
   }
-  const returnedImage = part.state.attachments?.some(
-    (attachment) =>
-      attachment?.type === "file" &&
-      typeof attachment.mime === "string" &&
-      LOCAL_IMAGE_MIMES.has(attachment.mime.toLowerCase()),
-  );
-  return returnedImage
-    ? [`/backstage/media?path=${encodeURIComponent(path)}`]
-    : [];
+  return [`/backstage/media?path=${encodeURIComponent(path)}`];
 }
 
 function toIso(ms: number | undefined, fallback: string): string {

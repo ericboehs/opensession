@@ -12,10 +12,11 @@
  * consumed, so a replay overlap never double-applies.
  *
  * Bounds: WS_BUFFER_MAX_FRAMES frames / WS_BUFFER_MAX_BYTES of serialized
- * lines. On overflow the OLDEST frames are dropped and the buffer remembers
- * the highest dropped seq; a later replay that needs to reach behind that
- * point reports the hole as a `gap` so the server can log the loss (the
- * transcript jsonl remains the durable copy).
+ * lines, with one oversized frame allowed alongside the normal byte budget.
+ * On overflow the OLDEST frames are dropped and the buffer remembers the
+ * highest dropped seq; a later replay that needs to reach behind that point
+ * reports the hole as a `gap` so the server can log the loss (the transcript
+ * jsonl remains the durable copy).
  *
  * Epochs: the server's ack carries an `epoch` — a random id minted when the
  * host's seq record is created server-side and kept for the registration's
@@ -84,9 +85,23 @@ export class WsFrameBuffer {
   stamp(msg: Record<string, unknown>): string {
     const seq = ++this.seq;
     const line = JSON.stringify({ ...msg, seq }) + "\n";
-    this.frames.push({ seq, line, bytes: line.length });
-    this.bytes += line.length;
-    while (this.frames.length > this.maxFrames || this.bytes > this.maxBytes) {
+    // Byte length, not string length: a serialized line is sent as UTF-8, so
+    // counting UTF-16 code units undercounts anything non-ASCII and lets the
+    // ring hold more bytes than its budget.
+    const bytes = Buffer.byteLength(line);
+    this.frames.push({ seq, line, bytes });
+    this.bytes += bytes;
+    // Allow ONE oversized frame on top of the normal byte budget. A sandboxed
+    // Read returns its image inline (opencodeToolResultImages), and after
+    // base64 expansion that single frame can exceed maxBytes on its own —
+    // under a plain cap it would be evicted the moment it arrived, so the one
+    // frame most worth replaying after a disconnect could never be replayed.
+    // Bounded work: the scan is over at most maxFrames entries and only runs
+    // while the ring is actually over budget.
+    for (;;) {
+      const largest = this.frames.reduce((max, frame) => Math.max(max, frame.bytes), 0);
+      const byteLimit = largest > this.maxBytes ? largest + this.maxBytes : this.maxBytes;
+      if (this.frames.length <= this.maxFrames && this.bytes <= byteLimit) break;
       const dropped = this.frames.shift()!;
       this.bytes -= dropped.bytes;
       this.droppedThrough = dropped.seq;

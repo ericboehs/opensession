@@ -95,6 +95,44 @@ function dialHost(hostId: string, token: string) {
   };
 }
 
+describe("WsFrameBuffer oversized frames", () => {
+  test("retains a frame larger than the whole byte budget", () => {
+    const buf = new WsFrameBuffer(10, 90);
+    // A sandboxed Read image arrives inline and blows the byte cap on its own.
+    buf.stamp({
+      t: "event",
+      event: { type: "tool_result", images: [`data:image/png;base64,${"x".repeat(200)}`] },
+    });
+    const afterImage = buf.replayFrom(0);
+    expect(afterImage.lines).toHaveLength(1);
+    expect(afterImage.gap).toBeNull();
+    // Normal frames still ride alongside it rather than being crowded out.
+    buf.stamp({ t: "event", event: { type: "text_chunk", text: "after" } });
+    const replay = buf.replayFrom(0);
+    expect(replay.lines).toHaveLength(2);
+    expect(replay.lines[1]).toContain("after");
+  });
+
+  test("still trims ordinary overflow to the byte budget", () => {
+    const buf = new WsFrameBuffer(10, 200);
+    for (let i = 0; i < 20; i++) buf.stamp({ t: "event", event: { type: "text_chunk", text: `f${i}` } });
+    const replay = buf.replayFrom(0);
+    expect(replay.lines.length).toBeLessThan(20);
+    expect(replay.gap).not.toBeNull();
+  });
+
+  test("counts UTF-8 bytes, not UTF-16 code units", () => {
+    // Four-byte characters: a budget counted in code units would hold roughly
+    // twice the bytes it advertises.
+    const wide = new WsFrameBuffer(1000, 400);
+    for (let i = 0; i < 40; i++) wide.stamp({ t: "event", event: { text: "🙂".repeat(10) } });
+    const bytes = wide
+      .replayFrom(0)
+      .lines.reduce((sum, line) => sum + Buffer.byteLength(line), 0);
+    expect(bytes).toBeLessThanOrEqual(400);
+  });
+});
+
 describe("ndjsonReader", () => {
   test("preserves UTF-8 split across chunks and handles multiple lines", () => {
     const messages: any[] = [];

@@ -287,6 +287,39 @@ describe("withOpencodeTranscriptMirror", () => {
     expect(userTexts).toEqual(["list files"]);
   });
 
+  test("a sandboxed Read's inline image survives the mirror", async () => {
+    // The in-sandbox runner is the only thing that ever sees the Read
+    // attachment's bytes, and it sends them inline because the host cannot
+    // serve a path inside the sandbox. The mirror used to build its
+    // tool_result line without ev.images, so every sandboxed Read image
+    // arrived blank in the transcript.
+    const bks = "bks-tool-images";
+    const oc = "ses_mirror_images";
+    const dataUrl = "data:image/png;base64,aGVsbG8=";
+    await drain(
+      withOpencodeTranscriptMirror(
+        stream([
+          { type: "init", sessionId: oc } as StreamEvent,
+          {
+            type: "tool_use",
+            toolUseId: "prt_img",
+            toolName: "read",
+            toolInput: { filePath: "/workspace/shot.png" },
+          } as StreamEvent,
+          {
+            type: "tool_result",
+            toolUseId: "prt_img",
+            content: "Image read successfully",
+            images: [dataUrl],
+          } as StreamEvent,
+        ]),
+        spec({ bksSessionId: bks, prompt: "look at the screenshot" }),
+      ),
+    );
+    const result = entriesFor(bks).find((e) => e.type === "tool_result");
+    expect(result?.images).toEqual([dataUrl]);
+  });
+
   test("non-opencode models pass through untouched", async () => {
     const events = [
       { type: "init", sessionId: "claude-native" } as StreamEvent,

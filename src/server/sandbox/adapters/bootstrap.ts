@@ -1090,7 +1090,14 @@ export async function* withOpencodeTranscriptMirror(
       } else if (ev.type === "tool_use" && ev.toolUseId) {
         mirror([transcriptLineToolUse(ev.toolUseId, ev.toolName || "tool", ev.toolInput)]);
       } else if (ev.type === "tool_result" && ev.toolUseId) {
-        mirror([transcriptLineToolResult(ev.toolUseId, ev.content || "", false)]);
+        // Carry ev.images through. For a remote run the in-sandbox runner is
+        // the only thing that ever sees the Read attachment's bytes, and it
+        // sends them inline precisely because the host cannot serve a path
+        // inside the sandbox — dropping them here (as this did) left every
+        // sandboxed Read image blank in the transcript.
+        mirror([
+          transcriptLineToolResult(ev.toolUseId, ev.content || "", false, undefined, ev.images),
+        ]);
       }
     } catch {
       // Mirroring must never break the run stream.
