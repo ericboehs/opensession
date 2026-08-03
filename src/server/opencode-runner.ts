@@ -3139,7 +3139,7 @@ const PROVIDER_STALL_MS = (() => {
 })();
 const PROVIDER_STALL_MIN_RETRIES = 3;
 
-function makeSubagentStallGuard(
+export function makeSubagentStallGuard(
   ocSessionId: string,
   onStall: (info: { quietMs: number; openTaskIds: string[] }) => void
 ) {
@@ -3199,6 +3199,10 @@ function makeSubagentStallGuard(
     /** Parent or any (transitive) task-child session id. */
     isFamily(sid: unknown): boolean {
       return sid === ocSessionId || (typeof sid === "string" && childSessions.has(sid));
+    },
+    /** Ms since the last family CONTENT event (test/debug accessor). */
+    quietFor(now = Date.now()): number {
+      return now - lastFamilyEventAt;
     },
     /** Call for every parent tool part update (tracks open task tools). */
     noteTool(part: any) {

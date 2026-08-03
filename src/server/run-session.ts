@@ -63,6 +63,7 @@ import {
 	mergedSessionTranscript,
 	mergedSessionTranscriptAsync,
 	readEngineTranscriptAsync,
+	trailingUserTexts,
 } from "./sessions";
 import {
 	getSandboxProvider,
@@ -135,6 +136,7 @@ import {
 	AUTO_CONTINUE_PROMPT,
 	AUTO_CONTINUE_USER,
 	INTERRUPT_STEER_NOTE,
+	ORPHANED_STEER_PROMPT,
 } from "./auto-continue";
 import { selectQueueBatch } from "./queue-hold";
 
@@ -148,6 +150,13 @@ const g = globalThis as any;
 // stay held behind fresh auto-continues (the queue-hold in the run-end handler)
 // until a turn ends without announcing more work.
 const autoContinueNudged: Set<string> = (g.__autoContinueNudged ??= new Set());
+
+// Per-session tail of stranded user messages already redelivered once (see
+// the endedWithError branch of maybeQueueAutoContinue) — keyed by content so
+// a redelivery turn that fails on the same tail doesn't loop, while a NEW
+// stranded message is always eligible. Cleared on any clean turn.
+const orphanRedeliveredTails: Map<string, string> = (g.__orphanRedeliveredTails ??=
+	new Map());
 
 // Sessions whose current queue head was delivered by aborting the running
 // turn (busy-send interrupt). The next drain consumes the mark and appends
@@ -1302,7 +1311,57 @@ export function maybeQueueAutoContinue(opts: {
 	const endedOnFabricatedTranscript = looksLikeFabricatedToolTranscript(
 		assistantText.slice(-2000),
 	);
-	if (endedWithError) return suppressed("ended_with_error");
+	if (endedWithError) {
+		// A failed/aborted turn can strand user messages the model never read: a
+		// busy-send steer is a noReply history append the running turn only reads
+		// at its NEXT LLM step, so when the turn dies first the message sits in
+		// the engine history unprocessed — and its receipt already reconciled
+		// away as "delivered" the moment it landed (2026-08-03 bks-019fc798:
+		// "continue" steered into a wedged oracle turn was silently swallowed).
+		// Trailing user entries with no assistant/tool reply are the durable
+		// signal; fire ONE redelivery turn per distinct tail so the messages get
+		// read — never over a user Stop, never for automations, and a repeat
+		// failure on the same tail doesn't loop.
+		if (
+			session.source === "backstage" &&
+			!session.automation &&
+			!stoppedSessions.has(sessionId)
+		) {
+			const trailing = trailingUserTexts(session).filter(
+				(t) =>
+					!t.includes("<backstage:context>") &&
+					!t.startsWith(`[${AUTO_CONTINUE_USER}]`),
+			);
+			const tailKey = trailing.join("\n").trim().slice(-500);
+			if (tailKey && orphanRedeliveredTails.get(sessionId) !== tailKey) {
+				orphanRedeliveredTails.set(sessionId, tailKey);
+				audit({
+					msg: "orphaned_steer_redelivery",
+					bks_session_id: sessionId,
+					trailing_count: trailing.length,
+					tail: tailKey.slice(-200),
+				});
+				broadcastToSession(sessionId, {
+					type: "notice",
+					message:
+						"The interrupted turn never read the latest message(s) — auto-continuing so they're addressed.",
+				});
+				enqueuePrompt(
+					sessionId,
+					{
+						content: wrapContext(ORPHANED_STEER_PROMPT),
+						user: AUTO_CONTINUE_USER,
+					},
+					{ front: true },
+				);
+				return true;
+			}
+		}
+		return suppressed("ended_with_error");
+	}
+	// A clean turn responded to everything in history — reset the redelivery
+	// once-guard so a future stranded tail is eligible again.
+	orphanRedeliveredTails.delete(sessionId);
 	if (runFailure) return suppressed("run_failure");
 	if (session.source !== "backstage") return suppressed(`source_${session.source}`);
 	if (session.automation) return suppressed("automation_session");

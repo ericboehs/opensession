@@ -34,6 +34,23 @@ export const AUTO_CONTINUE_FABRICATED_PROMPT =
 	"input only the human can give.";
 
 /**
+ * Redelivery nudge for user messages a dead turn never read. A busy-send
+ * steer is a noReply engine-history append the running turn only picks up at
+ * its NEXT LLM step — so when that turn dies first (wedged subagent, abort,
+ * provider error), the message sits in the history unprocessed while the
+ * receipt has already reconciled away as "delivered" (2026-08-03
+ * bks-019fc798: "continue" steered into a wedged oracle turn was silently
+ * swallowed; the user had to notice and re-send it). run-session.ts detects
+ * the stranded shape (trailing user entries with no assistant reply after an
+ * errored turn) and fires ONE redelivery turn carrying this prompt.
+ */
+export const ORPHANED_STEER_PROMPT =
+	"[auto-continue] Your previous turn was interrupted before it could read " +
+	"the user's most recent message(s), which are already in this conversation " +
+	"just above. Read and address them now, and keep working until the task is " +
+	"done or you are genuinely blocked on input only the human can give.";
+
+/**
  * Fenced context appended to a prompt that was delivered by ABORTING the
  * running turn (busy-send interrupt). The engine has no mid-turn steer (see
  * "why opencode stops": every busy-send is an abort, and the truncated turn

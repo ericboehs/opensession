@@ -430,6 +430,46 @@ export function engineUserTexts(session: {
 	}
 }
 
+/**
+ * User texts stranded at the TAIL of a session's engine history: user entries
+ * after the last assistant/tool entry, i.e. messages no turn has responded to.
+ * After an errored/aborted turn these are messages the model never read — a
+ * busy-send steer lands as a noReply history append that only the turn's next
+ * LLM step would have picked up (see ORPHANED_STEER_PROMPT). System chips
+ * don't count as a response: the run-failure notice lands after the stranded
+ * message and would otherwise mask it.
+ */
+export function trailingUserTexts(session: {
+	id?: string;
+	transcriptPath?: string | null;
+	opencodeSessionId?: string | null;
+	claudeSessionId?: string | null;
+}): string[] {
+	try {
+		const entries = mergedSessionTranscript({
+			id: session.id,
+			transcriptPath: session.transcriptPath ?? null,
+			opencodeSessionId: session.opencodeSessionId ?? undefined,
+			claudeSessionId: session.claudeSessionId ?? null,
+		});
+		let lastResponse = -1;
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const t = entries[i].type;
+			if (t === "assistant" || t === "tool_use" || t === "tool_result") {
+				lastResponse = i;
+				break;
+			}
+		}
+		return entries
+			.slice(lastResponse + 1)
+			.filter((e) => e.type === "user")
+			.map((e) => e.content.trim())
+			.filter(Boolean);
+	} catch {
+		return [];
+	}
+}
+
 export function engineSessionPatch(
   provider: "claude" | "codex" | "opencode",
   engineSessionId: string

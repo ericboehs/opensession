@@ -14,7 +14,7 @@ import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle, relinkAskThreads } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
 import { SESSION_EFFORTS, type SessionEffort, interactiveDefaultModel, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
-import { promptQueues, recordSteer, requeueSteerReceipts } from "./queue-state";
+import { promptQueues, recordSteer, requeueSteerReceipts, stoppedSessions } from "./queue-state";
 import { attachSessionWatchersToEngineTranscript, attachSessionWatchersToTranscript, enqueuePrompt, foldSessionUsage, maybeLaunchSandboxedRun, maybeQueueAutoContinue, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
 import { STRIPE_CONFIRM_TOOLS } from "./runner-shared";
 import { parseImageDataUrls } from "./uploads";
@@ -197,6 +197,11 @@ registerSessionControl({
 	cancelSession: (id) => {
 		const session = findSession(id);
 		if (!session || isLegacySideChat(session)) return false;
+		// Same park as the UI Stop: without it the run-end guards (queue drain,
+		// orphaned-steer redelivery in maybeQueueAutoContinue) would immediately
+		// start a new turn on the session that was just deliberately cancelled.
+		// Any later explicit prompt lifts it (runSessionPrompt deletes the mark).
+		stoppedSessions.add(id);
 		const cancelled = cancelAgentRun(
 			session.claudeSessionId,
 			session.codexThreadId,
