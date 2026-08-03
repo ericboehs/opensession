@@ -4,6 +4,7 @@
   "version": "0.3.8",
   "description": "macOS desktop shell for an OpenSession server",
   "private": true,
+  "license": "Apache-2.0",
   "main": "src/main.js",
   "opensession": {
     "defaultServer": "http://127.0.0.1:3850/"

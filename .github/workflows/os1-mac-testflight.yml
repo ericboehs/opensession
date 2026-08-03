@@ -1,3 +1,4 @@
+# Tella's client release pipeline — fork and rebrand (see os1-ios/README).
 name: Release OS1 for macOS (TestFlight)
 
 # Builds, signs and uploads the native SwiftUI OS1 client's macOS target
@@ -39,6 +40,7 @@ defaults:
 
 jobs:
   testflight:
+    if: github.repository_owner == 'tellahq'
     runs-on: macos-26
     timeout-minutes: 45
     env:
@@ -231,7 +233,7 @@ jobs:
 
   cooldown:
     needs: testflight
-    if: ${{ !cancelled() && github.event_name == 'push' }}
+    if: ${{ !cancelled() && github.event_name == 'push' && github.repository_owner == 'tellahq' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

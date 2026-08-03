@@ -2,6 +2,13 @@
   "name": "opensession",
   "version": "0.1.0",
   "private": true,
+  "description": "OpenSession — self-hosted agent session dashboard: run, watch, and steer AI coding sessions from the web UI, Slack, and native clients",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tellahq/opensession.git"
+  },
+  "homepage": "https://opensession.com",
   "bin": {
     "opensession": "scripts/cli.ts"
   },
@@ -34,11 +41,12 @@
     "@pierre/trees": "^1.0.0-beta.4",
     "@rynfar/meridian": "1.51.0",
     "@rynfar/meridian-plugin-opencode-scrub": "0.2.0",
+    "@shikijs/langs": "3.23.0",
+    "@shikijs/themes": "3.23.0",
     "@team-plain/typescript-sdk": "^5.12.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "clsx": "^2.1.1",
-    "codemirror": "^6.0.2",
     "e2b": "2.32.0",
     "emoji-datasource": "^16.0.0",
     "ghostty-web": "^0.4.0",

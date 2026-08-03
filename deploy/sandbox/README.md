@@ -307,6 +307,21 @@ hot-apply — a real restart is needed after changing it.
   WS transport, snapshots, and the sandboxed preview/lifecycle flow. Uses
   only `sbxtest-*` scratch resources and a redirected run journal; safe next
   to the live server.
+- `deploy/sandbox/verify-opencode-sandbox.ts` — the opencode-engine sibling of
+  verify.ts (`bun run deploy/sandbox/verify-opencode-sandbox.ts`): proves the
+  opencode engine runs INSIDE a docker sandbox end-to-end against the real
+  DockerProvider + `backstage-runner` image. Checks the transcript/bridge-config
+  mounts, in-container `opencode` binary resolution, then a real two-turn
+  opencode/anthropic run (haiku, meridian bridge) via `sandbox.launchRun` —
+  session resume across turns, `bks-sbx-*` sandboxId in the run journal,
+  `opencode serve` living only in-container and reaped at exit, the host-visible
+  JSONL transcript, and `opencode_meridian_run` audit events — before
+  `destroy()` teardown. Costs two haiku turns on the meridian bridge; dry-runs
+  (mount/binary checks only) when the account pool or bridge config is
+  absent/disabled. Uses `octest-*` scratch resources and a redirected journal;
+  safe next to the live server. Rebuild the image first if
+  `opencode-runner`/`host.ts` changed — the container runs the baked src, not
+  this checkout.
 - `deploy/sandbox/verify-external-engine.ts` — live “brain on host, hands in
   sandbox” certification for OpenCode OpenAI/Claude models. It creates a disposable
   real WebSocket session, requires all six `opensession-workspace` methods,

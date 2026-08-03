@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# Drain-aware git-pull deploy for OpenSession, run ON the EC2 box by the GitHub
-# Actions workflow (.github/workflows/deploy.yml) via AWS SSM Run Command
-# (AWS-RunShellScript). No inbound ingress, no SSH — GitHub authenticates to AWS
-# with OIDC and calls ssm:SendCommand; the SSM agent on the box runs this.
+# Drain-aware git-pull deploy for OpenSession, run ON the EC2 box by a CI
+# deploy job (this repo ships no such workflow — wire up your own) via AWS SSM
+# Run Command (AWS-RunShellScript). No inbound ingress, no SSH — CI
+# authenticates to AWS with OIDC and calls ssm:SendCommand; the SSM agent on
+# the box runs this.
 #
 # SSM runs commands as root. The checkout and the systemd service are owned by
 # `ubuntu`, so git/bun run as ubuntu and only systemctl runs as root.
@@ -88,7 +89,7 @@ if ! cmp -s "$OPENSESSION_SLICE_SOURCE" "$OPENSESSION_SLICE_PATH"; then
   run_as_service_user env XDG_RUNTIME_DIR="/run/user/$SERVICE_UID" systemctl --user start opensession.slice
 fi
 
-# Tella's Caddy listener binds directly to the host's Tailscale IP. At boot,
+# When Caddy's listener binds directly to the host's Tailscale IP, at boot
 # Caddy can otherwise race tailscaled, fail with EADDRNOTAVAIL, and remain down
 # forever because the package unit has no restart policy. Keep the host drop-in
 # in source control and recover a currently failed Caddy when it first ships.

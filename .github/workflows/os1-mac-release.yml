@@ -1,3 +1,4 @@
+# Tella's client release pipeline — fork and rebrand (see os1-mac/README).
 name: Release OS¹ for Mac
 
 # Builds, signs, notarizes and publishes the vendored Electron shell.
@@ -19,6 +20,7 @@ defaults:
 
 jobs:
   release:
+    if: github.repository_owner == 'tellahq'
     runs-on: macos-26
     timeout-minutes: 45
     steps:

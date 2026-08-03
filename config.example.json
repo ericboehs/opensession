@@ -41,6 +41,7 @@
       "defaultBranch": "main",
       "ghRepo": "acme/widget",
       "default": true,
+      "icon": "assets/widget-icon.png",
       "worktreeSetup": "git submodule update --init --depth 1",
       "depsInstall": "bun install",
       "previewCommand": "/srv/opensession/bin/start-widget-preview",
@@ -96,12 +97,14 @@
     "plain": {
       "enabled": false,
       "mentionHandle": "assistant",
-      "linearTeamKey": "WIDGET"
+      "linearTeamKey": "WIDGET",
+      "workspaceId": "w_01ABCDEFGHJKMNPQRSTVWXYZ00",
+      "apiUrl": "https://core-api.uk.plain.com/graphql/v1"
     },
     "stripe": {"enabled": false},
     "grafana": {"enabled": false},
     "accountHealth": {
-      "notifyUser": "Alice",
+      "notifyUser": "alice",
       "slackChannel": "D012345"
     },
     "seeds": {
@@ -128,9 +131,6 @@
           "mcpServers": []
         }
       ]
-    },
-    "accountHealth": {
-      "notifyUser": "alice"
     }
   }
 }
