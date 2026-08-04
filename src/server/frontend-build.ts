@@ -13,6 +13,8 @@ import { activeRunRecords } from "./run-journal";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { broadcastToAll } from "./ws-hub";
 import { isLocalProfile } from "./profile";
+import { compileTailwindCss } from "./frontend-css";
+import { assembleFrontendShell } from "./frontend-shell";
 import { configuredServer, defaultRepo, githubBotLogins, personaName, plainWorkspaceId, productMark, productName } from "./config";
 
 const g = globalThis as any;
@@ -41,6 +43,10 @@ export async function buildFrontend(): Promise<string> {
 	// Stamped before the build so edits landing mid-build hash as "changed" on
 	// the next boot rather than being masked by a post-build stamp.
 	const inputsHash = frontendInputsHash();
+	// This is mandatory: a bundle without utilities is not a valid frontend. Do
+	// it before producing any assets so failed rebuilds leave the served bundle
+	// untouched.
+	const twCss = await compileTailwindCss();
 	const result = await Bun.build({
 		entrypoints: [`${FRONTEND_SRC}/App.tsx`],
 		outdir: FRONTEND_DIST,
@@ -72,17 +78,17 @@ export async function buildFrontend(): Promise<string> {
 	// .panel-overlay / .sidebar-overlay inset (and a few color-mix percentages),
 	// which knocks out the mobile overlay layer. Bypass it: write the source CSS
 	// unmodified with a content-hashed name and serve it ourselves.
-	let cssSrc = await Bun.file(`${FRONTEND_SRC}/styles/global.css`).text();
+	let cssSrc = "";
+	const legacyCss = `${FRONTEND_SRC}/styles/global.css`;
+	if (existsSync(legacyCss)) cssSrc = await Bun.file(legacyCss).text();
 	// xterm stylesheet (the Shell tab) rides along in the same file, vendored
 	// straight from the installed package so it can't drift from the JS.
-	try {
-		const xtermCss = await Bun.file(
-			`${REPO_ROOT}/node_modules/@xterm/xterm/css/xterm.css`,
-		).text();
-		cssSrc += `\n\n/* ── vendored @xterm/xterm/css/xterm.css (Shell tab) ── */\n${xtermCss}`;
-	} catch {}
+	const xtermCss = await Bun.file(
+		`${REPO_ROOT}/node_modules/@xterm/xterm/css/xterm.css`,
+	).text();
+	cssSrc += `\n\n/* vendored @xterm/xterm/css/xterm.css (Shell tab) */\n${xtermCss}`;
 	const cssHash = Bun.hash(cssSrc).toString(36);
-	const cssName = `global-${cssHash}.css`;
+	const cssName = `app-${cssHash}.css`;
 	// Atomic: a mid-write bundle file has shipped corrupt before ("useState is
 	// not defined") — never serve a torn asset.
 	writeFileAtomic(`${FRONTEND_DIST}/${cssName}`, cssSrc);
@@ -105,38 +111,8 @@ export async function buildFrontend(): Promise<string> {
 		);
 	}
 
-	// Tailwind pass (see styles/tailwind.css). Bun can't compile Tailwind, so
-	// the real compiler runs as a subprocess (~50ms); its lightningcss minifier
-	// doesn't have the var() bug above. Linked after global.css so utilities win
-	// source-order ties against legacy rules. Fail-soft: a broken Tailwind
-	// compile ships the bundle without utilities rather than taking down the
-	// whole server (this build also runs at boot, before Bun.serve).
-	let twName: string | null = null;
-	try {
-		const twTmp = `${FRONTEND_DIST}/.tailwind-build.css`;
-		const twProc = Bun.spawn(
-			[
-				`${REPO_ROOT}/node_modules/.bin/tailwindcss`,
-				"-i",
-				`${FRONTEND_SRC}/styles/tailwind.css`,
-				"-o",
-				twTmp,
-				"--minify",
-			],
-			{ cwd: REPO_ROOT, stdout: "pipe", stderr: "pipe" },
-		);
-		if ((await twProc.exited) !== 0) {
-			throw new Error(await new Response(twProc.stderr).text());
-		}
-		const twCss = await Bun.file(twTmp).text();
-		twName = `tailwind-${Bun.hash(twCss).toString(36)}.css`;
-		writeFileAtomic(`${FRONTEND_DIST}/${twName}`, twCss);
-	} catch (e) {
-		console.error(
-			"[frontend] Tailwind build FAILED — serving without utilities:",
-			e,
-		);
-	}
+	const twName = `tailwind-${Bun.hash(twCss).toString(36)}.css`;
+	writeFileAtomic(`${FRONTEND_DIST}/${twName}`, twCss);
 
 	let indexHtml = await Bun.file(`${FRONTEND_SRC}/index.html`).text();
 	const instance = JSON.stringify({
@@ -153,25 +129,14 @@ export async function buildFrontend(): Promise<string> {
 		.replaceAll('"', "&quot;")
 		.replaceAll("<", "&lt;")
 		.replaceAll(">", "&gt;");
-	indexHtml = indexHtml.replace(
-		"window.__OPENSESSION_INSTANCE__ = window.__OPENSESSION_INSTANCE__ || {};",
-		`window.__OPENSESSION_INSTANCE__ = ${instance};`,
-	);
-	indexHtml = indexHtml
-		.replaceAll("<title>OpenSession</title>", `<title>${htmlProductName}</title>`)
-		.replaceAll('content="OpenSession"', `content="${htmlProductName}"`);
-	indexHtml = indexHtml.replace(
-		'<script type="module" src="./App.tsx"></script>',
-		`<script type="module" crossorigin src="/${entryName}"></script>`,
-	);
-	const twLink = twName
-		? `\n  <link rel="stylesheet" href="/${twName}">`
-		: "";
-	indexHtml = indexHtml.replace(
-		"</head>",
-		`  <link rel="stylesheet" href="/${cssName}">${twLink}\n</head>`,
-	);
-	const version = `${entryName}|${cssName}|${twName ?? "no-tw"}`;
+	indexHtml = assembleFrontendShell(indexHtml, {
+		instance,
+		productName: htmlProductName,
+		entryName,
+		baseCssName: cssName,
+		tailwindCssName: twName,
+	});
+	const version = `${entryName}|${cssName}|${twName}`;
 
 	const store: FrontendBundle = (g.__backstageFrontend ??= {
 		indexHtml: "",
@@ -184,7 +149,7 @@ export async function buildFrontend(): Promise<string> {
 	try {
 		writeFileAtomic(
 			BUNDLE_META,
-			JSON.stringify({ inputsHash, version, indexHtml, assets: [entryName, cssName, twName].filter(Boolean) }),
+			JSON.stringify({ inputsHash, version, indexHtml, assets: [entryName, cssName, twName] }),
 		);
 	} catch {}
 	console.log(
