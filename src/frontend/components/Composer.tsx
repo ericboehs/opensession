@@ -1047,7 +1047,7 @@ export function Composer({
                 type="button"
                 className={cn(
                   "composer-send composer-stop inline-flex size-8 shrink-0 items-center justify-center rounded-full border-0 bg-red text-[15px] leading-none font-semibold text-white transition-[filter,transform] duration-150 hover:not-disabled:scale-105 hover:not-disabled:brightness-110 disabled:cursor-default disabled:opacity-35 max-[720px]:size-10",
-                  minimized && "max-[720px]:order-4",
+                  minimized && "max-[720px]:order-4 max-[720px]:p-1 max-[720px]:bg-clip-content",
                 )}
                 {...tapProps(() => onStop())}
                 disabled={disabled}
@@ -1095,6 +1095,7 @@ export function Composer({
                       : busy && !noteMode
                         ? "composer-send-queue-main border-2 border-accent bg-raised text-accent"
                         : "",
+                    minimized && "max-[720px]:p-1 max-[720px]:bg-clip-content max-[720px]:[&_svg]:size-5",
                   )}
                   {...tapProps(() =>
                     fireSend(onSend, steerSend ? { steer: true } : undefined),
