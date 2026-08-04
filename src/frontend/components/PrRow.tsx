@@ -99,7 +99,7 @@ export function PrRow({
 			<span className="sidebar-item-title min-w-0 flex-1 truncate text-item-title font-medium leading-[1.35] text-dim max-[720px]:text-[16px]">{item.pr.title}</span>
 			{!isPhone && (
 				<span
-					className="sidebar-ws-time ml-auto min-w-[34px] shrink-0 text-right text-label text-faint"
+					className="sidebar-ws-time ml-auto min-w-[34px] shrink-0 text-right text-meta text-faint"
 					aria-label={new Date(item.pr.updatedAt).toLocaleString()}
 				>
 					{shortTime(item.pr.updatedAt)}

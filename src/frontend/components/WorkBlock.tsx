@@ -76,7 +76,7 @@ export const WorkBlock = React.memo(function WorkBlock({
           <span className="flex-shrink-0 text-meta text-red/80">· {failures} failed</span>
         )}
         {!expanded && last && (
-		<span className="min-w-0 truncate font-mono text-meta text-faint">
+          <span className="min-w-0 truncate text-meta text-faint">
             {toolDisplayName(last.toolName)}:{" "}
             {toolSummary(last.toolName || "Tool", last.toolInput, last.content, pathRoots)}
           </span>

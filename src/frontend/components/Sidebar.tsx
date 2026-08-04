@@ -230,13 +230,13 @@ const MOBILE_SHEET_ITEM_CLASS =
 	"mobile-sheet-item flex w-full items-center gap-[13px] rounded-md border-0 bg-transparent px-3.5 py-[15px] text-left text-[16px] text-fg active:bg-hover-strong [&_svg]:shrink-0 [&_svg]:text-faint";
 const HOVERCARD_HEAD_CLASS = "hovercard-head flex min-w-0 items-center gap-[7px]";
 const HOVERCARD_BRANCH_CLASS =
-	"hovercard-branch min-w-0 flex-1 truncate text-label text-dim";
+	"hovercard-branch min-w-0 flex-1 truncate text-meta text-dim";
 const HOVERCARD_TITLE_CLASS =
 	"hovercard-title mt-[5px] text-control-label font-semibold leading-[1.3]";
 const HOVERCARD_CALLOUT_CLASS =
-	"hovercard-callout mt-[7px] rounded-sm bg-accent-soft px-2 py-[5px] text-label text-dim";
+	"hovercard-callout mt-[7px] rounded-sm bg-accent-soft px-2 py-[5px] text-meta text-dim";
 const HOVERCARD_ROWS_CLASS = "hovercard-rows mt-[9px] flex flex-col gap-[3px]";
-const HOVERCARD_ROW_CLASS = "hovercard-row flex gap-2 text-label leading-[1.35]";
+const HOVERCARD_ROW_CLASS = "hovercard-row flex gap-2 text-meta leading-[1.35]";
 
 type SwipeAction = "archive" | "star";
 type SwipeState = { key: string; offset: number; action?: SwipeAction };
@@ -400,7 +400,7 @@ function SupportRow({
 				<span className={SIDEBAR_TITLE_CLASS}>{label}</span>
 				{!isPhone && t.statusChangedAt && (
 					<span
-						className="sidebar-ws-time ml-auto min-w-[34px] shrink-0 text-right text-label text-faint"
+						className="sidebar-ws-time ml-auto min-w-[34px] shrink-0 text-right text-meta text-faint"
 						aria-label={new Date(t.statusChangedAt).toLocaleString()}
 					>
 						{shortTime(t.statusChangedAt)}
@@ -552,7 +552,7 @@ function FeedRow({
 				</span>
 				{!isPhone && ts && (
 					<span
-						className="sidebar-ws-time ml-auto min-w-[34px] shrink-0 text-right text-label text-faint"
+						className="sidebar-ws-time ml-auto min-w-[34px] shrink-0 text-right text-meta text-faint"
 						aria-label={new Date(ts).toLocaleString()}
 					>
 						{shortTime(ts)}
@@ -3726,7 +3726,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 											{stripPrTitlePrefix(r.name)}
 										</span>
 										{!isPhone && r.lastActivity && (
-											<span className="sidebar-ws-time ml-auto min-w-[34px] shrink-0 text-right text-label text-faint">
+											<span className="sidebar-ws-time ml-auto min-w-[34px] shrink-0 text-right text-meta text-faint">
 												{shortTime(r.lastActivity)}
 											</span>
 										)}
@@ -7489,7 +7489,7 @@ function SessionCardBody({ session: s }: { session: UnifiedSession }) {
 
 			<div className={HOVERCARD_TITLE_CLASS}>{s.title}</div>
 
-			<div className={`hovercard-state mt-[3px] text-label font-medium hovercard-state-${state.tone}`}>
+			<div className={`hovercard-state mt-[3px] text-meta font-medium hovercard-state-${state.tone}`}>
 				{state.label}
 			</div>
 
@@ -8077,7 +8077,7 @@ function WsCardBody({
 					</CardLink>
 				)}
 				{prStatusBits.length > 0 && (
-					<span className="min-w-0 truncate text-label text-faint">
+					<span className="min-w-0 truncate text-meta text-faint">
 						{prStatusBits.join(" · ")}
 					</span>
 				)}
@@ -8174,7 +8174,7 @@ function WsMobileSheet({
 				<div className="px-2 pb-2.5 pt-1">
 					<WsOverviewInfo row={row} ov={ov} />
 					{(prStatusBits.length > 0 || row.lastActivity) && (
-						<div className="mt-2 flex min-w-0 items-center gap-2 text-label text-faint">
+						<div className="mt-2 flex min-w-0 items-center gap-2 text-meta text-faint">
 							{prChat?.prNumber != null && (
 								<span
 									className={`hovercard-mono shrink-0 hovercard-pr-${prTone(prChat)}`}

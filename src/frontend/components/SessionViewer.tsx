@@ -5199,12 +5199,12 @@ export function SessionViewer({
 											? ({ close }) => (
 													<button
 														type="button"
-														className="composer-menu-item"
+														className="composer-menu-item flex w-full cursor-pointer items-center gap-[9px] rounded-md border-0 bg-transparent px-[9px] py-[7px] text-left text-supporting text-fg hover:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)]"
 														disabled={promoting}
 														title="Ask mode — this chat can read the code but not change it"
 														onClick={() => void handlePromote(close)}
 													>
-														<span className="composer-menu-icon">
+														<span className="composer-menu-icon inline-flex w-5 items-center justify-center text-control-label text-dim">
 															<IconEye size={22} />
 														</span>
 														{promoting
