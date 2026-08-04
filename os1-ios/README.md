@@ -41,7 +41,11 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   footer's file chip opens that file's diff for the turn. Team notes (the
   session's chat channel, `session:<id>`) interleave into the transcript by
   the time they were written — the same human-to-human asides the web viewer
-  shows, which the agent never sees.
+  shows, which the agent never sees. A published walkthrough (demo recording,
+  writeup, before/after stills) renders as a card under the turn that
+  published it. `bks-…` session ids in agent output become links labelled with
+  the referenced session's title, and tapping one opens that session in the
+  app (falling back to the web app for a session this client hasn't polled).
   Long answers clamp with `Show full message · 12 KB` (wire-clamped entries
   refetch on demand), system events are toned by severity, and a floating pill
   offers the way back down — reading `New messages` when output arrived while
@@ -114,6 +118,8 @@ OS1/
     ToolPresentation.swift   Canonical tool names, families, summaries, ±lines
     SubagentTranscript.swift A Task call's sub-agent conversation payload
     SessionNote.swift        A team note on the session's chat channel
+    SessionWalkthrough.swift The published demo carried on the session row
+    SessionLinks.swift       `bks-…` ids in output -> in-app links + titles
     PrDetails.swift          PR panel payload
     SettingsModels.swift     Settings payloads (tools/personal/workspace)
   Networking/
@@ -139,6 +145,7 @@ OS1/
     ToolCallRow.swift        Tool rows, bespoke bodies, unified-diff rendering
     SubagentView.swift       A Task call's sub-agent transcript, in a sheet
     NoteBubble.swift         Team note (text, @mentions, images) in the transcript
+    WalkthroughCard.swift    Published walkthrough: demo video, writeup, stills
     MarkdownBody.swift       Streaming/durable markdown rendering
     AskQuestionCard.swift    Options + free text answer
     PrPanel.swift            Read-only pull-request panel

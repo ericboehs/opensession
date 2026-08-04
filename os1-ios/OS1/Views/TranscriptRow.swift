@@ -46,6 +46,8 @@ struct TranscriptRow: View {
             TurnFooterView(footer: footer)
         case .note(let note):
             NoteBubble(note: note)
+        case .walkthrough(let walkthrough):
+            WalkthroughCard(walkthrough: walkthrough)
         }
     }
 }

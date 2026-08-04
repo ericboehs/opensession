@@ -56,9 +56,15 @@ struct SessionView: View {
     /// read releases the pin so streams don't yank the reader back down.
     @State private var pinnedToBottom = true
 
-    /// How close to the bottom (pt) still counts as pinned — forgiving enough
-    /// to survive keyboard/inset transitions and lazy row settling.
-    private let pinTolerance: CGFloat = 80
+    /// How close to the bottom (pt) still counts as pinned.
+    ///
+    /// `scrollToBottom` aligns the LAST BLOCK's bottom edge with the visible
+    /// bottom, which deliberately leaves the transcript's trailing padding
+    /// (the composer's scrim run-up) below the fold — so "as far down as this
+    /// view ever scrolls itself" is already that far from the content's end.
+    /// The tolerance has to clear it, plus slack for keyboard/inset
+    /// transitions and lazy rows settling.
+    private var pinTolerance: CGFloat { OS1VisualStyle.composerScrimRunUp + 60 }
 
     /// Model/effort catalog for the toolbar picker; fetched on first open.
     @State private var catalog: ModelCatalog?
@@ -163,7 +169,14 @@ struct SessionView: View {
                     // visibility) and it costs a state write only when the
                     // Bool flips, not per scroll tick.
                     .onScrollGeometryChange(for: Bool.self) { geometry in
-                        geometry.contentOffset.y + geometry.containerSize.height
+                        // `visibleRect`, NOT `contentOffset + containerSize`:
+                        // containerSize excludes the content insets while the
+                        // offset and content size include them, so that sum
+                        // reads a full inset-height short of the bottom (measured
+                        // on an iPhone: 257pt of it, against an 80pt tolerance —
+                        // which is why the return pill used to sit there while
+                        // the reader was already at the latest message).
+                        geometry.visibleRect.maxY
                             >= geometry.contentSize.height
                                 + geometry.contentInsets.bottom - pinTolerance
                     } action: { _, isNearBottom in

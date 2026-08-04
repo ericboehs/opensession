@@ -36,6 +36,9 @@ struct Session: Identifiable, Decodable, Equatable, Hashable {
     var startedBy: String?
     var automation: AutomationFlag?
     var attachedRepos: [AttachedRepo]?
+    /// The agent-published demo of a user-visible change, rendered inline in
+    /// the transcript where it was published.
+    var walkthrough: SessionWalkthrough?
     /// Local-only marker for a just-created row that the sessions endpoint has
     /// not returned yet. Its id may already be real after create resolves.
     var isOptimisticPlaceholder: Bool?

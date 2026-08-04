@@ -307,7 +307,11 @@ final class SessionViewModel {
     /// Keep its loaded transcript while refreshing title/worktree/PR metadata.
     func updateSessionSnapshot(_ session: Session) {
         guard session.id == self.session.id else { return }
+        let hadWalkthrough = self.session.walkthrough
         self.session = session
+        // The walkthrough rides on the session row, not the transcript, so a
+        // newly published one only reaches the blocks through a rebuild.
+        if session.walkthrough != hadWalkthrough { rebuildDisplayItems() }
         guard stopped else { return }
 
         if let running = session.isRunning {
@@ -924,7 +928,8 @@ final class SessionViewModel {
             from: items,
             live: isRunning || isStreaming,
             worktreeDir: session.worktreeDir,
-            notes: notes
+            notes: notes,
+            walkthrough: session.walkthrough
         )
     }
 

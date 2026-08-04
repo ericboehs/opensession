@@ -19,6 +19,8 @@ enum TranscriptBlock: Identifiable, Equatable {
     case footer(TurnFooter)
     /// A team note, interleaved by the time it was written.
     case note(SessionNote)
+    /// The agent-published walkthrough, at the point it was published.
+    case walkthrough(SessionWalkthrough)
 
     var id: String {
         switch self {
@@ -27,6 +29,7 @@ enum TranscriptBlock: Identifiable, Equatable {
         case .work(let turn): turn.id
         case .footer(let footer): footer.id
         case .note(let note): "note:\(note.id)"
+        case .walkthrough(let walkthrough): "walkthrough:\(walkthrough.publishedAt)"
         }
     }
 
@@ -46,8 +49,9 @@ enum TranscriptBlock: Identifiable, Equatable {
         case .tool(let item): [item.use?.id, item.result?.id].compactMap { $0 }
         case .work(let turn): turn.items.flatMap(\.entryIds)
         case .footer(let footer): [footer.entryId]
-        // A note is not a transcript entry — it can never be an anchor.
-        case .note: []
+        // Neither a note nor a walkthrough is a transcript entry, so neither
+        // can ever be a scroll anchor.
+        case .note, .walkthrough: []
         }
     }
 }
@@ -224,7 +228,8 @@ enum TranscriptGrouping {
         from items: [SessionViewModel.DisplayItem],
         live: Bool,
         worktreeDir: String?,
-        notes: [SessionNote] = []
+        notes: [SessionNote] = [],
+        walkthrough: SessionWalkthrough? = nil
     ) -> [TranscriptBlock] {
         var blocks: [TranscriptBlock] = []
         var turn: [TurnItem] = []
@@ -317,7 +322,56 @@ enum TranscriptGrouping {
             }
             if isLast { flush(isTrailing: true) }
         }
-        return interleave(notes, into: blocks)
+        return place(walkthrough, into: interleave(notes, into: blocks))
+    }
+
+    /// Drop the walkthrough card straight after the turn that published it —
+    /// that's where the reader was when it appeared, and it reads as the
+    /// result of that work rather than a floating attachment. When the
+    /// publishing call has been trimmed out of the loaded window, fall back to
+    /// its publish time, and to the end of the transcript if even that is
+    /// unusable.
+    private static func place(
+        _ walkthrough: SessionWalkthrough?, into blocks: [TranscriptBlock]
+    ) -> [TranscriptBlock] {
+        guard let walkthrough else { return blocks }
+        var out = blocks
+        if let publishing = blocks.lastIndex(where: publishesWalkthrough) {
+            // Past the turn's answer and footer, not straight after the fold:
+            // the card summarizes the work, so splitting the turn from the
+            // reply it ended with would read as an interruption.
+            var at = publishing + 1
+            if at < blocks.count, case .message = blocks[at] { at += 1 }
+            if at < blocks.count, case .footer = blocks[at] { at += 1 }
+            out.insert(.walkthrough(walkthrough), at: at)
+            return out
+        }
+        guard let published = walkthrough.publishedDate else {
+            out.append(.walkthrough(walkthrough))
+            return out
+        }
+        let after = blocks.firstIndex { (blockTime($0) ?? .distantPast) > published }
+        out.insert(.walkthrough(walkthrough), at: after ?? blocks.count)
+        return out
+    }
+
+    /// Whether this block contains the `publish_walkthrough` tool call, under
+    /// whatever name the engine gave it (`opensession-walkthrough_publish…`,
+    /// `mcp__…__publish_walkthrough`).
+    private static func publishesWalkthrough(_ block: TranscriptBlock) -> Bool {
+        func isPublish(_ item: ToolCallItem) -> Bool {
+            let name = item.use?.toolName ?? item.presentation.canonical
+            return name.hasSuffix("publish_walkthrough")
+        }
+        switch block {
+        case .tool(let item): return isPublish(item)
+        case .work(let turn):
+            return turn.items.contains { item in
+                if case .tool(let call) = item { return isPublish(call) }
+                return false
+            }
+        default: return false
+        }
     }
 
     /// Drop each note after the last block written before it.
@@ -355,6 +409,7 @@ enum TranscriptGrouping {
         case .work(let turn): turn.items.last.flatMap(endTimestamp)
         case .footer(let footer): footer.timestamp
         case .note(let note): note.date
+        case .walkthrough(let walkthrough): walkthrough.publishedDate
         }
     }
 

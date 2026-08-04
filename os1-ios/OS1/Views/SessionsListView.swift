@@ -90,6 +90,16 @@ struct SessionsListView: View {
 
     var body: some View {
         navigationContainer
+            // Session-id links in agent output (SessionLinks) are ordinary
+            // markdown links on a private scheme; catching them here — above
+            // the navigation container — is what lets a transcript push the
+            // worker it spawned instead of leaving the id as dead text.
+            .environment(\.openURL, OpenURLAction { url in
+                guard let id = SessionLinks.sessionId(from: url) else {
+                    return .systemAction
+                }
+                return openSessionLink(id: id)
+            })
             .task {
                 viewModel.startPolling()
             }
@@ -337,6 +347,26 @@ struct SessionsListView: View {
                 .glassSurface(in: Capsule())
                 .padding(.bottom, 8)
         }
+    }
+
+    /// Follow a `bks-…` link from a transcript. A session we're already
+    /// polling opens in place; one we've never seen (archived away, another
+    /// server, deleted) can't be pushed, so it hands off to the web app rather
+    /// than dropping the tap silently.
+    private func openSessionLink(id: String) -> OpenURLAction.Result {
+        if let session = viewModel.sessions.first(where: { $0.id == id })
+            ?? viewModel.archivedSessions.first(where: { $0.id == id }) {
+            #if os(macOS)
+            selectedSessionID = session.id
+            #else
+            path.append(session)
+            #endif
+            return .handled
+        }
+        guard let base = ServerConfig.shared.baseURL else { return .handled }
+        return .systemAction(
+            base.appendingPathComponent("session").appendingPathComponent(id)
+        )
     }
 
     /// Dev convenience for simulator runs: OS1_OPEN_SESSION=<id> jumps straight

@@ -64,12 +64,21 @@ final class SessionsListViewModel {
         sessionsRevision += 1
     }
 
-    /// Group a list off the main actor, ready to publish with it.
+    /// Group a list off the main actor, ready to publish with it. The session
+    /// titles that label `bks-…` links in transcripts are built in the same
+    /// detached pass — it walks every row already, and doing it on the main
+    /// actor would put another thousands-of-rows loop in the 5s poll.
     private static func groupedOffMain(
         _ sessions: [Session], workspaceNames names: [String: String]
-    ) async -> [SidebarWorkspace] {
+    ) async -> (rows: [SidebarWorkspace], titles: [String: String]) {
         await Task.detached(priority: .userInitiated) {
-            sidebarRows(in: sessions, workspaceNames: names)
+            var titles: [String: String] = [:]
+            titles.reserveCapacity(sessions.count)
+            for session in sessions {
+                let title = session.displayTitle
+                if !title.isEmpty { titles[session.id] = title }
+            }
+            return (sidebarRows(in: sessions, workspaceNames: names), titles)
         }.value
     }
 
@@ -486,10 +495,11 @@ final class SessionsListViewModel {
                 // Group before publishing, not after: the assignment wakes
                 // every observing view, so a grouping that starts afterwards
                 // always loses the race to the body that needs it.
-                let rows = await Self.groupedOffMain(
+                let grouped = await Self.groupedOffMain(
                     next, workspaceNames: workspaceNames
                 )
-                setSessions(next, rows: rows)
+                SessionLinks.register(titles: grouped.titles)
+                setSessions(next, rows: grouped.rows)
             }
             if archivedNext != archivedSessions {
                 archivedSessions = archivedNext

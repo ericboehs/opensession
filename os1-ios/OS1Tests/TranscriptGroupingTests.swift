@@ -277,6 +277,135 @@ final class TranscriptGroupingTests: XCTestCase {
         )
         XCTAssertEqual(blocks.first?.entryIds, [])
     }
+
+    // MARK: - Walkthroughs
+
+    private func walkthrough(at iso: String) -> SessionWalkthrough {
+        SessionWalkthrough(summary: "what changed", publishedAt: iso)
+    }
+
+    func testAWalkthroughLandsRightAfterTheTurnThatPublishedIt() {
+        let items = TranscriptGrouping.displayItems(from: [
+            TranscriptEntry(
+                id: "a1", type: "assistant", content: "Recording it.",
+                timestamp: "2026-01-01T00:00:00Z"
+            ),
+            toolUse("t1", name: "opensession-walkthrough_publish_walkthrough"),
+            toolResult("t1", text: "published"),
+            TranscriptEntry(
+                id: "a2", type: "assistant", content: "Shipped.",
+                timestamp: "2026-01-01T00:01:00Z"
+            ),
+            TranscriptEntry(
+                id: "a3", type: "assistant", content: "Anything else?",
+                timestamp: "2026-01-01T00:02:00Z"
+            ),
+        ])
+        let blocks = TranscriptGrouping.blocks(
+            from: items,
+            live: false,
+            worktreeDir: nil,
+            // A publish time hours later must not win over the publishing
+            // call: where the reader was when it appeared is what matters.
+            walkthrough: walkthrough(at: "2026-01-01T09:00:00Z")
+        )
+        // The turn folds to one block keyed on its first item; its final
+        // message escapes the fold and carries the footer.
+        XCTAssertEqual(
+            blocks.map(\.id),
+            ["a1", "a3", "a3:footer", "walkthrough:2026-01-01T09:00:00Z"]
+        )
+    }
+
+    func testAWalkthroughWhoseCallWasTrimmedFallsBackToItsPublishTime() {
+        let items = TranscriptGrouping.displayItems(from: [
+            TranscriptEntry(
+                id: "a1", type: "assistant", content: "Earlier.",
+                timestamp: "2026-01-01T00:00:00Z"
+            ),
+            TranscriptEntry(
+                id: "a2", type: "assistant", content: "Later.",
+                timestamp: "2026-01-01T02:00:00Z"
+            ),
+        ])
+        let blocks = TranscriptGrouping.blocks(
+            from: items,
+            live: false,
+            worktreeDir: nil,
+            walkthrough: walkthrough(at: "2026-01-01T01:00:00Z")
+        )
+        XCTAssertEqual(
+            blocks.map(\.id).filter { !$0.hasSuffix(":footer") },
+            ["a1", "walkthrough:2026-01-01T01:00:00Z", "a2"]
+        )
+    }
+
+    func testAWalkthroughIsNotAScrollAnchor() {
+        let blocks = TranscriptGrouping.blocks(
+            from: [],
+            live: false,
+            worktreeDir: nil,
+            walkthrough: walkthrough(at: "2026-01-01T00:00:00Z")
+        )
+        XCTAssertEqual(blocks.first?.entryIds, [])
+    }
+}
+
+/// Session ids in agent output become links you can follow. The rewrite runs
+/// over every rendered message, so its blind spots (code, URLs) matter more
+/// than its hits.
+@MainActor
+final class SessionLinkTests: XCTestCase {
+    private let id = "bks-019fcc8f-b3a7-7000-b4e7-b71681d320cd"
+
+    override func setUp() {
+        SessionLinks.register(titles: [:])
+    }
+
+    func testACodespannedIdBecomesALink() {
+        SessionLinks.register(titles: [id: "Improve iOS chat UI"])
+        XCTAssertEqual(
+            SessionLinks.linkify("Delegated to `\(id)` just now."),
+            "Delegated to [Improve iOS chat UI](os1session:\(id)) just now."
+        )
+    }
+
+    func testAnUnknownIdIsLabelledByItsShortenedSelf() {
+        XCTAssertEqual(
+            SessionLinks.linkify("see \(id) for details"),
+            "see [bks-019fcc8f…](os1session:\(id)) for details"
+        )
+    }
+
+    func testCodeBlocksAreLeftAlone() {
+        let markdown = """
+        ```sh
+        os send \(id)
+        ```
+        """
+        XCTAssertEqual(SessionLinks.linkify(markdown), markdown)
+    }
+
+    func testAnIdInsideAURLIsLeftAlone() {
+        // Rewriting a link target would break the link it lives in.
+        let markdown = "[the run](https://os.tella.dev/session/\(id))"
+        XCTAssertEqual(SessionLinks.linkify(markdown), markdown)
+    }
+
+    func testTextWithoutAnIdIsReturnedUntouched() {
+        let markdown = "Nothing to see here.\n\n- a list\n- of things"
+        XCTAssertEqual(SessionLinks.linkify(markdown), markdown)
+    }
+
+    func testOnlyOurOwnSchemeResolvesToASession() {
+        XCTAssertEqual(
+            SessionLinks.sessionId(from: URL(string: "os1session:\(id)")!),
+            id
+        )
+        XCTAssertNil(
+            SessionLinks.sessionId(from: URL(string: "https://os.tella.dev/x")!)
+        )
+    }
 }
 
 /// Tool identity: the collapsed summary line is what people read 95% of the

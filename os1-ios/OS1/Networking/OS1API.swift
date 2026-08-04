@@ -105,6 +105,26 @@ enum OS1API {
         try await getData("/api/chat/image/\(id)")
     }
 
+    /// A server-side media file (walkthrough stills and demo videos are staged
+    /// as absolute paths). The route is path-scoped server-side; this only
+    /// spells the URL, which the video player needs as a URL rather than data.
+    static func mediaURL(path: String) -> URL? {
+        guard let base = ServerConfig.shared.baseURL,
+              var components = URLComponents(
+                  url: base.appendingPathComponent("media"),
+                  resolvingAgainstBaseURL: false
+              )
+        else { return nil }
+        components.queryItems = [URLQueryItem(name: "path", value: path)]
+        return components.url
+    }
+
+    /// Bytes of a staged media file, for the stills.
+    static func media(path: String) async throws -> Data {
+        guard let url = mediaURL(path: path) else { throw APIError.badURL }
+        return try await responseData(for: ServerConfig.shared.authorizedRequest(url))
+    }
+
     /// Full content for an entry the WS delivered clamped.
     static func fullEntryContent(sessionId: String, entryId: String) async throws -> String {
         struct EntryResponse: Decodable { let content: String }

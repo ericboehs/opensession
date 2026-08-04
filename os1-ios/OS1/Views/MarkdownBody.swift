@@ -20,7 +20,10 @@ struct MarkdownBody: View {
 
     var body: some View {
         SwiftStreamingMarkdown.MarkdownView(
-            text: text,
+            // Session ids become links here rather than in the display pass:
+            // the entry's own text stays the raw markdown, so copying a
+            // message still yields what the agent actually wrote.
+            text: SessionLinks.linkify(text),
             config: dimmed ? .os1Dim : .os1Static
         )
         .frame(maxWidth: .infinity, alignment: .leading)
