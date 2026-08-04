@@ -44,12 +44,43 @@ export interface GitStatusInfo {
   /**
    * This dir is a repo's shared checkout rather than a per-session worktree
    * (OpenSession's own repo works this way — every session edits one tree on
-   * the default branch). `uncommittedFiles` is then the union of every
-   * concurrent session's in-flight edits and says nothing about this session,
-   * so surfaces that present it as "your" work must not show it: offering to
-   * commit that count means committing other sessions' half-finished work.
+   * the default branch), so the working tree also holds other sessions' edits.
+   * `uncommittedFiles` is then scoped to the files this session wrote, and
+   * anything that commits must name paths rather than stage the tree.
    */
   sharedCheckout: boolean;
+  /**
+   * The dirty files, when the count is scoped to this session (capped). Lets
+   * the UI commit exactly these paths instead of everything in the tree.
+   */
+  uncommittedPaths?: string[];
+}
+
+/** Most paths a scoped status reports back; enough to name them in a prompt. */
+const MAX_SCOPED_PATHS = 40;
+
+/**
+ * Paths out of `git status --porcelain`: two status columns, a space, then the
+ * path — quoted when it has odd characters, and `old -> new` for a rename, of
+ * which only the new path exists on disk.
+ */
+export function porcelainPaths(status: string): string[] {
+  const out: string[] = [];
+  for (const line of status.split("\n")) {
+    if (line.length < 4) continue;
+    let path = line.slice(3);
+    const arrow = path.indexOf(" -> ");
+    if (arrow >= 0) path = path.slice(arrow + 4);
+    if (path.startsWith('"') && path.endsWith('"')) {
+      try {
+        path = JSON.parse(path) as string;
+      } catch {
+        path = path.slice(1, -1);
+      }
+    }
+    if (path) out.push(path);
+  }
+  return out;
 }
 
 const FETCH_TTL = 90_000;
@@ -70,6 +101,12 @@ export async function getGitStatus(
   dir: string,
   baseBranch = "main",
   exec?: WorkspaceExec,
+  /**
+   * Repo-relative paths this session wrote (sessionTouchedPaths). Pass them for
+   * a shared checkout, where the working tree is everyone's: the dirty count is
+   * then this session's own files rather than the tree's.
+   */
+  ownPaths?: string[],
 ): Promise<GitStatusInfo> {
   // Fire-and-forget: the fetch is only there to keep origin/<base> current for
   // the NEXT poll. Awaiting it made every TTL-expired status call block on a
@@ -111,10 +148,20 @@ export async function getGitStatus(
       ) || 0;
   } catch {}
 
+  const sharedCheckout = isSharedCheckoutDir(dir);
   let uncommittedFiles = 0;
+  let uncommittedPaths: string[] | undefined;
   try {
     const status = await gitText(dir, ["status", "--porcelain"], exec);
-    uncommittedFiles = status.split("\n").filter((l) => l.trim()).length;
+    const paths = porcelainPaths(status);
+    if (ownPaths) {
+      const own = new Set(ownPaths);
+      const mine = paths.filter((p) => own.has(p));
+      uncommittedFiles = mine.length;
+      uncommittedPaths = mine.slice(0, MAX_SCOPED_PATHS);
+    } else {
+      uncommittedFiles = paths.length;
+    }
   } catch {}
 
   return {
@@ -125,7 +172,8 @@ export async function getGitStatus(
     behindBase,
     baseBranch,
     uncommittedFiles,
-    sharedCheckout: isSharedCheckoutDir(dir),
+    sharedCheckout,
+    uncommittedPaths,
   };
 }
 

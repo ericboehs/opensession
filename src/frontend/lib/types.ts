@@ -650,11 +650,13 @@ export interface GitStatusInfo {
 	baseBranch: string;
 	uncommittedFiles: number;
 	/**
-	 * The session edits a repo's shared checkout, not its own worktree, so
-	 * `uncommittedFiles` counts every concurrent session's in-flight edits —
-	 * never attribute it to this session or offer to commit it.
+	 * The session edits a repo's shared checkout rather than its own worktree,
+	 * so the tree also holds other sessions' edits: `uncommittedFiles` is scoped
+	 * to this session's own files, and committing must name paths.
 	 */
 	sharedCheckout?: boolean;
+	/** The dirty files themselves, when the count is scoped (capped). */
+	uncommittedPaths?: string[];
 }
 
 export type WSClientMessage =

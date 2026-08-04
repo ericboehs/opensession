@@ -1,4 +1,5 @@
 import { repoLabel } from "../lib/repo-label";
+import { commitPrompt } from "../lib/commit-prompt";
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import type {
   GitStatusInfo,
@@ -2748,9 +2749,7 @@ function gitTasks(
       tone: "blue",
       run: "push",
     });
-  // Not on a shared checkout: the count is every session's edits, so "Commit"
-  // would ask this one to commit the others' in-flight work.
-  if (git && git.uncommittedFiles > 0 && !git.sharedCheckout)
+  if (git && git.uncommittedFiles > 0)
     tasks.push({
       key: "dirty",
       label: `${git.uncommittedFiles} uncommitted file${git.uncommittedFiles === 1 ? "" : "s"}`,
@@ -2758,7 +2757,7 @@ function gitTasks(
       tone: "yellow",
       run: {
         label: "commit the changes",
-        prompt: "Commit and push the current work in the worktree.",
+        prompt: commitPrompt(git.uncommittedFiles, git.sharedCheckout, git.uncommittedPaths),
       },
     });
   return tasks;

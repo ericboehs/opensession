@@ -3,7 +3,7 @@ import { $ } from "bun";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gitPull } from "./git-status";
+import { gitPull, porcelainPaths } from "./git-status";
 
 const roots: string[] = [];
 
@@ -92,5 +92,27 @@ describe("gitPull from base", () => {
     });
     expect(await git(repo, "rev-parse", "HEAD")).toBe(before);
     expect(await git(repo, "status", "--porcelain")).toContain("shared.txt");
+  });
+});
+
+describe("porcelainPaths", () => {
+  test("reads the path past both status columns, staged or not", () => {
+    expect(porcelainPaths("M  src/a.ts\n?? src/b.ts\n M src/c.ts")).toEqual([
+      "src/a.ts",
+      "src/b.ts",
+      "src/c.ts",
+    ]);
+  });
+
+  test("takes a rename's new path — the old one is gone from disk", () => {
+    expect(porcelainPaths("R  src/old.ts -> src/new.ts")).toEqual(["src/new.ts"]);
+  });
+
+  test("unquotes a path git had to escape", () => {
+    expect(porcelainPaths('?? "src/a b\\u00e9.ts"')).toEqual(["src/a bé.ts"]);
+  });
+
+  test("ignores blank and truncated lines", () => {
+    expect(porcelainPaths("\n\nM  src/a.ts\nM\n")).toEqual(["src/a.ts"]);
   });
 });
