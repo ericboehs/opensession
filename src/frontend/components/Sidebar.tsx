@@ -212,14 +212,14 @@ const SIDEBAR_ITEM_CLASS =
 const SIDEBAR_WS_ROW_CLASS =
 	"sidebar-ws-row group relative flex items-center gap-[9px]";
 const SIDEBAR_GROUP_HEADER_CLASS =
-	"sidebar-group-header group flex w-full items-center gap-[9px] rounded-md border-0 bg-transparent px-1.5 py-1 pl-2.5 text-left text-body font-medium text-dim transition-colors hover:bg-hover hover:text-fg max-[720px]:pl-2.5";
+	"sidebar-group-header group";
 const SIDEBAR_RAIL_CLASS =
 	"sidebar-rail relative flex size-[22px] shrink-0 items-center justify-center";
 const SIDEBAR_TITLE_CLASS =
 	"sidebar-item-title min-w-0 flex-1 truncate text-item-title font-medium leading-[1.35] text-dim max-[720px]:text-[16px]";
-const SIDEBAR_GROUP_NAME_CLASS = "sidebar-group-name min-w-0 truncate text-left";
+const SIDEBAR_GROUP_NAME_CLASS = "sidebar-group-name";
 const SIDEBAR_GROUP_COUNT_CLASS =
-	"sidebar-group-count ml-auto shrink-0 pr-1 text-meta font-medium text-faint";
+	"sidebar-group-count";
 const SIDEBAR_GROUP_CHEVRON_CLASS =
 	"sidebar-group-chevron ml-auto shrink-0 text-faint opacity-0 transition-[transform,opacity] duration-150 group-hover:opacity-100 group-hover:text-fg";
 const SIDEBAR_ACTION_CLASS =
@@ -3931,6 +3931,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					className={cn(
 						SIDEBAR_ITEM_CLASS,
 						SIDEBAR_WS_ROW_CLASS,
+						inbox && "sidebar-item--twoline flex-wrap gap-y-0.5 py-[7px]",
 						active && "sidebar-item-selected !bg-hover-strong",
 						waiting && "sidebar-item-waiting !bg-blue-soft",
 						row.unread && "sidebar-item-unread",
@@ -4042,7 +4043,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						// Same class as a session row's title, so workspace rows pick up
 						// the shared type scale (incl. the phone bump) and the
 						// selected/waiting/unread emphasis from the row's own classes.
-						className={SIDEBAR_TITLE_CLASS}
+						// Inbox rows flex-wrap, where an intrinsic-width title would push
+						// the trailing ticker/time onto a wrapped line instead of
+						// shrinking — flex-1 keeps the first line a single line.
+						className={cn(SIDEBAR_TITLE_CLASS, inbox && "flex-1")}
 						onDoubleClick={(e) => {
 							e.stopPropagation();
 							if (row.workspace) {
