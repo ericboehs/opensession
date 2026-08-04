@@ -649,6 +649,12 @@ export interface GitStatusInfo {
 	behindBase: number;
 	baseBranch: string;
 	uncommittedFiles: number;
+	/**
+	 * The session edits a repo's shared checkout, not its own worktree, so
+	 * `uncommittedFiles` counts every concurrent session's in-flight edits —
+	 * never attribute it to this session or offer to commit it.
+	 */
+	sharedCheckout?: boolean;
 }
 
 export type WSClientMessage =

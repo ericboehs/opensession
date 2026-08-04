@@ -452,7 +452,7 @@ Object.assign(window, {
 });
 localStorage.setItem("opensession-user", "Michiel");
 localStorage.setItem("opensession-last-session", activeSessionId);
-localStorage.setItem("opensession-panel-open", String(window.innerWidth > 760));
+localStorage.setItem("opensession-panel-open", "true");
 localStorage.setItem("opensession-panel-tab", "workflows");
 localStorage.setItem("opensession-sidebar-collapsed", "0");
 localStorage.setItem(

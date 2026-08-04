@@ -51,6 +51,10 @@ interface ViewTransitionHandle {
 	skipTransition(): void;
 }
 
+/** `focusVisible` is honoured by Chromium/Firefox but not yet in TypeScript's
+ * DOM lib; browsers without it just fall back to their own heuristic. */
+type FocusOptionsWithVisible = FocusOptions & { focusVisible?: boolean };
+
 type ViewTransitionDocument = Document & {
 	startViewTransition?: (update: () => void) => ViewTransitionHandle;
 };
@@ -241,7 +245,13 @@ export function MediaLightboxHost() {
 				e.altKey
 			)
 				return;
-			const img = (e.target as HTMLElement).closest?.("img.md-image");
+			const target = e.target as HTMLElement;
+			// Enter on the focused link dispatches a click whose target is the
+			// wrapping <a>, not the <img> inside it — match both, or keyboard
+			// activation falls through to the raw file in a new tab.
+			const img =
+				target.closest?.("img.md-image") ||
+				target.closest?.("a.md-image-link")?.querySelector("img.md-image");
 			if (!img) return;
 			e.preventDefault();
 			e.stopPropagation();
@@ -684,10 +694,19 @@ function MediaLightbox({
 
 	useEffect(() => {
 		const previousFocus = document.activeElement as HTMLElement | null;
+		// Focus returns to whatever opened the viewer, but the ring only comes
+		// back if it was there to begin with: a mouse click on a chat image
+		// focuses its wrapping <a> silently, and closing with Escape puts the
+		// browser in keyboard modality, so a plain focus() would leave an
+		// outline around an image nobody deliberately focused.
+		const restore: FocusOptionsWithVisible = {
+			preventScroll: true,
+			focusVisible: !!previousFocus?.matches?.(":focus-visible"),
+		};
 		const frame = requestAnimationFrame(() => closeRef.current?.focus({ preventScroll: true }));
 		return () => {
 			cancelAnimationFrame(frame);
-			if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+			if (previousFocus?.isConnected) previousFocus.focus(restore);
 		};
 	}, []);
 

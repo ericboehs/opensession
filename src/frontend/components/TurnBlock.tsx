@@ -2,8 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import type { TranscriptEntry } from "../lib/types";
 import {
   ToolCallBlock,
-  ToolGlyph,
-  toolFamily,
   toolDisplayName,
   toolSummary,
   useToolPathRoots,
@@ -31,11 +29,14 @@ interface Props {
 }
 
 /**
- * One assistant turn's work, folded into a single calm line — "12 tool calls,
- * 3 messages" with the distinct tool-family glyphs — closed by default so the
- * chat reads as question → answer. Expanding shows the full flat run:
- * intermediate assistant notes interleaved with the tool calls on the
- * timeline rail.
+ * One assistant turn's work, folded into a single calm line — "Worked · 12m 4s
+ * · 51 steps · +461 -70" — closed by default so the chat reads as question →
+ * answer. Expanding shows the full flat run: intermediate assistant notes
+ * interleaved with the tool calls on the timeline rail.
+ *
+ * The line stays short enough for a phone at every width: how long, how many
+ * steps, and how much code moved. Which files moved is the footer's job (it
+ * chips each one with its diff), and which tools ran is the expanded run's.
  */
 // Memoized with a custom comparator: TranscriptBlocks rebuilds the `items`
 // arrays and the `toolResults` Map on every render, so plain shallow-prop memo
@@ -86,19 +87,6 @@ export const TurnBlock = React.memo(function TurnBlock({
   ).length;
   const lastTool = tools[tools.length - 1];
 
-  // One glyph per distinct tool family, in order of first use — a compact
-  // fingerprint of what the run did (terminal, files, edits, …).
-  const familyReps: TranscriptEntry[] = [];
-  {
-    const seen = new Set<string>();
-    for (const it of tools) {
-      const fam = toolFamily(it.toolName || "Tool");
-      if (seen.has(fam)) continue;
-      seen.add(fam);
-      familyReps.push(it);
-      if (familyReps.length >= 6) break;
-    }
-  }
   const editedFiles = collectTouchedFiles(tools);
   // Whether the turn actually wrote code, at a glance: the ± totals across
   // every file it touched, in the same green/red as the footer's file chips.
@@ -149,12 +137,9 @@ export const TurnBlock = React.memo(function TurnBlock({
           setExpanded(!expanded);
         }}
         // Baseline, not centre: this row mixes its 14px title with 13px meta
-        // runs, and centring aligns boxes rather than text. The icons carry no
-        // baseline of their own, so they keep centring individually.
-        // A query container, not a viewport breakpoint: this line lives inside
-        // the chat column, which is as narrow as a phone when a pane is split
-        // on a wide screen.
-        className="@container mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-baseline gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-body leading-5 text-dim transition-colors hover:bg-hover/40 hover:text-fg focus-ring"
+        // runs, and centring aligns boxes rather than text. The chevron carries
+        // no baseline of its own, so it keeps centring individually.
+        className="mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-baseline gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-body leading-5 text-dim transition-colors hover:bg-hover/40 hover:text-fg focus-ring"
       >
         <span
           className={cn(
@@ -167,15 +152,6 @@ export const TurnBlock = React.memo(function TurnBlock({
         <span className="flex-shrink-0 font-medium">
           {live ? "Working" : "Worked"}
         </span>
-        {/* The glyph fingerprint is the one decorative run here, and the
-            widest — it steps aside first when the column can't hold the line. */}
-        {familyReps.length > 0 && (
-          <span className="hidden flex-shrink-0 self-center items-center gap-1.5 text-faint @[30rem]:flex">
-            {familyReps.map((it) => (
-              <ToolGlyph key={it.id} toolName={it.toolName || "Tool"} size={20} />
-            ))}
-          </span>
-        )}
         {metaLabel && (
           <span className="min-w-0 truncate text-label leading-4 text-faint">
             {metaLabel}

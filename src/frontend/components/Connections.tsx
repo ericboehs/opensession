@@ -446,7 +446,15 @@ interface GithubAuthData {
   enabled: boolean;
   clientIdConfigured: boolean;
   accounts: { login: string; name?: string; connectedAt: string; scopes?: string }[];
-  team: { name: string; github: string; connected: boolean; canManage: boolean }[];
+  team: {
+    name: string;
+    github: string;
+    connected: boolean;
+    /** Connected once, but GitHub has since revoked the renewal — reconnecting
+     *  is the only fix, so the row says so instead of reading "Connected". */
+    needsReconnect?: boolean;
+    canManage: boolean;
+  }[];
 }
 
 interface DeviceFlow {
@@ -641,8 +649,20 @@ export function GithubAccounts({ personal = false }: { personal?: boolean } = {}
                   </span>
                 )}
                 <StatusChip
-                  label={m.connected ? "Connected" : "Not connected"}
-                  dot={m.connected ? "var(--green)" : "var(--line-strong, var(--text-faint))"}
+                  label={
+                    m.needsReconnect
+                      ? "Reconnect needed"
+                      : m.connected
+                        ? "Connected"
+                        : "Not connected"
+                  }
+                  dot={
+                    m.needsReconnect
+                      ? "var(--red)"
+                      : m.connected
+                        ? "var(--green)"
+                        : "var(--line-strong, var(--text-faint))"
+                  }
                 />
                 {m.connected && m.canManage && (
                   <Button

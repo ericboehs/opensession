@@ -155,11 +155,54 @@ describe("token lookups + runner env", () => {
   });
 
   test("connectedGithubAccounts never exposes tokens", () => {
-    seedToken();
+    // Every credential field, not just `token`: the refresh token mints new
+    // access tokens for ~6 months, so leaking it is as bad as leaking the
+    // token itself. It reached the API for a while because the public view
+    // spread `...rest` and only named `token`.
+    writeFileSync(
+      process.env.OPENSESSION_GITHUB_AUTH_STORE!,
+      JSON.stringify({
+        users: {
+          alice: {
+            login: "alice",
+            token: "gho_test123",
+            refreshToken: "ghr_secret",
+            refreshTokenExpiresAt: "2027-01-01T00:00:00.000Z",
+            expiresAt: "2026-07-18T08:00:00.000Z",
+            connectedAt: "2026-07-18T00:00:00.000Z",
+          },
+        },
+      }),
+    );
     const accounts = connectedGithubAccounts();
     expect(accounts).toHaveLength(1);
     expect(accounts[0].login).toBe("alice");
-    expect((accounts[0] as any).token).toBeUndefined();
+    for (const secret of ["token", "refreshToken", "refreshTokenExpiresAt"]) {
+      expect((accounts[0] as any)[secret]).toBeUndefined();
+    }
+    expect(JSON.stringify(accounts)).not.toContain("ghr_secret");
+    expect(accounts[0].needsReconnect).toBeUndefined();
+  });
+
+  test("a dead refresh grant surfaces as needsReconnect", () => {
+    writeFileSync(
+      process.env.OPENSESSION_GITHUB_AUTH_STORE!,
+      JSON.stringify({
+        users: {
+          alice: {
+            login: "alice",
+            token: "gho_test123",
+            refreshToken: "ghr_dead",
+            refreshFailedAt: "2026-08-04T10:00:00.000Z",
+            connectedAt: "2026-07-18T00:00:00.000Z",
+          },
+        },
+      }),
+    );
+    const [account] = connectedGithubAccounts();
+    expect(account.needsReconnect).toBe(true);
+    // The marker itself is internal — only the derived flag is public.
+    expect((account as any).refreshFailedAt).toBeUndefined();
   });
 
   test("builds a credential only for the exact connected login", () => {

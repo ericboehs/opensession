@@ -960,11 +960,18 @@ export function Composer({
                 >
                   <button
                     type="button"
+                    // Same "on" language as .palette-icon-btn.is-on: the state
+                    // lives in a filled wash, not a ring — a full-strength
+                    // border reads as a validation outline, and it's the one
+                    // thing that survives when the fill lands on the tinted
+                    // surface this marker always sits on. Slightly stronger
+                    // than that rule's 16/24 for exactly that reason: here the
+                    // wash is the same ink as the surface under it.
                     className={cn(
-                      "inline-flex min-h-8 items-center gap-1.5 rounded-full border px-2.5 text-meta font-medium transition-colors hover:bg-hover",
+                      "inline-flex min-h-8 items-center gap-1.5 rounded-full px-2.5 text-meta font-medium transition-colors",
                       noteMode
-                        ? "border-[color-mix(in_srgb,var(--yellow)_38%,transparent)] text-yellow"
-                        : "border-[color-mix(in_srgb,var(--green)_38%,transparent)] text-green",
+                        ? "bg-[color-mix(in_srgb,var(--yellow)_18%,transparent)] text-yellow hover:bg-[color-mix(in_srgb,var(--yellow)_26%,transparent)]"
+                        : "bg-[color-mix(in_srgb,var(--green)_18%,transparent)] text-green hover:bg-[color-mix(in_srgb,var(--green)_26%,transparent)]",
                     )}
                     {...tapProps(() =>
                       noteMode ? onNoteModeChange?.(false) : setMenu("add"),
