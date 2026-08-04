@@ -1,5 +1,6 @@
 import { AGENT_NAME, GITHUB_BOT_NAME } from "../lib/brand";
 import { BASE_PATH } from "../lib/base";
+import { commitPrompt } from "../lib/commit-prompt";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parsePatchFiles } from "@pierre/diffs";
 import type { FileDiffMetadata } from "@pierre/diffs";
@@ -1286,10 +1287,9 @@ function GitStatusRows({
 	const ahead = git?.ahead ?? 0;
 	const behind = git?.behind ?? 0;
 	const behindBase = git?.behindBase ?? 0;
-	// A shared checkout's dirty files belong to whichever sessions are mid-edit,
-	// not to this one, so the row would always be someone else's — and its
-	// Commit action would ask this session to commit their work.
-	const dirty = git?.sharedCheckout ? 0 : (git?.uncommittedFiles ?? 0);
+	// On a shared checkout the server scopes this to the files this session
+	// wrote, so it means the same thing either way: your uncommitted work.
+	const dirty = git?.uncommittedFiles ?? 0;
 
 	// Behind counts fold together — a stale upstream reads "behind remote", a
 	// fresh branch behind its base reads "behind <base>". A merged branch is
@@ -1321,9 +1321,7 @@ function GitStatusRows({
 			type: "prompt",
 			sessionId,
 			user: getCurrentUser(),
-			content: `Commit the ${dirty} uncommitted file${
-				dirty === 1 ? "" : "s"
-			} in this worktree with a clear, descriptive message, then push.`,
+			content: commitPrompt(dirty, git?.sharedCheckout, git?.uncommittedPaths),
 		});
 		setPrompted("commit the changes");
 		setTimeout(() => setPrompted(null), 6000);

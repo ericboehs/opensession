@@ -13,7 +13,8 @@ import { getGitStatus, gitPull, gitPush } from "../git-status";
 import { imageContentType, imageHeaders } from "../image-mime";
 import { hasRemoteWorkspace, workspaceExecFor } from "../sandbox";
 import { findSession } from "../session-cache";
-import { getRepo, repoForPath } from "../worktree";
+import { sessionTouchedPaths } from "../session-touched";
+import { getRepo, isSharedCheckoutDir, repoForPath } from "../worktree";
 import { defaultRepo } from "../config";
 import { $ } from "bun";
 import { existsSync } from "fs";
@@ -229,11 +230,18 @@ export async function handleSessionGitRoutes(
 		const remote = isPrimary && hasRemoteWorkspace(session);
 		if (!dir || (!existsSync(dir) && !remote)) return Response.json(null);
 		const repoConf = getRepo(repoId || primaryRepo);
+		// A shared checkout holds every concurrent session's edits, so the raw
+		// dirty count belongs to nobody. Scope it to the files this session's own
+		// tool calls wrote.
+		const ownPaths = isSharedCheckoutDir(dir)
+			? await sessionTouchedPaths(session, dir)
+			: undefined;
 		return Response.json(
 			await getGitStatus(
 				dir,
 				repoConf.defaultBranch,
 				isPrimary ? await workspaceExecFor(session, dir) : undefined,
+				ownPaths,
 			),
 		);
 	}

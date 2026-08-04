@@ -129,9 +129,7 @@ function deriveHeadline(
 			label: `Behind by ${behind} commit${behind === 1 ? "" : "s"}`,
 			tone: "yellow",
 		};
-	// A shared checkout is dirty because other sessions are working in it, which
-	// is no reason to tell this one it has unshipped work.
-	if (ahead > 0 || (git?.sharedCheckout ? 0 : (git?.uncommittedFiles ?? 0)) > 0)
+	if (ahead > 0 || (git?.uncommittedFiles ?? 0) > 0)
 		return { key: "no-pr", label: "No PR open", tone: "muted" };
 	if ((git?.behindBase ?? 0) > 0)
 		return {
