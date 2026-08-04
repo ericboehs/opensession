@@ -65,7 +65,7 @@ export function RepoTile({
 		return (
 			<span
 				className={cn(
-					"repo-tile repo-tile--img inline-flex size-[18px] shrink-0 items-center justify-center overflow-hidden rounded-[5px] text-label font-bold text-white",
+					"repo-tile repo-tile--img inline-flex size-[18px] shrink-0 items-center justify-center overflow-hidden text-label font-bold text-white",
 					name === "backstage" && "repo-tile--app-icon [&_img]:scale-80",
 				)}
 				style={style}
@@ -84,7 +84,7 @@ export function RepoTile({
 	const letter = repoLetter(name);
 	return (
 		<span
-			className="repo-tile inline-flex size-[18px] shrink-0 items-center justify-center rounded-[5px] text-label font-bold text-white"
+			className="repo-tile inline-flex size-[18px] shrink-0 items-center justify-center text-label font-bold text-white"
 			style={style}
 		>
 			{letter}

@@ -864,13 +864,13 @@ export function Composer({
                   {onSetGoal && (
                     <button
                       type="button"
-                      className="composer-menu-item flex w-full cursor-pointer items-center gap-[9px] rounded-md border-0 bg-transparent px-[9px] py-[7px] text-left text-supporting text-fg hover:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)]"
+                      className="composer-menu-item"
                       // Opens the goal editor: `menu` is single-valued, so this
                       // closes the add menu and opens the modal in one step.
                       {...tapProps(() => setMenu("goal"))}
                       title={goal ? `Goal: ${goal}` : undefined}
                     >
-                      <span className="composer-menu-icon inline-flex w-5 items-center justify-center text-control-label text-dim">
+                      <span className="composer-menu-icon">
                         <IconCrosshair size={22} />
                       </span>
                       {goal ? "Edit goal" : "Set a goal"}
@@ -879,7 +879,7 @@ export function Composer({
                   {onNoteModeChange && (
                     <button
                       type="button"
-                      className="composer-menu-item flex w-full cursor-pointer items-center gap-[9px] rounded-md border-0 bg-transparent px-[9px] py-[7px] text-left text-supporting text-fg hover:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)]"
+                      className="composer-menu-item"
                       {...tapProps(() => {
                         onNoteModeChange(!noteMode);
                         setMenu(null);
@@ -890,7 +890,7 @@ export function Composer({
                           : "Posts to the team; the agent won't see it (⌘N)"
                       }
                     >
-                      <span className="composer-menu-icon inline-flex w-5 items-center justify-center text-control-label text-dim">
+                      <span className="composer-menu-icon">
                         <IconNote size={22} />
                       </span>
                       {noteMode ? "Back to prompting" : "Write a team note"}

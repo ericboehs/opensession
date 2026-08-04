@@ -23,7 +23,7 @@ const fmtTime = (d: Date) =>
   d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const toDateInput = (d: Date) =>
   `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const menuItemClass = "composer-menu-item flex w-full cursor-pointer items-center gap-[9px] rounded-md border-0 bg-transparent px-[9px] py-[7px] text-left text-supporting text-fg hover:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] disabled:cursor-default disabled:opacity-45";
+const menuItemClass = "composer-menu-item disabled:cursor-default disabled:opacity-45";
 
 /**
  * Composer "send later": schedules the *current composer draft* for this
