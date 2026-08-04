@@ -11,7 +11,7 @@ import {
   IconSearch,
   IconGlobe,
   IconSparkle,
-  IconPlug,
+  IconConnections,
   IconBook,
   IconBranches,
   IconListChecks,
@@ -353,8 +353,10 @@ export function ToolGlyph({ toolName, size = 20 }: { toolName: string; size?: nu
       return <IconGlobe size={size} />;
     case "agent":
       return <IconSparkle size={size} />;
+    // IconConnections, not IconPlug: the plug only draws the middle half of
+    // the 24-grid, so it read a size smaller than every glyph beside it.
     case "mcp":
-      return <IconPlug size={size} />;
+      return <IconConnections size={size} />;
     case "skill":
       return <IconBook size={size} />;
     default:

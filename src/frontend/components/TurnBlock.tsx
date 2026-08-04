@@ -54,34 +54,26 @@ export const TurnBlock = React.memo(function TurnBlock({
   const tools = items.filter((it) => it.type === "tool_use");
   const messages = items.filter((it) => it.type === "assistant");
 
-  // If any tool in the block returned media (image or video), keep the block
-  // open so the screenshot/recording stays visible after the run finishes.
-  const hasMedia = tools.some((it) => {
-    const r = it.toolUseId ? toolResults.get(it.toolUseId) : undefined;
-    return (r?.images?.length ?? 0) > 0 || (r?.videos?.length ?? 0) > 0;
-  });
-  const hasFailure = tools.some((it) => {
-    const result = it.toolUseId ? toolResults.get(it.toolUseId) : undefined;
-    return Boolean(result?.isError);
-  });
-  // Default fold state follows the per-browser preference (Settings →
-  // Appearance). The default stays folded, even during a live turn. "auto"
-  // is the opt-in mode that opens only the turn fold while it is working;
-  // ToolCallBlock owns its own disclosure, so this never expands a Bash input
-  // (including generated comment metadata). Media pins the turn open so a
-  // screenshot/recording stays visible.
+  // Default fold state follows the preference (Settings → Appearance) and
+  // nothing else. The default stays folded, even during a live turn. "auto"
+  // is the opt-in mode that opens only the turn fold while it is working, and
+  // folds it again the moment the turn settles — a failed step or a screenshot
+  // inside the turn used to pin it open forever, which is the one thing both
+  // "Always folded" and "Expand while running" promise never happens. The fold
+  // line already reports failures ("· 2 failed", in red); media is one click
+  // away. ToolCallBlock owns its own disclosure, so this never expands a Bash
+  // input (including generated comment metadata).
   const [pref, setPref] = useState(getTurnActivityPref);
   useEffect(
     () => onTurnActivityChanged(() => setPref(getTurnActivityPref())),
     []
   );
-  const defaultExpanded =
-    hasMedia || hasFailure || (pref === "auto" ? live : pref === "expanded");
+  const defaultExpanded = pref === "auto" ? live : pref === "expanded";
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   // Once the user has toggled the fold by hand, their choice wins — the
-  // auto-sync below must not reopen/collapse it on later default changes
-  // (settle, failure/media arriving).
+  // auto-sync below must not reopen/collapse it on a later default change
+  // (the turn settling, or the preference itself changing).
   const userToggledRef = useRef(false);
   useEffect(() => {
     if (userToggledRef.current) return;
@@ -108,21 +100,22 @@ export const TurnBlock = React.memo(function TurnBlock({
     }
   }
   const editedFiles = collectTouchedFiles(tools);
-  const editedFilesLabel = summarizeEditedFiles(editedFiles.map((file) => file.path));
   // Whether the turn actually wrote code, at a glance: the ± totals across
   // every file it touched, in the same green/red as the footer's file chips.
+  // The file *names* stay out of this line — the footer under the answer
+  // already chips them, with diffs on tap.
   const additions = editedFiles.reduce((n, f) => n + f.additions, 0);
   const deletions = editedFiles.reduce((n, f) => n + f.deletions, 0);
 
-  const countsLabel = [
-    tools.length > 0 &&
-      `${tools.length} step${tools.length === 1 ? "" : "s"}`,
-    tools.length === 0 &&
-      messages.length > 0 &&
-      `${messages.length} message${messages.length === 1 ? "" : "s"}`,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const countsLabel =
+    tools.length > 0
+      ? `${tools.length} step${tools.length === 1 ? "" : "s"}`
+      : messages.length > 0
+        ? `${messages.length} message${messages.length === 1 ? "" : "s"}`
+        : "";
+  // One run of faint meta rather than three separately-shrinking ones, so the
+  // line collapses by dropping characters off its tail instead of overflowing.
+  const metaLabel = [!live && duration, countsLabel].filter(Boolean).join(" · ");
 
   // Interleave: consecutive tool calls share one timeline rail; intermediate
   // assistant messages break the rail into segments.
@@ -155,11 +148,13 @@ export const TurnBlock = React.memo(function TurnBlock({
           userToggledRef.current = true;
           setExpanded(!expanded);
         }}
-        // Baseline, not centre: this row mixes its 14px title with 13px meta
-        // runs and a mono file list, and centring aligns boxes rather than
-        // text — the mono run landed a pixel off its neighbours. The icons
-        // carry no baseline of their own, so they keep centring individually.
-        className="mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-baseline gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-body leading-5 text-dim transition-colors hover:bg-hover/40 hover:text-fg focus-ring"
+		// Baseline, not centre: this row mixes its 14px title with 13px meta
+		// runs, and centring aligns boxes rather than text. The icons carry no
+		// baseline of their own, so they keep centring individually.
+		// A query container, not a viewport breakpoint: this line lives inside
+		// the chat column, which is as narrow as a phone when a pane is split
+		// on a wide screen.
+		className="@container mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-baseline gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-body leading-5 text-dim transition-colors hover:bg-hover/40 hover:text-fg focus-ring"
       >
         <span
           className={cn(
@@ -172,33 +167,29 @@ export const TurnBlock = React.memo(function TurnBlock({
         <span className="flex-shrink-0 font-medium">
           {live ? "Working" : "Worked"}
         </span>
+        {/* The glyph fingerprint is the one decorative run here, and the
+            widest — it steps aside first when the column can't hold the line. */}
         {familyReps.length > 0 && (
-          <span className="flex flex-shrink-0 self-center items-center gap-1.5 text-faint">
+          <span className="hidden flex-shrink-0 self-center items-center gap-1.5 text-faint @[30rem]:flex">
             {familyReps.map((it) => (
-              <ToolGlyph key={it.id} toolName={it.toolName || "Tool"} size={15} />
+              <ToolGlyph key={it.id} toolName={it.toolName || "Tool"} size={20} />
             ))}
           </span>
         )}
-        {duration && !live && (
-          <span className="flex-shrink-0 text-label leading-4 text-faint">{duration}</span>
-        )}
-        {countsLabel && (
-          <span className="flex-shrink-0 text-label leading-4 text-faint">· {countsLabel}</span>
+        {metaLabel && (
+          <span className="min-w-0 truncate text-label leading-4 text-faint">
+            {metaLabel}
+          </span>
         )}
         {failures > 0 && !live && (
           <span className="flex-shrink-0 text-label leading-4 text-red/80">
             · {failures} failed
           </span>
         )}
-        {!expanded && editedFilesLabel && (
-          <span className="min-w-0 truncate text-label leading-4 text-faint">
-            · {editedFilesLabel}
-          </span>
-        )}
         {additions + deletions > 0 && (
           <LineStats additions={additions} deletions={deletions} />
         )}
-        {live && !expanded && lastTool && !editedFilesLabel && (
+        {live && !expanded && lastTool && (
           <span className="min-w-0 truncate text-label leading-4 text-faint">
             {toolDisplayName(lastTool.toolName)}:{" "}
             {toolSummary(
@@ -249,12 +240,6 @@ export const TurnBlock = React.memo(function TurnBlock({
     </div>
   );
 }, turnBlockPropsEqual);
-
-export function summarizeEditedFiles(paths: string[]): string {
-  const names = paths.map((path) => path.split(/[\\/]/).pop() || path);
-  const shown = names.slice(0, 2).join(", ");
-  return names.length > 2 ? `${shown} +${names.length - 2}` : shown;
-}
 
 /** Intermediate reasoning stays readable while the turn itself provides the fold. */
 function TurnMessage({

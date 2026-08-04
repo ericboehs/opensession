@@ -140,6 +140,20 @@ it from descending into chaos:
   (it has happened repeatedly). For
   those files use `git add -p` to stage only your hunks, and check
   `git diff --cached` before committing.
+- **Scope the *commit*, not just the `add`.** The index is shared too: another
+  session's `git add` may already be staged before you touch anything, so a
+  careful `git add <your files>` followed by a bare `git commit` still ships
+  their work under your message. Always check `git diff --cached --name-only`
+  first — if it lists anything that isn't yours, commit with a pathspec
+  (`git commit -- <your files>`, which commits those paths' worktree content
+  and ignores the rest of the index). Never `git reset`/`git restore --staged`
+  to "clean up" first — that silently unstages what another session staged
+  deliberately. When a file has both problems at once (foreign entries in the
+  index *and* foreign uncommitted edits inside your own files), build the
+  commit through a private index instead: `GIT_INDEX_FILE=/tmp/my.index
+  git read-tree HEAD` → `git apply --cached your.patch` → `git write-tree` →
+  `git commit-tree` → `git update-ref refs/heads/main <new> <old>` (the
+  three-argument form is a compare-and-swap that fails instead of clobbering).
 - **Commit + push frequently.** Un-pushed work is the only thing a sync can't
   protect (the deploy is now `merge --ff-only`, never `reset --hard`, so it aborts
   loudly instead of wiping — but push anyway).
