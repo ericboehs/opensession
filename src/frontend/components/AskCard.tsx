@@ -88,8 +88,12 @@ export function AskCard({ questions, onAnswer }: Props) {
               )}
             </div>
           )}
+          {/* The question is prose, not a title: it is often several sentences,
+              and setting it semibold turned whole paragraphs bold. Body weight
+              on the transcript's own 14px/24px rhythm — the raised card and the
+              "needs input" label already mark it as the thing being asked. */}
           <div
-            className="markdown text-item-title font-[550] leading-[1.4] text-fg [overflow-wrap:anywhere]"
+            className="markdown text-body leading-6 text-fg [overflow-wrap:anywhere]"
             dangerouslySetInnerHTML={{ __html: renderMarkdown(q.question) }}
           />
           {q.options?.length ? (

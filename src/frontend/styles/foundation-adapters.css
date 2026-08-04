@@ -7708,6 +7708,23 @@ html[data-theme="light"] .tool-code-surface .shiki-gutter {
 .composer.composer-min .composer-stop {
 	order: 4;
 }
+/* The phone rules give send/stop a 40px thumb target, which inside the 50px
+   resting pill paints as a filled disc with 5px of air above and below — a red
+   blob against the hairline + and mic glyphs beside it. Keep the target and
+   shrink only the fill: padding + background-clip paints the disc at 32px
+   without moving the hit area (the .palette-icon-btn trick, done with the
+   background instead of a pseudo-element since these buttons are filled). */
+.composer.composer-min .composer-send {
+	padding: 4px;
+	background-clip: content-box;
+}
+/* The send arrow has to come down with the disc — the phone's 24px glyph all
+   but touches the smaller circle's edge. The stop square is a 10px mark inside
+   its 24px box, so it already sits in proportion and keeps its size. */
+.composer.composer-min .composer-send:not(.composer-stop) svg {
+	width: 20px;
+	height: 20px;
+}
 .composer.composer-min .composer-spacer {
 	display: none;
 }

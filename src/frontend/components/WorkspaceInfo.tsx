@@ -1286,7 +1286,10 @@ function GitStatusRows({
 	const ahead = git?.ahead ?? 0;
 	const behind = git?.behind ?? 0;
 	const behindBase = git?.behindBase ?? 0;
-	const dirty = git?.uncommittedFiles ?? 0;
+	// A shared checkout's dirty files belong to whichever sessions are mid-edit,
+	// not to this one, so the row would always be someone else's — and its
+	// Commit action would ask this session to commit their work.
+	const dirty = git?.sharedCheckout ? 0 : (git?.uncommittedFiles ?? 0);
 
 	// Behind counts fold together — a stale upstream reads "behind remote", a
 	// fresh branch behind its base reads "behind <base>". A merged branch is

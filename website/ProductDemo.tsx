@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import markUrl from "../os1-mac/build/icon-512.png";
 
+const desktopDemoWidth = 900;
+
 export function ProductDemo({ feature }: { feature: number }) {
+	const previewRef = useRef<HTMLElement>(null);
 	const frameRef = useRef<HTMLIFrameElement>(null);
 	const [ready, setReady] = useState(false);
 
 	const showFeature = () => {
-		if (window.matchMedia("(max-width: 760px)").matches) return;
 		frameRef.current?.contentWindow?.postMessage(
 			{ type: "opensession-demo-feature", feature },
 			window.location.origin,
@@ -14,6 +16,20 @@ export function ProductDemo({ feature }: { feature: number }) {
 	};
 
 	useEffect(showFeature, [feature]);
+
+	useLayoutEffect(() => {
+		const preview = previewRef.current;
+		if (!preview) return;
+		const updateScale = () => {
+			const scale = Math.min(1, preview.clientWidth / desktopDemoWidth);
+			preview.style.setProperty("--demo-scale", String(scale));
+			preview.dataset.scaled = String(scale < 1);
+		};
+		const observer = new ResizeObserver(updateScale);
+		observer.observe(preview);
+		updateScale();
+		return () => observer.disconnect();
+	}, []);
 
 	useEffect(() => {
 		const handleMessage = (event: MessageEvent) => {
@@ -28,7 +44,7 @@ export function ProductDemo({ feature }: { feature: number }) {
 	}, [feature]);
 
 	return (
-		<figure className="preview-wrap" data-ready={ready}>
+		<figure ref={previewRef} className="preview-wrap" data-ready={ready}>
 			<div
 				className="product-demo-loading"
 				role="status"

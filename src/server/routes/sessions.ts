@@ -14,7 +14,7 @@ import { pendingAsks } from "../asks";
 import { transcriptMatchSnippet } from "../jsonl-parser";
 import { transcriptDbPath, transcriptStore } from "../transcript-store";
 import { clearSessionFileArchive } from "../plain-archive";
-import { editPrReviewers, isNoPrError } from "../pr-info";
+import { editPrReviewers, isNoPrError, prMetaForBranch } from "../pr-info";
 import { promptQueues, requeueSteerReceipts, stoppedSessions } from "../queue-state";
 import { markPrReviewNotified } from "../pr-review-notifications";
 import { getReviewRequest, setReviewAccepted, setReviewRequest } from "../review-requests";
@@ -682,23 +682,35 @@ export async function handleSessionsRoutes(
 		let mirroredToGithub = false;
 		if (target && (addLogin || removeLogin)) {
 			const credential = githubMutationCredential(ctx);
-			if (!credential) return githubCredentialRequiredResponse();
-			const mirrored = await editPrReviewers(
-				target.branch,
-				{ add: addLogin, remove: removeLogin },
-				target.ghRepo,
-				credential,
-			).catch((e: any) => ({ error: e?.message || String(e) }));
-			// `resolvePrTarget` resolves from branch metadata alone, so it yields a
-			// target for a branch that has no PR yet — asking a teammate to look at
-			// a session before it has one is normal. That's an answer, not a
-			// failure: there is nothing to mirror, so the local request stands on
-			// its own. Every other error still blocks, so a PR that DOES exist can
-			// never silently disagree with the request stored here.
-			if ("error" in mirrored) {
-				if (!isNoPrError(mirrored.error))
-					return Response.json(mirrored, { status: 502 });
-			} else mirroredToGithub = true;
+			// No personal credential only actually blocks this when there is a PR
+			// to mirror onto: `target` comes from branch metadata alone, so most
+			// sessions reaching here have nothing on GitHub to change. Ask (as the
+			// service identity — a read) before refusing, so an expired GitHub
+			// connection can't take the internal review request down with it.
+			// Fails closed: if we can't establish there's no PR, we still refuse.
+			if (!credential) {
+				const existing = await prMetaForBranch(
+					target.branch,
+					target.ghRepo,
+				).catch(() => "unknown" as const);
+				if (existing !== null) return githubCredentialRequiredResponse();
+			} else {
+				const mirrored = await editPrReviewers(
+					target.branch,
+					{ add: addLogin, remove: removeLogin },
+					target.ghRepo,
+					credential,
+				).catch((e: any) => ({ error: e?.message || String(e) }));
+				// Same reasoning the other way round: `gh pr edit` answering "no
+				// pull requests found" is an answer, not a failure — nothing to
+				// mirror, so the local request stands on its own. Every other
+				// error still blocks, so a PR that DOES exist can never silently
+				// disagree with the request stored here.
+				if ("error" in mirrored) {
+					if (!isNoPrError(mirrored.error))
+						return Response.json(mirrored, { status: 502 });
+				} else mirroredToGithub = true;
+			}
 		}
 		setReviewRequest(
 			sessionId,

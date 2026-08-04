@@ -324,8 +324,10 @@ export async function handleConnectionsRoutes(
 		);
 		const { configuredIdentity } = await import("../config");
 		const settings = githubUserAuthSettings();
-		const connected = new Set(
-			connectedGithubAccounts().map((a) => a.login.toLowerCase()),
+		const all = connectedGithubAccounts();
+		const connected = new Set(all.map((a) => a.login.toLowerCase()));
+		const stale = new Set(
+			all.filter((a) => a.needsReconnect).map((a) => a.login.toLowerCase()),
 		);
 		const ownLogin = ctx.authUser?.login || "";
 		const ownAccount = ownLogin ? connectedGithubAccount(ownLogin) : null;
@@ -339,6 +341,7 @@ export async function handleConnectionsRoutes(
 					name: m.name,
 					github: m.github,
 					connected: connected.has(m.github!.toLowerCase()),
+					needsReconnect: stale.has(m.github!.toLowerCase()),
 					canManage:
 						!!ownLogin && m.github!.toLowerCase() === ownLogin.toLowerCase(),
 				})),

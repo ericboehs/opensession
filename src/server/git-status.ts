@@ -14,6 +14,7 @@
 import { $ } from "bun";
 import { audited } from "./audit";
 import { personaName } from "./config";
+import { isSharedCheckoutDir } from "./worktree";
 import type { WorkspaceExec } from "./sandbox/workspace-exec";
 
 /** `git -C <dir> <args>` on the host (Bun $) or through the workspace exec.
@@ -40,6 +41,15 @@ export interface GitStatusInfo {
   baseBranch: string;
   /** Dirty files in the working tree (staged + unstaged + untracked). */
   uncommittedFiles: number;
+  /**
+   * This dir is a repo's shared checkout rather than a per-session worktree
+   * (OpenSession's own repo works this way — every session edits one tree on
+   * the default branch). `uncommittedFiles` is then the union of every
+   * concurrent session's in-flight edits and says nothing about this session,
+   * so surfaces that present it as "your" work must not show it: offering to
+   * commit that count means committing other sessions' half-finished work.
+   */
+  sharedCheckout: boolean;
 }
 
 const FETCH_TTL = 90_000;
@@ -107,7 +117,16 @@ export async function getGitStatus(
     uncommittedFiles = status.split("\n").filter((l) => l.trim()).length;
   } catch {}
 
-  return { branch, hasUpstream, ahead, behind, behindBase, baseBranch, uncommittedFiles };
+  return {
+    branch,
+    hasUpstream,
+    ahead,
+    behind,
+    behindBase,
+    baseBranch,
+    uncommittedFiles,
+    sharedCheckout: isSharedCheckoutDir(dir),
+  };
 }
 
 /**

@@ -70,6 +70,10 @@ export interface GithubConnectedAccount {
   name?: string;
   scopes?: string;
   connectedAt: string;
+  /** GitHub has permanently rejected the stored refresh token, so the access
+   *  token can no longer be renewed. Nothing server-side can revive it — the
+   *  person has to connect again. */
+  needsReconnect?: boolean;
 }
 
 interface StoredAccount extends GithubConnectedAccount {
@@ -79,6 +83,10 @@ interface StoredAccount extends GithubConnectedAccount {
   /** Rotates on every refresh — the stored value is always the newest one. */
   refreshToken?: string;
   refreshTokenExpiresAt?: string;
+  /** When the refresh grant was rejected for good (`bad_refresh_token`, or the
+   *  refresh token itself lapsed). Set = stop retrying and ask for a reconnect;
+   *  cleared by connecting again, which writes a fresh record. */
+  refreshFailedAt?: string;
 }
 
 interface Store {
@@ -175,8 +183,18 @@ export type DeviceFlowPoll =
   | { status: "ok"; login: string; name?: string }
   | { status: "error"; error: string };
 
-function stripStoredAccount({ token: _token, ...rest }: StoredAccount): GithubConnectedAccount {
-  return rest;
+/** Public view of a stored account. Every credential is destructured away by
+ *  name rather than spread through — the refresh token mints new access tokens
+ *  for months, so it must never reach an API response. */
+function stripStoredAccount({
+  token: _token,
+  refreshToken: _refreshToken,
+  refreshTokenExpiresAt: _refreshTokenExpiresAt,
+  expiresAt: _expiresAt,
+  refreshFailedAt,
+  ...rest
+}: StoredAccount): GithubConnectedAccount {
+  return { ...rest, ...(refreshFailedAt ? { needsReconnect: true } : {}) };
 }
 
 export function connectedGithubAccount(login: string): GithubConnectedAccount | null {
@@ -387,6 +405,18 @@ async function identifyAndStoreToken(
 
 // ── Token refresh (GitHub App user tokens) ───────────────────────────────────
 
+/** Flag an account whose refresh grant is unrecoverable. The stored tokens stay
+ *  put (the getters already fail closed on the expired access token) — this only
+ *  stops the sweep from retrying and lets the UI surface the reconnect. */
+function markRefreshDead(key: string, error: string): void {
+  const store = readStore();
+  const account = store.users[key];
+  if (!account || account.refreshFailedAt) return;
+  store.users[key] = { ...account, refreshFailedAt: new Date().toISOString() };
+  writeStore(store);
+  audit({ kind: "github_auth_refresh_dead", login: account.login, error });
+}
+
 /** Refresh one account's token via the refresh-token grant. GitHub rotates
  *  the refresh token on every use, so the stored pair is always replaced
  *  together. Returns false when the account has nothing to refresh or the
@@ -398,10 +428,12 @@ export async function refreshGithubToken(login: string): Promise<boolean> {
   const key = login.toLowerCase();
   const account = readStore().users[key];
   if (!account?.refreshToken) return false;
+  if (account.refreshFailedAt) return false; // already known dead — see markRefreshDead
   if (
     account.refreshTokenExpiresAt &&
     Date.parse(account.refreshTokenExpiresAt) <= Date.now()
   ) {
+    markRefreshDead(key, "refresh token expired");
     return false;
   }
   const res = await fetchWithTimeout("https://github.com/login/oauth/access_token", {
@@ -417,11 +449,13 @@ export async function refreshGithubToken(login: string): Promise<boolean> {
   const body: TokenGrant & { error?: string; error_description?: string } =
     (await res.json().catch(() => null)) ?? {};
   if (body.error || !body.access_token) {
-    audit({
-      kind: "github_auth_refresh_failed",
-      login,
-      error: body.error_description || body.error || `HTTP ${res.status}`,
-    });
+    const error = body.error_description || body.error || `HTTP ${res.status}`;
+    audit({ kind: "github_auth_refresh_failed", login, error });
+    // `bad_refresh_token` is GitHub's final answer: the grant is gone and no
+    // amount of retrying brings it back (it was retried every 20 minutes for
+    // four days before this existed). Record it so the sweep gives up and the
+    // Connections UI can ask for a reconnect instead of failing silently.
+    if (body.error === "bad_refresh_token") markRefreshDead(key, error);
     return false;
   }
   // Re-read inside the write to keep the window for clobbering a concurrent
@@ -429,7 +463,8 @@ export async function refreshGithubToken(login: string): Promise<boolean> {
   const store = readStore();
   const current = store.users[key];
   if (!current) return false;
-  store.users[key] = { ...current, token: body.access_token, ...grantExpiryFields(body) };
+  const { refreshFailedAt: _cleared, ...kept } = current;
+  store.users[key] = { ...kept, token: body.access_token, ...grantExpiryFields(body) };
   writeStore(store);
   audit({ kind: "github_auth_refresh", login });
   return true;
@@ -442,6 +477,7 @@ export async function refreshExpiringGithubTokens(): Promise<void> {
   if (!githubUserAuthActive()) return;
   for (const account of Object.values(readStore().users)) {
     if (!account.refreshToken || !account.expiresAt) continue;
+    if (account.refreshFailedAt) continue; // dead grant — only a reconnect fixes it
     if (Date.parse(account.expiresAt) - Date.now() > REFRESH_SKEW_MS) continue;
     try {
       await refreshGithubToken(account.login);

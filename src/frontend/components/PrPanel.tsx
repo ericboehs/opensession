@@ -2748,7 +2748,9 @@ function gitTasks(
       tone: "blue",
       run: "push",
     });
-  if (git && git.uncommittedFiles > 0)
+  // Not on a shared checkout: the count is every session's edits, so "Commit"
+  // would ask this one to commit the others' in-flight work.
+  if (git && git.uncommittedFiles > 0 && !git.sharedCheckout)
     tasks.push({
       key: "dirty",
       label: `${git.uncommittedFiles} uncommitted file${git.uncommittedFiles === 1 ? "" : "s"}`,
