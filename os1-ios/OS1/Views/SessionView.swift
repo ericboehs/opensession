@@ -169,16 +169,18 @@ struct SessionView: View {
                     // visibility) and it costs a state write only when the
                     // Bool flips, not per scroll tick.
                     .onScrollGeometryChange(for: Bool.self) { geometry in
-                        // `visibleRect`, NOT `contentOffset + containerSize`:
-                        // containerSize excludes the content insets while the
-                        // offset and content size include them, so that sum
-                        // reads a full inset-height short of the bottom (measured
-                        // on an iPhone: 257pt of it, against an 80pt tolerance —
-                        // which is why the return pill used to sit there while
-                        // the reader was already at the latest message).
-                        geometry.visibleRect.maxY
-                            >= geometry.contentSize.height
-                                + geometry.contentInsets.bottom - pinTolerance
+                        // The predicate itself lives in TranscriptScroll, which
+                        // documents why it reads `visibleRect` rather than
+                        // `contentOffset + containerSize` — and is tested
+                        // against the numbers a real iPhone reports.
+                        TranscriptScroll.isNearBottom(
+                            TranscriptScroll.Geometry(
+                                visibleMaxY: geometry.visibleRect.maxY,
+                                contentHeight: geometry.contentSize.height,
+                                insetBottom: geometry.contentInsets.bottom
+                            ),
+                            tolerance: pinTolerance
+                        )
                     } action: { _, isNearBottom in
                         pinnedToBottom = isNearBottom
                         if isNearBottom { newBelow = false }
