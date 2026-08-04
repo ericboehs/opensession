@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import type { TranscriptEntry, UnifiedSession } from "../src/frontend/lib/types";
+import openSessionMark from "../os1-mac/build/icon-512.png";
 
 const now = "2026-08-04T12:00:00.000Z";
 const activeSessionId = "bks-demo-presence";
@@ -92,6 +94,40 @@ const sessions: UnifiedSession[] = [
 		prTitle: "Ship keyboard shortcuts",
 		prChecks: { total: 8, passed: 8, failed: 0, pending: 0 },
 		prReviewDecision: "APPROVED",
+	},
+	{
+		id: "bks-demo-search",
+		claudeSessionId: "demo-search",
+		source: "backstage",
+		branch: "michael/faster-session-search",
+		worktreeDir: "/workspace/search",
+		startedBy: "Michiel",
+		title: "Make session search instant",
+		lastActivity: "2026-08-04T10:31:00.000Z",
+		createdAt: "2026-08-04T06:54:00.000Z",
+		isRunning: false,
+		transcriptPath: "/demo/search.jsonl",
+		mode: "code",
+		repo: "opensession",
+		projectId: "project-search",
+		model: "anthropic/claude-opus-5",
+	},
+	{
+		id: "bks-demo-release",
+		claudeSessionId: "demo-release",
+		source: "backstage",
+		branch: "michael/release-notes",
+		worktreeDir: "/workspace/release",
+		startedBy: "Michiel",
+		title: "Draft the weekly release notes",
+		lastActivity: "2026-08-04T09:42:00.000Z",
+		createdAt: "2026-08-04T06:10:00.000Z",
+		isRunning: false,
+		transcriptPath: "/demo/release.jsonl",
+		mode: "ask",
+		repo: "opensession",
+		projectId: "project-release",
+		model: "openai/gpt-5.6-sol",
 	},
 ];
 
@@ -202,9 +238,11 @@ const responseFor = (url: URL, method: string): Response => {
 	if (path === "/api/people")
 		return json({
 			people: [
-				{ name: "Michiel", fullName: "Michiel Westerbeek" },
-				{ name: "Kent", fullName: "Kent de Bruin" },
-				{ name: "Jaap", fullName: "Jaap van der Meer" },
+				{ name: "Michiel", fullName: "Michiel Westerbeek", github: "happylinks" },
+				{ name: "Kent", fullName: "Kent de Bruin", github: "kentdebruin" },
+				{ name: "Jaap", fullName: "Jaap Frolich", github: "jfrolich" },
+				{ name: "Grant", fullName: "Grant Shaddick", github: "9ranty" },
+				{ name: "Louise", fullName: "Louise de Sadeleer", github: "louisedesadeleer" },
 			],
 		});
 	if (path === "/api/projects") return json({ projects });
@@ -257,7 +295,34 @@ const responseFor = (url: URL, method: string): Response => {
 	if (/^\/api\/sessions\/[^/]+\/reports$/.test(path)) return json({ reports: [] });
 	if (/^\/api\/sessions\/[^/]+\/workflows$/.test(path)) return json({ runs: [] });
 	if (/^\/api\/sessions\/[^/]+\/subagents$/.test(path))
-		return json({ subagents: [], sessionRunning: false });
+		return json({
+			subagents: path.includes(activeSessionId)
+				? [
+						{
+							id: "agent-demo-tests",
+							toolUseId: "tool-1",
+							agentType: "worker",
+							label: "Add presence coverage",
+							status: "done",
+							startedAt: Date.parse("2026-08-04T10:18:18.000Z"),
+							endedAt: Date.parse("2026-08-04T10:21:06.000Z"),
+							model: "anthropic/claude-sonnet-5",
+							tokensOut: 1840,
+							source: "opencode",
+						},
+						{
+							id: "agent-demo-review",
+							agentType: "oracle",
+							label: "Review the implementation",
+							status: "running",
+							startedAt: Date.parse("2026-08-04T10:21:12.000Z"),
+							model: "openai/gpt-5.6-terra",
+							source: "opencode",
+						},
+					]
+				: [],
+			sessionRunning: path.includes(activeSessionId),
+		});
 	if (method !== "GET") return json({ ok: true });
 	return json({ error: `No demo fixture for ${path}` }, { status: 404 });
 };
@@ -387,16 +452,99 @@ Object.assign(window, {
 });
 localStorage.setItem("opensession-user", "Michiel");
 localStorage.setItem("opensession-last-session", activeSessionId);
-localStorage.setItem("opensession-panel-open", "false");
+localStorage.setItem("opensession-panel-open", String(window.innerWidth > 760));
+localStorage.setItem("opensession-panel-tab", "workflows");
 localStorage.setItem("opensession-sidebar-collapsed", "0");
+localStorage.setItem(
+	"opensession-sidebar-hidden-tools",
+	JSON.stringify([
+		"tasks",
+		"reports",
+		"catchup",
+		"prtinder",
+		"supporttinder",
+		"analytics",
+		"notes",
+		"desk",
+	]),
+);
+
+const repoMarkObserver = new MutationObserver(() => {
+	for (const image of document.querySelectorAll<HTMLImageElement>(
+		'img[src*="/repo-icon/opensession.png"]',
+	)) {
+		if (image.src !== new URL(openSessionMark, location.href).href) {
+			image.src = openSessionMark;
+		}
+	}
+});
+repoMarkObserver.observe(document.documentElement, { childList: true, subtree: true });
 
 const [{ App }, { TooltipProvider }] = await Promise.all([
 	import("../src/frontend/App"),
 	import("../src/frontend/ui/tooltip"),
 ]);
 
-createRoot(document.getElementById("root")!).render(
-	<TooltipProvider>
-		<App serviceWorker={false} />
-	</TooltipProvider>,
-);
+function ProductDemoApp() {
+	useEffect(() => {
+		window.requestAnimationFrame(() => {
+			window.parent.postMessage(
+				{ type: "opensession-demo-ready" },
+				window.location.origin,
+			);
+		});
+	}, []);
+
+	return (
+		<TooltipProvider>
+			<App serviceWorker={false} />
+		</TooltipProvider>
+	);
+}
+
+createRoot(document.getElementById("root")!).render(<ProductDemoApp />);
+
+const featureSessions = [activeSessionId, activeSessionId, "bks-demo-shortcuts"];
+
+function syncFeaturePanel(feature: number, attempt = 0) {
+	const desiredTab = feature === 0 ? "Agents" : feature === 2 ? "Info" : null;
+	const panel = document.querySelector(".viewer-panel");
+	const toggle = document.querySelector<HTMLButtonElement>(
+		'button[aria-label="Toggle side panel"]',
+	);
+
+	if (desiredTab === null && panel) {
+		toggle?.click();
+		return;
+	}
+	if (desiredTab && !panel) {
+		toggle?.click();
+	} else if (desiredTab) {
+		const tab = Array.from(
+			document.querySelectorAll<HTMLButtonElement>(".panel-tab"),
+		).find((button) => button.textContent?.trim().startsWith(desiredTab));
+		if (tab && !tab.classList.contains("active")) tab.click();
+		if (tab) return;
+	}
+
+	if (attempt < 12) {
+		window.setTimeout(() => syncFeaturePanel(feature, attempt + 1), 80);
+	}
+}
+
+window.addEventListener("message", (event) => {
+	if (event.origin !== window.location.origin || event.source !== window.parent) return;
+	if (event.data?.type !== "opensession-demo-feature") return;
+	const feature = Number(event.data.feature);
+	if (!Number.isInteger(feature) || feature < 0 || feature >= featureSessions.length)
+		return;
+
+	const sessionId = featureSessions[feature];
+	window.history.replaceState(
+		{ d: 1 },
+		"",
+		`/session/${encodeURIComponent(sessionId)}`,
+	);
+	window.dispatchEvent(new PopStateEvent("popstate", { state: { d: 1 } }));
+	window.setTimeout(() => syncFeaturePanel(feature), 40);
+});

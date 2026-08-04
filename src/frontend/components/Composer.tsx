@@ -16,9 +16,11 @@ import {
   IconPaperclip,
   IconAtSign,
   IconCrosshair,
+  IconEye,
   IconNote,
   IconStopSquare,
 } from "./icons";
+import { cn } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
@@ -34,7 +36,6 @@ import { composerMorph, composerChipMotion } from "../ui/motion";
 import { ModelEffortSelect, shortModelLabel } from "./ModelEffortSelect";
 import { UsageMeter } from "./UsageMeter";
 import type { SessionUsage } from "../lib/types";
-import { cn } from "../ui/cn";
 
 interface Props {
   /**
@@ -699,7 +700,7 @@ export function Composer({
         animate={{ borderRadius: minimized ? 999 : 32 }}
         transition={composerMorph}
         className={cn(
-          "composer relative border border-line bg-control px-3.5 pt-3.5 pb-2.5 shadow-[var(--composer-shadow)] transition-[border-color,box-shadow] duration-150 max-[720px]:!rounded-xl max-[720px]:px-3 max-[720px]:pt-2.5 max-[720px]:pb-[9px]",
+          "composer relative border border-line bg-control px-3.5 pt-3.5 pb-2.5 shadow-[var(--composer-shadow)] transition-[border-color,box-shadow] duration-150 max-[720px]:px-3 max-[720px]:pt-2.5 max-[720px]:pb-[9px]",
           disabled && "composer-disabled opacity-60",
           minimized && "composer-min max-[720px]:mx-1.5 max-[720px]:flex max-[720px]:items-center max-[720px]:gap-1 max-[720px]:!p-1",
           noteMode && "composer-note",
@@ -708,7 +709,7 @@ export function Composer({
           noteMode
             ? tintedSurface("var(--yellow)", 10, 6, 45)
             : askMode
-              ? tintedSurface("var(--blue)", 7, 4, 30)
+              ? tintedSurface("var(--green)", 7, 4, 30)
               : undefined
         }
         onDrop={handleDrop}
@@ -833,13 +834,13 @@ export function Composer({
                   {canAttach && (
                     <button
                       type="button"
-                      className="composer-menu-item flex w-full cursor-pointer items-center gap-[9px] rounded-md border-0 bg-transparent px-[9px] py-[7px] text-left text-supporting text-fg hover:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)]"
+                      className="composer-menu-item"
                       {...tapProps(() => {
                         setMenu(null);
                         fileInputRef.current?.click();
                       })}
                     >
-                      <span className="composer-menu-icon inline-flex w-5 items-center justify-center text-control-label text-dim">
+                      <span className="composer-menu-icon">
                         <IconPaperclip size={22} />
                       </span>
                       {onFilesChange ? "Attach files" : "Attach an image"}
@@ -848,13 +849,13 @@ export function Composer({
                   {canAttach && mentionFetch && (
                     <button
                       type="button"
-                      className="composer-menu-item flex w-full cursor-pointer items-center gap-[9px] rounded-md border-0 bg-transparent px-[9px] py-[7px] text-left text-supporting text-fg hover:bg-[color-mix(in_srgb,var(--accent)_14%,transparent)]"
+                      className="composer-menu-item"
                       {...tapProps(() => {
                         setMenu(null);
                         startMention();
                       })}
                     >
-                      <span className="composer-menu-icon inline-flex w-5 items-center justify-center text-control-label text-dim">
+                      <span className="composer-menu-icon">
                         <IconAtSign size={22} />
                       </span>
                       Reference a file
@@ -931,6 +932,52 @@ export function Composer({
               />
             </motion.div>
           )}
+          {/* Active-mode marker. Nothing renders in the ordinary state; when a
+              mode is on it names itself next to the "+", so the tinted surface
+              isn't the only thing saying which one. Each marker does the safe
+              thing on click: note mode is a reversible toggle, so it turns
+              itself off, while ask mode's only exit cuts a worktree — that one
+              opens the menu and lets you pick the labelled row instead. */}
+          <AnimatePresence initial={false}>
+            {!minimized && (noteMode || askMode) && (
+              <motion.div
+                key="mode-marker"
+                layout="position"
+                {...composerChipMotion}
+                // Phones pull the model pill to the front of the toolbar
+                // (order:-1 in the foundation), which would otherwise wedge it
+                // between the "+" and this marker. Same order as the "+" wrap
+                // keeps the pair together — equal order falls back to DOM
+                // order, and the "+" is rendered first.
+                className="composer-pop-wrap max-[720px]:order-[-2]"
+              >
+                <Tooltip
+                  label={
+                    noteMode
+                      ? "Note mode — posts to the team; the agent won't see it. ⌘N to go back."
+                      : "Ask mode — this chat can read the code but not change it"
+                  }
+                >
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex min-h-8 items-center gap-1.5 rounded-full border px-2.5 text-meta font-medium transition-colors hover:bg-hover",
+                      noteMode
+                        ? "border-[color-mix(in_srgb,var(--yellow)_38%,transparent)] text-yellow"
+                        : "border-[color-mix(in_srgb,var(--green)_38%,transparent)] text-green",
+                    )}
+                    {...tapProps(() =>
+                      noteMode ? onNoteModeChange?.(false) : setMenu("add"),
+                    )}
+                    disabled={disabled}
+                  >
+                    {noteMode ? <IconNote size={15} /> : <IconEye size={15} />}
+                    {noteMode ? "Note" : "Ask"}
+                  </button>
+                </Tooltip>
+              </motion.div>
+            )}
+          </AnimatePresence>
           <div className={cn("composer-spacer flex-1", minimized && "max-[720px]:hidden")} />
 
           {/* Model + effort live together on the right edge (ChatGPT-style):

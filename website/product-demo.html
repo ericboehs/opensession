@@ -5,6 +5,19 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="color-scheme" content="light" />
 		<link rel="stylesheet" href="./.demo-tailwind.css" />
+		<style>
+			/* Keep real teammate avatars in the chat chrome without repeating the
+			   full People directory in the narrow marketing frame. */
+			.sidebar-independent-section:has(.sidebar-people-row) {
+				display: none;
+			}
+
+			@media (min-width: 721px) {
+				.sidebar-brand {
+					border-bottom: 1px solid var(--top-divider);
+				}
+			}
+		</style>
 		<title>OpenSession product preview</title>
 	</head>
 	<body>

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import markUrl from "../os1-mac/build/icon-512.png";
 import {
@@ -66,6 +66,24 @@ function CopyCommand() {
 }
 
 function LandingPage() {
+	const [activeFeature, setActiveFeature] = useState(0);
+	const featureRefs = useRef<Array<HTMLElement | null>>([]);
+
+	useEffect(() => {
+		const observer = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (!entry.isIntersecting) continue;
+					const index = Number((entry.target as HTMLElement).dataset.feature);
+					if (Number.isInteger(index)) setActiveFeature(index);
+				}
+			},
+			{ rootMargin: "-45% 0px -45%", threshold: 0 },
+		);
+		for (const node of featureRefs.current) if (node) observer.observe(node);
+		return () => observer.disconnect();
+	}, []);
+
 	return (
 		<>
 			<section className="hero">
@@ -116,8 +134,16 @@ function LandingPage() {
 					</div>
 
 					<div className="hero-scroll-notes" id="why">
-						{features.map((feature) => (
-							<article className="hero-scroll-note" key={feature.number}>
+						{features.map((feature, index) => (
+							<article
+								className="hero-scroll-note"
+								data-active={activeFeature === index}
+								data-feature={index}
+								key={feature.number}
+								ref={(node) => {
+									featureRefs.current[index] = node;
+								}}
+							>
 								<span>{feature.number}</span>
 								<h2>{feature.title}</h2>
 								<p>{feature.body}</p>
@@ -126,7 +152,7 @@ function LandingPage() {
 					</div>
 				</div>
 				<div className="hero-stage">
-					<ProductDemo />
+					<ProductDemo feature={activeFeature} />
 				</div>
 			</div>
 		</section>
