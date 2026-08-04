@@ -499,7 +499,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
           // the 11px trailing meta all ride this row, and centring aligns
           // their boxes rather than their text. Items with no text baseline
           // (the glyph, the spinner, the failure mark) opt back into centring.
-          "group flex w-full min-w-0 cursor-pointer items-baseline gap-2 rounded-md border-0 bg-transparent px-1 py-[3px] text-left font-sans transition-colors",
+          "group flex w-full min-w-0 cursor-pointer items-baseline gap-2 rounded-md border-0 bg-transparent px-1 py-[3px] text-left font-sans transition-colors focus-ring",
           "hover:bg-hover/40"
         )}
       >
@@ -522,14 +522,14 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
         </span>
 
         {mcp ? (
-          <span className="flex min-w-0 flex-shrink-0 items-baseline gap-1.5 text-[14px] leading-5">
+		  <span className="flex min-w-0 flex-shrink-0 items-baseline gap-1.5 text-body leading-5">
             <span className="rounded bg-panel px-1.5 py-px text-label leading-4 font-bold tracking-[-0.01em] text-dim">
               {mcp.server}
             </span>
             <span className="font-medium text-dim transition-colors group-hover:text-fg">{mcp.tool}</span>
           </span>
         ) : (
-          <span className="flex-shrink-0 text-[14px] leading-5 font-medium text-dim transition-colors group-hover:text-fg">{toolName}</span>
+		  <span className="flex-shrink-0 text-body leading-5 font-medium text-dim transition-colors group-hover:text-fg">{toolName}</span>
         )}
 
         {/* Baseline, not centre: the path is mono and the ± counts are sans, so
@@ -560,7 +560,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
             role="button"
             tabIndex={0}
             className={cn(
-              "flex-shrink-0 rounded border border-line px-1.5 py-px text-meta text-dim opacity-100 transition-opacity hover:border-line-strong hover:text-fg focus:opacity-100",
+			  "flex-shrink-0 rounded border border-line px-1.5 py-px text-meta text-dim opacity-100 transition-opacity hover:border-line-strong hover:text-fg focus:opacity-100 focus-ring",
               !subagentLive && "md:opacity-0 md:group-hover:opacity-100"
             )}
             onClick={(e) => {
@@ -616,7 +616,7 @@ export function ToolCallBlock({ entry, result, pending, onOpenSubagent, sessionI
                 )}
               >
                 {resultContent && (
-                  <div className="tool-code-surface">
+		<div className="tool-code-surface overflow-x-auto rounded-md border border-white/6 bg-[#0d0f13] px-2.5 py-2 [tab-size:2] [html[data-theme=light]_&]:border-[#d8dee4] [html[data-theme=light]_&]:bg-[#f6f8fa] [&_.tool-pre]:text-[#b6bcc8] [html[data-theme=light]_&_.tool-pre]:text-[#57606a] [&_.shiki-gutter]:text-[#565d6b] [html[data-theme=light]_&_.shiki-gutter]:text-[#8c959f]">
                     {renderResultContent(canonical, entry.toolInput, resultContent)}
                   </div>
                 )}
@@ -689,7 +689,7 @@ function toolInputNode(toolName: string, input: unknown): React.ReactNode | null
 
   if (toolName === "Bash" && bashCommand(input)) {
     return (
-      <div className="tool-code-surface">
+		  <div className="tool-code-surface overflow-x-auto rounded-md border border-white/6 bg-[#0d0f13] px-2.5 py-2 [tab-size:2] [html[data-theme=light]_&]:border-[#d8dee4] [html[data-theme=light]_&]:bg-[#f6f8fa] [&_.tool-pre]:text-[#b6bcc8] [html[data-theme=light]_&_.tool-pre]:text-[#57606a] [&_.shiki-gutter]:text-[#565d6b] [html[data-theme=light]_&_.shiki-gutter]:text-[#8c959f]">
         <CodeHighlight code={bashCommand(input)!} lang="bash" />
       </div>
     );
@@ -710,7 +710,7 @@ function toolInputNode(toolName: string, input: unknown): React.ReactNode | null
         : "");
     if (diff) {
       return (
-        <div className="tool-code-surface">
+		<div className="tool-code-surface overflow-x-auto rounded-md border border-white/6 bg-[#0d0f13] px-2.5 py-2 [tab-size:2] [html[data-theme=light]_&]:border-[#d8dee4] [html[data-theme=light]_&]:bg-[#f6f8fa] [&_.tool-pre]:text-[#b6bcc8] [html[data-theme=light]_&_.tool-pre]:text-[#57606a] [&_.shiki-gutter]:text-[#565d6b] [html[data-theme=light]_&_.shiki-gutter]:text-[#8c959f]">
           <CodeHighlight code={truncate(diff, 4000)} lang="diff" />
         </div>
       );

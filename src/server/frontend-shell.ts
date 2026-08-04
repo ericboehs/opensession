@@ -2,7 +2,6 @@ type FrontendShellOptions = {
 	instance: string;
 	productName: string;
 	entryName: string;
-	baseCssName: string;
 	tailwindCssName: string;
 };
 
@@ -37,7 +36,7 @@ export function assembleFrontendShell(source: string, options: FrontendShellOpti
 	html = replaceRequired(
 		html,
 		"</head>",
-		`  <link rel="stylesheet" href="/${options.baseCssName}">\n  <link rel="stylesheet" href="/${options.tailwindCssName}">\n</head>`,
+		`  <link rel="stylesheet" href="/${options.tailwindCssName}">\n</head>`,
 	);
 	return html;
 }

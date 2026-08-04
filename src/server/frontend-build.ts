@@ -74,25 +74,6 @@ export async function buildFrontend(): Promise<string> {
 	if (!entry) throw new Error("frontend build produced no entry point");
 	const entryName = entry.path.split("/").pop()!;
 
-	// Bun 1.3.14's CSS minifier strips the space after var(...) and breaks the
-	// .panel-overlay / .sidebar-overlay inset (and a few color-mix percentages),
-	// which knocks out the mobile overlay layer. Bypass it: write the source CSS
-	// unmodified with a content-hashed name and serve it ourselves.
-	let cssSrc = "";
-	const legacyCss = `${FRONTEND_SRC}/styles/global.css`;
-	if (existsSync(legacyCss)) cssSrc = await Bun.file(legacyCss).text();
-	// xterm stylesheet (the Shell tab) rides along in the same file, vendored
-	// straight from the installed package so it can't drift from the JS.
-	const xtermCss = await Bun.file(
-		`${REPO_ROOT}/node_modules/@xterm/xterm/css/xterm.css`,
-	).text();
-	cssSrc += `\n\n/* vendored @xterm/xterm/css/xterm.css (Shell tab) */\n${xtermCss}`;
-	const cssHash = Bun.hash(cssSrc).toString(36);
-	const cssName = `app-${cssHash}.css`;
-	// Atomic: a mid-write bundle file has shipped corrupt before ("useState is
-	// not defined") — never serve a torn asset.
-	writeFileAtomic(`${FRONTEND_DIST}/${cssName}`, cssSrc);
-
 	// ghostty-web's WASM VT engine (the Shell tab's terminal) rides along too:
 	// the bundled chunk can't resolve the package-relative wasm, so it's copied
 	// out and served at a stable name (static-assets.ts; the shell passes the
@@ -133,10 +114,9 @@ export async function buildFrontend(): Promise<string> {
 		instance,
 		productName: htmlProductName,
 		entryName,
-		baseCssName: cssName,
 		tailwindCssName: twName,
 	});
-	const version = `${entryName}|${cssName}|${twName}`;
+	const version = `${entryName}|${twName}`;
 
 	const store: FrontendBundle = (g.__backstageFrontend ??= {
 		indexHtml: "",
@@ -147,10 +127,11 @@ export async function buildFrontend(): Promise<string> {
 	store.gzip.clear(); // stale gzipped blobs were keyed by the old hashed names
 	store.version = version;
 	try {
-		writeFileAtomic(
-			BUNDLE_META,
-			JSON.stringify({ inputsHash, version, indexHtml, assets: [entryName, cssName, twName] }),
-		);
+		const assets = [
+			...result.outputs.map((output) => output.path.split("/").pop()!),
+			twName,
+		];
+		writeFileAtomic(BUNDLE_META, JSON.stringify({ inputsHash, version, indexHtml, assets }));
 	} catch {}
 	console.log(
 		`Frontend built: ${result.outputs.length} files → ${FRONTEND_DIST} (v=${version})`,
@@ -159,9 +140,9 @@ export async function buildFrontend(): Promise<string> {
 }
 
 // ── Boot-time build skip ─────────────────────────────────────────────────────
-// The bundle only depends on src/frontend/**, bun.lock (vendored xterm css /
-// ghostty wasm / the tailwind compiler all live in node_modules) and the Bun
-// version — verified: no frontend import reaches outside src/frontend. When
+// The bundle depends on src/frontend/**, the CSS/shell compiler helpers,
+// bun.lock (vendored xterm css / ghostty wasm / the tailwind compiler all live
+// in node_modules), and the Bun version. When
 // none of that changed since the last build, boot reuses .frontend-dist
 // instead of paying the ~3.5s rebuild; every restart used to eat it even with
 // zero frontend changes. The in-process watcher still rebuilds on any edit.
@@ -171,8 +152,18 @@ const BUNDLE_META = join(FRONTEND_DIST, ".bundle-meta.json");
 function frontendInputsHash(): string {
 	const parts: string[] = [
 		`bun:${Bun.version}`,
-		`instance:${productName()}:${productMark()}:${personaName()}:${configuredServer().publicBaseUrl}:${githubBotLogins().join(",")}:${defaultRepo().id}`,
+		`instance:${productName()}:${productMark()}:${personaName()}:${configuredServer().publicBaseUrl}:${githubBotLogins().join(",")}:${defaultRepo().id}:${plainWorkspaceId()}`,
 	];
+	for (const dependency of [
+		join(import.meta.dir, "frontend-build.ts"),
+		join(import.meta.dir, "frontend-css.ts"),
+		join(import.meta.dir, "frontend-shell.ts"),
+	]) {
+		try {
+			const file = statSync(dependency);
+			parts.push(`${dependency}:${file.mtimeMs}:${file.size}`);
+		} catch {}
+	}
 	try {
 		const lock = statSync(join(REPO_ROOT, "bun.lock"));
 		parts.push(`lock:${lock.mtimeMs}:${lock.size}`);

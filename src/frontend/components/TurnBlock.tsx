@@ -159,7 +159,7 @@ export const TurnBlock = React.memo(function TurnBlock({
         // runs and a mono file list, and centring aligns boxes rather than
         // text — the mono run landed a pixel off its neighbours. The icons
         // carry no baseline of their own, so they keep centring individually.
-        className="mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-baseline gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-[14px] leading-5 text-dim transition-colors hover:bg-hover/40 hover:text-fg"
+        className="mx-auto flex w-full max-w-[var(--chat-col)] min-w-0 cursor-pointer items-baseline gap-2 rounded-md border-0 bg-transparent px-1 py-1 text-left font-sans text-body leading-5 text-dim transition-colors hover:bg-hover/40 hover:text-fg focus-ring"
       >
         <span
           className={cn(

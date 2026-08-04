@@ -185,20 +185,23 @@ async function tailwindCss(): Promise<Response> {
 }
 
 // Serve the SPA shell through a rewriter: fetch Bun's HTML-import output from
-// the internal /__shell route and add the Tailwind link (after the bundled
-// global.css so utilities keep winning source-order ties, as in prod), plus a
-// watcher that hot-swaps that link when the compiled output changes — Bun's
-// HMR covers the bundle (App.tsx, global.css) but knows nothing about our
-// injected stylesheet.
+// the internal /__shell route and add the compiled Tailwind/foundation link,
+// plus a watcher that hot-swaps it when the compiled output changes. Bun's HMR
+// covers component modules but knows nothing about this injected stylesheet.
 const TW_REFRESH = `<script>
 (() => {
 	let last = null;
+	const revision = (value) => {
+		let hash = 2166136261;
+		for (let i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
+		return (hash >>> 0).toString(36);
+	};
 	setInterval(async () => {
 		try {
 			const css = await (await fetch("/tailwind-dev.css", { cache: "no-store" })).text();
 			if (last !== null && css !== last) {
 				const link = document.querySelector('link[href^="/tailwind-dev.css"]');
-				if (link) link.href = "/tailwind-dev.css?v=" + last.length;
+				if (link) link.href = "/tailwind-dev.css?v=" + revision(css);
 			}
 			last = css;
 		} catch {}
@@ -220,7 +223,7 @@ async function shell(req: Request): Promise<Response> {
 
 const server = Bun.serve<Bridge>({
 	port: PORT,
-	// hmr: edits to App.tsx/global.css hot-apply without a manual Cmd+R
+	// hmr: component edits hot-apply without a manual Cmd+R
 	// (React Fast Refresh through Bun's dev pipeline).
 	development: { hmr: true, console: true },
 	idleTimeout: 240,
