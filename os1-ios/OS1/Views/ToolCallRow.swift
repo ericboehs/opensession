@@ -14,9 +14,9 @@ struct ToolCallRow: View {
     @State private var detail: ToolDetail?
     /// The worker sheet opened from a Task row.
     @State private var openWorker: WorkerLink?
-    /// Installed by the iOS tab strip; absent everywhere else, which is what
-    /// keeps the asset chip from appearing where nothing can open it.
-    @Environment(\.openViewTab) private var openViewTab
+    /// Installed by the iOS session screen; absent everywhere else, which is
+    /// what keeps the asset chip from appearing where nothing can open it.
+    @Environment(\.openPanel) private var openPanel
 
     private var presentation: ToolPresentation { item.presentation }
 
@@ -131,11 +131,13 @@ struct ToolCallRow: View {
             }
 
             // Same dead end for a written asset: the row names a file the
-            // conversation itself can't show. The chip opens it in the assets
-            // tab, beside this session rather than over it.
-            if let assetPath = item.assetPath, openViewTab.isAvailable {
-                RowChip(title: "Open") { openViewTab(.assets(path: assetPath)) }
-                    .accessibilityLabel("Open this file in the assets tab")
+            // conversation itself can't show. The chip opens the file itself,
+            // one level deeper — back is the chevron, or the edge swipe.
+            if let assetPath = item.assetPath, openPanel.isAvailable {
+                RowChip(title: "Open") {
+                    openPanel(.asset(sessionId: sessionId, path: assetPath))
+                }
+                .accessibilityLabel("Open this file")
             }
 
             if let stats = presentation.lineStats {

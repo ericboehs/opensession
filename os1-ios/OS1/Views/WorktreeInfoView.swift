@@ -8,16 +8,17 @@ struct WorktreeInfoView: View {
     let catalog: ModelCatalog?
 
     @Environment(\.dismiss) private var dismiss
-    /// The session tab strip's assets tab, when this page was opened from
-    /// inside one — the asset rows are its second entry point.
-    @Environment(\.openViewTab) private var openViewTab
+    /// A detail of this session opened one level deeper INSIDE this sheet —
+    /// its assets, one of those files, its pull request. Pushed on the sheet's
+    /// own stack rather than the session's: this page is where you are, so
+    /// the chevron comes back here and the sheet never has to be dismissed.
+    @State private var panel: SessionPanel?
     @State private var gitStatus: OS1API.GitStatus?
     @State private var diff: OS1API.SessionDiff?
     @State private var assets: [OS1API.SessionAsset] = []
     @State private var overview: OS1API.WorkspaceOverview?
     @State private var loading = true
     @State private var loadFailed = false
-    @State private var showPrPanel = false
 
     var body: some View {
         NavigationStack {
@@ -50,8 +51,8 @@ struct WorktreeInfoView: View {
                     Task { await loadGitDetails() }
                 }
             }
-            .sheet(isPresented: $showPrPanel) {
-                PrPanelView(viewModel: viewModel)
+            .navigationDestination(item: $panel) { panel in
+                SessionPanelView(panel: panel, viewModel: viewModel)
             }
         }
     }
@@ -219,13 +220,12 @@ struct WorktreeInfoView: View {
     /// workspace page.
     @ViewBuilder
     private var assetsSection: some View {
-        if !assets.isEmpty, openViewTab.isAvailable {
+        if !assets.isEmpty {
             InfoSection(title: "\(assets.count) asset\(assets.count == 1 ? "" : "s")") {
                 let shown = Array(assets.prefix(8))
                 ForEach(shown) { asset in
                     Button {
-                        openViewTab(.assets(path: asset.path))
-                        dismiss()
+                        panel = .asset(sessionId: currentSession.id, path: asset.path)
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: AssetKind.of(asset).symbol)
@@ -272,14 +272,7 @@ struct WorktreeInfoView: View {
         if let number = viewModel.prDetails?.number ?? currentSession.prNumber {
             InfoSection(title: "Pull request") {
                 Button {
-                    // Same rule as the overflow menu: a tab of its own where
-                    // there's a strip to hold one, the sheet otherwise.
-                    if openViewTab.isAvailable {
-                        openViewTab(.review)
-                        dismiss()
-                    } else {
-                        showPrPanel = true
-                    }
+                    panel = .review(sessionId: currentSession.id)
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "arrow.triangle.pull")

@@ -49,13 +49,13 @@ extension PrDetails.Summary {
 /// Read-only by design — actions (merge, review, comment) stay on the web UI.
 struct PrPanelView: View {
     var viewModel: SessionViewModel
-    /// How this is being shown. As a `.tab` in the session strip it brings no
-    /// chrome of its own: the navigation stack is already there, and the way
-    /// out is the tab's × rather than a Done button.
+    /// How this is being shown. `.pushed` brings no chrome of its own: the
+    /// navigation stack is already there, and the way out is the chevron (or
+    /// the edge swipe) rather than a Done button.
     var chrome: Chrome = .sheet
     @Environment(\.dismiss) private var dismiss
 
-    enum Chrome { case sheet, tab }
+    enum Chrome { case sheet, pushed }
 
     var body: some View {
         Group {
@@ -69,7 +69,7 @@ struct PrPanelView: View {
                             }
                         }
                 }
-            case .tab:
+            case .pushed:
                 titled(content)
             }
         }

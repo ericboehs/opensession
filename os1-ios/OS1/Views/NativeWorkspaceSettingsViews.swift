@@ -232,6 +232,7 @@ struct ConnectionsSettingsView: View {
     @State private var addSheet = false
     @State private var editing: MCPConnection?
     @State private var removing: MCPConnection?
+    @State private var disconnecting: GitHubConnectedAccount?
     @State private var routerSheet = false
     @State private var githubFlow: GitHubDeviceFlow?
     @State private var githubConnectTask: Task<Void, Never>?
@@ -246,18 +247,60 @@ struct ConnectionsSettingsView: View {
                     if agents.isEmpty { Text("No agent health data.").foregroundStyle(.secondary) }
                     ForEach(agents.keys.sorted(), id: \.self) { name in
                         let health = agents[name]
-                        LabeledContent(name, value: [health?.status, health?.activeSessions.map { "\($0) active" }].compactMap { $0 }.joined(separator: " · "))
+                        ConnectionRow(
+                            name: name,
+                            status: health?.status,
+                            subtitle: health?.activeSessions.flatMap { $0 > 0 ? "\($0) active \($0 == 1 ? "session" : "sessions")" : nil } ?? health?.detail
+                        )
                     }
                 }
                 Section("MCP connections") {
                     let connections = (response?.mcpServers ?? []).filter { $0.name?.isEmpty == false }
                     if connections.isEmpty { Text("No MCP connections.").foregroundStyle(.secondary) }
                     ForEach(connections, id: \.id) { connection in
-                        VStack(alignment: .leading) {
-                            Text(connection.name ?? "Connection")
-                            Text([connection.transport, connection.status, connection.target].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
-                            HStack { Button("Allowed users") { editing = connection }; Button("Remove", role: .destructive) { removing = connection } }
-                                .buttonStyle(.borderless)
+                        ConnectionRow(
+                            name: connection.name ?? "Connection",
+                            status: connection.status,
+                            subtitle: connectionSubtitle(connection),
+                            detail: allowedUsersDetail(connection)
+                        ) {
+                            // The destructive action lives behind the row's menu
+                            // rather than as a bare red button per row: a list of
+                            // "Remove"s reads as the point of the screen, and one
+                            // mis-tap silently drops a connection for everyone.
+                            Menu {
+                                Button { editing = connection } label: { Label("Allowed users", systemImage: "person.2") }
+                                Button(role: .destructive) { removing = connection } label: { Label("Remove connection", systemImage: "trash") }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 30, height: 30)
+                                    .contentShape(Rectangle())
+                            }
+                            .menuStyle(.button)
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("\(Brand.displayName(connection.name ?? "connection")) options")
+                            // Anchored to the row's own control, so the confirm
+                            // reads as a continuation of the menu it came from
+                            // instead of a dialog floating over the whole list.
+                            .confirmationDialog(
+                                "Remove \(Brand.displayName(connection.name ?? "connection"))?",
+                                isPresented: Binding(
+                                    get: { removing?.id == connection.id },
+                                    set: { if !$0, removing?.id == connection.id { removing = nil } }
+                                ),
+                                titleVisibility: .visible
+                            ) {
+                                Button("Remove connection", role: .destructive) { Task { await remove(connection) } }
+                                Button("Cancel", role: .cancel) { removing = nil }
+                            } message: {
+                                Text("Every session loses access to \(Brand.displayName(connection.name ?? "this server"))'s tools. You can add it back later.")
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { removing = connection } label: { Label("Remove", systemImage: "trash") }
+                            Button { editing = connection } label: { Label("Users", systemImage: "person.2") }.tint(.blue)
                         }
                     }
                     Button { addSheet = true } label: { Label("Add MCP connection", systemImage: "plus") }
@@ -265,7 +308,36 @@ struct ConnectionsSettingsView: View {
                 Section("GitHub") {
                     Text(github?.enabled == true ? "GitHub connection enabled" : "GitHub connection not enabled").foregroundStyle(.secondary)
                     ForEach((github?.accounts ?? []).filter { $0.login?.isEmpty == false }, id: \.id) { account in
-                        HStack { Text("@\(account.login ?? "")"); Spacer(); Button("Disconnect", role: .destructive) { Task { await disconnect(account) } }.buttonStyle(.borderless) }
+                        ConnectionRow(name: "github", title: "@\(account.login ?? "")", status: nil, subtitle: nil) {
+                            Menu {
+                                Button(role: .destructive) { disconnecting = account } label: { Label("Disconnect account", systemImage: "person.badge.minus") }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 30, height: 30)
+                                    .contentShape(Rectangle())
+                            }
+                            .menuStyle(.button)
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("@\(account.login ?? "") options")
+                            .confirmationDialog(
+                                "Disconnect @\(account.login ?? "")?",
+                                isPresented: Binding(
+                                    get: { disconnecting?.id == account.id },
+                                    set: { if !$0, disconnecting?.id == account.id { disconnecting = nil } }
+                                ),
+                                titleVisibility: .visible
+                            ) {
+                                Button("Disconnect account", role: .destructive) { Task { await disconnect(account) } }
+                                Button("Cancel", role: .cancel) { disconnecting = nil }
+                            } message: {
+                                Text("Sessions fall back to the shared GitHub credential. You can reconnect any time.")
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { disconnecting = account } label: { Label("Disconnect", systemImage: "person.badge.minus") }
+                        }
                     }
                     if github?.enabled == true {
                         Button { Task { await connectGitHub() } } label: {
@@ -293,9 +365,6 @@ struct ConnectionsSettingsView: View {
                 GitHubConnectionFlowView(flow: githubFlow, onCancel: cancelGitHubConnect)
             }
         }
-        .alert("Remove connection?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { connection in
-            Button("Remove", role: .destructive) { Task { await remove(connection) } }; Button("Cancel", role: .cancel) {}
-        } message: { connection in Text("Remove \(connection.name ?? "this MCP connection")?") }
     }
     private func load(refresh: Bool = false) async {
         loading = true; error = nil
@@ -342,6 +411,95 @@ struct ConnectionsSettingsView: View {
         }
     }
     private func cancelGitHubConnect() { githubConnectTask?.cancel(); githubConnectTask = nil; githubFlow = nil }
+
+    /// Where the server lives. The transport is dropped when the target already
+    /// says it (an https URL) and kept when it doesn't (a stdio command).
+    private func connectionSubtitle(_ connection: MCPConnection) -> String? {
+        guard let target = connection.target, !target.isEmpty else { return connection.transport }
+        if let url = URL(string: target), let host = url.host, url.scheme?.hasPrefix("http") == true {
+            return host + (url.path == "/" ? "" : url.path)
+        }
+        return [connection.transport, target].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private func allowedUsersDetail(_ connection: MCPConnection) -> String? {
+        guard let users = connection.allowedUsers, !users.isEmpty else { return nil }
+        return users.count == 1 ? "1 allowed user" : "\(users.count) allowed users"
+    }
+}
+
+/// One service in Connections: its real logo and capitalized name, a health dot,
+/// and whatever actions the section wants behind a trailing control.
+private struct ConnectionRow<Trailing: View>: View {
+    let name: String
+    var title: String?
+    let status: String?
+    /// The endpoint — the one part long enough to truncate.
+    let subtitle: String?
+    /// Short, always-legible facts (e.g. "3 allowed users") kept out of the
+    /// truncating endpoint so a long URL can't eat them.
+    var detail: String?
+    @ViewBuilder let trailing: Trailing
+
+    init(
+        name: String,
+        title: String? = nil,
+        status: String?,
+        subtitle: String?,
+        detail: String? = nil,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.name = name
+        self.title = title
+        self.status = status
+        self.subtitle = subtitle
+        self.detail = detail
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            BrandTile(name: name)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title ?? Brand.displayName(name))
+                if status != nil || subtitle != nil || detail != nil {
+                    HStack(spacing: 5) {
+                        if let status, !status.isEmpty {
+                            Circle().fill(ConnectionRow.statusColor(status)).frame(width: 6, height: 6)
+                            Text(status.prefix(1).uppercased() + status.dropFirst()).fixedSize()
+                        }
+                        if let subtitle, !subtitle.isEmpty {
+                            if status?.isEmpty == false { Text("·") }
+                            Text(subtitle).lineLimit(1).truncationMode(.middle)
+                        }
+                        if let detail, !detail.isEmpty {
+                            if status?.isEmpty == false || subtitle?.isEmpty == false { Text("·").fixedSize() }
+                            Text(detail).fixedSize()
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 4)
+            trailing
+        }
+        .padding(.vertical, 2)
+    }
+
+    private static func statusColor(_ status: String) -> Color {
+        switch status.lowercased() {
+        case "operational", "connected", "ready", "ok", "healthy", "running": .green
+        case "error", "failed", "disconnected", "unauthorized", "stopped", "down": .red
+        default: .orange
+        }
+    }
+}
+
+extension ConnectionRow where Trailing == EmptyView {
+    init(name: String, title: String? = nil, status: String?, subtitle: String?, detail: String? = nil) {
+        self.init(name: name, title: title, status: status, subtitle: subtitle, detail: detail) { EmptyView() }
+    }
 }
 
 struct MemorySettingsView: View {

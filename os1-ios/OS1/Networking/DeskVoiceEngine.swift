@@ -232,6 +232,9 @@ final class DeskVoiceEngine {
             try inputNode.setVoiceProcessingEnabled(voiceProcessing)
         } catch {
             print("DeskVoiceEngine: setVoiceProcessingEnabled(\(voiceProcessing)) failed: \(error)")
+            // Enable failed → no echo cancellation → same self-echo hazard
+            // as the fallback path.
+            if voiceProcessing { rt.halfDuplex = true }
         }
         #endif
 
@@ -502,7 +505,11 @@ final class DeskVoiceEngine {
         guard active, !muted, !vpFallbackDone else { return }
         guard rt.uplinkPeak.value < 0.001 else { return }
         vpFallbackDone = true
-        print("DeskVoiceEngine: uplink is digital silence with voice processing on — rebuilding capture without it")
+        // No voice processing means no echo cancellation: without the gate
+        // the model converses with its own echo (the transcript literally
+        // shows it answering fragments of its previous sentence).
+        rt.halfDuplex = true
+        print("DeskVoiceEngine: uplink is digital silence with voice processing on — rebuilding capture without it (half-duplex)")
         engine.inputNode.removeTap(onBus: 0)
         if engine.isRunning {
             engine.stop()
@@ -599,6 +606,7 @@ final class DeskVoiceEngine {
         playerNode = nil
         audioLevel = 0
         rt.resetLevels()
+        rt.halfDuplex = false
 
         rt.playerNode = nil
         rt.uplinkConverter = nil
@@ -649,8 +657,14 @@ private final class DeskVoiceAudioBridge: @unchecked Sendable {
     /// Set from the main actor, read on the capture thread — a plain `Bool`
     /// load/store, and a frame either side of the flip is inaudible.
     var muted = false
+    /// Set when the call runs without echo cancellation (voice-processing
+    /// fallback). The uplink then goes half-duplex: mic frames stay local
+    /// while the model is audibly speaking, because the speaker's output
+    /// would otherwise re-enter the mic and barge in on the model itself.
+    var halfDuplex = false
 
     private let scheduledCount = LockedCounter()
+    private let lastDrainAt = LockedTime()
     private let inputLevel = LockedLevel()
     private let outputLevel = LockedLevel()
     /// Loudest sample the uplink has carried this call (0…1) — the silence
@@ -723,8 +737,9 @@ private final class DeskVoiceAudioBridge: @unchecked Sendable {
         if peak > uplinkPeak.value { uplinkPeak.value = peak }
 
         // Muted still captures (and still meters, so the level dies visibly) —
-        // it just stops anything leaving the device.
-        guard !muted else { return }
+        // it just stops anything leaving the device. Same for the half-duplex
+        // gate while the model is audibly speaking.
+        guard !muted, !uplinkGated() else { return }
         let byteCount = Int(outBuffer.frameLength) * MemoryLayout<Int16>.size
         let audioData = Data(bytes: UnsafeRawPointer(int16[0]), count: byteCount)
         send(["type": "input_audio_buffer.append", "audio": audioData.base64EncodedString()])
@@ -754,9 +769,19 @@ private final class DeskVoiceAudioBridge: @unchecked Sendable {
         playerNode.scheduleBuffer(buffer) { [weak self] in
             guard let self else { return }
             if self.scheduledCount.decrementAndGet() <= 0 {
+                self.lastDrainAt.value = CFAbsoluteTimeGetCurrent()
                 self.onPlaybackDrained?()
             }
         }
+    }
+
+    /// Half-duplex gate: true while the model's voice is (or was a moment
+    /// ago) coming out of the speaker. The tail covers the speaker's decay so
+    /// the reopened mic doesn't catch the last syllable's echo.
+    private func uplinkGated() -> Bool {
+        guard halfDuplex else { return false }
+        if scheduledCount.current() > 0 { return true }
+        return CFAbsoluteTimeGetCurrent() - lastDrainAt.value < 0.35
     }
 
     /// Barge-in: drop everything queued so the model's old response stops
@@ -776,6 +801,26 @@ private final class DeskVoiceAudioBridge: @unchecked Sendable {
               let text = String(data: data, encoding: .utf8)
         else { return }
         webSocketTask.send(.string(text)) { _ in }
+    }
+}
+
+/// A lock-guarded `CFAbsoluteTime`, written from the player-completion
+/// callback and read on the capture thread by the half-duplex gate.
+private final class LockedTime: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: CFAbsoluteTime = 0
+
+    var value: CFAbsoluteTime {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return storage
+        }
+        set {
+            lock.lock()
+            storage = newValue
+            lock.unlock()
+        }
     }
 }
 
@@ -814,6 +859,13 @@ private final class LockedCounter: @unchecked Sendable {
     func decrementAndGet() -> Int {
         lock.lock()
         value -= 1
+        let result = value
+        lock.unlock()
+        return result
+    }
+
+    func current() -> Int {
+        lock.lock()
         let result = value
         lock.unlock()
         return result

@@ -59,8 +59,8 @@ struct ComposerSettingsView: View {
     @State private var busySendMod = "steer"
     @State private var loading = true
     @State private var saving = false
+    @State private var resaveNeeded = false
     @State private var error: String?
-    @State private var savedMessage: String?
     @State private var savedPrefs: [String: String] = [:]
     @State private var prefsLoaded = false
 
@@ -123,23 +123,25 @@ struct ComposerSettingsView: View {
                     Text("Queued messages wait until the agent has fully finished; steering folds them into the running turn at its next step. Touch and hold the send button to use the other one for a single message.")
                     #endif
                 }
-
-                Section {
-                    Button(saving ? "Saving…" : "Save composer preferences") {
-                        Task { await save() }
-                    }
-                    .disabled(!prefsLoaded || saving || currentPrefs == savedPrefs)
-                    if let savedMessage {
-                        Text(savedMessage)
-                            .foregroundStyle(.green)
-                    }
-                }
             }
             PersonalPromptSection()
         }
         .navigationTitle("Composer")
         .task { await load() }
-        .disabled(saving)
+        .onChange(of: defaultModel) { _, _ in commit() }
+        .onChange(of: sendKey) { _, _ in commit() }
+        .onChange(of: busySend) { _, _ in commit() }
+        .onChange(of: busySendMod) { _, _ in commit() }
+        .onDisappear { commit() }
+    }
+
+    /// Every control writes through on change — there is no Save button, so
+    /// leaving the screen is only a backstop for a request still in flight.
+    /// A change made mid-save queues behind it rather than racing it.
+    private func commit() {
+        guard prefsLoaded, !loading, currentPrefs != savedPrefs else { return }
+        guard !saving else { resaveNeeded = true; return }
+        Task { await save() }
     }
 
     private func load() async {
@@ -175,14 +177,13 @@ struct ComposerSettingsView: View {
     private func save() async {
         saving = true
         error = nil
-        savedMessage = nil
         do {
             let current = currentPrefs
             var patch: [String: String?] = [:]
             for (key, value) in current where savedPrefs[key] != value {
                 patch[key] = value
             }
-            guard !patch.isEmpty else { saving = false; return }
+            guard !patch.isEmpty else { saving = false; resaveNeeded = false; return }
             let requestContext = NativePreferences.context()
             let response = try await SettingsAPI.updateUiPrefs(user: requestContext.user, prefs: patch)
             var confirmed = savedPrefs
@@ -204,11 +205,14 @@ struct ComposerSettingsView: View {
             nativeBusySend = busySend
             nativeBusySendMod = busySendMod
             savedPrefs = confirmed
-            savedMessage = "Composer preferences saved."
         } catch {
             self.error = error.localizedDescription
         }
         saving = false
+        if resaveNeeded {
+            resaveNeeded = false
+            commit()
+        }
     }
 
     private var currentPrefs: [String: String] {
@@ -230,7 +234,6 @@ struct AppearanceSettingsView: View {
     @State private var loading = true
     @State private var saving = false
     @State private var error: String?
-    @State private var savedMessage: String?
     @State private var savedTurnActivity = "auto"
     @State private var prefsLoaded = false
 
@@ -257,10 +260,6 @@ struct AppearanceSettingsView: View {
                         Text("Always expanded").tag("expanded")
                         Text("Always collapsed").tag("collapsed")
                     }
-                    Button(saving ? "Saving…" : "Save session preference") {
-                        Task { await saveTurnActivity() }
-                    }
-                    .disabled(!prefsLoaded || saving || turnActivity == savedTurnActivity)
                 }
             } header: {
                 Text("Session")
@@ -286,13 +285,13 @@ struct AppearanceSettingsView: View {
                     Button("Try again") { Task { await load() } }
                 }
             }
-            if let savedMessage {
-                Section { Text(savedMessage).foregroundStyle(.green) }
-            }
         }
         .navigationTitle("Appearance")
         .task { await load() }
-        .disabled(saving)
+        .onChange(of: turnActivity) { _, _ in
+            guard prefsLoaded, !saving, turnActivity != savedTurnActivity else { return }
+            Task { await saveTurnActivity() }
+        }
     }
 
     /// Fire-and-forget: the toggle is already reflected locally via
@@ -329,10 +328,10 @@ struct AppearanceSettingsView: View {
         loading = false
     }
 
+    /// Writes through on selection, like the Desk voice toggle above it.
     private func saveTurnActivity() async {
         saving = true
         error = nil
-        savedMessage = nil
         do {
             let requestContext = NativePreferences.context()
             let selected = turnActivity
@@ -350,7 +349,6 @@ struct AppearanceSettingsView: View {
             turnActivity = confirmed["turn-activity"] ?? selected
             nativeTurnActivity = turnActivity
             savedTurnActivity = turnActivity
-            savedMessage = "Session preference saved."
         } catch {
             self.error = error.localizedDescription
         }

@@ -17,6 +17,9 @@ export const BRANDS: Record<string, { bg: string; fg?: string }> = {
   incident: { bg: "#f25533" },
   ahrefs: { bg: "#ff6b00" },
   circle: { bg: "#6c47ff" },
+  brex: { bg: "#212121" },
+  posthog: { bg: "#f54e00" },
+  dub: { bg: "#000000" },
 };
 
 /** Pretty display names for the handful that don't title-case cleanly. */
