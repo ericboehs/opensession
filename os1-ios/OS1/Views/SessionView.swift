@@ -250,9 +250,6 @@ struct SessionView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 10) {
-                            if viewModel.canLoadEarlier || viewModel.loadingEarlier {
-                                historyLoader
-                            }
                             // Nothing on screen: the caller may own this space
                             // (the Desk puts its board here). Rendered inside
                             // the transcript rather than in place of it, so the
@@ -460,7 +457,17 @@ struct SessionView: View {
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
                     }
+                    // Match the web transcript: history is one floating action,
+                    // not a row that participates in the conversation layout.
+                    .overlay(alignment: .top) {
+                        if viewModel.canLoadEarlier || viewModel.loadingEarlier {
+                            historyLoader
+                                .padding(.top, 12)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+                    }
                     .animation(.snappy(duration: 0.22, extraBounce: 0), value: pinnedToBottom)
+                    .animation(.snappy(duration: 0.22, extraBounce: 0), value: viewModel.loadingEarlier)
                     // A scroll gesture is the reader taking over: the
                     // opening hold ends the moment they touch the transcript.
                     .onScrollPhaseChange { _, phase in
@@ -835,40 +842,38 @@ struct SessionView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Sits above the oldest rendered entry; scrolling it into view pages in
-    /// the previous window of history (with a button as the manual fallback).
+    /// The web transcript's floating Load all pill, kept out of the transcript
+    /// layout so loading older messages never looks like another message.
     private var historyLoader: some View {
-        HStack(spacing: 6) {
-            if viewModel.jumpingToStart {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Loading full history…")
-            } else if viewModel.loadingEarlier {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Loading earlier…")
-            } else {
-                Button("Load earlier history") { requestEarlier() }
-                    .buttonStyle(.borderless)
-                Divider()
-                    .frame(height: 14)
-                // The whole backlog in one tap, for readers who'd otherwise
-                // page a hundred times to reach the first message.
-                Button { requestJumpToStart() } label: {
-                    Image(systemName: "arrow.up.to.line")
+        Group {
+            if viewModel.loadingEarlier {
+                HStack(spacing: 7) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(viewModel.jumpingToStart
+                        ? "Loading all messages…"
+                        : "Loading older messages…")
                 }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Jump to the start of the session")
+                .historyPillSurface()
+            } else {
+                Button { requestJumpToStart() } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("Load all")
+                    }
+                    .historyPillSurface()
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Load all earlier messages")
             }
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
+        .font(.caption.weight(.medium))
+        .foregroundStyle(OS1VisualStyle.textDim)
         .onAppear {
-            // A jump that stopped at its ceiling leaves this control on screen
-            // right under the reader; auto-paging there would yank the view
-            // they were just placed in. The next appearance loads as usual.
+            // Preserve the native prefetch: one page loads when this control
+            // first enters, while the visible action handles the full backlog.
             if suppressAutoEarlier {
                 suppressAutoEarlier = false
             } else {
@@ -1531,6 +1536,19 @@ private struct ScrollToLatestButton: View {
         .accessibilityLabel(
             hasNewOutput ? "New messages below. Scroll to latest" : "Scroll to latest"
         )
+    }
+}
+
+private extension View {
+    /// The shared floating transcript-control surface. History and return-to-
+    /// latest actions travel over arbitrary content, so they stay opaque.
+    func historyPillSurface() -> some View {
+        self
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(OS1VisualStyle.panel, in: Capsule())
+            .overlay { Capsule().stroke(OS1VisualStyle.border, lineWidth: 0.5) }
+            .shadow(color: .black.opacity(0.12), radius: 6, y: 1)
     }
 }
 
