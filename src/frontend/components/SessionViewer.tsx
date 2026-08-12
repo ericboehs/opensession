@@ -1037,7 +1037,6 @@ export function SessionViewer({
 		loaded: number;
 		cursor: number | null;
 	} | null>(null);
-	const [loadingAllHistory, setLoadingAllHistory] = useState(false);
 	// Byte offset the loaded history begins at — the "load earlier" pagination
 	// cursor (server: parseTranscriptTail/parseTranscriptWindow startOffset).
 	// null = unknown (old server) → load_history falls back to the full resend.
@@ -1565,7 +1564,6 @@ export function SessionViewer({
 	useEffect(() => {
 		return () => {
 			historyWalkRef.current = null;
-			setLoadingAllHistory(false);
 		};
 	}, [session.id]);
 
@@ -2199,7 +2197,6 @@ export function SessionViewer({
 					if (historyWalkRef.current?.sessionId === session.id) {
 						if (msg.truncated) {
 							historyWalkRef.current = null;
-							setLoadingAllHistory(false);
 						} else {
 							finishHistoryWalk();
 						}
@@ -2844,7 +2841,6 @@ export function SessionViewer({
 			loaded: 0,
 			cursor: null,
 		};
-		setLoadingAllHistory(true);
 		beginHistoryLoad(60_000);
 		requestHistoryPage(true);
 	}, [beginHistoryLoad, historyTruncated, requestHistoryPage, session.id]);
@@ -2855,7 +2851,6 @@ export function SessionViewer({
 	const finishHistoryWalk = useCallback(() => {
 		if (!historyWalkRef.current) return;
 		historyWalkRef.current = null;
-		setLoadingAllHistory(false);
 		stopHistoryHold();
 	}, [stopHistoryHold]);
 
@@ -5606,11 +5601,7 @@ export function SessionViewer({
 												className={TRANSCRIPT_PILL_SPINNER}
 												aria-hidden
 											/>
-											<span>
-												{loadingAllHistory
-													? "Loading all messages…"
-													: "Loading older messages…"}
-											</span>
+											<span>Loading</span>
 										</div>
 									) : (
 										<button

@@ -845,7 +845,7 @@ struct SessionView: View {
     /// The web transcript's floating Load all pill, kept out of the transcript
     /// layout so loading older messages never looks like another message.
     private var historyLoader: some View {
-        Group {
+        HStack(spacing: 0) {
             if viewModel.loadingEarlier {
                 HStack(spacing: 7) {
                     ProgressView()

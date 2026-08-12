@@ -286,7 +286,7 @@ export const SESSION_DELETE_LABEL = "text-label text-dim";
 const PILL_BASE =
 	"inline-flex h-[26px] items-center rounded-full bg-panel pr-2.5 pl-2 " +
 	"text-xs font-medium text-dim " +
-	"[--smooth-ring-color:var(--line)] smooth-shadow-ring-sm";
+	"[--smooth-ring-width:0.5px] [--smooth-ring-color:var(--line)] smooth-shadow-ring-sm";
 
 export const TRANSCRIPT_PILL = `${PILL_BASE} gap-1.5`;
 
