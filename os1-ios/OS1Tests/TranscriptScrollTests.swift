@@ -138,10 +138,10 @@ final class TranscriptPrependRestoreTests: XCTestCase {
         XCTAssertEqual(distanceAfter - distanceBefore, 1108, accuracy: 0.001)
     }
 
-    func testTheRestoreFollowsRowsThatKeepMeasuring() throws {
-        // A page's height lands in steps — the rows realize and their markdown
-        // parses afterwards — so the restore recomputes against the newest
-        // height instead of setting one offset and trusting it.
+    func testEverySettledHeightHasTheSameRestorationCoordinate() throws {
+        // A page's height can land in steps as rows realize. Whichever valid
+        // post-prepend height arrives first must preserve the same coordinate;
+        // SwiftUI anchors later ordinary size changes itself.
         let distance = TranscriptScroll.distanceFromEnd(offset: 26.3, contentHeight: 11_129)
         let settling: [CGFloat] = [11_915, 11_926, 12_017, 12_064, 12_110, 12_156]
         for height in settling {
@@ -152,7 +152,7 @@ final class TranscriptPrependRestoreTests: XCTestCase {
                 TranscriptScroll.distanceFromEnd(offset: y - insetTop, contentHeight: height),
                 distance,
                 accuracy: 0.001,
-                "every step has to land the reader in the same place"
+                "every valid height has to map to the reader's same place"
             )
         }
     }
@@ -175,6 +175,15 @@ final class TranscriptPrependRestoreTests: XCTestCase {
             contentHeight: 22_000,
             insetTop: insetTop,
             minimumContentHeight: 21_095
+        ))
+    }
+
+    func testTheRestoreWaitsForContentToGrowPastTheBaseline() {
+        XCTAssertNil(TranscriptScroll.restoredScrollY(
+            distanceFromEnd: 8_000,
+            contentHeight: 12_000,
+            insetTop: insetTop,
+            minimumContentHeight: 12_000
         ))
     }
 

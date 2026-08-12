@@ -45,10 +45,8 @@ enum TranscriptScroll {
     ///
     /// The inverse of `distanceFromEnd`, plus the top inset, and both halves
     /// are load-bearing. It is a function rather than one line at the call
-    /// site because the restore re-runs as the prepended rows settle:
-    /// markdown parses asynchronously and the lazy stack realizes rows as it
-    /// goes, so `contentHeight` keeps climbing for a beat after the page
-    /// arrives and the answer has to be recomputed against the newest one.
+    /// site so the restore can use the first valid post-prepend geometry while
+    /// SwiftUI anchors later row-size changes itself.
     ///
     /// The inset is the trap. `scrollTo(y:)` measures from the top of the
     /// content AREA, while `contentOffset` — what `distanceFromEnd` is built
@@ -61,11 +59,14 @@ enum TranscriptScroll {
         insetTop: CGFloat,
         minimumContentHeight: CGFloat = 0
     ) -> CGFloat? {
-        guard contentHeight >= minimumContentHeight else { return nil }
+        guard minimumContentHeight == 0 || contentHeight > minimumContentHeight else {
+            return nil
+        }
         let y = contentHeight - distanceFromEnd + insetTop
         // A LazyVStack can briefly report less content than it had before the
-        // prepend while it re-realizes rows. There is no valid position above
-        // zero, so wait for the next measurement instead of clamping to top.
+        // prepend while it re-realizes rows, and the unchanged baseline can
+        // arrive before the new rows are laid out. Neither is a restoration
+        // target, so wait for the next measurement instead of moving early.
         return y >= 0 ? y : nil
     }
 
@@ -96,14 +97,10 @@ struct TranscriptGeometry: Equatable {
     var insetTop: CGFloat
 }
 
-/// The transcript's live scroll geometry, held by reference on purpose.
-///
-/// It updates on every frame of a scroll, and everything a `SessionView.body`
-/// reads re-evaluates the whole transcript with it — so the offset cannot live
-/// in `@State`. Only code outside `body` (the prepend restore) reads this.
+/// Mutable scroll geometry that does not participate in SwiftUI observation.
+/// The transcript updates it every frame but reads it only when a history page
+/// is requested or lands.
 @MainActor
 final class TranscriptGeometryBox {
-    var offset: CGFloat = 0
-    var contentHeight: CGFloat = 0
-    var insetTop: CGFloat = 0
+    var value = TranscriptGeometry(offset: 0, contentHeight: 0, insetTop: 0)
 }
