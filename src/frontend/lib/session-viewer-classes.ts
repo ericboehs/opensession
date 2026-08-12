@@ -268,8 +268,9 @@ export const SESSION_DELETE_LABEL = "text-label text-dim";
  *
  * "Load all" at the top of the transcript, "Scroll to bottom" at its foot, and
  * the loading state each of them swaps to. They float over live content, so
- * they are glass rather than a panel, and they stay small: this is chrome the
- * eye should pass over, not a primary action.
+ * they use the same compact opaque capsule as the native app: this is chrome
+ * the eye should pass over, not a primary action. `rounded-full` is deliberate
+ * here. Unlike the app's squircle radii, it keeps the ends truly round.
  *
  * The padding is asymmetric on purpose. Every one of these carries a leading
  * icon, and an icon brings its own whitespace to the edge, so matching the
@@ -283,9 +284,9 @@ export const SESSION_DELETE_LABEL = "text-label text-dim";
  *  one element resolve by Tailwind's output order, not by the order they are
  *  written in. */
 const PILL_BASE =
-	"inline-flex min-h-8 items-center rounded-[999px] bg-popup-glass pr-3.5 pl-2.5 " +
-	"text-label font-semibold text-fg [backdrop-filter:var(--popup-blur)] " +
-	"[--smooth-ring-color:var(--popup-ring)] smooth-shadow-ring-sm";
+	"inline-flex h-[26px] items-center rounded-full bg-panel pr-2.5 pl-2 " +
+	"text-xs font-medium text-dim " +
+	"[--smooth-ring-color:var(--line)] smooth-shadow-ring-sm";
 
 export const TRANSCRIPT_PILL = `${PILL_BASE} gap-1.5`;
 
@@ -298,15 +299,14 @@ export const TRANSCRIPT_PILL = `${PILL_BASE} gap-1.5`;
  * with a pale sliver showing at each corner. `corner-shape: inherit` follows
  * whatever the pill resolved to, including the PWA's round-cornered phone case.
  *
- * `after` is the hit target, held a few pixels out past the visible edge so a
- * small pill is still easy to hit; it must not paint anything, or it would
- * square off the corners it extends past.
+ * `after` is the 40px hit target around the 26px visible capsule; it must not
+ * paint anything, or it would square off the corners it extends past.
  */
 export const TRANSCRIPT_PILL_BUTTON =
 	`group relative cursor-pointer ${TRANSCRIPT_PILL} transition-[scale] ` +
 	"before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] " +
 	"before:[corner-shape:inherit] before:bg-transparent before:transition-colors before:content-[''] " +
-	"after:absolute after:-inset-1 after:content-[''] hover:before:bg-hover " +
+	"after:absolute after:-inset-x-1 after:-inset-y-[7px] after:content-[''] hover:before:bg-hover " +
 	"focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg active:scale-[0.96]";
 
 /** The loading state's leading spinner, and the wider gap it asks for: an arrow
