@@ -1158,7 +1158,6 @@ html.wco .app-body.sidebar-collapsed
 	font-size: 14px;
 	line-height: 1.5;
 	color: var(--text-dim);
-	overflow-wrap: anywhere;
 }
 .review-preview-markdown.markdown > h3:first-child {
 	margin: 0 0 12px;
@@ -1174,6 +1173,17 @@ html.wco .app-body.sidebar-collapsed
 }
 
 /* markdown content */
+/* Model and GitHub output carries tokens no line break can fall inside — a
+   module path, a query string, a bare URL. Left to default `normal` wrapping
+   those set the block's min-content width, so on a phone they don't just
+   overflow their own line: any flex/grid ancestor sized off min-content grows
+   with them and the whole surface scrolls sideways. `anywhere` both wraps them
+   and takes them out of the intrinsic width. `pre` is unaffected — it never
+   wraps, and keeps its own horizontal scroll. */
+.markdown {
+	overflow-wrap: anywhere;
+}
+
 .markdown p {
 	/* 8px on a 14px/24px body ≈ the 0.47em block rhythm the native app uses
 	   (blockSpacing 8 against 17pt). 6px left paragraphs reading as one slab. */

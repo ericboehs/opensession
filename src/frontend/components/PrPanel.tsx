@@ -1228,7 +1228,7 @@ export function PrPanel({
             inside the one scroll container so the identity scrolls away with
             the diff. Only the tab row sticks, so the reviewer keeps a way back
             to Conversation/Commits/Checks once they're deep in a file. */}
-        <main className="min-h-0 flex-1 overflow-y-auto bg-surface pb-24 [--review-file-header-top:106px]">
+        <main className="min-h-0 flex-1 overflow-y-auto bg-surface pb-24 [--review-file-header-top:106px] phone:pb-36">
           <header className="flex min-h-[96px] shrink-0 items-center gap-5 px-6 py-4 phone:min-h-[78px] phone:px-3">
             <div className="min-w-0 flex-1">
               <a
@@ -1644,7 +1644,10 @@ export function PrPanel({
           </>
         )}
 
-        <div className="pointer-events-none absolute bottom-4 left-4 right-4 z-10 flex min-h-[54px] items-center rounded-md border border-line-strong bg-panel/95 px-3 py-2 smooth-shadow-soft backdrop-blur">
+        {/* Caption and actions share a row until the actions need the whole
+            width — on a phone the three buttons alone are wider than the bar,
+            so side-by-side pushed them off its right edge. */}
+        <div className="pointer-events-none absolute bottom-4 left-4 right-4 z-10 flex min-h-[54px] items-center gap-3 rounded-md border border-line-strong bg-panel/95 px-3 py-2 smooth-shadow-soft backdrop-blur phone:flex-col phone:items-stretch phone:gap-2">
           <div className="min-w-0 flex-1">
             <div className="text-xs font-medium text-fg">
               {reviewDone === "merged"
@@ -1667,7 +1670,7 @@ export function PrPanel({
                   : `${provider.name} has no reviews. Merge or close when you're done.`)}
             </div>
           </div>
-          <div className="pointer-events-auto ml-3 flex shrink-0 gap-2">
+          <div className="pointer-events-auto flex shrink-0 flex-wrap justify-end gap-2">
             {onOpenSession && (
               <Button className="text-xs" onClick={onOpenSession}>
                 Open workspace

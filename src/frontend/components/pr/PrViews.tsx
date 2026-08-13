@@ -17,7 +17,7 @@ function PrDescriptionCard({
       </div>
     );
   return (
-    <article className="rounded-md border border-line bg-panel">
+    <article className="min-w-0 rounded-md border border-line bg-panel">
       <div className="flex items-center gap-2 border-b border-line px-4 py-3">
         <span className="flex size-7 items-center justify-center rounded-full bg-active text-[11px] font-semibold text-fg">
           {author.slice(0, 1).toUpperCase()}
@@ -60,7 +60,7 @@ export function ChecksView({
       ) : (
         <div className="grid gap-4">
           {checks.length > 0 && (
-            <section className="rounded-md border border-line bg-panel p-3">
+            <section className="min-w-0 rounded-md border border-line bg-panel p-3">
               <h3 className="m-0 px-2 pb-2 text-xs font-semibold text-fg">CI checks</h3>
               {checks.map((check, index) => (
                 <CheckRow key={`${check.name}-${index}`} check={check} />
@@ -68,7 +68,7 @@ export function ChecksView({
             </section>
           )}
           {deployments.length > 0 && (
-            <section className="rounded-md border border-line bg-panel p-3">
+            <section className="min-w-0 rounded-md border border-line bg-panel p-3">
               <h3 className="m-0 px-2 pb-2 text-xs font-semibold text-fg">Deployments</h3>
               {deployments.map((check, index) => (
                 <CheckRow key={`${check.name}-${index}`} check={check} />
@@ -163,7 +163,11 @@ export function ConversationView({
   repo?: string;
 }) {
   return (
-    <div className="mx-auto max-w-[760px]">
+    /* `w-full` is load-bearing, not belt-and-braces: this column is a flex item
+       and `mx-auto` (an auto cross-axis margin) opts it out of stretching, so
+       without it the box sizes to its content and `max-w` becomes a fixed 760px
+       that a phone can't fit. */
+    <div className="mx-auto w-full min-w-0 max-w-[760px]">
       <div className="mb-6">
         <h2 className="m-0 text-section-title font-semibold tracking-[-0.01em] text-fg">
           Conversation
@@ -190,7 +194,10 @@ export function ConversationView({
               : null;
             return (
               <article
-                className="rounded-md border border-line bg-panel"
+                /* A grid item's automatic minimum size is its min-content
+                   width, so a wide comment (a deploy table, a long path) would
+                   otherwise stretch the track past the viewport. */
+                className="min-w-0 rounded-md border border-line bg-panel"
                 key={`${comment.url || comment.createdAt || index}`}
               >
                 <div className="flex items-center gap-2 border-b border-line px-4 py-3">
