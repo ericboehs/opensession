@@ -4,7 +4,7 @@
  * removes the coordinator's systemd credential mount and sensitive host state
  * from engine/shell access while preserving the existing workspace access.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { statePath } from "./paths";
 
 export const AGENT_APPARMOR_PROFILE = "opensession-agent";
@@ -59,6 +59,30 @@ export function agentAppArmorProfileLoaded(): boolean {
   const loaded = transition.exitCode === 0 && deniedRead?.exitCode !== 0;
   profileProbe = { loaded, at: Date.now() };
   return loaded;
+}
+
+/** Read a profile name out of `/proc/<pid>/attr/current` and decide whether it
+ *  is OUR profile, enforcing. Complain mode confines nothing, so it does not
+ *  count; neither does `unconfined` nor another profile's name. Split out from
+ *  the /proc read so the parse is testable without a live process. */
+export function procAttrConfinedByAgentProfile(raw: string): boolean {
+  // The kernel writes "opensession-agent (enforce)", with a trailing NUL.
+  return raw.replace(/\0/g, "").trim() === `${AGENT_APPARMOR_PROFILE} (enforce)`;
+}
+
+/** Is this pid already running under our profile? Used to refuse REUSING a
+ *  process that predates the profile: an engine spawned before confinement
+ *  existed keeps the coordinator's view of /proc and the credential mount, so
+ *  adopting it after the key is mounted would hand it exactly what the profile
+ *  is there to deny. */
+export function processConfinedByAgentProfile(pid: number): boolean {
+  try {
+    return procAttrConfinedByAgentProfile(
+      readFileSync(`/proc/${pid}/attr/current`, "utf8"),
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** Wrap a model-controlled process. A service carrying protected credentials

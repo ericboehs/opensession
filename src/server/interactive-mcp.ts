@@ -126,10 +126,30 @@ function papercutsServerFor(
 	};
 }
 
+/** The personal-proxy scope a session's own run should get, for launchers that
+ *  rebuild a run's servers from the session file rather than from live run
+ *  options (the run-rpc fallback builder, the resume path in opensession.ts).
+ *  Old feed sessions can predate the persisted allowlist, and this cannot
+ *  resolve their connectors, so those fail closed rather than widening. */
+export function personalMcpScopeForSession(
+	session: { mcpServers?: string[]; externalRefs?: unknown[] } | undefined,
+): McpScope {
+	if (session?.mcpServers?.length) return session.mcpServers;
+	if (session?.externalRefs?.length) return [];
+	return "all";
+}
+
 export function interactiveMcpServers(
-	user?: string,
-	sessionId?: string,
-	personalMcpScope?: McpScope,
+	user: string | undefined,
+	sessionId: string | undefined,
+	/** Which external servers this run may see, so a personal proxy is never
+	 *  mounted wider than the run's own allowlist. REQUIRED, and deliberately
+	 *  not optional: every launcher has to make the choice, because forgetting
+	 *  it is silent — `buildOpencodeMcpConfig` drops a granted server on the
+	 *  assumption a proxy replaces it, so a launcher that omits the scope gets
+	 *  neither. Pass `undefined` only to mean "no personal tools at all"
+	 *  (Desk voice). */
+	personalMcpScope: McpScope | undefined,
 ): Record<string, unknown> {
 	const createdBy = user || productName();
 	const session = sessionId ? findSession(sessionId) : undefined;
@@ -344,12 +364,11 @@ registerInteractiveMcpBuilder((sessionId, user) => {
 	// Old feed sessions can predate the persisted allowlist. The asynchronous
 	// launch path still resolves their external connectors, but this fallback
 	// builder cannot; fail closed for personal proxies rather than widening.
-	const personalScope: McpScope = session?.mcpServers?.length
-		? session.mcpServers
-		: session?.externalRefs?.length
-			? []
-			: "all";
-	const servers = interactiveMcpServers(user, sessionId, personalScope);
+	const servers = interactiveMcpServers(
+		user,
+		sessionId,
+		personalMcpScopeForSession(session),
+	);
 	const goalId = session?.goalId;
 	if (goalId)
 		(servers as Record<string, unknown>)["opensession-goal-self"] =

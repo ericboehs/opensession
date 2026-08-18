@@ -6,6 +6,8 @@ import {
   AGENT_APPARMOR_PROFILE,
   __setAgentAppArmorProfileLoadedForTest,
   secureAgentCommand,
+  procAttrConfinedByAgentProfile,
+  processConfinedByAgentProfile,
 } from "./agent-runtime-security";
 
 describe("agent credential isolation", () => {
@@ -68,5 +70,28 @@ describe("agent credential isolation", () => {
     expect(profile).toContain(".opensession-mcp-oauth.json* rwkl");
     expect(profile).toContain(".opensession.env rwkl");
     expect(profile).toContain("deny /var/lib/opensession/** rwklx");
+  });
+});
+
+describe("adopting a process that predates confinement", () => {
+  // Reusing a survivor is the one path that can hand a model-controlled
+  // process the credential mount after the key is installed, because the
+  // process was spawned before the profile existed. The parse is what decides
+  // it, so complain mode and a foreign profile both have to read as unconfined.
+  test("only an enforcing instance of our own profile counts", () => {
+    expect(procAttrConfinedByAgentProfile("opensession-agent (enforce)")).toBe(true);
+    // The kernel NUL-terminates this file.
+    expect(procAttrConfinedByAgentProfile("opensession-agent (enforce)\n\0")).toBe(true);
+    expect(procAttrConfinedByAgentProfile("opensession-agent (complain)")).toBe(false);
+    expect(procAttrConfinedByAgentProfile("unconfined")).toBe(false);
+    expect(procAttrConfinedByAgentProfile("")).toBe(false);
+    expect(procAttrConfinedByAgentProfile("something-else (enforce)")).toBe(false);
+    // Prefix games: a neighbouring profile whose name starts with ours.
+    expect(procAttrConfinedByAgentProfile("opensession-agent-lax (enforce)")).toBe(false);
+  });
+
+  test("a pid with no readable attr file is treated as unconfined", () => {
+    // Nothing is running as pid 0, so the read fails and must fail closed.
+    expect(processConfinedByAgentProfile(0)).toBe(false);
   });
 });

@@ -158,7 +158,28 @@ type Store = Record<string, ServerAuth>;
 
 type ServerBinding =
   | { kind: "http"; url: string }
-  | { kind: "stdio"; command: string; args: string[] };
+  | {
+      kind: "stdio";
+      command: string;
+      args: string[];
+      /** Canonicalized env. The transport runs the command THROUGH this env,
+       *  so pinning only command+args leaves the execution hijackable: keep
+       *  `command: "bun"` and point PATH at a workspace directory holding a
+       *  replacement `bun`, and the replacement receives the decrypted token. */
+      env: string;
+    };
+
+/** Stable string for an stdio server's env: sorted, so key order in the config
+ *  file cannot change the binding, and every variable counts because any of
+ *  them (PATH, NODE_OPTIONS, LD_PRELOAD, ...) can redirect the executable. */
+function canonicalEnv(env: unknown): string {
+  if (!env || typeof env !== "object" || Array.isArray(env)) return "";
+  return JSON.stringify(
+    Object.entries(env as Record<string, unknown>)
+      .map(([k, v]) => [k, String(v)] as const)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
+}
 
 function configuredBinding(name: string): ServerBinding | undefined {
   try {
@@ -175,6 +196,7 @@ function configuredBinding(name: string): ServerBinding | undefined {
         kind: "stdio",
         command: cfg.command,
         args: Array.isArray(cfg.args) ? cfg.args.map(String) : [],
+        env: canonicalEnv(cfg.env),
       };
     }
   } catch {}
@@ -289,7 +311,12 @@ export function mcpOauthBindingMatches(
   return (
     cfg.command === stored.command &&
     JSON.stringify(Array.isArray(cfg.args) ? cfg.args.map(String) : []) ===
-      JSON.stringify(stored.args)
+      JSON.stringify(stored.args) &&
+    // A binding written before env was pinned compares as an EMPTY env, so a
+    // server that has since grown one fails closed and asks for a reconnect.
+    // Accepting "unpinned means anything" would leave exactly the PATH-swap
+    // this field exists to stop.
+    canonicalEnv(cfg.env) === (stored.env ?? "")
   );
 }
 

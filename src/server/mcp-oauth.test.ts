@@ -173,6 +173,20 @@ describe("personal MCP OAuth credential storage", () => {
         args: [],
       }),
     ).toBe(false);
+    // The command is what runs, but the environment decides WHICH command
+    // runs. Leaving command/args alone and pointing PATH at a workspace copy
+    // has to break the binding too, or the replacement receives the token.
+    expect(
+      oauth.mcpOauthBindingMatches("slack", {
+        command: "synthetic-slack-mcp",
+        args: [],
+        env: { PATH: "/tmp/agent-writable" },
+      }),
+    ).toBe(false);
+    // Key ORDER in the config file is not a change of execution.
+    expect(
+      oauth.mcpOauthBindingMatches("slack", { command: "synthetic-slack-mcp", args: [] }),
+    ).toBe(true);
   });
 
   test("does not inject personal tokens into engine-facing MCP config", () => {
