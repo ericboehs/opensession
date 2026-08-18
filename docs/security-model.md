@@ -150,11 +150,18 @@ removes its OAuth registration and every grant under it.
 
 ### What this does and does not protect against
 
-It protects the tokens as DATA. They are no longer readable in a backup, a
-snapshot, a synced directory, a stray copy of the file, or by anything that
-gets to read the store without also reading the key, and they no longer travel
-into engine config, process environments, command arguments, logs, transcripts
-or projected sandbox files, which is where a credential usually escapes.
+It keeps tokens out of the places a credential usually escapes from: engine
+configuration, process environments, command arguments, logs, transcripts and
+projected sandbox files. They are also unreadable to anything that gets the
+store without the key, which covers a stray copy of the file, a paste of its
+contents, and a partial sync. A grant is pinned to the server binding it was
+issued against, including the resolved absolute executable for stdio servers,
+so a redirected URL or a name shadowed on PATH cannot capture it.
+
+It does not make a whole-home backup safe: with the fallback key the key file
+sits in the same directory as the store, so a backup that takes both can be
+decrypted offline. Only a systemd credential (or a future broker) puts the key
+somewhere a copy of the home directory does not reach.
 
 It does not isolate the coordinator from the agents it runs. They share a Unix
 user, so a process running as that user can read the key exactly as the server

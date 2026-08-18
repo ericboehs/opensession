@@ -20,6 +20,9 @@ import { join } from "node:path";
 const root = mkdtempSync(join(tmpdir(), "mcp-oauth-security-"));
 const credentials = join(root, "credentials");
 const store = join(root, ".opensession-mcp-oauth.json");
+// A real executable on PATH: the stdio binding pins the RESOLVED path, so the
+// fixture needs something that actually resolves.
+const binDir = join(root, "bin");
 const key = Buffer.alloc(32, 0x42);
 const ACCESS = "synthetic-access-token-never-log";
 const REFRESH = "synthetic-refresh-token-never-log";
@@ -27,6 +30,7 @@ const previous = {
   state: process.env.OPENSESSION_STATE_DIR,
   credentials: process.env.CREDENTIALS_DIRECTORY,
   mcpConfig: process.env.OPENSESSION_MCP_CONFIG,
+  path: process.env.PATH,
 };
 
 let oauth: typeof import("./mcp-oauth");
@@ -37,6 +41,11 @@ let userMappings: typeof import("./shared/user-mappings");
 
 beforeAll(async () => {
   mkdirSync(credentials, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(join(binDir, "synthetic-slack-mcp"), "#!/bin/sh\nexit 0\n", {
+    mode: 0o755,
+  });
+  process.env.PATH = `${binDir}:${process.env.PATH}`;
   writeFileSync(join(credentials, "mcp-oauth-key"), key, { mode: 0o400 });
   const mcpConfig = join(root, "mcp-config.json");
   writeFileSync(
@@ -98,6 +107,8 @@ afterAll(() => {
   else process.env.CREDENTIALS_DIRECTORY = previous.credentials;
   if (previous.mcpConfig === undefined) delete process.env.OPENSESSION_MCP_CONFIG;
   else process.env.OPENSESSION_MCP_CONFIG = previous.mcpConfig;
+  if (previous.path === undefined) delete process.env.PATH;
+  else process.env.PATH = previous.path;
 });
 
 function legacyStore() {
@@ -185,6 +196,23 @@ describe("personal MCP OAuth credential storage", () => {
     expect(
       oauth.mcpOauthBindingMatches("slack", { command: "synthetic-slack-mcp", args: [] }),
     ).toBe(true);
+    // The pin is the resolved path, and the proxy launches that rather than
+    // the configured name, so shadowing the name on PATH cannot capture the
+    // token without also changing what the name resolves to.
+    expect(oauth.mcpOauthStdioCommand("slack")).toBe(
+      join(binDir, "synthetic-slack-mcp"),
+    );
+    const shadow = mkdtempSync(join(tmpdir(), "mcp-oauth-shadow-"));
+    writeFileSync(join(shadow, "synthetic-slack-mcp"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    const realPath = process.env.PATH;
+    process.env.PATH = `${shadow}:${realPath}`;
+    try {
+      expect(
+        oauth.mcpOauthBindingMatches("slack", { command: "synthetic-slack-mcp", args: [] }),
+      ).toBe(false);
+    } finally {
+      process.env.PATH = realPath;
+    }
   });
 
   test("mints its own 0600 key when no systemd credential is present", () => {

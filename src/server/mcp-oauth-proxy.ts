@@ -26,6 +26,7 @@ import {
   hasMcpOauthGrantForUsers,
   mcpAuthHeaderFresh,
   mcpOauthBindingMatches,
+  mcpOauthStdioCommand,
   oauthPresetFor,
 } from "./mcp-oauth";
 import {
@@ -63,8 +64,17 @@ async function connectUpstream(
     if (!preset?.envVar || !cfg.command) {
       throw new Error("Personal stdio connection has no protected OAuth preset");
     }
+    // Launch the pinned absolute executable, never the configured name: the
+    // name would be resolved through the inherited PATH at spawn time, and on
+    // a normal install that runs through directories this same user can write.
+    // mcpOauthBindingMatches has already checked that today's resolution still
+    // agrees with what was pinned when the grant was issued.
+    const command = mcpOauthStdioCommand(name);
+    if (!command) {
+      throw new Error("Personal stdio connection has no pinned executable");
+    }
     transport = new StdioClientTransport({
-      command: String(cfg.command),
+      command,
       args: Array.isArray(cfg.args) ? cfg.args.map(String) : [],
       env: {
         ...getDefaultEnvironment(),

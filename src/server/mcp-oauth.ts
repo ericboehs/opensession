@@ -199,6 +199,14 @@ type ServerBinding =
   | {
       kind: "stdio";
       command: string;
+      /** The command RESOLVED to an absolute path when the grant was issued.
+       *  The configured name is usually bare ("bunx"), and the transport would
+       *  otherwise resolve it through PATH at launch, which on a normal install
+       *  runs through directories this user can write (~/.bun/bin, a checkout's
+       *  node_modules/.bin). Shadowing the name there captures the token
+       *  without touching mcp-config.json, so the pin has to be the path, and
+       *  the launch has to use it rather than resolve again. */
+      commandPath: string;
       args: string[];
       /** Canonicalized env. The transport runs the command THROUGH this env,
        *  so pinning only command+args leaves the execution hijackable: keep
@@ -219,6 +227,18 @@ function canonicalEnv(env: unknown): string {
   );
 }
 
+/** Absolute path for a configured stdio command, or undefined when it cannot
+ *  be resolved. Absolute configured commands are taken as-is; a bare name is
+ *  resolved once, here, so the answer is recorded rather than recomputed from
+ *  whatever PATH the launch happens to inherit. */
+function resolveCommandPath(command: string): string | undefined {
+  if (command.startsWith("/")) return existsSync(command) ? command : undefined;
+  // Pass PATH explicitly: Bun.which() otherwise reads the PATH captured at
+  // process start, which would make the pin ignore the environment the server
+  // is actually running with.
+  return Bun.which(command, { PATH: process.env.PATH ?? "" }) ?? undefined;
+}
+
 function configuredBinding(name: string): ServerBinding | undefined {
   try {
     const parsed = JSON.parse(
@@ -230,9 +250,12 @@ function configuredBinding(name: string): ServerBinding | undefined {
       return { kind: "http", url: new URL(cfg.url).toString() };
     }
     if (typeof cfg.command === "string") {
+      const resolved = resolveCommandPath(cfg.command);
+      if (!resolved) return undefined;
       return {
         kind: "stdio",
         command: cfg.command,
+        commandPath: resolved,
         args: Array.isArray(cfg.args) ? cfg.args.map(String) : [],
         env: canonicalEnv(cfg.env),
       };
@@ -332,6 +355,14 @@ function tryReadStore(): Store {
   }
 }
 
+/** The absolute executable a granted stdio server is pinned to. The proxy
+ *  launches THIS rather than the configured name, so PATH cannot decide which
+ *  binary receives the token. */
+export function mcpOauthStdioCommand(name: string): string | undefined {
+  const stored = tryReadStore()[name]?.binding;
+  return stored?.kind === "stdio" ? stored.commandPath : undefined;
+}
+
 export function mcpOauthBindingMatches(
   name: string,
   cfg: Record<string, unknown>,
@@ -354,7 +385,11 @@ export function mcpOauthBindingMatches(
     // server that has since grown one fails closed and asks for a reconnect.
     // Accepting "unpinned means anything" would leave exactly the PATH-swap
     // this field exists to stop.
-    canonicalEnv(cfg.env) === (stored.env ?? "")
+    canonicalEnv(cfg.env) === (stored.env ?? "") &&
+    // A binding from before the path was pinned fails closed and asks for a
+    // reconnect, rather than being trusted against a name PATH still resolves.
+    !!stored.commandPath &&
+    resolveCommandPath(String(cfg.command)) === stored.commandPath
   );
 }
 
