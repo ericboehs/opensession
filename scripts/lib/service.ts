@@ -17,7 +17,7 @@
  * server in the foreground.
  */
 
-import { existsSync, mkdirSync } from "fs";
+import { existsSync, mkdirSync, readFileSync } from "fs";
 import { userInfo } from "os";
 import { join } from "path";
 import { ENV_PATH, HOME, OPENSESSION_HOME, REPO_ROOT, SERVICE_NAME, SERVICE_PATH } from "./paths";
@@ -225,6 +225,19 @@ export async function install(unitPath?: string): Promise<boolean> {
       // process serving with the pre-onboard env. Restart in that case so the
       // new unit and env actually take effect.
       const wasActive = await isActive();
+      // Mirrors deploy.sh: the first start that GAINS LoadCredential is the
+      // moment a surviving, still-unconfined agent scope could read the key
+      // out of the coordinator's credential mount. Read the INSTALLED unit
+      // before it is overwritten below, and retire those scopes ahead of the
+      // copy. Later installs skip it, so detached engines keep surviving
+      // restarts the way they are designed to.
+      const credentialAlreadyMounted = (() => {
+        try {
+          return /^LoadCredential=/m.test(readFileSync(SERVICE_PATH, "utf8"));
+        } catch {
+          return false;
+        }
+      })();
       info(dim(`installing ${path} -> ${SERVICE_PATH} (needs sudo)`));
       if (!appArmorParser) {
         warn(
@@ -253,6 +266,17 @@ export async function install(unitPath?: string): Promise<boolean> {
               ["sudo", appArmorParser, "-r", "/etc/apparmor.d/opensession-agent"],
             ]
           : []),
+        ...(credentialAlreadyMounted
+          ? []
+          : [
+              [
+                "bash",
+                "-c",
+                "systemctl --user list-units --plain --no-legend --type=scope " +
+                  "'opensession-oc-*.scope' 'opensession-preview-*.scope' 2>/dev/null " +
+                  "| awk '{print $1}' | xargs -r -n1 systemctl --user stop || true",
+              ],
+            ]),
         ["sudo", "cp", path, SERVICE_PATH],
         ["sudo", "systemctl", "daemon-reload"],
         ["sudo", "systemctl", "enable", "--now", SERVICE_NAME],

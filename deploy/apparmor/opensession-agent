@@ -31,6 +31,21 @@ profile opensession-agent flags=(attach_disconnected,mediate_deleted) {
   deny /{usr/,}bin/systemctl x,
   deny /{usr/,}bin/busctl x,
 
+  # Container daemons are root-equivalent brokers, for the same reason the user
+  # systemd manager was: they run as root and do filesystem work on our behalf,
+  # so `docker run -v /var/lib/opensession:/x` hands back the key and the store
+  # no matter what the path rules below say. On this host the service user is
+  # in the `docker` group, so the socket is genuinely reachable. Container work
+  # stays coordinator-side (src/server/sandbox), which is unconfined by design.
+  deny /var/run/docker.sock rwkl,
+  deny /run/docker.sock rwkl,
+  deny /var/run/containerd/containerd.sock rwkl,
+  deny /run/containerd/containerd.sock rwkl,
+  deny /run/podman/podman.sock rwkl,
+  deny /run/user/[0-9]*/podman/podman.sock rwkl,
+  deny /run/buildkit/** rwkl,
+  deny /{usr/,}bin/docker x,
+
   deny /run/credentials/** r,
   deny /var/lib/opensession/** rwklx,
   deny /etc/apparmor.d/** rwklx,

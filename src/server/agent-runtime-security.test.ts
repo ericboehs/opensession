@@ -79,6 +79,10 @@ describe("agent credential isolation", () => {
     expect(profile).toContain("deny /run/user/[0-9]*/bus rwkl");
     expect(profile).toContain("deny /run/systemd/private rwkl");
     expect(profile).toContain("deny dbus bus=session");
+    // Same class as the systemd manager: a root daemon that does filesystem
+    // work on our behalf undoes every path deny above via a bind mount.
+    expect(profile).toContain("deny /var/run/docker.sock rwkl");
+    expect(profile).toContain("deny /run/containerd/containerd.sock rwkl");
     expect(profile).toContain(
       "deny dbus bus=system peer=(name=org.freedesktop.systemd1)",
     );
