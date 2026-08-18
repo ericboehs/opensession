@@ -215,13 +215,44 @@ export async function install(unitPath?: string): Promise<boolean> {
   switch (supervisor()) {
     case "systemd": {
       const path = unitPath!;
+      const appArmorSource = join(REPO_ROOT, "deploy", "apparmor", "opensession-agent");
+      const appArmorParser =
+        Bun.which("apparmor_parser") ||
+        (["/usr/sbin/apparmor_parser", "/sbin/apparmor_parser"].find(existsSync) ??
+          null);
       // `enable --now` is a no-op on an already-running unit: a re-onboard
       // (say, to rebind from 127.0.0.1 to the tailnet IP) would leave the old
       // process serving with the pre-onboard env. Restart in that case so the
       // new unit and env actually take effect.
       const wasActive = await isActive();
       info(dim(`installing ${path} -> ${SERVICE_PATH} (needs sudo)`));
+      if (!appArmorParser) {
+        warn(
+          "AppArmor is unavailable; personal MCP connections will stay disabled",
+          "set OPENSESSION_PERSONAL_MCP=0 if this host already has an OAuth grant store",
+        );
+      }
       for (const cmd of [
+        ["sudo", "install", "-d", "-m", "0700", "/var/lib/opensession"],
+        [
+          "sudo",
+          "bash",
+          "-c",
+          "test -s /var/lib/opensession/mcp-oauth.key || dd if=/dev/urandom of=/var/lib/opensession/mcp-oauth.key bs=32 count=1 status=none; chown root:root /var/lib/opensession/mcp-oauth.key; chmod 0400 /var/lib/opensession/mcp-oauth.key",
+        ],
+        ...(appArmorParser
+          ? [
+              [
+                "sudo",
+                "install",
+                "-m",
+                "0644",
+                appArmorSource,
+                "/etc/apparmor.d/opensession-agent",
+              ],
+              ["sudo", appArmorParser, "-r", "/etc/apparmor.d/opensession-agent"],
+            ]
+          : []),
         ["sudo", "cp", path, SERVICE_PATH],
         ["sudo", "systemctl", "daemon-reload"],
         ["sudo", "systemctl", "enable", "--now", SERVICE_NAME],

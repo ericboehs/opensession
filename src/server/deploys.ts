@@ -38,6 +38,7 @@ import { join } from "node:path";
 import type { Subprocess } from "bun";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { audit } from "./audit";
+import { secureAgentCommand } from "./agent-runtime-security";
 import { stateDir } from "./paths";
 
 const DEPLOYS_DIR = stateDir("deploys");
@@ -246,7 +247,7 @@ export async function launchDeploy(
     // the wrapper leaves the real server running and holding the port, which
     // is exactly how "stopped" apps stayed up. publishDeploy rejects compound
     // entrypoints so exec always applies.
-    proc = Bun.spawn(["/bin/sh", "-c", `exec ${version.entrypoint}`], {
+    proc = Bun.spawn(secureAgentCommand(["/bin/sh", "-c", `exec ${version.entrypoint}`]), {
       cwd,
       env: {
         // A deliberately minimal environment, like agent subprocesses get:

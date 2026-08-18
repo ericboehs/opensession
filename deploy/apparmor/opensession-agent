@@ -1,0 +1,33 @@
+#include <tunables/global>
+
+# Model-controlled engine and shell processes inherit this profile. Open Session
+# itself stays unconfined so only the coordinator can read systemd credentials.
+profile opensession-agent flags=(attach_disconnected,mediate_deleted) {
+  file,
+  network,
+  unix,
+  dbus,
+  signal,
+  ptrace (read, trace, readby, tracedby) peer=opensession-agent,
+
+  deny /run/credentials/** r,
+  deny /var/lib/opensession/** rwklx,
+  deny /etc/apparmor.d/** rwklx,
+  deny /usr/bin/sudo x,
+  deny @{PROC}/[0-9]*/environ r,
+  deny @{PROC}/[0-9]*/mem rw,
+  deny @{PROC}/[0-9]*/fd/** rwkl,
+  deny @{PROC}/[0-9]*/task/[0-9]*/environ r,
+  deny @{PROC}/[0-9]*/task/[0-9]*/mem rw,
+  deny @{PROC}/[0-9]*/task/[0-9]*/fd/** rwkl,
+  deny @{PROC}/[0-9]*/root/run/credentials/** r,
+  deny @{PROC}/[0-9]*/root@{HOME}/.opensession.env rwkl,
+  deny @{PROC}/[0-9]*/root@{HOME}/.opensession-mcp-oauth.json* rwkl,
+  deny @{PROC}/[0-9]*/root@{HOME}/.opensession-mcp-relay.json* rwkl,
+  deny ptrace (read, trace) peer=unconfined,
+  deny signal (send) peer=unconfined,
+
+  deny @{HOME}/.opensession.env rwkl,
+  deny @{HOME}/.opensession-mcp-oauth.json* rwkl,
+  deny @{HOME}/.opensession-mcp-relay.json* rwkl,
+}

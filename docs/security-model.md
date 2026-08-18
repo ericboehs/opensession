@@ -117,6 +117,51 @@ two people who should see it.
   `allowedUsers` is neither enforced nor stripped — so restart after wiring a
   restricted server.
 
+## Personal MCP OAuth credentials
+
+Personal tool connections, including Slack user OAuth grants that can post as
+the connected person, are encrypted at rest in
+`~/.opensession-mcp-oauth.json`. The AES-256-GCM key is a root-owned systemd
+credential at `/var/lib/opensession/mcp-oauth.key`; PID 1 mounts it privately
+into `opensession.service`. It is never stored in the repository, environment,
+engine configuration, command arguments, or session state.
+
+The coordinator mounts OAuth-connected MCP servers as run-rpc proxies. It
+decrypts a provider token only when opening the upstream request or stdio
+transport. Engines and remote sandboxes receive the existing run-scoped RPC
+capability, not an access token, refresh token, or durable OAuth relay token.
+The `opensession-agent` AppArmor profile denies model-controlled engines and
+shells access to the systemd credential mount, sensitive state files, and
+other processes' environments/file descriptors. If the service has protected
+credentials mounted but the profile is not loaded, agent process launch fails
+closed.
+
+Personal grants follow the current signed-in prompter, never the creator of a
+session someone else is steering, and never widen an MCP server's
+`allowedUsers` gate. Shared grants remain available to explicitly allowlisted
+automations through the same coordinator proxy. Interactive runs carrying a
+personal proxy deliberately use a per-session engine server: the provider tool
+must not join the shared server's union MCP configuration.
+
+On the first read after upgrading, a legacy plaintext
+`~/.opensession-mcp-oauth.json` is atomically replaced by an authenticated
+encrypted envelope. Existing provider grants and refresh state are preserved.
+Legacy MCP relay bearer capabilities are deleted and no longer have a server
+route. Removing an MCP server also removes its stored OAuth registration and
+all personal/shared grants.
+
+`opensession service install` and `deploy/deploy.sh` create the root-owned key,
+install the AppArmor profile, and load the key through the systemd unit. A
+foreground process without that protected credential can run Open Session but
+cannot create, read, or migrate personal MCP OAuth grants.
+
+Set `OPENSESSION_PERSONAL_MCP=0` as an operator recovery switch when AppArmor
+or the protected credential is unavailable. Reads then degrade to no personal
+connections, and agent runtimes continue without the credential boundary;
+encrypted or legacy grant files are left byte-for-byte unchanged. Connecting
+an account requires signed-in web identity so the OAuth callback can be bound
+to the person who started it.
+
 ## GitHub credential scoping (out-of-org writes fail server-side)
 
 The "public repositories require confirmation" rule in AGENTS.md is enforced

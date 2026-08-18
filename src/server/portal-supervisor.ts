@@ -9,6 +9,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { audit } from "./audit";
+import { secureAgentCommand } from "./agent-runtime-security";
 import { configuredPaths, configuredServer } from "./config";
 import { ensureSandboxPortalRelay, mintSandboxPortalGrant, revokeSandboxPortalRelay } from "./sandbox-portal-relay";
 import { remoteSandboxCallbackBaseUrl, usesOutboundSandboxPortalRelay } from "./sandbox/config";
@@ -303,20 +304,23 @@ export async function startPortalService(input: {
 		allocatePort: () => allocatePort(input.worktreeDir),
 		urlFor: (port) => `https://${configuredServer().previewHost}:${port + 6_000}`,
 		launch: async ({ name, command, port, url }) => {
-			const proc = Bun.spawn(["setsid", "bash", "-lc", `exec ${command}`], {
-				cwd: input.worktreeDir,
-				// Portal commands are user-authored code. Do not hand them the Open
-				// Session service environment, which can include operator credentials.
-				env: {
-					PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
-					HOME: process.env.HOME || "/tmp",
-					PORT: String(port), PORTAL_URL: url, OPENSESSION_PORTAL: name,
-					// Next's detached telemetry flusher escapes the Portal process group
-					// during shutdown. Portals do not need telemetry, so never create it.
-					NEXT_TELEMETRY_DISABLED: "1",
+			const proc = Bun.spawn(
+				secureAgentCommand(["setsid", "bash", "-lc", `exec ${command}`]),
+				{
+					cwd: input.worktreeDir,
+					// Portal commands are user-authored code. Do not hand them the Open
+					// Session service environment, which can include operator credentials.
+					env: {
+						PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
+						HOME: process.env.HOME || "/tmp",
+						PORT: String(port), PORTAL_URL: url, OPENSESSION_PORTAL: name,
+						// Next's detached telemetry flusher escapes the Portal process group
+						// during shutdown. Portals do not need telemetry, so never create it.
+						NEXT_TELEMETRY_DISABLED: "1",
+					},
+					stdin: "ignore", stdout: "ignore", stderr: "ignore",
 				},
-				stdin: "ignore", stdout: "ignore", stderr: "ignore",
-			});
+			);
 			proc.unref();
 			return proc.pid;
 		},

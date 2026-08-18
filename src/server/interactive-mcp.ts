@@ -42,6 +42,8 @@ import { findSession, touchNativeSession } from "./session-cache";
 import { attachRepo, linkPr, resolveSessionRepoContext, sessionRepoIds, switchPrimaryRepo } from "./session-repos";
 import { makeAskHandler } from "./asks";
 import { activeSandboxFor } from "./session-sandbox";
+import { mcpOauthProxyServers } from "./mcp-oauth-proxy";
+import type { McpScope } from "./runner-shared";
 
 type PreviewAction = "start" | "status" | "stop";
 type PreviewModule = typeof import("./preview");
@@ -127,8 +129,19 @@ function papercutsServerFor(
 export function interactiveMcpServers(
 	user?: string,
 	sessionId?: string,
+	personalMcpScope?: McpScope,
 ): Record<string, unknown> {
 	const createdBy = user || productName();
+	const session = sessionId ? findSession(sessionId) : undefined;
+	// Personal provider tools are opt-in at the run launch sites. Other callers
+	// (notably Desk voice) deliberately consume a narrower interactive facade.
+	const personalMcp = session && personalMcpScope
+		? mcpOauthProxyServers(
+				personalMcpScope,
+				user,
+				[user],
+			)
+		: {};
 	return {
 		"opensession-sessions": createSessionsMcpServer({
 			createdBy,
@@ -143,6 +156,7 @@ export function interactiveMcpServers(
 			createdBy,
 			isAdmin: true,
 		}),
+		...personalMcp,
 		// Runners are deliberately trusted persistent machines for platform-locked
 		// work. Interactive-only: untrusted automation text must never reach one.
 		"opensession-runners": createRunnersMcpServer({ user, sessionId }),
@@ -327,7 +341,15 @@ registerInteractiveMcpBuilder((sessionId, user) => {
 			...(selfImproveMcpForSession(session, sessionId) || {}),
 		};
 	}
-	const servers = interactiveMcpServers(user, sessionId);
+	// Old feed sessions can predate the persisted allowlist. The asynchronous
+	// launch path still resolves their external connectors, but this fallback
+	// builder cannot; fail closed for personal proxies rather than widening.
+	const personalScope: McpScope = session?.mcpServers?.length
+		? session.mcpServers
+		: session?.externalRefs?.length
+			? []
+			: "all";
+	const servers = interactiveMcpServers(user, sessionId, personalScope);
 	const goalId = session?.goalId;
 	if (goalId)
 		(servers as Record<string, unknown>)["opensession-goal-self"] =

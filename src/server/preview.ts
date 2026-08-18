@@ -36,6 +36,7 @@ import { basename, dirname, join, resolve } from "path";
 import { getAgentAwsEnv } from "./aws-creds";
 import { createWorkloadIdentityEnv } from "./workload-identity";
 import { audit } from "./audit";
+import { secureAgentCommand } from "./agent-runtime-security";
 import { ensureRemoteSandboxPortalAgent, forgetRemoteSandboxPortalAgents, listPortalServices, listSandboxPortalServices } from "./portal-supervisor";
 import { revokeSandboxPortalGrants, revokeSandboxPortalRelay } from "./sandbox-portal-relay";
 import { cacheSandboxPortals, dropCachedSandboxPortals } from "./sandbox-portals";
@@ -959,6 +960,7 @@ export async function startPreview(worktreeDir: string): Promise<PreviewStatus> 
     ];
     const scoped = systemdUserScopesAvailable();
     const unit = previewScopeUnit(worktreeDir);
+    const securedInnerCmd = secureAgentCommand(innerCmd);
     const spawnCmd = scoped
       ? [
           "systemd-run",
@@ -970,9 +972,9 @@ export async function startPreview(worktreeDir: string): Promise<PreviewStatus> 
           ...previewScopeSystemdArgs(),
           "--property=TimeoutStopSec=5",
           "--",
-          ...innerCmd,
+          ...securedInnerCmd,
         ]
-      : innerCmd;
+      : securedInnerCmd;
     const proc = Bun.spawn(
       spawnCmd,
       {

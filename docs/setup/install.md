@@ -171,6 +171,16 @@ systemd unit (`opensession.service`) instead loads `~/.opensession.env` via
 `EnvironmentFile=` (the path is rendered for your box by
 `opensession service install`). Use that as your single secrets file.
 
+On Linux hosts with AppArmor, the installer also creates
+`/var/lib/opensession/mcp-oauth.key` as a root-only systemd credential and
+loads the `opensession-agent` profile. These protect personal MCP OAuth grants
+from model-controlled host shells. Personal MCP connections stay unavailable
+on hosts without that profile. Do not replace `LoadCredential=` with an
+environment variable or copy the key into the service user's home directory.
+If a profile cannot be restored on a host with an existing grant store, set
+`OPENSESSION_PERSONAL_MCP=0` in `~/.opensession.env` before restarting. This
+keeps agent sessions available without reading, migrating, or deleting grants.
+
 Everything is optional in the sense that the server boots without it — but
 integrations degrade (or must be disabled) without their vars. Inventory of
 what the code actually reads, by feature:

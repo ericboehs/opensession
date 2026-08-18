@@ -203,6 +203,7 @@ import {
 import { buildRunInstructions } from "./run-instructions";
 import { logStandingContext } from "./context-log";
 import { bashAskPolicyReply } from "./command-policy";
+import { secureAgentCommand } from "./agent-runtime-security";
 import {
   appendOpencodeTranscript,
   recordBksSessionFor,
@@ -1108,9 +1109,11 @@ export function makePiBashTool(input: {
       // direct-child kill.
       const setsidPath = Bun.which("setsid");
       const proc = Bun.spawn(
-        setsidPath
-          ? [setsidPath, "/bin/bash", "-c", command]
-          : ["/bin/bash", "-c", command],
+        secureAgentCommand(
+          setsidPath
+            ? [setsidPath, "/bin/bash", "-c", command]
+            : ["/bin/bash", "-c", command],
+        ),
         {
           cwd: input.cwd,
           env: input.env,
