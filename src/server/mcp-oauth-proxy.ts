@@ -33,7 +33,6 @@ import {
   type McpScope,
 } from "./runner-shared";
 import { audit } from "./audit";
-import { secureAgentCommand } from "./agent-runtime-security";
 
 function grantUsers(input: Array<string | undefined>): string[] {
   return [...new Set(input.filter((u): u is string => !!u))];
@@ -64,18 +63,9 @@ async function connectUpstream(
     if (!preset?.envVar || !cfg.command) {
       throw new Error("Personal stdio connection has no protected OAuth preset");
     }
-    // The upstream server is a third-party package that receives the decrypted
-    // token, and it is spawned BY THE COORDINATOR, which is unconfined and
-    // holds the credential mount. Without this wrapper a compromised MCP
-    // package could read the key and every teammate's grant rather than only
-    // the one token it was legitimately handed.
-    const [command, ...args] = secureAgentCommand([
-      String(cfg.command),
-      ...(Array.isArray(cfg.args) ? cfg.args.map(String) : []),
-    ]);
     transport = new StdioClientTransport({
-      command,
-      args,
+      command: String(cfg.command),
+      args: Array.isArray(cfg.args) ? cfg.args.map(String) : [],
       env: {
         ...getDefaultEnvironment(),
         ...(cfg.env || {}),

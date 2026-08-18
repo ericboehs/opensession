@@ -7,6 +7,7 @@ import {
 } from "bun:test";
 import {
   chmodSync,
+  rmSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -15,7 +16,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { __setAgentAppArmorProfileLoadedForTest } from "./agent-runtime-security";
 
 const root = mkdtempSync(join(tmpdir(), "mcp-oauth-security-"));
 const credentials = join(root, "credentials");
@@ -36,7 +36,6 @@ let runnerShared: typeof import("./runner-shared");
 let userMappings: typeof import("./shared/user-mappings");
 
 beforeAll(async () => {
-  __setAgentAppArmorProfileLoadedForTest(true);
   mkdirSync(credentials, { recursive: true });
   writeFileSync(join(credentials, "mcp-oauth-key"), key, { mode: 0o400 });
   const mcpConfig = join(root, "mcp-config.json");
@@ -93,7 +92,6 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  __setAgentAppArmorProfileLoadedForTest(undefined);
   if (previous.state === undefined) delete process.env.OPENSESSION_STATE_DIR;
   else process.env.OPENSESSION_STATE_DIR = previous.state;
   if (previous.credentials === undefined) delete process.env.CREDENTIALS_DIRECTORY;
@@ -187,6 +185,36 @@ describe("personal MCP OAuth credential storage", () => {
     expect(
       oauth.mcpOauthBindingMatches("slack", { command: "synthetic-slack-mcp", args: [] }),
     ).toBe(true);
+  });
+
+  test("mints its own 0600 key when no systemd credential is present", () => {
+    // The rootless install: no CREDENTIALS_DIRECTORY, so the store still has
+    // to be ciphertext at rest rather than the feature failing closed.
+    const previousCredentials = process.env.CREDENTIALS_DIRECTORY;
+    const keyPath = join(root, ".opensession-mcp-oauth.key");
+    delete process.env.CREDENTIALS_DIRECTORY;
+    try {
+      rmSync(keyPath, { force: true });
+      writeFileSync(store, JSON.stringify(legacyStore()), { mode: 0o600 });
+      expect(oauth.mcpOauthStatus("slack").shared).toBeDefined();
+
+      expect(statSync(keyPath).mode & 0o777).toBe(0o600);
+      expect(readFileSync(keyPath).length).toBe(32);
+      const disk = readFileSync(store, "utf8");
+      expect(JSON.parse(disk)).toMatchObject({ version: 2 });
+      expect(disk).not.toContain(ACCESS);
+      expect(disk).not.toContain(REFRESH);
+      // Minted once and reused: a second read must not re-key the store.
+      const minted = readFileSync(keyPath);
+      expect(oauth.mcpSharedGrantHeader("slack")).toBe(`Bearer ${ACCESS}`);
+      expect(readFileSync(keyPath)).toEqual(minted);
+    } finally {
+      if (previousCredentials === undefined) delete process.env.CREDENTIALS_DIRECTORY;
+      else process.env.CREDENTIALS_DIRECTORY = previousCredentials;
+      rmSync(keyPath, { force: true });
+      writeFileSync(store, JSON.stringify(legacyStore()), { mode: 0o600 });
+      expect(oauth.mcpOauthStatus("slack").shared).toBeDefined();
+    }
   });
 
   test("does not inject personal tokens into engine-facing MCP config", () => {

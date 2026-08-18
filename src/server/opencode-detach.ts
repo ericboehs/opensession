@@ -41,7 +41,6 @@ import {
   systemdUserEnv,
   systemdUserScopesAvailable,
 } from "./systemd-scopes";
-import { secureAgentCommand } from "./agent-runtime-security";
 
 const HOME = homeDir();
 
@@ -366,12 +365,6 @@ export async function spawnDetachedOpencodeServer(opts: {
   mkdirSync(opts.logDir, { recursive: true });
   const logPath = `${opts.logDir}/${unit}.log`;
   const fd = openSync(logPath, "a");
-  const engineCommand = secureAgentCommand([
-    opts.bin,
-    "serve",
-    "--hostname=127.0.0.1",
-    `--port=${port}`,
-  ]);
   let waiter: Subprocess<"ignore", number, number>;
   try {
     waiter = Bun.spawn({
@@ -386,7 +379,10 @@ export async function spawnDetachedOpencodeServer(opts: {
         // SIGTERM→SIGKILL escalation for scope stops (meridian swallows TERM).
         "--property=TimeoutStopSec=5",
         "--",
-        ...engineCommand,
+        opts.bin,
+        "serve",
+        "--hostname=127.0.0.1",
+        `--port=${port}`,
       ],
       cwd: opts.cwd,
       env: { ...opts.env, ...systemdUserEnv(opts.env) },

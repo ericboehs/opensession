@@ -17,7 +17,6 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/projects/opensession
 EnvironmentFile=/home/ubuntu/.opensession.env
-LoadCredential=mcp-oauth-key:/var/lib/opensession/mcp-oauth.key
 Environment="NODE_ENV=production"
 # Do not use `bun --hot` here. A failed reload on Bun 1.3.14 can permanently
 # stop every timer while HTTP keeps serving, leaving all sessions apparently

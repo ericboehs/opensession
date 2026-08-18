@@ -21,16 +21,16 @@
  * on the server origin → authorization server → RFC 8414 AS metadata →
  * dynamic client registration (RFC 7591, token_endpoint_auth_method "none").
  */
-import { readFileSync, writeFileSync, existsSync, rmSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, rmSync, openSync, closeSync } from "fs";
 import { randomBytes, createHash, createCipheriv, createDecipheriv } from "crypto";
 import { configuredPaths, configuredServer, productName } from "./config";
 import { statePath } from "./paths";
 import { resolveTeammate } from "./shared/user-mappings";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { audit } from "./audit";
-import { agentAppArmorProfileLoaded } from "./agent-runtime-security";
 
 const STORE_NAME = ".opensession-mcp-oauth.json";
+const KEY_NAME = ".opensession-mcp-oauth.key";
 const STORE_AAD = "opensession:mcp-oauth:v2";
 
 interface EncryptedStore {
@@ -45,30 +45,68 @@ function storePath(): string {
   return statePath(STORE_NAME);
 }
 
+/** Where the store's key comes from, in preference order.
+ *
+ *  1. A systemd credential (`LoadCredential=mcp-oauth-key`), when an operator
+ *     has set one up. PID 1 puts it in the unit's private mount, so it is not
+ *     in the filesystem the way the key file below is.
+ *  2. A 0600 key file beside the store, minted on first use.
+ *
+ *  (2) is what a rootless install gets, and it is deliberately not sold as
+ *  more than it is: it means the STORE is ciphertext at rest, which is what
+ *  keeps tokens out of backups, snapshots, syncs and a stray copy of the file,
+ *  and it is the substrate a per-use broker would sit on later. It is NOT a
+ *  boundary against a process already running as this user, which can read the
+ *  key exactly as the server does. Closing that needs a second uid, which
+ *  needs root, which most installs deliberately do not have. See
+ *  docs/security-model.md. */
 function encryptionKey(): Buffer {
-  if (!agentAppArmorProfileLoaded()) {
-    throw new Error(
-      "Personal MCP connections require the opensession-agent AppArmor profile on this host.",
-    );
-  }
   const credentialDir = process.env.CREDENTIALS_DIRECTORY;
-  const path = credentialDir ? `${credentialDir}/mcp-oauth-key` : undefined;
-  if (!path) {
-    throw new Error(
-      "Personal MCP connections require the protected mcp-oauth-key system credential. " +
-        "Reinstall the Open Session service before connecting an account.",
-    );
+  if (credentialDir) {
+    try {
+      const key = readFileSync(`${credentialDir}/mcp-oauth-key`);
+      if (key.length === 32) return key;
+      throw new Error(
+        "The mcp-oauth-key credential has an invalid length; expected 32 bytes.",
+      );
+    } catch (error) {
+      // A credential directory without OUR credential in it is the ordinary
+      // case on a host that mounts some other credential, so fall through to
+      // the key file rather than failing the whole feature.
+      if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+    }
   }
-  let key: Buffer;
+  const path = statePath(KEY_NAME);
   try {
-    key = readFileSync(path);
-  } catch {
-    throw new Error("The protected mcp-oauth-key system credential is unavailable.");
+    const key = readFileSync(path);
+    if (key.length !== 32) {
+      throw new Error(
+        `The personal MCP encryption key at ${path} has an invalid length. ` +
+          "Move it aside and reconnect the affected tools to mint a new one.",
+      );
+    }
+    return key;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
   }
-  if (key.length !== 32) {
-    throw new Error("The protected mcp-oauth-key system credential has an invalid length.");
+  // First use: mint one. `wx` so two racing writers cannot each mint a key and
+  // leave the store encrypted under whichever lost, and 0600 from the open
+  // rather than a later chmod, so it is never briefly world-readable.
+  const key = randomBytes(32);
+  try {
+    const fd = openSync(path, "wx", 0o600);
+    try {
+      writeFileSync(fd, key);
+    } finally {
+      closeSync(fd);
+    }
+    return key;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "EEXIST") {
+      return readFileSync(path);
+    }
+    throw error;
   }
-  return key;
 }
 
 function isEncryptedStore(value: unknown): value is EncryptedStore {

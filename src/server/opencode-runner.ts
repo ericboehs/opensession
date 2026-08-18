@@ -173,11 +173,6 @@ import {
   type ServerProcHandle,
 } from "./opencode-detach";
 import {
-  agentAppArmorProfileLoaded,
-  processConfinedByAgentProfile,
-  secureAgentCommand,
-} from "./agent-runtime-security";
-import {
   isClaudeUsageLimitError,
   isClaudeSubscriptionError,
   isClaudeBridgeLaunchError,
@@ -1356,12 +1351,7 @@ async function spawnOpencodeServer(
   }
 
   const proc = Bun.spawn({
-    cmd: secureAgentCommand([
-      bin,
-      "serve",
-      "--hostname=127.0.0.1",
-      "--port=0",
-    ]),
+    cmd: [bin, "serve", "--hostname=127.0.0.1", "--port=0"],
     cwd,
     env: {
       ...opencodeEnv(author),
@@ -2294,7 +2284,7 @@ export function adoptDetachedOpencodeServers(): Promise<number> {
 }
 
 async function adoptDetachedOpencodeServersInner(): Promise<number> {
-  const records = retirePreConfinementRecords(readDetachedRegistry());
+  const records = readDetachedRegistry();
   if (!records.length) return 0;
   const probes = await probeDetachedRecords(records);
   return applyDetachedAdoption(records, probes, {
@@ -2320,41 +2310,6 @@ interface DetachedAdoptionOps {
 interface DetachedAdoptionResult {
   adopted: number;
   managed: OpencodeServerEntry[];
-}
-
-/** Drop detached servers that are NOT already confined, stopping their scopes.
- *
- * Adoption reuses a process this coordinator did not spawn. On the first boot
- * after confinement is installed, the survivors were spawned without it: they
- * keep the coordinator's uid and mount namespace, so reusing one would give a
- * model shell the /proc and credential-mount access the profile exists to
- * deny, right as the key is mounted for the first time. Retiring them costs
- * those turns a restart, which is the same cost any deploy already pays.
- *
- * Only enforced when the profile is actually loaded, so a host without
- * AppArmor (dev machines, containers) keeps adopting exactly as before.
- */
-function retirePreConfinementRecords(
-  records: DetachedServerRecord[],
-): DetachedServerRecord[] {
-  if (!agentAppArmorProfileLoaded()) return records;
-  const kept: DetachedServerRecord[] = [];
-  for (const r of records) {
-    if (processConfinedByAgentProfile(r.pid)) {
-      kept.push(r);
-      continue;
-    }
-    console.warn(
-      `[opencode-runner] retiring pre-confinement detached server ${r.unit} (pid ${r.pid})`,
-    );
-    try {
-      stopDetachedUnit(r.unit);
-    } catch {}
-    try {
-      removeDetachedRecord(r.unit);
-    } catch {}
-  }
-  return kept;
 }
 
 function applyDetachedAdoption(

@@ -17,7 +17,7 @@
  * server in the foreground.
  */
 
-import { existsSync, mkdirSync, readFileSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import { userInfo } from "os";
 import { join } from "path";
 import { ENV_PATH, HOME, OPENSESSION_HOME, REPO_ROOT, SERVICE_NAME, SERVICE_PATH } from "./paths";
@@ -215,68 +215,13 @@ export async function install(unitPath?: string): Promise<boolean> {
   switch (supervisor()) {
     case "systemd": {
       const path = unitPath!;
-      const appArmorSource = join(REPO_ROOT, "deploy", "apparmor", "opensession-agent");
-      const appArmorParser =
-        Bun.which("apparmor_parser") ||
-        (["/usr/sbin/apparmor_parser", "/sbin/apparmor_parser"].find(existsSync) ??
-          null);
       // `enable --now` is a no-op on an already-running unit: a re-onboard
       // (say, to rebind from 127.0.0.1 to the tailnet IP) would leave the old
       // process serving with the pre-onboard env. Restart in that case so the
       // new unit and env actually take effect.
       const wasActive = await isActive();
-      // Mirrors deploy.sh: the first start that GAINS LoadCredential is the
-      // moment a surviving, still-unconfined agent scope could read the key
-      // out of the coordinator's credential mount. Read the INSTALLED unit
-      // before it is overwritten below, and retire those scopes ahead of the
-      // copy. Later installs skip it, so detached engines keep surviving
-      // restarts the way they are designed to.
-      const credentialAlreadyMounted = (() => {
-        try {
-          return /^LoadCredential=/m.test(readFileSync(SERVICE_PATH, "utf8"));
-        } catch {
-          return false;
-        }
-      })();
       info(dim(`installing ${path} -> ${SERVICE_PATH} (needs sudo)`));
-      if (!appArmorParser) {
-        warn(
-          "AppArmor is unavailable; personal MCP connections will stay disabled",
-          "set OPENSESSION_PERSONAL_MCP=0 if this host already has an OAuth grant store",
-        );
-      }
       for (const cmd of [
-        ["sudo", "install", "-d", "-m", "0700", "/var/lib/opensession"],
-        [
-          "sudo",
-          "bash",
-          "-c",
-          "test -s /var/lib/opensession/mcp-oauth.key || dd if=/dev/urandom of=/var/lib/opensession/mcp-oauth.key bs=32 count=1 status=none; chown root:root /var/lib/opensession/mcp-oauth.key; chmod 0400 /var/lib/opensession/mcp-oauth.key",
-        ],
-        ...(appArmorParser
-          ? [
-              [
-                "sudo",
-                "install",
-                "-m",
-                "0644",
-                appArmorSource,
-                "/etc/apparmor.d/opensession-agent",
-              ],
-              ["sudo", appArmorParser, "-r", "/etc/apparmor.d/opensession-agent"],
-            ]
-          : []),
-        ...(credentialAlreadyMounted
-          ? []
-          : [
-              [
-                "bash",
-                "-c",
-                "systemctl --user list-units --plain --no-legend --type=scope " +
-                  "'opensession-oc-*.scope' 'opensession-preview-*.scope' 2>/dev/null " +
-                  "| awk '{print $1}' | xargs -r -n1 systemctl --user stop || true",
-              ],
-            ]),
         ["sudo", "cp", path, SERVICE_PATH],
         ["sudo", "systemctl", "daemon-reload"],
         ["sudo", "systemctl", "enable", "--now", SERVICE_NAME],
