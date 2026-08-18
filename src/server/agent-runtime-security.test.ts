@@ -70,6 +70,18 @@ describe("agent credential isolation", () => {
     expect(profile).toContain(".opensession-mcp-oauth.json* rwkl");
     expect(profile).toContain(".opensession.env rwkl");
     expect(profile).toContain("deny /var/lib/opensession/** rwklx");
+    // A transient unit created through the systemd USER manager does not
+    // inherit this profile, so an open path to that manager makes every deny
+    // above decorative. The socket rules are what close it; denying the
+    // systemd-run/systemctl/busctl binaries alone would not, since a raw
+    // D-Bus client reaches the same manager.
+    expect(profile).toContain("deny /run/user/[0-9]*/systemd/private rwkl");
+    expect(profile).toContain("deny /run/user/[0-9]*/bus rwkl");
+    expect(profile).toContain("deny /run/systemd/private rwkl");
+    expect(profile).toContain("deny dbus bus=session");
+    expect(profile).toContain(
+      "deny dbus bus=system peer=(name=org.freedesktop.systemd1)",
+    );
   });
 });
 

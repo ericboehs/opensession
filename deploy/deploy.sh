@@ -84,6 +84,14 @@ else
   echo "[deploy] WARNING: AppArmor unavailable; personal MCP connections remain disabled" >&2
 fi
 
+# Was the unit ALREADY credential-bearing? Read before the sync below: the
+# first start that gains LoadCredential is the moment a still-unconfined
+# survivor could read the key out of the coordinator's credential mount.
+CREDENTIAL_ALREADY_MOUNTED=no
+if grep -q '^LoadCredential=' /etc/systemd/system/opensession.service 2>/dev/null; then
+  CREDENTIAL_ALREADY_MOUNTED=yes
+fi
+
 # The deployed unit is a COPY of the repo's opensession.service (not a symlink) —
 # sync it when it changes so unit edits actually ship.
 if ! cmp -s "$REPO_DIR/opensession.service" /etc/systemd/system/opensession.service; then
@@ -152,6 +160,26 @@ while :; do
   echo "[deploy] ${active} run(s) in flight — waiting…"
   sleep 10
 done
+
+# First credential-bearing start only: retire model-controlled scopes that
+# predate confinement. They run at this uid and are NOT under the profile, so
+# once the new unit holds the key they could read it straight out of
+# /proc/<coordinator>/root/run/credentials. The in-process boot sweep
+# (retirePreConfinementRecords) still runs as defence in depth, but it can only
+# run after the mount already exists. Skipped on every later deploy, so
+# detached engines keep surviving restarts the way they are designed to.
+if [ "$CREDENTIAL_ALREADY_MOUNTED" = no ] && [ -s /var/lib/opensession/mcp-oauth.key ]; then
+  echo "[deploy] first credential-bearing start — retiring pre-confinement agent scopes"
+  user_systemctl() {
+    run_as_service_user env XDG_RUNTIME_DIR="/run/user/$SERVICE_UID" systemctl --user "$@"
+  }
+  stale_scopes="$(user_systemctl list-units --plain --no-legend --type=scope \
+    'opensession-oc-*.scope' 'opensession-preview-*.scope' 2>/dev/null | awk '{print $1}' || true)"
+  for scope in $stale_scopes; do
+    echo "[deploy]   stopping $scope"
+    user_systemctl stop "$scope" || true
+  done
+fi
 
 systemctl restart opensession.service
 
