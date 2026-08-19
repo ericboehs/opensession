@@ -30,7 +30,14 @@ export const SHIM_PATH = join(BIN_DIR, "opensession");
 export const CONFIG_PATH = process.env.OPENSESSION_CONFIG || join(OPENSESSION_HOME, "config.json");
 export const ENV_PATH = process.env.OPENSESSION_ENV_FILE || join(HOME, ".opensession.env");
 
-/** The unit name is fixed; the file is rendered per-box at onboard time. */
+/** The unit name is fixed; the file is rendered per-box at install time. */
 export const SERVICE_NAME = "opensession";
+/** User-scope unit: no root, the default. */
+export const USER_UNIT_PATH = join(
+  process.env.XDG_CONFIG_HOME || join(HOME, ".config"),
+  "systemd",
+  "user",
+  `${SERVICE_NAME}.service`,
+);
+/** System-scope unit: the operator path (`service install --system`). */
 export const SERVICE_PATH = `/etc/systemd/system/${SERVICE_NAME}.service`;
-export const STAGED_UNIT_PATH = join(OPENSESSION_HOME, "opensession.service");
