@@ -57,8 +57,9 @@ Read that first when a Runner shows offline.
 
 If `connect` cannot install the task, it says why and
 `opensession runner service install` runs the same installation on its own.
-There is nothing to configure first on Windows, and nothing to elevate: the
-task is per-user and installs from an ordinary PowerShell window.
+There is nothing to configure first on Windows, and the task itself needs no
+administrator rights: it is per-user and installs from an ordinary PowerShell
+window. Machine-wide setup does need elevation, which is its own subject below.
 
 A damaged PATH does not need repairing by hand. The Runner resolves PowerShell
 and `schtasks.exe` at their known location under `%SystemRoot%\System32`, and
@@ -75,6 +76,57 @@ Two behaviours of the task decide how an always-on box has to be set up:
 - `MultipleInstancesPolicy` is `IgnoreNew`. If `opensession runner run` is
   already going in a console window, the task's launch is ignored without
   comment. Close the foreground one first.
+
+### Elevation, and running exactly one instance
+
+A delegated command runs with a UAC-filtered token. `whoami /groups` reports
+`BUILTIN\Administrators` as *"Group used for deny only"* even when the account
+is an administrator, and
+
+```powershell
+([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+```
+
+returns `False`. The boundary does not fall where the command names suggest:
+
+| Works unelevated | Needs elevation |
+| --- | --- |
+| `powercfg /change standby-timeout-ac 0` | `powercfg /hibernate off` |
+| installing and querying the scheduled task | `New-NetFirewallRule`, `Set-NetFirewallRule` |
+| writes under `HKCU` | writes under `HKLM` |
+| | `Get-NetAdapterPowerManagement`, even to read |
+| | installing a service, such as a VNC server |
+
+So the awake settings, the firewall rules and a VNC server all have to be
+driven from a Runner that was started elevated. Start one from an
+**Administrator** PowerShell window, stopping the task first so only one
+instance holds the channel:
+
+```powershell
+schtasks /End /TN OpenSessionRunner
+Get-CimInstance Win32_Process -Filter "Name='bun.exe'" |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+opensession runner run
+```
+
+When the machine-wide work is finished, close that window and
+`schtasks /Run /TN OpenSessionRunner` to hand the channel back to the ordinary
+per-user task. A Runner left permanently elevated gives every delegated command
+administrator rights it does not need.
+
+**One instance, always.** `MultipleInstancesPolicy: IgnoreNew` only stops the
+*task* from starting a second copy of itself. It does nothing about a
+foreground `opensession runner run` started alongside a task that is already
+going. Two live Runners share one identity and take turns owning the control
+connection, each knocking the other off. The symptom is distinctive rather than
+obvious: the Runner reads `online` with a `lastSeenAt` that keeps advancing,
+while commands fail immediately with `[Runner disconnected]`, occasionally
+interleaved with ones that succeed. Count the processes, expect exactly one,
+and kill the rest:
+
+```powershell
+(Get-CimInstance Win32_Process -Filter "Name='bun.exe'").Count
+```
 
 ### Keeping the machine awake
 
