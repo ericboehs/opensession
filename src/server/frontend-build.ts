@@ -7,6 +7,8 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "path";
+import type { BunFile } from "bun";
+import { EMBEDDED_FRONTEND } from "./embedded-frontend";
 import { activeRunRecords } from "./run-journal";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { gitIdentityFor } from "./shared/user-mappings";
@@ -25,6 +27,22 @@ export type FrontendBundle = {
 	gzip: Map<string, Blob>;
 	version: string;
 };
+
+/** True when the SPA is served from assets baked into the compiled binary
+ *  rather than a `.frontend-dist` checkout (no in-process build is possible). */
+/**
+ * A built SPA asset by its served name (e.g. `App-abc123.js`, `ghostty-vt.wasm`)
+ * — from the embedded set in the compiled binary, or `.frontend-dist` on disk.
+ * Null when the compiled binary has no such asset (source mode returns a
+ * BunFile whose `.exists()` the caller still checks).
+ */
+export function frontendDistFile(name: string): BunFile | null {
+	if (EMBEDDED_FRONTEND) {
+		const path = EMBEDDED_FRONTEND.assets[name];
+		return path ? Bun.file(path) : null;
+	}
+	return Bun.file(join(FRONTEND_DIST, name));
+}
 
 /**
  * Name of the newest Tailwind sheet that compiled successfully, so a failed
@@ -106,8 +124,11 @@ export async function devTailwindCss(): Promise<string | null> {
 
 const RELEASE_MANIFEST = join(REPO_ROOT, "release.json");
 
-/** True when the frontend must be served from a shipped .frontend-dist. */
+/** True when the frontend is served from a fixed prebuilt bundle rather than
+ *  built in-process: the compiled binary's embedded assets, or a release
+ *  tarball's shipped .frontend-dist. Either way there is no source rebuild. */
 export function isPrebuiltFrontend(): boolean {
+	if (EMBEDDED_FRONTEND) return true;
 	if (process.env.OPENSESSION_PREBUILT_FRONTEND === "1") return true;
 	if (process.env.OPENSESSION_PREBUILT_FRONTEND === "0") return false;
 	return existsSync(RELEASE_MANIFEST);
@@ -521,6 +542,16 @@ export function ensureFrontendBuilt(): Promise<void> {
 	if (!frontend || frontend.version) return Promise.resolve();
 	if (!g.__opensessionFrontendBuild) {
 		g.__opensessionFrontendBuild = (async () => {
+			// Compiled binary: the bundle is baked in, no source tree or Tailwind
+			// CLI to build from — fill from the embedded assets.
+			if (EMBEDDED_FRONTEND) {
+				frontend.indexHtml = await Bun.file(EMBEDDED_FRONTEND.indexHtmlPath).text();
+				frontend.gzip.clear();
+				frontend.version = EMBEDDED_FRONTEND.version;
+				console.log(`Frontend served from embedded assets (v=${EMBEDDED_FRONTEND.version})`);
+				return;
+			}
+			// Release tarball: the prebuilt .frontend-dist is on disk.
 			if (isPrebuiltFrontend()) {
 				loadPrebuiltFrontendDist();
 				return;

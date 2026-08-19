@@ -1044,8 +1044,10 @@ if (!g.__opensessionBooted) {
 	// for restart in a deploy script). Guarded by __opensessionBooted so a hot
 	// reload doesn't stack watchers/handlers. recursive watch needs Linux ≥ 6.x
 	// (we're on 6.17) — fine here.
+	// A prebuilt bundle (compiled binary's embedded assets, or a release
+	// tarball's .frontend-dist) has no src/frontend tree to watch.
 	if (!IS_DEV && frontend && isPrebuiltFrontend()) {
-		console.log("[frontend] Prebuilt release: source watch and SIGUSR2 rebuilds are off");
+		console.log("[frontend] Prebuilt bundle: source watch and SIGUSR2 rebuilds are off");
 	} else if (!IS_DEV && frontend) {
 		try {
 			const watcher = watch(FRONTEND_SRC, { recursive: true }, (_evt, file) => {
