@@ -253,8 +253,19 @@ async function checkService(t: Tally, config?: Record<string, unknown>): Promise
  */
 async function checkEngine(t: Tally): Promise<void> {
   heading("Engine");
-  const { engineStatus } = await import("../../src/server/engine-status");
+  const { engineStatus, claudeCliStatus } = await import("../../src/server/engine-status");
   const e = engineStatus();
+
+  // Nothing bundled stands in for the `claude` CLI: the Anthropic bridge and
+  // Meridian both exec the installed one. Checked on its own so a box whose
+  // default model is not Anthropic still hears about it before the first
+  // Claude turn dies.
+  const cli = claudeCliStatus();
+  if (cli.ok) ok("claude CLI", cli.path);
+  else {
+    fail("claude CLI missing", cli.error || undefined);
+    t.errors++;
+  }
 
   info(dim(`default model ${e.defaultModel}`));
   const pool = `${e.claudeAccounts} Claude, ${e.codexAccounts} ChatGPT`;
