@@ -83,7 +83,11 @@ import { UserGate, getCurrentUser, useAuthStatus, useCurrentUser } from "./compo
 import { PreviewWait, matchPreviewWaitRoute } from "./components/PreviewWait";
 import { SettingsButton } from "./components/SettingsButton";
 import { TitleBar } from "./components/TitleBar";
-import { Settings, type SettingsSectionKey } from "./components/Settings";
+import { Settings } from "./components/Settings";
+import {
+	settingsPaletteActions,
+	type SettingsSectionKey,
+} from "./lib/settings-sections";
 import { SessionTabs, type ViewTab } from "./components/SessionTabs";
 import type { SubagentRef } from "./components/SubagentPane";
 import { SessionSplit, type SplitSide } from "./components/SessionSplit";
@@ -3568,7 +3572,7 @@ export function App(
 		...(currentSession
 			? [
 					{
-						id: "new-session",
+						id: "new-session-workspace",
 						label: "New session in this workspace",
 						description: "Share the current workspace and worktree",
 						category: "Actions" as const,
@@ -3803,6 +3807,15 @@ export function App(
 			icon: <IconGear size={18} />,
 			run: () => navigate({ view: "settings" }),
 		},
+		// Every Settings section, straight from the nav's own table — the palette
+		// used to reach three of them, and only because those three happen to have
+		// their own top-level routes.
+		...settingsPaletteActions({ admin: auth?.admin !== false }).map(
+			({ section, ...action }) => ({
+				...action,
+				run: () => navigate({ view: "settings", section }),
+			}),
+		),
 		...commandMcpServers
 			.slice()
 			.sort((a, b) => displayName(a).localeCompare(displayName(b)))

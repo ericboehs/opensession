@@ -764,6 +764,40 @@ export function Composer({
     textareaRef,
     mentionFetch,
     skillsFetch,
+    actions: [
+      ...(canAttach
+        ? [{
+            id: "add-files",
+            label: "Add files and folders",
+            description: "Attach context to this message",
+            keywords: ["upload", "attach"],
+            icon: <IconPaperclip size={16} />,
+            run: () => fileInputRef.current?.click(),
+          }]
+        : []),
+      ...(onSetGoal
+        ? [{
+            id: "session-goal",
+            label: goal ? "Edit session goal" : "Set session goal",
+            description: "Guide every prompt in this session",
+            keywords: ["target", "objective"],
+            icon: <IconCrosshair size={16} />,
+            run: () => setMenu("goal"),
+          }]
+        : []),
+      ...(onNoteModeChange
+        ? [{
+            id: "team-note",
+            label: noteMode ? "Back to prompting" : "Write a team note",
+            description: noteMode
+              ? "Send the next message to the agent"
+              : "Only your team will see it",
+            keywords: ["internal", "note"],
+            icon: <IconNote size={16} />,
+            run: () => onNoteModeChange(!noteMode),
+          }]
+        : []),
+    ],
   });
 
   async function addFiles(picked: FileList | File[]) {
@@ -1470,6 +1504,7 @@ export function Composer({
           )}
           <textarea
             ref={textareaRef}
+            {...mentions.inputProps}
             // `composer-textarea` stays as a class NAME hook: the sidebar swipe
             // guard (lib/sidebar-swipe.ts) and SessionViewer's global keys both
             // ask whether the caret is in a composer by looking for it.

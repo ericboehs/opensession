@@ -11,7 +11,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
-import { opencodeOneShot } from "./opencode-oneshot";
+import { oneShot } from "./one-shot";
 import { getTitleOverride } from "./title-overrides";
 
 const REGISTRY_PATH = `${OPENSESSION_SESSIONS_DIR}/generated-titles.json`;
@@ -112,7 +112,7 @@ export async function ensureGeneratedTitle(
 	const source = prompt.trim().slice(0, 2000);
 	if (!source) return null;
 
-	const out = await opencodeOneShot(
+	const out = await oneShot(
 		`Summarize this task as a short title of 3 to 6 words, phrased as an imperative like a git branch or PR title (e.g. "Add onboarding flow", "Fix layout thumbnails", "Raise timeline playhead"). Sentence case, no trailing punctuation, no quotes, no code. Always name the task, even when it is a question, an investigation or a discussion rather than a code change — never comment on the task itself. Output ONLY the title, nothing else.\n\nTask:\n"""\n${source}\n"""`,
 		{ user, label: "generated-titles" },
 	);

@@ -673,7 +673,9 @@ function CatchUpComposer({
 				onAccountChange={isNative ? handleAccountChange : undefined}
 				goal={currentGoal}
 				onSetGoal={isNative ? handleSetGoal : undefined}
-				mentionFetch={(q) => fetchFileMentions(q, target.id)}
+				mentionFetch={(q) =>
+					fetchFileMentions(q, target.id, undefined, currentUser)
+				}
 				skillsFetch={(q) => fetchSkillMentions(q, target.id)}
 			/>
 		</div>

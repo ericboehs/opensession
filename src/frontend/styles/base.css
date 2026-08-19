@@ -918,9 +918,9 @@ body {
 	color: var(--text);
 	font-family: var(--sans);
 	font-size: 14px;
-	/* Medium is the app's regular: 400 reads washed-out at these sizes (Kent).
-	   The 11px text-meta role is the exception; its smaller labels render at
-	   400 so their strokes do not close up. Bold accents stay 600/700. */
+	/* Medium is the app's regular. Metadata and supporting copy are the
+	   exceptions: they render at 400 so their secondary text stays quiet and
+	   their smaller strokes do not close up. Bold accents stay 600/700. */
 	font-weight: 500;
 	/* No -webkit-font-smoothing here on purpose: macOS rasterizes text for us.
 	   `antialiased` opts out of that and thins every stem, so the same string

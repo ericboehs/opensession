@@ -19,9 +19,8 @@ import { getDeskVoicePref, onDeskVoiceChanged } from "../lib/desk-voice-pref";
  *
  * Persistence is the point: after the first summon the body STAYS MOUNTED
  * (hidden, not unmounted) — the session's scoped socket keeps watching, so every
- * later ⌘J is instant with the transcript already in place. No enter/exit
- * animations
- * either; summon-dismiss-summon should feel like toggling a HUD.
+ * later ⌘J is instant with the transcript already in place. The desktop panel
+ * uses the shared dialog's subtle scale transition when summoned.
  *
  * The Desk is a normal durable session (desk: true, hidden from the session
  * lists) pinned to a fast model+effort server-side; "Clear" sets a display
@@ -261,10 +260,6 @@ export function DeskOverlay({
 			label="Desk"
 			// The body stays mounted after the first summon — see the module doc.
 			keepMounted
-			// ⌘J is a HUD toggle, not a dialog: summon-dismiss-summon stays
-			// instant on desktop. The phone sheet animates like every other
-			// sheet, so its drag-to-dismiss has something to follow.
-			desktopTransition="none"
 			// bg-raised on both breakpoints, overriding the sheet's bg-surface:
 			// the Desk's controls are recessed bg-surface inputs, which would
 			// dissolve into a bg-surface panel.

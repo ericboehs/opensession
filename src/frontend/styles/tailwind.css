@@ -301,6 +301,7 @@
 	--text-meta--font-weight: var(--font-weight-normal);
 	--text-label: 13px;
 	--text-supporting: 13px;
+	--text-supporting--font-weight: var(--font-weight-normal);
 	--text-control-label: 13px;
 	--text-body: 15px;
 	--text-item-title: 14px;

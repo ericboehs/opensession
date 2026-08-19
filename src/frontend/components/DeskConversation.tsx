@@ -98,7 +98,8 @@ export function DeskConversation({
 		value: draft,
 		onChange: setDraft,
 		textareaRef,
-		mentionFetch: (q) => fetchFileMentions(q, sessionId),
+		mentionFetch: (q) =>
+			fetchFileMentions(q, sessionId, undefined, getCurrentUser()),
 	});
 
 	// Watch the Desk only and tear the socket down on unmount / id change.
@@ -386,6 +387,7 @@ export function DeskConversation({
 				    primitive via fieldClasses. */}
 				<textarea
 					ref={textareaRef}
+					{...mentions.inputProps}
 					className={fieldClasses(
 						"sm",
 						"max-h-40 min-h-[36px] flex-1 resize-none py-1.5 font-medium placeholder:text-dim",

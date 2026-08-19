@@ -23,7 +23,7 @@
  * Kill switch: OPENSESSION_RECAP=0.
  */
 
-import { opencodeOneShot } from "./opencode-oneshot";
+import { oneShot } from "./one-shot";
 import { storeAppendUserLineEarly, transcriptLineRecap } from "./opencode-transcript";
 import { getRunState } from "./run-state";
 import { findSession } from "./session-cache";
@@ -160,7 +160,7 @@ async function generateAndPersistRecap(
     "</session_data>\n\n" +
     "Write the recap now (plain text only).";
 
-  const raw = await opencodeOneShot(prompt, {
+  const raw = await oneShot(prompt, {
     system: RECAP_SYSTEM,
     label: "session-recap",
     user,

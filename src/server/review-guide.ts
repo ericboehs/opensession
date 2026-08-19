@@ -11,7 +11,7 @@
  */
 import type { Repo } from "./config";
 import { hostRepoId, prHostFor } from "./pr-host";
-import { opencodeOneShot } from "./opencode-oneshot";
+import { oneShot } from "./one-shot";
 
 const GUIDE_MODEL = process.env.REVIEW_GUIDE_MODEL || "claude-sonnet-5";
 /** Patch text beyond this is truncated before it reaches the model. */
@@ -125,7 +125,7 @@ async function generate(
 		'"""',
 	].join("\n");
 
-	const raw = await opencodeOneShot(prompt, {
+	const raw = await oneShot(prompt, {
 		system: SYSTEM_PROMPT,
 		model: GUIDE_MODEL,
 		label: "review-guide",

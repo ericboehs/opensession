@@ -105,6 +105,9 @@ export interface HostedRunOpts {
   deniedTools?: Record<string, string>;
   confirmTools?: Record<string, string>;
   aws?: boolean;
+  /** Pool credentials for trusted run-spawned CLI tools (deepsec scans). */
+  claudeCliEnv?: boolean;
+  codexCliEnv?: boolean;
   author?: GitIdentity | null;
   user?: string;
   fallbackModel?: string;
@@ -167,6 +170,8 @@ export async function* runAgentHosted(opts: HostedRunOpts): AsyncGenerator<Strea
     deniedTools: opts.deniedTools,
     confirmTools: opts.confirmTools,
     aws: opts.aws,
+    claudeCliEnv: opts.claudeCliEnv,
+    codexCliEnv: opts.codexCliEnv,
     author: opts.author,
     user: opts.user,
     fallbackModel: opts.fallbackModel,
@@ -243,6 +248,8 @@ function hostedRunRecord(spec: RunHostSpec): ActiveRunRecord {
     deniedTools: spec.deniedTools,
     confirmTools: spec.confirmTools,
     aws: spec.aws,
+    claudeCliEnv: spec.claudeCliEnv,
+    codexCliEnv: spec.codexCliEnv,
     model: spec.model,
     selectedModel: spec.selectedModel ?? spec.model,
     transientFallback: spec.transientFallback,
@@ -293,6 +300,8 @@ async function spawnHostRun(
     deniedTools: opts.deniedTools,
     confirmTools: opts.confirmTools,
     aws: opts.aws,
+    claudeCliEnv: opts.claudeCliEnv,
+    codexCliEnv: opts.codexCliEnv,
     author: opts.author,
     user: opts.user,
     fallbackModel: opts.fallbackModel,

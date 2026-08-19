@@ -93,6 +93,9 @@ export interface RunHostSpec {
   deniedTools?: Record<string, string>;
   confirmTools?: Record<string, string>;
   aws?: boolean;
+  /** Provision pool credentials for run-spawned Claude/Codex CLI tools. */
+  claudeCliEnv?: boolean;
+  codexCliEnv?: boolean;
   author?: GitIdentity | null;
   user?: string;
   fallbackModel?: string;

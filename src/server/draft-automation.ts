@@ -9,7 +9,7 @@
  * here (cron parsed, mode/eventKey/mcpServers checked against known values) so
  * a bad reply can never produce an invalid or over-privileged config.
  */
-import { opencodeOneShot } from "./opencode-oneshot";
+import { oneShot } from "./one-shot";
 import { parseCron } from "./cron";
 import { readMcpConfig } from "./connections";
 import { defaultRepo, personaCompany, personaProduct } from "./config";
@@ -63,7 +63,7 @@ export async function draftAutomation(description: string): Promise<AutomationDr
   } catch {}
 
   try {
-    const resultText = await opencodeOneShot(
+    const resultText = await oneShot(
       `Draft an automation for this:\n\n${text.slice(0, 4000)}`,
       { system: systemPrompt(mcpNames), model: DRAFT_MODEL, label: "draft-automation" },
     );

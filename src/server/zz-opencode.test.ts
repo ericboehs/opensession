@@ -28,8 +28,8 @@ import { STRIPE_CONFIRM_TOOLS, filterMcpServers } from "./runner-shared";
 import { DESK_NOTE } from "./desk";
 import {
   automationDeniedTools,
-  opencodeAutomationModel,
-  DEFAULT_OPENCODE_AUTOMATION_MODEL,
+  automationModel,
+  DEFAULT_PI_AUTOMATION_MODEL,
 } from "./automations";
 import {
   flattenMessageText,
@@ -555,32 +555,31 @@ describe("opencodeDeniedToolIds", () => {
   });
 });
 
-describe("opencodeAutomationModel (automations dispatch on opencode)", () => {
-  // The live ~/.opensession-opencode.json has the bridge enabled; these
-  // assertions describe the bridged mapping (the fail-safe path is exercised
-  // only when the bridge is off, which would flip claude tiers to passthrough).
-  test("tier-preserving mapping", () => {
-    expect(opencodeAutomationModel("claude-sonnet-4-6")).toBe(
-      "opencode/anthropic/claude-sonnet-4-6"
-    );
-    expect(opencodeAutomationModel("claude-fable-5")).toBe("opencode/anthropic/claude-fable-5");
-    expect(opencodeAutomationModel("gpt-5.5")).toBe("opencode/openai/gpt-5.5");
-  });
-  test("unset model gets the automation default", () => {
-    expect(opencodeAutomationModel(undefined)).toBe(DEFAULT_OPENCODE_AUTOMATION_MODEL);
-    expect(opencodeAutomationModel("")).toBe(DEFAULT_OPENCODE_AUTOMATION_MODEL);
-  });
-  test("already-opencode ids and unknown shapes pass through", () => {
-    expect(opencodeAutomationModel("opencode/anthropic/claude-haiku-4-5")).toBe(
-      "opencode/anthropic/claude-haiku-4-5"
-    );
-    expect(opencodeAutomationModel("codex-mini")).toBe("codex-mini");
-  });
-  test("pi ids name their engine — pass through untouched", () => {
-    expect(opencodeAutomationModel("pi/anthropic/claude-sonnet-5")).toBe(
+describe("automationModel (automations dispatch on Pi)", () => {
+  test("maps native tiers onto Pi", () => {
+    expect(automationModel("claude-sonnet-5")).toBe(
       "pi/anthropic/claude-sonnet-5"
     );
-    expect(opencodeAutomationModel("pi/openai/gpt-5.5-codex")).toBe("pi/openai/gpt-5.5-codex");
+    expect(automationModel("claude-fable-5")).toBe("pi/anthropic/claude-fable-5");
+    expect(automationModel("gpt-5.6-terra")).toBe("pi/openai/gpt-5.6-terra");
+  });
+  test("unset model gets the Pi automation default", () => {
+    expect(automationModel(undefined)).toBe(DEFAULT_PI_AUTOMATION_MODEL);
+    expect(automationModel("")).toBe(DEFAULT_PI_AUTOMATION_MODEL);
+  });
+  test("migrates legacy OpenCode ids while preserving provider and tier", () => {
+    expect(automationModel("opencode/anthropic/claude-haiku-4-5")).toBe(
+      "pi/anthropic/claude-haiku-4-5"
+    );
+    expect(automationModel("opencode/openai/gpt-5.6-sol")).toBe(
+      "pi/openai/gpt-5.6-sol"
+    );
+  });
+  test("Pi ids pass through untouched", () => {
+    expect(automationModel("pi/anthropic/claude-sonnet-5")).toBe(
+      "pi/anthropic/claude-sonnet-5"
+    );
+    expect(automationModel("pi/openai/gpt-5.6-luna")).toBe("pi/openai/gpt-5.6-luna");
   });
 });
 

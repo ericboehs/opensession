@@ -18,6 +18,7 @@ import {
 	personNameForKey,
 	usePeople,
 } from "../lib/people";
+import { isBotAuthor } from "../lib/pr-comments";
 import { Popover } from "../ui/popover";
 import { Tooltip } from "../ui/tooltip";
 import { cn } from "../ui/cn";
@@ -40,7 +41,7 @@ import {
 	WS_SUMMARY_STATE,
 	WS_SUMMARY_THUMB,
 } from "../lib/workspace-summary-classes";
-import { IconClock, IconFile, IconListCircles } from "./icons";
+import { IconClock, IconFile, IconListCircles, IconPeople } from "./icons";
 
 /**
  * The session header's compact stand-in for the right Workspace panel: one
@@ -110,6 +111,8 @@ interface Props {
 	 * resolves it (see `effectiveReview`) and hands the answer down.
 	 */
 	reviewRequest?: UnifiedSession["reviewRequest"] | null;
+	/** Workspace-wide GitHub requests, including requests held by a sibling session. */
+	prReviewRequested?: string[];
 	/** Live run state, so the PR block refetches the moment a turn ends. */
 	running?: boolean;
 	/** Prompt the session (Commit) via WS `prompt`. Absent while disconnected. */
@@ -142,7 +145,9 @@ function emptyData(): SummaryData {
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|avif|svg)$/i;
 
 /**
- * One row per human, merged across the two ways a review lands on someone.
+ * One identity per reviewer, merged across the two ways a review lands on
+ * someone. Human identities are collected under one labelled band; bots and
+ * teams keep their own status rows.
  *
  * The pull request has reviewers, and Open Session has its own "please review
  * this" pointed at a teammate. They are not alternatives: the picker mirrors
@@ -167,11 +172,13 @@ type ReviewLine = {
 	login?: string;
 	state: string;
 	tone: string;
+	human: boolean;
 };
 
 function reviewLines(
 	pr: PrDetails | null,
 	request: UnifiedSession["reviewRequest"] | null | undefined,
+	prReviewRequested: string[] | undefined,
 ): ReviewLine[] {
 	const lines: ReviewLine[] = [];
 	const seen = new Map<string, ReviewLine>();
@@ -185,7 +192,10 @@ function reviewLines(
 
 	// Whoever we asked, first: this is the row that exists even with no pull
 	// request open at all.
-	for (const key of [request?.to, ...(request?.recipients || [])]) {
+	const requestedPeople = request?.recipients?.length
+		? request.recipients
+		: [request?.to];
+	for (const key of requestedPeople) {
 		if (!key) continue;
 		const name = personNameForKey(key);
 		add({
@@ -193,6 +203,18 @@ function reviewLines(
 			name,
 			state: request?.accepted ? "Signed off" : "Review asked",
 			tone: request?.accepted ? "text-green" : "text-dim",
+			human: true,
+		});
+	}
+	for (const key of prReviewRequested || []) {
+		if (!key) continue;
+		const name = personNameForKey(key);
+		add({
+			key: name.toLowerCase(),
+			name,
+			state: "Awaiting review",
+			tone: "text-dim",
+			human: true,
 		});
 	}
 
@@ -208,15 +230,17 @@ function reviewLines(
 		}
 		for (const reviewer of byLogin.values()) {
 			const meta = reviewerStateMeta(reviewer.state);
-			const name = reviewer.isTeam
-				? reviewer.login
-				: personNameForGithubLogin(reviewer.login) || reviewer.login;
+			const personName = reviewer.isTeam
+				? null
+				: personNameForGithubLogin(reviewer.login);
+			const name = personName || reviewer.login;
 			const line = add({
 				key: name.toLowerCase(),
 				name,
 				login: reviewer.isTeam ? undefined : reviewer.login,
 				state: meta.label,
 				tone: meta.tone === "muted" ? "text-dim" : `text-${meta.tone}`,
+				human: !reviewer.isTeam && !isBotAuthor(reviewer.login),
 			});
 			// Merged onto a request row: keep the request's name, take GitHub's
 			// verdict once there is one to take.
@@ -225,9 +249,10 @@ function reviewLines(
 				line.tone = meta.tone === "muted" ? "text-dim" : `text-${meta.tone}`;
 				line.login = line.login || reviewer.login;
 			}
+			line.human ||= !reviewer.isTeam && !isBotAuthor(reviewer.login);
 		}
 	}
-	return lines.slice(0, REVIEWERS_SHOWN);
+	return lines;
 }
 
 /** How many assets the card lists before it defers to the Assets tab. The card
@@ -296,6 +321,7 @@ function SummaryBody({
 	onOpenAssets,
 	onArchive,
 	reviewRequest,
+	prReviewRequested,
 	running,
 	send,
 	refreshTick,
@@ -394,7 +420,13 @@ function SummaryBody({
 	// here or a reviewer stays a bare person key until something else happens to
 	// re-render the card.
 	usePeople();
-	const reviewers = reviewLines(pr, reviewRequest);
+	const reviewers = reviewLines(pr, reviewRequest, prReviewRequested);
+	const humanReviewers = reviewers
+		.filter((reviewer) => reviewer.human)
+		.slice(0, REVIEWERS_SHOWN);
+	const otherReviewers = reviewers
+		.filter((reviewer) => !reviewer.human)
+		.slice(0, REVIEWERS_SHOWN);
 
 	const shown = assets.slice(0, ASSETS_SHOWN);
 
@@ -448,10 +480,9 @@ function SummaryBody({
 				onArchive={onArchive ? () => go(onArchive) : undefined}
 			/>
 
-			{/* Who is holding it. The status row above says a review is needed;
-			    these say by whom, which is the next question and the one you act
-			    on. */}
-			{reviewers.map((reviewer) => (
+			{/* Automated reviewers keep their individual verdict rows. Human review
+			    gets a labelled band and a real Add action in its empty state. */}
+			{otherReviewers.map((reviewer) => (
 				<button
 					key={reviewer.key}
 					className={WS_SUMMARY_ROW}
@@ -472,6 +503,42 @@ function SummaryBody({
 					</span>
 				</button>
 			))}
+
+			<div className={WS_SUMMARY_SECTION}>Human reviewers</div>
+			{humanReviewers.length ? (
+				humanReviewers.map((reviewer) => (
+					<button
+						key={reviewer.key}
+						className={WS_SUMMARY_ROW}
+						onClick={() => go(() => onOpenPanelTab("info"))}
+						title={`${reviewer.name} · ${reviewer.state}`}
+					>
+						<span className={WS_SUMMARY_RAIL}>
+							<UserAvatar
+								name={reviewer.name}
+								login={reviewer.login}
+								size={16}
+								edge={false}
+							/>
+						</span>
+						<span className={WS_SUMMARY_LABEL}>{reviewer.name}</span>
+						<span className={cn(WS_SUMMARY_STATE, reviewer.tone)}>
+							{reviewer.state}
+						</span>
+					</button>
+				))
+			) : (
+				<button
+					className={WS_SUMMARY_ROW}
+					onClick={() => go(() => onOpenPanelTab("info"))}
+				>
+					<span className={WS_SUMMARY_RAIL}>
+						<IconPeople size={20} className={WS_SUMMARY_ICON} />
+					</span>
+					<span className={WS_SUMMARY_LABEL}>No reviewers</span>
+					<span className={WS_SUMMARY_ACTION}>Add</span>
+				</button>
+			)}
 
 			{shown.length > 0 && (
 				<>

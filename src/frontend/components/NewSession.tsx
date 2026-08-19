@@ -1326,6 +1326,7 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
           valueRef={promptText}
           handle={promptHandle}
           repo={effectiveRepo}
+          mcpServers={selectedMcpServers}
           // Ask sessions read and explain; they never touch the code. Asking
           // "what to work on" in that mode invites a prompt the session
           // cannot carry out.

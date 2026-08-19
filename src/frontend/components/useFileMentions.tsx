@@ -1,9 +1,21 @@
 import { repoLabel } from "../lib/repo-label";
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { FileMention } from "../lib/api";
 import { UserAvatar } from "./UserAvatar";
 import { cn } from "../ui/cn";
+import { IconTile } from "./BrandTile";
+import { displayName as brandDisplayName } from "../brand-logos";
+import { IconBolt, IconFile, IconFolder, IconMessage, IconPlug } from "./icons";
+import { peopleMentionMatches, usePeople } from "../lib/people";
+import { useCurrentUser } from "./UserPicker";
+import {
+  actionMentionSuggestions,
+  groupMentionSuggestions,
+  mergeMentionSuggestions,
+  type MentionAction,
+  type MentionSuggestion,
+} from "../lib/mention-palette";
 
 /**
  * Find the active "@"-mention being typed at the caret. Returns the index of
@@ -74,6 +86,8 @@ interface Options {
    * text typed after the "/", returns matching skills/commands.
    */
   skillsFetch?: (query: string) => Promise<FileMention[]>;
+  /** Contextual commands offered after people, tools, and sessions. */
+  actions?: MentionAction[];
 }
 
 interface FileMentions {
@@ -83,6 +97,16 @@ interface FileMentions {
   popup: React.ReactNode;
   /** True while the popup is open (suggestions visible). */
   open: boolean;
+  /** Combobox wiring for the textarea that keeps focus while the popup opens. */
+  inputProps: Pick<
+    React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+    | "role"
+    | "aria-autocomplete"
+    | "aria-expanded"
+    | "aria-controls"
+    | "aria-activedescendant"
+    | "aria-haspopup"
+  >;
   /** Re-evaluate the mention context; call on keyup/click and after value changes. */
   sync: () => void;
   /**
@@ -101,10 +125,13 @@ interface FileMentions {
  * popup node plus handlers to wire into a host textarea. Used by both the session
  * Composer and the New-session prompt field so they behave identically.
  */
-export function useFileMentions({ value, onChange, textareaRef, mentionFetch, skillsFetch }: Options): FileMentions {
+export function useFileMentions({ value, onChange, textareaRef, mentionFetch, skillsFetch, actions = [] }: Options): FileMentions {
   const [mention, setMention] = useState<TriggerContext | null>(null);
-  const [suggestions, setSuggestions] = useState<FileMention[]>([]);
+  const [suggestions, setSuggestions] = useState<MentionSuggestion[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
+  const popupId = useId();
+  const people = usePeople();
+  const currentUser = useCurrentUser();
   // Caret-target to apply after a programmatic value change (insertion).
   const pendingCaret = useRef<number | null>(null);
   // Guards against a stale async fetch overwriting a newer query's results.
@@ -120,7 +147,10 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
   mentionFetchRef.current = mentionFetch;
   const skillsFetchRef = useRef(skillsFetch);
   skillsFetchRef.current = skillsFetch;
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
   const inputWrapRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
   // Fixed viewport coordinates for the portaled popup, measured from the
   // wrapper. Null until the first measure after opening.
   const [pos, setPos] = useState<React.CSSProperties | null>(null);
@@ -180,8 +210,9 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
     sync();
   }, [value]);
 
-  // Fetch immediately: file results are cached server-side, and waiting after
-  // every keystroke made the picker feel sticky despite a warm index.
+  // People are already in the page-level directory cache, so paint them before
+  // the file/tool/session request resolves. A bare "@" should feel like opening
+  // a palette, not like waiting for a repository search.
   useEffect(() => {
     const fetcher = mention?.kind === "skill" ? skillsFetchRef.current : mentionFetchRef.current;
     if (!mention || !fetcher) {
@@ -189,19 +220,27 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
       return;
     }
     const seq = ++fetchSeq.current;
-    // Never let Enter select rows belonging to the previous query.
-    clearSuggestions();
+    const local = mention.kind === "file"
+      ? mergeMentionSuggestions(
+          peopleMentionMatches(mention.query, people, currentUser),
+          actionMentionSuggestions(mention.query, actionsRef.current),
+        )
+      : [];
+    // Never let Enter select rows belonging to the previous query. The local
+    // directory rows are safe immediately; fetched rows merge underneath.
+    setSuggestions(local);
+    setActiveIdx(0);
     void fetcher(mention.query)
-      .then((files) => {
+      .then((items) => {
         if (seq === fetchSeq.current) {
-          setSuggestions(files);
+          setSuggestions(mergeMentionSuggestions(local, items));
           setActiveIdx(0);
         }
       })
       .catch(() => {
         if (seq === fetchSeq.current) clearSuggestions();
       });
-  }, [mention?.query, mention?.start, mention?.kind]);
+  }, [mention?.query, mention?.start, mention?.kind, people, currentUser]);
 
   const open = !!mention && suggestions.length > 0;
 
@@ -218,7 +257,7 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
       const el = inputWrapRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      const POPUP_MAX = 240;
+      const POPUP_MAX = 420;
       const spaceAbove = rect.top;
       const spaceBelow = window.innerHeight - rect.bottom;
       const down = spaceAbove < POPUP_MAX && spaceBelow > spaceAbove;
@@ -245,12 +284,26 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
     };
   }, [open, suggestions.length]);
 
-  function applySuggestion(item: FileMention) {
+  useEffect(() => {
+    if (!open) return;
+    popupRef.current
+      ?.querySelector<HTMLElement>(`[data-mention-index="${activeIdx}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activeIdx, open]);
+
+  function applySuggestion(item: MentionSuggestion) {
     if (!mention) return;
     const el = textareaRef.current;
     const caret = el?.selectionStart ?? value.length;
     const before = value.slice(0, mention.start);
     const after = value.slice(caret);
+    if (item.action) {
+      setMention(null);
+      setSuggestions([]);
+      pendingCaret.current = onChange(before + after, before.length, before.length) ?? before.length;
+      queueMicrotask(item.action);
+      return;
+    }
     const insert = `${mention.kind === "skill" ? "/" : "@"}${item.insert} `;
     const next = before + insert + after;
     const nextCaret = before.length + insert.length;
@@ -303,50 +356,118 @@ export function useFileMentions({ value, onChange, textareaRef, mentionFetch, sk
     setMention(null);
   }
 
+  const groups = groupMentionSuggestions(suggestions);
   const popup = open && pos ? createPortal(
-    <div className="fixed z-[10500] max-h-60 overflow-y-auto rounded-xl bg-popup-glass [backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] p-1 smooth-shadow-ring-md" role="listbox" style={pos}>
-      {suggestions.map((item, i) => {
-        const isSession = item.kind === "session";
-        const isSkill = item.kind === "skill";
-        const isDir = item.kind === "dir";
-        const isPerson = item.kind === "person";
-        const path = item.display;
-        const slash = isSession || isSkill || isPerson ? -1 : path.lastIndexOf("/");
-        const dir = slash >= 0 ? path.slice(0, slash + 1) : "";
-        const base = slash >= 0 ? path.slice(slash + 1) : path;
-        return (
-          <div
-            key={`${item.insert}-${i}`}
-            role="option"
-            aria-selected={i === activeIdx}
-            className={cn(
-              "flex cursor-pointer items-baseline gap-2 overflow-hidden rounded-control px-[9px] py-1.5 text-label leading-[1.3] whitespace-nowrap",
-              i === activeIdx && "bg-pressed",
-            )}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              applySuggestion(item);
-            }}
-            onMouseEnter={() => setActiveIdx(i)}
-          >
-            {isSession && <span className="shrink-0 self-center rounded-md bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] px-[5px] py-px text-meta font-semibold text-accent">session</span>}
-            {/* A teammate is pictured rather than labelled: the face says
-                "person" faster than the word did, and it is the same picture
-                the mention itself carries once it lands in a message. Plain
-                UserAvatar, so it keeps the app's squircle: the face is the
-                same shape here, in the draft, and in the sent chip. */}
-            {isPerson && <UserAvatar name={item.display} size={18} className="self-center" />}
-            {!isSession && !isSkill && !isPerson && item.repo && <span className="shrink-0 self-center rounded-md bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] px-[5px] py-px text-meta font-semibold text-accent">{repoLabel(item.repo)}</span>}
-            <span className="shrink-0 font-medium text-fg">{isSkill ? `/${base}` : isDir ? `${base}/` : base}</span>
-            {isSession || isSkill || isPerson
-              ? item.sub && <span className="overflow-hidden text-ellipsis text-left text-meta text-faint [direction:rtl]">{item.sub}</span>
-              : dir && <span className="overflow-hidden text-ellipsis text-left text-meta text-faint [direction:rtl]">{dir}</span>}
+    <div
+      ref={popupRef}
+      className="fixed z-[10500] overflow-y-auto rounded-xl bg-popup-glass [backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] p-1 smooth-shadow-ring-md"
+      id={popupId}
+      role="listbox"
+      style={pos}
+    >
+      {groups.map((group, groupIndex) => (
+        <div key={group.category} role="group" aria-label={group.category}>
+          <div className={cn(
+            "px-2.5 pb-1 text-meta font-medium text-faint",
+            groupIndex === 0 ? "pt-1" : "pt-2",
+          )}>
+            {group.category}
           </div>
-        );
-      })}
+          {group.items.map(({ item, index: i }) => {
+            const isSession = item.kind === "session";
+            const isSkill = item.kind === "skill";
+            const isDir = item.kind === "dir";
+            const isPerson = item.kind === "person";
+            const isTool = item.kind === "tool";
+            const isAction = item.kind === "action";
+            const path = item.display;
+            const slash = isSession || isSkill || isPerson || isTool || isAction
+              ? -1
+              : path.lastIndexOf("/");
+            const dir = slash >= 0 ? path.slice(0, slash + 1) : "";
+            const base = slash >= 0 ? path.slice(slash + 1) : path;
+            const label = isTool
+              ? brandDisplayName(base)
+              : isSkill
+                ? `/${base}`
+                : isDir
+                  ? `${base}/`
+                  : base;
+            return (
+              <div
+                key={`${item.kind || "file"}:${item.insert}`}
+                role="option"
+                id={`${popupId}-option-${i}`}
+                aria-selected={i === activeIdx}
+                data-mention-index={i}
+                className={cn(
+                  "flex cursor-pointer items-center gap-2.5 overflow-hidden rounded-control px-2.5 py-2 text-label leading-[1.3] whitespace-nowrap",
+                  i === activeIdx && "bg-pressed",
+                )}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  applySuggestion(item);
+                }}
+                onMouseEnter={() => setActiveIdx(i)}
+              >
+                {isPerson ? (
+                  <UserAvatar name={item.display} size={20} />
+                ) : isTool ? (
+                  <IconTile name={item.insert} size={20} />
+                ) : isSession ? (
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-active text-dim">
+                    <IconMessage size={14} />
+                  </span>
+                ) : isAction ? (
+                  <span className="flex size-5 shrink-0 items-center justify-center text-dim">
+                    {item.icon || <IconPlug size={16} />}
+                  </span>
+                ) : item.repo ? (
+                  <span className="shrink-0 rounded-md bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] px-[5px] py-px text-meta font-semibold text-accent">
+                    {repoLabel(item.repo)}
+                  </span>
+                ) : (
+                  <span className="flex size-5 shrink-0 items-center justify-center text-faint">
+                    {isSkill ? <IconBolt size={16} /> : isDir ? <IconFolder size={16} /> : <IconFile size={16} />}
+                  </span>
+                )}
+                <span className="shrink-0 font-medium text-fg">{label}</span>
+                {isTool ? (
+                  <span className="overflow-hidden text-ellipsis text-meta text-faint">
+                    @{item.insert}
+                  </span>
+                ) : isSession || isSkill || isPerson || isAction ? (
+                  item.sub && (
+                    <span className="overflow-hidden text-ellipsis text-meta text-faint">
+                      {item.sub}
+                    </span>
+                  )
+                ) : dir ? (
+                  <span className="overflow-hidden text-ellipsis text-left text-meta text-faint [direction:rtl]">
+                    {dir}
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ))}
     </div>,
     document.body,
   ) : null;
 
-  return { inputWrapRef, popup, open, sync, handleKeyDown, close };
+  const inputProps: FileMentions["inputProps"] = {
+    role: "combobox",
+    "aria-autocomplete": "list",
+    "aria-expanded": open,
+    "aria-haspopup": "listbox",
+    ...(open
+      ? {
+          "aria-controls": popupId,
+          "aria-activedescendant": `${popupId}-option-${activeIdx}`,
+        }
+      : {}),
+  };
+
+  return { inputWrapRef, popup, open, inputProps, sync, handleKeyDown, close };
 }

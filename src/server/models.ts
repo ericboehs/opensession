@@ -6,8 +6,8 @@
  * Single engine: EVERYTHING runs on the OpenCode engine (opencode-runner.ts) —
  * the legacy Claude/Codex SDK runners are deleted. The picker only surfaces
  * opencode ids (opencodePickerModels), interactiveDefaultModel maps the
- * default onto opencode, and nextFallbackModel / opencodeAutomationModel map
- * every fallback onto opencode too (toOpencodeModel). Native ids (claude-*,
+ * default onto opencode, while automationModel routes unattended routines and
+ * their fallbacks onto Pi. Native ids (claude-*,
  * gpt-*) stay RESOLVABLE (resolveModel prefix passthrough) for stored session
  * state, env vars and provider bookkeeping — agent-runner maps them onto
  * their opencode form at dispatch.
@@ -843,7 +843,7 @@ export function interactiveFallbackModel(_primaryModel?: string): string | undef
  *   claude-*                 → opencode/anthropic/<model> (meridian/native bridge)
  *   opencode/…               → unchanged
  *
- * Fail-safe (mirrors opencodeAutomationModel): the anthropic path is gated on
+ * Fail-safe: the anthropic path is gated on
  * the bridge being enabled — with it off, claude ids stay native so a config
  * toggle degrades to the direct SDK runner instead of failing. The openai path
  * keys off codex accounts (not the bridge flag), so it always maps. This is

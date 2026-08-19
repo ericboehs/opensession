@@ -30,7 +30,7 @@
  */
 
 import { audit } from "./audit";
-import { opencodeOneShot } from "./opencode-oneshot";
+import { oneShot } from "./one-shot";
 import { getRunState } from "./run-state";
 import { promptQueues } from "./queue-state";
 import { findSession } from "./session-cache";
@@ -301,7 +301,7 @@ async function generate(sessionId: string, user?: string): Promise<void> {
 			"Return the JSON array now (or [] if the turn ended with nothing to decide).";
 
 		markTried(sessionId);
-		const raw = await opencodeOneShot(prompt, {
+		const raw = await oneShot(prompt, {
 			system: SUGGESTION_SYSTEM,
 			label: "reply-suggestions",
 			user,

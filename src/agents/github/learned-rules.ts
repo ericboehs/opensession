@@ -18,7 +18,7 @@ import { stateDir } from "../../server/paths";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { audit } from "../../server/audit";
 import { configuredRepos, defaultRepo } from "../../server/config";
-import { opencodeOneShot } from "../../server/opencode-oneshot";
+import { oneShot } from "../../server/one-shot";
 import { repoForFullName } from "./constants";
 import { readFeedback } from "./feedback";
 import {
@@ -128,7 +128,7 @@ export async function distillLearnedRules(ghRepo?: string, force = false): Promi
   if (!force && !distillDue(current, signalCount, Date.now())) return false;
 
   const repoFull = ghRepo || defaultRepo().ghRepo;
-  const text = await opencodeOneShot(buildDistillPrompt(repoFull, records, current), {
+  const text = await oneShot(buildDistillPrompt(repoFull, records, current), {
     label: "review-rules-distill",
     model: DISTILL_MODEL,
   });

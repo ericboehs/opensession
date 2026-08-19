@@ -257,7 +257,7 @@ export function WalkthroughCard({
 				// transcript. Three lines is what the paragraph usually is; the
 				// rest of the writeup stays behind the fold, which is what the
 				// fold is for.
-				<p className="m-0 mt-2 line-clamp-3 text-label leading-5 text-dim [overflow-wrap:anywhere] [text-wrap:pretty]">
+				<p className="m-0 mt-2 line-clamp-3 text-meta leading-4 text-dim [overflow-wrap:anywhere] [text-wrap:pretty]">
 					{lede}
 				</p>
 			)}

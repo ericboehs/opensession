@@ -3,7 +3,7 @@
  * plus file metadata, and results are cached by the exact diff contents.
  */
 import { createHash } from "crypto";
-import { opencodeOneShot } from "./opencode-oneshot";
+import { oneShot } from "./one-shot";
 
 const GROUP_MODEL = process.env.DIFF_GROUP_MODEL || "claude-haiku-4-5";
 const MAX_FILES = 250;
@@ -135,7 +135,7 @@ async function generate(
 		modelPatch,
 		'"""',
 	].join("\n");
-	const raw = await opencodeOneShot(prompt, {
+	const raw = await oneShot(prompt, {
 		system: SYSTEM_PROMPT,
 		model: GROUP_MODEL,
 		label: "diff-groups",

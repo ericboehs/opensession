@@ -36,14 +36,13 @@ configuration for the run.
   Reads stay allowed; suggested customer replies go in an internal Plain note.
   Linear (incl. issue creation) and Sentry are internal, so their writes are
   allowed — that's the "spin off work" affordance.
-- Everything runs on the opencode engine. `runAutomation` maps the
-  automation's model tier onto opencode at dispatch
-  (`opencodeAutomationModel`; unset → `DEFAULT_OPENCODE_AUTOMATION_MODEL` in
-  automations.ts). Deny-sets are enforced by STRIPPING the tools from the
-  model's tool list via OpenCode's `tools` config (`opencodeRunPolicy` in
-  opencode-runner.ts, `<server>_<tool>` ids verified live).
-  opensession-admin/opensession-sessions and per-user (`allowedUsers`) servers
-  stay out of automation runs. The run gate (`opencodeGateReason`) is
+- Automations run on Pi in detached run hosts. `runAutomation` maps every
+  native or legacy OpenCode model id onto Pi at dispatch (`automationModel`;
+  unset uses `DEFAULT_PI_AUTOMATION_MODEL` in automations.ts). Deny-sets are
+  enforced before Pi registers MCP tools, and its guarded local tools keep
+  filesystem and environment access contained. opensession-admin,
+  opensession-sessions, and per-user (`allowedUsers`) servers stay out of
+  automation runs. Both engine run gates are
   deny-by-default on journal kind: interactive kinds
   (prompt/goal/create/linear/slack), unattended kinds
   (automation/plain/action/security-scan/github-*), everything else refused.

@@ -462,18 +462,19 @@ How to delegate from an Open Session session:
   summary, diff, tests, and assumptions; rerun, steer, or escalate to a
   smarter model if the result misses the bar.
 
-Engine notes: the opencode engine has no mid-turn steer — a busy send queues
-and delivers as the next turn. Anthropic models run through the bundled
-Meridian bridge on your configured Anthropic account pool; OpenAI models run
-on your configured OpenAI (ChatGPT-OAuth) account pool. One-shot utility calls
-(titles, branch names, intent classifiers) go through `opencodeOneShot`
-(src/server/opencode-oneshot.ts) on a shared tool-less server. Runner code is
-runner internals — changes need a real restart.
+Engine notes: Pi is the default engine and supports mid-turn steering through
+detached run hosts. OpenCode remains available explicitly and as a fallback;
+it queues a busy steer for the next turn. Anthropic models use the configured
+Anthropic account pool, and OpenAI models use the ChatGPT-OAuth account pool.
+One-shot utility calls (titles, branch names, intent classifiers) go through
+the tool-less Pi-backed `oneShot` helper (`src/server/one-shot.ts`). Runner code
+is runner internals. Changes need a real restart.
 
-Eligible interactive runs multiplex onto one shared always-warm
-`opencode serve` per (bridge account × user); automations and other unattended
-kinds keep per-session servers so their least-privilege MCP allowlist stays
-config-level. Full contract in opencode-runner.ts's module doc ("Server
+Eligible OpenCode interactive runs multiplex onto one shared always-warm
+`opencode serve` per (bridge account × user). Pi sessions and automations run
+in detached hosts, with automation MCP access proxied from the fail-closed
+server-side set. Full contracts live in pi-runner.ts, host-client.ts, and
+opencode-runner.ts ("Server
 lifecycle"); adding a new in-process opensession-* server requires adding it
 to SHARED_INPROCESS_SERVERS or its sessions silently fall back to per-session
 servers.

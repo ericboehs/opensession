@@ -62,6 +62,22 @@ export interface WorkspaceExecSession {
  *  splitting), never throws on non-zero exit. Today's behavior, verbatim. */
 export function hostWorkspaceExec(dir: string): WorkspaceExec {
   const exec = async (cmd: string[], opts?: ExecOpts): Promise<ExecResult> => {
+    if (opts?.timeoutMs) {
+      const proc = Bun.spawn(cmd, {
+        cwd: dir,
+        env: { ...process.env, ...opts.env },
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: opts.timeoutMs,
+      });
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      return { exitCode, stdout, stderr };
+    }
     const shell = opts?.env ? $.env({ ...process.env, ...opts.env } as any) : $;
     const r = await shell`${cmd}`.cwd(dir).nothrow().quiet();
     return {

@@ -9,7 +9,7 @@
  * the field is simply left for the user to fill. The model output is always
  * re-sanitized here so a bad reply can never produce an invalid branch name.
  */
-import { opencodeOneShot } from "./opencode-oneshot";
+import { oneShot } from "./one-shot";
 
 const SUGGEST_MODEL = process.env.SUGGEST_BRANCH_MODEL || "claude-haiku-4-5";
 
@@ -44,7 +44,7 @@ export async function suggestBranchName(prompt: string): Promise<string | null> 
   if (text.length < 10) return null;
 
   try {
-    const resultText = await opencodeOneShot(
+    const resultText = await oneShot(
       `Name a branch for this task:\n\n${text.slice(0, 2000)}`,
       { system: SYSTEM_PROMPT, model: SUGGEST_MODEL, label: "suggest-branch" },
     );

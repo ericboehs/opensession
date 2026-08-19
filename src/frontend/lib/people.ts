@@ -128,21 +128,30 @@ export function personNameForKey(key: string): string {
 }
 
 /**
- * People rows for the composer's @-mention popup. Only offered once a query
- * is typed (a bare "@" stays the familiar file browser); name matches list
- * before file results. Inserting yields `@Name`, which the server's mention
- * scan (people.ts mentionedUsers) turns into a push when the prompt is sent.
+ * People rows for the composer's @ palette. A bare "@" offers the complete
+ * directory; typing filters by first or full name. The current person sorts
+ * first, then the directory keeps its configured order. Inserting yields
+ * `@Name`, which the server's mention scan turns into a push when sent.
  */
-export function peopleMentionMatches(query: string): FileMention[] {
+export function peopleMentionMatches(
+	query: string,
+	roster: Person[] = getPeople(),
+	currentUser = "",
+): FileMention[] {
 	const q = query.trim().toLowerCase();
-	if (!q) return [];
-	return getPeople()
+	const current = currentUser.trim().toLowerCase();
+	return roster
 		.filter(
 			(p) =>
-				p.name.toLowerCase().startsWith(q) ||
-				p.fullName.toLowerCase().startsWith(q),
+				!q ||
+				p.name.toLowerCase().includes(q) ||
+				p.fullName.toLowerCase().includes(q),
 		)
-		.slice(0, 3)
+		.sort((a, b) => {
+			const aIsCurrent = a.name.toLowerCase() === current;
+			const bIsCurrent = b.name.toLowerCase() === current;
+			return Number(bIsCurrent) - Number(aIsCurrent);
+		})
 		.map((p) => ({
 			display: p.name,
 			insert: p.name,

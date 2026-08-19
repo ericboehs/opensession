@@ -137,6 +137,7 @@ function evidenceDeps(over: Partial<EvidenceDeps> = {}): EvidenceDeps {
 			totalDeletions: 2,
 		}),
 		defaultBranch: () => "master",
+		isSharedCheckout: () => false,
 		exists: () => true,
 		...over,
 	};
@@ -181,6 +182,14 @@ describe("collectHandoffEvidence", () => {
 		expect(ev!.diff!.shared).toBe(true);
 		// The block must not claim these are the worker's changes.
 		expect(formatHandoffEvidence(ev!)).toContain("SHARED with the parent");
+	});
+
+	it("flags a diff taken in a configured shared checkout", async () => {
+		const ev = await collectHandoffEvidence(
+			"bks-child",
+			evidenceDeps({ isSharedCheckout: () => true }),
+		);
+		expect(ev!.diff!.shared).toBe(true);
 	});
 
 	it("reports the run error and still returns evidence when git fails", async () => {

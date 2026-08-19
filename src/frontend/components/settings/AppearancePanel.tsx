@@ -358,7 +358,7 @@ export function AppearancePanel() {
 				{sidebarFeeds.some((feed) => feed.id === PLAIN_ID) && (
 					<SettingRow
 						title="Support tickets"
-						desc="Where the Plain queue lives. The sidebar band opens a ticket's workspace, with a session and a transcript around it. As a tool it opens the ticket next to the queue, with no chat."
+						desc="Choose where Plain tickets live: in a full workspace from the sidebar, or beside the queue without chat."
 						control={
 							<Select
 								label="Where support tickets live"

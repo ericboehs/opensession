@@ -15,7 +15,7 @@
  * Fail-open: any error or unparseable output returns null and the caller falls
  * back to the default worktree (code) flow, so a hiccup never blocks the agent.
  */
-import { opencodeOneShot } from "../../server/opencode-oneshot";
+import { oneShot } from "../../server/one-shot";
 import { personaCompany, personaName } from "../../server/config";
 import { suggestRepos } from "../../server/suggest-repos";
 
@@ -90,7 +90,7 @@ Respond with ONLY a JSON object: {"action": "review"|"autofix"|"simplify"|"adver
 /** Classify a GitHub PR comment that mentions the assistant. */
 export async function classifyPrActionIntent(message: string): Promise<PrIntentAction> {
   try {
-    const resultText = await opencodeOneShot(
+    const resultText = await oneShot(
       `Classify this PR comment addressed to ${personaName()}:\n\n${message.slice(0, 2000)}`,
       { system: PR_ACTION_SYSTEM, model: INTENT_MODEL, label: "pr-action-intent" },
     );
@@ -115,7 +115,7 @@ export async function classifyMention(
     if (opts?.channelName) parts.push(`Channel: #${opts.channelName}`);
     parts.push(`Message:\n${message.slice(0, 2000)}`);
     if (opts?.context) parts.push(`Thread context:\n${opts.context.slice(0, 1500)}`);
-    const resultText = await opencodeOneShot(
+    const resultText = await oneShot(
       `Classify this Slack message:\n\n${parts.join("\n\n")}`,
       { system: buildSystemPrompt(), model: INTENT_MODEL, label: "mention-intent" },
     );

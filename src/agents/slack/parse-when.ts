@@ -7,7 +7,7 @@
  * Returns the ISO string, or null if the text isn't a usable time expression
  * (caller surfaces a friendly error). Fail-closed: any hiccup returns null.
  */
-import { opencodeOneShot } from "../../server/opencode-oneshot";
+import { oneShot } from "../../server/one-shot";
 
 const WHEN_MODEL = process.env.SCHEDULE_WHEN_MODEL || "claude-haiku-4-5";
 
@@ -29,7 +29,7 @@ Rules:
 Respond with ONLY a JSON object: {"iso": "<ISO8601 UTC, e.g. 2026-07-06T16:00:00Z>"} or {"iso": null}.`;
 
   try {
-    const resultText = await opencodeOneShot(
+    const resultText = await oneShot(
       `Convert this to an instant:\n\n${text.slice(0, 200)}`,
       { system, model: WHEN_MODEL, label: "parse-when" },
     );

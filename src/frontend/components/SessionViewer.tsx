@@ -5331,6 +5331,7 @@ export function SessionViewer({
 							// request may live on a sibling), and already folded
 							// together with a GitHub review that completes it.
 							reviewRequest={effectiveReview?.req ?? null}
+							prReviewRequested={effectiveReview?.prReviewRequested}
 							running={isRunningLive}
 							send={connected ? send : undefined}
 							refreshTick={gitRefreshTick}
@@ -5973,15 +5974,9 @@ export function SessionViewer({
 							{loading ? (
 								<ConversationLoading />
 							) : waitingForWorkspace ? (
-								// Worktree prep in flight — the first message waits in the
+								// Worktree prep in flight. The first message waits in the
 								// queue flap below and sends the moment this clears.
-								<WorkspaceWaiting
-									detail={
-										session.branch
-											? `Creating a worktree for ${session.branch}. Your messages send when it's ready.`
-											: "Creating the worktree. Your messages send when it's ready."
-									}
-								/>
+								<WorkspaceWaiting detail="Your messages send when it's ready." />
 							) : entries.length === 0 && !session.transcriptPath ? (
 								// A fresh session with no run yet is just an empty conversation —
 								// blank canvas, the composer below is the UI. Only a session
@@ -6461,7 +6456,12 @@ export function SessionViewer({
 									usage={usage}
 									mentionFetch={async (q) => [
 										...peopleMentionMatches(q),
-										...(await fetchFileMentions(q, session.id)),
+										...(await fetchFileMentions(
+											q,
+											session.id,
+											undefined,
+											getCurrentUser(),
+										)),
 									]}
 									skillsFetch={(q) => fetchSkillMentions(q, session.id)}
 									textareaRef={composerRef}

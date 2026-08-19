@@ -19,6 +19,7 @@ import { handleSessionAssetsRoutes } from "./session-assets";
 import { handleSessionNotesRoutes } from "./session-notes";
 import { handleEffectiveConfigRoutes } from "./effective-config";
 import { handleMentionsRoutes } from "./mentions";
+import { handleMentionPaletteRoutes } from "./mention-palette";
 import { handleSandboxRoutes } from "./sandbox";
 import { handleSandboxesRoutes } from "./sandboxes";
 import { handleSessionsRoutes } from "./sessions";
@@ -75,6 +76,7 @@ export const routeHandlers: RouteHandler[] = [
 	handleSessionNotesRoutes,
 	handleEffectiveConfigRoutes,
 	handleMentionsRoutes,
+	handleMentionPaletteRoutes,
 	handleSandboxesRoutes,
 	handleSandboxRoutes,
 	handleShippedChangeRoutes,

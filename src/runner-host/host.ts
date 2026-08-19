@@ -481,6 +481,8 @@ try {
     deniedTools: spec.deniedTools,
     confirmTools: spec.confirmTools,
     aws: spec.aws,
+    claudeCliEnv: spec.claudeCliEnv,
+    codexCliEnv: spec.codexCliEnv,
     author: spec.author,
     user: spec.user,
     fallbackModel: spec.fallbackModel,

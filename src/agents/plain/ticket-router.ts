@@ -21,7 +21,7 @@
  */
 import { stateDir } from "../../server/paths";
 import { existsSync, readFileSync } from "fs";
-import { opencodeOneShot } from "../../server/opencode-oneshot";
+import { oneShot } from "../../server/one-shot";
 import { writeJsonAtomic } from "../../server/shared/atomic-write";
 import { resolveModel } from "../../server/models";
 import { personaCompany, personaProduct } from "../../server/config";
@@ -111,7 +111,7 @@ export async function classifyTicketRoute(ticketContent: string): Promise<RouteV
   try {
     // Untrusted ticket text — the one-shot is tool-less by construction, so
     // the content can only influence the classification, never act.
-    const resultText = await opencodeOneShot(
+    const resultText = await oneShot(
       `Classify this support ticket:\n\n${ticketContent.slice(0, 8000)}`,
       {
         system: `${getRouterConfig().prompt}\n\n${OUTPUT_CONTRACT}`,
