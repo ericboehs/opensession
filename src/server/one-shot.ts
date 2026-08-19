@@ -19,6 +19,35 @@ import { toPiModel, type SessionEffort } from "./models";
 const DEFAULT_ONESHOT_MODEL = "pi/anthropic/claude-haiku-4-5";
 const DEFAULT_TIMEOUT_MS = 120_000;
 const ONESHOT_CWD = `${PI_STATE_DIR}/oneshot`;
+const ONESHOT_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.OPENSESSION_ONESHOT_CONCURRENCY || 4),
+);
+
+type OneShotPool = {
+  active: number;
+  waiters: Array<() => void>;
+};
+const pool: OneShotPool = ((globalThis as any).__piOneShotPool ??= {
+  active: 0,
+  waiters: [],
+});
+
+async function acquireOneShotSlot(): Promise<() => void> {
+  if (pool.active >= ONESHOT_CONCURRENCY) {
+    await new Promise<void>((resolve) => pool.waiters.push(resolve));
+  } else {
+    pool.active++;
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = pool.waiters.shift();
+    if (next) next();
+    else pool.active = Math.max(0, pool.active - 1);
+  };
+}
 
 export interface OneShotOpts {
   /** Additional high-priority instructions injected into Pi's system context. */
@@ -58,6 +87,7 @@ export async function oneShot(
     return null;
   }
 
+  const releaseSlot = await acquireOneShotSlot();
   mkdirSync(ONESHOT_CWD, { recursive: true });
   const runKey = `oneshot-${crypto.randomUUID()}`;
   const sessionDir = `${PI_STATE_DIR}/sessions/${runKey}`;
@@ -88,7 +118,10 @@ export async function oneShot(
           : "This is a tool-less one-shot text transformation. Return only the requested answer.",
         user: opts.user,
         effort: opts.effort,
-        journal: { kind: "automation" },
+        // Interactive pool semantics fail fast on a dry account. One-shots
+        // already have deterministic caller fallbacks and must not join the
+        // unattended ten-minute account wait queue.
+        journal: { kind: "prompt" },
       },
       model,
     )) {
@@ -131,5 +164,6 @@ export async function oneShot(
     try {
       rmSync(sessionDir, { recursive: true, force: true });
     } catch {}
+    releaseSlot();
   }
 }

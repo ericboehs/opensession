@@ -1672,7 +1672,7 @@ final class SessionViewModel {
     /// destroyed the moment the row leaves the realization window.
     @ObservationIgnored private let folds = FoldStateStore()
 
-    func foldState(for turn: WorkTurn, preference: String) -> TurnFoldState {
+    func foldState(for turn: WorkTurn, preference: TurnActivity) -> TurnFoldState {
         folds.fold(for: turn, preference: preference)
     }
 

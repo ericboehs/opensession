@@ -126,11 +126,20 @@ enum SettingsAPI {
         return response.prefs ?? [:]
     }
 
-    static func updateUiPrefs(user: String, prefs: [String: String?]) async throws -> [String: String] {
+    static func updateUiPrefs(
+        user: String,
+        prefs: [String: String?],
+        expected: [String: String?]? = nil
+    ) async throws -> [String: String] {
         struct Response: Decodable, Sendable { var prefs: [String: String]? }
         var prefValues: [String: Any] = [:]
         for (key, value) in prefs { prefValues[key] = value ?? NSNull() }
-        let body: [String: Any] = ["user": user, "prefs": prefValues]
+        var body: [String: Any] = ["user": user, "prefs": prefValues]
+        if let expected {
+            var expectedValues: [String: Any] = [:]
+            for (key, value) in expected { expectedValues[key] = value ?? NSNull() }
+            body["expected"] = expectedValues
+        }
         let response: Response = try await request("/api/ui-prefs", method: "PUT", body: body)
         return response.prefs ?? [:]
     }

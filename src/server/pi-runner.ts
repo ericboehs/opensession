@@ -1376,6 +1376,15 @@ async function* runPiAttempt(
   };
 
   let piSessionId: string | undefined;
+  // Utility callers such as oneShot deliberately have no unified session.
+  // They still use Pi's native JSONL while alive, but must not emit degraded
+  // transcript writes or create a ghost Open Session transcript.
+  const persistRunEntries = (entries: TranscriptEntry[]) => {
+    if (unifiedSessionId) persistEntries(piSessionId, entries);
+  };
+  const appendRunLines = (lines: Record<string, unknown>[]) => {
+    if (unifiedSessionId && piSessionId) piAppend(piSessionId, lines);
+  };
   let reachedTerminal = false;
   let session: AgentSession | undefined;
   let mcpBridge: PiMcpBridge | undefined;
@@ -2239,7 +2248,7 @@ async function* runPiAttempt(
     push({ type: "init", sessionId: piSessionId, provider: PROVIDER, model });
     // Engine-keyed write of the turn's user line — same uuid as the early
     // store write, so the row upserts instead of duplicating the bubble.
-    piAppend(piSessionId, [userLine]);
+    appendRunLines([userLine]);
 
     if (resumeMissNote) {
       const notice =
@@ -2247,7 +2256,7 @@ async function* runPiAttempt(
         "assistant output was persisted) — continuing in a fresh one with the " +
         "recent transcript bridged into this turn's prompt.";
       push({ type: "runner_notice", text: notice });
-      persistEntries(piSessionId, [
+      persistRunEntries([
         { id: crypto.randomUUID(), type: "system", content: notice, timestamp: nowIso() },
       ]);
     }
@@ -2380,11 +2389,11 @@ async function* runPiAttempt(
                     });
                   }
                 }
-                persistEntries(piSessionId, out);
+                persistRunEntries(out);
               }
             } else if (msg.role === "toolResult" && msg.toolCallId) {
               const { text, images } = contentToTextAndImages(msg.content);
-              persistEntries(piSessionId, [
+              persistRunEntries([
                 {
                   id: `${msg.toolCallId}-result`,
                   type: "tool_result",
@@ -2421,7 +2430,7 @@ async function* runPiAttempt(
                     : (steer.images || []).map(
                         (im) => `data:${im.mediaType};base64,${im.data}`
                       );
-                  persistEntries(piSessionId, [
+                  persistRunEntries([
                     {
                       id: crypto.randomUUID(),
                       type: "user",
@@ -2439,7 +2448,7 @@ async function* runPiAttempt(
             const ce = ev as any;
             if (!ce.aborted && ce.result?.summary) {
               try {
-                piAppend(piSessionId!, [
+                appendRunLines([
                   transcriptLineCompactionSummary(
                     String(ce.result.summary),
                     crypto.randomUUID(),
@@ -2487,7 +2496,7 @@ async function* runPiAttempt(
                 (r.delayMs || 0) / 1000
               )}s — ${errText.slice(0, 300)}`;
               push({ type: "runner_notice", text: notice });
-              persistEntries(piSessionId, [
+              persistRunEntries([
                 {
                   id: crypto.randomUUID(),
                   type: "system",

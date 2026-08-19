@@ -130,10 +130,20 @@ enum NativePreferences {
             resetMissing: changedIdentity,
             in: defaults
         )
+        let legacyTurnActivity = prefs["turn-activity"].flatMap { TurnActivity.legacy[$0] }
         set(
-            validated(prefs["turn-activity"], allowed: ["messages", "auto", "expanded", "collapsed"]),
-            default: "auto",
+            TurnActivity.Work(rawValue: prefs["turn-activity"] ?? "")?.rawValue
+                ?? legacyTurnActivity?.work.rawValue,
+            default: "running",
             key: "os1.appearance.turnActivity",
+            resetMissing: changedIdentity,
+            in: defaults
+        )
+        set(
+            TurnActivity.Tools(rawValue: prefs["tool-calls"] ?? "")?.rawValue
+                ?? legacyTurnActivity?.tools.rawValue,
+            default: "folded",
+            key: "os1.appearance.toolCalls",
             resetMissing: changedIdentity,
             in: defaults
         )

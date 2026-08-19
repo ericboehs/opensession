@@ -73,10 +73,13 @@ struct SessionView: View {
     /// screens-tall blocks has no row fine-grained enough to land on.
     @State private var scrollPosition = ScrollPosition()
 
-    /// How work folds start out: messages (folded, but the turn's notes still
-    /// read as transcript) / collapsed / expanded / auto (open while the turn
-    /// is live). Set in Settings → Preferences, shared with the web.
-    @AppStorage("os1.appearance.turnActivity") private var turnActivity = "auto"
+    /// How work folds start out: where a turn's steps rest, and whether nested
+    /// grouped tool calls start open. Shared with the web preference.
+    @AppStorage("os1.appearance.turnActivity") private var turnWork = "running"
+    @AppStorage("os1.appearance.toolCalls") private var toolCalls = "folded"
+    private var turnActivity: TurnActivity {
+        TurnActivity(work: turnWork, tools: toolCalls)
+    }
 
     /// Output arrived while the reader was scrolled up. Turns the return pill
     /// from a navigation aid into a notification.
@@ -1187,7 +1190,7 @@ struct SessionView: View {
             expansionState: {
                 viewModel.expansionState(id: $0, defaultExpanded: $1)
             },
-            showsMessagesWhenFolded: turnActivity == "messages",
+            activity: turnActivity,
             // An automation's turns are not a person's words, so they get no
             // author fallback. The web makes the same exception.
             owner: viewModel.session.transcriptOwner,

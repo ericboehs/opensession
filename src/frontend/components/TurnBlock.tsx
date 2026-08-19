@@ -16,7 +16,7 @@ import { cn } from "../ui/cn";
 import { msgBody } from "../lib/msg-classes";
 import { formatDuration } from "../lib/time";
 import {
-  getTurnActivityPref,
+  getTurnActivityPrefs,
   onTurnActivityChanged,
 } from "../lib/turn-activity";
 import {
@@ -71,31 +71,28 @@ export const TurnBlock = React.memo(function TurnBlock({
   const tools = items.filter((it) => it.type === "tool_use");
   const messages = items.filter((it) => it.type === "assistant");
 
-  // Default fold state follows the preference (Settings → Preferences) and
-  // nothing else. The default ("auto") opens only the turn fold while it is
-  // working and folds it again the moment the turn settles — a failed step or
-  // a screenshot inside the turn used to pin it open forever, which is the one
-  // thing both "Always folded" and "Expand while running" promise never
-  // happens. Failures are one click away inside the disclosure, and media the
-  // agent explicitly surfaced outlives the fold on its own (featuredTurnMedia)
-  // rather than holding every step open with it.
-  // "messages" folds the tool calls and nothing else,
-  // "collapsed" folds the notes away too, and both stay folded even during a
-  // live turn — the work line's tail reports the running tool. ToolCallBlock
-  // owns its own disclosure, so this never expands a Bash input (including
-  // generated comment metadata).
-  const [pref, setPref] = useState(getTurnActivityPref);
+  // Default fold state follows the two preferences (Settings → Preferences)
+  // and nothing else. `work` answers whether this turn's working is on screen
+  // at all: the default opens it while the turn is working and folds it again
+  // the moment the turn settles. A failed step or a screenshot inside the turn
+  // used to pin it open forever, which is the one thing "Always folded" and
+  // "Expand while running" promise never happens. Failures are one click away
+  // inside the disclosure, and media the agent explicitly surfaced outlives
+  // the fold on its own (featuredTurnMedia) rather than holding every step
+  // open with it. Folded work stays folded even during a live turn, where the
+  // work line's tail reports the running tool instead.
+  const [pref, setPref] = useState(getTurnActivityPrefs);
   useEffect(
-    () => onTurnActivityChanged(() => setPref(getTurnActivityPref())),
+    () => onTurnActivityChanged(() => setPref(getTurnActivityPrefs())),
     []
   );
-  const defaultExpanded = pref === "auto" ? live : pref === "expanded";
+  const defaultExpanded =
+    pref.work === "open" || (pref.work === "running" && live);
   const [expanded, setExpanded] = useState(defaultExpanded);
-  // "messages" folds the tool calls only: the turn's in-between notes keep
-  // reading as transcript, live and afterwards, while Bash and friends stay
-  // behind the work line. Expanding puts the tools back in place, interleaved
-  // with those same notes, so nothing moves except what appears between them.
-  const messagesInline = pref === "messages" && !expanded;
+  // `tools` owns the nested grouped-call disclosures. Open renders each call
+  // in place; folded keeps routine runs behind their compact step rows.
+  // ToolCallBlock owns its own detail disclosure either way, so this never
+  // expands a Bash input (including generated comment metadata).
 
   // Once the user has toggled the fold by hand, their choice wins — the
   // auto-sync below must not reopen/collapse it on a later default change
@@ -210,7 +207,7 @@ export const TurnBlock = React.memo(function TurnBlock({
         )}
       </button>
 
-      {(expanded || messagesInline) && (
+      {expanded && (
         <div
           className={cn(
             "mt-0.5",
@@ -221,24 +218,19 @@ export const TurnBlock = React.memo(function TurnBlock({
             // stays legible however long the fold runs (a divider only marks
             // the seam; the rail says "still inside the work" from any
             // scroll position). The 5px puts the hairline under the chevron's
-            // center after the disclosure line's 8px left shift. "messages"
-            // inline notes keep reading as plain transcript, so they take no
-            // rail until the fold is explicitly opened.
-            expanded &&
-              "relative mb-2 ml-[5px] border-l border-line pl-2.5"
+            // center after the disclosure line's 8px left shift.
+            "relative mb-2 ml-[5px] border-l border-line pl-2.5"
           )}
         >
-          {expanded && (
-            <button
-              type="button"
-              aria-label={`Collapse ${live ? "Working" : "Worked"}`}
-              onClick={() => {
-                userToggledRef.current = true;
-                setExpanded(false);
-              }}
-              className="absolute inset-y-0 -left-2 w-4 cursor-pointer border-0 bg-transparent p-0 after:absolute after:inset-y-0 after:left-1/2 after:border-l after:border-transparent after:transition-colors hover:after:border-line-strong focus-visible:after:border-line-strong"
-            />
-          )}
+          <button
+            type="button"
+            aria-label={`Collapse ${live ? "Working" : "Worked"}`}
+            onClick={() => {
+              userToggledRef.current = true;
+              setExpanded(false);
+            }}
+            className="absolute inset-y-0 -left-2 w-4 cursor-pointer border-0 bg-transparent p-0 after:absolute after:inset-y-0 after:left-1/2 after:border-l after:border-transparent after:transition-colors hover:after:border-line-strong focus-visible:after:border-line-strong"
+          />
           {sections.map((sec) =>
             sec.kind === "msg" ? (
               <TurnMessage
@@ -246,7 +238,7 @@ export const TurnBlock = React.memo(function TurnBlock({
                 entry={sec.entry}
                 sessionId={sessionId}
               />
-            ) : messagesInline ? null : (
+            ) : (
               // Tool icons align with the fold chevron on desktop. Phones use
               // the 1px optical correction for the icon's inset glyph.
               <div
@@ -258,7 +250,7 @@ export const TurnBlock = React.memo(function TurnBlock({
                   items={sec.items}
                   toolResults={toolResults}
                   live={live}
-                  expandAll={pref === "expanded"}
+                  expandAll={pref.tools === "open"}
                   sessionId={sessionId}
                   onOpenSubagent={onOpenSubagent}
                 />
@@ -270,7 +262,7 @@ export const TurnBlock = React.memo(function TurnBlock({
               file step now wears its own language mark, so an open fold
               already says which files it touched, and the answer's footer
               still carries them for the folded turn. */}
-          {expanded && failures > 0 && (
+          {failures > 0 && (
             // The row starts where every other row in the fold does.
             <div className="mt-1 flex flex-wrap items-center gap-x-0.5 gap-y-1 px-1 text-label leading-4 text-red/80">
               {failures} failed {failures === 1 ? "step" : "steps"}
@@ -306,8 +298,8 @@ export interface ToolSectionProps {
   items: TranscriptEntry[];
   toolResults: Map<string, TranscriptEntry>;
   live: boolean;
-  /** The "Always expanded" preference: every call renders in place, with no
-   *  grouped row to open and no indent under one. */
+  /** Work always open with its tool calls open: every call renders in place,
+   *  with no grouped row to open and no indent under one. */
   expandAll: boolean;
   onOpenSubagent?: (agentId: string, label: string) => void;
   sessionId?: string;
@@ -331,9 +323,10 @@ export function ToolSection(props: ToolSectionProps) {
   }
 
   return runs.map((run) =>
-    // Two reasons a run stays flat. Under "Always expanded" there is nothing
-    // to disclose, so a header and its indent would only wrap rows that are
-    // already on screen. And a run of one has nothing to fold: "1 step" hides
+    // Two reasons a run stays flat. With the work and its tool calls both
+    // always open there is nothing to disclose, so a header and its indent
+    // would only wrap rows already on screen. And a run of one has nothing
+    // to fold: "1 step" hides
     // a single call behind a click and says less than the call's own row does.
     run.compact && run.items.length > 1 && !props.expandAll ? (
       <ToolRunBlock key={run.items[0].id} {...props} items={run.items} />

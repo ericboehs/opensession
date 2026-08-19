@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { maxValueLength } from "./ui-prefs";
+import { expectedUiPrefsMatch, maxValueLength } from "./ui-prefs";
 
 describe("UI preference limits", () => {
 	test("repository orders can hold a large configured repo list", () => {
@@ -27,5 +27,21 @@ describe("UI preference limits", () => {
 
 	test("ordinary scalar preferences remain tightly bounded", () => {
 		expect(maxValueLength("turn-activity")).toBe(200);
+	});
+
+	test("conditional patches reject a stale legacy preference snapshot", () => {
+		const current = { "turn-activity": "auto", "tool-calls": "open" };
+		expect(
+			expectedUiPrefsMatch(current, {
+				"turn-activity": "auto",
+				"tool-calls": null,
+			}),
+		).toBeFalse();
+		expect(
+			expectedUiPrefsMatch(current, {
+				"turn-activity": "auto",
+				"tool-calls": "open",
+			}),
+		).toBeTrue();
 	});
 });

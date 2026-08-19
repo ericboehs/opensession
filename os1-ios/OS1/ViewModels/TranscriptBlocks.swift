@@ -275,17 +275,8 @@ struct WorkTurn: Identifiable, Equatable {
     var livePreview: String?
 
     /// How the fold should start out, before any manual toggle.
-    func defaultExpanded(preference: String) -> Bool {
-        switch preference {
-        case "expanded": return true
-        // "auto" is the default: open while the work is happening, folded the
-        // moment it settles — which is also the only setting where a finished
-        // turn's notes can be put away, since the header then owns them.
-        case "auto": return isLive
-        // "messages" and "collapsed" both start folded — they differ only in
-        // whether the turn's notes render outside the fold (TurnBlockView).
-        default: return false
-        }
+    func defaultExpanded(preference: TurnActivity) -> Bool {
+        preference.defaultExpanded(isLive: isLive)
     }
 }
 
@@ -805,7 +796,7 @@ final class FoldStateStore {
 
     /// The open/closed state for one work fold, created on first sight with
     /// the preference-derived default and reused forever after.
-    func fold(for turn: WorkTurn, preference: String) -> TurnFoldState {
+    func fold(for turn: WorkTurn, preference: TurnActivity) -> TurnFoldState {
         let fallback = turn.defaultExpanded(preference: preference)
         if let existing = states[turn.id] {
             // Only the live tail may re-derive its default afterwards; a

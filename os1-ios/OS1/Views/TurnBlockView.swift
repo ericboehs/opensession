@@ -13,12 +13,9 @@ struct TurnBlockView: View {
     let sessionId: String
     var worktreeDir: String?
     let state: TurnFoldState
-    /// The "Fold tool calls" preference: the turn's in-between notes keep
-    /// reading as transcript while only its tool calls hide behind the header,
-    /// because the narration is the part worth reading and a shell invocation
-    /// rarely is. Expanding puts the tools back between those same notes.
-    var showsMessagesWhenFolded = false
-    var expandsToolRuns = false
+    /// The outer state owns this turn's steps. `activity.tools` owns the
+    /// grouped tool runs nested inside it.
+    var activity = TurnActivity.standard
     /// Resolves each nested tool row's own detail state, which must survive
     /// the row scrolling out of the lazy stack.
     let expansionState: (String, Bool) -> TurnFoldState
@@ -28,13 +25,6 @@ struct TurnBlockView: View {
 
     private var glyphLimit: Int {
         horizontalSizeClass == .compact ? 4 : 6
-    }
-
-    /// A folded turn that has notes to show. A turn of pure tool calls keeps
-    /// the bare header rather than opening an empty container under it.
-    private var showsNotesOnly: Bool {
-        guard showsMessagesWhenFolded else { return false }
-        return turn.items.contains { if case .message = $0 { true } else { false } }
     }
 
     var body: some View {
@@ -50,30 +40,21 @@ struct TurnBlockView: View {
             .accessibilityLabel(accessibilityLabel)
             .accessibilityHint(state.expanded ? "Hide the work" : "Show the work")
 
-            if state.expanded || showsNotesOnly {
+            if state.expanded {
                 TurnStepsView(
                     items: turn.items,
                     sessionId: sessionId,
                     worktreeDir: worktreeDir,
                     isLive: turn.isLive,
-                    showsTools: state.expanded,
-                    expandsToolRuns: expandsToolRuns,
+                    showsTools: true,
+                    expandsToolRuns: activity.expandsToolRuns,
                     expansionState: expansionState
                 )
-                // The indent marks what the header can actually close, so it
-                // appears only when the fold is open. Under the "messages"
-                // preference a folded turn still shows its notes, and those
-                // are NOT collapsible — indenting them would offer a
-                // container the header cannot shut. Folded, the notes sit
-                // flush and read as ordinary transcript, which is the whole
-                // point of that preference.
-                .padding(.leading, state.expanded ? 6 : 0)
-                .padding(.top, state.expanded ? 8 : 2)
+                .padding(.leading, 6)
+                .padding(.top, 8)
                 .transition(.opacity)
 
-                if state.expanded {
-                    touchedFileSummary
-                }
+                touchedFileSummary
             }
 
             // A marked screenshot or recording is the result, not the work.

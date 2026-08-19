@@ -57,10 +57,11 @@ import {
 	setSendKeyPref,
 } from "../../lib/send-key-pref";
 import {
-	getTurnActivityPref,
+	getTurnActivityPrefs,
 	onTurnActivityChanged,
-	setTurnActivityPref,
-	type TurnActivityPref,
+	setToolCallsPref,
+	setTurnWorkPref,
+	type TurnActivityPrefs,
 } from "../../lib/turn-activity";
 import {
 	getLiveTypingPref,
@@ -408,9 +409,9 @@ export function PreferencesPanel() {
 		[],
 	);
 	const [turnActivity, setTurnActivity] =
-		useState<TurnActivityPref>(getTurnActivityPref);
+		useState<TurnActivityPrefs>(getTurnActivityPrefs);
 	useEffect(
-		() => onTurnActivityChanged(() => setTurnActivity(getTurnActivityPref())),
+		() => onTurnActivityChanged(() => setTurnActivity(getTurnActivityPrefs())),
 		[],
 	);
 	const [liveTyping, setLiveTyping] = useState<boolean>(getLiveTypingPref);
@@ -587,18 +588,31 @@ export function PreferencesPanel() {
 			<SettingsGroupLabel>Transcript</SettingsGroupLabel>
 			<SettingCard>
 				<SettingRow
-					title="Tool calls and messages"
+					title="Steps"
 					control={
 						<Select
-						label="Tool calls and messages"
-							value={turnActivity}
+							label="Steps"
+							value={turnActivity.work}
 							options={[
-								{ value: "messages", label: "Fold tool calls" },
-								{ value: "collapsed", label: "Fold everything" },
-								{ value: "auto", label: "Expand while running" },
-								{ value: "expanded", label: "Always expanded" },
+								{ value: "folded", label: "Closed" },
+								{ value: "running", label: "While running" },
+								{ value: "open", label: "Open" },
 							]}
-							onChange={setTurnActivityPref}
+							onChange={setTurnWorkPref}
+						/>
+					}
+				/>
+				<SettingRow
+					title="Tool calls"
+					control={
+						<Select
+							label="Tool calls"
+							value={turnActivity.tools}
+							options={[
+								{ value: "folded", label: "Closed" },
+								{ value: "open", label: "Open" },
+							]}
+							onChange={setToolCallsPref}
 						/>
 					}
 				/>
