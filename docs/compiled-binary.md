@@ -77,6 +77,39 @@ boots and serves without them; features that reach one only need it when that
 feature runs. The build-only natives (`@tailwindcss/oxide`, `lightningcss`,
 `@parcel/watcher`) are never used in prebuilt-frontend mode.
 
+## What doesn't work in this mode
+
+Features absent or degraded in the compiled binary versus a source/tarball
+install. Everything the shipped artefact covers (the sharp sidecar, the engine
+seed, install/service/update, non-sandbox turns) works and is not listed here.
+
+- **On-box self-development.** No source tree ships in the binary, so code
+  sessions cannot run against the Open Session checkout itself (the
+  `sharedCheckout` self-hosting path). Use the `--source` install (git checkout
+  + bun) for self-development.
+- **Changing the primary product wordmark/mark/agent name at runtime.** These
+  and the base HTML `<title>` are stitched into the embedded `index.html` at
+  build time and served verbatim (the embedded boot path never re-runs
+  `renderIndexHtml`). To change them you build a custom binary with that
+  config. Workspace name/icon, the PWA install name, and session social-card
+  titles still follow live config per request. Clean fix if per-install
+  re-branding of one shared binary is wanted: re-run `renderIndexHtml` against
+  live config on the embedded boot path instead of serving the pre-stitched
+  HTML (the stitching logic exists and is instance-pure, just bypassed here).
+- **Cosmetic PWA assets.** App icons, splash images, `sw.js`, and sign-in
+  background art under `src/frontend/` are not embedded and `404`; the app
+  still renders (the manifest is generated dynamically).
+- **Bundled agent skills.** The `.agents/skills` tree is not in the binary
+  artefact, so the installer's global-skills step is skipped (it degrades
+  without error). The `--source` install still ships them.
+- **Live frontend rebuild / CSS hot edits.** The in-process watcher and
+  `scheduleFrontendRebuild` are off in prebuilt mode. Use `--source` for live
+  edits.
+- **Sandboxed agent runs launched from a compiled host** are untested: the
+  sandbox re-exec sites run `bun run <host-entry>` inside a container that
+  carries its own bun + checkout. Non-sandbox / local runs work (the dispatcher
+  self-execs the binary for `runner-host` and `mcp-proxy`).
+
 ## State
 
 Runtime state stays external and is unchanged: `OPENSESSION_CONFIG`
