@@ -15,7 +15,8 @@
  * the run-host and MCP proxy can import it without dragging in the server graph.
  */
 
-import { basename } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 /**
  * True when this process is the compiled executable rather than `bun`.
@@ -50,4 +51,30 @@ export function mcpProxyArgv(bun: string, entry: string, opts: { smol?: boolean 
 	return isCompiledBinary()
 		? [process.execPath, "mcp-proxy"]
 		: [bun, ...(opts.smol ? ["--smol"] : []), "run", entry];
+}
+
+/** The release-artefact subdir holding the opencode plugins the external
+ *  `opencode serve` / meridian processes load from disk (the meridian bridge
+ *  stack in `node_modules` plus the `opencode-plugin-*.js` files). */
+export const OPENCODE_PLUGINS_SIDECAR = "opencode-plugins";
+
+/**
+ * Directory the opencode/meridian plugin files and packages are resolved from.
+ *
+ * Source mode: `sourceDir` (the caller's `import.meta.dir`) — the `.js` plugins
+ * sit there and `node_modules` resolves by walking up the checkout, exactly as
+ * before. Compiled binary: `import.meta.dir` is `/$bunfs/root`, a path the
+ * EXTERNAL opencode process cannot read, so use the sidecar shipped beside the
+ * binary in the release dir instead (the same dir `paths.ts` REPO_ROOT resolves
+ * to when compiled: the realpath of the executable's directory).
+ */
+export function pluginsRoot(sourceDir: string): string {
+	if (!isCompiledBinary()) return sourceDir;
+	let releaseDir: string;
+	try {
+		releaseDir = dirname(realpathSync(process.execPath));
+	} catch {
+		releaseDir = dirname(process.execPath);
+	}
+	return join(releaseDir, OPENCODE_PLUGINS_SIDECAR);
 }

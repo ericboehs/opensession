@@ -144,6 +144,7 @@ import {
   writeFileSync,
 } from "fs";
 import { dirname, join } from "path";
+import { isCompiledBinary, pluginsRoot } from "../runner-host/exe";
 import type { Subprocess } from "bun";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
 import type { RunAgentOpts } from "./agent-runner";
@@ -428,10 +429,14 @@ const SHARED_CWD = `${OPENCODE_STATE_DIR}/shared-cwd`;
 /** Plugin that tags michael-* / opensession-* tool calls with the opencode
  *  session id so run-rpc can route them to the right opensession session on a
  *  shared server (see opencode-plugin-session-tag.js). */
-const SESSION_TAG_PLUGIN_PATH = join(import.meta.dir, "opencode-plugin-session-tag.js");
+// Where the external opencode/meridian processes load plugins from on disk.
+// Source mode: this module's dir. Compiled binary: the sidecar in the release
+// dir (import.meta.dir is /$bunfs, unreadable by those processes).
+const PLUGINS_ROOT = pluginsRoot(import.meta.dir);
+const SESSION_TAG_PLUGIN_PATH = join(PLUGINS_ROOT, "opencode-plugin-session-tag.js");
 /** Repairs model-stringified object args on MCP tool calls (see the plugin's
  *  module doc; upstream closed coercion as not-planned). */
-const ARG_COERCE_PLUGIN_PATH = join(import.meta.dir, "opencode-plugin-arg-coerce.js");
+const ARG_COERCE_PLUGIN_PATH = join(PLUGINS_ROOT, "opencode-plugin-arg-coerce.js");
 
 const PROVIDER = "opencode" as const;
 
@@ -556,6 +561,34 @@ function isCompactionMessageInfo(info: unknown): boolean {
 
 let cachedMeridianStack: MeridianStackInfo | undefined;
 
+/**
+ * Resolve a package's entry FILE that the external opencode/meridian process
+ * loads. Source mode uses `Bun.resolveSync` against PLUGINS_ROOT (walks the
+ * checkout's node_modules). A compiled binary cannot: `Bun.resolveSync` there
+ * resolves against the embedded module graph, never the on-disk sidecar, so
+ * read the sidecar package's package.json and join its entry by hand.
+ */
+/**
+ * The plugin package's entry file, as a real path on disk for the external
+ * opencode/meridian processes to load. Source mode uses the normal resolver.
+ * A compiled binary cannot resolve a disk node_modules at runtime (neither
+ * Bun.resolveSync nor createRequire see the filesystem, only the embedded
+ * graph), so the build resolved the entries with the real resolver and wrote
+ * `opencode-plugins/plugins.json`; here we just read that path.
+ */
+let cachedPluginManifest: Record<string, string> | undefined;
+function resolvePluginPackage(pkg: string): string {
+  if (!isCompiledBinary()) return Bun.resolveSync(pkg, PLUGINS_ROOT);
+  if (!cachedPluginManifest) {
+    cachedPluginManifest = JSON.parse(readFileSync(join(PLUGINS_ROOT, "plugins.json"), "utf-8"));
+  }
+  const rel = cachedPluginManifest![pkg];
+  if (!rel) {
+    throw new Error(`plugin ${pkg} is not in the compiled-binary plugins manifest`);
+  }
+  return join(PLUGINS_ROOT, rel);
+}
+
 function pkgVersionNear(entryPath: string): string {
   try {
     // dist/index.js → ../package.json (both packages ship dist/ at the root).
@@ -572,8 +605,8 @@ export function meridianStackInfo(): MeridianStackInfo {
   let pluginPath: string;
   let meridianEntry: string;
   try {
-    pluginPath = Bun.resolveSync("opencode-with-claude", import.meta.dir);
-    meridianEntry = Bun.resolveSync("@rynfar/meridian", import.meta.dir);
+    pluginPath = resolvePluginPackage("opencode-with-claude");
+    meridianEntry = resolvePluginPackage("@rynfar/meridian");
   } catch (e: any) {
     throw new Error(
       "The meridian bridge packages are not installed (opencode-with-claude / @rynfar/meridian) — " +
@@ -675,10 +708,7 @@ function ensureMeridianProxyScrub(): void {
   if (meridianProxyScrubInstalled) return;
   meridianProxyScrubInstalled = true;
   try {
-    const scrubPkg = Bun.resolveSync(
-      "@rynfar/meridian-plugin-opencode-scrub",
-      import.meta.dir,
-    );
+    const scrubPkg = resolvePluginPackage("@rynfar/meridian-plugin-opencode-scrub");
     // Meridian's proxy resolves the plugin dir via os.homedir(); with HOME set
     // (systemd unit + opencodeEnv both pass it) that equals this HOME. The
     // proxy runs in-process in the opencode server, which inherits it.

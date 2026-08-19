@@ -32,7 +32,7 @@
  */
 
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "fs";
-import { dirname, join, resolve } from "path";
+import { dirname, join, relative, resolve } from "path";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const EMBED_MODULE = join(REPO_ROOT, "src", "server", "embedded-frontend.ts");
@@ -67,7 +67,8 @@ async function sh(cmd: string[], opts: { cwd?: string; env?: Record<string, stri
 	return out;
 }
 function dirBytes(p: string): number {
-	const st = statSync(p);
+	let st;
+	try { st = statSync(p); } catch { return 0; } // dangling symlink etc.
 	if (!st.isDirectory()) return st.size;
 	let n = 0;
 	for (const c of readdirSync(p)) n += dirBytes(join(p, c));
@@ -196,6 +197,70 @@ async function buildEngineSeed(stage: string, engineVersion: string | undefined)
 	console.log(`[compile] engine seed @opencode-ai/plugin@${engineVersion}`);
 }
 
+/** The opencode-plugins sidecar: the meridian bridge stack + the plugin .js
+ *  files, on disk beside the binary. The external `opencode serve` / meridian
+ *  processes load these from disk, so they cannot live inside the binary's
+ *  `/$bunfs`. Mirrors how the checkout installs meridian (exact pins + the
+ *  @rynfar/meridian patch). Platform-independent JS, so no --os/--cpu. */
+async function buildPluginsSidecar(
+	stage: string,
+	deps: Record<string, string>,
+	patched: Record<string, string>,
+): Promise<void> {
+	const names = ["opencode-with-claude", "@rynfar/meridian", "@rynfar/meridian-plugin-opencode-scrub"];
+	const missing = names.filter((n) => !deps[n]);
+	if (missing.length) return console.log(`[compile] plugins sidecar skipped; missing pins: ${missing.join(", ")}`);
+	const dest = join(stage, "opencode-plugins");
+	mkdirSync(dest, { recursive: true });
+	// The two opencode plugin .js files the server ships next to opencode-runner.
+	const src = join(REPO_ROOT, "src", "server");
+	for (const f of readdirSync(src).filter((n) => /^opencode-plugin-.*\.js$/.test(n))) {
+		cpSync(join(src, f), join(dest, f));
+	}
+	// Install the meridian stack with the same pins + patch the checkout uses.
+	const tmp = join(OUT, "plugins-sidecar");
+	rmSync(tmp, { recursive: true, force: true });
+	mkdirSync(tmp, { recursive: true });
+	const pkgJson: Record<string, unknown> = {
+		dependencies: Object.fromEntries(names.map((n) => [n, deps[n]])),
+	};
+	if (Object.keys(patched).length) pkgJson.patchedDependencies = patched;
+	writeFileSync(join(tmp, "package.json"), JSON.stringify(pkgJson, null, 2) + "\n");
+	// The patch path in patchedDependencies is relative to the package.json, so
+	// carry the patches dir alongside it.
+	if (existsSync(join(REPO_ROOT, "patches"))) cpSync(join(REPO_ROOT, "patches"), join(tmp, "patches"), { recursive: true });
+	// --os/--cpu fetches the target's optional natives (e.g. @libsql); the
+	// meridian JS itself is platform-independent.
+	await sh(["bun", "install", "--ignore-scripts", `--os=${os}`, `--cpu=${arch}`], { cwd: tmp });
+	// The Agent SDK + claude-code carry a ~200-300 MB per-platform binary each
+	// that is never executed here (the server shells out to the installed claude
+	// CLI via MERIDIAN_CLAUDE_PATH). Prune them, matching build-release.
+	const anth = join(tmp, "node_modules", "@anthropic-ai");
+	if (existsSync(anth)) {
+		for (const d of readdirSync(anth)) {
+			if (/^claude-(code|agent-sdk)-/.test(d)) rmSync(join(anth, d), { recursive: true, force: true });
+		}
+	}
+	const binDir = join(tmp, "node_modules", ".bin");
+	if (existsSync(binDir)) {
+		for (const b of readdirSync(binDir)) if (!existsSync(join(binDir, b))) rmSync(join(binDir, b), { force: true });
+	}
+	cpSync(join(tmp, "node_modules"), join(dest, "node_modules"), { recursive: true });
+
+	// Resolve each plugin package's entry file HERE, with the real resolver, and
+	// record the path relative to the sidecar. A compiled binary cannot resolve a
+	// disk node_modules at runtime (neither Bun.resolveSync nor createRequire see
+	// the filesystem, only the embedded graph), so the runtime reads this manifest
+	// instead of reimplementing Node resolution by hand.
+	const manifest: Record<string, string> = {};
+	for (const name of names) {
+		const entry = Bun.resolveSync(name, dest);
+		manifest[name] = relative(dest, entry);
+	}
+	writeFileSync(join(dest, "plugins.json"), JSON.stringify(manifest, null, 2) + "\n");
+	console.log(`[compile] plugins sidecar: ${(dirBytes(dest) / 1e6).toFixed(0)} MB (manifest: ${Object.keys(manifest).join(", ")})`);
+}
+
 async function main(): Promise<void> {
 	const { version: fver, distDir } = await buildFrontendDist();
 
@@ -213,6 +278,7 @@ async function main(): Promise<void> {
 	const pkg = JSON.parse(await Bun.file(join(REPO_ROOT, "package.json")).text()) as {
 		version?: string;
 		dependencies?: Record<string, string>;
+		patchedDependencies?: Record<string, string>;
 		opensession?: { opencodeVersion?: string };
 	};
 	const commit = (await sh(["git", "rev-parse", "--short", "HEAD"], { cwd: REPO_ROOT })).trim();
@@ -233,6 +299,8 @@ async function main(): Promise<void> {
 	await buildSharpSidecar(stage, sharpVersion);
 	console.log("\n== engine seed");
 	await buildEngineSeed(stage, engineVersion);
+	console.log("\n== opencode-plugins sidecar");
+	await buildPluginsSidecar(stage, pkg.dependencies ?? {}, pkg.patchedDependencies ?? {});
 
 	writeFileSync(
 		join(stage, "release.json"),
