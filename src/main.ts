@@ -26,6 +26,20 @@
 
 export {}; // module marker so top-level await is allowed
 
+// The source install runs through a bash shim that puts the engine CLIs
+// (opencode, claude) on PATH before handing off; the compiled binary has no
+// such shim, so do it here. Without this a thin PATH (a non-login shell, cron,
+// the service unit if it ever loses its Environment=) resolves no engine, and
+// the server finds nothing to run turns on. Only this binary imports main.ts.
+{
+  const { homedir } = await import("os");
+  const { join } = await import("path");
+  const extra = [join(homedir(), ".opencode", "bin"), join(homedir(), ".local", "bin")];
+  const seen = new Set(process.env.PATH ? process.env.PATH.split(":") : []);
+  const add = extra.filter((d) => !seen.has(d));
+  if (add.length) process.env.PATH = [...add, process.env.PATH ?? ""].filter(Boolean).join(":");
+}
+
 const sub = process.argv[2];
 if (process.env.OPENSESSION_DISPATCH_DEBUG === "1")
 	console.error(

@@ -3,8 +3,9 @@
 # Run inside the box:  goss --vars vars.yaml validate --format tap
 file:
   {{.Vars.home}}/.opensession/bin/opensession:
+    # A binary install symlinks this at the release binary; a source install
+    # writes a shell shim. `opensession-shim-executable` below asserts -x.
     exists: true
-    filetype: file
   {{.Vars.home}}/.opensession/config.json:
     exists: true
     mode: "0600"
