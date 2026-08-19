@@ -4111,13 +4111,14 @@ async function* runOpencodeAttempt(
       serverExtraEnv = { ...(serverExtraEnv || {}), ...gitIdentityEnv(author) };
     }
     // AWS read creds (aws-creds.ts): `aws: true` runs get a STATIC pointer
-    // env to a credentials file the main process keeps fresh — raw keys in
-    // the spawn env would expire under a long-lived server, and rotating
+    // env to a credentials file the main process keeps fresh, because raw keys
+    // in the spawn env would expire under a long-lived server, and rotating
     // them would churn the config hash. Every shared-eligible kind passes
     // aws:true (run-session / slack / linear), so shared servers hash
     // identically; per-session unattended runs gate at their call site
-    // (automations/github yes, plain no). In sandboxes the mint fails (IMDS
-    // blocked) and the run proceeds without AWS — documented docker caveat.
+    // (automations/github yes, plain no). The mint itself is opt-in and
+    // returns {} where it is off or cannot reach IMDS (a docker sandbox, or
+    // any host that is not EC2); the run then proceeds without AWS.
     if (opts.aws) {
       const awsPointerEnv = await ensureAgentAwsCredsFile();
       if (Object.keys(awsPointerEnv).length) {
