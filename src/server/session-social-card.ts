@@ -21,7 +21,7 @@ import {
 } from "./config";
 import { teamDirectory, type DirectoryPerson } from "./people";
 import { stateDir } from "./paths";
-import { findSessionAsync } from "./session-cache";
+import { findSession } from "./session-cache";
 import type { UnifiedSession } from "./types";
 import { getUiPrefs } from "./ui-prefs";
 
@@ -384,7 +384,7 @@ export function sessionSocialCardPublicRoutes(): Map<
 		}
 		if (!validCardToken(sessionId, match[2]))
 			return Response.json({ error: "Not found" }, { status: 404 });
-		const session = await findSessionAsync(sessionId);
+		const session = await findSession(sessionId);
 		if (!session) return Response.json({ error: "Not found" }, { status: 404 });
 		const data = sessionSocialCardData(session);
 		const fingerprint = JSON.stringify(data, (key, value) => (key === "person" ? data.person?.image || data.person?.github : value));
