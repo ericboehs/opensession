@@ -14,6 +14,7 @@
  */
 
 import { existsSync } from "fs";
+import { isCompiledBinary } from "../src/runner-host/exe";
 import { bind } from "./lib/bind";
 import { doctor } from "./lib/doctor";
 import { onboard } from "./lib/onboard";
@@ -113,7 +114,12 @@ async function version(): Promise<number> {
 async function start(): Promise<number> {
   if (flags.has("--foreground") || flags.has("-f") || !(await service.isInstalled())) {
     info(dim(`starting in the foreground — ${REPO_ROOT}`));
-    return await runInherit(["bun", "run", "opensession.ts"], REPO_ROOT);
+    // Compiled binary: re-exec ourselves as the server subcommand (there is no
+    // `bun`/opensession.ts on disk). From source: run the entry under bun.
+    const command = isCompiledBinary()
+      ? [process.execPath, "server"]
+      : ["bun", "run", "opensession.ts"];
+    return await runInherit(command, REPO_ROOT);
   }
   return await service.control("start");
 }
