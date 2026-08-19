@@ -70,6 +70,21 @@ place a minimal `node_modules` with `sharp` + the platform `@img/sharp-*`
 beside the binary — e.g. copy `node_modules/sharp` and
 `node_modules/@img/sharp-<platform>` (+ its `sharp-libvips-<platform>`).
 
+**External — opencode plugins.** The external `opencode serve` / meridian
+processes load their plugins from FILE PATHS on disk, which a compiled binary
+cannot provide from its `/$bunfs` (and `Bun.resolveSync` inside a compiled
+binary resolves against the embedded graph, not a disk `node_modules`). So the
+artefact ships an `opencode-plugins/` sidecar beside the binary: the Meridian
+bridge stack (`opencode-with-claude`, `@rynfar/meridian`,
+`@rynfar/meridian-plugin-opencode-scrub`, exact-pinned and patched as the
+checkout installs them, with the never-run Claude Code / Agent SDK per-platform
+binaries pruned) plus the `opencode-plugin-*.js` files. `pluginsRoot()`
+(`src/runner-host/exe.ts`) points at this sidecar when compiled, and the
+meridian packages resolve by reading the sidecar package's `package.json` entry
+by hand. Without it a Claude turn fails with "the meridian bridge packages are
+not installed". Source mode resolves from `import.meta.dir` / the checkout
+`node_modules` unchanged.
+
 Other native addons in the dependency tree (`@libsql/*`, `@cbor-extract/*`,
 `@anthropic-ai/claude-agent-sdk` audio-capture, `@mariozechner/clipboard`,
 `@earendil-works/pi-tui`) are not on the server boot/serve path, so the binary
