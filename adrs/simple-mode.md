@@ -67,26 +67,22 @@ On a fresh macOS or Ubuntu box with only `curl` and `git`:
   requirement**, not a follow-on: the multi-gigabyte dependency tree is the
   single largest cost on the critical path and the main reason the install
   cannot hit the five-minute bar.
-  - v1 artefact: `opensession-<ver>-<os>-<arch>.tar.gz` containing a
-    pinned `bun` binary, the server bundled per entrypoint (`opensession.ts`,
-    `scripts/cli.ts`, `src/runner-host/host.ts`, the MCP proxy, ...) with
-    `bun build --target=bun`, the prebuilt frontend, and a minimal
-    `package.json`. Unpacked to `~/.opensession/releases/<ver>/` with a
-    `current` link; `opensession update` swaps the link and keeps the
-    previous release for rollback. Same shape as Grafana, Prometheus,
-    Temporal: runtime-inclusive tarball, no build on the box.
-  - True single executable (`bun build --compile`) is a follow-on, blocked
-    on one refactor: the server spawns itself as `bun` for side entrypoints
-    through `process.execPath` (`src/server/run-rpc-protocol.ts`,
-    `src/runner-host/protocol.ts`, `host.ts`, and `bun install` in
-    `frontend-build.ts`), which a compiled binary cannot do without a
-    multi-entry dispatcher.
-  - Consequences: no `bun` on the user's PATH, no `.git`, no
-    `node_modules` under `~/.opensession`; client apps (Electron, Swift,
-    Chrome, TUI) are outside the server's build graph; `doctor` reports
-    release version and size; the harness installs the artefact, not the
-    source. Source install (`--from-source`) stays as the self-development
-    and contributor path.
+  - Artefact: a `bun build --compile` single executable, tarred as
+    `opensession-<ver>-<os>-<arch>.tar.gz` beside a small `node_modules`
+    sharp sidecar (its platform native cannot be embedded), the engine seed,
+    and `release.json`. `src/main.ts` is the front controller (server / CLI /
+    runner-host / mcp-proxy behind one argv), so the binary re-execs itself
+    for its side entrypoints via `process.execPath`; the prebuilt frontend is
+    baked in with `Bun.embeddedFiles`. `bun build --compile --target=bun-<os>-
+    <arch>` cross-compiles every target from one runner. Unpacked to
+    `~/.opensession/releases/<ver>/` with the `src` link; `opensession update`
+    swaps it and keeps the previous release for rollback.
+  - Consequences: no `bun` on the box, no `.git`, no full `node_modules`
+    (only the sharp sidecar) under `~/.opensession`; client apps (Electron,
+    Swift, Chrome, TUI) are outside the build graph; `doctor` reports Bun as
+    embedded; the harness installs the artefact, not the source. The
+    `--source` install (a git checkout + `bun install`) stays as the
+    self-development and contributor path.
 - **R1.4** Idempotent and pinnable: re-run to upgrade (true today when
   the checkout is clean and fast-forwardable), and `--channel` for a tag.
   Keep `--uninstall`. A release install upgrades by download-and-swap:
@@ -301,7 +297,7 @@ second consumer of the same files, not the primary one.
   VM's arch (R1.3), create the VM, run the installer against that artefact
   exactly as a customer would (no Bun, no git clone in the guest), run
   Goss, reboot, run Goss again, uninstall, run Goss, destroy. A
-  `--from-source` variant of the same run covers the contributor path. TypeScript calling `limactl` and `goss`; no
+  `--source` variant of the same run covers the contributor path. TypeScript calling `limactl` and `goss`; no
   hand-written shell scripts. `SIMPLE_MODE_TARGET=host` runs the same steps
   on the current machine (a CI runner, or a throwaway box) without Lima.
 - **The real turn** (DoD 5) runs only when `OPENSESSION_TEST_CLAUDE_TOKEN`

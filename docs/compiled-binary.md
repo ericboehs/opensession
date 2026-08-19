@@ -1,15 +1,20 @@
 # Single-executable build (`bun build --compile`)
 
-Open Session's server can be built as one self-contained executable with
-[`bun build --compile`](https://bun.com/docs/bundler/executables), in addition
-to the source checkout and the tarball/install flow (which are unchanged). The
-binary boots the server and serves the UI with nothing on `PATH` except the
-external engine CLIs (`opencode` / `claude`).
+The default simple-mode artefact is one self-contained executable built with
+[`bun build --compile`](https://bun.com/docs/bundler/executables): the server,
+CLI, run host and MCP proxy behind one argv, with the prebuilt frontend baked
+in. It boots and serves the UI with nothing on `PATH` except the external
+engine CLIs (`opencode` / `claude`). The `--source` install (a git checkout +
+`bun install`) stays as the self-development and contributor path.
 
 ## Build
 
 ```bash
-bun scripts/build-compile.ts                 # → ./opensession
+# Release artefact (the default install downloads this): the target binary +
+# a sharp sidecar + the engine seed + release.json, tarred.
+bun scripts/build-compile.ts --os linux --arch arm64 --out ~/.cache/opensession-release
+
+# Just the host binary, for local testing (no sidecar, no seed).
 bun scripts/build-compile.ts --outfile dist/opensession
 ```
 

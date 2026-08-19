@@ -30,7 +30,7 @@ session. A turn that actually runs is the only proof the install works, not a
 health check.
 
 Budget 5-15 minutes on a fresh box, most of it unattended: the installer
-downloads Bun, the OpenCode engine and the two model CLIs, and installs a
+downloads the compiled release binary, the OpenCode engine and the model CLIs, and installs a
 multi-gigabyte dependency tree.
 
 Sections 3-7 below — automations, the env-var inventory, the `config.json`

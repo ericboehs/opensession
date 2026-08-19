@@ -3,7 +3,7 @@
 # `install.sh` with no flags fetches
 #   https://github.com/tellahq/opensession/releases/latest/download/opensession-<os>-<arch>.tar.gz
 # so every release carries, beside its versioned tarballs, one stable alias per
-# target. scripts/build-release.ts is cross-target (nothing executes target
+# target. scripts/build-compile.ts cross-compiles per target (bun --target, nothing executes target
 # binaries), so one Linux runner builds all four; npm is needed for the engine
 # seed (an npm lockfile is what opencode's arborist checks) and ubuntu-latest
 # has it.
@@ -42,7 +42,10 @@ jobs:
           mkdir -p "$out/assets"
           for target in linux/x64 linux/arm64 darwin/x64 darwin/arm64; do
             os="${target%/*}"; arch="${target#*/}"
-            bun scripts/build-release.ts --os "$os" --arch "$arch" --out "$out"
+            # The default artefact is the compiled single-executable
+            # (build-compile.ts, cross-compiled per target). The source install
+            # path is a git checkout, so no tarball is published for it.
+            bun scripts/build-compile.ts --os "$os" --arch "$arch" --out "$out"
             versioned="$(ls "$out"/opensession-*-"$os"-"$arch".tar.gz)"
             cp "$versioned" "$out/assets/"
             cp "$versioned" "$out/assets/opensession-$os-$arch.tar.gz"
