@@ -30,14 +30,17 @@ import { chmodSync, existsSync, mkdirSync } from "fs";
 import { userInfo } from "os";
 import { dirname, join } from "path";
 import {
+  BIN_DIR,
   ENV_PATH,
   HOME,
   OPENSESSION_HOME,
   REPO_ROOT,
   SERVICE_NAME,
   SERVICE_PATH,
+  SHIM_PATH,
   USER_UNIT_PATH,
 } from "./paths";
+import { isCompiledBinary } from "../../src/runner-host/exe";
 import { dim, info, ok, run, runInherit, warn } from "./ui";
 
 export type Supervisor = "systemd" | "launchd" | "none";
@@ -162,6 +165,22 @@ function servicePath(bunDir: string): string {
   ].join(":");
 }
 
+/**
+ * How the service starts the server, and the dir to head the PATH with.
+ *
+ * Compiled-binary install: the binary is the server behind `server`, and the
+ * unit runs it through the shim symlink (BIN_DIR/opensession) so `opensession
+ * update` can repoint it without re-rendering the unit. The sharp sidecar
+ * resolves via the binary's realpath, not PATH.
+ *
+ * Source install: `bun run opensession.ts` from the checkout.
+ */
+function serverExec(): { cmd: string; binDir: string } {
+  if (isCompiledBinary()) return { cmd: `${SHIM_PATH} server`, binDir: BIN_DIR };
+  const bun = bunPath();
+  return { cmd: `${bun} run opensession.ts`, binDir: bun.replace(/\/bun$/, "") };
+}
+
 function bunPath(): string {
   // A release install carries its own bun at <checkout>/bin/bun and puts no
   // bun on PATH; prefer it so the rendered ExecStart works even when the unit
@@ -233,13 +252,13 @@ export async function renderUnit(scope: SystemdScope = "user"): Promise<string> 
   if (!existsSync(template)) {
     throw new Error(`missing unit template at ${template}`);
   }
-  const bun = bunPath();
+  const exec = serverExec();
   let unit = (await Bun.file(template).text())
     .replace(/^WorkingDirectory=.*$/m, `WorkingDirectory=${REPO_ROOT}`)
-    .replace(/^ExecStart=.*$/m, `ExecStart=${bun} run opensession.ts`)
+    .replace(/^ExecStart=.*$/m, `ExecStart=${exec.cmd}`)
     .replace(
       /^Environment="PATH=.*"$/m,
-      `Environment="PATH=${servicePath(bun.replace(/\/bun$/, ""))}"`,
+      `Environment="PATH=${servicePath(exec.binDir)}"`,
     );
   if (scope === "system") {
     return unit
@@ -331,18 +350,18 @@ const xml = (s: string) =>
  * after it ("opensession-service"), not "bash".
  */
 export function renderLauncher(): string {
-  const bun = bunPath();
+  const exec = serverExec();
   return (
     `#!/bin/bash\n` +
     `# macOS shows this file's name in Login Items & Extensions; hence "OpenSession".\n` +
     `cd ${REPO_ROOT} || exit 1\n` +
     `set -a; [ -f ${ENV_PATH} ] && . ${ENV_PATH}; set +a\n` +
-    `exec ${bun} run opensession.ts\n`
+    `exec ${exec.cmd}\n`
   );
 }
 
 export function renderPlist(): string {
-  const bun = bunPath();
+  const exec = serverExec();
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -355,7 +374,7 @@ export function renderPlist(): string {
   <key>WorkingDirectory</key><string>${xml(REPO_ROOT)}</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string>${xml(servicePath(bun.replace(/\/bun$/, "")))}</string>
+    <key>PATH</key><string>${xml(servicePath(exec.binDir))}</string>
     <key>NODE_ENV</key><string>production</string>
   </dict>
   <key>RunAtLoad</key><true/>

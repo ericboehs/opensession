@@ -182,10 +182,10 @@ describe("simple mode install", () => {
     // Built outside the repo tree (see build-release.ts on why), then only
     // the tarball is copied into the mounted work dir.
     const r = await host(
-      ["bun", "scripts/build-release.ts", "--os", os, "--arch", arch, "--out", RELEASE_OUT],
+      ["bun", "scripts/build-compile.ts", "--os", os, "--arch", arch, "--out", RELEASE_OUT],
       { cwd: REPO_ROOT },
     );
-    expectOk(r, "build-release");
+    expectOk(r, "build-compile");
     const tarballs = readdirSync(RELEASE_OUT).filter((f) => f.endsWith(".tar.gz"));
     if (tarballs.length !== 1) throw new Error(`expected one tarball in ${RELEASE_OUT}, found ${tarballs.join(", ") || "none"}`);
     tarballName = tarballs[0];

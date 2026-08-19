@@ -1,43 +1,78 @@
 #!/usr/bin/env bun
 /**
- * Build the single-executable `opensession` binary with `bun build --compile`.
+ * Build the single-executable `opensession` release artefact with
+ * `bun build --compile`. This is the DEFAULT simple-mode artefact; the
+ * source install (`install.sh --source`, a git checkout + `bun install`) is
+ * the self-development path and is unaffected.
  *
- * The compiled binary is an ADDITIONAL artefact: `bun run opensession.ts`, the
- * install flow and the tests are untouched. src/main.ts is the front controller
- * (server / CLI / runner-host / mcp-proxy behind one argv), and this script
- * bakes the prebuilt SPA into the binary so it needs no `.frontend-dist`
- * checkout beside it at runtime.
+ * src/main.ts is the front controller (server / CLI / runner-host / mcp-proxy
+ * behind one argv), and this script bakes the prebuilt SPA into the binary so
+ * it needs no `.frontend-dist` beside it at runtime.
  *
- * Steps:
- *   1. Build the prod frontend into `.frontend-dist` (the same in-process build
- *      the server does at boot) and write the stitched index.html there.
- *   2. Overwrite src/server/embedded-frontend.ts with generated
- *      `import … with { type: "file" }` lines so Bun embeds every built asset.
- *   3. `bun build --compile src/main.ts` with sharp + its native marked
- *      external (a runtime-resolved native can't be embedded).
- *   4. Restore the embedded-frontend.ts stub so the working tree stays clean.
+ * Two modes:
  *
- * Usage: bun scripts/build-compile.ts [--outfile <path>]  (default ./opensession)
+ *   bun scripts/build-compile.ts --outfile <path>
+ *       Just the binary for the host, for local testing. No sidecar, no seed.
  *
- * sharp travels OUTSIDE the binary: the social-card endpoint loads it lazily and
- * degrades to 501 when it (and its @img native) are absent, so the binary boots
- * and serves the UI on its own. To enable social cards, drop a minimal
- * node_modules with `sharp` + `@img/sharp-<platform>` beside the binary (see the
- * README note this script prints at the end).
+ *   bun scripts/build-compile.ts --os linux --arch arm64 [--out <dir>]
+ *       The full release artefact `opensession-<ver>-<os>-<arch>.tar.gz`:
+ *         opensession                 the target binary
+ *         node_modules/               sharp + @img/sharp-<target> sidecar, so the
+ *                                     binary resolves sharp beside itself and the
+ *                                     social-card endpoint works (501 without it)
+ *         engine-seed/opencode-config the @opencode-ai/plugin@<pin> npm tree
+ *                                     opencode would otherwise install on first run
+ *         release.json                version, commit, target, engine pin, kind
+ *       `bun build --compile --target=bun-<os>-<arch>` cross-compiles from any
+ *       host, so one runner builds every target.
+ *
+ * Steps: build the prod frontend into `.frontend-dist`, generate the
+ * `embedded-frontend.ts` `import … with { type: "file" }` module so Bun embeds
+ * every asset, compile, then restore the stub so the working tree stays clean.
  */
 
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const EMBED_MODULE = join(REPO_ROOT, "src", "server", "embedded-frontend.ts");
 
-function arg(name: string, fallback: string): string {
-	const i = process.argv.indexOf(name);
+function arg(name: string, fallback?: string): string | undefined {
+	const i = process.argv.indexOf(`--${name}`);
 	return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
+function has(name: string): boolean {
+	return process.argv.includes(`--${name}`);
+}
 
-const outfile = resolve(arg("--outfile", join(REPO_ROOT, "opensession")));
+type Os = "linux" | "darwin";
+type Arch = "arm64" | "x64";
+
+const os = (arg("os", process.platform === "darwin" ? "darwin" : "linux") as Os);
+const arch = (arg("arch", process.arch === "arm64" ? "arm64" : "x64") as Arch);
+if (!["linux", "darwin"].includes(os) || !["arm64", "x64"].includes(arch)) {
+	console.error(`unsupported target ${os}/${arch}`);
+	process.exit(2);
+}
+// The host target needs no cross flag; a cross target does.
+const isHost = os === (process.platform === "darwin" ? "darwin" : "linux") && arch === (process.arch === "arm64" ? "arm64" : "x64");
+
+const CACHE_HOME = process.env.XDG_CACHE_HOME || join(process.env.HOME || "~", ".cache");
+const OUT = resolve(arg("out", join(CACHE_HOME, "opensession-release"))!);
+
+async function sh(cmd: string[], opts: { cwd?: string; env?: Record<string, string> } = {}) {
+	const p = Bun.spawn(cmd, { cwd: opts.cwd, env: { ...process.env, ...opts.env }, stdout: "pipe", stderr: "pipe" });
+	const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
+	if ((await p.exited) !== 0) throw new Error(`${cmd.join(" ")} failed\n${out}\n${err}`);
+	return out;
+}
+function dirBytes(p: string): number {
+	const st = statSync(p);
+	if (!st.isDirectory()) return st.size;
+	let n = 0;
+	for (const c of readdirSync(p)) n += dirBytes(join(p, c));
+	return n;
+}
 
 // Assets Bun should embed: the hashed SPA bundle + the stable-named wasm, plus
 // index.html. Icons/splash/sw.js live under src/frontend and are cosmetic (they
@@ -45,20 +80,15 @@ const outfile = resolve(arg("--outfile", join(REPO_ROOT, "opensession")));
 // embedded to keep the binary lean.
 const ASSET_RE = /\.(?:js|css|map|wasm)$/;
 
-async function buildFrontendDist(): Promise<{ version: string; indexHtml: string }> {
-	// Imported here (not top-level) so a plain `--help` never pays for the graph.
+async function buildFrontendDist(): Promise<{ version: string; distDir: string }> {
 	const fb = await import("../src/server/frontend-build");
 	// Build into a CLEAN dist so only THIS build's hashed assets get embedded.
-	// The live server keeps stale chunks around for open tabs (14-day retention);
-	// embedding that backlog would bloat the binary by ~90 MB per rebuild.
 	rmSync(fb.FRONTEND_DIST, { recursive: true, force: true });
-	console.log("[compile] building prod frontend → .frontend-dist …");
+	console.log("[compile] building prod frontend -> .frontend-dist ...");
 	const version = await fb.buildFrontend();
 	if (!fb.frontend?.indexHtml) throw new Error("frontend build produced no index.html");
-	// buildFrontend keeps the stitched index.html in memory + .bundle-meta.json,
-	// not as a dist file. Write it so it can be embedded like any other asset.
 	writeFileSync(join(fb.FRONTEND_DIST, "index.html"), fb.frontend.indexHtml);
-	return { version, indexHtml: fb.frontend.indexHtml };
+	return { version, distDir: fb.FRONTEND_DIST };
 }
 
 function generateEmbedModule(distDir: string, version: string): string {
@@ -99,49 +129,123 @@ function generateEmbedModule(distDir: string, version: string): string {
 	return lines.join("\n");
 }
 
-async function main(): Promise<void> {
+/** Compile src/main.ts to `outfile` for the target, embedding the built SPA. */
+async function compileBinary(outfile: string, version: string, distDir: string): Promise<void> {
 	const stub = await Bun.file(EMBED_MODULE).text();
-	const { version } = await buildFrontendDist();
-	const distDir = join(REPO_ROOT, ".frontend-dist");
-	const generated = generateEmbedModule(distDir, version);
-
 	mkdirSync(dirname(outfile), { recursive: true });
-	// `bun build --compile` appends to an existing outfile rather than truncating
-	// it, so a rebuild over a prior binary balloons by the embedded-blob size.
+	// `bun build --compile` appends to an existing outfile, so remove any prior.
 	rmSync(outfile, { force: true });
-	writeFileSync(EMBED_MODULE, generated);
+	writeFileSync(EMBED_MODULE, generateEmbedModule(distDir, version));
 	try {
-		const args = [
+		const cmd = [
 			"bun",
 			"build",
 			"--compile",
+			...(isHost ? [] : [`--target=bun-${os}-${arch}`]),
 			join(REPO_ROOT, "src", "main.ts"),
 			"--outfile",
 			outfile,
 			// sharp's platform native is resolved at runtime and can't be embedded;
-			// keep it (and its @img/* backends) out of the trace. The server loads
-			// it lazily and degrades without it.
+			// keep it (and its @img/* backends) out of the trace.
 			"--external",
 			"sharp",
 			"--external",
 			"@img/*",
 		];
-		console.log(`[compile] ${args.join(" ")}`);
-		const proc = Bun.spawn(args, { cwd: REPO_ROOT, stdout: "inherit", stderr: "inherit" });
-		const code = await proc.exited;
-		if (code !== 0) throw new Error(`bun build --compile exited ${code}`);
+		console.log(`[compile] ${cmd.join(" ")}`);
+		const proc = Bun.spawn(cmd, { cwd: REPO_ROOT, stdout: "inherit", stderr: "inherit" });
+		if ((await proc.exited) !== 0) throw new Error("bun build --compile failed");
 	} finally {
 		writeFileSync(EMBED_MODULE, stub);
 	}
-
 	if (!existsSync(outfile)) throw new Error(`expected binary at ${outfile}`);
-	const size = (await Bun.file(outfile).arrayBuffer()).byteLength;
-	console.log(`\n[compile] built ${outfile} (${(size / 1e6).toFixed(1)} MB, v=${version})`);
-	console.log(
-		"[compile] sharp is external: PNG social cards need a sibling node_modules " +
-			"with `sharp` + `@img/sharp-<platform>`; without it the binary still boots " +
-			"and the /session-card endpoint returns 501.",
+}
+
+/** Install the sharp sidecar for the target into `<stage>/node_modules`. */
+async function buildSharpSidecar(stage: string, sharpVersion: string): Promise<void> {
+	const tmp = join(OUT, "sharp-sidecar", `${os}-${arch}`);
+	rmSync(tmp, { recursive: true, force: true });
+	mkdirSync(tmp, { recursive: true });
+	writeFileSync(join(tmp, "package.json"), JSON.stringify({ dependencies: { sharp: sharpVersion } }, null, 2) + "\n");
+	// `bun install --os/--cpu` fetches the target's optional @img/sharp-<target>
+	// natives (npm's --os/--cpu does not resolve cross-platform optionals here).
+	await sh(["bun", "install", "--ignore-scripts", `--os=${os}`, `--cpu=${arch}`], { cwd: tmp });
+	// Prune other platforms' natives, matching build-release: keep only the
+	// target's @img/sharp-<target> (glibc) family.
+	const foreign = (d: string) =>
+		/musl/.test(d) || (os === "linux" && /darwin|win32/.test(d)) || (os === "darwin" && /linux|win32/.test(d));
+	const imgDir = join(tmp, "node_modules", "@img");
+	if (existsSync(imgDir)) {
+		for (const d of readdirSync(imgDir)) if (foreign(d)) rmSync(join(imgDir, d), { recursive: true, force: true });
+	}
+	cpSync(join(tmp, "node_modules"), join(stage, "node_modules"), { recursive: true });
+	console.log(`[compile] sharp sidecar: ${(dirBytes(join(stage, "node_modules")) / 1e6).toFixed(0)} MB`);
+}
+
+/** The @opencode-ai/plugin tree opencode installs on first run (build-release seed). */
+async function buildEngineSeed(stage: string, engineVersion: string | undefined): Promise<void> {
+	if (!engineVersion) return console.log("[compile] no opencodeVersion pin; skipping engine seed");
+	if (!Bun.which("npm")) return console.log("[compile] npm not on PATH; skipping engine seed");
+	const seed = join(stage, "engine-seed", "opencode-config");
+	mkdirSync(seed, { recursive: true });
+	writeFileSync(join(seed, "package.json"), JSON.stringify({ dependencies: { "@opencode-ai/plugin": engineVersion } }, null, 2) + "\n");
+	await sh(
+		["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", "--loglevel=error", `--os=${os}`, `--cpu=${arch}`],
+		{ cwd: seed },
 	);
+	console.log(`[compile] engine seed @opencode-ai/plugin@${engineVersion}`);
+}
+
+async function main(): Promise<void> {
+	const { version: fver, distDir } = await buildFrontendDist();
+
+	// Bare-binary mode: --outfile with no artefact assembly (local testing).
+	const bareOut = arg("outfile");
+	if (bareOut && !has("out") && !has("os") && !has("arch")) {
+		const outfile = resolve(bareOut);
+		await compileBinary(outfile, fver, distDir);
+		const mb = (statSync(outfile).size / 1e6).toFixed(1);
+		console.log(`\n[compile] built ${outfile} (${mb} MB, v=${fver})`);
+		return;
+	}
+
+	// Artefact mode.
+	const pkg = JSON.parse(await Bun.file(join(REPO_ROOT, "package.json")).text()) as {
+		version?: string;
+		dependencies?: Record<string, string>;
+		opensession?: { opencodeVersion?: string };
+	};
+	const commit = (await sh(["git", "rev-parse", "--short", "HEAD"], { cwd: REPO_ROOT })).trim();
+	const version = arg("version", `${pkg.version ?? "0.0.0"}+${commit}`)!;
+	const engineVersion = pkg.opensession?.opencodeVersion;
+	const sharpVersion = pkg.dependencies?.sharp ?? "latest";
+	const name = `opensession-${version}-${os}-${arch}`;
+	const stage = join(OUT, "stage", name);
+	rmSync(stage, { recursive: true, force: true });
+	mkdirSync(stage, { recursive: true });
+
+	console.log(`\n== compile ${name}`);
+	await compileBinary(join(stage, "opensession"), fver, distDir);
+	console.log("\n== sharp sidecar");
+	await buildSharpSidecar(stage, sharpVersion);
+	console.log("\n== engine seed");
+	await buildEngineSeed(stage, engineVersion);
+
+	writeFileSync(
+		join(stage, "release.json"),
+		JSON.stringify(
+			{ name, version, commit, os, arch, kind: "binary", opencode: engineVersion ?? null, builtAt: new Date().toISOString() },
+			null,
+			2,
+		) + "\n",
+	);
+
+	const tarball = join(OUT, `${name}.tar.gz`);
+	rmSync(tarball, { force: true });
+	await sh(["tar", "--no-xattrs", "-C", join(OUT, "stage"), "-czf", tarball, name], { env: { COPYFILE_DISABLE: "1" } });
+	const mb = (statSync(tarball).size / 1e6).toFixed(0);
+	console.log(`\n[compile] ${tarball} (${mb} MB)`);
+	console.log(`Install: install.sh --artifact ${tarball}`);
 }
 
 await main();

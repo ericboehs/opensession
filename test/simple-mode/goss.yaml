@@ -36,14 +36,21 @@ command:
     exec: "{{.Vars.home}}/.bun/bin/bun --version"
     exit-status: 0
 {{else}}
-  # Artefact install: the release carries its own Bun; nothing else does.
-  release-bun:
-    exec: "{{.Vars.home}}/.opensession/src/bin/bun --version"
+  # Compiled-binary artefact: one executable that embeds the Bun runtime and the
+  # frontend; sharp travels beside it as a small node_modules sidecar.
+  release-binary:
+    exec: "test -x {{.Vars.home}}/.opensession/src/opensession"
     exit-status: 0
   release-manifest:
     exec: "cat {{.Vars.home}}/.opensession/src/release.json"
     exit-status: 0
-    stdout: ["version", "commit"]
+    stdout: ["version", "commit", "binary"]
+  sharp-sidecar:
+    exec: "ls {{.Vars.home}}/.opensession/src/node_modules/@img | grep -c sharp"
+    exit-status: 0
+  no-release-bun:
+    exec: "test ! -e {{.Vars.home}}/.opensession/src/bin/bun"
+    exit-status: 0
   no-user-bun:
     # ~/.bun/install/cache is Bun's transpile cache, written by any Bun run;
     # what must not exist is an installed Bun binary.
