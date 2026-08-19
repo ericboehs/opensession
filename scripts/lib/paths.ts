@@ -15,12 +15,26 @@
  */
 
 import { homedir } from "os";
-import { join, resolve } from "path";
+import { realpathSync } from "fs";
+import { basename, dirname, join, resolve } from "path";
 
 export const HOME = homedir();
 
-/** Root of the checkout this CLI is running from. */
-export const REPO_ROOT = resolve(import.meta.dir, "..", "..");
+/** Root of the install this CLI runs from. In a source checkout it is the
+ *  checkout (two up from this file). In the compiled binary, `import.meta.dir`
+ *  is a virtual path inside the executable, so use the directory the binary
+ *  actually lives in (the release dir), following the shim symlink. */
+export const REPO_ROOT = (() => {
+  const compiled = !/^bun(\b|-|\.|$)/i.test(basename(process.execPath));
+  if (compiled) {
+    try {
+      return dirname(realpathSync(process.execPath));
+    } catch {
+      return dirname(process.execPath);
+    }
+  }
+  return resolve(import.meta.dir, "..", "..");
+})();
 
 /** Everything a normal install owns, overridable for tests and side-by-side installs. */
 export const OPENSESSION_HOME = process.env.OPENSESSION_HOME || join(HOME, ".opensession");

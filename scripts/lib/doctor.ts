@@ -14,6 +14,7 @@
 import { existsSync, statSync } from "fs";
 import { tailnetIp } from "./config-edit";
 import { CONFIG_PATH, ENV_PATH, REPO_ROOT } from "./paths";
+import { isCompiledBinary } from "../../src/runner-host/exe";
 import { INTEGRATIONS } from "../../src/server/integrations/registry";
 import * as service from "./service";
 import { dim, fail, heading, info, ok, run, warn } from "./ui";
@@ -54,6 +55,12 @@ const TOOLS = [
 async function checkTools(t: Tally): Promise<void> {
   heading("Tooling");
   for (const tool of TOOLS) {
+    // A compiled-binary install has no `bun` on the box; the runtime is baked
+    // into the release binary. Report it as such rather than running `bun`.
+    if (tool.bin === "bun" && isCompiledBinary()) {
+      ok("Bun", "embedded in the release binary");
+      continue;
+    }
     // This CLI is itself running under Bun, so a PATH lookup failing does not
     // mean Bun is missing — it means PATH is thin (a non-login shell, cron,
     // systemd). Trust the running interpreter over the lookup.

@@ -101,7 +101,19 @@ Docs: docs/setup/README.md
 }
 
 async function version(): Promise<number> {
-  const pkg = JSON.parse(await Bun.file(`${REPO_ROOT}/package.json`).text());
+  // A release install (binary or tarball) carries release.json; a source
+  // checkout has package.json + a live git tree. Neither read may throw.
+  const rel = await Bun.file(`${REPO_ROOT}/release.json`)
+    .json()
+    .catch(() => null as { version?: string; commit?: string } | null);
+  if (rel?.version) {
+    console.log(`opensession ${rel.version}${rel.commit ? ` (${rel.commit})` : ""}`);
+    console.log(dim(`  ${REPO_ROOT}`));
+    return 0;
+  }
+  const pkg = await Bun.file(`${REPO_ROOT}/package.json`)
+    .json()
+    .catch(() => ({ version: "unknown" }) as { version?: string });
   const { stdout: sha } = await run(["git", "rev-parse", "--short", "HEAD"], { cwd: REPO_ROOT });
   const { stdout: branch } = await run(["git", "rev-parse", "--abbrev-ref", "HEAD"], {
     cwd: REPO_ROOT,

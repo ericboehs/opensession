@@ -226,6 +226,9 @@ async function main(): Promise<void> {
 
 	console.log(`\n== compile ${name}`);
 	await compileBinary(join(stage, "opensession"), fver, distDir);
+	// service.ts renders the systemd unit from this template at REPO_ROOT, which
+	// for a binary install is the release dir — ship it beside the binary.
+	cpSync(join(REPO_ROOT, "opensession.service"), join(stage, "opensession.service"));
 	console.log("\n== sharp sidecar");
 	await buildSharpSidecar(stage, sharpVersion);
 	console.log("\n== engine seed");
