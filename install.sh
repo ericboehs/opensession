@@ -595,7 +595,15 @@ install_cli() {
 # (package.json `opensession.opencodeVersion`; the same number release.json
 # carries), so the plugin runtime seeded below matches what opencode asks
 # for. OPENCODE_VERSION=latest (or any version) overrides.
-pinned_opencode="$(sed -n 's/.*"opencodeVersion": *"\([^"]*\)".*/\1/p' "$DIR/package.json" 2>/dev/null | head -1)"
+# The pin travels in release.json (`opencode`) for an artefact and in
+# package.json (`opensession.opencodeVersion`) for a source checkout. Guard the
+# reads: a binary artefact has no package.json, and sed on a missing file would
+# abort the installer under `set -e`/pipefail.
+pinned_opencode=""
+[ -f "$DIR/release.json" ] && pinned_opencode="$(sed -n 's/.*"opencode": *"\([^"]*\)".*/\1/p' "$DIR/release.json" | head -1)"
+if [ -z "$pinned_opencode" ] && [ -f "$DIR/package.json" ]; then
+  pinned_opencode="$(sed -n 's/.*"opencodeVersion": *"\([^"]*\)".*/\1/p' "$DIR/package.json" | head -1)"
+fi
 OPENCODE_VERSION="${OPENCODE_VERSION:-${pinned_opencode:-latest}}"
 opencode_install="curl -fsSL https://opencode.ai/install | bash"
 [ "$OPENCODE_VERSION" != "latest" ] && opencode_install="$opencode_install -s -- --version $OPENCODE_VERSION"
