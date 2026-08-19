@@ -743,9 +743,21 @@ export function meridianAccountEnv(
 ): Record<string, string> {
   const cfgDir = `${MERIDIAN_CFG_ROOT}/${account.id}`;
   mkdirSync(cfgDir, { recursive: true, mode: 0o700 });
+  // Isolate opencode's OWN data store (auth.json lives at
+  // $XDG_DATA_HOME/opencode/auth.json). Without this, an `opencode/anthropic/*`
+  // run reads the host ~/.local/share/opencode/auth.json, and a stale
+  // `anthropic` oauth entry there (a lapsed `opencode auth login`) outranks the
+  // provider apiKey — opencode refreshes the dead token and fails the whole run
+  // with `invalid_grant` before the request ever reaches the Meridian proxy or
+  // this account's CLAUDE_CODE_OAUTH_TOKEN. The OpenAI path already isolates
+  // XDG_DATA_HOME; the anthropic path needs the same. Per-account and
+  // deterministic, so it rides the server config hash like CLAUDE_CONFIG_DIR.
+  const dataDir = `${cfgDir}/xdg-data`;
+  mkdirSync(`${dataDir}/opencode`, { recursive: true, mode: 0o700 });
   return {
     CLAUDE_CODE_OAUTH_TOKEN: account.token,
     CLAUDE_CONFIG_DIR: cfgDir,
+    XDG_DATA_HOME: dataDir,
     // Loopback-only is Meridian's default bind; MERIDIAN_API_KEY additionally
     // requires x-api-key on every /v1/* request (verified live: 401 without
     // it), so another local process can't ride the proxy. The same key is set
