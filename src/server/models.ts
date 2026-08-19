@@ -6,8 +6,8 @@
  * Single engine: EVERYTHING runs on the OpenCode engine (opencode-runner.ts) —
  * the legacy Claude/Codex SDK runners are deleted. The picker only surfaces
  * opencode ids (opencodePickerModels), interactiveDefaultModel maps the
- * default onto opencode, and nextFallbackModel / opencodeAutomationModel map
- * every fallback onto opencode too (toOpencodeModel). Native ids (claude-*,
+ * default onto opencode, while automationModel routes unattended routines and
+ * their fallbacks onto Pi. Native ids (claude-*,
  * gpt-*) stay RESOLVABLE (resolveModel prefix passthrough) for stored session
  * state, env vars and provider bookkeeping — agent-runner maps them onto
  * their opencode form at dispatch.
@@ -603,7 +603,7 @@ const CODEX_MODEL_ORDER = [
  * an equal-or-smarter model automatically, but ASK a human before dropping to a
  * dumber one. "smart→smart / medium→smart = fine (auto); smart→dumb /
  * medium→dumb = ask." Concrete edges that policy yields: Fable→Sol auto,
- * Fable→Opus ask, Opus→Sol auto, Opus→Sonnet ask, Sol→Opus ask.
+ * Fable→Opus auto, Opus→Sol auto, and Opus→Sonnet ask.
  *
  * Unlisted models default to tier 1 (treated as a downgrade from any premium
  * primary, so the human is asked — the safe default).
@@ -611,9 +611,9 @@ const CODEX_MODEL_ORDER = [
 const FALLBACK_TIER: Record<string, number> = {
   "claude-fable-5": 3,
   "gpt-5.6-sol": 3,
+  "claude-opus-5": 3,
   "gpt-5.6-terra": 3,
   "gpt-5.6-luna": 3,
-  "claude-opus-5": 2,
   "claude-opus-4-8": 2,
   "gpt-5.5": 2,
   "claude-sonnet-5": 1,
@@ -635,14 +635,11 @@ const FALLBACK_TIER: Record<string, number> = {
  */
 const FALLBACK_DESTINATIONS = [
   "gpt-5.6-sol",
-  // Terra/Luna: same-tier 5.6 siblings — a per-model Sol exhaustion keeps the
-  // run on the codex pool automatically before crossing to Anthropic.
+  // Prefer Opus before the cheaper 5.6 siblings once Sol is unavailable.
+  "claude-opus-5",
+  // Terra/Luna remain automatic top-tier fallbacks after Opus.
   "gpt-5.6-terra",
   "gpt-5.6-luna",
-  // Opus 5 supersedes 4.8 as the Anthropic destination — the bridge serves one
-  // canonical Opus per server (see KNOWN_MODELS note), so listing both would
-  // just walk the same exhausted pool twice.
-  "claude-opus-5",
   // gpt-5.5 / gpt-5.4 / gpt-5.4-mini / spark removed 2026-07-25: retired
   // 272k-window models (RETIRED_CODEX_REROUTE) — falling back onto them would
   // land every session in the compact-every-turn loop.
@@ -846,7 +843,7 @@ export function interactiveFallbackModel(_primaryModel?: string): string | undef
  *   claude-*                 → opencode/anthropic/<model> (meridian/native bridge)
  *   opencode/…               → unchanged
  *
- * Fail-safe (mirrors opencodeAutomationModel): the anthropic path is gated on
+ * Fail-safe: the anthropic path is gated on
  * the bridge being enabled — with it off, claude ids stay native so a config
  * toggle degrades to the direct SDK runner instead of failing. The openai path
  * keys off codex accounts (not the bridge flag), so it always maps. This is
@@ -1156,14 +1153,22 @@ export function nextFallbackModel(
   for (const id of FALLBACK_DESTINATIONS) add(id);
   if (!candidates.length) return null;
 
-  // Stable sort (candidates already in preference order): auto-eligible first,
-  // then by descending tier — so we always reach for the strongest model we can
-  // keep going on before offering a downgrade.
+  // Auto-eligible models stay ahead of downgrades. Within a tier, use the
+  // explicit destination order rather than candidate insertion order: the
+  // configured Opus fallback is added first above, but Sol must remain the
+  // first hop off Fable.
   candidates.sort((a, b) => {
     const aDown = fallbackTier(a) >= currentTier ? 0 : 1;
     const bDown = fallbackTier(b) >= currentTier ? 0 : 1;
     if (aDown !== bDown) return aDown - bDown;
-    return fallbackTier(b) - fallbackTier(a);
+    const tierDelta = fallbackTier(b) - fallbackTier(a);
+    if (tierDelta) return tierDelta;
+    const destinationRank = (id: string) => {
+      const native = nativeModelId(id);
+      const rank = FALLBACK_DESTINATIONS.indexOf(native);
+      return rank < 0 ? Number.MAX_SAFE_INTEGER : rank;
+    };
+    return destinationRank(a) - destinationRank(b);
   });
 
   const to = candidates[0];

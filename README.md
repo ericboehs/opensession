@@ -11,6 +11,11 @@ sandboxes — Docker locally, with pluggable adapters for other providers.
 
 ## Quickstart
 
+Run this on Linux, macOS, or inside WSL2 on Windows. The server does not run
+directly from PowerShell; follow the
+[Windows WSL2 setup](docs/setup/install.md#windows-run-the-server-in-wsl2)
+first.
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
 ```

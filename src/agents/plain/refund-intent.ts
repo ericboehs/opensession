@@ -6,7 +6,7 @@
  * router: any error, ambiguity, or unparseable output returns {approve:false}.
  * A no-tools Haiku call — it only reads, never acts.
  */
-import { opencodeOneShot } from "../../server/opencode-oneshot";
+import { oneShot } from "../../server/one-shot";
 import { personaCompany, personaName } from "../../server/config";
 
 const MODEL = process.env.PLAIN_REFUND_INTENT_MODEL || "claude-haiku-4-5";
@@ -33,7 +33,7 @@ export async function classifyRefundApproval(
 ): Promise<RefundApproval> {
   const deny: RefundApproval = { approve: false, reason: "fail-closed default" };
   try {
-    const resultText = await opencodeOneShot(
+    const resultText = await oneShot(
       `Agent's note (the approval to evaluate):\n${request.slice(0, 2000)}\n\n` +
         `Thread context (look for a ${personaName()} refund/cancellation proposal):\n${threadContext.slice(0, 12000)}`,
       { system: SYSTEM_PROMPT, model: MODEL, label: "refund-intent" },

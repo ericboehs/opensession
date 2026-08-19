@@ -37,6 +37,28 @@ export function registerServiceWorker(): void {
     .catch(() => {});
 }
 
+/**
+ * Route a notification tap the service worker handed to this page (see sw.js).
+ * The worker posts the URL rather than reloading the document, and waits for
+ * the ack this sends back before falling back to a document navigation.
+ */
+export function onPushNavigate(handler: (url: string) => void): () => void {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator))
+    return () => {};
+  const listener = (event: MessageEvent) => {
+    const data = event.data as { type?: string; url?: string } | null;
+    if (!data || data.type !== "os1-navigate" || typeof data.url !== "string")
+      return;
+    event.ports?.[0]?.postMessage({ ok: true });
+    handler(data.url);
+  };
+  navigator.serviceWorker.addEventListener("message", listener);
+  // Messages posted before a listener exists are buffered until the page asks
+  // for them, and addEventListener (unlike the onmessage setter) does not ask.
+  navigator.serviceWorker.startMessages?.();
+  return () => navigator.serviceWorker.removeEventListener("message", listener);
+}
+
 export async function getPushState(): Promise<PushState> {
   if (!supported()) return "unsupported";
   if (Notification.permission === "denied") return "denied";

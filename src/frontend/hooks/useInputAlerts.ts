@@ -89,6 +89,7 @@ export function useInputAlerts(
 				"Needs your review",
 				`${s.reviewRequest?.by || "Someone"} asked you to review ${s.title || "a session"}`,
 				() => onOpenRef.current(s.id),
+				s.id,
 			);
 		}
 
@@ -102,6 +103,7 @@ export function useInputAlerts(
 					? s.title || "A session is waiting for your answer"
 					: `Run failed: ${s.title || "a session needs attention"}`,
 				() => onOpenRef.current(s.id),
+				s.id,
 			);
 		}
 
@@ -116,6 +118,7 @@ export function useInputAlerts(
 				"Finished",
 				s.title || "A session finished working",
 				() => onOpenRef.current(s.id),
+				s.id,
 			);
 		}
 	}, [sessions]);

@@ -51,7 +51,7 @@ import {
   gitIdentityFor,
   slackIdToFirstName,
 } from "../../server/shared/user-mappings";
-import { opencodeOneShot } from "../../server/opencode-oneshot";
+import { oneShot } from "../../server/one-shot";
 import {
   worktreePathFor,
   getRepo,
@@ -273,7 +273,7 @@ async function generateBranchName(
     .join("\n\n")
     .slice(0, 2000);
   if (source) {
-    const out = await opencodeOneShot(
+    const out = await oneShot(
       `Name a git branch for this task: 2-4 words, kebab-case, lowercase letters/digits/hyphens only, max 30 chars, describing the actual task (never filler like "plz-fix" or "try-again"). Output ONLY the branch name, nothing else.\n\nTask:\n"""\n${source}\n"""`,
       { label: "slack-branch-name" }
     );

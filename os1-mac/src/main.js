@@ -619,8 +619,14 @@ function showWindow() {
   if (!win || win.isDestroyed()) {
     if (appReady) createWindow();
   } else if (windowReady) {
+    // show() alone leaves a minimized window in the Dock, so a deep link or a
+    // notification click would land on a window nobody can see.
+    if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
+    // The window is only half of it on macOS: an app that is not frontmost
+    // stays behind the one that is until it asks for the activation itself.
+    app.focus({ steal: true });
   }
 }
 
@@ -921,6 +927,13 @@ app.whenReady().then(async () => {
   ipcMain.on("os1:set-badge", (e, count) => {
     if (!inWindow(e.senderFrame?.url ?? "")) return;
     app.setBadgeCount(Number.isFinite(count) && count > 0 ? Math.floor(count) : 0);
+  });
+
+  // The web app asks for this from a notification click handler, where its own
+  // window.focus() cannot raise a background app.
+  ipcMain.on("os1:focus-window", (e) => {
+    if (!inWindow(e.senderFrame?.url ?? "")) return;
+    showWindow();
   });
 
   ipcMain.handle("os1:update-state", (e) =>

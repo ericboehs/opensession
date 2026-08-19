@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
 	PlainEntryAttachment,
 	PlainLabelType,
@@ -27,6 +27,7 @@ import {
 import { BASE_PATH } from "../lib/base";
 import { Menu } from "../ui/menu";
 import { renderMarkdown } from "../lib/markdown";
+import { MarkdownBody } from "./MarkdownBody";
 import { loadDraft, saveDraft, clearDraft } from "../lib/drafts";
 import { useCurrentUser } from "./UserPicker";
 import { cn } from "../ui/cn";
@@ -978,7 +979,7 @@ function PlainAttachments({
 						className={cn(
 							"block overflow-hidden rounded-lg no-underline",
 							isImage
-								? "bg-surface"
+								? "md-image-link bg-surface"
 								: "inline-flex items-center gap-1.5 bg-active px-2.5 py-1.5 text-label text-dim hover:bg-hover hover:text-fg",
 						)}
 					>
@@ -990,7 +991,11 @@ function PlainAttachments({
 								onError={() =>
 									setFailed((f) => ({ ...f, [a.id]: true }))
 								}
-								className="block max-h-[220px] max-w-full bg-surface object-contain"
+								/* md-image is what opens the lightbox. Its own block
+								   treatment is for a full-width transcript image, so the
+								   thumbnail keeps its cap and drops the border and margin
+								   the wrapper already provides. */
+								className="md-image m-0 block max-h-[220px] max-w-full border-0 bg-surface object-contain"
 							/>
 						) : (
 							<>
@@ -1008,6 +1013,22 @@ function PlainAttachments({
 			})}
 		</div>
 	);
+}
+
+/**
+ * A message body, rendered as markdown. Customer mail and our own replies get
+ * the same treatment a session message does: `**test**` is bold, a pasted
+ * stack trace in a fence is highlighted, and an inline image opens the shared
+ * lightbox (markdown.ts emits the `md-image` class the delegated handler in
+ * MediaLightbox.tsx watches for).
+ *
+ * Deliberately rendered with no context: a bare `#123` in a customer's mail is
+ * their order number rather than a PR in our repo, and raw HTML they paste
+ * stays literal text, which is the renderer's default.
+ */
+function PlainEntryText({ text }: { text: string }) {
+	const html = useMemo(() => renderMarkdown(text), [text]);
+	return <MarkdownBody className={plainEntryBody} html={html} />;
 }
 
 /**
@@ -1109,10 +1130,7 @@ export function PlainEntryRow({
 						</a>
 					)}
 				</div>
-				<div
-					className="markdown break-words text-body leading-relaxed text-fg [&>:first-child]:mt-0 [&>:last-child]:mb-0"
-					dangerouslySetInnerHTML={{ __html: renderMarkdown(author.text) }}
-				/>
+				<PlainEntryText text={author.text} />
 				{entry.attachments?.length ? (
 					<PlainAttachments attachments={entry.attachments} />
 				) : null}
@@ -1138,7 +1156,7 @@ export function PlainEntryRow({
 				{subject && (
 					<div className="text-body font-semibold text-fg">{subject}</div>
 				)}
-				{entry.text && <div className={plainEntryBody}>{entry.text}</div>}
+				{entry.text && <PlainEntryText text={entry.text} />}
 				{entry.attachments?.length ? (
 					<PlainAttachments attachments={entry.attachments} />
 				) : null}

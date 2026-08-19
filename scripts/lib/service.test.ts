@@ -13,10 +13,17 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { platform } from "os";
 import { LAUNCHD_LABEL, LAUNCHD_LAUNCHER, renderLauncher, renderPlist, renderUnit } from "./service";
 import { ENV_PATH, REPO_ROOT } from "./paths";
 
-describe("systemd unit", () => {
+// Both renderers interpolate host paths and the local bun, so on Windows they
+// produce a unit and a plist that could never be installed. Neither service
+// manager exists there, so skip rather than loosen assertions that catch a
+// real regression on the platforms that install them.
+const onServiceHost = platform() !== "win32";
+
+describe.skipIf(!onServiceHost)("systemd unit", () => {
   test("user scope: no User=, no IPAddressDeny=, wants default.target", async () => {
     const unit = await renderUnit("user");
     // A user manager rejects User= and cannot apply the BPF IP filter without
@@ -36,6 +43,7 @@ describe("systemd unit", () => {
 
   test("system scope: rewrites every host-specific directive", async () => {
     const unit = await renderUnit("system");
+
 
     const user = unit.match(/^User=(.*)$/m)?.[1];
     expect(user).toBeTruthy();
@@ -69,7 +77,7 @@ describe("systemd unit", () => {
   });
 });
 
-describe("launchd plist", () => {
+describe.skipIf(!onServiceHost)("launchd plist", () => {
   test("is well-formed and carries the expected keys", () => {
     const plist = renderPlist();
     expect(plist).toStartWith('<?xml version="1.0"');

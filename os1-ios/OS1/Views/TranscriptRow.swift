@@ -14,8 +14,8 @@ struct TranscriptRow: View {
     /// Id, and whether it starts open — a walkthrough does, everything else
     /// that folds inside a row starts closed.
     let expansionState: (String, Bool) -> TurnFoldState
-    /// "Fold tool calls": a folded work turn still shows its notes.
-    var showsMessagesWhenFolded = false
+    /// Where a turn's work rests, and whether that includes its tool calls.
+    var activity = TurnActivity.standard
     /// Who started this session, for crediting turns that carry no explicit
     /// sender (see `UserBubble`). Nil for automations and sub-agents.
     var owner: String?
@@ -23,8 +23,6 @@ struct TranscriptRow: View {
     var onEditNote: ((SessionNote, String) async throws -> Void)?
     var onDeleteNote: ((SessionNote) async throws -> Void)?
     var failureContinuation: FailureContinuationAction? = nil
-
-    @AppStorage("os1.appearance.turnActivity") private var turnActivity = "auto"
 
     var body: some View {
         switch block {
@@ -79,8 +77,7 @@ struct TranscriptRow: View {
                 sessionId: sessionId,
                 worktreeDir: worktreeDir,
                 state: foldState(turn),
-                showsMessagesWhenFolded: showsMessagesWhenFolded,
-                expandsToolRuns: turnActivity == "expanded",
+                activity: activity,
                 expansionState: expansionState
             )
         case .footer(let footer):

@@ -12,7 +12,7 @@
  * `pi/orchestrator/<name>` and `pi/workspace-preset/<ws>/<id>` resolve to
  * their concrete lead with the preset wiring attached — the dial oracle as a
  * native custom tool (same-bridge resolved via sameBridgeDialOracle, answered
- * out-of-band by opencodeOneShot), orchestrator/workspace delegation as
+ * out-of-band by oneShot), orchestrator/workspace delegation as
  * instructions over opensession-sessions (the codex-direct shape; pi has no
  * subagent registry, so claude-direct's native worker agents have no pi
  * equivalent).
@@ -187,6 +187,7 @@ import {
   readOpencodeBridgeConfig,
 } from "./opencode-config";
 import { markCodexExhausted, type CodexAccount } from "./codex-accounts";
+import { pickAccount as pickClaudeAccount } from "./claude-accounts";
 import {
   pickOpenaiAccount,
   buildSeededOpenaiAuth,
@@ -222,7 +223,6 @@ import { buildEngineSwitchHandoffNote } from "./fork-handoff";
 import { piAnthropicTransport, piEngineEnabled } from "./pi-config";
 import { buildPiAnthropicProvider } from "./pi-anthropic-provider";
 import { createPiMcpBridge, type PiMcpBridge } from "./pi-mcp-bridge";
-import { opencodeOneShot } from "./opencode-oneshot";
 import {
   DIAL_ORACLE_AGENTS,
   ORCHESTRATOR_WORKER_AGENTS,
@@ -334,7 +334,7 @@ export const resolvePiDialModel = resolvePiRoutedModel;
 /** The oracle agent a pi dial run actually consults: the preset's oracle when
  * its account family matches the run's provider, else the same-bridge
  * substitute — the rule every other engine applies (sameBridgeDialOracle).
- * Pi's oracle executes out-of-band through opencodeOneShot, so a cross-family
+ * Pi's oracle executes out-of-band through oneShot, so a cross-family
  * oracle would technically work; the substitution is account-pool POLICY
  * parity — a dial run must not consult (and bill) a second account family the
  * same preset would not consult on any other engine. Third-party providers
@@ -436,7 +436,10 @@ function makePiDialOracleTool(
       if (!prompt) throw new Error("oracle requires a prompt");
       if (signal?.aborted) throw new Error("Oracle request aborted");
       if (!oracle) throw new Error(`Dial oracle "${oracleAgent}" is not configured`);
-      const answer = await opencodeOneShot(prompt, {
+      // Dynamic import avoids a module cycle: one-shot.ts drives runPi, while
+      // Pi's Dial oracle delegates its out-of-band consultation back to it.
+      const { oneShot } = await import("./one-shot");
+      const answer = await oneShot(prompt, {
         model: oracle.model,
         effort: oracle.variant,
         user,
@@ -1373,6 +1376,15 @@ async function* runPiAttempt(
   };
 
   let piSessionId: string | undefined;
+  // Utility callers such as oneShot deliberately have no unified session.
+  // They still use Pi's native JSONL while alive, but must not emit degraded
+  // transcript writes or create a ghost Open Session transcript.
+  const persistRunEntries = (entries: TranscriptEntry[]) => {
+    if (unifiedSessionId) persistEntries(piSessionId, entries);
+  };
+  const appendRunLines = (lines: Record<string, unknown>[]) => {
+    if (unifiedSessionId && piSessionId) piAppend(piSessionId, lines);
+  };
   let reachedTerminal = false;
   let session: AgentSession | undefined;
   let mcpBridge: PiMcpBridge | undefined;
@@ -1791,10 +1803,65 @@ async function* runPiAttempt(
       }
     }
 
-    // Minimal bash env — the security invariant this engine hangs on. The
+    // Optional pool credentials for tools the run itself spawns (currently
+    // deepsec's Claude Agent SDK and Codex CLI workers). These are explicit
+    // additions to the minimal environment, never inherited server secrets.
+    const cliEnv: Record<string, string> = {};
+    if (opts.claudeCliEnv) {
+      const cliAccount = pickClaudeAccount(undefined, user, undefined, opts.usageCredits);
+      if (cliAccount) {
+        const cliCfgDir = `${PI_STATE_DIR}/cli/claude/${cliAccount.id}`;
+        mkdirSync(cliCfgDir, { recursive: true, mode: 0o700 });
+        cliEnv.CLAUDE_CODE_OAUTH_TOKEN = cliAccount.token;
+        cliEnv.CLAUDE_CONFIG_DIR = cliCfgDir;
+        audit({
+          msg: "claude_cli_env_account",
+          run_kind: journal?.kind,
+          session_id: journal?.osSessionId,
+          account: cliAccount.name,
+          account_id: cliAccount.id.slice(0, 8),
+          engine: "pi",
+        });
+      } else {
+        console.warn(
+          "[pi-runner] claudeCliEnv requested but no usable Claude account in the pool; run proceeds without it",
+        );
+      }
+    }
+    if (opts.codexCliEnv) {
+      const cfg = readOpencodeBridgeConfig();
+      const picked = pickOpenaiAccount(
+        "",
+        cfg?.openaiAccounts,
+        journal?.osSessionId || runKey,
+        undefined,
+        user,
+      );
+      if ("error" in picked) {
+        console.warn(
+          `[pi-runner] codexCliEnv requested but no usable Codex account (${picked.error}); run proceeds without it`,
+        );
+      } else {
+        Object.assign(
+          cliEnv,
+          picked.kind === "home"
+            ? { CODEX_HOME: picked.value }
+            : { OPENAI_API_KEY: picked.value },
+        );
+        audit({
+          msg: "codex_cli_env_account",
+          run_kind: journal?.kind,
+          session_id: journal?.osSessionId,
+          account: picked.name,
+          account_id: picked.id.slice(0, 8),
+          engine: "pi",
+        });
+      }
+    }
+
+    // Minimal bash env, the security invariant this engine hangs on. The
     // server env is NEVER inherited; every entry is explicit.
-    const awsEnv =
-      opts.aws ? await ensureAgentAwsCredsFile() : {};
+    const awsEnv = opts.aws ? await ensureAgentAwsCredsFile() : {};
     const bashEnv: Record<string, string> = {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
       ...(process.env.HOME ? { HOME: process.env.HOME } : {}),
@@ -1807,6 +1874,7 @@ async function* runPiAttempt(
       ...gitIdentityEnv(author),
       ...(githubUserLogin ? githubAuthEnv(user || author?.name) : {}),
       ...awsEnv,
+      ...cliEnv,
     };
 
     // MCP tools via the hand-rolled bridge; denied ids (policy.disables keys,
@@ -2180,7 +2248,7 @@ async function* runPiAttempt(
     push({ type: "init", sessionId: piSessionId, provider: PROVIDER, model });
     // Engine-keyed write of the turn's user line — same uuid as the early
     // store write, so the row upserts instead of duplicating the bubble.
-    piAppend(piSessionId, [userLine]);
+    appendRunLines([userLine]);
 
     if (resumeMissNote) {
       const notice =
@@ -2188,7 +2256,7 @@ async function* runPiAttempt(
         "assistant output was persisted) — continuing in a fresh one with the " +
         "recent transcript bridged into this turn's prompt.";
       push({ type: "runner_notice", text: notice });
-      persistEntries(piSessionId, [
+      persistRunEntries([
         { id: crypto.randomUUID(), type: "system", content: notice, timestamp: nowIso() },
       ]);
     }
@@ -2321,11 +2389,11 @@ async function* runPiAttempt(
                     });
                   }
                 }
-                persistEntries(piSessionId, out);
+                persistRunEntries(out);
               }
             } else if (msg.role === "toolResult" && msg.toolCallId) {
               const { text, images } = contentToTextAndImages(msg.content);
-              persistEntries(piSessionId, [
+              persistRunEntries([
                 {
                   id: `${msg.toolCallId}-result`,
                   type: "tool_result",
@@ -2362,7 +2430,7 @@ async function* runPiAttempt(
                     : (steer.images || []).map(
                         (im) => `data:${im.mediaType};base64,${im.data}`
                       );
-                  persistEntries(piSessionId, [
+                  persistRunEntries([
                     {
                       id: crypto.randomUUID(),
                       type: "user",
@@ -2380,7 +2448,7 @@ async function* runPiAttempt(
             const ce = ev as any;
             if (!ce.aborted && ce.result?.summary) {
               try {
-                piAppend(piSessionId!, [
+                appendRunLines([
                   transcriptLineCompactionSummary(
                     String(ce.result.summary),
                     crypto.randomUUID(),
@@ -2428,7 +2496,7 @@ async function* runPiAttempt(
                 (r.delayMs || 0) / 1000
               )}s — ${errText.slice(0, 300)}`;
               push({ type: "runner_notice", text: notice });
-              persistEntries(piSessionId, [
+              persistRunEntries([
                 {
                   id: crypto.randomUUID(),
                   type: "system",

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Settings → Identity: what this instance and its agent call themselves.
+/// Settings → General: what this instance and its agent call themselves.
 ///
 /// Two workspace-wide names from `GET /api/settings/identity`, stored in the
 /// server's own config file rather than per device, so everyone on the

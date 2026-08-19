@@ -219,6 +219,20 @@ export async function setPrFileViewed(
 	});
 }
 
+/** Full text of one file at a PR revision, proxied so private repos work. */
+export async function fetchPrFile(
+	repo: string | undefined,
+	ref: string,
+	path: string,
+): Promise<string> {
+	const qs = new URLSearchParams({ ref, path });
+	if (repo) qs.set("repo", repo);
+	const data = await request<{ content: string }>(`/pr-file?${qs}`, {
+		label: "Failed to load file",
+	});
+	return data.content;
+}
+
 /** Full text of one worktree file (Changes-tab edit mode). `side: "base"` reads
  *  the pre-change version from the merge base; `null` = file absent on that side. */
 export async function fetchWorktreeFile(

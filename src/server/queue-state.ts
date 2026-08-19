@@ -119,6 +119,18 @@ export const steeredReceipts: Map<string, QueueItem[]> = (g.__steeredReceipts ??
 // only: after a real restart a stop is stale anyway, and boot re-drains.
 export const stoppedSessions: Set<string> = (g.__stoppedSessions ??= new Set());
 
+/**
+ * Lift a Stop so this session's queue can drain again. Call this on any
+ * explicit human send. The latch is normally lifted by runSessionPrompt, but
+ * the drain is what calls that: a message sent after a Stop enters the durable
+ * queue and drainQueueInner returns at the latch, so without this the message
+ * is parked forever and reads as lost (most visible right after a create, when
+ * the opening turn is stopped before it settles).
+ */
+export function liftUserStop(sessionId: string): void {
+	stoppedSessions.delete(sessionId);
+}
+
 // Both maps are persisted to disk so a real restart/crash (not just a hot
 // reload, which keeps the globalThis maps) doesn't silently drop queued or
 // just-steered messages. Queued prompts re-drain on boot; steer receipts stay

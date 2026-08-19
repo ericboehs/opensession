@@ -93,7 +93,8 @@ struct PreferencesSettingsView: View {
     @AppStorage("os1.composer.sendKey") private var nativeSendKey = "enter"
     @AppStorage("os1.composer.busySend") private var nativeBusySend = "queue"
     @AppStorage("os1.composer.busySendMod") private var nativeBusySendMod = "steer"
-    @AppStorage("os1.appearance.turnActivity") private var nativeTurnActivity = "auto"
+    @AppStorage("os1.appearance.turnActivity") private var nativeTurnWork = "running"
+    @AppStorage("os1.appearance.toolCalls") private var nativeToolCalls = "folded"
     @AppStorage("os1.composer.replySuggestions") private var nativeReplySuggestions = true
     @AppStorage("os1.transcript.liveTyping") private var nativeLiveTyping = false
     @AppStorage("os1.desk.voice") private var deskVoice = "off"
@@ -109,7 +110,8 @@ struct PreferencesSettingsView: View {
     @State private var sendKey: String
     @State private var busySend: String
     @State private var busySendMod: String
-    @State private var turnActivity: String
+    @State private var turnWork: String
+    @State private var toolCalls: String
     @State private var replySuggestions: Bool
     @State private var liveTyping: Bool
     @State private var loading = true
@@ -131,13 +133,18 @@ struct PreferencesSettingsView: View {
     /// against a baseline the server has not confirmed.
     init() {
         let defaults = UserDefaults.standard
+        let activity = TurnActivity(
+            work: defaults.string(forKey: "os1.appearance.turnActivity"),
+            tools: defaults.string(forKey: "os1.appearance.toolCalls")
+        )
         let seeded: [String: String] = [
             "default-model": defaults.string(forKey: "os1.composer.defaultModel") ?? "",
             "default-engine": defaults.string(forKey: "os1.composer.defaultEngine") ?? "",
             "send-key": defaults.string(forKey: "os1.composer.sendKey") ?? "enter",
             "busy-send": defaults.string(forKey: "os1.composer.busySend") ?? "queue",
             "busy-send-mod": defaults.string(forKey: "os1.composer.busySendMod") ?? "steer",
-            "turn-activity": defaults.string(forKey: "os1.appearance.turnActivity") ?? "auto",
+            "turn-activity": activity.work.rawValue,
+            "tool-calls": activity.tools.rawValue,
             "reply-suggestions": (defaults.object(forKey: "os1.composer.replySuggestions") as? Bool ?? true) ? "on" : "off",
             "live-typing": (defaults.object(forKey: "os1.transcript.liveTyping") as? Bool ?? false) ? "on" : "off",
         ]
@@ -147,7 +154,8 @@ struct PreferencesSettingsView: View {
         _sendKey = State(initialValue: seeded["send-key"] ?? "enter")
         _busySend = State(initialValue: seeded["busy-send"] ?? "queue")
         _busySendMod = State(initialValue: seeded["busy-send-mod"] ?? "steer")
-        _turnActivity = State(initialValue: seeded["turn-activity"] ?? "auto")
+        _turnWork = State(initialValue: seeded["turn-activity"] ?? "running")
+        _toolCalls = State(initialValue: seeded["tool-calls"] ?? "folded")
         _replySuggestions = State(initialValue: seeded["reply-suggestions"] != "off")
         _liveTyping = State(initialValue: seeded["live-typing"] == "on")
         let cachedCatalog = SettingsCache.value("model-catalog", as: ModelCatalogSettings.self)
@@ -265,17 +273,20 @@ struct PreferencesSettingsView: View {
             #endif
 
             Section {
-                Picker("Tool calls and messages", selection: $turnActivity) {
-                    Text("Fold tool calls").tag("messages")
-                    Text("Fold everything").tag("collapsed")
-                    Text("Expand while running").tag("auto")
-                    Text("Always expanded").tag("expanded")
+                Picker("Steps", selection: $turnWork) {
+                    Text("Closed").tag("folded")
+                    Text("While running").tag("running")
+                    Text("Open").tag("open")
+                }
+                Picker("Tool calls", selection: $toolCalls) {
+                    Text("Closed").tag("folded")
+                    Text("Open").tag("open")
                 }
                 Toggle("Live typing", isOn: $liveTyping)
             } header: {
                 Text("Transcript")
             } footer: {
-                Text("How each turn's working folds in a session. By default a turn is open while it runs and folds away once it settles. \"Fold tool calls\" instead keeps every turn's in-between messages reading as normal transcript, so only its tool calls ever fold. Expanding a turn does not open its individual tool inputs. Live typing types the reply out as the model writes it. Off, each part appears when it is finished.")
+                Text("By default, steps stay open while a turn runs, then close. Closed tool calls stay one tap away. Live typing types the reply out as the model writes it. Off, each part appears when it is finished.")
             }
 
             Section {
@@ -306,7 +317,8 @@ struct PreferencesSettingsView: View {
         .onChange(of: sendKey) { _, _ in commit() }
         .onChange(of: busySend) { _, _ in commit() }
         .onChange(of: busySendMod) { _, _ in commit() }
-        .onChange(of: turnActivity) { _, _ in commit() }
+        .onChange(of: turnWork) { _, _ in commit() }
+        .onChange(of: toolCalls) { _, _ in commit() }
         .onChange(of: replySuggestions) { _, _ in commit() }
         .onChange(of: liveTyping) { _, _ in commit() }
         .onDisappear { commit() }
@@ -341,6 +353,11 @@ struct PreferencesSettingsView: View {
             let requestContext = NativePreferences.context()
             let prefs = try await SettingsAPI.uiPrefs(user: requestContext.user)
             guard NativePreferences.context() == requestContext else { loading = false; return }
+            let remoteActivity = TurnActivity.mergingRemote(
+                work: prefs["turn-activity"],
+                tools: prefs["tool-calls"],
+                local: TurnActivity(work: nativeTurnWork, tools: nativeToolCalls)
+            )
             let server: [String: String] = [
                 "default-model": prefs["default-model"] ?? nativeDefaultModel,
                 "default-engine": prefs["default-engine"] ?? nativeDefaultEngine,
@@ -350,7 +367,8 @@ struct PreferencesSettingsView: View {
                 // Unset (or an unknown value from a newer client) keeps
                 // whatever this device last saw rather than snapping the
                 // picker to a default the account never chose.
-                "turn-activity": Self.validTurnActivity(prefs["turn-activity"]) ?? nativeTurnActivity,
+                "turn-activity": remoteActivity.work.rawValue,
+                "tool-calls": remoteActivity.tools.rawValue,
                 "reply-suggestions": (
                     NativePreferences.replySuggestionsEnabled(prefs["reply-suggestions"])
                         ?? replySuggestions
@@ -368,7 +386,8 @@ struct PreferencesSettingsView: View {
             if sendKey == seededPrefs["send-key"] { sendKey = server["send-key"] ?? sendKey }
             if busySend == seededPrefs["busy-send"] { busySend = server["busy-send"] ?? busySend }
             if busySendMod == seededPrefs["busy-send-mod"] { busySendMod = server["busy-send-mod"] ?? busySendMod }
-            if turnActivity == seededPrefs["turn-activity"] { turnActivity = server["turn-activity"] ?? turnActivity }
+            if turnWork == seededPrefs["turn-activity"] { turnWork = server["turn-activity"] ?? turnWork }
+            if toolCalls == seededPrefs["tool-calls"] { toolCalls = server["tool-calls"] ?? toolCalls }
             if (replySuggestions ? "on" : "off") == seededPrefs["reply-suggestions"] {
                 replySuggestions = server["reply-suggestions"] != "off"
             }
@@ -381,10 +400,42 @@ struct PreferencesSettingsView: View {
             #endif
             nativeBusySend = busySend
             nativeBusySendMod = busySendMod
-            nativeTurnActivity = turnActivity
+            nativeTurnWork = turnWork
+            nativeToolCalls = toolCalls
             nativeReplySuggestions = replySuggestions
             nativeLiveTyping = liveTyping
             savedPrefs = server
+            if let legacyValue = prefs["turn-activity"],
+               TurnActivity.legacy[legacyValue] != nil {
+                let expected: [String: String?] = [
+                    "turn-activity": legacyValue,
+                    "tool-calls": prefs["tool-calls"],
+                ]
+                if let migrated = try? await SettingsAPI.updateUiPrefs(
+                    user: requestContext.user,
+                    prefs: [
+                        "turn-activity": remoteActivity.work.rawValue,
+                        "tool-calls": remoteActivity.tools.rawValue,
+                    ],
+                    expected: expected
+                ) {
+                    let reconciled = TurnActivity.mergingRemote(
+                        work: migrated["turn-activity"],
+                        tools: migrated["tool-calls"],
+                        local: remoteActivity
+                    )
+                    if turnWork == remoteActivity.work.rawValue {
+                        turnWork = reconciled.work.rawValue
+                    }
+                    if toolCalls == remoteActivity.tools.rawValue {
+                        toolCalls = reconciled.tools.rawValue
+                    }
+                    nativeTurnWork = turnWork
+                    nativeToolCalls = toolCalls
+                    savedPrefs["turn-activity"] = reconciled.work.rawValue
+                    savedPrefs["tool-calls"] = reconciled.tools.rawValue
+                }
+            }
             prefsLoaded = true
         } catch {
             self.error = error.localizedDescription
@@ -426,7 +477,8 @@ struct PreferencesSettingsView: View {
             sendKey = confirmed["send-key"] == "mod-enter" ? "mod-enter" : "enter"
             busySend = confirmed["busy-send"] == "steer" ? "steer" : "queue"
             busySendMod = confirmed["busy-send-mod"] == "queue" ? "queue" : "steer"
-            turnActivity = Self.validTurnActivity(confirmed["turn-activity"]) ?? turnActivity
+            turnWork = TurnActivity.Work(rawValue: confirmed["turn-activity"] ?? "")?.rawValue ?? turnWork
+            toolCalls = TurnActivity.Tools(rawValue: confirmed["tool-calls"] ?? "")?.rawValue ?? toolCalls
             replySuggestions = NativePreferences.replySuggestionsEnabled(
                 confirmed["reply-suggestions"]
             ) ?? replySuggestions
@@ -440,7 +492,8 @@ struct PreferencesSettingsView: View {
             #endif
             nativeBusySend = busySend
             nativeBusySendMod = busySendMod
-            nativeTurnActivity = turnActivity
+            nativeTurnWork = turnWork
+            nativeToolCalls = toolCalls
             nativeReplySuggestions = replySuggestions
             nativeLiveTyping = liveTyping
             savedPrefs = confirmed
@@ -461,15 +514,13 @@ struct PreferencesSettingsView: View {
             "send-key": sendKey,
             "busy-send": busySend,
             "busy-send-mod": busySendMod,
-            "turn-activity": turnActivity,
+            "turn-activity": turnWork,
+            "tool-calls": toolCalls,
             "reply-suggestions": replySuggestions ? "on" : "off",
             "live-typing": liveTyping ? "on" : "off",
         ]
     }
 
-    private static func validTurnActivity(_ value: String?) -> String? {
-        ["messages", "auto", "expanded", "collapsed"].contains(value) ? value : nil
-    }
 }
 
 /// How the app looks, and how the session list is arranged — the native half

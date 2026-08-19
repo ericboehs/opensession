@@ -1,9 +1,9 @@
 import React from "react";
-import { BRAND_LOGOS } from "../brand-logos";
+import { brandLogo } from "../brand-logos";
 
 export function BrandMark({ name, size = 20 }: { name: string; size?: number }) {
 	const key = name.toLowerCase();
-	const logo = BRAND_LOGOS[key] || BRAND_LOGOS[key.split("-")[0]];
+	const logo = brandLogo(key);
 	if (!logo) return null;
 	return (
 		<svg
@@ -15,7 +15,12 @@ export function BrandMark({ name, size = 20 }: { name: string; size?: number }) 
 			aria-hidden="true"
 		>
 			{logo.paths.map((d, i) => (
-				<path key={i} d={d} />
+				<path
+					key={i}
+					d={d}
+					opacity={logo.opacities?.[i]}
+					fillRule={logo.evenOdd ? "evenodd" : undefined}
+				/>
 			))}
 		</svg>
 	);

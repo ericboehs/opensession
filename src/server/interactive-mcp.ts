@@ -318,24 +318,39 @@ export function interactiveMcpServers(
 // sessions can inspect/create/steer Open Session sessions too. Goal-driven
 // sessions additionally get opensession-goal-self (next-wake/ledger/pause tools),
 // matching what the in-process path hands them at the runAgent call sites.
+/**
+ * The automation-bar server set for an automation-owned session: papercuts +
+ * the automation's own report/workflows rebuild + (selfImprove automations
+ * only) the scoped spawn/self pair. This is exactly what the run-rpc fallback
+ * builder below serves for these sessions. Exported so launchers that proxy
+ * opensession-* servers into a detached run host (run-session's hosted pi
+ * path) can compute proxy names that resolve to this same fail-closed set,
+ * never the interactive siblings.
+ */
+export function automationSessionMcp(
+	session: { automation?: string; worktreeDir?: string | null },
+	sessionId: string,
+): Record<string, unknown> {
+	return {
+		...papercutsServerFor(
+			sessionId,
+			"automation",
+			`${session.automation} (automation)`,
+		),
+		...(automationRunMcpForSession(session, sessionId) || {}),
+		...(selfImproveMcpForSession(session, sessionId) || {}),
+	};
+}
+
 registerInteractiveMcpBuilder((sessionId, user) => {
 	// Automation-owned sessions run on untrusted event/ticket text. Their runs
-	// only ever carry opensession-papercuts (automations.ts registers the exact
-	// instances per run) — plus, for selfImprove automations only, the scoped
-	// spawn/self pair — but this builder is also run-rpc's FALLBACK resolver
-	// for any registered run token, so it must fail closed here rather than
-	// hand session-control/admin tools to an automation that asks for them.
+	// only ever carry the automation-bar set (automationSessionMcp above), but
+	// this builder is also run-rpc's FALLBACK resolver for any registered run
+	// token, so it must fail closed here rather than hand session-control or
+	// admin tools to an automation that asks for them.
 	const session = sessionId ? findSession(sessionId) : undefined;
-	if (session?.automation) {
-		return {
-			...papercutsServerFor(
-				sessionId,
-				"automation",
-				`${session.automation} (automation)`,
-			),
-			...(automationRunMcpForSession(session, sessionId) || {}),
-			...(selfImproveMcpForSession(session, sessionId) || {}),
-		};
+	if (sessionId && session?.automation) {
+		return automationSessionMcp(session, sessionId);
 	}
 	const servers = interactiveMcpServers(user, sessionId);
 	const goalId = session?.goalId;

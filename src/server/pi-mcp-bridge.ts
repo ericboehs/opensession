@@ -21,6 +21,13 @@
  *  - In-process servers (instances from inprocess-mcp.ts, built per-session
  *    by interactive-mcp.ts) connect directly over an InMemoryTransport pair —
  *    no stdio proxy hop, no run-rpc token: we're in the same process.
+ *  - `inProcessMcp` has a SECOND shape, and it is the one detached run hosts
+ *    and sandboxed runs use: a stdio proxy CONFIG (runner-host/mcp-proxy.ts)
+ *    that forwards tools/list and tools/call back to the opensession process
+ *    over the run-rpc socket, because the real instances live there and not
+ *    in the host. Those mount through the ordinary external stdio path (see
+ *    classifyInProcessMcp). Accepting only the instance shape is what silently
+ *    stripped every opensession-* server from hosted pi runs until 2026-08-19.
  *  - OAuth-granted http servers ride the local mcp-relay
  *    (mcpRelayUrl + mintMcpRelayToken, exactly like buildOpencodeMcpConfig):
  *    a fresh Authorization is injected per REQUEST by the relay, so
@@ -110,6 +117,88 @@ function isInProcessServer(v: unknown): v is InProcessMcpServer {
     (v as { type?: unknown }).type === "sdk" &&
     !!(v as { instance?: unknown }).instance
   );
+}
+
+/**
+ * The SECOND shape `RunAgentOpts.inProcessMcp` carries: a stdio (or HTTP) MCP
+ * config for a PROXY that forwards tools/list and tools/call back to the
+ * opensession process (runner-host/mcp-proxy.ts over the run-rpc socket).
+ *
+ * A detached run host passes this instead of SDK instances (host.ts's
+ * proxyMcpConfigs), and so does every sandboxed run, because the in-process
+ * servers live in the opensession process and simply do not exist there. Pi
+ * only ever accepted the instance shape and silently `continue`d past the
+ * rest, so a hosted pi run lost every opensession-* server while keeping all
+ * its external ones — the failure looked like the tools had never been
+ * configured (2026-08-19).
+ *
+ * Mounting these widens nothing: membership is fixed by the spec's
+ * `proxyMcpServers`, and each call still authenticates with the run's own rpc
+ * token, which dispatchRunRpc resolves back to this session and user (and the
+ * interactive builder stays fail-closed for automation-owned sessions).
+ */
+function isProxyMcpConfig(v: unknown): v is Record<string, unknown> {
+  if (!v || typeof v !== "object") return false;
+  const cfg = v as { command?: unknown; url?: unknown };
+  return typeof cfg.command === "string" || typeof cfg.url === "string";
+}
+
+/** Per-run secrets inside a proxy config's env. Hashing them would give every
+ *  run a fresh cache key, so the catalog cache could never hit and each turn
+ *  would spawn one stdio child per opensession-* server purely to list tools
+ *  (20 of them, sequentially, before the first token). A proxied catalog is a
+ *  property of the server NAME, not of this run's token.
+ *
+ *  INVARIANT this relies on: a proxied server's tool LIST does not vary by
+ *  session or user. It doesn't today — the run token scopes what a CALL does
+ *  (dispatchRunRpc resolves it to a session and user, and the builder is
+ *  fail-closed for automation-owned sessions), while which servers a run
+ *  mounts at all is fixed by the spec's proxyMcpServers, and per-session
+ *  servers carry their own distinct names (opensession-goal-self). If a server
+ *  ever returns a different tool list per caller, that distinguishing bit has
+ *  to enter this key, or one caller's catalog shape is served to another. */
+const VOLATILE_PROXY_ENV = [
+  "OPENSESSION_RPC_TOKEN",
+  "OPENSESSION_RPC_WS_AUTH",
+  "OPENSESSION_RPC_WS_HOST",
+] as const;
+
+function proxyToolsCacheKey(cfg: Record<string, unknown>): string {
+  const env =
+    cfg.env && typeof cfg.env === "object"
+      ? { ...(cfg.env as Record<string, unknown>) }
+      : undefined;
+  if (env) for (const key of VOLATILE_PROXY_ENV) delete env[key];
+  return toolsCacheKey(env ? { ...cfg, env } : cfg);
+}
+
+/** One mountable `inProcessMcp` entry: an SDK instance connected over an
+ *  InMemoryTransport, or a proxy config connected like any other stdio/HTTP
+ *  server. */
+export type InProcessMount =
+  | { name: string; kind: "sdk"; server: InProcessMcpServer }
+  | { name: string; kind: "proxy"; cfg: Record<string, unknown>; cacheKey: string };
+
+/**
+ * Which `inProcessMcp` entries this bridge can mount, and how. Split out and
+ * exported because the proxy branch is the one hosted runs depend on and it
+ * cannot be reached from an in-memory fixture — an unrecognized shape is
+ * dropped silently by design (a caller may pass a server this engine has no
+ * transport for), which is exactly what made the original bug invisible.
+ */
+export function classifyInProcessMcp(
+  inProcessMcp: Record<string, unknown> | undefined,
+  taken: ReadonlySet<string> = new Set(),
+): InProcessMount[] {
+  const out: InProcessMount[] = [];
+  for (const [name, v] of Object.entries(inProcessMcp ?? {})) {
+    // An external server of the same name wins; never double-mount.
+    if (taken.has(name)) continue;
+    if (isInProcessServer(v)) out.push({ name, kind: "sdk", server: v });
+    else if (isProxyMcpConfig(v))
+      out.push({ name, kind: "proxy", cfg: v, cacheKey: proxyToolsCacheKey(v) });
+  }
+  return out;
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
@@ -321,9 +410,12 @@ export async function createPiMcpBridge(opts: {
   };
 
   // ── Resolve the server set ─────────────────────────────────────────────────
-  // `cacheKey` is set for external servers only: it keys the catalog cache on
-  // the server's own config entry, so editing command/args/env/url re-lists at
-  // once. In-process servers get none — listing them is a call in this process.
+  // `cacheKey` keys the catalog cache on the server's own config entry, so
+  // editing command/args/env/url re-lists at once. SDK instances get none —
+  // listing one is a function call in this process. Proxy configs DO get one
+  // (minus the per-run token, see proxyToolsCacheKey): they are stdio children
+  // like any other external server, and a warm cache is what keeps a hosted
+  // run from spawning twenty of them before its first token.
   const entries: Array<{
     name: string;
     factory: () => Promise<ServerConn>;
@@ -341,10 +433,19 @@ export async function createPiMcpBridge(opts: {
       cacheKey: toolsCacheKey(cfg),
     });
   }
-  for (const [name, v] of Object.entries(opts.inProcessMcp ?? {})) {
-    if (!isInProcessServer(v)) continue;
-    if (entries.some((e) => e.name === name)) continue; // external name wins; never double-mount
-    entries.push({ name, factory: () => connectInProcess(v) });
+  for (const mount of classifyInProcessMcp(
+    opts.inProcessMcp,
+    new Set(entries.map((e) => e.name)),
+  )) {
+    entries.push(
+      mount.kind === "sdk"
+        ? { name: mount.name, factory: () => connectInProcess(mount.server) }
+        : {
+            name: mount.name,
+            factory: () => connectExternal(mount.name, mount.cfg),
+            cacheKey: mount.cacheKey,
+          },
+    );
   }
 
   // ── List + register (deny BEFORE defineTool; dead servers degrade) ─────────

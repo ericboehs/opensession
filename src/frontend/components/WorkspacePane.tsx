@@ -257,9 +257,9 @@ export function WorkspacePane({
 		}, 15_000);
 		// PR-backed workspaces start on the PR's existing head branch (fromPr:
 		// isolated worktree even on shared-checkout repos); ticket/plain
-		// workspaces start ask-style — the server links plainThreadId from the
+		// workspaces start ask-style, and the server links plainThreadId from the
 		// workspace record and injects the ticket context. Feed-item workspaces
-		// (externalRefs, no repo — e.g. a Tella video) start in scratch mode:
+		// (externalRefs, no repo, such as a Tella video) start in scratch mode:
 		// repo-less scratch dir, write+bash allowed, MCP as usual.
 		send({
 			type: "create_session",

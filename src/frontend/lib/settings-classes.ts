@@ -17,7 +17,7 @@
  * Goals, Actions, Security) goes edge-to-edge on desktop, because those panels
  * bring their own padding and scrolling. Inside the sheet it does NOT: the old
  * `.settings-sheet .settings-content` was two class selectors and outranked
- * the single `.settings-content-tool`, so a tool section kept the sheet's 16px
+ * the single `.settings-content-tool`, so a tool section kept the sheet's 8px
  * gutter. That is almost certainly not what the override intended, but it is
  * what phones have been rendering, so SETTINGS_CONTENT_SHEET is the same
  * string either way rather than quietly re-cutting a layout this change is not
@@ -141,7 +141,7 @@ export const SETTINGS_CONTENT_TOOL = "min-h-0 p-0";
 
 /** Same column inside the phone sheet — a phone gutter instead of the desktop one. */
 export const SETTINGS_CONTENT_SHEET =
-	"flex min-h-0 min-w-0 flex-1 justify-center overflow-y-auto px-4 pt-4";
+	"flex min-h-0 min-w-0 flex-1 justify-center overflow-y-auto px-2 pt-4";
 
 /** The reading column a settings panel sits in, and its bottom air. */
 export const SETTINGS_PANEL_FRAME = "w-full max-w-[720px] self-start pb-22";

@@ -3,6 +3,7 @@ import {
 	fetchRepos,
 	fetchReads,
 	fetchSessionsSnapshot,
+	newSessionApi,
 } from "./api";
 
 const originalFetch = globalThis.fetch;
@@ -90,4 +91,24 @@ test("session snapshots retain response validators on changed data", async () =>
 		etag: '"sessions-v2"',
 		notModified: false,
 	});
+});
+
+test("new workspace tabs create an idle sibling session", async () => {
+	let url = "";
+	let init: RequestInit | undefined;
+	globalThis.fetch = (async (
+		input: string | URL | Request,
+		requestInit?: RequestInit,
+	) => {
+		url = String(input);
+		init = requestInit;
+		return Response.json({ id: "bks-new", session: { id: "bks-new" } });
+	}) as unknown as typeof fetch;
+
+	const created = await newSessionApi("bks-source", "Kent", "share");
+	expect(created.id).toBe("bks-new");
+	expect(created.session?.id).toBe("bks-new");
+	expect(url).toBe("/api/sessions/bks-source/new-session");
+	expect(init?.method).toBe("POST");
+	expect(JSON.parse(String(init?.body))).toEqual({ user: "Kent", mode: "share" });
 });

@@ -235,7 +235,7 @@ export interface FileMention {
 	/** Repo label, set only when more than one repo is searched (cross-repo). */
 	repo?: string;
 	/** Entry type; absent means a file. */
-	kind?: "session" | "skill" | "dir" | "person";
+	kind?: "session" | "skill" | "dir" | "person" | "tool";
 	/** Subtitle for non-file entries (e.g. a session's branch, a skill's description). */
 	sub?: string;
 }
@@ -258,9 +258,34 @@ export async function fetchFileMentions(
 		const data = await request<{ files?: FileMention[] }>(
 			`/files?${params.toString()}`,
 		);
-		return data?.files ?? [];
-	} catch (e) {
-		console.warn("fetchFileMentions failed:", e);
+		return (data.files ?? []).filter(
+			(item) => item.kind === undefined || item.kind === "dir",
+		);
+	} catch (error) {
+		console.warn("fetchFileMentions failed:", error);
+		return [];
+	}
+}
+
+/** People-independent rows for the inline @ palette. Kept separate from the
+ * repository search so tools and recent sessions never wait for git. */
+export async function fetchMentionSuggestions(
+	query: string,
+	sessionId?: string,
+	user?: string,
+	mcpServers?: string[],
+): Promise<FileMention[]> {
+	const params = new URLSearchParams({ q: query });
+	if (sessionId) params.set("session", sessionId);
+	if (user) params.set("user", user);
+	for (const server of mcpServers || []) params.append("mcp", server);
+	try {
+		const data = await request<{ items?: FileMention[] }>(
+			`/mention-suggestions?${params.toString()}`,
+		);
+		return data.items ?? [];
+	} catch (error) {
+		console.warn("fetchMentionPalette failed:", error);
 		return [];
 	}
 }
@@ -307,6 +332,19 @@ export async function promoteSessionApi(
 		`/sessions/${encodeURIComponent(sessionId)}/promote`,
 		{ method: "POST", body: opts || {} },
 	);
+}
+
+/** Create an idle sibling tab. The first prompt starts its engine run. */
+export async function newSessionApi(
+	sourceId: string,
+	user: string,
+	mode?: "share" | "stack" | "ask",
+): Promise<{ id: string; session: UnifiedSession | null }> {
+	const body = await request<{ id: string; session?: UnifiedSession }>(
+		`/sessions/${encodeURIComponent(sourceId)}/new-session`,
+		{ method: "POST", body: { user, ...(mode ? { mode } : {}) } },
+	);
+	return { id: body.id, session: body.session || null };
 }
 
 export async function deleteSessionApi(

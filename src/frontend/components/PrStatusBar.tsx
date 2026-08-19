@@ -44,6 +44,16 @@ import {
 	PR_BAR_STATE_TEXT,
 	PR_STATE_TEXT,
 } from "../lib/pr-tone-classes";
+// The summary variant renders into the workspace summary card, so it borrows
+// that card's row grammar rather than inventing a third one. The strip owns
+// the PR state machine; the card owns how a row in it looks.
+import {
+	WS_SUMMARY_COUNT,
+	WS_SUMMARY_LABEL,
+	WS_SUMMARY_RAIL,
+	WS_SUMMARY_ROW,
+	WS_SUMMARY_STATUS_ROW,
+} from "../lib/workspace-summary-classes";
 import { Tooltip } from "../ui/tooltip";
 import { ContextMenu, Menu } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
@@ -61,8 +71,10 @@ import {
 	IconCopy,
 	IconHash,
 	IconCheck,
+	IconClock,
 	IconPlus,
 	IconArchive,
+	IconX,
 } from "./icons";
 
 /**
@@ -173,6 +185,44 @@ function deriveHeadline(
 	return { key: "clean", label: "Up to date", tone: "muted" };
 }
 
+/** The PR row's glyph tone in the summary card: where the pull request itself
+ *  stands, which is a different question from the headline under it. A merged
+ *  PR with an old approval on it must not read as open. */
+function prGlyphTone(pr: PrDetails): string {
+	if (pr.state === "MERGED") return "text-purple";
+	if (pr.state === "CLOSED") return "text-dim";
+	if (pr.isDraft) return "text-faint";
+	return "text-green";
+}
+
+/** The summary card's headline glyph, one per state the strip can report. The
+ *  card is a list of rows and every other row opens with a mark, so the
+ *  headline needs one too rather than starting on bare text. */
+function headlineGlyph(key: PrHeadline["key"]): React.ReactNode {
+	switch (key) {
+		case "merged":
+		case "conflicts":
+			return <IconGitMerge size={20} />;
+		case "closed":
+		case "failing":
+		case "changes-requested":
+			return <IconX size={20} />;
+		case "running":
+			return <IconClock size={20} />;
+		case "ahead":
+			return <IconArrowUp size={20} />;
+		case "behind":
+		case "behind-base":
+			return <IconArrowDown size={20} />;
+		case "no-pr":
+		case "draft":
+		case "stack-blocked":
+			return <IconPullRequest size={20} />;
+		default:
+			return <IconCheck size={20} />;
+	}
+}
+
 export type { SessionPrRef } from "../lib/pr-refs";
 // Re-exported so the strip stays the one import site for PR-ref presentation.
 export { refTone } from "../lib/pr-refs";
@@ -229,8 +279,19 @@ interface Props {
 	    keep going in a fresh session. Left unset in the session header, which
 	    carries its own "+". */
 	onNewSession?: () => void;
-	/** "header" renders just the PR chip + primary action while the panel is closed. */
-	variant?: "bar" | "header";
+	/**
+	 * - "bar" is the panel's own strip.
+	 * - "header" renders just the PR chip + primary action while the panel is
+	 *   closed.
+	 * - "summary" renders the same two facts as rows for the workspace summary
+	 *   card: which PR, and where it stands with its one action. It is a
+	 *   variant rather than a copy because everything behind that action —
+	 *   headline derivation, the stack merge plan, confirm-then-merge, the
+	 *   prompt-the-session paths, busy state — is this component's, and a
+	 *   second implementation of it is a second thing that can be wrong about
+	 *   whether a merge is in flight.
+	 */
+	variant?: "bar" | "header" | "summary";
 	/** Optional element rendered inside the strip, left of the PR chip (bar
 	    variant only) so it shares the strip's tone background — e.g. the globe
 	    staging-deploy icon in the Workspace panel. */
@@ -740,7 +801,13 @@ export function PrStatusBar({
 	// session that turns out to have nothing is the same blink, pointed the
 	// other way.
 	if (!loaded) {
-		if (variant === "header" || !(prs || []).some((ref) => ref.number))
+		if (
+			variant === "header" ||
+			// The card fills in row by row as its own fetches land, so a
+			// placeholder row here would be the one thing in it that flashes.
+			variant === "summary" ||
+			!(prs || []).some((ref) => ref.number)
+		)
 			return null;
 		return (
 			<div
@@ -966,6 +1033,78 @@ export function PrStatusBar({
 			default:
 				return null;
 		}
+	}
+
+	// The summary card: which PR, then where it stands with its one action.
+	//
+	// The headline row is a div holding two targets rather than one row-wide
+	// button, which is the card's only departure from "the whole row is the
+	// target". It has to be: the label opens the PR (or its checks) and the
+	// button beside it merges, pushes or pulls, and a button inside a button is
+	// not a thing.
+	if (variant === "summary") {
+		// The label is the button, rather than a button wrapping it: it has to
+		// carry the row's truncation and its flex share, and a `display:contents`
+		// wrapper would drop the focus ring with the box.
+		const labelClass = cn(
+			WS_SUMMARY_LABEL,
+			"cursor-pointer rounded-sm border-none bg-transparent p-0 text-left text-item-title text-fg hover:text-accent focus-ring",
+		);
+		return (
+			<>
+				{pr && (
+					<button
+						className={WS_SUMMARY_ROW}
+						onClick={() => onOpenPrTab?.()}
+						title={`#${pr.number} · ${pr.title}`}
+					>
+						<span className={cn(WS_SUMMARY_RAIL, prGlyphTone(pr))}>
+							<IconPullRequest size={20} />
+						</span>
+						<span className={WS_SUMMARY_LABEL}>{pr.title}</span>
+						<span className={cn(WS_SUMMARY_COUNT, "text-faint")}>
+							#{pr.number}
+						</span>
+					</button>
+				)}
+				<div className={WS_SUMMARY_STATUS_ROW}>
+					<span className={cn(WS_SUMMARY_RAIL, PR_STATE_TEXT[headlineTone])}>
+						{headlineGlyph(headline.key)}
+					</span>
+					{/* When checks are the reason for the headline, the headline IS the
+					    checks control, exactly as on the strip: hovering lists them,
+					    clicking opens Review's Checks tab. */}
+					{checksPr ? (
+						<PrChecksPopover
+							checks={checksPr.checks}
+							trigger={
+								<button
+									type="button"
+									className={labelClass}
+									onClick={onOpenChecksTab}
+								>
+									{headlineLabel}
+								</button>
+							}
+						/>
+					) : (
+						<button
+							type="button"
+							className={labelClass}
+							onClick={() => onOpenPrTab?.()}
+						>
+							{headlineLabel}
+						</button>
+					)}
+					{error && (
+						<span className={PR_HEAD_ERROR} title={error}>
+							{error}
+						</span>
+					)}
+					{renderAction()}
+				</div>
+			</>
+		);
 	}
 
 	if (variant === "header") {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { fetchWorktrees, fetchModels, fetchConnections, fetchSandboxStatus, requestSandboxPrewarm, suggestBranch, suggestRepos, type RepoSuggestion, configuredNewSessionRepo, fetchProviderAccounts, fetchRepos, createWorkspaceApi, updateWorkspaceApi, ApiError, type ProviderAccountOption, type ModelOption, type SandboxStatusInfo } from "../lib/api";
+import { AnimatePresence } from "motion/react";
+import { fetchWorktrees, fetchModels, fetchToolAccounts, fetchSandboxStatus, requestSandboxPrewarm, suggestBranch, suggestRepos, type RepoSuggestion, configuredNewSessionRepo, fetchProviderAccounts, fetchRepos, createWorkspaceApi, updateWorkspaceApi, ApiError, type ProviderAccountOption, type ModelOption, type SandboxStatusInfo } from "../lib/api";
 import { getCurrentUser } from "./UserPicker";
 import { type FileAttachment } from "../lib/images";
 import {
@@ -35,6 +36,7 @@ import {
   NewSessionPrompt,
   type NewSessionPromptHandle,
 } from "./NewSessionPrompt";
+import { ComposerContextChip } from "./ComposerContextChip";
 import {
   IconPaperclip,
   IconChevronDown,
@@ -48,6 +50,7 @@ import {
   IconStack,
   IconNewBranch,
   IconSparkle,
+  IconX,
 } from "./icons";
 import type { WSServerMessage, Workspace } from "../lib/types";
 import { VoiceInput } from "./VoiceInput";
@@ -89,6 +92,9 @@ interface Props {
   connected: boolean;
   /** Prefill the prompt (e.g. from the Home "New session" box). */
   prefillPrompt?: string;
+  /** Services selected before the palette opens, such as from a command-menu
+   *  shortcut. They use the same chips and create payload as manual picks. */
+  initialMcpServers?: string[];
   forceMode?: "ask" | "code" | "scratch";
   /** When starting a session inside a workspace, the session joins that workspace… */
   workspaceId?: string;
@@ -158,7 +164,7 @@ const LAST_REPO_KEY = "opensession-new-session-repo";
  *  nothing is abbreviated; on any width that fits (every desktop) the row is
  *  unchanged, since wrapping costs nothing until it happens. */
 const HEADER =
-	"flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-transparent px-4 pt-4 pb-[11px]";
+	"flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-transparent px-4 pt-4 pb-[11px] phone:grid phone:grid-cols-2 phone:items-start phone:gap-2 phone:px-3 phone:pb-3 phone:pt-2";
 /** Merged onto HEADER/FOOTER by `cn()`, which drops the transparent colour. */
 const EDGE_DIVIDER = "border-line";
 /** Header pickers. `relative` is load-bearing — PaletteSelect's phone branch
@@ -176,6 +182,16 @@ const TRIGGER =
 const TRIGGER_STRONG =
 	"relative inline-flex min-w-0 max-w-[46%] cursor-pointer items-center gap-1.5 rounded-control px-2 py-[5px] text-item-title font-semibold text-fg transition-colors hover:bg-hover disabled:cursor-default disabled:opacity-55";
 const CHEVRON = "-ml-0.5 shrink-0 text-faint";
+const MOBILE_PICKER =
+	"contents phone:flex phone:min-w-0 phone:flex-col phone:gap-0.5";
+const MOBILE_PICKER_LABEL =
+	"hidden px-1 text-meta font-medium text-faint phone:block";
+const MOBILE_TRIGGER =
+	"phone:min-h-11 phone:w-full phone:max-w-none phone:px-2.5 phone:py-2";
+const MOBILE_TITLE =
+	"hidden items-center justify-between gap-3 px-4 pb-1 pt-3 phone:flex";
+const MOBILE_CLOSE =
+	"focus-ring relative -mr-1 flex size-11 shrink-0 items-center justify-center rounded-control p-0 text-faint transition-colors hover:bg-hover hover:text-fg";
 
 /* (The prompt's own surface — the scroller and the field — moved to
    NewSessionPrompt, with the draft state it belongs to.) */
@@ -190,9 +206,9 @@ const ERROR = "mx-4 mb-2 rounded-md bg-red-soft px-2.5 py-[7px] text-supporting 
    rounded at ~30px. Create is a 36px plate inside a 40px row, so 14px here
    leaves it the same 16px clearance the side padding gives it. */
 const FOOTER =
-	"flex items-center justify-between gap-x-2 gap-y-2 border-t border-transparent px-4 pt-[9px] pb-3.5 phone:flex-wrap max-[560px]:gap-x-1.5 max-[560px]:px-3";
-const FOOTER_LEFT = "flex min-w-0 items-center gap-1.5 max-[560px]:gap-1";
-const FOOTER_RIGHT = "flex min-w-0 items-center gap-1.5 max-[560px]:gap-1 phone:ml-auto";
+	"flex items-center justify-between gap-x-2 gap-y-2 border-t border-transparent px-4 pt-[9px] pb-3.5 phone:flex-wrap phone:px-3 phone:pb-[calc(0.75rem+env(safe-area-inset-bottom))] max-[560px]:gap-x-1.5";
+const FOOTER_LEFT = "flex min-w-0 items-center gap-1.5 phone:flex-1 max-[560px]:gap-1";
+const FOOTER_RIGHT = "flex min-w-0 items-center gap-1.5 phone:contents max-[560px]:gap-1";
 const FOOTER_ICON_BTN = cn(paletteIconBtn, "shrink-0 max-[560px]:w-9");
 /** Ask mode's toggle. Off, it is one of the footer's quiet icon tools. On, it
  *  wears the same green marker the session composer's toolbar shows for the
@@ -223,7 +239,7 @@ const ASK_SURFACE =
  *  model name, which would otherwise truncate to a single letter. */
 const MODEL_PILL = cn(
 	palettePill,
-	"shrink min-w-0 max-[560px]:px-[9px] max-[374px]:[&_[data-effort]]:hidden",
+	"shrink min-w-0 phone:ml-auto max-[560px]:max-w-[150px] max-[560px]:px-[9px] max-[374px]:[&_[data-effort]]:hidden",
 );
 
 /* What a create does with the view behind the palette: "open" follows the new
@@ -264,9 +280,10 @@ const CREATE_LABELS: Record<CreateAction, string> = {
    chrome shares (the Button primitive, the header CTAs). It used to be
    `rounded-md` — one step down, 9.45px against 13.5px — which on a 36px-tall
    plate read visibly square next to its neighbours. */
-const CREATE_SPLIT = "relative inline-flex shrink-0 items-stretch";
+const CREATE_SPLIT =
+	"relative inline-flex shrink-0 items-stretch phone:order-2 phone:mt-0.5 phone:w-full";
 const CREATE_MAIN =
-	"inline-flex cursor-pointer items-center gap-[7px] border-none bg-accent px-3.5 py-[7px] text-label font-semibold text-on-accent transition-[background-color,opacity] enabled:hover:bg-accent-hover disabled:cursor-default disabled:opacity-40 max-[560px]:px-3";
+	"inline-flex cursor-pointer items-center gap-[7px] border-none bg-accent px-3.5 py-[7px] text-label font-semibold text-on-accent transition-[background-color,opacity] enabled:hover:bg-accent-hover disabled:cursor-default disabled:opacity-40 phone:min-h-11 phone:flex-1 phone:justify-center max-[560px]:px-3";
 /** The desktop corner, split between the two shapes the button takes: half of
  *  a split button beside its caret, or the whole button when there is no caret
  *  (inline). Written as two whole classes rather than one plus an override,
@@ -280,7 +297,7 @@ const CREATE_MAIN =
 const CREATE_MAIN_SPLIT = "desktop:rounded-l-control phone:rounded-l-[999px] phone:rounded-r-none";
 const CREATE_MAIN_WHOLE = "desktop:rounded-control phone:rounded-[999px]";
 const CREATE_CARET =
-	"inline-flex cursor-pointer items-center gap-[7px] rounded-r-control phone:rounded-r-[999px] border-none bg-accent p-[7px] text-label font-semibold text-on-accent shadow-[inset_1px_0_0_rgba(0,0,0,0.14)] transition-[background-color,opacity] enabled:hover:bg-accent-hover disabled:cursor-default disabled:opacity-40";
+	"inline-flex cursor-pointer items-center gap-[7px] rounded-r-control phone:min-w-11 phone:justify-center phone:rounded-r-[999px] border-none bg-accent p-[7px] text-label font-semibold text-on-accent shadow-[inset_1px_0_0_rgba(0,0,0,0.14)] transition-[background-color,opacity] enabled:hover:bg-accent-hover disabled:cursor-default disabled:opacity-40";
 const CREATE_KBD = "opacity-70";
 const CREATE_MENU =
 	"absolute bottom-[calc(100%+6px)] right-0 z-20 min-w-[208px] rounded-control bg-popup-glass [backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] p-[5px] smooth-shadow-ring-md";
@@ -386,7 +403,7 @@ function slugifyBranch(text: string): string {
   return slug || "new-session";
 }
 
-export function NewSession({ onBack, inline, focusSeq, send, addHandler, connected, prefillPrompt, forceMode, workspaceId, modelWorkspaceId, forceRepo, forceBranch, onCreateStarted, onDraftSaved }: Props) {
+export function NewSession({ onBack, inline, focusSeq, send, addHandler, connected, prefillPrompt, initialMcpServers, forceMode, workspaceId, modelWorkspaceId, forceRepo, forceBranch, onCreateStarted, onDraftSaved }: Props) {
   const [prefill] = useState(readPrefill);
   // What the session may do, and nothing else — the footer's Ask toggle. The
   // repo is a separate axis, so Scratch is not a third value here: it is what
@@ -704,15 +721,17 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
       .catch(() => {});
   }, [hasPromptText, shouldPrewarm, sandboxProvider, repo, busy]);
 
-  // MCP servers: empty by default (minimal context), users can opt in for
-  // specific ones. The list comes from mcp-config.json via the connections
-  // API so it never drifts from what's actually installed.
-  const [selectedMcpServers, setSelectedMcpServers] = useState<string[]>([]);
+  // An empty selection means every available service; one or more picks narrow
+  // the session to those services. Command-menu shortcuts seed this same state
+  // so their selection stays visible and removable before Create.
+  const [selectedMcpServers, setSelectedMcpServers] = useState<string[]>(
+    () => initialMcpServers || [],
+  );
   const [availableMcpServers, setAvailableMcpServers] = useState<string[]>([]);
   useEffect(() => {
-    fetchConnections()
+    fetchToolAccounts()
       .then((c) => {
-        setAvailableMcpServers((c.mcpServers || []).map((s) => s.name));
+        setAvailableMcpServers(c.servers.map((s) => s.name));
       })
       .catch(() => {});
   }, []);
@@ -1144,16 +1163,27 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
   // palette or sits on it as the empty state's session input.
   const card = (
     <>
-        {/* Header: the Code/Ask switch and the repo (left) · create-from
-            (right). Two axes, in the order they're decided: what the session
-            may do, then what it is pointed at. Either mode can be pointed at
-            nothing — Ask with no repo is a conversation with your tools, Code
-            with no repo is a scratch dir. On phones the create-from picker
-            stays hidden until the footer's options toggle opens it. */}
-        <div className={cn(HEADER, edges.top && EDGE_DIVIDER)}>
+      {!inline && (
+        <div className={MOBILE_TITLE}>
+          <Modal.Title className="m-0 min-w-0 flex-1 text-dialog-title font-semibold leading-tight tracking-[-0.01em] text-fg">
+            New session
+          </Modal.Title>
+          <Modal.Close className={MOBILE_CLOSE} aria-label="Close">
+            <IconX size={20} />
+          </Modal.Close>
+        </div>
+      )}
+      {/* Header: the Code/Ask switch and the repo (left) · create-from
+          (right). Two axes, in the order they're decided: what the session
+          may do, then what it is pointed at. Either mode can be pointed at
+          nothing: Ask with no repo is a conversation with your tools, Code
+          with no repo is a scratch dir. */}
+      <div className={cn(HEADER, edges.top && EDGE_DIVIDER)}>
+        <div className={MOBILE_PICKER}>
+          <span className={MOBILE_PICKER_LABEL}>Project</span>
           <PaletteSelect
-            className={TRIGGER_STRONG}
-            title="Repository"
+            className={cn(TRIGGER_STRONG, MOBILE_TRIGGER)}
+            title="Project"
             value={repo}
             options={[
               ...repos.map((p) => ({
@@ -1223,7 +1253,7 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
             // A feed workspace is repo-less by construction (its subject is a
             // Tella video, not a checkout), so its create doesn't offer one.
             disabled={busy || forceMode === "scratch"}
-            ariaLabel="Repository"
+            ariaLabel="Project"
             isPhone={isPhone}
           >
             {repo === NO_REPO ? (
@@ -1267,28 +1297,58 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
               <IconChevronDown className={CHEVRON} size={22} />
             )}
           </PaletteSelect>
-
-          {mode === "code" && (
-          <PaletteSelect
-            className={TRIGGER}
-            title="What to create from"
-            value={selectedWorktree}
-            options={createFromOptions}
-            onChange={setSelectedWorktree}
-            disabled={busy}
-            ariaLabel="Create from"
-            isPhone={isPhone}
-            align="end"
-          >
-            {/* shrink-0 like every other glyph in the header: a long branch
-                name squeezes the trigger, and the icon was giving up its width
-                before the label gave up characters, leaving a sliver. */}
-            <IconNewBranch className="shrink-0" size={19} />
-            <span className="truncate">{createFromLabel}</span>
-            <IconChevronDown className={CHEVRON} size={22} />
-          </PaletteSelect>
-          )}
         </div>
+
+        {mode === "code" && (
+          <div className={MOBILE_PICKER}>
+            <span className={MOBILE_PICKER_LABEL}>Branch</span>
+            <PaletteSelect
+              className={cn(TRIGGER, MOBILE_TRIGGER)}
+              title="What to create from"
+              value={selectedWorktree}
+              options={createFromOptions}
+              onChange={setSelectedWorktree}
+              disabled={busy}
+              ariaLabel="Create from"
+              isPhone={isPhone}
+              align="end"
+            >
+              {/* shrink-0 like every other glyph in the header: a long branch
+                  name squeezes the trigger, and the icon was giving up its width
+                  before the label gave up characters, leaving a sliver. */}
+              <IconNewBranch className="shrink-0" size={19} />
+              <span className="truncate">{createFromLabel}</span>
+              <IconChevronDown className={CHEVRON} size={22} />
+            </PaletteSelect>
+          </div>
+        )}
+      </div>
+
+      {/* Picked services, above the field like every other thing attached to
+          what you are about to send. The picker is two levels inside a menu,
+          so without this the only trace of a pick is a count on the overflow
+          button, and the pick governs the whole session rather than one
+          prompt. The row stays mounted so the last chip can animate out. */}
+      <div className="flex flex-wrap items-start gap-x-1 px-4 phone:px-3 phone:pt-1">
+        {selectedMcpServers.length > 0 && (
+          <span className="mr-1 self-center text-meta font-medium text-faint phone:block desktop:hidden">
+            Using
+          </span>
+        )}
+        <AnimatePresence initial={false}>
+          {selectedMcpServers.map((mcp) => (
+            <ComposerContextChip
+              key={mcp}
+              icon={<IconTile name={mcp} size={15} />}
+              label={displayName(mcp)}
+              title={`${displayName(mcp)} is on. A session gets only the services you pick here.`}
+              onRemove={() => toggleMcpServer(mcp, false)}
+              removeLabel={`Remove ${displayName(mcp)}`}
+              disabled={busy}
+            />
+          ))}
+        </AnimatePresence>
+      </div>
 
         {/* Prompt. It owns the draft: see NewSessionPrompt for why the text
             does not live in this component. */}
@@ -1298,6 +1358,7 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
           valueRef={promptText}
           handle={promptHandle}
           repo={effectiveRepo}
+          mcpServers={selectedMcpServers}
           // Ask sessions read and explain; they never touch the code. Asking
           // "what to work on" in that mode invites a prompt the session
           // cannot carry out.
@@ -1461,11 +1522,20 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
                       <span className="truncate">Connected services</span>
                     </span>
                     <span className="flex flex-none items-center gap-1 text-dim">
-                      {selectedMcpServers.length ? `${selectedMcpServers.length} on` : "None"}
+                      {/* Nothing picked is not "none": an empty allowlist means
+                          the run gets every service you can see
+                          (filterMcpServers, scope "all"), so the readout says
+                          so rather than promising a session with no tools. */}
+                      {selectedMcpServers.length ? `${selectedMcpServers.length} on` : "All"}
                       <IconChevronRight className="shrink-0 text-faint" size={17} />
                     </span>
                   </Menu.SubmenuTrigger>
                   <Menu.Popup className="max-w-[min(360px,calc(100vw-1rem))]">
+                    {availableMcpServers.length > 0 && (
+                      <div className="max-w-[300px] px-2 pb-1 text-meta font-medium leading-snug text-faint">
+                        Picked services are the only ones the session gets.
+                      </div>
+                    )}
                     {availableMcpServers.length === 0 && (
                       <Menu.Item disabled className="text-faint">
                         No services available
@@ -1669,8 +1739,10 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
     >
       <Modal.Content
         variant="palette"
+        widthClassName="w-[min(820px,100%)] phone:w-full"
+        viewportClassName="phone:items-end phone:px-0 phone:pb-0 phone:pt-3"
         className={cn(
-          "max-h-[calc(89dvh-1rem)] max-[560px]:max-h-[calc(93dvh-1rem)]",
+          "max-h-[calc(89dvh-1rem)] phone:max-h-[calc(100dvh-12px)] phone:rounded-b-none phone:[&_textarea]:min-h-[160px] phone:[&_textarea]:text-input-phone",
           ASK_SURFACE,
           mode === "ask" && "before:opacity-100 after:opacity-100",
         )}

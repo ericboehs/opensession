@@ -96,8 +96,8 @@ export function ResponsiveDialog({
 	 * sockets, scroll position — that must survive a dismiss.
 	 */
 	keepMounted?: boolean;
-	/** `"none"` for overlays that toggle like a HUD rather than open like a dialog. */
-	desktopTransition?: "pop" | "none";
+	/** `"scale-drop"` adds an asymmetric scale-in/drop-out transition. */
+	desktopTransition?: "pop" | "scale-drop" | "none";
 	/** Extra classes for the phone sheet panel (e.g. a fixed height). */
 	sheetClassName?: string;
 	/** Extra classes for the desktop modal panel (e.g. a fixed size). */
@@ -107,8 +107,9 @@ export function ResponsiveDialog({
 	children: React.ReactNode | ((dismiss: () => void) => React.ReactNode);
 }) {
 	// The sheet always animates: its drag-to-dismiss needs something to follow.
-	const animated = phone || desktopTransition === "pop";
-	const phase = usePhase(open, animated, phone ? SHEET_MS : MODAL_MS);
+	const scaleDrop = !phone && desktopTransition === "scale-drop";
+	const animated = phone || desktopTransition !== "none";
+	const phase = usePhase(open, animated, phone ? SHEET_MS : scaleDrop ? 100 : MODAL_MS);
 	const panelRef = React.useRef<HTMLDivElement>(null);
 	const restoreRef = React.useRef<HTMLElement | null>(null);
 
@@ -235,7 +236,13 @@ export function ResponsiveDialog({
 					backdropClassName,
 					animated && [
 						"transition-opacity",
-						phone ? "duration-[var(--dur-lg)]" : "duration-[var(--dur)]",
+						phone
+							? "duration-[var(--dur-lg)]"
+							: scaleDrop
+								? phase === "exiting"
+									? "duration-[100ms]"
+									: "duration-[var(--dur-micro)]"
+								: "duration-[var(--dur)]",
 						shown ? "opacity-100" : "opacity-0",
 					],
 				)}
@@ -251,14 +258,29 @@ export function ResponsiveDialog({
 					"absolute flex flex-col overflow-hidden outline-none [corner-shape:squircle]",
 					phone
 						? "inset-x-0 bottom-0 max-h-[94dvh] rounded-t-[calc(16.5px*var(--rf))] bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_40px_rgba(0,0,0,0.35)]"
-						: "left-1/2 top-1/2 max-h-[85vh] w-[92vw] max-w-[30rem] -translate-x-1/2 -translate-y-1/2 rounded-[calc(18px*var(--rf))] bg-raised smooth-shadow-ring-lg",
+						: cn(
+								"left-1/2 top-1/2 max-h-[85vh] w-[92vw] max-w-[30rem] rounded-[calc(18px*var(--rf))] bg-raised smooth-shadow-ring-lg",
+								!scaleDrop && "-translate-x-1/2 -translate-y-1/2",
+							),
 					animated &&
 						(phone
 							? [
 									"transition-transform duration-[var(--dur-lg)] ease-[var(--ease)]",
 									shown ? "translate-y-0" : "translate-y-full",
 								]
-							: [
+							: scaleDrop
+								? [
+										"origin-center transition-[scale,translate,opacity] ease-out",
+										phase === "exiting"
+											? "duration-[100ms] scale-100 opacity-0 [translate:-50%_calc(-50%_+_16px)]"
+											: cn(
+													"duration-[var(--dur-micro)] [translate:-50%_-50%]",
+													phase === "entering"
+														? "scale-90 opacity-0"
+														: "scale-100 opacity-100",
+												),
+									]
+								: [
 									"origin-center transition-[transform,opacity] duration-[var(--dur)] ease-[var(--ease)]",
 									shown ? "scale-100 opacity-100" : "scale-[0.96] opacity-0",
 								]),

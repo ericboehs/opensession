@@ -72,6 +72,7 @@ export interface EvidenceDeps {
 	getSession: (id: string) => UnifiedSession | null | undefined;
 	transcript: (session: UnifiedSession) => Promise<TranscriptEntry[]>;
 	diff: (
+		session: UnifiedSession,
 		worktreeDir: string,
 		baseBranch: string,
 	) => Promise<{
@@ -80,6 +81,7 @@ export interface EvidenceDeps {
 		totalDeletions: number;
 	}>;
 	defaultBranch: (repo?: string) => string;
+	isSharedCheckout: (path: string) => boolean;
 	exists: (path: string) => boolean;
 }
 
@@ -98,19 +100,37 @@ export function clipError(body: string): string {
 }
 
 async function defaultDeps(): Promise<EvidenceDeps> {
-	const [{ findSession }, { mergedSessionTranscriptAsync }, gitDiff, worktree, fs] =
+	const [
+		{ findSession },
+		{ mergedSessionTranscriptAsync },
+		gitDiff,
+		worktree,
+		{ sessionTouchedPaths },
+		fs,
+	] =
 		await Promise.all([
 			import("./session-cache"),
 			import("./sessions"),
 			import("./git-diff"),
 			import("./worktree"),
+			import("./session-touched"),
 			import("fs"),
 		]);
 	return {
 		getSession: (id) => findSession(id),
 		transcript: (session) => mergedSessionTranscriptAsync(session),
-		diff: async (dir, base) => {
-			const d = await gitDiff.getSessionDiff(dir, base);
+		diff: async (session, dir, base) => {
+			const ownPaths = worktree.isSharedCheckoutDir(dir)
+				? await sessionTouchedPaths(session, dir)
+				: undefined;
+			const d = await gitDiff.getSessionDiff(
+				dir,
+				base,
+				undefined,
+				false,
+				undefined,
+				ownPaths,
+			);
 			return {
 				files: d.files.map((f) => ({
 					path: f.path,
@@ -129,6 +149,7 @@ async function defaultDeps(): Promise<EvidenceDeps> {
 				return "main";
 			}
 		},
+		isSharedCheckout: (path) => worktree.isSharedCheckoutDir(path),
 		exists: (p) => fs.existsSync(p),
 	};
 }
@@ -256,8 +277,14 @@ export async function collectHandoffEvidence(
 	if (session.mode === "code" && session.worktreeDir && d.exists(session.worktreeDir)) {
 		try {
 			const parent = session.parentSessionId ? d.getSession(session.parentSessionId) : null;
-			const shared = Boolean(parent?.worktreeDir && parent.worktreeDir === session.worktreeDir);
-			const diff = await d.diff(session.worktreeDir, d.defaultBranch(session.repo));
+			const shared =
+				d.isSharedCheckout(session.worktreeDir) ||
+				Boolean(parent?.worktreeDir && parent.worktreeDir === session.worktreeDir);
+			const diff = await d.diff(
+				session,
+				session.worktreeDir,
+				d.defaultBranch(session.repo),
+			);
 			if (diff.files.length) {
 				ev.diff = {
 					files: diff.files.slice(0, MAX_FILES),

@@ -22,8 +22,14 @@ import {
 import { getAccountById } from "./claude-accounts";
 import { getCodexAccountById } from "./codex-accounts";
 import { runAgent } from "./agent-runner";
-import { providerFor, resolveModel, DEFAULT_FALLBACK_MODEL, modelLabel } from "./models";
-import { readOpencodeBridgeConfig } from "./opencode-config";
+import { runAgentHosted } from "./host-client";
+import {
+  providerFor,
+  resolveModel,
+  DEFAULT_FALLBACK_MODEL,
+  modelLabel,
+  toPiModel,
+} from "./models";
 import { createWorktree, ensureAskCheckout, getRepo, listWorktrees, REPOS, worktreeHeadBranch } from "./worktree";
 import { engineSessionPatch } from "./sessions";
 import { updateSessionFile } from "./session-cache";
@@ -241,11 +247,9 @@ export interface Automation {
   /** Durable report plus optional downstream sinks fed from that report. */
   outputs?: AutomationOutput[];
   /**
-   * Model TIER for new runs (claude-* / gpt-* / opencode/…; see models.ts).
-   * Omitted = the automation default. Dispatch maps tiers onto the opencode
-   * engine (opencodeAutomationModel) — the stored id stays the tier. Codex
-   * models enforce tool denials as per-server disabled_tools (codex-runner.ts);
-   * opencode strips them via its tools config (opencodeRunPolicy).
+   * Model for new runs (claude-* / gpt-* / pi/…; see models.ts).
+   * Omitted = the Pi automation default. Dispatch maps engine-neutral and
+   * legacy OpenCode ids onto Pi while preserving the model tier.
    */
   model?: string;
   /**
@@ -419,7 +423,7 @@ function validateSandboxAutomation(
   if (!automation.accountId) {
     return { error: "sandbox automations require a pinned model account" };
   }
-  const runModel = opencodeAutomationModel(automation.model) || "";
+  const runModel = automationModel(automation.model) || "";
   if (
     /^(?:claude-|opencode\/anthropic\/|pi\/anthropic\/)/.test(runModel) &&
     !getAccountById(automation.accountId)
@@ -1045,40 +1049,17 @@ export function automationMcpServersByName(name: string): string[] | undefined {
   return listAutomations().find((a) => a.name === name)?.mcpServers;
 }
 
-/** Default engine+model for automations (policy: automations run
- *  on the opencode engine; 2026-07-22: model-less automations default to Sol
- *  on the codex pool — research-class automations pin claude-fable-5
- *  explicitly instead of relying on this). */
-export const DEFAULT_OPENCODE_AUTOMATION_MODEL = "opencode/openai/gpt-5.6-sol";
+/** Default engine+model for automations. Model-less routines use the same Sol
+ * tier as before, now on Pi's ChatGPT-subscription path. */
+export const DEFAULT_PI_AUTOMATION_MODEL = "pi/openai/gpt-5.6-sol";
 
-/**
- * Map an automation's configured model (or a router's modelOverride) onto the
- * opencode engine, tier-preserving: claude-sonnet-4-6 →
- * opencode/anthropic/claude-sonnet-4-6, gpt-5.5 → opencode/openai/gpt-5.5,
- * unset → DEFAULT_OPENCODE_AUTOMATION_MODEL. Automations keep their stored
- * tier ids; the flip to opencode happens here at dispatch, so it covers every
- * automation (and future ones) uniformly.
- *
- * Fail-safe: when the Anthropic bridge is disabled (~/.opensession-opencode.json)
- * claude tiers keep their original id and run on the claude engine as before —
- * a config toggle must degrade automations to the old engine, not break them.
- * The least-privilege deny-set is enforced on every engine either way
- * (canUseTool / disabled_tools / opencodeRunPolicy).
- */
-export function opencodeAutomationModel(model?: string): string | undefined {
-  const m = (model || "").trim();
-  if (m.startsWith("opencode/")) return m;
-  // Pi ids name their engine explicitly (pi/<provider>/<model>) — pass through
-  // untouched; the tier flip below is only for engine-less tier ids.
-  if (m.startsWith("pi/")) return m;
-  // The openai path keys off codex accounts, not the bridge flag — always map.
-  if (m.startsWith("gpt-")) return `opencode/openai/${m}`;
-  // The default is Sol (openai path), so it applies regardless of the
-  // anthropic bridge flag — the bridge fail-safe below only concerns claude-*.
-  if (!m) return DEFAULT_OPENCODE_AUTOMATION_MODEL;
-  if (readOpencodeBridgeConfig()?.enabled !== true) return model;
-  if (m.startsWith("claude-")) return `opencode/anthropic/${m}`;
-  return model; // unknown shapes (codex-*, custom ids) keep their engine
+/** Map an automation's stored model, a router override, or a fallback onto Pi
+ * while preserving the concrete provider/model tier. Legacy OpenCode-prefixed
+ * ids migrate in place, so old records cannot silently keep the old engine. */
+export function automationModel(model?: string): string | undefined {
+  const requested = (model || "").trim();
+  if (!requested) return DEFAULT_PI_AUTOMATION_MODEL;
+  return toPiModel(requested) || requested;
 }
 
 function slugify(name: string): string {
@@ -1203,7 +1184,7 @@ export async function runAutomation(
     // a mid-run usage-limit fallback can swap it (tracked in modelHistory), so
     // word it as "started on".
     {
-      const runModelForPrompt = opencodeAutomationModel(
+      const runModelForPrompt = automationModel(
         options?.modelOverride || automation.model,
       );
       const displayModel = (runModelForPrompt || "").replace(
@@ -1286,11 +1267,10 @@ export async function runAutomation(
       } catch {}
     }
 
-    // Automations dispatch on the opencode engine (tier-preserving mapping;
-    // see opencodeAutomationModel). The effective model/provider can change
-    // mid-run (usage-limit fallback), so track them from the runner's
-    // init/done events for persistence.
-    const runModel = opencodeAutomationModel(options?.modelOverride || automation.model);
+    // Automations dispatch on Pi (tier-preserving mapping; see
+    // automationModel). The effective model/provider can change mid-run on a
+    // usage-limit fallback, so track it from runner events for persistence.
+    const runModel = automationModel(options?.modelOverride || automation.model);
     let effectiveModel = runModel;
     let selectedModel = runModel;
     let effectiveProvider = providerFor(effectiveModel);
@@ -1405,7 +1385,7 @@ export async function runAutomation(
     const fallbackModel = (() => {
       if (automation.fallbackModel === "none" || automation.sandbox) return undefined;
       const fb = automation.fallbackModel || DEFAULT_FALLBACK_MODEL;
-      return fb ? opencodeAutomationModel(fb) : undefined;
+      return fb ? automationModel(fb) : undefined;
     })();
     let events: AsyncGenerator<StreamEvent>;
     if (sandbox) {
@@ -1425,10 +1405,15 @@ export async function runAutomation(
         deniedTools: AUTOMATION_DENIED_TOOLS,
         confirmTools: STRIPE_CONFIRM_TOOLS,
         aws: false,
+        claudeCliEnv: !!automation.claudeCliEnv,
+        codexCliEnv: !!automation.codexCliEnv,
         fallbackModel,
         accountId: automation.accountId,
         accountStrict: true,
         usageCredits: automation.usageCredits,
+        // PRs opened from the sandboxed run carry the automation's review
+        // policy, same as the in-process runAgent call below.
+        prReviewer: automation.prReviewer,
         journalKind: "automation",
         trustProfile: "automation",
       };
@@ -1437,17 +1422,14 @@ export async function runAutomation(
         : sandbox.launchRun(spec);
       events = handle.events();
     } else {
-      events = runAgent({
+      const common = {
         prompt,
         cwd,
         mode: automation.mode,
         model: runModel,
-        mcpServers: automation.mcpServers ?? "all",
-        inProcessMcp,
+        mcpServers: (automation.mcpServers ?? "all") as "all" | string[],
         deniedTools: AUTOMATION_DENIED_TOOLS,
-        // No onAskUser here, so confirm tools deny with "propose it for a human"
-        // (codex disables them outright — codex-runner.ts; opencode strips them
-        // from the tool list with the same post-in-note guidance — opencodeRunPolicy)
+        // No onAskUser here, so confirm tools deny with "propose it for a human".
         confirmTools: STRIPE_CONFIRM_TOOLS,
         aws: true, // host automations keep short-lived instance-role read creds
         claudeCliEnv: !!automation.claudeCliEnv,
@@ -1457,13 +1439,24 @@ export async function runAutomation(
         usageCredits: automation.usageCredits,
         fallbackModel,
         prReviewer: automation.prReviewer,
-        // Commits say which automation made them. Nobody sent this prompt, so
-        // there is no person to credit, but the instance's default identity is
-        // shared by every unattended run and reduces all of them to one
-        // anonymous author. The automation is the owner, so it signs.
+        // The automation is the commit author. Nobody sent this prompt, so the
+        // instance identity would otherwise collapse every routine into one.
         author: labelIdentity(automation.name),
-        journal: { osSessionId: bksId, kind: "automation" },
-      });
+      };
+      events = providerFor(runModel) === "pi"
+        ? runAgentHosted({
+            ...common,
+            osSessionId: bksId,
+            proxyMcpServers: Object.keys(inProcessMcp),
+            fallbackInProcessMcp: () => inProcessMcp,
+            journalKind: "automation",
+            trustProfile: "automation",
+          })
+        : runAgent({
+            ...common,
+            inProcessMcp,
+            journal: { osSessionId: bksId, kind: "automation" },
+          });
     }
     for await (const event of events) {
       if (event.type === "init") {

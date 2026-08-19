@@ -55,6 +55,8 @@ import { suppressLayoutAnimations } from "./ui/motion";
 import { SessionViewer } from "./components/SessionViewer";
 import type { PortalTarget } from "./lib/portals";
 import { NewSession } from "./components/NewSession";
+import { IconTile } from "./components/BrandTile";
+import { displayName } from "./brand-logos";
 import type { NewSessionPrefill } from "./lib/new-session-link";
 import { shouldOpenCreatedSession } from "./lib/new-session-navigation";
 import {
@@ -81,7 +83,11 @@ import { UserGate, getCurrentUser, useAuthStatus, useCurrentUser } from "./compo
 import { PreviewWait, matchPreviewWaitRoute } from "./components/PreviewWait";
 import { SettingsButton } from "./components/SettingsButton";
 import { TitleBar } from "./components/TitleBar";
-import { Settings, type SettingsSectionKey } from "./components/Settings";
+import { Settings } from "./components/Settings";
+import {
+	settingsPaletteActions,
+	type SettingsSectionKey,
+} from "./lib/settings-sections";
 import { SessionTabs, type ViewTab } from "./components/SessionTabs";
 import type { SubagentRef } from "./components/SubagentPane";
 import { SessionSplit, type SplitSide } from "./components/SessionSplit";
@@ -125,16 +131,19 @@ import { useInputAlerts } from "./hooks/useInputAlerts";
 import { useScrollEdge } from "./hooks/useScrollEdge";
 import { useLargeTitleHandoff } from "./hooks/useLargeTitle";
 import { initAlerts } from "./lib/notify";
-import { registerServiceWorker } from "./lib/push";
+import { onPushNavigate, registerServiceWorker } from "./lib/push";
 import {
 	archiveSessionApi,
 	deleteSessionApi,
 	renameSessionApi,
 	setSessionStatusApi,
+	newSessionApi,
 	fetchWorkspaces,
 	updateWorkspaceApi,
 	deleteWorkspaceApi,
 	fetchRepos,
+	fetchToolAccounts,
+	knownToolAccounts,
 	REPOS_CHANGED_EVENT,
 	resolveWorkspaceApi,
 	type OpenPr,
@@ -303,7 +312,6 @@ const SETTINGS_SECTIONS = new Set<SettingsSectionKey>([
 	"shortcuts",
 	"general",
 	"setup",
-	"identity",
 	"repos",
 	"members",
 	"models",
@@ -332,6 +340,7 @@ const LEGACY_SETTINGS_SECTIONS: Record<string, SettingsSectionKey> = {
 	composer: "preferences",
 	keychain: "myAccounts",
 	profile: "myAccounts",
+	identity: "general",
 };
 
 // Everything a session URL carries after `/session/`: the id, plus the
@@ -1155,6 +1164,20 @@ export function App(
 		connected,
 	});
 
+	// Tapping a push notification opens what it is about. The service worker
+	// hands the URL to this page instead of reloading the document, so the tap
+	// lands on that session rather than on whatever page the app was left on.
+	useEffect(() => {
+		if (!serviceWorker) return;
+		return onPushNavigate((url) => {
+			try {
+				navigateRef.current(parseRoute(new URL(url, location.origin).pathname));
+			} catch {
+				// A malformed URL is not worth throwing away the focus for.
+			}
+		});
+	}, [serviceWorker]);
+
 	// The "new session" ⌘K palette. It's an overlay driven by its own state (not a
 	// route), so it can open over any view; the <base>/new route still opens it
 	// so old links keep working.
@@ -1170,6 +1193,7 @@ export function App(
 		repo?: string;
 		branch?: string;
 		mode?: "ask" | "code" | "scratch";
+		mcpServers?: string[];
 	}>(() =>
 		route.view === "new" ? { open: true, prompt: route.prompt } : { open: false },
 	);
@@ -1179,7 +1203,7 @@ export function App(
 	const [draftFocusSeq, setDraftFocusSeq] = useState(0);
 	const paletteOpenRef = useRef(palette.open);
 	paletteOpenRef.current = palette.open;
-	const openPalette = React.useCallback((prompt?: string) => {
+	const openPalette = React.useCallback((prompt?: string, mcpServers?: string[]) => {
 		// This is the global new-session action. It must not inherit the workspace
 		// behind it: without workspaceId, NewSession creates a workspace with its
 		// first session. Its model combinations are safe to use as a picker source,
@@ -1192,6 +1216,7 @@ export function App(
 		setPalette({
 			open: true,
 			prompt,
+			...(mcpServers?.length ? { mcpServers } : {}),
 			...(modelWorkspaceId ? { modelWorkspaceId } : {}),
 		});
 	}, [route, sessions]);
@@ -1367,6 +1392,21 @@ export function App(
 	// The ⌘K command palette. Sessions, PRs, and app actions share one overlay
 	// driven by its own state so it can open over any view.
 	const [searchOpen, setSearchOpen] = useState(false);
+	const [commandMcpServers, setCommandMcpServers] = useState<string[]>(() =>
+		(knownToolAccounts() || []).map((server) => server.name),
+	);
+	useEffect(() => {
+		if (!searchOpen) return;
+		let live = true;
+		fetchToolAccounts()
+			.then(({ servers }) => {
+				if (live) setCommandMcpServers(servers.map((server) => server.name));
+			})
+			.catch(() => {});
+		return () => {
+			live = false;
+		};
+	}, [searchOpen]);
 	// The Desk overlay (⌘J / the floating desk button): a standing concierge
 	// session on top of whatever view is open.
 	const [deskOpen, setDeskOpen] = useState(false);
@@ -2703,7 +2743,7 @@ export function App(
 	/**
 	 * A workspace always has at least one tab. Close its last session and dismiss
 	 * its last pane and there is nothing left to put in the strip, so the
-	 * workspace home — the composer that starts the next session — takes the slot
+	 * workspace home, the composer that starts the next session, takes the slot
 	 * rather than leaving a workspace with no tabs at all. It is the only tab
 	 * whenever it exists, which is why it carries no × of its own.
 	 */
@@ -3009,6 +3049,58 @@ export function App(
 		excludeId: currentSession?.id,
 	});
 
+	async function createNewSessionFrom(
+		src: UnifiedSession,
+		mode: "share" | "stack" | "ask",
+	): Promise<string> {
+		const { id, session } = await newSessionApi(src.id, getCurrentUser(), mode);
+		const now = new Date().toISOString();
+		// Render the real tab from the endpoint response immediately. The fallback
+		// keeps the interaction working against a server that returns only the id.
+		inject(
+			session ?? {
+				...src,
+				id,
+				source: "opensession",
+				claudeSessionId: null,
+				codexThreadId: undefined,
+				title: "New session",
+				createdAt: now,
+				lastActivity: now,
+				isRunning: false,
+				transcriptPath: null,
+				startedBy: getCurrentUser(),
+				archived: false,
+				waitingForInput: false,
+				queuedCount: 0,
+				prUrl: undefined,
+				prState: undefined,
+				automation: undefined,
+				plainThreadId: undefined,
+				goal: undefined,
+				loop: undefined,
+				...(mode === "ask"
+					? {
+							branch: null,
+							worktreeDir: null,
+							mode: "ask" as const,
+						}
+					: {}),
+			},
+			{ sticky: true },
+		);
+		setPendingSessionId(id);
+		setPendingNewWorkspace(false);
+		clearTimeout(pendingTimer.current);
+		pendingTimer.current = setTimeout(() => {
+			setPendingSessionId(null);
+			unstick(id);
+		}, 30_000);
+		refresh();
+		navigate({ view: "session", id });
+		return id;
+	}
+
 	function openNewSessionInWorkspace(
 		src: UnifiedSession,
 		mode: "share" | "stack" | "ask",
@@ -3037,13 +3129,11 @@ export function App(
 		});
 	}
 
-	// Start a new session in the current workspace. The tab strip's + button and the
-	// SessionViewer ⋯ menu (the only reachable entry point on a phone, where the
-	// strip and its + are hidden/hover-revealed) both open its composer. The first
-	// prompt creates the session on the shared worktree by default, or stacked/Ask.
+	// Open a real sibling tab immediately. Its first prompt starts the engine, so
+	// the lightweight create does no model work and keeps the interaction quick.
 	const handleNewSession = async (
 		mode: "share" | "stack" | "ask",
-		_side: SplitSide | null = null,
+		side: SplitSide | null = null,
 	) => {
 		const src = currentSession || mainSession(naturalSessions);
 		if (!src) {
@@ -3065,7 +3155,17 @@ export function App(
 			}
 			return;
 		}
-		openNewSessionInWorkspace(src, mode);
+		try {
+			const id = await createNewSessionFrom(src, mode);
+			if (side === "right" && tabOrderKey && activeTabSplit)
+				saveTabSplit(tabOrderKey, {
+					...toStoredSplit(activeTabSplit),
+					right: [...activeTabSplit.right, id],
+					rightActive: id,
+				});
+		} catch (e) {
+			console.error("New session failed:", e);
+		}
 	};
 	const handleNewSessionRef = useRef(handleNewSession);
 	handleNewSessionRef.current = handleNewSession;
@@ -3486,7 +3586,7 @@ export function App(
 		...(currentSession
 			? [
 					{
-						id: "new-session",
+						id: "new-session-workspace",
 						label: "New session in this workspace",
 						description: "Share the current workspace and worktree",
 						category: "Actions" as const,
@@ -3721,6 +3821,30 @@ export function App(
 			icon: <IconGear size={18} />,
 			run: () => navigate({ view: "settings" }),
 		},
+		// Every Settings section, straight from the nav's own table — the palette
+		// used to reach three of them, and only because those three happen to have
+		// their own top-level routes.
+		...settingsPaletteActions({ admin: auth?.admin !== false }).map(
+			({ section, ...action }) => ({
+				...action,
+				run: () => navigate({ view: "settings", section }),
+			}),
+		),
+		...commandMcpServers
+			.slice()
+			.sort((a, b) => displayName(a).localeCompare(displayName(b)))
+			.map((server) => {
+				const name = displayName(server);
+				return {
+					id: `new-session-with-${server}`,
+					label: `New session with ${name}`,
+					description: `Start a session with only ${name} connected`,
+					category: "Tools" as const,
+					keywords: [server, name, "tool", "service", "connected"],
+					icon: <IconTile name={server} size={18} />,
+					run: () => openPalette(undefined, [server]),
+				};
+			}),
 	];
 	const openSession = (id: string, created?: UnifiedSession | null) => {
 		const known = sessions.some(
@@ -4925,6 +5049,7 @@ export function App(
 						forceRepo={palette.repo}
 						forceBranch={palette.branch}
 						forceMode={palette.mode}
+						initialMcpServers={palette.mcpServers}
 						onCreateStarted={(draft) => {
 							pendingCreateDraftRef.current = {
 								...draft,

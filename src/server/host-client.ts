@@ -98,12 +98,17 @@ export interface HostedRunOpts {
   forkSession?: boolean;
   resumeSessionAt?: string;
   mcpServers?: McpScope;
-  /** opensession-* servers to expose through the RPC proxy (interactive runs only). */
+  /** opensession-* servers to expose through the RPC proxy. Names must
+   *  resolve through the run-rpc builder: the interactive set, or the
+   *  fail-closed automation-bar set for automation-owned sessions. */
   proxyMcpServers?: string[];
   reposNote?: string;
   deniedTools?: Record<string, string>;
   confirmTools?: Record<string, string>;
   aws?: boolean;
+  /** Pool credentials for trusted run-spawned CLI tools (deepsec scans). */
+  claudeCliEnv?: boolean;
+  codexCliEnv?: boolean;
   author?: GitIdentity | null;
   user?: string;
   fallbackModel?: string;
@@ -114,6 +119,11 @@ export interface HostedRunOpts {
   accountId?: string;
   accountStrict?: boolean;
   usageCredits?: boolean;
+  /** Reviewer(s) for PRs the run opens (an automation session's policy). */
+  prReviewer?: string;
+  /** Trust boundary stamped on the spec + journal record: "automation" for
+   *  automation-owned sessions, defaults to interactive. */
+  trustProfile?: "interactive" | "automation";
   journalKind?: string;
   firstJournaledAt?: string;
   resumeAttempts?: number;
@@ -161,6 +171,8 @@ export async function* runAgentHosted(opts: HostedRunOpts): AsyncGenerator<Strea
     deniedTools: opts.deniedTools,
     confirmTools: opts.confirmTools,
     aws: opts.aws,
+    claudeCliEnv: opts.claudeCliEnv,
+    codexCliEnv: opts.codexCliEnv,
     author: opts.author,
     user: opts.user,
     fallbackModel: opts.fallbackModel,
@@ -169,6 +181,7 @@ export async function* runAgentHosted(opts: HostedRunOpts): AsyncGenerator<Strea
     accountId: opts.accountId,
     accountStrict: opts.accountStrict,
     usageCredits: opts.usageCredits,
+    prReviewer: opts.prReviewer,
     journal: {
       osSessionId: opts.osSessionId,
       kind: opts.journalKind || "prompt",
@@ -236,6 +249,8 @@ function hostedRunRecord(spec: RunHostSpec): ActiveRunRecord {
     deniedTools: spec.deniedTools,
     confirmTools: spec.confirmTools,
     aws: spec.aws,
+    claudeCliEnv: spec.claudeCliEnv,
+    codexCliEnv: spec.codexCliEnv,
     model: spec.model,
     selectedModel: spec.selectedModel ?? spec.model,
     transientFallback: spec.transientFallback,
@@ -244,6 +259,8 @@ function hostedRunRecord(spec: RunHostSpec): ActiveRunRecord {
     accountId: spec.accountId,
     accountStrict: spec.accountStrict,
     usageCredits: spec.usageCredits,
+    prReviewer: spec.prReviewer,
+    trustProfile: spec.trustProfile,
     fallbackModel: spec.fallbackModel,
     kind: spec.journalKind || "prompt",
     firstJournaledAt: spec.firstJournaledAt,
@@ -284,6 +301,8 @@ async function spawnHostRun(
     deniedTools: opts.deniedTools,
     confirmTools: opts.confirmTools,
     aws: opts.aws,
+    claudeCliEnv: opts.claudeCliEnv,
+    codexCliEnv: opts.codexCliEnv,
     author: opts.author,
     user: opts.user,
     fallbackModel: opts.fallbackModel,
@@ -292,6 +311,8 @@ async function spawnHostRun(
     accountId: opts.accountId,
     accountStrict: opts.accountStrict,
     usageCredits: opts.usageCredits,
+    prReviewer: opts.prReviewer,
+    trustProfile: opts.trustProfile,
     journalKind: opts.journalKind,
     firstJournaledAt: opts.firstJournaledAt || new Date().toISOString(),
     resumeAttempts: opts.resumeAttempts,

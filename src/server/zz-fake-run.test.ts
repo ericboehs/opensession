@@ -325,4 +325,41 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		expect(runState.getRunState(sid)).toBe("idle");
 		expect(sessionCache.isRunSettled(sid)).toBe(true);
 	});
+
+	test("a send after Stop delivers instead of parking in the queue", async () => {
+		if (!redirected) return;
+		const sid = "bks-zz-stop-then-send";
+		writeSessionFile(sid);
+		sessionCache.invalidateSessionsCache();
+		const fake = fakeEngineMod.makeFakeEngine([
+			{ kind: "clean", engineSessionId: "ses_zz_stop", text: ["after the stop"] },
+		]);
+		agentRunner.__setEngineForTest(fake.engine);
+
+		// The user pressed Stop: the latch parks the queue (ws-handlers "cancel").
+		queueState.stoppedSessions.add(sid);
+		runSession.enqueuePrompt(
+			sid,
+			queueState.queueItem({ content: "parked", user: "Test" }),
+		);
+		await runSession.drainQueue(sid);
+		expect(fake.calls).toHaveLength(0);
+		expect(queueState.promptQueues.get(sid)?.length ?? 0).toBe(1);
+
+		// The next explicit send lifts it at intake, the way every human send
+		// path does. Without that lift the message below is queued forever:
+		// only runSessionPrompt clears the latch, and the drain is what calls it.
+		queueState.liftUserStop(sid);
+		runSession.enqueuePrompt(
+			sid,
+			queueState.queueItem({ content: "second try", user: "Test" }),
+		);
+		await runSession.drainQueue(sid);
+
+		expect(fake.calls).toHaveLength(1);
+		expect(fake.calls[0].prompt).toContain("parked");
+		expect(fake.calls[0].prompt).toContain("second try");
+		expect(queueState.promptQueues.get(sid)?.length ?? 0).toBe(0);
+		expect(queueState.stoppedSessions.has(sid)).toBe(false);
+	});
 });

@@ -421,7 +421,11 @@ private struct WorkflowAgentTranscriptView: View {
     /// A live agent keeps writing; a finished one is read once.
     let keepsPolling: Bool
 
-    @AppStorage("os1.appearance.turnActivity") private var turnActivity = "auto"
+    @AppStorage("os1.appearance.turnActivity") private var turnWork = "running"
+    @AppStorage("os1.appearance.toolCalls") private var toolCalls = "folded"
+    private var turnActivity: TurnActivity {
+        TurnActivity(work: turnWork, tools: toolCalls)
+    }
 
     @State private var blocks: [TranscriptBlock] = []
     @State private var loaded = false
@@ -480,7 +484,7 @@ private struct WorkflowAgentTranscriptView: View {
                         worktreeDir: nil,
                         foldState: { folds.fold(for: $0, preference: turnActivity) },
                         expansionState: { folds.expansion(id: $0, defaultExpanded: $1) },
-                        showsMessagesWhenFolded: turnActivity == "messages"
+                        activity: turnActivity
                     )
                     .id(block.id)
                 }

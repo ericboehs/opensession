@@ -20,10 +20,7 @@ export function IntegrationsPanel() {
 	const { status, failed } = setup;
 	return (
 		<SettingsPanel className="relative">
-			<SettingsHeader
-				title="Integrations"
-				description="Connect agent tools and event sources."
-			/>
+			<SettingsHeader title="Integrations" />
 			{!status ? (
 				// A failure is an alert, not a quiet label under a spinner: it used
 				// to render in the loading register, so the sentence saying the

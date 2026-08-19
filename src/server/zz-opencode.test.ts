@@ -28,8 +28,8 @@ import { STRIPE_CONFIRM_TOOLS, filterMcpServers } from "./runner-shared";
 import { DESK_NOTE } from "./desk";
 import {
   automationDeniedTools,
-  opencodeAutomationModel,
-  DEFAULT_OPENCODE_AUTOMATION_MODEL,
+  automationModel,
+  DEFAULT_PI_AUTOMATION_MODEL,
 } from "./automations";
 import {
   flattenMessageText,
@@ -555,32 +555,31 @@ describe("opencodeDeniedToolIds", () => {
   });
 });
 
-describe("opencodeAutomationModel (automations dispatch on opencode)", () => {
-  // The live ~/.opensession-opencode.json has the bridge enabled; these
-  // assertions describe the bridged mapping (the fail-safe path is exercised
-  // only when the bridge is off, which would flip claude tiers to passthrough).
-  test("tier-preserving mapping", () => {
-    expect(opencodeAutomationModel("claude-sonnet-4-6")).toBe(
-      "opencode/anthropic/claude-sonnet-4-6"
-    );
-    expect(opencodeAutomationModel("claude-fable-5")).toBe("opencode/anthropic/claude-fable-5");
-    expect(opencodeAutomationModel("gpt-5.5")).toBe("opencode/openai/gpt-5.5");
-  });
-  test("unset model gets the automation default", () => {
-    expect(opencodeAutomationModel(undefined)).toBe(DEFAULT_OPENCODE_AUTOMATION_MODEL);
-    expect(opencodeAutomationModel("")).toBe(DEFAULT_OPENCODE_AUTOMATION_MODEL);
-  });
-  test("already-opencode ids and unknown shapes pass through", () => {
-    expect(opencodeAutomationModel("opencode/anthropic/claude-haiku-4-5")).toBe(
-      "opencode/anthropic/claude-haiku-4-5"
-    );
-    expect(opencodeAutomationModel("codex-mini")).toBe("codex-mini");
-  });
-  test("pi ids name their engine — pass through untouched", () => {
-    expect(opencodeAutomationModel("pi/anthropic/claude-sonnet-5")).toBe(
+describe("automationModel (automations dispatch on Pi)", () => {
+  test("maps native tiers onto Pi", () => {
+    expect(automationModel("claude-sonnet-5")).toBe(
       "pi/anthropic/claude-sonnet-5"
     );
-    expect(opencodeAutomationModel("pi/openai/gpt-5.5-codex")).toBe("pi/openai/gpt-5.5-codex");
+    expect(automationModel("claude-fable-5")).toBe("pi/anthropic/claude-fable-5");
+    expect(automationModel("gpt-5.6-terra")).toBe("pi/openai/gpt-5.6-terra");
+  });
+  test("unset model gets the Pi automation default", () => {
+    expect(automationModel(undefined)).toBe(DEFAULT_PI_AUTOMATION_MODEL);
+    expect(automationModel("")).toBe(DEFAULT_PI_AUTOMATION_MODEL);
+  });
+  test("migrates legacy OpenCode ids while preserving provider and tier", () => {
+    expect(automationModel("opencode/anthropic/claude-haiku-4-5")).toBe(
+      "pi/anthropic/claude-haiku-4-5"
+    );
+    expect(automationModel("opencode/openai/gpt-5.6-sol")).toBe(
+      "pi/openai/gpt-5.6-sol"
+    );
+  });
+  test("Pi ids pass through untouched", () => {
+    expect(automationModel("pi/anthropic/claude-sonnet-5")).toBe(
+      "pi/anthropic/claude-sonnet-5"
+    );
+    expect(automationModel("pi/openai/gpt-5.6-luna")).toBe("pi/openai/gpt-5.6-luna");
   });
 });
 
@@ -753,7 +752,7 @@ describe("buildRunInstructions", () => {
       const s = buildRunInstructions({ isAsk });
       expect(s).toContain("## Browser processes must be bounded");
       expect(s).toContain("Never launch Chrome/Chromium or Xvfb directly");
-      expect(s).toContain("bun scripts/cdp-browser.ts start");
+      expect(s).toContain("Prefer the repository's own screenshot or browser tooling");
       expect(s).toContain("Never reuse another session's CDP port or browser profile");
     }
   });
@@ -777,6 +776,22 @@ describe("buildRunInstructions", () => {
     // A rejected reviewer must not cost the PR itself.
     expect(s).toContain("never drop the PR over it");
   });
+  // A user asking for "a new session" means a detached session in their own
+  // sidebar, not an in-process subagent that dies with this run.
+  test("a user asking for a new session gets create_session, not a subagent", () => {
+    const s = buildRunInstructions({
+      isAsk: false,
+      inProcessMcp: { "opensession-sessions": {} },
+    });
+    expect(s).toContain('When the USER asks for "a new session"');
+    expect(s).toContain("Use `create_session` for that");
+    expect(s).toContain("Never satisfy that request with an in-process");
+    expect(s).toContain("When it is ambiguous, create the session");
+  });
+  test("runs without the sessions server are told nothing about create_session", () => {
+    const s = buildRunInstructions({ isAsk: false });
+    expect(s).not.toContain('When the USER asks for "a new session"');
+  });
   test("no reviewer configured leaves the PR section alone", () => {
     const s = buildRunInstructions({ isAsk: false, osSessionId: "os-1" });
     expect(s).toContain("## PR attribution");
@@ -799,21 +814,22 @@ describe("buildRunInstructions", () => {
     });
     expect(s).toContain("a static visual change needs at least one after screenshot");
     expect(s).toContain("Retina or device-native resolution");
-    expect(s).toContain("`bun scripts/capture-ui.ts`");
+    expect(s).toContain("use the repository's own capture or preview command");
     expect(s).toContain("why it matters");
     expect(s).toContain("deliberate Share to Slack action");
   });
   // Native changes shipped without walkthroughs while web changes got them:
-  // the instruction named only the web capture script, so an os1-ios run faced
-  // an undocumented Mac-node chain and skipping looked reasonable every time.
-  test("the walkthrough instruction names the native capture script too", () => {
+  // the instruction assumed a web-shaped capture, so a mobile run faced an
+  // undocumented build chain and skipping looked reasonable every time. The
+  // command itself is per-repo (its AGENTS.md names it), so the run text only
+  // has to send the model looking for one.
+  test("the walkthrough instruction covers native and mobile changes too", () => {
     const s = buildRunInstructions({
       isAsk: false,
       inProcessMcp: { "opensession-walkthrough": {} },
     });
-    expect(s).toContain("`bun scripts/capture-ios.ts`");
-    expect(s).toContain("os1-ios/");
-    expect(s).toContain("--platform mac");
+    expect(s).toContain("A native or mobile app change is exactly the one that gets skipped");
+    expect(s).toContain("look for that command before deciding it is too much work");
     expect(s).toContain("deliberate Share to Slack action");
   });
   // Kent kept waiting for walkthroughs on design work that never came: the old

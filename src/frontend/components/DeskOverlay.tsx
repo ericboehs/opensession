@@ -19,9 +19,8 @@ import { getDeskVoicePref, onDeskVoiceChanged } from "../lib/desk-voice-pref";
  *
  * Persistence is the point: after the first summon the body STAYS MOUNTED
  * (hidden, not unmounted) — the session's scoped socket keeps watching, so every
- * later ⌘J is instant with the transcript already in place. No enter/exit
- * animations
- * either; summon-dismiss-summon should feel like toggling a HUD.
+ * later ⌘J is instant with the transcript already in place. The desktop panel
+ * uses the shared dialog's subtle scale transition when summoned.
  *
  * The Desk is a normal durable session (desk: true, hidden from the session
  * lists) pinned to a fast model+effort server-side; "Clear" sets a display
@@ -47,7 +46,6 @@ function DeskBody({
 	const [sessionId, setSessionId] = useState<string | null>(null);
 	const [clearedAt, setClearedAt] = useState<string | undefined>(undefined);
 	const [ensureError, setEnsureError] = useState<string | null>(null);
-	const rootRef = useRef<HTMLDivElement | null>(null);
 
 	// Voice mode (Settings → Desk voice): a live GPT Realtime call layered on
 	// this same Desk session. The call mirrors its transcript into the session,
@@ -118,14 +116,6 @@ function DeskBody({
 		};
 	}, [user]);
 
-	// On summon: drop the caret straight into the composer (desktop — a phone
-	// keyboard popping open unasked is hostile).
-	useEffect(() => {
-		if (!active || phone) return;
-		const ta = rootRef.current?.querySelector("textarea");
-		(ta as HTMLTextAreaElement | null)?.focus();
-	}, [active, phone]);
-
 	async function clearSession() {
 		try {
 			const res = await fetch(`${BASE_PATH}/api/desk/clear`, {
@@ -141,7 +131,7 @@ function DeskBody({
 	return (
 		// flex-1 rather than h-full: on phone the sheet's drag grabber is a
 		// sibling above us, so we take the remainder instead of the whole panel.
-		<div ref={rootRef} className="flex min-h-0 flex-1 flex-col">
+		<div className="flex min-h-0 flex-1 flex-col">
 			{/* Header */}
 			<div className="flex shrink-0 items-center gap-2.5 border-b border-divider px-4 py-2.5">
 				<IconDesk size={22} className="text-dim" />
@@ -157,21 +147,6 @@ function DeskBody({
 							? (voiceError ?? "Voice call failed")
 							: { connecting: "Connecting…", listening: "Listening", thinking: "Thinking…", speaking: "Speaking", action: "Working…" }[voiceState]}
 					</span>
-				)}
-				{voiceEnabled && (
-					<Button
-						variant="ghost"
-						size="sm"
-						className={`shrink-0 ${voiceActive ? "text-fg" : "text-faint"}`}
-						icon={<IconMic size={20} />}
-						onClick={toggleVoice}
-						title={
-							voiceActive
-								? "End the voice call"
-								: "Talk to your Desk (GPT Realtime)"
-						}
-						aria-label={voiceActive ? "End voice call" : "Start voice call"}
-					/>
 				)}
 				<Button
 					variant="ghost"
@@ -216,6 +191,26 @@ function DeskBody({
 					<DeskConversation
 						sessionId={sessionId}
 						presenceActive={active}
+						autoFocus={active && !phone}
+						trailingActions={
+							voiceEnabled ? (
+								<Button
+									variant="ghost"
+									size="lg"
+									className={`shrink-0 ${voiceActive ? "text-fg" : "text-faint"}`}
+									icon={<IconMic size={20} />}
+									onClick={toggleVoice}
+									title={
+										voiceActive
+											? "End the voice call"
+											: "Talk to your Desk (GPT Realtime)"
+									}
+									aria-label={
+										voiceActive ? "End voice call" : "Start voice call"
+									}
+								/>
+							) : undefined
+						}
 						effort="low"
 						hideBefore={clearedAt}
 						voiceSend={(text) =>
@@ -261,10 +256,7 @@ export function DeskOverlay({
 			label="Desk"
 			// The body stays mounted after the first summon — see the module doc.
 			keepMounted
-			// ⌘J is a HUD toggle, not a dialog: summon-dismiss-summon stays
-			// instant on desktop. The phone sheet animates like every other
-			// sheet, so its drag-to-dismiss has something to follow.
-			desktopTransition="none"
+			desktopTransition="scale-drop"
 			// bg-raised on both breakpoints, overriding the sheet's bg-surface:
 			// the Desk's controls are recessed bg-surface inputs, which would
 			// dissolve into a bg-surface panel.

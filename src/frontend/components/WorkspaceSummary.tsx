@@ -3,6 +3,7 @@ import {
 	fetchGitStatus,
 	fetchPr,
 	fetchSessionAssets,
+	setSessionReviewerApi,
 	sessionAssetPreviewUrl,
 	type SessionAssetFile,
 } from "../lib/api";
@@ -10,11 +11,26 @@ import { fetchDiff } from "../lib/api";
 import { commitPrompt } from "../lib/commit-prompt";
 import { getCurrentUser } from "./UserPicker";
 import { pollWhileVisible, PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
-import { summarizeChecks } from "./PrStatusBar";
+import { PrStatusBar } from "./PrStatusBar";
+import { reviewerStateMeta } from "./pr/PrRows";
+import { UserAvatar } from "./UserAvatar";
+import {
+	personNameForGithubLogin,
+	personNameForKey,
+	usePeople,
+	useReviewTeams,
+} from "../lib/people";
+import { isBotAuthor } from "../lib/pr-comments";
 import { Popover } from "../ui/popover";
+import { Menu } from "../ui/menu";
 import { Tooltip } from "../ui/tooltip";
 import { cn } from "../ui/cn";
-import type { GitStatusInfo, PrDetails, UnifiedSession } from "../lib/types";
+import type {
+	GitStatusInfo,
+	PrDetails,
+	PrReviewer,
+	UnifiedSession,
+} from "../lib/types";
 import {
 	WS_SUMMARY_ACTION,
 	WS_SUMMARY_CARD,
@@ -22,33 +38,29 @@ import {
 	WS_SUMMARY_DIVIDER,
 	WS_SUMMARY_ICON,
 	WS_SUMMARY_LABEL,
+	WS_SUMMARY_RAIL,
 	WS_SUMMARY_ROW,
 	WS_SUMMARY_SECTION,
 	WS_SUMMARY_STATE,
 	WS_SUMMARY_THUMB,
 } from "../lib/workspace-summary-classes";
 import {
-	IconArrowUp,
-	IconArrowDown,
-	IconBranches,
-	IconCheck,
+	IconChevronDown,
 	IconClock,
 	IconFile,
-	IconGitMerge,
-	IconGlobe,
 	IconListCircles,
-	IconPullRequest,
-	IconRepo,
+	IconPeople,
 	IconStack,
-	IconTerminal,
-	IconX,
 } from "./icons";
 
 /**
  * The session header's compact stand-in for the right Workspace panel: one
- * floating card carrying both halves of what that panel holds. Where the work
- * stands (changes, branch, PR, checks, conflicts, sources) and the places it
- * can take you (portals, agents, terminal).
+ * floating card carrying what that panel carries, in three bands.
+ *
+ * 1. The work itself, unlabelled: how big the diff is, whether anything is
+ *    uncommitted, and where the pull request stands with its one action.
+ * 2. Places, which is the panel's bottom bar: portals, agents, terminal.
+ * 3. Assets, the session's own files.
  *
  * Why it exists: the Workspace panel is a third of the pane, so the only way
  * to check "did the checks pass / is there a conflict / is anything still
@@ -58,26 +70,25 @@ import {
  * pane's own gutter, so both side columns can stay shut and the reading column
  * stays wide.
  *
- * It carries the panel's whole set of destinations rather than a chosen few.
- * A smaller version of a place is only useful if it is the same place: a card
- * that answered five of the panel's questions and stayed quiet about the other
- * three would send you to the panel for the missing ones, which is the thing
- * it exists to avoid. The Places band is the panel's bottom bar, one row each,
- * with the same live counts on the same two rows.
+ * What it deliberately does NOT hold: the repo and the branch. They were the
+ * two rows that never changed while you worked, and a summary is for what
+ * moves. Both are on the session header a few pixels above, and the branch is
+ * in the panel's Info section.
  *
- * It is deliberately read-and-route, not a second control surface: every row
- * opens the panel page that owns the real actions, and the only thing it does
- * itself is ask the session to commit (which is a sentence, not a git plumbing
- * call). Duplicating merge/confirm state here would mean two places that can
- * disagree about whether a merge is in flight, which is why the header's PR
- * strip keeps merge and push: this card reports, that strip commits.
+ * The PR block is `PrStatusBar` in its `summary` variant rather than rows of
+ * this file's own. Everything behind a merge button (headline derivation, the
+ * stack merge plan, confirm-then-merge, the ask-the-session paths) belongs to
+ * that component, and re-deriving it here would be a second thing that can be
+ * wrong about whether a merge is in flight. It replaced hand-written checks,
+ * conflict, ahead and behind rows that could report a state without being able
+ * to do anything about it.
  *
  * Data is fetched only while the card is open, which is what keeps the polls
- * off every session that merely has the header. The PR's own line stats feed
- * the Changes row when there is a PR, because that number rides along with the
- * PR fetch where a worktree diff would be a second, much heavier request for
- * the same two integers. With no PR (or no branch yet) it falls back to the
- * worktree diff.
+ * off every session that merely has the header. What is left to fetch here is
+ * small: the PR's own line stats feed the diff row, because that number rides
+ * along with the PR fetch where a worktree diff would be a second, much
+ * heavier request for the same two integers. With no PR (or no branch yet) it
+ * falls back to the worktree diff.
  */
 
 interface Props {
@@ -90,19 +101,30 @@ interface Props {
 	 * the right-hand panel belongs.
 	 */
 	anchor?: React.RefObject<HTMLElement | null>;
-	/** Open the right panel on a page. Most rows' destination. */
+	/** Open the right panel on a page. */
 	onOpenPanelTab: (tab: "info" | "changes") => void;
 	/** Open the Review tab (PR + its checks). */
 	onOpenPr: () => void;
 	onOpenChecks: () => void;
-	/** Open the Assets tab (the Sources list's destination). */
+	/** Open the Assets tab (the Assets list's destination). */
 	onOpenAssets?: () => void;
-	/** The panel's own bottom-bar places, and their live counts. */
-	onOpenPortals?: () => void;
-	onOpenAgents?: () => void;
-	onOpenTerminal?: () => void;
-	livePortals?: number;
-	runningAgents?: number;
+	/** Archive through the owning viewer, so it can select the neighbouring
+	 *  sidebar row. Offered by the PR block once the work has landed. */
+	onArchive?: () => void;
+	/**
+	 * The teammate this session's review was handed to, if anyone. Open
+	 * Session's own request, which is a different thing from the reviewers on
+	 * the pull request: this one is a person somebody here asked, and it is the
+	 * only one of the two that can be pending with no PR in sight.
+	 *
+	 * The workspace's request may live on a sibling session, so the viewer
+	 * resolves it (see `effectiveReview`) and hands the answer down.
+	 */
+	reviewRequest?: UnifiedSession["reviewRequest"] | null;
+	/** Workspace-wide GitHub requests, including requests held by a sibling session. */
+	prReviewRequested?: string[];
+	/** Live run state, so the PR block refetches the moment a turn ends. */
+	running?: boolean;
 	/** Prompt the session (Commit) via WS `prompt`. Absent while disconnected. */
 	send?: (msg: any) => void;
 	/** Bumped when a webhook or an auto-push reports workspace activity. */
@@ -131,57 +153,142 @@ function emptyData(): SummaryData {
 }
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|avif|svg)$/i;
+const OPEN_KEY = "opensession-workspace-summary-open";
 
-/** How many sources the card lists before it defers to the Assets tab. The
- *  card scrolls, so this is about the list staying a summary rather than about
- *  the height it would take. */
-const SOURCES_SHOWN = 6;
+/**
+ * One identity per reviewer, merged across the two ways a review lands on
+ * someone. Human identities are collected under one labelled band; bots and
+ * teams keep their own status rows.
+ *
+ * The pull request has reviewers, and Open Session has its own "please review
+ * this" pointed at a teammate. They are not alternatives: the picker mirrors
+ * its picks into GitHub's reviewer list, so the same person arrives from both
+ * sides, once as a login and once as a name. Rendered as two lists that reads
+ * as "johnnylinsf · Awaiting review" directly above "Johnny · Review asked",
+ * which is one person, one fact, and two rows saying it differently.
+ *
+ * So: one row per person. GitHub's state wins when they have actually
+ * submitted something, because "Approved" says more than "we asked"; the
+ * request supplies the state otherwise, and the name, which is what a
+ * teammate is called here.
+ *
+ * GitHub also lists a person twice when they answer a request they were
+ * already on, so the latest state wins per login before any of this.
+ */
+const REVIEWERS_SHOWN = 4;
 
-/** The PR glyph's colour: where the pull request itself stands. */
-function prTone(pr: PrDetails): string {
-	if (pr.state === "MERGED") return "text-purple";
-	if (pr.state === "CLOSED") return "text-dim";
-	if (pr.isDraft) return "text-faint";
-	return "text-green";
+type ReviewLine = {
+	key: string;
+	name: string;
+	login?: string;
+	state: string;
+	tone: string;
+	human: boolean;
+};
+
+function reviewLines(
+	pr: PrDetails | null,
+	request: UnifiedSession["reviewRequest"] | null | undefined,
+	prReviewRequested: string[] | undefined,
+): ReviewLine[] {
+	const lines: ReviewLine[] = [];
+	const seen = new Map<string, ReviewLine>();
+	const add = (line: ReviewLine) => {
+		const existing = seen.get(line.key);
+		if (existing) return existing;
+		seen.set(line.key, line);
+		lines.push(line);
+		return line;
+	};
+
+	// Whoever we asked, first: this is the row that exists even with no pull
+	// request open at all.
+	const requestedPeople = request?.recipients?.length
+		? request.recipients
+		: [request?.to];
+	for (const key of requestedPeople) {
+		if (!key) continue;
+		const name = personNameForKey(key);
+		add({
+			key: name.toLowerCase(),
+			name,
+			state: request?.accepted ? "Signed off" : "Review asked",
+			tone: request?.accepted ? "text-green" : "text-dim",
+			human: true,
+		});
+	}
+	for (const key of prReviewRequested || []) {
+		if (!key) continue;
+		const name = personNameForKey(key);
+		add({
+			key: name.toLowerCase(),
+			name,
+			state: "Awaiting review",
+			tone: "text-dim",
+			human: true,
+		});
+	}
+
+	// Then the PR's own, folded onto the same person where they match. Only
+	// while it is open: once it lands the review is history, and the card is for
+	// what is still live.
+	if (pr?.state === "OPEN") {
+		const byLogin = new Map<string, PrReviewer>();
+		for (const reviewer of pr.reviewers || []) {
+			const previous = byLogin.get(reviewer.login);
+			if (!previous || previous.state === "PENDING")
+				byLogin.set(reviewer.login, reviewer);
+		}
+		for (const reviewer of byLogin.values()) {
+			const meta = reviewerStateMeta(reviewer.state);
+			const personName = reviewer.isTeam
+				? null
+				: personNameForGithubLogin(reviewer.login);
+			const name = personName || reviewer.login;
+			const line = add({
+				key: name.toLowerCase(),
+				name,
+				login: reviewer.isTeam ? undefined : reviewer.login,
+				state: meta.label,
+				tone: meta.tone === "muted" ? "text-dim" : `text-${meta.tone}`,
+				human: !reviewer.isTeam && !isBotAuthor(reviewer.login),
+			});
+			// Merged onto a request row: keep the request's name, take GitHub's
+			// verdict once there is one to take.
+			if (line.state !== meta.label && reviewer.state !== "PENDING") {
+				line.state = meta.label;
+				line.tone = meta.tone === "muted" ? "text-dim" : `text-${meta.tone}`;
+				line.login = line.login || reviewer.login;
+			}
+			line.human ||= !reviewer.isTeam && !isBotAuthor(reviewer.login);
+		}
+	}
+	return lines;
 }
 
-/** The word at the row's right edge: the review verdict when there is one to
- *  report, otherwise the PR's own state. A draft says so before anything else,
- *  since an approval on a draft still cannot ship. */
-function prStatusLabel(pr: PrDetails): { label: string; tone: string } {
-	if (pr.state === "MERGED") return { label: "Merged", tone: "text-purple" };
-	if (pr.state === "CLOSED") return { label: "Closed", tone: "text-dim" };
-	if (pr.isDraft) return { label: "Draft", tone: "text-dim" };
-	if (pr.reviewDecision === "CHANGES_REQUESTED")
-		return { label: "Changes requested", tone: "text-red" };
-	if (pr.reviewDecision === "APPROVED")
-		return { label: "Approved", tone: "text-green" };
-	if (pr.reviewDecision === "REVIEW_REQUIRED")
-		return { label: "Review needed", tone: "text-dim" };
-	return { label: "Open", tone: "text-dim" };
-}
+/** How many assets the card lists before it defers to the Assets tab. The card
+ *  scrolls, so this is about the list staying a summary rather than about the
+ *  height it would take. */
+const ASSETS_SHOWN = 6;
 
 export function WorkspaceSummary({
 	session,
 	anchor,
-	onOpenPanelTab,
-	onOpenPr,
-	onOpenChecks,
-	onOpenAssets,
-	onOpenPortals,
-	onOpenAgents,
-	onOpenTerminal,
-	livePortals = 0,
-	runningAgents = 0,
-	send,
-	refreshTick,
 	onOpenChange,
 	tabStripVisible,
+	...body
 }: Props) {
-	const [open, setOpen] = useState(false);
-	useEffect(() => () => onOpenChange?.(false), [onOpenChange]);
+	const [open, setOpen] = useState(
+		() => localStorage.getItem(OPEN_KEY) === "true",
+	);
+	const initialOpen = useRef(open);
+	useEffect(() => {
+		onOpenChange?.(initialOpen.current);
+		return () => onOpenChange?.(false);
+	}, [onOpenChange]);
 	function changeOpen(nextOpen: boolean) {
 		setOpen(nextOpen);
+		localStorage.setItem(OPEN_KEY, String(nextOpen));
 		onOpenChange?.(nextOpen);
 	}
 	return (
@@ -206,8 +313,8 @@ export function WorkspaceSummary({
 				anchor={anchor}
 				// Keep the usual 8px air below whichever chrome row is lowest. The
 				// desktop tab strip is 40px tall and sits after the header's own 8px
-				// inset, so clear both before adding the final 8px gap.
-				sideOffset={tabStripVisible ? 56 : 8}
+				// inset, so clear both before adding 16px of breathing room.
+				sideOffset={tabStripVisible ? 64 : 8}
 				elevation="lg"
 				className={WS_SUMMARY_CARD}
 				initialFocus
@@ -216,17 +323,7 @@ export function WorkspaceSummary({
 				    session that merely has the header. */}
 				<SummaryBody
 					session={session}
-					onOpenPanelTab={onOpenPanelTab}
-					onOpenPr={onOpenPr}
-					onOpenChecks={onOpenChecks}
-					onOpenAssets={onOpenAssets}
-					onOpenPortals={onOpenPortals}
-					onOpenAgents={onOpenAgents}
-					onOpenTerminal={onOpenTerminal}
-					livePortals={livePortals}
-					runningAgents={runningAgents}
-					send={send}
-					refreshTick={refreshTick}
+					{...body}
 					close={() => changeOpen(false)}
 				/>
 			</Popover.Popup>
@@ -240,11 +337,10 @@ function SummaryBody({
 	onOpenPr,
 	onOpenChecks,
 	onOpenAssets,
-	onOpenPortals,
-	onOpenAgents,
-	onOpenTerminal,
-	livePortals = 0,
-	runningAgents = 0,
+	onArchive,
+	reviewRequest,
+	prReviewRequested,
+	running,
 	send,
 	refreshTick,
 	close,
@@ -257,6 +353,9 @@ function SummaryBody({
 		() => lastKnown.get(session.id) ?? emptyData(),
 	);
 	const [prompted, setPrompted] = useState(false);
+	const [selectedReview, setSelectedReview] = useState(reviewRequest ?? null);
+	const [reviewError, setReviewError] = useState<string | null>(null);
+	const [reviewBusy, setReviewBusy] = useState(false);
 	const updateData = useCallback(
 		(patch: Partial<SummaryData>) => {
 			if (activeSessionId.current !== session.id) return;
@@ -312,16 +411,16 @@ function SummaryBody({
 	useEffect(() => {
 		if (refreshTick) load();
 	}, [refreshTick, load]);
+	useEffect(() => {
+		setSelectedReview(reviewRequest ?? null);
+		setReviewError(null);
+	}, [reviewRequest?.to, reviewRequest?.at, reviewRequest?.accepted?.at]);
 
 	const { pr, git, assets, diff } = data;
 	const additions = pr ? pr.additions : (diff?.additions ?? 0);
 	const deletions = pr ? pr.deletions : (diff?.deletions ?? 0);
 	const changedFiles = pr ? pr.changedFiles : (diff?.files ?? 0);
-	const checks = summarizeChecks(pr);
 	const dirty = git?.uncommittedFiles ?? 0;
-	const ahead = git?.ahead ?? 0;
-	const behind = git?.behindBase ?? 0;
-	const conflicted = pr?.mergeable === "CONFLICTING";
 
 	/** Route somewhere else and get out of the way. A card that stayed open
 	 *  over the thing it just opened would have to be dismissed by hand. */
@@ -342,21 +441,56 @@ function SummaryBody({
 		setTimeout(() => setPrompted(false), 4000);
 	}
 
-	const branch = git?.branch || session.branch;
-	const sources = assets.slice(0, SOURCES_SHOWN);
-	const places = onOpenPortals || onOpenAgents || onOpenTerminal;
+	// The roster arrives async and the name lookup below reads it, so subscribe
+	// here or a reviewer stays a bare person key until something else happens to
+	// re-render the card.
+	const people = usePeople();
+	const reviewTeams = useReviewTeams();
+	const reviewers = reviewLines(pr, selectedReview, prReviewRequested);
+	const humanReviewers = reviewers
+		.filter((reviewer) => reviewer.human)
+		.slice(0, REVIEWERS_SHOWN);
+	const otherReviewers = reviewers
+		.filter((reviewer) => !reviewer.human)
+		.slice(0, REVIEWERS_SHOWN);
+
+	const shown = assets.slice(0, ASSETS_SHOWN);
+
+	function pickReviewer(name: string | null, recipients?: string[]) {
+		if (reviewBusy) return;
+		const previous = selectedReview;
+		const next = name
+			? {
+					to: name,
+					...(recipients ? { recipients } : {}),
+					by: getCurrentUser(),
+					at: new Date().toISOString(),
+				}
+			: null;
+		setSelectedReview(next);
+		setReviewError(null);
+		setReviewBusy(true);
+		setSessionReviewerApi(session.id, name, getCurrentUser())
+			.catch((error: any) => {
+				setSelectedReview(previous);
+				setReviewError(error?.message || "Failed to set reviewer");
+			})
+			.finally(() => setReviewBusy(false));
+	}
 
 	return (
 		<>
-			<div className={WS_SUMMARY_SECTION}>Workspace</div>
-
 			{changedFiles > 0 && (
 				<button
 					className={WS_SUMMARY_ROW}
 					onClick={() => go(() => onOpenPanelTab("changes"))}
 				>
-					<IconFile size={15} className={WS_SUMMARY_ICON} />
-					<span className={WS_SUMMARY_LABEL}>Changes</span>
+					<span className={WS_SUMMARY_RAIL}>
+						<IconFile size={20} className={WS_SUMMARY_ICON} />
+					</span>
+					<span className={WS_SUMMARY_LABEL}>
+						{changedFiles} file{changedFiles === 1 ? "" : "s"} changed
+					</span>
 					<span className={WS_SUMMARY_COUNT}>
 						<span className="text-green">+{additions}</span>{" "}
 						<span className="text-red">−{deletions}</span>
@@ -364,193 +498,156 @@ function SummaryBody({
 				</button>
 			)}
 
-			{session.repo && (
-				<button
-					className={WS_SUMMARY_ROW}
-					onClick={() => go(() => onOpenPanelTab("info"))}
-				>
-					<IconRepo size={15} className={WS_SUMMARY_ICON} />
-					<span className={WS_SUMMARY_LABEL}>{session.repo}</span>
-				</button>
-			)}
-
-			{branch && (
-				<button
-					className={WS_SUMMARY_ROW}
-					onClick={() => {
-						navigator.clipboard?.writeText(branch).catch(() => {});
-					}}
-					title={branch}
-				>
-					<IconBranches size={15} className={WS_SUMMARY_ICON} />
-					<span className={WS_SUMMARY_LABEL}>{branch}</span>
-					<span
-						className={cn(
-							WS_SUMMARY_ACTION,
-							"opacity-0 group-hover/ws:opacity-100",
-						)}
-					>
-						Copy
-					</span>
-				</button>
-			)}
-
 			{dirty > 0 && (
 				<button className={WS_SUMMARY_ROW} onClick={askCommit} disabled={!send}>
-					<IconClock size={15} className={WS_SUMMARY_ICON} />
+					<span className={WS_SUMMARY_RAIL}>
+						<IconClock size={20} className={WS_SUMMARY_ICON} />
+					</span>
 					<span className={WS_SUMMARY_LABEL}>
 						{prompted
 							? "Asked to commit"
-							: `Commit ${dirty} file${dirty === 1 ? "" : "s"}`}
+							: `${dirty} file${dirty === 1 ? "" : "s"} uncommitted`}
 					</span>
 					{!prompted && <span className={WS_SUMMARY_ACTION}>Commit</span>}
 				</button>
 			)}
 
-			{ahead > 0 && (
-				<div className={WS_SUMMARY_ROW}>
-					<IconArrowUp size={15} className={WS_SUMMARY_ICON} />
-					<span className={WS_SUMMARY_LABEL}>
-						Ahead by {ahead} commit{ahead === 1 ? "" : "s"}
-					</span>
-				</div>
-			)}
+			{/* Which PR, where it stands, and the one thing to do about it. The
+			    strip owns all three; this card only says where they go. */}
+			<PrStatusBar
+				variant="summary"
+				sessionId={session.id}
+				repo={session.repo || undefined}
+				archived={session.archived}
+				prs={session.prs}
+				send={send}
+				running={running}
+				refreshTick={refreshTick}
+				onOpenPrTab={() => go(onOpenPr)}
+				onOpenChecksTab={() => go(onOpenChecks)}
+				onArchive={onArchive ? () => go(onArchive) : undefined}
+			/>
 
-			{pr && (
+			{/* One review section for both the automated reading and the people asked
+			    to review. The final row owns the picker, so adding or changing a
+			    reviewer never requires opening the workspace panel. */}
+			<div className={WS_SUMMARY_SECTION}>Review</div>
+			{otherReviewers.map((reviewer) => (
 				<button
+					key={reviewer.key}
 					className={WS_SUMMARY_ROW}
 					onClick={() => go(onOpenPr)}
-					title={`#${pr.number} · ${pr.title}`}
+					title={`${reviewer.name} · ${reviewer.state}`}
 				>
-					{/* The glyph carries the PR's own state and the trailing word
-					    carries the review's. They answer different questions ("has it
-					    landed" vs "is anyone blocking it"), and a merged PR with an old
-					    approval on it must not read as open. */}
-					<IconPullRequest size={15} className={cn("shrink-0", prTone(pr))} />
-					<span className={WS_SUMMARY_LABEL}>{pr.title}</span>
-					<span className={cn(WS_SUMMARY_STATE, prStatusLabel(pr).tone)}>
-						{prStatusLabel(pr).label}
+					<span className={WS_SUMMARY_RAIL}>
+						<UserAvatar
+							name={reviewer.name}
+							login={reviewer.login}
+							size={16}
+							edge={false}
+						/>
+					</span>
+					<span className={WS_SUMMARY_LABEL}>{reviewer.name}</span>
+					<span className={cn(WS_SUMMARY_STATE, reviewer.tone)}>
+						{reviewer.state}
 					</span>
 				</button>
+			))}
+
+			{humanReviewers.length > 0 &&
+				humanReviewers.map((reviewer) => (
+					<button
+						key={reviewer.key}
+						className={WS_SUMMARY_ROW}
+						onClick={() => go(() => onOpenPanelTab("info"))}
+						title={`${reviewer.name} · ${reviewer.state}`}
+					>
+						<span className={WS_SUMMARY_RAIL}>
+							<UserAvatar
+								name={reviewer.name}
+								login={reviewer.login}
+								size={16}
+								edge={false}
+							/>
+						</span>
+						<span className={WS_SUMMARY_LABEL}>{reviewer.name}</span>
+						<span className={cn(WS_SUMMARY_STATE, reviewer.tone)}>
+							{reviewer.state}
+						</span>
+					</button>
+				))}
+			{humanReviewers.length === 0 && (
+				<Menu.Root>
+					<Menu.Trigger
+						className={WS_SUMMARY_ROW}
+						disabled={reviewBusy}
+					>
+						<span className={WS_SUMMARY_RAIL}>
+							<IconPeople size={20} className={WS_SUMMARY_ICON} />
+						</span>
+						<span className={WS_SUMMARY_LABEL}>No reviewers</span>
+						<span className={cn(WS_SUMMARY_ACTION, "inline-flex items-center gap-0.5")}>
+							Add
+							<IconChevronDown size={14} />
+						</span>
+					</Menu.Trigger>
+					<Menu.Popup align="end" sideOffset={6} className="min-w-[200px]">
+					{people.map((person) => (
+						<Menu.Item key={person.name} onClick={() => pickReviewer(person.name)}>
+							<UserAvatar name={person.name} size={22} />
+							<span className="min-w-0 flex-1 truncate">{person.name}</span>
+							<Menu.Check on={selectedReview?.to === person.name} size={20} className="text-dim" />
+						</Menu.Item>
+					))}
+					{reviewTeams.length > 0 && <Menu.Separator />}
+					{reviewTeams.map((team) => (
+						<Menu.Item
+							key={team.github}
+							onClick={() => pickReviewer(team.github, team.members)}
+						>
+							<span className="grid size-[22px] place-items-center text-dim">
+								<IconStack size={20} />
+							</span>
+							<span className="min-w-0 flex-1 truncate">{team.name}</span>
+							<Menu.Check on={selectedReview?.to === team.github} size={20} className="text-dim" />
+						</Menu.Item>
+					))}
+					</Menu.Popup>
+				</Menu.Root>
+			)}
+			{reviewError && (
+				<div className="px-4 py-1 text-meta font-medium text-red">{reviewError}</div>
 			)}
 
-			{pr && checks.total > 0 && (
-				<button className={WS_SUMMARY_ROW} onClick={() => go(onOpenChecks)}>
-					{checks.failed > 0 ? (
-						<IconX size={15} className="shrink-0 text-red" />
-					) : checks.pending > 0 ? (
-						<IconClock size={15} className="shrink-0 text-yellow" />
-					) : (
-						<IconCheck size={15} className="shrink-0 text-green" />
-					)}
-					<span className={WS_SUMMARY_LABEL}>
-						{checks.failed > 0
-							? `${checks.failed} check${checks.failed === 1 ? "" : "s"} failing`
-							: checks.pending > 0
-								? `${checks.pending} check${checks.pending === 1 ? "" : "s"} pending`
-								: "Checks successful"}
-					</span>
-				</button>
-			)}
-
-			{conflicted && (
-				<button className={WS_SUMMARY_ROW} onClick={() => go(onOpenPr)}>
-					<IconGitMerge size={15} className="shrink-0 text-red" />
-					<span className={WS_SUMMARY_LABEL}>Merge conflicts</span>
-					<span className={WS_SUMMARY_ACTION}>Fix</span>
-				</button>
-			)}
-
-			{behind > 0 && (
-				<button
-					className={WS_SUMMARY_ROW}
-					onClick={() => go(() => onOpenPanelTab("info"))}
-				>
-					<IconArrowDown size={15} className={WS_SUMMARY_ICON} />
-					<span className={WS_SUMMARY_LABEL}>
-						{behind} behind {git?.baseBranch || "main"}
-					</span>
-					<span className={WS_SUMMARY_ACTION}>Pull</span>
-				</button>
-			)}
-
-			{/* The panel's bottom bar, as rows. These are places rather than
-			    readings, so they keep their own band: everything above says where
-			    the work stands, everything here goes somewhere. */}
-			{places && (
+			{shown.length > 0 && (
 				<>
 					<div className={WS_SUMMARY_DIVIDER} />
-					<div className={WS_SUMMARY_SECTION}>Places</div>
-					{onOpenPortals && (
-						<button
-							className={WS_SUMMARY_ROW}
-							onClick={() => go(onOpenPortals)}
-						>
-							<IconGlobe size={15} className={WS_SUMMARY_ICON} />
-							<span className={WS_SUMMARY_LABEL}>Portals</span>
-							{livePortals > 0 && (
-								<span className={cn(WS_SUMMARY_COUNT, "text-faint")}>
-									{livePortals}
-								</span>
-							)}
-						</button>
-					)}
-					{onOpenAgents && (
-						<button className={WS_SUMMARY_ROW} onClick={() => go(onOpenAgents)}>
-							<IconStack size={15} className={WS_SUMMARY_ICON} />
-							<span className={WS_SUMMARY_LABEL}>Agents</span>
-							{/* Only the live count, as on the bar: a finished run is
-							    something you go and read, not something a summary has to
-							    keep announcing. */}
-							{runningAgents > 0 && (
-								<span className={cn(WS_SUMMARY_COUNT, "text-yellow")}>
-									{runningAgents}
-								</span>
-							)}
-						</button>
-					)}
-					{onOpenTerminal && (
-						<button
-							className={WS_SUMMARY_ROW}
-							onClick={() => go(onOpenTerminal)}
-						>
-							<IconTerminal size={15} className={WS_SUMMARY_ICON} />
-							<span className={WS_SUMMARY_LABEL}>Terminal</span>
-						</button>
-					)}
-				</>
-			)}
-
-			{sources.length > 0 && (
-				<>
-					<div className={WS_SUMMARY_DIVIDER} />
-					<div className={WS_SUMMARY_SECTION}>Sources</div>
-					{sources.map((file) => (
+					<div className={WS_SUMMARY_SECTION}>Assets</div>
+					{shown.map((file) => (
 						<button
 							key={file.path}
 							className={WS_SUMMARY_ROW}
 							onClick={() => go(onOpenAssets)}
 							title={file.path}
 						>
-							{IMAGE_RE.test(file.path) ? (
-								<img
-									src={sessionAssetPreviewUrl(session.id, file)}
-									alt=""
-									className={WS_SUMMARY_THUMB}
-									loading="lazy"
-								/>
-							) : (
-								<IconFile size={15} className={WS_SUMMARY_ICON} />
-							)}
+							<span className={WS_SUMMARY_RAIL}>
+								{IMAGE_RE.test(file.path) ? (
+									<img
+										src={sessionAssetPreviewUrl(session.id, file)}
+										alt=""
+										className={WS_SUMMARY_THUMB}
+										loading="lazy"
+									/>
+								) : (
+									<IconFile size={20} className={WS_SUMMARY_ICON} />
+								)}
+							</span>
 							<span className={WS_SUMMARY_LABEL}>{file.path}</span>
 						</button>
 					))}
-					{assets.length > sources.length && (
-						<button
-							className={WS_SUMMARY_ROW}
-							onClick={() => go(onOpenAssets)}
-						>
-							<span className="w-[15px] shrink-0" />
+					{assets.length > shown.length && (
+						<button className={WS_SUMMARY_ROW} onClick={() => go(onOpenAssets)}>
+							<span className={WS_SUMMARY_RAIL} />
 							<span className={cn(WS_SUMMARY_LABEL, "text-dim")}>
 								View all {assets.length}
 							</span>

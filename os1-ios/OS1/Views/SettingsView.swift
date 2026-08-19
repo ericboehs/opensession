@@ -95,8 +95,8 @@ struct SettingsView: View {
 
             // Same order as the web's Workspace group: what an instance is set
             // up with, then what a session runs on, then what it can reach.
-            // Identity, Members and Integrations are not rows of their own here
-            // — they live inside Setup, which is where a phone meets them.
+            // Identity is part of General. Members and Integrations stay as
+            // dedicated destinations because they each carry their own lists.
             Section("Workspace") {
                 if isAdmin {
                     settingsLink("General", icon: "building.2") {
@@ -105,15 +105,6 @@ struct SettingsView: View {
                 }
                 settingsLink("Setup", icon: "checklist") {
                     SetupSettingsView()
-                }
-                // Three glyphs of a person in one settings screen, so each
-                // says which one: a name card for what the instance is
-                // called, a crop of one face for your own sign-ins, two
-                // figures for the roster of everybody.
-                if isAdmin {
-                    settingsLink("Identity", icon: "person.text.rectangle") {
-                        IdentitySettingsView()
-                    }
                 }
                 settingsLink("Repositories", icon: "shippingbox") {
                     RepositoriesSettingsView()

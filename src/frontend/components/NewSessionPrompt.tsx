@@ -6,11 +6,14 @@ import React, {
 	useRef,
 	useState,
 } from "react";
-import { fetchFileMentions, fetchSkillMentions } from "../lib/api";
+import {
+	fetchFileMentions,
+	fetchMentionSuggestions,
+	fetchSkillMentions,
+} from "../lib/api";
 import { saveDraft, NEW_SESSION_DRAFT_KEY as DRAFT_KEY } from "../lib/drafts";
 import { attachingLabel, type StagingCount } from "../lib/attachments";
 import { imageFilesFromPaste, type FileAttachment } from "../lib/images";
-import { peopleMentionMatches } from "../lib/people";
 import { insertPastedSessionId } from "../lib/session-url";
 import { insideOpenFence, isSendCombo, type SendKeyPref } from "../lib/send-key";
 import {
@@ -24,6 +27,7 @@ import { useFileMentions } from "./useFileMentions";
 import { ImageThumbs } from "./ImageThumbs";
 import { FileChips } from "./FileChips";
 import { cn } from "../ui/cn";
+import { getCurrentUser } from "./UserPicker";
 
 /** One scroll surface for the prompt and its attachments. Keeping the image in
  *  this flow means it travels with the text instead of pinning over it.
@@ -74,6 +78,8 @@ interface Props {
 	handle: React.RefObject<NewSessionPromptHandle | null>;
 	/** Which repo "@" searches for files in. */
 	repo: string;
+	/** A non-empty selection narrows which connected tools "@" offers. */
+	mcpServers?: string[];
 	placeholder: string;
 	disabled: boolean;
 	images: string[];
@@ -120,6 +126,7 @@ export function NewSessionPrompt({
 	valueRef,
 	handle,
 	repo,
+	mcpServers,
 	placeholder,
 	disabled,
 	images,
@@ -262,10 +269,9 @@ export function NewSessionPrompt({
 		value: sessionNames.displayText,
 		onChange: sessionNames.setDisplayText,
 		textareaRef,
-		mentionFetch: async (q) => [
-			...peopleMentionMatches(q),
-			...(await fetchFileMentions(q, undefined, repo)),
-		],
+		mentionFetch: (q) => fetchFileMentions(q, undefined, repo),
+		paletteFetch: (q) =>
+			fetchMentionSuggestions(q, undefined, getCurrentUser(), mcpServers),
 		skillsFetch: (q) => fetchSkillMentions(q, undefined, repo),
 	});
 
@@ -387,6 +393,7 @@ export function NewSessionPrompt({
 				)}
 				<textarea
 					ref={textareaRef}
+					{...mentions.inputProps}
 					className={cn(
 						TEXTAREA,
 						sessionPill &&

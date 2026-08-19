@@ -74,13 +74,13 @@ import { SubagentPane, type SubagentRef } from "./SubagentPane";
 import { ShellPanel } from "./TerminalPanel";
 import { getCurrentUser, useCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
-import { peopleMentionMatches } from "../lib/people";
 import {
 	deleteSessionApi,
 	archiveSessionApi,
 	fetchModels,
 	fetchProviderAccounts,
 	fetchFileMentions,
+	fetchMentionSuggestions,
 	fetchSkillMentions,
 	fetchSessionSubagents,
 	promoteSessionApi,
@@ -2504,6 +2504,15 @@ export function SessionViewer({
 					break;
 				case "session_status":
 					setIsRunningLive(msg.isRunning);
+					if (!msg.isRunning) {
+						// Every isRunning:false broadcast follows its run's stream_done,
+						// so a live turn never gets cut here. This clears the stale case:
+						// a socket that died mid-stream (server restart) reconnects, the
+						// re-watch hello reports the turn already over, and the spinner
+						// from the dead stream would otherwise stay up forever.
+						setIsStreaming(false);
+						liveTurnStore.finish();
+					}
 					onRunningChange?.(session.id, msg.isRunning);
 					break;
 				case "git_pushed":
@@ -4482,13 +4491,7 @@ export function SessionViewer({
 	// also renew the authenticated Caddy routes for remote sandbox services.
 	useEffect(() => {
 		if (
-			(!showPreviewTab &&
-				!showPortal &&
-				!panelOpen &&
-				!infoPageOpen &&
-				// The summary card reports the same live-portal count on its own
-				// Portals row, so it needs status warm for as long as it is up.
-				!summaryOpen) ||
+			(!showPreviewTab && !showPortal && !panelOpen && !infoPageOpen) ||
 			!session.worktreeDir
 		)
 			return;
@@ -4510,7 +4513,6 @@ export function SessionViewer({
 		showPortal,
 		panelOpen,
 		infoPageOpen,
-		summaryOpen,
 		session.id,
 		session.worktreeDir,
 	]);
@@ -5288,9 +5290,9 @@ export function SessionViewer({
 					)}
 					{/* Panel closed → surface the PR chip + its primary action (Merge/
 					    Push/Resolve) inline, grouped with the globe directly left of
-					    the side-panel toggle, so the header still tells you where the
-					    PR stands without opening the Workspace panel. */}
-					{!isPhone && hasRepoWork && !panelOpen && (
+					    the side-panel toggle. Review owns that action in its own header,
+					    so the global copy steps out while Review is open. */}
+					{!isPhone && hasRepoWork && !panelOpen && !showReview && (
 						<PrStatusBar
 							sessionId={session.id}
 							repo={session.repo || undefined}
@@ -5305,10 +5307,12 @@ export function SessionViewer({
 							refreshTick={gitRefreshTick}
 						/>
 					)}
-					{/* …and the rest of what a one-line strip can't say: changes,
-					    branch, conflicts, sources, and the panel's own places. One
+					{/* …and the rest of what a one-line strip can't say: the diff's
+					    size, uncommitted work, who is reviewing, the assets. One
 					    floating card, so the panel can stay shut without going blind
-					    (see WorkspaceSummary's module doc). */}
+					    (see WorkspaceSummary's module doc). Portals, Agents and
+					    Terminal are deliberately not in it: they are places, and
+					    places live in the panel. */}
 					{!isPhone && hasRepoWork && !panelOpen && (
 						<WorkspaceSummary
 							session={session}
@@ -5322,32 +5326,13 @@ export function SessionViewer({
 							onOpenPr={() => focusPrInReview()}
 							onOpenChecks={() => focusPrInReview(undefined, "checks")}
 							onOpenAssets={onOpenAssets}
-							// The panel's bottom bar, reached from here: Portals and
-							// Agents are pages of the panel, Terminal is the full-width
-							// view tab beside it.
-							onOpenPortals={
-								hasWorkspace
-									? () => {
-											setPanelPage("portals");
-											setPanelOpen(true);
-										}
-									: undefined
-							}
-							onOpenAgents={
-								hasWorkspace
-									? () => {
-											setPanelPage("agents");
-											setPanelOpen(true);
-										}
-									: undefined
-							}
-							onOpenTerminal={
-								hasWorkspace && onOpenTerminal
-									? () => onOpenTerminal()
-									: undefined
-							}
-							livePortals={livePortals}
-							runningAgents={runningAgents}
+							onArchive={handleArchive}
+							// Already resolved across the workspace's sessions (the
+							// request may live on a sibling), and already folded
+							// together with a GitHub review that completes it.
+							reviewRequest={effectiveReview?.req ?? null}
+							prReviewRequested={effectiveReview?.prReviewRequested}
+							running={isRunningLive}
 							send={connected ? send : undefined}
 							refreshTick={gitRefreshTick}
 							onOpenChange={setSummaryOpen}
@@ -5989,15 +5974,9 @@ export function SessionViewer({
 							{loading ? (
 								<ConversationLoading />
 							) : waitingForWorkspace ? (
-								// Worktree prep in flight — the first message waits in the
+								// Worktree prep in flight. The first message waits in the
 								// queue flap below and sends the moment this clears.
-								<WorkspaceWaiting
-									detail={
-										session.branch
-											? `Creating a worktree for ${session.branch}. Your messages send when it's ready.`
-											: "Creating the worktree. Your messages send when it's ready."
-									}
-								/>
+								<WorkspaceWaiting detail="Your messages send when it's ready." />
 							) : entries.length === 0 && !session.transcriptPath ? (
 								// A fresh session with no run yet is just an empty conversation —
 								// blank canvas, the composer below is the UI. Only a session
@@ -6475,10 +6454,10 @@ export function SessionViewer({
 										session.source === "opensession" ? handleSetGoal : undefined
 									}
 									usage={usage}
-									mentionFetch={async (q) => [
-										...peopleMentionMatches(q),
-										...(await fetchFileMentions(q, session.id)),
-									]}
+									mentionFetch={(q) => fetchFileMentions(q, session.id)}
+									paletteFetch={(q) =>
+										fetchMentionSuggestions(q, session.id, getCurrentUser())
+									}
 									skillsFetch={(q) => fetchSkillMentions(q, session.id)}
 									textareaRef={composerRef}
 									sendMenu={
@@ -6847,10 +6826,17 @@ function BusyInline({
 		<div
 			className={cn(
 				msgRow,
-				"-ml-2 mt-0.5 flex-row items-center gap-2 px-1 py-1.25 text-dim",
+				"mt-0.5 flex-row items-center gap-2 px-1 py-1.25 text-dim",
 			)}
 		>
-			<span className="grid size-5 shrink-0 place-items-center">
+			{/* The 8px pull hangs off the DOT, not off the row: msgRow centres
+			    itself in the reading column with `mx-auto`, and a `-ml-2` on the
+			    row overrides that auto (Tailwind emits `margin-left` after
+			    `margin-inline`), leaving `margin-right: auto` to shove the whole
+			    row against the scroller's left gutter. Here it lands the dot's
+			    centre on the work fold's chevron, which hangs out by the same
+			    8px from a box that stays centred. */}
+			<span className="-ml-2 grid size-5 shrink-0 place-items-center">
 				<PulseDot size={7} />
 			</span>
 			{since != null && <BusyElapsed since={since} />}

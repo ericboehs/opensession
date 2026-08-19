@@ -57,7 +57,7 @@ function PushRow() {
 					? "Push needs an HTTPS origin. It isn't available on plain http."
 					: state === "denied"
 						? "Notifications are blocked for this site. Allow them in your browser to enable push."
-						: "Buzz this device when a session needs your input, even with the app closed. It's per device, so enable it on your phone too.")
+						: "Alerts even when the app is closed. Turn it on separately on each device.")
 			}
 			control={
 				<Switch
@@ -80,17 +80,13 @@ export function NotificationsPanel() {
 
 	return (
 		<SettingsPanel>
-			<SettingsHeader
-				title="Notifications"
-				description="Choose how this device tells you when a session needs you."
-			/>
+			<SettingsHeader title="Notifications" />
 
 			<SettingsGroupLabel>Alerts</SettingsGroupLabel>
 			<SettingCard>
 				<PushRow />
 				<SettingRow
 					title="Desktop notifications"
-					desc="Get a banner when one of your sessions needs input or finishes."
 					control={
 						<Switch
 							aria-label="Desktop notifications"
@@ -104,7 +100,6 @@ export function NotificationsPanel() {
 				/>
 				<SettingRow
 					title="Completion sound"
-					desc="What plays when a session needs input or finishes."
 					control={
 						<div className="flex items-center gap-2">
 							<Select
@@ -141,7 +136,6 @@ export function NotificationsPanel() {
 				/>
 				<SettingRow
 					title="When to notify"
-					desc="Alert always, only when this tab is in the background, or never."
 					control={
 						<Select
 							label="When to notify"
@@ -157,7 +151,6 @@ export function NotificationsPanel() {
 			<SettingCard>
 				<SettingRow
 					title="Needs input"
-					desc="Alert when a session is blocked waiting for your answer."
 					control={
 						<Switch
 							aria-label="Needs input alerts"
@@ -168,7 +161,6 @@ export function NotificationsPanel() {
 				/>
 				<SettingRow
 					title="Run complete"
-					desc="Alert when one of your sessions finishes working."
 					control={
 						<Switch
 							aria-label="Run complete alerts"

@@ -41,10 +41,15 @@ export function setCurrentUser(name: string) {
 
 /** Reactive current user — updates when the picker (or another tab) changes it. */
 export function useCurrentUser(): string {
-  const [user, setUser] = useState(getCurrentUser);
+  const [user, setUser] = useState(() =>
+    typeof localStorage === "undefined" ? "" : getCurrentUser(),
+  );
 
   useEffect(() => {
     const handler = () => setUser(getCurrentUser());
+    // Server-rendered component tests start without localStorage. Hydrate the
+    // real browser identity as soon as the hook reaches the client.
+    handler();
     window.addEventListener(CHANGE_EVENT, handler);
     window.addEventListener("storage", handler);
     return () => {

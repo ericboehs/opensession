@@ -16,7 +16,7 @@ import { startWatching, stopAllWatchesForClient, transcriptRev } from "./file-wa
 import { INIT_WIRE_CLAMP_BYTES, entriesForWire, parseTranscriptAsync, parseTranscriptTail, parseTranscriptWindow } from "./jsonl-parser";
 import { providerFor } from "./models";
 import { appendOpencodeTranscript, clearTranscriptStoreDegraded, transcriptLineRunnerNotice } from "./opencode-transcript";
-import { deleteQueuedPrompt, persistQueues, promptQueues, queueDisplayState, recordSteer, reorderQueuedPrompt, requeueSteerReceipts, steeredReceipts, stoppedSessions, takeQueuedPrompt, updateQueuedPrompt } from "./queue-state";
+import { deleteQueuedPrompt, liftUserStop, persistQueues, promptQueues, queueDisplayState, recordSteer, reorderQueuedPrompt, requeueSteerReceipts, steeredReceipts, stoppedSessions, takeQueuedPrompt, updateQueuedPrompt } from "./queue-state";
 import { transitionRunState } from "./run-state";
 import { abortTurnAndDrain, drainQueue, enqueuePrompt, interruptQueuedPrompt, runSessionPrompt, runSessionPromptAndDrain, steerQueuedPrompt, watchExternalRunAndDrain } from "./run-session";
 import { sandboxWsClose, sandboxWsMessage, sandboxWsOpen } from "./run-ws";
@@ -865,6 +865,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					session.title || "a session",
 				);
 
+				// An explicit send is the user's next action after a Stop, so it lifts the
+				// stop latch here rather than inside the run the latch prevents. Without
+				// this the message below queues durably and the drain parks it forever.
+				liftUserStop(sessionId);
+
 				// Busy sends queue by default, so the user can still delete/edit or
 				// manually steer the message. Settings can opt the composer into
 				// steer-by-default (`busyMode: "steer"`), delivered at the next turn
@@ -987,6 +992,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				}
 				maybePersistEffort(session, msg.effort);
 				maybePersistFastMode(session, msg.fastMode);
+				liftUserStop(sessionId);
 				const attributed = user ? `[${user}] ${content}` : content;
 				// Files can't ride the interrupt/steer content-block channel — a send
 				// carrying files falls through to the queue (drain delivers images +

@@ -363,7 +363,6 @@ export function ShortcutsPanel() {
 		<SettingsPanel>
 			<SettingsHeader
 				title="Keyboard shortcuts"
-				description="Your bindings follow you to your other devices."
 				actions={
 					customizedCount > 0 ? (
 						<Button size="sm" variant="soft" onClick={resetAllShortcuts}>

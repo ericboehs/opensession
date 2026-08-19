@@ -7,6 +7,7 @@ import {
 	type OrganizationSettingsDto,
 } from "../../lib/api";
 import { pngFromImageFile } from "../../lib/icon-image";
+import { REPO_TILE_INK, repoColor, repoIconFill } from "../../lib/repo-colors";
 import { Button } from "../../ui/button";
 import { cn } from "../../ui/cn";
 import {
@@ -14,9 +15,9 @@ import {
 	SettingCardSkeleton,
 	SettingRow,
 	SettingRowControl,
-	SettingRowDescription,
 	SettingRowText,
 	SettingRowTitle,
+	SettingsGroupLabel,
 	SettingsHeader,
 	SettingsHint,
 	SettingsPanel,
@@ -25,6 +26,7 @@ import {
 import { toast } from "../../ui/toast";
 import { InlineAlert } from "../../ui/state";
 import { IconArrowUpToLine, IconTrash } from "../icons";
+import { IdentityCard } from "../SetupIdentity";
 
 const NAME_INPUT_CLASS = cn(settingsInputClass, "w-[220px] max-w-full");
 
@@ -97,15 +99,18 @@ export function GeneralPanel() {
 		}, "Organization icon updated.");
 	}
 
-	const initial = (settings?.organizationName || "O").trim().charAt(0).toUpperCase();
+	const nameParts = (settings?.organizationName || "Organization").trim().split(/\s+/);
+	const initials = (
+		nameParts.length > 1
+			? `${nameParts[0].charAt(0)}${nameParts.at(-1)?.charAt(0) || ""}`
+			: nameParts[0].slice(0, 2)
+	).toUpperCase();
 	const showIcon = !!settings?.organizationIconUrl && !iconFailed;
+	const fallbackColor = repoColor(settings?.organizationName || "organization");
 
 	return (
 		<SettingsPanel>
-			<SettingsHeader
-				title="General"
-				description="Set the name and icon people see for this organization."
-			/>
+			<SettingsHeader title="General" className="phone:hidden" />
 			{loadError && !settings ? (
 				<InlineAlert onRetry={() => void load()}>{loadError}</InlineAlert>
 			) : settings ? (
@@ -113,20 +118,9 @@ export function GeneralPanel() {
 					<SettingCard>
 						<SettingRow className="items-center">
 							<SettingRowText>
-								<SettingRowTitle>Organization icon</SettingRowTitle>
-								<SettingRowDescription>
-									Choose a square image that represents your organization.
-								</SettingRowDescription>
+								<SettingRowTitle>Upload icon</SettingRowTitle>
 							</SettingRowText>
 							<SettingRowControl className="flex flex-wrap items-center justify-end gap-2">
-								<Button
-									variant="soft"
-									icon={<IconArrowUpToLine size={20} />}
-									disabled={busy}
-									onClick={() => fileInput.current?.click()}
-								>
-									Upload icon
-								</Button>
 								{settings.organizationIconUrl && (
 									<Button
 										variant="ghost"
@@ -139,9 +133,20 @@ export function GeneralPanel() {
 										Remove
 									</Button>
 								)}
-								<div
-									aria-hidden="true"
-									className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-active text-section-title font-semibold text-dim outline outline-1 outline-divider"
+								<button
+									type="button"
+									disabled={busy}
+									onClick={() => fileInput.current?.click()}
+									aria-label={showIcon ? "Change organization icon" : "Upload organization icon"}
+									className="focus-ring group relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg text-section-title font-semibold outline outline-1 outline-divider disabled:pointer-events-none"
+									style={
+										showIcon
+											? undefined
+											: {
+													backgroundImage: repoIconFill(fallbackColor),
+													color: REPO_TILE_INK,
+												}
+									}
 								>
 									{showIcon ? (
 										<img
@@ -151,9 +156,12 @@ export function GeneralPanel() {
 											onError={() => setIconFailed(true)}
 										/>
 									) : (
-										initial
+										initials
 									)}
-								</div>
+									<span className="pointer-events-none absolute inset-0 grid place-items-center rounded-[inherit] bg-black/50 text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
+										<IconArrowUpToLine size={20} />
+									</span>
+								</button>
 								<input
 									ref={fileInput}
 									type="file"
@@ -171,9 +179,6 @@ export function GeneralPanel() {
 						<SettingRow>
 							<SettingRowText>
 								<SettingRowTitle>Organization name</SettingRowTitle>
-								<SettingRowDescription>
-									The company or team sharing this workspace.
-								</SettingRowDescription>
 							</SettingRowText>
 							<input
 								className={NAME_INPUT_CLASS}
@@ -198,6 +203,8 @@ export function GeneralPanel() {
 			) : (
 				<SettingCardSkeleton rows={2} label="Loading organization settings" />
 			)}
+			<SettingsGroupLabel>Identity</SettingsGroupLabel>
+			<IdentityCard />
 		</SettingsPanel>
 	);
 }

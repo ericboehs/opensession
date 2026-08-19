@@ -80,12 +80,13 @@ export function ComposerContextChip({
 				colours.box,
 			)}
 		>
-			<span
-				className={cn(
-					"inline-flex shrink-0 translate-y-px items-center",
-					colours.icon,
-				)}
-			>
+			{/* No optical nudge on either glyph. Every icon this chip carries is
+			    drawn on the shared 24 grid with its ink centred (IconEye, IconNote,
+			    IconX all span 4.75-19.25 about y=12), and a brand tile is a solid
+			    square, so a translate here only pushes the mark off the row's
+			    centre: measured, it sat 1px below while the label's ink sat 0.5px
+			    above, which is the 1.5px step you can see at Retina. */}
+			<span className={cn("inline-flex shrink-0 items-center", colours.icon)}>
 				{icon}
 			</span>
 			<span className="truncate">{label}</span>
@@ -105,10 +106,7 @@ export function ComposerContextChip({
 						colours.remove,
 					)}
 				>
-					<IconX
-						size={20}
-						className="translate-y-px scale-[0.8] [&_path]:stroke-2"
-					/>
+					<IconX size={20} className="scale-[0.8] [&_path]:stroke-2" />
 				</button>
 			)}
 		</div>

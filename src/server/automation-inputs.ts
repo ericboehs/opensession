@@ -8,7 +8,7 @@
  */
 
 import { existsSync, readFileSync, rmSync } from "fs";
-import { opencodeOneShot } from "./opencode-oneshot";
+import { oneShot } from "./one-shot";
 import { stateDir } from "./paths";
 import { listReports } from "./reports";
 import { writeJsonAtomic } from "./shared/atomic-write";
@@ -95,7 +95,7 @@ interface InputDeps {
 		params: Record<string, string | number | boolean | undefined>,
 	) => Promise<any>;
 	resolveSlackUser: (id: string) => Promise<{ name: string }>;
-	oneShot: typeof opencodeOneShot;
+	oneShot: typeof oneShot;
 }
 
 const INPUTS_ROOT = stateDir("automation-input-state");
@@ -271,7 +271,7 @@ async function defaultDeps(): Promise<InputDeps> {
 	return {
 		slackApiGet: slack.slackApiGet,
 		resolveSlackUser: slack.resolveSlackUser,
-		oneShot: opencodeOneShot,
+		oneShot: oneShot,
 	};
 }
 

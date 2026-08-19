@@ -215,7 +215,12 @@ struct CatchUpCardView: View {
                             block: block,
                             sessionId: card.target.id,
                             worktreeDir: card.target.worktreeDir,
-                            foldState: { folds.fold(for: $0, preference: "collapsed") },
+                            foldState: {
+                                folds.fold(
+                                    for: $0,
+                                    preference: TurnActivity(work: .folded, tools: .folded)
+                                )
+                            },
                             expansionState: {
                                 folds.expansion(id: $0, defaultExpanded: $1)
                             },

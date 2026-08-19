@@ -23,13 +23,18 @@ import {
 	SETTINGS_NAV_SEARCH,
 } from "../lib/settings-classes";
 import { matchSections, type SectionHit } from "../lib/settings-search";
+import {
+	SECTIONS,
+	TOOL_SECTIONS,
+	type SettingsSectionKey,
+	type ToolSectionKey,
+} from "../lib/settings-sections";
 import { Input } from "../ui/input";
 import { BottomSheet } from "../ui/sheet";
 import { Connections } from "./Connections";
 import {
 	IconChevronLeft,
 	IconChevronRight,
-	IconHome,
 	IconSearch,
 	IconX,
 } from "./icons";
@@ -38,7 +43,6 @@ import { AppearancePanel } from "./settings/AppearancePanel";
 import { AuditPanel } from "./settings/AuditPanel";
 import { DeploysPanel } from "./settings/DeploysPanel";
 import { GeneralPanel } from "./settings/GeneralPanel";
-import { IdentityPanel } from "./settings/IdentityPanel";
 import { IntegrationsPanel } from "./settings/IntegrationsPanel";
 import { LibraryPanel } from "./settings/LibraryPanel";
 import { MembersPanel } from "./settings/MembersPanel";
@@ -73,525 +77,14 @@ import type { Workspace } from "../lib/types";
 // the headline; "Infrastructure" is the machinery prepared ahead of a run; and
 // "Activity" is the read-only record agents leave behind.
 
-/** Tool surfaces hosted inside Settings — App renders their panel as children. */
-export type ToolSectionKey = "automations" | "goals" | "security";
-
-/** Listed in nav order (SECTIONS below). */
-export type SettingsSectionKey =
-	| "myAccounts"
-	| "preferences"
-	| "notifications"
-	| "appearance"
-	| "shortcuts"
-	| "general"
-	| "setup"
-	| "identity"
-	| "repos"
-	| "members"
-	| "models"
-	| "usage"
-	| "sandboxes"
-	| "runners"
-	| "library"
-	| "integrations"
-	| "connections"
-	| "memory"
-	| "prewarming"
-	| "deploys"
-	| "papercuts"
-	| "audit"
-	| ToolSectionKey;
-
-const TOOL_SECTIONS = new Set<SettingsSectionKey>([
-	"automations",
-	"goals",
-	"security",
-]);
+// The nav table itself lives in lib/settings-sections, because the command
+// palette needs the same list and importing this whole component tree to read
+// it would be absurd. Re-exported here so existing callers keep their import.
+export type { SettingsSectionKey, ToolSectionKey };
 
 /** Sections that are browsed rather than read down, and take the wider
  *  column for it (see SETTINGS_PANEL_FRAME_GALLERY). */
-const GALLERY_SECTIONS = new Set<SettingsSectionKey>(["library"]);
-
-const SECTIONS: {
-	key: SettingsSectionKey;
-	label: string;
-	group: string;
-	icon: React.ReactNode;
-	adminOnly?: boolean;
-}[] = [
-	{
-		key: "myAccounts",
-		label: "Account",
-		group: "Personal",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<circle cx="8" cy="5.2" r="2.7" />
-				<path d="M2.8 13.5a5.2 5.2 0 0 1 10.4 0" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		key: "preferences",
-		label: "Preferences",
-		group: "Personal",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path d="M2.5 4.5h11M2.5 11.5h11" strokeLinecap="round" />
-				<circle cx="6" cy="4.5" r="1.7" fill="var(--bg-panel)" />
-				<circle cx="10.5" cy="11.5" r="1.7" fill="var(--bg-panel)" />
-			</svg>
-		),
-	},
-	{
-		key: "notifications",
-		label: "Notifications",
-		group: "Personal",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path
-					d="M8 2.2a3.4 3.4 0 0 0-3.4 3.4c0 2.9-1.1 3.9-1.1 3.9h9A5.4 5.4 0 0 1 11.4 5.6 3.4 3.4 0 0 0 8 2.2z"
-					strokeLinejoin="round"
-				/>
-				<path d="M6.7 12a1.4 1.4 0 0 0 2.6 0" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		key: "appearance",
-		label: "Appearance",
-		group: "Personal",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<circle cx="8" cy="8" r="5.5" />
-				<path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none" />
-			</svg>
-		),
-	},
-	{
-		key: "shortcuts",
-		label: "Shortcuts",
-		group: "Personal",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<rect x="1.4" y="3.6" width="13.2" height="8.8" rx="2" />
-				<path
-					d="M4.3 6.4h.01M6.7 6.4h.01M9.1 6.4h.01M11.5 6.4h.01M4.3 9.6h7.2"
-					strokeLinecap="round"
-				/>
-			</svg>
-		),
-	},
-	{
-		key: "general",
-		label: "General",
-		group: "Workspace",
-		adminOnly: true,
-		icon: <IconHome size={20} />,
-	},
-	{
-		key: "setup",
-		label: "Setup",
-		group: "Workspace",
-		adminOnly: true,
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path d="M2.7 4.1l1 1 1.8-2" strokeLinecap="round" strokeLinejoin="round" />
-				<path d="M7.8 4.4h5.5" strokeLinecap="round" />
-				<path d="M2.7 8.1l1 1 1.8-2" strokeLinecap="round" strokeLinejoin="round" />
-				<path d="M7.8 8.4h5.5" strokeLinecap="round" />
-				<path d="M2.7 12.1l1 1 1.8-2" strokeLinecap="round" strokeLinejoin="round" />
-				<path d="M7.8 12.4h5.5" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		key: "identity",
-		label: "Identity",
-		group: "Workspace",
-		adminOnly: true,
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<rect x="2.2" y="3.4" width="11.6" height="9.2" rx="1.5" />
-				<circle cx="6" cy="7" r="1.4" />
-				<path d="M3.9 10.9a2.3 2.3 0 0 1 4.2 0" strokeLinecap="round" />
-				<path d="M10.2 6.6h2.1M10.2 9h2.1" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		key: "repos",
-		label: "Repositories",
-		group: "Workspace",
-		adminOnly: true,
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path
-					d="M4.2 2.5h8v11h-8a1.5 1.5 0 0 1 0-3h8"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-				/>
-			</svg>
-		),
-	},
-	{
-		key: "members",
-		label: "Members",
-		group: "Workspace",
-		adminOnly: true,
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<circle cx="6.1" cy="5.6" r="2.3" />
-				<path d="M2.1 12.7a4 4 0 0 1 8 0" strokeLinecap="round" />
-				<path d="M10.6 3.9a2.3 2.3 0 0 1 0 3.4" strokeLinecap="round" />
-				<path d="M11.6 12.7a4 4 0 0 0-1.1-2.8" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		key: "models",
-		label: "Models",
-		group: "Workspace",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<rect x="2.25" y="2.25" width="5" height="5" rx="1" />
-				<rect x="8.75" y="8.75" width="5" height="5" rx="1" />
-				<circle cx="11.25" cy="4.75" r="2.5" />
-				<path d="M4.75 9.5v1.75a1 1 0 0 0 1 1h1.75" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		key: "usage",
-		label: "Usage",
-		group: "Workspace",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path d="M2.6 11.6a5.7 5.7 0 1 1 10.8 0" strokeLinecap="round" />
-				<path d="M8 11.6l2.7-3.9" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		key: "sandboxes",
-		label: "Sandboxes",
-		group: "Workspace",
-		icon: (
-			<svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
-				<path d="M8 1.8l5.2 2.9v6.1L8 13.8l-5.2-3V4.7L8 1.8z" strokeLinejoin="round" />
-				<path d="M2.9 4.9L8 7.7l5.1-2.8M8 7.8v5.8" />
-			</svg>
-		),
-	},
-	{
-		key: "runners",
-		label: "Runners",
-		group: "Workspace",
-		icon: (
-			<svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
-				<rect x="2.3" y="3" width="11.4" height="10" rx="1.6" />
-				<path d="M5 6.1h.01M8 6.1h3M5 9.8h6" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		key: "library",
-		label: "Library",
-		group: "Workspace",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path d="M2.6 3.1h2.6v9.8H2.6zM6.4 3.1H9v9.8H6.4z" strokeLinejoin="round" />
-				<path d="M10.5 3.6l2.5.7-2.2 8.4-2.4-.7" strokeLinejoin="round" />
-			</svg>
-		),
-	},
-	{
-		key: "integrations",
-		label: "Integrations",
-		group: "Workspace",
-		adminOnly: true,
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path d="M6 2.2v3.2M10 2.2v3.2" strokeLinecap="round" />
-				<path
-					d="M3.8 5.4h8.4v2.1a4.2 4.2 0 0 1-8.4 0z"
-					strokeLinejoin="round"
-				/>
-				<path d="M8 11.7v2.1" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		key: "connections",
-		label: "Connections",
-		group: "Workspace",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<circle cx="4.5" cy="8" r="2" />
-				<circle cx="11.5" cy="4" r="2" />
-				<circle cx="11.5" cy="12" r="2" />
-				<path d="M6.3 7.1l3.4-2.2M6.3 8.9l3.4 2.2" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		key: "memory",
-		label: "Memory",
-		group: "Workspace",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path d="M8 2.5l5.5 2.75L8 8 2.5 5.25 8 2.5z" strokeLinejoin="round" />
-				<path d="M2.5 8.25L8 11l5.5-2.75" strokeLinecap="round" strokeLinejoin="round" />
-				<path d="M2.5 11.25L8 14l5.5-2.75" strokeLinecap="round" strokeLinejoin="round" />
-			</svg>
-		),
-	},
-	{
-		key: "automations",
-		label: "Automations",
-		group: "Automation",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<circle cx="8" cy="8" r="5.5" />
-				<path d="M8 5v3l2 1.5" strokeLinecap="round" strokeLinejoin="round" />
-			</svg>
-		),
-	},
-	{
-		key: "goals",
-		label: "Goals",
-		group: "Automation",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<circle cx="8" cy="8" r="6" />
-				<circle cx="8" cy="8" r="3" />
-				<circle cx="8" cy="8" r="0.6" fill="currentColor" stroke="none" />
-			</svg>
-		),
-	},
-	{
-		key: "security",
-		label: "Security",
-		group: "Automation",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path
-					d="M8 1.8l4.6 1.7v3.8c0 3-1.9 5.2-4.6 6.5-2.7-1.3-4.6-3.5-4.6-6.5V3.5L8 1.8z"
-					strokeLinejoin="round"
-				/>
-				<path d="M6.1 8l1.3 1.3 2.5-2.6" strokeLinecap="round" strokeLinejoin="round" />
-			</svg>
-		),
-	},
-	{
-		key: "prewarming",
-		label: "Acceleration",
-		group: "Infrastructure",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path
-					d="M8 1.8c.4 2.2 3.7 3.4 3.7 6.7a3.7 3.7 0 0 1-7.4 0c0-1.4.6-2.4 1.4-3.4.2 1 .7 1.6 1.4 2 0-1.9.2-3.9.9-5.3z"
-					strokeLinejoin="round"
-				/>
-			</svg>
-		),
-	},
-	{
-		key: "deploys",
-		label: "Deploys",
-		group: "Infrastructure",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<rect x="2" y="2.4" width="12" height="4" rx="1" />
-				<rect x="2" y="9.6" width="12" height="4" rx="1" />
-				<path d="M4.6 4.4h.01M4.6 11.6h.01" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		key: "papercuts",
-		label: "Papercuts",
-		group: "Activity",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<rect
-					x="1.6"
-					y="5.4"
-					width="12.8"
-					height="5.2"
-					rx="2.6"
-					transform="rotate(-45 8 8)"
-					strokeLinejoin="round"
-				/>
-				<path d="M6.9 8h.01M9.1 8h.01M8 6.9v.01M8 9.1v.01" strokeLinecap="round" />
-			</svg>
-		),
-	},
-	{
-		key: "audit",
-		label: "Audit log",
-		group: "Activity",
-		icon: (
-			<svg
-				width="20"
-				height="20"
-				viewBox="0 0 16 16"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.4"
-			>
-				<path d="M4 2.5h8a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z" strokeLinejoin="round" />
-				<path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3" strokeLinecap="round" />
-			</svg>
-		),
-	},
-];
+const GALLERY_SECTIONS = new Set<SettingsSectionKey>(["library", "setup"]);
 
 type Section = (typeof SECTIONS)[number];
 type SectionGroup = { group: string; items: Section[] };
@@ -609,8 +102,8 @@ function filterGroups(groups: SectionGroup[], query: string): FilteredGroup[] {
 }
 
 /**
- * The nav's filter field. Settings is 22 sections across five groups, and the
- * group a setting sits in is a judgement call the person searching hasn't made
+ * The nav's filter field. Settings spans many sections across five groups,
+ * and the group a setting sits in is a judgement call the person hasn't made
  * — so the query also matches per-section keywords ("vim", "cron", "dark
  * mode"), and a row that matched on one says which under its label.
  *
@@ -727,7 +220,6 @@ function SectionPanel({
 			{section === "shortcuts" && <ShortcutsPanel />}
 			{section === "general" && <GeneralPanel />}
 			{section === "setup" && <SetupPanel onDone={onBack} />}
-			{section === "identity" && <IdentityPanel />}
 			{section === "repos" && <ReposPanel />}
 			{section === "members" && <MembersPanel />}
 			{section === "library" && <LibraryPanel />}
@@ -822,15 +314,7 @@ export function Settings({
 			<aside className={SETTINGS_NAV}>
 				<button className={SETTINGS_BACK} onClick={onBack}>
 					<span className={SETTINGS_NAV_ICON}>
-						<svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-							<path
-								d="M10 3.5L5.5 8l4.5 4.5"
-								stroke="currentColor"
-								strokeWidth="1.5"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-							/>
-						</svg>
+						<IconChevronLeft />
 					</span>
 					Back to app
 				</button>
@@ -1023,7 +507,7 @@ function MobileSettings({
 							{/* Search sits at the bottom edge, where the thumb is and where
 							    iOS 26 puts it (the native app's sessions list does the same),
 							    on glass — so the list stays legible passing behind it and the
-							    way out of 22 sections is always in reach. */}
+							    way out of a long section list is always in reach. */}
 							<NavSearch
 								sheet
 								value={query}

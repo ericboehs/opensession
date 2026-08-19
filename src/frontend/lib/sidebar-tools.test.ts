@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
 	normalizeHiddenSidebarTools,
+	mergeSidebarToolOrder,
+	normalizeSidebarToolOrder,
+	replaceVisibleSidebarToolOrder,
 	readHiddenSidebarTools,
 	toolFitsViewport,
 	SIDEBAR_TOOL_IDS,
@@ -85,6 +88,49 @@ describe("readHiddenSidebarTools", () => {
 			store.set(LEGACY_KEY, JSON.stringify(["reports"]));
 			expect([...readHiddenSidebarTools()]).toEqual(["tasks"]);
 		});
+	});
+});
+
+describe("sidebar tool order", () => {
+	test("normalizes ids, applies renames and drops duplicates", () => {
+		expect(
+			normalizeSidebarToolOrder(["reports", "home", "prs", "nope"]),
+		).toEqual(["reports", "prs"]);
+	});
+
+	test("appends tools missing from a saved order", () => {
+		expect(mergeSidebarToolOrder(["reports", "feed"]).slice(0, 3)).toEqual([
+			"reports",
+			"feed",
+			"prs",
+		]);
+	});
+
+	test("reorders visible tools without moving viewport-only tools", () => {
+			expect(
+				replaceVisibleSidebarToolOrder(
+				[
+					"feed",
+					"catchup",
+					"prs",
+					"tasks",
+					"supporttinder",
+					"reports",
+					"plain",
+					"analytics",
+				],
+				["reports", "feed", "prs", "tasks", "plain", "analytics"],
+			),
+		).toEqual([
+			"reports",
+			"catchup",
+			"feed",
+			"prs",
+			"supporttinder",
+			"tasks",
+			"plain",
+			"analytics",
+		]);
 	});
 });
 

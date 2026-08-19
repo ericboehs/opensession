@@ -21,7 +21,7 @@ export interface CommandPaletteAction {
 	id: string;
 	label: string;
 	description?: string;
-	category: "Actions" | "Navigate";
+	category: "Actions" | "Navigate" | "Tools";
 	keywords?: string[];
 	shortcut?: string[];
 	icon?: React.ReactNode;

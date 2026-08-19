@@ -52,6 +52,11 @@ export const plainEntryName = "text-supporting font-semibold text-fg";
 export const plainEntryMeta = "text-meta text-faint";
 
 /** The message itself, at the transcript's reading size — this is the page's
- *  content, not a preview of it. */
+ *  content, not a preview of it. Rendered markdown, the same as a session
+ *  message: a customer writing `**test**` means it, and a pasted stack trace
+ *  belongs in a fence rather than in the prose. `breaks: true` on the shared
+ *  renderer (lib/markdown.ts) keeps an email's hard line breaks, which is why
+ *  this no longer needs `whitespace-pre-wrap`: that would double every one. */
 export const plainEntryBody =
-	"whitespace-pre-wrap break-words text-body leading-relaxed text-fg";
+	"markdown break-words text-body leading-relaxed text-fg " +
+	"[&>:first-child]:mt-0 [&>:last-child]:mb-0";

@@ -66,10 +66,12 @@ export function toolFitsViewport(id: SidebarToolId, isPhone: boolean): boolean {
 }
 
 const LOCAL_KEY_PREFIX = "opensession-sidebar-hidden-tools:";
+const ORDER_LOCAL_KEY_PREFIX = "opensession-sidebar-tool-order:";
 // The browser-wide key this pref used to live in. Read once per person, then
 // retired, so a sidebar someone had already arranged survives the move.
 const LEGACY_LOCAL_KEY = "opensession-sidebar-hidden-tools";
 const PREF_KEY = "sidebar-hidden-tools";
+const ORDER_PREF_KEY = "sidebar-tool-order";
 const TOOLS_CHANGED_EVENT = "opensession-sidebar-tools-changed";
 const USER_CHANGE_EVENT = "opensession-user-changed";
 
@@ -109,6 +111,48 @@ export function normalizeHiddenSidebarTools(value: unknown): SidebarToolId[] {
 	];
 }
 
+export function normalizeSidebarToolOrder(value: unknown): SidebarToolId[] {
+	if (!Array.isArray(value)) return [];
+	return [
+		...new Set(
+			value
+				.map((id) => RENAMED_TOOL_IDS[id as string] ?? id)
+				.filter((id): id is SidebarToolId =>
+					SIDEBAR_TOOL_IDS.includes(id as SidebarToolId),
+				),
+		),
+	];
+}
+
+export function mergeSidebarToolOrder(
+	preferred: readonly SidebarToolId[],
+	available: readonly SidebarToolId[] = SIDEBAR_TOOL_IDS,
+): SidebarToolId[] {
+	const allowed = new Set(available);
+	const ordered = normalizeSidebarToolOrder(preferred).filter((id) =>
+		allowed.has(id),
+	);
+	const seen = new Set(ordered);
+	for (const id of available) {
+		if (!seen.has(id)) {
+			seen.add(id);
+			ordered.push(id);
+		}
+	}
+	return ordered;
+}
+
+export function replaceVisibleSidebarToolOrder(
+	fullOrder: readonly SidebarToolId[],
+	visibleOrder: readonly SidebarToolId[],
+): SidebarToolId[] {
+	const visible = new Set(visibleOrder);
+	const queue = [...visibleOrder];
+	return mergeSidebarToolOrder(
+		fullOrder.map((id) => (visible.has(id) ? (queue.shift() ?? id) : id)),
+	);
+}
+
 /**
  * What this person chose, or null when they never have.
  *
@@ -129,6 +173,20 @@ function readStored(user: string): Set<SidebarToolId> | null {
 		return new Set(normalizeHiddenSidebarTools(JSON.parse(raw)));
 	} catch {
 		return null;
+	}
+}
+
+function readStoredOrder(user: string): SidebarToolId[] {
+	try {
+		return normalizeSidebarToolOrder(
+			JSON.parse(
+				localStorage.getItem(
+					`${ORDER_LOCAL_KEY_PREFIX}${user.trim().toLowerCase() || "anonymous"}`,
+				) || "[]",
+			),
+		);
+	} catch {
+		return [];
 	}
 }
 
@@ -168,8 +226,21 @@ function writeLocal(user: string, hidden: Set<SidebarToolId>) {
 	} catch {}
 }
 
+function writeLocalOrder(user: string, order: readonly SidebarToolId[]) {
+	try {
+		localStorage.setItem(
+			`${ORDER_LOCAL_KEY_PREFIX}${user.trim().toLowerCase() || "anonymous"}`,
+			JSON.stringify(normalizeSidebarToolOrder(order)),
+		);
+	} catch {}
+}
+
 export function readHiddenSidebarTools(): Set<SidebarToolId> {
 	return readStored(getCurrentUser()) ?? new Set(DEFAULT_HIDDEN_TOOLS);
+}
+
+export function getSidebarToolOrder(): SidebarToolId[] {
+	return mergeSidebarToolOrder(readStoredOrder(getCurrentUser()));
 }
 
 function announce() {
@@ -202,6 +273,22 @@ export function setSidebarToolVisible(id: SidebarToolId, visible: boolean) {
 	commit(user, hidden);
 }
 
+export function setSidebarToolOrder(order: readonly SidebarToolId[]) {
+	const user = getCurrentUser();
+	const next = mergeSidebarToolOrder(order);
+	writeStamp++;
+	writeLocalOrder(user, next);
+	announce();
+	saveChain = saveChain
+		.catch(() => {})
+		.then(() =>
+			saveUiPrefsApi(user, {
+				[ORDER_PREF_KEY]: JSON.stringify(next),
+			}),
+		)
+		.catch(() => {});
+}
+
 async function hydrate(user: string) {
 	const stampAtStart = writeStamp;
 	let prefs: Record<string, string>;
@@ -227,17 +314,40 @@ async function hydrate(user: string) {
 				announce();
 			}
 		} catch {}
-		return;
+	} else {
+		// No server value yet. Push this browser's choice up so the phone stops
+		// showing what was switched off here, but only when there IS a choice:
+		// writing the defaults would turn an untouched account into a decision
+		// nobody made.
+		const local = readStored(user);
+		if (local) {
+			void saveUiPrefsApi(user, {
+				[PREF_KEY]: JSON.stringify(normalizeHiddenSidebarTools([...local])),
+			}).catch(() => {});
+		}
 	}
-	// No server value yet. Push this browser's choice up so the phone stops
-	// showing what was switched off here, but only when there IS a choice:
-	// writing the defaults would turn an untouched account into a decision
-	// nobody made.
-	const local = readStored(user);
-	if (local) {
-		void saveUiPrefsApi(user, {
-			[PREF_KEY]: JSON.stringify(normalizeHiddenSidebarTools([...local])),
-		}).catch(() => {});
+
+	const serverOrderValue = prefs[ORDER_PREF_KEY];
+	if (typeof serverOrderValue === "string") {
+		try {
+			const serverOrder = mergeSidebarToolOrder(
+				normalizeSidebarToolOrder(JSON.parse(serverOrderValue)),
+			);
+			if (
+				JSON.stringify(serverOrder) !==
+				JSON.stringify(mergeSidebarToolOrder(readStoredOrder(user)))
+			) {
+				writeLocalOrder(user, serverOrder);
+				announce();
+			}
+		} catch {}
+	} else {
+		const localOrder = readStoredOrder(user);
+		if (localOrder.length) {
+			void saveUiPrefsApi(user, {
+				[ORDER_PREF_KEY]: JSON.stringify(mergeSidebarToolOrder(localOrder)),
+			}).catch(() => {});
+		}
 	}
 }
 
@@ -254,7 +364,10 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
 		void hydrate(getCurrentUser());
 	});
 	window.addEventListener("storage", (event) => {
-		if (event.key?.startsWith(LOCAL_KEY_PREFIX)) {
+		if (
+			event.key?.startsWith(LOCAL_KEY_PREFIX) ||
+			event.key?.startsWith(ORDER_LOCAL_KEY_PREFIX)
+		) {
 			writeStamp++;
 			announce();
 		} else if (event.key === "opensession-user" || event.key === "backstage-user") {

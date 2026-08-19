@@ -622,15 +622,15 @@ describe("fallback graph (nextFallbackModel)", () => {
       id: sol,
       mode: "auto",
     });
-    // Fable, Sol gone → Terra: same-tier 5.6 sibling, automatic.
+    // Fable, Sol gone → Opus: next top-tier destination, automatic.
     expect(
       nextFallbackModel(fable, new Set([fable, sol]), "claude-opus-5")
-    ).toEqual({ id: terra, mode: "auto" });
-    // Fable + all 5.6 siblings gone → Opus: downgrade, ASK.
+    ).toEqual({ id: opus, mode: "auto" });
+    // Fable, Sol, and Opus gone → Terra: same-tier sibling, automatic.
     expect(
-      nextFallbackModel(fable, new Set([fable, sol, terra, luna]), "claude-opus-5")
-    ).toEqual({ id: opus, mode: "ask" });
-    // Opus → Sol: upgrade-ish, automatic.
+      nextFallbackModel(fable, new Set([fable, sol, opus]), "claude-opus-5")
+    ).toEqual({ id: terra, mode: "auto" });
+    // Opus → Sol: same tier, automatic.
     expect(nextFallbackModel(opus, new Set([opus]), "claude-opus-5")).toEqual({
       id: sol,
       mode: "auto",
@@ -640,15 +640,15 @@ describe("fallback graph (nextFallbackModel)", () => {
     expect(
       nextFallbackModel(opus, new Set([opus, sol, terra, luna]), "claude-opus-5")
     ).toEqual({ id: sonnet, mode: "ask" });
-    // Sol → Terra: same-tier sibling, automatic.
+    // Sol → Opus: preferred top-tier destination, automatic.
     expect(nextFallbackModel(sol, new Set([sol]), "claude-opus-5")).toEqual({
-      id: terra,
+      id: opus,
       mode: "auto",
     });
-    // Sol + siblings gone → Opus: downgrade, ASK.
+    // Sol + Opus gone → Terra: same-tier sibling, automatic.
     expect(
-      nextFallbackModel(sol, new Set([sol, terra, luna]), "claude-opus-5")
-    ).toEqual({ id: opus, mode: "ask" });
+      nextFallbackModel(sol, new Set([sol, opus]), "claude-opus-5")
+    ).toEqual({ id: terra, mode: "auto" });
   });
 
   it("never routes back into Fable (scarce weekly-scoped credit pool)", () => {
@@ -661,22 +661,21 @@ describe("fallback graph (nextFallbackModel)", () => {
     expect(fallbackPlan("claude-fable-5", "none")).toEqual([]);
   });
 
-  it("Fable's plan leads with the automatic Sol hop; the drop to Opus is ask-gated", () => {
+  it("orders Fable fallbacks as Sol, Opus, Terra, then Luna", () => {
     const plan = fallbackPlan("claude-fable-5", "claude-opus-5");
-    expect(plan.length).toBeGreaterThan(0);
-    // First hop off Fable is the equal-tier Sol, taken automatically.
-    expect(plan[0]).toEqual({ id: sol, mode: "auto" });
-    // Dropping down to Opus is a downgrade → always ask (each hop's mode is
-    // re-evaluated against the model it leaves, so lateral moves lower in the
-    // chain can be auto again — that's intended).
-    expect(plan.find((h) => h.id === opus)?.mode).toBe("ask");
+    expect(plan.slice(0, 4)).toEqual([
+      { id: sol, mode: "auto" },
+      { id: opus, mode: "auto" },
+      { id: terra, mode: "auto" },
+      { id: luna, mode: "auto" },
+    ]);
     // The single-engine fallback graph always emits OpenCode ids.
     for (const hop of plan) expect(hop.id.startsWith("opencode/")).toBe(true);
   });
 
-  it("tiers Fable/Sol above Opus above Sonnet", () => {
-    expect(fallbackTier("claude-fable-5")).toBeGreaterThan(fallbackTier("claude-opus-5"));
-    expect(fallbackTier(sol)).toBeGreaterThan(fallbackTier("claude-opus-5"));
+  it("tiers Fable, Sol, and Opus above Sonnet", () => {
+    expect(fallbackTier("claude-fable-5")).toBe(fallbackTier("claude-opus-5"));
+    expect(fallbackTier(sol)).toBe(fallbackTier("claude-opus-5"));
     expect(fallbackTier("claude-opus-5")).toBeGreaterThan(fallbackTier("claude-sonnet-5"));
   });
 });

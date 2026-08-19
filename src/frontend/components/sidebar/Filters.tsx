@@ -17,7 +17,12 @@ import { Menu } from "../../ui/menu";
 import { SwitchIndicator } from "../../ui/switch";
 import { cn } from "../../ui/cn";
 import { RepoTile, repoLabel } from "../RepoTile";
-import { IconChevronDown, IconChevronRight, IconRobot } from "../icons";
+import {
+	IconChevronDown,
+	IconChevronRight,
+	IconRobot,
+	IconSliders,
+} from "../icons";
 import { UserAvatar } from "../UserAvatar";
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -188,6 +193,7 @@ export function FilterPopover({
 	currentUser,
 	onChange,
 	onClose,
+	onCustomize,
 }: {
 	anchor: HTMLElement | null;
 	filter: FilterState;
@@ -196,6 +202,7 @@ export function FilterPopover({
 	currentUser: string;
 	onChange: (patch: Partial<FilterState>) => void;
 	onClose: () => void;
+	onCustomize: () => void;
 }) {
 	// Row density is a property of this list, so it sits with the other view
 	// controls rather than only in settings. It is a stored preference, not part
@@ -442,6 +449,14 @@ export function FilterPopover({
 						)}
 					</Menu.Popup>
 				</Menu.Root>
+				<button
+					type="button"
+					className={cn(FILTER_ROW, "mt-1 text-fg")}
+					onClick={onCustomize}
+				>
+					<IconSliders size={20} className="shrink-0 text-dim" />
+					<span className="truncate">Customize sidebar</span>
+				</button>
 			</div>
 		</>,
 		document.body,

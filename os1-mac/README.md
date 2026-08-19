@@ -209,5 +209,7 @@ the tag. Installed apps (≥ 0.2.0) pick it up on their next check. Dev runs
 - **Universal links**: see above.
 - **Web Push**: push events don't arrive in Electron (no FCM); notifications
   while the app is running come through the page's WebSocket + Notification
-  API, which works. Closed-app push would need a native APNs story — not
-  planned.
+  API, which works. Clicking one raises the window through
+  `window.os1.focusWindow()`, since a renderer-side `window.focus()` does not
+  bring a BrowserWindow forward on macOS. Closed-app push would need a native
+  APNs story — not planned.

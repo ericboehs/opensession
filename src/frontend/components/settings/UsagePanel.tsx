@@ -8,10 +8,7 @@ import { ClaudeAccountsSection, CodexAccountsSection } from "./ModelAccounts";
 export function UsagePanel() {
 	return (
 		<SettingsPanel>
-			<SettingsHeader
-				title="Usage"
-				description="How much of each subscription account runs have spent, and when it frees up."
-			/>
+			<SettingsHeader title="Usage" />
 			<ClaudeAccountsSection />
 			<CodexAccountsSection />
 		</SettingsPanel>

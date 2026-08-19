@@ -8,7 +8,7 @@ import {
 } from "../../lib/support-surface";
 import { ContextMenu, Menu, MENU_ICON } from "../../ui/menu";
 import { cn } from "../../ui/cn";
-import { IconDotsHorizontal } from "../icons";
+import { IconDotsHorizontal, IconSliders } from "../icons";
 
 /**
  * The sidebar's own right-click menu: every tool and every source, ticked when
@@ -173,12 +173,14 @@ export function SidebarToolsMenu({
 	onToggleTool,
 	onSetSupport,
 	onToggleSource,
+	onCustomize,
 }: {
 	tools: SidebarMenuTool[];
 	sources: SidebarMenuSource[];
 	onToggleTool: (id: SidebarToolId, shown: boolean) => void;
 	onSetSupport: (surface: SupportSurface) => void;
 	onToggleSource: (id: string, shown: boolean) => void;
+	onCustomize: () => void;
 }) {
 	return (
 		<ContextMenu.Popup>
@@ -209,6 +211,11 @@ export function SidebarToolsMenu({
 					</ContextMenu.Group>
 				</>
 			)}
+			<ContextMenu.Separator />
+			<ContextMenu.Item onClick={onCustomize}>
+				<IconSliders size={20} className={MENU_ICON} />
+				<span className="grow truncate">Customize sidebar</span>
+			</ContextMenu.Item>
 		</ContextMenu.Popup>
 	);
 }

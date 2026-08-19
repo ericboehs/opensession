@@ -568,15 +568,6 @@ export async function handleWorkspaceRoutes(
 	const newSessionMatch = path.match(
 		/^\/api\/sessions\/(.+)\/new-session$/,
 	);
-	// A session is a conversation, not an empty tab. Current clients open the
-	// workspace composer and create the session with its first prompt. Refuse
-	// this legacy endpoint so a stale client cannot leave a durable blank row.
-	if (newSessionMatch && req.method === "POST") {
-		return Response.json(
-			{ error: "Write a first message to start a session." },
-			{ status: 410 },
-		);
-	}
 	if (newSessionMatch && req.method === "POST") {
 		const sourceId = decodeURIComponent(newSessionMatch[1]);
 		const src = findSession(sourceId);

@@ -10,7 +10,7 @@
  *  - "mech": mechanical extraction (title, first user prompt, final assistant
  *    text, files touched from Edit/Write tool calls). Free, applied to every
  *    session including the historical backfill.
- *  - "llm": a one-shot distillation via opencodeOneShot, only for sessions
+ *  - "llm": a one-shot distillation via oneShot, only for sessions
  *    active in the last DISTILL_RECENT_DAYS and idle >IDLE_MS, capped at
  *    DISTILL_PER_SWEEP per sweep so a backfill can never hammer the account
  *    pool. A mech record upgrades to llm on a later sweep; an llm record is
@@ -26,7 +26,7 @@
 import { homeDir } from "./paths";
 import { getCachedSessions, getCachedSessionsAsync } from "./session-cache";
 import { mergedSessionTranscriptAsync } from "./sessions";
-import { opencodeOneShot } from "./opencode-oneshot";
+import { oneShot } from "./one-shot";
 import { audit } from "./audit";
 import { isDevInstance } from "./dev-mode";
 import {
@@ -224,7 +224,7 @@ async function distillWithLlm(
 	x: ExtractedTexts,
 	base: SearchRecord,
 ): Promise<SearchRecord | null> {
-	const text = await opencodeOneShot(distillPrompt(s, x), {
+	const text = await oneShot(distillPrompt(s, x), {
 		system: DISTILL_SYSTEM,
 		label: "session-index",
 		user: s.startedBy || undefined,

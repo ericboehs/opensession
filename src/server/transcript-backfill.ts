@@ -17,7 +17,7 @@
  *
  * Import-graph rule (invariant 6): nothing imported at module scope here may
  * reach run-rpc.ts. sessions.ts DOES reach it (sessions.ts → generated-titles
- * → opencode-oneshot → opencode-runner → run-rpc), so it is dynamic-imported
+ * → one-shot → opencode-runner → run-rpc), so it is dynamic-imported
  * at call time — by then the live process has long since loaded it, and tests
  * importing this module never bind the live rpc socket.
  *

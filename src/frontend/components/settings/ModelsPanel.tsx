@@ -11,10 +11,7 @@ import type { Workspace } from "../../lib/types";
 export function ModelsPanel({ workspace }: { workspace?: Workspace }) {
 	return (
 		<SettingsPanel>
-			<SettingsHeader
-				title="Models"
-				description="Choose the models and execution environments available to new sessions."
-			/>
+			<SettingsHeader title="Models" />
 			<ModelDefaultsSection />
 			<WorkspaceModelPresetSettings workspace={workspace} />
 			<ModelProvidersPanel />

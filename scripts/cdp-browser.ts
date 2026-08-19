@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { boundedCdpSystemdArgs, waitForFile } from "./lib/cdp-browser";
+import { boundedCdpSystemdArgs, systemdUserEnv, waitForFile } from "./lib/cdp-browser";
 
 const argv = process.argv.slice(2);
 const command = argv[0];
@@ -37,14 +37,25 @@ if (command === "start") {
 		"bun", worker, "worker", "--port", String(port), "--display", String(display),
 		"--profile", profile, "--state", state,
 	];
-	const proc = Bun.spawn(args, { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+	const env = systemdUserEnv();
+	const proc = Bun.spawn(args, { stdin: "ignore", stdout: "pipe", stderr: "pipe", env });
 	const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
-	if (code !== 0) throw new Error(`systemd-run failed: ${stderr.trim()}`);
+	if (code !== 0) {
+		const detail = stderr.trim();
+		// XDG_RUNTIME_DIR is always set now, so a bus error here means the user
+		// manager itself is not running for this uid. Name that, instead of
+		// leaving systemd's "No medium found" to be decoded from scratch again.
+		throw new Error(
+			/Failed to connect to bus|No medium found/.test(detail)
+				? `systemd-run failed: ${detail}\nThe user manager under ${env.XDG_RUNTIME_DIR} is unreachable; \`loginctl enable-linger\` for this user keeps one running.`
+				: `systemd-run failed: ${detail}`,
+		);
+	}
 	try {
 		const ready = JSON.parse(await waitForFile(state, 20_000));
 		console.log(JSON.stringify({ port: ready.port, unit }));
 	} catch (error) {
-		Bun.spawnSync(["systemctl", "--user", "stop", unit]);
+		Bun.spawnSync(["systemctl", "--user", "stop", unit], { env });
 		throw error;
 	}
 	process.exit(0);
@@ -103,14 +114,15 @@ if (command === "worker") {
 }
 
 if (command === "janitor") {
-	const list = Bun.spawnSync(["systemctl", "--user", "list-units", "--all", "--plain", "--no-legend", "opensession-cdp-*.service"]);
+	const env = systemdUserEnv();
+	const list = Bun.spawnSync(["systemctl", "--user", "list-units", "--all", "--plain", "--no-legend", "opensession-cdp-*.service"], { env });
 	const units = list.stdout.toString().split("\n").map((line) => line.trim().split(/\s+/)[0]).filter(Boolean);
 	for (const unit of units) {
-		const show = Bun.spawnSync(["systemctl", "--user", "show", unit, "-p", "ActiveState", "-p", "MemoryCurrent", "-p", "TasksCurrent"]);
+		const show = Bun.spawnSync(["systemctl", "--user", "show", unit, "-p", "ActiveState", "-p", "MemoryCurrent", "-p", "TasksCurrent"], { env });
 		const fields = Object.fromEntries(show.stdout.toString().trim().split("\n").map((line) => line.split("=", 2)));
 		if (fields.ActiveState === "active" && (Number(fields.MemoryCurrent) > 4 * 1024 ** 3 || Number(fields.TasksCurrent) > 256)) {
 			console.error(`stopping runaway ${unit}: memory=${fields.MemoryCurrent} tasks=${fields.TasksCurrent}`);
-			Bun.spawnSync(["systemctl", "--user", "stop", unit]);
+			Bun.spawnSync(["systemctl", "--user", "stop", unit], { env });
 		}
 	}
 	process.exit(0);

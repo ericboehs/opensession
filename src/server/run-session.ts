@@ -132,13 +132,14 @@ import {
 	stoppedSessions,
 	type QueueItem,
 } from "./queue-state";
+import { isShuttingDown } from "./shutdown-state";
 import {
 	parseImageDataUrls,
 	stageFileAttachments,
 	withUploadsNote,
 } from "./uploads";
 import { buildSessionNote } from "./session-repos";
-import { interactiveMcpServers } from "./interactive-mcp";
+import { automationSessionMcp, interactiveMcpServers } from "./interactive-mcp";
 import { makeAskHandler, settleRestoredAskAfterRecovery } from "./asks";
 
 // The runner writes its active-run journal before it can call an engine. Once
@@ -821,6 +822,20 @@ export function attachSessionWatchersToEngineTranscript(
 
 const queueDrains: Map<string, Promise<void>> = (g.__queueDrains ??= new Map());
 
+// One notice per session when a send parks for a restart. In-memory only: the
+// next boot delivers the parked queue, so a stale entry costs nothing.
+const shutdownParkNotified: Set<string> = (g.__shutdownParkNotified ??= new Set());
+function notifyShutdownPark(sessionId: string): void {
+	if (shutdownParkNotified.has(sessionId)) return;
+	shutdownParkNotified.add(sessionId);
+	broadcastToSession(sessionId, {
+		type: "notice",
+		sessionId,
+		message:
+			"The server is restarting. Your message is queued and will be delivered when it's back.",
+	});
+}
+
 /**
  * Serialize queue draining per session. A sleeping Sandbox may take seconds
  * to resume, during which later composer sends must stay behind the first
@@ -842,6 +857,16 @@ async function drainQueueInner(sessionId: string): Promise<void> {
 		// The user pressed stop: leave the queue visible-but-parked until their
 		// next explicit action instead of restarting the run they just stopped.
 		if (stoppedSessions.has(sessionId)) return;
+		// Graceful shutdown: park the queue instead of starting a turn. A turn
+		// started after the shutdown snapshot races the drain deadline (an
+		// in-process one is SIGKILLed there and redone from the journal), and
+		// the sender's socket dies mid-stream either way. The queue is already
+		// persisted, so the next boot's restorePromptQueues delivers this
+		// message cleanly instead.
+		if (isShuttingDown()) {
+			notifyShutdownPark(sessionId);
+			return;
+		}
 		// A racing run can own the session by the time we loop again (e.g. our
 		// last batch lost the start race and got re-queued) — hand off to the
 		// idle-watcher instead of busy-spinning runs that immediately bounce.
@@ -2050,13 +2075,14 @@ async function runSessionPromptInner(
 	// proxied back over the host protocol, so the server stays the store's
 	// only writer. Kill switch: OPENSESSION_PI_DETACH=0 (the generic
 	// disable-run-hosts file and runAgentHosted's in-process fallback also
-	// apply). Automation-owned sessions keep the in-process path: their runs
-	// carry a scoped policy surface this launcher does not thread.
+	// apply). Automation-owned sessions ride it too, with the automation's
+	// scoping intact: proxy names come from the same fail-closed automation
+	// set the run-rpc fallback builder serves, the repos note and MCP grant
+	// identity are withheld, and the automation's prReviewer rides the spec.
 	const hostedRun =
 		!runnerRun &&
 		!sandboxRun &&
 		routedEngine === "pi" &&
-		!isAutomationSession &&
 		process.env.OPENSESSION_PI_DETACH !== "0"
 			? runAgentHosted({
 					osSessionId: session.id,
@@ -2066,15 +2092,23 @@ async function runSessionPromptInner(
 					sessionId: engineSessionId || undefined,
 					cwd,
 					mode: session.mode,
-					mcpGrantUser: session.startedBy || undefined,
+					// Automation runs pass no MCP grant identity: a human's OAuth
+					// grants must not ride an automation-owned session's turns.
+					mcpGrantUser: isAutomationSession
+						? undefined
+						: session.startedBy || undefined,
 					model: session.model,
 					images,
 					mcpServers: mcpServers ?? "all",
-					proxyMcpServers: [
-						...Object.keys(interactiveMcpServers(user, sessionId)),
-						...(session.goalId ? ["opensession-goal-self"] : []),
-					],
-					reposNote: await buildSessionNote(session, user),
+					proxyMcpServers: isAutomationSession
+						? Object.keys(automationSessionMcp(session, sessionId))
+						: [
+								...Object.keys(interactiveMcpServers(user, sessionId)),
+								...(session.goalId ? ["opensession-goal-self"] : []),
+							],
+					reposNote: isAutomationSession
+						? undefined
+						: await buildSessionNote(session, user),
 					deniedTools,
 					confirmTools: STRIPE_CONFIRM_TOOLS,
 					aws: true,
@@ -2084,6 +2118,14 @@ async function runSessionPromptInner(
 					effort: session.effort,
 					fastMode: session.fastMode,
 					accountId: session.accountId,
+					// A human steering an automation-owned session still opens PRs
+					// under that automation's policy (parity with the in-process
+					// call below).
+					prReviewer:
+						isAutomationSession && session.automationId
+							? getAutomation(session.automationId)?.prReviewer
+							: undefined,
+					trustProfile: isAutomationSession ? "automation" : "interactive",
 					journalKind: "prompt",
 					onAskUser: makeAskHandler(sessionId),
 					onSteerFailed: (text) => {
@@ -2091,12 +2133,14 @@ async function runSessionPromptInner(
 						watchExternalRunAndDrain(session.id);
 					},
 					fallbackInProcessMcp: () =>
-						session.goalId
-							? {
-									...interactiveMcpServers(user, sessionId),
-									"opensession-goal-self": createGoalSelfMcpServer(session.goalId),
-								}
-							: interactiveMcpServers(user, sessionId),
+						isAutomationSession
+							? automationSessionMcp(session, sessionId)
+							: session.goalId
+								? {
+										...interactiveMcpServers(user, sessionId),
+										"opensession-goal-self": createGoalSelfMcpServer(session.goalId),
+									}
+								: interactiveMcpServers(user, sessionId),
 				})
 			: null;
 

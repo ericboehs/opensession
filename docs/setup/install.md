@@ -38,13 +38,73 @@ reference, MCP — are reference material you can skip on a first install, and
 networking, TLS, GitHub and systemd are all optional for session #1. Come back
 to them when the first session has run.
 
-Prerequisites: Linux (or macOS), `git`, and `curl`. The installer brings its
-own [Bun](https://bun.sh) and [OpenCode](https://opencode.ai). `gh`
-(authenticated) is needed for pull-request operations. See
-[README.md](README.md#minimum-requirements) for the optional extras.
+Prerequisites: Linux, macOS, or Windows 10/11 with WSL2, plus `git` and
+`curl`. The installer brings its own [Bun](https://bun.sh) and
+[OpenCode](https://opencode.ai). `gh` (authenticated) is needed for
+pull-request operations. See [README.md](README.md#minimum-requirements) for
+the optional extras.
 
-Provisioning a fresh cloud box first? [ec2.md](ec2.md) — there is one
+Provisioning a fresh cloud box first? [ec2.md](ec2.md). There is one
 cloud-init trap worth knowing about.
+
+### Windows: run the server in WSL2
+
+Open Session supports a Windows host through WSL2. The server and agent engines
+run in the Linux environment. Native Windows is supported separately as a
+[Runner](../runners.md#windows-runners) for PowerShell and Windows toolchains;
+running the server directly from PowerShell is not supported.
+
+First install Ubuntu from an Administrator PowerShell window:
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+Restart Windows if prompted, open Ubuntu, and finish creating its Linux user.
+Open Session needs systemd for its service and restart-safe engine processes.
+Check what PID 1 is inside Ubuntu:
+
+```sh
+ps -p 1 -o comm=
+```
+
+If that does not print `systemd`, enable it inside Ubuntu:
+
+```sh
+sudo tee /etc/wsl.conf >/dev/null <<'EOF'
+[boot]
+systemd=true
+EOF
+```
+
+Then apply the change from PowerShell and reopen Ubuntu:
+
+```powershell
+wsl --shutdown
+```
+
+Run the standard installer inside Ubuntu:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
+```
+
+The default `http://127.0.0.1:3850` address is reachable from Windows through
+WSL's localhost forwarding. For access from other machines, install and join
+Tailscale inside WSL, then use `opensession bind` to bind Open Session to that
+tailnet address. Do not expose it with `HOST=0.0.0.0`.
+
+WSL distributions do not start at Windows boot on their own. After a Windows
+restart, opening Ubuntu once starts systemd and the enabled Open Session
+service. For an unattended desktop, create a Windows logon task after the
+service is installed:
+
+```powershell
+schtasks /Create /TN OpenSessionWSL /SC ONLOGON /TR "wsl.exe -d Ubuntu --exec /bin/true" /F
+```
+
+If your distribution has a different name, use the value from `wsl -l -q` in
+place of `Ubuntu`.
 
 ## 1. Install
 

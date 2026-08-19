@@ -11,6 +11,7 @@ import {
 	fetchModels,
 	fetchProviderAccounts,
 	fetchFileMentions,
+	fetchMentionSuggestions,
 	fetchSkillMentions,
 	type ModelOption,
 	type ProviderAccountOption,
@@ -674,6 +675,9 @@ function CatchUpComposer({
 				goal={currentGoal}
 				onSetGoal={isNative ? handleSetGoal : undefined}
 				mentionFetch={(q) => fetchFileMentions(q, target.id)}
+				paletteFetch={(q) =>
+					fetchMentionSuggestions(q, target.id, currentUser)
+				}
 				skillsFetch={(q) => fetchSkillMentions(q, target.id)}
 			/>
 		</div>

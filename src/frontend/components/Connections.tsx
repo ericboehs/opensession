@@ -5,10 +5,11 @@ import { OptionSelect } from "../ui/select";
 import { cn } from "../ui/cn";
 import { Button } from "../ui/button";
 import { DeviceCode } from "../ui/device-code";
-import { InlineAlert, LoadingState } from "../ui/state";
+import { InlineAlert, Skeleton, SkeletonBar } from "../ui/state";
 import { PulseDot } from "../ui/status";
 import {
   SettingCard,
+  SettingCardSkeleton,
   SettingRow,
   SettingRowControl,
   SettingRowDescription,
@@ -124,6 +125,33 @@ export function SectionHeading({
   actions?: React.ReactNode;
 }) {
   return <SettingsGroupLabel actions={actions}>{children}</SettingsGroupLabel>;
+}
+
+function ConnectionsSkeleton() {
+  return (
+    <>
+      <SectionHeading>Agents: how work reaches {AGENT_NAME}</SectionHeading>
+      <Skeleton
+        label="Checking connections"
+        className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5"
+      >
+        {Array.from({ length: 3 }, (_, index) => (
+          <SettingsSection key={index} className="flex flex-col gap-2 p-3.5">
+            <div className="flex items-center gap-2.5">
+              <SkeletonBar className="size-[30px] shrink-0 rounded-control" />
+              <SkeletonBar className="w-[38%]" />
+              <SkeletonBar className="ml-auto h-5 w-16 rounded-[999px]" />
+            </div>
+            <SkeletonBar className="h-2.5 w-[72%]" />
+            <SkeletonBar className="h-2.5 w-[34%]" />
+          </SettingsSection>
+        ))}
+      </Skeleton>
+
+      <SectionHeading>MCP servers: tools inside every session</SectionHeading>
+      <SettingCardSkeleton rows={5} icon={40} label="Checking connections" />
+    </>
+  );
 }
 
 export function Connections() {
@@ -259,7 +287,6 @@ export function Connections() {
     <SettingsPanel>
       <SettingsHeader
         title="Connections"
-        description={`What ${AGENT_NAME} is wired into: inbound agents and the MCP tools every session can use.`}
         actions={
           <>
             <Button
@@ -296,7 +323,7 @@ export function Connections() {
       )}
 
       {!data ? (
-        <LoadingState>Checking connections…</LoadingState>
+        <ConnectionsSkeleton />
       ) : (
         <>
           <SectionHeading>Agents: how work reaches {AGENT_NAME}</SectionHeading>
@@ -454,11 +481,6 @@ export function Connections() {
           <ProjectsSection />
 
           <PlainRouter />
-
-          <div className="mt-6 text-supporting text-faint">
-            Changes apply to new session runs immediately (config is read per run). In a session
-            transcript, MCP tool calls show up tagged with their server name.
-          </div>
         </>
       )}
     </SettingsPanel>

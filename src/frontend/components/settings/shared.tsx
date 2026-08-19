@@ -25,14 +25,14 @@ export function SettingRow({
 	control,
 }: {
 	title: string;
-	desc: React.ReactNode;
+	desc?: React.ReactNode;
 	control: React.ReactNode;
 }) {
 	return (
 		<SettingsRow>
 			<SettingRowText>
 				<SettingRowTitle>{title}</SettingRowTitle>
-				<SettingRowDescription>{desc}</SettingRowDescription>
+				{desc != null && <SettingRowDescription>{desc}</SettingRowDescription>}
 			</SettingRowText>
 			<SettingRowControl>{control}</SettingRowControl>
 		</SettingsRow>

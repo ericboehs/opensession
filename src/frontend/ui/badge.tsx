@@ -13,9 +13,9 @@ import { cn } from "./cn";
  *
  * The choices worth knowing:
  *
- *  - `text-meta` and `font-medium`, always. A badge sits inside a row it must
- *    not outweigh, so it does not get its own type size or a bolder weight
- *    "because this one matters" — the tone carries that.
+ *  - `text-meta`, always. A badge sits inside a row it must not outweigh, so
+ *    it does not get its own type size or a bolder weight "because this one
+ *    matters." The tone carries that.
  *  - `rounded-sm`, matching the majority of what it replaces. A capsule reads
  *    as a control you can press; a badge is not pressable, and the softer rect
  *    also stays concentric inside the `rounded-md`/`rounded-row` boxes these
@@ -77,7 +77,7 @@ export function Badge({
 		<span
 			className={cn(
 				"inline-flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5",
-				"text-meta font-medium whitespace-nowrap",
+				"text-meta whitespace-nowrap",
 				variant === "outline" ? outline[tone] : soft[tone],
 				className,
 			)}

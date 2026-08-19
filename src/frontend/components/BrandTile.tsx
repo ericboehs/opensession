@@ -1,5 +1,5 @@
 import React from "react";
-import { BRANDS, brandLogo } from "../brand-logos";
+import { BRANDS, brandKey, brandLogo } from "../brand-logos";
 import { markTileClass, markTileShadow } from "../lib/mark-tile";
 
 /** Rounded brand square with the service's real logo (falls back to the first
@@ -11,9 +11,10 @@ import { markTileClass, markTileShadow } from "../lib/mark-tile";
  * and it did not while each side rounded and lit itself. */
 export function IconTile({ name, size = 34 }: { name: string; size?: number }) {
   const key = name.toLowerCase();
-  const brand = BRANDS[key];
+  const canonicalKey = brandKey(key);
+  const brand = BRANDS[canonicalKey];
   const logo = brandLogo(key);
-  const logoSize = key === "tella" ? size : size * 0.56;
+  const logoSize = canonicalKey === "tella" ? size : size * 0.56;
   const bg = brand?.bg;
   return (
     <span
@@ -44,11 +45,17 @@ export function IconTile({ name, size = 34 }: { name: string; size?: number }) {
           aria-hidden="true"
         >
           {logo.paths.map((d, i) => (
-            <path key={i} d={d} />
+            <path
+              key={i}
+              d={d}
+              fill={logo.fills?.[i] || "currentColor"}
+              opacity={logo.opacities?.[i]}
+              fillRule={logo.evenOdd ? "evenodd" : undefined}
+            />
           ))}
         </svg>
       ) : (
-        key === "codestorage" ? "cs" : name.charAt(0).toUpperCase()
+        name.charAt(0).toUpperCase()
       )}
     </span>
   );
@@ -86,7 +93,12 @@ export function BrandMark({
       className={className}
     >
       {logo.paths.map((d, i) => (
-        <path key={i} d={d} />
+        <path
+          key={i}
+          d={d}
+          opacity={logo.opacities?.[i]}
+          fillRule={logo.evenOdd ? "evenodd" : undefined}
+        />
       ))}
     </svg>
   );

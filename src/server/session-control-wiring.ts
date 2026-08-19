@@ -21,7 +21,7 @@ import { cancelAgentRun, isAgentSessionBusy, steerAgentRun } from "./agent-runne
 import { pendingAsks } from "./asks";
 import { relinkAskThreads } from "./human-asks";
 import { SESSION_EFFORTS, type SessionEffort, interactiveDefaultModel, providerFor, resolveModel } from "./models";
-import { promptQueues, recordSteer, requeueSteerReceipts, stoppedSessions } from "./queue-state";
+import { liftUserStop, promptQueues, recordSteer, requeueSteerReceipts, stoppedSessions } from "./queue-state";
 import { enqueuePrompt, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
 import { parseImageDataUrls } from "./uploads";
 import { type Sandbox } from "./sandbox";
@@ -130,6 +130,12 @@ registerSessionControl({
 			invalidateSessionsCache();
 			return { status: "handled" as const, message: notice, deliveryId };
 		}
+
+		// A delivery is an explicit next action on this session, so it lifts a
+		// prior Stop here rather than inside the run the Stop prevents: the busy
+		// branch below only enqueues, and drainQueue parks at the latch, which
+		// would leave the message queued forever.
+		liftUserStop(id);
 
 		const attributed = user ? `[${user}] ${content}` : content;
 		// Disk-staged files can only be supplied to a fresh turn. Never fold them

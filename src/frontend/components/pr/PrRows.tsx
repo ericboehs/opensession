@@ -40,7 +40,7 @@ export function ReviewerRow({ reviewer, provider }: { reviewer: PrReviewer; prov
   );
 }
 
-function reviewerStateMeta(state: PrReviewer["state"]): {
+export function reviewerStateMeta(state: PrReviewer["state"]): {
   label: string;
   tone: "green" | "red" | "muted" | "yellow";
   icon: React.ReactNode;

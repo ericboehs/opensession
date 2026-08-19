@@ -175,6 +175,25 @@ function shouldAlert(event: NotifEvent, s: NotifSettings): boolean {
 	return true;
 }
 
+// Bring the app forward from a notification click. In the desktop shell the
+// page's own window.focus() does not raise the window on macOS, so the shell's
+// main process is asked to do it (os1-mac preload). Older shells do not expose
+// that bridge, hence the feature check.
+function focusApp(): void {
+	try {
+		(
+			window as unknown as { os1?: { focusWindow?: () => void } }
+		).os1?.focusWindow?.();
+	} catch {
+		// The bridge is missing or threw. The plain focus below still runs.
+	}
+	try {
+		window.focus();
+	} catch {
+		// Focus can be refused; the click still routes.
+	}
+}
+
 // Fire an alert (sound + optional desktop banner) for a session event, subject to
 // the user's notification settings.
 export function notifyEvent(
@@ -182,6 +201,11 @@ export function notifyEvent(
 	title: string,
 	body: string,
 	onClick: () => void,
+	// What this banner collapses onto. Alerts about the same session replace one
+	// another; two sessions each keep their own banner, so a click still reaches
+	// the session it names. Without it every "Needs input" shared one tag and
+	// only the newest session was ever reachable.
+	key?: string,
 ): void {
 	const s = getNotifSettings();
 	if (!shouldAlert(event, s)) return;
@@ -190,9 +214,12 @@ export function notifyEvent(
 	try {
 		if (!("Notification" in window) || Notification.permission !== "granted")
 			return;
-		const n = new Notification(title, { body, tag: `opensession-${event}` });
+		const n = new Notification(title, {
+			body,
+			tag: `opensession-${event}${key ? `-${key}` : ""}`,
+		});
 		n.onclick = () => {
-			window.focus();
+			focusApp();
 			onClick();
 			n.close();
 		};

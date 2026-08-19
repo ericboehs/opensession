@@ -484,6 +484,8 @@ try {
     deniedTools: spec.deniedTools,
     confirmTools: spec.confirmTools,
     aws: spec.aws,
+    claudeCliEnv: spec.claudeCliEnv,
+    codexCliEnv: spec.codexCliEnv,
     author: spec.author,
     user: spec.user,
     fallbackModel: spec.fallbackModel,
@@ -492,6 +494,7 @@ try {
     accountId: spec.accountId,
     accountStrict: spec.accountStrict,
     usageCredits: spec.usageCredits,
+    prReviewer: spec.prReviewer,
     journal: {
       osSessionId: spec.osSessionId,
       kind: spec.journalKind || "prompt",

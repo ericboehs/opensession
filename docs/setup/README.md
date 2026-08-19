@@ -51,9 +51,11 @@ UI and API at the root of your instance URL.
 
 ## Minimum requirements
 
-- A Linux box (Tella runs Ubuntu on EC2; nothing requires AWS — see
-  [github.md](github.md) for the AWS-specific deploy pipeline, which is
-  replaceable).
+- A supported server environment: Linux, macOS, or Ubuntu under WSL2 on
+  Windows. The server does not run directly from PowerShell. See the
+  [WSL2 install path](install.md#windows-run-the-server-in-wsl2). Tella runs
+  Ubuntu on EC2; nothing requires AWS. The AWS-specific deploy pipeline in
+  [github.md](github.md) is replaceable.
 - [Bun](https://bun.sh) — runtime, package manager, and bundler. No Node/Vite.
   The installer brings its own; you only need it up front for a manual install.
 - `git`, and the [`gh` CLI](https://cli.github.com) for PR operations.

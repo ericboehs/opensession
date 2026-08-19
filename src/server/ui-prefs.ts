@@ -55,12 +55,35 @@ export function getUiPrefs(user: string): UiPrefs {
 	return store.get(user);
 }
 
+export function expectedUiPrefsMatch(
+	current: UiPrefs,
+	expected: unknown,
+): boolean {
+	if (!expected || typeof expected !== "object") return true;
+	for (const [key, value] of Object.entries(
+		expected as Record<string, unknown>,
+	)) {
+		if (!KEY_RE.test(key)) return false;
+		if (value === null) {
+			if (key in current) return false;
+		} else if (typeof value !== "string" || current[key] !== value) {
+			return false;
+		}
+	}
+	return true;
+}
+
 /**
  * Merge `patch` into a user's prefs (null value deletes the key). Returns the
  * stored map after the merge.
  */
-export function patchUiPrefs(user: string, patch: unknown): UiPrefs {
+export function patchUiPrefs(
+	user: string,
+	patch: unknown,
+	expected?: unknown,
+): UiPrefs {
 	const current = getUiPrefs(user);
+	if (!expectedUiPrefsMatch(current, expected)) return current;
 	if (patch && typeof patch === "object") {
 		for (const [key, value] of Object.entries(
 			patch as Record<string, unknown>,

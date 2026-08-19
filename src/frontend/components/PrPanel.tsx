@@ -1,6 +1,13 @@
 import { repoLabel } from "../lib/repo-label";
 import { AGENT_NAME } from "../lib/brand";
-import React, { useEffect, useState, useCallback, useId, useMemo, useRef } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useId,
+  useMemo,
+  useRef,
+} from "react";
 import { motion } from "motion/react";
 import { duration, ease } from "../ui/motion";
 import type {
@@ -22,6 +29,7 @@ import {
   fetchPrCodeFlow,
   fetchPrDiffGroups,
   fetchPrViewedFiles,
+  fetchPrFile,
   setPrFileViewed,
   fetchGitStatus,
   fetchReviewGuide,
@@ -45,7 +53,11 @@ import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { toast } from "../ui/toast";
 import type { FileDiffMetadata } from "@pierre/diffs";
-import { CommentableDiff, type CommentTarget, type PendingComment } from "./CommentableDiff";
+import {
+  CommentableDiff,
+  type CommentTarget,
+  type PendingComment,
+} from "./CommentableDiff";
 import { SelectionToSession } from "./SelectionToSession";
 import { getCurrentUser } from "./UserPicker";
 import { UserAvatar } from "./UserAvatar";
@@ -62,21 +74,28 @@ import { providerFromUrl, prCapabilities } from "../lib/provider";
 import { pollWhileVisible, PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
 import { Textarea } from "../ui/input";
 import {
+  IconArrowDown,
+  IconArrowUp,
   IconBranches,
   IconChevronRight,
+  IconCopy,
   IconDiffSplit,
   IconDiffUnified,
   IconDotsHorizontal,
   IconFile,
+  IconGitMerge,
   IconGlobe,
   IconListCircles,
-  IconMessages,
-  IconReturn,
+  IconSliders,
   IconX,
 } from "./icons";
 import { Menu, MENU_ICON } from "../ui/menu";
 import { Modal, useEnterOnMount } from "../ui/modal";
 import { Tooltip } from "../ui/tooltip";
+import { Popover } from "../ui/popover";
+import { Switch } from "../ui/switch";
+import { Segmented, SegmentedOption } from "../ui/segmented";
+import { OptionSelect } from "../ui/select";
 
 import { checkClass, isDeployment, summarize } from "../lib/pr-status-derive";
 import { prStatusMark } from "../lib/pr-status";
@@ -99,9 +118,17 @@ import { CodeFlow } from "./CodeFlow";
 import { revealDiffFile } from "../lib/diff-navigation";
 import { PrFileTree } from "./pr/PrFileTree";
 import { reviewDiffLoadPolicy } from "../lib/review-diff";
+import { BrandMark } from "./BrandTile";
+import { useCopy } from "../ui/copy";
 
 // Re-exported so existing importers of these (formerly local) helpers keep working.
-export { checkClass, isDeployment, formatPrCommentPrompt, CheckRow, PrStateIcon };
+export {
+  checkClass,
+  isDeployment,
+  formatPrCommentPrompt,
+  CheckRow,
+  PrStateIcon,
+};
 
 type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 
@@ -112,6 +139,29 @@ const CODE_VIEWS = {
   flow: { label: "Code flow", Icon: IconBranches },
 } as const;
 type CodeView = keyof typeof CODE_VIEWS;
+
+const NO_PR_FILES: NonNullable<PrDetails["files"]> = [];
+
+function useStoredCodeSetting<T extends string>(
+  key: string,
+  allowed: readonly T[],
+  fallback: T,
+): [T, (next: T) => void] {
+  const [value, setValue] = useState<T>(() => {
+    const stored = localStorage.getItem(key) as T | null;
+    return stored && allowed.includes(stored) ? stored : fallback;
+  });
+  const change = useCallback(
+    (next: T) => {
+      setValue(next);
+      try {
+        localStorage.setItem(key, next);
+      } catch {}
+    },
+    [key],
+  );
+  return [value, change];
+}
 
 interface Props {
   sessionId: string;
@@ -292,7 +342,8 @@ export function PrPanel({
   // every render for the (common) session with none.
   const linked = linkedLocal ?? linkedPrs ?? NO_LINKED_PRS;
   const targets = useMemo<PrTarget[]>(
-    () => dedupeTargets([
+    () =>
+      dedupeTargets([
       ...(previewTarget
         ? [
             {
@@ -321,7 +372,7 @@ export function PrPanel({
       })),
       // Last, so an explicit link (which owns the unlink affordance) wins the
       // dedupe over the same PR discovered from its body footer.
-      ...(previewTarget ? [] : discoveredPrs ?? []).map((dp) => ({
+        ...(previewTarget ? [] : (discoveredPrs ?? [])).map((dp) => ({
         key: `${dp.repo} ${dp.branch}`,
         repo: dp.repo,
         branch: dp.branch,
@@ -409,6 +460,7 @@ export function PrPanel({
   const [closing, setClosing] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const { copy: copyPrLink } = useCopy();
   // Merging is a separate decision from approving, so it starts off: the
   // reviewer opts into it, and the primary action stays "Approve".
   const [mergeAfterReview, setMergeAfterReview] = useState(false);
@@ -420,43 +472,81 @@ export function PrPanel({
    * never re-triggers guide or code-flow generation.
    */
   const [page, setPage] = useState<"overview" | "files">("files");
-  const [fileTreeOpen, setFileTreeOpen] = useState(false);
   const [codeView, setCodeView] = useState<"all" | "guide" | "flow">("all");
   /** A check chip elsewhere in the app asked for the checks (focusTarget). */
   const [focusChecksSeq, setFocusChecksSeq] = useState(0);
   /** A file picked on Overview, waiting for the code page to have its diff. */
   const [pendingReveal, setPendingReveal] = useState<string | null>(null);
-  const [diffStyle, setDiffStyle] = useState<"unified" | "split">(() => {
-    const stored = localStorage.getItem("opensession-pr-diff-style");
-    if (stored === "unified" || stored === "split") return stored;
-    // Side-by-side columns don't fit a phone viewport, so phones default to unified.
-    return window.matchMedia("(max-width: 720px)").matches ? "unified" : "split";
-  });
-  const changeDiffStyle = (style: "unified" | "split") => {
-    setDiffStyle(style);
-    try {
-      localStorage.setItem("opensession-pr-diff-style", style);
-    } catch {}
-  };
+  const phoneLayout = window.matchMedia("(max-width: 720px)").matches;
+  const [diffStyle, changeDiffStyle] = useStoredCodeSetting(
+    "opensession-pr-diff-style",
+    ["unified", "split"] as const,
+    phoneLayout ? "unified" : "split",
+  );
   // Long lines scroll sideways by default (GitHub's behaviour). Wrapping keeps
   // them all on screen, which matters most in split view where each side is
   // half as wide.
-  const [wrapLines, setWrapLines] = useState(
-    () => localStorage.getItem("opensession-pr-diff-wrap") === "1",
+  const [wrapSetting, changeWrapSetting] = useStoredCodeSetting(
+    "opensession-pr-diff-wrap",
+    ["0", "1"] as const,
+    "0",
   );
-  const changeWrapLines = (wrap: boolean) => {
-    setWrapLines(wrap);
-    try {
-      localStorage.setItem("opensession-pr-diff-wrap", wrap ? "1" : "0");
-    } catch {}
-  };
+  const wrapLines = wrapSetting === "1";
+  const changeWrapLines = (wrap: boolean) =>
+    changeWrapSetting(wrap ? "1" : "0");
+  const [structuralSetting, changeStructuralSetting] = useStoredCodeSetting(
+    "opensession-pr-structural-highlighting",
+    ["0", "1"] as const,
+    "1",
+  );
+  const [fileStatsSetting, changeFileStatsSetting] = useStoredCodeSetting(
+    "opensession-pr-file-stats",
+    ["0", "1"] as const,
+    "1",
+  );
+  const [grouping, changeGrouping] = useStoredCodeSetting(
+    "opensession-pr-grouping",
+    ["none", "ai"] as const,
+    "none",
+  );
+  const [fileListMode, changeFileListMode] = useStoredCodeSetting(
+    "opensession-pr-file-list",
+    ["flat", "tree", "hidden"] as const,
+    phoneLayout ? "hidden" : "flat",
+  );
+  const [fileOrder, changeFileOrder] = useStoredCodeSetting(
+    "opensession-pr-file-order",
+    ["path", "changes", "pull-request"] as const,
+    "path",
+  );
+  const [sortDirection, changeSortDirection] = useStoredCodeSetting(
+    "opensession-pr-file-order-direction",
+    ["asc", "desc"] as const,
+    "asc",
+  );
+  const [hideReviewedSetting, changeHideReviewedSetting] = useStoredCodeSetting(
+    "opensession-pr-hide-reviewed",
+    ["0", "1"] as const,
+    "0",
+  );
+  const [codeTheme, changeCodeTheme] = useStoredCodeSetting(
+    "opensession-pr-code-theme",
+    ["system", "light", "dark"] as const,
+    "system",
+  );
   // Keyed like the code flow below, so one target's guide never renders under
   // another's diff and a slow response can't land after the panel moved on.
-  const [guide, setGuide] = useState<{ key: string; data: ReviewGuideData } | null>(null);
+  const [guide, setGuide] = useState<{
+    key: string;
+    data: ReviewGuideData;
+  } | null>(null);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideFailed, setGuideFailed] = useState(false);
   const guideGenerationRef = useRef(0);
-  const [codeFlow, setCodeFlow] = useState<{ key: string; data: CodeFlowResult } | null>(null);
+  const [codeFlow, setCodeFlow] = useState<{
+    key: string;
+    data: CodeFlowResult;
+  } | null>(null);
   const [codeFlowLoading, setCodeFlowLoading] = useState(false);
   const [codeFlowError, setCodeFlowError] = useState<string | null>(null);
   const codeFlowGenerationRef = useRef(0);
@@ -503,11 +593,16 @@ export function PrPanel({
   }, [rootEl]);
   const loadGenerationRef = useRef(0);
   const activeLoadTargetRef = useRef(loadTargetKey);
-  const loadInFlightRef = useRef<{ key: string; promise: Promise<void> } | null>(null);
+  const loadInFlightRef = useRef<{
+    key: string;
+    promise: Promise<void>;
+  } | null>(null);
   activeLoadTargetRef.current = loadTargetKey;
 
-  const load = useCallback((force = false): Promise<void> => {
-    if (loadTargetKey !== activeLoadTargetRef.current) return Promise.resolve();
+  const load = useCallback(
+    (force = false): Promise<void> => {
+      if (loadTargetKey !== activeLoadTargetRef.current)
+        return Promise.resolve();
     const existing = loadInFlightRef.current;
     if (!force && existing?.key === loadTargetKey) return existing.promise;
 
@@ -527,7 +622,8 @@ export function PrPanel({
       );
       setDiffLoading(false);
     };
-    const prRequest = (previewTarget
+      const prRequest = (
+        previewTarget
       ? fetchPrPreview(previewTarget.repo, previewTarget.branch)
       : fetchPr(sessionId, active?.repo, active?.branch)
     )
@@ -543,13 +639,15 @@ export function PrPanel({
       .catch((e: any) => {
         prSettled = true;
         prResult = null;
-        if (isCurrent()) setLoadError(e?.message || "Failed to load the pull request.");
+          if (isCurrent())
+            setLoadError(e?.message || "Failed to load the pull request.");
         commitDiff();
       })
       .finally(() => {
         if (isCurrent()) setLoading(false);
       });
-    const diffRequest = (previewTarget
+      const diffRequest = (
+        previewTarget
       ? fetchPrPreviewDiff(previewTarget.repo, previewTarget.branch)
       : fetchPrDiff(sessionId, active?.repo, active?.branch)
     )
@@ -562,11 +660,13 @@ export function PrPanel({
       .catch((e: any) => {
         diffSettled = true;
         diffResult = null;
-        if (isCurrent()) setDiffError(e?.message || "Failed to load pull request changes.");
+          if (isCurrent())
+            setDiffError(e?.message || "Failed to load pull request changes.");
         commitDiff();
       });
     // A linked PR has no local worktree in this session — no git state.
-    const gitRequest = (previewTarget || active?.linked
+      const gitRequest = (
+        previewTarget || active?.linked
       ? Promise.resolve(null)
       : fetchGitStatus(sessionId, active?.repo)
     )
@@ -577,15 +677,19 @@ export function PrPanel({
         if (isCurrent()) setGit(null);
       });
 
-    const promise = Promise.allSettled([prRequest, diffRequest, gitRequest]).then(
-      () => undefined,
-    );
+      const promise = Promise.allSettled([
+        prRequest,
+        diffRequest,
+        gitRequest,
+      ]).then(() => undefined);
     loadInFlightRef.current = { key: loadTargetKey, promise };
     void promise.then(() => {
-      if (loadInFlightRef.current?.promise === promise) loadInFlightRef.current = null;
+        if (loadInFlightRef.current?.promise === promise)
+          loadInFlightRef.current = null;
     });
     return promise;
-  }, [
+    },
+    [
     sessionId,
     loadTargetKey,
     active?.repo,
@@ -593,7 +697,8 @@ export function PrPanel({
     active?.linked,
     previewTarget?.repo,
     previewTarget?.branch,
-  ]);
+    ],
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -661,7 +766,10 @@ export function PrPanel({
     let live = true;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const retryLater = () => {
-      retryTimer = setTimeout(() => setDiffGroupsRetry((attempt) => attempt + 1), 125_000);
+      retryTimer = setTimeout(
+        () => setDiffGroupsRetry((attempt) => attempt + 1),
+        125_000,
+      );
     };
     fetchPrDiffGroups(
       sessionId,
@@ -727,7 +835,10 @@ export function PrPanel({
   ]);
 
   const prPatchVersion = diff?.diffVersion || "";
-  const codeFlowKey = diff && prPatchVersion ? `${loadTargetKey}\0${diff.headRefOid}\0${prPatchVersion}` : "";
+  const codeFlowKey =
+    diff && prPatchVersion
+      ? `${loadTargetKey}\0${diff.headRefOid}\0${prPatchVersion}`
+      : "";
   const loadCodeFlow = useCallback(async () => {
     if ((!diff?.patch && !diff?.skippedFiles) || !codeFlowKey) return;
     const generation = ++codeFlowGenerationRef.current;
@@ -737,10 +848,13 @@ export function PrPanel({
       const data = previewTarget
         ? await fetchPrPreviewCodeFlow(previewTarget.repo, previewTarget.branch)
         : await fetchPrCodeFlow(sessionId, active?.repo, active?.branch);
-      if (!data) throw new Error("Code flow isn't available for this pull request.");
+      if (!data)
+        throw new Error("Code flow isn't available for this pull request.");
       if (data.diffVersion !== prPatchVersion) {
         if (generation === codeFlowGenerationRef.current) {
-          setCodeFlowError("The pull request updated while code flow was loading. Try again.");
+          setCodeFlowError(
+            "The pull request updated while code flow was loading. Try again.",
+          );
         }
         return;
       }
@@ -750,7 +864,8 @@ export function PrPanel({
       if (generation === codeFlowGenerationRef.current)
         setCodeFlowError(error?.message || "Couldn't load code flow.");
     } finally {
-      if (generation === codeFlowGenerationRef.current) setCodeFlowLoading(false);
+      if (generation === codeFlowGenerationRef.current)
+        setCodeFlowLoading(false);
     }
   }, [
     sessionId,
@@ -791,7 +906,15 @@ export function PrPanel({
     if (guideLoading || guideFailed) return;
     if (guide?.key === guideKey) return;
     void loadGuide();
-  }, [showingGuide, diff?.patch, guideKey, guide, guideLoading, guideFailed, loadGuide]);
+  }, [
+    showingGuide,
+    diff?.patch,
+    guideKey,
+    guide,
+    guideLoading,
+    guideFailed,
+    loadGuide,
+  ]);
 
   useEffect(() => {
     if (!showingFlow || codeFlowLoading || codeFlowError) return;
@@ -801,20 +924,38 @@ export function PrPanel({
       return;
     }
     if (codeFlow && codeFlow.key !== codeFlowKey) {
-      setCodeFlowError("The pull request updated. Refresh code flow to analyze the latest diff.");
+      setCodeFlowError(
+        "The pull request updated. Refresh code flow to analyze the latest diff.",
+      );
       return;
     }
     if (!codeFlow) void loadCodeFlow();
-  }, [showingFlow, diff?.patch, diffLoading, diffOutOfDate, codeFlow, codeFlowKey, codeFlowLoading, codeFlowError, loadCodeFlow]);
+  }, [
+    showingFlow,
+    diff?.patch,
+    diffLoading,
+    diffOutOfDate,
+    codeFlow,
+    codeFlowKey,
+    codeFlowLoading,
+    codeFlowError,
+    loadCodeFlow,
+  ]);
 
   // Inline comments don't post one-by-one — they accumulate as pending and ship
   // together when the reviewer finishes the review (the provider's native flow).
   // Both are stable: they ride diffProps into every mounted file row, so a new
   // identity here re-renders the whole diff.
-  const handleAddPending = useCallback(async (target: CommentTarget, text: string) => {
-    setPending((prev) => [...prev, { ...target, text, id: crypto.randomUUID() }]);
+  const handleAddPending = useCallback(
+    async (target: CommentTarget, text: string) => {
+      setPending((prev) => [
+        ...prev,
+        { ...target, text, id: crypto.randomUUID() },
+      ]);
     setReviewDone(null);
-  }, []);
+    },
+    [],
+  );
 
   const handleRemovePending = useCallback((id: string) => {
     setPending((prev) => prev.filter((c) => c.id !== id));
@@ -823,11 +964,7 @@ export function PrPanel({
   async function handleSubmitReview(summary: string) {
     if (submitting) return;
     const actionTargetKey = loadTargetKey;
-    if (
-      pending.length === 0 &&
-      !summary.trim() &&
-      reviewEvent !== "APPROVE"
-    ) {
+    if (pending.length === 0 && !summary.trim() && reviewEvent !== "APPROVE") {
       setReviewError("Add a comment or a summary first");
       return;
     }
@@ -845,9 +982,7 @@ export function PrPanel({
           path: c.path,
           line: c.endLine,
           startLine: c.startLine !== c.endLine ? c.startLine : undefined,
-          side: (c.side === "deletions" ? "LEFT" : "RIGHT") as
-            | "LEFT"
-            | "RIGHT",
+          side: (c.side === "deletions" ? "LEFT" : "RIGHT") as "LEFT" | "RIGHT",
         })),
       };
       const result = previewTarget
@@ -918,8 +1053,11 @@ export function PrPanel({
       else await mergePrApi(sessionId, "squash", active?.repo, active?.branch);
       if (actionTargetKey === activeLoadTargetRef.current) await load(true);
     } catch (e: any) {
-      if (actionTargetKey === activeLoadTargetRef.current)
-        setMergeError(e.message || "Merge failed");
+      if (actionTargetKey === activeLoadTargetRef.current) {
+        const message = e.message || "Merge failed";
+        setMergeError(message);
+        toast(message);
+      }
     } finally {
       setMerging(false);
     }
@@ -957,7 +1095,13 @@ export function PrPanel({
     const s = summarize(checks);
     const rank = (c: PrCheck) => {
       const cls = checkClass(c.status, c.conclusion);
-      return cls === "check-failure" ? 0 : cls === "check-pending" ? 1 : cls === "check-success" ? 3 : 2;
+      return cls === "check-failure"
+        ? 0
+        : cls === "check-pending"
+          ? 1
+          : cls === "check-success"
+            ? 3
+            : 2;
     };
     const sorted = [...checks].sort((a, b) => rank(a) - rank(b));
     return {
@@ -979,7 +1123,9 @@ export function PrPanel({
       .trim();
     // A PR body is PR prose like its comments: the same `<details>` blocks,
     // `<img>` screenshots and bot markup, rendered by the same allowlist.
-    return stripped ? renderPrCommentMarkdown(stripped, { repo: markdownRepo }) : "";
+    return stripped
+      ? renderPrCommentMarkdown(stripped, { repo: markdownRepo })
+      : "";
   }, [pr?.body, markdownRepo]);
   const provider = useMemo(() => providerFromUrl(pr?.url), [pr?.url]);
   // Host capability gating: absent (GitHub, older cache entries) means all
@@ -1004,7 +1150,13 @@ export function PrPanel({
     [page, codeView],
   );
   useEffect(() => {
-    if (!pendingReveal || page !== "files" || codeView === "flow" || !diff?.patch) return;
+    if (
+      !pendingReveal ||
+      page !== "files" ||
+      codeView === "flow" ||
+      !diff?.patch
+    )
+      return;
     const frame = requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         revealDiffFile(rootRef.current, pendingReveal);
@@ -1033,6 +1185,32 @@ export function PrPanel({
   // The pr-image endpoint serves blobs through the GitHub API — on hosts
   // without it, image files fall back to the plain binary-diff placeholder.
   const imageSrcs = caps.images ? prImageSrcs : undefined;
+  const fileActions = useMemo(() => {
+    const ref = pr?.headRefOid || pr?.headRefName;
+    const prUrl = pr?.url;
+    return {
+      providerName: provider.name,
+      url: (file: FileDiffMetadata) => {
+        if (provider.key !== "github" || !prUrl || !ref) return null;
+        try {
+          const url = new URL(prUrl);
+          url.pathname = `${url.pathname.replace(/\/pull\/\d+.*$/, "")}/blob/${encodeURIComponent(ref)}/${file.name
+            .split("/")
+            .map(encodeURIComponent)
+            .join("/")}`;
+          url.search = "";
+          url.hash = "";
+          return url.toString();
+        } catch {
+          return null;
+        }
+      },
+      loadContents:
+        provider.key === "github" && ref
+          ? (file: FileDiffMetadata) => fetchPrFile(activeRepoId, ref, file.name)
+          : undefined,
+    };
+  }, [pr?.headRefOid, pr?.headRefName, pr?.url, provider, activeRepoId]);
 
   // In-place edit mode on the review canvas. Only targets backed by one of the
   // session's own worktrees qualify (primary/attached repos — their worktree is
@@ -1097,7 +1275,11 @@ export function PrPanel({
     fetchPrViewedFiles(activeRepoId, diff.number, getCurrentUser())
       .then((res) => {
         if (!live) return;
-        setPrViewed({ key: viewedKey, prId: res.prId, viewed: new Set(res.viewed) });
+        setPrViewed({
+          key: viewedKey,
+          prId: res.prId,
+          viewed: new Set(res.viewed),
+        });
       })
       .catch(() => {
         // Leave prViewed unset — checkboxes just stay hidden for this PR.
@@ -1158,12 +1340,40 @@ export function PrPanel({
     [sessions, active?.repo, active?.branch, pr?.number, pr?.headRefName],
   );
 
+  const files = pr?.files ?? NO_PR_FILES;
+  const reviewedFiles =
+    prViewed?.key === viewedKey ? prViewed.viewed : undefined;
+  const hideReviewed = hideReviewedSetting === "1";
+  const reviewFiles = useMemo(() => {
+    const visible =
+      hideReviewed && reviewedFiles
+        ? files.filter((file) => !reviewedFiles.has(file.path))
+        : [...files];
+    if (fileOrder === "pull-request")
+      return sortDirection === "asc" ? visible : visible.reverse();
+    const direction = sortDirection === "asc" ? 1 : -1;
+    return visible.sort((left, right) => {
+      const result =
+        fileOrder === "changes"
+          ? left.additions + left.deletions - right.additions - right.deletions
+          : left.path.localeCompare(right.path);
+      return (result || left.path.localeCompare(right.path)) * direction;
+    });
+  }, [files, reviewedFiles, hideReviewed, fileOrder, sortDirection]);
+  const visibleFileOrder = useMemo(
+    () => reviewFiles.map((file) => file.path),
+    [reviewFiles],
+  );
+
   const currentGuide = guide?.key === guideKey ? guide.data : null;
   // Slicing the patch per section walks every byte of it, so it cannot run on
   // renders it has nothing to do with — while the guide is the open lens, that
   // would be once per keystroke in the review summary.
   const guideSections = useMemo(
-    () => (currentGuide && diff?.patch ? sectionsWithPatches(currentGuide, diff.patch) : []),
+    () =>
+      currentGuide && diff?.patch
+        ? sectionsWithPatches(currentGuide, diff.patch)
+        : [],
     [currentGuide, diff?.patch],
   );
 
@@ -1176,6 +1386,10 @@ export function PrPanel({
       diff && {
         diffStyle,
         wrapLines,
+        structuralHighlighting: structuralSetting === "1",
+        showFileStats: fileStatsSetting === "1",
+        codeTheme,
+        visibleFileOrder,
         stickyFileHeaders: true,
         defaultExpandedFiles: diffLoadPolicy.defaultExpandedFiles,
         allowExpandAll: diffLoadPolicy.allowExpandAll,
@@ -1191,12 +1405,17 @@ export function PrPanel({
         onRemovePending: handleRemovePending,
         onSubmit: handleAddPending,
         imageSrcs,
+        fileActions,
         editFile,
       },
     [
       diff,
       diffStyle,
       wrapLines,
+      structuralSetting,
+      fileStatsSetting,
+      codeTheme,
+      visibleFileOrder,
       prViewed,
       viewedKey,
       handleToggleViewed,
@@ -1207,6 +1426,7 @@ export function PrPanel({
       handleRemovePending,
       handleAddPending,
       imageSrcs,
+      fileActions,
       editFile,
       diffLoadPolicy.defaultExpandedFiles,
       diffLoadPolicy.allowExpandAll,
@@ -1248,7 +1468,11 @@ export function PrPanel({
         </button>
       ))}
       {linkable && (
-        <LinkPrControl sessionId={sessionId} variant="tab" onLinked={handleLinked} />
+        <LinkPrControl
+          sessionId={sessionId}
+          variant="tab"
+          onLinked={handleLinked}
+        />
       )}
     </div>
   ) : null;
@@ -1257,7 +1481,7 @@ export function PrPanel({
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         {switcher}
-        <LoadingState>Loading pull request…</LoadingState>
+        <LoadingState className="flex-1">Loading pull request…</LoadingState>
       </div>
     );
 
@@ -1297,14 +1521,17 @@ export function PrPanel({
             </PrCard>
             {linkable && !showBar && (
               <div className="flex flex-wrap items-center gap-2">
-                <LinkPrControl sessionId={sessionId} variant="action" onLinked={handleLinked} />
+              <LinkPrControl
+                sessionId={sessionId}
+                variant="action"
+                onLinked={handleLinked}
+              />
               </div>
             )}
         </div>
       </div>
     );
 
-  const files = pr.files || [];
   // Bot bookkeeping comments are pure HTML markers — hide them, and strip
   // leading markers from real comments' previews.
   const comments = (pr.comments || []).filter(
@@ -1363,135 +1590,286 @@ export function PrPanel({
     />
   );
 
-  /** How the diff is drawn: its own dropdown when there is room for one, and
-   *  folded into the view menu when there is not — a narrow panel scrolls its
-   *  chrome row, and a trigger parked past the right edge opens its popup
-   *  off screen. */
-  const diffDisplayItems = (
-    <>
-      <Menu.RadioGroup
-        value={diffStyle}
-        onValueChange={(next) => changeDiffStyle(String(next) as "unified" | "split")}
+  const codeSettings = (
+    <Popover.Root>
+      <Tooltip label="Code view settings">
+        <Popover.Trigger
+          render={
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Code view settings"
+              icon={<IconSliders size={18} />}
+            />
+          }
+        />
+      </Tooltip>
+      <Popover.Popup
+        side="bottom"
+        align="end"
+        initialFocus
+        className="w-[340px] p-2"
       >
-        <Menu.RadioItem value="unified" closeOnClick>
-          <IconDiffUnified size={18} className={MENU_ICON} />
-          <span className="min-w-0 flex-1 truncate">Unified diff</span>
-          <Menu.Check on={diffStyle === "unified"} />
-        </Menu.RadioItem>
-        <Menu.RadioItem value="split" closeOnClick>
-          <IconDiffSplit size={18} className={MENU_ICON} />
-          <span className="min-w-0 flex-1 truncate">Split diff</span>
-          <Menu.Check on={diffStyle === "split"} />
-        </Menu.RadioItem>
-      </Menu.RadioGroup>
-      <Menu.Separator />
-      <Menu.CheckboxItem checked={wrapLines} onCheckedChange={changeWrapLines} closeOnClick>
-        <IconReturn size={18} className={MENU_ICON} />
-        <span className="min-w-0 flex-1 truncate">Wrap long lines</span>
-        <Menu.Check on={wrapLines} />
-      </Menu.CheckboxItem>
-    </>
+        <Segmented
+          label="Diff layout"
+          value={diffStyle}
+          onValueChange={(next) => changeDiffStyle(next as "unified" | "split")}
+          className="grid w-full grid-cols-2"
+        >
+          <SegmentedOption value="split" className="justify-center py-1.5">
+            <IconDiffSplit size={18} />
+            Split
+          </SegmentedOption>
+          <SegmentedOption value="unified" className="justify-center py-1.5">
+            <IconDiffUnified size={18} />
+            Unified
+          </SegmentedOption>
+        </Segmented>
+
+        <div className="mt-2 border-t border-divider py-1">
+          <label className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
+            <span>Structural highlighting</span>
+            <Switch
+              size="sm"
+              checked={structuralSetting === "1"}
+              onCheckedChange={(checked) =>
+                changeStructuralSetting(checked ? "1" : "0")
+              }
+            />
+          </label>
+          <label className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
+            <span>Wrap lines</span>
+            <Switch
+              size="sm"
+              checked={wrapLines}
+              onCheckedChange={changeWrapLines}
+            />
+          </label>
+          <label className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
+            <span>Show changed lines per file</span>
+            <Switch
+              size="sm"
+              checked={fileStatsSetting === "1"}
+              onCheckedChange={(checked) =>
+                changeFileStatsSetting(checked ? "1" : "0")
+              }
+            />
+          </label>
+        </div>
+
+        <div className="border-t border-divider py-1">
+          <div className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
+            <span className="shrink-0 whitespace-nowrap">Grouping</span>
+            <OptionSelect
+              label="Grouping"
+              value={grouping}
+              onChange={changeGrouping}
+              size="sm"
+              options={[
+                { value: "none", label: "No grouping" },
+                { value: "ai", label: "By purpose" },
+              ]}
+            />
+          </div>
+          <div className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
+            <span className="shrink-0 whitespace-nowrap">File list</span>
+            <OptionSelect
+              label="File list"
+              value={fileListMode}
+              onChange={changeFileListMode}
+              size="sm"
+              options={[
+                { value: "flat", label: "Flat" },
+                { value: "tree", label: "Tree" },
+                { value: "hidden", label: "Hidden" },
+              ]}
+            />
+          </div>
+          <div className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
+            <span className="shrink-0 whitespace-nowrap">Order by</span>
+            <span className="flex items-center gap-1">
+              <Tooltip
+                label={sortDirection === "asc" ? "Ascending" : "Descending"}
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={
+                    sortDirection === "asc"
+                      ? "Sort descending"
+                      : "Sort ascending"
+                  }
+                  icon={
+                    sortDirection === "asc" ? (
+                      <IconArrowUp size={17} />
+                    ) : (
+                      <IconArrowDown size={17} />
+                    )
+                  }
+                  onClick={() =>
+                    changeSortDirection(
+                      sortDirection === "asc" ? "desc" : "asc",
+                    )
+                  }
+                />
+              </Tooltip>
+              <OptionSelect
+                label="File order"
+                value={fileOrder}
+                onChange={changeFileOrder}
+                size="sm"
+                options={[
+                  { value: "path", label: "Path" },
+                  { value: "changes", label: "Changed lines" },
+                  { value: "pull-request", label: "Pull request" },
+                ]}
+              />
+            </span>
+          </div>
+          <label className="flex min-h-10 items-center justify-between gap-4 px-2 text-label text-fg">
+            <span className="shrink-0 whitespace-nowrap">Hide reviewed</span>
+            <Switch
+              size="sm"
+              checked={hideReviewed}
+              disabled={!reviewedFiles}
+              onCheckedChange={(checked) =>
+                changeHideReviewedSetting(checked ? "1" : "0")
+              }
+            />
+          </label>
+        </div>
+
+        <div className="flex min-h-11 items-center justify-between gap-4 border-t border-divider px-2 pt-1 text-label text-fg">
+          <span className="shrink-0 whitespace-nowrap">Code theme</span>
+          <OptionSelect
+            label="Code theme"
+            value={codeTheme}
+            onChange={changeCodeTheme}
+            size="sm"
+            options={[
+              { value: "system", label: "Match app" },
+              { value: "light", label: "Light" },
+              { value: "dark", label: "Dark" },
+            ]}
+          />
+        </div>
+      </Popover.Popup>
+    </Popover.Root>
   );
-  const showDisplayMenu = codeView !== "flow";
 
-  /* The two pages as a rail rather than a strip. A review is Overview and
-     Files changed, and a menu down the canvas' edge keeps both a click away
-     without spending a row of chrome on them, in the same shape as the app's
-     own sidebar one level out. The items are icon-only, so each carries its
-     name in a tooltip and an aria-label, and the count the strip showed rides
-     the glyph's corner as a badge rather than sitting under it, which kept the
-     item two lines tall for a number nobody reads twice.
-
-     A rail is 48px of permanent width, though, which a phone reading a diff
-     needs more than two buttons do. So at the width where the header already
-     drops its labels, the same pair moves onto the row above the diff, at the
-     start of the line where a tab strip is read: the navigation stays one tap
-     away, and the code gets the canvas. */
-  const fileTreePaths = files.map((file) => file.path);
+  /* The review has two pages, kept beside each other in the sticky bar so the
+     navigation stays visible without taking width from the review canvas. */
   const pageTabs = (
     [
-      ["overview", "Overview", IconMessages, comments.length || undefined, true],
-      ["files", "Files changed", IconFile, files.length || undefined, false],
+      ["overview", "Overview", comments.length || undefined],
+      ["files", "Files changed", files.length || undefined],
     ] as const
-  ).map(([key, label, Icon, count, badged]) => (
-    <Tooltip
+  ).map(([key, label, count]) => (
+    <button
       key={key}
-      side={headerCompact ? "bottom" : "right"}
-      label={
-        key === "files" && page === "files"
-          ? fileTreeOpen
-            ? "Hide file tree"
-            : "Show file tree"
-          : count === undefined
-            ? label
-            : key === "overview"
-              ? `Overview · ${count} comment${count === 1 ? "" : "s"}`
-              : `${count} file${count === 1 ? "" : "s"} changed`
-      }
+      role="tab"
+      aria-selected={page === key}
+      className={`relative flex h-11 shrink-0 items-center gap-1.5 border-0 bg-transparent px-3 text-control-label font-medium transition-colors ${
+        page === key ? "text-fg" : "text-dim hover:text-fg"
+      }`}
+      onClick={() => setPage(key)}
     >
-      <button
-        role="tab"
-        aria-selected={page === key}
-        aria-label={label}
-        /* Two shapes for one state, because the two placements read
-           differently. Down a rail the item is a row in a list, so the one you
-           are on takes a filled plate, the way every sidebar row does. Along a
-           strip it is a tab, and a tab says so with a line on the edge it
-           shares with the content below — a plate there reads as a pressed
-           button instead. Selected keeps its own background named either way:
-           a `bg-transparent` in the shared half would win or lose the
-           source-order tie on Tailwind's output order, not on which one is
-           written last here. */
-        className={
-          headerCompact
-            ? `group relative flex h-11 w-9 shrink-0 items-center justify-center border-0 bg-transparent transition-colors before:absolute before:inset-x-0 before:inset-y-1.5 before:rounded-control before:content-[''] ${
-                page === key
-                  ? "text-accent"
-                  : "text-dim hover:text-fg hover:before:bg-hover"
-              }`
-            : `relative flex size-10 shrink-0 items-center justify-center rounded-control border-0 transition-colors ${
-                page === key
-                  ? "bg-accent-soft text-accent"
-                  : "bg-transparent text-dim hover:bg-hover hover:text-fg"
-              }`
-        }
-        aria-expanded={key === "files" && page === "files" ? fileTreeOpen : undefined}
-        aria-controls={key === "files" ? "pr-file-tree" : undefined}
-        onClick={() => {
-          if (key === "files" && page === "files") {
-            setFileTreeOpen((open) => !open);
-            return;
-          }
-          setPage(key);
-        }}
-      >
-        {/* On the hairline the row already draws, so the tab and its page read
-            as one surface. */}
-        {headerCompact && page === key && (
-          <motion.span
-            layoutId={tabUnderlineId}
-            aria-hidden
-            className="absolute inset-x-0 bottom-0 h-0.5 bg-accent"
-            transition={{ type: "tween", duration: duration.base, ease }}
-          />
-        )}
-        {/* The badge hangs off the GLYPH's corner, not the plate's:
-            anchored to the box it floats in the box's empty corner and
-            reads as a second object beside the icon rather than a
-            count on it. It carries the accent plate in both states so
-            it stays legible over the selected item's own wash, and it
-            is inert to the pointer so the whole box is still the tab. */}
-        <span className="relative inline-flex">
-          <Icon size={19} />
-          {badged && count !== undefined && (
-            <span className="pointer-events-none absolute -right-2.5 -top-1.5 min-w-[16px] rounded-full bg-accent px-1 py-px text-center text-meta font-semibold leading-[1.3] tabular-nums text-on-accent">
-              {count}
-            </span>
-          )}
+      {page === key && (
+        <motion.span
+          layoutId={tabUnderlineId}
+          aria-hidden
+          className="absolute inset-x-0 bottom-0 h-0.5 bg-accent"
+          transition={{ type: "tween", duration: duration.base, ease }}
+        />
+      )}
+      {label}
+      {count !== undefined && (
+        <span
+          className={`min-w-5 rounded-full px-[7px] py-px text-center text-meta font-semibold tabular-nums ${
+            page === key ? "bg-accent-soft text-accent" : "bg-active text-dim"
+          }`}
+        >
+          {count}
         </span>
-      </button>
-    </Tooltip>
+      )}
+    </button>
   ));
+
+  const reviewBar = (
+    <div className="flex h-11 shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden bg-surface px-6 shadow-[inset_0_-1px_0_var(--border)] [scrollbar-width:none] phone:px-2 [&::-webkit-scrollbar]:hidden">
+      <div
+        className="flex shrink-0 items-center gap-0.5 self-stretch"
+        role="tablist"
+        aria-orientation="horizontal"
+        aria-label="Pull request pages"
+      >
+        {pageTabs}
+      </div>
+      {page === "files" && (
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {handEdited.length > 0 && send && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={tellAgentAboutEdits}
+              title="Sends a note listing your hand-edits so they get committed and pushed"
+            >
+              Tell {AGENT_NAME} about {handEdited.length} edit
+              {handEdited.length === 1 ? "" : "s"}
+            </Button>
+          )}
+          <span className="flex shrink-0 items-center gap-1.5 text-label tabular-nums">
+            <span className="text-green">+{pr.additions}</span>
+            <span className="text-red">−{pr.deletions}</span>
+          </span>
+          <Menu.Root>
+            <Tooltip label="Change the view">
+              <Menu.Trigger
+                render={
+                  <Button variant="default" size="sm" className="text-fg" caret>
+                    {CODE_VIEWS[codeView].label}
+                  </Button>
+                }
+              />
+            </Tooltip>
+            <Menu.Popup align="end" className="min-w-[210px]">
+              <Menu.RadioGroup
+                value={codeView}
+                onValueChange={(next) => {
+                  const key = String(next) as CodeView;
+                  if (key === "flow" && codeView !== "flow" && codeFlowError) {
+                    setCodeFlow(null);
+                    setCodeFlowError(null);
+                  }
+                  setCodeView(key);
+                }}
+              >
+                {(Object.keys(CODE_VIEWS) as CodeView[]).map((key) => {
+                  const { label, Icon } = CODE_VIEWS[key];
+                  return (
+                    <Menu.RadioItem
+                      key={key}
+                      value={key}
+                      closeOnClick
+                      disabled={
+                        key === "flow" &&
+                        ((!diff?.patch && !diff?.skippedFiles) || !prPatchVersion)
+                      }
+                    >
+                      <Icon size={18} className={MENU_ICON} />
+                      <span className="min-w-0 flex-1 truncate">{label}</span>
+                      <Menu.Check on={codeView === key} />
+                    </Menu.RadioItem>
+                  );
+                })}
+              </Menu.RadioGroup>
+            </Menu.Popup>
+          </Menu.Root>
+          {codeSettings}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div
@@ -1501,16 +1879,18 @@ export function PrPanel({
     >
       {switcher}
 
-      {/* The PR identity, edge to edge above everything else: it names the
-          canvas, so it spans it rather than starting past the rail. */}
-      <header className="flex h-10 shrink-0 items-center gap-2.5 bg-surface px-6 shadow-[inset_0_-1px_0_var(--border)] phone:px-3">
+      {/* The PR identity names the canvas, so it stays edge to edge above the
+          navigation and review content. */}
+      <header
+        className={`flex h-10 shrink-0 items-center gap-2.5 px-6 shadow-[inset_0_-1px_0_var(--border)] phone:px-3 ${statusMark.bgClassName}`}
+      >
         {/* State, in the app's own PR language, filled rather than drawn: the
             tone washes the whole chip and the glyph and word share its ink.
             It is its own object, so it gets more air than the pieces of the
             identity line it precedes. */}
         <Tooltip label={statusMark.label}>
           <span
-            className={`mr-1.5 flex h-6 shrink-0 items-center gap-1.5 rounded-control px-2 ${statusMark.bgClassName} ${statusMark.className}`}
+            className={`mr-1.5 flex h-6 shrink-0 items-center gap-1.5 ${statusMark.className}`}
           >
             <PrStateIcon state={pr.state} isDraft={pr.isDraft} />
             {!headerCompact && (
@@ -1576,7 +1956,10 @@ export function PrPanel({
             </a>
           </Tooltip>
         )}
-        {pr.state === "OPEN" && !pr.isDraft && caps.reviewComments && !reviewing && (
+        {pr.state === "OPEN" &&
+          !pr.isDraft &&
+          caps.reviewComments &&
+          !reviewing && (
           /* The one call to action on this canvas, so it takes the accent
              plate. Green is the app's affirmative tone (approve, merge) and
              the state glyph beside it is already wearing it; a green Review
@@ -1594,207 +1977,134 @@ export function PrPanel({
             Review
           </Button>
         )}
-        {pr.state === "OPEN" && (
-          <Menu.Root>
-            <Tooltip label="Pull request actions">
-              <Menu.Trigger
+        {canMergeAfterReview && (
+          <Button
+            variant="success-strong"
+            size="sm"
+            className={
+              !pr.staging?.url && !(caps.reviewComments && !reviewing)
+                ? "ml-auto"
+                : undefined
+            }
+            icon={!merging && !confirmMerge ? <IconGitMerge size={18} /> : undefined}
+            disabled={merging}
+            onClick={handleMerge}
+            title="Squash and merge this pull request"
+          >
+            {merging
+              ? "Merging…"
+              : confirmMerge
+                ? "Confirm merge"
+                : headerCompact
+                  ? "Merge"
+                  : "Squash and merge"}
+          </Button>
+        )}
+        <Menu.Root>
+          <Tooltip label="Pull request actions">
+            <Menu.Trigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="-mr-1.5"
+                  aria-label="Pull request actions"
+                  icon={<IconDotsHorizontal size={18} />}
+                />
+              }
+            />
+          </Tooltip>
+          <Menu.Popup align="end">
+            <Menu.Item
+              render={<a href={pr.url} target="_blank" rel="noopener" />}
+            >
+              <BrandMark name={provider.key} size={18} className={MENU_ICON} />
+              <span className="min-w-0 flex-1 truncate">
+                Open on {provider.name}
+              </span>
+            </Menu.Item>
+            {pr.staging?.url && (
+              <Menu.Item
                 render={
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="-mr-1.5"
-                    aria-label="Pull request actions"
-                    icon={<IconDotsHorizontal size={18} />}
+                  <a
+                    href={pr.staging.url}
+                    target="_blank"
+                    rel="noopener"
                   />
                 }
-              />
-            </Tooltip>
-            <Menu.Popup align="end">
-              <Menu.Item
-                className="text-red data-[highlighted]:bg-red-soft"
-                onClick={handleClose}
-                disabled={closing}
               >
-                {closing
-                  ? "Closing…"
-                  : confirmClose
-                    ? "Confirm close pull request"
-                    : "Close pull request"}
+                <IconGlobe size={18} className={MENU_ICON} />
+                <span className="min-w-0 flex-1 truncate">Open preview</span>
               </Menu.Item>
-            </Menu.Popup>
-          </Menu.Root>
-        )}
+            )}
+            <Menu.Item
+              onClick={() =>
+                copyPrLink(pr.url, { toast: "Pull request link copied" })
+              }
+            >
+              <IconCopy size={18} className={MENU_ICON} />
+              <span className="min-w-0 flex-1 truncate">Copy PR link</span>
+            </Menu.Item>
+            {pr.state === "OPEN" && (
+              <>
+                <Menu.Separator />
+                {canMergeAfterReview && (
+                  <Menu.Item
+                    onClick={handleMerge}
+                    closeOnClick={confirmMerge}
+                    disabled={merging}
+                  >
+                    <IconGitMerge size={18} className={MENU_ICON} />
+                    {merging
+                      ? "Merging…"
+                      : confirmMerge
+                        ? "Confirm squash and merge"
+                        : "Squash and merge"}
+                  </Menu.Item>
+                )}
+                <Menu.Item
+                  className="text-red data-[highlighted]:bg-red-soft"
+                  onClick={handleClose}
+                  closeOnClick={confirmClose}
+                  disabled={closing}
+                >
+                  <IconX size={18} className={MENU_ICON} />
+                  {closing
+                    ? "Closing…"
+                    : confirmClose
+                      ? "Confirm close pull request"
+                      : "Close pull request"}
+                </Menu.Item>
+              </>
+            )}
+          </Menu.Popup>
+        </Menu.Root>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        {/* The rail, when the canvas can spare the 48px. Its shape and its
-            reasoning live with `pageTabs` above; below that width the same
-            tabs ride the header instead. */}
-        {!headerCompact && (
-          <nav
-            className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-line bg-surface pt-2"
-            role="tablist"
-            aria-orientation="vertical"
-            aria-label="Pull request pages"
-          >
-            {pageTabs}
-          </nav>
-        )}
+      {caps.stacks && (
+        <StackSection
+          pr={pr}
+          sessionId={sessionId}
+          repo={active?.repo}
+          onOpenPr={onOpenPr}
+          onLinked={load}
+        />
+      )}
+      {reviewBar}
 
-        {page === "files" && fileTreeOpen && fileTreePaths.length > 0 && (
-          <PrFileTree paths={fileTreePaths} onOpenFile={scrollToFile} />
+      <div className="flex min-h-0 flex-1">
+        {page === "files" && fileListMode !== "hidden" && files.length > 0 && (
+          <PrFileTree
+            files={reviewFiles}
+            mode={fileListMode}
+            showFileStats={fileStatsSetting === "1"}
+            onOpenFile={scrollToFile}
+          />
         )}
 
         <main
-          className={`min-w-0 flex-1 overflow-y-auto bg-surface [--review-file-header-top:44px] ${reviewing ? "pb-24 phone:pb-36" : "pb-4"}`}
+          className={`min-w-0 flex-1 overflow-y-auto bg-surface [--review-file-header-top:0px] ${reviewing ? "pb-24 phone:pb-36" : "pb-4"}`}
         >
-          {/* Where this PR sits in its chain of layers — above the pages, because
-              it reframes what everything under it means. */}
-          {caps.stacks && (
-            <StackSection pr={pr} sessionId={sessionId} repo={active?.repo} onOpenPr={onOpenPr} onLinked={load} />
-          )}
-
-          {/* What the code page needs: how big the change is, and the two
-              controls that scope and draw the diff. With a rail there is
-              nothing else in it, so Overview gets no chrome row at all rather
-              than an empty bar — but without one this row is also where the
-              pages live, so then Overview keeps it and shows the tabs alone.
-              Horizontal scrollbars are hidden because a 1px overflow here parks
-              one (base.css opts Chrome out of overlay scrollbars). */}
-          {(page === "files" || headerCompact) && (
-            <div className="sticky top-0 z-[8] flex h-11 shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden bg-surface px-6 shadow-[inset_0_-1px_0_var(--border)] [scrollbar-width:none] phone:px-2 [&::-webkit-scrollbar]:hidden">
-              {/* The pages, when there is no rail to hold them: at the start of
-                  the line, where a tab strip is read. This row is then the only
-                  thing carrying them, so Overview keeps it too rather than
-                  losing its way back to the code. */}
-              {headerCompact && (
-                <div
-                  /* Wider than the rail's gap: the Overview badge hangs past
-                     its plate's right edge, and at a tighter gap it touched
-                     the Files tab beside it. */
-                  className="flex shrink-0 items-center gap-2"
-                  role="tablist"
-                  aria-orientation="horizontal"
-                  aria-label="Pull request pages"
-                >
-                  {pageTabs}
-                </div>
-              )}
-              {/* Everything that scopes or draws the diff, so it belongs to the
-                  code page alone. On Overview the row carries only the tabs. */}
-              {page === "files" && (
-                <div className="ml-auto flex shrink-0 items-center gap-2">
-                  {handEdited.length > 0 && send && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={tellAgentAboutEdits}
-                      title="Sends a note listing your hand-edits so they get committed and pushed"
-                    >
-                      Tell {AGENT_NAME} about {handEdited.length} edit
-                      {handEdited.length === 1 ? "" : "s"}
-                    </Button>
-                  )}
-                  {/* How big the change is, beside the control that scopes it, so
-                      a reader knows what they are about to read. */}
-                  <span className="flex shrink-0 items-center gap-1.5 text-label tabular-nums">
-                    <span className="text-green">+{pr.additions}</span>
-                    <span className="text-red">−{pr.deletions}</span>
-                  </span>
-                  {/* Two axes, two controls. The named dropdown picks WHAT you are
-                      reading — a diff, a guided walk through it, a call graph —
-                      and reports it, so it takes the outlined plate with its value
-                      in normal ink. Unified vs split and wrapping are how the diff
-                      is DRAWN: settings a reader picks once, which is why they sit
-                      behind a glyph rather than under a trigger labelled "All
-                      changes", where nobody would look for them. The glyph is a
-                      ghost for the same reason the ⋯ menu beside it is: a flyout of
-                      settings is chrome, and two plates side by side read as a
-                      toolbar. They drop out under the flow lens, which draws no
-                      diff. */}
-                  <Menu.Root>
-                    <Tooltip label="Change the view">
-                      <Menu.Trigger
-                        render={
-                          <Button variant="default" size="sm" className="text-fg" caret>
-                            {CODE_VIEWS[codeView].label}
-                          </Button>
-                        }
-                      />
-                    </Tooltip>
-                    <Menu.Popup align="end" className="min-w-[210px]">
-                      <Menu.RadioGroup
-                        value={codeView}
-                        onValueChange={(next) => {
-                          const key = String(next) as CodeView;
-                          if (key === "flow" && codeView !== "flow" && codeFlowError) {
-                            setCodeFlow(null);
-                            setCodeFlowError(null);
-                          }
-                          setCodeView(key);
-                        }}
-                      >
-                        {(Object.keys(CODE_VIEWS) as CodeView[]).map((key) => {
-                          const { label, Icon } = CODE_VIEWS[key];
-                          return (
-                            <Menu.RadioItem
-                              key={key}
-                              value={key}
-                              closeOnClick
-                              disabled={
-                                key === "flow" &&
-                                ((!diff?.patch && !diff?.skippedFiles) || !prPatchVersion)
-                              }
-                            >
-                              <Icon size={18} className={MENU_ICON} />
-                              <span className="min-w-0 flex-1 truncate">{label}</span>
-                              <Menu.Check on={codeView === key} />
-                            </Menu.RadioItem>
-                          );
-                        })}
-                      </Menu.RadioGroup>
-                      {showDisplayMenu && headerCompact && (
-                        <>
-                          <Menu.Separator />
-                          {diffDisplayItems}
-                        </>
-                      )}
-                    </Menu.Popup>
-                  </Menu.Root>
-                  {/* `w-auto px-2` because an icon-only Button sizes to the glyph
-                      alone and the caret needs room beside it. */}
-                  {showDisplayMenu && !headerCompact && (
-                    <Menu.Root>
-                      <Tooltip label="Diff display">
-                        <Menu.Trigger
-                          render={
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="w-auto px-2"
-                              aria-label="Diff display"
-                              caret
-                              icon={
-                                diffStyle === "split" ? (
-                                  <IconDiffSplit size={17} />
-                                ) : (
-                                  <IconDiffUnified size={17} />
-                                )
-                              }
-                            />
-                          }
-                        />
-                      </Tooltip>
-                      <Menu.Popup align="end" className="min-w-[190px]">
-                        {diffDisplayItems}
-                      </Menu.Popup>
-                    </Menu.Root>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
           {page === "overview" ? (
             <SelectionToSession
               sessionId={sessionId}
@@ -1827,7 +2137,10 @@ export function PrPanel({
               {codeView === "flow" ? (
                 <CodeFlow
                   data={codeFlow?.key === codeFlowKey ? codeFlow.data : null}
-                  loading={codeFlowLoading || (codeFlow?.key !== codeFlowKey && !codeFlowError)}
+                  loading={
+                    codeFlowLoading ||
+                    (codeFlow?.key !== codeFlowKey && !codeFlowError)
+                  }
                   error={codeFlowError}
                   onRetry={() => void refreshCodeFlow()}
                   onOpenLocation={scrollToFile}
@@ -1848,17 +2161,20 @@ export function PrPanel({
                         Retry
                       </button>
                     </>
-                  ) : diffLoading
-                    ? "Loading pull request changes…"
-                    : diffOutOfDate
-                      ? "The pull request changed while loading. It will refresh automatically."
-                      : "No text diff is available for this pull request."}
+                  ) : diffLoading ? (
+                    "Loading pull request changes…"
+                  ) : diffOutOfDate ? (
+                    "The pull request changed while loading. It will refresh automatically."
+                  ) : (
+                    "No text diff is available for this pull request."
+                  )}
                 </div>
               ) : codeView === "guide" ? (
                 guideLoading || (!currentGuide && !guideFailed) ? (
                   <>
                     <div className="mb-4 rounded-sm border border-line bg-panel px-3 py-2 text-xs text-faint">
-                      Writing the review guide… You can review the file diff while it groups the change by intent.
+                      Writing the review guide… You can review the file diff
+                      while it groups the change by intent.
                     </div>
                     <CommentableDiff patch={diff.patch} {...diffProps} />
                   </>
@@ -1880,7 +2196,8 @@ export function PrPanel({
                       </div>
                       <div>
                         <h2 className="m-0 text-item-title font-semibold tracking-[-0.01em] text-fg">
-                          {currentGuide.sections.length} focused review step{currentGuide.sections.length === 1 ? "" : "s"}
+                          {currentGuide.sections.length} focused review step
+                          {currentGuide.sections.length === 1 ? "" : "s"}
                         </h2>
                         <p className="mt-1 max-w-[680px] text-xs leading-relaxed text-dim">
                           {reviewing
@@ -1897,17 +2214,23 @@ export function PrPanel({
                       >
                         <div className="mb-3 grid grid-cols-[54px_minmax(0,1fr)] gap-4 px-1">
                           <div className="text-meta text-faint">
-                            {String(index + 1).padStart(2, "0")} / {String(all.length).padStart(2, "0")}
+                            {String(index + 1).padStart(2, "0")} /{" "}
+                            {String(all.length).padStart(2, "0")}
                           </div>
                           <div>
-                            <div className="text-item-title font-semibold text-fg">{section.title}</div>
+                            <div className="text-item-title font-semibold text-fg">
+                              {section.title}
+                            </div>
                             <div className="mt-1 text-meta leading-relaxed text-dim">
                               {section.explanation}
                             </div>
                           </div>
                         </div>
                         {section.patch && (
-                          <CommentableDiff patch={section.patch} {...diffProps} />
+                          <CommentableDiff
+                            patch={section.patch}
+                            {...diffProps}
+                          />
                         )}
                       </section>
                     ))}
@@ -1917,8 +2240,12 @@ export function PrPanel({
                 <CommentableDiff
                   patch={diff.patch}
                   {...diffProps}
-                  groups={diffGroups?.oid === diff.headRefOid ? diffGroups.groups || undefined : undefined}
-                  groupsLoading={diffGroupsLoading}
+                  groups={
+                    grouping === "ai" && diffGroups?.oid === diff.headRefOid
+                      ? diffGroups.groups || undefined
+                      : undefined
+                  }
+                  groupsLoading={grouping === "ai" && diffGroupsLoading}
                 />
               )}
             </div>
@@ -1994,7 +2321,11 @@ export function PrPanel({
           </div>
           <div className="pointer-events-auto flex shrink-0 flex-wrap justify-end gap-2">
             {onOpenSession && (
-              <Button variant="soft" className="text-xs" onClick={onOpenSession}>
+              <Button
+                variant="soft"
+                className="text-xs"
+                onClick={onOpenSession}
+              >
                 Open workspace
               </Button>
             )}
@@ -2092,7 +2423,11 @@ function FinishReviewDialog({
   const summaryRef = useRef<HTMLTextAreaElement>(null);
   const verdicts: Array<{ event: ReviewEvent; label: string; hint: string }> = [
     { event: "APPROVE", label: "Approve", hint: "Sign off on these changes" },
-    { event: "COMMENT", label: "Comment", hint: "Leave feedback without a verdict" },
+    {
+      event: "COMMENT",
+      label: "Comment",
+      hint: "Leave feedback without a verdict",
+    },
     {
       event: "REQUEST_CHANGES",
       label: "Request changes",
@@ -2110,7 +2445,11 @@ function FinishReviewDialog({
               : `Leave a review on #${prNumber}.`
           }
         />
-        <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Review verdict">
+        <div
+          className="flex flex-col gap-1.5"
+          role="radiogroup"
+          aria-label="Review verdict"
+        >
           {verdicts.map((verdict) => (
             <button
               key={verdict.event}
@@ -2125,7 +2464,9 @@ function FinishReviewDialog({
                 <span className="size-1.5 rounded-full bg-on-accent opacity-0 group-data-active:opacity-100" />
               </span>
               <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-label font-semibold text-fg">{verdict.label}</span>
+                <span className="text-label font-semibold text-fg">
+                  {verdict.label}
+                </span>
                 <span className="text-meta text-dim">{verdict.hint}</span>
               </span>
             </button>
@@ -2136,7 +2477,9 @@ function FinishReviewDialog({
           size="sm"
           className="h-20 resize-none"
           placeholder={
-            event === "APPROVE" || pendingCount > 0 ? "Summary (optional)" : "Summary"
+            event === "APPROVE" || pendingCount > 0
+              ? "Summary (optional)"
+              : "Summary"
           }
           value={summary}
           onChange={(e) => setSummary(e.target.value)}
@@ -2149,7 +2492,9 @@ function FinishReviewDialog({
               checked={mergeAfterReview}
               onCheckedChange={onMergeAfterReviewChange}
             />
-            <span className="text-supporting text-dim">Squash and merge as well</span>
+            <span className="text-supporting text-dim">
+              Squash and merge as well
+            </span>
           </label>
         )}
         {error && <div className="text-supporting text-red">{error}</div>}

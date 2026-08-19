@@ -18,8 +18,8 @@ import {
 import { toast } from "../ui/toast";
 import { Code } from "./setup-shared";
 
-// What this instance and its agent are called — a Setup step, and a Workspace
-// settings page of its own, from the same card.
+// What this instance and its agent are called: a Setup step and a group in
+// Workspace > General, rendered from the same card.
 
 const IDENTITY_INPUT_CLASS = cn(settingsInputClass, "w-[140px]");
 

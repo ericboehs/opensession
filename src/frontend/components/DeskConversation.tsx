@@ -3,13 +3,12 @@ import type { TranscriptEntry } from "../lib/types";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { getCurrentUser } from "./UserPicker";
 import { renderMarkdown } from "../lib/markdown";
-import { fetchFileMentions } from "../lib/api";
+import { fetchFileMentions, fetchMentionSuggestions } from "../lib/api";
 import { TranscriptBlocks } from "./TranscriptBlocks";
 import { useFileMentions } from "./useFileMentions";
 import { IconArrowUp } from "./icons";
 import { mergeTranscriptEntries } from "../lib/transcript-state";
 import { CONTINUE_AFTER_FAILURE_PROMPT } from "../lib/continue-run";
-import { fieldClasses } from "../ui/input";
 import { noAutofill } from "../lib/composer-autofill";
 import { cn } from "../ui/cn";
 import {
@@ -24,6 +23,10 @@ interface DeskConversationProps {
 	sessionId: string;
 	/** The dismissed Desk stays mounted and streaming, but is not presence. */
 	presenceActive?: boolean;
+	/** Focus the composer when this conversation first mounts. */
+	autoFocus?: boolean;
+	/** Controls rendered inside the composer, immediately before submit. */
+	trailingActions?: React.ReactNode;
 	placeholder?: string;
 	effort?: string;
 	hideBefore?: string;
@@ -51,6 +54,8 @@ interface DeskConversationProps {
 export function DeskConversation({
 	sessionId,
 	presenceActive = true,
+	autoFocus = false,
+	trailingActions,
 	placeholder,
 	effort,
 	hideBefore,
@@ -67,6 +72,15 @@ export function DeskConversation({
 	const [pending, setPending] = useState<string | null>(null);
 	const bodyRef = useRef<HTMLDivElement | null>(null);
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+	useEffect(() => {
+		if (!autoFocus) return;
+		const timer = window.setTimeout(
+			() => textareaRef.current?.focus({ preventScroll: true }),
+			160,
+		);
+		return () => window.clearTimeout(timer);
+	}, [autoFocus]);
 	// Stick to the live edge only while the reader is already there, so a
 	// streaming reply doesn't yank them up from scrollback.
 	const followRef = useRef(true);
@@ -99,6 +113,8 @@ export function DeskConversation({
 		onChange: setDraft,
 		textareaRef,
 		mentionFetch: (q) => fetchFileMentions(q, sessionId),
+		paletteFetch: (q) =>
+			fetchMentionSuggestions(q, sessionId, getCurrentUser()),
 	});
 
 	// Watch the Desk only and tear the socket down on unmount / id change.
@@ -287,9 +303,9 @@ export function DeskConversation({
 
 
 	return (
-		<div className="flex h-full min-h-0 flex-col">
+		<div className="relative flex h-full min-h-0 flex-col">
 			<div
-				className="min-h-0 flex-1 overflow-y-auto px-3 py-2"
+				className="min-h-0 flex-1 overflow-y-auto px-3 pb-16 pt-2"
 				ref={bodyRef}
 				onScroll={onScroll}
 			>
@@ -350,73 +366,66 @@ export function DeskConversation({
 				)}
 			</div>
 
-			{/* Starter pills, one scrolling row directly above the composer —
-			    the place you're already looking when you don't know what to
-			    type. They go the moment there's a conversation. */}
-			{!hasContent && !!suggestions?.length && (
-				<div className="flex gap-1.5 overflow-x-auto px-3 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-					{suggestions.map((s) => (
-						<button
-							type="button"
-							key={s}
-							/* No outline, and a fill BELOW the panel rather than above it:
-							   these are suggestions you may never take, so they read as
-							   grey shapes you can skip, not as controls asking to be
-							   pressed. Without the border the old bg-surface fill was
-							   white on a white panel — invisible — so the fill carries
-							   the shape on its own. */
-							className="shrink-0 whitespace-nowrap rounded-full bg-hover px-3 py-1.5 text-label font-medium text-dim hover:bg-active hover:text-fg"
-							onClick={() => {
-								setDraft(s);
-								textareaRef.current?.focus();
-							}}
-						>
-							{s}
-						</button>
-					))}
-				</div>
-			)}
+			<div className="absolute inset-x-2 bottom-2 z-10">
+				{/* Starter pills stay attached to the composer and disappear once the
+				    conversation starts. */}
+				{!hasContent && !!suggestions?.length && (
+					<div className="flex gap-1.5 overflow-x-auto px-1 pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+						{suggestions.map((s) => (
+							<button
+								type="button"
+								key={s}
+								className="shrink-0 whitespace-nowrap rounded-full bg-hover px-3 py-1.5 text-label font-medium text-dim hover:bg-active hover:text-fg"
+								onClick={() => {
+									setDraft(s);
+									textareaRef.current?.focus();
+								}}
+							>
+								{s}
+							</button>
+						))}
+					</div>
+				)}
 
-			<div
-				className="flex items-end gap-2 border-t border-line px-3 py-2"
-				ref={mentions.inputWrapRef}
-			>
-				{mentions.popup}
-				{/* Raw element for the ref — the field's optics still come from the
-				    primitive via fieldClasses. */}
-				<textarea
-					ref={textareaRef}
-					className={fieldClasses(
-						"sm",
-						"max-h-40 min-h-[36px] flex-1 resize-none py-1.5 font-medium placeholder:text-dim",
-					)}
-					rows={1}
-					{...noAutofill}
-					value={draft}
-					placeholder={
-						connected ? placeholder || "Ask your Desk…" : "Not connected"
-					}
-					disabled={!connected}
-					onChange={(e) => setDraft(e.target.value)}
-					onKeyUp={mentions.sync}
-					onClick={mentions.sync}
-					onBlur={() => setTimeout(mentions.close, 120)}
-					onKeyDown={(e) => {
-						if (mentions.handleKeyDown(e)) return;
-						if (e.key === "Enter" && !e.shiftKey) {
-							e.preventDefault();
-							handleSend();
-						}
-					}}
-				/>
-				<button
-					className="flex shrink-0 items-center justify-center rounded-control bg-fg p-1.5 text-panel disabled:opacity-40"
-					onClick={handleSend}
-					disabled={!connected || !draft.trim()}
-					aria-label="Send"
+				<div
+					className="flex items-center gap-1 rounded-popup border border-line bg-surface p-1 smooth-shadow-ring-sm transition-colors focus-within:border-accent"
+					ref={mentions.inputWrapRef}
 				>
-					<IconArrowUp size={20} />
-				</button>
+					{mentions.popup}
+					<textarea
+						ref={textareaRef}
+						{...mentions.inputProps}
+						className="h-9 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-xs font-medium leading-[18px] text-fg outline-none placeholder:text-dim disabled:cursor-default disabled:opacity-40"
+						rows={1}
+						autoFocus={autoFocus}
+						{...noAutofill}
+						value={draft}
+						placeholder={
+							connected ? placeholder || "Ask your Desk…" : "Not connected"
+						}
+						disabled={!connected}
+						onChange={(e) => setDraft(e.target.value)}
+						onKeyUp={mentions.sync}
+						onClick={mentions.sync}
+						onBlur={() => setTimeout(mentions.close, 120)}
+						onKeyDown={(e) => {
+							if (mentions.handleKeyDown(e)) return;
+							if (e.key === "Enter" && !e.shiftKey) {
+								e.preventDefault();
+								handleSend();
+							}
+						}}
+					/>
+					{trailingActions}
+					<button
+						className="flex size-9 shrink-0 items-center justify-center rounded-control bg-fg text-panel disabled:opacity-40"
+						onClick={handleSend}
+						disabled={!connected || !draft.trim()}
+						aria-label="Send"
+					>
+						<IconArrowUp size={20} />
+					</button>
+				</div>
 			</div>
 		</div>
 	);

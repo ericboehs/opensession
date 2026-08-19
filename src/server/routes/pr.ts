@@ -428,6 +428,34 @@ export async function handlePrRoutes(
 		});
 	}
 
+	// Text file contents at a PR revision. This mirrors pr-image but returns JSON
+	// for clipboard actions in the review file menu. The repo must be registered,
+	// and gh supplies the private-repo credential server-side.
+	if (path === "/api/pr-file" && req.method === "GET") {
+		const filePath = url.searchParams.get("path") || "";
+		const ref = url.searchParams.get("ref") || "";
+		if (!filePath || !ref)
+			return Response.json({ error: "path and ref required" }, { status: 400 });
+		const repo = getRepo(url.searchParams.get("repo") || undefined);
+		const proc = Bun.spawn(
+			[
+				"gh",
+				"api",
+				"-H",
+				"Accept: application/vnd.github.raw",
+				`repos/${repo.ghRepo}/contents/${encodeURIComponent(filePath).replace(/%2F/gi, "/")}?ref=${encodeURIComponent(ref)}`,
+			],
+			{ stdout: "pipe", stderr: "ignore" },
+		);
+		const content = await new Response(proc.stdout).text();
+		if ((await proc.exited) !== 0)
+			return Response.json(
+				{ error: "File not found at that revision" },
+				{ status: 404 },
+			);
+		return Response.json({ content });
+	}
+
 	// Session-less PR preview (sidebar PR rows with no session yet): PR details
 	// and diff straight from repo+branch — same pr-info helpers as the
 	// session routes, minus the session lookup.

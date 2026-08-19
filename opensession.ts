@@ -91,6 +91,7 @@ import { join } from "node:path";
 // from a script or a test never touches live resources.
 import "./src/server/interactive-mcp"; // registerInteractiveMcpBuilder
 import { hydratePersistedQueueState } from "./src/server/queue-state";
+import { beginShutdown } from "./src/server/shutdown-state";
 import "./src/server/session-control-wiring"; // opensession-sessions MCP + Slack-link bridge
 import "./src/server/keychain"; // registers the keychain human-ask domain handler
 import { websocketHandlers } from "./src/server/ws-handlers";
@@ -937,6 +938,10 @@ if (!g.__opensessionBooted) {
 	const gracefulShutdown = async (signal: string) => {
 		if (shuttingDown) return;
 		shuttingDown = true;
+		// Cross-module flag: run-session's queue drain parks new prompts from
+		// here on (the next boot delivers them) instead of starting turns that
+		// race the drain deadline.
+		beginShutdown();
 		// With poisoned timers (see run-ws.ts tripwire)
 		// every `await sleep` and Promise.race timeout below would wedge forever
 		// and systemd would SIGKILL us at TimeoutStopSec (observed: an 80s

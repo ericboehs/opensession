@@ -152,23 +152,75 @@ self.addEventListener("push", (event) => {
   );
 });
 
+/*
+ * A tap has to do two things: bring the app forward, and land it on the
+ * session the notification is about.
+ *
+ * The document is never reloaded to get there. `WindowClient.navigate()`
+ * rejects outright on a client this worker does not control, and matchAll asks
+ * for uncontrolled ones too, so that is an ordinary case rather than an edge
+ * one. That rejection used to float unhandled, leaving `focus()` as the only
+ * surviving effect: the app came forward on whatever page it was already
+ * showing. The URL is posted to the page instead and its own router handles
+ * it, which is also what makes the tap instant rather than a full SPA reload.
+ * `navigate()` and `openWindow()` remain as fallbacks for a page too old or
+ * too frozen to answer.
+ */
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = localUrl(event.notification.data && event.notification.data.url);
   event.waitUntil(
-    Promise.all([
-      updateAppBadge(event.notification.tag),
-      self.clients
-        .matchAll({ type: "window", includeUncontrolled: true })
-        .then((wins) => {
-          for (const w of wins) {
-            if ("focus" in w) {
-              if (w.navigate) w.navigate(url);
-              return w.focus();
-            }
-          }
-          return self.clients.openWindow(url);
-        }),
-    ]),
+    Promise.all([updateAppBadge(event.notification.tag), openApp(url)]),
   );
 });
+
+// How long the page gets to acknowledge the routing message. It is a live
+// page answering a postMessage, so this is generous; the cost of it being too
+// short is a document navigation that did not need to happen.
+const NAV_ACK_MS = 700;
+
+async function openApp(url) {
+  const wins = await self.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+  // Prefer the window the person is actually looking at: routing a background
+  // window is a change nobody sees.
+  const client =
+    wins.find((w) => w.focused) ||
+    wins.find((w) => w.visibilityState === "visible") ||
+    wins[0];
+  if (!client) return self.clients.openWindow(url);
+  // Focus first. It needs the tap's transient activation, which an awaited
+  // round trip to the page could outlive.
+  if ("focus" in client) await client.focus().catch(() => {});
+  if (await postNavigate(client, url)) return;
+  if (client.navigate) {
+    try {
+      await client.navigate(url);
+      return;
+    } catch {}
+  }
+  return self.clients.openWindow(url);
+}
+
+// Ask a page to route itself, and wait for it to say it did. The ack is what
+// keeps the fallbacks from navigating a page that already handled the tap.
+function postNavigate(client, url) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+    try {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => finish(true);
+      client.postMessage({ type: "os1-navigate", url }, [channel.port2]);
+    } catch {
+      finish(false);
+    }
+    setTimeout(() => finish(false), NAV_ACK_MS);
+  });
+}

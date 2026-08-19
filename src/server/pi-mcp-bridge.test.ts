@@ -11,7 +11,11 @@ import { test, expect, describe, afterEach } from "bun:test";
 import { z } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { createSdkMcpServer, tool } from "./inprocess-mcp";
-import { createPiMcpBridge, type PiMcpBridge } from "./pi-mcp-bridge";
+import {
+  classifyInProcessMcp,
+  createPiMcpBridge,
+  type PiMcpBridge,
+} from "./pi-mcp-bridge";
 
 function makeServer(name = "alpha") {
   return createSdkMcpServer({
@@ -81,6 +85,61 @@ function discoveryToolByName(bridge: PiMcpBridge, name: string) {
 
 const exec = (def: { execute: Function }, params: unknown = {}) =>
   def.execute("call-1", params, undefined, undefined, {} as any);
+
+describe("inProcessMcp shapes", () => {
+  /** What runner-host/host.ts's proxyMcpConfigs() writes for one server. */
+  const hostProxy = (token: string, server = "opensession-workflows") => ({
+    command: "/home/x/.bun/bin/bun",
+    args: ["run", "/repo/src/runner-host/mcp-proxy.ts"],
+    env: {
+      OPENSESSION_RPC_SOCKET: "/home/x/.opensession-sessions/rpc.sock",
+      OPENSESSION_RPC_TOKEN: token,
+      OPENSESSION_MCP_SERVER: server,
+    },
+  });
+
+  const proxyKey = (cfg: Record<string, unknown>) => {
+    const [mount] = classifyInProcessMcp({ w: cfg });
+    if (mount?.kind !== "proxy") throw new Error("expected a proxy mount");
+    return mount.cacheKey;
+  };
+
+  test("mounts a detached run host's stdio proxy configs, not only SDK instances", () => {
+    // The regression this guards: a hosted run passes proxy configs, and
+    // dropping them left it with every external server and zero opensession-*
+    // ones — which reads as "these tools were never configured".
+    const mounts = classifyInProcessMcp({
+      alpha: makeServer(),
+      "opensession-workflows": hostProxy("tok-1"),
+    });
+    expect(mounts.map((m) => [m.name, m.kind])).toEqual([
+      ["alpha", "sdk"],
+      ["opensession-workflows", "proxy"],
+    ]);
+  });
+
+  test("a proxy's cache key ignores the per-run token but not its real config", () => {
+    expect(proxyKey(hostProxy("tok-1"))).toBe(proxyKey(hostProxy("tok-2")));
+    expect(proxyKey(hostProxy("tok-1"))).not.toBe(
+      proxyKey(hostProxy("tok-1", "opensession-sessions")),
+    );
+    expect(proxyKey(hostProxy("tok-1"))).not.toBe(
+      proxyKey({ ...hostProxy("tok-1"), args: ["run", "/elsewhere.ts"] }),
+    );
+  });
+
+  test("skips names an external server already claimed, and unrecognized shapes", () => {
+    const mounts = classifyInProcessMcp(
+      {
+        alpha: makeServer(),
+        junk: { type: "sdk" },
+        "opensession-web": hostProxy("tok-1", "opensession-web"),
+      },
+      new Set(["alpha"]),
+    );
+    expect(mounts.map((m) => m.name)).toEqual(["opensession-web"]);
+  });
+});
 
 describe("registration", () => {
   test("names tools <server>_<tool> and passes the JSON Schema through", async () => {

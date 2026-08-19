@@ -17,7 +17,17 @@ import type {
 } from "@pierre/diffs";
 import type { Editor, EditorOptions } from "@pierre/diffs/edit";
 import type { DiffFileGroup } from "../lib/types";
-import { IconCheck, IconChevronRight, IconCopy, IconPencil, IconUndo } from "./icons";
+import {
+  IconArrowUpRight,
+  IconCheck,
+  IconChevronRight,
+  IconCopy,
+  IconDotsHorizontal,
+  IconFile,
+  IconLink,
+  IconPencil,
+  IconUndo,
+} from "./icons";
 import { copyToClipboard } from "../lib/share-link";
 import { canAutoExpandDiffFile } from "../lib/review-diff";
 import { noAutofill } from "../lib/composer-autofill";
@@ -27,20 +37,23 @@ import { Checkbox } from "../ui/checkbox";
 import { useResolvedTheme } from "./CodeHighlight";
 import { Spinner } from "../ui/spinner";
 import { EmptyState } from "../ui/state";
+import { Menu, MENU_ICON } from "../ui/menu";
+import { toast } from "../ui/toast";
 
 /* The +/− counts. DiffPanel's summary strip carries the same pair, and the two
    must read alike. */
 const DIFF_ADD = "font-semibold text-green";
 const DIFF_DEL = "font-semibold text-red";
 
-/* One collapsible file. The header is the hover group for everything revealed
-   inside it — the copy-path button, the edit and discard actions, and the
-   stats that hide beneath them. */
+/* One collapsible file. The header is the hover group for the edit and discard
+   actions revealed inside editable worktree diffs. */
 const FILE_ROW = "mb-2 overflow-clip rounded-xl bg-panel";
 const FILE_HEADER =
-  "group relative flex w-full min-w-0 cursor-pointer items-center gap-2 border-none px-2.5 py-2 text-left text-fg hover:bg-hover";
+  "group relative flex min-h-12 w-full min-w-0 items-center gap-2 px-3 text-left text-fg hover:bg-hover";
 const STICKY_FILE_HEADER =
   "sticky top-[var(--review-file-header-top,0px)] z-[6] bg-panel";
+const FILE_TOGGLE =
+  "focus-ring flex min-w-0 flex-1 cursor-pointer items-center gap-2 self-stretch border-none bg-transparent p-0 text-left text-fg";
 
 /* Revealed on row hover but always occupying its space (opacity, not display),
    so nothing can shift under the pointer. Focus reveals it too — hover cannot
@@ -48,11 +61,6 @@ const STICKY_FILE_HEADER =
 const REVEAL =
   "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100";
 const REVEALED = "pointer-events-auto opacity-100";
-/* Touch has no hover to reveal the copy button with — and no easy text
-   selection to fall back on either. */
-const REVEAL_TOUCH =
-  "[@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100";
-
 /* Borderless icon-only actions, overlaid on the stats so revealing the larger
    icon cannot change the row's dimensions. No cursor here on purpose: the
    in-flight discard wants `cursor-default`, and two cursor utilities on one
@@ -119,6 +127,20 @@ interface Props {
   diffStyle?: "unified" | "split";
   /** Soft-wrap long lines instead of scrolling each file horizontally. */
   wrapLines?: boolean;
+  /** Highlight the changed words within added and removed lines. */
+  structuralHighlighting?: boolean;
+  /** Show per-file addition and deletion totals in file and group headers. */
+  showFileStats?: boolean;
+  /** Follow the app theme, or pin the code surface light or dark. */
+  codeTheme?: "system" | "light" | "dark";
+  /** Optional review-canvas ordering, with paths absent from the list hidden. */
+  visibleFileOrder?: readonly string[];
+  /** Review-only file actions supplied by the PR host. */
+  fileActions?: {
+    providerName: string;
+    url: (file: FileDiffMetadata) => string | null;
+    loadContents?: (file: FileDiffMetadata) => Promise<string | null>;
+  };
   /** Keep each filename visible while its expanded file scrolls through a review canvas. */
   stickyFileHeaders?: boolean;
   /**
@@ -151,7 +173,10 @@ interface Props {
    * writes the edited text back.
    */
   editFile?: {
-    load: (file: FileDiffMetadata, side: "new" | "base") => Promise<string | null>;
+    load: (
+      file: FileDiffMetadata,
+      side: "new" | "base",
+    ) => Promise<string | null>;
     save: (path: string, content: string) => Promise<void>;
   };
 }
@@ -242,20 +267,33 @@ export function CommentableDiff({
   groupsLoading,
   diffStyle = "unified",
   wrapLines = false,
+  structuralHighlighting = true,
+  showFileStats = true,
+  codeTheme = "system",
+  visibleFileOrder,
+  fileActions,
   stickyFileHeaders = false,
   viewedFiles,
   onToggleViewed,
   editFile,
 }: Props) {
   const reviewMode = pendingComments !== undefined;
-  const theme = useResolvedTheme();
+  const resolvedTheme = useResolvedTheme();
+  const theme = codeTheme === "system" ? resolvedTheme : codeTheme;
   const files = useMemo<FileDiffMetadata[]>(() => {
     try {
-      return parsePatchFiles(patch).flatMap((p) => p.files);
+      const parsed = parsePatchFiles(patch).flatMap((p) => p.files);
+      if (!visibleFileOrder) return parsed;
+      const order = new Map(
+        visibleFileOrder.map((path, index) => [path, index]),
+      );
+      return parsed
+        .filter((file) => order.has(file.name))
+        .sort((a, b) => order.get(a.name)! - order.get(b.name)!);
     } catch {
       return [];
     }
-  }, [patch]);
+  }, [patch, visibleFileOrder]);
 
   // GitHub-backed "Viewed" checkboxes: hidden until the parent's fetch lands.
   const viewedEnabled = !!onToggleViewed && viewedFiles !== undefined;
@@ -271,8 +309,7 @@ export function CommentableDiff({
         files
           .slice(0, defaultExpandedFiles)
           .map((_, index) => index)
-          .filter(
-            (index) =>
+          .filter((index) =>
               canAutoExpandDiffFile(
                 files[index].name,
                 stats[index].add + stats[index].del,
@@ -316,8 +353,11 @@ export function CommentableDiff({
       });
       return indices.length ? [{ ...group, indices }] : [];
     });
-    const remaining = files.flatMap((_, index) => (used.has(index) ? [] : [index]));
-    if (remaining.length) resolved.push({ title: "Other", files: [], indices: remaining });
+    const remaining = files.flatMap((_, index) =>
+      used.has(index) ? [] : [index],
+    );
+    if (remaining.length)
+      resolved.push({ title: "Other", files: [], indices: remaining });
     return resolved.length >= 2 ? resolved : null;
   }, [files, groups]);
 
@@ -330,7 +370,9 @@ export function CommentableDiff({
   // within 4s performs it. `discarding` disables the row while the request runs.
   const [armed, setArmed] = useState<string | null>(null);
   const [discarding, setDiscarding] = useState<string | null>(null);
-  const disarmTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const disarmTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const disarm = useCallback(() => {
     clearTimeout(disarmTimer.current);
     setArmed(null);
@@ -361,7 +403,9 @@ export function CommentableDiff({
   // Copying the path is the reliable way to get it out of the diff — text
   // selection breaks wherever the surrounding surface sets user-select: none.
   const [copied, setCopied] = useState<string | null>(null);
-  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const copyPath = useCallback((path: string) => {
     copyToClipboard(path, () => {
       setCopied(path);
@@ -370,6 +414,23 @@ export function CommentableDiff({
     });
   }, []);
   useEffect(() => () => clearTimeout(copiedTimer.current), []);
+
+  const copyMenuValue = useCallback((value: string, message: string) => {
+    copyToClipboard(value, () => toast(message));
+  }, []);
+  const copyFileContents = useCallback(
+    async (file: FileDiffMetadata) => {
+      if (!fileActions?.loadContents) return;
+      try {
+        const contents = await fileActions.loadContents(file);
+        if (contents == null) throw new Error("File is not available at this revision");
+        copyMenuValue(contents, "File contents copied");
+      } catch (error: any) {
+        toast(error?.message || "Couldn’t copy file contents");
+      }
+    },
+    [fileActions, copyMenuValue],
+  );
 
   const viewedCollapseKey = useRef<string | null>(null);
   useEffect(() => {
@@ -394,13 +455,16 @@ export function CommentableDiff({
   // loads async, after the diff renders). Applied once per patch so it never
   // fights a user who re-expands a viewed file.
   useEffect(() => {
-    if (viewedFiles === undefined || viewedCollapseKey.current === patch) return;
+    if (viewedFiles === undefined || viewedCollapseKey.current === patch)
+      return;
     viewedCollapseKey.current = patch;
     if (viewedFiles.size === 0) return;
     setExpanded(
       (prev) =>
         new Set(
-          [...prev].filter((index) => !viewedFiles.has(files[index]?.name ?? "")),
+          [...prev].filter(
+            (index) => !viewedFiles.has(files[index]?.name ?? ""),
+          ),
         ),
     );
   }, [viewedFiles, patch, files]);
@@ -429,17 +493,22 @@ export function CommentableDiff({
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-  const editModuleRef = useRef<typeof import("@pierre/diffs/edit") | null>(null);
+  const editModuleRef = useRef<typeof import("@pierre/diffs/edit") | null>(
+    null,
+  );
   const editorRef = useRef<Editor<Meta> | null>(null);
 
-  const startEdit = useCallback(async (file: FileDiffMetadata, index: number) => {
+  const startEdit = useCallback(
+    async (file: FileDiffMetadata, index: number) => {
     if (!editModuleRef.current) {
       editModuleRef.current = await import("@pierre/diffs/edit");
     }
     setEditError(null);
     setEditingPath(file.name);
     setExpanded((prev) => new Set(prev).add(index));
-  }, []);
+    },
+    [],
+  );
 
   const cancelEdit = useCallback(() => {
     editorRef.current = null;
@@ -498,11 +567,14 @@ export function CommentableDiff({
   // selection range is adjusted, without re-rendering the diff on each keystroke.
   const draftTextRef = useRef("");
 
-  const handleSelect = useCallback((fileIndex: number, path: string, range: SelectedLineRange | null) => {
+  const handleSelect = useCallback(
+    (fileIndex: number, path: string, range: SelectedLineRange | null) => {
     if (!range) return; // keep the draft on stray deselects; Cancel closes it
     setConfirmation(null);
     setDraft({ fileIndex, path, range });
-  }, []);
+    },
+    [],
+  );
 
   const closeDraft = useCallback(() => {
     draftTextRef.current = "";
@@ -513,7 +585,8 @@ export function CommentableDiff({
     async (body: string) => {
       const d = draftRef.current;
       if (!d) return;
-      const side: "additions" | "deletions" = d.range.side === "deletions" ? "deletions" : "additions";
+      const side: "additions" | "deletions" =
+        d.range.side === "deletions" ? "deletions" : "additions";
       await onSubmit(
         {
           path: d.path,
@@ -596,7 +669,15 @@ export function CommentableDiff({
         />
       );
     },
-    [renderPending, disabled, disabledHint, placeholder, submitLabel, closeDraft, submitDraft],
+    [
+      renderPending,
+      disabled,
+      disabledHint,
+      placeholder,
+      submitLabel,
+      closeDraft,
+      submitDraft,
+    ],
   );
 
   // Group pending comments by file once per change, so unaffected files reuse a
@@ -650,7 +731,8 @@ export function CommentableDiff({
     // Keep a file open while it holds a draft (the comment form lives inside
     // the diff), already-added pending comments (so they stay visible), or an
     // active edit session (collapsing would unmount the editor mid-edit).
-    const isOpen = expanded.has(i) || isDraftFile || pend.length > 0 || isEditing;
+    const isOpen =
+      expanded.has(i) || isDraftFile || pend.length > 0 || isEditing;
     // Open, but its turn to parse has not come round yet — the header is
     // already drawn open, and the diff drops in a frame or two later.
     const mounted = (mountRank.get(i) ?? 0) < mountBudget;
@@ -659,13 +741,16 @@ export function CommentableDiff({
       !!editFile && file.type !== "deleted" && !IMAGE_EXT.test(file.name);
     const s = stats[i];
     const slash = file.name.lastIndexOf("/");
-    const dir = slash >= 0 ? file.name.slice(0, slash + 1) : "";
+    const dir = slash >= 0 ? file.name.slice(0, slash) : "";
     const base = slash >= 0 ? file.name.slice(slash + 1) : file.name;
+    const fileUrl = fileActions?.url(file) ?? null;
     const annotations = isDraftFile
       ? [
           ...pend,
           {
-            side: (draft!.range.side === "deletions" ? "deletions" : "additions") as "additions" | "deletions",
+            side: (draft!.range.side === "deletions"
+              ? "deletions"
+              : "additions") as "additions" | "deletions",
             lineNumber: Math.max(draft!.range.start, draft!.range.end),
             metadata: { kind: "draft" as const },
           },
@@ -673,63 +758,60 @@ export function CommentableDiff({
       : pend;
 
     return (
-      <div className={FILE_ROW} key={`${file.name}-${i}`} data-diff-file={file.name}>
+      <div
+        className={FILE_ROW}
+        key={`${file.name}-${i}`}
+        data-diff-file={file.name}
+      >
         <div
           // `diff-file-header` is a DOM hook, not styling — no rule reaches it
           // any more: PrPanel's Files card finds this row by that class to
           // scroll to and expand a file (`el.querySelector(".diff-file-header")`).
-          className={`diff-file-header ${FILE_HEADER} ${stickyFileHeaders ? STICKY_FILE_HEADER : "bg-transparent"}`}
-          role="button"
-          tabIndex={0}
-          aria-expanded={isOpen}
-          onClick={() => {
-            disarm();
-            toggle(i);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
+          className={`${FILE_HEADER} ${stickyFileHeaders ? STICKY_FILE_HEADER : "bg-transparent"}`}
+        >
+          <button
+            type="button"
+            className={`diff-file-header ${FILE_TOGGLE}`}
+            aria-expanded={isOpen}
+            onClick={() => {
               disarm();
               toggle(i);
-            }
-          }}
-        >
-          <IconChevronRight
-            size={16}
-            className={`shrink-0 text-faint transition-transform ${isOpen ? "rotate-90" : ""}`}
-          />
-          {/* The dir (left, low-signal) absorbs truncation with an ellipsis; the
-              base stays whole and only clips in the pathological no-dir case. */}
-          <span
-            className="flex min-w-0 flex-1 cursor-text overflow-hidden text-label select-text"
-            onClick={(e) => e.stopPropagation()}
+            }}
           >
-            {dir && (
-              <span className="min-w-0 shrink overflow-hidden text-ellipsis whitespace-nowrap text-faint">
-                {dir}
+            <IconChevronRight
+              size={16}
+              className={`shrink-0 text-faint transition-transform ${isOpen ? "rotate-90" : ""}`}
+            />
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-active text-dim">
+              <IconFile size={17} />
+            </span>
+            <span className="flex min-w-0 items-baseline gap-2 overflow-hidden text-label">
+              <span className="shrink-0 overflow-hidden text-ellipsis whitespace-nowrap font-semibold text-fg">
+                {base}
               </span>
-            )}
-            <span className="shrink-0 font-semibold whitespace-nowrap text-fg">{base}</span>
-            <Tooltip label={copied === file.name ? "Copied" : "Copy path"}>
-              <button
-                type="button"
-                // Sized to the 20px icon with no padding: anything taller is the
-                // tallest thing in the row and pushes every file header down.
-                className={`ml-[5px] inline-flex size-5 shrink-0 cursor-pointer items-center justify-center self-center rounded-sm border-none bg-transparent p-0 transition-[color,background,opacity] select-none ${
-                  copied === file.name
-                    ? `${REVEALED} text-green`
-                    : `${REVEAL} ${REVEAL_TOUCH} text-faint hover:bg-hover hover:text-fg`
-                }`}
-                aria-label={`Copy path ${file.name}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  copyPath(file.name);
-                }}
-              >
-                {copied === file.name ? <IconCheck size={20} /> : <IconCopy size={20} />}
-              </button>
-            </Tooltip>
-          </span>
+              {dir && (
+                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-faint">
+                  {dir}
+                </span>
+              )}
+            </span>
+          </button>
+          <Tooltip label={copied === file.name ? "Copied" : "Copy path"}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={copied === file.name ? "text-green" : "text-faint"}
+              aria-label={`Copy path ${file.name}`}
+              icon={
+                copied === file.name ? (
+                  <IconCheck size={18} />
+                ) : (
+                  <IconCopy size={18} />
+                )
+              }
+              onClick={() => copyPath(file.name)}
+            />
+          </Tooltip>
           {pend.length > 0 && (
             <span className="inline-flex shrink-0 items-center gap-[3px] font-sans text-meta text-faint before:text-meta before:content-['💬']">
               {pend.length}
@@ -813,17 +895,21 @@ export function CommentableDiff({
               </button>
             </Tooltip>
           )}
-          {/* Change counts, pinned right. They hide whenever the discard icon
-              shows — hover, armed, focused or in-flight — so the icon can take
-              their place without the row changing size. */}
-          <span
-            className={`ml-auto flex shrink-0 gap-1.5 text-meta group-hover:invisible [[data-discard]:focus-visible~&]:invisible ${
-              isEditing ? "hidden" : ""
-            } ${armed === file.name || discarding === file.name ? "invisible" : ""}`}
-          >
-            {s.add > 0 && <span className={DIFF_ADD}>+{s.add}</span>}
-            {s.del > 0 && <span className={DIFF_DEL}>−{s.del}</span>}
-          </span>
+          {/* Change counts stay pinned right, before the review state and menu. */}
+          {showFileStats && (
+            <span
+              className={`ml-auto flex shrink-0 gap-1.5 text-meta ${
+                isEditing ? "hidden" : ""
+              } ${
+                onDiscard
+                  ? "group-hover:invisible [[data-discard]:focus-visible~&]:invisible"
+                  : ""
+              } ${armed === file.name || discarding === file.name ? "invisible" : ""}`}
+            >
+              {s.add > 0 && <span className={DIFF_ADD}>+{s.add}</span>}
+              {s.del > 0 && <span className={DIFF_DEL}>−{s.del}</span>}
+            </span>
+          )}
           {viewedEnabled && (
             <label
               className={`inline-flex shrink-0 cursor-pointer items-center gap-[5px] pl-1 font-sans text-label select-none ${
@@ -831,9 +917,75 @@ export function CommentableDiff({
               }`}
               onClick={(e) => e.stopPropagation()}
             >
-              <Checkbox checked={isViewed} onCheckedChange={() => toggleViewed(file, i)} />
-              Viewed
+              <Checkbox
+                checked={isViewed}
+                onCheckedChange={() => toggleViewed(file, i)}
+              />
+              Reviewed
             </label>
+          )}
+          {fileActions && (
+            <Menu.Root>
+              <Tooltip label="File actions">
+                <Menu.Trigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`File actions for ${file.name}`}
+                      icon={<IconDotsHorizontal size={18} />}
+                    />
+                  }
+                />
+              </Tooltip>
+              <Menu.Popup align="end" className="min-w-[230px]">
+                {fileUrl && (
+                  <>
+                    <Menu.Item
+                      onClick={() =>
+                        window.open(fileUrl, "_blank", "noopener,noreferrer")
+                      }
+                    >
+                      <IconArrowUpRight size={18} className={MENU_ICON} />
+                      <span className="min-w-0 flex-1 truncate">
+                        Open file on {fileActions.providerName}
+                      </span>
+                    </Menu.Item>
+                    <Menu.Item
+                      onClick={() => copyMenuValue(fileUrl, "File link copied")}
+                    >
+                      <IconLink size={18} className={MENU_ICON} />
+                      <span className="min-w-0 flex-1 truncate">
+                        Copy link to file
+                      </span>
+                    </Menu.Item>
+                    <Menu.Separator />
+                  </>
+                )}
+                <Menu.Item
+                  onClick={() => copyMenuValue(file.name, "File path copied")}
+                >
+                  <IconCopy size={18} className={MENU_ICON} />
+                  <span className="min-w-0 flex-1 truncate">Copy full path</span>
+                </Menu.Item>
+                <Menu.Item
+                  onClick={() => copyMenuValue(base, "Filename copied")}
+                >
+                  <IconCopy size={18} className={MENU_ICON} />
+                  <span className="min-w-0 flex-1 truncate">Copy filename</span>
+                </Menu.Item>
+                {fileActions.loadContents &&
+                  file.type !== "deleted" &&
+                  !IMAGE_EXT.test(file.name) && (
+                  <Menu.Item onClick={() => void copyFileContents(file)}>
+                    <IconCopy size={18} className={MENU_ICON} />
+                    <span className="min-w-0 flex-1 truncate">
+                      Copy file contents
+                    </span>
+                  </Menu.Item>
+                )}
+              </Menu.Popup>
+            </Menu.Root>
           )}
         </div>
         {isOpen &&
@@ -847,6 +999,7 @@ export function CommentableDiff({
               theme={theme}
               diffStyle={diffStyle}
               wrapLines={wrapLines}
+              structuralHighlighting={structuralHighlighting}
               annotations={annotations}
               selectedLines={isDraftFile ? draft!.range : null}
               onSelect={handleSelect}
@@ -934,16 +1087,28 @@ export function CommentableDiff({
                     size={16}
                     className={`shrink-0 text-faint transition-transform ${collapsed ? "" : "rotate-90"}`}
                   />
-                  <span className="text-label font-semibold">{group.title}</span>
-                  <span className="text-meta text-faint">{group.indices.length}</span>
-                  <span className="ml-auto flex gap-2 text-meta">
-                    {totals.add > 0 && <span className={DIFF_ADD}>+{totals.add}</span>}
-                    {totals.del > 0 && <span className={DIFF_DEL}>−{totals.del}</span>}
+                  <span className="text-label font-semibold">
+                    {group.title}
                   </span>
+                  <span className="text-meta text-faint">
+                    {group.indices.length}
+                  </span>
+                  {showFileStats && (
+                  <span className="ml-auto flex gap-2 text-meta">
+                      {totals.add > 0 && (
+                        <span className={DIFF_ADD}>+{totals.add}</span>
+                      )}
+                      {totals.del > 0 && (
+                        <span className={DIFF_DEL}>−{totals.del}</span>
+                      )}
+                  </span>
+                  )}
                 </button>
                 {!collapsed && (
                   <div className="flex flex-col gap-[7px] border-l border-line pl-3">
-                    {group.indices.map((index) => renderFile(files[index], index))}
+                    {group.indices.map((index) =>
+                      renderFile(files[index], index),
+                    )}
                   </div>
                 )}
               </section>
@@ -978,7 +1143,11 @@ function ImageDiffRow({
   const showOld = !!srcs?.oldSrc && file.type !== "new" && !oldErr;
   const showNew = !!srcs?.newSrc && file.type !== "deleted" && !newErr;
   if (!showOld && !showNew)
-    return <div className="p-3 text-label text-dim">Image not available to preview</div>;
+    return (
+      <div className="p-3 text-label text-dim">
+        Image not available to preview
+      </div>
+    );
   return (
     <div className="flex flex-wrap gap-3 p-3">
       {showOld && (
@@ -1124,6 +1293,7 @@ const FileDiffRow = React.memo(function FileDiffRow({
   theme,
   diffStyle,
   wrapLines,
+  structuralHighlighting,
   annotations,
   selectedLines,
   onSelect,
@@ -1137,9 +1307,14 @@ const FileDiffRow = React.memo(function FileDiffRow({
   theme: "light" | "dark";
   diffStyle: "unified" | "split";
   wrapLines: boolean;
+  structuralHighlighting: boolean;
   annotations: DiffLineAnnotation<Meta>[];
   selectedLines: SelectedLineRange | null;
-  onSelect: (fileIndex: number, path: string, range: SelectedLineRange | null) => void;
+  onSelect: (
+    fileIndex: number,
+    path: string,
+    range: SelectedLineRange | null,
+  ) => void;
   renderAnnotation: (annotation: DiffLineAnnotation<Meta>) => React.ReactNode;
   editing?: boolean;
   createEditor?: (options: EditorOptions<Meta>) => DiffsEditor<Meta>;
@@ -1150,15 +1325,29 @@ const FileDiffRow = React.memo(function FileDiffRow({
       ...BASE_OPTIONS,
       diffStyle,
       overflow: wrapLines ? ("wrap" as const) : ("scroll" as const),
+      lineDiffType: structuralHighlighting
+        ? ("word-alt" as const)
+        : ("none" as const),
       theme: theme === "light" ? "pierre-light" : "pierre-dark",
       themeType: theme,
       // Line selection drives commenting; while editing, clicks place the
       // caret instead.
       enableLineSelection: !editing,
       ...(loadDiffFiles ? { loadDiffFiles } : {}),
-      onLineSelected: (range: SelectedLineRange | null) => onSelect(fileIndex, file.name, range),
+      onLineSelected: (range: SelectedLineRange | null) =>
+        onSelect(fileIndex, file.name, range),
     }),
-    [diffStyle, wrapLines, fileIndex, file.name, onSelect, theme, editing, loadDiffFiles],
+    [
+      diffStyle,
+      wrapLines,
+      structuralHighlighting,
+      fileIndex,
+      file.name,
+      onSelect,
+      theme,
+      editing,
+      loadDiffFiles,
+    ],
   );
 
   const fileDiff = (

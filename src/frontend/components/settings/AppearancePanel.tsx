@@ -284,11 +284,6 @@ export function AppearancePanel() {
 						/>
 					))}
 				</div>
-				<div className="mt-3 text-meta text-faint">
-					{pref === "system"
-						? "Matches your operating system."
-						: `Always ${pref} mode.`}
-				</div>
 			</SettingsSection>
 
 			<SettingsGroupLabel>Accent</SettingsGroupLabel>
@@ -322,7 +317,6 @@ export function AppearancePanel() {
 			<SettingCard>
 				<SettingRow
 					title="Row density"
-					desc="Compact tightens the sidebar so more workspaces fit on screen. Phone layouts keep their larger touch targets at either setting."
 					control={
 						// Two named choices rather than a switch: the same pair the
 						// sidebar's filter menu offers, in the same control, wearing the
@@ -343,7 +337,6 @@ export function AppearancePanel() {
 				/>
 				<SettingRow
 					title="Show last used time"
-					desc="Show when each workspace was last active in the sidebar. A live run always shows its running time regardless."
 					control={
 						<Select
 							label="Show last used time"
@@ -365,7 +358,7 @@ export function AppearancePanel() {
 				{sidebarFeeds.some((feed) => feed.id === PLAIN_ID) && (
 					<SettingRow
 						title="Support tickets"
-						desc="Where the Plain queue lives. The sidebar band opens a ticket's workspace, with a session and a transcript around it. As a tool it opens the ticket next to the queue, with no chat."
+						desc="Choose where Plain tickets live: in a full workspace from the sidebar, or beside the queue without chat."
 						control={
 							<Select
 								label="Where support tickets live"
@@ -388,7 +381,6 @@ export function AppearancePanel() {
 					<SettingRow
 						key={toolId}
 						title={SIDEBAR_TOOL_LABELS[toolId]}
-						desc="Show this tool in the sidebar."
 						control={
 							<Switch
 								aria-label={`Show ${SIDEBAR_TOOL_LABELS[toolId]} in sidebar`}
@@ -406,7 +398,7 @@ export function AppearancePanel() {
 						<SettingRow
 							key={feed.id}
 							title={feed.title}
-							desc="Show this source in the sidebar. Hidden sources stop refreshing until shown again."
+							desc="Hidden sources stop refreshing until shown again."
 							control={
 								<Switch
 									aria-label={`Show ${feed.title} in sidebar`}

@@ -127,10 +127,11 @@ export async function fetchUiPrefs(
 export async function saveUiPrefsApi(
 	user: string,
 	prefs: Record<string, string | null>,
+	expected?: Record<string, string | null>,
 ): Promise<Record<string, string>> {
 	const body = await request<{ prefs?: Record<string, string> }>("/ui-prefs", {
 		method: "PUT",
-		body: { user, prefs },
+		body: { user, prefs, expected },
 		label: "Failed to save UI prefs",
 	});
 	return body?.prefs && typeof body.prefs === "object" ? body.prefs : {};

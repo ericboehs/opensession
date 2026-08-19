@@ -1,5 +1,6 @@
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import React, { useEffect, useRef, useState } from "react";
+import type { PrFile } from "../../lib/types";
 
 const WIDTH_KEY = "opensession-pr-file-tree-width";
 const DEFAULT_WIDTH = 300;
@@ -21,18 +22,27 @@ function allDirectories(paths: string[]): string[] {
 function initialWidth(): number {
   if (typeof localStorage === "undefined") return DEFAULT_WIDTH;
   const stored = Number(localStorage.getItem(WIDTH_KEY));
-  return Number.isFinite(stored) ? Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, stored)) : DEFAULT_WIDTH;
+  return Number.isFinite(stored)
+    ? Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, stored))
+    : DEFAULT_WIDTH;
 }
 
 export function PrFileTree({
-  paths,
+  files,
+  mode,
+  showFileStats,
   onOpenFile,
 }: {
-  paths: string[];
+  files: PrFile[];
+  mode: "flat" | "tree";
+  showFileStats: boolean;
   onOpenFile: (path: string) => void;
 }) {
+  const paths = files.map((file) => file.path);
   const [width, setWidth] = useState(initialWidth);
-  const [availableWidth, setAvailableWidth] = useState(MAX_WIDTH + MIN_DIFF_WIDTH);
+  const [availableWidth, setAvailableWidth] = useState(
+    MAX_WIDTH + MIN_DIFF_WIDTH,
+  );
   const onOpenFileRef = useRef(onOpenFile);
   const rootRef = useRef<HTMLElement | null>(null);
   const stopResizeRef = useRef<(() => void) | null>(null);
@@ -46,6 +56,10 @@ export function PrFileTree({
     },
   });
 
+  useEffect(() => {
+    model.resetPaths(paths, { initialExpandedPaths: allDirectories(paths) });
+  }, [model, paths.join("\0")]);
+
   useEffect(
     () => () => {
       stopResizeRef.current?.();
@@ -57,16 +71,21 @@ export function PrFileTree({
   useEffect(() => {
     const parent = rootRef.current?.parentElement;
     if (!parent || typeof ResizeObserver === "undefined") return;
-    const update = () => setAvailableWidth(parent.getBoundingClientRect().width);
+    const update = () =>
+      setAvailableWidth(parent.getBoundingClientRect().width);
     update();
     const observer = new ResizeObserver(update);
     observer.observe(parent);
     return () => observer.disconnect();
   }, []);
 
-  const maxWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, availableWidth - MIN_DIFF_WIDTH));
+  const maxWidth = Math.max(
+    MIN_WIDTH,
+    Math.min(MAX_WIDTH, availableWidth - MIN_DIFF_WIDTH),
+  );
   const renderedWidth = Math.min(width, maxWidth);
-  const clampWidth = (next: number) => Math.min(maxWidth, Math.max(MIN_WIDTH, next));
+  const clampWidth = (next: number) =>
+    Math.min(maxWidth, Math.max(MIN_WIDTH, next));
   const commitWidth = (next: number) => {
     const clamped = clampWidth(next);
     setWidth(clamped);
@@ -114,17 +133,64 @@ export function PrFileTree({
       id="pr-file-tree"
       aria-label="Changed files"
       className="relative flex min-h-0 shrink-0 flex-col bg-raised"
-      style={{ width: renderedWidth, maxWidth: `calc(100% - ${MIN_DIFF_WIDTH}px)` }}
+      style={{
+        width: renderedWidth,
+        maxWidth: `calc(100% - ${MIN_DIFF_WIDTH}px)`,
+      }}
     >
       <div className="flex h-11 shrink-0 items-center gap-2 px-3 text-label font-medium text-fg shadow-[inset_0_-1px_0_var(--divider)]">
         <span className="min-w-0 flex-1 truncate">Changed files</span>
-        <span className="text-meta font-normal tabular-nums text-faint">{paths.length}</span>
+        <span className="text-meta font-normal tabular-nums text-faint">
+          {files.length}
+        </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden px-1 py-1.5">
-        <FileTree
-          model={model}
-          className="block h-full [color-scheme:dark] [--trees-accent-override:var(--accent)] [--trees-bg-override:transparent] [--trees-border-color-override:var(--divider)] [--trees-fg-muted-override:var(--text-faint)] [--trees-fg-override:var(--text-dim)] [--trees-focus-ring-color-override:var(--accent)] [--trees-selected-bg-override:var(--selected)] [--trees-selected-fg-override:var(--text)]"
-        />
+      <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1.5">
+        {files.length === 0 ? (
+          <p className="m-0 px-2 py-3 text-label text-faint">
+            No files to review
+          </p>
+        ) : mode === "tree" ? (
+          <FileTree
+            model={model}
+            className="block h-full [color-scheme:dark] [--trees-accent-override:var(--accent)] [--trees-bg-override:transparent] [--trees-border-color-override:var(--divider)] [--trees-fg-muted-override:var(--text-faint)] [--trees-fg-override:var(--text-dim)] [--trees-focus-ring-color-override:var(--accent)] [--trees-selected-bg-override:var(--selected)] [--trees-selected-fg-override:var(--text)]"
+          />
+        ) : (
+          <div className="flex flex-col gap-0.5">
+            {files.map((file) => {
+              const slash = file.path.lastIndexOf("/");
+              const dir = slash >= 0 ? file.path.slice(0, slash + 1) : "";
+              const base = slash >= 0 ? file.path.slice(slash + 1) : file.path;
+              return (
+                <button
+                  key={file.path}
+                  type="button"
+                  className="group flex min-h-8 min-w-0 items-center gap-2 rounded-row border-0 bg-transparent px-2 text-left text-label text-dim hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+                  title={file.path}
+                  onClick={() => onOpenFile(file.path)}
+                >
+                  <span className="flex min-w-0 flex-1 overflow-hidden">
+                    <span className="shrink-0 font-medium text-fg">{base}</span>
+                    {dir && (
+                      <span className="ml-1 min-w-0 truncate text-faint">
+                        {dir}
+                      </span>
+                    )}
+                  </span>
+                  {showFileStats && (
+                    <span className="flex shrink-0 gap-1 text-meta tabular-nums">
+                      {file.additions > 0 && (
+                        <span className="text-green">+{file.additions}</span>
+                      )}
+                      {file.deletions > 0 && (
+                        <span className="text-red">−{file.deletions}</span>
+                      )}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
       <div
         role="separator"

@@ -29,7 +29,7 @@
  * the configured default, exactly like suggest-branch.
  */
 
-import { opencodeOneShot } from "./opencode-oneshot";
+import { oneShot } from "./one-shot";
 import { configuredRepos } from "./config";
 import { repoRoutingCatalog, renderRepoCatalog, type RepoCard } from "./repo-context";
 
@@ -37,9 +37,9 @@ const SUGGEST_MODEL = process.env.SUGGEST_REPOS_MODEL || "claude-haiku-4-5";
 /**
  * How long we WAIT, which is not the same as how long the call may take.
  *
- * opencodeOneShot's `timeoutMs` is a health threshold, not a latency budget:
+ * oneShot's `timeoutMs` is a health threshold, not a latency budget:
  * a timeout there is read as "this account is wedged" and sidelines it with
- * markExhausted (see the comment at opencode-oneshot.ts:258 — that behaviour
+ * markExhausted (see the comment in one-shot.ts; that behaviour
  * exists to route around a genuinely broken account). Passing a short one
  * marks healthy accounts exhausted and rotates the pool on every slow call.
  *
@@ -152,7 +152,7 @@ export async function suggestRepos(
 		// Deliberately no `timeoutMs`: see PREVIEW_BUDGET_MS. We race our own
 		// clock instead, so giving up costs the account nothing.
 		const resultText = await Promise.race([
-			opencodeOneShot(`Route this task:\n\n${text.slice(0, 2000)}`, {
+			oneShot(`Route this task:\n\n${text.slice(0, 2000)}`, {
 				system: buildSystemPrompt(cards, mode),
 				model: SUGGEST_MODEL,
 				label: "suggest-repos",

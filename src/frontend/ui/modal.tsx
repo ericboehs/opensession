@@ -59,6 +59,9 @@ export type ModalContentProps = Omit<
 	/** Element to focus when the dialog closes. Pass `false` when closing the
 	 *  dialog also replaces the surface that opened it. */
 	finalFocus?: React.ComponentProps<typeof BaseDialog.Popup>["finalFocus"];
+	/** Palette only: adjust the viewport that positions the popup. Useful for a
+	 *  phone sheet that rests on the bottom edge instead of below the top bar. */
+	viewportClassName?: string;
 	variant?: ModalVariant;
 };
 
@@ -73,6 +76,7 @@ function Content({
 	children,
 	widthClassName,
 	initialFocus,
+	viewportClassName,
 	variant = "centered",
 	...popupProps
 }: ModalContentProps) {
@@ -168,7 +172,12 @@ function Content({
 				)}
 			/>
 			{palette ? (
-				<BaseDialog.Viewport className="fixed inset-0 z-[6001] flex items-start justify-center px-4 pb-4 pt-[11vh] max-[560px]:pt-[7vh]">
+				<BaseDialog.Viewport
+					className={cn(
+						"fixed inset-0 z-[6001] flex items-start justify-center px-4 pb-4 pt-[11vh] max-[560px]:pt-[7vh]",
+						viewportClassName,
+					)}
+				>
 					{popup}
 				</BaseDialog.Viewport>
 			) : (

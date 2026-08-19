@@ -92,16 +92,16 @@ export function buildRunInstructions(input: {
 }): string {
   const parts: string[] = [];
   // Unconditional, every run: uploads to public hosts are public and
-  // unrecoverable, and files an agent handles can contain customer PII.
+  // unrecoverable, and files an agent handles can contain private data.
   parts.push(
     "## Data handling — never upload to public hosts\nNEVER upload files or data to public " +
       "file-sharing hosts or pastebins (gofile.io, transfer.sh, 0x0.st, catbox.moe, file.io, " +
       "tmpfiles, pastebin, and the like) — no exceptions, no matter how delivery of a file is " +
-      "failing. Anything uploaded there is public and unrecoverable, and our files routinely " +
-      "contain customer PII. Deliver files only through channels we control: Slack file upload, " +
-      "this session's UI, email via our own tooling, or a commit/PR in a private repo. If every " +
-      "controlled channel fails, stop and report the failure instead of escalating to a " +
-      "third-party host."
+      "failing. Anything uploaded there is public and unrecoverable, and the files you handle " +
+      "routinely contain private or customer data. Deliver files only through channels your " +
+      "organization controls: this session's UI, an internal file share or chat, or a commit/PR " +
+      "in a private repo. If every controlled channel fails, stop and report the failure " +
+      "instead of escalating to a third-party host."
   );
   // Open Session vends bounded instance-role credentials to eligible runs.
   // Interactive SSO was both unnecessary and noisy: models started `aws sso
@@ -111,10 +111,11 @@ export function buildRunInstructions(input: {
   parts.push(
     "## AWS access is non-interactive\nNEVER run `aws login` or `aws sso login`, and NEVER " +
       "ask a human to authorize AWS, open an AWS device-login URL, enter a device code, or " +
-      "confirm an AWS login. Open Session supplies non-interactive read credentials to eligible " +
-      "runs. Use those ambient credentials without setting `AWS_PROFILE` or passing `--profile`. " +
-      "If AWS access is missing, expired, or insufficient, treat that as an Open Session " +
-      "infrastructure limitation: report it clearly and continue without AWS. Do not inspect " +
+      `confirm an AWS login. ${productName()} supplies non-interactive read credentials to ` +
+      "eligible runs. Use those ambient credentials without setting `AWS_PROFILE` or passing " +
+      `\`--profile\`. If AWS access is missing, expired, or insufficient, treat that as a ` +
+      `${productName()} infrastructure limitation: report it clearly and continue without ` +
+      "AWS. Do not inspect " +
       "or reuse the host's personal AWS SSO profiles, and do not try to work around the failure " +
       "with another login path."
   );
@@ -140,7 +141,7 @@ export function buildRunInstructions(input: {
     "## GitHub checks authentication\nThe ambient GitHub PAT or user token cannot read " +
       "GitHub Checks API data. When inspecting PR checks, use the private-key-backed command " +
       `\`bun ${GH_CHECKS_CLI_PATH} <pr-number> --repo <owner/repo>\`. It mints a short-lived, ` +
-      "read-only installation token from Open Session's GitHub App. Do not conclude that checks " +
+      `read-only installation token from ${productName()}'s GitHub App. Do not conclude that checks ` +
       "are inaccessible from a `gh pr checks` or `statusCheckRollup` permission error."
   );
   // Observed 2026-07-10 (bks-019f4b70): twice in one session the model ended
@@ -184,16 +185,12 @@ export function buildRunInstructions(input: {
   parts.push(
     "## Browser processes must be bounded\nNever launch Chrome/Chromium or Xvfb directly " +
       "with `systemd-run`, `setsid`, `nohup`, or a trailing `&`. Those processes outlive " +
-      "the turn, escape the session resource limits, and have previously consumed tens of " +
-      "gigabytes. For this repository's finished screenshots, use " +
-      "`bun scripts/capture-ui.ts /tmp/name.png --route /path`; it preserves the CSS " +
-      "viewport while rasterizing at Retina density and emulating the Electron material " +
-      "shell. Do not hand-roll a DPR 1 screenshot for visual review. For CSS checks, run " +
-      "`bun scripts/css-shots.ts`, " +
-      "`bun scripts/css-ab.ts`, or `bun scripts/css-rulekill.ts`; they acquire a private " +
-      "headful browser with memory/task/CPU/idle/lifetime limits and clean it up. For other " +
-      "CDP work use `bun scripts/cdp-browser.ts start` and stop the returned systemd unit " +
-      "in a `finally`/trap. Never reuse another session's CDP port or browser profile."
+      "the turn, escape the session's resource limits, and have previously eaten tens of " +
+      "gigabytes. Prefer the repository's own screenshot or browser tooling when it has " +
+      "any (its AGENTS.md names the command); otherwise launch the browser in the " +
+      "foreground under a wrapper you always stop in a `finally`/trap, with memory and " +
+      "lifetime limits. Never reuse another session's CDP port or browser profile, and " +
+      "capture screenshots at device-native resolution rather than enlarging a DPR 1 shot."
   );
   // Session-scoped scratch (session-scratch.ts): the path is per-session and
   // deleted with the session, so temp files stop accumulating in shared /tmp.
@@ -222,8 +219,8 @@ export function buildRunInstructions(input: {
       // and `#29` are far more often a step, a hex colour or a ranking than a
       // PR (markdown.ts's prMention extension). Writing the repo id is the
       // cheap half of that contract, so ask for it here.
-      "Write pull request references qualified with the repo id — `opensession#92`, " +
-      "`tella-fusion#5528` — rather than a bare `#92`. A qualified reference always " +
+      "Write pull request references qualified with the repo id — `webapp#92`, " +
+      "`api#5528` — rather than a bare `#92`. A qualified reference always " +
       "renders as a chip that opens the review here; a bare number only does when it is " +
       "long enough to be unmistakable, because short `#numbers` in prose are usually a " +
       "step, a hex colour or a ranking instead.\n" +
@@ -245,7 +242,7 @@ export function buildRunInstructions(input: {
     // stored string, which engine-session identity is keyed on (worktree.ts's
     // canonicalPath carries the same warning). A session persisted before a
     // checkout rename stores the pre-rename path, and naming it here makes the
-    // model narrate `cd …/tella-backstage &&` back in every command — while
+    // model narrate `cd …/<old-checkout-name> &&` back in every command — while
     // `pwd` reports the post-rename path, since getcwd() resolves symlinks.
     // Importing canonicalPath here would cycle back through worktree/preview,
     // so this is the same two lines locally.
@@ -272,8 +269,8 @@ export function buildRunInstructions(input: {
         "or PR flow here — never try to commit, push, or open PRs from this directory. " +
         "You CAN write files, download media, and run shell tools (ffmpeg, curl, etc.) " +
         "freely in this directory, and you should lean on the available MCP tools when " +
-        "the task concerns the external object this workspace is linked to (e.g. a Tella " +
-        "video: fetch its details/transcript via the API or MCP rather than guessing)."
+        "the task concerns the external object this workspace is linked to: fetch its " +
+        "details through those tools rather than guessing."
     );
   }
   if (input.isAsk && input.isRepoLess) {
@@ -453,7 +450,17 @@ export function buildRunInstructions(input: {
         "opensession-sessions MCP tools (list_sessions, get_session, send_to_session, " +
         "answer_session_question, cancel_session, create_session), manage setup via " +
         "opensession-admin, ask teammates via opensession-humans, and attach/switch repos via " +
-        "opensession-repos when those servers are available."
+        "opensession-repos when those servers are available.\n" +
+        `When the USER asks for "a new session" — "create a new session for X", "spin up a ` +
+        `session on Y", "start a separate session" — they mean a real ${productName()} session ` +
+        "created as them: it shows up in their own sidebar, has its own worktree/branch and " +
+        "transcript, and keeps running after this turn ends. Use `create_session` for that, and " +
+        "reply with the new session's URL. Never satisfy that request with an in-process " +
+        "subagent or task agent: a subagent is invisible in their sidebar, they cannot open or " +
+        "steer it, and it dies with this run. Subagents and `spawn_task` are for work YOU " +
+        "choose to fan out inside your own turn, or when the user explicitly asks for a " +
+        "subagent/worker. When it is ambiguous, create the session — one they didn't need is " +
+        "easy to close, while a subagent they wanted to open doesn't exist."
     );
   }
   // Dynamic workflows (workflow-runner.ts). The runtime has been wired into
@@ -503,12 +510,11 @@ export function buildRunInstructions(input: {
         "would be silly: a static visual change needs at least one after screenshot (a " +
         "before/after pair is better), an interaction or flow change needs a short demo " +
         "screen-recording of it working. Capture screenshots at Retina or device-native " +
-      "resolution rather than enlarging a low-resolution image; on this repo, use " +
-      "`bun scripts/capture-ui.ts` for the web UI and `bun scripts/capture-ios.ts` for the " +
-      "native app (`os1-ios/`), which builds on the Mac node, boots a simulator and copies the " +
-      "PNG back in one command — pass `--platform mac` if it reports the box is too busy for a " +
-      "simulator. A native change is exactly the one that gets skipped because capturing it " +
-      "looks expensive; it is one command. Either way include a 2-6 sentence markdown writeup " +
+      "resolution rather than enlarging a low-resolution image, and use the repository's own " +
+      "capture or preview command when it has one (its AGENTS.md names it). A native or " +
+      "mobile app change is exactly the one that gets skipped because capturing it looks " +
+      "expensive; look for that command before deciding it is too much work. Either way " +
+      "include a 2-6 sentence markdown writeup " +
         "whose first paragraph says what " +
         "changed and why it matters. That proof makes a deliberate Share to Slack action " +
         "available after the PR merges. Record media " +
@@ -572,8 +578,8 @@ export function buildRunInstructions(input: {
         "doing → what got in the way (a guess at the cause/fix is a bonus). Do this " +
         "proactively, in the moment, even though none of these are blocking — logged " +
         "together they show where the repo and tooling need sanding down. This is distinct " +
-        "from your final report (what you accomplished) and from Linear issues (real bugs / " +
-        "tracked work); don't log ordinary task difficulty or your own mistakes, only " +
+        "from your final report (what you accomplished) and from issues in your tracker " +
+        "(real bugs, planned work); don't log ordinary task difficulty or your own mistakes, only " +
         "friction the environment caused."
     );
   }

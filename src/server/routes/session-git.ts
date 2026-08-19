@@ -8,7 +8,12 @@
 
 import type { RouteContext } from "./context";
 import type { DiffGroupFile } from "../diff-groups";
-import { type SessionDiff, discardSessionFile, getSessionDiff } from "../git-diff";
+import {
+	type SessionDiff,
+	SessionDiffTimeoutError,
+	discardSessionFile,
+	getSessionDiff,
+} from "../git-diff";
 import { getGitStatus, gitPull, gitPush } from "../git-status";
 import { imageContentType, imageHeaders } from "../image-mime";
 import { workspaceExecFor } from "../sandbox";
@@ -57,40 +62,56 @@ export async function handleSessionGitRoutes(
 			...(session.attachedRepos || []).map((r) => r.repo),
 		];
 
-		const repos = await Promise.all(
-			repoIds.map(async (repoId, index) => {
-				let diff: SessionDiff = {
-					branch: null,
-					baseRef: null,
-					files: [],
-					totalAdditions: 0,
-					totalDeletions: 0,
-					rawPatch: "",
-					diffVersion: "",
-				};
-				// A volume-mode workspace has no host dir but is still reachable:
-				// the primary repo's diff runs through the session's sandbox exec
-				// instead (workspaceExecFor; host exec when no active sandbox).
-				const target = resolveWorktreeTarget(session, repoId);
-				if (target?.reachable) {
-					try {
-						diff = await getSessionDiff(
-							target.dir,
-							target.defaultBranch,
-							target.primary
-								? await workspaceExecFor(session, target.dir)
-								: undefined,
-						);
-					} catch {}
-				}
-				return {
-					repo: repoId,
-					dir: target?.dir ?? null,
-					primary: index === 0,
-					diff,
-				};
-			}),
-		);
+		let repos;
+		try {
+			repos = await Promise.all(
+				repoIds.map(async (repoId, index) => {
+					let diff: SessionDiff = {
+						branch: null,
+						baseRef: null,
+						files: [],
+						totalAdditions: 0,
+						totalDeletions: 0,
+						rawPatch: "",
+						diffVersion: "",
+					};
+					// A volume-mode workspace has no host dir but is still reachable:
+					// the primary repo's diff runs through the session's sandbox exec
+					// instead (workspaceExecFor; host exec when no active sandbox).
+					const target = resolveWorktreeTarget(session, repoId);
+					if (target?.reachable) {
+						try {
+							const ownPaths = isSharedCheckoutDir(target.dir)
+								? await sessionTouchedPaths(session, target.dir)
+								: undefined;
+							diff = await getSessionDiff(
+								target.dir,
+								target.defaultBranch,
+								target.primary
+									? await workspaceExecFor(session, target.dir)
+									: undefined,
+								false,
+								undefined,
+								ownPaths,
+							);
+						} catch (error) {
+							if (error instanceof SessionDiffTimeoutError) throw error;
+						}
+					}
+					return {
+						repo: repoId,
+						dir: target?.dir ?? null,
+						primary: index === 0,
+						diff,
+					};
+				}),
+			);
+		} catch (error) {
+			return Response.json(
+				{ error: error instanceof Error ? error.message : "Failed to read git diff" },
+				{ status: error instanceof SessionDiffTimeoutError ? 504 : 500 },
+			);
+		}
 
 		return Response.json({ repos });
 	}

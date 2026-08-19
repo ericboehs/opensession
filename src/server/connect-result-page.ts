@@ -16,7 +16,7 @@
  * going back to the app when it did not.
  */
 
-import { BRANDS, brandLogo, displayName } from "../frontend/brand-logos";
+import { BRANDS, brandKey, brandLogo, displayName } from "../frontend/brand-logos";
 
 const ESCAPES: Record<string, string> = {
 	"&": "&amp;",
@@ -35,7 +35,7 @@ const ALERT =
 /** The service's brand square, badged with the outcome. */
 function mark(server: string | undefined, ok: boolean): string {
 	const key = server?.toLowerCase() || "";
-	const brand = BRANDS[key];
+	const brand = BRANDS[brandKey(key)];
 	const logo = brandLogo(key);
 	// No server name at all (a redirect that lost its state): the badge has
 	// nothing to sit on, so the alert becomes the mark.
@@ -43,7 +43,14 @@ function mark(server: string | undefined, ok: boolean): string {
 		return `<div class="mark"><span class="tile tile-alert">${ALERT}</span></div>`;
 	const face = logo
 		? `<svg viewBox="${logo.viewBox}" fill="currentColor" aria-hidden="true">${logo.paths
-				.map((d) => `<path d="${d}"/>`)
+				.map((d, index) => {
+					const fill = logo.fills?.[index] ? ` fill="${logo.fills[index]}"` : "";
+					const opacity = logo.opacities?.[index] != null
+						? ` opacity="${logo.opacities[index]}"`
+						: "";
+					const rule = logo.evenOdd ? ' fill-rule="evenodd"' : "";
+					return `<path d="${d}"${fill}${opacity}${rule}/>`;
+				})
 				.join("")}</svg>`
 		: esc(server.charAt(0).toUpperCase());
 	const style = brand

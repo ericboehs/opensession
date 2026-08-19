@@ -32,9 +32,18 @@ Object.assign(
 
 const { TranscriptBlocks } = await import("./TranscriptBlocks");
 
-function setTurnActivity(value: string | null) {
+/** The two transcript preferences as the browser store holds them: whether a
+ *  turn's work shows, and whether that includes its tool calls. Absent is the
+ *  default (work "running", tool calls "folded"); an old single value in the
+ *  work key still answers both. */
+function setTurnPrefs(work: string | null, tools: string | null = null) {
 	(globalThis.localStorage as { getItem: (key: string) => string | null }).getItem =
-		(key) => key === "opensession-turn-activity" ? value : null;
+		(key) =>
+			key === "opensession-turn-activity"
+				? work
+				: key === "opensession-tool-calls"
+					? tools
+					: null;
 }
 
 const entries: TranscriptEntry[] = [
@@ -219,7 +228,7 @@ describe("TranscriptBlocks compact tool runs", () => {
 	];
 
 	test("folds routine calls to one icon-led row by default", () => {
-		setTurnActivity(null);
+		setTurnPrefs(null);
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks live entries={toolEntries} />,
 		);
@@ -237,7 +246,7 @@ describe("TranscriptBlocks compact tool runs", () => {
 	});
 
 	test("leaves a lone routine call as its own row", () => {
-		setTurnActivity(null);
+		setTurnPrefs(null);
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks live entries={toolEntries.slice(0, 3)} />,
 		);
@@ -248,7 +257,7 @@ describe("TranscriptBlocks compact tool runs", () => {
 	});
 
 	test("folds edits into the run and counts their lines on the row", () => {
-		setTurnActivity(null);
+		setTurnPrefs(null);
 		const edit = (n: number, path: string): TranscriptEntry[] => [
 			{ id: `edit-${n}`, type: "tool_use", toolUseId: `edit-call-${n}`, toolName: "edit", toolInput: { filePath: path, oldString: "old", newString: "new" }, content: "Using edit", timestamp: `2026-08-13T06:00:0${n}.000Z` },
 			{ id: `edit-result-${n}`, type: "tool_result", toolUseId: `edit-call-${n}`, content: "updated", timestamp: `2026-08-13T06:00:0${n}.500Z` },
@@ -278,7 +287,7 @@ describe("TranscriptBlocks compact tool runs", () => {
 	});
 
 	test("shows every call in place under the always-expanded preference", () => {
-		setTurnActivity("expanded");
+		setTurnPrefs("expanded");
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks live entries={toolEntries} />,
 		);
@@ -288,11 +297,11 @@ describe("TranscriptBlocks compact tool runs", () => {
 		expect(html).not.toContain('class="ml-3"');
 		expect(html).toContain("git status");
 		expect(html).toContain("package.json");
-		setTurnActivity(null);
+		setTurnPrefs(null);
 	});
 
 	test("keeps intermediate messages between compact runs", () => {
-		setTurnActivity(null);
+		setTurnPrefs(null);
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks
 				live
@@ -310,7 +319,7 @@ describe("TranscriptBlocks compact tool runs", () => {
 	});
 
 	test("surfaces failure and incidental media status on the compact row", () => {
-		setTurnActivity(null);
+		setTurnPrefs(null);
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks
 				live
@@ -330,7 +339,7 @@ describe("TranscriptBlocks compact tool runs", () => {
 	});
 
 	test("keeps featured media and subagents as direct rows", () => {
-		setTurnActivity("expanded");
+		setTurnPrefs("expanded");
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks
 				live
@@ -346,7 +355,82 @@ describe("TranscriptBlocks compact tool runs", () => {
 		expect(html).not.toContain('data-tool-run="true"');
 		expect(html).toContain("after.png");
 		expect(html).toContain("task");
-		setTurnActivity(null);
+		setTurnPrefs(null);
+	});
+});
+
+describe("TranscriptBlocks turn work and tool call preferences", () => {
+	/** A turn that narrates between its steps, so the two preferences have
+	 *  something to disagree about: notes to keep and calls to fold. */
+	const narratedTurn: TranscriptEntry[] = [
+		{ id: "prompt", type: "user", content: "Check the repository", timestamp: "2026-08-19T06:00:00Z" },
+		{ id: "bash", type: "tool_use", toolUseId: "bash-call", toolName: "bash", toolInput: { command: "git status" }, content: "Using bash", timestamp: "2026-08-19T06:00:01Z" },
+		{ id: "bash-result", type: "tool_result", toolUseId: "bash-call", content: "clean", timestamp: "2026-08-19T06:00:02Z" },
+		{ id: "read", type: "tool_use", toolUseId: "read-call", toolName: "read", toolInput: { filePath: "/tmp/package.json" }, content: "Using read", timestamp: "2026-08-19T06:00:03Z" },
+		{ id: "read-result", type: "tool_result", toolUseId: "read-call", content: "{}", timestamp: "2026-08-19T06:00:04Z" },
+		{ id: "note", type: "assistant", content: "The repository is clean.", timestamp: "2026-08-19T06:00:05Z" },
+		{ id: "answer", type: "assistant", content: "All good.", timestamp: "2026-08-19T06:00:06Z" },
+	];
+
+	test("keeps grouped calls closed inside steps that stay open", () => {
+		setTurnPrefs("open", "folded");
+		const html = renderToStaticMarkup(<TranscriptBlocks entries={narratedTurn} />);
+
+		expect(html).toContain("The repository is clean.");
+		expect(html).toContain('data-tool-run="true"');
+		expect(html).not.toContain("git status");
+		expect(html).not.toContain("package.json");
+		setTurnPrefs(null);
+	});
+
+	test("opens grouped calls independently of the step timing", () => {
+		setTurnPrefs("running", "open");
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks live entries={narratedTurn.slice(0, -1)} />,
+		);
+
+		expect(html).not.toContain('data-tool-run="true"');
+		expect(html).toContain("git status");
+		expect(html).toContain("package.json");
+		setTurnPrefs(null);
+	});
+
+	test("reads the old always-expanded preference as both controls open", () => {
+		setTurnPrefs("expanded");
+		const html = renderToStaticMarkup(<TranscriptBlocks entries={narratedTurn} />);
+
+		expect(html).toContain("The repository is clean.");
+		expect(html).not.toContain('data-tool-run="true"');
+		expect(html).toContain("git status");
+		setTurnPrefs(null);
+	});
+
+	test("folds the notes away too when the work is always folded", () => {
+		setTurnPrefs("folded", "open");
+		const html = renderToStaticMarkup(<TranscriptBlocks entries={narratedTurn} />);
+
+		expect(html).toContain("Worked");
+		expect(html).not.toContain("The repository is clean.");
+		expect(html).not.toContain("git status");
+		// The answer is never work, so it stays whatever the turn does.
+		expect(html).toContain("All good.");
+		setTurnPrefs(null);
+	});
+
+	test("opens the outer steps only while a turn runs", () => {
+		setTurnPrefs("running", "folded");
+		const running = renderToStaticMarkup(
+			<TranscriptBlocks live entries={narratedTurn.slice(0, -1)} />,
+		);
+		expect(running).toContain("The repository is clean.");
+		expect(running).toContain('data-tool-run="true"');
+
+		const settled = renderToStaticMarkup(
+			<TranscriptBlocks entries={narratedTurn} />,
+		);
+		expect(settled).not.toContain("The repository is clean.");
+		expect(settled).not.toContain("git status");
+		setTurnPrefs(null);
 	});
 });
 
@@ -362,7 +446,7 @@ describe("TranscriptBlocks featured media outlives the fold", () => {
 	];
 
 	test("keeps a marked screenshot on screen once the turn settles", () => {
-		setTurnActivity(null);
+		setTurnPrefs(null);
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks
 				entries={turn({
@@ -381,7 +465,7 @@ describe("TranscriptBlocks featured media outlives the fold", () => {
 	});
 
 	test("leaves media the turn merely touched inside the fold", () => {
-		setTurnActivity(null);
+		setTurnPrefs(null);
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks entries={turn({ images: ["/media?path=incidental.png"] })} />,
 		);
@@ -393,7 +477,7 @@ describe("TranscriptBlocks featured media outlives the fold", () => {
 	});
 
 	test("shows a featured video with its player", () => {
-		setTurnActivity(null);
+		setTurnPrefs(null);
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks
 				entries={turn({
@@ -408,7 +492,7 @@ describe("TranscriptBlocks featured media outlives the fold", () => {
 	});
 
 	test("renders one tile for a loop that captured to the same path twice", () => {
-		setTurnActivity(null);
+		setTurnPrefs(null);
 		const shot = (n: number): TranscriptEntry[] => [
 			{ id: `shot-${n}`, type: "tool_use", toolUseId: `shot-call-${n}`, toolName: "bash", toolInput: { command: "bun run capture" }, content: "Using bash", timestamp: `2026-08-15T06:0${n}:00Z` },
 			{ id: `shot-result-${n}`, type: "tool_result", toolUseId: `shot-call-${n}`, content: "OPENSESSION_IMAGE: /tmp/after.png", images: ["/media?path=after.png"], featuredMedia: ["/media?path=after.png"], timestamp: `2026-08-15T06:0${n}:01Z` },
@@ -428,7 +512,7 @@ describe("TranscriptBlocks featured media outlives the fold", () => {
 	});
 
 	test("does not repeat the media that its own open row is already showing", () => {
-		setTurnActivity("expanded");
+		setTurnPrefs("expanded");
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks
 				entries={turn({
@@ -440,7 +524,7 @@ describe("TranscriptBlocks featured media outlives the fold", () => {
 
 		expect(html).toContain("bun run capture");
 		expect(html.match(/src="\/media\?path=featured\.png"/g)).toHaveLength(1);
-		setTurnActivity(null);
+		setTurnPrefs(null);
 	});
 });
 

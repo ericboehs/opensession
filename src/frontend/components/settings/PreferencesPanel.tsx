@@ -57,10 +57,11 @@ import {
 	setSendKeyPref,
 } from "../../lib/send-key-pref";
 import {
-	getTurnActivityPref,
+	getTurnActivityPrefs,
 	onTurnActivityChanged,
-	setTurnActivityPref,
-	type TurnActivityPref,
+	setToolCallsPref,
+	setTurnWorkPref,
+	type TurnActivityPrefs,
 } from "../../lib/turn-activity";
 import {
 	getLiveTypingPref,
@@ -192,7 +193,6 @@ function DeskVoicePanel() {
 			<SettingCard>
 				<SettingRow
 					title="Voice mode"
-					desc="Show the voice toggle in your Desk. Off hides it for you only."
 					control={
 						<Switch aria-label="Voice mode" checked={on} onCheckedChange={setDeskVoicePref} />
 					}
@@ -409,9 +409,9 @@ export function PreferencesPanel() {
 		[],
 	);
 	const [turnActivity, setTurnActivity] =
-		useState<TurnActivityPref>(getTurnActivityPref);
+		useState<TurnActivityPrefs>(getTurnActivityPrefs);
 	useEffect(
-		() => onTurnActivityChanged(() => setTurnActivity(getTurnActivityPref())),
+		() => onTurnActivityChanged(() => setTurnActivity(getTurnActivityPrefs())),
 		[],
 	);
 	const [liveTyping, setLiveTyping] = useState<boolean>(getLiveTypingPref);
@@ -437,7 +437,6 @@ export function PreferencesPanel() {
 			<SettingCard>
 				<SettingRow
 					title="Default model"
-					desc="Preselect this model when you start a session."
 					control={
 						<Select
 							label="Default model"
@@ -461,7 +460,6 @@ export function PreferencesPanel() {
 				{engineOptions.length > 1 && (
 					<SettingRow
 						title="Default engine"
-						desc="Which engine your new sessions start on. Switch a single session in its model picker."
 						control={
 							<Select
 								label="Default engine"
@@ -568,7 +566,6 @@ export function PreferencesPanel() {
 				/>
 				<SettingRow
 					title="Pin new sessions"
-					desc="Automatically pin a session to your tab strip when you start it."
 					control={
 						<Switch
 							aria-label="Pin new sessions"
@@ -579,7 +576,6 @@ export function PreferencesPanel() {
 				/>
 				<SettingRow
 					title="Pin new workspaces"
-					desc="Also pin a workspace to your tab strip when you create one."
 					control={
 						<Switch
 							aria-label="Pin new workspaces"
@@ -589,27 +585,36 @@ export function PreferencesPanel() {
 					}
 				/>
 			</SettingCard>
-			<SettingsHint>
-				Stored per user, so it follows you across every device. Queue holds a
-				follow-up until the run and its worker sessions have finished.
-			</SettingsHint>
-
 			<SettingsGroupLabel>Transcript</SettingsGroupLabel>
 			<SettingCard>
 				<SettingRow
-					title="Tool calls and messages"
-					desc="How much of each turn's working the transcript shows."
+					title="Steps"
+					desc="Choose whether a turn’s steps stay closed, open only while it runs, or remain open."
 					control={
 						<Select
-						label="Tool calls and messages"
-							value={turnActivity}
+							label="Steps"
+							value={turnActivity.work}
 							options={[
-								{ value: "messages", label: "Fold tool calls" },
-								{ value: "collapsed", label: "Fold everything" },
-								{ value: "auto", label: "Expand while running" },
-								{ value: "expanded", label: "Always expanded" },
+								{ value: "folded", label: "Closed" },
+								{ value: "running", label: "While running" },
+								{ value: "open", label: "Open" },
 							]}
-							onChange={setTurnActivityPref}
+							onChange={setTurnWorkPref}
+						/>
+					}
+				/>
+				<SettingRow
+					title="Tool calls"
+					desc="Choose whether tool calls start open or stay folded into a single step."
+					control={
+						<Select
+							label="Tool calls"
+							value={turnActivity.tools}
+							options={[
+								{ value: "folded", label: "Closed" },
+								{ value: "open", label: "Open" },
+							]}
+							onChange={setToolCallsPref}
 						/>
 					}
 				/>
@@ -625,11 +630,6 @@ export function PreferencesPanel() {
 					}
 				/>
 			</SettingCard>
-			<SettingsHint>
-				By default a turn is open while it runs and folds away once it settles.
-				"Fold tool calls" instead folds only the tool calls, leaving the rest of the
-				turn reading as normal transcript.
-			</SettingsHint>
 
 			<DeskVoicePanel />
 			<PersonalPromptPanel />

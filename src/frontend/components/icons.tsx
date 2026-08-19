@@ -126,6 +126,24 @@ export function IconSliders(p: IconProps) {
   );
 }
 
+export function IconKeyboard(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="4.75" y="4.75" width="14.5" height="14.5" rx="2" />
+      <path {...stroke} d="M8 8H8.01M12 8H12.01M16 8H16.01M8 12H8.01M12 12H12.01M16 12H16.01M7.75 16.25H16.25" />
+    </Svg>
+  );
+}
+
+export function IconChecklist(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="4.75" y="5.75" width="4.5" height="4.5" rx="1" />
+      <path {...stroke} d="M4.75 13.75V17.25C4.75 17.8023 5.19772 18.25 5.75 18.25H9.25M12.75 6.75H19.25M12.75 9.25H19.25M12.75 14.75H19.25M12.75 17.25H19.25M6.75 15.25L8 16.75L10.25 12.75" />
+    </Svg>
+  );
+}
+
 export function IconFilter(p: IconProps) {
   return (
     <Svg {...p}>
@@ -258,6 +276,17 @@ export function IconArrowUpRight(p: IconProps) {
   );
 }
 
+export function IconShare(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path
+        {...stroke}
+        d="M9.25 4.75H6.75C5.64543 4.75 4.75 5.64543 4.75 6.75V17.25C4.75 18.3546 5.64543 19.25 6.75 19.25H17.25C18.3546 19.25 19.25 18.3546 19.25 17.25V14.75M19.25 9.25V4.75H14.75M19 5L11.75 12.25"
+      />
+    </Svg>
+  );
+}
+
 // Hash / number sign — the "Copy number" affordance on the PR chip menu.
 export function IconHash(p: IconProps) {
   return (
@@ -314,6 +343,26 @@ export function IconCamera(p: IconProps) {
         d="M4.75 8.75C4.75 7.64543 5.64543 6.75 6.75 6.75H8L9 5.25H15L16 6.75H17.25C18.3546 6.75 19.25 7.64543 19.25 8.75V16.25C19.25 17.3546 18.3546 18.25 17.25 18.25H6.75C5.64543 18.25 4.75 17.3546 4.75 16.25V8.75Z"
       />
       <circle {...stroke} cx="12" cy="12.25" r="3" fill="none" />
+    </Svg>
+  );
+}
+
+// Picture: a framed photo, where IconCamera is the act of taking one. Both
+// exist because a profile picture is a FILE you replace, not a shot the app
+// captures. Frame spans the set's 4.75 → 19.25.
+export function IconImage(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="4.75" y="4.75" width="14.5" height="14.5" rx="3" />
+      <circle {...stroke} cx="9.5" cy="9.5" r="1.25" fill="none" />
+      {/* The ridge runs into the frame's lower corners rather than stopping
+          inside it: a hill floating in the middle of the box reads as a shape
+          on a card, not as a photograph. */}
+      <path
+        {...stroke}
+        d="M5.25 17.25L9.6 12.65C10.1 12.12 10.94 12.12 11.44 12.65L15.75 17.25"
+      />
+      <path {...stroke} d="M13.5 14.85L15.1 13.2C15.6 12.68 16.43 12.68 16.93 13.2L18.75 15.1" />
     </Svg>
   );
 }
@@ -542,6 +591,24 @@ export function IconPerson(p: IconProps) {
   );
 }
 
+export function IconUser(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle {...stroke} cx="12" cy="8" r="3.25" />
+      <path {...stroke} d="M6.8475 19.25H17.1525C18.2944 19.25 19.174 18.2681 18.6408 17.2584C17.8563 15.7731 16.068 14 12 14C7.93201 14 6.14367 15.7731 5.35924 17.2584C4.82597 18.2681 5.70558 19.25 6.8475 19.25Z" />
+    </Svg>
+  );
+}
+
+export function IconBadge(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M14.25 8.75L18.25 4.75H5.75L9.75 8.75" />
+      <circle {...stroke} cx="12" cy="14" r="5.25" />
+    </Svg>
+  );
+}
+
 // Flag on a pole: priority, the way every ticket tool draws it.
 export function IconFlag(p: IconProps) {
   return (
@@ -749,6 +816,34 @@ export function IconWrench(p: IconProps) {
   );
 }
 
+export function IconServer(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="4.75" y="4.75" width="14.5" height="5.5" rx="1" />
+      <rect {...stroke} x="4.75" y="13.75" width="14.5" height="5.5" rx="1" />
+      <path {...stroke} d="M16.25 5V10M16.25 14V19" />
+    </Svg>
+  );
+}
+
+export function IconDatabase(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <ellipse {...stroke} cx="12" cy="7" rx="7.25" ry="2.25" />
+      <path {...stroke} d="M19.25 12C19.25 13.1046 15.866 14.25 12 14.25C8.13401 14.25 4.75 13.1046 4.75 12M19.25 7V17C19.25 18.1046 15.866 19.25 12 19.25C8.13401 19.25 4.75 18.1046 4.75 17V7" />
+    </Svg>
+  );
+}
+
+export function IconGauge(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M16.75 17.25H17.25C18.3546 17.25 19.25 16.3546 19.25 15.25V8.75C19.25 7.64543 18.3546 6.75 17.25 6.75H6.75C5.64543 6.75 4.75 7.64543 4.75 8.75V15.25C4.75 16.3546 5.64543 17.25 6.75 17.25H7.25M11 16L8.75 11.75M12 9.75V10.25M15.625 10.7213L15.375 11.1543" />
+      <circle {...stroke} cx="12" cy="17" r="1.25" />
+    </Svg>
+  );
+}
+
 const EXPAND_PATHS = [
   "M14.75 4.75H19.25V9.25",
   "M19.25 4.75L13.75 10.25",
@@ -840,6 +935,43 @@ export function IconClock(p: IconProps) {
     <Svg {...p}>
       <circle {...stroke} cx="12" cy="12" r="7.25" />
       <path {...stroke} d="M12 8.25V12L14.75 14.25" />
+    </Svg>
+  );
+}
+
+export function IconTarget(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle {...stroke} cx="12" cy="12" r="7.25" />
+      <circle {...stroke} cx="12" cy="12" r="4.25" />
+      <circle {...stroke} cx="12" cy="12" r="1.25" />
+    </Svg>
+  );
+}
+
+export function IconShieldCheck(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M12 4.75L4.75 8C4.75 8 4 19.25 12 19.25C20 19.25 19.25 8 19.25 8L12 4.75Z" />
+      <path {...stroke} d="M9.75 12.75L11 14.25L14.25 9.75" />
+    </Svg>
+  );
+}
+
+export function IconRocket(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M13.4556 6.85504C14.9314 5.50111 16.8613 4.74994 18.864 4.74994H19.2501V5.13607C19.2501 7.1388 18.4989 9.0687 17.145 10.5444L10.9948 17.2478L6.7522 13.0052L13.4556 6.85504Z" />
+      <path {...stroke} d="M7.25 16.75L4.75 19.25M9.25 18.75L8.75 19.25M5.25 14.75L4.75 15.25M13 19.25L14.24 14L11 17.25L13 19.25ZM6.75 13L10 9.75L4.75 10.75L6.75 13Z" />
+    </Svg>
+  );
+}
+
+export function IconBandAid(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M19.25 14L10 4.75H8.75C6.54086 4.75 4.75 6.54086 4.75 8.75V10L14 19.25H15.25C17.4591 19.25 19.25 17.4591 19.25 15.25V14Z" />
+      <path {...stroke} d="M11 10L10 11L13 14L14 13L11 10Z" />
     </Svg>
   );
 }
@@ -1179,6 +1311,14 @@ export function IconChart(p: IconProps) {
   );
 }
 
+export function IconShapes(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path {...stroke} d="M15 5.75C15 7.5 13.5 9 11.75 9C13.5 9 15 10.5 15 12.25C15 10.5 16.5 9 18.25 9C16.5 9 15 7.5 15 5.75ZM8 13.75C8 16 8 16 5.75 16C8 16 8 16 8 18.25C8 16 8 16 10.25 16C8 16 8 16 8 13.75ZM17 14.75L14.75 17L17 19.25L19.25 17L17 14.75ZM7 5.75L5.75 7L7 8.25L8.25 7L7 5.75Z" />
+    </Svg>
+  );
+}
+
 // ⋯ more options. Deliberately NOT iconic-pro's `dots-horizontal` geometry
 // (8/12/16 at r=1): that spans only 10 of the 24 grid and renders visibly
 // smaller than the stroke glyphs beside it, which draw ~14.5.
@@ -1199,6 +1339,18 @@ export function IconDotsHorizontal(p: IconProps) {
       <circle cx="5" cy="12" r="1.5" fill="currentColor" />
       <circle cx="12" cy="12" r="1.5" fill="currentColor" />
       <circle cx="19" cy="12" r="1.5" fill="currentColor" />
+    </Svg>
+  );
+}
+
+// Six raised dots, the handle for a row that can be reordered.
+export function IconGripVertical(p: IconProps) {
+  return (
+    <Svg {...p}>
+      {[8, 12, 16].flatMap((cy) => [
+        <circle key={`l-${cy}`} cx="9" cy={cy} r="1.1" fill="currentColor" />,
+        <circle key={`r-${cy}`} cx="15" cy={cy} r="1.1" fill="currentColor" />,
+      ])}
     </Svg>
   );
 }

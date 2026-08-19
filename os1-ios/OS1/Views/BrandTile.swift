@@ -10,15 +10,36 @@ struct BrandTile: View {
 
     var body: some View {
         let brand = Brand.colors(for: name)
-        let logoScale = name.lowercased() == "tella" ? 1.0 : 0.56
+        let logoScale = ["tella", "tellainternalsupportmcp"].contains(name.lowercased()) ? 1.0 : 0.56
         RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
             .fill(brand?.background ?? Color.secondary.opacity(0.16))
             .frame(width: size, height: size)
             .overlay {
                 if let logo = Brand.logo(for: name) {
-                    BrandLogoShape(logo: logo)
-                        .fill(brand?.foreground ?? .secondary)
-                        .frame(width: size * logoScale, height: size * logoScale)
+                    Group {
+                        if logo.fills != nil || logo.opacities != nil {
+                            ZStack {
+                                ForEach(logo.paths.indices, id: \.self) { index in
+                                    BrandLogoShape(
+                                        logo: BrandLogo(viewBox: logo.viewBox, paths: [logo.paths[index]])
+                                    )
+                                    .fill(
+                                        logo.fills.flatMap { index < $0.count ? $0[index] : nil }
+                                            ?? brand?.foreground
+                                            ?? .secondary
+                                    )
+                                    .opacity(logo.opacities.flatMap { index < $0.count ? $0[index] : nil } ?? 1)
+                                }
+                            }
+                        } else {
+                            BrandLogoShape(logo: logo)
+                                .fill(
+                                    brand?.foreground ?? .secondary,
+                                    style: FillStyle(eoFill: logo.evenOdd)
+                                )
+                        }
+                    }
+                    .frame(width: size * logoScale, height: size * logoScale)
                 } else {
                     Text(initial)
                         .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))

@@ -342,7 +342,9 @@ export async function handlePrefsRoutes(
 			);
 		}
 		const user = requestUser(ctx, body.user) || "Anonymous";
-		return Response.json({ prefs: patchUiPrefs(user, body.prefs) });
+		return Response.json({
+			prefs: patchUiPrefs(user, body.prefs, body.expected),
+		});
 	}
 
 	// ── Per-user sidebar lanes ──

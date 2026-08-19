@@ -365,7 +365,7 @@ describe("fake engine through runAgent", () => {
 		release();
 		const events = await collecting;
 
-		expect(run?.model).toBe("opencode/openai/gpt-5.6-terra");
+		expect(run?.model).toBe("opencode/anthropic/claude-opus-5");
 		expect(run?.selectedModel).toBe("dial/medium");
 		expect(run?.transientFallback).toBe(true);
 		const switchEvent = events.find((event) => event.type === "model_switch");

@@ -180,6 +180,10 @@ import {
 import { ReviewAskerFace } from "./ReviewAskerFace";
 import {
 	readHiddenSidebarTools,
+	getSidebarToolOrder,
+	mergeSidebarToolOrder,
+	replaceVisibleSidebarToolOrder,
+	setSidebarToolOrder,
 	setSidebarToolVisible,
 	onSidebarToolsChanged,
 	toolFitsViewport,
@@ -274,6 +278,7 @@ import { ActiveSubagentRows } from "./sidebar/ActiveSubagentRows";
 import { DraftRow } from "./sidebar/DraftRow";
 import { SidebarCtxMenu } from "./sidebar/SidebarCtxMenu";
 import { SidebarToolRows, SidebarToolsMenu } from "./sidebar/SidebarToolsMenu";
+import { SidebarCustomizeDialog } from "./sidebar/SidebarCustomizeDialog";
 import { EmptyState, ListSkeleton } from "../ui/state";
 import {
 	SIDEBAR_ROW,
@@ -342,6 +347,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// Groups are collapsed by default; the expanded set persists per browser
 	const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
 	const [hiddenTools, setHiddenTools] = useState(readHiddenSidebarTools);
+	const [toolOrder, setToolOrderState] = useState(getSidebarToolOrder);
 	const [hiddenFeeds, setHiddenFeeds] = useState(readHiddenSidebarFeeds);
 	const [savedRepoOrder, setSavedRepoOrder] = useState(getRepoOrder);
 	useEffect(
@@ -531,7 +537,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// The team with live status attached, for the Home entry's face pile.
 	const team = useTeamPresence({ sessions, teamViewing, currentUser });
 	useEffect(
-		() => onSidebarToolsChanged(() => setHiddenTools(readHiddenSidebarTools())),
+		() =>
+			onSidebarToolsChanged(() => {
+				setHiddenTools(readHiddenSidebarTools());
+				setToolOrderState(getSidebarToolOrder());
+			}),
 		[],
 	);
 	useEffect(
@@ -658,6 +668,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	// a face picked there is the sidebar you come back to.
 	const filter = useSidebarFilter();
 	const [filterOpen, setFilterOpen] = useState(false);
+	const [customizeOpen, setCustomizeOpen] = useState(false);
 	const filterBtnRef = useRef<HTMLButtonElement>(null);
 	// The phone stand-in for the header filter button (portaled into the top
 	// bar next to Search). The popover anchors to whichever button is live.
@@ -2578,7 +2589,14 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	];
 	// Tools this width offers at all — the switches below only choose among
 	// these, so a tool that doesn't fit the viewport is never listed as off.
-	const fittingTools = tools.filter((tool) => toolFitsViewport(tool.id, isPhone));
+	const viewportTools = tools.filter((tool) => toolFitsViewport(tool.id, isPhone));
+	const fittingTools = mergeSidebarToolOrder(
+		toolOrder,
+		viewportTools.map((tool) => tool.id),
+	).flatMap((id) => {
+		const tool = viewportTools.find((candidate) => candidate.id === id);
+		return tool ? [tool] : [];
+	});
 	// None of the tools belong to the person whose sidebar you are borrowing:
 	// Tasks and Catch up are yours, and Feed, Pull requests and Analytics are
 	// the whole team's. Under a heading with someone else's name on it they
@@ -4277,10 +4295,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	}
 
 	return (
-		// The scrollport is the right-click target for the sidebar's own menu:
-		// only the background reaches it, since every row stops the event on its
-		// way up to open its own menu. Phones are left alone — the gesture there
-		// is a long-press, which the row sheets own.
+		<>
+		{/* The scrollport is the right-click target for the sidebar's own menu.
+		    Only the background reaches it, since every row stops the event on its
+		    way up to open its own menu. Phones are left alone because row sheets
+		    own the long-press gesture there. */}
 		<ContextMenu.Root disabled={isPhone}>
 		<ContextMenu.Trigger
 			render={
@@ -4787,6 +4806,10 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					currentUser={currentUser}
 					onChange={setFilter}
 					onClose={() => setFilterOpen(false)}
+					onCustomize={() => {
+						setFilterOpen(false);
+						setCustomizeOpen(true);
+					}}
 				/>
 			)}
 
@@ -5862,7 +5885,30 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			onToggleTool={setToolVisible}
 			onSetSupport={setSupportSurface}
 			onToggleSource={setSidebarFeedVisible}
+			onCustomize={() => setCustomizeOpen(true)}
 		/>
 		</ContextMenu.Root>
+		<SidebarCustomizeDialog
+			open={customizeOpen}
+			onOpenChange={setCustomizeOpen}
+			tools={sidebarMenuTools.map((tool) => ({
+				id: tool.id,
+				label: tool.label,
+				icon: tool.icon,
+				shown: tool.surface ? tool.surface === "page" : tool.shown,
+				onShownChange: (shown: boolean) =>
+					tool.surface
+						? setSupportSurface(shown ? "page" : "off")
+						: setToolVisible(tool.id, shown),
+			}))}
+			repositories={repos}
+			onToolOrderChange={(next) =>
+				setSidebarToolOrder(
+					replaceVisibleSidebarToolOrder(getSidebarToolOrder(), next),
+				)
+			}
+			onRepositoryOrderChange={setRepoOrder}
+		/>
+		</>
 	);
 });

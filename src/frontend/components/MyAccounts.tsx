@@ -18,7 +18,6 @@ import {
 	SettingRowTitle,
 	SettingsGroupLabel,
 	SettingsHeader,
-	SettingsHint,
 	SettingsPanel,
 	StatusChip,
 	rowMenuTriggerClasses,
@@ -118,10 +117,7 @@ export function MyAccountsPanel() {
 
 	return (
 		<SettingsPanel>
-			<SettingsHeader
-				title="Account"
-				description="Your profile, and the accounts your sessions act as."
-			/>
+			<SettingsHeader title="Account" />
 			{error && (
 				<InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
 			)}
@@ -205,12 +201,6 @@ export function MyAccountsPanel() {
 						);
 					})}
 				</SettingCard>
-			)}
-			{oauthServers.length > 0 && (
-				<SettingsHint>
-					Connect a tool to use your own account in sessions. Unconnected tools
-					use the workspace account.
-				</SettingsHint>
 			)}
 			<KeychainSection />
 		</SettingsPanel>

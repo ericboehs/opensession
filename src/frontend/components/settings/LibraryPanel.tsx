@@ -409,10 +409,7 @@ export function LibraryPanel() {
 	const installed = [...byMark.values()];
 
 	const header = (
-		<SettingsHeader
-			title="Library"
-			description="Add tools, automations, and integrations to this instance. Nothing is on until you add it."
-		/>
+		<SettingsHeader title="Library" />
 	);
 
 	if (error)

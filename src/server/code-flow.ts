@@ -14,8 +14,9 @@ import type { Repo } from "./config";
 import { getSessionDiff, parsePatchFiles, type DiffFile } from "./git-diff";
 import type { PrDetails, PrDiffData } from "./pr-info";
 import { workspaceExecFor, type WorkspaceExec } from "./sandbox/workspace-exec";
+import { sessionTouchedPaths } from "./session-touched";
 import { resolveSessionRepoContext } from "./session-repos";
-import { getRepo } from "./worktree";
+import { getRepo, isSharedCheckoutDir } from "./worktree";
 import {
 	supportsCodeFlow,
 } from "./vendor/calldiff/extract";
@@ -292,11 +293,23 @@ export async function sessionCodeFlow(session: UnifiedSession, repoId?: string):
 	try {
 		const context = resolveSessionRepoContext(session, repoId);
 		if (!context) throw new Error("Repo not in session");
-			const repo = getRepo(context.repo);
-			const exec = await workspaceExecFor(context.primary ? session : null, context.dir);
-			const canonicalRoot = exec.remote ? undefined : await realpath(context.dir).catch(() => resolve(context.dir));
+		const repo = getRepo(context.repo);
+		const exec = await workspaceExecFor(context.primary ? session : null, context.dir);
+		const canonicalRoot = exec.remote
+			? undefined
+			: await realpath(context.dir).catch(() => resolve(context.dir));
+		const ownPaths = isSharedCheckoutDir(context.dir)
+			? await sessionTouchedPaths(session, context.dir)
+			: undefined;
 		for (let attempt = 0; attempt < 2; attempt++) {
-			const diff = await getSessionDiff(context.dir, repo.defaultBranch, exec, false, MAX_PATCH_BYTES);
+			const diff = await getSessionDiff(
+				context.dir,
+				repo.defaultBranch,
+				exec,
+				false,
+				MAX_PATCH_BYTES,
+				ownPaths,
+			);
 			if (!diff.baseRef && exec.remote) throw new Error("The remote workspace is unavailable");
 			const version = diff.diffVersion;
 			const snapshotKey = `${context.repo}\0${diff.baseRef ?? "empty repository"}\0working tree\0${version}`;
@@ -307,7 +320,14 @@ export async function sessionCodeFlow(session: UnifiedSession, repoId?: string):
 				diff.baseRef ? (path, limit) => gitFile(exec, diff.baseRef!, path, limit) : async () => null,
 				(path, limit) => worktreeFile(exec, context.dir, path, limit, canonicalRoot),
 			);
-			const verified = await getSessionDiff(context.dir, repo.defaultBranch, exec, true, MAX_PATCH_BYTES);
+			const verified = await getSessionDiff(
+				context.dir,
+				repo.defaultBranch,
+				exec,
+				true,
+				MAX_PATCH_BYTES,
+				ownPaths,
+			);
 			if (verified.diffVersion !== version) continue;
 			const result = await cachedAnalysis(
 				context.repo,

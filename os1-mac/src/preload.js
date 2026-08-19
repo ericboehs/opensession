@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld("os1", {
   materialBackdrop: true,
   setBadge: (count) => ipcRenderer.send("os1:set-badge", Number(count) || 0),
   clearBadge: () => ipcRenderer.send("os1:set-badge", 0),
+  // Raise the app from a notification click. The web app calls window.focus()
+  // for this, which a renderer cannot honour on macOS: a background or hidden
+  // window stays where it is, so the click routed the app to the right session
+  // behind whatever the person was actually looking at.
+  focusWindow: () => ipcRenderer.send("os1:focus-window"),
   // Which Open Session server this shell talks to. Only the shell's own
   // file:// pages (setup.html, offline.html) call these, and main.js refuses
   // them from anywhere else: the app served BY a server must not be able to
