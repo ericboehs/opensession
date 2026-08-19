@@ -31,7 +31,7 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
-const FRONTEND = join(ROOT, "src/frontend");
+const FRONTEND = join(ROOT, "packages/core/opensession-server/src/frontend");
 const BUDGET_FILE = join(import.meta.dir, "ui-audit-budget.json");
 
 /** Radii the scale actually names (styles/tailwind.css), in px before `--rf`. */

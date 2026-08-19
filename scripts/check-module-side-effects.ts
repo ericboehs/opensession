@@ -61,7 +61,7 @@ export interface SideEffectScan {
 /** Every module a server process could plausibly pull in. Tests and test
  *  helpers are excluded: they are not on any live import chain. */
 export function serverModules(root = REPO_ROOT): string[] {
-	const glob = new Bun.Glob("src/server/**/*.ts");
+	const glob = new Bun.Glob("packages/core/opensession-server/src/server/**/*.ts");
 	return [...glob.scanSync({ cwd: root })]
 		.filter((p) => !p.endsWith(".test.ts") && !p.includes("/testing/"))
 		.sort();
@@ -123,7 +123,7 @@ if (import.meta.main) {
 	}
 	if (scan.hits.length === 0 && scan.failed.length === 0) {
 		console.log(
-			`ok — ${scan.scanned} modules under src/server import cleanly (no listener, timer or subprocess at import time)`,
+			`ok — ${scan.scanned} modules under packages/core/opensession-server/src/server import cleanly (no listener, timer or subprocess at import time)`,
 		);
 		process.exit(0);
 	}

@@ -51,9 +51,11 @@ UI and API at the root of your instance URL.
 
 ## Minimum requirements
 
-- A Linux box (Tella runs Ubuntu on EC2; nothing requires AWS — see
-  [github.md](github.md) for the AWS-specific deploy pipeline, which is
-  replaceable).
+- A supported server environment: Linux, macOS, or Ubuntu under WSL2 on
+  Windows. The server does not run directly from PowerShell. See the
+  [WSL2 install path](install.md#windows-run-the-server-in-wsl2). Tella runs
+  Ubuntu on EC2; nothing requires AWS. The AWS-specific deploy pipeline in
+  [github.md](github.md) is replaceable.
 - [Bun](https://bun.sh) — runtime, package manager, and bundler. No Node/Vite.
   The installer brings its own; you only need it up front for a manual install.
 - `git`, and the [`gh` CLI](https://cli.github.com) for PR operations.
@@ -122,7 +124,7 @@ when adding anything that touches this.
 | [integrations-misc.md](integrations-misc.md) | Stripe, WorkOS, Grafana/Sentry/Tinybird, web push, voice |
 | [engines.md](engines.md) | the OpenCode engine, account pools, usage & fallbacks, model routing |
 | [../self-hosting-sandboxes.md](../self-hosting-sandboxes.md) | Docker/Daytona/E2B/Box/Modal/AWS Lambda MicroVM sandboxes |
-| [../runners.md](../runners.md) | attaching a Mac/Linux box as a Runner |
+| [../runners.md](../runners.md) | attaching a Mac/Linux/Windows box as a Runner |
 | [../worktrees.md](../worktrees.md) | how sessions map to git worktrees, and where the disk goes |
 | [../../CLIENTS.md](../../CLIENTS.md) | web UI, PWA, Electron shell, Swift app, Chrome extension |
 | [../extending.md](../extending.md) | MCP servers, recipes, integrations, providers, skills |

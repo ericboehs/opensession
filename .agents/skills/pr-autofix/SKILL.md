@@ -65,7 +65,7 @@ The `<!-- michael-fixed -->` marker (or a leading "Fixed in") is what marks a th
 
 ## Disposition lines (required output contract)
 
-End your turn with these three lines (exact keys, one line each). Open Session's auto-fix loop parses them (`parseDispositions` in src/agents/github/autofix.ts`) to report what happened and decide whether to continue — do not rename the keys. Use "none" where a category is empty:
+End your turn with these three lines (exact keys, one line each). Open Session's auto-fix loop parses them (`parseDispositions` in packages/core/opensession-server/src/agents/github/autofix.ts`) to report what happened and decide whether to continue — do not rename the keys. Use "none" where a category is empty:
 
 ```
 FIXED: <short list of findings you fixed and pushed, or none>

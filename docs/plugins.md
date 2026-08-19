@@ -17,7 +17,7 @@ as a design for what a plugin has to be able to do, not as a description of
 current behavior.
 
 **Status: the first slice of the library is built; the plugin runtime is a
-proposal.** Settings → Library (`src/server/library.ts`, `LibraryPanel.tsx`)
+proposal.** Settings → Library (`packages/core/opensession-server/src/server/library.ts`, `LibraryPanel.tsx`)
 browses the catalog described below — 31 entries derived from the recipes
 directory, the automation templates and the integration registry. Everything
 about the runtime, and the server-side feature gate that would make a tool
@@ -54,7 +54,7 @@ switch, and leave physical extraction as an optional, invisible cleanup.
 ## What already works, and the one thing that does not
 
 The feeds system calls itself "Open Session's plugin seam" in its own module doc
-(`src/agents/types.ts`), and it is closer to delivering the brief than it looks.
+(`packages/core/opensession-server/src/agents/types.ts`), and it is closer to delivering the brief than it looks.
 A tool defined as a **connected MCP server plus a feed descriptor**
 (`~/.opensession-feeds.json`) already gets, with zero code:
 
@@ -220,7 +220,7 @@ like a library rather than four settings pages with a search box.
 
 ## The Notes and Tasks switch is currently a lie
 
-`hiddenTools` (`src/frontend/lib/sidebar-tools.ts`) is localStorage, per browser.
+`hiddenTools` (`packages/core/opensession-server/src/frontend/lib/sidebar-tools.ts`) is localStorage, per browser.
 Hide Tasks and you still get Slack DM reminders, Web Push, and todos baked into
 your Desk payload — `todos.ts` does not know or care about a client-side CSS
 toggle. Hide it in Chrome and it is still there on iOS.

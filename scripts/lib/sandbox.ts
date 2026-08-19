@@ -15,13 +15,13 @@ import {
   getSandboxConnection,
   isWorkspaceSandboxProvider,
   updateSandboxConnection,
-} from "../../src/server/sandbox/connections";
-import { qualifySandboxConnection } from "../../src/server/sandbox/qualification";
-import { upsertCaddyIngress } from "../../src/server/sandbox/caddy-ingress";
-import { setSandboxPublicIngressUrl } from "../../src/server/sandbox/config";
-import { configuredServer } from "../../src/server/config";
-import { stateDir } from "../../src/server/paths";
-import { writeJsonAtomic } from "../../src/server/shared/atomic-write";
+} from "../../packages/core/opensession-server/src/server/sandbox/connections";
+import { qualifySandboxConnection } from "../../packages/core/opensession-server/src/server/sandbox/qualification";
+import { upsertCaddyIngress } from "../../packages/core/opensession-server/src/server/sandbox/caddy-ingress";
+import { setSandboxPublicIngressUrl } from "../../packages/core/opensession-server/src/server/sandbox/config";
+import { configuredServer } from "../../packages/core/opensession-server/src/server/config";
+import { stateDir } from "../../packages/core/opensession-server/src/server/paths";
+import { writeJsonAtomic } from "../../packages/core/opensession-server/src/server/shared/atomic-write";
 import { REPO_ROOT } from "./paths";
 import { localAutomationToken } from "./local-auth";
 import { dim, fail, heading, info, ok, run, runInherit, warn } from "./ui";

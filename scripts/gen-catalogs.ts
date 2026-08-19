@@ -17,7 +17,7 @@
  * than a doc nobody trusts.
  *
  * How the tool data is obtained: every server in MCP_SERVER_CATALOG
- * (src/server/mcp-catalog.ts) is BUILT — the same call the runtime makes — and
+ * (packages/core/opensession-server/src/server/mcp-catalog.ts) is BUILT — the same call the runtime makes — and
  * asked for tools/list over an in-memory MCP transport. Nothing is parsed out
  * of source, so a tool cannot exist without appearing here.
  *
@@ -129,12 +129,12 @@ const RUN_CLASS_LABEL: Record<string, string> = {
 };
 
 async function renderMcpTools(): Promise<string> {
-  const { MCP_SERVER_CATALOG } = await import(`${REPO_ROOT}/src/server/mcp-catalog.ts`);
+  const { MCP_SERVER_CATALOG } = await import(`${REPO_ROOT}/packages/core/opensession-server/src/server/mcp-catalog.ts`);
   const { AUTOMATION_DENIED_TOOLS } = await import(
-    `${REPO_ROOT}/src/server/automation-denied-tools.ts`
+    `${REPO_ROOT}/packages/core/opensession-server/src/server/automation-denied-tools.ts`
   );
-  const { STRIPE_CONFIRM_TOOLS } = await import(`${REPO_ROOT}/src/server/runner-shared.ts`);
-  const { SHARED_INPROCESS_SERVERS } = await import(`${REPO_ROOT}/src/server/opencode-policy.ts`);
+  const { STRIPE_CONFIRM_TOOLS } = await import(`${REPO_ROOT}/packages/core/opensession-server/src/server/runner-shared.ts`);
+  const { SHARED_INPROCESS_SERVERS } = await import(`${REPO_ROOT}/packages/core/opensession-server/src/server/opencode-policy.ts`);
 
   const out: string[] = [
     header(
@@ -144,19 +144,19 @@ async function renderMcpTools(): Promise<string> {
         "`opensession-*` servers — with the gating that decides which runs can",
         "call it. Tool names and inputs are read from the live server objects",
         "(`tools/list`), so this file cannot drift from the code; the run classes",
-        "and conditions are declared in `src/server/mcp-catalog.ts` beside each",
+        "and conditions are declared in `packages/core/opensession-server/src/server/mcp-catalog.ts` beside each",
         "entry and checked against the real wiring by `mcp-catalog.test.ts`.",
         "",
         "External MCP servers (`mcp-config.json`) are NOT listed here: they are",
         "per-instance configuration, and their per-user `allowedUsers` scoping is",
-        "enforced in `filterMcpServers` (`src/server/runner-shared.ts`).",
+        "enforced in `filterMcpServers` (`packages/core/opensession-server/src/server/runner-shared.ts`).",
         "",
         "**How gating works.** An in-process server reaches a run only if a call",
         "site hands it over, so the *run class* column is the real permission",
         "boundary:",
         "",
         "- **interactive** — the web UI and native clients, via",
-        "  `interactiveMcpServers()` (`src/server/interactive-mcp.ts`).",
+        "  `interactiveMcpServers()` (`packages/core/opensession-server/src/server/interactive-mcp.ts`).",
         "- **automation** — unattended runs on untrusted text. They receive only",
         "  the servers `automations.ts` builds for them; the run-rpc fallback",
         "  resolver fails closed for automation-owned sessions, so asking for an",
@@ -166,10 +166,10 @@ async function renderMcpTools(): Promise<string> {
         "Two further layers apply to every run, and neither currently touches an",
         "in-process tool (both name external MCP tools):",
         "",
-        "- `AUTOMATION_DENIED_TOOLS` (`src/server/automation-denied-tools.ts`) —",
+        "- `AUTOMATION_DENIED_TOOLS` (`packages/core/opensession-server/src/server/automation-denied-tools.ts`) —",
         "  stripped from automation runs and from interactive resumes of",
         "  automation-owned sessions.",
-        "- `STRIPE_CONFIRM_TOOLS` (`src/server/runner-shared.ts`) — money movers,",
+        "- `STRIPE_CONFIRM_TOOLS` (`packages/core/opensession-server/src/server/runner-shared.ts`) — money movers,",
         "  stripped from every run's tool list.",
       ].join("\n"),
     ),
@@ -199,7 +199,7 @@ async function renderMcpTools(): Promise<string> {
   out.push(
     "",
     `${built.length} servers, ${total} tools. "Shared server" is membership of`,
-    "`SHARED_INPROCESS_SERVERS` (`src/server/opencode-policy.ts`): a run carrying",
+    "`SHARED_INPROCESS_SERVERS` (`packages/core/opensession-server/src/server/opencode-policy.ts`): a run carrying",
     "any server outside that list falls back to a per-session engine server.",
     "",
   );
@@ -259,7 +259,7 @@ export const ENGINE_NOTES: Record<
 > = {
   opencode: {
     title: "opencode",
-    adapter: "src/server/opencode-runner.ts (policy in src/server/opencode-policy.ts)",
+    adapter: "packages/core/opensession-server/src/server/opencode-runner.ts (policy in packages/core/opensession-server/src/server/opencode-policy.ts)",
     prefix: "`opencode/<provider>/<model>`",
     gate:
       "Always available; the Anthropic side additionally needs the Meridian bridge enabled " +
@@ -271,7 +271,7 @@ export const ENGINE_NOTES: Record<
   },
   pi: {
     title: "pi",
-    adapter: "src/server/pi-runner.ts",
+    adapter: "packages/core/opensession-server/src/server/pi-runner.ts",
     prefix: "`pi/<provider>/<model>`",
     gate: "`enabled` in `~/.opensession-pi.json` (`piConfigPath()`). Off by default.",
     note:
@@ -280,7 +280,7 @@ export const ENGINE_NOTES: Record<
   },
   fake: {
     title: "fake (tests only)",
-    adapter: "src/server/agent-runner.ts — the __setEngineForTest seam; fixtures in src/server/fake-engine.test.ts",
+    adapter: "packages/core/opensession-server/src/server/agent-runner.ts — the __setEngineForTest seam; fixtures in packages/core/opensession-server/src/server/fake-engine.test.ts",
     prefix: "– (intercepts every model id)",
     gate:
       "Not config-gated and not reachable in production: it is a module-local test seam, set only " +
@@ -292,8 +292,8 @@ export const ENGINE_NOTES: Record<
 };
 
 async function renderEngines(): Promise<string> {
-  const models = await import(`${REPO_ROOT}/src/server/models.ts`);
-  const { ENGINE_IDS } = await import(`${REPO_ROOT}/src/server/engine/engines-config.ts`);
+  const models = await import(`${REPO_ROOT}/packages/core/opensession-server/src/server/models.ts`);
+  const { ENGINE_IDS } = await import(`${REPO_ROOT}/packages/core/opensession-server/src/server/engine/engines-config.ts`);
   // Read the ids from the engine registry so a new one cannot be missed, but
   // lead with the default engine rather than the union's alphabetical order.
   const lead = ["opencode", "pi"];
@@ -309,7 +309,7 @@ async function renderEngines(): Promise<string> {
       [
         "Which engine runs a turn, what turns it on, and where each model lands.",
         "The routing table below is computed by calling `routeModel()`",
-        "(`src/server/models.ts`) against a clean instance — no per-model engine",
+        "(`packages/core/opensession-server/src/server/models.ts`) against a clean instance — no per-model engine",
         "overrides configured — so it shows the shipped defaults.",
         "",
         "`routeModel()` resolves in one order, and this is the only place that",

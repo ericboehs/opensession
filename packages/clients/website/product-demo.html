@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<script>
+			/* The preview follows the visitor's system theme, the same signal the
+			   page around it uses, so a dark landing page never frames a white
+			   app. Set before the stylesheets so there is no flash. */
+			(function () {
+				var media = window.matchMedia("(prefers-color-scheme: dark)");
+				var apply = function (dark) {
+					document.documentElement.setAttribute(
+						"data-theme",
+						dark ? "dark" : "light",
+					);
+				};
+				apply(media.matches);
+				media.addEventListener("change", function (event) {
+					apply(event.matches);
+				});
+			})();
+		</script>
+		<link rel="stylesheet" href="../../core/opensession-server/src/frontend/styles/base.css" />
+		<link rel="stylesheet" href="../../core/opensession-server/src/frontend/styles/legacy.css" />
+		<link rel="stylesheet" href="./.demo-tailwind.css" />
+		<style>
+			/* Overlay scrollbars, the way a Mac draws them. A track running down
+			   the side of the one screenshot on the page is noise, and it is not
+			   what the app looks like on the machine most visitors are on.
+
+			   `html *` rather than `*`, because base.css sets `scrollbar-width:
+			   thin` on the universal selector and the build emits the bundled
+			   stylesheet AFTER this block: anything here that ties on
+			   specificity loses. One element in the selector is enough to win
+			   without reaching for !important. */
+			html,
+			html * {
+				scrollbar-width: none;
+			}
+
+			/* For WebKit before Safari 18.2, which has no scrollbar-width. Hidden
+			   rather than zero-width: a custom scrollbar with a width carves a
+			   permanent gutter out of the Macs that draw overlays, while a hidden
+			   one reserves nothing. */
+			html ::-webkit-scrollbar {
+				display: none;
+			}
+
+			/* The app's floating desktop notifications: the "Open in app" hand-off
+			   and the update toast. Both are right in the product and wrong in a
+			   screenshot of it. Matched on the stack rather than on either
+			   toast's copy, which is the part that keeps changing. */
+			html [class*="z-[9500]"] {
+				display: none;
+			}
+
+			/* The controls product-demo-main.tsx makes inert should not advertise a
+			   press either. Keep this list in step with the one there. */
+			html [aria-label="Open settings"],
+			html [aria-label="Dictate"],
+			html [title="View archived sessions"],
+			html a[href^="/pr/"] {
+				cursor: default;
+			}
+
+			/* The Desk trigger. It floats over the transcript waiting to be
+			   pressed, which is one affordance too many in a screenshot. */
+			html [aria-label="Open the Desk"] {
+				display: none;
+			}
+
+			.sidebar-independent-section:has(.sidebar-people-row) {
+				display: none;
+			}
+
+			/* The demo runs one repo, so the per-row repo tile the inbox puts in
+			   front of every title says the same word six times. */
+			.sidebar-container .repo-tile {
+				display: none;
+			}
+
+			/* The Mac window's traffic lights. `html.wco` already reserves the
+			   room for them at the start of this row. */
+			html.wco .sidebar-brand {
+				position: relative;
+			}
+
+			html.wco .sidebar-brand::before {
+				content: "";
+				position: absolute;
+				z-index: 3;
+				top: 50%;
+				left: 20px;
+				width: 12px;
+				height: 12px;
+				margin-top: -6px;
+				border-radius: 50%;
+				background: #ff5f57;
+				box-shadow: 20px 0 #febc2e, 40px 0 #28c840;
+				pointer-events: none;
+			}
+		</style>
+		<title>Open Session product preview</title>
+	</head>
+	<body>
+		<div id="root"></div>
+		<script type="module" src="./product-demo-main.tsx"></script>
+	</body>
+</html>

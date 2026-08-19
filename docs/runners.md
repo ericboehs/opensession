@@ -11,11 +11,116 @@ pairing code is one-time and expires after ten minutes. On the target machine:
 opensession runner connect --server https://your-opensession-host --code CODE
 ```
 
-Connect installs a per-user LaunchAgent or systemd user service when one is
-available. It reconnects after restart. If installation is unavailable, run
-`opensession runner service install` after configuring a user service manager.
+Connect installs a per-user LaunchAgent, systemd user service or Windows
+scheduled task when one is available. It reconnects after restart. If it does
+not install one it says why, and `opensession runner service install` retries
+it once the cause is fixed.
 The Runner connects outbound over the tailnet. Open Session never dials into
 the machine.
+
+## Windows Runners
+
+Windows machines are supported as Runners. The Open Session server itself
+still runs on Linux or macOS; the Windows install is the Runner client only.
+On the Windows machine, from PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/tellahq/opensession/main/install.ps1 | iex
+opensession runner connect --server https://your-opensession-host --code CODE
+```
+
+Connect registers a per-user scheduled task named `OpenSessionRunner` that
+starts the Runner at sign-in, restarts it if the process dies, and needs no
+administrator rights. Delegated commands run under PowerShell (`-NoProfile
+-NonInteractive`), so write PowerShell rather than bash when targeting a
+Windows Runner; the `run_on_runner` tool description says the same to agents.
+Pairing is tailnet-gated on every platform, so install Tailscale for Windows
+first.
+
+PowerShell and `schtasks.exe` are resolved at their known location under
+`%SystemRoot%\System32` rather than through PATH, because a damaged PATH would
+otherwise break every delegated command and leave the sign-in task launching
+nothing.
+
+## Operating a Windows Runner
+
+The scheduled task is the service. Inspect and drive it directly:
+
+```powershell
+schtasks /Query /TN OpenSessionRunner /FO LIST /V
+schtasks /Run /TN OpenSessionRunner
+schtasks /Delete /TN OpenSessionRunner /F
+```
+
+The Runner writes everything it prints to `%USERPROFILE%\.opensession\runner.log`.
+Read that first when a Runner shows offline.
+
+If `connect` cannot install the task, it says why and
+`opensession runner service install` runs the same installation on its own.
+There is nothing to configure first on Windows, and nothing to elevate: the
+task is per-user and installs from an ordinary PowerShell window.
+
+A damaged PATH does not need repairing by hand. The Runner resolves PowerShell
+and `schtasks.exe` at their known location under `%SystemRoot%\System32`, and
+puts the core System32 directories back on the PATH it hands to every command
+it runs, so `git`, `where` and `Get-CimInstance` resolve inside a delegated
+command even on a machine whose own PATH lost them. The machine's PATH is left
+as it is.
+
+Two behaviours of the task decide how an always-on box has to be set up:
+
+- The trigger is a **LogonTrigger** running with an `InteractiveToken`. The
+  Runner starts when the user signs in, not at boot. A headless machine needs
+  autologon to come back on its own after a reboot.
+- `MultipleInstancesPolicy` is `IgnoreNew`. If `opensession runner run` is
+  already going in a console window, the task's launch is ignored without
+  comment. Close the foreground one first.
+
+### Keeping the machine awake
+
+A sleeping Runner is an offline Runner.
+
+```powershell
+powercfg /change standby-timeout-ac 0
+powercfg /change disk-timeout-ac 0
+powercfg /hibernate off
+```
+
+Check `powercfg /a` for Modern Standby ("Standby (S0 Low Power Idle)"). Those
+timeouts are ignored on such machines, and staying awake needs the
+`PlatformAoAcOverride` registry override under
+`HKLM\SYSTEM\CurrentControlSet\Control\Power` followed by a reboot.
+
+Separately, check the network adapter: Device Manager, the adapter's Power
+Management tab, and clear "Allow the computer to turn off this device to save
+power". With it set the box stays awake while the tailnet connection drops,
+which looks exactly like a crashed Runner.
+
+### Remote access for operators
+
+Two options, and they are not interchangeable.
+
+**VNC** shares the physical console session, so it leaves the signed-in
+desktop the LogonTrigger depends on exactly as it is. That makes it the right
+fit for a machine kept online by autologon. Scope its firewall rule to the
+tailnet rather than the LAN:
+
+```powershell
+New-NetFirewallRule -DisplayName "VNC over tailnet" -Direction Inbound `
+  -Protocol TCP -LocalPort 5900 -RemoteAddress 100.64.0.0/10 -Action Allow
+```
+
+**RDP** is built into Windows and the Mac client is free, so it needs no
+server installed. Scope it the same way:
+
+```powershell
+Set-NetFirewallRule -Name RemoteDesktop-UserMode-In-TCP -RemoteAddress 100.64.0.0/10
+```
+
+The conflict to know before picking: an RDP session disconnects the physical
+console session. That logs out the interactive desktop the task's LogonTrigger
+depends on, so a box built around autologon should use VNC and not also be
+reached over RDP.
 
 Administrators choose its permissions, eligible people and repositories,
 managed workspace roots, maintenance state, and revocation. Revoking a Runner

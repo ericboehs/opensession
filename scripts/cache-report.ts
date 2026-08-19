@@ -97,8 +97,8 @@
 
 import { Database } from "bun:sqlite";
 import { readdirSync, statSync } from "node:fs";
-import { OPENSESSION_SESSIONS_DIR } from "../src/server/paths";
-import { loadRates } from "../src/server/engine-usage";
+import { OPENSESSION_SESSIONS_DIR } from "../packages/core/opensession-server/src/server/paths";
+import { loadRates } from "../packages/core/opensession-server/src/server/engine-usage";
 
 const SHARD_DIR = `${OPENSESSION_SESSIONS_DIR}/opencode/db`;
 

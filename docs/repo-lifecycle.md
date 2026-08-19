@@ -96,7 +96,7 @@ what both the session UI and the agent will act on.
 **Resolution chain.** `.agents/start.sh` → the
 instance-config `previewCommand` (invoked with the worktree path as `$1` —
 for repos you can't commit to). One chain, shared by host and sandbox
-previews (`resolvePreviewBoot` in src/server/preview.ts); no rung resolves →
+previews (`resolvePreviewBoot` in packages/core/opensession-server/src/server/preview.ts); no rung resolves →
 the Preview button is disabled with a hint about what to add.
 
 **`.ports.conf`.** The host seeds `WEBAPP_PORT=<port>` into

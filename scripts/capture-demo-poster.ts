@@ -7,7 +7,7 @@
  * live app underneath it when it is ready.
  *
  * It is a picture of the real preview, taken at the width the preview lays the
- * app out at (`desktopDemoWidth` in website/ProductDemo.tsx) and the aspect the
+ * app out at (`desktopDemoWidth` in packages/clients/website/ProductDemo.tsx) and the aspect the
  * desktop window has, so the swap lands on the same pixels. Re-run it whenever
  * the demo's fixtures or the app's chrome change:
  *
@@ -27,14 +27,35 @@ import {
 const ROOT = join(import.meta.dir, "..");
 const DIST = join(ROOT, ".website-dist");
 
-/** The app's layout width in the preview. Keep in step with ProductDemo.tsx. */
-const APP_WIDTH = 1080;
+/**
+ * The app's layout width in the preview. Keep in step with ProductDemo.tsx.
+ *
+ * It is a zoom, not a taste. The window stands for a 14-inch MacBook Pro's
+ * screen, which is 1512pt across, so laying the app out at 1260 draws its UI
+ * at 1.2x life size: a page is looked at from desk distance rather than held,
+ * and at 1.0x the product in it stops being readable. The phone below carries
+ * the same 1.2x, which is what keeps the two from disagreeing.
+ */
+const APP_WIDTH = 1260;
 /**
  * The desktop window's aspect: a 3:2 stage less an even 5.6% inset on all four
  * sides, which is 0.888W by 0.5547W. Narrower windows crop the poster from the
  * top rather than stretching it.
  */
 const APP_HEIGHT = Math.round((APP_WIDTH * 0.5547) / 0.888);
+
+/**
+ * The phone beside it, at the same 1.2x. An iPhone 17 Pro is 393pt across a
+ * 68mm screen in a 71.9mm body, and the poster fills the body, so 346pt is
+ * that device's UI drawn 1.2x life. The shape stays the device's own.
+ */
+const PHONE_WIDTH = 346;
+const PHONE_HEIGHT = Math.round((PHONE_WIDTH * 852) / 393);
+
+const SHOTS = [
+  { name: "demo-poster", width: APP_WIDTH, height: APP_HEIGHT, mobile: false, dpr: 2 },
+  { name: "demo-phone", width: PHONE_WIDTH, height: PHONE_HEIGHT, mobile: true, dpr: 2 },
+] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -76,6 +97,7 @@ const scratch = mkdtempSync(join(tmpdir(), "demo-poster-"));
 
 const lease = await acquireCdpBrowser();
 try {
+  for (const shot of SHOTS)
   for (const theme of ["light", "dark"] as const) {
     const created = await fetch(
       `http://127.0.0.1:${lease.port}/json/new?about:blank`,
@@ -88,10 +110,10 @@ try {
         features: [{ name: "prefers-color-scheme", value: theme }],
       });
       await t.send("Emulation.setDeviceMetricsOverride", {
-        width: APP_WIDTH,
-        height: APP_HEIGHT,
-        deviceScaleFactor: 2,
-        mobile: false,
+        width: shot.width,
+        height: shot.height,
+        deviceScaleFactor: shot.dpr,
+        mobile: shot.mobile,
       });
       await t.send("Page.navigate", { url: `${base}/product-demo.html` });
 
@@ -107,12 +129,22 @@ try {
         if (Date.now() > deadline) throw new Error("the demo never finished painting");
         await sleep(250);
       }
+      // The phone shows the list rather than the session: the window beside it
+      // is already the transcript, and a pair that says the same paragraph
+      // twice reads as one screenshot pasted at two sizes. The whole product
+      // in a pocket is the claim worth making.
+      if (shot.mobile) {
+        await t.send("Runtime.evaluate", {
+          expression: `document.querySelector('[aria-label="Back to sidebar"]')?.click()`,
+        });
+        await sleep(1200);
+      }
       await sleep(1500);
       await t.send("Page.bringToFront");
-      const shot = await t.send("Page.captureScreenshot", { format: "png" });
-      const png = join(scratch, `${theme}.png`);
-      writeFileSync(png, Buffer.from(shot.data, "base64"));
-      const out = join(ROOT, "website", theme === "dark" ? "demo-poster-dark.webp" : "demo-poster.webp");
+      const frame = await t.send("Page.captureScreenshot", { format: "png" });
+      const png = join(scratch, `${shot.name}-${theme}.png`);
+      writeFileSync(png, Buffer.from(frame.data, "base64"));
+      const out = join(ROOT, "packages", "clients", "website", `${shot.name}${theme === "dark" ? "-dark" : ""}.webp`);
       const convert = Bun.spawnSync([
         "python3",
         "-c",
@@ -120,7 +152,9 @@ try {
       ]);
       if (convert.exitCode !== 0) throw new Error(convert.stderr.toString());
       const size = Bun.file(out).size / 1024;
-      console.log(`${theme}: ${out} (${size.toFixed(0)} KB, ${APP_WIDTH}x${APP_HEIGHT} at 2x)`);
+      console.log(
+        `${shot.name} ${theme}: ${out} (${size.toFixed(0)} KB, ${shot.width}x${shot.height} at ${shot.dpr}x)`,
+      );
     } finally {
       t.close();
       await closeCdpTarget(lease.port, created.id);

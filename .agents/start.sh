@@ -125,4 +125,4 @@ exec env \
 	ENABLE_GITHUB_AGENT=false \
 	ENABLE_GRAFANA_POLLER=false \
 	ENABLE_TELLA_MODULE=false \
-	bun run opensession.ts
+	bun run packages/core/opensession-server/opensession.ts

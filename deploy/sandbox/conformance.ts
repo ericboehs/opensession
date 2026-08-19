@@ -57,17 +57,17 @@ process.env.OPENSESSION_SANDBOX_CERTIFICATION_RUN = "1";
 import { homedir } from "os";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 
-const { getSandboxProvider } = await import("../../src/server/sandbox/index");
-const runWs = await import("../../src/server/run-ws");
-const { hostRunBusy } = await import("../../src/server/host-registry");
-const { OPENSESSION_SESSIONS_DIR } = await import("../../src/server/paths");
-const { statePath } = await import("../../src/server/paths");
+const { getSandboxProvider } = await import("../../packages/core/opensession-server/src/server/sandbox/index");
+const runWs = await import("../../packages/core/opensession-server/src/server/run-ws");
+const { hostRunBusy } = await import("../../packages/core/opensession-server/src/server/host-registry");
+const { OPENSESSION_SESSIONS_DIR } = await import("../../packages/core/opensession-server/src/server/paths");
+const { statePath } = await import("../../packages/core/opensession-server/src/server/paths");
 const {
   invalidateRemoteRepoTemplate,
   readRemoteRepoTemplate,
   remoteRepoTemplateProofPath,
 } = await import(
-  "../../src/server/sandbox/remote-repo-template"
+  "../../packages/core/opensession-server/src/server/sandbox/remote-repo-template"
 );
 // The orphan-snapshot sweep (docker.ts, piggybacked on the idle sweep) reads
 // session/state files through the — now scratch-redirected — chats dir, so it
@@ -75,9 +75,9 @@ const {
 // front so it never runs inside this suite.
 (globalThis as unknown as { __sandboxSnapOrphanSweepAt?: number }).__sandboxSnapOrphanSweepAt =
   Date.now();
-type RunHostSpec = import("../../src/runner-host/protocol").RunHostSpec;
-type Sandbox = import("../../src/server/sandbox/provider").Sandbox;
-type PortMap = import("../../src/server/sandbox/provider").PortMap;
+type RunHostSpec = import("../../packages/core/opensession-server/src/runner-host/protocol").RunHostSpec;
+type Sandbox = import("../../packages/core/opensession-server/src/server/sandbox/provider").Sandbox;
+type PortMap = import("../../packages/core/opensession-server/src/server/sandbox/provider").PortMap;
 
 const RUN_TS = Date.now().toString(36);
 const HOME = process.env.HOME || homedir();
@@ -525,7 +525,7 @@ const selected = entries.filter((e) => !wanted.length || wanted.includes(e.name)
 // ── the parameterized checks ──────────────────────────────────────────────────
 
 async function waitForPrewarm(entry: Entry, checkPrefix = "prewarm"): Promise<string> {
-  const { requestPrewarm } = await import("../../src/server/sandbox/prewarm");
+  const { requestPrewarm } = await import("../../packages/core/opensession-server/src/server/sandbox/prewarm");
   const startedAt = Date.now();
   let st = await requestPrewarm(entry.providerId, entry.repoId, "sbxtest");
   ok(
@@ -602,7 +602,7 @@ async function runEntry(entry: Entry): Promise<void> {
   }
   await Bun.write(process.env.OPENSESSION_SANDBOX_CONFIG!, JSON.stringify(entry.config));
   const { connectSandboxProvider, setSandboxConnectionQualification } = await import(
-    "../../src/server/sandbox/connections"
+    "../../packages/core/opensession-server/src/server/sandbox/connections"
   );
   if (entry.providerId === "daytona") {
     connectSandboxProvider("daytona", {
@@ -834,7 +834,7 @@ async function runEntry(entry: Entry): Promise<void> {
       // certifies everything about launchRun except the provider's egress
       // (e.g. Daytona Tier-1/2 sandboxes cannot reach arbitrary hosts).
       if (entry.remote) {
-        const { HOST_ENTRY, HOST_SPEC_NAME } = await import("../../src/runner-host/protocol");
+        const { HOST_ENTRY, HOST_SPEC_NAME } = await import("../../packages/core/opensession-server/src/runner-host/protocol");
         const smokeDir = `/home/ubuntu/.bks-runs/smoke-${RUN_TS}`;
         const smokeSpec = {
           hostId: `rh-smoke-${RUN_TS}`,
@@ -893,7 +893,7 @@ async function runEntry(entry: Entry): Promise<void> {
           .catch(() => {});
       }
       const t2 = Date.now();
-      let handle: import("../../src/server/sandbox/provider").RunHandle;
+      let handle: import("../../packages/core/opensession-server/src/server/sandbox/provider").RunHandle;
       try {
         handle = sandbox.launchRunEager
           ? await sandbox.launchRunEager(runSpec, {})
@@ -1260,7 +1260,7 @@ try {
     console.warn("  scratch ingress cleanup failed:", String(e).slice(0, 200));
   }
   // Docker scratch containers/volumes/state for both docker entries.
-  const { containerNameFor } = await import("../../src/server/sandbox/docker");
+  const { containerNameFor } = await import("../../packages/core/opensession-server/src/server/sandbox/docker");
   for (const e of entries.filter((x) => x.providerId === "docker")) {
     const c = containerNameFor(`sbxtest-conf-${e.name}-${RUN_TS}`);
     await sh(["docker", "rm", "-f", c]);

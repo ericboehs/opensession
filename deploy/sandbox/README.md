@@ -51,11 +51,11 @@ needed.
 
 ## Runtime design (Phase 1 — DockerProvider)
 
-`src/server/sandbox/docker.ts` runs one container per session
+`packages/core/opensession-server/src/server/sandbox/docker.ts` runs one container per session
 (`bks-sbx-<sessionId>`, labels `opensession.sandbox=1` +
 `opensession.session=<id>`, `--init`, `--restart no`, `--cpus`/`--memory` from
 `~/.opensession-sandbox.json`, defaults 4 / 8g). A run is the same runner-host
-entry the systemd path uses (`src/runner-host/host.ts`), `docker exec -d`'d
+entry the systemd path uses (`packages/core/opensession-server/src/runner-host/host.ts`), `docker exec -d`'d
 into the container; its unix socket + spec/meta/journal/log live in a
 bind-mounted per-session run dir (`~/.opensession-sessions/sandbox-runs/<id>`), so
 the server drives it with the normal HostHandle machinery and can reattach
@@ -84,7 +84,7 @@ the repository then exchanges its per-launch lease with its cloud provider.
 
 ## Phase 2 — exec-routed surfaces, volume workspaces, preview ports
 
-- **workspace-exec choke point** (`src/server/sandbox/workspace-exec.ts`):
+- **workspace-exec choke point** (`packages/core/opensession-server/src/server/sandbox/workspace-exec.ts`):
   @-mention file search, the Changes diff/discard, and git status/pull/push
   take an optional exec from `workspaceExecFor(session, dir)` — host Bun `$`
   unless the session's sandbox is ACTIVE (materialized + config docker +
@@ -128,7 +128,7 @@ sandboxes) can hold the same webapp port number. Sandbox routes therefore use
 a dedicated allocated range **[20000, 28000)**, keyed by
 `(sandboxId, containerPort)` and persisted in
 `~/.opensession-sessions/sandbox-preview-ports.json`
-(src/server/sandbox/preview-ports.ts): host-vs-sandbox collisions are
+(packages/core/opensession-server/src/server/sandbox/preview-ports.ts): host-vs-sandbox collisions are
 impossible by range disjointness, sandbox-vs-sandbox by the allocator's
 uniqueness probe. Allocations survive restarts/recreations (stable preview
 URL) and are released by `destroy()`.
@@ -219,7 +219,7 @@ background-agents "snapshot after every turn" warm-restore behavior.
 ## Terminals in sandboxes (Shell tab)
 
 The session viewer's **Shell tab** (xterm.js ↔ server-side PTY over the
-tailnet-gated session WS — `src/server/terminals.ts`) is sandbox-aware:
+tailnet-gated session WS — `packages/core/opensession-server/src/server/terminals.ts`) is sandbox-aware:
 `startSessionTerminal` lands the PTY where the session's work actually
 happens.
 
@@ -249,7 +249,7 @@ container recreation to roll it out. The UI signals where a shell landed via
 `term_ready` (dim `[shell inside docker sandbox — <cwd>]` banner).
 
 Terminal code is reached through the server's WebSocket handlers
-(`src/server/ws-handlers.ts`), which do NOT hot-apply — a real restart is
+(`packages/core/opensession-server/src/server/ws-handlers.ts`), which do NOT hot-apply — a real restart is
 needed after changing it.
 
 ## Phase 3 — WS transport + remote adapters
@@ -263,12 +263,12 @@ needed after changing it.
   rpc socket. `callbackBaseUrl` must be reachable FROM the sandbox (Tailscale
   URL for self-hosters; 127.0.0.1 never works). For remote providers that
   means the PUBLIC internet: enable the isolated `publicIngress` listener
-  (src/server/public-ingress.ts — serves run-ws/rpc-ws, health, and the
+  (packages/core/opensession-server/src/server/public-ingress.ts — serves run-ws/rpc-ws, health, and the
   narrowly scoped workload-identity OIDC endpoints; see docs/self-hosting-sandboxes.md "Public dial-back
   ingress") instead of exposing the main server. Transport code is runner
   internals — restart + image rebuild to take effect.
 - **Remote adapters** (`provider: "daytona"` / `"e2b"` / `"box"` / `"modal"`,
-  src/server/sandbox/adapters/): always volume-style workspaces cloned
+  packages/core/opensession-server/src/server/sandbox/adapters/): always volume-style workspaces cloned
   in-sandbox over https (`cloneCredential`), always ws transport, runner
   payload installed on first ensure by `bootstrapRemoteSandbox` for engines
   that run inside the sandbox. OpenCode engines (OpenAI, Claude and other
@@ -372,7 +372,7 @@ needed after changing it.
 - **Bun bump** on the host → bump `BUN_VERSION` to keep parity.
 - Source changes to `src/` / `opensession.ts` that the runner-host path uses →
   rebuild (fast: only the final COPY layers change). In particular ANY change
-  under `src/runner-host/` (protocol/entry) must be rebuilt before the next
+  under `packages/core/opensession-server/src/runner-host/` (protocol/entry) must be rebuilt before the next
   sandboxed run — the container executes the image's copy, not the checkout.
 
 Keep the image's pins in lockstep with the host; parity is the whole point.

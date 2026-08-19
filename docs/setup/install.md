@@ -36,13 +36,73 @@ reference, MCP — are reference material you can skip on a first install, and
 networking, TLS, GitHub and systemd are all optional for session #1. Come back
 to them when the first session has run.
 
-Prerequisites: Linux (or macOS), `git`, and `curl`. The installer brings its
-own [Bun](https://bun.sh) and [OpenCode](https://opencode.ai). `gh`
-(authenticated) is needed for pull-request operations. See
-[README.md](README.md#minimum-requirements) for the optional extras.
+Prerequisites: Linux, macOS, or Windows 10/11 with WSL2, plus `git` and
+`curl`. The installer brings its own [Bun](https://bun.sh) and
+[OpenCode](https://opencode.ai). `gh` (authenticated) is needed for
+pull-request operations. See [README.md](README.md#minimum-requirements) for
+the optional extras.
 
-Provisioning a fresh cloud box first? [ec2.md](ec2.md) — there is one
+Provisioning a fresh cloud box first? [ec2.md](ec2.md). There is one
 cloud-init trap worth knowing about.
+
+### Windows: run the server in WSL2
+
+Open Session supports a Windows host through WSL2. The server and agent engines
+run in the Linux environment. Native Windows is supported separately as a
+[Runner](../runners.md#windows-runners) for PowerShell and Windows toolchains;
+running the server directly from PowerShell is not supported.
+
+First install Ubuntu from an Administrator PowerShell window:
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+Restart Windows if prompted, open Ubuntu, and finish creating its Linux user.
+Open Session needs systemd for its service and restart-safe engine processes.
+Check what PID 1 is inside Ubuntu:
+
+```sh
+ps -p 1 -o comm=
+```
+
+If that does not print `systemd`, enable it inside Ubuntu:
+
+```sh
+sudo tee /etc/wsl.conf >/dev/null <<'EOF'
+[boot]
+systemd=true
+EOF
+```
+
+Then apply the change from PowerShell and reopen Ubuntu:
+
+```powershell
+wsl --shutdown
+```
+
+Run the standard installer inside Ubuntu:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
+```
+
+The default `http://127.0.0.1:3850` address is reachable from Windows through
+WSL's localhost forwarding. For access from other machines, install and join
+Tailscale inside WSL, then use `opensession bind` to bind Open Session to that
+tailnet address. Do not expose it with `HOST=0.0.0.0`.
+
+WSL distributions do not start at Windows boot on their own. After a Windows
+restart, opening Ubuntu once starts systemd and the enabled Open Session
+service. For an unattended desktop, create a Windows logon task after the
+service is installed:
+
+```powershell
+schtasks /Create /TN OpenSessionWSL /SC ONLOGON /TR "wsl.exe -d Ubuntu --exec /bin/true" /F
+```
+
+If your distribution has a different name, use the value from `wsl -l -q` in
+place of `Ubuntu`.
 
 ## 1. Install
 
@@ -110,7 +170,7 @@ health-gated deploy path.
 Nothing depends on the checkout living in a particular place — the CLI derives
 paths from wherever it is running, and onboarding writes the rest into
 `~/.opensession/config.json`. If you skip onboarding, the default mcp-config
-path is `<checkout>/mcp-config.json` (`src/server/config.ts`) and the checkout
+path is `<checkout>/mcp-config.json` (`packages/core/opensession-server/src/server/config.ts`) and the checkout
 registers *itself* as a repo.
 
 ## 2. Onboarding
@@ -223,7 +283,7 @@ agent-started compilers, MCP proxies, and dev servers—not only `opencode`.
 | Voice | `OPENAI_API_KEY`, `GROQ_API_KEY`, `WHISPER_CLI`, `WHISPER_MODEL` | [integrations-misc.md](integrations-misc.md#voice--transcription) |
 | Sandboxes | `E2B_API_KEY`, `OPENSESSION_SANDBOX_CONFIG` (experimental conformance only; supported workspace connections use Settings) | [self-hosting-sandboxes](../self-hosting-sandboxes.md) |
 | AWS runs | `AGENT_AWS_REGION` | [integrations-misc.md](integrations-misc.md#aws-creds-for-runs-agent_aws_region) |
-| Previews | `PREVIEW_HOST` | Caddy-fronted live previews (`src/server/preview.ts`) |
+| Previews | `PREVIEW_HOST` | Caddy-fronted live previews (`packages/core/opensession-server/src/server/preview.ts`) |
 
 **Feature flags** — `ENABLE_SLACK_AGENT`, `ENABLE_LINEAR_AGENT`,
 `ENABLE_PLAIN_AGENT`, `ENABLE_GITHUB_AGENT`, `ENABLE_STRIPE_AGENT`,
@@ -238,7 +298,7 @@ Open Session for its own runner-host/MCP-proxy subprocesses), and
 
 Note: agent subprocesses do **not** inherit this env file — runs get a
 minimal env (PATH, HOME, LANG, OPENSESSION_MODEL) by design, and MCP servers
-carry their own credentials (`src/server/runner-shared.ts`).
+carry their own credentials (`packages/core/opensession-server/src/server/runner-shared.ts`).
 
 ## 5. `~/.opensession/config.json`
 
@@ -246,7 +306,7 @@ Instance config for everything that isn't a secret: server ports/URLs,
 binary paths, the **repo registry**, the **team identity table**, persona
 and branding. Copy [`config.example.json`](../../config.example.json) to
 `~/.opensession/config.json` and edit. Every field is optional; precedence per
-key is env var → config.json → built-in default (`src/server/config.ts`).
+key is env var → config.json → built-in default (`packages/core/opensession-server/src/server/config.ts`).
 The file is re-read on change — no restart for config edits.
 See [instance configuration](../instance-configuration.md) for the portability
 boundaries and the client-distribution settings.
@@ -350,7 +410,7 @@ automatically).
 
 Unit choices worth knowing (comments in the file itself):
 
-- `ExecStart=bun run opensession.ts` — stable production runtime, see below.
+- `ExecStart=bun run packages/core/opensession-server/opensession.ts` — stable production runtime, see below.
 - `EnvironmentFile=<your home>/.opensession.env` — your secrets file (the
   path is stamped in by `opensession service install`).
 - `TimeoutStopSec=80` — must stay above `SHUTDOWN_DRAIN_MS` (60s) plus
@@ -385,7 +445,7 @@ after the backend change rather than after every save.
 
 ## Webhook server
 
-One detail every integration page references: `src/server/webhook-server.ts`
+One detail every integration page references: `packages/core/opensession-server/src/server/webhook-server.ts`
 runs a second `Bun.serve` on `127.0.0.1:${WEBHOOK_PORT}` (default 3848).
 Agents register their own routes on it (`/slack/events`, `/slack/actions`,
 `/github/webhook`, `/webhook` (Linear), `/plain/webhook`, `/stripe/webhook`,

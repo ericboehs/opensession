@@ -11,6 +11,11 @@ sandboxes — Docker locally, with pluggable adapters for other providers.
 
 ## Quickstart
 
+Run this on Linux, macOS, or inside WSL2 on Windows. The server does not run
+directly from PowerShell; follow the
+[Windows WSL2 setup](docs/setup/install.md#windows-run-the-server-in-wsl2)
+first.
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash
 ```
@@ -46,6 +51,17 @@ bun run setup                             # same wizard, without the installer
 The installer accepts `--dir`, `--channel <ref>`, `--no-engine`,
 `--no-tailscale`, `--no-modify-path`, `--yes` and `--uninstall`; `--help`
 lists them all.
+
+## Repository layout
+
+Product code lives under `packages/`:
+
+- `packages/core/opensession-server/` contains the Bun server, web client, and runner host.
+- `packages/core/protocol/` contains shared wire and record contracts.
+- `packages/clients/` contains the Chrome, native Swift, Electron, and website clients.
+
+Repository-level scripts, deployment files, documentation, the workspace
+manifest, and the lockfile stay at the root.
 
 ### Or paste this into an agent
 
@@ -128,9 +144,9 @@ tour and which to pick.
 | --- | --- |
 | Web UI | served by the server itself — start here |
 | PWA | the web UI on your phone's home screen (iOS push notifications) |
-| macOS desktop shell (Electron) | [`os1-mac/`](os1-mac/) |
-| Native Swift app (iOS + macOS) | [`os1-ios/`](os1-ios/) |
-| Chrome extension (page context → session) | [`os1-chrome/`](os1-chrome/) |
+| macOS desktop shell (Electron) | [`packages/clients/mac/`](packages/clients/mac/) |
+| Native Swift app (iOS + macOS) | [`packages/clients/ios/`](packages/clients/ios/) |
+| Chrome extension (page context → session) | [`packages/clients/chrome/`](packages/clients/chrome/) |
 
 ## Make it your own
 

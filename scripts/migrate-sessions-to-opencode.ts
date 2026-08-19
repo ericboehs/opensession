@@ -23,16 +23,16 @@
  * aren't touched either — this script only operates on the opensession store.
  */
 import { existsSync, readdirSync, readFileSync } from "fs";
-import { OPENSESSION_SESSIONS_DIR } from "../src/server/paths";
-import { providerFor } from "../src/server/models";
-import { getEngineTranscriptPath } from "../src/server/sessions";
-import { isOpencodeSessionId, hasOpencodeTranscript } from "../src/server/opencode-transcript";
+import { OPENSESSION_SESSIONS_DIR } from "../packages/core/opensession-server/src/server/paths";
+import { providerFor } from "../packages/core/opensession-server/src/server/models";
+import { getEngineTranscriptPath } from "../packages/core/opensession-server/src/server/sessions";
+import { isOpencodeSessionId, hasOpencodeTranscript } from "../packages/core/opensession-server/src/server/opencode-transcript";
 import {
   migrateSessionEngine,
   isAutomationOwnedSession,
   sessionHasJournaledRun,
-} from "../src/server/migrate-engine";
-import type { NativeSessionFile } from "../src/server/types";
+} from "../packages/core/opensession-server/src/server/migrate-engine";
+import type { NativeSessionFile } from "../packages/core/opensession-server/src/server/types";
 
 const argv = process.argv.slice(2);
 const execute = argv.includes("--execute");

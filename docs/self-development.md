@@ -7,7 +7,7 @@ boundaries.
 
 ## The dev instance
 
-A dev instance is `bun run opensession.ts` with:
+A dev instance is `bun run packages/core/opensession-server/opensession.ts` with:
 
 - `OPENSESSION_DEV=1` — historically this only swapped the frontend pipeline:
   serve the UI through Bun's HMR dev server instead of the prebuilt

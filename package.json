@@ -9,22 +9,30 @@
     "url": "git+https://github.com/tellahq/opensession.git"
   },
   "homepage": "https://opensession.com",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/core/opensession-server",
+    "packages/core/protocol"
+  ],
   "bin": {
     "opensession": "scripts/cli.ts"
   },
   "scripts": {
     "app:dev": "bun scripts/app-dev.ts",
     "bench:memory": "bun scripts/memory-bench.ts",
-    "dev": "bun --hot opensession.ts",
+    "dev": "bun --hot packages/core/opensession-server/opensession.ts",
     "opensession": "bun scripts/cli.ts",
     "setup": "bun scripts/cli.ts onboard",
-    "start": "bun opensession.ts",
-    "test": "bun test src scripts",
-    "test:snapshots": "OPENSESSION_SNAPSHOT_STRICT=1 bun test src/server/zz-snapshot-runs.test.ts",
+    "start": "bun packages/core/opensession-server/opensession.ts",
+    "test": "bun test packages/core/opensession-server/src scripts",
+    "test:snapshots": "OPENSESSION_SNAPSHOT_STRICT=1 bun test packages/core/opensession-server/src/server/zz-snapshot-runs.test.ts",
     "typecheck": "tsc --noEmit",
     "website:build": "bun scripts/build-website.ts",
     "website:dev": "bun --hot scripts/website-dev.ts"
+  },
+  "patchedDependencies": {
+    "@base-ui/react@1.6.0": "patches/@base-ui%2Freact@1.6.0.patch",
+    "@pierre/trees@1.0.0-beta.4": "patches/@pierre%2Ftrees@1.0.0-beta.4.patch",
+    "@rynfar/meridian@1.51.0": "patches/@rynfar%2Fmeridian@1.51.0.patch"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.104",
@@ -59,11 +67,13 @@
     "opencode-with-claude": "1.6.18",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "sharp": "0.34.5",
     "shiki": "3.23.0",
     "tailwind-merge": "^3.6.0",
     "typescript": "^5.7.0",
     "web-push": "^3.6.7",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@tellahq/opensession-server": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.2",
@@ -73,9 +83,5 @@
     "@types/web-push": "^3.6.4",
     "agentation": "^3.0.2",
     "tailwindcss": "^4.3.2"
-  },
-  "patchedDependencies": {
-    "@base-ui/react@1.6.0": "patches/@base-ui%2Freact@1.6.0.patch",
-    "@rynfar/meridian@1.51.0": "patches/@rynfar%2Fmeridian@1.51.0.patch"
   }
 }

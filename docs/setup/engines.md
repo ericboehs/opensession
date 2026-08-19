@@ -1,11 +1,13 @@
-# Engine: OpenCode
+# Engines: Pi and OpenCode
 
-Every session, automation, agent-loop turn and one-shot utility call runs on
-the OpenCode engine — a per-session `opencode serve` process driven over
-HTTP+SSE by `src/server/opencode-runner.ts` (one-shots go through
-`src/server/opencode-oneshot.ts` on a shared tool-less server). Model ids
-look like `opencode/<provider>/<model>`; bare native ids (`claude-sonnet-5`,
-`gpt-5.6-sol`) are mapped onto that form at dispatch (`toOpencodeModel`).
+New interactive sessions, automations, and one-shot utility calls default to
+Pi. Pi runs through detached run hosts driven by `packages/core/opensession-server/src/server/pi-runner.ts`, so
+turns survive server restarts. OpenCode remains available as an explicit engine
+and as a migration fallback through `packages/core/opensession-server/src/server/opencode-runner.ts`. Model ids
+name their engine as `pi/<provider>/<model>` or
+`opencode/<provider>/<model>`; bare native ids (`claude-sonnet-5`,
+`gpt-5.6-sol`) are routed at dispatch. One-shots use the tool-less
+`oneShot` helper in `packages/core/opensession-server/src/server/one-shot.ts`.
 After changing engine/runner code, restart with `systemctl restart opensession`
 ([install.md](install.md#10-frontend-rebuilds-vs-restart)).
 
@@ -15,7 +17,7 @@ nvm fallback path.
 ## Engine config
 
 `~/.opensession-opencode.json` (override with `OPENSESSION_OPENCODE_CONFIG`),
-schema from `src/server/opencode-config.ts`:
+schema from `packages/core/opensession-server/src/server/opencode-config.ts`:
 
 ```json
 {
@@ -88,7 +90,7 @@ optionally restricts which Claude accounts serve it. Per-account
 `CLAUDE_CONFIG_DIR` isolation pins the selected account.
 
 Other `bridge.mode` values exist as non-default escape hatches: `"native"`
-(the in-repo `src/server/anthropic-bridge.ts`, a loopback-only
+(the in-repo `packages/core/opensession-server/src/server/anthropic-bridge.ts`, a loopback-only
 Anthropic-Messages endpoint on the official Claude Agent SDK — designated
 accounts only, bills to extra-usage credits; alongside the flag-gated
 experimental claude-direct engine adapter it is the last consumer of
@@ -98,7 +100,7 @@ experimental claude-direct engine adapter it is the last consumer of
 
 `~/.opensession-claude-accounts.json` (override with
 `OPENSESSION_CLAUDE_ACCOUNTS_PATH`; written mode 0600). Shape
-(`src/server/claude-accounts.ts`):
+(`packages/core/opensession-server/src/server/claude-accounts.ts`):
 
 ```json
 {
@@ -138,8 +140,8 @@ experimental claude-direct engine adapter it is the last consumer of
 
 `opencode/openai/*` models run on OpenCode's native ChatGPT OAuth using the
 codex-accounts pool — `~/.opensession-codex-accounts.json` (no env override;
-0600), managed by `src/server/codex-accounts.ts` and seeded into opencode by
-`src/server/opencode-openai-auth.ts` (access-token-only + poisoned refresh so
+0600), managed by `packages/core/opensession-server/src/server/codex-accounts.ts` and seeded into opencode by
+`packages/core/opensession-server/src/server/opencode-openai-auth.ts` (access-token-only + poisoned refresh so
 the host `codex login` can never be invalidated):
 
 ```json
@@ -218,7 +220,7 @@ poller noise is never alerted.
 
 ## Model routing
 
-`src/server/models.ts`:
+`packages/core/opensession-server/src/server/models.ts`:
 
 - **Default model**: UI override file `~/.opensession-default-model.json`
   (`{ "model": "<id>" | null }`) → `OPENSESSION_MODEL` env → `claude-fable-5`.
@@ -230,11 +232,11 @@ poller noise is never alerted.
   configured `preferredFallbackModel` is tried first). Every fallback is
   mapped onto opencode too.
 - **Cheap-task models**: several features run small classifier prompts on
-  haiku by default via `opencodeOneShot`, each overridable by env where it's
+  Pi Haiku by default via `oneShot`, each overridable by env where it's
   read: `SUGGEST_BRANCH_MODEL`, `NOTE_EDIT_MODEL`, `SCHEDULE_WHEN_MODEL`,
   `DRAFT_AUTOMATION_MODEL`, `SLACK_MENTION_INTENT_MODEL`,
   `PLAIN_SPAM_CHECK_MODEL`, `PLAIN_REFUND_INTENT_MODEL` (all default
-  `claude-haiku-4-5`; native ids map onto opencode at dispatch), plus
+  `claude-haiku-4-5`; native and legacy OpenCode ids map onto Pi at dispatch), plus
   `OPENSESSION_ONESHOT_MODEL` as the one-shot default.
 
 ## Run gate + least privilege

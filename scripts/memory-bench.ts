@@ -3,8 +3,8 @@
  *
  * Replays the canned conversations in test/memory-bench/*.json through each
  * strategy in src/server/memory-bench.ts and has an LLM judge score every
- * resulting notebook. Real model calls on the opencode engine (the same
- * opencodeOneShot path titles and classifiers use), so this is a SCRIPT, run
+ * resulting notebook. Real model calls through Pi (the same oneShot path titles and
+ * classifiers use), so this is a SCRIPT, run
  * deliberately — never part of bun test.
  *
  * Env:
@@ -20,7 +20,7 @@
  */
 import { readdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import { opencodeOneShot } from "../src/server/opencode-oneshot";
+import { oneShot } from "../packages/core/opensession-server/src/server/one-shot";
 import {
   BENCH_STRATEGIES,
   formatTable,
@@ -32,7 +32,7 @@ import {
   summarize,
   type BenchResult,
   type OneShot,
-} from "../src/server/memory-bench";
+} from "../packages/core/opensession-server/src/server/memory-bench";
 
 const requested = (process.env.MEMORY_BENCH_STRATEGIES ?? "")
   .split(",")
@@ -65,14 +65,14 @@ if (!conversations.length) {
 const DEFAULT_JUDGE_MODEL = "claude-sonnet-5";
 
 const strategyOneShot: OneShot = (system, prompt) =>
-  opencodeOneShot(prompt, {
+  oneShot(prompt, {
     system,
     label: "memory-bench",
     ...(process.env.MEMORY_BENCH_MODEL ? { model: process.env.MEMORY_BENCH_MODEL } : {}),
   });
 
 const judgeOneShot: OneShot = (system, prompt) =>
-  opencodeOneShot(prompt, {
+  oneShot(prompt, {
     system,
     label: "memory-bench-judge",
     model: process.env.MEMORY_BENCH_JUDGE_MODEL || DEFAULT_JUDGE_MODEL,

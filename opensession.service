@@ -23,7 +23,7 @@ Environment="NODE_ENV=production"
 # running but unable to progress. Backend changes use a deliberate graceful
 # restart; detached engine turns survive and the run journal reattaches them.
 # The app's own frontend watcher still rebuilds frontend edits live.
-ExecStart=/home/ubuntu/.bun/bin/bun run opensession.ts
+ExecStart=/home/ubuntu/.bun/bin/bun run packages/core/opensession-server/opensession.ts
 Restart=always
 # 1s, not 5s: this pause is pure downtime on every restart (deliberate or
 # crash), and Caddy's lb_try_duration parks requests meanwhile — a crash loop

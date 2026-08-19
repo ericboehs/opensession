@@ -21,7 +21,7 @@ Contributor doc. Nothing here is operator configuration.
 
 ```sh
 bun run test:snapshots                                             # compare
-OPENSESSION_SNAPSHOT=record bun test src/server/zz-snapshot-runs.test.ts   # re-record
+OPENSESSION_SNAPSHOT=record bun test packages/core/opensession-server/src/server/zz-snapshot-runs.test.ts   # re-record
 ```
 
 Run the file **directly**. Like `zz-fake-run.test.ts`, it redirects module
@@ -35,7 +35,7 @@ sweep these scenarios protect nothing. The script sets
 `OPENSESSION_SNAPSHOT_STRICT=1`, which turns an unready harness into a failure
 rather than a silent pass, so the step cannot go green by skipping everything.
 
-Fixtures live in `src/server/testing/snapshots/`.
+Fixtures live in `packages/core/opensession-server/src/server/testing/snapshots/`.
 
 ## The scenarios
 
@@ -79,7 +79,7 @@ before you commit it. A fixture whose diff nobody read is worth nothing.
 
 ## Adding a scenario
 
-1. Add a `test(...)` to `src/server/zz-snapshot-runs.test.ts`. Start it with
+1. Add a `test(...)` to `packages/core/opensession-server/src/server/zz-snapshot-runs.test.ts`. Start it with
    `if (!h.ready) return;` so it skips with the rest when module state is warm.
 2. Build the session with `h.writeSession(id, {...})`. Prefer `mode: "scratch"`
    plus an explicit `repo` id: a scratch session's working directory is created

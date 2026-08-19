@@ -167,7 +167,7 @@ export async function renderUnit(): Promise<string> {
     .replace(/^User=.*$/m, `User=${await resolveUsername()}`)
     .replace(/^WorkingDirectory=.*$/m, `WorkingDirectory=${REPO_ROOT}`)
     .replace(/^EnvironmentFile=.*$/m, `EnvironmentFile=${ENV_PATH}`)
-    .replace(/^ExecStart=.*$/m, `ExecStart=${bun} run opensession.ts`)
+    .replace(/^ExecStart=.*$/m, `ExecStart=${bun} run packages/core/opensession-server/opensession.ts`)
     .replace(
       /^Environment="PATH=.*"$/m,
       `Environment="PATH=${servicePath(bun.replace(/\/bun$/, ""))}"`,
@@ -182,7 +182,7 @@ export function renderPlist(): string {
   const bun = bunPath();
   // launchd has no EnvironmentFile, so source the env file in a shell first.
   // `set -a` exports everything it defines.
-  const script = `set -a; [ -f ${ENV_PATH} ] && . ${ENV_PATH}; set +a; exec ${bun} run opensession.ts`;
+  const script = `set -a; [ -f ${ENV_PATH} ] && . ${ENV_PATH}; set +a; exec ${bun} run packages/core/opensession-server/opensession.ts`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

@@ -39,7 +39,7 @@ git clone https://github.com/tellahq/opensession.git
 cd opensession
 bun install
 bun run setup          # writes ~/.opensession/config.json and ~/.opensession.env
-bun run opensession.ts # or: opensession start --foreground
+bun run packages/core/opensession-server/opensession.ts # or: opensession start --foreground
 ```
 
 You need [Bun](https://bun.sh) and `git`. Everything else is optional until you
@@ -59,7 +59,7 @@ bun run test           # must be green
 bun run test:snapshots # the run-pipeline fixtures, which only work run alone
 ```
 
-`bun run test` is `bun test src scripts`, which is where every server-side test
+`bun run test` is `bun test packages/core/opensession-server/src scripts`, which is where every server-side test
 lives.
 
 The snapshot suite needs its own command because it redirects module state that
@@ -83,7 +83,7 @@ reload can permanently stop timer delivery while HTTP keeps serving, which
 looks like "sessions are running but never progress".
 
 **Integrations are declared, not hand-wired.** Adding one means appending an
-entry to `src/server/integrations/registry.ts` — config key, env flag,
+entry to `packages/core/opensession-server/src/server/integrations/registry.ts` — config key, env flag,
 credentials, constructor. `loadAgents()` is a loop over that array; you should
 not need to touch `opensession.ts`. The array order is boot order, because
 agents register webhook routes in sequence.

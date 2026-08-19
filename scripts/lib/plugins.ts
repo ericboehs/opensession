@@ -45,7 +45,7 @@ import {
 	type InstalledArtifact,
 	type InstalledPackage,
 	type PackageManifest,
-} from "../../src/server/plugins";
+} from "../../packages/core/opensession-server/src/server/plugins";
 import { REPO_ROOT } from "./paths";
 import { installRecipe, removeRecipe, installedKeys, type Recipe } from "./recipes";
 import { askYesNo, canPrompt, dim, fail, green, heading, info, ok, run, warn } from "./ui";
@@ -380,8 +380,8 @@ function sha256(path: string): string {
 
 /** The real stores. Imported lazily so this module stays cheap to load. */
 export async function defaultStores(): Promise<InstanceStores> {
-	const connections = await import("../../src/server/connections");
-	const feeds = await import("../../src/server/feeds-config");
+	const connections = await import("../../packages/core/opensession-server/src/server/connections");
+	const feeds = await import("../../packages/core/opensession-server/src/server/feeds-config");
 	const { readdirSync } = await import("fs");
 
 	const skillNames = () => {

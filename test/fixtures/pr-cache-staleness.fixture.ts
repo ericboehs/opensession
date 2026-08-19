@@ -36,8 +36,8 @@ beforeAll(async () => {
 	priorConfig = process.env.OPENSESSION_CONFIG;
 	process.env.OPENSESSION_CONFIG = join(stateDir, "config.json");
 	// Another test file may have parked a backoff; the sweep must run.
-	priorGhBackoff = (await import("../../src/server/github-limit")).__setGhBackoffForTest(0);
-	const host = (await import("../../src/server/pr-host")).githubPrHost as any;
+	priorGhBackoff = (await import("../../packages/core/opensession-server/src/server/github-limit")).__setGhBackoffForTest(0);
+	const host = (await import("../../packages/core/opensession-server/src/server/pr-host")).githubPrHost as any;
 	for (const method of ["listOpenPrs", "listRecentPrs", "changedSince"])
 		priorHost[method] = host[method];
 	// Default null: a repo no test set up must never become authoritative, or
@@ -51,10 +51,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-	const host = (await import("../../src/server/pr-host")).githubPrHost as any;
+	const host = (await import("../../packages/core/opensession-server/src/server/pr-host")).githubPrHost as any;
 	for (const [method, fn] of Object.entries(priorHost)) host[method] = fn;
 	if (priorGhBackoff !== undefined)
-		(await import("../../src/server/github-limit")).__setGhBackoffForTest(priorGhBackoff);
+		(await import("../../packages/core/opensession-server/src/server/github-limit")).__setGhBackoffForTest(priorGhBackoff);
 	if (priorStateDir === undefined) delete process.env.OPENSESSION_STATE_DIR;
 	else process.env.OPENSESSION_STATE_DIR = priorStateDir;
 	if (priorConfig === undefined) delete process.env.OPENSESSION_CONFIG;
@@ -102,7 +102,7 @@ function bulkOpenPr(number: number, branch: string): any {
 
 describe("PR bulk cache staleness rules", () => {
 	it("keeps a pending merge overlay when the sweep never queried that repo", async () => {
-		const prCache = await import("../../src/server/pr-cache");
+		const prCache = await import("../../packages/core/opensession-server/src/server/pr-cache");
 		// Prime the cache timestamp first: getPrsByRepo is stale-while-revalidate,
 		// so an unprimed read would fire its own sweep underneath the assertions.
 		openPrsByRepo.set(REPO_A, null);
@@ -125,7 +125,7 @@ describe("PR bulk cache staleness rules", () => {
 	});
 
 	it("does not revert a webhook merge with data a sweep fetched before it", async () => {
-		const prCache = await import("../../src/server/pr-cache");
+		const prCache = await import("../../packages/core/opensession-server/src/server/pr-cache");
 		prCache.applyPrWebhookToBulkCache(REPO_B, "pull_request", prPayload(22, "feat-b"));
 		// The sweep reads the open list (PR still open there), and only then does
 		// the merge webhook land. The write-through has to register an overlay or

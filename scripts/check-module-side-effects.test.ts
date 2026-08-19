@@ -41,8 +41,8 @@ describe("module-scope side effects", () => {
 	test("scans the whole server graph, not a handful of files", () => {
 		const modules = serverModules();
 		expect(modules.length).toBeGreaterThan(200);
-		expect(modules).toContain("src/server/interactive-mcp.ts");
-		expect(modules).toContain("src/server/session-index.ts");
+		expect(modules).toContain("packages/core/opensession-server/src/server/interactive-mcp.ts");
+		expect(modules).toContain("packages/core/opensession-server/src/server/session-index.ts");
 		expect(modules.filter((m) => m.endsWith(".test.ts"))).toEqual([]);
 	});
 });

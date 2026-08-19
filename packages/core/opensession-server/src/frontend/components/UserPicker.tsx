@@ -1,0 +1,520 @@
+import React, { useState, useEffect } from "react";
+import { BrandMark } from "./BrandMark";
+import { UserAvatar } from "./UserAvatar";
+import { IconArrowUpRight } from "./icons";
+import { BASE_PATH } from "../lib/base";
+import { PRODUCT_NAME } from "../lib/brand";
+import { usePeople } from "../lib/people";
+import { effectiveTheme, onThemeChanged } from "../lib/theme";
+import { Button } from "../ui/button";
+import { cn } from "../ui/cn";
+import { DeviceCode } from "../ui/device-code";
+import { InlineAlert } from "../ui/state";
+import { PulseDot } from "../ui/status";
+
+/**
+ * Mutable compatibility view for older consumers. `usePeople()` owns the
+ * roster and updates this array in place after GET /api/people resolves.
+ */
+export const TEAM: string[] = [];
+// Rename shim: read the new key first, fall back to the legacy one (existing
+// browsers + tooling that presets it stay signed in); writes go to the new key.
+const KEY = "opensession-user";
+const LEGACY_KEY = "backstage-user";
+const CHANGE_EVENT = "opensession-user-changed";
+
+function setStoredUser(val: string) {
+  localStorage.setItem(KEY, val);
+  window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+export function getCurrentUser(): string {
+  return (
+    localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || "Anonymous"
+  );
+}
+
+/** Switch the current user (used by the account menu's switcher). */
+export function setCurrentUser(name: string) {
+  setStoredUser(name);
+}
+
+/** Reactive current user — updates when the picker (or another tab) changes it. */
+export function useCurrentUser(): string {
+  const [user, setUser] = useState(() =>
+    typeof localStorage === "undefined" ? "" : getCurrentUser(),
+  );
+
+  useEffect(() => {
+    const handler = () => setUser(getCurrentUser());
+    // Server-rendered component tests start without localStorage. Hydrate the
+    // real browser identity as soon as the hook reaches the client.
+    handler();
+    window.addEventListener(CHANGE_EVENT, handler);
+    window.addEventListener("storage", handler);
+    return () => {
+      window.removeEventListener(CHANGE_EVENT, handler);
+      window.removeEventListener("storage", handler);
+    };
+  }, []);
+
+  return user;
+}
+
+export interface AuthStatus {
+  required: boolean;
+  authenticated: boolean;
+  admin?: boolean;
+  /** Signed out because GitHub permanently rejected this person's grant, not
+   *  because they never signed in: `login` is still theirs, and the way back
+   *  in is the same authorize. */
+  reconnectRequired?: boolean;
+  login?: string;
+  name?: string;
+}
+
+// Shared auth state: UserGate fetches /api/auth/status once on load; other
+// components (Settings' account footer) read it reactively from here
+// instead of re-fetching.
+const AUTH_STATUS_EVENT = "opensession-auth-status-changed";
+let authStatusCache: AuthStatus | null = null;
+
+function setAuthStatusCache(status: AuthStatus) {
+  authStatusCache = status;
+  window.dispatchEvent(new Event(AUTH_STATUS_EVENT));
+}
+
+/** Reactive sign-in state; null until /api/auth/status answers (or when the
+ *  server predates it). `required && authenticated` ⇒ GitHub-verified user. */
+export function useAuthStatus(): AuthStatus | null {
+  const [status, setStatus] = useState(authStatusCache);
+  useEffect(() => {
+    const handler = () => setStatus(authStatusCache);
+    window.addEventListener(AUTH_STATUS_EVENT, handler);
+    return () => window.removeEventListener(AUTH_STATUS_EVENT, handler);
+  }, []);
+  return status;
+}
+
+/** Sign out of the GitHub web session and return to the sign-in screen. */
+export async function signOut(): Promise<void> {
+  try {
+    await fetch(`${BASE_PATH}/api/auth/logout`, { method: "POST" });
+  } catch {}
+  window.location.reload();
+}
+
+/**
+ * The backdrop behind every gate screen: the same "Silver Silk" loop the
+ * landing page runs, so the site and the app's front door are one surface.
+ * Served from our own origin (routes/static-assets.ts), never the site's CDN.
+ *
+ * Three layers, each covering for the one above it: a flat fill that is
+ * whatever paints first, the loop's own first frame as a background image, and
+ * the video. So an offline browser, a slow connection and a reduced-motion
+ * visitor all get the same picture, just not moving. `aria-hidden` and
+ * `pointer-events-none` because it is wallpaper.
+ *
+ * Dark gets its OWN cut of the loop rather than the silver one behind a scrim.
+ * A dimmed light background is still a light background: it stays the
+ * brightest thing on the display and the whole screen glows in a dark room.
+ * The dark cut is the same footage graded to charcoal (`scripts/signin-bg.sh`),
+ * so it is the same material and the same motion in a different finish, and
+ * its darkest point still sits clear of the card's own fill.
+ *
+ * `key` on the video: swapping a <source> child does not make an already-live
+ * <video> reload, so a theme flip would keep playing the old cut. Keying it to
+ * the theme replaces the element instead.
+ */
+function AuthBackdrop() {
+	const [theme, setTheme] = useState(effectiveTheme);
+	useEffect(() => onThemeChanged(() => setTheme(effectiveTheme())), []);
+	const name = theme === "dark" ? "signin-bg-dark" : "signin-bg";
+	const poster = `${BASE_PATH}/${name}.webp`;
+	return (
+		<div
+			aria-hidden="true"
+			className="pointer-events-none absolute inset-0 select-none bg-surface bg-cover bg-center"
+			style={{ backgroundImage: `url(${poster})` }}
+		>
+			<video
+				key={name}
+				className="size-full object-cover motion-reduce:hidden"
+				autoPlay
+				loop
+				muted
+				playsInline
+				poster={poster}
+			>
+				<source src={`${BASE_PATH}/${name}.mp4`} type="video/mp4" />
+			</video>
+		</div>
+	);
+}
+
+/**
+ * The shell every pre-app screen shares: sign-in, the local name picker, the
+ * expired-session notice, the retry after a failed status check. They were
+ * four hand-built boxes with their own paddings and inline styles, which is
+ * why the first thing a new teammate saw looked like a different product from
+ * the one behind it.
+ *
+ * One card, one corner, one width. The corner is the container step of the
+ * radius scale (`rounded-2xl`) rather than the card step: nothing is stacked
+ * around it, so it is the whole page's shape.
+ *
+ * It is paper (`bg-surface`, the page's own base) rather than the panel grey
+ * every other card takes: on the silk it is the only opaque thing on screen,
+ * so it reads against the backdrop rather than against a page.
+ *
+ * Its edge is the one thing that changes with the theme, and `--auth-card-edge`
+ * (base.css) holds both answers. Over the silver loop the card is white in
+ * front of a picture and takes the `lg` cast a genuinely floating card has
+ * earned. Over the charcoal cut there is nothing for a cast to fall on, so it
+ * takes a hairline instead.
+ *
+ * Every screen opens on the product's own icon, the same one the loading
+ * splash shows (index.html), so the app you are signing in to is what you land
+ * on. GitHub is the method, and it is named on the button.
+ */
+function AuthCard({
+	title,
+	children,
+}: {
+	title: string;
+	children?: React.ReactNode;
+}) {
+	return (
+		// Before sign-in there is no sidebar or header, so the desktop shell has
+		// none of the rows it normally makes draggable (base.css, `html.wco`) and
+		// the window cannot be moved at all. The backdrop is the handle here; the
+		// card opts back out so its controls stay clickable.
+		<div className="relative flex h-screen items-center justify-center overflow-hidden p-6 [html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag]">
+			<AuthBackdrop />
+			<div className="relative w-[400px] max-w-full rounded-2xl bg-surface p-8 text-center shadow-(--auth-card-edge) phone:p-6 [html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag]">
+				<img
+					src={`${BASE_PATH}/mac-app-icon.png`}
+					alt=""
+					width={56}
+					height={56}
+					className="mx-auto mb-5 block size-14"
+				/>
+				{/* Medium, not semibold: at 19px on the card's own paper the heavier
+				    step read as a slab rather than a heading. */}
+				<h1 className="m-0 text-section-title font-title text-fg">{title}</h1>
+				{children}
+			</div>
+		</div>
+	);
+}
+
+/** The sentence under an AuthCard's title. */
+function AuthCopy({ children }: { children: React.ReactNode }) {
+	return (
+		// `last:mb-0` for the cards whose sentence IS the card (the expired
+		// notice): the margin is air before whatever follows, and with nothing
+		// following it just lands the card off-centre.
+		<p className="mx-auto mt-2 mb-6 max-w-[32ch] text-supporting leading-relaxed text-dim last:mb-0">
+			{children}
+		</p>
+	);
+}
+
+/**
+ * Identity gate. Default: the historical localStorage name picker. When
+ * GitHub web sign-in is active on the server (config
+ * integrations.github.userPrAuth), the picker is replaced by a real GitHub
+ * sign-in (device flow → HttpOnly cookie) — the server then ignores
+ * client-claimed names, so the localStorage value is display-only and is
+ * synced to the verified identity here.
+ */
+export function UserGate({ children }: { children: React.ReactNode }) {
+  const user = useCurrentUser();
+  const roster = usePeople();
+  TEAM.splice(0, TEAM.length, ...roster.map(({ name }) => name));
+  const [auth, setAuth] = useState<AuthStatus | null>(null);
+	const [authFailed, setAuthFailed] = useState(false);
+	const [showAuthWait, setShowAuthWait] = useState(false);
+	const loadAuth = () => {
+		setAuthFailed(false);
+		setShowAuthWait(false);
+		fetch(`${BASE_PATH}/api/auth/status`)
+			.then((r) => {
+				if (!r.ok) throw new Error(`Authentication status failed: ${r.status}`);
+				return r.json();
+			})
+			.then((body: AuthStatus | null) => {
+				if (!body) throw new Error("Authentication status was empty");
+				setAuth(body);
+				setAuthStatusCache(body);
+				if (body.required && body.authenticated && body.name) {
+					const user = body.name.split(" ")[0];
+					setStoredUser(user);
+				}
+			})
+			.catch(() => setAuthFailed(true));
+	};
+
+  useEffect(() => {
+		loadAuth();
+  }, []);
+
+	useEffect(() => {
+		if (auth || authFailed) return;
+		const timer = window.setTimeout(() => setShowAuthWait(true), 300);
+		return () => window.clearTimeout(timer);
+	}, [auth, authFailed]);
+
+	// Returning visitors already have a local identity. Let the app paint while
+	// the server verifies its HttpOnly session, as it did before this check grew
+	// a blocking loading screen. The server still enforces auth on every route.
+	if (!auth && !authFailed && user !== "Anonymous") return <>{children}</>;
+
+	if (!auth) {
+		if (authFailed) {
+			return (
+				<AuthCard title="Couldn't check sign-in">
+					<AuthCopy>The server didn't answer. It may still be starting up.</AuthCopy>
+					<Button variant="primary" size="lg" className="min-h-10 w-full" onClick={loadAuth}>
+						Try again
+					</Button>
+				</AuthCard>
+			);
+		}
+		// The same backdrop, so the wait and the card it resolves into are one
+		// screen rather than a white flash and then a picture.
+		return (
+			<div className="relative flex h-screen items-center justify-center overflow-hidden [html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag]">
+				<AuthBackdrop />
+				{showAuthWait ? (
+					<div role="status" aria-live="polite" className="relative text-supporting text-dim">
+						Checking sign-in
+					</div>
+				) : null}
+			</div>
+		);
+	}
+
+  // GitHub sign-in is configured: it is the only way in, and the name picker
+  // below is unreachable. The two are alternatives, never steps of one flow
+  // (web-auth.ts: "Off (default): the UI keeps today's localStorage name
+  // picker"), so nobody signing in with GitHub is ever asked to pick a name.
+  if (auth?.required) {
+    if (auth.authenticated) return <>{children}</>;
+    return (
+      <GithubSignIn
+        reconnect={auth.reconnectRequired === true}
+        login={auth.login}
+        onSignedIn={(status) => {
+          setAuth(status);
+          setAuthStatusCache(status);
+        }}
+      />
+    );
+  }
+
+  if (user !== "Anonymous") return <>{children}</>;
+
+  // No sign-in configured, which is the default for a fresh instance: the
+  // server cannot verify anyone, so this name is a label rather than an
+  // identity. It is also the bootstrap path, since an admin has to get in
+  // here before there is a GitHub app to sign in with.
+  return (
+    <AuthCard title="Who are you?">
+      <AuthCopy>
+        Sign-in isn't set up here, so your name is only a label on your
+        sessions.
+      </AuthCopy>
+      <div
+        className={cn(
+          "grid gap-2",
+          // One tile has no column to pair with: a half-width button floating
+          // in a card reads as a layout that lost its other half.
+          roster.length > 1 ? "grid-cols-2 phone:grid-cols-1" : "grid-cols-1",
+        )}
+      >
+        {(roster.length ? roster.map(({ name }) => name) : ["Local User"]).map(
+          (name) => (
+            <button
+              key={name}
+              // The raised-control optics of Button's `default` variant, at
+              // tile proportions: a hairline is allowed here because the tile
+              // is a control, not a card (see src/frontend/AGENTS.md).
+              className="flex flex-col items-center gap-2 rounded-lg border border-line bg-button px-3 py-4 text-item-title font-medium text-fg smooth-shadow-xs transition-[border-color,scale] hover:border-line-strong active:scale-[0.98] focus-ring"
+              onClick={() => setStoredUser(name)}
+            >
+              <UserAvatar name={name} size={36} />
+              {roster.length ? name : "Continue locally"}
+            </button>
+          ),
+        )}
+      </div>
+    </AuthCard>
+  );
+}
+
+/**
+ * Sign in with GitHub's device flow: the code is entered on github.com in
+ * whatever browser the person already trusts, and this screen waits.
+ *
+ * It is the only flow, deliberately. An authorization-code redirect has to
+ * come back to the exact origin it left, and on the iOS PWA it returns into
+ * Safari instead of the installed app, stranding the person one tab away from
+ * the thing they were signing in to. Entering a code is one step longer and
+ * lands everywhere.
+ */
+function GithubSignIn({
+  reconnect = false,
+  login,
+  onSignedIn,
+}: {
+  /** The grant behind an existing session died; this is the same screen and
+   *  the same flow, saying which of the two happened. */
+  reconnect?: boolean;
+  login?: string;
+  onSignedIn: (status: AuthStatus) => void;
+}) {
+  const [flow, setFlow] = useState<{
+    deviceCode: string;
+    userCode: string;
+    verificationUri: string;
+    interval: number;
+  } | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Poll GitHub (via the server) until the device code is authorized.
+  useEffect(() => {
+    if (!flow) return;
+    let cancelled = false;
+    let intervalMs = Math.max(flow.interval, 5) * 1000;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      try {
+        const res = await fetch(`${BASE_PATH}/api/auth/device/poll`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceCode: flow.deviceCode }),
+        });
+        const body = await res.json();
+        if (cancelled) return;
+        if (body.status === "ok") {
+          if (body.name) setStoredUser(body.name.split(" ")[0]);
+          onSignedIn({ required: true, authenticated: true, admin: body.admin, login: body.login, name: body.name });
+          return;
+        }
+        if (body.status === "slow_down") intervalMs = Math.max(body.interval, 5) * 1000;
+        if (body.status === "error" || body.error) {
+          setError(body.error || "Sign-in failed");
+          setFlow(null);
+          return;
+        }
+      } catch {}
+      if (!cancelled) timer = setTimeout(tick, intervalMs);
+    };
+    timer = setTimeout(tick, intervalMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [flow, onSignedIn]);
+
+  async function start() {
+    setError(null);
+    setStarting(true);
+    try {
+      const res = await fetch(`${BASE_PATH}/api/auth/device`, { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
+      setFlow(body);
+    } catch (e: any) {
+      setError(e.message);
+    }
+    setStarting(false);
+  }
+
+  return (
+    <AuthCard
+      title={
+        flow
+          ? "Enter this code"
+          : reconnect
+            ? "Reconnect GitHub"
+            : `Sign in to ${PRODUCT_NAME}`
+      }
+    >
+      {!flow ? (
+        <>
+          <AuthCopy>
+            {reconnect ? (
+              <>
+                GitHub's authorization
+                {login ? <> for @{login}</> : null} expired. Sign in again to
+                continue.
+              </>
+            ) : (
+              <>
+                Sessions act as your own GitHub account, so pull requests are
+                authored by you.
+              </>
+            )}
+          </AuthCopy>
+          <Button
+            variant="primary"
+            size="lg"
+            className="min-h-10 w-full"
+            icon={<BrandMark name="github" size={20} />}
+            disabled={starting}
+            onClick={() => void start()}
+          >
+            {starting
+              ? "Starting…"
+              : reconnect
+                ? "Reconnect with GitHub"
+                : "Continue with GitHub"}
+          </Button>
+        </>
+      ) : (
+        <div className="flex flex-col items-center">
+          <AuthCopy>
+            GitHub will ask for it at{" "}
+            <span className="font-medium text-fg">
+              {flow.verificationUri.replace(/^https:\/\//, "")}
+            </span>
+            .
+          </AuthCopy>
+          {/* The code is what this screen is for, so it gets the display step
+              and room to breathe rather than the inline chip size. */}
+          <DeviceCode
+            code={flow.userCode}
+            className="text-page-title px-4 py-2.5"
+          />
+          <a
+            href={flow.verificationUri}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-5 w-full"
+          >
+            <Button
+              variant="primary"
+              size="lg"
+              className="min-h-10 w-full"
+              icon={<IconArrowUpRight size={20} />}
+            >
+              Open GitHub
+            </Button>
+          </a>
+          <span className="mt-3.5 flex items-center gap-2 text-label text-dim">
+            <PulseDot size={7} />
+            Waiting for GitHub…
+          </span>
+        </div>
+      )}
+      {error && (
+        <InlineAlert variant="error" className="mt-5 text-left">
+          {error}
+        </InlineAlert>
+      )}
+    </AuthCard>
+  );
+}

@@ -40,9 +40,9 @@ import {
   runOpencode,
   killAllOpencodeServers,
   OPENCODE_BIN,
-} from "../src/server/opencode-runner";
-import { readOpencodeBridgeConfig } from "../src/server/opencode-config";
-import { listCodexAccounts } from "../src/server/codex-accounts";
+} from "../packages/core/opensession-server/src/server/opencode-runner";
+import { readOpencodeBridgeConfig } from "../packages/core/opensession-server/src/server/opencode-config";
+import { listCodexAccounts } from "../packages/core/opensession-server/src/server/codex-accounts";
 
 const argModel = process.argv[2];
 const prompt = process.argv[3] || "Reply with exactly: OK";

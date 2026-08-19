@@ -113,7 +113,7 @@ for (const pair of LAUNCH_ENV) {
 
 const ROOT = resolve(import.meta.dir, "..");
 const OUT = resolve(output);
-const SOURCE = resolve(flag("source", `${ROOT}/os1-ios`)!);
+const SOURCE = resolve(flag("source", `${ROOT}/packages/clients/ios`)!);
 
 /**
  * One build tree per Open Session session, not per invocation: a cold build is
@@ -198,10 +198,10 @@ async function build(scheme: string, extra: string): Promise<void> {
     `xcodebuild ${scheme} failed:\n${errors}\n\n` +
       `Full log: ${NODE}:${log}\n` +
       `If an error names a file you did not touch, check whether another session is ` +
-      `mid-edit in this shared checkout — \`git status --porcelain os1-ios/\`, and ` +
+      `mid-edit in this shared checkout — \`git status --porcelain packages/clients/ios/\`, and ` +
       `\`git show HEAD:<file>\` to compare. Capture a known-good build meanwhile with ` +
       `--source from a detached worktree: ` +
-      `\`git worktree add --detach /tmp/wt-$$ HEAD\` then \`--source /tmp/wt-$$/os1-ios\`.`,
+      `\`git worktree add --detach /tmp/wt-$$ HEAD\` then \`--source /tmp/wt-$$/packages/clients/ios\`.`,
   );
 }
 

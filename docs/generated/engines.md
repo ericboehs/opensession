@@ -5,7 +5,7 @@
 
 Which engine runs a turn, what turns it on, and where each model lands.
 The routing table below is computed by calling `routeModel()`
-(`src/server/models.ts`) against a clean instance — no per-model engine
+(`packages/core/opensession-server/src/server/models.ts`) against a clean instance — no per-model engine
 overrides configured — so it shows the shipped defaults.
 
 `routeModel()` resolves in one order, and this is the only place that
@@ -26,7 +26,7 @@ that engine's own gate reports why it cannot run.
 
 ### opencode · `opencode`
 
-- **Adapter** `src/server/opencode-runner.ts (policy in src/server/opencode-policy.ts)`
+- **Adapter** `packages/core/opensession-server/src/server/opencode-runner.ts (policy in packages/core/opensession-server/src/server/opencode-policy.ts)`
 - **Model ids** `opencode/<provider>/<model>`
 - **Gate** Always available; the Anthropic side additionally needs the Meridian bridge enabled (`bridgeEnabled()`, `~/.opensession-opencode.json`).
 - **Mid-turn steer** yes
@@ -34,7 +34,7 @@ that engine's own gate reports why it cannot run.
 
 ### pi · `pi`
 
-- **Adapter** `src/server/pi-runner.ts`
+- **Adapter** `packages/core/opensession-server/src/server/pi-runner.ts`
 - **Model ids** `pi/<provider>/<model>`
 - **Gate** `enabled` in `~/.opensession-pi.json` (`piConfigPath()`). Off by default.
 - **Mid-turn steer** yes
@@ -42,7 +42,7 @@ that engine's own gate reports why it cannot run.
 
 ### fake (tests only) · `fake`
 
-- **Adapter** `src/server/agent-runner.ts — the __setEngineForTest seam; fixtures in src/server/fake-engine.test.ts`
+- **Adapter** `packages/core/opensession-server/src/server/agent-runner.ts — the __setEngineForTest seam; fixtures in packages/core/opensession-server/src/server/fake-engine.test.ts`
 - **Model ids** – (intercepts every model id)
 - **Gate** Not config-gated and not reachable in production: it is a module-local test seam, set only by a test and cleared by any hot reload.
 - **Mid-turn steer** n/a

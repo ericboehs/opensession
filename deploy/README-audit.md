@@ -1,11 +1,11 @@
 # Open Session audit logs
 
 Open Session keeps a structured audit trail of every agent run
-(`src/server/audit.ts`): one JSON line per event, in a daily file.
+(`packages/core/opensession-server/src/server/audit.ts`): one JSON line per event, in a daily file.
 
 ## What gets logged
 
-Every engine run (`src/server/opencode-runner.ts`) emits `claude_turn_event`
+Every engine run (`packages/core/opensession-server/src/server/opencode-runner.ts`) emits `claude_turn_event`
 JSON lines (the event name predates the single-engine consolidation and is
 kept for log continuity) to `~/.opensession-audit/audit-YYYY-MM-DD.jsonl`.
 Every line carries the run key, session id, run kind, mode, and model; the

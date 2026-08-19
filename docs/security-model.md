@@ -36,14 +36,13 @@ configuration for the run.
   Reads stay allowed; suggested customer replies go in an internal Plain note.
   Linear (incl. issue creation) and Sentry are internal, so their writes are
   allowed — that's the "spin off work" affordance.
-- Everything runs on the opencode engine. `runAutomation` maps the
-  automation's model tier onto opencode at dispatch
-  (`opencodeAutomationModel`; unset → `DEFAULT_OPENCODE_AUTOMATION_MODEL` in
-  automations.ts). Deny-sets are enforced by STRIPPING the tools from the
-  model's tool list via OpenCode's `tools` config (`opencodeRunPolicy` in
-  opencode-runner.ts, `<server>_<tool>` ids verified live).
-  opensession-admin/opensession-sessions and per-user (`allowedUsers`) servers
-  stay out of automation runs. The run gate (`opencodeGateReason`) is
+- Automations run on Pi in detached run hosts. `runAutomation` maps every
+  native or legacy OpenCode model id onto Pi at dispatch (`automationModel`;
+  unset uses `DEFAULT_PI_AUTOMATION_MODEL` in automations.ts). Deny-sets are
+  enforced before Pi registers MCP tools, and its guarded local tools keep
+  filesystem and environment access contained. opensession-admin,
+  opensession-sessions, and per-user (`allowedUsers`) servers stay out of
+  automation runs. Both engine run gates are
   deny-by-default on journal kind: interactive kinds
   (prompt/goal/create/linear/slack), unattended kinds
   (automation/plain/action/security-scan/github-*), everything else refused.
@@ -86,7 +85,7 @@ An MCP server in `mcp-config.json` can carry an optional
 `allowedUsers: string[]`. When set (non-empty), only runs whose **user**
 resolves to one of those people get that server's tools; everyone else's
 sessions never see it. Omitted/empty = available to everyone (the default).
-Entries are matched by `userMatchesAny` (src/server/shared/user-mappings.ts)
+Entries are matched by `userMatchesAny` (packages/core/opensession-server/src/server/shared/user-mappings.ts)
 through the same identity table as commit attribution, so a teammate's name
 matches a run user given as their short name, a nickname, their email, or
 their Slack id. Example use: scope a finance/expenses MCP server to the one or
@@ -110,7 +109,7 @@ two people who should see it.
   `PUT /api/connections/mcp/:name` with `{allowedUsers}`), or via
   opensession-admin (`add_mcp_server`'s `allowedUsers`, and
   `set_mcp_allowed_users`). Backing helpers: `addMcpServer` /
-  `setMcpAllowedUsers` in src/server/connections.ts.
+  `setMcpAllowedUsers` in packages/core/opensession-server/src/server/connections.ts.
 - A change to the runner-layer filtering needs a real `systemctl restart`.
   Adding/removing/re-scoping a server in `mcp-config.json` itself is read
   fresh per run, but until the process runs the new `filterMcpServers`,
@@ -203,7 +202,7 @@ is byte-identical. Opting in (`integrations.github: { userPrAuth: true,
 oauthClientId: "<GitHub App client id>" }`; env OPENSESSION_GITHUB_CLIENT_ID
 wins over the config id) activates BOTH halves at once:
 
-- **PRs as the session owner** (src/server/github-auth.ts): teammates connect
+- **PRs as the session owner** (packages/core/opensession-server/src/server/github-auth.ts): teammates connect
   their GitHub account via the OAuth *device flow* (Connections UI card, or
   implicitly by signing in). Tokens live per-login in
   `~/.opensession-github-auth.json` (0600, never returned by any API). The
@@ -216,7 +215,7 @@ wins over the config id) activates BOTH halves at once:
   PR-attribution instructions swap the `--assignee` bot wording for "authored
   by them" when the token rides. Injection lives in opencode-runner.ts ⇒
   needs a real restart.
-- **GitHub web sign-in** (src/server/web-auth.ts + routes/auth.ts): when
+- **GitHub web sign-in** (packages/core/opensession-server/src/server/web-auth.ts + routes/auth.ts): when
   active, the UI's name picker is replaced by a real sign-in (UserGate →
   device flow → HttpOnly `opensession_auth` cookie; sessions in
   `~/.opensession-web-sessions.json`, sliding 90d). Every API request and the
@@ -259,7 +258,7 @@ locks out a whole instance at once.
 ## Self-management tools (Slack + interactive Open Session sessions)
 
 The `opensession-admin` in-process MCP server
-(src/agents/slack/admin-tools.ts) lets the agent manage its own setup from
+(packages/core/opensession-server/src/agents/slack/admin-tools.ts) lets the agent manage its own setup from
 Slack: channel memory (remember/list_memory/forget) and — gated to the trusted
 user (`isAdmin` = no `ALLOWED_SLACK_USER_ID` set, or sender matches it) —
 automations (list/create/update/delete/run) and MCP connections
@@ -267,13 +266,13 @@ automations (list/create/update/delete/run) and MCP connections
 `processMessage`); automation runs never go through there, so they never
 receive these tools. Do not add `opensession-admin` to automation/`runAgent`
 paths — that would let untrusted ticket text reconfigure the agent. Channel
-memory is scoped in src/agents/slack/memory.ts (public channel → shared
+memory is scoped in packages/core/opensession-server/src/agents/slack/memory.ts (public channel → shared
 `workspace` store; private channel/DM → isolated, with read-only workspace
 view) and auto-injected into the system prompt each run.
 
 Both `opensession-admin` and `opensession-sessions` are ALSO available inside
 **interactive Open Session sessions** (web UI + loops), not just Slack:
-`interactiveMcpServers(user, sessionId)` (src/server/interactive-mcp.ts)
+`interactiveMcpServers(user, sessionId)` (packages/core/opensession-server/src/server/interactive-mcp.ts)
 builds them and they are passed as `inProcessMcp` from the interactive run
 paths (`runSessionPrompt`, both `create_session` paths). They're withheld from
 automation runs **and** from interactive resumes of automation-owned sessions
@@ -281,7 +280,7 @@ automation runs **and** from interactive resumes of automation-owned sessions
 ticket text must never reach these tools. Open Session is network- and
 team-gated and already exposes all of this through its UI, so interactive
 users are treated as `isAdmin: true` there. The in-process servers are built
-with `src/server/inprocess-mcp.ts` (a thin @modelcontextprotocol/sdk wrapper)
+with `packages/core/opensession-server/src/server/inprocess-mcp.ts` (a thin @modelcontextprotocol/sdk wrapper)
 and reach opencode runs as stdio MCP proxies that forward to the in-process
 tools through the run-RPC socket; the Slack loop registers its own
 slack-context server set per run via `registerSessionMcpServers` (run-rpc.ts)
@@ -289,7 +288,7 @@ so those proxies execute the right context. The runner adds a short "Managing
 <persona.name>" context block when these tools are present so the session
 knows they exist.
 
-The `opensession-sessions` in-process MCP (src/agents/slack/sessions-tools.ts)
+The `opensession-sessions` in-process MCP (packages/core/opensession-server/src/agents/slack/sessions-tools.ts)
 is a sibling, wired the same way (interactive runs only — never automations).
 It lets the agent see and steer every *other* Open Session session: read tools
 `list_sessions` (with a `waiting` state filter and an exact `createdBy`
@@ -298,8 +297,8 @@ pending question, and transcript tail) are open to any whitelisted user; the con
 `answer_session_question`, `send_to_session`, `cancel_session`,
 `create_session` — are gated to the trusted user via `isAdmin`. The tools
 don't touch in-process state directly; they go through the `SessionControl`
-registry (src/server/session-control.ts) that
-src/server/session-control-wiring.ts populates at boot with the same helpers
+registry (packages/core/opensession-server/src/server/session-control.ts) that
+packages/core/opensession-server/src/server/session-control-wiring.ts populates at boot with the same helpers
 the WebSocket handlers use — so steering from here behaves exactly like a
 human in the web UI, and an autonomous monitor can call the same registry
 directly without the MCP. Sessions whose runs aren't owned by this process
@@ -311,8 +310,8 @@ which grants the spawn_task suite only — never answer/send/cancel/create.)
 
 ### Exception 1: papercuts
 
-`opensession-papercuts` (src/agents/slack/papercuts-tools.ts, store in
-src/server/papercuts.ts → ~/.opensession-papercuts) is the one deliberate
+`opensession-papercuts` (packages/core/opensession-server/src/agents/slack/papercuts-tools.ts, store in
+packages/core/opensession-server/src/server/papercuts.ts → ~/.opensession-papercuts) is the one deliberate
 exception to "no in-process servers for automations": an append-only friction
 log with no reads of anything sensitive and no control surface, so automation
 runs DO carry it (automations.ts registers the instances per run). Two
@@ -336,7 +335,7 @@ builder both honor the flag) — additionally carry two scoped servers:
 reads plus the `spawn_task`/`task_status`/`cancel_task` suite ONLY; the
 answer/send/cancel/create controls on other sessions stay isAdmin-gated and
 are never included) and `opensession-self`
-(src/agents/slack/self-improve-tools.ts — read own record +
+(packages/core/opensession-server/src/agents/slack/self-improve-tools.ts — read own record +
 `update_own_prompt`, own automation only, timestamped backup +
 `automation_self_update` audit event, length floor against degenerate
 rewrites; schedule/model/mode/repo stay human-only via

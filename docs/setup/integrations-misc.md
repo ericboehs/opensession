@@ -3,8 +3,8 @@
 ## Boot guards
 
 Every integration is declared in the registry
-(`src/server/integrations/registry.ts`); `loadAgents()` in `opensession.ts`
-is a loop over it (`loadIntegrations`, `src/server/integrations/load.ts`).
+(`packages/core/opensession-server/src/server/integrations/registry.ts`); `loadAgents()` in `opensession.ts`
+is a loop over it (`loadIntegrations`, `packages/core/opensession-server/src/server/integrations/load.ts`).
 Enable resolution per integration:
 
 - Every agent is **OFF by default**. An integration loads only when you enable
@@ -30,7 +30,7 @@ the agent is skipped entirely (no route worth exposing).
 
 Two separate pieces:
 
-1. **Dispute webhook agent** (`src/agents/stripe/`): route `POST
+1. **Dispute webhook agent** (`packages/core/opensession-server/src/agents/stripe/`): route `POST
    /stripe/webhook` on the [webhook server](install.md#webhook-server),
    verified with `STRIPE_WEBHOOK_SECRET`. It only acts on
    `charge.dispute.created`, firing the `stripe:charge.dispute.created`
@@ -44,7 +44,7 @@ Two separate pieces:
    matter what the agent asks for.
 
 On top of the key ceiling, the money-moving tools are **confirm-listed**
-(`STRIPE_CONFIRM_TOOLS`, `src/server/runner-shared.ts`; override with
+(`STRIPE_CONFIRM_TOOLS`, `packages/core/opensession-server/src/server/runner-shared.ts`; override with
 `policy.stripeConfirmTools` in config): `mcp__stripe__create_refund`,
 `mcp__stripe__cancel_subscription`, `mcp__stripe__update_subscription`, and
 the raw-API mutators `mcp__stripe__stripe_api_execute` /
@@ -62,13 +62,13 @@ No server code — it's a stdio MCP server in `mcp-config.json` (a wrapper
 script that loads its own credentials; the repo doesn't contain one, so
 bring your own WorkOS MCP). Automation runs
 hard-deny its entire write/impersonation surface
-(`AUTOMATION_DENIED_TOOLS` in `src/server/automations.ts` — see
+(`AUTOMATION_DENIED_TOOLS` in `packages/core/opensession-server/src/server/automations.ts` — see
 [plain.md](plain.md#the-triage-automation-least-privilege-model) for the
 exact list); reads (`get_*`, `list_*`) stay allowed.
 
 ## Grafana poller
 
-`src/agents/grafana-poller/` polls Loki for failure signatures and spins up
+`packages/core/opensession-server/src/agents/grafana-poller/` polls Loki for failure signatures and spins up
 investigation automations with a Slack control card per fresh failure.
 
 | Var | Default | Notes |
@@ -78,7 +78,7 @@ investigation automations with a Slack control card per fresh failure.
 | `LOKI_DATASOURCE_UID` | `loki` | queried via `/api/datasources/proxy/uid/<uid>/loki/api/v1/query` |
 
 Each poll is configuration on an automation (`grafanaPoll` in
-`src/server/automations.ts`): the LogQL to run (`lokiQuery`, with `$LOOKBACK`
+`packages/core/opensession-server/src/server/automations.ts`): the LogQL to run (`lokiQuery`, with `$LOOKBACK`
 substituted with the poll window), the dedup label, and the Slack channel the
 control card posts to (`slackChannel`) — so pointing the poller at your own
 failure signatures is configuration, not a code edit. Dedup state lives in
@@ -93,7 +93,7 @@ them and nothing breaks; runs just don't get those tools.
 
 ## Web push
 
-`src/server/push.ts`. Zero configuration: VAPID keys are generated on first
+`packages/core/opensession-server/src/server/push.ts`. Zero configuration: VAPID keys are generated on first
 use and stored in `~/.opensession-push/vapid.json`; per-user subscriptions in
 `~/.opensession-push/subscriptions.json` (dead ones pruned on send). The VAPID
 contact comes from `integrations.push.vapidSubject` and defaults to
@@ -104,7 +104,7 @@ requires the UI to be served over HTTPS (e.g. Tailscale
 
 ## Voice / transcription
 
-`src/server/transcribe.ts` tries providers in order, falling through on
+`packages/core/opensession-server/src/server/transcribe.ts` tries providers in order, falling through on
 failure:
 
 1. OpenAI (`OPENAI_API_KEY`; `gpt-4o-mini-transcribe`)
@@ -119,7 +119,7 @@ the app is unaffected.
 
 ## AWS creds for runs (`AGENT_AWS_REGION`)
 
-`src/server/aws-creds.ts` mints short-lived instance-role credentials for
+`packages/core/opensession-server/src/server/aws-creds.ts` mints short-lived instance-role credentials for
 agent runs that opt into AWS (`aws: true`), injecting `AWS_REGION` /
 `AWS_DEFAULT_REGION` (resolved `AGENT_AWS_REGION` → `AWS_REGION` →
 `integrations.aws.region` in config → default `us-east-1`) plus

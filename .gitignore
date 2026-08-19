@@ -21,7 +21,7 @@ node_modules/.bin/codex
 .frontend-dist/
 .website-dist/
 .website-dist-stage/
-website/.demo-tailwind.css
+packages/clients/website/.demo-tailwind.css
 node_modules
 __pycache__/
 *.pyc

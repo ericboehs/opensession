@@ -13,10 +13,18 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { platform } from "os";
 import { LAUNCHD_LABEL, renderPlist, renderUnit } from "./service";
 import { ENV_PATH, REPO_ROOT } from "./paths";
 
-describe("systemd unit", () => {
+// Both renderers interpolate host paths and the local bun, so on Windows they
+// produce a unit and a plist that could never be installed anywhere. Neither
+// service manager exists there; a Windows Runner is a scheduled task. Asserting
+// their shape on win32 measures nothing, so skip rather than loosen the
+// assertions that catch a real regression on the platforms that install them.
+const onServiceHost = platform() !== "win32";
+
+describe.skipIf(!onServiceHost)("systemd unit", () => {
   test("rewrites every host-specific directive", async () => {
     const unit = await renderUnit();
 
@@ -29,7 +37,7 @@ describe("systemd unit", () => {
 
     expect(unit).toContain(`WorkingDirectory=${REPO_ROOT}`);
     expect(unit).toContain(`EnvironmentFile=${ENV_PATH}`);
-    expect(unit.match(/^ExecStart=(\S+) run opensession\.ts$/m)?.[1]).toMatch(/bun$/);
+    expect(unit.match(/^ExecStart=(\S+) run packages\/core\/opensession-server\/opensession\.ts$/m)?.[1]).toMatch(/bun$/);
   });
 
   test("preserves the tuning directives that encode real incidents", async () => {
@@ -52,7 +60,7 @@ describe("systemd unit", () => {
   });
 });
 
-describe("launchd plist", () => {
+describe.skipIf(!onServiceHost)("launchd plist", () => {
   test("is well-formed and carries the expected keys", () => {
     const plist = renderPlist();
     expect(plist).toStartWith('<?xml version="1.0"');
@@ -80,7 +88,7 @@ describe("launchd plist", () => {
     // flags and no secrets — inert, and hard to diagnose.
     expect(plist).toContain(ENV_PATH);
     expect(plist).toContain("set -a");
-    expect(plist).toMatch(/exec \S*bun run opensession\.ts/);
+    expect(plist).toMatch(/exec \S*bun run packages\/core\/opensession-server\/opensession\.ts/);
   });
 
   test("escapes XML so a path with & or < cannot corrupt the file", () => {

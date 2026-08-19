@@ -5,9 +5,9 @@ export async function buildWebsiteTailwind(root: string): Promise<void> {
 		[
 			join(root, "node_modules", ".bin", "tailwindcss"),
 			"-i",
-			join(root, "src", "frontend", "styles", "tailwind.css"),
+			join(root, "packages", "core", "opensession-server", "src", "frontend", "styles", "tailwind.css"),
 			"-o",
-			join(root, "website", ".demo-tailwind.css"),
+			join(root, "packages", "clients", "website", ".demo-tailwind.css"),
 			"--minify",
 		],
 		{ cwd: root, stdout: "pipe", stderr: "pipe" },

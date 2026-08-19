@@ -5,11 +5,11 @@ everything else is optional and talks to the same instance.
 
 | Client | Where | Needs building? |
 | --- | --- | --- |
-| Web UI | `src/frontend/` | no — the server builds and serves it |
+| Web UI | `packages/core/opensession-server/src/frontend/` | no — the server builds and serves it |
 | PWA | same web UI, installed to a home screen | no |
-| Electron desktop shell | `os1-mac/` | yes |
-| Native Swift app (iOS + macOS) | `os1-ios/` | yes, with Xcode |
-| Chrome extension | `os1-chrome/` | no — load unpacked |
+| Electron desktop shell | `packages/clients/mac/` | yes |
+| Native Swift app (iOS + macOS) | `packages/clients/ios/` | yes, with Xcode |
+| Chrome extension | `packages/clients/chrome/` | no — load unpacked |
 
 **All of them let you set the server address**, and the versions in this
 repository default to `http://127.0.0.1:3850` rather than anyone else's
@@ -39,7 +39,7 @@ is why it feels like an app rather than a website in a frame.
 
 ## Electron desktop shell
 
-`os1-mac/` — a thin native window around the web UI. It exists for the things a
+`packages/clients/mac/` — a thin native window around the web UI. It exists for the things a
 browser tab cannot do: a dock icon, native window materials, deep links
 (`opensession://`), and staying out of the way of your browser's tab bar.
 
@@ -50,7 +50,7 @@ the status page, bring the question back. `OS1_URL` overrides the stored answer
 for one run.
 
 ```sh
-cd os1-mac && bun install && bun start
+cd packages/clients/mac && bun install && bun start
 ```
 
 Despite the directory name it is an ordinary Electron app; the macOS-specific
@@ -58,7 +58,7 @@ parts are signing and notarisation, not the runtime.
 
 ## Native Swift app (iOS and macOS)
 
-`os1-ios/` — one SwiftUI codebase, two targets. This is *not* a web view: it is
+`packages/clients/ios/` — one SwiftUI codebase, two targets. This is *not* a web view: it is
 a native client against the REST and WebSocket surface, which is why it feels
 different from the PWA and why it can do things like native settings panes and
 proper background behaviour.
@@ -66,7 +66,7 @@ proper background behaviour.
 Set the server under Settings → Server. There are `OS1_SERVER` / `OS1_TOKEN`
 environment overrides for simulator runs, which are deliberately not persisted.
 
-Read `os1-ios/AGENTS.md` before changing it — the build and verification
+Read `packages/clients/ios/AGENTS.md` before changing it — the build and verification
 workflow, the release trigger, and some load-bearing performance invariants live
 there rather than being obvious from the code.
 
@@ -75,7 +75,7 @@ come from `.github/workflows/os1-ios-testflight.yml`.
 
 ## Chrome extension
 
-`os1-chrome/` — an MV3 side panel. Its job is capturing context from the page
+`packages/clients/chrome/` — an MV3 side panel. Its job is capturing context from the page
 you are looking at: a screenshot, or a picked element complete with its React
 fiber info, handed straight into a new session. For debugging a web app with an
 agent, that is a much better starting prompt than a description.
@@ -83,7 +83,7 @@ agent, that is a much better starting prompt than a description.
 Loaded unpacked, never from the Web Store:
 
 ```
-chrome://extensions → Developer mode → Load unpacked → os1-chrome/
+chrome://extensions → Developer mode → Load unpacked → packages/clients/chrome/
 ```
 
 Set the server in the side panel's Server field. It authenticates with a Bearer

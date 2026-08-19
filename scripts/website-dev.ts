@@ -5,9 +5,10 @@ import { buildWebsiteTailwind } from "./website-tailwind";
 
 const root = join(import.meta.dir, "..");
 await buildWebsiteTailwind(root);
-const [{ default: homepage }, { default: productDemo }] = await Promise.all([
-	import("../website/index.html"),
-	import("../website/product-demo.html"),
+const [{ default: homepage }, { default: productDemo }, { default: setup }] = await Promise.all([
+	import("../packages/clients/website/index.html"),
+	import("../packages/clients/website/product-demo.html"),
+	import("../packages/clients/website/setup.html"),
 ]);
 
 const port = Number(process.env.PORT || 3865);
@@ -50,6 +51,9 @@ Bun.serve({
 	routes: {
 		"/": homepage,
 		"/product-demo.html": productDemo,
+		"/setup": setup,
+		"/setup/": setup,
+		"/setup.html": setup,
 		"/api/waitlist": { POST: joinWaitlist },
 	},
 	development: {

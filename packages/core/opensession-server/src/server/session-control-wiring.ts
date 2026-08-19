@@ -1,0 +1,681 @@
+/**
+ * Wires the SessionControl registry (src/server/session-control.ts) — the
+ * surface behind the opensession-sessions MCP — into the same in-process state and
+ * helpers the WebSocket handlers use, so a management session lists/steers/
+ * answers/creates exactly like a human in the web UI. Also keeps the linked
+ * Slack-channel index + inbound-message bridge fresh. Module-scope side
+ * effects: re-run on every hot reload (cheap, and keeps closures current).
+ *
+ * This module holds NO allowlist and gates nothing. Registering the surface is
+ * unconditional; who may reach it is decided entirely at the wiring site —
+ * opensession-sessions goes to interactive runs only (interactiveMcpServers in
+ * interactive-mcp.ts, whose run-rpc builder fails closed for automation-owned
+ * sessions). So a capability added to a callback here reaches every run kind
+ * that already carries the server, and none that doesn't. Widen or narrow the
+ * exposure there, never here.
+ */
+
+import { AUTO_CONTINUE_USER } from "./auto-continue";
+import { personaName } from "./config";
+import { cancelAgentRun, isAgentSessionBusy, steerAgentRun } from "./agent-runner";
+import { pendingAsks } from "./asks";
+import { relinkAskThreads } from "./human-asks";
+import { SESSION_EFFORTS, type SessionEffort, interactiveDefaultModel, providerFor, resolveModel } from "./models";
+import { liftUserStop, promptQueues, recordSteer, requeueSteerReceipts, stoppedSessions } from "./queue-state";
+import { enqueuePrompt, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
+import { parseImageDataUrls } from "./uploads";
+import { type Sandbox } from "./sandbox";
+import { isRemoteSandboxProvider, resolveRequestedSandbox } from "./sandbox/config";
+import { resolveInteractiveSandbox } from "./sandbox/defaults";
+import { findSession, getCachedSessions, invalidateSessionsCache, touchNativeSession } from "./session-cache";
+import { type SessionState, type SessionSummary, registerSessionControl } from "./session-control";
+import { type ResolvedCreate, forkHandoffContext, openCreatedSession, resolveForkContext, resolvePinnedAccountId } from "./session-create";
+import { resolveSessionRepoContext, workspaceOwningWorktree } from "./session-repos";
+import { engineUserTexts, getAllSessions, mergedSessionTranscript } from "./sessions";
+import { rebuildIndex } from "./slack-links";
+import { handleSlashCommand } from "./slash-commands";
+import { type UnifiedSession } from "./types";
+import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
+import { ownedWorktree } from "./session-workspace";
+import { createWorktree, ensureAskCheckout, ensureScratchDir, getRepo, listWorktrees, repoForPath, repoForPathOrNull, resolveUniqueBranch } from "./worktree";
+import { broadcastToSession } from "./ws-hub";
+import { randomUUIDv7 } from "bun";
+import { existsSync, watch } from "fs";
+import { newSessionId } from "./paths";
+import { branchNameFromPrompt } from "./suggest-branch";
+
+/** Derive the at-a-glance state + control surface for a session (for the MCP). */
+function buildSummary(s: UnifiedSession): SessionSummary {
+	const busyHere = isAgentSessionBusy(s.claudeSessionId, s.codexThreadId, s.id);
+	// External runs (CLI in tmux, another process) show as running via PID but
+	// aren't in our activeRuns — observe-only, can't steer/cancel them.
+	const runningExternal = !!s.isRunning && !busyHere;
+	const pending = pendingAsks.get(s.id);
+	const queuedCount = promptQueues.get(s.id)?.length || 0;
+
+	let state: SessionState;
+	if (s.archived) state = "archived";
+	else if (pending) state = "waiting_question";
+	else if (busyHere || s.isRunning) state = "running";
+	else if (queuedCount > 0) state = "queued";
+	else state = "idle";
+
+	return {
+		...s,
+		state,
+		queuedCount,
+		controllable: !runningExternal,
+		...(pending
+			? {
+					pendingQuestion: {
+						questionId: pending.questionId,
+						questions: pending.questions,
+					},
+				}
+			: {}),
+	};
+}
+
+// --- Session control surface (powers the opensession-sessions MCP) ---
+// Wire the Slack thread index (thread replies → owning session). Re-run on
+// every hot reload (cheap) so the index stays fresh.
+rebuildIndex(getAllSessions());
+// rebuildIndex() clears the index, so replay the links the session files don't
+// hold: a human-ask DM thread belongs to the session that raised the ask.
+relinkAskThreads();
+
+// Wires the MCP's tools into the same in-process state and helpers the
+// WebSocket handlers use, so a management session steers/answers/creates the
+// exact same way a human does in the web UI. See src/server/session-control.ts.
+registerSessionControl({
+	listSessions: () =>
+		getCachedSessions().map(buildSummary),
+
+	getSession: (id) => {
+		const s = findSession(id);
+		return s ? buildSummary(s) : undefined;
+	},
+
+	transcriptTail: (id, n) => {
+		const s = findSession(id);
+		if (!s) return [];
+		// Engine-spanning read (file + opencode store) — same as the transcript
+		// route, so get_session works on opencode/migrated sessions too.
+		return mergedSessionTranscript(s).slice(-Math.max(0, n));
+	},
+
+	answerQuestion: (id, answers) => {
+		const pending = pendingAsks.get(id);
+		if (!pending) return false;
+		// resolve() clears the timeout, deletes the entry and unblocks makeAskHandler,
+		// which broadcasts ask_resolved and lets the run continue with these answers.
+		pending.resolve(answers && typeof answers === "object" ? answers : null);
+		return true;
+	},
+
+	deliverToSession: async (id, content, user, opts) => {
+		const deliveryId = opts?.deliveryId || randomUUIDv7();
+		const session = findSession(id);
+		if (!session)
+			return { status: "error" as const, message: "No session with that id.", deliveryId };
+
+		// Slash commands (/loop, /goal, /model, /help) are handled by opensession
+		// itself, exactly like the WebSocket prompt path — checked BEFORE the
+		// busy branch so "/loop stop" configures the session instead of being
+		// steered into its running turn as literal prompt text. This is what
+		// lets a monitor session manage loops (its own and others') via the
+		// opensession-sessions send_to_session tool.
+		const notice = handleSlashCommand(session, String(content || "").trim(), user);
+		if (notice !== null) {
+			invalidateSessionsCache();
+			return { status: "handled" as const, message: notice, deliveryId };
+		}
+
+		// A delivery is an explicit next action on this session, so it lifts a
+		// prior Stop here rather than inside the run the Stop prevents: the busy
+		// branch below only enqueues, and drainQueue parks at the latch, which
+		// would leave the message queued forever.
+		liftUserStop(id);
+
+		const attributed = user ? `[${user}] ${content}` : content;
+		// Disk-staged files can only be supplied to a fresh turn. Never fold them
+		// into a steer request, where the runner has no file staging channel.
+		const hasFiles = Array.isArray(opts?.files) && opts.files.length > 0;
+
+		if (
+			isAgentSessionBusy(
+				session.claudeSessionId,
+				session.codexThreadId,
+				session.id,
+			)
+		) {
+			// Busy + owned here → fold into the running turn (delivered at the next
+			// stopping point). Otherwise queue and drain when the external run ends.
+			// busy: "queue" opts out of steering; Slack-thread replies always set it
+			// (and never steer regardless): the in-thread answer mirror only fires
+			// on a turn that carries the slackReplyTo, and a steered message can't
+			// (it folds into a turn that's already running).
+			if (
+				opts?.busy !== "queue" &&
+				!opts?.slackReplyTo &&
+				!hasFiles &&
+				steerAgentRun(
+					[session.claudeSessionId, session.codexThreadId, session.id],
+					attributed,
+					opts?.images,
+				)
+			) {
+				recordSteer(id, { id: deliveryId, content, user, images: opts?.imageUrls });
+				return {
+					status: "steered" as const,
+					message: "Folded into the running turn.",
+					deliveryId,
+				};
+			}
+			enqueuePrompt(id, {
+				id: deliveryId,
+				content,
+				user,
+				images: opts?.imageUrls,
+				files: opts?.files,
+				contextSessions: opts?.contextSessions,
+				slackReplyTo: opts?.slackReplyTo,
+				...(opts?.hold ? { hold: true } : {}),
+				...(opts?.reviewHandoff ? { reviewHandoff: true } : {}),
+			});
+			watchExternalRunAndDrain(id);
+			return {
+				status: "queued" as const,
+				message: "Queued behind the current run.",
+				deliveryId,
+			};
+		}
+		// Open Session sessions with no engine id are fresh sessions — the first prompt
+		// starts a new conversation (see runSessionPrompt).
+		if (
+			providerFor(session.model) === "claude" &&
+			!session.claudeSessionId &&
+			session.source !== "opensession"
+		) {
+			return {
+				status: "error" as const,
+				message: "Session has no Claude session to resume yet.",
+				deliveryId,
+			};
+		}
+
+		// Idle → start a fresh turn in the background; don't block the tool call on
+		// the whole run finishing.
+		void runSessionPromptAndDrain(
+			id,
+			content,
+			user,
+			opts?.images,
+			opts?.files,
+			opts?.contextSessions,
+			opts?.slackReplyTo,
+		).catch((e) => console.error(`[sessions-mcp] deliver to ${id} failed:`, e));
+		return {
+			status: "started" as const,
+			message: "Started a new turn on the session.",
+			deliveryId,
+		};
+	},
+
+	cancelSession: (id) => {
+		const session = findSession(id);
+		if (!session) return false;
+		// Same park as the UI Stop: without it the run-end guards (queue drain,
+		// orphaned-steer redelivery in maybeQueueAutoContinue) would immediately
+		// start a new turn on the session that was just deliberately cancelled.
+		// Any later explicit prompt lifts it (runSessionPrompt deletes the mark).
+		stoppedSessions.add(id);
+		const cancelled = cancelAgentRun(
+			session.claudeSessionId,
+			session.codexThreadId,
+			session.id,
+		);
+		requeueSteerReceipts(id, engineUserTexts(session));
+		return cancelled;
+	},
+
+	createSession: async ({
+		prompt,
+		branch,
+		repo: repoInput,
+		repoLess,
+		mode,
+		model: modelInput,
+		effort: effortInput,
+		fastMode: fastModeInput,
+		images: imageUrls,
+		mcpServers,
+		workspaceId,
+		isolatedWorktree,
+		parentSessionId,
+		spawnedBy: spawnedByInput,
+		reportBack,
+		user,
+		sandbox,
+		forkFrom,
+		accountId: accountIdInput,
+	}) => {
+		// Fork: branch a new session off an existing one — same rules as the
+		// web create (shares the source's cwd/branch/model; Claude sources are
+		// cloned via SDK forkSession, others get a transcript handoff). An
+		// unknown source id fails the create loudly.
+		const fork = resolveForkContext(forkFrom);
+		// Scratch: repo-less sessions (feed-item workspaces — the feeds design).
+		const isScratch = fork ? fork.source.mode === "scratch" : mode === "scratch";
+		const isAsk = fork
+			? !isScratch && fork.source.mode !== "code"
+			: !isScratch && mode !== "code";
+		const isRepoLess = fork
+			? isScratch || fork.source.repoLess === true
+			: isScratch || (isAsk && repoLess === true);
+		const model = fork
+			? fork.source.model
+			: (modelInput ? resolveModel(String(modelInput))?.id : undefined) ||
+				interactiveDefaultModel();
+		// Same validation as the web palette's create_session: unknown efforts
+		// are dropped rather than persisted; images arrive as data URLs. Forks
+		// inherit the source's effort/fast-mode/account pin, like the web path.
+		const createEffort = fork
+			? fork.source.effort
+			: typeof effortInput === "string" &&
+					(SESSION_EFFORTS as readonly string[]).includes(
+						effortInput.trim().toLowerCase(),
+					)
+				? (effortInput.trim().toLowerCase() as SessionEffort)
+				: undefined;
+		const createFastMode = fork
+			? fork.source.fastMode === true
+			: fastModeInput === true;
+		// Pinned provider account: validated exactly like the web palette
+		// (mismatched/unknown/foreign ids drop to the pool).
+		const createAccountId = fork
+			? fork.source.accountId
+			: resolvePinnedAccountId(model, accountIdInput, user);
+		const images = parseImageDataUrls(imageUrls);
+		const parentSession = parentSessionId ? findSession(parentSessionId) : null;
+		// Attribution only (CreateSessionInput.spawnedBy): the session whose agent
+		// asked for this one, recorded even when the create was standalone and
+		// carries no parent link. It is what lets the sidebar keep an agent's own
+		// helper sessions — a scratch session spun up mid-run — out of the human's
+		// rows. The Desk is deliberately exempt: it delegates on the user's behalf,
+		// so the work it spawns is the user's own and stays visible.
+		const spawnerSession = spawnedByInput ? findSession(spawnedByInput) : null;
+		const spawnedBy =
+			spawnerSession && !spawnerSession.desk ? spawnerSession.id : undefined;
+		// Explicit workspace join (the native apps' "new session in this workspace" —
+		// this path's equivalent of the web tab strip's "+"). An unknown id is a
+		// hard error: falling back to a standalone create would silently mint the
+		// duplicate sidebar row the caller asked to avoid.
+		const joinedWorkspace = workspaceId ? getWorkspace(workspaceId) : null;
+		if (workspaceId && !joinedWorkspace) {
+			throw new Error(`No such workspace: ${workspaceId}`);
+		}
+		// A child defaults to the parent's primary repo, but an explicit repo —
+		// or a prompt that names exactly one attached worktree — inherits that
+		// exact repo context. This is load-bearing for reviewers of in-progress
+		// attached-repo work: a fresh ask checkout cannot see those changes.
+		const parentRepoContext = parentSession
+			? resolveSessionRepoContext(parentSession, repoInput, prompt)
+			: null;
+		// A joined workspace's repo outranks the global default: a caller that
+		// names only a workspace means "a session in there", and defaulting to the
+		// configured default repo would mint a foreign worktree inside it.
+		const repo = getRepo(
+			repoInput ||
+				joinedWorkspace?.repo ||
+				parentRepoContext?.repo ||
+				parentSession?.repo,
+		);
+		// Sandbox opt-in: true = config default provider, or an explicit
+		// provider id validated against the config — an unconfigured pick fails
+		// the create loudly instead of silently running on the host. Forks
+		// never sandbox — they share/fork the source session's engine state
+		// and cwd (same rule as the web create).
+		const sandboxResolved = fork
+			? resolveRequestedSandbox(undefined, repo.id, model)
+			: resolveInteractiveSandbox(sandbox, user, repo.id, model);
+		if (!sandboxResolved.ok) throw new Error(sandboxResolved.error);
+		const sandboxProvider = sandboxResolved.provider;
+		const remoteSandbox = isRemoteSandboxProvider(sandboxProvider);
+		const parentWorkspace =
+			parentSession?.workspaceId
+				? getWorkspace(parentSession.workspaceId)
+				: null;
+		// The workspace this session lands in: the one it explicitly joins, else the
+		// parent's. Everything a session inherits from its workspace — repo context,
+		// worktree, feed refs and their MCP scoping — reads from this.
+		const contextWorkspace = joinedWorkspace ?? parentWorkspace;
+		// Least privilege: sessions in feed-item workspaces default their MCP
+		// allowlist to the feed's declared servers, else inherit the parent's
+		// scoping — never widen back to the full mcp-config.
+		const { feedMcpServersForRefs } = await import("./feeds");
+		const effectiveMcpServers = mcpServers?.length
+			? mcpServers
+			: contextWorkspace?.externalRefs?.length
+				? ((await feedMcpServersForRefs(contextWorkspace.externalRefs)) ??
+					parentSession?.mcpServers)
+				: parentSession?.mcpServers;
+
+		let wtPath: string;
+		let sessionBranch = branch || "";
+		const sharedParentContext =
+			parentSession &&
+			parentSession.mode !== "ask" &&
+			parentSession.mode !== "scratch" &&
+			parentRepoContext?.repo === repo.id &&
+			existsSync(parentRepoContext.dir)
+				? parentRepoContext
+				: null;
+		if (fork) {
+			// Share the source's cwd so the fork sees the same code state.
+			wtPath = fork.source.worktreeDir || repo.repo;
+			sessionBranch = fork.source.branch || "";
+		} else if (isRepoLess) {
+			// Repo-less sessions share their workspace's scratch dir when there is
+			// one; standalone creates get a fresh directory. Ask remains read-only,
+			// while scratch keeps its normal write permissions.
+			wtPath = ensureScratchDir(
+				joinedWorkspace?.id || parentSession?.workspaceId || randomUUIDv7(),
+			);
+			sessionBranch = "";
+		} else if (isAsk) {
+			// A child reviewer shares the selected parent worktree read-only so
+			// it sees uncommitted/current-branch work. Standalone ask sessions
+			// keep using the pinned default-branch checkout.
+			if (sharedParentContext) {
+				wtPath = sharedParentContext.dir;
+				sessionBranch = sharedParentContext.branch || sessionBranch;
+			} else {
+				wtPath = await ensureAskCheckout(repo.id);
+			}
+		} else {
+			// Same workspace ⇒ same worktree: a code session joining a workspace (its
+			// parent's, or one it named) shares that worktree/branch instead of
+			// creating a fresh one. Only when the repo matches — a session explicitly
+			// targeting another repo still gets its own isolated worktree there.
+			const shared =
+				sharedParentContext
+					? {
+							dir: sharedParentContext.dir,
+							branch: sharedParentContext.branch,
+						}
+					: contextWorkspace?.worktreeDir &&
+				repoForPath(contextWorkspace.worktreeDir).id === repo.id &&
+				existsSync(contextWorkspace.worktreeDir)
+					? {
+							dir: contextWorkspace.worktreeDir,
+							branch: contextWorkspace.branch,
+						}
+					: parentSession?.worktreeDir &&
+							parentSession.mode !== "ask" &&
+							repoForPath(parentSession.worktreeDir).id === repo.id &&
+							existsSync(parentSession.worktreeDir)
+						? { dir: parentSession.worktreeDir, branch: parentSession.branch }
+						: null;
+			if (shared) {
+				wtPath = shared.dir;
+				sessionBranch = shared.branch || sessionBranch;
+			} else {
+				if (!sessionBranch.trim()) {
+					sessionBranch = await branchNameFromPrompt(prompt);
+					sessionBranch = await resolveUniqueBranch(sessionBranch, repo.id);
+				}
+				const worktrees = await listWorktrees(repo.id);
+				wtPath = worktrees.find((w) => w.branch === sessionBranch)?.path || "";
+				// `isolated` only says anything on a shared-checkout repo, where it
+				// is the difference between this session getting a tree of its own
+				// and joining every other session in the live main checkout.
+				if (!wtPath)
+					wtPath = await createWorktree(sessionBranch, repo.id, {
+						...(isolatedWorktree ? { isolated: true } : {}),
+					});
+			}
+		}
+		// The first code session in a joined workspace that owns no worktree yet (an
+		// ask-style or ticket workspace) materializes it, so the next session joining
+		// the workspace inherits THIS worktree instead of minting a second one and
+		// silently splitting the tabs across two trees. Only an isolated worktree
+		// is owned — never a shared main/ask checkout, which every other session in
+		// the repo uses too.
+		if (
+			joinedWorkspace &&
+			!joinedWorkspace.worktreeDir &&
+			!isAsk &&
+			!isScratch &&
+			ownedWorktree(wtPath)
+		) {
+			updateWorkspace(joinedWorkspace.id, {
+				worktreeDir: wtPath,
+				...(sessionBranch ? { branch: sessionBranch } : {}),
+			});
+		}
+
+		const bksId = newSessionId();
+		// "auto-continue" is a turn's sender, not a person. A session spawned
+		// from a resumed turn belongs to whoever owns the session that spawned
+		// it, not to the sentinel that woke it: owned by the sentinel it has no
+		// person at all, so nothing it goes on to commit can be credited either
+		// (commitAuthorFor falls back to exactly this field).
+		const creator = user && user !== AUTO_CONTINUE_USER ? user : null;
+		const sessionCreatedBy =
+			creator ||
+			parentSession?.startedBy ||
+			parentSession?.createdBy ||
+			personaName();
+		const sessionCreatedAt = new Date().toISOString();
+		const title = prompt.trim().split("\n")[0].slice(0, 80);
+		// The Desk (desk.ts) is an orchestrator living in an overlay, not a piece
+		// of work: it carries no workspace, and a worker it spawns is its own
+		// independent thing. So a desk parent contributes NOTHING to the workspace
+		// resolution below — no inherited id, no name seed, no back-fill. Without
+		// this the workers landed in (or minted) a workspace named "Desk", which
+		// is exactly how the Desk surfaced in the sidebar's Workspaces list.
+		const deskParent = !!parentSession?.desk;
+		// A joined workspace is the session's workspace, which also skips the mint /
+		// adopt block below — and with it the auto-naming: a session that merely
+		// joins an existing workspace must never rename it. A fork lands next to
+		// its source in the same workspace (same rule as the web create).
+		let resolvedWorkspaceId =
+			joinedWorkspace?.id ||
+			fork?.source.workspaceId ||
+			(deskParent ? null : parentSession?.workspaceId) ||
+			null;
+		// A workspace minted below from THIS session's provisional first line is
+		// renamed once the generated summary lands, exactly like the web create
+		// path — the sidebar rows (web and native) are titled by the workspace,
+		// so without this a session started from the native apps wears its raw
+		// 80-character prompt for life while its own title is a short summary.
+		let autoNamedWorkspace: Workspace | null = null;
+		if (!resolvedWorkspaceId) {
+			// Adopt the workspace that already owns the (parent's or this child's)
+			// worktree before minting a duplicate one over it. Failing that, mint —
+			// every session lives in a workspace (session-workspace.ts), so a parentless
+			// child, or one hanging off a workspace-less slack/linear session, gets
+			// wrapped here instead of surfacing as an orphan for the read-side
+			// sweep to adopt. The parent's identity seeds the name when there is
+			// one: the pair is one piece of work.
+			// The Desk lends nothing to a minted workspace (see deskParent above):
+			// seeding from it would name the workspace "Desk" — and a
+			// parent-seeded name never arms autoNamedWorkspace, so that name
+			// would stick for life instead of being replaced by the generated
+			// summary. Treating it as parentless makes the child name its own
+			// workspace, which is what a delegated worker deserves.
+			const wsParent = deskParent ? null : parentSession;
+			const owned =
+				workspaceOwningWorktree(wsParent?.worktreeDir) ??
+				workspaceOwningWorktree(wtPath);
+			if (owned) resolvedWorkspaceId = owned.id;
+			else {
+				const branchForWs = wsParent?.branch || sessionBranch;
+				// Only an isolated worktree is owned — never a shared main/ask
+				// checkout, which every other session there uses too.
+				const dir =
+					ownedWorktree(wsParent?.worktreeDir) ?? ownedWorktree(wtPath);
+				const wsName =
+					wsParent?.title || wsParent?.branch || title || "Workspace";
+				const ws = createWorkspace({
+					name: wsName,
+					...(isRepoLess ? {} : { repo: wsParent?.repo || repo.id }),
+					createdBy:
+						creator || wsParent?.createdBy || wsParent?.startedBy || "Anonymous",
+					...(branchForWs ? { branch: branchForWs } : {}),
+					...(dir ? { worktreeDir: dir } : {}),
+				});
+				resolvedWorkspaceId = ws.id;
+				// Only when the name was seeded from this session's own first line
+				// (compared before createWorkspace trims it): a workspace named
+				// after the parent's identity belongs to the parent's work, and
+				// this child's summary must not rename it.
+				if (wsName === title) autoNamedWorkspace = ws;
+			}
+			// …but never drag the Desk into its worker's workspace: that would put
+			// it right back in the sidebar, and touchNativeSession would bump its
+			// lastActivity on every delegation too.
+			if (resolvedWorkspaceId && !deskParent && parentSession?.source === "opensession")
+				touchNativeSession(parentSession.id, { workspaceId: resolvedWorkspaceId });
+		}
+
+		// @session:<id> mentions in a create_session prompt (e.g. a monitor
+		// session spun up to watch others) get the same resolving footer as
+		// prompts on existing sessions — this create path bypasses
+		// runSessionPromptInner.
+		const createMentionsNote = sessionMentionsNote(prompt);
+		let openingPrompt = createMentionsNote
+			? `${prompt}\n\n${createMentionsNote}`
+			: prompt;
+		// A session joining a workspace opens with the workspace's own context, the
+		// same as the web create: the feed item it hangs off, and the support
+		// ticket it belongs to. Without this a "new tab" in a ticket workspace is
+		// an amnesiac session that has to be told what it's looking at.
+		if (joinedWorkspace) {
+			const { wrapContext } = await import("./prompt-context");
+			if (joinedWorkspace.externalRefs?.length) {
+				const { externalRefsOpeningContext } = await import("./feeds");
+				const refsContext = await externalRefsOpeningContext(
+					joinedWorkspace.externalRefs,
+					{ scratch: isScratch, user },
+				);
+				if (refsContext) openingPrompt += `\n\n${wrapContext(refsContext, "external-refs")}`;
+			}
+			if (joinedWorkspace.plainThreadId) {
+				const threadId = joinedWorkspace.plainThreadId;
+				try {
+					const { getThreadWithMessages, formatThreadContext } = await import(
+						"../agents/plain/api"
+					);
+					const thread = await getThreadWithMessages(threadId);
+					openingPrompt += `\n\n${wrapContext(
+						`This session was opened from a Plain support ticket. Ticket context:\n\n${formatThreadContext(thread, true)}`,
+						"ticket",
+					)}`;
+				} catch (e) {
+					console.error(
+						`[create_session] Plain thread lookup failed for ${threadId}:`,
+						e,
+					);
+					openingPrompt += `\n\n${wrapContext(
+						`This session was opened from Plain support ticket ${threadId} (the context lookup failed — use the plain MCP tools to fetch the thread).`,
+						"ticket",
+					)}`;
+				}
+			}
+		}
+		// A non-clonable fork hands the source transcript over in the opening
+		// prompt instead (same as the web create).
+		if (fork?.needsHandoff) {
+			openingPrompt += `\n\n${await forkHandoffContext(fork)}`;
+		}
+
+		const spec: ResolvedCreate = {
+			id: bksId,
+			title,
+			titlePrompt: prompt,
+			openingPrompt,
+			user,
+			createdBy: sessionCreatedBy,
+			createdAt: sessionCreatedAt,
+			mode: isScratch
+				? ("scratch" as const)
+				: isAsk
+					? ("ask" as const)
+					: ("code" as const),
+			wtPath,
+			// Ask/scratch sessions record no branch (a shared parent worktree's
+			// branch still drives the branch note + HEAD-drift compare below).
+			persistBranch: isAsk || isScratch ? "" : sessionBranch,
+			branch: sessionBranch,
+			// Repo-less sessions record none (wtPath is a plain dir no repo
+			// owns — scratch, or a repo-less ask session being forked). A
+			// fork's worktree names its repo: the source may live elsewhere.
+			repoId: isRepoLess
+				? undefined
+				: fork
+					? repoForPathOrNull(wtPath)?.id
+					: repo.id,
+			memoryRepoIds: [repo.id],
+			workspaceId: resolvedWorkspaceId || undefined,
+			announceWorkspaceId: resolvedWorkspaceId || undefined,
+			autoNameWorkspace: autoNamedWorkspace,
+			parentSessionId,
+			spawnedBy,
+			reportBack,
+			model,
+			effort: createEffort,
+			fastMode: createFastMode || undefined,
+			accountId: createAccountId,
+			images,
+			// Feed-item linkage follows the session's workspace (Video tab +
+			// sidebar feed-row join — the feeds design).
+			externalRefs: contextWorkspace?.externalRefs,
+			// A session in a support-ticket workspace is on that ticket too —
+			// same rule as the web tab strip's "+".
+			plainThreadId: joinedWorkspace?.plainThreadId,
+			// Persist the MCP scoping so follow-up prompts keep it.
+			persistMcpServers: effectiveMcpServers?.length
+				? effectiveMcpServers
+				: undefined,
+			// Unscoped creates leave this undefined (read as "all" downstream,
+			// like the web path) — the sandbox launcher fail-closes to [].
+			runMcpServers: effectiveMcpServers,
+			sandboxProvider,
+			volumeWorkspace: false,
+			remoteSandbox,
+			// The worktree was created synchronously above — the tool caller
+			// gets an id whose workspace already exists.
+			needsWorktree: false,
+			fork: fork?.canFork
+				? {
+						engineSessionId: fork.source.claudeSessionId!,
+						resumeAt: fork.messageId,
+					}
+				: undefined,
+			finish: "auto-continue-guard",
+		};
+
+		// Run in the background; watchers (web UI) see the live stream, the same
+		// as a UI-created session. The tool returns once the session file exists
+		// (the announce), while engine startup continues behind it.
+		return await new Promise<{ id: string; createdBy: string; createdAt: string }>(
+			(resolve, reject) => {
+				openCreatedSession(spec, {
+					announce: (info) =>
+						resolve({
+							id: info.id,
+							createdBy: info.createdBy,
+							createdAt: info.createdAt,
+						}),
+					emit: (m) => broadcastToSession(bksId, { ...m, sessionId: bksId }),
+					fail: (message) => reject(new Error(message)),
+				}).catch((e) => {
+					console.error(`[sessions-mcp] create session ${bksId} failed:`, e);
+					reject(e);
+				});
+			},
+		);
+	},
+});

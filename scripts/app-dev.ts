@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const MAC_APP_ROOT = join(ROOT, "os1-mac");
+const MAC_APP_ROOT = join(ROOT, "packages", "clients", "mac");
 // electron-builder names the bundle and its executable after productName, so
 // read that rather than repeating a label here: it is the app's visible name,
 // and it moves.

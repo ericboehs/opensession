@@ -1,6 +1,6 @@
 # Slack
 
-The Slack agent (`src/agents/slack/`) is the main chat surface: DMs and
+The Slack agent (`packages/core/opensession-server/src/agents/slack/`) is the main chat surface: DMs and
 @-mentions become agent runs, worktree channels drive coding sessions, and
 watched channels fire automations.
 
@@ -11,7 +11,7 @@ flow anywhere in the Slack agent.
 
 | Var | Required | Notes |
 | --- | --- | --- |
-| `SLACK_BOT_TOKEN` | yes | `xoxb-…`; used as Bearer for every Web API call (`src/agents/slack/slack-api.ts`). Missing → the agent loads and every Slack call fails with logged auth warnings (no crash) |
+| `SLACK_BOT_TOKEN` | yes | `xoxb-…`; used as Bearer for every Web API call (`packages/core/opensession-server/src/agents/slack/slack-api.ts`). Missing → the agent loads and every Slack call fails with logged auth warnings (no crash) |
 | `SLACK_SIGNING_SECRET` | yes | HMAC verification of `/slack/events` and `/slack/actions`; missing → real Slack requests fail verification → 401, so event intake is dead |
 | `ALLOWED_SLACK_USER_ID` | recommended | admin gating, see below. **Unset = everyone is admin** (fail-open) |
 | `WORKTREE_HOOK_SECRET` | for `/worktree/*` hooks | shared secret; fail-closed (empty → all worktree-hook requests rejected) |
@@ -73,7 +73,7 @@ any pre-existing channel you want it to read or post shipped changes into.
 
 ## Who can drive it (`ALLOWED_SLACK_USER_ID`)
 
-`src/agents/slack/handlers.ts`:
+`packages/core/opensession-server/src/agents/slack/handlers.ts`:
 
 - DMs and mentions are ignored unless the sender matches
   `ALLOWED_SLACK_USER_ID` — **except** mentions in worktree channels or
@@ -96,7 +96,7 @@ any pre-existing channel you want it to read or post shipped changes into.
 
 ## Channel memory
 
-`src/agents/slack/memory.ts`, stored under `~/.michael-memory/` (a legacy
+`packages/core/opensession-server/src/agents/slack/memory.ts`, stored under `~/.michael-memory/` (a legacy
 directory name kept for state compatibility), one JSON file per scope,
 injected into the system prompt each run and edited via the admin
 `remember`/`list_memory`/`forget` tools:

@@ -27,8 +27,8 @@ import {
   killAllOpencodeServers,
   awaitOpencodeServersDead,
   OPENCODE_BIN,
-} from "../src/server/opencode-runner";
-import { readOpencodeBridgeConfig } from "../src/server/opencode-config";
+} from "../packages/core/opensession-server/src/server/opencode-runner";
+import { readOpencodeBridgeConfig } from "../packages/core/opensession-server/src/server/opencode-config";
 
 const model = process.argv[2] || "opencode/anthropic/claude-haiku-4-5";
 if (!existsSync(OPENCODE_BIN)) {

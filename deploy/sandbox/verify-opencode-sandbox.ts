@@ -38,15 +38,15 @@ process.env.OPENSESSION_SANDBOX_CONFIG = `${SCRATCH}/sandbox-config.json`;
 import { homedir } from "os";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 
-const { DockerProvider, containerNameFor } = await import("../../src/server/sandbox/docker");
+const { DockerProvider, containerNameFor } = await import("../../packages/core/opensession-server/src/server/sandbox/docker");
 const { OPENCODE_TRANSCRIPTS_DIR, getOpencodeTranscriptPath } = await import(
-  "../../src/server/opencode-transcript"
+  "../../packages/core/opensession-server/src/server/opencode-transcript"
 );
-const { readOpencodeBridgeConfig } = await import("../../src/server/opencode-config");
-const { OPENSESSION_SESSIONS_DIR } = await import("../../src/server/paths");
-const { stateDir, statePath } = await import("../../src/server/paths");
-type RunHostSpec = import("../../src/runner-host/protocol").RunHostSpec;
-type StreamEvent = import("../../src/server/run-events").StreamEvent;
+const { readOpencodeBridgeConfig } = await import("../../packages/core/opensession-server/src/server/opencode-config");
+const { OPENSESSION_SESSIONS_DIR } = await import("../../packages/core/opensession-server/src/server/paths");
+const { stateDir, statePath } = await import("../../packages/core/opensession-server/src/server/paths");
+type RunHostSpec = import("../../packages/core/opensession-server/src/runner-host/protocol").RunHostSpec;
+type StreamEvent = import("../../packages/core/opensession-server/src/server/run-events").StreamEvent;
 
 const HOME = process.env.HOME || homedir();
 const SESSION_ID = `octest-${Date.now().toString(36)}`;

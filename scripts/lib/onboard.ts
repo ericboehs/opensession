@@ -14,8 +14,8 @@
 
 import { chmodSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
-import { INTEGRATIONS } from "../../src/server/integrations/registry";
-import { configPath as engineConfigPath, setBridgeEnabled } from "../../src/server/opencode-config";
+import { INTEGRATIONS } from "../../packages/core/opensession-server/src/server/integrations/registry";
+import { configPath as engineConfigPath, setBridgeEnabled } from "../../packages/core/opensession-server/src/server/opencode-config";
 import { backup, tailnetIp } from "./config-edit";
 import { CONFIG_PATH, ENV_PATH, HOME, OPENSESSION_HOME, REPO_ROOT, STAGED_UNIT_PATH } from "./paths";
 import { installRecipe, listRecipes } from "./recipes";

@@ -1,0 +1,56 @@
+// Per-user default model for NEW sessions (Settings → Preferences): what the
+// New-session palette (and the workspace/support first-session composers)
+// preselect for this user. "" = no preference — fall back to the workspace's
+// interactive default from GET /api/models. A makeUserPref instance — see
+// lib/user-pref for the server-side ui-prefs hydrate pattern. Any string the
+// server sends (including "" for an explicit reset) is applied as-is.
+//
+// resolveNewSessionModel below is what those composers actually call: it folds
+// in the engine half of the same question (lib/default-engine-pref) through
+// the rule in lib/new-session-model.
+
+import { fetchEngines } from "./api/engines";
+import { getDefaultEnginePref } from "./default-engine-pref";
+import { preferredNewSessionModel } from "./new-session-model";
+import { makeUserPref } from "./user-pref";
+
+const pref = makeUserPref<string>({
+	localKey: "opensession-default-model-pref",
+	prefKey: "default-model",
+	changeEvent: "opensession-default-model-pref-changed",
+	defaultValue: "",
+	decode: (v) => (typeof v === "string" ? v : null),
+	encode: (v) => v,
+});
+
+/** The user's preferred new-session model id, or "" for no preference. */
+export const getDefaultModelPref = pref.get;
+export const setDefaultModelPref = pref.set;
+export const onDefaultModelPrefChanged = pref.onChanged;
+
+/**
+ * The id a new-session composer should preselect for this person: their model
+ * and engine preferences applied to the catalog it just fetched. "" means no
+ * preference, so the composer sends no model and the server picks.
+ */
+export async function resolveNewSessionModel(catalog: {
+	models: { id: string }[];
+	default: string;
+}): Promise<string> {
+	const enginePref = getDefaultEnginePref();
+	// Only consulted when there is a preference to validate. It is the same
+	// cached /api/models read the picker on this surface already makes.
+	const availableEngines =
+		enginePref && enginePref !== "opencode"
+			? (await fetchEngines()).engines
+					.filter((e) => e.available)
+					.map((e) => e.id as string)
+			: [];
+	return preferredNewSessionModel({
+		models: catalog.models,
+		default: catalog.default,
+		modelPref: getDefaultModelPref(),
+		enginePref,
+		availableEngines,
+	});
+}

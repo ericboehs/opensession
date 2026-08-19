@@ -42,7 +42,7 @@ if (stateRoot) {
   process.env.OPENSESSION_OPENCODE_TRANSCRIPTS_DIR ||= `${process.env.OPENSESSION_SESSIONS_DIR}/demo/engine-transcripts`;
 }
 
-const { generateDemoData } = await import("../src/server/demo/generate");
+const { generateDemoData } = await import("../packages/core/opensession-server/src/server/demo/generate");
 
 const result = generateDemoData({ homeStores: !!stateRoot });
 if (!stateRoot && result.created) {

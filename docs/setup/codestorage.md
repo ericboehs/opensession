@@ -209,18 +209,18 @@ Notes:
 
 ## Pieces (for developers)
 
-- `src/server/codestorage/auth.ts` — JWT minting (WebCrypto), remote URLs.
-- `src/server/codestorage/client.ts` — REST client: repos, branches, merge +
+- `packages/core/opensession-server/src/server/codestorage/auth.ts` — JWT minting (WebCrypto), remote URLs.
+- `packages/core/opensession-server/src/server/codestorage/client.ts` — REST client: repos, branches, merge +
   preview, commits, diffs (branch diff = the PR-diff equivalent), files, git
   notes (write/read/delete/list-refs).
-- `src/server/codestorage/remote.ts` — `parseCsRemote` (incl. `+ephemeral`
+- `packages/core/opensession-server/src/server/codestorage/remote.ts` — `parseCsRemote` (incl. `+ephemeral`
   remotes), per-checkout
   credential-helper wiring (URL-scoped, never touches github.com flows),
   registration clones (`cloneCsCheckout`) and boot adoption
   (`adoptCsCheckouts`).
-- `src/server/codestorage/webhook.ts` — `POST /codestorage/webhook` (HMAC
+- `packages/core/opensession-server/src/server/codestorage/webhook.ts` — `POST /codestorage/webhook` (HMAC
   verification, push → PR-cache invalidation + `pr_updated` broadcast,
   sync-failure warnings, last-delivery metadata).
-- `src/server/routes/setup-codestorage.ts` — the UI connect flow
+- `packages/core/opensession-server/src/server/routes/setup-codestorage.ts` — the UI connect flow
   (`/api/setup/codestorage/{connect,status,disconnect}`).
 - `scripts/cs-credential.ts` — the git credential helper itself.

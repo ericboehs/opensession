@@ -1,4 +1,4 @@
-# Tella's client release pipeline — fork and rebrand (see os1-ios/README).
+# Tella's client release pipeline — fork and rebrand (see packages/clients/ios/README).
 name: Release OS1 for iOS (TestFlight)
 
 # Builds, signs and uploads the native SwiftUI OS1 iOS client to TestFlight
@@ -13,9 +13,9 @@ on:
     branches: [main]
     paths:
       # Build inputs only — docs (AGENTS.md/CLAUDE.md/README.md) land in
-      # os1-ios/ constantly and must not each ship a TestFlight build.
-      - "os1-ios/**"
-      - "!os1-ios/**.md"
+      # packages/clients/ios/ constantly and must not each ship a TestFlight build.
+      - "packages/clients/ios/**"
+      - "!packages/clients/ios/**.md"
       - ".github/workflows/os1-ios-testflight.yml"
   workflow_dispatch:
 
@@ -28,7 +28,7 @@ concurrency:
 
 defaults:
   run:
-    working-directory: os1-ios
+    working-directory: packages/clients/ios
 
 jobs:
   build:
@@ -59,7 +59,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.OS1_DERIVED_DATA }}/SourcePackages
-          key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('os1-ios/project.yml') }}
+          key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/clients/ios/project.yml') }}
           restore-keys: |
             os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-
 
@@ -70,9 +70,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.OS1_COMPILATION_CACHE }}
-          key: os1-cas-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}-${{ github.sha }}
+          key: os1-cas-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('packages/clients/ios/project.yml') }}-${{ github.sha }}
           restore-keys: |
-            os1-cas-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}-
+            os1-cas-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('packages/clients/ios/project.yml') }}-
             os1-cas-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-
 
       - name: Import Apple Distribution certificate
@@ -208,14 +208,14 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.OS1_DERIVED_DATA }}/SourcePackages
-          key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('os1-ios/project.yml') }}
+          key: os1-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/clients/ios/project.yml') }}
 
       - name: Save Xcode compilation cache
         if: steps.compilation-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.OS1_COMPILATION_CACHE }}
-          key: os1-cas-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('os1-ios/project.yml') }}-${{ github.sha }}
+          key: os1-cas-v1-ios-${{ runner.os }}-${{ runner.arch }}-${{ steps.build-tools.outputs.fingerprint }}-${{ hashFiles('packages/clients/ios/project.yml') }}-${{ github.sha }}
 
       - name: Store signed IPA
         uses: actions/upload-artifact@v4

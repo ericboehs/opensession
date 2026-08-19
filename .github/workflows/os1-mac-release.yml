@@ -1,4 +1,4 @@
-# Tella's client release pipeline — fork and rebrand (see os1-mac/README).
+# Tella's client release pipeline — fork and rebrand (see packages/clients/mac/README).
 name: Release Open Session for Mac
 
 # Builds, signs, notarizes and publishes the vendored Electron shell.
@@ -16,7 +16,7 @@ concurrency:
 
 defaults:
   run:
-    working-directory: os1-mac
+    working-directory: packages/clients/mac
 
 jobs:
   release:
@@ -171,5 +171,5 @@ jobs:
         with:
           name: OS1
           path: |
-            os1-mac/dist/*.dmg
-            os1-mac/dist/*.zip
+            packages/clients/mac/dist/*.dmg
+            packages/clients/mac/dist/*.zip

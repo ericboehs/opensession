@@ -14,7 +14,7 @@
 import { existsSync, statSync } from "fs";
 import { tailnetIp } from "./config-edit";
 import { CONFIG_PATH, ENV_PATH, REPO_ROOT } from "./paths";
-import { INTEGRATIONS } from "../../src/server/integrations/registry";
+import { INTEGRATIONS } from "../../packages/core/opensession-server/src/server/integrations/registry";
 import * as service from "./service";
 import { dim, fail, heading, info, ok, run, warn } from "./ui";
 
@@ -253,7 +253,7 @@ async function checkService(t: Tally, config?: Record<string, unknown>): Promise
  */
 async function checkEngine(t: Tally): Promise<void> {
   heading("Engine");
-  const { engineStatus } = await import("../../src/server/engine-status");
+  const { engineStatus } = await import("../../packages/core/opensession-server/src/server/engine-status");
   const e = engineStatus();
 
   info(dim(`default model ${e.defaultModel}`));

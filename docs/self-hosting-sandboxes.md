@@ -62,7 +62,7 @@ root. Pins are `ARG`s — override with `--build-arg` per build:
 
 Rebuild whenever: the host Claude CLI or bun is bumped, `bun.lock` changes
 (any dep, incl. the Agent SDK / vendored codex binary), or **anything under
-`src/runner-host/` changes** — sandboxed runs execute the image's copy of
+`packages/core/opensession-server/src/runner-host/` changes** — sandboxed runs execute the image's copy of
 the runner, not your checkout.
 
 ### Path parity is load-bearing (do not "tidy" it)
@@ -320,7 +320,7 @@ to `provider: "local"` (today's host behavior). Env override for the path:
   // https URL (GitHub PAT / x-access-token).
   "cloneCredential": { "type": "https-token", "token": "ghp_…" },
 
-  // Warm-on-typing prewarm pool (src/server/sandbox/prewarm.ts): typing a
+  // Warm-on-typing prewarm pool (packages/core/opensession-server/src/server/sandbox/prewarm.ts): typing a
   // new-session prompt with a prewarm-capable provider selected (daytona,
   // microvm — e2b has no prewarm adapter yet) starts the runner bootstrap
   // immediately; the session create ADOPTS the warmed sandbox, cutting
@@ -420,7 +420,7 @@ Remote sandboxes (Daytona/E2B/Box/Modal/Lambda MicroVMs) run on remote compute a
 to opensession's `/run-ws/<hostId>` and `/rpc-ws`
 WebSocket routes from the **public internet**. The main server binds the
 tailnet and carries the whole app — never expose it. Instead,
-`src/server/public-ingress.ts` runs a **second, isolated Bun.serve** when
+`packages/core/opensession-server/src/server/public-ingress.ts` runs a **second, isolated Bun.serve** when
 `publicIngress.enabled` is set:
 
 **What it serves:**
@@ -499,7 +499,7 @@ so no ingress URL is reachable from inside.
   it lives if you need a remote run's turn-level audit. (The persisted
   opencode transcript had the same gap and is now mirrored host-side from the
   dial-back stream — see `withOpencodeTranscriptMirror` in
-  `src/server/sandbox/adapters/bootstrap.ts`; audit mirroring is a possible
+  `packages/core/opensession-server/src/server/sandbox/adapters/bootstrap.ts`; audit mirroring is a possible
   follow-up on the same hook.)
 
 ## Kill switch
@@ -520,7 +520,7 @@ The config file's *values* are read fresh per run. Code changes to the sandbox
 path are **runner internals** and need a service restart:
 
 - First-time enablement, provider/transport code changes, anything under
-  `src/server/sandbox/`, `src/runner-host/`, run-ws/rpc-ws → real
+  `packages/core/opensession-server/src/server/sandbox/`, `packages/core/opensession-server/src/runner-host/`, run-ws/rpc-ws → real
   `systemctl restart opensession`.
 - The publicIngress listener starts once at boot: enabling/disabling it or
   changing `port`/`host` → restart (`publicBaseUrl` value tweaks apply to
@@ -564,7 +564,7 @@ matrix above for current certification.
 ### Daytona (implemented, live-certified 2026-08-11)
 
 Self-hostable sandbox platform (Helm/K8s) with a hosted cloud. The adapter
-(`src/server/sandbox/adapters/daytona.ts`) creates sandboxes over the
+(`packages/core/opensession-server/src/server/sandbox/adapters/daytona.ts`) creates sandboxes over the
 Daytona API/SDK: volume-style workspace cloned in-sandbox over https
 (`cloneCredential`), ws transport always, runner bootstrapped on first
 ensure. A prewarm clones the repo, runs `.agents/setup`, scrubs clone and
@@ -594,7 +594,7 @@ is native (`autoStopInterval`).
 
 Firecracker microVM sandboxes; hosted cloud plus an OSS self-host stack
 (Terraform/Nomad, GCP full / AWS beta — heavyweight; we document it, we
-don't operate it). The adapter (`src/server/sandbox/adapters/e2b.ts`) is
+don't operate it). The adapter (`packages/core/opensession-server/src/server/sandbox/adapters/e2b.ts`) is
 written to the same contract as Daytona (volume-style workspace, ws
 transport, bootstrap on first ensure) but has **not been run against a live
 E2B account** — treat it as untested until the conformance suite passes.
@@ -650,7 +650,7 @@ Sandboxes**. It is stored as an opaque workspace secret; new Boxes use
 ### Modal (implemented, live-certified 2026-08-11)
 
 Modal sandboxes are ephemeral containers created through the official
-Apache-2.0 TypeScript SDK. The adapter (`src/server/sandbox/adapters/modal.ts`)
+Apache-2.0 TypeScript SDK. The adapter (`packages/core/opensession-server/src/server/sandbox/adapters/modal.ts`)
 uses the same volume-style workspace, remote bootstrap, and WebSocket dial-back
 contract as the other remote providers.
 
@@ -679,7 +679,7 @@ contract as the other remote providers.
 ### AWS Lambda MicroVMs (experimental, NOT yet certified)
 
 AWS Lambda MicroVMs are Firecracker VMs purpose-built for agent sandboxes. The
-adapter (`src/server/sandbox/adapters/lambda-microvm.ts`) uses the AWS SDK
+adapter (`packages/core/opensession-server/src/server/sandbox/adapters/lambda-microvm.ts`) uses the AWS SDK
 control plane and authenticated HTTP requests to the structured command daemon
 in `deploy/sandbox/lambda-microvm/`.
 
@@ -724,7 +724,7 @@ hidden from the picker and rejected by session creation.
 - **AWS Lambda MicroVMs**: the AWS SDK client is Apache-2.0.
 - **Docker provider**: plain `docker` CLI against your own daemon; nothing
   vendored.
-- Core imports adapter SDKs only inside `src/server/sandbox/adapters/` —
+- Core imports adapter SDKs only inside `packages/core/opensession-server/src/server/sandbox/adapters/` —
   a build without those files carries no third-party sandbox code.
 
 ## Security posture (what a sandbox does and doesn't isolate)

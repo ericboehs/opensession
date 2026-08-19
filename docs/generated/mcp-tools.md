@@ -7,19 +7,19 @@ Every tool Open Session serves from inside its own process — the
 `opensession-*` servers — with the gating that decides which runs can
 call it. Tool names and inputs are read from the live server objects
 (`tools/list`), so this file cannot drift from the code; the run classes
-and conditions are declared in `src/server/mcp-catalog.ts` beside each
+and conditions are declared in `packages/core/opensession-server/src/server/mcp-catalog.ts` beside each
 entry and checked against the real wiring by `mcp-catalog.test.ts`.
 
 External MCP servers (`mcp-config.json`) are NOT listed here: they are
 per-instance configuration, and their per-user `allowedUsers` scoping is
-enforced in `filterMcpServers` (`src/server/runner-shared.ts`).
+enforced in `filterMcpServers` (`packages/core/opensession-server/src/server/runner-shared.ts`).
 
 **How gating works.** An in-process server reaches a run only if a call
 site hands it over, so the *run class* column is the real permission
 boundary:
 
 - **interactive** — the web UI and native clients, via
-  `interactiveMcpServers()` (`src/server/interactive-mcp.ts`).
+  `interactiveMcpServers()` (`packages/core/opensession-server/src/server/interactive-mcp.ts`).
 - **automation** — unattended runs on untrusted text. They receive only
   the servers `automations.ts` builds for them; the run-rpc fallback
   resolver fails closed for automation-owned sessions, so asking for an
@@ -29,10 +29,10 @@ boundary:
 Two further layers apply to every run, and neither currently touches an
 in-process tool (both name external MCP tools):
 
-- `AUTOMATION_DENIED_TOOLS` (`src/server/automation-denied-tools.ts`) —
+- `AUTOMATION_DENIED_TOOLS` (`packages/core/opensession-server/src/server/automation-denied-tools.ts`) —
   stripped from automation runs and from interactive resumes of
   automation-owned sessions.
-- `STRIPE_CONFIRM_TOOLS` (`src/server/runner-shared.ts`) — money movers,
+- `STRIPE_CONFIRM_TOOLS` (`packages/core/opensession-server/src/server/runner-shared.ts`) — money movers,
   stripped from every run's tool list.
 
 ## Servers
@@ -49,7 +49,8 @@ in-process tool (both name external MCP tools):
 | [`opensession-keychain`](#opensession-keychain) | 3 | interactive | yes | Needs a session id. |
 | [`opensession-publish`](#opensession-publish) | 4 | interactive | yes | Needs a session id. |
 | [`opensession-repos`](#opensession-repos) | 4 | interactive | yes | Needs a session id. |
-| [`opensession-memory`](#opensession-memory) | 3 | interactive | yes | Needs a session id. |
+| [`opensession-memory`](#opensession-memory) | 5 | interactive | yes | Needs a session id. |
+| [`opensession-web`](#opensession-web) | 3 | interactive | yes | Needs a session id. |
 | [`opensession-portals`](#opensession-portals) | 5 | interactive | yes | Needs a session id. |
 | [`opensession-walkthrough`](#opensession-walkthrough) | 2 | interactive | yes | Needs a session id. |
 | [`opensession-slack`](#opensession-slack) | 1 | interactive | yes | Needs a session id. |
@@ -64,16 +65,16 @@ in-process tool (both name external MCP tools):
 | [`opensession-github`](#opensession-github) | 4 | Slack loop | yes | – |
 | [`opensession-goal-self`](#opensession-goal-self) | 6 | goal wake | no | Only on a session that carries a goalId. |
 
-24 servers, 98 tools. "Shared server" is membership of
-`SHARED_INPROCESS_SERVERS` (`src/server/opencode-policy.ts`): a run carrying
+25 servers, 103 tools. "Shared server" is membership of
+`SHARED_INPROCESS_SERVERS` (`packages/core/opensession-server/src/server/opencode-policy.ts`): a run carrying
 any server outside that list falls back to a per-session engine server.
 
 ## opensession-sessions
 
 See and steer other sessions, and spawn worker sessions.
 
-- **Source** `src/agents/slack/sessions-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`, `src/agents/slack/handlers.ts`, `src/server/automations.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/sessions-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`, `packages/core/opensession-server/src/agents/slack/handlers.ts`, `packages/core/opensession-server/src/server/automations.ts`
 - **Runs** interactive, Slack loop, automation
 - **Condition** Automation runs get it ONLY with the human-set `selfImprove` flag, and then in the `automationSelf` build below.
 - **Note** The control tools (answer/send/cancel/create) are gated on `isAdmin`; Slack passes isAdmin only for the configured trusted user.
@@ -118,7 +119,7 @@ Cancel a session's in-flight run and drop any queued messages. Only works for ru
 
 `mcp__opensession-sessions__create_session` · input: `prompt` (string, required), `repo` (string), `mode` ("ask" | "code"), `branch` (string), `model` (string), `mcpServers` (string[]), `parentSessionId` (string), `reportBack` (boolean), `standalone` (boolean), `sandbox` (boolean | "docker" | "daytona" | "e2b" | "box" | "modal" | "microvm" | "lambda-microvm"), `accountId` (string), `forkFrom` (object)
 
-Spin up a visible Open Session session and start it on a prompt. Use this as the sub-session primitive: workers can delegate focused tasks and report back to this parent session. mode 'ask' (default) runs read-only on the selected repo checkout; mode 'code' can edit files / open PRs (never merges). A worker targeting one of the parent's repos shares that exact primary or attached worktree, so reviewers see current/uncommitted work; pass repo explicitly for attached-repo tasks. `branch` is only used when there is nothing to share — a standalone worker, or a worker targeting a repo the parent does not carry — and is generated from the prompt when omitted. Repo defaults to the parent session's repo (example when standalone); pass another registered repo id to override. For workers that only need filesystem/code access, pass mcpServers: [] to avoid unrelated MCP startup cost/failures. When called from a session, the worker defaults to the same workspace and is instructed to report back here; set standalone true or reportBack false to opt out.
+Spin up a visible Open Session session and start it on a prompt. Use this as the sub-session primitive: workers can delegate focused tasks and report back to this parent session. mode 'ask' (default) runs read-only on the selected repo checkout; mode 'code' can edit files / open PRs (never merges). A worker targeting one of the parent's repos shares that exact primary or attached worktree, so reviewers see current/uncommitted work; pass repo explicitly for attached-repo tasks. `branch` is only used when there is nothing to share — a standalone worker, or a worker targeting a repo the parent does not carry — and is generated from the prompt when omitted. Repo defaults to the parent session's repo (example when standalone); pass another registered repo id to override. For workers that only need filesystem/code access, pass mcpServers: [] to avoid unrelated MCP startup cost/failures. When called from a session, the worker defaults to the same workspace and is instructed to report back here; set standalone true or reportBack false to opt out. When a HUMAN asks for "a new session" ("create a new session for X", "spin one up on Y"), this tool is what they mean — a detached session that appears in their sidebar and outlives the current run — never an in-process subagent or task agent; reply with the new session's URL.
 
 ### `migrate_session_engine`
 
@@ -152,8 +153,8 @@ Built for: automation. 5 tools, without `answer_session_question`, `send_to_sess
 
 Manage automations, MCP connections and channel memory.
 
-- **Source** `src/agents/slack/admin-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`, `src/agents/slack/handlers.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/admin-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`, `packages/core/opensession-server/src/agents/slack/handlers.ts`
 - **Runs** interactive, Slack loop
 - **Note** Automation and MCP-connection tools are gated on `isAdmin`; channel memory is not.
 
@@ -239,8 +240,8 @@ Remove a configured MCP server by name.
 
 Run bounded commands on trusted persistent machines (Runners).
 
-- **Source** `src/server/runners-mcp.ts`
-- **Wired in** `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/server/runners-mcp.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** interactive
 
 ### `list_runners`
@@ -259,7 +260,7 @@ Read one Runner's health, workload, resources, and execution permissions. A Runn
 
 `mcp__opensession-runners__run_on_runner` · input: `runner` (string, required), `command` (string, required), `cwd` (string), `timeoutSeconds` (number)
 
-Run one bounded command on a trusted Runner. It runs as that machine's local user and is not sandboxed. Check status first, use only the session-owned workspace, and avoid destructive commands.
+Run one bounded command on a trusted Runner. It runs as that machine's local user and is not sandboxed. Check status first, use only the session-owned workspace, and avoid destructive commands. Commands run under PowerShell on a win32 Runner and under bash elsewhere, so match the syntax to the Runner's platform.
 
 ### `reserve_runner`
 
@@ -277,8 +278,8 @@ Release this user's reservation on a Runner.
 
 Create and steer long-running, self-pacing goals.
 
-- **Source** `src/agents/slack/goal-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/goal-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** interactive
 - **Note** create/update/delete/steer are gated on `isAdmin`.
 
@@ -334,8 +335,8 @@ Delete a goal and its ledger. Permanent. The opensession session it created is l
 
 Search and read the distilled record of past sessions.
 
-- **Source** `src/agents/slack/search-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/search-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** interactive
 
 ### `search_history`
@@ -354,8 +355,8 @@ Expand a past session into its REAL transcript — the source of truth behind a 
 
 Deploy this instance to a sha and restart the live server.
 
-- **Source** `src/server/self-deploy.ts`
-- **Wired in** `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/server/self-deploy.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** interactive
 - **Condition** Withheld from dev instances (isDevInstance()) — the script targets the production service and state.
 
@@ -375,8 +376,8 @@ Read the most recent self-deploy result, the last-known-good pin, and whether th
 
 Ask a teammate and fold their answer back into this session.
 
-- **Source** `src/agents/slack/humans-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`, `src/agents/slack/handlers.ts`, `src/server/goal-runner.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/humans-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`, `packages/core/opensession-server/src/agents/slack/handlers.ts`, `packages/core/opensession-server/src/server/goal-runner.ts`
 - **Runs** interactive, Slack loop, goal wake
 - **Condition** Interactive runs need a session id (the answer routes back to it).
 
@@ -402,8 +403,8 @@ Cancel an outstanding human ask by id (from list_pending_asks). If it was alread
 
 Borrow a teammate's credential for a stated purpose, with their approval.
 
-- **Source** `src/agents/slack/keychain-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/keychain-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** interactive
 - **Condition** Needs a session id.
 
@@ -429,8 +430,8 @@ List the keychain grants this session holds — which credential, once or standi
 
 Publish a directory as a durable internal web app.
 
-- **Source** `src/agents/slack/publish-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/publish-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** interactive
 - **Condition** Needs a session id.
 
@@ -462,8 +463,8 @@ Stop a published app. It stays registered with its versions intact and can be st
 
 Attach or switch repos, and link a PR to this session.
 
-- **Source** `src/agents/slack/repos-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/repos-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** interactive
 - **Condition** Needs a session id.
 
@@ -495,17 +496,29 @@ Link a pull request to this session so it shows in the session's Review tab besi
 
 Durable repo / user / team memory, shared with Slack channel memory.
 
-- **Source** `src/agents/slack/memory-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/memory-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** interactive
 - **Condition** Needs a session id.
 - **Note** Write tools are interactive-only; automation runs get read-only memory injected into their prompt instead.
 
 ### `store_memory`
 
-`mcp__opensession-memory__store_memory` · input: `text` (string, required), `scope` ("repo" | "user" | "team"), `repo` (string)
+`mcp__opensession-memory__store_memory` · input: `text` (string, required), `scope` ("repo" | "user" | "team"), `repo` (string), `supersedes` (string[])
 
 Store a durable fact in memory so future sessions know it without being told. Scopes: 'repo' (default) = facts about this session's codebase (gotchas, operational quirks, decisions — things that don't belong in checked-in docs); 'user' = facts about the person prompting (preferences, context); 'team' = workspace-wide facts everyone (including Assistant in Slack) should know. Store only durable, non-obvious facts — never conversation state, never things already in the repo's docs.
+
+### `search_memory`
+
+`mcp__opensession-memory__search_memory` · input: `query` (string, required), `limit` (number), `includeArchived` (boolean)
+
+Search everything ever remembered for this session's scopes, including entries that are no longer injected — older facts held back to keep the Memory section a sane size, and entries superseded by a later correction. Reach for this before re-deriving something that smells familiar, or when the Memory section says entries were held back. Exact tokens work best: file names, error strings, flag names.
+
+### `supersede_memory`
+
+`mcp__opensession-memory__supersede_memory` · input: `ids` (string[], required)
+
+Archive memory entries that are wrong or obsolete, without storing a replacement. They stop being injected but stay reachable through search_memory. Use forget_memory only when an entry should not have been recorded at all.
 
 ### `list_memory`
 
@@ -519,12 +532,39 @@ List everything in this session's memory scopes (repo(s), user, team) with the i
 
 Remove a memory entry by id (see list_memory or the [id] tags in the Memory section). Works on any of this session's scopes.
 
+## opensession-web
+
+Read a URL as text, search what was fetched, clone a GitHub repo. No web search.
+
+- **Source** `packages/core/opensession-server/src/server/web-mcp.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
+- **Runs** interactive
+- **Condition** Needs a session id.
+
+### `fetch_url`
+
+`mcp__opensession-web__fetch_url` · input: `url` (string, required), `mode` ("text" | "raw"), `headChars` (number), `refresh` (boolean)
+
+Fetch a URL and return its readable text. Returns the first part of the page inline plus a `handle`; the whole body is kept on disk for an hour, so use `read_page` with that handle to search the rest rather than re-fetching. This keeps a long page out of the conversation unless you ask for the part you need. A GitHub repository URL is CLONED instead of scraped, and the result is a local path you can read with the normal file tools. A GitHub file URL is read as raw text rather than as a rendered page. Private, loopback and link-local addresses are refused, redirects included. This does not search the web: pass a URL you already have.
+
+### `read_page`
+
+`mcp__opensession-web__read_page` · input: `handle` (string, required), `find` (string), `caseSensitive` (boolean), `context` (number), `offset` (number), `limit` (number)
+
+Read more of a page fetched earlier in this session, by its handle. Prefer `find` over paging: it returns just the passages containing your term, with context, plus how many times it occurs in the whole page. Use `offset` only when you genuinely want to read straight through. Pages expire an hour after they are fetched; fetch the URL again if a handle has gone.
+
+### `clone_repo`
+
+`mcp__opensession-web__clone_repo` · input: `repo` (string, required)
+
+Shallow-clone a public GitHub repository and return the local path, its file list and the head of its README. Use this instead of fetching GitHub pages when you want to read a project's actual source: the clone is real files, so read/grep/find work on it normally. The clone lands in scratch, not in the session's worktree.
+
 ## opensession-portals
 
 Supervised HTTP/WebSocket services for this session's workspace.
 
-- **Source** `src/server/portals-mcp.ts`
-- **Wired in** `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/server/portals-mcp.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** interactive
 - **Condition** Needs a session id.
 
@@ -562,8 +602,8 @@ Set the root-relative route a Portal should open by default. Omit name to set th
 
 Publish a walkthrough (video, before/after, writeup) onto the Review tab and the PR.
 
-- **Source** `src/agents/slack/walkthrough-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/walkthrough-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** interactive
 - **Condition** Needs a session id.
 
@@ -583,8 +623,8 @@ Post a comment on this session's PR (or an explicit PR) with screenshots that RE
 
 Open an editable Slack composer — the human still presses Send.
 
-- **Source** `src/agents/slack/slack-compose-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/slack-compose-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** interactive
 - **Condition** Needs a session id.
 
@@ -598,8 +638,8 @@ Open an editable Slack composer in this Open Session and wait for the signed-in 
 
 Ask the human a blocking question (for engines with no native ask tool).
 
-- **Source** `src/agents/slack/ask-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`, `src/agents/slack/handlers.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/ask-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`, `packages/core/opensession-server/src/agents/slack/handlers.ts`
 - **Runs** interactive, Slack loop
 - **Condition** Needs a session id. claude-runner strips it so Claude keeps its native AskUserQuestion.
 
@@ -613,8 +653,8 @@ Ask the human watching this session a question and wait for their answer. The ru
 
 Deterministic agent fan-out from a model-authored script.
 
-- **Source** `src/agents/slack/workflow-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`, `src/server/automations.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/workflow-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`, `packages/core/opensession-server/src/server/automations.ts`
 - **Runs** interactive, automation
 - **Condition** Automation runs get it ONLY with the human-set `workflows` flag.
 - **Note** An automation's build passes its own mcpAllowlist + AUTOMATION_DENIED_TOOLS, so a script's mcp.* calls cannot widen the run's least-privilege surface. Same tools either way.
@@ -623,7 +663,7 @@ Deterministic agent fan-out from a model-authored script.
 
 `mcp__opensession-workflows__run_workflow` · input: `script` (string, required), `args_json` (string), `budget_tokens` (number), `repo` (string)
 
-Run a dynamic workflow: a JS script YOU author that fans out many lightweight read/analyze agents deterministically and combines their results — map-reduce over a codebase, N-way file audits, comparative research. Progress streams live to this session's Agents panel; poll workflow_status for the outcome. Script shape — plain JavaScript (NOT TypeScript), no imports; the API below is injected as globals. A meta export is required, then the async body follows (top-level await AND top-level return are allowed): export const meta = { name: "route-audit", // required, short slug description: "Audit every route for auth checks", // optional phases: [{ title: "List" }, { title: "Audit" }], // optional, pre-seeds the progress UI }; Injected globals: - agent(prompt, opts?) → Promise — run one focused agent (ask mode: reads files / runs read-only commands in this session's worktree; its final message is the return value). Resolves to the final text; with opts.schema (a JSON Schema) resolves to the parsed, validated object instead; resolves to null when the agent errored — filter with .filter(Boolean). opts: { label, phase, schema, model }. - parallel([...thunks]) → Promise — run zero-arg thunks concurrently and wait for all; a thrown thunk becomes null, never rejects the batch. E.g. await parallel(files.map(f => () => agent("Audit " + f))) - pipeline(items, ...stages) → Promise — per-item stage chain with NO barrier between stages (item B can run stage 1 while item A is in stage 2). Each stage gets (prevResult, originalItem, index); a throwing stage drops that item to null and skips its remaining stages. - mcp.<server>.<tool>(args) → Promise — call an MCP tool DIRECTLY from the script (no model turn: one round trip). Resolves to the tool's structured result, or its text auto-parsed as JSON when it parses. REJECTS on failure (unlike agent(), which resolves null) — try/catch it, or let parallel() degrade the throw to null. Also: mcp.call(server, tool, args) (same thing, dynamic names), mcp.servers() → string[], mcp.tools(server) → [{name, description, inputSchema}]. - phase(title) — set the current progress group for subsequent agent calls. - log(message) — narrator line in the progress feed. - args — your args_json, parsed, verbatim. - budget — { total, spent(), remaining() } in output tokens. AGENT OR TOOL? An agent() is a model turn — use it when the work needs judgement (reading code, summarizing, ranking, deciding). An mcp.* call is a function call — use it whenever you just need DATA from a connected server. Don't spend an agent on "query Prometheus for X" or "fetch that Linear issue": call the tool, filter the rows in the script, and spend agents only on the parts that need thinking. Tool names and argument shapes are the same ones in your own tool list; mcp.servers() / mcp.tools(server) enumerate them at runtime. The surface is exactly what YOUR runs may use (per-user restrictions apply, confirm-gated servers like stripe are never reachable from a script). MODEL: pick whichever model fits each agent — pass opts.model with any of the currently available ids: claude-fable-5 (Claude Fable 5), claude-opus-5 (Claude Opus 5), claude-opus-4-8 (Claude Opus 4.8), claude-sonnet-5 (Claude Sonnet 5), claude-sonnet-4-6 (Claude Sonnet 4.6), claude-haiku-4-5 (Claude Haiku 4.5), codex-best-available (Best available (Codex)), gpt-5.6-sol (GPT-5.6 Sol), gpt-5.6-terra (GPT-5.6 Terra), gpt-5.6-luna (GPT-5.6 Luna), gpt-5.5 (GPT-5.5 (Codex)), gpt-5.4 (GPT-5.4 (Codex)), gpt-5.4-mini (GPT-5.4 mini (Codex)), gpt-5.3-codex-spark (GPT-5.3 Codex Spark). Agents default to claude-opus-5 when you don't set one. Choose per task — intelligence and taste first. Rules: - Date.now(), argless new Date(), and Math.random() THROW inside scripts (they break resume replay determinism) — pass timestamps/seeds via args. - Agents start fresh with ZERO context from this session — make every prompt self-contained (paths, constraints, what to return). - Agents are read-only by default (ask mode). Pass opts.write to let one edit code (see below). - Limits: 8 agents run concurrently (extras queue), 200 agent() calls per run lifetime, 15min per agent, 60min per workflow. mcp.* is cheaper and its own lane: 16 concurrent, 2000 per run, 60s per call. - Both agent() and mcp.* calls are journaled, so resume_workflow REPLAYS them instead of re-firing — a resumed script won't create the same Linear issue twice. Example (no opts.model set → agents run on the default): export const meta = { name: "route-audit", phases: [{ title: "List" }, { title: "Audit" }, { title: "Rank" }] }; phase("List"); const files = await agent( "List every .ts file in src/server/routes of this repo. Reply with ONLY the basenames.", { schema: { type: "array", items: { type: "string" } } }, ); if (!files) return "listing failed"; phase("Audit"); const findings = await pipeline( files, (f) => agent("Read src/server/routes/" + f + " and report missing auth/validation checks. Reply 'none' if clean.", { label: f }), (prev, f) => (prev && prev !== "none" ? f + ": " + prev : null), ); log(findings.filter(Boolean).length + " files with findings"); phase("Rank"); const real = findings.filter(Boolean); if (!real.length) return "all clean"; return await agent( "Rank these route-audit findings by real-world severity and drop the false positives:\n" + real.join("\n"), { label: "rank findings" }, ); Example of mixing tools and agents (data by tool, judgement by agent): export const meta = { name: "alert-triage" }; const alerts = await mcp.grafana.list_alert_groups({ state: "new" }); const issues = await mcp.linear.list_issues({ team: "ENG", state: "started" }); // Reduce HERE — every row dropped in the script is a model turn not spent. const unclaimed = alerts.filter((a) => !issues.some((i) => i.title.includes(a.title))); log(unclaimed.length + " unclaimed of " + alerts.length); return await parallel( unclaimed.map((a) => () => agent("Assess this alert and say who should own it: " + JSON.stringify(a), { label: a.id })), );
+Run a dynamic workflow: a JS script YOU author that fans out many lightweight read/analyze agents deterministically and combines their results — map-reduce over a codebase, N-way file audits, comparative research. Progress streams live to this session's Agents panel; poll workflow_status for the outcome. Script shape — plain JavaScript (NOT TypeScript), no imports; the API below is injected as globals. A meta export is required, then the async body follows (top-level await AND top-level return are allowed): export const meta = { name: "route-audit", // required, short slug description: "Audit every route for auth checks", // optional phases: [{ title: "List" }, { title: "Audit" }], // optional, pre-seeds the progress UI }; Injected globals: - agent(prompt, opts?) → Promise — run one focused agent (ask mode: reads files / runs read-only commands in this session's worktree; its final message is the return value). Resolves to the final text; with opts.schema (a JSON Schema) resolves to the parsed, validated object instead; resolves to null when the agent errored — filter with .filter(Boolean). opts: { label, phase, schema, model, effort, write }. - parallel([...thunks]) → Promise — run zero-arg thunks concurrently and wait for all; a thrown thunk becomes null, never rejects the batch. E.g. await parallel(files.map(f => () => agent("Audit " + f))) - pipeline(items, ...stages) → Promise — per-item stage chain with NO barrier between stages (item B can run stage 1 while item A is in stage 2). Each stage gets (prevResult, originalItem, index); a throwing stage drops that item to null and skips its remaining stages. - mcp.<server>.<tool>(args) → Promise — call an MCP tool DIRECTLY from the script (no model turn: one round trip). Resolves to the tool's structured result, or its text auto-parsed as JSON when it parses. REJECTS on failure (unlike agent(), which resolves null) — try/catch it, or let parallel() degrade the throw to null. Also: mcp.call(server, tool, args) (same thing, dynamic names), mcp.servers() → string[], mcp.tools(server) → [{name, description, inputSchema}]. - phase(title) — set the current progress group for subsequent agent calls. - log(message) — narrator line in the progress feed. - args — your args_json, parsed, verbatim. - budget — { total, spent(), remaining() } in output tokens. AGENT OR TOOL? An agent() is a model turn — use it when the work needs judgement (reading code, summarizing, ranking, deciding). An mcp.* call is a function call — use it whenever you just need DATA from a connected server. Don't spend an agent on "query Prometheus for X" or "fetch that Linear issue": call the tool, filter the rows in the script, and spend agents only on the parts that need thinking. Tool names and argument shapes are the same ones in your own tool list; mcp.servers() / mcp.tools(server) enumerate them at runtime. The surface is exactly what YOUR runs may use (per-user restrictions apply, confirm-gated servers like stripe are never reachable from a script). MODEL: pick whichever model fits each agent — pass opts.model with any of the currently available ids: claude-fable-5 (Claude Fable 5), claude-opus-5 (Claude Opus 5), claude-opus-4-8 (Claude Opus 4.8), claude-sonnet-5 (Claude Sonnet 5), claude-sonnet-4-6 (Claude Sonnet 4.6), claude-haiku-4-5 (Claude Haiku 4.5), codex-best-available (Best available (Codex)), gpt-5.6-sol (GPT-5.6 Sol), gpt-5.6-terra (GPT-5.6 Terra), gpt-5.6-luna (GPT-5.6 Luna), gpt-5.5 (GPT-5.5 (Codex)), gpt-5.4 (GPT-5.4 (Codex)), gpt-5.4-mini (GPT-5.4 mini (Codex)), gpt-5.3-codex-spark (GPT-5.3 Codex Spark). Agents default to claude-opus-5 when you don't set one. Choose per task — intelligence and taste first. EFFORT: pass opts.effort to set one agent's reasoning level. The values are low, medium, high, xhigh and max; each model offers its own ladder, and unset means that model's default. Spend it where judgement lives (a verifier, a ranker, a synthesis step); mechanical extraction and classification do not need it. A level the chosen model does not offer is ignored rather than an error. Rules: - Date.now(), argless new Date(), and Math.random() THROW inside scripts (they break resume replay determinism) — pass timestamps/seeds via args. - Agents start fresh with ZERO context from this session — make every prompt self-contained (paths, constraints, what to return). - Agents are read-only by default (ask mode). Pass opts.write to let one edit code (see below). - Limits: 8 agents run concurrently (extras queue), 200 agent() calls per run lifetime, 15min per agent, 60min per workflow. mcp.* is cheaper and its own lane: 16 concurrent, 2000 per run, 60s per call. - Both agent() and mcp.* calls are journaled, so resume_workflow REPLAYS them instead of re-firing — a resumed script won't create the same Linear issue twice. Example (no opts.model set → agents run on the default): export const meta = { name: "route-audit", phases: [{ title: "List" }, { title: "Audit" }, { title: "Rank" }] }; phase("List"); const files = await agent( "List every .ts file in packages/core/opensession-server/src/server/routes of this repo. Reply with ONLY the basenames.", { schema: { type: "array", items: { type: "string" } } }, ); if (!files) return "listing failed"; phase("Audit"); const findings = await pipeline( files, (f) => agent("Read packages/core/opensession-server/src/server/routes/" + f + " and report missing auth/validation checks. Reply 'none' if clean.", { label: f }), (prev, f) => (prev && prev !== "none" ? f + ": " + prev : null), ); log(findings.filter(Boolean).length + " files with findings"); phase("Rank"); const real = findings.filter(Boolean); if (!real.length) return "all clean"; return await agent( "Rank these route-audit findings by real-world severity and drop the false positives:\n" + real.join("\n"), { label: "rank findings" }, ); Example of mixing tools and agents (data by tool, judgement by agent): export const meta = { name: "alert-triage" }; const alerts = await mcp.grafana.list_alert_groups({ state: "new" }); const issues = await mcp.linear.list_issues({ team: "ENG", state: "started" }); // Reduce HERE — every row dropped in the script is a model turn not spent. const unclaimed = alerts.filter((a) => !issues.some((i) => i.title.includes(a.title))); log(unclaimed.length + " unclaimed of " + alerts.length); return await parallel( unclaimed.map((a) => () => agent("Assess this alert and say who should own it: " + JSON.stringify(a), { label: a.id })), );
 
 ### `workflow_status`
 
@@ -653,8 +693,8 @@ Re-launch a done/error/interrupted/cancelled workflow run as a NEW run that repl
 
 Per-session scratch assets, previewed in the Assets tab.
 
-- **Source** `src/agents/slack/assets-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/assets-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** interactive
 - **Condition** Needs a session id. Works in read-only Ask mode — assets land outside the checkout.
 
@@ -686,8 +726,8 @@ Delete a file (or a whole subfolder) from this session's assets folder.
 
 The user's Desk todo list.
 
-- **Source** `src/agents/slack/todos-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/todos-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** interactive
 - **Condition** Needs a session id.
 - **Note** Reminder times are described in the list owner's configured timezone.
@@ -726,8 +766,8 @@ Edit a todo's text, note, or due date, or reopen a done/dropped one (status "ope
 
 Append-only friction log.
 
-- **Source** `src/agents/slack/papercuts-tools.ts`
-- **Wired in** `src/server/interactive-mcp.ts`, `src/server/automations.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/papercuts-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/interactive-mcp.ts`, `packages/core/opensession-server/src/server/automations.ts`
 - **Runs** interactive, automation
 - **Condition** Dropped when the session's repo opted out (Settings → Papercuts).
 - **Note** One of the two deliberate automation exceptions in docs/security-model.md: append-only, reads nothing sensitive, no control surface.
@@ -748,8 +788,8 @@ List recently logged papercuts (newest first) — the accumulated small friction
 
 Publish this run's durable HTML report into the Reports view.
 
-- **Source** `src/agents/slack/report-tools.ts`
-- **Wired in** `src/server/automations.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/report-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/automations.ts`
 - **Runs** automation
 
 ### `publish_report`
@@ -762,8 +802,8 @@ Publish this run's HTML report with optional durable assets shown in the Reports
 
 Say "looked, nothing to report" instead of ending on silence.
 
-- **Source** `src/agents/slack/turn-tools.ts`
-- **Wired in** `src/server/automations.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/turn-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/automations.ts`
 - **Runs** automation
 - **Note** Held to the papercuts bar: reads nothing, controls nothing.
 
@@ -783,8 +823,8 @@ End this turn without replying, when you were addressed directly and have decide
 
 A self-improving automation reading and rewriting its OWN prompt.
 
-- **Source** `src/agents/slack/self-improve-tools.ts`
-- **Wired in** `src/server/automations.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/self-improve-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/automations.ts`
 - **Runs** automation
 - **Condition** Only with the human-set `selfImprove` flag on that automation.
 
@@ -804,8 +844,8 @@ Replace your own automation prompt (self-improvement). Pass the COMPLETE new pro
 
 Trigger the PR behaviours (review / auto-fix / simplify / adversarial).
 
-- **Source** `src/agents/slack/github-tools.ts`
-- **Wired in** `src/agents/slack/handlers.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/github-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/agents/slack/handlers.ts`
 - **Runs** Slack loop
 - **Note** Slack-loop only: it reports back into the originating Slack thread. Open Session sessions use the PR panel instead.
 
@@ -837,8 +877,8 @@ Run Assistant's adversarial code review on a example PR (two independent hostile
 
 A running goal's own cadence controls and fact ledger.
 
-- **Source** `src/agents/slack/goal-tools.ts`
-- **Wired in** `src/server/goal-runner.ts`, `src/server/interactive-mcp.ts`
+- **Source** `packages/core/opensession-server/src/agents/slack/goal-tools.ts`
+- **Wired in** `packages/core/opensession-server/src/server/goal-runner.ts`, `packages/core/opensession-server/src/server/interactive-mcp.ts`
 - **Runs** goal wake
 - **Condition** Only on a session that carries a goalId.
 - **Note** Deliberately NOT in SHARED_INPROCESS_SERVERS: goal wakes keep per-session engine servers, because the tool list is discovered once per directory instance.

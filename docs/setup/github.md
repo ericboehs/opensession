@@ -35,8 +35,8 @@ owner connected their own account open PRs as that person instead.
 
 ## GITHUB_API_TOKEN
 
-Read in `src/agents/github/github-rest.ts` (write-capable REST/GraphQL client
-for the PR agent) and `src/agents/slack/github-reviews.ts` (read-only PR
+Read in `packages/core/opensession-server/src/agents/github/github-rest.ts` (write-capable REST/GraphQL client
+for the PR agent) and `packages/core/opensession-server/src/agents/slack/github-reviews.ts` (read-only PR
 lookups for Slack). Always sent as `Authorization: Bearer <token>` against
 `api.github.com` — the code never runs `gh auth` with it.
 
@@ -50,9 +50,9 @@ What the token actually does (so you can scope the PAT):
 So: a token with read+write on issues/PRs (classic `repo` scope, or
 fine-grained "Pull requests: read+write" + "Issues: read+write") for the
 target repo. The agent is loaded even without the token — it just warns and
-can't post (`src/agents/github/index.ts` startup).
+can't post (`packages/core/opensession-server/src/agents/github/index.ts` startup).
 
-Related settings (`src/agents/github/`, resolved in `src/server/config.ts`):
+Related settings (`packages/core/opensession-server/src/agents/github/`, resolved in `packages/core/opensession-server/src/server/config.ts`):
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -61,7 +61,7 @@ Related settings (`src/agents/github/`, resolved in `src/server/config.ts`):
 
 ## gh CLI auth is separate
 
-`src/server/pr-info.ts` and session prompts shell out to `gh` (`gh pr view`,
+`packages/core/opensession-server/src/server/pr-info.ts` and session prompts shell out to `gh` (`gh pr view`,
 `gh pr diff`, `gh pr comment`, `gh pr merge`, `gh api`) with **no token passed
 in code** — they use the box's ambient `gh` authentication (`gh auth login`,
 or `GH_TOKEN` in `~/.opensession.env`, which systemd loads as the service's
@@ -71,25 +71,25 @@ auth for the CLI.
 
 ## Webhook intake
 
-The webhook server (`src/server/webhook-server.ts`) listens on
+The webhook server (`packages/core/opensession-server/src/server/webhook-server.ts`) listens on
 `127.0.0.1:${WEBHOOK_PORT}` (default 3848). You need a
 TLS-terminating proxy in front of it for GitHub to reach it — Tella, for
 example, uses Caddy on a public hostname.
 
 - Route: `POST /github/webhook` (registered by the Slack agent,
-  `src/agents/slack/index.ts`, which forwards PR events to the github agent).
+  `packages/core/opensession-server/src/agents/slack/index.ts`, which forwards PR events to the github agent).
 - Verification: `GITHUB_WEBHOOK_SECRET`, HMAC-SHA256 over the raw body,
   header `x-hub-signature-256` (`sha256=<hex>`), timing-safe compare; invalid
   signature → 401. Deliveries are deduped by `x-github-delivery`.
 
 Configure the GitHub webhook (repo → Settings → Webhooks) with that URL,
 content type `application/json`, your secret, and these events — this is what
-the code consumes (`src/agents/github/webhook.ts`):
+the code consumes (`packages/core/opensession-server/src/agents/github/webhook.ts`):
 
 | Event | What happens |
 | --- | --- |
 | `issue_comment`, `pull_request_review_comment` (action `created`) | if the body matches a configured mention handle: intent-classified → whole-PR action (review / autofix / simplify / adversarial) or a conversational reply run in a PR-branch worktree |
-| `pull_request` action `labeled` | labels `os-review` / `os-auto-fix` / `os-simplify` / `os-adversarial` trigger the corresponding behavior (the legacy `michael-*` names are accepted as aliases — `src/agents/github/constants.ts`; create the labels on your repo first); auto-fix also merges the current base into conflicting PR branches and resolves the conflicts without force-pushing |
+| `pull_request` action `labeled` | labels `os-review` / `os-auto-fix` / `os-simplify` / `os-adversarial` trigger the corresponding behavior (the legacy `michael-*` names are accepted as aliases — `packages/core/opensession-server/src/agents/github/constants.ts`; create the labels on your repo first); auto-fix also merges the current base into conflicting PR branches and resolves the conflicts without force-pushing |
 | `pull_request` `opened`/`reopened`/`synchronize`/`ready_for_review` | auto-review, if the PR is non-draft and either carries `os-review` or the review automation is enabled |
 | `pull_request` action `closed` + merged | notifies linked sessions; fires the docs-sync automation on `github:pr_merged` |
 | `pull_request_review` | handled by the Slack agent (review → Slack notification) |
@@ -206,7 +206,7 @@ story.
    the first ~8h expiry.)
 3. Restart the service to load the runner-internal token injection.
 
-What turns on (`src/server/github-auth.ts`, `web-auth.ts`, `routes/auth.ts`):
+What turns on (`packages/core/opensession-server/src/server/github-auth.ts`, `web-auth.ts`, `routes/auth.ts`):
 
 - **Sign-in required**: the UI shows "Continue with GitHub", which starts the
   device flow, the one sign-in every client uses; only logins on

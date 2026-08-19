@@ -77,7 +77,7 @@ read. `--yes` skips the question for scripted installs.
 ```
 
 A feed entry is a `ConfigFeed` exactly as the feeds store defines one
-(`src/server/feeds-config.ts`); an automation entry is a recipe as
+(`packages/core/opensession-server/src/server/feeds-config.ts`); an automation entry is a recipe as
 `recipes/README.md` describes one. The manifest is an envelope around them
 rather than a second schema.
 
