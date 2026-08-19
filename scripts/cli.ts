@@ -330,7 +330,11 @@ async function main(): Promise<number> {
 
     case "runner":
       if (positional[0] === "run") return await runnerRun();
-			if (positional[0] === "service" && positional[1] === "install") return (await installRunnerService()) ? 0 : 1;
+			if (positional[0] === "service" && positional[1] === "install") {
+				if (await installRunnerService()) return 0;
+				info(dim("  run `opensession runner run` in the foreground to hold the channel open meanwhile"));
+				return 1;
+			}
       if (positional[0] === "status" || !positional[0]) return await runnerStatus();
 			// The pairing UI and docs both say `opensession runner connect`; keep
 			// that spelling working alongside the top-level `connect`.
