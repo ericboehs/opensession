@@ -124,6 +124,16 @@ seed, install/service/update, non-sandbox turns) works and is not listed here.
   sandbox re-exec sites run `bun run <host-entry>` inside a container that
   carries its own bun + checkout. Non-sandbox / local runs work (the dispatcher
   self-execs the binary for `runner-host` and `mcp-proxy`).
+- **Features that spawn a `scripts/*.ts` helper by path.** A few paths resolve
+  a helper script through `import.meta.dir` (which is `/$bunfs` in the binary),
+  so the file is not on disk for the spawned process: PR-checks
+  (`GH_CHECKS_CLI_PATH` → `scripts/gh-checks.ts`, `run-instructions.ts`) and the
+  code-storage credential mint (`scripts/cs-credential.ts`,
+  `codestorage/remote.ts`). The default self-repo / `mcp-config.json` path
+  (`OPENSESSION_ROOT`, `config.ts`) also resolves under `/$bunfs`; simple mode
+  uses the scratch repo and a written config, so it is unaffected, but a
+  self-repo default would be wrong. These are separate from the turn path
+  (Claude turns work) and would each need their own on-disk-sidecar treatment.
 
 ## State
 
