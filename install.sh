@@ -824,17 +824,17 @@ if [ "$NO_MODIFY_PATH" != "1" ]; then
   case "$(basename "${SHELL:-bash}")" in
     fish)
       profiles="$HOME/.config/fish/config.fish"
-      line="fish_add_path $BIN_DIR"
+      line="fish_add_path $BIN_DIR $HOME/.opencode/bin"
       mkdir -p "$HOME/.config/fish"
       ;;
     zsh)
       # .zshenv is read by every zsh invocation; .zshrc only by interactive ones.
       profiles="${ZDOTDIR:-$HOME}/.zshrc ${ZDOTDIR:-$HOME}/.zshenv"
-      line="export PATH=\"$BIN_DIR:\$PATH\""
+      line="export PATH=\"$BIN_DIR:\$HOME/.opencode/bin:\$PATH\""
       ;;
     *)
       profiles="$HOME/.bashrc $HOME/.profile"
-      line="export PATH=\"$BIN_DIR:\$PATH\""
+      line="export PATH=\"$BIN_DIR:\$HOME/.opencode/bin:\$PATH\""
       ;;
   esac
   for profile in $profiles; do
