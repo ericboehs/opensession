@@ -183,8 +183,10 @@ describe("custom OPENSESSION_HOME", () => {
   test("persistedHomeEnv keeps a moved home and drops the default", () => {
     // A default install ($HOME/.opensession) needs no entry; a moved home does,
     // or the server's runtime opensessionHome() tends ~/.opensession instead.
-    expect(persistedHomeEnv("/srv/os-home", "/home/bob")).toBe("/srv/os-home");
-    expect(persistedHomeEnv("/home/bob/.opensession", "/home/bob")).toBeNull();
+    const homeRoot = join("/", "home", "bob");
+    const movedHome = join("/", "srv", "os-home");
+    expect(persistedHomeEnv(movedHome, homeRoot)).toBe(movedHome);
+    expect(persistedHomeEnv(join(homeRoot, ".opensession"), homeRoot)).toBeNull();
   });
 
   // OPENSESSION_HOME is read once at import, so exercise the rendered output in
