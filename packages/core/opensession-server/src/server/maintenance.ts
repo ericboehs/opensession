@@ -38,9 +38,27 @@ const FIRST_SWEEP_DELAY_MS = 2 * 60 * 1000;
 /** Warn the operator once free space is this tight — before writes start failing. */
 const DISK_WARN_PCT = num(process.env.OPENSESSION_DISK_WARN_PCT, 90);
 
+/** The install's home, honoring the OPENSESSION_HOME override the installer
+ *  uses (scripts/lib/paths.ts), so maintenance inspects the same tree launchd
+ *  and systemd actually write to rather than a stale `~/.opensession`. */
+function opensessionHome(): string {
+  return process.env.OPENSESSION_HOME || join(homeDir(), ".opensession");
+}
+
 /** The install's log directory (service.ts points the unit's log output here). */
 export function serviceLogDir(): string {
-  return join(homeDir(), ".opensession", "logs");
+  return join(opensessionHome(), "logs");
+}
+
+/** An existing path ON the log filesystem, for the free-space check. The log
+ *  dir may not be created yet, so fall back to the install home, then $HOME.
+ *  Probing `/` would miss a nearly full `/home` on a split-filesystem box. */
+export function diskProbePath(): string {
+  const dir = serviceLogDir();
+  if (existsSync(dir)) return dir;
+  const home = opensessionHome();
+  if (existsSync(home)) return home;
+  return homeDir();
 }
 
 const SERVICE_LOGS = ["server.log", "server.err.log"];
@@ -92,7 +110,7 @@ export function runMaintenance(): MaintenanceResult {
   }
   if (rotated.length) audit({ event: "maintenance_log_rotate", rotated: rotated.length });
 
-  const diskPct = diskUsagePct();
+  const diskPct = diskUsagePct(diskProbePath());
   if (diskPct >= DISK_WARN_PCT) {
     console.warn(
       `[maintenance] free disk is low — filesystem at ${diskPct.toFixed(0)}%. ` +

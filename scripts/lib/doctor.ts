@@ -18,7 +18,7 @@ import { CONFIG_PATH, ENV_PATH, REPO_ROOT } from "./paths";
 import { isCompiledBinary } from "../../packages/core/opensession-server/src/runner-host/exe";
 import { INTEGRATIONS } from "../../packages/core/opensession-server/src/server/integrations/registry";
 import { diskUsagePct } from "../../packages/core/opensession-server/src/server/disk-gc";
-import { serviceLogDir } from "../../packages/core/opensession-server/src/server/maintenance";
+import { diskProbePath, serviceLogDir } from "../../packages/core/opensession-server/src/server/maintenance";
 import * as service from "./service";
 import { dim, fail, heading, info, ok, run, warn } from "./ui";
 
@@ -282,7 +282,7 @@ async function checkEngine(t: Tally): Promise<void> {
  */
 function checkDisk(t: Tally): void {
   heading("Disk");
-  const pct = diskUsagePct();
+  const pct = diskUsagePct(diskProbePath());
   if (pct >= 95) {
     fail(`disk ${pct.toFixed(0)}% full`, "free space now — old sessions and worktrees are the usual cause");
     t.errors++;
