@@ -17,8 +17,14 @@
  * scope; the sweep is armed from the boot block via startMaintenance().
  */
 
-import { copyFileSync, existsSync, statSync, truncateSync } from "node:fs";
-import { join } from "node:path";
+import {
+  copyFileSync,
+  existsSync,
+  readFileSync,
+  statSync,
+  truncateSync,
+} from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { audit } from "./audit";
 import { diskUsagePct } from "./disk-gc";
 import { homeDir } from "./paths";
@@ -38,27 +44,105 @@ const FIRST_SWEEP_DELAY_MS = 2 * 60 * 1000;
 /** Warn the operator once free space is this tight — before writes start failing. */
 const DISK_WARN_PCT = num(process.env.OPENSESSION_DISK_WARN_PCT, 90);
 
-/** The install's home, honoring the OPENSESSION_HOME override the installer
- *  uses (scripts/lib/paths.ts), so maintenance inspects the same tree launchd
- *  and systemd actually write to rather than a stale `~/.opensession`. */
+/** The install's home, honoring the override used by scripts/lib/paths.ts. */
 function opensessionHome(): string {
   return process.env.OPENSESSION_HOME || join(homeDir(), ".opensession");
 }
 
-/** The install's log directory (service.ts points the unit's log output here). */
-export function serviceLogDir(): string {
-  return join(opensessionHome(), "logs");
+function xmlText(value: string): string {
+  return value
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&");
 }
 
-/** An existing path ON the log filesystem, for the free-space check. The log
- *  dir may not be created yet, so fall back to the install home, then $HOME.
- *  Probing `/` would miss a nearly full `/home` on a split-filesystem box. */
+function logParent(path: string): string | null {
+  const clean = path.trim();
+  return /^(server|server\.err)\.log$/.test(basename(clean))
+    ? dirname(clean)
+    : null;
+}
+
+/**
+ * Recover the log directory from a rendered systemd unit or launchd plist.
+ * Older custom-home services do not carry OPENSESSION_HOME in their process
+ * environment, but their installed definition still names the real log path or
+ * stable executable. Reading it lets an upgraded server protect those logs on
+ * its first restart, without requiring a separate service reinstall.
+ */
+export function serviceLogDirFromDefinition(text: string): string | null {
+  for (const match of text.matchAll(
+    /^Standard(?:Output|Error)=append:(.+)$/gm,
+  )) {
+    const dir = logParent(match[1] || "");
+    if (dir) return dir;
+  }
+
+  for (const match of text.matchAll(
+    /<key>Standard(?:Out|Error)Path<\/key>\s*<string>([^<]+)<\/string>/g,
+  )) {
+    const dir = logParent(xmlText(match[1] || ""));
+    if (dir) return dir;
+  }
+
+  const systemdHome = text.match(
+    /^Environment=["']?OPENSESSION_HOME=([^"'\n]+)["']?$/m,
+  )?.[1];
+  if (systemdHome) return join(systemdHome.trim(), "logs");
+
+  const plistHome = text.match(
+    /<key>OPENSESSION_HOME<\/key>\s*<string>([^<]+)<\/string>/,
+  )?.[1];
+  if (plistHome) return join(xmlText(plistHome), "logs");
+
+  const binaryHome = text.match(
+    /^ExecStart=["']?(.+?)[\/]bin[\/]opensession(?:\s|["'])/m,
+  )?.[1];
+  return binaryHome ? join(binaryHome, "logs") : null;
+}
+
+function installedServiceLogDir(): string | null {
+  const home = homeDir();
+  const definitions = process.platform === "darwin"
+    ? [join(home, "Library", "LaunchAgents", "dev.opensession.server.plist")]
+    : [
+        join(
+          process.env.XDG_CONFIG_HOME || join(home, ".config"),
+          "systemd",
+          "user",
+          "opensession.service",
+        ),
+        "/etc/systemd/system/opensession.service",
+      ];
+  for (const path of definitions) {
+    try {
+      const dir = serviceLogDirFromDefinition(readFileSync(path, "utf8"));
+      if (dir) return dir;
+    } catch {}
+  }
+  return null;
+}
+
+/** The directory the active service writes, including pre-upgrade definitions. */
+export function serviceLogDir(): string {
+  if (process.env.OPENSESSION_HOME)
+    return join(process.env.OPENSESSION_HOME, "logs");
+  return installedServiceLogDir() || join(opensessionHome(), "logs");
+}
+
+/** The nearest existing path on the log filesystem for the free-space check.
+ * The log directory may not exist yet, so walk through its install home before
+ * reaching the filesystem root. */
 export function diskProbePath(): string {
-  const dir = serviceLogDir();
-  if (existsSync(dir)) return dir;
-  const home = opensessionHome();
-  if (existsSync(home)) return home;
-  return homeDir();
+  let candidate = serviceLogDir();
+  while (true) {
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(candidate);
+    if (parent === candidate) return homeDir();
+    candidate = parent;
+  }
 }
 
 const SERVICE_LOGS = ["server.log", "server.err.log"];
