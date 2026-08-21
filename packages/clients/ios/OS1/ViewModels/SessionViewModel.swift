@@ -942,6 +942,31 @@ final class SessionViewModel {
         sendSeq += 1
     }
 
+    /// Sends a crop and its comment as one complete message without reading or
+    /// clearing anything waiting in the ordinary composer.
+    @discardableResult
+    func sendImageRegionComment(_ text: String, image: AttachedImage) -> Bool {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return false }
+        let busyMode = UserDefaults.standard.string(forKey: "os1.composer.busySend") ?? "queue"
+        guard outbox.enqueue(
+            sessionId: session.id,
+            content: text,
+            images: [image.dataURL],
+            effort: effort.isEmpty ? nil : effort,
+            fastMode: fastMode ? true : nil,
+            busyMode: busyMode,
+            user: ServerConfig.shared.userName
+        ) != nil else {
+            notice = "Too many unsent messages. Send or delete some first."
+            return false
+        }
+        HideStore.shared.unhide(for: session)
+        replySuggestions = []
+        sendSeq += 1
+        return true
+    }
+
     /// The server took a message: put it where the server says it went. This
     /// replaces the old guess from local `isRunning` — a client that has been
     /// offline has no idea whether a run started meanwhile, and a bubble in

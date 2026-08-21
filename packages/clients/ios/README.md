@@ -90,8 +90,11 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   Routine calls fold into one `N steps` run, and consecutive edits to the same
   file into one row — the path once, the summed ±lines, and a `×3` count —
   both opening to the individual calls.
-  Transcript videos stream inline on both platforms. Tool-result screenshots
-  and recordings marked as featured stay visible when their work fold closes,
+  Transcript videos stream inline on both platforms. An already-sent image can
+  be opened, cropped with a movable and resizable selection, and sent back with
+  a direct comment without changing the original or the current composer draft.
+  Tool-result screenshots and recordings marked as featured stay visible when
+  their work fold closes,
   while incidental media remains inside the producing tool row.
   A `Task` row opens the sub-agent's own transcript in a sheet (polled while
   the worker runs, via `GET /api/sessions/:id/subagent/:agentId`), and a
@@ -406,6 +409,7 @@ OS1/
     TranscriptEntry.swift    Transcript entry (REST + WS frames)
     AskQuestion.swift        Pending AskUserQuestion
     AttachedImage.swift      Composer image attachments
+    ImageRegionComment.swift Normalized crop geometry and image derivation
     AttachedFile.swift       Open-in and staged file attachments
     ModelCatalog.swift       Workspace model catalog + engine routing
     ToolPresentation.swift   Canonical tool names, families, summaries, ±lines
