@@ -22,6 +22,18 @@ final class MarkdownCodeFenceTests: XCTestCase {
 
         XCTAssertEqual(clipboard.text, "printf 'one\\n'\nprintf 'two\\n'")
     }
+
+    func testCompleteExampleInsideUnclosedLongerFenceIsNotExtracted() {
+        let markdown = """
+        ````text
+        An example:
+        ```swift
+        print(1)
+        ```
+        """
+
+        XCTAssertEqual(MarkdownCodeFenceParser.split(markdown), [.markdown(markdown)])
+    }
 }
 
 private final class RecordingCodeFenceClipboard: CodeFenceClipboard {

@@ -33,10 +33,19 @@ enum MarkdownCodeFenceParser {
         var index = 0
 
         while index < lines.count {
-            guard let opening = opening(in: lines[index]),
-                  let closingIndex = closingIndex(in: lines, after: index, opening: opening) else {
+            guard let opening = opening(in: lines[index]) else {
                 index += 1
                 continue
+            }
+            // Once an opening fence is seen, every later line belongs to it
+            // until a matching close. A shorter nested-looking fence is code,
+            // not a new block that can be extracted independently.
+            guard let closingIndex = closingIndex(
+                in: lines,
+                after: index,
+                opening: opening
+            ) else {
+                break
             }
 
             appendMarkdown(lines[markdownStart..<index], to: &segments)
