@@ -160,6 +160,7 @@ import {
 	IconListCircles,
 	IconMessages,
 	IconFeed,
+	IconPeople,
 	IconPullRequest,
 } from "./icons";
 import { Button } from "../ui/button";
@@ -4792,7 +4793,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						// once by a strip above the tools, once by this heading — and
 						// each said it with its own ✕.
 						borrowedLens &&
-							"min-h-10 w-full rounded-row bg-blue-soft pl-3 pr-2 phone:min-h-12 phone:pl-3.5 desktop:h-full desktop:min-h-0",
+							"min-h-10 w-full rounded-row bg-blue-soft pl-3 pr-1 phone:min-h-12 phone:pl-3.5 desktop:h-full desktop:min-h-0",
 					)}
 					ref={headRef}
 				>
@@ -4807,14 +4808,20 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 									titleRef.current = node;
 								}}
 							>
-								{filter.person !== "everyone" &&
+								{filter.person === "everyone" ? (
+									<IconPeople
+										size={20}
+										className="shrink-0 translate-y-[0.5px] text-dim phone:-translate-y-px"
+									/>
+								) : (
 									filter.person !== "unassigned" && (
 										<UserAvatar
 											name={personLensName}
 											size={20}
 											className="shrink-0"
 										/>
-									)}
+									)
+								)}
 								<span className="min-w-0 truncate font-semibold">
 									{filter.person === "everyone"
 										? "Everyone"
@@ -4825,7 +4832,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							</div>
 							<Tooltip label="Back to your workspaces">
 								<button
-									className="relative flex size-10 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-dim transition-[color,scale] before:absolute before:inset-1 before:rounded-md before:transition-colors before:content-[''] hover:text-fg hover:before:bg-hover active:scale-[0.96] phone:size-11 motion-reduce:transform-none [&>*]:relative [&>*]:z-[1]"
+									className="relative flex size-10 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-dim transition-[color,scale] before:absolute before:inset-2 before:rounded-md before:transition-colors before:content-[''] hover:text-fg hover:before:bg-hover active:scale-[0.96] phone:size-11 motion-reduce:transform-none [&>*]:relative [&>*]:z-[1]"
 									onClick={() => setFilter({ person: "me" })}
 									aria-label="Back to your workspaces"
 								>

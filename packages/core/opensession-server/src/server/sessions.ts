@@ -1331,9 +1331,8 @@ export async function getAllSessionsAsync(
   );
 }
 
-export function deleteSession(session: UnifiedSession): void {
-  sessionKernel(session.id).applySync("session_delete", () => {
-  // Delete the session JSON file based on source
+function removeSessionArtifacts(session: UnifiedSession): void {
+  // Delete the session JSON file based on source.
   switch (session.source) {
     case "slack": {
       // ID format: slack-{filename}
@@ -1361,5 +1360,20 @@ export function deleteSession(session: UnifiedSession): void {
   // async: a scratch hiccup must never block deletion.
   for (const id of [session.id, ...(session.aliasIds || [])])
     void removeSessionScratch(id);
+}
+
+export function deleteSession(session: UnifiedSession): void {
+  sessionKernel(session.id).applySync("session_delete", () => {
+    removeSessionArtifacts(session);
   });
+}
+
+/**
+ * Finish a deletion whose permanent tombstone was written before its session
+ * file was removed. The tombstone already fences every writer, so re-entering
+ * the mailbox is both impossible and unnecessary. Callers must verify the
+ * tombstone before using this recovery path.
+ */
+export function removeTombstonedSessionArtifacts(session: UnifiedSession): void {
+  removeSessionArtifacts(session);
 }

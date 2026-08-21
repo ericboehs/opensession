@@ -28,6 +28,7 @@ import { getAccountById } from "./claude-accounts";
 import { getCodexAccountById } from "./codex-accounts";
 import { buildForkHandoffNote } from "./fork-handoff";
 import { ensureGeneratedTitle } from "./generated-titles";
+import { nameKnownSessionReferencesForTitle } from "./session-reference-title";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
 import { parseTranscriptAsync } from "./jsonl-parser";
@@ -101,6 +102,8 @@ export interface CreateSessionMessage {
 	/** Client-minted native id used to replay this create safely after reconnect. */
 	clientSessionId?: unknown;
 	prompt: string;
+	/** Prompt with session-reference display names, used only for title generation. */
+	titlePrompt?: unknown;
 	requestId?: string;
 	user?: string;
 	mode?: string;
@@ -447,7 +450,8 @@ export async function openCreatedSession(
 	// wore the raw first line) and keeps that name for life — later sessions
 	// never rename it, and a manual rename in the meantime wins.
 	const wsToName = spec.autoNameWorkspace;
-	void ensureGeneratedTitle(bksId, spec.titlePrompt, spec.user, spec.model,).then(
+	const titlePrompt = await nameKnownSessionReferencesForTitle(spec.titlePrompt);
+	void ensureGeneratedTitle(bksId, titlePrompt, spec.user, spec.model,).then(
 		(t) => {
 			if (!t) return;
 			invalidateSessionsCache();
@@ -1107,6 +1111,8 @@ export async function handleCreateSessionMessage(
 	};
 
 	const { prompt, user, mode } = msg;
+	const titlePrompt =
+		typeof msg.titlePrompt === "string" ? msg.titlePrompt.slice(0, 2000) : prompt;
 	const requestId =
 		typeof msg.requestId === "string" && msg.requestId
 			? msg.requestId
@@ -1347,7 +1353,7 @@ export async function handleCreateSessionMessage(
 				name:
 					(typeof msg.createWorkspace.name === "string" &&
 						msg.createWorkspace.name) ||
-					prompt.trim().split("\n")[0].slice(0, 80) ||
+					titlePrompt.trim().split("\n")[0].slice(0, 80) ||
 					"Workspace",
 				...(isRepoLess ? {} : { project: repo.id }),
 				createdBy: user || "Anonymous",
@@ -1558,7 +1564,10 @@ export async function handleCreateSessionMessage(
 			attachBranch,
 		);
 
-		const title = prompt.trim().split("\n")[0].slice(0, 80);
+		const title = (await nameKnownSessionReferencesForTitle(titlePrompt))
+			.trim()
+			.split("\n")[0]
+			.slice(0, 80);
 		// Every session lives in a workspace (session-workspace.ts). A create
 		// that resolved none — no picker choice, no fork parent, no
 		// explicit id — mints its own here rather than surfacing as an
@@ -1693,7 +1702,7 @@ export async function handleCreateSessionMessage(
 		const computedSpec: ResolvedCreate = {
 			id: bksId,
 			title,
-			titlePrompt: prompt,
+			titlePrompt,
 			openingPrompt,
 			user,
 			createdBy: user || "Anonymous",

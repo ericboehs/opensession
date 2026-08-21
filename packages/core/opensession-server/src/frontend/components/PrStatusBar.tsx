@@ -1200,6 +1200,12 @@ export function PrStatusBar({
 				{renderAction()}
 			</>
 		);
+		// Without a preview mark, give the headline another 8px of space from
+		// the band's left edge. The mark supplies that breathing room when present.
+		const summaryRowClass = cn(
+			WS_SUMMARY_STATUS_ROW,
+			"[&&:not(:has([data-summary-preview]))]:pl-4",
+		);
 		const primarySummary = (
 			<div
 				className={cn(
@@ -1216,7 +1222,7 @@ export function PrStatusBar({
 					// strip's `#1234` chip.
 					<ContextMenu.Root>
 						<ContextMenu.Trigger
-							render={<div className={WS_SUMMARY_STATUS_ROW} />}
+							render={<div className={summaryRowClass} />}
 						>
 							{rowBody}
 						</ContextMenu.Trigger>
@@ -1225,7 +1231,7 @@ export function PrStatusBar({
 						</ContextMenu.Popup>
 					</ContextMenu.Root>
 				) : (
-					<div className={WS_SUMMARY_STATUS_ROW}>{rowBody}</div>
+					<div className={summaryRowClass}>{rowBody}</div>
 				)}
 			</div>
 		);

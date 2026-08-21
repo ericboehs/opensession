@@ -353,7 +353,6 @@ import {
 	PANEL_FOOTER_ITEM,
 	PANEL_INFO_TOP,
 	PANEL_OVERLAY,
-	PANEL_PR_PLATE,
 	PANEL_SHELL,
 } from "../lib/session-panel-classes";
 import { TURN_SPACER } from "../lib/app-shell-classes";
@@ -1205,9 +1204,9 @@ export function SessionViewer({
 	const [viewers, setViewers] = useState<string[]>([]);
 	const [typingUsers, setTypingUsers] = useState<string[]>([]);
 	// The create run is still preparing this session's worktree (new workspaces
-	// announce the session before the slow git work). While true the Workspace
-	// panel shows creation progress, and the opening message holds above the
-	// composer. Flipped off by the workspace_status event, kept in sync with
+	// announce the session before the slow git work). While true the conversation
+	// shows creation progress, and the opening message holds above the composer.
+	// Flipped off by the workspace_status event, kept in sync with
 	// the sessions poll otherwise.
 	const [workspacePreparing, setWorkspacePreparing] = useState(
 		!!session.workspacePreparing,
@@ -1419,18 +1418,19 @@ export function SessionViewer({
 	const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
 	const activePanelOpen = showReview ? reviewPanelOpen : panelOpen;
 	const setActivePanelOpen = showReview ? setReviewPanelOpen : setPanelOpen;
-	// The panel's own navigation stack, one level deep: null is the workspace
-	// overview, and a page is what pushes on top of it: "portals" from the bar
-	// along the bottom, "changes" from the file list in the overview. It lives
-	// here rather than in either of them, so closing the panel (or switching
-	// session) lands back on the overview.
-	//
-	// On phones the same state drives the info page's own sub-page: that page
-	// IS this panel there, so a drill-in has to push inside it rather than open
-	// a column that phone layouts never render.
+	// The desktop panel has four pages. Null means Changes there, while phones
+	// still use null for their Workspace details overview and push Changes from
+	// that page. Keeping one state preserves the phone drill-in without giving
+	// the desktop panel a duplicate overview.
 	const [panelPage, setPanelPage] = useState<
-		null | "portals" | "agents" | "changes"
+		null | "changes" | "portals" | "agents" | "terminal"
 	>(null);
+	// Start a panel terminal only after its tab is opened. Keep it mounted while
+	// switching tabs, then drop it when the panel closes.
+	const [panelTerminalMounted, setPanelTerminalMounted] = useState(false);
+	useEffect(() => {
+		if (!activePanelOpen) setPanelTerminalMounted(false);
+	}, [activePanelOpen]);
 	// Closing the host that shows pages returns to the overview; that effect
 	// needs `isPhone` to know which host to watch, so it lives beside the
 	// viewport state further down.
@@ -2203,8 +2203,7 @@ export function SessionViewer({
 	// or Plain thread still need somewhere to show the Agents tab.
 	const panelAvailable =
 		!hideRightPanel &&
-		(workspacePreparing ||
-			hasWorkspace ||
+		(hasWorkspace ||
 			hasPlain ||
 			workflowRuns.length > 0 ||
 			subagents.length > 0 ||
@@ -5874,7 +5873,7 @@ export function SessionViewer({
 								className={cn(
 									"[corner-shape:squircle]",
 									isPhone &&
-										"size-11 min-h-11 rounded-full border-transparent text-dim shadow-none [corner-shape:round]",
+										"size-11 min-h-11 rounded-control border-transparent text-dim shadow-none [corner-shape:squircle]",
 									overflowOpen && "bg-hover text-fg",
 								)}
 								title="More actions"
@@ -6231,11 +6230,15 @@ export function SessionViewer({
 						<WorkspaceSummary
 							session={session}
 							anchor={headerActionsRef}
-							// The Changes row opens the active view's panel already on its
-							// Changes page; its other rows land on the overview.
+							// Changes opens beside the card. Review rows go to the full Review
+							// canvas now that the side panel contains tools only.
 							onOpenPanelTab={(tab) => {
-								setPanelPage(tab === "changes" ? "changes" : null);
-								setActivePanelOpen(true);
+								if (tab === "changes") {
+									setPanelPage("changes");
+									setActivePanelOpen(true);
+								} else {
+									onOpenReview?.();
+								}
 							}}
 							onOpenPr={() => focusPrInReview()}
 							onOpenStackPr={onOpenPr}
@@ -6366,20 +6369,22 @@ export function SessionViewer({
 											: workspaceName || session.title}
 									</div>
 								</div>
-								{waitingForWorkspace ? (
-									<WorkspaceWaiting detail="This takes a moment." />
-								) : panelPage === "changes" ? (
-									// Same offset as the panel's Changes page, against
-									// this page's taller bar (52px plus the notch).
-									<div className="[&_.sticky]:top-[calc(env(safe-area-inset-top,0px)+52px)]">
-										<DiffPanel
-											sessionId={session.id}
-											isRunning={isBusy}
-											canSend={connected && !isBusy && !noEngine}
-											send={send}
-											diff={diffState}
-										/>
-									</div>
+								{panelPage === "changes" ? (
+									waitingForWorkspace ? (
+										<WorkspaceWaiting detail="This takes a moment." />
+									) : (
+										// Same offset as the panel's Changes page, against
+										// this page's taller bar (52px plus the notch).
+										<div className="[&_.sticky]:top-[calc(env(safe-area-inset-top,0px)+52px)]">
+											<DiffPanel
+												sessionId={session.id}
+												isRunning={isBusy}
+												canSend={connected && !isBusy && !noEngine}
+												send={send}
+												diff={diffState}
+											/>
+										</div>
+									)
 								) : (
 								<>
 								<div className={INFO_HERO}>
@@ -6944,10 +6949,10 @@ export function SessionViewer({
 							onClick={handleMessagesClick}
 						>
 							{waitingForWorkspace ? (
-								// Keep workspace creation out of the conversation. The opening
-								// message stays visible in the queue flap beside the composer,
-								// while the Workspace panel owns the creation status.
-								<div className="min-h-full" aria-hidden="true" />
+								<WorkspaceWaiting
+									detail="Your message will send when it's ready."
+									ghost
+								/>
 							) : optimisticEmpty ? (
 								<div className="min-h-full flex items-center justify-center px-4 text-center text-dim">
 									{"New session in"}
@@ -7329,7 +7334,7 @@ export function SessionViewer({
 														<Button
 															variant="ghost"
 															size="lg"
-															className="size-11 min-h-11 rounded-full [corner-shape:round]"
+															className="size-11 min-h-11 rounded-control [corner-shape:squircle]"
 															icon={<IconArchive size={22} aria-hidden />}
 															aria-label="Archive and open next chat"
 															disabled={archiving}
@@ -7341,7 +7346,7 @@ export function SessionViewer({
 													<Button
 														variant="ghost"
 														size="lg"
-														className="size-11 min-h-11 rounded-full [corner-shape:round]"
+														className="size-11 min-h-11 rounded-control [corner-shape:squircle]"
 														icon={<IconPlus size={22} aria-hidden />}
 														aria-label="New workspace"
 														disabled={!onNewWorkspace}
@@ -7351,7 +7356,7 @@ export function SessionViewer({
 														<Button
 															variant="ghost"
 															size="lg"
-															className="size-11 min-h-11 rounded-full [corner-shape:round]"
+															className="size-11 min-h-11 rounded-control [corner-shape:squircle]"
 															icon={<IconArrowRight size={22} aria-hidden />}
 															aria-label="Next chat"
 															disabled={!onNextChat}
@@ -7548,6 +7553,7 @@ export function SessionViewer({
             it opens as a full-height column beside the left sidebar (not just
             below the session header). */}
 				{(() => {
+				const desktopPanelPage = panelPage ?? "changes";
 				const rightRegion = (
 					<>
 				{!isPhone && panelAvailable && activePanelOpen && (
@@ -7556,75 +7562,35 @@ export function SessionViewer({
 				{!isPhone && panelAvailable && activePanelOpen ? (
 					<div className={PANEL_SHELL} style={panelStyle}>
 						{panelResizeHandle}
-						{/* A plate, not a band: the strip takes the same inset and
-						    corner as the sections under it, so it reads as the first
-						    element of the column rather than chrome across its top.
-						    It belongs to the overview, so a page pushed on top of it
-						    (Portals) gets the whole column — the strip would read as
-						    chrome that page owns rather than the panel underneath. */}
-						{hasRepoWork && !panelPage && (
-							<div className={PANEL_PR_PLATE}>
-								<PrStatusBar
-									sessionId={session.id}
-									repo={session.repo || undefined}
-									archived={session.archived}
-									prs={session.prs}
-									send={connected ? send : undefined}
-									onOpenPrTab={focusPrInReview}
-									onOpenChecksTab={() => focusPrInReview(undefined, "checks")}
-									onArchive={handleArchive}
-									onNewSession={
-										onNewSession ? () => onNewSession("share") : undefined
-									}
-									running={isRunningLive}
-									refreshTick={gitRefreshTick}
-									leading={
-										!isPhone ? (
-											<StagingLink
-												session={session}
-												variant="header"
-												refreshTick={gitRefreshTick}
-											/>
-										) : undefined
-									}
-								/>
-							</div>
-						)}
-						{/* No tab strip. This panel is the workspace overview, and
-						    everything it used to hide behind a tab now opens full-width
-						    from a row inside it — Changes and Terminal as view tabs (see
-						    App.tsx), Assets and the PR the same way. What stays here is
-						    what you read at a glance while your work runs beside it. */}
+						{/* The summary owns the workspace overview. This panel is only the
+						    four places that benefit from dedicated room. */}
 						<div className={PANEL_BODY}>
-							{waitingForWorkspace ? (
-								<WorkspaceWaiting detail="This takes a moment." />
-							) : panelPage === "changes" ? (
+							{desktopPanelPage === "changes" ? (
 								<>
 									<PanelPageHeader
 										title="Changes"
-										onBack={() => setPanelPage(null)}
+										onBack={() => setActivePanelOpen(false)}
 									/>
-									{/* DiffPanel's own bars stick to this same scroll
-									    container at top-0, which is behind the header
-									    above. Drop them by its height so the file summary
-									    and the Files/Code flow toggle stay reachable while
-									    you read, instead of hiding under it. */}
-									<div className="[&_.sticky]:top-12">
-										<DiffPanel
-											sessionId={session.id}
-											isRunning={isBusy}
-											canSend={connected && !isBusy && !noEngine}
-											send={send}
-											diff={diffState}
-										/>
-									</div>
+									{waitingForWorkspace ? (
+										<WorkspaceWaiting detail="This takes a moment." />
+									) : (
+										<div className="[&_.sticky]:top-12">
+											<DiffPanel
+												sessionId={session.id}
+												isRunning={isBusy}
+												canSend={connected && !isBusy && !noEngine}
+												send={send}
+												diff={diffState}
+											/>
+										</div>
+									)}
 								</>
-							) : panelPage === "portals" ? (
+							) : desktopPanelPage === "portals" ? (
 								<PortalsPage
 									sessionId={session.id}
 									status={previewStatus}
 									activePortal={portalTarget}
-									onBack={() => setPanelPage(null)}
+									onBack={() => setActivePanelOpen(false)}
 									onOpenPortal={onOpenPortal}
 									onStartPortal={(recipe) =>
 										send({
@@ -7644,96 +7610,63 @@ export function SessionViewer({
 										);
 									}}
 								/>
-							) : panelPage === "agents" ? (
+							) : desktopPanelPage === "agents" ? (
 								<WorkflowPanel
 									sessionId={session.id}
 									runs={workflowRuns}
 									onCancel={cancelWorkflowRun}
 									subagents={subagents}
 									onOpenSubagent={openSubagent}
-									onBack={() => setPanelPage(null)}
+									onBack={() => setActivePanelOpen(false)}
 								/>
-							) : (
-							<>
-							<div className={`px-1 ${PANEL_INFO_TOP}`}>
-								<WorkspaceInfo
-									sessionId={session.id}
-									workspaceId={session.workspaceId || null}
-									sessions={(workspaceSessions?.length ? workspaceSessions : [session]).map(
-										(s) => ({
-											id: s.id,
-											title: s.title,
-											createdAt: s.createdAt || "",
-											startedBy: s.startedBy,
-										}),
-									)}
-									repo={
-										hasRepoWork ? session.repo || "repository" : undefined
+							) : null}
+							{/* Keep terminals mounted while switching panel tabs so their PTYs
+							    survive. Closing the panel still closes its terminals. */}
+							{hasWorkspace && panelTerminalMounted && (
+								<div
+									className={
+										desktopPanelPage === "terminal"
+											? "flex h-full min-h-0 flex-col"
+											: "hidden"
 									}
-									prState={hasRepoWork ? session.prState : undefined}
-									refreshTick={gitRefreshTick}
-									sandbox={session.sandbox}
-									reviewRequest={effectiveReview?.req ?? null}
-									reviewRequestSessionId={effectiveReview?.ownerId}
-									prReviewRequested={effectiveReview?.prReviewRequested}
-									reviewAcceptedFromPr={effectiveReview?.acceptedFromPr}
-									onReviewChange={onReviewChange}
-									send={connected ? send : undefined}
-									assets={assetFiles}
-									onOpenAsset={(path) => setOverlayAssetPath(path)}
-									onOpenTab={(tab) => {
-										if (tab === "pr") onOpenReview?.();
-										else if (tab === "staging") onOpenStaging?.();
-										else if (tab === "assets") onOpenAssets?.();
-										// Changes stays in this panel: the file list you just
-										// clicked is the top of the diff you get, one level
-										// deeper, with a chevron back to here.
-										else if (tab === "changes") setPanelPage("changes");
-									}}
-									onAddToInput={(text) =>
-										setComposerPrefill((p) => ({
-											seq: (p?.seq ?? 0) + 1,
-											text,
-										}))
-									}
-									onOpenSession={(id, created) => onOpenSession?.(id, created)}
-									liveMediaCount={liveMediaCount}
-									liveMedia={liveOverviewMedia}
-								/>
-							</div>
-							{/* Reports are a section of this same panel, in the panel's
-							    own grammar: a faint label over a borderless plate, lining
-							    up with Git status and the changed files above. Agents is
-							    not one of them: it is a place the bottom bar opens, like
-							    Portals, so its empty state has somewhere to live and a
-							    long run cannot bury the overview. */}
-							{sessionReports.length > 0 && (
-								<div className="flex flex-col gap-4 px-2 pb-[22px]">
-									<SessionReportsPanel
-										reports={sessionReports}
-										onOpenNewSession={onOpenNewSession}
+								>
+									<PanelPageHeader
+										title="Terminal"
+										onBack={() => setActivePanelOpen(false)}
 									/>
+									<div className="min-h-0 flex-1">
+										<ShellPanel
+											sessionId={session.id}
+											send={send}
+											addHandler={addHandler}
+											visible={desktopPanelPage === "terminal"}
+										/>
+									</div>
 								</div>
 							)}
-							</>
-							)}
 						</div>
-						{/* Portals and Terminal are places, not readings, so they live on
-						    a bar along the bottom rather than as sections you scroll to.
-						    Portals opens the page on top of this panel; Terminal opens the
-						    full-width view tab beside it. */}
 						{hasWorkspace && (
 							<div className={PANEL_FOOTER}>
 								<button
 									type="button"
-									aria-pressed={panelPage === "portals"}
+									aria-pressed={desktopPanelPage === "changes"}
 									className={cn(
 										PANEL_FOOTER_ITEM,
-										panelPage === "portals" && "bg-hover text-fg",
+										desktopPanelPage === "changes" && "bg-hover text-fg",
 									)}
-									onClick={() =>
-										setPanelPage(panelPage === "portals" ? null : "portals")
-									}
+									onClick={() => setPanelPage("changes")}
+								>
+									<IconFile size={15} className="shrink-0" />
+									Changes
+								</button>
+								<button
+									type="button"
+									aria-pressed={desktopPanelPage === "portals"}
+									className={cn(
+										PANEL_FOOTER_ITEM,
+										desktopPanelPage === "portals" && "bg-hover text-fg",
+									)}
+									onClick={() => setPanelPage("portals")}
 								>
 									<IconGlobe size={15} className="shrink-0" />
 									Portals
@@ -7745,20 +7678,15 @@ export function SessionViewer({
 								</button>
 								<button
 									type="button"
-									aria-pressed={panelPage === "agents"}
+									aria-pressed={desktopPanelPage === "agents"}
 									className={cn(
 										PANEL_FOOTER_ITEM,
-										panelPage === "agents" && "bg-hover text-fg",
+										desktopPanelPage === "agents" && "bg-hover text-fg",
 									)}
-									onClick={() =>
-										setPanelPage(panelPage === "agents" ? null : "agents")
-									}
+									onClick={() => setPanelPage("agents")}
 								>
 									<IconStack size={15} className="shrink-0" />
 									Agents
-									{/* Only the live count, like Portals: a finished run is
-									    something you go and read, not something the bar has
-									    to keep announcing. */}
 									{runningAgents > 0 && (
 										<span className="shrink-0 tabular-nums text-yellow">
 											{runningAgents}
@@ -7767,12 +7695,15 @@ export function SessionViewer({
 								</button>
 								<button
 									type="button"
-									aria-pressed={showTerminal}
+									aria-pressed={desktopPanelPage === "terminal"}
 									className={cn(
 										PANEL_FOOTER_ITEM,
-										showTerminal && "bg-hover text-fg",
+										desktopPanelPage === "terminal" && "bg-hover text-fg",
 									)}
-									onClick={() => onOpenTerminal?.()}
+									onClick={() => {
+										setPanelTerminalMounted(true);
+										setPanelPage("terminal");
+									}}
 								>
 									<IconTerminal size={15} className="shrink-0" />
 									Terminal

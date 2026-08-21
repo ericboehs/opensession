@@ -28,6 +28,7 @@ test("phone navigation chrome has no hard divider bars", async () => {
 test("archived search focus collapses the phone header without clipping its shadow", () => {
 	expect(ARCHIVED_SEARCH_HEADER).not.toContain("overflow-hidden");
 	expect(ARCHIVED_SEARCH_HEADER).toContain("safe-area-inset-top,0px),16px");
+	expect(ARCHIVED_SEARCH_HEADER).toContain("+60px");
 	expect(ARCHIVED_SEARCH_HEADER).toContain("phone:[body.kb-open_&]:h-0!");
 	expect(ARCHIVED_SEARCH_HEADER).toContain("phone:[body.kb-open_&]:opacity-0");
 	expect(ARCHIVED_SEARCH_HEADER).toContain(

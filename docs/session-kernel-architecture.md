@@ -43,8 +43,10 @@ forever. Reusing an id with another payload is
 rejected. WebSocket receipt replay is capability-negotiated. Mutations wait
 behind the hello handshake, then become durable commands on a capable server
 or one-shot sends on an older server. A command whose physical execution was
-interrupted becomes pending again only when its server call site explicitly declares
-the operation replay-safe. Replay policy is not part of client request identity,
+interrupted becomes a retryable durable failure receipt only when its server
+call site explicitly declares the operation replay-safe. Admission committed but
+never marked as executing is also promoted to that safe retry receipt on actor
+restart, because no physical callback could have begun. Replay policy is not part of client request identity,
 and the first policy-aware migration preserves pre-existing interrupted receipts. The default is fail-closed: interrupted physical work
 becomes `indeterminate` and cannot execute again without reconciliation. Web and
 native clients keep every unresolved mutation envelope until `command_result`,
@@ -52,6 +54,9 @@ without age or count eviction, then replay the same request id after reconnect
 or app restart. Chrome keeps unresolved create and follow-up intents by request
 identity instead of overwriting one ambiguous request with the next. Completed retries return the
 stored result; interrupted retries re-enter the actor with the original id.
+Readiness ages only pending or processing commands. Indeterminate outcomes have
+separate count and oldest-age metrics, so a retained forensic receipt cannot make
+an unrelated active command report the whole actor service as stale.
 
 Large attachments are not copied into the command journal. Their content hash
 is part of the command identity. Create requests derive a stable session id
@@ -106,7 +111,7 @@ The protocol names workspace, branch, sandbox, credential, attachment-reference,
 and opening-turn effects, including adoption or reconciliation modes and durable
 creation fences. Payload decoding strips unknown fields, so bearer credentials
 and inline attachment bodies do not cross the durable executor boundary. The
-The creation aggregate durably retains bounded completed-effect receipts. An
+creation aggregate durably retains bounded completed-effect receipts. An
 executor result clears the current effect and records its stable ID in the same
 state/change transaction. Actor-store restarts preserve those receipts, and a
 completed effect cannot be emitted again after its outbox row is acknowledged.
@@ -127,9 +132,15 @@ The branch effect also has a production executor. It adopts only an exact
 project, branch, and worktree-path match, or materializes the requested branch
 with stable base and isolation options before returning its actor fence. Branch
 or path crossover is immediately indeterminate, and a crash after Git accepts
-the worktree adopts it on retry. Create entry points do not emit this effect yet.
-Sandbox, credential, attachment, and opening-turn executors are also not yet
-registered. Wiring those adapters and removing the remaining create-plan
+the worktree adopts it on retry. Credential preparation now has a production
+executor and stable intent. It validates only a durable principal selector and
+scope, records no token or Git environment, and returns an ordinary fenced
+receipt. Branch effects can carry that selector and resolve its process-local Git
+capability only when Git creation is necessary. The credential-bearing MCP path
+is still on its explicit legacy adapter until it emits the credential and branch
+intents in sequence. WebSocket branch creation is also still legacy.
+Sandbox, attachment, and opening-turn executors are not yet registered. Wiring
+those adapters and removing the remaining create-plan
 authority are the next cutovers; the presence or absence of a plan file is not
 actor lifecycle evidence.
 

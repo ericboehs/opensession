@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { requestCreationWorkspace } from "./creation-intents";
+import {
+  requestCreationBranch,
+  requestCreationCredential,
+  requestCreationWorkspace,
+} from "./creation-intents";
 import {
   SessionKernelStore,
   type CreationEventDecision,
@@ -28,6 +32,17 @@ const input = {
   project: "opensession",
   branch: "feature/intent",
   worktreeDir: "/worktrees/intent",
+};
+
+const branchInput = {
+  sessionId: "create-branch-intent",
+  identity: "request-branch-intent",
+  project: "opensession",
+  branch: "feature/branch-intent",
+  worktreePath: "/worktrees/branch-intent",
+  baseBranch: "main",
+  isolated: true,
+  credentialPrincipal: "user:alice",
 };
 
 describe("creation workspace intents", () => {
@@ -118,6 +133,105 @@ describe("creation workspace intents", () => {
       await expect(
         requestCreationWorkspace(input, { kernel, timeoutMs: 20, pollMs: 1 }),
       ).rejects.toThrow("identity crossed");
+    } finally {
+      store.close();
+    }
+  });
+});
+
+describe("creation branch intents", () => {
+  test("persists stable branch identity and waits for its actor receipt", async () => {
+    const { store, kernel } = harness(branchInput.sessionId);
+    try {
+      setTimeout(() => {
+        store.applyCreationEvent({
+          sessionId: branchInput.sessionId,
+          identity: branchInput.identity,
+          event: "preparation_started",
+          effectId: `branch:${branchInput.project}:${branchInput.branch}`,
+        });
+      }, 5);
+      const state = await requestCreationBranch(branchInput, {
+        kernel,
+        timeoutMs: 200,
+        pollMs: 1,
+      });
+      expect(state.completedEffectIds).toEqual([
+        `branch:${branchInput.project}:${branchInput.branch}`,
+      ]);
+      expect(store.pendingOutbox()).toMatchObject([
+        {
+          kind: "creation_branch_prepare",
+          payload: {
+            worktreePath: "/worktrees/branch-intent",
+            baseBranch: "main",
+            isolated: true,
+            credentialPrincipal: "user:alice",
+          },
+        },
+      ]);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("leaves timed-out branch work durable and does not re-emit it", async () => {
+    const { store, kernel } = harness(branchInput.sessionId);
+    try {
+      await expect(requestCreationBranch(branchInput, {
+        kernel,
+        timeoutMs: 5,
+        pollMs: 1,
+      })).rejects.toThrow("remains durably pending");
+      expect(store.pendingOutbox()).toHaveLength(1);
+      await expect(requestCreationBranch(branchInput, {
+        kernel,
+        timeoutMs: 5,
+        pollMs: 1,
+      })).rejects.toThrow("remains durably pending");
+      expect(store.pendingOutbox()).toHaveLength(1);
+    } finally {
+      store.close();
+    }
+  });
+});
+
+describe("creation credential intents", () => {
+  test("persists only a stable selector and scope before receipt", async () => {
+    const input = {
+      sessionId: "create-credential-intent",
+      identity: "request-credential-intent",
+      principal: "user:alice",
+      scope: "git:opensession",
+    };
+    const { store, kernel } = harness(input.sessionId);
+    try {
+      setTimeout(() => {
+        store.applyCreationEvent({
+          sessionId: input.sessionId,
+          identity: input.identity,
+          event: "preparation_started",
+          effectId: `credential:${input.principal}:${input.scope}`,
+        });
+      }, 5);
+      const state = await requestCreationCredential(input, {
+        kernel,
+        timeoutMs: 200,
+        pollMs: 1,
+      });
+      expect(state.completedEffectIds).toEqual([
+        `credential:${input.principal}:${input.scope}`,
+      ]);
+      const [effect] = store.pendingOutbox();
+      expect(effect).toMatchObject({
+        kind: "creation_credential_resolve",
+        payload: {
+          principal: "user:alice",
+          scope: "git:opensession",
+        },
+      });
+      expect(JSON.stringify(effect)).not.toContain("gitEnv");
+      expect(JSON.stringify(effect)).not.toContain("token");
     } finally {
       store.close();
     }

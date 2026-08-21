@@ -25,6 +25,14 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(session.effectiveRepo, "backstage")
     }
 
+    func testSessionAliasesAreDecodedForTranscriptLinks() throws {
+        let session = try self.session(
+            #"{"id":"os-current","aliasIds":["bks-original"]}"#
+        )
+
+        XCTAssertEqual(session.aliasIds, ["bks-original"])
+    }
+
     @MainActor
     func testRepoLessMarkerWinsOverNormalizedDefaultRepo() throws {
         let session = try session(

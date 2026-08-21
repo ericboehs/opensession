@@ -334,6 +334,8 @@ export type ProtocolClientMessage =
       clientSessionId?: string;
       branch: string;
       prompt: string;
+      /** Prompt projected with visible session names, used only for naming this session. */
+      titlePrompt?: string;
       user: string;
       /** Local-profile bridge only: create this session on the hosted upstream. */
       cloud?: boolean;

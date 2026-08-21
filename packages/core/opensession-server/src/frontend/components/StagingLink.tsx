@@ -210,6 +210,9 @@ export function StagingLink({
 					multiline
 				>
 					<span
+						// PrStatusBar uses this marker to add breathing room only when
+						// the preview mark is absent.
+						data-summary-preview
 						// Nothing to open yet, so the mark drops its pointer and its
 						// plate rather than offering a target that does nothing.
 						className={cn(
@@ -356,6 +359,7 @@ export function StagingLink({
 					rel="noopener"
 					onClick={onClick}
 					aria-disabled={building || undefined}
+					data-summary-preview
 					// The label the mark used to carry is now the tooltip's first line,
 					// and the deploy's own state rides in there with it: an icon cannot
 					// say "Redeploying" and the band has no room for a word that is only

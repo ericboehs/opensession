@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useShortcutLabel } from "../hooks/useShortcutBindings";
-import { Reorder } from "motion/react";
+import { motion, Reorder, useReducedMotion } from "motion/react";
 import type { UnifiedSession } from "../lib/types";
 import { TAB_COLORS, colorHex } from "../lib/tab-colors";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
@@ -41,6 +41,11 @@ import {
 	tabDotClass,
 } from "../lib/session-tab-classes";
 import { cn } from "../ui/cn";
+import {
+	animateEmptyTabClose,
+	EMPTY_TAB_COLLAPSED_WIDTH,
+	emptyTabTransition,
+} from "./session-tabs/empty-tab-morph";
 import { useTabReorder } from "./session-tabs/useTabReorder";
 
 /**
@@ -155,6 +160,8 @@ interface Props {
 	 * ask = no worktree.
 	 */
 	onNewSession?: (mode: "share" | "stack" | "ask") => void;
+	/** The workspace's reusable empty tab, which morphs from and back into +. */
+	emptySessionId?: string | null;
 	/** Rename a session (double-click the title); empty title resets it. */
 	onRename: (id: string, title: string) => void;
 	/** Close (archive) a session — the × revealed on hover. */
@@ -224,6 +231,7 @@ export function SessionTabs({
 	onSelectView,
 	onCloseView,
 	onNewSession,
+	emptySessionId,
 	onRename,
 	onClose,
 	onRestore,
@@ -231,8 +239,18 @@ export function SessionTabs({
 }: Props) {
 	const copyTranscriptLabel = useShortcutLabel("session-copy-transcript");
 	const closeLabel = useShortcutLabel("session-close");
+	const reducedMotion = useReducedMotion();
 	const [editKey, setEditKey] = useState<string | null>(null);
 	const [draft, setDraft] = useState("");
+	const [animateNextEmpty, setAnimateNextEmpty] = useState(false);
+	useEffect(() => {
+		if (!animateNextEmpty) return;
+		const timer = setTimeout(
+			() => setAnimateNextEmpty(false),
+			emptySessionId ? emptyTabTransition.duration * 1000 + 40 : 1000,
+		);
+		return () => clearTimeout(timer);
+	}, [animateNextEmpty, emptySessionId]);
 	// Re-render when a composer draft appears/disappears — tabs check hasDraft()
 	// during render to show the unsent-draft pencil on sibling sessions.
 	const [, setDraftsRev] = useState(0);
@@ -345,6 +363,11 @@ export function SessionTabs({
 	// somewhere to live — a lone code session then reads as [session][Review].
 	if (!inSplit && tabs.length <= 1 && viewTabs.length === 0) return null;
 
+	function closeEmptySession(button: HTMLButtonElement, session: UnifiedSession) {
+		if (!reducedMotion && !isPhone) animateEmptyTabClose(button);
+		onClose(session);
+	}
+
 	// Plain-click shares the workspace worktree. The standard context menu owns
 	// right-click positioning, dismissal, focus and keyboard behavior.
 	const newTabButton = onNewSession && (
@@ -356,7 +379,10 @@ export function SessionTabs({
 						className={cn(TAB_NEW, "relative z-[1]")}
 						aria-label="New session in this workspace"
 						title="New session. Shares this workspace's worktree (right-click for options)"
-						onClick={() => onNewSession("share")}
+						onClick={() => {
+							setAnimateNextEmpty(!reducedMotion && !isPhone);
+							onNewSession("share");
+						}}
 					/>
 				}
 			>
@@ -467,6 +493,9 @@ export function SessionTabs({
 						const session = member.session;
 						const waiting = !!session.waitingForInput;
 						const hex = colorHex(colors[key]);
+						const empty = key === emptySessionId;
+						const openingEmpty = empty && animateNextEmpty;
+
 						const titleContent =
 							editKey === key ? (
 								<input
@@ -500,7 +529,7 @@ export function SessionTabs({
 								<ContextMenu.Root>
 									<ContextMenu.Trigger
 										render={
-											<div
+											<motion.div
 												role="tab"
 												aria-selected={key === activeId}
 												className={`group/tab ${tabClass({
@@ -508,7 +537,15 @@ export function SessionTabs({
 													waiting,
 													colored: !!hex,
 												})}`}
-												style={hex ? ({ "--tab-color": hex } as React.CSSProperties) : undefined}
+												style={{
+													...(hex ? { "--tab-color": hex } : {}),
+													...(empty ? { overflow: "hidden" } : {}),
+												} as React.CSSProperties}
+												initial={
+													openingEmpty ? { width: EMPTY_TAB_COLLAPSED_WIDTH } : false
+												}
+												animate={empty ? { width: "auto" } : undefined}
+												transition={emptyTabTransition}
 												onClick={() => onSelect(session)}
 												title={session.title}
 											/>
@@ -519,7 +556,18 @@ export function SessionTabs({
 										) : (
 											session.isRunning && <span className={tabDotClass(false)} />
 										)}
-										{titleContent}
+										{empty ? (
+											<motion.span
+												className="inline-flex min-w-0"
+												initial={openingEmpty ? { opacity: 0, filter: "blur(4px)" } : false}
+												animate={{ opacity: 1, filter: "blur(0px)" }}
+												transition={emptyTabTransition}
+											>
+												{titleContent}
+											</motion.span>
+										) : (
+											titleContent
+										)}
 										{/* Who else is in this tab. The sidebar's workspace row shows
 							    the same faces for the whole strip, which says a teammate
 							    is in here somewhere; on the tab it says where. Shown on
@@ -563,10 +611,22 @@ export function SessionTabs({
 											title="Close session"
 											onClick={(e) => {
 												e.stopPropagation();
-												onClose(session);
+												if (empty) closeEmptySession(e.currentTarget, session);
+												else onClose(session);
 											}}
 										>
-											<IconX size={16} dense aria-hidden="true" />
+											{empty ? (
+												<motion.span
+													className="inline-flex"
+													initial={openingEmpty ? { rotate: 45, scale: 1.25 } : false}
+													animate={{ rotate: 0, scale: 1 }}
+													transition={emptyTabTransition}
+												>
+													<IconX size={16} dense aria-hidden="true" />
+												</motion.span>
+											) : (
+												<IconX size={16} dense aria-hidden="true" />
+											)}
 										</button>
 									</ContextMenu.Trigger>
 									{/* finalFocus=false: "Rename session" mounts the inline rename

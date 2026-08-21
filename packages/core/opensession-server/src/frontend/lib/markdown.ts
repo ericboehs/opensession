@@ -231,17 +231,24 @@ const SESSION_ID_SHORT = 12; // `os-019fb3ad2` / `bks-019fb3ad`
  */
 export function setSessionTitles(
   entries: Iterable<
-    readonly [string, string | null | undefined, boolean?, (string | null)?]
+    readonly [
+      string,
+      string | null | undefined,
+      boolean?,
+      (string | null)?,
+      (readonly string[])?,
+    ]
   >,
 ): void {
   const next = new Map<string, SessionName>();
   const running = new Set<string>();
-  for (const [id, title, isRunning, tabTitle] of entries) {
+  for (const [id, title, isRunning, tabTitle, aliases] of entries) {
     const label = cleanSessionTitle(String(title ?? "").trim());
     const tab = cleanSessionTitle(String(tabTitle ?? "").trim());
-    if (id && label)
-      next.set(id, { label, ...(tab && tab !== label ? { tab } : {}) });
-    if (id && isRunning) running.add(id);
+    const ids = [id, ...(aliases ?? [])].filter(Boolean);
+    const name = { label, ...(tab && tab !== label ? { tab } : {}) };
+    if (label) for (const knownId of ids) next.set(knownId, name);
+    if (isRunning) for (const knownId of ids) running.add(knownId);
   }
   runningSessions = running;
   // Unconditional: a chip rendered from the markdown cache carries whatever
@@ -260,7 +267,12 @@ export function setSessionTitles(
     if (same) return; // the common case: a poll that only moved lastActivity
   }
   sessionTitles = next;
-  // Labels are baked into the cached HTML, so it has to go when they change.
+  // A transcript can mount from the same session-list render that supplies its
+  // names. The registry updates in an effect after that render, while the
+  // markdown HTML is memoized, so correct chips already in the DOM directly
+  // rather than waiting for an unrelated transcript render.
+  syncRenderedSessionTitles();
+  // Labels are baked into the cached HTML, so future renders need fresh HTML.
   mdCache.clear();
   for (const listener of sessionTitleListeners) listener();
 }
@@ -377,6 +389,26 @@ function syncRenderedSessionRuns(): void {
   }
 }
 
+/** Name chips that mounted before the polled session registry was published. */
+function syncRenderedSessionTitles(): void {
+  if (
+    typeof document === "undefined" ||
+    typeof document.querySelectorAll !== "function"
+  )
+    return;
+  for (const anchor of document.querySelectorAll<HTMLAnchorElement>(
+    "a.session-link[data-session-id]",
+  )) {
+    const id = anchor.dataset.sessionId;
+    const title = id ? sessionTitles.get(id)?.label : undefined;
+    const label = anchor.querySelector<HTMLElement>(".session-link-label");
+    if (!id || !title || !label) continue;
+    label.textContent = sessionLabel(title);
+    delete anchor.dataset.sessionLabel;
+    anchor.title = sessionTip(id);
+  }
+}
+
 /**
  * The title we know for a session id. The composer and sent-message chips use
  * the same registry, so a reference keeps one name before and after sending.
@@ -437,13 +469,15 @@ function sessionChip(
   );
 }
 
+function sessionLabel(title: string): string {
+  return title.length > SESSION_TITLE_MAX
+    ? `${title.slice(0, SESSION_TITLE_MAX - 1).trimEnd()}…`
+    : title;
+}
+
 function sessionLink(id: string, href?: string): string {
   const title = sessionTitles.get(id)?.label;
-  const label = title
-    ? title.length > SESSION_TITLE_MAX
-      ? `${title.slice(0, SESSION_TITLE_MAX - 1).trimEnd()}…`
-      : title
-    : shortSessionId(id);
+  const label = title ? sessionLabel(title) : shortSessionId(id);
   // The label is lossy either way (truncated title, abbreviated id), so the
   // full id always stays in the tooltip. data-session-label marks the id
   // fallback for the monospace treatment.

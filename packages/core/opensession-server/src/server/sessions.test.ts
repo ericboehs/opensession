@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { UnifiedSession } from "./types";
@@ -114,6 +114,25 @@ function uuidV7ForDate(iso: string): string {
 	const hex = Date.parse(iso).toString(16).padStart(12, "0");
 	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-7000-8000-000000000000`;
 }
+
+describe("removeTombstonedSessionArtifacts", () => {
+	it("removes a ghost session without re-entering its mailbox", async () => {
+		const id = `bks-tombstoned-ghost-${crypto.randomUUID()}`;
+		const path = join(home, ".opensession-sessions", `${id}.json`);
+		writeSession(id, { title: "Deleted ghost" });
+		expect(existsSync(path)).toBe(true);
+
+		const { removeTombstonedSessionArtifacts } = await import(
+			`./sessions.ts?tombstoned=${crypto.randomUUID()}`
+		);
+		removeTombstonedSessionArtifacts({
+			id,
+			source: "opensession",
+		} as UnifiedSession);
+
+		expect(existsSync(path)).toBe(false);
+	});
+});
 
 describe("getAllSessions", () => {
 	it("reads one native session without scanning the directory", async () => {

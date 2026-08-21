@@ -37,6 +37,8 @@
  */
 export const WS_SUMMARY_CARD =
 	"flex max-h-[min(72vh,640px)] w-[300px] flex-col overflow-y-auto py-2 " +
+	"[--popup-glass:color-mix(in_srgb,var(--popup-surface)_58%,transparent)] " +
+	"[--popup-blur:blur(32px)_saturate(1.6)_brightness(1.12)] " +
 	"[border-radius:calc(18px*var(--rf))]!";
 
 /**

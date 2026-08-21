@@ -74,6 +74,17 @@ test("the new session payload persists fast mode", async () => {
   expect(createPayload).toContain("...(fastMode ? { fastMode: true } : {})");
 });
 
+test("the new session title uses the visible names of pasted session links", async () => {
+  const source = await Bun.file(new URL("./NewSession.tsx", import.meta.url)).text();
+  const createStart = source.indexOf('type: "create_session"');
+  const createEnd = source.indexOf("const canCreate =", createStart);
+  const createPayload = source.slice(createStart, createEnd);
+
+  expect(createPayload).toContain(
+    "titlePrompt: projectComposerSessions(prompt).displayText",
+  );
+});
+
 test("the floating composer owns app-wide file drops", async () => {
   const source = await Bun.file(new URL("./NewSession.tsx", import.meta.url)).text();
 

@@ -29,6 +29,7 @@ import { type Sandbox } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox } from "./sandbox/config";
 import { resolveInteractiveSandbox } from "./sandbox/defaults";
 import { findSession, getCachedSessions, invalidateSessionsCache, touchNativeSession } from "./session-cache";
+import { nameKnownSessionReferencesForTitle } from "./session-reference-title";
 import {
 	getSessionControl,
 	type CreateSessionOpts,
@@ -50,6 +51,7 @@ import { randomUUIDv7 } from "bun";
 import {
 	ensureCreationPlanned,
 	legacyGatewayEffect,
+	requestCreationBranch,
 	requestCreationWorkspace,
 	sessionKernel,
 	sessionKernelOwnsCurrentCommand,
@@ -655,8 +657,21 @@ registerSessionControl({
 						...(githubGitEnv ? { gitEnv: githubGitEnv } : {}),
 					};
 					wtPath = worktreePathFor(sessionBranch, repo.id, worktreeOptions);
-					materializeWorktree = () =>
-						createWorktree(sessionBranch, repo.id, worktreeOptions);
+					const plannedBranch = sessionBranch;
+					const plannedWorktreePath = wtPath;
+					materializeWorktree = githubGitEnv
+						? () => createWorktree(plannedBranch, repo.id, worktreeOptions)
+						: async () => {
+								await requestCreationBranch({
+									sessionId: bksId,
+									identity: createIdentity,
+									project: repo.id,
+									branch: plannedBranch,
+									worktreePath: plannedWorktreePath,
+									isolated: isolatedWorktree === true,
+								});
+								return plannedWorktreePath;
+							};
 				}
 			}
 		}
@@ -691,8 +706,12 @@ registerSessionControl({
 			parentSession?.createdBy ||
 			personaName();
 		const sessionCreatedAt = new Date().toISOString();
+		const namedPrompt = await nameKnownSessionReferencesForTitle(prompt);
 		const title =
-			prompt.trim().split("\n")[0].slice(0, 80) ||
+			namedPrompt
+				.trim()
+				.split("\n")[0]
+				.slice(0, 80) ||
 			(Array.isArray(rawFiles) && rawFiles.length
 				? "Attached file"
 				: imageUrls?.length ? "Image" : "New session");

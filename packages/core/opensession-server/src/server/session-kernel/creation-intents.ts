@@ -13,6 +13,24 @@ export type CreationWorkspaceIntent = {
   worktreeDir?: string;
 };
 
+export type CreationBranchIntent = {
+  sessionId: string;
+  identity: string;
+  project: string;
+  branch: string;
+  worktreePath: string;
+  baseBranch?: string;
+  isolated: boolean;
+  credentialPrincipal?: string;
+};
+
+export type CreationCredentialIntent = {
+  sessionId: string;
+  identity: string;
+  principal: string;
+  scope: string;
+};
+
 type CreationIntentKernel = Pick<
   ReturnType<typeof sessionKernel>,
   "creationState" | "applyCreationEvent"
@@ -101,6 +119,114 @@ export async function requestCreationWorkspace(
     const current = kernel.creationState();
     if (!current)
       throw new Error("Creation state disappeared while workspace work was pending");
+    assertIdentity(current, input.identity);
+    state = current;
+  }
+  return state;
+}
+
+/** Emit one stable branch intent and wait for its actor receipt. */
+export async function requestCreationBranch(
+  input: CreationBranchIntent,
+  options: CreationIntentOptions = {},
+): Promise<DurableCreationState> {
+  const kernel = options.kernel ?? sessionKernel(input.sessionId);
+  let state = ensureCreationPlanned(input.sessionId, input.identity, kernel);
+  const effectId = `branch:${input.project}:${input.branch}`;
+  if (state.completedEffectIds.includes(effectId)) return state;
+  if (state.currentEffectId && state.currentEffectId !== effectId)
+    throw new Error(
+      `Creation effect ${state.currentEffectId} must settle before ${effectId}`,
+    );
+  if (!state.currentEffectId) {
+    const emitted = kernel.applyCreationEvent({
+      identity: input.identity,
+      event: "preparation_started",
+      nextEffectId: effectId,
+      effect: {
+        kind: "creation_branch_prepare",
+        effectKey: effectId,
+        payload: {
+          creationIdentity: input.identity,
+          creationGeneration: state.generation,
+          project: input.project,
+          branch: input.branch,
+          worktreePath: input.worktreePath,
+          baseBranch: input.baseBranch,
+          isolated: input.isolated,
+          credentialPrincipal: input.credentialPrincipal,
+          mode: "adopt_or_create",
+        },
+      },
+    });
+    if (!emitted.accepted || !emitted.state)
+      throw new Error(
+        `Creation branch intent was rejected: ${emitted.reason || "unknown"}`,
+      );
+    state = emitted.state;
+  }
+  const deadline = Date.now() + (options.timeoutMs ?? 30_000);
+  while (!state.completedEffectIds.includes(effectId)) {
+    if (Date.now() >= deadline)
+      throw new Error(`Creation branch effect ${effectId} remains durably pending`);
+    await Bun.sleep(options.pollMs ?? 25);
+    const current = kernel.creationState();
+    if (!current)
+      throw new Error("Creation state disappeared while branch work was pending");
+    assertIdentity(current, input.identity);
+    state = current;
+  }
+  return state;
+}
+
+/** Resolve a durable principal selector without admitting secret material. */
+export async function requestCreationCredential(
+  input: CreationCredentialIntent,
+  options: CreationIntentOptions = {},
+): Promise<DurableCreationState> {
+  const kernel = options.kernel ?? sessionKernel(input.sessionId);
+  let state = ensureCreationPlanned(input.sessionId, input.identity, kernel);
+  const effectId = `credential:${input.principal}:${input.scope}`;
+  if (state.completedEffectIds.includes(effectId)) return state;
+  if (state.currentEffectId && state.currentEffectId !== effectId)
+    throw new Error(
+      `Creation effect ${state.currentEffectId} must settle before ${effectId}`,
+    );
+  if (!state.currentEffectId) {
+    const emitted = kernel.applyCreationEvent({
+      identity: input.identity,
+      event: "preparation_started",
+      nextEffectId: effectId,
+      effect: {
+        kind: "creation_credential_resolve",
+        effectKey: effectId,
+        payload: {
+          creationIdentity: input.identity,
+          creationGeneration: state.generation,
+          principal: input.principal,
+          scope: input.scope,
+          mode: "resolve_current",
+        },
+      },
+    });
+    if (!emitted.accepted || !emitted.state)
+      throw new Error(
+        `Creation credential intent was rejected: ${emitted.reason || "unknown"}`,
+      );
+    state = emitted.state;
+  }
+  const deadline = Date.now() + (options.timeoutMs ?? 30_000);
+  while (!state.completedEffectIds.includes(effectId)) {
+    if (Date.now() >= deadline)
+      throw new Error(
+        `Creation credential effect ${effectId} remains durably pending`,
+      );
+    await Bun.sleep(options.pollMs ?? 25);
+    const current = kernel.creationState();
+    if (!current)
+      throw new Error(
+        "Creation state disappeared while credential work was pending",
+      );
     assertIdentity(current, input.identity);
     state = current;
   }

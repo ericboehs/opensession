@@ -598,6 +598,16 @@ export class SessionKernelStore {
 			"UPDATE session_kernel_commands SET status = 'pending', error = 'actor restarted before acknowledgement', updated_at = ? WHERE status = 'processing' AND replay_safe = 1",
 			[Date.now()],
 		);
+		// Pending means the actor committed admission but never marked execution
+		// started. No physical effect can have run, so preserve the receipt as a
+		// retryable failure instead of leaving readiness degraded forever.
+		this.db.run(
+			`UPDATE session_kernel_commands
+			 SET status = 'failed', replay_safe = 1, retryable = 1,
+			     error = 'actor restarted before execution admission', updated_at = ?
+			 WHERE status = 'pending'`,
+			[Date.now()],
+		);
 		this.db.run(
 			"UPDATE session_kernel_commands SET status = 'indeterminate', error = 'actor restarted after execution began', retryable = 0, updated_at = ? WHERE status = 'processing'",
 			[Date.now()],
@@ -2114,11 +2124,13 @@ export class SessionKernelStore {
 	stats(): {
 		sessions: number;
 		pendingCommands: number;
+		indeterminateCommands: number;
 		pendingTimers: number;
 		pendingOutbox: number;
 		deadLetteredOutbox: number;
 		deadLetteredTimers: number;
 		oldestPendingCommandAt?: number;
+		oldestIndeterminateCommandAt?: number;
 		oldestPendingTimerAt?: number;
 		oldestPendingOutboxAt?: number;
 		dbBytes: number;
@@ -2166,6 +2178,10 @@ export class SessionKernelStore {
 				"session_kernel_commands",
 				"WHERE status IN ('pending', 'processing')",
 			),
+			indeterminateCommands: count(
+				"session_kernel_commands",
+				"WHERE status = 'indeterminate'",
+			),
 			pendingTimers: count("session_kernel_timers"),
       pendingOutbox: count(
         "session_kernel_outbox",
@@ -2182,7 +2198,12 @@ export class SessionKernelStore {
 			oldestPendingCommandAt: oldest(
 				"session_kernel_commands",
 				"created_at",
-				"WHERE status IN ('pending', 'processing', 'indeterminate')",
+				"WHERE status IN ('pending', 'processing')",
+			),
+			oldestIndeterminateCommandAt: oldest(
+				"session_kernel_commands",
+				"created_at",
+				"WHERE status = 'indeterminate'",
 			),
 			oldestPendingTimerAt: oldest(
 				"session_kernel_timers",

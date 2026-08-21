@@ -5,6 +5,9 @@ import Foundation
 /// fields are ignored, so server-side additions never break the client.
 struct Session: Identifiable, Decodable, Equatable, Hashable {
     let id: String
+    /// Other stable ids that resolve to this same session. Transcript links can
+    /// carry one of these after a session source is unified under a new id.
+    var aliasIds: [String]?
     /// This session has an engine conversation behind it — it ran at least one
     /// turn. The list carries this instead of the engine session ids
     /// themselves (`sessionRan` in src/server/routes/sessions.ts): nothing here

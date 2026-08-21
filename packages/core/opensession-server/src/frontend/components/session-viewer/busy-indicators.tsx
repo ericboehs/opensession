@@ -1,15 +1,33 @@
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { duration, ease } from "../../ui/motion";
-import { TranscriptSkeleton } from "../../ui/state";
+import { Skeleton, SkeletonBar, TranscriptSkeleton } from "../../ui/state";
 import { PageLoader } from "../../ui/page-loader";
 import { PulseDot } from "../../ui/status";
 import { cn } from "../../ui/cn";
 import { msgRow } from "../../lib/msg-classes";
 
-export function WorkspaceWaiting({ detail }: { detail: string }) {
+export function WorkspaceWaiting({
+	detail,
+	ghost = false,
+}: {
+	detail: string;
+	ghost?: boolean;
+}) {
 	return (
-		<div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-1 px-6 text-center">
+		<div className="relative flex h-full min-h-[240px] flex-col items-center justify-center gap-1 px-6 text-center">
+			{ghost && (
+				<div className="absolute inset-x-6 top-6">
+					<div className="mx-auto w-full max-w-[var(--session-col)]">
+						<Skeleton
+							label="Preparing message"
+							className="flex flex-col items-end opacity-60"
+						>
+							<SkeletonBar className="h-[42px] w-[42%] rounded-lg" />
+						</Skeleton>
+					</div>
+				</div>
+			)}
 			<PageLoader className="mb-2 text-dim" />
 			<div className="text-item-title font-semibold text-fg">
 				Creating your workspace

@@ -185,6 +185,38 @@ describe("session chip labels", () => {
     expect(html).not.toContain("data-session-label");
   });
 
+  it("labels an alias with the canonical session's title", () => {
+    const canonical = "os-019f24b5-f31d-7000-a48f-31a9e829c4ae";
+    setSessionTitles([
+      [canonical, "Fix the sidebar hover states", false, null, [id]],
+    ]);
+    expect(renderMarkdown(`Delegated to \`${id}\`.`)).toContain(
+      '<span class="session-link-label">Fix the sidebar hover states</span>',
+    );
+  });
+
+  it("corrects an id chip that mounted before titles arrived", () => {
+    const label = { textContent: "bks-019f24b5…" };
+    const anchor = {
+      dataset: { sessionId: id, sessionLabel: "id" },
+      title: `Open session ${id}`,
+      querySelector: () => label,
+    };
+    const previousDocument = globalThis.document;
+    (globalThis as any).document = {
+      querySelectorAll: () => [anchor],
+    };
+    try {
+      setSessionTitles([[id, "Fix the sidebar hover states"]]);
+      expect(label.textContent).toBe("Fix the sidebar hover states");
+      expect(anchor.dataset.sessionLabel).toBeUndefined();
+      expect(anchor.title).toBe(`Open Fix the sidebar hover states (${id})`);
+    } finally {
+      if (previousDocument === undefined) delete (globalThis as any).document;
+      else (globalThis as any).document = previousDocument;
+    }
+  });
+
   it("keeps the session's own title in the tooltip when it differs", () => {
     // The label names the workspace, so two chips into one workspace read the
     // same; the tip is where they come apart.

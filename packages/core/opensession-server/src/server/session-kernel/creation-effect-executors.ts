@@ -1,3 +1,4 @@
+import type { GithubCredential } from "../github-auth";
 import { createWorkspace, getWorkspace, type Workspace } from "../workspaces";
 import type { WorktreeInfo } from "../worktree";
 import { registerSessionEffectExecutor } from "./effect-executors";
@@ -10,6 +11,7 @@ import type {
 
 type WorkspaceEffect = SessionActorEffectFor<"creation_workspace_prepare">;
 type BranchEffect = SessionActorEffectFor<"creation_branch_prepare">;
+type CredentialEffect = SessionActorEffectFor<"creation_credential_resolve">;
 export type CreationWorkspaceEffectItem = Omit<
   DurableOutboxItem,
   "kind" | "payload"
@@ -18,6 +20,10 @@ export type CreationBranchEffectItem = Omit<
   DurableOutboxItem,
   "kind" | "payload"
 > & BranchEffect;
+export type CreationCredentialEffectItem = Omit<
+  DurableOutboxItem,
+  "kind" | "payload"
+> & CredentialEffect;
 
 export class CreationEffectIndeterminateError extends Error {
   readonly indeterminate = true;
@@ -109,8 +115,13 @@ type BranchExecutorDependencies = {
   createWorktree: (
     branch: string,
     project: string,
-    options: { base?: string; isolated?: boolean },
+    options: {
+      base?: string;
+      isolated?: boolean;
+      gitEnv?: Record<string, string>;
+    },
   ) => Promise<string>;
+  resolveCredential?: (principal: string) => Promise<GithubCredential | null>;
   result: (item: CreationBranchEffectItem) => CreationEventDecisionResult;
   afterDestinationAccepted?: (worktreePath: string) => void;
 };
@@ -130,11 +141,18 @@ function defaultBranchResult(
   });
 }
 
+async function resolveCurrentCredential(
+  principal: string,
+): Promise<GithubCredential | null> {
+  return (await import("../github-auth")).githubCredentialForPrincipal(principal);
+}
+
 const defaultBranchDependencies: BranchExecutorDependencies = {
   listWorktrees: async (project) =>
     (await import("../worktree")).listWorktrees(project),
   createWorktree: async (branch, project, options) =>
     (await import("../worktree")).createWorktree(branch, project, options),
+  resolveCredential: resolveCurrentCredential,
   result: defaultBranchResult,
 };
 
@@ -155,12 +173,26 @@ export async function executeCreationBranchPrepare(
     throw new CreationEffectIndeterminateError(
       `Worktree ${payload.worktreePath} belongs to another branch`,
     );
+  let credential: GithubCredential | null = null;
+  if (!byBranch && payload.credentialPrincipal) {
+    credential = await (dependencies.resolveCredential ??
+      resolveCurrentCredential)(payload.credentialPrincipal);
+    if (!credential)
+      throw new Error(
+        `Credential ${payload.credentialPrincipal} is not currently available`,
+      );
+    if (credential.principal !== payload.credentialPrincipal)
+      throw new CreationEffectIndeterminateError(
+        `Credential selector ${payload.credentialPrincipal} resolved to another principal`,
+      );
+  }
   const acceptedPath = byBranch?.path ?? await dependencies.createWorktree(
     payload.branch,
     payload.project,
     {
       ...(payload.baseBranch ? { base: payload.baseBranch } : {}),
       ...(payload.isolated ? { isolated: true } : {}),
+      ...(credential ? { gitEnv: credential.env } : {}),
     },
   );
   if (acceptedPath !== payload.worktreePath)
@@ -175,9 +207,57 @@ export async function executeCreationBranchPrepare(
   );
 }
 
+type CredentialExecutorDependencies = {
+  resolveCredential: (principal: string) => Promise<GithubCredential | null>;
+  result: (item: CreationCredentialEffectItem) => CreationEventDecisionResult;
+  afterResolved?: (credential: GithubCredential) => void;
+};
+
+function defaultCredentialResult(
+  item: CreationCredentialEffectItem,
+): CreationEventDecisionResult {
+  return sessionKernel(item.sessionId).applyCreationEvent({
+    identity: item.payload.creationIdentity,
+    event: "preparation_started",
+    effectId: item.effectKey,
+    detail: {
+      principal: item.payload.principal,
+      scope: item.payload.scope,
+    },
+  });
+}
+
+const defaultCredentialDependencies: CredentialExecutorDependencies = {
+  resolveCredential: resolveCurrentCredential,
+  result: defaultCredentialResult,
+};
+
+/** Validate a durable principal selector without returning or persisting its secret. */
+export async function executeCreationCredentialResolve(
+  item: CreationCredentialEffectItem,
+  dependencies: CredentialExecutorDependencies = defaultCredentialDependencies,
+): Promise<void> {
+  const credential = await dependencies.resolveCredential(item.payload.principal);
+  if (!credential)
+    throw new Error(
+      `Credential ${item.payload.principal} is not currently available`,
+    );
+  if (credential.principal !== item.payload.principal)
+    throw new CreationEffectIndeterminateError(
+      `Credential selector ${item.payload.principal} resolved to another principal`,
+    );
+  dependencies.afterResolved?.(credential);
+  const result = dependencies.result(item);
+  if (result.accepted || result.reason === "stale_effect") return;
+  throw new CreationEffectIndeterminateError(
+    `Credential effect ${item.effectId} result was rejected: ${result.reason || "unknown"}`,
+  );
+}
+
 const registrationGlobal = globalThis as typeof globalThis & {
   __opensessionCreationWorkspaceExecutorRegistered?: boolean;
   __opensessionCreationBranchExecutorRegistered?: boolean;
+  __opensessionCreationCredentialExecutorRegistered?: boolean;
 };
 
 export function ensureCreationEffectExecutors(): void {
@@ -194,5 +274,12 @@ export function ensureCreationEffectExecutors(): void {
       executeCreationBranchPrepare,
     );
     registrationGlobal.__opensessionCreationBranchExecutorRegistered = true;
+  }
+  if (!registrationGlobal.__opensessionCreationCredentialExecutorRegistered) {
+    registerSessionEffectExecutor(
+      "creation_credential_resolve",
+      executeCreationCredentialResolve,
+    );
+    registrationGlobal.__opensessionCreationCredentialExecutorRegistered = true;
   }
 }

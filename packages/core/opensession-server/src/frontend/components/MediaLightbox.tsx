@@ -13,6 +13,7 @@ import {
 	saveFileWithNativeShare,
 	shareURL,
 } from "../lib/native-file-save";
+import { copyImageToClipboard } from "../lib/image-clipboard";
 import { copyToClipboard } from "../lib/share-link";
 import { fullTime } from "../lib/time";
 import {
@@ -46,8 +47,10 @@ import {
 	IconCheck,
 	IconChevronLeft,
 	IconChevronRight,
+	IconCopy,
 	IconLink,
 	IconMessage,
+	IconShare,
 	IconX,
 } from "./icons";
 
@@ -610,6 +613,7 @@ function ZoomableMedia({
 	src,
 	diagram,
 	onTapBackdrop,
+	onTapMedia,
 	onZoomChange,
 	onSwipe,
 	enterFrom = 0,
@@ -623,6 +627,9 @@ function ZoomableMedia({
 	/** Present for a diagram: draw this markup instead of loading `src`. */
 	diagram?: DiagramMedia;
 	onTapBackdrop: () => void;
+	/** A clean single tap on the media. Omitted on desktop, where a tap keeps
+	 * waiting for the existing double-tap zoom gesture. */
+	onTapMedia?: () => void;
 	onZoomChange: (zoomed: boolean) => void;
 	/** Page to the previous (-1) / next (+1) item; absent when there is one. */
 	onSwipe?: (direction: -1 | 1) => void;
@@ -661,7 +668,13 @@ function ZoomableMedia({
 		/** null while the drag's intent is still undecided. */
 		swiping: boolean | null;
 	} | null>(null);
-	const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
+	const lastTap = useRef<{
+		at: number;
+		x: number;
+		y: number;
+		media: boolean;
+	} | null>(null);
+	const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [zoomed, setZoomed] = useState(false);
 	const zoomedRef = useRef(false);
 	const regionGesture = useRef<
@@ -697,6 +710,15 @@ function ZoomableMedia({
 	 * rather than by CSS on the svg because the gesture code needs a real box
 	 * to measure the zoom and pan bounds against. */
 	const [fit, setFit] = useState<{ w: number; h: number } | null>(null);
+
+	function cancelSingleTap() {
+		if (singleTapTimer.current === null) return;
+		clearTimeout(singleTapTimer.current);
+		singleTapTimer.current = null;
+	}
+
+	useEffect(() => cancelSingleTap, [src, commentMode]);
+
 	useLayoutEffect(() => {
 		if (!diagram) return;
 		const measure = () => {
@@ -798,6 +820,19 @@ function ZoomableMedia({
 		layout.current = null;
 	}, [src]);
 
+	// Chrome visibility changes the fitted room on a phone. Forget the old
+	// geometry throughout that refit so the next pan or zoom starts from what is
+	// actually on screen.
+	useLayoutEffect(() => {
+		const wrap = wrapRef.current;
+		if (!wrap) return;
+		const observer = new ResizeObserver(() => {
+			layout.current = null;
+		});
+		observer.observe(wrap);
+		return () => observer.disconnect();
+	}, []);
+
 	// A region is stored against the image, while its outline is painted against
 	// the lightbox wrapper. Keep that projection current when a phone keyboard,
 	// a rotation, or a decoded image changes the fitted box.
@@ -869,6 +904,7 @@ function ZoomableMedia({
 		pointers.current.clear();
 		gesture.current = null;
 		lastTap.current = null;
+		cancelSingleTap();
 	}, [commentMode, src]);
 
 	/** Keep the scaled image covering the viewport (or centered when smaller).
@@ -968,6 +1004,9 @@ function ZoomableMedia({
 			setDraftRegion(imageRegionBetween(start, start));
 			return;
 		}
+		// A second interaction cancels a pending single tap. If this press is the
+		// second half of a double tap, pointer-up below will zoom instead.
+		cancelSingleTap();
 		// One measurement per gesture: nothing that happens between here and the
 		// last finger up can move the picture's layout box.
 		layout.current = null;
@@ -1061,7 +1100,10 @@ function ZoomableMedia({
 			const p = pts[0];
 			const dx = p.x - g.p0.x;
 			const dy = p.y - g.p0.y;
-			if (Math.hypot(dx, dy) > 6) g.moved = true;
+			if (Math.hypot(dx, dy) > 6) {
+				g.moved = true;
+				cancelSingleTap();
+			}
 			if (t.current.s > 1 && !g.pinched) {
 				t.current = clamp({ s: g.t0.s, tx: g.t0.tx + dx, ty: g.t0.ty + dy });
 				apply();
@@ -1086,7 +1128,17 @@ function ZoomableMedia({
 	}
 
 	function onPointerCancel(e: React.PointerEvent) {
+		cancelSingleTap();
+		lastTap.current = null;
 		if (clearRegionGesture(e.pointerId)) return;
+		// Settle the transform without letting a canceled gesture page or count as
+		// a tap. A pointer capture can be canceled by app switching or a browser
+		// gesture even when the finger barely moved.
+		if (gesture.current) {
+			gesture.current.moved = true;
+			gesture.current.swiping = false;
+		}
+		if (swipeX.current) applySwipe(0, true);
 		onPointerEnd(e);
 	}
 
@@ -1152,19 +1204,33 @@ function ZoomableMedia({
 				: !g.moved; // mouse: any clean click counts
 		gesture.current = null;
 		if (!isTap) return;
+		const mediaTap = g.downTarget === imgRef.current;
 		const prevTap = lastTap.current;
-		lastTap.current = { at: performance.now(), x: p.x, y: p.y };
+		lastTap.current = {
+			at: performance.now(),
+			x: p.x,
+			y: p.y,
+			media: mediaTap,
+		};
 		const isDouble =
-			prevTap &&
+			mediaTap &&
+			prevTap?.media &&
 			performance.now() - prevTap.at < 300 &&
 			Math.hypot(p.x - prevTap.x, p.y - prevTap.y) < 40;
 		if (isDouble) {
 			lastTap.current = null;
+			cancelSingleTap();
 			zoomAt(p, t.current.s > 1 ? 1 : DOUBLE_TAP_SCALE, true);
 			return;
 		}
-		// Single tap on the backdrop (not the photo itself) closes, like the
-		// rest of the modal chrome. On the photo it's a no-op (double-tap arms).
+		if (mediaTap && onTapMedia) {
+			singleTapTimer.current = setTimeout(() => {
+				singleTapTimer.current = null;
+				onTapMedia();
+			}, 300);
+			return;
+		}
+		// A clean tap beside the media keeps the existing backdrop behavior.
 		if (g.downTarget === wrapRef.current && t.current.s === 1) onTapBackdrop();
 	}
 
@@ -1395,8 +1461,14 @@ function MediaLightbox({
 	useHeroTransition: boolean;
 	heroTransitionName?: string;
 }) {
+	const isPhone = useIsPhone();
 	const item = items[index];
 	const many = items.length > 1;
+	const [chromeVisible, setChromeVisible] = useState(true);
+	const [phoneBottomHeight, setPhoneBottomHeight] = useState(0);
+	const phoneBottomRef = useRef<HTMLDivElement>(null);
+	const filmstripRef = useRef<HTMLDivElement>(null);
+	const filmstripIndexRef = useRef(index);
 	const dotStart = Math.min(
 		Math.max(0, index - Math.floor(MAX_VISIBLE_DOTS / 2)),
 		Math.max(0, items.length - MAX_VISIBLE_DOTS),
@@ -1439,6 +1511,7 @@ function MediaLightbox({
 	const commentCardRef = useRef<HTMLFormElement>(null);
 	const reduceMotion = useReducedMotion();
 	const resetComment = () => {
+		setChromeVisible(true);
 		setCommenting(false);
 		setSelection(null);
 		setSelectionRect(null);
@@ -1466,6 +1539,10 @@ function MediaLightbox({
 		onIndex(i);
 	};
 	const requestClose = () => onClose(!imageZoomed);
+	const togglePhoneChrome = () => {
+		if (!isPhone || commenting) return;
+		setChromeVisible((visible) => !visible);
+	};
 	const saveItem = async () => {
 		if (saving) return;
 		setSavingSrc(item.src);
@@ -1483,6 +1560,12 @@ function MediaLightbox({
 		} catch (error) {
 			if (!nativeShareWasCancelled(error)) toast("Could not share that link");
 		}
+	};
+	const copyImage = () => {
+		void copyImageToClipboard(item.src).then(
+			() => setCopiedSrc(item.src),
+			() => toast("Could not copy that image"),
+		);
 	};
 	const commentable =
 		item.kind === "image" &&
@@ -1517,6 +1600,46 @@ function MediaLightbox({
 		const t = setTimeout(() => setCopiedSrc(null), 1600);
 		return () => clearTimeout(t);
 	}, [copiedSrc]);
+
+	// The image fits above the phone bar, whose height changes with captions and
+	// the home indicator. Measure the rendered bar instead of assuming one size.
+	useLayoutEffect(() => {
+		if (!isPhone) return;
+		const bar = phoneBottomRef.current;
+		if (!bar) return;
+		const measure = () => {
+			const height = bar.getBoundingClientRect().height;
+			setPhoneBottomHeight((current) =>
+				Math.abs(current - height) < 0.5 ? current : height,
+			);
+		};
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(bar);
+		return () => observer.disconnect();
+	}, [isPhone]);
+
+	// Swiping the main image and tapping a thumbnail keep the active still in
+	// the middle of the strip. The first positioning is immediate.
+	useEffect(() => {
+		if (!isPhone) return;
+		const changed = filmstripIndexRef.current !== index;
+		filmstripIndexRef.current = index;
+		filmstripRef.current
+			?.querySelector<HTMLElement>(`[data-lightbox-thumb="${index}"]`)
+			?.scrollIntoView({
+				behavior: changed && !reduceMotion ? "smooth" : "auto",
+				block: "nearest",
+				inline: "center",
+			});
+	}, [index, isPhone, reduceMotion]);
+
+	// A hidden toolbar must not retain focus. Focus the dialog itself so Enter,
+	// Space, or a fresh tap can reveal the controls again.
+	useEffect(() => {
+		if (!isPhone || chromeVisible) return;
+		dialogRef.current?.focus({ preventScroll: true });
+	}, [chromeVisible, isPhone]);
 
 	// The card is placed against the selection, so it needs the room it is being
 	// placed in. visualViewport rather than innerHeight: an open phone keyboard
@@ -1604,6 +1727,15 @@ function MediaLightbox({
 				e.preventDefault();
 				e.stopPropagation();
 				requestClose();
+			} else if (
+				isPhone &&
+				!chromeVisible &&
+				!editingText &&
+				(e.key === "Enter" || e.key === " ")
+			) {
+				e.preventDefault();
+				e.stopPropagation();
+				setChromeVisible(true);
 			} else if (!editingText && e.key === "ArrowLeft" && many) {
 				e.stopPropagation();
 				e.preventDefault();
@@ -1617,7 +1749,10 @@ function MediaLightbox({
 					dialogRef.current?.querySelectorAll<HTMLElement>(
 						'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), video[controls], [tabindex]:not([tabindex="-1"])',
 					) || [],
-				).filter((element) => element.getClientRects().length > 0);
+				).filter(
+					(element) =>
+						element.getClientRects().length > 0 && !element.closest("[inert]"),
+				);
 				if (focusable.length === 0) {
 					e.preventDefault();
 					return;
@@ -1660,13 +1795,22 @@ function MediaLightbox({
 					viewport,
 				)
 			: null;
+	const phoneStageInset = chromeVisible || imageZoomed || commenting;
+	// Photos keeps the still centered on the screen and floats its chrome over it.
+	// Using the full bottom bar as one-sided padding made tall images look pulled
+	// upward. Preserve the same fitted size, but share that clearance between the
+	// top and bottom so the image's center stays at the viewport's center.
+	const phoneStagePadding = (68 + phoneBottomHeight) / 2;
+	const phoneAction =
+		"grid size-11 shrink-0 place-items-center rounded-full border-0 bg-transparent p-0 text-white transition-[transform,background-color,opacity] duration-[var(--dur-micro)] ease-[var(--ease)] active:scale-[0.96] disabled:opacity-[0.35]";
 
 	return (
 		<motion.div
 			ref={dialogRef}
 			data-media-lightbox=""
-			className="fixed inset-0 z-[11000] flex flex-col bg-black/85"
+			className="fixed inset-0 z-[11000] flex flex-col bg-black/85 phone:h-[100dvh] phone:bg-black"
 			role="dialog"
+			tabIndex={-1}
 			aria-modal="true"
 			aria-label={PREVIEW_LABEL[item.kind]}
 			initial={useHeroTransition ? false : { opacity: 0 }}
@@ -1677,7 +1821,17 @@ function MediaLightbox({
 				if (e.target === e.currentTarget) requestClose();
 			}}
 		>
-			<div className="absolute right-[calc(12px+env(safe-area-inset-right))] top-[calc(12px+env(safe-area-inset-top))] z-10 flex items-center gap-1">
+			<div
+				className={cn(
+					"absolute right-[calc(12px+env(safe-area-inset-right))] top-[calc(12px+env(safe-area-inset-top))] z-10 flex items-center gap-1",
+					isPhone &&
+						"transition-[opacity,transform] duration-[var(--dur)] ease-[var(--ease)] motion-reduce:transition-none",
+					isPhone && !chromeVisible && "pointer-events-none -translate-y-2 opacity-0",
+				)}
+				inert={isPhone && !chromeVisible ? true : undefined}
+				aria-hidden={isPhone && !chromeVisible ? true : undefined}
+			>
+				<div className={isPhone ? "hidden" : "contents"}>
 				{commentable && (
 					<button
 						type="button"
@@ -1766,6 +1920,7 @@ function MediaLightbox({
 						)}
 					</>
 				)}
+				</div>
 				<button
 					ref={closeRef}
 					type="button"
@@ -1778,12 +1933,26 @@ function MediaLightbox({
 			</div>
 
 			<div
-				className="flex min-h-0 flex-1 items-center justify-center gap-3 px-3 pb-2 pt-[calc(56px+env(safe-area-inset-top))] sm:px-4"
+				className={cn(
+					"flex min-h-0 flex-1 items-center justify-center gap-3 px-3 pb-2 pt-[calc(56px+env(safe-area-inset-top))] sm:px-4",
+					isPhone && "gap-0 px-0",
+				)}
+				style={
+					isPhone
+						? {
+								paddingTop: phoneStageInset ? phoneStagePadding : 0,
+								paddingBottom: phoneStageInset ? phoneStagePadding : 0,
+								transition: reduceMotion
+									? "none"
+									: "padding 0.25s cubic-bezier(0.77, 0, 0.175, 1)",
+							}
+						: undefined
+				}
 				onMouseDown={(e) => {
 					if (e.target === e.currentTarget) requestClose();
 				}}
 			>
-				{many && (
+				{many && !isPhone && (
 					<button
 						type="button"
 						className={navBtn}
@@ -1819,8 +1988,16 @@ function MediaLightbox({
 							key={item.src}
 							src={item.src}
 							diagram={item.diagram}
-							onTapBackdrop={requestClose}
-							onZoomChange={setImageZoomed}
+							onTapBackdrop={isPhone ? togglePhoneChrome : requestClose}
+							onTapMedia={
+								isPhone && item.kind === "image" && !commenting
+									? togglePhoneChrome
+									: undefined
+							}
+							onZoomChange={(zoomed) => {
+								setImageZoomed(zoomed);
+								if (isPhone && zoomed) setChromeVisible(false);
+							}}
 							onSwipe={
 								many && !commenting
 									? (d) => (d === 1 ? next() : prev())
@@ -1860,7 +2037,7 @@ function MediaLightbox({
 						</div>
 					)}
 				</motion.div>
-				{many && (
+				{many && !isPhone && (
 					<button
 						type="button"
 						className={navBtn}
@@ -1871,6 +2048,153 @@ function MediaLightbox({
 					</button>
 				)}
 			</div>
+
+			{isPhone && (
+				<div
+					ref={phoneBottomRef}
+					className={cn(
+						"absolute inset-x-0 bottom-0 z-10 flex flex-col gap-3 bg-linear-to-b from-transparent via-black/85 to-black px-0 pb-[max(14px,env(safe-area-inset-bottom))] pt-8 transition-[opacity,transform] duration-[var(--dur)] ease-[var(--ease)] motion-reduce:transition-none",
+						!chromeVisible && "pointer-events-none translate-y-3 opacity-0",
+					)}
+					inert={!chromeVisible ? true : undefined}
+					aria-hidden={!chromeVisible ? true : undefined}
+				>
+					{!commenting && (item.walkthroughLabel || caption || description) && (
+						<div className="flex max-w-full flex-col items-center gap-0.5 px-6 text-center">
+							<div className="flex max-w-full items-center justify-center gap-2">
+								{caption && (
+									<div className="line-clamp-2 min-w-0 max-w-full text-sm font-medium leading-snug text-white">
+										{caption}
+									</div>
+								)}
+								{item.walkthroughLabel && (
+									<span
+										className={cn(
+											WALKTHROUGH_LABEL_CLASS,
+											WALKTHROUGH_LABEL_TONE[item.walkthroughLabel],
+										)}
+									>
+										{WALKTHROUGH_LABEL_TEXT[item.walkthroughLabel]}
+									</span>
+								)}
+							</div>
+							{description && (
+								<div className="line-clamp-2 max-w-full text-sm leading-snug text-white/75">
+									{description}
+								</div>
+							)}
+						</div>
+					)}
+
+					{many && (
+						<div
+							ref={filmstripRef}
+							className="flex h-12 snap-x snap-mandatory items-center gap-1 overflow-x-auto px-[calc(50%_-_22px)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+							role="group"
+							aria-label="Media filmstrip"
+						>
+							{items.map((thumb, thumbIndex) => {
+								const active = thumbIndex === index;
+								return (
+									<button
+										key={`${thumb.src}-${thumbIndex}`}
+										type="button"
+										data-lightbox-thumb={thumbIndex}
+										className="grid size-11 shrink-0 snap-center place-items-center border-0 bg-transparent p-0"
+										onClick={() => go(thumbIndex)}
+										aria-label={`Show ${thumb.kind} ${thumbIndex + 1} of ${items.length}`}
+										aria-current={active ? "true" : undefined}
+									>
+										<span
+											className={cn(
+												"block overflow-hidden rounded-sm outline outline-1 outline-offset-1 transition-[width,height,opacity] duration-[var(--dur)] ease-[var(--ease)] motion-reduce:transition-none",
+												active
+													? "h-11 w-11 opacity-100 outline-white/85"
+													: "h-9 w-7 opacity-60 outline-transparent",
+											)}
+										>
+											{thumb.kind === "video" ? (
+												<video
+													src={thumb.src}
+													muted
+													playsInline
+													preload="metadata"
+													className="size-full object-cover"
+												/>
+											) : (
+												<img
+													src={thumb.src}
+													alt=""
+													loading="lazy"
+													className="size-full object-cover"
+												/>
+											)}
+										</span>
+									</button>
+								);
+							})}
+						</div>
+					)}
+
+					<div className="grid grid-cols-3 items-center px-5">
+						<div className="justify-self-start">
+							{nativeShare ? (
+								<button
+									type="button"
+									className={phoneAction}
+									onClick={saveItem}
+									disabled={saving}
+									aria-label={saving ? "Preparing image" : "Share image"}
+								>
+									<IconShare size={21} />
+								</button>
+							) : (
+								<a
+									href={downloadHref(item)}
+									download={
+										item.src.startsWith("data:") || item.src.startsWith("blob:")
+											? suggestedName(item)
+											: undefined
+									}
+									className={phoneAction}
+									aria-label="Download"
+								>
+									<IconArrowDown size={21} />
+								</a>
+							)}
+						</div>
+
+						{commentable && (
+							<button
+								type="button"
+								className={cn(phoneAction, "justify-self-center", commenting && "bg-white/15")}
+								onClick={() => {
+									if (commenting) resetComment();
+									else {
+										setChromeVisible(true);
+										setCommenting(true);
+										setCommentError(null);
+									}
+								}}
+								aria-pressed={commenting}
+								aria-label={commenting ? "Cancel image comment" : "Comment on image"}
+							>
+								<IconMessage size={21} />
+							</button>
+						)}
+
+						<button
+							type="button"
+							className={cn(phoneAction, "col-start-3 justify-self-end")}
+							onClick={copyImage}
+							disabled={item.kind === "video"}
+							aria-label={copied ? "Image copied" : "Copy image"}
+						>
+							{copied ? <IconCheck size={21} /> : <IconCopy size={21} />}
+						</button>
+					</div>
+				</div>
+			)}
 
 			{commenting && !selection && (
 				<div className="pointer-events-none absolute inset-x-0 bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex justify-center px-4">
@@ -1975,9 +2299,10 @@ function MediaLightbox({
 			{/* What you are looking at gets its own line directly under the
 			    picture, in plain white. Actions live above with Close, so a
 			    "Before"/"After" label cannot read as another link. */}
-			<div
-				className={cn(
-					"z-10 flex flex-col items-center gap-1.5 px-4 pb-4 pt-4",
+			{!isPhone && (
+				<div
+					className={cn(
+						"z-10 flex flex-col items-center gap-1.5 px-4 pb-4 pt-4",
 					(commenting ||
 						(!item.walkthroughLabel && !caption && !description && !many)) &&
 						"hidden",
@@ -2047,8 +2372,9 @@ function MediaLightbox({
 							{index + 1} of {items.length}
 						</span>
 					)}
+					</div>
 				</div>
-			</div>
+			)}
 		</motion.div>
 	);
 }

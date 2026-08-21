@@ -7,8 +7,10 @@ import { createWorktree, listWorktrees } from "../worktree";
 import {
   CreationEffectIndeterminateError,
   executeCreationBranchPrepare,
+  executeCreationCredentialResolve,
   executeCreationWorkspacePrepare,
   type CreationBranchEffectItem,
+  type CreationCredentialEffectItem,
   type CreationWorkspaceEffectItem,
 } from "./creation-effect-executors";
 
@@ -62,6 +64,26 @@ function branchItem(): CreationBranchEffectItem {
       baseBranch: "main",
       isolated: true,
       mode: "adopt_or_create",
+    },
+    attempts: 0,
+    nextAttemptAt: 0,
+    createdAt: 1,
+  };
+}
+
+function credentialItem(): CreationCredentialEffectItem {
+  return {
+    id: 3,
+    effectId: "session:creation_credential_resolve:credential-effect",
+    effectKey: "credential-effect",
+    sessionId: "session-one",
+    kind: "creation_credential_resolve",
+    payload: {
+      creationIdentity: "create-one",
+      creationGeneration: 1,
+      principal: "user:alice",
+      scope: "git:opensession",
+      mode: "resolve_current",
     },
     attempts: 0,
     nextAttemptAt: 0,
@@ -214,6 +236,28 @@ describe("creation branch effect executor", () => {
     expect(results).toBe(1);
   });
 
+  test("resolves an ephemeral Git capability only when creation is necessary", async () => {
+    const effect = branchItem();
+    effect.payload.credentialPrincipal = "user:alice";
+    const secretEnv = { GIT_ASKPASS: "/private/helper" };
+    let receivedOptions: Record<string, unknown> | undefined;
+    await executeCreationBranchPrepare(effect, {
+      listWorktrees: (async () => []) as typeof listWorktrees,
+      createWorktree: (async (_branch, _project, options) => {
+        receivedOptions = options;
+        return "/worktrees/create-one";
+      }) as typeof createWorktree,
+      resolveCredential: async () => ({
+        kind: "user",
+        principal: "user:alice",
+        env: secretEnv,
+      }),
+      result: () => ({ accepted: true, to: "preparing" }),
+    });
+    expect(receivedOptions).toMatchObject({ gitEnv: secretEnv });
+    expect(effect.payload).not.toHaveProperty("gitEnv");
+  });
+
   test("fails closed when branch and worktree identity disagree", async () => {
     await expect(executeCreationBranchPrepare(branchItem(), {
       listWorktrees: (async () => [
@@ -226,5 +270,43 @@ describe("creation branch effect executor", () => {
         throw new Error("must not result");
       },
     })).rejects.toBeInstanceOf(CreationEffectIndeterminateError);
+  });
+});
+
+describe("creation credential effect executor", () => {
+  test("returns only a fenced receipt after resolving a process-local capability", async () => {
+    let resultCalls = 0;
+    const secretEnv = { GIT_ASKPASS: "/private/helper" };
+    await executeCreationCredentialResolve(credentialItem(), {
+      resolveCredential: async () => ({
+        kind: "user",
+        principal: "user:alice",
+        env: secretEnv,
+      }),
+      afterResolved: (credential) => expect(credential.env).toBe(secretEnv),
+      result: (effect) => {
+        resultCalls += 1;
+        expect(effect.payload).not.toHaveProperty("env");
+        expect(effect.payload).not.toHaveProperty("token");
+        return { accepted: true, to: "preparing" };
+      },
+    });
+    expect(resultCalls).toBe(1);
+  });
+
+  test("rejects identity crossover before reporting a result", async () => {
+    let resultCalls = 0;
+    await expect(executeCreationCredentialResolve(credentialItem(), {
+      resolveCredential: async () => ({
+        kind: "service",
+        principal: "service",
+        env: { SECRET: "hidden" },
+      }),
+      result: () => {
+        resultCalls += 1;
+        return { accepted: true, to: "preparing" };
+      },
+    })).rejects.toBeInstanceOf(CreationEffectIndeterminateError);
+    expect(resultCalls).toBe(0);
   });
 });

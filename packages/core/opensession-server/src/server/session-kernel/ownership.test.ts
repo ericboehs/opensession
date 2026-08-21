@@ -127,6 +127,11 @@ describe("single session ownership", () => {
 		expect(creationExecutors).toContain(
 			'registerSessionEffectExecutor(\n      "creation_branch_prepare"',
 		);
+		expect(creationExecutors).toContain(
+			'"creation_credential_resolve",\n      executeCreationCredentialResolve',
+		);
+		expect(creationExecutors).toContain("resolveCurrentCredential");
+		expect(creationExecutors).not.toContain("payload.gitEnv");
 		expect(creationExecutors).toContain("assertAdoptableWorkspace(workspace, item)");
 		expect(creationExecutors.indexOf("dependencies.result(item)")).toBeGreaterThan(
 			creationExecutors.indexOf("dependencies.createWorkspace({"),
@@ -256,6 +261,7 @@ describe("single session ownership", () => {
 		expect(wiring).toContain("createPlan.resolved");
 		expect(wiring).toContain("ensureCreationPlanned(bksId, createIdentity)");
 		expect(wiring).toContain("await requestCreationWorkspace({");
+		expect(wiring).toContain("await requestCreationBranch({");
 		expect(wiring).not.toContain("createWorkspace(");
 		const create = read("session-create.ts");
 		expect(create).toContain("createPlan.resolved");
@@ -315,7 +321,7 @@ describe("single session ownership", () => {
 		expect(ws).toContain('`stop-${msg.requestId}`');
 		const routes = read("routes/sessions.ts");
 		expect(routes).toContain("await cancelAgentRunAndWait(runIds)");
-		expect(routes).toContain('.runExclusive(\n\t\t\t"delete_session"');
+		expect(routes).toMatch(/\.runExclusive\(\s*"delete_session"/);
 	});
 
 	test("create and sandbox recovery establish one execution owner", () => {

@@ -26,6 +26,7 @@ import {
   type StagingCount,
 } from "../lib/attachments";
 import { resolveNewSessionModel } from "../lib/default-model-pref";
+import { projectComposerSessions } from "../lib/composer-session-projection";
 import { baseModelId, modelEngine } from "./ModelEffortSelect";
 import { getSendKeyPref, onSendKeyChanged } from "../lib/send-key-pref";
 import { effectiveSendKey, MOD_ENTER_GLYPH } from "../lib/send-key";
@@ -1236,6 +1237,7 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
       ...(modelWorkspaceId ? { modelWorkspaceId } : {}),
       branch: createMode === "code" ? branch : "",
       prompt,
+      titlePrompt: projectComposerSessions(prompt).displayText,
       user: getCurrentUser(),
       ...(model ? { model } : {}),
       effort,

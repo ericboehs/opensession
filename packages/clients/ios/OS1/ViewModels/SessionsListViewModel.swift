@@ -205,7 +205,10 @@ final class SessionsListViewModel {
                 // fallback, for a workspace this client has no name for.
                 let workspace = session.workspaceName ?? ""
                 let title = workspace.isEmpty ? session.displayTitle : workspace
-                if !title.isEmpty { titles[session.id] = title }
+                if !title.isEmpty {
+                    titles[session.id] = title
+                    for aliasId in session.aliasIds ?? [] { titles[aliasId] = title }
+                }
             }
             return (
                 sidebarRows(

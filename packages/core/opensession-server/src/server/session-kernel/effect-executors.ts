@@ -97,6 +97,10 @@ function creationPayload<K extends Exclude<
             ? undefined
             : requiredString(kind, value.baseBranch, "baseBranch"),
         isolated: value.isolated === true,
+        credentialPrincipal:
+          value.credentialPrincipal === undefined
+            ? undefined
+            : requiredString(kind, value.credentialPrincipal, "credentialPrincipal"),
         mode: value.mode,
       } as SessionActorEffectFor<K>["payload"];
     case "creation_sandbox_prepare":
