@@ -20,12 +20,13 @@ import { runAgent } from "./agent-runner";
 import { declaredRunFailure, hasRunStatusDeclaration } from "./runner-shared";
 import { createWorktree, listWorktrees, REPOS, getRepo, type Repo } from "./worktree";
 import { personaName, productName } from "./config";
-import { OPENSESSION_SESSIONS_DIR , newSessionId} from "./paths";
+import { newSessionId } from "./paths";
 import { providerFor, modelLabel } from "./models";
 import { engineSessionPatch } from "./sessions";
 import type { NativeSessionFile } from "./types";
 import { stateDir } from "./paths";
 import { shouldPersistModelSwitch } from "./run-events";
+import { updateSessionFile } from "./session-cache";
 
 const SECURITY_DIR = stateDir("security");
 const SCANS_DIR = `${SECURITY_DIR}/scans`;
@@ -320,7 +321,9 @@ export async function executeScan(
           mode: "code",
           repo: repo.id,
         };
-        writeJsonAtomic(`${OPENSESSION_SESSIONS_DIR}/${bksId}.json`, data);
+        void updateSessionFile(bksId, (current) => ({ ...current, ...data })).catch(
+          (error) => console.error(`[security] Failed to persist session ${bksId}:`, error),
+        );
       };
       persistSession();
 

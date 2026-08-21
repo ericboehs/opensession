@@ -18,6 +18,8 @@
  * concurrent hosts never read-modify-write the shared active-runs.json.
  */
 
+import { existsSync, unlinkSync, writeFileSync } from "fs";
+import { processIdentity } from "../server/process-identity";
 import { dirname, resolve } from "path";
 
 const specPath = process.argv[2];
@@ -27,6 +29,30 @@ if (!specPath) {
 }
 const hostDir = dirname(resolve(specPath));
 const projectedGithubAuthPath = process.env.OPENSESSION_GITHUB_RUN_AUTH_FILE;
+const cleanupProjectedGithubAuth = () => {
+  if (
+    projectedGithubAuthPath &&
+    dirname(resolve(projectedGithubAuthPath)) === hostDir
+  ) {
+    try {
+      unlinkSync(projectedGithubAuthPath);
+    } catch {}
+  }
+};
+// Covers validation/import failures as well as the ordinary terminal path.
+process.once("exit", cleanupProjectedGithubAuth);
+// Publish process identity before reading the cancellation marker. A stopper
+// can now close the startup race without broad process-name matching.
+writeFileSync(
+  `${hostDir}/startup.json`,
+  JSON.stringify({ ...processIdentity(), pid: process.pid, specPath: resolve(specPath), startedAt: new Date().toISOString() }),
+  { mode: 0o600 },
+);
+if (existsSync(`${hostDir}/cancelled`)) {
+  cleanupProjectedGithubAuth();
+  console.log(`[run-host] ${hostDir}: cancelled before startup`);
+  process.exit(0);
+}
 
 // Must be set before claude-runner is evaluated — it resolves the journal path
 // at module load. The transient unit sets it too; this is the belt-and-braces
@@ -46,7 +72,7 @@ const {
   interruptAndSteerAgentRun,
 } = await import("../server/agent-runner");
 const { shouldPersistModelSwitch } = await import("../server/run-events");
-const { readFileSync, writeFileSync, existsSync, unlinkSync } = await import("fs");
+const { readFileSync } = await import("fs");
 const { writeJsonAtomic } = await import("../server/shared/atomic-write");
 const {
   ndjsonReader,
@@ -65,12 +91,24 @@ type ClientToHostMsg = import("./protocol").ClientToHostMsg;
 type AskResult = import("./protocol").AskResult;
 type StreamEvent = import("../server/run-events").StreamEvent;
 
-const spec: RunHostSpec = JSON.parse(readFileSync(specPath, "utf-8"));
+const specBytes = readFileSync(specPath);
+const expectedSpecHash = process.env.OPENSESSION_RUN_SPEC_HASH;
+if (expectedSpecHash) {
+  const actualSpecHash = new Bun.CryptoHasher("sha256")
+    .update(specBytes)
+    .digest("hex");
+  if (actualSpecHash !== expectedSpecHash) {
+    console.error("run host spec changed after executor validation");
+    process.exit(2);
+  }
+}
+const spec: RunHostSpec = JSON.parse(specBytes.toString("utf-8"));
 const sockPath = `${hostDir}/${HOST_SOCK_NAME}`;
 const metaPath = `${hostDir}/${HOST_META_NAME}`;
 
 const meta: RunHostMeta = {
   hostId: spec.hostId,
+  ...processIdentity(),
   pid: process.pid,
   osSessionId: spec.osSessionId,
   startedAt: new Date().toISOString(),
@@ -220,7 +258,9 @@ function handleClientMsg(msg: ClientToHostMsg): void {
           [spec.osSessionId, meta.engineSessionId],
           msg.text,
           msg.images,
+
           msg.steerId
+
         )
       ) {
         // Too late (run finishing) or backend can't steer — bounce it back so
@@ -582,13 +622,6 @@ if (!RUN_WS_URL) {
 // Remote interactive runs receive a short-lived access token in their private
 // run directory. Remove it on every ordinary host exit; a crashed sandbox is
 // still bounded by the token's own expiry and the sandbox lifecycle cleanup.
-if (
-  projectedGithubAuthPath &&
-  dirname(resolve(projectedGithubAuthPath)) === hostDir
-) {
-  try {
-    unlinkSync(projectedGithubAuthPath);
-  } catch {}
-}
+cleanupProjectedGithubAuth();
 log("exiting");
 process.exit(0);

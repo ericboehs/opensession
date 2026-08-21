@@ -1606,10 +1606,11 @@ enum OS1API {
         images: [String] = [],
         files: [AttachedFile] = [],
         workspaceId: String? = nil,
-        sandbox: String? = nil
+        sandbox: String? = nil,
+        requestId: String? = nil
     ) async throws -> String {
         struct CreateResponse: Decodable { let id: String }
-        let body = createSessionBody(
+        var body = createSessionBody(
             prompt: prompt,
             repo: repo,
             mode: mode,
@@ -1620,9 +1621,18 @@ enum OS1API {
             files: files,
             workspaceId: workspaceId,
             sandbox: sandbox,
-            user: ServerConfig.shared.userName
+            user: ServerConfig.shared.userName,
+            requestId: requestId
         )
+        let config = ServerConfig.shared
+        let scope = config.githubLogin.isEmpty ? config.userName : config.githubLogin
+        let intents = SessionCreateIntent(
+            key: "dev.tella.os1.create-intent.v1:\(config.baseURLString):\(scope)"
+        )
+        let stableRequestId = requestId ?? intents.requestId(for: body)
+        body["requestId"] = stableRequestId
         let response: CreateResponse = try await post("/api/sessions", body: body)
+        intents.complete(requestId: stableRequestId)
         return response.id
     }
 
@@ -1640,9 +1650,11 @@ enum OS1API {
         files: [AttachedFile] = [],
         workspaceId: String? = nil,
         sandbox: String? = nil,
-        user: String
+        user: String,
+        requestId: String? = nil
     ) -> [String: Any] {
         var body: [String: Any] = ["prompt": prompt, "mode": mode]
+        if let requestId, !requestId.isEmpty { body["requestId"] = requestId }
         // Sent only when the composer actually offered the choice. Omitting it
         // lets the instance's own sandbox default decide, which is the right
         // behaviour when there was nothing to pick from — and the wrong one

@@ -195,6 +195,7 @@ export type ProtocolClientMessage =
   // Liveness probe — the server echoes `pong`. Detects half-open sockets
   // (iOS/Safari kills backgrounded connections without firing onclose).
   | { type: "ping" }
+  | { type: "command_ack"; sessionId: string; requestId: string }
   | {
       type: "watch";
       sessionId: string;
@@ -241,6 +242,7 @@ export type ProtocolClientMessage =
   | {
       type: "answer_question";
       sessionId: string;
+      requestId?: string;
       questionId: string;
       answers: Record<string, string> | null;
     }
@@ -258,6 +260,7 @@ export type ProtocolClientMessage =
   | {
       type: "prompt";
       sessionId: string;
+      requestId?: string;
       content: string;
       user?: string;
       images?: string[];
@@ -274,6 +277,7 @@ export type ProtocolClientMessage =
   | {
       type: "interrupt_prompt";
       sessionId: string;
+      requestId?: string;
       content: string;
       user?: string;
       images?: string[];
@@ -284,14 +288,17 @@ export type ProtocolClientMessage =
   | {
       type: "delete_queued_prompt";
       sessionId: string;
+      requestId?: string;
       queueId?: string;
       queueIndex?: number;
     }
-  | { type: "take_queued_prompt"; sessionId: string; queueId: string }
+  | { type: "take_queued_prompt"; sessionId: string; requestId?: string; queueId: string; }
+  | { type: "take_steered_prompt"; sessionId: string; requestId?: string; queueId: string; }
   | {
       /** @deprecated Current clients take the item back into the composer. */
       type: "update_queued_prompt";
       sessionId: string;
+      requestId?: string;
       queueId?: string;
       queueIndex?: number;
       content: string;
@@ -300,12 +307,14 @@ export type ProtocolClientMessage =
   | {
       type: "steer_queued_prompt";
       sessionId: string;
+      requestId?: string;
       queueId?: string;
       queueIndex?: number;
     }
   | {
       type: "interrupt_queued_prompt";
       sessionId: string;
+      requestId?: string;
       queueId?: string;
       queueIndex?: number;
     }
@@ -314,11 +323,13 @@ export type ProtocolClientMessage =
       // order. The server reconciles its queue array to match.
       type: "reorder_queued_prompt";
       sessionId: string;
+      requestId?: string;
       order: string[];
     }
-  | { type: "cancel" }
+  | { type: "cancel"; sessionId?: string; requestId?: string }
   | {
       type: "create_session";
+      requestId?: string;
       /** Client-minted native id. Replaying the same create after reconnect is idempotent. */
       clientSessionId?: string;
       branch: string;
@@ -411,7 +422,14 @@ export type ProtocolServerMessage =
   // can tell a real restart (changed) from a transient blip (unchanged).
   // `restartBy` (when the boot was seconds after a shutdown) names the
   // session that likely triggered that restart.
-  | { type: "hello"; bootId: string; restartBy?: string }
+  | {
+      type: "hello";
+      bootId: string;
+      restartBy?: string;
+      capabilities?: { commandResults?: boolean };
+      /** Verified durable-command partition. Never derived from client claims. */
+      commandScope?: string;
+    }
   | {
       type: "transcript_init";
       sessionId?: string;
@@ -509,7 +527,7 @@ export type ProtocolServerMessage =
     }
   // The create run finished (or failed) preparing the session's worktree.
   | { type: "workspace_status"; sessionId: string; ready: boolean }
-  | { type: "model_changed"; sessionId: string; model: string; from?: string; by?: string }
+  | { type: "model_changed"; sessionId: string; model: string; from?: string; by?: string; }
   | {
       type: "queue_update";
       sessionId: string;
@@ -560,6 +578,16 @@ export type ProtocolServerMessage =
       permalink?: string;
       /** Message timestamp, so the sender can undo the post. */
       ts?: string;
+    }
+  | { type: "command_ack_result"; sessionId: string; requestId: string }
+  | { type: "command_result";
+      sessionId: string;
+      requestId: string;
+      status: "completed" | "failed";
+      result?: unknown;
+      error?: string;
+      /** Failed validation is terminal; transient ownership/storage failures stay queued. */
+      terminal?: boolean;
     }
   | { type: "notice"; sessionId?: string; message: string }
   | { type: "pong" }

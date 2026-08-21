@@ -29,10 +29,10 @@ import {
 	invalidateSessionsCache,
 	peekCachedSessions,
 	touchNativeSession,
+	updateSessionFile,
 } from "../session-cache";
 import { attachRepo, switchPrimaryRepo, workspaceOwningWorktree } from "../session-repos";
 import { getAllSessions, getTranscriptPath } from "../sessions";
-import { writeJsonAtomic } from "../shared/atomic-write";
 import { configuredIdentity, configuredRepos, defaultRepo, newSessionRepoDefault } from "../config";
 import { persistRawConfig, rawConfig, withConfigMutationLock } from "../config-mutation";
 import { AUTO_REPO } from "../worktree";
@@ -771,8 +771,7 @@ export async function handleWorkspaceRoutes(
 					}
 				: {}),
 		};
-		writeJsonAtomic(`${SESSIONS_DIR}/${bksId}.json`, data);
-		invalidateSessionsCache();
+		await updateSessionFile(bksId, () => data);
 		// Also return the full unified session so the client can drop it into
 		// its session list and render the new session instantly, instead of
 		// flashing a loading screen until the next sessions poll lands.

@@ -29,6 +29,7 @@
         "opensession-slack",
         "opensession-todos",
         "opensession-walkthrough",
+        "opensession-web",
         "opensession-workflows"
       ],
       "journalKind": "prompt",
@@ -52,13 +53,10 @@
       "gateReason": null,
       "mcpConfig": {
         "snapshot-alpha": {
-          "command": [
-            "/bin/true",
+          "args": [
             "--alpha"
           ],
-          "enabled": true,
-          "timeout": 30000,
-          "type": "local"
+          "command": "/bin/true"
         }
       },
       "mountedMcpServers": [
@@ -85,31 +83,31 @@
       ],
       "toolStripNotes": [
         {
-          "message": "\"Create a refund\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action you want taken (tool name and full parameters, including amounts and IDs) in your reply and ask the human in this session to execute it themselves.",
+          "message": "\"Create a refund\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
           "tools": [
             "mcp__stripe__create_refund"
           ]
         },
         {
-          "message": "\"Cancel a subscription\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action you want taken (tool name and full parameters, including amounts and IDs) in your reply and ask the human in this session to execute it themselves.",
+          "message": "\"Cancel a subscription\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
           "tools": [
             "mcp__stripe__cancel_subscription"
           ]
         },
         {
-          "message": "\"Update a subscription\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action you want taken (tool name and full parameters, including amounts and IDs) in your reply and ask the human in this session to execute it themselves.",
+          "message": "\"Update a subscription\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
           "tools": [
             "mcp__stripe__update_subscription"
           ]
         },
         {
-          "message": "\"Execute a raw Stripe API call\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action you want taken (tool name and full parameters, including amounts and IDs) in your reply and ask the human in this session to execute it themselves.",
+          "message": "\"Execute a raw Stripe API call\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
           "tools": [
             "mcp__stripe__stripe_api_execute"
           ]
         },
         {
-          "message": "\"Execute a mutating Stripe API call\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action you want taken (tool name and full parameters, including amounts and IDs) in your reply and ask the human in this session to execute it themselves.",
+          "message": "\"Execute a mutating Stripe API call\" requires per-call human approval, which this engine cannot collect. This tool is not available; state the exact action, tool name, and full parameters in your reply and ask the human to execute it.",
           "tools": [
             "mcp__stripe__stripe_api_write"
           ]
@@ -132,7 +130,7 @@
       "type": "system"
     },
     {
-      "content": "{\n  \"confirmTools\": [\n    \"mcp__stripe__cancel_subscription\",\n    \"mcp__stripe__create_refund\",\n    \"mcp__stripe__stripe_api_execute\",\n    \"mcp__stripe__stripe_api_write\",\n    \"mcp__stripe__update_subscription\"\n  ],\n  \"deniedTools\": [],\n  \"inProcess\": [\n    \"opensession-admin\",\n    \"opensession-ask\",\n    \"opensession-assets\",\n    \"opensession-goals\",\n    \"opensession-humans\",\n    \"opensession-keychain\",\n    \"opensession-memory\",\n    \"opensession-papercuts\",\n    \"opensession-portals\",\n    \"opensession-publish\",\n    \"opensession-repos\",\n    \"opensession-runners\",\n    \"opensession-search\",\n    \"opensession-self-deploy\",\n    \"opensession-sessions\",\n    \"opensession-slack\",\n    \"opensession-todos\",\n    \"opensession-walkthrough\",\n    \"opensession-workflows\"\n  ],\n  \"localWorkspaceToolsDisabled\": false,\n  \"mcpScope\": [\n    \"snapshot-alpha\"\n  ],\n  \"mode\": \"scratch\"\n}",
+      "content": "{\n  \"confirmTools\": [\n    \"mcp__stripe__cancel_subscription\",\n    \"mcp__stripe__create_refund\",\n    \"mcp__stripe__stripe_api_execute\",\n    \"mcp__stripe__stripe_api_write\",\n    \"mcp__stripe__update_subscription\"\n  ],\n  \"deniedTools\": [],\n  \"inProcess\": [\n    \"opensession-admin\",\n    \"opensession-ask\",\n    \"opensession-assets\",\n    \"opensession-goals\",\n    \"opensession-humans\",\n    \"opensession-keychain\",\n    \"opensession-memory\",\n    \"opensession-papercuts\",\n    \"opensession-portals\",\n    \"opensession-publish\",\n    \"opensession-repos\",\n    \"opensession-runners\",\n    \"opensession-search\",\n    \"opensession-self-deploy\",\n    \"opensession-sessions\",\n    \"opensession-slack\",\n    \"opensession-todos\",\n    \"opensession-walkthrough\",\n    \"opensession-web\",\n    \"opensession-workflows\"\n  ],\n  \"localWorkspaceToolsDisabled\": false,\n  \"mcpScope\": [\n    \"snapshot-alpha\"\n  ],\n  \"mode\": \"scratch\"\n}",
       "contextSource": "tools",
       "noticeKind": "standing-context",
       "seq": 3,

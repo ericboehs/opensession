@@ -379,7 +379,7 @@ const BEACON_THROTTLE_MS = 10 * 60_000;
 export interface BeaconDeps {
 	readSessionFile: (id: string) => Record<string, unknown> | null;
 	stamp: (id: string, at: string) => void;
-	deliver: (parentId: string, content: string) => Promise<unknown>;
+	deliver: (parentId: string, content: string, deliveryId: string) => Promise<unknown>;
 	evidence: (id: string) => Promise<HandoffEvidence | null>;
 	now?: () => number;
 }
@@ -403,10 +403,11 @@ async function defaultBeaconDeps(): Promise<BeaconDeps> {
 			}
 		},
 		stamp: (id, at) => touchNativeSession(id, { parentNotifiedAt: at }),
-		deliver: (parentId, content) =>
-			// No user → deliverToSession leaves off the "[name]" prefix: this is
-			// the server speaking, not a person and not the worker.
-			getSessionControl().deliverToSession(parentId, content, undefined),
+		deliver: (parentId, content, deliveryId) =>
+			// No user means the server is speaking, not a person or worker.
+			getSessionControl().deliverToSession(parentId, content, undefined, {
+				deliveryId,
+			}),
 		evidence: (id) => collectHandoffEvidence(id),
 	};
 }
@@ -453,7 +454,7 @@ export async function notifyParentOfFailedRun(
 			block;
 
 		d.stamp(sessionId, new Date(now).toISOString());
-		await d.deliver(parentId, content);
+		await d.deliver(parentId, content, `worker-failure:${sessionId}`);
 		return "sent";
 	} catch {
 		return "failed";

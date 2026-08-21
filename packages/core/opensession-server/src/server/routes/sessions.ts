@@ -7,8 +7,12 @@
  */
 
 import { requestUser, type RouteContext } from "./context";
-import { cancelAgentRun, isAgentSessionBusy } from "../agent-runner";
-import { archiveOlderThan, setArchived, unpinArchivedSessions } from "../archive";
+import {
+	cancelAgentRun,
+	cancelAgentRunAndWait,
+	isAgentSessionBusy,
+} from "../agent-runner";
+import { archiveOlderThan, setArchived, unpinArchivedSessions, } from "../archive";
 import { audit } from "../audit";
 import { pendingAskAwaitingAnswer } from "../asks";
 import { transcriptMatchSnippet } from "../jsonl-parser";
@@ -30,15 +34,16 @@ import {
 	prMetaForBranch,
 	prReviewerSpecs,
 } from "../pr-info";
+
 import {
 	clientVisibleQueuedCount,
 	requeueSteerReceipts,
 	stoppedSessions,
 } from "../queue-state";
+
 import { markPrReviewNotified } from "../pr-review-notifications";
-import { getReviewRequest, setReviewAccepted, setReviewRequest } from "../review-requests";
+import { getReviewRequest, setReviewAccepted, setReviewRequest, } from "../review-requests";
 import { getSessionControl, type SandboxRequest } from "../session-control";
-import { suggestBranchName } from "../suggest-branch";
 import { transitionRunState } from "../run-state";
 import {
 	findSessionAsync,
@@ -52,11 +57,12 @@ import { asDataUrlList, countImageRefs, parseImageDataUrls } from "../uploads";
 import { notifyMentions } from "../mentions";
 import { reviewTeamFor } from "../people";
 import { sendPushToUser } from "../push";
+import { sessionKernel, sessionKernelStore, tombstoneSessionKernel, } from "../session-kernel";
 import {
-	promptReceipt,
-	promptReceiptKey,
-	rememberPromptReceipt,
-} from "../prompt-receipts";
+	canonicalCommandPayload,
+	sessionIdForRequest,
+} from "../session-request-id";
+import { suggestBranchName } from "../suggest-branch";
 import { searchIndex } from "../session-index";
 import { resolvePrTarget } from "../session-repos";
 import { destroySessionSandbox } from "../session-sandbox";
@@ -74,8 +80,8 @@ import { githubLoginFor } from "../shared/user-mappings";
 import { isManualStatus, setStatusOverride } from "../status-overrides";
 import { getSubagentTranscript, listSubagents } from "../subagents";
 import { setTitleOverride } from "../title-overrides";
-import { buildWorkspaceOverview, resolveTranscriptImage } from "../workspace-overview";
-import { type Workspace, deleteWorkspace, getWorkspace, workspaceName } from "../workspaces";
+import { buildWorkspaceOverview, resolveTranscriptImage, } from "../workspace-overview";
+import { type Workspace, deleteWorkspace, getWorkspace, workspaceName, } from "../workspaces";
 import { prHostFor } from "../pr-host";
 import { getRepo, NO_REPO, removeWorktree, repoForPath } from "../worktree";
 import { preparingWorkspaces } from "../ws-hub";
@@ -148,8 +154,7 @@ export type SessionListRow = Omit<
  */
 export function sessionRan(
 	s: Pick<
-		UnifiedSession,
-		| "claudeSessionId"
+		UnifiedSession, "claudeSessionId"
 		| "codexThreadId"
 		| "piSessionId"
 	>,
@@ -268,7 +273,7 @@ function persistDiskLiveList(text: string): void {
 			throw error;
 		}
 	} catch (error) {
-		console.warn("[sessions] failed to persist the live-list startup cache:", error);
+		console.warn("[sessions] failed to persist the live-list startup cache:", error,);
 	}
 }
 
@@ -423,8 +428,8 @@ const SIDEBAR_AUTOMATION_RUNS = 5;
  * Every retained run carries the complete count so the heading still says how
  * much history exists rather than pretending this bounded window is all of it.
  */
-export function sidebarLiveSessions<T extends UnifiedSession & SessionListSignals>(
-	sessions: T[],
+export function sidebarLiveSessions<T extends UnifiedSession & SessionListSignals,>(
+	sessions: T[]
 ): Array<T & { automationRunCount?: number }> {
 	const byAutomation = new Map<string, T[]>();
 	for (const session of sessions) {
@@ -556,7 +561,7 @@ async function searchStoredTranscripts(
 	}
 	signal?.addEventListener("abort", abort, { once: true });
 	proc.stdin.write(
-		JSON.stringify({ dbPath: transcriptDbPath(), query, sessionIds, maxMatches: 50 }),
+		JSON.stringify({ dbPath: transcriptDbPath(), query, sessionIds, maxMatches: 50, }),
 	);
 	proc.stdin.end();
 	let output = "";
@@ -573,7 +578,7 @@ async function searchStoredTranscripts(
 	}
 	if (code !== 0) {
 		if (!signal?.aborted)
-			console.warn(`[transcript-search] store worker failed: ${error.trim().slice(0, 300)}`);
+			console.warn(`[transcript-search] store worker failed: ${error.trim().slice(0, 300)}`,);
 		return { matches: [], searchedSessions: 0 };
 	}
 	try {
@@ -589,7 +594,7 @@ async function searchStoredTranscripts(
 
 async function ripgrepFiles(
 	query: string,
-	files: string[],
+	files: string[]
 ): Promise<string[]> {
 	const hits = new Set<string>();
 	const CHUNK = 1000;
@@ -667,6 +672,8 @@ export async function handleSessionsRoutes(
 			user?: unknown;
 			workspaceId?: unknown;
 			sandbox?: unknown;
+			requestId?: unknown;
+			clientId?: unknown;
 		} | null;
 		const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
 		const files = Array.isArray(body?.files) ? body.files : undefined;
@@ -674,10 +681,7 @@ export async function handleSessionsRoutes(
 			? body.images.filter((value): value is string => typeof value === "string")
 			: [];
 		if (!prompt && !files?.length && !imageUrls.length) {
-			return Response.json(
-				{ error: "prompt or attachment required" },
-				{ status: 400 },
-			);
+			return Response.json({ error: "prompt or attachment required" }, { status: 400 });
 		}
 		// Join an existing workspace as a sibling session — the native apps' "new
 		// session in this workspace", equivalent to the web tab strip's "+".
@@ -692,23 +696,46 @@ export async function handleSessionsRoutes(
 					? ("scratch" as const)
 					: ("ask" as const);
 		let branch = typeof body?.branch === "string" ? body.branch.trim() : "";
-		// A code session joining a workspace that already owns a worktree works on
-		// that worktree's branch, so skip the (LLM) branch suggestion — it would
-		// only be discarded. A workspace with no worktree yet still needs one.
 		const joinsWorktree = !!(workspaceId && getWorkspace(workspaceId)?.worktreeDir);
 		if (mode === "code" && !branch && !joinsWorktree) {
 			const attachmentName =
 				typeof (files?.[0] as { name?: unknown } | undefined)?.name === "string"
 					? String((files?.[0] as { name: string }).name)
-					: imageUrls.length
-						? "image"
-						: "session";
+					: imageUrls.length ? "image" : "session";
 			branch =
 				(await suggestBranchName(prompt || `Review ${attachmentName}`).catch(() => null)) ||
 				`session-${Date.now().toString(36)}`;
 		}
+
 		try {
-			const { id } = await getSessionControl().createSession({
+			const actor = requestUser(ctx, body?.user);
+			const suppliedRequestId =
+				typeof body?.requestId === "string" && body.requestId.trim()
+					? body.requestId.trim().slice(0, 200)
+					: typeof body?.clientId === "string" && body.clientId.trim()
+						? body.clientId.trim().slice(0, 200)
+						: undefined;
+			const requestId = suppliedRequestId || crypto.randomUUID();
+			const actorScope = ctx.authUser?.login || actor || "anonymous";
+			const targetId = sessionIdForRequest(actorScope, requestId);
+			const accepted = await sessionKernel(targetId).dispatch(
+				{
+					requestId,
+					type: "create_session",
+					payload: {
+						targetId,
+						hash: new Bun.CryptoHasher("sha256")
+							.update(canonicalCommandPayload(body))
+							.digest("hex"),
+					},
+					source: "rest",
+					replaySafe: true,
+				},
+				async () => {
+					return getSessionControl().createSession({
+						id: targetId,
+						requestId,
+						requestScope: actorScope,
 				prompt,
 				mode,
 				...(mode === "code" && branch ? { branch } : {}),
@@ -731,13 +758,14 @@ export async function handleSessionsRoutes(
 				...(typeof body?.sandbox === "string" && body.sandbox
 					? { sandbox: body.sandbox as SandboxRequest }
 					: {}),
-				// Image attachments as data URLs (the native apps' create path;
-				// validated/parsed by the wiring's parseImageDataUrls).
+				// Image and file attachments from the native create path.
 				...(imageUrls.length ? { images: imageUrls } : {}),
 				...(files?.length ? { files } : {}),
-				user: requestUser(ctx, body?.user),
-			});
-			return Response.json({ id });
+				user: actor,
+					});
+				},);
+			return Response.json({ id: accepted.result.id,
+				...(accepted.duplicate ? { duplicate: true } : {}), });
 		} catch (e) {
 			return Response.json(
 				{ error: e instanceof Error ? e.message : String(e) },
@@ -794,7 +822,7 @@ export async function handleSessionsRoutes(
 			if (!sessionsResponseRefreshes.has(variant)) {
 				setTimeout(() => {
 					void refreshSessionsResponse(variant).catch((error) =>
-						console.warn("[sessions] live-list background refresh failed:", error),
+						console.warn("[sessions] live-list background refresh failed:", error,),
 					);
 				}, 250).unref?.();
 			}
@@ -815,7 +843,7 @@ export async function handleSessionsRoutes(
 				// the persisted response keeps the list useful in the meantime.
 				setTimeout(() => {
 					void refreshSessionsResponse(variant).catch((error) =>
-						console.warn("[sessions] live-list background refresh failed:", error),
+						console.warn("[sessions] live-list background refresh failed:", error,),
 					);
 				}, 30_000).unref?.();
 				return await sessionsListResponse(req, disk);
@@ -878,7 +906,7 @@ export async function handleSessionsRoutes(
 			// failed with Edit and Retry rather than looping.
 			if ((images?.length ?? 0) < countImageRefs(body?.images)) {
 				return Response.json(
-					{ error: "An attached image is no longer available. Attach it again." },
+					{ error: "An attached image is no longer available. Attach it again.", },
 					{ status: 400 },
 				);
 			}
@@ -886,31 +914,9 @@ export async function handleSessionsRoutes(
 				typeof body?.clientId === "string" && body.clientId.trim()
 					? body.clientId.trim().slice(0, 200)
 					: undefined;
-			const receiptKey = clientId
-				? promptReceiptKey(sessionId, clientId)
-				: undefined;
-			if (receiptKey) {
-				const seen = promptReceipt(receiptKey);
-				// Already delivered under this id — replay the answer instead of
-				// posting the message a second time.
-				if (seen) return Response.json({ ...seen.body, duplicate: true });
-			}
-			// No findSession GATE: the 2s session cache can lag a just-created
-			// session, and deliverToSession resolves the id (and reports unknown
-			// ids) itself. The lookup here only drives the best-effort extras.
+			// No synchronous cache gate: a just-created session may not be visible
+			// in the projection yet. Delivery resolves the authoritative target.
 			const session = await findSessionAsync(sessionId);
-			if (session) {
-				// The composer's effort/fast pills ride every send; persist a
-				// change so this and future runs honor it, as the WS path does.
-				maybePersistEffort(
-					session,
-					typeof body?.effort === "string" ? body.effort : undefined,
-				);
-				maybePersistFastMode(
-					session,
-					typeof body?.fastMode === "boolean" ? body.fastMode : undefined,
-				);
-			}
 			const user = requestUser(ctx, body?.user);
 			const busyMode =
 				body?.busyMode === "queue" || body?.busy === "queue"
@@ -921,30 +927,37 @@ export async function handleSessionsRoutes(
 			const contextSessions = Array.isArray(body?.contextSessions)
 				? body.contextSessions.filter((id): id is string => typeof id === "string")
 				: undefined;
-			const res = await getSessionControl().deliverToSession(
+			if (session) {
+				maybePersistEffort(
+					session,
+					typeof body?.effort === "string" ? body.effort : undefined,
+				);
+				maybePersistFastMode(
+					session,
+					typeof body?.fastMode === "boolean" ? body.fastMode : undefined,
+				);
+			}
+			const result = await getSessionControl().deliverToSession(
 				sessionId,
 				content,
 				user,
 				{
 					busy: busyMode,
-					// Queue-by-choice holds until the agent fully completes,
-					// matching what the composers mean by "queue".
 					hold: busyMode === "queue",
 					images,
 					imageUrls,
 					files,
 					contextSessions,
+					...(clientId ? { deliveryId: clientId } : {}),
 				},
 			);
-			if (res.status === "error") {
+			if (result.status === "error") {
 				return Response.json(
-					{ ...res, error: res.message },
-					{ status: /no session/i.test(res.message) ? 404 : 400 },
+					{ ...result, error: result.message },
+					{ status: /no session/i.test(result.message) ? 404 : 400 },
 				);
 			}
-			// @People-mentions ping the tagged teammates on every delivery path,
-			// exactly like the WS prompt (same matcher, never the sender).
-			if (session)
+			if (session && !result.duplicate) {
 				await notifyMentions(
 					content,
 					String(user || ""),
@@ -952,9 +965,35 @@ export async function handleSessionsRoutes(
 					"prompt",
 					session.title || "a session",
 				);
-			const payload = { ...res, ...(clientId ? { clientId } : {}) };
-			if (receiptKey) rememberPromptReceipt(receiptKey, payload);
+			}
+			const payload = {
+				...result,
+				...(clientId ? { clientId } : {}),
+			};
 			return Response.json(payload);
+		}
+	}
+
+	// Durable lifecycle and metadata changes for a thin gateway or diagnostic
+	// client. Transcript bodies keep using the transcript changeSeq endpoint;
+	// this stream names ownership decisions, queue changes, asks and metadata.
+	{
+		const m = path.match(/^\/api\/sessions\/([^/]+)\/state-changes$/);
+		if (m && req.method === "GET") {
+			const sessionId = decodeURIComponent(m[1]);
+			if (!(await findSessionAsync(sessionId)))
+				return Response.json({ error: "Session not found" }, { status: 404 });
+			const after = Math.max(0, Number(url.searchParams.get("after") || 0) || 0,);
+			const limit = Math.min(
+				500,
+				Math.max(1, Number(url.searchParams.get("limit") || 200) || 200),
+			);
+			const store = sessionKernelStore();
+			return Response.json({
+				sessionId,
+				changeSeq: store.runState(sessionId).changeSeq,
+				changes: store.changesSince(sessionId, after, limit),
+			});
 		}
 	}
 
@@ -987,7 +1026,7 @@ export async function handleSessionsRoutes(
 	// thing here.
 	{
 		const m = path.match(
-			/^\/api\/sessions\/(.+)\/entry\/([^/]+)$/,
+			/^\/api\/sessions\/(.+)\/entry\/([^/]+)$/
 		);
 		if (m && req.method === "GET") {
 			const session = await findSessionAsync(decodeURIComponent(m[1]));
@@ -1045,7 +1084,7 @@ export async function handleSessionsRoutes(
 	// transcript-image refs (below), not inline base64.
 	{
 		const m = path.match(
-			/^\/api\/workspaces\/([^/]+)\/overview$/,
+			/^\/api\/workspaces\/([^/]+)\/overview$/
 		);
 		if (m && req.method === "GET") {
 			const wsId = decodeURIComponent(m[1]);
@@ -1192,7 +1231,7 @@ export async function handleSessionsRoutes(
 			if (!session)
 				return Response.json(
 					{ error: "Session not found" },
-					{ status: 404 },
+					{ status: 404 }
 				);
 			return Response.json({
 				subagents: session.transcriptPath ? listSubagents(session.transcriptPath) : [],
@@ -1206,14 +1245,14 @@ export async function handleSessionsRoutes(
 	// session id (ses_…) from the task tool / the subagents list above.
 	{
 		const m = path.match(
-			/^\/api\/sessions\/(.+)\/subagent\/([^/]+)$/,
+			/^\/api\/sessions\/(.+)\/subagent\/([^/]+)$/
 		);
 		if (m && req.method === "GET") {
 			const session = await findSessionAsync(decodeURIComponent(m[1]));
 			if (!session)
 				return Response.json(
 					{ error: "Session not found" },
-					{ status: 404 },
+					{ status: 404 }
 				);
 			const agentId = decodeURIComponent(m[2]);
 			const sub = session.transcriptPath
@@ -1222,7 +1261,7 @@ export async function handleSessionsRoutes(
 			if (!sub)
 				return Response.json(
 					{ error: "Sub-agent not found" },
-					{ status: 404 },
+					{ status: 404 }
 				);
 			return Response.json({ ...sub, sessionRunning: session.isRunning });
 		}
@@ -1242,7 +1281,7 @@ export async function handleSessionsRoutes(
 
 	// Archive / unarchive a single session
 	const archiveMatch = path.match(
-		/^\/api\/sessions\/(.+)\/archive$/,
+		/^\/api\/sessions\/(.+)\/archive$/
 	);
 	if (archiveMatch && req.method === "POST") {
 		const sessionId = decodeURIComponent(archiveMatch[1]);
@@ -1284,7 +1323,9 @@ export async function handleSessionsRoutes(
 			requeueSteerReceipts(session.id, engineUserTexts(session));
 			stoppedRun = true;
 		}
-		setArchived(sessionId, archived);
+		sessionKernel(sessionId).applySync("archive_override", () =>
+			setArchived(sessionId, archived),
+		);
 		// Plain done-tickets are archived via a file-level flag, not the
 		// registry; clearing only the registry would leave them archived. On
 		// unarchive, also clear the file flag so the session returns to "My
@@ -1303,7 +1344,7 @@ export async function handleSessionsRoutes(
 	// Rename a session (manual display title; empty/blank clears it back to
 	// the derived title). Works for any source via the override registry.
 	const titleMatch = path.match(
-		/^\/api\/sessions\/(.+)\/title$/,
+		/^\/api\/sessions\/(.+)\/title$/
 	);
 	if (titleMatch && req.method === "PUT") {
 		const sessionId = decodeURIComponent(titleMatch[1]);
@@ -1313,7 +1354,9 @@ export async function handleSessionsRoutes(
 		const body = await req.json().catch(() => ({}));
 		const title =
 			typeof body?.title === "string" ? body.title.trim().slice(0, 80) : "";
-		setTitleOverride(sessionId, title || null);
+		sessionKernel(sessionId).applySync("title_override", () =>
+			setTitleOverride(sessionId, title || null),
+		);
 		invalidateSessionsCache();
 		return Response.json({ ok: true });
 	}
@@ -1322,7 +1365,7 @@ export async function handleSessionsRoutes(
 	// lane keys (needsinput/inprogress/review/merged/pending); null/invalid
 	// clears the override back to the derived lane.
 	const statusMatch = path.match(
-		/^\/api\/sessions\/(.+)\/status$/,
+		/^\/api\/sessions\/(.+)\/status$/
 	);
 	if (statusMatch && req.method === "PUT") {
 		const sessionId = decodeURIComponent(statusMatch[1]);
@@ -1331,7 +1374,9 @@ export async function handleSessionsRoutes(
 			return Response.json({ error: "Session not found" }, { status: 404 });
 		const body = await req.json().catch(() => ({}));
 		const status = isManualStatus(body?.status) ? body.status : null;
-		setStatusOverride(sessionId, status);
+		sessionKernel(sessionId).applySync("status_override", () =>
+			setStatusOverride(sessionId, status),
+		);
 		invalidateSessionsCache();
 		return Response.json({ ok: true });
 	}
@@ -1342,7 +1387,7 @@ export async function handleSessionsRoutes(
 	// request. Setting one pushes a "needs your review" notification to the
 	// reviewer's registered devices (mirrors the needs-input ask push).
 	const reviewMatch = path.match(
-		/^\/api\/sessions\/(.+)\/review$/,
+		/^\/api\/sessions\/(.+)\/review$/
 	);
 	if (reviewMatch && req.method === "PUT") {
 		const sessionId = decodeURIComponent(reviewMatch[1]);
@@ -1379,7 +1424,7 @@ export async function handleSessionsRoutes(
 						const { sendPushToUser } = await import("../../server/push");
 						await sendPushToUser(existing.by, {
 							title: "Review complete",
-							body: `${by || "Someone"} reviewed ${session.title || sessionId}`.slice(0, 180),
+							body: `${by || "Someone"} reviewed ${session.title || sessionId}`.slice(0, 180,),
 							url: `/session/${encodeURIComponent(sessionId)}`,
 							tag: `review-${sessionId}`,
 						});
@@ -1466,16 +1511,18 @@ export async function handleSessionsRoutes(
 				} else mirroredToGithub = true;
 			}
 		}
-		setReviewRequest(
-			sessionId,
-			reviewer
-				? {
-						to: reviewTeam?.github || reviewer,
-						...(reviewTeam ? { recipients: reviewTeam.members } : {}),
-						by: by || "someone",
-						at: new Date().toISOString(),
-					}
-				: null,
+		sessionKernel(sessionId).applySync("review_request", () =>
+			setReviewRequest(
+				sessionId,
+				reviewer
+					? {
+							to: reviewTeam?.github || reviewer,
+							...(reviewTeam ? { recipients: reviewTeam.members } : {}),
+							by: by || "someone",
+							at: new Date().toISOString(),
+						}
+					: null,
+			),
 		);
 		// The chip's GitHub fallback reads the bulk PR cache, which the throttled
 		// sweep only refills every 10-30 minutes. Without a write-through, a clear
@@ -1498,7 +1545,7 @@ export async function handleSessionsRoutes(
 						(reviewTeam?.members || [reviewer]).map((recipient) =>
 							sendPushToUser(recipient, {
 								title: "Needs your review",
-								body: `${by || "Someone"} asked you to review ${session.title || sessionId}`.slice(0, 180),
+								body: `${by || "Someone"} asked you to review ${session.title || sessionId}`.slice(0, 180,),
 								url: `/session/${encodeURIComponent(sessionId)}`,
 								tag: `review-${sessionId}`,
 							}),
@@ -1560,19 +1607,38 @@ export async function handleSessionsRoutes(
 				searchIndex().remove(`session:${id}`);
 			} catch {}
 		};
+		return await sessionKernel(session.id).runExclusive(
+			"delete_session",
+			async () => {
 		try {
+			const runIds = [
+				session.claudeSessionId,
+				session.codexThreadId,
+				session.id,
+			];
+			if (
+				runIds.some((id) => !!id && isAgentSessionBusy(id!)) &&
+				!(await cancelAgentRunAndWait(runIds))
+			) {
+				return Response.json(
+					{ error: "The session is still stopping. Retry deletion shortly." },
+					{ status: 409 },
+				);
+			}
 			// Local Portals are their own detached process groups. Stop them before
 			// deleting session metadata or optionally removing the worktree.
 			if (session.runner)
-				await dropRunnerPortalRoutes(session.id, session.runner.id, session.startedBy || undefined);
+				await dropRunnerPortalRoutes(session.id, session.runner.id, session.startedBy || undefined,);
 			else if (session.worktreeDir && !session.sandbox?.sandboxId)
-				await stopAllPortalServices({ sessionId: session.id, worktreeDir: session.worktreeDir });
+				await stopAllPortalServices({ sessionId: session.id, worktreeDir: session.worktreeDir, });
+			// Fence late engine frames and file writers before removing external state.
+			tombstoneSessionKernel(session.id);
 			deleteSession(session);
 			// Runner workspace deletion is opt-in on the Runner. It remains
 			// best-effort so an offline machine never blocks deleting a session.
 			if (session.runner && session.repo && session.worktreeDir) {
-				void cleanupRunnerWorkspace({ runnerId: session.runner.id, sessionId: session.id, repo: session.repo, workspacePath: session.worktreeDir, user: session.createdBy || undefined }).catch((error) =>
-					console.warn(`[runners] Workspace retained after deleting ${session.id}:`, error),
+				void cleanupRunnerWorkspace({ runnerId: session.runner.id, sessionId: session.id, repo: session.repo, workspacePath: session.worktreeDir, user: session.createdBy || undefined, }).catch((error) =>
+					console.warn(`[runners] Workspace retained after deleting ${session.id}:`, error,),
 				);
 			}
 			purgeTranscriptRows(session.id);
@@ -1610,6 +1676,8 @@ export async function handleSessionsRoutes(
 		} catch (e: any) {
 			return Response.json({ error: e.message }, { status: 500 });
 		}
+			},
+		);
 	}
 
 	return undefined;

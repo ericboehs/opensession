@@ -4,8 +4,8 @@
  *
  * The tool itself only pre-validates and LAUNCHES: the actual
  * fetch → ff-only merge → restart → health-gate → (opt-in) rollback sequence
- * lives in deploy/self-deploy.sh, spawned as a transient SYSTEM unit via
- * `sudo -n systemd-run` (the host-client.ts launchHostUnit precedent) so it
+ * lives in deploy/self-deploy.sh, spawned as a transient SYSTEM unit via the
+ * root-owned validating runtime helper so it
  * survives the service restart it triggers — any of that logic living in this
  * process would die mid-deploy. Results land as JSON in the deploy state dir
  * (~/.opensession-deploy by default), which deploy_status reads back.
@@ -23,6 +23,7 @@ import { userInfo } from "os";
 import { resolve as resolvePath } from "path";
 import { z } from "zod";
 import { createSdkMcpServer, tool } from "./inprocess-mcp";
+import { RUN_HOST_HELPER } from "../executor/host-unit";
 import { homeDir } from "./paths";
 import { isDevInstance } from "./dev-mode";
 
@@ -145,8 +146,8 @@ async function git(cwd: string, args: string[]): Promise<{ code: number; out: st
 }
 
 /**
- * Launch deploy/self-deploy.sh as a transient SYSTEM unit via passwordless
- * sudo — the exact host-client.ts launchHostUnit pattern. A system unit (not
+ * Launch deploy/self-deploy.sh as a transient SYSTEM unit via the root-owned
+ * fixed helper. A system unit (not
  * a --user scope) because the sequence must outlive opensession.service's
  * restart AND not depend on the user manager surviving it.
  */
@@ -154,36 +155,39 @@ async function launchDeployUnit(unit: string, targetSha: string): Promise<void> 
 	const checkout = deployCheckout();
 	const stateDir = deployStateDir();
 	mkdirSync(stateDir, { recursive: true });
-	const user = userInfo().username;
-	const env = (kv: string) => ["-p", `Environment=${kv}`];
-	const args = [
-		"sudo", "-n", "systemd-run", "--collect", "--quiet",
-		`--unit=${unit}`,
-		`--description=Open Session self-deploy to ${targetSha.slice(0, 10)}`,
-		`--uid=${user}`, `--gid=${user}`,
-		"-p", `WorkingDirectory=${checkout}`,
-		...env(`HOME=${homeDir()}`),
-		...env(`PATH=${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}`),
-		...env(`OPENSESSION_DEPLOY_CHECKOUT=${checkout}`),
-		...env(`OPENSESSION_DEPLOY_STATE=${stateDir}`),
-		// Rollback tree-rewrite stays opt-in: forward only the caller's explicit
-		// flag, never default it on (see the script header for why).
-		...(process.env.OPENSESSION_DEPLOY_ALLOW_RESET === "1"
-			? env("OPENSESSION_DEPLOY_ALLOW_RESET=1")
-			: []),
-		...(process.env.OPENSESSION_HEALTH_URL
-			? env(`OPENSESSION_HEALTH_URL=${process.env.OPENSESSION_HEALTH_URL}`)
-			: []),
-		// The script tees its own trail into the state dir; this unit-level log
-		// additionally catches anything before that redirect (bash startup errors).
-		"-p", `StandardOutput=append:${stateDir}/self-deploy.unit.log`,
-		"-p", `StandardError=append:${stateDir}/self-deploy.unit.log`,
-		"/usr/bin/env", "bash", `${checkout}/deploy/self-deploy.sh`, "--sha", targetSha,
-	];
+	if (!existsSync(RUN_HOST_HELPER) && userInfo().uid === 0) {
+		throw new Error("legacy self-deploy refuses to launch from a root service");
+	}
+	const args = existsSync(RUN_HOST_HELPER)
+		? ["sudo", "-n", RUN_HOST_HELPER, "self-deploy", unit, targetSha]
+		: [
+				// Migration path for instances upgrading through the old in-product
+				// deploy flow. Those boxes already grant this exact capability; a
+				// subsequent `opensession service install` replaces it with the helper.
+				"sudo", "-n", "systemd-run", "--collect", "--quiet",
+				`--unit=${unit}`,
+				`--description=Open Session self-deploy to ${targetSha.slice(0, 10)}`,
+				`--uid=${userInfo().username}`,
+				`--gid=${userInfo().username}`,
+				"-p", `WorkingDirectory=${checkout}`,
+				"-p", `Environment=HOME=${homeDir()}`,
+				"-p", `Environment=PATH=${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}`,
+				"-p", `Environment=OPENSESSION_DEPLOY_CHECKOUT=${checkout}`,
+				"-p", `Environment=OPENSESSION_DEPLOY_STATE=${stateDir}`,
+				...(process.env.OPENSESSION_DEPLOY_ALLOW_RESET === "1"
+					? ["-p", "Environment=OPENSESSION_DEPLOY_ALLOW_RESET=1"]
+					: []),
+				...(process.env.OPENSESSION_HEALTH_URL
+					? ["-p", `Environment=OPENSESSION_HEALTH_URL=${process.env.OPENSESSION_HEALTH_URL}`]
+					: []),
+				"-p", "StandardOutput=journal",
+				"-p", "StandardError=journal",
+				"/bin/bash", `${checkout}/deploy/self-deploy.sh`, "--sha", targetSha,
+			];
 	const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
 	const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
 	if (code !== 0) {
-		throw new Error(`systemd-run exited ${code}: ${err.trim().slice(0, 400)}`);
+		throw new Error(`self-deploy launcher exited ${code}: ${err.trim().slice(0, 400)}`);
 	}
 }
 

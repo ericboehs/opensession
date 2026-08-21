@@ -19,8 +19,10 @@ export interface HostRunControl {
   steerable: boolean;
   /** True while the socket to the host is up (steers need a live connection). */
   connected: () => boolean;
+
   steer: (text: string, images?: ImageInput[], steerId?: string) => boolean;
   retractSteer: (steerId: string) => Promise<boolean>;
+
   interruptSteer: (text: string, images?: ImageInput[]) => boolean;
   cancel: () => boolean;
 }
@@ -55,6 +57,7 @@ export function hostSteer(
   id: string,
   text: string,
   images?: ImageInput[],
+
   steerId?: string
 ): boolean {
   const ctl = hostRuns.get(id);
@@ -73,6 +76,7 @@ export async function hostRetractSteer(
     if (ctl.steerable && ctl.connected() && await ctl.retractSteer(steerId)) return true;
   }
   return false;
+
 }
 
 export function hostInterruptSteer(

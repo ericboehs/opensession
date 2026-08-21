@@ -402,8 +402,11 @@ if (process.env.NODE_ENV !== "test" && piEngineEnabled()) {
 interface PiRunHandle {
   abort: AbortController;
   /** Distinct-run identity: every alias key maps to the same handle object. */
+
   steer?: (text: string, images?: ImageInput[], steerId?: string) => void;
   retractSteer?: (steerId: string) => boolean;
+  acceptedSteerIds?: Set<string>;
+
 }
 
 // Alias keys (runKey, unified session id, pi session id) → shared handle,
@@ -441,6 +444,17 @@ export function cancelPiRun(id: string): boolean {
  *  the current assistant step's in-flight tool calls, before the next LLM
  *  call. True = a live run accepted it; false = nothing steerable (caller
  *  queues for the next turn instead). */
+export function acceptSteerOnce(
+  accepted: Set<string>,
+  steerId: string,
+  accept: () => void,
+): boolean {
+  if (accepted.has(steerId)) return true;
+  accept();
+  accepted.add(steerId);
+  return true;
+}
+
 export function steerPiRun(
   id: string,
   text: string,
@@ -449,12 +463,22 @@ export function steerPiRun(
 ): boolean {
   const handle = activeRuns.get(id);
   if (!handle?.steer) return false;
-  handle.steer(text, images, steerId);
-  return true;
+  if (!steerId) {
+    handle.steer(text, images);
+    return true;
+  }
+  return acceptSteerOnce(
+    (handle.acceptedSteerIds ??= new Set()),
+    steerId,
+    () => handle.steer!(text, images, steerId),
+  );
 }
 
 export function retractPiSteer(id: string, steerId: string): boolean {
-  return activeRuns.get(id)?.retractSteer?.(steerId) === true;
+  const handle = activeRuns.get(id);
+  const retracted = handle?.retractSteer?.(steerId) === true;
+  if (retracted) handle?.acceptedSteerIds?.delete(steerId);
+  return retracted;
 }
 
 /** Remove one exact pending steer, then let the caller rebuild the engine queue.
@@ -470,6 +494,7 @@ export function retractPendingSteer<T extends { steerId?: string }>(
   const remaining = pending.filter((_, candidate) => candidate !== index);
   pending.splice(0, pending.length, ...remaining);
   replay(remaining);
+
   return true;
 }
 

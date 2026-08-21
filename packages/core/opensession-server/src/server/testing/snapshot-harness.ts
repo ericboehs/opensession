@@ -102,19 +102,22 @@ export function prepareSnapshotEnv(label: string): SnapshotDirs {
   prevEnv = {
     state: process.env.OPENSESSION_STATE_DIR,
     mcpConfig: process.env.OPENSESSION_MCP_CONFIG,
+    piDetach: process.env.OPENSESSION_PI_DETACH,
   };
   process.env.OPENSESSION_STATE_DIR = state;
   process.env.OPENSESSION_MCP_CONFIG = mcpConfig;
+  process.env.OPENSESSION_PI_DETACH = "0";
   dirs = { root, state, sessions, automations, memory, mcpConfig };
   return dirs;
 }
 
-let prevEnv: { state?: string; mcpConfig?: string } = {};
+let prevEnv: { state?: string; mcpConfig?: string; piDetach?: string } = {};
 
 function restoreEnv(): void {
   for (const [name, value] of [
     ["OPENSESSION_STATE_DIR", prevEnv.state],
     ["OPENSESSION_MCP_CONFIG", prevEnv.mcpConfig],
+    ["OPENSESSION_PI_DETACH", prevEnv.piDetach],
   ] as const) {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;

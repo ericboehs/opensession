@@ -1148,7 +1148,6 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
     // session_created event arrives (and drops us into the new session).
     setStatus({ kind: "creating" });
     creatingRef.current = true;
-    consumePendingDraftParks(prompt, workspaceId);
     // Workspace linkage: scoped to an existing workspace (the tab/sidebar +),
     // the session joins it — sharing its worktree when reusing the sibling branch,
     // stacking a fresh worktree off it for a new branch. Unscoped, the default
@@ -1159,7 +1158,7 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
         : createMode === "code" && selectedWorktree === "__new__"
           ? "stack"
           : "share";
-    onCreateStarted?.({
+    const optimisticCreate = {
       prompt,
       mode: createMode,
       // The optimistic shell is replaced once the persisted record lands.
@@ -1175,7 +1174,7 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
       ...(images.length ? { images } : {}),
       // App navigates into a created session by default; this asks it not to.
       ...(createAction === "background" ? { background: true } : {}),
-    });
+    };
     const clientSessionId = newClientSessionId();
     const createMessage = {
       type: "create_session",
@@ -1214,7 +1213,19 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
     } as WSClientMessage;
     createSessionIdRef.current = clientSessionId;
     createMessageRef.current = createMessage;
-    send(createMessage);
+    try {
+      send(createMessage);
+      consumePendingDraftParks(prompt, workspaceId);
+      onCreateStarted?.(optimisticCreate);
+    } catch (error) {
+      creatingRef.current = false;
+      createSessionIdRef.current = null;
+      createMessageRef.current = null;
+      setStatus({
+        kind: "failed",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   const canCreate =

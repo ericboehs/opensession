@@ -134,6 +134,8 @@ describe("pending ask restart persistence", () => {
 				answers: { "Which option?": "Two" },
 			},
 		});
+		expect(pendingAsks.get(SESSION)).toMatchObject({ answerReceived: true });
+		settleRestoredAskAfterRecovery(SESSION);
 		expect(pendingAsks.has(SESSION)).toBe(false);
 		expect(JSON.parse(readFileSync(storePath, "utf8"))).toEqual({ asks: [] });
 	});
@@ -200,6 +202,8 @@ describe("pending ask restart persistence", () => {
 				answers: { "Which option?": "One" },
 			},
 		});
+		expect(pendingAsks.get(SESSION)).toMatchObject({ answerReceived: true });
+		settleRestoredAskAfterRecovery(SESSION);
 		expect(pendingAsks.has(SESSION)).toBe(false);
 		expect(JSON.parse(readFileSync(storePath, "utf8"))).toEqual({ asks: [] });
 	});

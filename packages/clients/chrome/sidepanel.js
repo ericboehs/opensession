@@ -26,6 +26,39 @@ const ctx = {
 let view = "new";
 let pollTimer = null;
 let detail = { id: null, title: "", entryCount: 0, metaTick: 0 };
+const INTENT_PREFIX = "opensession-intent:v3:";
+
+async function intentDigest(value) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function durableIntent(name, identity) {
+  if (!cfg.login) throw new Error("Sign in before sending durable work.");
+  const scope = `${cfg.serverUrl.replace(/\/+$/, "").toLowerCase()}|${cfg.login.toLowerCase()}`;
+  const [scopeHash, identityHash] = await Promise.all([
+    intentDigest(scope),
+    intentDigest(identity),
+  ]);
+  const key = `${INTENT_PREFIX}${scopeHash}:${name}:${identityHash}`;
+  const stored = (await chrome.storage.local.get(key))[key];
+  if (stored?.version === 3 && typeof stored.id === "string")
+    return { key, id: stored.id };
+  const id = crypto.randomUUID();
+  await chrome.storage.local.set({ [key]: { version: 3, id, createdAt: Date.now() } });
+  const verified = (await chrome.storage.local.get(key))[key];
+  if (verified?.id !== id) throw new Error("Could not save this request for retry.");
+  return { key, id };
+}
+
+async function clearDurableIntent(intent) {
+  const stored = (await chrome.storage.local.get(intent.key))[intent.key];
+  if (stored?.version !== 3 || stored.id !== intent.id) return;
+  await chrome.storage.local.remove(intent.key);
+}
 
 // ── API ──────────────────────────────────────────────────────────────────────
 
@@ -373,10 +406,15 @@ async function startSession() {
       ...($("sel-model").value ? { model: $("sel-model").value } : {}),
       ...(images.length ? { images } : {}),
     };
+    const createIntent = await durableIntent(
+      "create",
+      JSON.stringify({ server: cfg.serverUrl, body }),
+    );
     const { id } = await api("/sessions", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, requestId: createIntent.id }),
     });
+    await clearDurableIntent(createIntent);
     $("prompt").value = "";
     ctx.screenshot = null;
     ctx.element = null;
@@ -504,10 +542,15 @@ async function sendFollowup() {
   const btn = $("btn-send");
   btn.disabled = true;
   try {
+    const followupIntent = await durableIntent(
+      "followup",
+      JSON.stringify({ server: cfg.serverUrl, sessionId: detail.id, content }),
+    );
     const res = await api(`/sessions/${encodeURIComponent(detail.id)}/prompt`, {
       method: "POST",
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, clientId: followupIntent.id }),
     });
+    await clearDurableIntent(followupIntent);
     ta.value = "";
     toast(
       "detail-status",

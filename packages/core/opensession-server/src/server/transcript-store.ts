@@ -237,6 +237,8 @@ export function __setTranscriptStoreForTest(
   return prev;
 }
 
+import { sessionKernel } from "./session-kernel";
+
 // ── Row shapes ───────────────────────────────────────────────────────────────
 
 interface EventRow {
@@ -380,6 +382,16 @@ export class TranscriptStore {
     entries: TranscriptEntry[],
     opts?: AppendOpts
   ): AppendResult | null {
+    return sessionKernel(sessionId).applySync("transcript_append", () =>
+      this.appendTranscriptEventsOwned(sessionId, entries, opts)
+    );
+  }
+
+  private appendTranscriptEventsOwned(
+    sessionId: string,
+    entries: TranscriptEntry[],
+    opts?: AppendOpts
+  ): AppendResult | null {
     if (!sessionId || !entries || entries.length === 0) return null;
 
     // Import-first gate (§3). The hook runs synchronously; the store is
@@ -445,6 +457,17 @@ export class TranscriptStore {
     src: TranscriptImportSrc | string,
     watermark: number | null
   ): { inserted: number; updated: number } {
+    return sessionKernel(sessionId).applySync("transcript_import", () =>
+      this.importLegacyTranscriptOwned(sessionId, entries, src, watermark)
+    );
+  }
+
+  private importLegacyTranscriptOwned(
+    sessionId: string,
+    entries: TranscriptEntry[],
+    src: TranscriptImportSrc | string,
+    watermark: number | null
+  ): { inserted: number; updated: number } {
     let inserted = 0;
     let updated = 0;
     for (let i = 0; i < entries.length; i += 500) {
@@ -470,6 +493,15 @@ export class TranscriptStore {
   /** Replace a file-backed transcript authoritatively while preserving the
    * monotonic change cursor. Used for truncation/atomic replacement only. */
   replaceTranscriptEvents(
+    sessionId: string,
+    entries: TranscriptEntry[]
+  ): { inserted: number; updated: number } {
+    return sessionKernel(sessionId).applySync("transcript_replace", () =>
+      this.replaceTranscriptEventsOwned(sessionId, entries)
+    );
+  }
+
+  private replaceTranscriptEventsOwned(
     sessionId: string,
     entries: TranscriptEntry[]
   ): { inserted: number; updated: number } {
@@ -784,8 +816,10 @@ export class TranscriptStore {
 
   /** Remove every trace of a session (events + blobs + session row). */
   deleteSessionTranscript(sessionId: string): void {
-    this.txDelete.immediate(sessionId);
-    this.importedCache.delete(sessionId);
+    sessionKernel(sessionId).applySync("transcript_delete", () => {
+      this.txDelete.immediate(sessionId);
+      this.importedCache.delete(sessionId);
+    });
   }
 
   /**

@@ -14,8 +14,13 @@
 
 import { describe, expect, test } from "bun:test";
 import { platform } from "os";
-import { LAUNCHD_LABEL, renderPlist, renderUnit } from "./service";
-import { ENV_PATH, REPO_ROOT } from "./paths";
+import {
+  LAUNCHD_LABEL,
+  renderExecutorUnit,
+  renderPlist,
+  renderUnit,
+} from "./service";
+import { ENV_PATH, HOME, REPO_ROOT } from "./paths";
 
 // Both renderers interpolate host paths and the local bun, so on Windows they
 // produce a unit and a plist that could never be installed anywhere. Neither
@@ -48,12 +53,31 @@ describe.skipIf(!onServiceHost)("systemd unit", () => {
     expect(unit).toContain("IPAddressDeny=169.254.169.254/32");
     expect(unit).toMatch(/^TimeoutStopSec=\d+$/m);
     expect(unit).toContain("[Install]");
+    expect(unit).toContain("Wants=opensession-executor.service");
+    expect(unit).not.toContain("Requires=opensession-executor.service");
+    expect(unit).toContain("LoadCredential=executor-token:/etc/opensession/executor-token");
   });
 
   test("PATH carries bun and the engine", async () => {
     const path = (await renderUnit()).match(/^Environment="PATH=(.*)"$/m)?.[1] ?? "";
     expect(path).toContain("/usr/bin");
     expect(path.split(":").every((p) => p.startsWith("/"))).toBe(true);
+  });
+});
+
+describe.skipIf(!onServiceHost)("executor systemd unit", () => {
+  test("is independently restartable and host-specific", async () => {
+    const unit = await renderExecutorUnit();
+    expect(unit).toContain(`WorkingDirectory=${REPO_ROOT}`);
+    expect(unit).not.toContain("EnvironmentFile=");
+    expect(unit).toContain(`Environment="HOME=${HOME}"`);
+    expect(unit).toMatch(
+      /^ExecStart=(\S+) run packages\/core\/opensession-server\/src\/executor\/main\.ts$/m,
+    );
+    expect(unit).toContain("Restart=always");
+    expect(unit).toContain("RuntimeDirectory=opensession-executor");
+    expect(unit).toContain("LoadCredential=executor-token:/etc/opensession/executor-token");
+    expect(unit).not.toContain("PartOf=opensession.service");
   });
 });
 

@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import {
+  acceptSteerOnce,
   assertContainedPiPath,
   buildPiThirdPartyProviderPlan,
   isPiSessionBusy,
@@ -42,6 +43,22 @@ import {
 } from "./pi-runner";
 import { __setCodexAccountsPathForTest } from "./codex-accounts";
 import type { ResolvedWorkspaceModelPreset } from "./workspace-model-presets";
+
+describe("acceptSteerOnce", () => {
+  test("records only successful acceptance and deduplicates retries", () => {
+    const accepted = new Set<string>();
+    expect(() =>
+      acceptSteerOnce(accepted, "one", () => {
+        throw new Error("not accepted");
+      }),
+    ).toThrow("not accepted");
+    expect(accepted.has("one")).toBe(false);
+    let calls = 0;
+    expect(acceptSteerOnce(accepted, "one", () => { calls += 1; })).toBe(true);
+    expect(acceptSteerOnce(accepted, "one", () => { calls += 1; })).toBe(true);
+    expect(calls).toBe(1);
+  });
+});
 
 describe("retractPendingSteer", () => {
   test("retracts an exact duplicate id and replays the remaining payloads in order", () => {

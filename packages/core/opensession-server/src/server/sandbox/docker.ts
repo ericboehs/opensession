@@ -113,14 +113,20 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unl
 import { dirname, resolve as resolvePath } from "path";
 import { homeDir, OPENSESSION_SESSIONS_DIR } from "../paths";
 import { stateDir, } from "../paths";
-import { journalSet, journalClear, type ActiveRunRecord } from "../run-journal";
+import { journalSet, journalClear, journalClearIfLineage, type ActiveRunRecord } from "../run-journal";
 import { shouldPersistModelSwitch, type StreamEvent } from "../run-events";
 import { recoveryKind, restartContinuationPrompt } from "../agent-runner";
 import { modelSupportsSteer, providerFor } from "../models";
 import { hostRunBusy, hostSteer, hostInterruptSteer, hostCancel } from "../host-registry";
 import { registerRunToken, unregisterRunToken } from "../run-rpc";
 import { writeJsonAtomic } from "../shared/atomic-write";
-import { HostHandle, type HandleCallbacks, type HostLauncher } from "../host-client";
+import {
+  HostHandle,
+  HostLaunchNotDispatchedError,
+  reconcileUncertainHostEvents,
+  type HandleCallbacks,
+  type HostLauncher,
+} from "../host-client";
 import { registerRunWsHost, unregisterRunWsHost, runWsConnector } from "../run-ws";
 import { getTranscriptPath } from "../sessions";
 import { listCodexAccounts } from "../codex-accounts";
@@ -141,9 +147,11 @@ import {
   sandboxCallbackBaseUrl,
   type SandboxTransport,
 } from "./config";
+import { decideSandboxHostRecovery } from "./recovery";
 import {
   HOST_SPEC_NAME,
   HOST_META_NAME,
+  HOST_JOURNAL_NAME,
   HOST_LOG_NAME,
   HOST_ENTRY,
   rpcSocketPath,
@@ -932,7 +940,7 @@ function makeDockerLauncher(container: string, sessionId: string): HostLauncher 
     // undefined = HostHandle's default unix connector.
     connector: (_dir, spec) =>
       spec.wsToken ? runWsConnector(spec.hostId) : undefined,
-    async launch(hostId, dir) {
+    async launch(hostId, dir, onDispatching) {
       await ensureStarted(container);
       const specPath = assertSafePath(`${dir}/${HOST_SPEC_NAME}`);
       const logPath = assertSafePath(`${dir}/${HOST_LOG_NAME}`);
@@ -985,11 +993,43 @@ function makeDockerLauncher(container: string, sessionId: string): HostLauncher 
         "sh", "-c",
         `exec bun run ${assertSafePath(HOST_ENTRY)} ${specPath} >> ${logPath} 2>&1`,
       ];
+      onDispatching?.();
       const r = await docker(args);
       if (r.exitCode !== 0) {
         if (spec?.wsToken) unregisterRunWsHost(hostId);
-        throw new Error(`docker exec (run host) failed: ${r.stderr.trim().slice(0, 400)}`);
+        throw new HostLaunchNotDispatchedError(
+          `docker exec (run host) failed: ${r.stderr.trim().slice(0, 400)}`,
+        );
       }
+    },
+    evidence(dir) {
+      const meta = readJsonSafe<RunHostMeta>(`${dir}/${HOST_META_NAME}`);
+      const journal = readJsonSafe<Record<string, ActiveRunRecord>>(
+        `${dir}/${HOST_JOURNAL_NAME}`,
+      );
+      return {
+        started: !!meta?.pid || !!journal,
+        ...(meta?.engineSessionId ? { engineSessionId: meta.engineSessionId } : {}),
+        ...(meta?.done ? { done: meta.done } : {}),
+      };
+    },
+    async stop(hostId, dir) {
+      await Bun.write(`${dir}/cancelled`, "cancelled\n");
+      const meta = readJsonSafe<RunHostMeta>(`${dir}/${HOST_META_NAME}`);
+      const startup = readJsonSafe<{ pid?: number }>(`${dir}/startup.json`);
+      const pid = meta?.pid || startup?.pid || 0;
+      if (pid) {
+        const specPath = assertSafePath(`${dir}/${HOST_SPEC_NAME}`);
+        const script =
+          `is_host() { [ -r /proc/${pid}/cmdline ] && ` +
+          `tr '\\0' '\\n' < /proc/${pid}/cmdline | grep -Fqx -- '${specPath}'; }; ` +
+          `is_host && kill -TERM ${pid} 2>/dev/null || true; sleep 1; ` +
+          `is_host && kill -KILL ${pid} 2>/dev/null || true; sleep 0.2; ! is_host`;
+        const result = await docker(["exec", container, "sh", "-c", script]);
+        if (result.exitCode !== 0)
+          throw new Error(`Could not prove sandbox host ${hostId} absent`);
+      }
+      unregisterRunWsHost(hostId);
     },
   };
 }
@@ -1021,6 +1061,7 @@ function recordForSpec(spec: RunHostSpec, sandboxId: string): ActiveRunRecord {
     fallbackModel: spec.fallbackModel,
     sandboxId,
     sandboxProvider: "docker",
+    launchPhase: "prepared",
     trustProfile: spec.trustProfile,
     kind: spec.journalKind || "prompt",
     firstJournaledAt: spec.firstJournaledAt,
@@ -1139,34 +1180,53 @@ function makeDockerSandbox(
       const record = recordForSpec(spec, sandboxId);
       mkdirSync(dir, { recursive: true });
       writeJsonAtomic(`${dir}/${HOST_SPEC_NAME}`, spec);
+      // The complete recovery spec must exist before the journal listener can
+      // acknowledge the create dispatch, but ownership must precede launch.
+      journalSet(record);
       let handle: HostHandle | undefined;
+      let uncertainLaunch = false;
       // Per-step marks: a stalled await in this chain is otherwise silent
       // (2026-07-09: launches ran in-sandbox while opensession never attached).
       const t0 = Date.now();
       const mark = (step: string) =>
         console.log(`[sandbox] launch ${spec.hostId.slice(0, 11)}: ${step} (+${Date.now() - t0}ms)`);
       try {
-        await launcher.launch(spec.hostId, dir);
+        await launcher.launch(spec.hostId, dir, () => {
+          record.launchPhase = "launching";
+          journalSet(record);
+        });
+        record.launchPhase = "started";
+        journalSet(record);
         mark("host exec dispatched");
         handle = new HostHandle(dir, spec, callbacks, launcher);
         await handle.connectWithWait(30_000);
         mark("host attached");
-      } catch (e) {
-        // The HostHandle ctor registered its control in the host-registry —
-        // drop it (and the caller-registered run token) on any launch failure,
-        // or hostRunBusy(osSessionId) stays true forever: every future prompt
-        // reads busy and the idle-stop sweep skips the container.
-        handle?.abandon();
-        unregisterRunToken(spec.rpcToken);
-        // abandon() disposes the handle's connector (which unregisters the ws
-        // token); cover the pre-handle failure path too. Idempotent.
-        if (spec.wsToken) unregisterRunWsHost(spec.hostId);
-        try {
-          rmSync(dir, { recursive: true, force: true });
-        } catch {}
-        throw e;
+      } catch (error) {
+        const definitelyNotDispatched =
+          record.launchPhase === "prepared" ||
+          error instanceof HostLaunchNotDispatchedError;
+        if (definitelyNotDispatched) {
+          journalClearIfLineage(record);
+          handle?.abandon();
+          unregisterRunToken(spec.rpcToken);
+          if (spec.wsToken) unregisterRunWsHost(spec.hostId);
+          try { rmSync(dir, { recursive: true, force: true }); } catch {}
+          throw error;
+        }
+        // The launch call may have reached Docker. Keep spec, token, route,
+        // handle and journal, and transfer them to a live reconciliation owner.
+        uncertainLaunch = true;
+        handle ??= new HostHandle(dir, spec, callbacks, launcher);
+        console.warn(
+          `[sandbox] ${spec.hostId}: launch outcome uncertain; waiting for host attachment`,
+          error,
+        );
       }
-      const gen = withRunJournal(handle.events(), record);
+      const ownedHandle = handle!;
+      const rawEvents = uncertainLaunch
+        ? reconcileUncertainHostEvents(ownedHandle, "Sandbox host")
+        : ownedHandle.events();
+      const gen = withRunJournal(rawEvents, record);
       return {
         events: () => gen,
         steerable: modelSupportsSteer(spec.model),
@@ -1622,8 +1682,12 @@ export async function resumeDockerSandboxRun(
   const launcher = makeDockerLauncher(run.sandboxId, run.osSessionId);
   const oldDir = launcher.newRunDir(run.runKey);
   const oldSpec = readJsonSafe<RunHostSpec>(`${oldDir}/${HOST_SPEC_NAME}`);
+  const meta = readJsonSafe<RunHostMeta>(`${oldDir}/${HOST_META_NAME}`);
+  const privateJournal = readJsonSafe<Record<string, ActiveRunRecord>>(
+    `${oldDir}/${HOST_JOURNAL_NAME}`,
+  );
+  const privateRun = privateJournal ? Object.values(privateJournal)[0] : undefined;
   if (oldSpec) {
-    const meta = readJsonSafe<RunHostMeta>(`${oldDir}/${HOST_META_NAME}`);
     if (meta?.done) {
       // Ended while opensession was down: hand the terminal event to the normal
       // consumption bookkeeping, then clean up.
@@ -1655,7 +1719,7 @@ export async function resumeDockerSandboxRun(
       // restart dropped the route).
       if (oldSpec.wsToken) registerRunWsHost(oldSpec.hostId, oldSpec.wsToken);
       console.log(`[sandbox] reattaching to live run ${run.runKey} in ${run.sandboxId}`);
-      const handle = new HostHandle(oldDir, oldSpec, cb, launcher);
+      const handle = new HostHandle(oldDir, oldSpec, cb, launcher, run.runKey);
       try {
         await handle.connectWithWait(15_000);
       } catch (e) {
@@ -1672,18 +1736,42 @@ export async function resumeDockerSandboxRun(
 
   // Host process died with (or before) the restart — relaunch a continuation
   // in the same sandbox so the engine session's in-container state is reused.
-  const prompt = run.claudeSessionId
+  const recovery = decideSandboxHostRecovery({
+    run,
+    meta: meta,
+    privateRun,
+    hasCompleteSpec: !!oldSpec,
+  });
+  if (recovery.kind === "uncertain")
+    throw new Error(
+      `Sandbox run ${run.runKey} has execution evidence but no resumable engine session`,
+    );
+  const effectiveEngineSessionId =
+    recovery.kind === "resume" ? recovery.engineSessionId : undefined;
+  const prompt = effectiveEngineSessionId
     ? restartContinuationPrompt(run.prompt)
     : run.prompt;
   if (!prompt) return null;
   const rpcToken = oldSpec?.proxyMcpServers?.length ? crypto.randomUUID() : undefined;
   if (rpcToken) registerRunToken(rpcToken, { sessionId: run.osSessionId, user: run.user });
-  const spec: RunHostSpec = {
-    hostId: `rh-${Bun.randomUUIDv7()}`,
+  const hostId = `rh-${Bun.randomUUIDv7()}`;
+  const spec: RunHostSpec = recovery.kind === "replay"
+    ? {
+        ...(oldSpec as RunHostSpec),
+        hostId,
+        rpcToken,
+        ...((oldSpec as RunHostSpec).wsToken ? { wsToken: crypto.randomUUID() } : {}),
+        journalKind: recoveryKind(run.kind, "resume"),
+        firstJournaledAt: run.firstJournaledAt,
+        resumeAttempts: run.resumeAttempts,
+        lastResumeAt: run.lastResumeAt,
+      }
+    : {
+    hostId,
     osSessionId: run.osSessionId,
     prompt,
-    promptEntryId: run.claudeSessionId ? undefined : run.promptEntryId,
-    engineSessionId: run.claudeSessionId,
+    promptEntryId: effectiveEngineSessionId ? undefined : run.promptEntryId,
+    engineSessionId: effectiveEngineSessionId,
     cwd: run.cwd,
     mode: run.mode,
     model: run.model,
@@ -1710,9 +1798,12 @@ export async function resumeDockerSandboxRun(
     resumeAttempts: run.resumeAttempts,
     lastResumeAt: run.lastResumeAt,
   };
+  console.log(`[sandbox] relaunching interrupted run ${run.runKey} in ${run.sandboxId} as ${spec.hostId}`);
+  const replacement = sandbox.launchRunEager
+    ? await sandbox.launchRunEager(spec, { onAskUser: cb.onAskUser })
+    : sandbox.launchRun(spec, { onAskUser: cb.onAskUser });
   try {
     if (oldDir && existsSync(oldDir)) rmSync(oldDir, { recursive: true, force: true });
   } catch {}
-  console.log(`[sandbox] relaunching interrupted run ${run.runKey} in ${run.sandboxId} as ${spec.hostId}`);
-  return sandbox.launchRun(spec, { onAskUser: cb.onAskUser }).events();
+  return replacement.events();
 }

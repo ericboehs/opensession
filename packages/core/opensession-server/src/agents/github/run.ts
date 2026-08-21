@@ -280,6 +280,8 @@ export interface GithubRunResult {
   error?: string;
   /** Model that actually drove the run (after any fallback switches). */
   model?: string;
+  /** Ownership remains with a detached host whose absence is not proven. */
+  uncertain?: true;
 }
 
 /** Pick the newest detached turn belonging to this deterministic GitHub session. */
@@ -303,11 +305,21 @@ export function recoverableGithubRun(
     )[0];
 }
 
+export class GithubRunRecoveryUncertainError extends Error {
+  constructor(readonly hostId: string) {
+    super(`Detached host ${hostId} is not connectable but is not proven dead`);
+    this.name = "GithubRunRecoveryUncertainError";
+  }
+}
+
 async function discardGithubRunRecord(
   run: ActiveRunRecord,
   bksId: string,
 ): Promise<void> {
   const events = await resumeLocalHostRun(run, {});
+  if (events === "uncertain") {
+    throw new GithubRunRecoveryUncertainError(run.hostId || run.runKey);
+  }
   if (events) {
     cancelAgentRun(bksId, run.claudeSessionId, run.runKey);
     for await (const _event of events) {}
@@ -396,6 +408,7 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
   let text = "";
   let engineSessionId = resumeFrom;
   let errorMsg = "";
+  let recoveryUncertain = false;
 
   // Write the file before the engine boots, not on its first event: the run's
   // session link is already public by now (see announceGithubRun), and booting
@@ -424,6 +437,12 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
       recoveredRun = journalStartRecovery(recoveredRun);
       engineSessionId = recoveredRun.claudeSessionId || engineSessionId;
       const reattached = await resumeLocalHostRun(recoveredRun, {});
+      if (reattached === "uncertain") {
+        recoveryUncertain = true;
+        throw new GithubRunRecoveryUncertainError(
+          recoveredRun.hostId || recoveredRun.runKey,
+        );
+      }
       if (reattached) {
         console.log(
           `[github-run] Reattached ${opts.kind} session ${bksId} to host ${recoveredRun.hostId}`,
@@ -529,13 +548,18 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
   } catch (e: any) {
     errorMsg = e.message || String(e);
   } finally {
-    if (recoveredRun) journalClearIfLineage(recoveredRun);
+    if (recoveredRun && !recoveryUncertain) journalClearIfLineage(recoveredRun);
   }
 
   await persist(engineSessionId);
-  // GitHub behaviors drive runAgent directly instead of flowing through
-  // runSessionPrompt, so they must settle the visible session themselves.
-  // Without this, journalSet leaves the FSM in `running` after the engine exits.
-  recordRunOutcome(bksId, errorMsg || null);
-  return { bksId, text, error: errorMsg || undefined, model: effectiveModel };
+  // An uncertain host still owns the turn. Settling the visible run or clearing
+  // its journal here would let a retry overlap it.
+  if (!recoveryUncertain) recordRunOutcome(bksId, errorMsg || null);
+  return {
+    bksId,
+    text,
+    error: errorMsg || undefined,
+    model: effectiveModel,
+    ...(recoveryUncertain ? { uncertain: true as const } : {}),
+  };
 }

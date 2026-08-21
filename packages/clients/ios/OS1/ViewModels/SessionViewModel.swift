@@ -1397,6 +1397,7 @@ final class SessionViewModel {
         let socket = socketFactory()
         socket.onEvent = { [weak self] event in self?.handle(event) }
         socket.onClose = { [weak self] reason in self?.scheduleReconnect(reason) }
+        socket.setMutationRejectedHandler { [weak self] message in self?.notice = message }
         self.socket = socket
         socket.connect()
     }

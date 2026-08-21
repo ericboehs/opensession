@@ -330,7 +330,7 @@ export async function postSlackBlocks(
   fallbackText: string,
   blocks: any[],
   threadTs?: string,
-  opts?: { unfurlLinks?: boolean; unfurlMedia?: boolean },
+  opts?: { unfurlLinks?: boolean; unfurlMedia?: boolean; clientMsgId?: string },
 ): Promise<any> {
   const response = await fetchWithTimeout("https://slack.com/api/chat.postMessage", {
     method: "POST",
@@ -343,6 +343,7 @@ export async function postSlackBlocks(
       text: fallbackText,
       blocks,
       thread_ts: threadTs,
+      ...(opts?.clientMsgId ? { client_msg_id: opts.clientMsgId } : {}),
       ...(opts?.unfurlLinks !== undefined ? { unfurl_links: opts.unfurlLinks } : {}),
       ...(opts?.unfurlMedia !== undefined ? { unfurl_media: opts.unfurlMedia } : {}),
     }),
@@ -466,7 +467,7 @@ export async function updateSlackBlocks(
   ts: string,
   text: string,
   blocks: any[],
-  opts?: { unfurlLinks?: boolean; unfurlMedia?: boolean },
+  opts?: { unfurlLinks?: boolean; unfurlMedia?: boolean; clientMsgId?: string },
 ): Promise<any> {
   const response = await fetchWithTimeout("https://slack.com/api/chat.update", {
     method: "POST",

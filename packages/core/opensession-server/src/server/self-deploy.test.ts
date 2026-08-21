@@ -157,4 +157,10 @@ describe("deploy/self-deploy.sh", () => {
 		const proc = Bun.spawnSync(["bash", "-n", script]);
 		expect(proc.exitCode).toBe(0);
 	});
+
+	test("the server launches through the fixed privileged helper", async () => {
+		const source = await Bun.file(resolve(import.meta.dir, "self-deploy.ts")).text();
+		expect(source).toContain('RUN_HOST_HELPER, "self-deploy"');
+		expect(source).toContain("Migration path for instances upgrading");
+	});
 });

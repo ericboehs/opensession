@@ -296,8 +296,8 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 										)}
 										{step.id === "ai" && (
 											<div className="flex flex-col gap-4">
-												<ClaudeAccountsSection compact />
-												<CodexAccountsSection compact />
+												<ClaudeAccountsSection />
+												<CodexAccountsSection />
 											</div>
 										)}
 										{step.id === "repos" && (

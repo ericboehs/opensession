@@ -278,7 +278,7 @@ export function __setEngineForTest(fn: EngineRunner | null): void {
 type LocalHostResume = (
   run: ActiveRunRecord,
   callbacks: { onAskUser?: RunAgentOpts["onAskUser"] },
-) => Promise<AsyncGenerator<StreamEvent> | null>;
+) => Promise<AsyncGenerator<StreamEvent> | "uncertain" | null>;
 
 /** Test seam for the local detached-host half of restart recovery. */
 let localHostResumeForTest: LocalHostResume | null = null;
@@ -922,11 +922,7 @@ export function isAgentEngineBusy(...ids: Array<string | null | undefined>): boo
 /** Busy check (pass any engine/backstage session id). */
 export function isAgentSessionBusy(...ids: Array<string | null | undefined>): boolean {
   if (hasActiveRunFor(...ids) || isAgentEngineBusy(...ids)) return true;
-  return ids.some((id) => {
-    if (!id) return false;
-    const state = getRunState(id);
-    return state === "interrupted" || state === "reattaching";
-  });
+  return ids.some((id) => !!id && isRunStateUnsettled(getRunState(id)));
 }
 
 /**
@@ -958,17 +954,21 @@ export function steerAgentRun(
   ids: Array<string | null | undefined>,
   text: string,
   images?: ImageInput[],
+
   steerId?: string
 ): boolean {
   for (const id of ids) {
     if (!id) continue;
     if (steerPiRun(id, text, images, steerId)) return true;
+
     // Images ride the host frame too (protocol ClientToHostMsg.steer). This
     // used to bail on any attachment, which read as "pi can't steer images"
     // — it can; only the RPC frame was text-only. Once every local run moved
     // into a detached host that guard covered every case, so no message with
     // a screenshot could be steered at all.
+
     if (hostSteer(id, text, images, steerId)) return true;
+
   }
   return false;
 }
@@ -1063,12 +1063,19 @@ export function cancelAgentRun(...ids: Array<string | null | undefined>): boolea
     if (recoveryRunKeys.has(run.runKey)) {
       cancelledRecoveries.add(run);
     }
-    journalClear(run.runKey);
-    // A queued recovery has not crossed an async boundary yet, so its marker
-    // is enough to make it exit when scheduled. An active worker keeps its
-    // reservation until its probe/stream actually unwinds; otherwise a new
-    // prompt can overlap work that Stop has not finished cancelling.
-    if (!activeRecoveryWorkerRunKeys.has(run.runKey)) untrackRecovery(run);
+    // A detached host owns the turn until it reports a terminal event or its
+    // launcher proves it absent. Keep its recovery marker while cancellation
+    // is in flight, especially when its socket is temporarily disconnected.
+    // Clearing here lets a restart admit a successor while the old host can
+    // still execute tools.
+    if (!run.hostId) {
+      journalClear(run.runKey);
+      // A queued recovery has not crossed an async boundary yet, so its marker
+      // is enough to make it exit when scheduled. An active worker keeps its
+      // reservation until its probe/stream actually unwinds; otherwise a new
+      // prompt can overlap work that Stop has not finished cancelling.
+      if (!activeRecoveryWorkerRunKeys.has(run.runKey)) untrackRecovery(run);
+    }
     if (run.osSessionId && isRunStateUnsettled(getRunState(run.osSessionId)))
       transitionRunState(run.osSessionId, "cancel", {
         run_key: run.runKey,
@@ -1077,6 +1084,20 @@ export function cancelAgentRun(...ids: Array<string | null | undefined>): boolea
     cancelled = true;
   }
   return cancelled;
+}
+
+/** Cancel and wait until every known engine/host releases ownership. */
+export async function cancelAgentRunAndWait(
+  ids: Array<string | null | undefined>,
+  timeoutMs = 10_000,
+): Promise<boolean> {
+  cancelAgentRun(...ids);
+  const deadline = Date.now() + timeoutMs;
+  while (ids.some((id) => !!id && isAgentSessionBusy(id!))) {
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return true;
 }
 
 /** Per-session AskUserQuestion handler, mirroring RunAgentOpts.onAskUser. */
@@ -1467,10 +1488,16 @@ export function resumeInterruptedRuns(
             })
             .catch((e) => {
               console.warn(`[runner] Local host reattach failed for ${run.runKey}:`, e);
-              return null;
+              return "uncertain" as const;
             });
           if (abandonStoppedRecovery(run)) {
             cancelRecoveredEngine(run);
+            return;
+          }
+          if (reattached === "uncertain") {
+            console.warn(
+              `[runner] Local run host ${run.hostId} is not connectable but is not proven dead; preserving recovery state`,
+            );
             return;
           }
           if (run.osSessionId)

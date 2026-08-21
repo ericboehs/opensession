@@ -21,19 +21,21 @@ import { cancelAgentRun, isAgentSessionBusy, steerAgentRun } from "./agent-runne
 import { pendingAskAwaitingAnswer } from "./asks";
 import { relinkAskThreads } from "./human-asks";
 import { SESSION_EFFORTS, type SessionEffort, interactiveDefaultModel, providerFor, resolveModel } from "./models";
-import { liftUserStop, promptQueues, recordSteer, requeueSteerReceipts, stoppedSessions } from "./queue-state";
-import { enqueuePrompt, runSessionPrompt, runSessionPromptAndDrain, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
-import {
-	parseImageDataUrls,
-	stageFileAttachments,
-	withUploadsNote,
-} from "./uploads";
+import { deliveryQueueState, liftUserStop, promptQueues, recordSteer, requeueSteerReceipts, stoppedSessions } from "./queue-state";
+import { drainQueue, enqueuePrompt, runSessionPrompt, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
+import { parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
 import { type Sandbox } from "./sandbox";
 import { isRemoteSandboxProvider, resolveRequestedSandbox } from "./sandbox/config";
 import { resolveInteractiveSandbox } from "./sandbox/defaults";
 import { findSession, getCachedSessions, invalidateSessionsCache, touchNativeSession } from "./session-cache";
-import { type SessionState, type SessionSummary, registerSessionControl } from "./session-control";
-import { type ResolvedCreate, forkHandoffContext, openCreatedSession, resolveForkContext, resolvePinnedAccountId } from "./session-create";
+import {
+	getSessionControl,
+	type CreateSessionOpts,
+	type SessionState,
+	type SessionSummary,
+	registerSessionControl,
+} from "./session-control";
+import { type ResolvedCreate, forkHandoffContext, runOpeningCreateOnce, resolveForkContext, resolvePinnedAccountId } from "./session-create";
 import { resolveSessionRepoContext, workspaceOwningWorktree } from "./session-repos";
 import { engineUserTexts, getAllSessions, mergedSessionTranscript } from "./sessions";
 import { rebuildIndex } from "./slack-links";
@@ -41,11 +43,22 @@ import { handleSlashCommand } from "./slash-commands";
 import { type UnifiedSession } from "./types";
 import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
 import { ownedWorktree } from "./session-workspace";
-import { createWorktree, ensureAskCheckout, ensureScratchDir, getRepo, listWorktrees, repoForPath, repoForPathOrNull, resolveUniqueBranch } from "./worktree";
+import { createWorktree, ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, listWorktrees, repoForPath, repoForPathOrNull, resolveUniqueBranch, worktreePathFor } from "./worktree";
 import { broadcastToSession } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
+import { sessionKernel, sessionKernelOwnsCurrentCommand } from "./session-kernel";
+import {
+	canonicalCommandPayload,
+	sessionIdForRequest,
+} from "./session-request-id";
+import {
+	clearCreatePlan,
+	createPlanWorkspaceId,
+	restoreResolvedCreate,
+	snapshotResolvedCreate,
+	updateCreatePlan,
+} from "./session-create-plan";
 import { existsSync, watch } from "fs";
-import { newSessionId } from "./paths";
 import { branchNameFromPrompt } from "./suggest-branch";
 
 /** Derive the at-a-glance state + control surface for a session (for the MCP). */
@@ -91,6 +104,18 @@ relinkAskThreads();
 // Wires the MCP's tools into the same in-process state and helpers the
 // WebSocket handlers use, so a management session steers/answers/creates the
 // exact same way a human does in the web UI. See src/server/session-control.ts.
+class SessionDeliveryError extends Error {
+	constructor(
+		readonly result: {
+			status: "error";
+			message: string;
+			deliveryId: string;
+		},
+	) {
+		super(result.message);
+	}
+}
+
 registerSessionControl({
 	listSessions: () =>
 		getCachedSessions().map(buildSummary),
@@ -108,75 +133,170 @@ registerSessionControl({
 		return mergedSessionTranscript(s).slice(-Math.max(0, n));
 	},
 
-	answerQuestion: (id, answers) => {
-		const pending = pendingAskAwaitingAnswer(id);
-		if (!pending) return false;
-		// resolve() clears the timeout, deletes the entry and unblocks makeAskHandler,
-		// which broadcasts ask_resolved and lets the run continue with these answers.
-		pending.resolve(answers && typeof answers === "object" ? answers : null);
-		return true;
+	answerQuestion: async (id, answers, opts) => {
+		const requestId = opts?.requestId || randomUUIDv7();
+		const questionId = pendingAskAwaitingAnswer(id)?.questionId || null;
+		const accepted = await sessionKernel(id).dispatch(
+			{
+				requestId,
+				type: "answer_question",
+				payload: { questionId, answers },
+				source: "session_control",
+				replaySafe: true,
+			},
+			() => {
+				const pending = pendingAskAwaitingAnswer(id);
+				if (!pending || pending.questionId !== questionId) return false;
+				pending.resolve(answers && typeof answers === "object" ? answers : null);
+				return true;
+			},
+		);
+		return accepted.result;
 	},
 
 	deliverToSession: async (id, content, user, opts) => {
 		const deliveryId = opts?.deliveryId || randomUUIDv7();
-		const session = findSession(id);
-		if (!session)
-			return { status: "error" as const, message: "No session with that id.", deliveryId };
 
-		// Slash commands (/loop, /goal, /model, /help) are handled by opensession
-		// itself, exactly like the WebSocket prompt path — checked BEFORE the
-		// busy branch so "/loop stop" configures the session instead of being
-		// steered into its running turn as literal prompt text. This is what
-		// lets a monitor session manage loops (its own and others') via the
-		// opensession-sessions send_to_session tool.
-		const notice = handleSlashCommand(session, String(content || "").trim(), user);
-		if (notice !== null) {
-			invalidateSessionsCache();
-			return { status: "handled" as const, message: notice, deliveryId };
-		}
+		const identity = {
+			content,
+			user,
+			busy: opts?.busy,
+			hold: opts?.hold,
+			reviewHandoff: opts?.reviewHandoff,
+			admissionKey: opts?.admissionKey,
+			contextSessions: opts?.contextSessions,
+			slackReplyTo: opts?.slackReplyTo,
+			attachmentsHash: new Bun.CryptoHasher("sha256")
+				.update(
+					JSON.stringify({
+						imageUrls: opts?.imageUrls,
+						images: opts?.images,
+						files: opts?.files,
+					}),
 
-		// A delivery is an explicit next action on this session, so it lifts a
-		// prior Stop here rather than inside the run the Stop prevents: the busy
-		// branch below only enqueues, and drainQueue parks at the latch, which
-		// would leave the message queued forever.
-		liftUserStop(id);
-
-		const attributed = user ? `[${user}] ${content}` : content;
-		// Disk-staged files can only be supplied to a fresh turn. Never fold them
-		// into a steer request, where the runner has no file staging channel.
-		const hasFiles = Array.isArray(opts?.files) && opts.files.length > 0;
-
-		if (
-			isAgentSessionBusy(
-				session.claudeSessionId,
-				session.codexThreadId,
-				session.id,
-			)
-		) {
-			// Busy + owned here → fold into the running turn (delivered at the next
-			// stopping point). Otherwise queue and drain when the external run ends.
-			// busy: "queue" opts out of steering; Slack-thread replies always set it
-			// (and never steer regardless): the in-thread answer mirror only fires
-			// on a turn that carries the slackReplyTo, and a steered message can't
-			// (it folds into a turn that's already running).
-			if (
-				opts?.busy !== "queue" &&
-				!opts?.slackReplyTo &&
-				!hasFiles &&
-				steerAgentRun(
-					[session.claudeSessionId, session.codexThreadId, session.id],
-					attributed,
-					opts?.images,
-					deliveryId,
 				)
-			) {
-				recordSteer(id, { id: deliveryId, content, user, images: opts?.imageUrls });
+				.digest("hex"),
+		};
+		const deliverOwned = async () => {
+			const session = findSession(id);
+			if (!session)
+				throw new SessionDeliveryError({
+					status: "error",
+					message: "No session with that id.",
+					deliveryId,
+				});
+			const priorDelivery = deliveryQueueState(id, deliveryId);
+			if (priorDelivery === "steered")
 				return {
 					status: "steered" as const,
 					message: "Folded into the running turn.",
 					deliveryId,
 				};
+			if (priorDelivery === "queued" || priorDelivery === "dispatching")
+				return {
+					status: priorDelivery === "queued" ? ("queued" as const) : ("started" as const),
+					message:
+						priorDelivery === "queued"
+							? "Queued behind the current run."
+							: "Started a new turn on the session.",
+					deliveryId,
+				};
+
+			if (opts?.admit && !opts.admit())
+				return {
+					status: "handled" as const,
+					message: "The delivery intent is no longer current.",
+					deliveryId,
+				};
+
+			// Slash commands (/loop, /goal, /model, /help) are handled by opensession
+			// itself, exactly like the WebSocket prompt path — checked BEFORE the
+			// busy branch so "/loop stop" configures the session instead of being
+			// steered into its running turn as literal prompt text. This is what
+			// lets a monitor session manage loops (its own and others') via the
+			// opensession-sessions send_to_session tool.
+			const notice = handleSlashCommand(session, String(content || "").trim(), user);
+			if (notice !== null) {
+				invalidateSessionsCache();
+				return { status: "handled" as const, message: notice, deliveryId };
 			}
+
+			// A delivery is an explicit next action on this session, so it lifts a
+			// prior Stop here rather than inside the run the Stop prevents: the busy
+			// branch below only enqueues, and drainQueue parks at the latch, which
+			// would leave the message queued forever.
+			liftUserStop(id);
+
+			const attributed = user ? `[${user}] ${content}` : content;
+			// Disk-staged files can only be supplied to a fresh turn. Never fold them
+			// into a steer request, where the runner has no file staging channel.
+			const hasFiles = Array.isArray(opts?.files) && opts.files.length > 0;
+
+			if (
+				isAgentSessionBusy(
+					session.claudeSessionId,
+					session.codexThreadId,
+					session.id,
+				)
+			) {
+				// Busy + owned here → fold into the running turn (delivered at the next
+				// stopping point). Otherwise queue and drain when the external run ends.
+				// busy: "queue" opts out of steering; Slack-thread replies always set it
+				// (and never steer regardless): the in-thread answer mirror only fires
+				// on a turn that carries the slackReplyTo, and a steered message can't
+				// (it folds into a turn that's already running).
+				if (
+					opts?.busy !== "queue" &&
+					!opts?.slackReplyTo &&
+					!hasFiles &&
+					steerAgentRun(
+						[session.claudeSessionId, session.codexThreadId, session.id],
+						attributed,
+						opts?.images,
+						deliveryId,
+					)
+				) {
+					recordSteer(id, { id: deliveryId, content, user, images: opts?.imageUrls });
+					return {
+						status: "steered" as const,
+						message: "Folded into the running turn.",
+						deliveryId,
+					};
+				}
+				enqueuePrompt(id, {
+					id: deliveryId,
+					content,
+					user,
+					images: opts?.imageUrls,
+					files: opts?.files,
+					contextSessions: opts?.contextSessions,
+					slackReplyTo: opts?.slackReplyTo,
+					...(opts?.hold ? { hold: true } : {}),
+					...(opts?.reviewHandoff ? { reviewHandoff: true } : {}),
+				});
+				watchExternalRunAndDrain(id);
+				return {
+					status: "queued" as const,
+					message: "Queued behind the current run.",
+					deliveryId,
+				};
+			}
+			// Open Session sessions with no engine id are fresh sessions — the first prompt
+			// starts a new conversation (see runSessionPrompt).
+			if (
+				providerFor(session.model) === "claude" &&
+				!session.claudeSessionId &&
+				session.source !== "opensession"
+			) {
+				throw new SessionDeliveryError({
+					status: "error",
+					message: "Session has no Claude session to resume yet.",
+					deliveryId,
+				});
+			}
+
+			// Every accepted prompt is durable before any engine or workspace wake.
+			// A crash after this write but before dispatch replays the same queue id.
 			enqueuePrompt(id, {
 				id: deliveryId,
 				content,
@@ -185,87 +305,132 @@ registerSessionControl({
 				files: opts?.files,
 				contextSessions: opts?.contextSessions,
 				slackReplyTo: opts?.slackReplyTo,
-				...(opts?.hold ? { hold: true } : {}),
-				...(opts?.reviewHandoff ? { reviewHandoff: true } : {}),
 			});
-			watchExternalRunAndDrain(id);
+			void drainQueue(id).catch((error) =>
+				console.error(`[sessions-mcp] deliver to ${id} failed:`, error),
+			);
 			return {
-				status: "queued" as const,
-				message: "Queued behind the current run.",
+				status: "started" as const,
+				message: "Started a new turn on the session.",
 				deliveryId,
 			};
-		}
-		// Open Session sessions with no engine id are fresh sessions — the first prompt
-		// starts a new conversation (see runSessionPrompt).
-		if (
-			providerFor(session.model) === "claude" &&
-			!session.claudeSessionId &&
-			session.source !== "opensession"
-		) {
-			return {
-				status: "error" as const,
-				message: "Session has no Claude session to resume yet.",
-				deliveryId,
-			};
-		}
-
-		// Idle → start a fresh turn in the background; don't block the tool call on
-		// the whole run finishing.
-		void runSessionPromptAndDrain(
-			id,
-			content,
-			user,
-			opts?.images,
-			opts?.files,
-			opts?.contextSessions,
-			opts?.slackReplyTo,
-		).catch((e) => console.error(`[sessions-mcp] deliver to ${id} failed:`, e));
-		return {
-			status: "started" as const,
-			message: "Started a new turn on the session.",
-			deliveryId,
 		};
+		if (sessionKernelOwnsCurrentCommand(id)) return deliverOwned();
+		try {
+			const accepted = await sessionKernel(id).dispatch(
+				{
+					requestId: deliveryId,
+					type: "submit_prompt",
+					payload: identity,
+					source: "session_control",
+				replaySafe: true,
+				},
+				deliverOwned,
+			);
+			return {
+				...accepted.result,
+				...(accepted.duplicate ? { duplicate: true } : {}),
+			};
+		} catch (error) {
+			if (error instanceof SessionDeliveryError) return error.result;
+			throw error;
+		}
 	},
 
-	cancelSession: (id) => {
-		const session = findSession(id);
-		if (!session) return false;
-		// Same park as the UI Stop: without it the run-end guards (queue drain,
-		// orphaned-steer redelivery in maybeQueueAutoContinue) would immediately
-		// start a new turn on the session that was just deliberately cancelled.
-		// Any later explicit prompt lifts it (runSessionPrompt deletes the mark).
-		stoppedSessions.add(id);
-		const cancelled = cancelAgentRun(
-			session.claudeSessionId,
-			session.codexThreadId,
-			session.id,
+	cancelSession: async (id, opts) => {
+		const requestId = opts?.requestId || randomUUIDv7();
+		const targetRunId = sessionKernel(id).runState().currentRunId || null;
+		const accepted = await sessionKernel(id).dispatch(
+			{
+				requestId,
+				type: "cancel_session",
+				payload: { targetRunId },
+				source: "session_control",
+				replaySafe: true,
+			},
+			() => {
+				if ((sessionKernel(id).runState().currentRunId || null) !== targetRunId)
+					throw new Error("The run targeted by this command has already changed");
+				const session = findSession(id);
+				if (!session) return false;
+				stoppedSessions.add(id);
+				const cancelled = cancelAgentRun(
+					session.claudeSessionId,
+					session.codexThreadId,
+					session.id,
+				);
+				requeueSteerReceipts(id, engineUserTexts(session));
+				return cancelled;
+			},
 		);
-		requeueSteerReceipts(id, engineUserTexts(session));
-		return cancelled;
+		return accepted.result;
 	},
 
-	createSession: async ({
-		prompt,
-		branch,
-		repo: repoInput,
-		repoLess,
-		mode,
-		model: modelInput,
-		effort: effortInput,
-		fastMode: fastModeInput,
-		images: imageUrls,
-		files: rawFiles,
-		mcpServers,
-		workspaceId,
-		isolatedWorktree,
-		parentSessionId,
-		spawnedBy: spawnedByInput,
-		reportBack,
-		user,
-		sandbox,
-		forkFrom,
-		accountId: accountIdInput,
-	}) => {
+	createSession: async (input: CreateSessionOpts) => {
+		const requestId = input.requestId || randomUUIDv7();
+		const actorScope = input.requestScope || input.user || "automation";
+		const requestedId = input.id || sessionIdForRequest(actorScope, requestId);
+		const commandOwner = requestedId;
+		const ownedInput: CreateSessionOpts = {
+			...input,
+			id: requestedId,
+			requestId,
+		};
+		if (!sessionKernelOwnsCurrentCommand(commandOwner)) {
+			const identity = new Bun.CryptoHasher("sha256")
+				.update(canonicalCommandPayload(ownedInput))
+				.digest("hex");
+			const accepted = await sessionKernel(commandOwner).dispatch(
+				{
+					requestId,
+					type: "create_session",
+					payload: { targetId: requestedId, identity },
+					source: "session_control",
+				replaySafe: true,
+				},
+				() => getSessionControl().createSession(ownedInput),
+			);
+			return accepted.result;
+		}
+		const {
+			prompt,
+			branch,
+			repo: repoInput,
+			repoLess,
+			mode,
+			model: modelInput,
+			effort: effortInput,
+			fastMode: fastModeInput,
+			images: imageUrls,
+			files: rawFiles,
+			mcpServers,
+			workspaceId,
+			isolatedWorktree,
+			parentSessionId,
+			spawnedBy: spawnedByInput,
+			reportBack,
+			user,
+			sandbox,
+			forkFrom,
+			accountId: accountIdInput,
+		} = ownedInput;
+		const bksId = requestedId;
+		const createIdentity = new Bun.CryptoHasher("sha256")
+			.update(canonicalCommandPayload(ownedInput))
+			.digest("hex");
+		let createPlan = updateCreatePlan(bksId, createIdentity);
+		const completedCreate = findSession(requestedId);
+		if (
+			completedCreate?.claudeSessionId ||
+			completedCreate?.codexThreadId
+		) {
+			clearCreatePlan(bksId);
+			return {
+				id: completedCreate.id,
+				createdBy: completedCreate.createdBy || completedCreate.startedBy || user || "Anonymous",
+				createdAt: completedCreate.createdAt || new Date().toISOString(),
+			};
+		}
 		// Fork: branch a new session off an existing one — same rules as the
 		// web create (shares the source's cwd/branch/model; Claude sources are
 		// cloned via SDK forkSession, others get a transcript handoff). An
@@ -368,6 +533,7 @@ registerSessionControl({
 				: parentSession?.mcpServers;
 
 		let wtPath: string;
+		let materializeWorktree: (() => Promise<string>) | undefined;
 		let sessionBranch = branch || "";
 		const sharedParentContext =
 			parentSession &&
@@ -386,7 +552,7 @@ registerSessionControl({
 			// one; standalone creates get a fresh directory. Ask remains read-only,
 			// while scratch keeps its normal write permissions.
 			wtPath = ensureScratchDir(
-				joinedWorkspace?.id || parentSession?.workspaceId || randomUUIDv7(),
+				joinedWorkspace?.id || parentSession?.workspaceId || createPlanWorkspaceId(bksId),
 			);
 			sessionBranch = "";
 		} else if (isAsk) {
@@ -428,18 +594,26 @@ registerSessionControl({
 				sessionBranch = shared.branch || sessionBranch;
 			} else {
 				if (!sessionBranch.trim()) {
-					sessionBranch = await branchNameFromPrompt(prompt);
-					sessionBranch = await resolveUniqueBranch(sessionBranch, repo.id);
+					if (createPlan.branch) sessionBranch = createPlan.branch;
+					else {
+						sessionBranch = await branchNameFromPrompt(prompt);
+						sessionBranch = await resolveUniqueBranch(sessionBranch, repo.id);
+						createPlan = updateCreatePlan(bksId, createIdentity, {
+							branch: sessionBranch,
+						});
+					}
 				}
 				const worktrees = await listWorktrees(repo.id);
 				wtPath = worktrees.find((w) => w.branch === sessionBranch)?.path || "";
 				// `isolated` only says anything on a shared-checkout repo, where it
 				// is the difference between this session getting a tree of its own
 				// and joining every other session in the live main checkout.
-				if (!wtPath)
-					wtPath = await createWorktree(sessionBranch, repo.id, {
-						...(isolatedWorktree ? { isolated: true } : {}),
-					});
+				if (!wtPath) {
+					const worktreeOptions = isolatedWorktree ? { isolated: true } : {};
+					wtPath = worktreePathFor(sessionBranch, repo.id, worktreeOptions);
+					materializeWorktree = () =>
+						createWorktree(sessionBranch, repo.id, worktreeOptions);
+				}
 			}
 		}
 		// The first code session in a joined workspace that owns no worktree yet (an
@@ -461,7 +635,6 @@ registerSessionControl({
 			});
 		}
 
-		const bksId = newSessionId();
 		// "auto-continue" is a turn's sender, not a person. A session spawned
 		// from a resumed turn belongs to whoever owns the session that spawned
 		// it, not to the sentinel that woke it: owned by the sentinel it has no
@@ -478,9 +651,7 @@ registerSessionControl({
 			prompt.trim().split("\n")[0].slice(0, 80) ||
 			(Array.isArray(rawFiles) && rawFiles.length
 				? "Attached file"
-				: imageUrls?.length
-					? "Image"
-					: "New session");
+				: imageUrls?.length ? "Image" : "New session");
 		// The Desk (desk.ts) is an orchestrator living in an overlay, not a piece
 		// of work: it carries no workspace, and a worker it spawns is its own
 		// independent thing. So a desk parent contributes NOTHING to the workspace
@@ -523,6 +694,12 @@ registerSessionControl({
 				workspaceOwningWorktree(wtPath);
 			if (owned) resolvedWorkspaceId = owned.id;
 			else {
+				const plannedWorkspaceId =
+					createPlan.workspaceId || createPlanWorkspaceId(bksId);
+				if (!createPlan.workspaceId)
+					createPlan = updateCreatePlan(bksId, createIdentity, {
+						workspaceId: plannedWorkspaceId,
+					});
 				const branchForWs = wsParent?.branch || sessionBranch;
 				// Only an isolated worktree is owned — never a shared main/ask
 				// checkout, which every other session there uses too.
@@ -530,7 +707,8 @@ registerSessionControl({
 					ownedWorktree(wsParent?.worktreeDir) ?? ownedWorktree(wtPath);
 				const wsName =
 					wsParent?.title || wsParent?.branch || title || "Workspace";
-				const ws = createWorkspace({
+				const ws = getWorkspace(plannedWorkspaceId) || createWorkspace({
+					id: plannedWorkspaceId,
 					name: wsName,
 					...(isRepoLess ? {} : { repo: wsParent?.repo || repo.id }),
 					createdBy:
@@ -561,7 +739,9 @@ registerSessionControl({
 			prompt,
 			stageFileAttachments(bksId, rawFiles),
 		);
-		if (createMentionsNote) openingPrompt += `\n\n${createMentionsNote}`;
+		if (createMentionsNote) openingPrompt += `
+
+${createMentionsNote}`;
 		// A session joining a workspace opens with the workspace's own context, the
 		// same as the web create: the feed item it hangs off, and the support
 		// ticket it belongs to. Without this a "new tab" in a ticket workspace is
@@ -605,7 +785,7 @@ registerSessionControl({
 			openingPrompt += `\n\n${await forkHandoffContext(fork)}`;
 		}
 
-		const spec: ResolvedCreate = {
+		const computedSpec: ResolvedCreate = {
 			id: bksId,
 			title,
 			titlePrompt: prompt,
@@ -659,9 +839,13 @@ registerSessionControl({
 			sandboxProvider,
 			volumeWorkspace: false,
 			remoteSandbox,
-			// The worktree was created synchronously above — the tool caller
-			// gets an id whose workspace already exists.
-			needsWorktree: false,
+			openingPromptEntryId: `create-${requestId}`,
+			// Persist the full decision before git creates anything. The opening
+			// setup materializes this deterministic path after announcement.
+			needsWorktree: !!materializeWorktree,
+			worktreeKind: "new",
+			worktreeIsolated: isolatedWorktree === true,
+			materializeWorktree,
 			fork: fork?.canFork
 				? {
 						engineSessionId: fork.source.claudeSessionId!,
@@ -670,25 +854,85 @@ registerSessionControl({
 				: undefined,
 			finish: "auto-continue-guard",
 		};
+		const restoredSpec = createPlan.resolved
+			? restoreResolvedCreate<ResolvedCreate>(createPlan.resolved)
+			: undefined;
+		const restoredWorktreeReady =
+			restoredSpec?.needsWorktree &&
+			typeof restoredSpec.wtPath === "string" &&
+			typeof restoredSpec.repoId === "string" &&
+			typeof restoredSpec.branch === "string"
+				? await isRegisteredWorktree(
+					restoredSpec.wtPath,
+					restoredSpec.repoId,
+					restoredSpec.branch,
+				)
+				: false;
+		const restoredMaterializer =
+			restoredSpec?.needsWorktree &&
+			!restoredWorktreeReady &&
+			typeof restoredSpec.wtPath === "string" &&
+			typeof restoredSpec.branch === "string" &&
+			typeof restoredSpec.repoId === "string"
+				? async () => {
+						if (existsSync(restoredSpec.wtPath!))
+							throw new Error(
+								`Incomplete worktree exists at ${restoredSpec.wtPath}; refusing to start the session`,
+							);
+						return createWorktree(restoredSpec.branch!, restoredSpec.repoId!, {
+							...(isolatedWorktree ? { isolated: true } : {}),
+						});
+					}
+				: undefined;
+		const spec: ResolvedCreate = restoredSpec
+			? {
+					...computedSpec,
+					...restoredSpec,
+					images: computedSpec.images,
+					materializeWorktree: restoredMaterializer,
+					needsWorktree: !!restoredMaterializer,
+				}
+			: computedSpec;
+		if (!createPlan.resolved) {
+			const { images: _images, materializeWorktree: _materialize, ...durable } =
+				computedSpec;
+			createPlan = updateCreatePlan(bksId, createIdentity, {
+				resolved: snapshotResolvedCreate(durable),
+			});
+		}
 
 		// Run in the background; watchers (web UI) see the live stream, the same
 		// as a UI-created session. The tool returns once the session file exists
 		// (the announce), while engine startup continues behind it.
 		return await new Promise<{ id: string; createdBy: string; createdAt: string }>(
 			(resolve, reject) => {
-				openCreatedSession(spec, {
-					announce: (info) =>
+				const opening = runOpeningCreateOnce(spec, {
+					announce: (info) => {
 						resolve({
 							id: info.id,
 							createdBy: info.createdBy,
 							createdAt: info.createdAt,
-						}),
+						});
+					},
 					emit: (m) => broadcastToSession(bksId, { ...m, sessionId: bksId }),
 					fail: (message) => reject(new Error(message)),
-				}).catch((e) => {
-					console.error(`[sessions-mcp] create session ${bksId} failed:`, e);
-					reject(e);
 				});
+				if (!opening.owner) {
+					const existing = findSession(bksId);
+					resolve({
+						id: bksId,
+						createdBy: existing?.createdBy || user || "Anonymous",
+						createdAt: existing?.createdAt || createPlan.createdAt,
+					});
+					return;
+				}
+				void opening.done.then(
+					() => clearCreatePlan(bksId),
+					(e) => {
+						console.error(`[sessions-mcp] create session ${bksId} failed:`, e);
+						reject(e);
+					},
+				);
 			},
 		);
 	},

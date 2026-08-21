@@ -39,7 +39,6 @@ import { userMatchesAny } from "../../server/shared/user-mappings";
 import { migrateSessionEngine } from "../../server/session-model-migration";
 import { resolveSessionRepoContext } from "../../server/session-repos";
 import { transferSessionFile } from "../../server/session-file-transfer";
-import { branchNameFromPrompt } from "../../server/suggest-branch";
 import type { NativeSessionFile, TranscriptEntry } from "../../server/types";
 
 export interface SessionsToolContext {
@@ -61,6 +60,25 @@ export interface SessionsToolContext {
 
 function text(s: string) {
   return { content: [{ type: "text" as const, text: s }] };
+}
+
+function durableToolRequestId(
+  ctx: SessionsToolContext,
+  toolName: string,
+  extra:
+    | {
+        requestId?: string | number;
+        _meta?: { opensessionToolCallId?: unknown };
+      }
+    | undefined,
+): string {
+  const stableCallId =
+    typeof extra?._meta?.opensessionToolCallId === "string"
+      ? extra._meta.opensessionToolCallId
+      : extra?.requestId ?? crypto.randomUUID();
+  const raw = `${ctx.currentSessionId || ctx.createdBy}:${toolName}:${String(stableCallId)}`;
+  const digest = new Bun.CryptoHasher("sha256").update(raw).digest("hex");
+  return `mcp-${digest}`;
 }
 
 const STATE_ICON: Record<SessionState, string> = {
@@ -395,6 +413,7 @@ export async function spawnTaskImpl(
   args: SpawnTaskArgs,
   ctx: SessionsToolContext,
   deps: SpawnTaskDeps = defaultSpawnDeps(),
+  requestId?: string,
 ): Promise<SpawnTaskResult> {
   if (!args.prompt?.trim()) return { ok: false, error: "Need a prompt to spawn a task." };
   const mode = args.mode || "code";
@@ -442,6 +461,8 @@ export async function spawnTaskImpl(
     reportBack: Boolean(caller),
   });
   const { id, createdBy, createdAt } = await deps.control.createSession({
+    requestId,
+    requestScope: caller || ctx.createdBy,
     prompt,
     repo: args.repo,
     mode,
@@ -508,11 +529,12 @@ export async function taskStatusImpl(
   return parts.join("\n");
 }
 
-export function cancelTaskImpl(
+export async function cancelTaskImpl(
   args: { taskId: string },
   deps: SpawnTaskDeps = defaultSpawnDeps(),
-): string {
-  const ok = deps.control.cancelSession(args.taskId);
+  requestId?: string,
+): Promise<string> {
+  const ok = await deps.control.cancelSession(args.taskId, { requestId });
   return ok
     ? `Cancelled task \`${args.taskId}\`.`
     : `Nothing to cancel on \`${args.taskId}\` (idle, done, or an external run this server doesn't own).`;
@@ -604,8 +626,13 @@ export function createSessionsMcpServer(
             .record(z.string(), z.string())
             .describe("Map of question header → chosen option label, e.g. { \"Auth method\": \"OAuth\" }."),
         },
-        async (args: { id: string; answers: Record<string, string> }) => {
-          const ok = getSessionControl().answerQuestion(args.id, args.answers);
+        async (
+          args: { id: string; answers: Record<string, string> },
+          extra: any,
+        ) => {
+          const ok = await getSessionControl().answerQuestion(args.id, args.answers, {
+            requestId: durableToolRequestId(ctx, "answer_question", extra),
+          });
           return text(
             ok
               ? `Answered \`${args.id}\` — the run continues with your choice.`
@@ -625,7 +652,10 @@ export function createSessionsMcpServer(
             .optional()
             .describe("Optional caller-generated correlation id. Omit to receive a generated delivery receipt."),
         },
-        async (args: { id: string; message: string; delivery_id?: string }) => {
+        async (
+          args: { id: string; message: string; delivery_id?: string },
+          extra: any,
+        ) => {
           if (!args.message?.trim()) return text("Nothing to send (empty message).");
           // Reporting to my own parent gets a worker card with server-computed
           // evidence. Every other agent-authored delivery gets a session notice.
@@ -634,7 +664,8 @@ export function createSessionsMcpServer(
           const content = isWorkerActor(payload.user)
             ? payload.content
             : sessionMessagePayload(payload.content);
-          const deliveryId = args.delivery_id?.trim() || crypto.randomUUID();
+          const deliveryId =
+            args.delivery_id?.trim() || durableToolRequestId(ctx, "send_to_session", extra);
           const res = await getSessionControl().deliverToSession(
             args.id,
             content,
@@ -681,7 +712,7 @@ export function createSessionsMcpServer(
           source?: "workspace" | "assets";
           destination?: string;
           message?: string;
-        }) => {
+        }, extra: any) => {
           const fromId = ctx.currentSessionId;
           if (!fromId)
             return text("File sending needs a current Open Session session id.");
@@ -706,7 +737,7 @@ export function createSessionsMcpServer(
               args.message?.trim() || `Session ${fromId} sent you a file.`,
               `Received asset: \`${file.path}\` (${file.size} bytes). Read it with the opensession-assets tools or open ${download}.`,
             ].join("\n\n");
-            const deliveryId = crypto.randomUUID();
+            const deliveryId = durableToolRequestId(ctx, "send_file_to_session", extra);
             const delivered = await ctrl.deliverToSession(
               to.id,
               notification,
@@ -738,8 +769,10 @@ export function createSessionsMcpServer(
         "cancel_session",
         "Cancel a session's in-flight run and drop any queued messages. Only works for runs this server owns (web UI / Slack / automation sessions) — external CLI/tmux sessions are observe-only.",
         { id: z.string().describe("The session id to cancel.") },
-        async (args: { id: string }) => {
-          const ok = getSessionControl().cancelSession(args.id);
+        async (args: { id: string }, extra: any) => {
+          const ok = await getSessionControl().cancelSession(args.id, {
+            requestId: durableToolRequestId(ctx, "cancel_session", extra),
+          });
           if (ok) {
             audit({
               msg: "run_cancelled",
@@ -819,7 +852,7 @@ export function createSessionsMcpServer(
           sandbox?: boolean | "docker" | "daytona" | "e2b" | "box" | "modal" | "microvm" | "lambda-microvm";
           accountId?: string;
           forkFrom?: { sourceId: string; messageId?: string };
-        }) => {
+        }, extra: any) => {
           if (!args.prompt?.trim()) return text("Need a prompt to start a session.");
           const parentSessionId = args.standalone
             ? undefined
@@ -832,11 +865,10 @@ export function createSessionsMcpServer(
                 reportBack: shouldReportBack,
               })
             : args.prompt;
-          const branch =
-            args.mode === "code" && !args.branch?.trim()
-              ? await (deps.branchNameFromPrompt ?? branchNameFromPrompt)(args.prompt)
-              : args.branch;
+          const branch = args.branch;
           const { id, createdBy, createdAt } = await getSessionControl().createSession({
+            requestId: durableToolRequestId(ctx, "create_session", extra),
+            requestScope: ctx.currentSessionId || ctx.createdBy,
             prompt,
             repo: args.repo,
             mode: args.mode,
@@ -852,7 +884,7 @@ export function createSessionsMcpServer(
           });
           return text(
             [
-              `Started session \`${id}\` (${args.mode === "code" ? `code on ${branch}` : "ask"}). Metadata: createdBy=${JSON.stringify(createdBy)} · createdAt=${createdAt}. It'll appear in list_sessions as it boots.`,
+              `Started session \`${id}\` (${args.mode === "code" ? (branch ? `code on ${branch}` : "code session") : "ask"}). Metadata: createdBy=${JSON.stringify(createdBy)} · createdAt=${createdAt}. It'll appear in list_sessions as it boots.`,
               parentSessionId && shouldReportBack
                 ? `It is linked to \`${parentSessionId}\` and has instructions to report back there.`
                 : "",
@@ -913,8 +945,13 @@ export function createSessionsMcpServer(
           mode: z.enum(["ask", "code", "scratch"]).optional().describe("'code' (default) can edit files / open PRs; 'ask' is read-only."),
           sandbox: z.union([z.boolean(), z.enum(["docker", "daytona", "e2b", "box", "modal", "microvm", "lambda-microvm"])]).optional().describe("Run the child in an isolated sandbox: true = the server's default provider, or an explicit configured provider id."),
         },
-        async (args: SpawnTaskArgs) => {
-          const res = await spawnTaskImpl(args, ctx);
+        async (args: SpawnTaskArgs, extra: any) => {
+          const res = await spawnTaskImpl(
+            args,
+            ctx,
+            undefined,
+            durableToolRequestId(ctx, "spawn_task", extra),
+          );
           if (!res.ok) return text(res.error);
           return text(
             `Spawned task \`${res.taskId}\` — ${res.url}\nMetadata: createdBy=${JSON.stringify(res.createdBy)} · createdAt=${res.createdAt}. It runs in the background; poll with task_status(taskId)${ctx.isAdmin ? ", answer questions with answer_session_question," : ""} and stop with cancel_task.`
@@ -935,7 +972,14 @@ export function createSessionsMcpServer(
         "cancel_task",
         "Cancel a spawned task's in-flight run (drops queued messages too). Only runs this server owns.",
         { taskId: z.string().describe("The task/session id returned by spawn_task.") },
-        async (args: { taskId: string }) => text(cancelTaskImpl(args))
+        async (args: { taskId: string }, extra: any) =>
+          text(
+            await cancelTaskImpl(
+              args,
+              undefined,
+              durableToolRequestId(ctx, "cancel_task", extra),
+            ),
+          )
       )
     );
   }

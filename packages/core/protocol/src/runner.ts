@@ -128,6 +128,8 @@ export interface RunHostSpec {
 export interface RunHostMeta {
   hostId: string;
   pid: number;
+  bootId?: string;
+  startTicks?: string;
   osSessionId: string;
   startedAt: string;
   engineSessionId?: string;
@@ -259,20 +261,36 @@ export type ClientToHostMsg =
  */
 export function ndjsonReader(
   onMsg: (msg: any) => void,
-  label: string
+  label: string,
+  options?: {
+    maxBufferedBytes?: number;
+    onInvalid?: () => void;
+  },
 ): (data: Buffer | string) => void {
   let fragments: Buffer[] = [];
   let fragmentBytes = 0;
-  const emit = (line: Buffer) => {
+  let invalid = false;
+  const fail = () => {
+    invalid = true;
+    options?.onInvalid?.();
+  };
+  const emit = (line: Buffer): boolean => {
     const text = line.toString();
-    if (!text.trim()) return;
+    if (!text.trim()) return true;
     try {
       onMsg(JSON.parse(text));
+      return true;
     } catch (e) {
+      if (options?.onInvalid) {
+        fail();
+        return false;
+      }
       console.error(`[${label}] dropping malformed NDJSON line:`, e);
+      return true;
     }
   };
   return (data) => {
+    if (invalid) return;
     const chunk = typeof data === "string" ? Buffer.from(data) : data;
     let start = 0;
     for (;;) {
@@ -280,19 +298,37 @@ export function ndjsonReader(
       if (newline < 0) {
         if (start < chunk.length) {
           const fragment = Buffer.from(chunk.subarray(start));
+          if (
+            options?.maxBufferedBytes !== undefined &&
+            fragmentBytes + fragment.length > options.maxBufferedBytes
+          ) {
+            fail();
+            fragments = [];
+            fragmentBytes = 0;
+            return;
+          }
           fragments.push(fragment);
           fragmentBytes += fragment.length;
         }
         return;
       }
       const tail = chunk.subarray(start, newline);
+      if (
+        options?.maxBufferedBytes !== undefined &&
+        fragmentBytes + tail.length > options.maxBufferedBytes
+      ) {
+        fail();
+        fragments = [];
+        fragmentBytes = 0;
+        return;
+      }
       if (fragments.length) {
         const line = Buffer.concat([...fragments, tail], fragmentBytes + tail.length);
         fragments = [];
         fragmentBytes = 0;
-        emit(line);
+        if (!emit(line)) return;
       } else {
-        emit(tail);
+        if (!emit(tail)) return;
       }
       start = newline + 1;
     }

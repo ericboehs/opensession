@@ -117,6 +117,7 @@ export const SETTINGS_KEYWORDS: Record<string, string[]> = {
 		"quota",
 	],
 	runners: ["run hosts", "machines", "workers", "capacity", "detached runs"],
+	reliability: ["failed deliveries", "dead letters", "retry", "discard", "kernel", "outbox"],
 	library: ["templates", "prompts", "skills", "starters", "commands"],
 	sandboxes: ["docker", "daytona", "box", "ascii", "modal", "microvm", "firecracker", "isolation", "compute"],
 	integrations: ["github sign-in", "oauth app"],

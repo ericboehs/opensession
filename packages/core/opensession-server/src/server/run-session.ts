@@ -125,6 +125,7 @@ import {
 	clearSteerReceipts,
 	isGitHubQueueItem,
 	persistQueues,
+	promptDispatches,
 	promptQueues,
 	queuedPromptIndex,
 	queueItem,
@@ -251,9 +252,15 @@ export function enqueuePrompt(
 	opts?: { front?: boolean },
 ): void {
 	const queue = promptQueues.get(sessionId) || [];
-	if (opts?.front) queue.unshift(queueItem(item));
-	else queue.push(queueItem(item));
-	promptQueues.set(sessionId, queue);
+	const owned = queueItem(item);
+	// A durable command can be replayed after the queue write committed but
+	// before its command receipt did. Stable ids make that retry an adoption,
+	// not a second prompt.
+	if (!owned.id || !queue.some((queued) => queued.id === owned.id)) {
+		if (opts?.front) queue.unshift(owned);
+		else queue.push(owned);
+		promptQueues.set(sessionId, queue);
+	}
 	persistQueues();
 	broadcastQueue(sessionId);
 	// Queueing is a delivery promise, not just a UI state. Arm the idle watcher
@@ -494,6 +501,18 @@ export function restorePromptQueues(resumedSessionIds: Set<string>): void {
 			return session ? engineUserTexts(session) : [];
 		},
 	});
+	for (const [sessionId, dispatch] of promptDispatches) {
+		if (dispatch.kind !== "create") continue;
+		void import("./session-create")
+			.then((module) => module.resumePlannedCreate(sessionId))
+			.then((resumed) => {
+				if (!resumed)
+					console.error(`[create] No durable plan could resume ${sessionId}`);
+			})
+			.catch((error) =>
+				console.error(`[create] Failed to resume ${sessionId}:`, error),
+			);
+	}
 	for (const sessionId of restored.queuedSessionIds) {
 		watchExternalRunAndDrain(sessionId);
 	}
@@ -1438,7 +1457,6 @@ export async function maybeLaunchSandboxedRun(
 			sandboxReadyMs: Date.now() - sandboxStartedAt,
 		});
 	} catch (e: any) {
-		// The token was registered mid-try; the failed run will never consume it.
 		unregisterRunToken(rpcToken);
 		const reason = String(e?.message || e).slice(0, 200);
 		if (session.source === "opensession" && session.sandbox) {

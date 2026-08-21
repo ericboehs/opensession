@@ -2,13 +2,24 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { HostHandle, type HostLauncher } from "./host-client";
+import {
+  HostHandle,
+  localRunHostsSupported,
+  reconcileUncertainHostEvents,
+  resolveInactiveHostRecovery,
+  type HostLauncher,
+} from "./host-client";
 import type { RunHostMeta, RunHostSpec } from "../runner-host/protocol";
 import {
   TranscriptStore,
   __setTranscriptStoreForTest,
 } from "./transcript-store";
 import { transcriptLineUser } from "./transcript-persistence";
+import {
+  SessionKernelStore,
+  __setSessionKernelStoreForTest,
+  sessionKernel,
+} from "./session-kernel";
 
 const roots: string[] = [];
 
@@ -28,6 +39,149 @@ function makeHandle(spec: RunHostSpec) {
   };
   return new HostHandle(dir, spec, {}, launcher);
 }
+
+describe("uncertain host reconciliation", () => {
+  test("delivers an offline terminal result before destructive stop", async () => {
+    let preserved = false;
+    const fake = {
+      ended: false,
+      connectWithWait: async () => { throw new Error("not connectable"); },
+      events: async function* () {},
+      executionEvidence: async () => ({
+        started: true,
+        done: { type: "done", result: "offline complete" },
+      }),
+      stopAndWait: async (_timeout: number, preserve: boolean) => {
+        preserved = preserve;
+        fake.ended = true;
+        return true;
+      },
+    };
+    const events = reconcileUncertainHostEvents(fake as any, "Sandbox", 0);
+    expect((await events.next()).value).toMatchObject({
+      type: "done",
+      result: "offline complete",
+    });
+    expect((await events.next()).done).toBe(true);
+    expect(preserved).toBe(true);
+  });
+
+  test("re-reads terminal evidence after stop settlement", async () => {
+    let reads = 0;
+    const fake = {
+      ended: false,
+      connectWithWait: async () => { throw new Error("not connectable"); },
+      events: async function* () {},
+      executionEvidence: async () =>
+        ++reads === 1
+          ? { started: true }
+          : { started: true, done: { type: "done", result: "finished while stopping" } },
+      stopAndWait: async () => true,
+      takeObservedTerminal: () => undefined,
+    };
+    const events = reconcileUncertainHostEvents(fake as any, "Sandbox", 0);
+    expect((await events.next()).value).toMatchObject({
+      type: "done",
+      result: "finished while stopping",
+    });
+    expect((await events.next()).done).toBe(true);
+  });
+
+  test("prefers a terminal observed live while stop is settling", async () => {
+    let terminal: any;
+    const fake = {
+      ended: false,
+      connectWithWait: async () => { throw new Error("not connectable"); },
+      events: async function* () {},
+      executionEvidence: async () => ({ started: false }),
+      stopAndWait: async () => {
+        terminal = { type: "done", result: "live finish" };
+        return true;
+      },
+      takeObservedTerminal: () => {
+        const value = terminal;
+        terminal = undefined;
+        return value;
+      },
+    };
+    const events = reconcileUncertainHostEvents(fake as any, "Sandbox", 0);
+    expect((await events.next()).value).toMatchObject({
+      type: "done",
+      result: "live finish",
+    });
+    expect((await events.next()).done).toBe(true);
+  });
+
+  test("retained uncertainty is a nonterminal notice", async () => {
+    const fake = {
+      ended: false,
+      connectWithWait: async () => { throw new Error("not connectable"); },
+      events: async function* () {},
+      executionEvidence: async () => ({ started: false }),
+      stopAndWait: async () => false,
+    };
+    const events = reconcileUncertainHostEvents(fake as any, "Sandbox", 0);
+    expect((await events.next()).value).toMatchObject({ type: "runner_notice" });
+    fake.ended = true;
+    expect((await events.next()).done).toBe(true);
+  });
+});
+
+describe("local run-host capability", () => {
+  test("requires Linux, a booted systemd, systemctl, and sudo", () => {
+    const commands = (command: string) =>
+      ["systemctl", "sudo"].includes(command) ? `/usr/bin/${command}` : null;
+    expect(localRunHostsSupported("linux", true, commands)).toBe(true);
+    expect(localRunHostsSupported("darwin", true, commands)).toBe(false);
+    expect(localRunHostsSupported("linux", false, commands)).toBe(false);
+    expect(localRunHostsSupported("linux", true, () => null)).toBe(false);
+  });
+});
+
+describe("inactive local host recovery", () => {
+  test("does not replay execution evidence without an engine session", () => {
+    expect(
+      resolveInactiveHostRecovery(
+        {
+          hostId: "rh-test",
+          pid: 123,
+          osSessionId: "session-test",
+          startedAt: new Date().toISOString(),
+        },
+        null,
+      ),
+    ).toEqual({ kind: "uncertain" });
+  });
+
+  test("recovers an engine session from metadata or the private journal", () => {
+    expect(
+      resolveInactiveHostRecovery(
+        {
+          hostId: "rh-test",
+          pid: 123,
+          osSessionId: "session-test",
+          startedAt: new Date().toISOString(),
+          engineSessionId: "engine-meta",
+        },
+        null,
+      ),
+    ).toEqual({ kind: "resume", engineSessionId: "engine-meta" });
+    expect(
+      resolveInactiveHostRecovery(null, {
+        runKey: "run-1",
+        osSessionId: "session-1",
+        claudeSessionId: "engine-journal",
+        cwd: "/tmp",
+        kind: "prompt",
+        startedAt: new Date().toISOString(),
+      }),
+    ).toEqual({ kind: "resume", engineSessionId: "engine-journal" });
+  });
+
+  test("allows replay only when no execution evidence exists", () => {
+    expect(resolveInactiveHostRecovery(null, null)).toEqual({ kind: "replay" });
+  });
+});
 
 function hello(spec: RunHostSpec, selectedModel: string) {
   return {
@@ -147,12 +301,19 @@ describe("HostHandle model recovery", () => {
 		roots.push(root);
 		const store = new TranscriptStore(join(root, "transcripts.db"));
 		const previous = __setTranscriptStoreForTest(store);
+		const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
+		const previousKernel = __setSessionKernelStoreForTest(kernelStore);
 		const spec: RunHostSpec = {
 			hostId: "rh-transcript",
 			osSessionId: "os-transcript",
 			prompt: "test",
 			cwd: "/tmp",
 		};
+		sessionKernel(spec.osSessionId).registerRun(
+			spec.hostId,
+			"running",
+			"run_registered",
+		);
 		const handle = makeHandle(spec);
 		try {
 			(handle as any).handleMsg({
@@ -167,6 +328,109 @@ describe("HostHandle model recovery", () => {
 		} finally {
 			(handle as any).finish();
 			__setTranscriptStoreForTest(previous);
+			__setSessionKernelStoreForTest(previousKernel);
+			kernelStore.close();
+		}
+	});
+
+	test("rejects transcript frames from a stale host generation", () => {
+		const root = mkdtempSync(join(tmpdir(), "host-client-stale-transcript-test-"));
+		roots.push(root);
+		const store = new TranscriptStore(join(root, "transcripts.db"));
+		const previous = __setTranscriptStoreForTest(store);
+		const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
+		const previousKernel = __setSessionKernelStoreForTest(kernelStore);
+		const spec: RunHostSpec = {
+			hostId: "rh-stale",
+			osSessionId: "os-stale-transcript",
+			prompt: "test",
+			cwd: "/tmp",
+		};
+		sessionKernel(spec.osSessionId).registerRun(
+			"rh-current",
+			"running",
+			"run_registered",
+		);
+		let asks = 0;
+		let steerFailures = 0;
+		const handle = makeHandle(spec);
+		(handle as any).cb = {
+			onAskUser: async () => { asks += 1; return null; },
+			onSteerFailed: () => { steerFailures += 1; },
+		};
+		try {
+			(handle as any).handleMsg({
+				t: "transcript",
+				engineSessionId: spec.osSessionId,
+				lines: [transcriptLineUser("stale", "prompt-stale")],
+			});
+			(handle as any).handleMsg({ t: "ask", askId: "stale-ask", input: {} });
+			(handle as any).handleMsg({ t: "steer_failed", text: "stale steer" });
+			(handle as any).handleMsg({
+				t: "event",
+				event: { type: "init", sessionId: "engine-stale" },
+			});
+			(handle as any).handleMsg({
+				...hello(spec, "model-a"),
+				pendingAsks: [{ askId: "stale-hello-ask", input: {} }],
+			});
+			expect(store.readTail(spec.osSessionId, 10).entries).toEqual([]);
+			expect(asks).toBe(0);
+			expect(steerFailures).toBe(0);
+			expect((handle as any).engineSessionId).toBeUndefined();
+		} finally {
+			(handle as any).finish();
+			__setTranscriptStoreForTest(previous);
+			__setSessionKernelStoreForTest(previousKernel);
+			kernelStore.close();
+		}
+	});
+
+	test("drops an ask answer when ownership changes during the human wait", async () => {
+		const root = mkdtempSync(join(tmpdir(), "host-client-ask-generation-test-"));
+		roots.push(root);
+		const dir = join(root, "rh-ask");
+		mkdirSync(dir);
+		const sent: any[] = [];
+		let handlers: { onMsg(msg: any): void; onClose(): void } | undefined;
+		const launcher: HostLauncher = {
+			alive: () => true,
+			newRunDir: (hostId) => join(root, hostId),
+			launch: async () => {},
+			connector: () => ({
+				connect: async (nextHandlers) => {
+					handlers = nextHandlers;
+					return { send: (message) => { sent.push(message); return true; }, close: () => {} };
+				},
+			}),
+		};
+		const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
+		const previousKernel = __setSessionKernelStoreForTest(kernelStore);
+		const answer = Promise.withResolvers<any>();
+		const spec: RunHostSpec = {
+			hostId: "rh-ask",
+			osSessionId: "os-ask-generation",
+			prompt: "test",
+			cwd: "/tmp",
+		};
+		sessionKernel(spec.osSessionId).registerRun(spec.hostId, "running", "run_registered");
+		const handle = new HostHandle(
+			dir,
+			spec,
+			{ onAskUser: () => answer.promise },
+			launcher,
+		);
+		try {
+			await handle.connectWithWait(100);
+			handlers!.onMsg({ t: "ask", askId: "ask-1", input: {} });
+			sessionKernel(spec.osSessionId).registerRun("rh-successor", "running", "run_registered");
+			answer.resolve({ behavior: "allow", updatedInput: {} });
+			await Bun.sleep(0);
+			expect(sent.some((message) => message.t === "ask_answer")).toBe(false);
+		} finally {
+			(handle as any).finish();
+			__setSessionKernelStoreForTest(previousKernel);
+			kernelStore.close();
 		}
 	});
 
@@ -179,6 +443,11 @@ describe("HostHandle model recovery", () => {
       model: "model-a",
       selectedModel: "model-a",
     };
+    const kernelRoot = mkdtempSync(join(tmpdir(), "host-client-reconnect-kernel-"));
+    roots.push(kernelRoot);
+    const kernelStore = new SessionKernelStore(join(kernelRoot, "kernel.db"));
+    const previousKernel = __setSessionKernelStoreForTest(kernelStore);
+    sessionKernel(spec.osSessionId).registerRun(spec.hostId, "running", "run_registered");
     const handle = makeHandle(spec);
     const events = handle.events();
 
@@ -201,6 +470,8 @@ describe("HostHandle model recovery", () => {
     expect((await events.next()).value?.toModel).toBe("model-c");
     expect((await events.next()).value?.type).toBe("done");
     (handle as any).finish();
+    __setSessionKernelStoreForTest(previousKernel);
+    kernelStore.close();
   });
 
   test("respawns with the host's latest fallback state", async () => {
@@ -231,6 +502,15 @@ describe("HostHandle model recovery", () => {
         },
       }),
     };
+    const transcriptStore = new TranscriptStore(join(root, "transcripts.db"));
+    const previousTranscript = __setTranscriptStoreForTest(transcriptStore);
+    const kernelStore = new SessionKernelStore(join(root, "kernel.db"));
+    const previousKernel = __setSessionKernelStoreForTest(kernelStore);
+    sessionKernel(spec.osSessionId).registerRun(
+      spec.hostId,
+      "running",
+      "run_registered",
+    );
     const handle = new HostHandle(oldDir, spec, {}, launcher);
     const meta: RunHostMeta = {
       hostId: spec.hostId,
@@ -247,6 +527,17 @@ describe("HostHandle model recovery", () => {
     expect(writtenSpec?.selectedModel).toBe("model-b");
     expect(writtenSpec?.model).toBe("model-c");
     expect(writtenSpec?.transientFallback).toBe(true);
+    (handle as any).handleMsg({
+      t: "transcript",
+      engineSessionId: spec.osSessionId,
+      lines: [transcriptLineUser("after respawn", "prompt-respawn")],
+    });
+    expect(transcriptStore.readTail(spec.osSessionId, 10).entries).toMatchObject([
+      { id: "prompt-respawn", content: "after respawn" },
+    ]);
     (handle as any).finish();
+    __setTranscriptStoreForTest(previousTranscript);
+    __setSessionKernelStoreForTest(previousKernel);
+    kernelStore.close();
   });
 });

@@ -21,7 +21,8 @@
 
 import type { ServerWebSocket } from "bun";
 import { randomUUIDv7 } from "bun";
-import { type StreamEvent, markSessionStarting, runAgent, unmarkSessionStarting } from "./agent-runner";
+import { existsSync } from "node:fs";
+import { type StreamEvent, markSessionStarting, runAgent, unmarkSessionStarting, } from "./agent-runner";
 import { makeAskHandler } from "./asks";
 import { getAccountById } from "./claude-accounts";
 import { getCodexAccountById } from "./codex-accounts";
@@ -30,17 +31,22 @@ import { ensureGeneratedTitle } from "./generated-titles";
 import { onSessionIdle as onHumanAsksSessionIdle } from "./human-asks";
 import { interactiveMcpServers } from "./interactive-mcp";
 import { parseTranscriptAsync } from "./jsonl-parser";
-import { accountProviderForModel, interactiveDefaultModel, interactiveFallbackModel, modelLabel, providerFor, resolveModel } from "./models";
+import { accountProviderForModel, interactiveDefaultModel, interactiveFallbackModel, modelLabel, providerFor, resolveModel, } from "./models";
 import { notifyMentions } from "./mentions";
 import { newSessionId } from "./paths";
 import { wrapContext } from "./prompt-context";
-import { acknowledgePromptDispatch, beginPromptDispatch, promptQueues } from "./queue-state";
+import {
+	acknowledgePromptDispatch,
+	beginPromptDispatch,
+	promptDispatches,
+	promptQueues,
+} from "./queue-state";
 import { type ImageInput, shouldPersistModelSwitch } from "./run-events";
-import { attachSessionWatchersToEngineTranscript, drainQueue, foldSessionUsage, maybeLaunchSandboxedRun, maybeQueueAutoContinue, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
+import { attachSessionWatchersToEngineTranscript, drainQueue, foldSessionUsage, maybeLaunchSandboxedRun, maybeQueueAutoContinue, sessionMentionsNote, watchExternalRunAndDrain, } from "./run-session";
 import { type McpScope, STRIPE_CONFIRM_TOOLS } from "./runner-shared";
-import { isRemoteSandboxProvider, resolveRequestedSandbox, sandboxConfig, sandboxesEnabled } from "./sandbox/config";
+import { isRemoteSandboxProvider, resolveRequestedSandbox, sandboxConfig, sandboxesEnabled, } from "./sandbox/config";
 import { resolveInteractiveSandbox } from "./sandbox/defaults";
-import { getRunner, runnerAvailableForSession, runnerWorkspacePath } from "./runners";
+import { getRunner, runnerAvailableForSession, runnerWorkspacePath, } from "./runners";
 import { isRunnerConnected, prepareRunnerWorkspace } from "./runner-ws";
 import { maybeLaunchRunnerRun } from "./runner-session";
 import { githubAppRepositoryToken } from "./github-app";
@@ -50,19 +56,30 @@ type ResolvedSandboxProvider = Extract<
 	ReturnType<typeof resolveRequestedSandbox>,
 	{ ok: true }
 >["provider"];
+
 import { SESSION_EFFORTS, findSession, findSessionAsync, invalidateSessionsCache, recordRunOutcome, touchNativeSession, updateSessionFile } from "./session-cache";
 import { attachRepo, buildBranchNote, buildReposNote, memoryNoteFor, planCreateAttachRepos, workspaceOwningWorktree } from "./session-repos";
+
 import { ownedWorktree } from "./session-workspace";
 import { engineSessionPatch } from "./sessions";
 import { commitAuthorFor, userMatchesAny } from "./shared/user-mappings";
 import { sanitizeBranchSlug } from "./suggest-branch";
-import { type NativeSessionFile, type SessionUsage, type UnifiedSession } from "./types";
-import { parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
+import { type NativeSessionFile, type SessionUsage, type UnifiedSession, } from "./types";
+import { parseImageDataUrls, stageFileAttachments, withUploadsNote, } from "./uploads";
 import { resolvePlainWorkspace } from "./workspace-resolve";
 import { resolveWorkspaceModelPreset } from "./workspace-model-presets";
-import { type Workspace, createWorkspace, getWorkspace, updateWorkspace } from "./workspaces";
-import { AUTO_REPO, createWorktree, createWorktreeForExistingBranch, ensureAskCheckout, ensureScratchDir, getRepo, listWorktrees, NO_REPO, repoForPath, repoForPathOrNull, resolveUniqueBranch, sharedCheckoutForNewSessions, worktreeHeadBranch, worktreePathFor } from "./worktree";
-import { type WSClientData, broadcastToSession, preparingWorkspaces } from "./ws-hub";
+import { type Workspace, createWorkspace, getWorkspace, updateWorkspace, } from "./workspaces";
+import { AUTO_REPO, createWorktree, createWorktreeForExistingBranch, ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, listWorktrees, NO_REPO, repoForPath, repoForPathOrNull, resolveUniqueBranch, sharedCheckoutForNewSessions, worktreeHeadBranch, worktreePathFor, } from "./worktree";
+import { type WSClientData, broadcastToSession, preparingWorkspaces, } from "./ws-hub";
+import { sessionIdForRequest } from "./session-request-id";
+import {
+	clearCreatePlan,
+	createPlanWorkspaceId,
+	readCreatePlanForRecovery,
+	restoreResolvedCreate,
+	snapshotResolvedCreate,
+	updateCreatePlan,
+} from "./session-create-plan";
 
 /**
  * The `create_session` client message fields the flow reads. Fields typed
@@ -73,6 +90,7 @@ export interface CreateSessionMessage {
 	/** Client-minted native id used to replay this create safely after reconnect. */
 	clientSessionId?: unknown;
 	prompt: string;
+	requestId?: string;
 	user?: string;
 	mode?: string;
 	branch: string;
@@ -203,10 +221,10 @@ export interface ResolvedCreate {
 	/** Repos whose memory notes ride the opening prompt. */
 	memoryRepoIds: string[];
 	/**
-	 * Repos to work in beside the session's own: an isolated worktree each, on
-	 * one shared branch, prepared after the announce and BEFORE the opening run
-	 * so its system note and any sandbox mounts already know about them.
-	 */
+   * Repos to work in beside the session's own: an isolated worktree each, on
+   * one shared branch, prepared after the announce and BEFORE the opening run
+   * so its system note and any sandbox mounts already know about them.
+   */
 	attachRepos?: { repos: string[]; branch: string };
 	stackedOn?: { repo: string; branch: string };
 	/** Workspace recorded on the session file. */
@@ -234,38 +252,43 @@ export interface ResolvedCreate {
 	/** MCP allowlist persisted on the session file (non-empty lists only). */
 	persistMcpServers?: string[];
 	/**
-	 * MCP scope for the opening run. May be undefined at runtime (historic
-	 * web-palette behavior — read as "all" downstream); the sandbox launcher
-	 * defaults it to [] (fail-closed) instead.
-	 */
+   * MCP scope for the opening run. May be undefined at runtime (historic
+   * web-palette behavior — read as "all" downstream); the sandbox launcher
+   * defaults it to [] (fail-closed) instead.
+   */
 	runMcpServers?: McpScope;
 	sandboxProvider: ResolvedSandboxProvider;
 	/** Explicit persistent-machine target. Mutually exclusive with Sandbox. */
-	runnerTarget?: { id: string; name: string; workspacePath: string; repositoryUrl: string };
+	runnerTarget?: { id: string; name: string; workspacePath: string; repositoryUrl: string; };
 	/** Sandbox volume workspace: no host worktree, provider clones in-container. */
 	volumeWorkspace: boolean;
 	remoteSandbox: boolean;
+	/** Stable intake id shared by create retry and queue recovery. */
+	openingPromptEntryId: string;
 	/** Worktree creation deferred until after the announce (web creates). */
 	needsWorktree: boolean;
+	/** How a recovered create rebuilds the deferred worktree. */
+	worktreeKind?: "new" | "existing";
+	worktreeIsolated?: boolean;
 	/** Materializes the deferred worktree (present iff needsWorktree). */
 	materializeWorktree?: () => Promise<unknown>;
 	/** Engine-level fork (Claude SDK forkSession) of the source conversation. */
 	fork?: { engineSessionId: string; resumeAt?: string };
 	/**
-	 * How the opening run hands off at the end: "drain" delivers any queued
-	 * prompts right away (web creates); "auto-continue-guard" runs the shared
-	 * announce-then-stop guard first (MCP creates, which nothing wraps in
-	 * runSessionPromptAndDrain).
-	 */
+   * How the opening run hands off at the end: "drain" delivers any queued
+   * prompts right away (web creates); "auto-continue-guard" runs the shared
+   * announce-then-stop guard first (MCP creates, which nothing wraps in
+   * runSessionPromptAndDrain).
+   */
 	finish: "drain" | "auto-continue-guard";
 }
 
 /** Per-path transport for a create: who hears the announce/stream/failures. */
 export interface CreateSessionIO {
 	/**
-	 * The session file exists and the id is resolvable — the web adapter sends
-	 * session_created, the MCP adapter resolves the tool call.
-	 */
+   * The session file exists and the id is resolvable — the web adapter sends
+   * session_created, the MCP adapter resolves the tool call.
+   */
 	announce(info: {
 		id: string;
 		workspaceId?: string;
@@ -310,12 +333,84 @@ async function attachCreateRepos(
 			io.emit({
 				type: "notice",
 				message: `Couldn't add ${repoId} to this session: ${
-					e instanceof Error ? e.message : String(e)
-				}. The other repos are ready; add this one from the repo menu when it is.`,
+          e instanceof Error ? e.message : String(e)
+        }. The other repos are ready; add this one from the repo menu when it is.`,
 			});
 		}
 	}
 	return attached;
+}
+
+const activeOpeningCreates = new Map<string, Promise<void>>();
+
+export function runOpeningCreateOnce(
+	spec: ResolvedCreate,
+	io: CreateSessionIO,
+): { owner: boolean; done: Promise<void> } {
+	const existing = activeOpeningCreates.get(spec.id);
+	if (existing) return { owner: false, done: existing };
+	const done = openCreatedSession(spec, io).finally(() => {
+		if (activeOpeningCreates.get(spec.id) === done)
+			activeOpeningCreates.delete(spec.id);
+	});
+	activeOpeningCreates.set(spec.id, done);
+	return { owner: true, done };
+}
+
+export async function resumePlannedCreate(sessionId: string): Promise<boolean> {
+	const plan = readCreatePlanForRecovery(sessionId);
+	const dispatch = promptDispatches.get(sessionId);
+	if (!plan?.resolved || dispatch?.kind !== "create") return false;
+	const restored = restoreResolvedCreate<ResolvedCreate>(plan.resolved);
+	if (
+		typeof restored.wtPath !== "string" ||
+		typeof restored.branch !== "string" ||
+		(restored.needsWorktree && typeof restored.repoId !== "string")
+	) return false;
+	const ready = restored.needsWorktree
+		? await isRegisteredWorktree(restored.wtPath, restored.repoId!, restored.branch)
+		: true;
+	const materializeWorktree = restored.needsWorktree && !ready
+		? async () => {
+				if (existsSync(restored.wtPath!))
+					throw new Error(
+						`Incomplete worktree exists at ${restored.wtPath}; refusing to resume the session`,
+					);
+				return restored.worktreeKind === "existing"
+					? createWorktreeForExistingBranch(restored.branch!, restored.repoId!)
+					: createWorktree(restored.branch!, restored.repoId!, {
+							...(restored.stackedOn?.branch
+								? { base: restored.stackedOn.branch }
+								: {}),
+							...(restored.worktreeIsolated ? { isolated: true } : {}),
+						});
+			}
+		: undefined;
+	const imageUrls = dispatch.items.flatMap((item) => item.images || []);
+	const spec: ResolvedCreate = {
+		...(restored as ResolvedCreate),
+		id: sessionId,
+		openingPromptEntryId: dispatch.promptEntryId,
+		images: parseImageDataUrls(imageUrls),
+		materializeWorktree,
+		needsWorktree: !!materializeWorktree,
+	};
+	const opening = runOpeningCreateOnce(spec, {
+		announce: () => {},
+		emit: (message) =>
+			broadcastToSession(sessionId, { ...message, sessionId }),
+		fail: (message) =>
+			broadcastToSession(sessionId, {
+				type: "notice",
+				sessionId,
+				message,
+			}),
+	});
+	if (opening.owner) {
+		await opening.done;
+		clearCreatePlan(sessionId);
+	}
+	return true;
 }
 
 export async function openCreatedSession(
@@ -329,7 +424,7 @@ export async function openCreatedSession(
 	// wore the raw first line) and keeps that name for life — later sessions
 	// never rename it, and a manual rename in the meantime wins.
 	const wsToName = spec.autoNameWorkspace;
-	void ensureGeneratedTitle(bksId, spec.titlePrompt, spec.user, spec.model).then(
+	void ensureGeneratedTitle(bksId, spec.titlePrompt, spec.user, spec.model,).then(
 		(t) => {
 			if (!t) return;
 			invalidateSessionsCache();
@@ -337,7 +432,7 @@ export async function openCreatedSession(
 			const cur = getWorkspace(wsToName.id);
 			if (cur && cur.name === wsToName.name)
 				updateWorkspace(wsToName.id, { name: t });
-		},
+		}
 	);
 
 	// Set once the session has been announced — a later failure must then
@@ -437,7 +532,8 @@ export async function openCreatedSession(
 						}
 					: {}),
 				...(spec.runnerTarget
-					? { runner: { id: spec.runnerTarget.id, name: spec.runnerTarget.name, workspacePath: spec.runnerTarget.workspacePath, lifecycle: "preparing" as const } }
+					? { runner: { id: spec.runnerTarget.id, name: spec.runnerTarget.name, workspacePath: spec.runnerTarget.workspacePath, lifecycle: "preparing" as const,
+							}, }
 					: {}),
 				...existing,
 				...(engineSessionId
@@ -473,22 +569,20 @@ export async function openCreatedSession(
 		const preparingEnvironment = spec.needsWorktree || Boolean(pendingAttach) || Boolean(spec.sandboxProvider) || Boolean(spec.runnerTarget);
 		if (preparingEnvironment) preparingWorkspaces.add(bksId);
 		try {
+			openingPromptEntryId = beginPromptDispatch(bksId, [
+				{
+					content: spec.openingPrompt,
+					user: spec.user,
+					...(spec.images?.length
+						? {
+							images: spec.images.map(
+								(image) => `data:${image.mediaType};base64,${image.data}`,
+							),
+						}
+						: {}),
+				},
+			], spec.openingPromptEntryId, true, "create");
 			await persist();
-			if (spec.sandboxProvider) {
-				openingPromptEntryId = beginPromptDispatch(bksId, [
-					{
-						content: spec.openingPrompt,
-						user: spec.user,
-						...(spec.images?.length
-							? {
-								images: spec.images.map(
-									(image) => `data:${image.mediaType};base64,${image.data}`,
-								),
-							}
-							: {}),
-					},
-				]);
-			}
 			// A session starting in a workspace consumes its draft. The
 			// composer prompt it held is now this session's opening prompt.
 			// After persist() so this never races the create with a client
@@ -538,7 +632,7 @@ export async function openCreatedSession(
 						attachedRepoIds = await attachCreateRepos(
 							bksId,
 							pendingAttach,
-							io,
+							io
 						);
 				} finally {
 					// Ready (or failed — the error surfaces separately): flip the
@@ -596,7 +690,7 @@ export async function openCreatedSession(
 					user: spec.user,
 				});
 				touchNativeSession(bksId, {
-					runner: { id: spec.runnerTarget.id, name: spec.runnerTarget.name, workspacePath: spec.runnerTarget.workspacePath, lifecycle: "awake" },
+					runner: { id: spec.runnerTarget.id, name: spec.runnerTarget.name, workspacePath: spec.runnerTarget.workspacePath, lifecycle: "awake", },
 				});
 				const created = findSession(bksId);
 				runnerOpeningRun = created
@@ -606,12 +700,12 @@ export async function openCreatedSession(
 						mcpServers: spec.runMcpServers ?? [],
 						user: spec.user,
 						reposNote: [
-							buildBranchNote({ mode: spec.mode, branch: spec.branch, worktreeDir: spec.wtPath }),
+							buildBranchNote({ mode: spec.mode, branch: spec.branch, worktreeDir: spec.wtPath, }),
 							await memoryNoteFor(spec.user, spec.memoryRepoIds),
 						].filter(Boolean).join("\n\n") || undefined,
 					})
 					: null;
-				if (!runnerOpeningRun) throw new Error("Runner unavailable. Check its connection and retry.");
+				if (!runnerOpeningRun) throw new Error("Runner unavailable. Check its connection and retry.",);
 				preparingWorkspaces.delete(bksId);
 				io.emit({ type: "workspace_status", ready: true });
 			}
@@ -690,13 +784,13 @@ export async function openCreatedSession(
 						{
 							...engineSessionPatch(
 								effectiveProvider,
-								engineSessionId,
+								engineSessionId
 							),
 							...(engineSessionId
 								? { lastEngineProvider: effectiveProvider }
 								: {}),
 							...(effectiveModel ? { lastEngineModel: effectiveModel } : {}),
-						},
+						}
 					);
 					// The transcript file didn't exist when viewers sent their
 					// watch (fresh session) — attach them now so this first turn
@@ -826,7 +920,7 @@ export async function openCreatedSession(
 					{
 						...engineSessionPatch(
 							effectiveProvider,
-							engineSessionId,
+							engineSessionId
 						),
 						...(engineSessionId
 							? { lastEngineProvider: effectiveProvider }
@@ -837,7 +931,7 @@ export async function openCreatedSession(
 						// worktree (same sync as runSessionPromptInner's run-end
 						// patch) — keep the record on the actual HEAD.
 						...headBranchPatch(),
-					},
+					}
 				);
 			// Persist opening-run usage regardless of which branch ran
 			// above (persist() writes the base file without it).
@@ -957,7 +1051,7 @@ function sendCreateFrame(
 export async function handleCreateSessionMessage(
 	ws: ServerWebSocket<WSClientData>,
 	msg: CreateSessionMessage,
-): Promise<void> {
+): Promise<Record<string, unknown> | undefined> {
 	const rawClientSessionId = msg.clientSessionId;
 	if (
 		rawClientSessionId !== undefined &&
@@ -984,42 +1078,46 @@ export async function handleCreateSessionMessage(
 		if (
 			clientSessionId &&
 			pendingWebCreates.get(clientSessionId) === attempt
-		) {
-			pendingWebCreates.delete(clientSessionId);
-		}
+		) pendingWebCreates.delete(clientSessionId);
 	};
 	const failCreate = (message: string) => {
 		sendCreateFrame(attempt, { type: "error", message });
 		finishCreate();
 	};
-	if (clientSessionId) {
-		let existing: UnifiedSession | undefined;
-		try {
-			existing = await findSessionAsync(clientSessionId);
-		} catch (error) {
-			finishCreate();
-			throw error;
-		}
-		if (existing) {
-			sendCreateFrame(attempt, {
-				type: "session_created",
-				id: existing.id,
-				...(existing.workspaceId ? { workspaceId: existing.workspaceId } : {}),
-				...(!msg.workspaceId && msg.createWorkspace ? { newWorkspace: true } : {}),
-				...(preparingWorkspaces.has(existing.id)
-					? { preparingWorkspace: true }
-					: {}),
-			});
-			finishCreate();
-			return;
-		}
-	}
 
 	const { prompt, user, mode } = msg;
+	const requestId =
+		typeof msg.requestId === "string" && msg.requestId
+			? msg.requestId
+			: undefined;
+	const bksId =
+		clientSessionId ||
+		(requestId
+			? sessionIdForRequest(ws.data?.authLogin || user || "anonymous", requestId)
+			: newSessionId());
+	const createIdentity = requestId || clientSessionId || bksId;
+	let createPlan = updateCreatePlan(bksId, createIdentity);
+	const recoveringSession = findSession(bksId);
+	if (
+		recoveringSession?.claudeSessionId ||
+		recoveringSession?.codexThreadId
+	) {
+		clearCreatePlan(bksId);
+		const response = {
+			type: "session_created",
+			id: recoveringSession.id,
+			...(recoveringSession.workspaceId
+				? { workspaceId: recoveringSession.workspaceId }
+				: {}),
+		};
+		sendCreateFrame(attempt, response);
+		finishCreate();
+		return response;
+	}
 	// Mutable: a brand-new code branch is made collision-free below (a
 	// name clashing with an existing `name/...` ref — or vice versa —
 	// makes `git worktree add -b` fail, killing the session).
-	let branch = msg.branch;
+	let branch = recoveringSession?.branch || createPlan.branch || msg.branch;
 	const images = parseImageDataUrls(msg.images);
 	// Session opened from a PR row (sidebar): `branch` is the PR's
 	// EXISTING head branch — check it out instead of creating a new
@@ -1030,8 +1128,7 @@ export async function handleCreateSessionMessage(
 	// Fork: branch a new session off an existing one. Claude can clone the
 	// real engine conversation via SDK forkSession; backends without clone
 	// support get a transcript handoff in the opening prompt instead.
-	const forkFrom = msg.forkFrom as
-		| { sourceId?: string; messageId?: string }
+	const forkFrom = msg.forkFrom as { sourceId?: string; messageId?: string }
 		| undefined;
 	let fork: ForkContext | undefined;
 	try {
@@ -1074,7 +1171,7 @@ export async function handleCreateSessionMessage(
 	// disengage the dial (the preset id must be what the session stores).
 	const workspacePreset = forkSource
 		? undefined
-		: resolveWorkspaceModelPreset(msg.model, msg.workspaceId ?? msg.modelWorkspaceId);
+		: resolveWorkspaceModelPreset(msg.model, msg.workspaceId ?? msg.modelWorkspaceId,);
 	const model = forkSource
 		? forkSource.model
 		: workspacePreset?.id || (msg.model ? resolveModel(String(msg.model))?.id : undefined) ||
@@ -1092,7 +1189,7 @@ export async function handleCreateSessionMessage(
 	// Pinned provider account from the palette (forks inherit).
 	const createAccountId = forkSource
 		? forkSource.accountId
-		: resolvePinnedAccountId(workspacePreset?.model || model, msg.accountId, user);
+		: resolvePinnedAccountId(workspacePreset?.model || model, msg.accountId, user,);
 	const createMcpServers = Array.isArray(msg.mcpServers)
 		? msg.mcpServers.map(String)
 		: undefined;
@@ -1116,23 +1213,28 @@ export async function handleCreateSessionMessage(
 				model,
 			);
 	if (!sandboxResolved.ok) {
+
 		failCreate(sandboxResolved.error);
+
 		return;
 	}
 	// null = host (no sandbox recorded on the session).
 	const createSandboxProvider = sandboxResolved.provider;
 	const requestedRunnerId = typeof msg.runner === "string" && msg.runner.trim() ? msg.runner.trim() : undefined;
 	if (requestedRunnerId) {
+
 		failCreate("Runner full sessions are not available. Use Runner command delegation from a standard session.");
 		return;
 	}
 	if (requestedRunnerId && createSandboxProvider) {
 		failCreate("Choose either Sandbox or a Runner for this session.");
+
 		return;
 	}
 	const selectedRunner = requestedRunnerId ? getRunner(requestedRunnerId) : undefined;
 	if (requestedRunnerId) {
 		if (!selectedRunner || !isRunnerConnected(selectedRunner.id)) {
+
 			failCreate("That Runner is offline.");
 			return;
 		}
@@ -1142,6 +1244,7 @@ export async function handleCreateSessionMessage(
 		}
 		if (forkSource || fromPr || isScratch || isAsk) {
 			failCreate("Runner sessions require a new code workspace.");
+
 			return;
 		}
 	}
@@ -1156,8 +1259,9 @@ export async function handleCreateSessionMessage(
 		: msg.worktreeMode === "stack"
 			? "stack"
 			: "share";
-	let workspace =
-		typeof msg.workspaceId === "string" && msg.workspaceId
+	let workspace = recoveringSession?.workspaceId
+		? getWorkspace(recoveringSession.workspaceId)
+		: typeof msg.workspaceId === "string" && msg.workspaceId
 			? getWorkspace(msg.workspaceId)
 			: null;
 	// A ticket-linked create always lands in the ticket's ONE workspace
@@ -1186,6 +1290,12 @@ export async function handleCreateSessionMessage(
 	// word its brief pending state accordingly.
 	let createdWorkspaceNow = false;
 	if (!workspace && msg.createWorkspace) {
+		const plannedWorkspaceId =
+			createPlan.workspaceId || createPlanWorkspaceId(bksId);
+		if (!createPlan.workspaceId)
+			createPlan = updateCreatePlan(bksId, createIdentity, {
+				workspaceId: plannedWorkspaceId,
+			});
 		// A code create landing on a branch whose worktree an existing
 		// workspace already owns joins that workspace (the worktree
 		// lookup below would silently reuse the worktree anyway —
@@ -1199,7 +1309,8 @@ export async function handleCreateSessionMessage(
 		}
 		if (!workspace) {
 			createdWorkspaceNow = true;
-			workspace = createWorkspace({
+			workspace = getWorkspace(plannedWorkspaceId) || createWorkspace({
+				id: plannedWorkspaceId,
 				name:
 					(typeof msg.createWorkspace.name === "string" &&
 						msg.createWorkspace.name) ||
@@ -1214,6 +1325,7 @@ export async function handleCreateSessionMessage(
 	// session_created) — a later failure must then close out the
 	// stream instead of leaving the just-opened viewer spinning.
 	let announcedId: string | null = null;
+	let createResponse: Record<string, unknown> | undefined;
 
 	// One outlet for this run's stream events (usable only after the
 	// announce sets announcedId). Everything is stamped with sessionId
@@ -1237,7 +1349,8 @@ export async function handleCreateSessionMessage(
 	};
 	let spec: ResolvedCreate;
 	try {
-		const bksId = clientSessionId || newSessionId();
+
+
 		let wtPath: string;
 		// Deferred worktree setup: the git fetch + worktree add +
 		// bun install can take tens of seconds, so the session is
@@ -1249,7 +1362,15 @@ export async function handleCreateSessionMessage(
 		// all - the sandbox provider clones it in-container on the
 		// opening run below.
 		let volumeWorkspace = false;
-		if (selectedRunner) {
+		if (recoveringSession) {
+			wtPath = recoveringSession.worktreeDir || repo.repo;
+			needsWorktree =
+				!createSandboxProvider &&
+				!selectedRunner &&
+				!isAsk &&
+				!isScratch &&
+				!existsSync(wtPath);
+		} else if (selectedRunner) {
 			if (!branch)
 				branch = sanitizeBranchSlug(prompt.trim().split("\n")[0]) || `session-${Date.now().toString(36)}`;
 			wtPath = runnerWorkspacePath(selectedRunner, bksId);
@@ -1274,7 +1395,7 @@ export async function handleCreateSessionMessage(
 			// workspace's sessions so downloads persist across them); a
 			// repo-less ask session only needs somewhere for bash to stand,
 			// and carries no tool that can write to it.
-			wtPath = ensureScratchDir(workspace?.id || randomUUIDv7());
+			wtPath = ensureScratchDir(workspace?.id || createPlanWorkspaceId(bksId));
 		} else if (isAsk) {
 			// Ask sessions read the repo's pinned ask checkout (default
 			// branch, detached) — never the mutable main checkout, whose
@@ -1444,11 +1565,11 @@ export async function handleCreateSessionMessage(
 		);
 		if (deferredAutoRepo) {
 			openingPrompt += `\n\n${wrapContext(
-				isAsk
-					? `Repository selection was left on Auto and session creation did not wait for the preview. Decide whether this question belongs to a registered repository. If another repository is a better fit, use opensession-repos list_repos and read it from the checkout path returned there.`
-					: `Repository selection was left on Auto and session creation did not wait for the preview. Decide whether this task belongs in the current repository before editing. If another registered repository is a better fit, use the opensession-repos tools to switch this session or attach that repository first.`,
-				"repos-note",
-			)}`;
+        isAsk
+          ? `Repository selection was left on Auto and session creation did not wait for the preview. Decide whether this question belongs to a registered repository. If another repository is a better fit, use opensession-repos list_repos and read it from the checkout path returned there.`
+          : `Repository selection was left on Auto and session creation did not wait for the preview. Decide whether this task belongs in the current repository before editing. If another registered repository is a better fit, use the opensession-repos tools to switch this session or attach that repository first.`,
+        "repos-note",
+      )}`;
 		}
 		// @session:<id> mentions from the New-session box get the same
 		// resolving footer as prompts on existing sessions (see
@@ -1496,25 +1617,27 @@ export async function handleCreateSessionMessage(
 					await import("../agents/plain/api");
 				const thread = await getThreadWithMessages(plainThreadId);
 				openingPrompt += `\n\n${wrapContext(
-					`This session was opened from a Plain support ticket. Ticket context:\n\n${formatThreadContext(thread, true)}`,
-					"ticket",
-				)}`;
+          `This session was opened from a Plain support ticket. Ticket context:\n\n${formatThreadContext(thread, true)}`,
+          "ticket",
+        )}`;
 			} catch (e) {
 				console.error(
 					`[create_session] Plain thread lookup failed for ${plainThreadId}:`,
 					e,
 				);
 				openingPrompt += `\n\n${wrapContext(
-					`This session was opened from Plain support ticket ${plainThreadId} (the context lookup failed — use the plain MCP tools to fetch the thread).`,
-					"ticket",
-				)}`;
+          `This session was opened from Plain support ticket ${plainThreadId} (the context lookup failed — use the plain MCP tools to fetch the thread).`,
+          "ticket",
+        )}`;
 			}
 		}
 		if (needsForkHandoff && fork) {
 			openingPrompt += `\n\n${await forkHandoffContext(fork)}`;
 		}
 
-		spec = {
+		if (branch && branch !== createPlan.branch)
+			createPlan = updateCreatePlan(bksId, createIdentity, { branch });
+		const computedSpec: ResolvedCreate = {
 			id: bksId,
 			title,
 			titlePrompt: prompt,
@@ -1583,7 +1706,9 @@ export async function handleCreateSessionMessage(
 			} : undefined,
 			volumeWorkspace,
 			remoteSandbox,
+			openingPromptEntryId: `create-${requestId || bksId}`,
 			needsWorktree,
+			worktreeKind: fromPr ? "existing" : "new",
 			materializeWorktree: needsWorktree
 				? () =>
 						fromPr
@@ -1602,27 +1727,116 @@ export async function handleCreateSessionMessage(
 				: undefined,
 			finish: "drain",
 		};
+		const restoredSpec = createPlan.resolved
+			? restoreResolvedCreate<ResolvedCreate>(createPlan.resolved)
+			: undefined;
+		const restoredWorktreeReady =
+			restoredSpec?.needsWorktree &&
+			typeof restoredSpec.wtPath === "string" &&
+			typeof restoredSpec.repoId === "string" &&
+			typeof restoredSpec.branch === "string"
+				? await isRegisteredWorktree(
+					restoredSpec.wtPath,
+					restoredSpec.repoId,
+					restoredSpec.branch,
+				)
+				: false;
+		const restoredMaterializer =
+			restoredSpec?.needsWorktree &&
+			!restoredWorktreeReady &&
+			typeof restoredSpec.wtPath === "string" &&
+			typeof restoredSpec.branch === "string" &&
+			typeof restoredSpec.repoId === "string"
+				? async () => {
+						if (existsSync(restoredSpec.wtPath!))
+							throw new Error(
+								`Incomplete worktree exists at ${restoredSpec.wtPath}; refusing to start the session`,
+							);
+						return fromPr
+							? createWorktreeForExistingBranch(
+									restoredSpec.branch!,
+									restoredSpec.repoId!,
+								)
+							: createWorktree(
+									restoredSpec.branch!,
+									restoredSpec.repoId!,
+									restoredSpec.stackedOn?.branch
+										? { base: restoredSpec.stackedOn.branch }
+										: undefined,
+								);
+					}
+				: undefined;
+		spec = restoredSpec
+			? {
+					...computedSpec,
+					...restoredSpec,
+					images: computedSpec.images,
+					materializeWorktree: restoredMaterializer,
+					needsWorktree: !!restoredMaterializer,
+				}
+			: computedSpec;
+		if (!createPlan.resolved) {
+			const { images: _images, materializeWorktree: _materialize, ...durable } =
+				computedSpec;
+			createPlan = updateCreatePlan(bksId, createIdentity, {
+				resolved: snapshotResolvedCreate(durable),
+			});
+		}
 	} catch (e: any) {
 		// Setup failed before anything was persisted or announced. Every socket
 		// that replayed this create receives the same terminal response.
+		clearCreatePlan(bksId);
 		failCreate(e.message || String(e));
 		return;
 	}
 
-	await openCreatedSession(spec, {
+	let releaseAdmission!: () => void;
+	const admitted = new Promise<void>((resolve) => {
+		releaseAdmission = resolve;
+	});
+	const opening = runOpeningCreateOnce(spec, {
 		announce: (info) => {
-			sendCreateFrame(attempt, {
+			createResponse = {
 				type: "session_created",
 				id: info.id,
 				...(info.workspaceId ? { workspaceId: info.workspaceId } : {}),
 				...(info.newWorkspace ? { newWorkspace: true } : {}),
 				...(info.preparingWorkspace ? { preparingWorkspace: true } : {}),
-			});
+			};
+			sendCreateFrame(attempt, createResponse);
 			finishCreate();
 			announcedId = info.id;
 			emit({ type: "stream_start" });
+			releaseAdmission();
 		},
 		emit,
-		fail: failCreate,
+		fail: (message) => {
+			failCreate(message);
+			releaseAdmission();
+		},
 	});
+	if (!opening.owner) {
+		createResponse = {
+			type: "session_created",
+			id: bksId,
+			...(recoveringSession?.workspaceId
+				? { workspaceId: recoveringSession.workspaceId }
+				: {}),
+		};
+		sendCreateFrame(attempt, createResponse);
+		finishCreate();
+		return createResponse;
+	}
+	void opening.done
+		.then(
+			() => clearCreatePlan(bksId),
+			(error) =>
+				console.error(`[create_session] opening run ${bksId} failed:`, error),
+		)
+		.finally(releaseAdmission);
+	// Command ownership ends once the session and opening dispatch are durable.
+	// The target session can now accept Stop or another control while its opening
+	// run continues under generation fencing.
+	await admitted;
+	return createResponse;
 }

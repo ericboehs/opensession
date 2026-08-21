@@ -86,9 +86,17 @@ if [ "$DO_UNINSTALL" = "1" ]; then
       rm -f "$plist"
       good "LaunchAgent removed"
     fi
-  elif [ -f /etc/systemd/system/opensession.service ]; then
+  elif [ -f /etc/systemd/system/opensession.service ] \
+    || [ -f /etc/systemd/system/opensession-executor.service ]; then
     sudo systemctl disable --now opensession 2>/dev/null || true
+    sudo systemctl disable --now opensession-executor 2>/dev/null || true
     sudo rm -f /etc/systemd/system/opensession.service
+    sudo rm -f /etc/systemd/system/opensession-executor.service
+    sudo rm -f /etc/systemd/system/opensession.service.d/executor-credential.conf
+    sudo rm -f /etc/opensession/executor-token
+    sudo rm -f /etc/opensession/run-host.conf
+    sudo rm -f /etc/sudoers.d/opensession-run-host
+    sudo rm -f /usr/local/libexec/opensession-run-host
     sudo systemctl daemon-reload 2>/dev/null || true
     good "service removed"
   fi

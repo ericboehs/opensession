@@ -628,7 +628,8 @@ async function deliverNoteToLinkedSession(
     const result = await control.deliverToSession(
       session.id,
       `Internal note from a teammate on this ticket's Plain thread (${threadId}):\n\n${request}\n\nAct on it. If a reply is useful, post it as an internal note on the thread.`,
-      "Plain"
+      "Plain",
+      { deliveryId: `plain-note:${noteId}` },
     );
     if (result.status === "error") {
       console.error(

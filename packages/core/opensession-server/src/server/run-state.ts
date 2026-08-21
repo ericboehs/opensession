@@ -1,63 +1,15 @@
 /**
- * Explicit per-session run-state machine: one answer to "what state is this
- * session's run in?", with every transition (and every REJECTED transition)
- * audited.
+ * Authoritative per-session run-state machine.
  *
- * Why: today that answer is derived from ~18 scattered markers in three
- * storage tiers, and there are four independent "is it running?" derivations —
- * `isAgentSessionBusy` (OR of pendingStarts + activePiRuns + hostRuns),
- * the run journal (`ActiveRunRecord`), the recomputed `isRunning`/
- * `runStartedAt` on UnifiedSession, and `getRunningPids()` for external CLI
- * runs. They key on different ids and nothing ties them together, so they can
- * disagree — and each disagreement is a known incident class: zombie busy
- * (busy-map entry, no journal record), inverse zombie (journal record, no
- * driver), steer receipts with no run to fold into, drains firing against
- * externally-owned runs. This module doesn't replace those stores (yet); it
- * runs alongside them as the explicit source of truth, so an illegal
- * combination becomes a loud `run_state_rejected` audit event instead of a
- * silent wedge diagnosed from memory recipes.
- *
- * How the implicit markers map onto states:
- *   preparing    preparingWorkspaces (ws-hub.ts)
- *   starting     pendingStarts (agent-runner.ts markSessionStarting)
- *   running      activePiRuns / detachedRunKeys / hostRuns
- *   ask_blocked  running + pendingAsks (asks.ts)
- *   stopped      stoppedSessions latch (queue-state.ts)
- *   failed       runErrors / lastRunError (session-cache.ts recordRunOutcome)
- *   interrupted  journal ActiveRunRecord with no live driver (run-journal.ts)
- *   reattaching  tryReattachPiRun in flight (pi-runner.ts)
- *   idle         none of the above
- * Orthogonal context, deliberately NOT states: queued prompts / steer receipts
- * (delivery obligations), manualStatus (human display pin), detached-vs-child
- * (a `running` attribute that only matters at shutdown).
- *
- * Wiring (transitions are additive observation; the busy gate also treats
- * unsettled states as session ownership). Everything keys on the bks session id:
- *   prompt                   agent-runner.ts markSessionStarting (called by
- *                            every run path before its first await)
- *   run_registered           run-journal.ts journalSet (run start + fallback
- *                            re-journal; self-edge while running)
- *   turn_end / run_failed    session-cache.ts recordRunOutcome (the one
- *                            terminal-outcome choke point for owned runs)
- *   ask_posed / ask_resolved asks.ts makeAskHandler (offerAskCard is exempt —
- *                            its card doesn't park the run)
- *   cancel                   ws-handlers.ts "cancel" (the UI Stop button) +
- *                            routes/sessions.ts archive-stop
- *   boot_journal_found       run-journal.ts takeInterruptedRuns
- *   reattach_start/ok/fail, resume_reprompt
- *                            agent-runner.ts resumeInterruptedRuns
- * Not wired yet: engine_died / shutdown_orphaned (pi-runner.ts /
- * run-session.ts), workspace_prepare/ready (ws-hub.ts), mid-run steer. The
- * leniency edges below keep those gaps silent instead of noisy.
- * Runner-internal wiring needs a real restart; so do WS-handler edits
- * (they keep serving old code under --hot despite what the docs suggest).
- *
- * State lives in-memory on globalThis (hot-reload safe, restart-fresh — a
- * restart re-derives reality through the boot events, so persisting this map
- * would only let it go stale).
+ * The transition table remains pure and exhaustively tested. Runtime state is
+ * committed by SessionKernel, which gives prompt admission, recovery, asks,
+ * cancellation and executor events one durable answer to whether the session
+ * is owned. Detached run hosts keep only a private ephemeral view: they report
+ * events to the server and never write the session kernel database.
  */
 
 import { audit } from "./audit";
+import { clearSessionKernel, sessionKernel, sessionKernelStore } from "./session-kernel";
 
 export type RunState =
 	| "idle"
@@ -119,11 +71,13 @@ export const RUN_STATE_TRANSITIONS: Record<
 		run_registered: "running",
 	},
 	preparing: {
+		boot_journal_found: "interrupted",
 		workspace_ready: "idle",
 		workspace_failed: "failed",
 		cancel: "idle",
 	},
 	starting: {
+		boot_journal_found: "interrupted",
 		run_registered: "running",
 		start_failed: "failed",
 		start_aborted: "idle",
@@ -132,6 +86,7 @@ export const RUN_STATE_TRANSITIONS: Record<
 		prompt: "starting",
 	},
 	running: {
+		boot_journal_found: "interrupted",
 		ask_posed: "ask_blocked",
 		turn_end: "idle",
 		run_failed: "failed",
@@ -143,6 +98,7 @@ export const RUN_STATE_TRANSITIONS: Record<
 		run_registered: "running",
 	},
 	ask_blocked: {
+		boot_journal_found: "interrupted",
 		ask_resolved: "running",
 		turn_end: "idle",
 		run_failed: "failed",
@@ -154,6 +110,7 @@ export const RUN_STATE_TRANSITIONS: Record<
 		ask_posed: "ask_blocked",
 	},
 	stopped: {
+		boot_journal_found: "interrupted",
 		prompt: "starting",
 		run_registered: "running",
 		turn_end: "stopped",
@@ -161,6 +118,7 @@ export const RUN_STATE_TRANSITIONS: Record<
 		cancel: "stopped",
 	},
 	failed: {
+		boot_journal_found: "interrupted",
 		prompt: "starting",
 		run_registered: "running",
 	},
@@ -180,6 +138,7 @@ export const RUN_STATE_TRANSITIONS: Record<
 		turn_end: "idle",
 	},
 	reattaching: {
+		boot_journal_found: "interrupted",
 		reattach_ok: "running",
 		reattach_fail: "interrupted",
 		run_failed: "failed",
@@ -215,22 +174,33 @@ export function isRunStateUnsettled(state: RunState): boolean {
 	);
 }
 
-const g = globalThis as any;
-export const runStates: Map<string, RunStateEntry> = (g.__runStates ??=
-	new Map());
+const detachedHostStates = new Map<string, RunStateEntry>();
+const detachedRunHost = () => !!process.env.OPENSESSION_RUN_JOURNAL;
+
+export const runStates = {
+	get(sessionId: string): RunStateEntry | undefined {
+		if (detachedRunHost()) return detachedHostStates.get(sessionId);
+		const current = sessionKernelStore().runState(sessionId);
+		if (current.changeSeq === 0) return undefined;
+		return {
+			state: current.state as RunState,
+			since: current.since,
+			lastEvent: current.lastEvent as RunEvent | undefined,
+		};
+	},
+};
 
 export function getRunState(sessionId: string): RunState {
-	return runStates.get(sessionId)?.state ?? "idle";
+	if (detachedRunHost()) return detachedHostStates.get(sessionId)?.state ?? "idle";
+	return sessionKernelStore().runState(sessionId).state as RunState;
 }
 
 type AuditEmit = (event: Record<string, unknown>) => void;
 
 /**
- * Apply an event to a session's run state. A defined edge moves the state and
- * emits `run_state_transition`; an undefined one leaves the state untouched
- * and emits `run_state_rejected` + a console.warn — rejected transitions are
- * the whole point, never swallow them. Returns the (possibly unchanged)
- * resulting state.
+ * Apply an event through the owning SessionKernel. A defined edge moves the
+ * durable state and emits `run_state_transition`; an undefined one leaves the
+ * state untouched and emits `run_state_rejected`.
  */
 export function transitionRunState(
 	sessionId: string,
@@ -253,11 +223,39 @@ export function transitionRunState(
 		});
 		return from;
 	}
-	runStates.set(sessionId, {
-		state: to,
-		since: new Date().toISOString(),
-		lastEvent: event,
-	});
+	const runKey = typeof detail?.run_key === "string" ? detail.run_key : undefined;
+	if (!detachedRunHost() && event === "run_registered" && runKey) {
+		const owner = sessionKernel(sessionId).runState();
+		if (
+			owner.currentRunId &&
+			owner.currentRunId !== runKey &&
+			(from === "running" ||
+				from === "ask_blocked" ||
+				from === "interrupted" ||
+				from === "reattaching")
+		) {
+			emit({
+				msg: "stale_run_registration_rejected",
+				session_id: sessionId,
+				current_run_id: owner.currentRunId,
+				rejected_run_id: runKey,
+				state: from,
+			});
+			return from;
+		}
+	}
+	if (detachedRunHost()) {
+		detachedHostStates.set(sessionId, {
+			state: to,
+			since: new Date().toISOString(),
+			lastEvent: event,
+		});
+	} else {
+	const kernel = sessionKernel(sessionId);
+	if (runKey && (event === "run_registered" || event === "boot_journal_found"))
+		kernel.registerRun(runKey, to, event, detail);
+	else kernel.setRunState({ state: to, event, detail });
+	}
 	emit({
 		msg: "run_state_transition",
 		session_id: sessionId,
@@ -271,5 +269,6 @@ export function transitionRunState(
 
 /** Drop tracking for a deleted session. */
 export function clearRunState(sessionId: string): void {
-	runStates.delete(sessionId);
+	if (detachedRunHost()) detachedHostStates.delete(sessionId);
+	else clearSessionKernel(sessionId);
 }

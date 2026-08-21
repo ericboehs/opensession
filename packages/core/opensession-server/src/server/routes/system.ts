@@ -18,11 +18,102 @@ import { getSessionControl } from "../session-control";
 import { MAX_UPLOAD_BYTES, stageHttpUpload } from "../uploads";
 import { systemStats } from "../system-stats";
 import { BOOT_ID, broadcastToAll } from "../ws-hub";
+import { executorClientHealth, executorClientReady } from "../executor-client";
+import { sessionKernelHealth, sessionKernelStore } from "../session-kernel";
+import { requireWorkspaceAdmin } from "../workspace-auth";
+import { audit } from "../audit";
+import { serviceReadiness } from "../service-readiness";
 
 export async function handleSystemRoutes(
 	ctx: RouteContext,
 ): Promise<Response | undefined> {
 	const { req, url, path, publicPrefix } = ctx;
+
+	if (path === "/api/system/session-kernel/dead-letters") {
+		const forbidden = requireWorkspaceAdmin(ctx);
+		if (forbidden) return forbidden;
+		if (req.method === "GET") {
+			const limit = Math.max(
+				1,
+				Math.min(100, Math.trunc(Number(url.searchParams.get("limit"))) || 100),
+			);
+			const offset = Math.max(
+				0,
+				Math.trunc(Number(url.searchParams.get("offset"))) || 0,
+			);
+			return Response.json(sessionKernelStore().deadLetters(limit, offset));
+		}
+		if (req.method === "POST") {
+			const body = (await req.json().catch(() => null)) as {
+				type?: unknown;
+				sessionId?: unknown;
+				timerId?: unknown;
+				id?: unknown;
+				action?: unknown;
+			} | null;
+			const validAction = body?.action === "retry" || body?.action === "discard";
+			const validTimer =
+				body?.type === "timer" &&
+				typeof body.sessionId === "string" && body.sessionId.trim().length > 0 &&
+				typeof body.timerId === "string" && body.timerId.trim().length > 0 &&
+				body.id === undefined;
+			const validOutbox =
+				body?.type === "outbox" &&
+				Number.isSafeInteger(body.id) && Number(body.id) > 0 &&
+				body.sessionId === undefined && body.timerId === undefined;
+			if (!validAction || (!validTimer && !validOutbox))
+				return Response.json(
+					{ error: "invalid_dead_letter_action" },
+					{ status: 400 },
+				);
+			const discard = body.action === "discard";
+			const changed = validTimer
+				? discard
+					? sessionKernelStore().discardDeadTimer(body.sessionId as string, body.timerId as string)
+					: sessionKernelStore().retryDeadTimer(body.sessionId as string, body.timerId as string)
+				: discard
+					? sessionKernelStore().discardDeadOutbox(Number(body.id))
+					: sessionKernelStore().retryDeadOutbox(Number(body.id));
+			audit({
+				msg: "session_kernel_dead_letter_changed",
+				user: requestUser(ctx),
+				action: discard ? "discard" : "retry",
+				kind: body?.type,
+				session_id:
+					typeof body?.sessionId === "string" ? body.sessionId : undefined,
+				timer_id: typeof body?.timerId === "string" ? body.timerId : undefined,
+				outbox_id: Number.isSafeInteger(body?.id) ? Number(body?.id) : undefined,
+				changed,
+			});
+			return Response.json(
+				{ changed, action: discard ? "discard" : "retry" },
+				{ status: changed ? 200 : 404 },
+			);
+		}
+		return new Response("Method not allowed", { status: 405, headers: { Allow: "GET, POST" } });
+	}
+
+	if (path === "/live" && req.method === "GET")
+		return Response.json({ ok: true, bootId: BOOT_ID, uptime: process.uptime() });
+
+	if (path === "/ready" && req.method === "GET") {
+		try {
+			const kernel = await sessionKernelHealth();
+			const executor = executorClientHealth();
+			const executorReadiness = await executorClientReady();
+			const readiness = serviceReadiness();
+			const ready = executorReadiness.ready && readiness.phase === "ready";
+			return Response.json(
+				{ ok: ready, ready, phase: readiness.phase, bootId: BOOT_ID, activeRuns: activeAgentRunCount(), executor: { ...executor, ...executorReadiness }, sessionKernel: kernel },
+				{ status: ready ? 200 : 503 },
+			);
+		} catch (error) {
+			return Response.json(
+				{ ok: false, ready: false, error: error instanceof Error ? error.message : String(error) },
+				{ status: 503 },
+			);
+		}
+	}
 
 	// Health check (includes agent health — Tailscale-only, not public).
 	// frontendVersion lets clients detect a frontend-only rebuild (no bootId
@@ -41,6 +132,8 @@ export async function handleSystemRoutes(
 			// polls this to restart only when the service is idle (or near it), so a
 			// restart kills as few in-flight runs/background tasks as possible.
 			activeRuns: activeAgentRunCount(),
+			executor: executorClientHealth(),
+			sessionKernel: await sessionKernelHealth(),
 			agents: agentHealth,
 			system: systemStats(),
 		});

@@ -1,96 +1,144 @@
 /**
- * Scheduled prompts: "send this to this session at 5pm". A tiny store +
- * due-taker; opensession.ts's boot loop polls takeDuePrompts() every 30s and
- * delivers each one through the SessionControl registry (steer if the session
- * is mid-run, queue behind an external run, or start a fresh turn) — exactly
- * as if the user had typed it at that moment.
+ * Durable prompts scheduled for an existing session.
  *
- * Distinct from automations' runOnceAt (which creates a NEW session per run):
- * these target an EXISTING session and ride its normal prompt path.
+ * The JSON file remains the UI listing format. Delivery authority is a
+ * SessionKernel timer, so a process timeout is only a wake-up and the stable
+ * schedule id is also the prompt delivery id.
  */
 import { randomUUIDv7 } from "bun";
 import { existsSync, readFileSync } from "fs";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import { stateDir } from "./paths";
+import {
+	registerSessionTimerHandler,
+	sessionKernel,
+} from "./session-kernel";
+import { getSessionControl } from "./session-control";
 
-const STORE_PATH = stateDir("scheduled-prompts.json");
+let STORE_PATH = stateDir("scheduled-prompts.json");
+
+export function __setScheduledPromptStoreForTest(path: string): string {
+	const previous = STORE_PATH;
+	STORE_PATH = path;
+	return previous;
+}
+const TIMER_KIND = "scheduled_prompt";
 
 export interface ScheduledPrompt {
-  id: string;
-  sessionId: string;
-  prompt: string;
-  /** Display name credited when the prompt fires. */
-  user: string;
-  /** ISO instant to deliver at. */
-  at: string;
-  createdAt: string;
+	id: string;
+	sessionId: string;
+	prompt: string;
+	user: string;
+	at: string;
+	createdAt: string;
 }
 
 interface Store {
-  prompts: ScheduledPrompt[];
+	prompts: ScheduledPrompt[];
 }
 
 function readStore(): Store {
-  try {
-    if (existsSync(STORE_PATH)) {
-      const s = JSON.parse(readFileSync(STORE_PATH, "utf-8"));
-      if (Array.isArray(s.prompts)) return s;
-    }
-  } catch {}
-  return { prompts: [] };
+	try {
+		if (existsSync(STORE_PATH)) {
+			const stored = JSON.parse(readFileSync(STORE_PATH, "utf-8"));
+			if (Array.isArray(stored.prompts)) return stored;
+		}
+	} catch {}
+	return { prompts: [] };
+}
+
+function writeStore(store: Store): void {
+	writeJsonAtomic(STORE_PATH, store);
+}
+
+function removeFromListing(id: string): boolean {
+	const store = readStore();
+	const before = store.prompts.length;
+	store.prompts = store.prompts.filter((prompt) => prompt.id !== id);
+	if (store.prompts.length === before) return false;
+	writeStore(store);
+	return true;
+}
+
+function schedule(prompt: ScheduledPrompt): void {
+	sessionKernel(prompt.sessionId).scheduleTimer({
+		timerId: prompt.id,
+		kind: TIMER_KIND,
+		dueAt: Date.parse(prompt.at),
+		payload: prompt,
+	});
+}
+
+registerSessionTimerHandler(TIMER_KIND, async (timer) => {
+	const prompt = timer.payload as ScheduledPrompt;
+	if (
+		!prompt ||
+		prompt.id !== timer.timerId ||
+		prompt.sessionId !== timer.sessionId ||
+		typeof prompt.prompt !== "string"
+	)
+		throw new Error("Invalid scheduled prompt timer payload");
+	const result = await getSessionControl().deliverToSession(
+		prompt.sessionId,
+		prompt.prompt,
+		prompt.user,
+		{ deliveryId: prompt.id },
+	);
+	if (result.status === "error") throw new Error(result.message);
+	removeFromListing(prompt.id);
+	console.log(
+		`[scheduled-prompts] ${prompt.id} -> ${prompt.sessionId}: ${result.status}`,
+	);
+});
+
+export function hydrateScheduledPromptTimers(): number {
+	const prompts = readStore().prompts;
+	for (const prompt of prompts) schedule(prompt);
+	return prompts.length;
 }
 
 export function listScheduledPrompts(sessionId?: string): ScheduledPrompt[] {
-  const all = readStore().prompts;
-  return (sessionId ? all.filter((p) => p.sessionId === sessionId) : all).sort(
-    (a, b) => a.at.localeCompare(b.at),
-  );
+	const all = readStore().prompts;
+	return (sessionId ? all.filter((prompt) => prompt.sessionId === sessionId) : all).sort(
+		(a, b) => a.at.localeCompare(b.at),
+	);
 }
 
 export function createScheduledPrompt(input: {
-  sessionId: string;
-  prompt: string;
-  at: string;
-  user: string;
+	sessionId: string;
+	prompt: string;
+	at: string;
+	user: string;
 }): ScheduledPrompt | { error: string } {
-  if (!input.sessionId?.trim()) return { error: "sessionId required" };
-  if (!input.prompt?.trim()) return { error: "Prompt is required" };
-  const t = Date.parse(input.at || "");
-  if (Number.isNaN(t)) return { error: `Invalid time: "${input.at}"` };
-  if (t < Date.now() - 60_000) return { error: "That time is in the past" };
-  const p: ScheduledPrompt = {
-    id: `sched-${randomUUIDv7()}`,
-    sessionId: input.sessionId.trim(),
-    prompt: input.prompt.trim(),
-    user: input.user?.trim() || "Anonymous",
-    at: new Date(t).toISOString(),
-    createdAt: new Date().toISOString(),
-  };
-  const store = readStore();
-  store.prompts.push(p);
-  writeJsonAtomic(STORE_PATH, store);
-  return p;
+	if (!input.sessionId?.trim()) return { error: "sessionId required" };
+	if (!input.prompt?.trim()) return { error: "Prompt is required" };
+	const time = Date.parse(input.at || "");
+	if (Number.isNaN(time)) return { error: `Invalid time: "${input.at}"` };
+	if (time < Date.now() - 60_000) return { error: "That time is in the past" };
+	const prompt: ScheduledPrompt = {
+		id: `sched-${randomUUIDv7()}`,
+		sessionId: input.sessionId.trim(),
+		prompt: input.prompt.trim(),
+		user: input.user?.trim() || "Anonymous",
+		at: new Date(time).toISOString(),
+		createdAt: new Date().toISOString(),
+	};
+	const store = readStore();
+	store.prompts.push(prompt);
+	writeStore(store);
+	schedule(prompt);
+	return prompt;
 }
 
 export function deleteScheduledPrompt(id: string): boolean {
-  const store = readStore();
-  const before = store.prompts.length;
-  store.prompts = store.prompts.filter((p) => p.id !== id);
-  if (store.prompts.length === before) return false;
-  writeJsonAtomic(STORE_PATH, store);
-  return true;
+	const prompt = readStore().prompts.find((candidate) => candidate.id === id);
+	if (!prompt) return false;
+	const removed = removeFromListing(id);
+	if (removed) sessionKernel(prompt.sessionId).cancelTimer(prompt.id);
+	return removed;
 }
 
-/**
- * Remove and return everything due at `now`. Persisted BEFORE returning, so a
- * crash mid-delivery can't double-fire on the next tick (matches the
- * consumed-before-firing pattern in automations' runOnceAt).
- */
+/** Compatibility read for old callers. Delivery is no longer destructive. */
 export function takeDuePrompts(now = Date.now()): ScheduledPrompt[] {
-  const store = readStore();
-  const due = store.prompts.filter((p) => Date.parse(p.at) <= now);
-  if (due.length === 0) return [];
-  store.prompts = store.prompts.filter((p) => Date.parse(p.at) > now);
-  writeJsonAtomic(STORE_PATH, store);
-  return due;
+	return readStore().prompts.filter((prompt) => Date.parse(prompt.at) <= now);
 }

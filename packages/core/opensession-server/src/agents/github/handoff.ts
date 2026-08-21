@@ -132,6 +132,7 @@ export async function maybeHandoffFindings(pr: PrRef, review: ReviewResult | nul
 		const res = await control.deliverToSession(target.id, message, "GitHub", {
 			busy: "queue",
 			reviewHandoff: true,
+			deliveryId: `github-handoff:${repoFull}:${pr.number}:${sha}:${round}`,
 		});
     if (res.status === "error") {
       console.error(`[github] review handoff → ${target.id} failed for PR #${pr.number}: ${res.message}`);

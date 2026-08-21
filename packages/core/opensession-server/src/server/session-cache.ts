@@ -31,6 +31,7 @@ import {
 } from "./models";
 import { writeJsonAtomic } from "./shared/atomic-write";
 import type { UnifiedSession, NativeSessionFile } from "./types";
+import { sessionKernel } from "./session-kernel";
 
 export const SESSIONS_DIR = OPENSESSION_SESSIONS_DIR;
 
@@ -339,14 +340,11 @@ export type SessionFileMutator = (
 	data: NativeSessionFile,
 ) => NativeSessionFile;
 
-const sessionFileLocks: Map<string, Promise<void>> = (g.__osSessionFileLocks ??=
-	new Map());
-
 export function updateSessionFile(
 	sessionId: string,
 	mutator: SessionFileMutator,
 ): Promise<void> {
-	const write = () => {
+	return sessionKernel(sessionId).runExclusive("session_file_updated", () => {
 		const path = `${SESSIONS_DIR}/${sessionId}.json`;
 		const current: NativeSessionFile = existsSync(path)
 			? JSON.parse(readFileSync(path, "utf-8"))
@@ -356,30 +354,7 @@ export function updateSessionFile(
 		(next as { rev?: number }).rev = (typeof rev === "number" ? rev : 0) + 1;
 		writeJsonAtomic(path, next);
 		invalidateSessionsCache();
-	};
-	const prev = sessionFileLocks.get(sessionId);
-	let done: Promise<void>;
-	if (!prev) {
-		// Uncontended fast path: run synchronously so read-after-write callers
-		// (`persist(); findSession(id)`) keep today's visibility.
-		try {
-			write();
-			done = Promise.resolve();
-		} catch (e) {
-			done = Promise.reject(e);
-		}
-	} else {
-		done = prev.then(write);
-	}
-	// The stored chain link never rejects, so one failed write can't poison
-	// (or double-report through) the writes queued behind it.
-	const settled = done.catch(() => {});
-	sessionFileLocks.set(sessionId, settled);
-	void settled.finally(() => {
-		if (sessionFileLocks.get(sessionId) === settled)
-			sessionFileLocks.delete(sessionId);
 	});
-	return done;
 }
 
 export function touchNativeSession(

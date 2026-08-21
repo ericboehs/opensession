@@ -17,13 +17,16 @@ import {
   type PiMcpBridge,
 } from "./pi-mcp-bridge";
 
+let lastToolCallMeta: unknown;
+
 function makeServer(name = "alpha") {
   return createSdkMcpServer({
     name,
     tools: [
-      tool("echo", "Echo the text back", { text: z.string() }, async (args) => ({
-        content: [{ type: "text", text: `echo:${args.text}` }],
-      })),
+      tool("echo", "Echo the text back", { text: z.string() }, async (args, extra: any) => {
+        lastToolCallMeta = extra?._meta;
+        return { content: [{ type: "text", text: `echo:${args.text}` }] };
+      }),
       tool("picture", "Return text plus an image", {}, async () => ({
         content: [
           { type: "text", text: "here you go" },
@@ -182,6 +185,7 @@ describe("registration", () => {
       arguments: { text: "through dispatcher" },
     });
     expect(call.content).toEqual([{ type: "text", text: "echo:through dispatcher" }]);
+    expect(lastToolCallMeta).toMatchObject({ opensessionToolCallId: "call-1" });
   });
 
   test("non-sdk inProcessMcp values are skipped and an empty bridge is fine", async () => {

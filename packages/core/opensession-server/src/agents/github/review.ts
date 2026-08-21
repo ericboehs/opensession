@@ -24,6 +24,7 @@ import {
 import {
   announceGithubRun,
   discardRecoverableGithubRun,
+  GithubRunRecoveryUncertainError,
   runGithubAgent,
   sessionUrl,
   type GithubRunResult,
@@ -151,6 +152,7 @@ export async function runReview(
     console.log(`[github] review already running for PR #${pr.number}, skipping`);
     return null;
   }
+  let preserveRecovery = false;
   try {
     const prRepo = pr.ghRepo ? repoForFullName(pr.ghRepo) : null;
     const state = getOrInitPrState(pr.number, pr.headRef, pr.ghRepo);
@@ -430,6 +432,10 @@ export async function runReview(
         detached: true,
         recoverDetached: sameHeadRecovery || legacyRecovery,
       });
+      if (finalResult.uncertain) {
+        preserveRecovery = true;
+        throw new Error(finalResult.error || "Detached review ownership is uncertain");
+      }
       persistReviewResult(finalResult);
     }
 
@@ -456,6 +462,10 @@ export async function runReview(
         // result above is durable and the surviving host belongs to the repair.
         recoverDetached: recovering,
       });
+      if (finalResult.uncertain) {
+        preserveRecovery = true;
+        throw new Error(finalResult.error || "Detached review ownership is uncertain");
+      }
       persistReviewResult(finalResult);
       if (cancellationRequested()) return finishCancelled(placeholderId || undefined);
       parsed = parseReviewOutput(finalResult.text);
@@ -560,16 +570,23 @@ export async function runReview(
     console.error(`[github] review failed for PR #${pr.number}:`, e);
     return null;
   } finally {
-    // Any detached host still present here belongs to a workflow that returned
-    // before consuming it (for example, PR setup failed during restart
-    // recovery). Stop it before clearing the marker so no orphaned review keeps
-    // running without a posting owner.
-    await discardRecoverableGithubRun(pr.number, "review", pr.ghRepo).catch(
-      (e) => console.warn(`[github] failed to stop orphaned review host for PR #${pr.number}:`, e),
-    );
-    // Clear the recovery flag on completion; a killed process leaves it set so the
-    // github agent re-runs the review on startup.
-    clearActiveRun(pr.number, pr.headRef, "review", pr.ghRepo);
+    if (!preserveRecovery) {
+      // Any detached host still present here belongs to a workflow that returned
+      // before consuming it. Clear the marker only after absence is proven.
+      try {
+        await discardRecoverableGithubRun(pr.number, "review", pr.ghRepo);
+      } catch (error) {
+        if (error instanceof GithubRunRecoveryUncertainError)
+          preserveRecovery = true;
+        else
+          console.warn(
+            `[github] failed to stop orphaned review host for PR #${pr.number}:`,
+            error,
+          );
+      }
+      if (!preserveRecovery)
+        clearActiveRun(pr.number, pr.headRef, "review", pr.ghRepo);
+    }
     releaseLock("review", pr.number, pr.ghRepo);
   }
 }

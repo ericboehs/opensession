@@ -2,6 +2,14 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { WSServerMessage, WSClientMessage } from "../lib/types";
 import { API_BASE, getWebSocketUrl } from "../lib/api";
 import { countSessionPerf } from "../lib/session-performance";
+import { withMutationRequestId } from "../lib/ws-request-id";
+import { BASE_PATH } from "../lib/base";
+import { toast } from "../ui/toast";
+import {
+  localCommandScope,
+  shouldRetireCommandResult,
+  wsCommandOutboxForScope,
+} from "../lib/ws-command-outbox";
 
 // Liveness probe cadence. iOS/Safari kills backgrounded sockets without firing
 // onclose, leaving a half-open socket that reads as OPEN but delivers nothing —
@@ -63,6 +71,10 @@ export function useWebSocket(presenceActive = true) {
   // never opens and the upgrade 401s for ever. Reloading on that would be an
   // endless refresh of the sign-in card.
   const everOpenRef = useRef(false);
+  const commandResultsRef = useRef(false);
+  const commandOutboxRef = useRef(wsCommandOutboxForScope(localCommandScope()));
+  const commandNegotiatedRef = useRef(false);
+  const negotiatingCommandsRef = useRef(new Map<string, WSClientMessage>());
   // Presence, tracked separately from the watch: a hidden or unfocused tab keeps
   // streaming its session (unread counts, notifications) but must stop telling
   // teammates its owner is looking at that session.
@@ -96,9 +108,73 @@ export function useWebSocket(presenceActive = true) {
     const state = wsRef.current?.readyState;
     if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) return;
 
+    commandResultsRef.current = false;
+    commandNegotiatedRef.current = false;
     const ws = new WebSocket(getWebSocketUrl());
     wsRef.current = ws;
     aliveRef.current = true;
+
+    const finishCommandNegotiation = (supported: boolean, commandScope?: string) => {
+      if (wsRef.current !== ws || commandNegotiatedRef.current) return;
+      commandResultsRef.current = supported;
+      const commandOutbox = wsCommandOutboxForScope(commandScope || localCommandScope());
+      const provisional = wsCommandOutboxForScope(localCommandScope());
+      commandOutboxRef.current = commandOutbox;
+      try { localStorage.setItem("opensession-command-scope", commandScope || localCommandScope()); } catch {}
+      const inMemory = [...negotiatingCommandsRef.current.values()];
+      negotiatingCommandsRef.current.clear();
+      commandNegotiatedRef.current = true;
+      if (!supported) {
+        for (const command of inMemory) {
+          try {
+            ws.send(JSON.stringify(command));
+            if ("requestId" in command && command.requestId)
+              provisional.retireLegacy(command.requestId);
+          } catch {
+            if ("requestId" in command && typeof command.requestId === "string")
+              negotiatingCommandsRef.current.set(command.requestId, command);
+          }
+        }
+        return;
+      }
+      for (const ack of commandOutbox.pendingAcks()) {
+        try { ws.send(JSON.stringify(ack)); } catch {}
+      }
+      const existing = commandOutbox.pending();
+      const existingIds = new Set(existing.map((command) => command.requestId));
+      for (const command of existing) {
+        try { ws.send(JSON.stringify(command)); } catch {}
+      }
+      const candidates = new Map<string, WSClientMessage>();
+      for (const candidate of [...provisional.pending(), ...inMemory])
+        if ("requestId" in candidate && typeof candidate.requestId === "string")
+          candidates.set(candidate.requestId, candidate);
+      for (const [requestId, candidate] of candidates) {
+        if (existingIds.has(requestId)) {
+          if (provisional !== commandOutbox) provisional.forget(requestId);
+          continue;
+        }
+        if (!commandOutbox.put(candidate)) {
+          negotiatingCommandsRef.current.set(requestId, candidate);
+          window.dispatchEvent(new CustomEvent("opensession-command-outbox-blocked"));
+          toast("A pending send needs storage before it can continue.", {
+            variant: "error",
+            action: {
+              label: "Review",
+              onClick: () => {
+                history.pushState(null, "", `${BASE_PATH}/settings/reliability`);
+                window.dispatchEvent(new PopStateEvent("popstate"));
+              },
+            },
+          });
+          continue;
+        }
+        try {
+          ws.send(JSON.stringify(candidate));
+          if (provisional !== commandOutbox) provisional.forget(requestId);
+        } catch {}
+      }
+    };
 
     ws.onopen = () => {
       if (wsRef.current !== ws) return;
@@ -133,6 +209,44 @@ export function useWebSocket(presenceActive = true) {
       );
       try {
         const msg = JSON.parse(e.data) as WSServerMessage;
+        if (!commandNegotiatedRef.current) {
+          if (msg.type === "hello")
+            finishCommandNegotiation(
+              msg.capabilities?.commandResults === true,
+              msg.commandScope,
+            );
+          else finishCommandNegotiation(false);
+        }
+        if (
+          msg.type === "command_result" &&
+          shouldRetireCommandResult(msg)
+        ) {
+          const acknowledged = commandOutboxRef.current.ack(
+            msg.requestId,
+            msg.sessionId,
+          );
+          if (!acknowledged) return;
+          try {
+            ws.send(
+              JSON.stringify({
+                type: "command_ack",
+                sessionId: msg.sessionId,
+                requestId: msg.requestId,
+              } satisfies WSClientMessage),
+            );
+          } catch {}
+        }
+        if (msg.type === "command_ack_result") {
+          commandOutboxRef.current.confirmAck(msg.requestId);
+          for (const [requestId, command] of negotiatingCommandsRef.current) {
+            if (!commandOutboxRef.current.put(command)) continue;
+            negotiatingCommandsRef.current.delete(requestId);
+            try { ws.send(JSON.stringify(command)); } catch {}
+            const provisional = wsCommandOutboxForScope(localCommandScope());
+            if (provisional !== commandOutboxRef.current) provisional.forget(requestId);
+          }
+          return;
+        }
         if (msg.type === "pong") return; // liveness only, not for handlers
         let delivered: WSServerMessage | null = msg;
         if (msg.type === "session_feed") {
@@ -341,7 +455,7 @@ export function useWebSocket(presenceActive = true) {
             type: "typing",
             sessionId: typing.sessionId,
             typing: false,
-          }));
+          }),);
         } catch {}
       }
       typing.active = false;
@@ -363,8 +477,53 @@ export function useWebSocket(presenceActive = true) {
     syncPresenceRef.current();
   }, [presenceActive]);
 
+
+  useEffect(() => {
+    const reconnectForIdentity = () => {
+      commandNegotiatedRef.current = false;
+      commandResultsRef.current = false;
+      const oldSocket = wsRef.current;
+      wsRef.current = null;
+      oldSocket?.close();
+      connect();
+    };
+    window.addEventListener("opensession-user-changed", reconnectForIdentity);
+    window.addEventListener("opensession-command-outbox-retry", reconnectForIdentity);
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === "opensession-user") reconnectForIdentity();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("opensession-user-changed", reconnectForIdentity);
+      window.removeEventListener("opensession-command-outbox-retry", reconnectForIdentity);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [connect]);
+
   const send = useCallback(
     (msg: WSClientMessage) => {
+      msg = withMutationRequestId(msg);
+      const mutationRequestId =
+        "requestId" in msg && typeof msg.requestId === "string"
+          ? msg.requestId
+          : undefined;
+      if (mutationRequestId && !commandNegotiatedRef.current) {
+        const provisional = wsCommandOutboxForScope(localCommandScope());
+        if (!provisional.put(msg))
+          throw new Error("Pending sends are using local storage. Reconnect or forget one before sending more.");
+        negotiatingCommandsRef.current.set(mutationRequestId, msg);
+        const pendingSocket = wsRef.current;
+        if (!pendingSocket || pendingSocket.readyState === WebSocket.CLOSED) {
+          clearTimeout(reconnectTimer.current);
+          connect();
+        }
+        return;
+      }
+      const durableMutation = commandResultsRef.current
+        ? commandOutboxRef.current.put(msg)
+        : false;
+      if (mutationRequestId && commandResultsRef.current && !durableMutation)
+        throw new Error("Could not save this command for reconnect. It was not sent.");
       if (msg.type === "watch") {
         const cursor = feedCursorsRef.current.get(msg.sessionId);
         msg = {
@@ -386,6 +545,14 @@ export function useWebSocket(presenceActive = true) {
         } catch {
           // send threw mid-drop — fall through and queue it for the reconnect.
         }
+      }
+      // Durable mutations replay from their receipt outbox after reconnect.
+      if (durableMutation) {
+        if (!ws || ws.readyState === WebSocket.CLOSED) {
+          clearTimeout(reconnectTimer.current);
+          connect();
+        }
+        return;
       }
       // Liveness pings are worthless once stale — never queue them.
       if ((msg as { type?: string }).type === "ping") return;
@@ -440,7 +607,7 @@ export function useWebSocket(presenceActive = true) {
       const socket = wsRef.current;
       if (socket?.readyState === WebSocket.OPEN) {
         try {
-          socket.send(JSON.stringify({ type: "typing", sessionId, typing: false }));
+          socket.send(JSON.stringify({ type: "typing", sessionId, typing: false }),);
         } catch {}
       }
       latest.active = false;

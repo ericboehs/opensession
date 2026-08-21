@@ -7,6 +7,7 @@ import { slackIdToFirstName } from "./shared/user-mappings";
 import { isArchivedId, getArchiveReason } from "./archive";
 import { purgeDraftsForSessions } from "./drafts";
 import { removeSessionScratch } from "./session-scratch";
+import { sessionKernel } from "./session-kernel";
 import { getTitleOverride } from "./title-overrides";
 import { getStatusOverride } from "./status-overrides";
 import { getReviewRequest } from "./review-requests";
@@ -1331,6 +1332,7 @@ export async function getAllSessionsAsync(
 }
 
 export function deleteSession(session: UnifiedSession): void {
+  sessionKernel(session.id).applySync("session_delete", () => {
   // Delete the session JSON file based on source
   switch (session.source) {
     case "slack": {
@@ -1359,4 +1361,5 @@ export function deleteSession(session: UnifiedSession): void {
   // async: a scratch hiccup must never block deletion.
   for (const id of [session.id, ...(session.aliasIds || [])])
     void removeSessionScratch(id);
+  });
 }

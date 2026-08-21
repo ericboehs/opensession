@@ -7,22 +7,27 @@
 
 import type { WebSocketHandler } from "bun";
 import type { WSClientData } from "./ws-hub";
+
 import { cancelAgentRun, interruptAndSteerAgentRun, isAgentSessionBusy, retractAgentSteer, steerAgentRun } from "./agent-runner";
+
 import { audit } from "./audit";
 import { pendingAskAwaitingAnswer } from "./asks";
 import { resendPendingSlackComposer } from "./slack-compose";
 import { notifyMentions } from "./mentions";
-import { startWatching, stopAllWatchesForClient, transcriptRev } from "./file-watcher";
-import { INIT_WIRE_CLAMP_BYTES, entriesForWire, parseTranscriptAsync, parseTranscriptTail, parseTranscriptWindow } from "./jsonl-parser";
+import { startWatching, stopAllWatchesForClient, transcriptRev, } from "./file-watcher";
+import { INIT_WIRE_CLAMP_BYTES, entriesForWire, parseTranscriptAsync, parseTranscriptTail, parseTranscriptWindow, } from "./jsonl-parser";
 import { providerFor } from "./models";
+
 import { appendTranscriptEntries, clearTranscriptStoreDegraded, transcriptLineRunnerNotice } from "./transcript-persistence";
 import { deleteQueuedPrompt, editableSteerReceipt, liftUserStop, persistQueues, promptQueues, queueDisplayState, queueItem, recordSteer, reorderQueuedPrompt, requeueSteerReceipts, steeredReceipts, stoppedSessions, takeQueuedPrompt, takeSteeredPrompt, updateQueuedPrompt } from "./queue-state";
+
 import { transitionRunState } from "./run-state";
-import { abortTurnAndDrain, drainQueue, enqueuePrompt, interruptQueuedPrompt, runSessionPrompt, runSessionPromptAndDrain, steerQueuedPrompt, watchExternalRunAndDrain } from "./run-session";
+import { abortTurnAndDrain, drainQueue, enqueuePrompt, interruptQueuedPrompt, runSessionPrompt, runSessionPromptAndDrain, steerQueuedPrompt, watchExternalRunAndDrain, } from "./run-session";
 import { sandboxWsClose, sandboxWsMessage, sandboxWsOpen } from "./run-ws";
 import { handleCreateSessionMessage } from "./session-create";
+import { sessionIdForRequest } from "./session-request-id";
 import { runnerWsClose, runnerWsMessage, runnerWsOpen } from "./runner-ws";
-import { sandboxPortalRelayClose, sandboxPortalRelayMessage, sandboxPortalRelayOpen } from "./sandbox-portal-relay";
+import { sandboxPortalRelayClose, sandboxPortalRelayMessage, sandboxPortalRelayOpen, } from "./sandbox-portal-relay";
 import { type Sandbox } from "./sandbox";
 import {
 	findSessionAsync,
@@ -30,26 +35,31 @@ import {
 	maybePersistEffort,
 	maybePersistFastMode,
 } from "./session-cache";
-import { engineUserTexts, mergedSessionTranscript, mergedSessionTranscriptAsync, v2MirrorFiles, v2TranscriptHasDrift } from "./sessions";
+import { engineUserTexts, mergedSessionTranscript, mergedSessionTranscriptAsync, v2MirrorFiles, v2TranscriptHasDrift, } from "./sessions";
 import { handleSlashCommand } from "./slash-commands";
 import { maybeRecapOnReturn } from "./recap";
-import { maybeSuggestRepliesOnReturn, resendReplySuggestions } from "./reply-suggestions";
+import { maybeSuggestRepliesOnReturn, resendReplySuggestions, } from "./reply-suggestions";
 import { unarchiveForHumanTurn } from "./session-unarchive";
-import { resizeTerminal, startSessionTerminal, stopAllTerminals, stopTerminal, writeTerminal } from "./terminals";
-import { classifyEntries, dropContextInjections } from "@tellahq/opensession-protocol/notices";
+import { resizeTerminal, startSessionTerminal, stopAllTerminals, stopTerminal, writeTerminal, } from "./terminals";
+import { classifyEntries, dropContextInjections, } from "@tellahq/opensession-protocol/notices";
 import { withToolPresentations } from "@tellahq/opensession-protocol/tool-presentation";
 import { subscribeTranscript } from "./transcript-bus";
 import { resumeSessionFeed } from "./session-feed";
 import { type SeqEntry, transcriptStore } from "./transcript-store";
 import { startTranscriptWatch } from "./transcript-watch";
 import { clampV2InitEntries } from "./transcript-wire";
-import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls } from "./uploads";
+import { MAX_UPLOAD_BYTES, WS_MAX_PAYLOAD_BYTES, asDataUrlList, parseImageDataUrls, } from "./uploads";
 import { githubReconnectRequired } from "./github-auth";
 import { refreshWebIdentity } from "./web-auth";
-import { BOOT_ID, allClients, broadcastToAll, broadcastToSession, globalPresenceFrame, joinSession, leaveSession, markClientSeen, setClientAway, setClientTyping } from "./ws-hub";
+import { BOOT_ID, allClients, broadcastToAll, broadcastToSession, globalPresenceFrame, joinSession, leaveSession, markClientSeen, setClientAway, setClientTyping, } from "./ws-hub";
 import { existsSync, readFileSync, statSync, watch } from "fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import {
+	acknowledgeSessionCommand,
+	isRetryableSessionCommandError,
+	sessionKernel,
+} from "./session-kernel";
 
 // Who likely triggered the restart that booted THIS process — read once from
 // the marker the previous process wrote in gracefulShutdown, and only trusted
@@ -92,8 +102,8 @@ function sendWatchExtras(
 			}),
 		);
 	}
-	resendPendingSlackComposer(sessionId, (message) => ws.send(JSON.stringify(message)));
-	resendReplySuggestions(sessionId, (message) => ws.send(JSON.stringify(message)));
+	resendPendingSlackComposer(sessionId, (message) => ws.send(JSON.stringify(message)),);
+	resendReplySuggestions(sessionId, (message) => ws.send(JSON.stringify(message)),);
 
 	// Older in-memory rows may lack ids; assign and persist them before
 	// sending so edit/delete/steer actions can address the same row.
@@ -271,7 +281,7 @@ function v2FinishImport(
 	);
 	clearTranscriptStoreDegraded(
 		session.id,
-		session.claudeSessionId,
+		session.claudeSessionId
 	);
 }
 
@@ -323,7 +333,7 @@ function serveTranscriptV2(
 	// mirror retirement (design doc §11); mirror writes themselves are gone.
 	if (
 		session.isRunning &&
-		!isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id)
+		!isAgentSessionBusy(session.claudeSessionId, session.codexThreadId, session.id,)
 	)
 		return false;
 
@@ -419,6 +429,9 @@ function serveTranscriptV2(
 	return true;
 }
 
+const kernelDispatchTokens = new Set<string>();
+const kernelDispatchResults = new Map<string, unknown>();
+
 export const websocketHandlers: WebSocketHandler<WSClientData> = {
 	// Default is 16 MB — too small for a base64'd attachment near MAX_UPLOAD_BYTES,
 	// which would otherwise drop the frame (close 1009) before staging. See above.
@@ -443,6 +456,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				JSON.stringify({
 					type: "hello",
 					bootId: BOOT_ID,
+					capabilities: { commandResults: true },
+					...(ws.data?.authLogin
+						? { commandScope: `github:${ws.data.authLogin.toLowerCase()}` }
+						: {}),
 					...(lastRestartBy() ? { restartBy: lastRestartBy() } : {}),
 				}),
 			);
@@ -488,7 +505,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				!identity ||
 				(!identity.automation && githubReconnectRequired(identity.login))
 			) {
-				ws.close(4001, identity ? "GitHub reconnect required" : "Roster membership changed");
+				ws.close(4001, identity ? "GitHub reconnect required" : "Roster membership changed",);
 				return;
 			}
 			const firstName = identity.name.split(" ")[0] || identity.name;
@@ -501,12 +518,162 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 		// "here now"). `away` carries its own stamp.
 		markClientSeen(ws, msg.type !== "ping" && msg.type !== "away");
 
+		// Every session mutation enters one per-session mailbox. The recursive
+		// call carries the private marker and executes the existing handler only
+		// after earlier commands for this session have committed. Read/watch and
+		// terminal frames stay outside the kernel because they do not own session
+		// lifecycle state.
+		const kernelCommands = new Set([
+			"prompt",
+			"interrupt_prompt",
+			"delete_queued_prompt",
+			"take_queued_prompt",
+			"take_steered_prompt",
+			"update_queued_prompt",
+			"steer_queued_prompt",
+			"interrupt_queued_prompt",
+			"reorder_queued_prompt",
+			"cancel",
+			"answer_question",
+				"create_session",
+		]);
+		const requestId =
+				typeof msg.requestId === "string" && msg.requestId
+					? msg.requestId.slice(0, 200)
+					: crypto.randomUUID();
+			const commandSessionId =
+				msg.type === "create_session"
+					? typeof msg.clientSessionId === "string"
+						? msg.clientSessionId
+						: sessionIdForRequest(
+								ws.data?.authLogin || msg.user || "anonymous",
+								requestId,
+							)
+					: typeof msg.sessionId === "string"
+						? msg.sessionId
+						:
+			msg.type === "cancel" && typeof ws.data?.watchingSessionId === "string"
+				? ws.data.watchingSessionId
+				: typeof ws.data?.watchingSessionId === "string"
+					? ws.data.watchingSessionId
+					: undefined;
+		const internalKernelToken =
+			typeof msg.__sessionKernelToken === "string" &&
+			kernelDispatchTokens.delete(msg.__sessionKernelToken);
+		if (
+			!internalKernelToken &&
+			commandSessionId &&
+			kernelCommands.has(msg.type)
+		) {
+			const messageHash = new Bun.CryptoHasher("sha256")
+				.update(String(message))
+				.digest("hex");
+			// Cancel and interrupt target the run that existed when the command was
+			// first admitted. Replaying after a successor starts must fail payload
+			// identity instead of stopping the successor.
+			const targetRunId =
+				msg.type === "cancel" || msg.type === "interrupt_prompt"
+					? sessionKernel(commandSessionId).runState().currentRunId || null
+					: undefined;
+			const kernelToken = crypto.randomUUID();
+			kernelDispatchTokens.add(kernelToken);
+				try {
+					const accepted =
+			await sessionKernel(commandSessionId).dispatch(
+				{
+					requestId,
+					type: msg.type,
+					payload: {
+						messageHash,
+						...(targetRunId !== undefined ? { targetRunId } : {}),
+					},
+					source: "websocket",
+					replaySafe: true,
+				},
+				async () => {
+					if (
+						targetRunId !== undefined &&
+						(sessionKernel(commandSessionId).runState().currentRunId || null) !==
+							targetRunId
+					)
+						throw new Error("The run targeted by this command has already changed");
+					await websocketHandlers.message?.(
+						ws,
+						JSON.stringify({
+							...msg,
+							sessionId: commandSessionId,
+							requestId,
+							__sessionKernelToken: kernelToken,
+						}),
+					);
+					return kernelDispatchResults.get(kernelToken);
+				},
+					);
+					if (
+						accepted.duplicate &&
+						accepted.result &&
+						typeof accepted.result === "object"
+					)
+						ws.send(JSON.stringify(accepted.result));
+					ws.send(
+						JSON.stringify({
+							type: "command_result",
+							sessionId: commandSessionId,
+							requestId,
+							status: "completed",
+							result: accepted.result,
+						}),
+					);
+				} catch (error) {
+					const message =
+						error instanceof Error ? error.message : String(error);
+					const retryable = isRetryableSessionCommandError(error);
+					ws.send(
+						JSON.stringify({
+							type: "command_result",
+							sessionId: commandSessionId,
+							requestId,
+							status: "failed",
+							error: message,
+							terminal: !retryable,
+						}),
+					);
+					ws.send(
+						JSON.stringify({
+							type: "error",
+							sessionId: commandSessionId,
+							message,
+						}),
+					);
+					if (retryable)
+						setTimeout(() => ws.close(1012, "Retry session command"), 50).unref?.();
+				} finally {
+			kernelDispatchTokens.delete(kernelToken);
+					kernelDispatchResults.delete(kernelToken);
+				}
+			return;
+		}
+
 		switch (msg.type) {
 			case "ping": {
 				// App-level liveness probe (browsers can't send WS protocol pings).
 				// The client closes + reconnects a socket whose ping goes unanswered
 				// — how a half-open iOS/Safari socket gets detected.
 				ws.send('{"type":"pong"}');
+				break;
+			}
+
+			case "command_ack": {
+				if (msg.sessionId && msg.requestId) {
+					await acknowledgeSessionCommand(msg.sessionId, msg.requestId);
+					ws.send(
+						JSON.stringify({
+							type: "command_ack_result",
+							sessionId: msg.sessionId,
+							requestId: msg.requestId,
+						}),
+					);
+				}
 				break;
 			}
 
@@ -794,7 +961,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						);
 						break;
 					} catch (e) {
-						console.warn(`[ws] v2 load_history failed for ${msg.sessionId}:`, e);
+						console.warn(`[ws] v2 load_history failed for ${msg.sessionId}:`, e,);
 					}
 				}
 				const session = await findSessionAsync(msg.sessionId);
@@ -807,7 +974,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							sessionId: msg.sessionId,
 							entries: session
 								? entriesForWire(
-										await mergedSessionTranscriptAsync(session),
+										await mergedSessionTranscriptAsync(session)
 									)
 								: [],
 							truncated: false,
@@ -918,7 +1085,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					!(Array.isArray(msg.files) && msg.files.length)
 				) {
 					ws.send(
-						JSON.stringify({ type: "error", message: "Empty prompt (no content/images/files)" }),
+						JSON.stringify({ type: "error", message: "Empty prompt (no content/images/files)", }),
 					);
 					return;
 				}
@@ -998,6 +1165,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				) {
 					if (msg.busyMode === "queue") {
 						enqueuePrompt(sessionId, {
+							id: msg.requestId,
 							content,
 							user,
 							images: imageUrls,
@@ -1012,7 +1180,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 						break;
 					}
 					const attributed = user ? `[${user}] ${content}` : content;
-					const steerItem = queueItem({ content, user, images: imageUrls });
+					const steerItem = queueItem({ id: msg.requestId, content, user, images: imageUrls });
 					// Images fold into the live run as content blocks; disk-staged
 					// files can't ride the steer channel, so a send carrying files
 					// falls through to the queue (its drain delivers images + files
@@ -1027,17 +1195,22 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							[session.claudeSessionId, session.codexThreadId, session.id],
 							attributed,
 							images,
+
 							steerItem.id,
+
 						)
 					) {
 						// The message lands in the transcript when its turn starts. Until
 						// then a steer receipt is the durable visible record (survives
 						// reload/leave); kept out of promptQueues so the drain never
 						// re-delivers it, and cleared when the run finishes.
+
 						recordSteer(sessionId, steerItem);
+
 						break;
 					}
 					enqueuePrompt(sessionId, {
+						id: msg.requestId,
 						content,
 						user,
 						images: imageUrls,
@@ -1053,10 +1226,11 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// the wake and later messages remain FIFO behind it.
 				if (session.sandbox?.sandboxId && session.sandbox.provider !== "local") {
 					enqueuePrompt(sessionId, {
+						id: msg.requestId,
 						content, user, images: imageUrls, files: msg.files, contextSessions,
 					});
 					void drainQueue(sessionId).catch((error) =>
-						console.error(`[queue] Sandbox wake drain failed for ${sessionId}:`, error),
+						console.error(`[queue] Sandbox wake drain failed for ${sessionId}:`, error,),
 					);
 					break;
 				}
@@ -1065,91 +1239,53 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				// it into a dispatch record that survives a restart until the engine has
 				// written its own active-run journal.
 				enqueuePrompt(sessionId, {
+					id: msg.requestId,
 					content,
 					user,
 					images: imageUrls,
 					files: msg.files,
 					contextSessions,
 				});
-				await drainQueue(sessionId);
+				void drainQueue(sessionId).catch((error) =>
+					console.error(`[queue] Prompt drain failed for ${sessionId}:`, error,),
+				);
 				break;
 			}
 
 			case "interrupt_prompt": {
-				// Esc-style redirect: stop the current turn, keep the session, and
-				// continue right away with this message. Falls back to a normal
-				// prompt (steer/queue/run) when there's nothing to interrupt.
 				const { sessionId, content, user } = msg;
 				const images = parseImageDataUrls(msg.images);
 				const imageUrls = asDataUrlList(msg.images);
 				const session = await findSessionAsync(sessionId);
 				if (!session) {
-					ws.send(
-						JSON.stringify({ type: "error", message: "Session not found" }),
-					);
+					ws.send(JSON.stringify({ type: "error", message: "Session not found" }),);
 					return;
 				}
 				unarchiveForHumanTurn(session);
 				maybePersistEffort(session, msg.effort);
 				maybePersistFastMode(session, msg.fastMode);
 				liftUserStop(sessionId);
-				const attributed = user ? `[${user}] ${content}` : content;
-				// Files can't ride the interrupt/steer content-block channel — a send
-				// carrying files falls through to the queue (drain delivers images +
-				// files together), so it isn't interrupted here.
-				const hasFiles = Array.isArray(msg.files) && msg.files.length > 0;
-				if (
-					!hasFiles &&
-					isAgentSessionBusy(
-						session.claudeSessionId,
-						session.codexThreadId,
-						session.id,
-					) &&
-					interruptAndSteerAgentRun(
-						[session.claudeSessionId, session.codexThreadId, session.id],
-						attributed,
-						images,
-					)
-				) {
-					// Interrupt aborts the current turn and continues immediately, so
-					// the message lands in the transcript almost at once — no steer
-					// receipt ("folded in" would be wrong for an interrupt) and no system
-					// notice. The sender's optimistic bubble reconciles when its real
-					// turn appears; the SDK's "[Request interrupted by user]" marker is
-					// filtered out in jsonl-parser.
-					break;
-				}
-				// No in-band interrupt-and-steer (pi runs, or a send carrying
-				// files): queue the message durably, then abort the current turn so
-				// the drain delivers it as the immediate next turn — esc+enter
-				// semantics. If nothing is abortable either (external CLI/tmux run),
-				// it stays queued for the natural stopping point, so nothing — text
-				// or attachment — is lost.
-				if (
-					isAgentSessionBusy(
-						session.claudeSessionId,
-						session.codexThreadId,
-						session.id,
-					)
-				) {
-					enqueuePrompt(sessionId, {
-						content,
-						user,
-						images: imageUrls,
-						files: msg.files,
-					});
-					if (!abortTurnAndDrain(sessionId, session)) {
-						watchExternalRunAndDrain(sessionId);
-					}
-					break;
-				}
-				await runSessionPromptAndDrain(
-					sessionId,
+				enqueuePrompt(sessionId, {
+					id: msg.requestId,
 					content,
 					user,
-					images,
-					msg.files,
-				);
+					images: imageUrls,
+					files: msg.files,
+				});
+				if (
+					isAgentSessionBusy(
+						session.claudeSessionId,
+						session.codexThreadId,
+						session.id,
+					)
+				) {
+					if (!abortTurnAndDrain(sessionId, session))
+						watchExternalRunAndDrain(sessionId);
+				} else {
+					void drainQueue(sessionId).catch((error) =>
+						console.error(`[queue] Interrupt prompt failed for ${sessionId}:`, error,),
+					);
+				}
 				break;
 			}
 
@@ -1166,14 +1302,17 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 					queueId,
 					ws.data.authUser || ws.data.user || undefined,
 				);
-				ws.send(JSON.stringify({
+					const response ={
 					type: "queued_prompt_taken",
 					sessionId,
 					queueId,
 					...(item
 						? { item }
 						: { message: "That queued message could not be edited." }),
-				}));
+				};
+					if (typeof msg.__sessionKernelToken === "string")
+						kernelDispatchResults.set(msg.__sessionKernelToken, response);
+					ws.send(JSON.stringify(response));
 				if (item) watchExternalRunAndDrain(sessionId);
 				break;
 			}
@@ -1190,14 +1329,17 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				const item = retracted
 					? takeSteeredPrompt(sessionId, queueId, actor) ?? receipt
 					: undefined;
-				ws.send(JSON.stringify({
+				const response = {
 					type: "queued_prompt_taken",
 					sessionId,
 					queueId,
 					...(item
 						? { item }
 						: { message: "That steering message has already been sent." }),
-				}));
+				};
+				if (typeof msg.__sessionKernelToken === "string")
+					kernelDispatchResults.set(msg.__sessionKernelToken, response);
+				ws.send(JSON.stringify(response));
 				break;
 			}
 
@@ -1256,8 +1398,8 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 
 			case "cancel": {
 				const data = ws.data;
-				if (data.watchingSessionId) {
-					const sessionId = data.watchingSessionId;
+				const sessionId = msg.sessionId || data.watchingSessionId;
+				if (sessionId) {
 					const session = await findSessionAsync(sessionId);
 					// Park the queue until the user's next explicit action —
 					// otherwise the drain would deliver the requeued steers into a
@@ -1301,6 +1443,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 								appendTranscriptEntries(session.claudeSessionId, [
 									transcriptLineRunnerNotice(
 										`Stopped by ${data.user || "someone"}.`,
+										`stop-${msg.requestId}`,
 									),
 								]);
 							} catch {}
@@ -1374,7 +1517,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 			}
 
 			case "create_session": {
+					const response =
 				await handleCreateSessionMessage(ws, msg);
+					if (typeof msg.__sessionKernelToken === "string" && response)
+						kernelDispatchResults.set(msg.__sessionKernelToken, response);
 				break;
 			}
 		}

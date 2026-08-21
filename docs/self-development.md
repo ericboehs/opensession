@@ -89,8 +89,9 @@ can't write to our upstream) and, after your first local commit, ff-only
 deploys abort permanently because your history has diverged from ours. Clone
 your **fork** (keep `tellahq/opensession` as an `upstream` remote to pull our
 updates), and in worktree mode set the self repo's `ghRepo` in your config to
-the fork so the PR flow targets it. Beyond that, the service user needs
-passwordless sudo for `systemctl restart <service>` and `systemd-run`.
+the fork so the PR flow targets it. Run `opensession service install` once as
+an administrator; it installs the fixed run-host helper and narrowly scoped
+service-restart grants used by self-deploy.
 
 Staying current is one command: **`opensession update`** detects the fork
 topology (origin = your fork + an upstream remote), fetches upstream, merges

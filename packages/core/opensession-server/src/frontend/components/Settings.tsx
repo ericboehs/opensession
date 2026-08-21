@@ -57,6 +57,7 @@ import { SandboxesPanel } from "./settings/SandboxesPanel";
 import { StoragePanel } from "./settings/StoragePanel";
 import { WaitlistPanel } from "./settings/WaitlistPanel";
 import { RunnersPanel } from "./settings/RunnersPanel";
+import { ReliabilityPanel } from "./settings/ReliabilityPanel";
 import { SettingsAccountCard, SettingsAccountFooter } from "./SettingsAccount";
 import { SetupPanel } from "./Setup";
 import type { Workspace } from "../lib/types";
@@ -239,6 +240,7 @@ function SectionPanel({
 			{section === "providers" && <ProvidersPanel workspace={workspace} />}
 			{section === "sandboxes" && <SandboxesPanel />}
 			{section === "runners" && <RunnersPanel />}
+			{section === "reliability" && <ReliabilityPanel />}
 			{section === "connections" && <Connections />}
 			{section === "myAccounts" && <MyAccountsPanel />}
 			{section === "memory" && <MemoryPanel />}

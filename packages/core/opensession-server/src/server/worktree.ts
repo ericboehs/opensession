@@ -362,6 +362,22 @@ export async function listWorktrees(repoId?: string): Promise<WorktreeInfo[]> {
   }
 }
 
+/** True only when git registers this exact path for this repo and branch. */
+export async function isRegisteredWorktree(
+  path: string,
+  repoId: string,
+  branch: string,
+): Promise<boolean> {
+  const repo = getRepo(repoId);
+  const registered = (await listWorktrees(repo.id)).find(
+    (worktree) =>
+      canonicalPath(worktree.path) === canonicalPath(path) &&
+      worktree.branch === branch,
+  );
+  if (!registered) return false;
+  return repoFromGitPointer(path)?.repo.id === repo.id;
+}
+
 /**
  * Repo-less scratch directory for "scratch" sessions (feed-item workspaces —
  * the feeds design): media/MCP work like downloading a linked video and

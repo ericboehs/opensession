@@ -34,3 +34,10 @@ export const ENV_PATH = process.env.OPENSESSION_ENV_FILE || join(HOME, ".openses
 export const SERVICE_NAME = "opensession";
 export const SERVICE_PATH = `/etc/systemd/system/${SERVICE_NAME}.service`;
 export const STAGED_UNIT_PATH = join(OPENSESSION_HOME, "opensession.service");
+export const EXECUTOR_SERVICE_NAME = "opensession-executor";
+export const EXECUTOR_SERVICE_PATH = `/etc/systemd/system/${EXECUTOR_SERVICE_NAME}.service`;
+export const STAGED_EXECUTOR_UNIT_PATH = join(
+  OPENSESSION_HOME,
+  "opensession-executor.service",
+);
+export const EXECUTOR_TOKEN_PATH = "/etc/opensession/executor-token";

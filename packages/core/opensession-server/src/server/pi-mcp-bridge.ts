@@ -382,7 +382,7 @@ export async function createPiMcpBridge(opts: {
           : `${tool.name} (MCP tool from ${server})`,
       // MCP inputSchema is JSON Schema; TypeBox IS JSON Schema — passthrough.
       parameters: (tool.inputSchema ?? { type: "object", properties: {} }) as any,
-      execute: async (_toolCallId, params, signal) => {
+      execute: async (toolCallId, params, signal) => {
         const started = Date.now();
         try {
           if (closed) throw new Error("MCP bridge is closed");
@@ -392,7 +392,11 @@ export async function createPiMcpBridge(opts: {
             `MCP server "${server}" connect timed out`,
           );
           const res = (await conn.client.callTool(
-            { name: tool.name, arguments: (params ?? {}) as Record<string, unknown> },
+            {
+              name: tool.name,
+              arguments: (params ?? {}) as Record<string, unknown>,
+              _meta: { opensessionToolCallId: toolCallId },
+            },
             undefined,
             { timeout: timeoutMs, maxTotalTimeout: timeoutMs, signal },
           )) as Record<string, unknown>;

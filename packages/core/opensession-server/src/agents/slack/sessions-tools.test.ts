@@ -399,7 +399,7 @@ describe("session creator metadata", () => {
 		}
 	});
 
-	it("generates a branch when create_session code mode cannot inherit one", async () => {
+	it("delegates omitted branch generation to the durable create plan", async () => {
 		const h = makeHarness();
 		registerSessionControl(h.deps.control);
 		const server = createSessionsMcpServer(ctx("bks-parent"), {
@@ -430,8 +430,8 @@ describe("session creator metadata", () => {
 			const output = (
 				result as { content: Array<{ type: string; text: string }> }
 			).content[0].text;
-			expect(h.created[0].branch).toBe("fix-session-branch-ux");
-			expect(output).toContain("code on fix-session-branch-ux");
+			expect(h.created[0].branch).toBeUndefined();
+			expect(output).toContain("code session");
 		} finally {
 			await client.close();
 			await server.instance.close();
@@ -541,9 +541,9 @@ describe("task_status / cancel_task", () => {
 		expect(await taskStatusImpl({ taskId: "bks-nope" }, h.deps)).toContain("No task/session");
 	});
 
-	it("cancel_task cancels through the registry", () => {
+	it("cancel_task cancels through the registry", async () => {
 		const h = makeHarness();
-		expect(cancelTaskImpl({ taskId: "bks-test-task" }, h.deps)).toContain("Cancelled");
+		expect(await cancelTaskImpl({ taskId: "bks-test-task" }, h.deps)).toContain("Cancelled");
 		expect(h.cancelled).toEqual(["bks-test-task"]);
 	});
 });

@@ -230,7 +230,7 @@ export async function resumeRunnerRun(
 		},
 	};
 	setRunnerWorkload(run.runnerId, { sessionId: session.id, operation: "full session", startedAt: run.startedAt });
-	const handle = new HostHandle(candidate.dir, spec, callbacks, launcher);
+	const handle = new HostHandle(candidate.dir, spec, callbacks, launcher, run.runKey);
 	try {
 		await handle.connectWithWait(20_000);
 		return (async function* (): AsyncGenerator<StreamEvent> {

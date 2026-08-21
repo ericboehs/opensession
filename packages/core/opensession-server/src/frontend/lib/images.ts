@@ -82,7 +82,11 @@ function imageUploadName(file: File): string {
  */
 async function stageImage(file: File, rejected: string[]): Promise<string | null> {
   const inline = () => readFileAsDataUrl(file);
-  if (!STAGEABLE_IMAGE_TYPES[file.type]) return inline();
+  if (!STAGEABLE_IMAGE_TYPES[file.type]) {
+    if (file.size <= MAX_INLINE_IMAGE_BYTES) return inline();
+    rejected.push(`${file.name || "image"} (unsupported image type is too large to keep offline)`);
+    return null;
+  }
   if (file.size > MAX_UPLOAD_BYTES) {
     rejected.push(`${file.name || "image"} (too large, max ${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))} MB)`);
     return null;

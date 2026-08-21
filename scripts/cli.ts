@@ -19,7 +19,12 @@ import { doctor } from "./lib/doctor";
 import { onboard } from "./lib/onboard";
 import { repos } from "./lib/repos";
 import { team } from "./lib/team";
-import { ENV_PATH, REPO_ROOT, STAGED_UNIT_PATH } from "./lib/paths";
+import {
+  ENV_PATH,
+  REPO_ROOT,
+  STAGED_EXECUTOR_UNIT_PATH,
+  STAGED_UNIT_PATH,
+} from "./lib/paths";
 import * as service from "./lib/service";
 import { update } from "./lib/update";
 import { bold, dim, fail, green, heading, info, ok, run, runInherit, warn } from "./lib/ui";
@@ -290,8 +295,16 @@ async function main(): Promise<number> {
       if (positional[0] === "install") {
         if (service.supervisor() === "systemd") {
           await Bun.write(STAGED_UNIT_PATH, await service.renderUnit());
+          await Bun.write(
+            STAGED_EXECUTOR_UNIT_PATH,
+            await service.renderExecutorUnit(),
+          );
         }
-        return (await service.install(STAGED_UNIT_PATH)) ? 0 : 1;
+        return (
+          await service.install(STAGED_UNIT_PATH, STAGED_EXECUTOR_UNIT_PATH)
+        )
+          ? 0
+          : 1;
       }
       fail("usage: opensession service install");
       return 1;

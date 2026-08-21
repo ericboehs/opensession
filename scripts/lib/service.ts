@@ -17,10 +17,20 @@
  * server in the foreground.
  */
 
-import { existsSync, mkdirSync } from "fs";
+import { existsSync, mkdirSync, readFileSync } from "fs";
 import { userInfo } from "os";
 import { join } from "path";
-import { ENV_PATH, HOME, OPENSESSION_HOME, REPO_ROOT, SERVICE_NAME, SERVICE_PATH } from "./paths";
+import {
+  ENV_PATH,
+  EXECUTOR_SERVICE_NAME,
+  EXECUTOR_SERVICE_PATH,
+  EXECUTOR_TOKEN_PATH,
+  HOME,
+  OPENSESSION_HOME,
+  REPO_ROOT,
+  SERVICE_NAME,
+  SERVICE_PATH,
+} from "./paths";
 import { dim, info, ok, run, runInherit, warn } from "./ui";
 
 export type Supervisor = "systemd" | "launchd" | "none";
@@ -28,6 +38,38 @@ export type Supervisor = "systemd" | "launchd" | "none";
 export const LAUNCHD_LABEL = "dev.opensession.server";
 export const LAUNCHD_PLIST = join(HOME, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
 export const LOG_DIR = join(OPENSESSION_HOME, "logs");
+const RUN_HOST_HELPER = "/usr/local/libexec/opensession-run-host";
+
+function envFileValue(name: string): string | undefined {
+  if (!existsSync(ENV_PATH)) return undefined;
+  const prefix = `${name}=`;
+  const raw = readFileSync(ENV_PATH, "utf8")
+    .split("\n")
+    .findLast((line) => line.startsWith(prefix))
+    ?.slice(prefix.length)
+    .trim();
+  if (!raw) return undefined;
+  if (
+    (raw.startsWith('"') && raw.endsWith('"')) ||
+    (raw.startsWith("'") && raw.endsWith("'"))
+  ) {
+    return raw.slice(1, -1);
+  }
+  return raw;
+}
+
+function runHostsRoot(): string {
+  const sessionsDir =
+    process.env.OPENSESSION_SESSIONS_DIR ||
+    envFileValue("OPENSESSION_SESSIONS_DIR") ||
+    ((process.env.OPENSESSION_STATE_DIR || envFileValue("OPENSESSION_STATE_DIR"))
+      ? join(
+          process.env.OPENSESSION_STATE_DIR || envFileValue("OPENSESSION_STATE_DIR")!,
+          ".opensession-sessions",
+        )
+      : join(HOME, ".opensession-sessions"));
+  return join(sessionsDir, "run-hosts");
+}
 
 export function supervisor(): Supervisor {
   if (process.platform === "darwin") return "launchd";
@@ -146,11 +188,12 @@ async function resolveUsername(): Promise<string> {
     const name = candidate?.trim();
     if (!name || name === "unknown") continue;
     // `id -u <name>` is the cheapest "does this account exist" check.
-    if ((await run(["id", "-u", name])).code === 0) return name;
+    const resolved = await run(["id", "-u", name]);
+    if (resolved.code === 0 && resolved.stdout !== "0") return name;
   }
 
   throw new Error(
-    "could not determine which user to run the service as — " +
+    "could not determine a non-root user to run the service as — " +
       "set USER in the environment, or edit User= in the generated unit",
   );
 }
@@ -166,7 +209,55 @@ export async function renderUnit(): Promise<string> {
     .replace(/^User=.*$/m, `User=${await resolveUsername()}`)
     .replace(/^WorkingDirectory=.*$/m, `WorkingDirectory=${REPO_ROOT}`)
     .replace(/^EnvironmentFile=.*$/m, `EnvironmentFile=${ENV_PATH}`)
+    .replace(
+      /^# EXECUTOR_CREDENTIAL:.*$/m,
+      "LoadCredential=executor-token:/etc/opensession/executor-token",
+    )
     .replace(/^ExecStart=.*$/m, `ExecStart=${bun} run packages/core/opensession-server/opensession.ts`)
+    .replace(
+      /^Environment="PATH=.*"$/m,
+      `Environment="PATH=${servicePath(bun.replace(/\/bun$/, ""))}"`,
+    );
+}
+
+function executorPathEnvironment(): string {
+  const values = [
+    ["HOME", HOME],
+    [
+      "OPENSESSION_STATE_DIR",
+      process.env.OPENSESSION_STATE_DIR || envFileValue("OPENSESSION_STATE_DIR"),
+    ],
+    [
+      "OPENSESSION_SESSIONS_DIR",
+      process.env.OPENSESSION_SESSIONS_DIR ||
+        envFileValue("OPENSESSION_SESSIONS_DIR"),
+    ],
+  ] satisfies Array<readonly [string, string | undefined]>;
+  const lines: string[] = [];
+  for (const [key, value] of values) {
+    if (!value) continue;
+    lines.push(
+      `Environment="${key}=${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`,
+    );
+  }
+  return lines.join("\n");
+}
+
+/** Render the independent executor launcher unit for this box. */
+export async function renderExecutorUnit(): Promise<string> {
+  const template = join(REPO_ROOT, "opensession-executor.service");
+  if (!existsSync(template)) {
+    throw new Error(`missing executor unit template at ${template}`);
+  }
+  const bun = bunPath();
+  return (await Bun.file(template).text())
+    .replace(/^User=.*$/m, `User=${await resolveUsername()}`)
+    .replace(/^WorkingDirectory=.*$/m, `WorkingDirectory=${REPO_ROOT}`)
+    .replace(/^# EXECUTOR_PATH_ENV$/m, executorPathEnvironment())
+    .replace(
+      /^ExecStart=.*$/m,
+      `ExecStart=${bun} run packages/core/opensession-server/src/executor/main.ts`,
+    )
     .replace(
       /^Environment="PATH=.*"$/m,
       `Environment="PATH=${servicePath(bun.replace(/\/bun$/, ""))}"`,
@@ -210,19 +301,72 @@ export function renderPlist(): string {
 `;
 }
 
-export async function install(unitPath?: string): Promise<boolean> {
+export async function install(
+  unitPath?: string,
+  executorUnitPath?: string,
+): Promise<boolean> {
   switch (supervisor()) {
     case "systemd": {
       const path = unitPath!;
+      if (!executorUnitPath) {
+        warn("missing rendered executor unit");
+        return false;
+      }
       // `enable --now` is a no-op on an already-running unit: a re-onboard
       // (say, to rebind from 127.0.0.1 to the tailnet IP) would leave the old
       // process serving with the pre-onboard env. Restart in that case so the
       // new unit and env actually take effect.
       const wasActive = await isActive();
+      const executorWasActive =
+        (await run(["systemctl", "is-active", EXECUTOR_SERVICE_NAME])).stdout ===
+        "active";
+      const executorUnit = await Bun.file(executorUnitPath).text();
+      const serviceUser = executorUnit.match(/^User=(.*)$/m)?.[1];
+      const bun = executorUnit.match(/^ExecStart=(\S+) run /m)?.[1];
+      const servicePathValue = executorUnit.match(/^Environment="PATH=(.*)"$/m)?.[1];
+      if (!serviceUser || !bun || !servicePathValue) {
+        warn("rendered executor unit is missing User, ExecStart, or PATH");
+        return false;
+      }
       info(dim(`installing ${path} -> ${SERVICE_PATH} (needs sudo)`));
       for (const cmd of [
+        [
+          "sudo",
+          join(REPO_ROOT, "deploy", "install-executor-credential.sh"),
+          EXECUTOR_TOKEN_PATH,
+        ],
+        [
+          "sudo",
+          join(REPO_ROOT, "deploy", "install-run-host-helper.sh"),
+          serviceUser,
+          REPO_ROOT,
+          bun,
+          HOME,
+          ENV_PATH,
+          runHostsRoot(),
+          servicePathValue,
+          process.env.OPENSESSION_DEPLOY_CHECKOUT || REPO_ROOT,
+          process.env.OPENSESSION_DEPLOY_STATE || join(HOME, ".opensession-deploy"),
+          process.env.OPENSESSION_DEPLOY_ALLOW_RESET === "1" ? "1" : "0",
+          process.env.OPENSESSION_HEALTH_URL || "http://127.0.0.1:3850/api/health",
+        ],
+        ["sudo", "-n", RUN_HOST_HELPER, "check"],
         ["sudo", "cp", path, SERVICE_PATH],
+        ["sudo", "cp", executorUnitPath!, EXECUTOR_SERVICE_PATH],
+        [
+          "sudo",
+          "rm",
+          "-f",
+          "/etc/systemd/system/opensession.service.d/executor-credential.conf",
+        ],
         ["sudo", "systemctl", "daemon-reload"],
+        ["sudo", "systemctl", "enable", EXECUTOR_SERVICE_NAME],
+        [
+          "sudo",
+          "systemctl",
+          executorWasActive ? "restart" : "start",
+          EXECUTOR_SERVICE_NAME,
+        ],
         ["sudo", "systemctl", "enable", "--now", SERVICE_NAME],
         ...(wasActive ? [["sudo", "systemctl", "restart", SERVICE_NAME]] : []),
       ]) {

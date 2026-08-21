@@ -202,18 +202,18 @@ describe("transcript snapshots", () => {
     });
 
     // The human switches models to the other engine, then keeps going.
-    h.patchSession(sid, { model: "codex/openai/gpt-5.6-sol" });
+    h.patchSession(sid, { model: "pi/openai/gpt-5.6-sol" });
     await h.prompt({
       sessionId: sid,
       content: "keep going",
       user: "SnapshotOwner",
       collect: calls,
-      turns: [{ kind: "clean", provider: "codex", engineSessionId: "codex-thread-1", text: ["Continuing."] }],
+      turns: [{ kind: "clean", provider: "pi", engineSessionId: "pi-session-1", text: ["Continuing."] }],
     });
 
     expect(calls).toHaveLength(2);
-    // Turn two starts a fresh engine session and is handed the prior one.
-    expect(calls[1].opts.sessionId).toBeUndefined();
+    // Pi is the only engine, so the second turn resumes the same engine session.
+    expect(calls[1].opts.sessionId).toBe("11111111-2222-4333-8444-555555555555");
     expect(calls[1].prompt).toContain('<opensession:context source="handoff">');
     h.snapshot("engine-switch-handoff", { sessionId: sid, calls });
   });

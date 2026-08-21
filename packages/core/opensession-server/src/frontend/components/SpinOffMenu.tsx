@@ -1,3 +1,4 @@
+import { toast } from "../ui/toast";
 import { AGENT_NAME } from "../lib/brand";
 import React, { useRef, useState } from "react";
 import { Button } from "../ui/button";
@@ -81,6 +82,7 @@ export function SpinOffMenu({
     const context = buildContext(entries, flavor === "build" ? 6000 : 9000);
     const me = getCurrentUser();
 
+    try {
     if (flavor === "analyze") {
       send({
         type: "create_session",
@@ -134,6 +136,10 @@ export function SpinOffMenu({
         `so trust its conclusions but re-verify file paths before editing.\n\n` +
         `## Ask conversation\n\n${context}\n\n## Task\n\n${task.trim() || "Implement what was discussed above."}`,
     });
+    } catch (error) {
+      setStarting(false);
+      toast(error instanceof Error ? error.message : String(error), { variant: "error" });
+    }
   }
 
   const needsBranch = flavor === "build" || flavor === "learnings";

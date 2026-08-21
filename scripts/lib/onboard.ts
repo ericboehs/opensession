@@ -17,7 +17,15 @@ import { join } from "path";
 import { INTEGRATIONS } from "../../packages/core/opensession-server/src/server/integrations/registry";
 import { piConfigPath as engineConfigPath, setPiEnabled } from "../../packages/core/opensession-server/src/server/pi-config";
 import { backup, tailnetIp } from "./config-edit";
-import { CONFIG_PATH, ENV_PATH, HOME, OPENSESSION_HOME, REPO_ROOT, STAGED_UNIT_PATH } from "./paths";
+import {
+  CONFIG_PATH,
+  ENV_PATH,
+  HOME,
+  OPENSESSION_HOME,
+  REPO_ROOT,
+  STAGED_EXECUTOR_UNIT_PATH,
+  STAGED_UNIT_PATH,
+} from "./paths";
 import { installRecipe, listRecipes } from "./recipes";
 import * as service from "./service";
 import { ask, askYesNo, bold, canPrompt, dim, heading, info, warn, wrote, yellow } from "./ui";
@@ -285,12 +293,19 @@ export async function onboard(opts: OnboardOptions = {}): Promise<number> {
       // stays an explicit choice.
       await Bun.write(STAGED_UNIT_PATH, await service.renderUnit());
       wrote(STAGED_UNIT_PATH, "(templated for this box)");
+      await Bun.write(
+        STAGED_EXECUTOR_UNIT_PATH,
+        await service.renderExecutorUnit(),
+      );
+      wrote(STAGED_EXECUTOR_UNIT_PATH, "(templated for this box)");
     }
     if (kind !== "none") {
       const what = kind === "launchd" ? "LaunchAgent" : "systemd service";
       const needsRoot = kind === "systemd" ? " (needs sudo)" : "";
       if (askYesNo(`\n  Install and start it as a ${what} now?${needsRoot}`, false)) {
-        await service.install(STAGED_UNIT_PATH);
+        if (!(await service.install(STAGED_UNIT_PATH, STAGED_EXECUTOR_UNIT_PATH))) {
+          throw new Error("service installation failed");
+        }
       }
     }
   } catch (err) {

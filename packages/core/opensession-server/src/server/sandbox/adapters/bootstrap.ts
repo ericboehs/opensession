@@ -61,7 +61,7 @@ import {
 } from "fs";
 import { dirname, isAbsolute, relative, resolve } from "path";
 import { OPENSESSION_SESSIONS_DIR, homeDir, stateDir } from "../../paths";
-import { journalSet, journalClear, type ActiveRunRecord } from "../../run-journal";
+import { journalSet, journalClear, journalClearIfLineage, type ActiveRunRecord } from "../../run-journal";
 import { shouldPersistModelSwitch, type StreamEvent } from "../../run-events";
 import { recoveryKind, restartContinuationPrompt } from "../../agent-runner";
 import { accountsForRemoteUpload, type ClaudeAccount } from "../../claude-accounts";
@@ -102,14 +102,23 @@ import { registerRunToken, unregisterRunToken } from "../../run-rpc";
 import { registerRunWsHost, unregisterRunWsHost, runWsConnector } from "../../run-ws";
 import { writeJsonAtomic } from "../../shared/atomic-write";
 import { createWorkloadIdentityEnv, type WorkloadIdentityContext } from "../../workload-identity";
-import { HostHandle, type HandleCallbacks, type HostLauncher } from "../../host-client";
+import {
+  HostHandle,
+  reconcileUncertainHostEvents,
+  type HandleCallbacks,
+  type HostLauncher,
+} from "../../host-client";
 import {
   HOST_SPEC_NAME,
+  HOST_META_NAME,
+  HOST_JOURNAL_NAME,
   HOST_ENTRY,
   REPO_ROOT,
+  type RunHostMeta,
   type RunHostSpec,
 } from "../../../runner-host/protocol";
 import { sandboxConfig, remoteSandboxCallbackBaseUrl } from "../config";
+import { decideSandboxHostRecovery } from "../recovery";
 import type {
   ExecOpts,
   ExecResult,
@@ -1407,7 +1416,8 @@ function makeRemoteLauncher(
         throw new Error(`remote run spec chmod failed: ${secured.stderr.trim().slice(0, 300)}`);
       }
     },
-    async launch(hostId, dir) {
+    async launch(hostId, dir, onDispatching) {
+      let dispatchAttempted = false;
       const spec = readJsonSafe<RunHostSpec>(`${dir}/${HOST_SPEC_NAME}`);
       if (!spec?.wsToken) {
         throw new Error(`remote launch of ${hostId}: spec.json (with wsToken) missing from ${dir}`);
@@ -1646,6 +1656,8 @@ function makeRemoteLauncher(
         // detached command's delivery is verified by the dial-back
         // (connectWithWait) anyway — after the bound, proceed and let that
         // decide.
+        dispatchAttempted = true;
+        onDispatching?.();
         const bg = driver.execBackground(
           `${envPrefix(env)}${REMOTE_BUN} run ${HOST_ENTRY} ${dir}/${HOST_SPEC_NAME} >> ${dir}/host.log 2>&1`,
         );
@@ -1660,9 +1672,53 @@ function makeRemoteLauncher(
         }
         mark("host exec dispatched");
       } catch (e) {
-        unregisterRunWsHost(hostId);
+        if (!dispatchAttempted) unregisterRunWsHost(hostId);
         throw e;
       }
+    },
+    async evidence(dir) {
+      const [metaResult, journalResult] = await Promise.all([
+        driver.exec(`cat ${shellQuoteWord(`${dir}/${HOST_META_NAME}`)} 2>/dev/null`),
+        driver.exec(`cat ${shellQuoteWord(`${dir}/${HOST_JOURNAL_NAME}`)} 2>/dev/null`),
+      ]);
+      let meta: RunHostMeta | undefined;
+      let journal: Record<string, ActiveRunRecord> | undefined;
+      try { if (metaResult.exitCode === 0) meta = JSON.parse(metaResult.stdout); } catch {}
+      try { if (journalResult.exitCode === 0) journal = JSON.parse(journalResult.stdout); } catch {}
+      return {
+        started: !!meta?.pid || !!journal,
+        ...(meta?.engineSessionId ? { engineSessionId: meta.engineSessionId } : {}),
+        ...(meta?.done ? { done: meta.done } : {}),
+      };
+    },
+    async stop(hostId, dir) {
+      await driver.writeFile(`${dir}/cancelled`, "cancelled\n");
+      const [metaResult, startupResult] = await Promise.all([
+        driver.exec(`cat ${shellQuoteWord(`${dir}/${HOST_META_NAME}`)} 2>/dev/null`),
+        driver.exec(`cat ${shellQuoteWord(`${dir}/startup.json`)} 2>/dev/null`),
+      ]);
+      let pid = 0;
+      try {
+        if (metaResult.exitCode === 0)
+          pid = Number(JSON.parse(metaResult.stdout)?.pid) || 0;
+      } catch {}
+      try {
+        if (!pid && startupResult.exitCode === 0)
+          pid = Number(JSON.parse(startupResult.stdout)?.pid) || 0;
+      } catch {}
+      if (pid) {
+        const specPath = `${dir}/${HOST_SPEC_NAME}`;
+        const quotedSpec = shellQuoteWord(specPath);
+        const script =
+          `is_host() { [ -r /proc/${pid}/cmdline ] && ` +
+          `tr '\\0' '\\n' < /proc/${pid}/cmdline | grep -Fqx -- ${quotedSpec}; }; ` +
+          `is_host && kill -TERM ${pid} 2>/dev/null || true; sleep 1; ` +
+          `is_host && kill -KILL ${pid} 2>/dev/null || true; sleep 0.2; ! is_host`;
+        const result = await driver.exec(script);
+        if (result.exitCode !== 0)
+          throw new Error(`Could not prove remote sandbox host ${hostId} absent`);
+      }
+      unregisterRunWsHost(hostId);
     },
   };
 }
@@ -1698,6 +1754,7 @@ function recordForSpec(
     fallbackModel: spec.fallbackModel,
     sandboxId,
     sandboxProvider: provider,
+    launchPhase: "prepared",
     trustProfile: spec.trustProfile,
     kind: spec.journalKind || "prompt",
     firstJournaledAt: spec.firstJournaledAt,
@@ -1803,26 +1860,47 @@ export function makeRemoteSandbox(parts: RemoteSandboxParts): Sandbox {
       spec.wsToken ??= crypto.randomUUID(); // remote runs are always WS
       const record = recordForSpec(spec, parts.sandboxId, parts.providerId);
       let handle: HostHandle | undefined;
+      let uncertainLaunch = false;
       const t0 = Date.now();
       const mark = (step: string) =>
         console.log(`[sandbox-remote] launch ${spec.hostId.slice(0, 11)}: ${step} (+${Date.now() - t0}ms)`);
       try {
         await launcher.writeSpec!(dir, spec);
         mark("spec written");
-        await launcher.launch(spec.hostId, dir);
+        // A crash after journal admission must recover from the full spec.
+        journalSet(record);
+        await launcher.launch(spec.hostId, dir, () => {
+          record.launchPhase = "launching";
+          journalSet(record);
+        });
+        record.launchPhase = "started";
+        journalSet(record);
         handle = new HostHandle(dir, spec, callbacks, launcher);
         await handle.connectWithWait(45_000);
         mark("host attached");
-      } catch (e) {
-        handle?.abandon();
-        unregisterRunToken(spec.rpcToken);
-        unregisterRunWsHost(spec.hostId);
-        try {
-          rmSync(dir, { recursive: true, force: true });
-        } catch {}
-        throw e;
+      } catch (error) {
+        if (record.launchPhase === "prepared") {
+          journalClearIfLineage(record);
+          handle?.abandon();
+          unregisterRunToken(spec.rpcToken);
+          unregisterRunWsHost(spec.hostId);
+          try { rmSync(dir, { recursive: true, force: true }); } catch {}
+          throw error;
+        }
+        // execBackground may have delivered the command. Transfer the
+        // retained artifacts to a live owner that keeps reconciling now.
+        uncertainLaunch = true;
+        handle ??= new HostHandle(dir, spec, callbacks, launcher);
+        console.warn(
+          `[sandbox-remote] ${spec.hostId}: launch outcome uncertain; waiting for host attachment`,
+          error,
+        );
       }
-      const gen = withRunJournal(handle.events(), record, touch);
+      const ownedHandle = handle!;
+      const rawEvents = uncertainLaunch
+        ? reconcileUncertainHostEvents(ownedHandle, "Remote sandbox host")
+        : ownedHandle.events();
+      const gen = withRunJournal(rawEvents, record, touch);
       // Steers fold into the running turn in-sandbox, so they never come back
       // as dial-back user frames — mirror DELIVERED steers into the current
       // engine-session file (same reconcile contract as the dispatch prompt).
@@ -1893,16 +1971,26 @@ export async function resumeRemoteSandboxRun(
 
   const oldDir = launcher.newRunDir(run.runKey);
   const oldSpec = readJsonSafe<RunHostSpec>(`${oldDir}/${HOST_SPEC_NAME}`);
+  const metaResult = await driver.exec(
+    `cat ${shellQuoteWord(`${oldDir}/${HOST_META_NAME}`)} 2>/dev/null`,
+  );
+  const journalResult = await driver.exec(
+    `cat ${shellQuoteWord(`${oldDir}/${HOST_JOURNAL_NAME}`)} 2>/dev/null`,
+  );
+  let remoteMeta: RunHostMeta | undefined;
+  let privateRun: ActiveRunRecord | undefined;
+  try {
+    if (metaResult.exitCode === 0) remoteMeta = JSON.parse(metaResult.stdout);
+  } catch {}
+  try {
+    if (journalResult.exitCode === 0) {
+      const journal = JSON.parse(journalResult.stdout) as Record<string, ActiveRunRecord>;
+      privateRun = Object.values(journal)[0];
+    }
+  } catch {}
   if (oldSpec?.wsToken) {
-    // Ended while we were down? meta.json lives in-sandbox only.
-    const meta = await driver.exec(`cat ${shellQuoteWord(`${oldDir}/meta.json`)} 2>/dev/null`);
-    let done: StreamEvent | undefined;
-    let selectedModel: string | undefined;
-    try {
-      const parsed = meta.exitCode === 0 ? JSON.parse(meta.stdout) : undefined;
-      done = parsed?.done;
-      selectedModel = parsed?.selectedModel;
-    } catch {}
+    let done: StreamEvent | undefined = remoteMeta?.done;
+    let selectedModel: string | undefined = remoteMeta?.selectedModel;
     if (done) {
       try {
         rmSync(oldDir, { recursive: true, force: true });
@@ -1928,7 +2016,7 @@ export async function resumeRemoteSandboxRun(
       }
       registerRunWsHost(oldSpec.hostId, oldSpec.wsToken);
       console.log(`[sandbox-remote] reattaching to live run ${run.runKey} in ${run.sandboxId}`);
-      const handle = new HostHandle(oldDir, oldSpec, cb, launcher);
+      const handle = new HostHandle(oldDir, oldSpec, cb, launcher, run.runKey);
       try {
         // The host redials with ≤5s backoff once its token is re-registered.
         await handle.connectWithWait(20_000);
@@ -1946,18 +2034,42 @@ export async function resumeRemoteSandboxRun(
 
   // Host died with (or before) the restart — relaunch a continuation in the
   // same sandbox so the engine session's in-sandbox state is reused.
-  const prompt = run.claudeSessionId
+  const recovery = decideSandboxHostRecovery({
+    run,
+    meta: remoteMeta,
+    privateRun,
+    hasCompleteSpec: !!oldSpec,
+  });
+  if (recovery.kind === "uncertain")
+    throw new Error(
+      `Remote sandbox run ${run.runKey} has execution evidence but no resumable engine session`,
+    );
+  const effectiveEngineSessionId =
+    recovery.kind === "resume" ? recovery.engineSessionId : undefined;
+  const prompt = effectiveEngineSessionId
     ? restartContinuationPrompt(run.prompt)
     : run.prompt;
   if (!prompt) return null;
   const rpcToken = oldSpec?.proxyMcpServers?.length ? crypto.randomUUID() : undefined;
   if (rpcToken) registerRunToken(rpcToken, { sessionId: run.osSessionId, user: run.user });
-  const spec: RunHostSpec = {
-    hostId: `rh-${Bun.randomUUIDv7()}`,
+  const hostId = `rh-${Bun.randomUUIDv7()}`;
+  const spec: RunHostSpec = recovery.kind === "replay"
+    ? {
+        ...(oldSpec as RunHostSpec),
+        hostId,
+        rpcToken,
+        ...((oldSpec as RunHostSpec).wsToken ? { wsToken: crypto.randomUUID() } : {}),
+        journalKind: recoveryKind(run.kind, "resume"),
+        firstJournaledAt: run.firstJournaledAt,
+        resumeAttempts: run.resumeAttempts,
+        lastResumeAt: run.lastResumeAt,
+      }
+    : {
+    hostId,
     osSessionId: run.osSessionId,
     prompt,
-    promptEntryId: run.claudeSessionId ? undefined : run.promptEntryId,
-    engineSessionId: run.claudeSessionId,
+    promptEntryId: effectiveEngineSessionId ? undefined : run.promptEntryId,
+    engineSessionId: effectiveEngineSessionId,
     cwd: run.cwd,
     mode: run.mode,
     model: run.model,
@@ -1984,9 +2096,12 @@ export async function resumeRemoteSandboxRun(
     resumeAttempts: run.resumeAttempts,
     lastResumeAt: run.lastResumeAt,
   };
+  console.log(`[sandbox-remote] relaunching interrupted run ${run.runKey} in ${run.sandboxId} as ${spec.hostId}`);
+  const replacement = sandbox.launchRunEager
+    ? await sandbox.launchRunEager(spec, { onAskUser: cb.onAskUser })
+    : sandbox.launchRun(spec, { onAskUser: cb.onAskUser });
   try {
     if (oldDir && existsSync(oldDir)) rmSync(oldDir, { recursive: true, force: true });
   } catch {}
-  console.log(`[sandbox-remote] relaunching interrupted run ${run.runKey} in ${run.sandboxId} as ${spec.hostId}`);
-  return sandbox.launchRun(spec, { onAskUser: cb.onAskUser }).events();
+  return replacement.events();
 }

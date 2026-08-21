@@ -81,10 +81,18 @@ async function git(args: string[]) {
   return await run(["git", ...args], { cwd: REPO_ROOT });
 }
 
-/** Can this shell restart the service without prompting? (self-deploy.sh runs
- *  systemctl via `sudo -n`; a sudo password prompt inside it would just fail.) */
+/** Can this shell launch the fixed deploy helper and restart without prompting? */
 async function passwordlessRoot(): Promise<boolean> {
   if (process.getuid?.() === 0) return true;
+  const systemctl = Bun.which("systemctl") || "/usr/bin/systemctl";
+  const [helper, restart] = await Promise.all([
+    run(["sudo", "-n", "/usr/local/libexec/opensession-run-host", "check"]),
+    run(["sudo", "-n", "-l", systemctl, "restart", "opensession.service"]),
+  ]);
+  if (helper.code === 0 && restart.code === 0) return true;
+  // Existing self-hosted instances used broad passwordless sudo for the
+  // transient deploy unit. Keep that one-release bootstrap path working until
+  // `opensession service install` replaces it with the fixed helper grant.
   return (await run(["sudo", "-n", "true"])).code === 0;
 }
 
@@ -237,6 +245,13 @@ export async function update(opts: UpdateOptions = {}): Promise<number> {
     else warn("restart failed — do it by hand");
   } else {
     warn("no service installed", "restart your foreground server to pick this up");
+  }
+
+  if ((await service.isInstalled()) && !existsSync("/usr/local/libexec/opensession-run-host")) {
+    warn(
+      "detached executor not installed",
+      "run `opensession service install` once to install the fixed launch helper",
+    );
   }
 
   return 0;

@@ -894,6 +894,45 @@ describe("restart recovery queue", () => {
 });
 
 describe("restart recovery reattach", () => {
+	it("does not re-prompt when a local host is not proven dead", async () => {
+		const sessionId = `local-host-uncertain-${crypto.randomUUID()}`;
+		const hostId = `rh-${crypto.randomUUID()}`;
+		const fake = makeFakeEngine([{ kind: "clean" }]);
+		agent.__setEngineForTest(fake.engine);
+		let resumeCalls = 0;
+		agent.__setLocalHostResumeForTest(async () => {
+			resumeCalls++;
+			return "uncertain";
+		});
+		const snapshotRun: mod.ActiveRunRecord = {
+			runKey: hostId,
+			hostId,
+			osSessionId: sessionId,
+			claudeSessionId: `pi-${crypto.randomUUID()}`,
+			prompt: "perform this once",
+			cwd: "/tmp",
+			model: "pi/anthropic/claude-sonnet-5",
+			kind: "prompt",
+			startedAt: new Date().toISOString(),
+		};
+		try {
+			agent.resumeInterruptedRuns(
+				() => {},
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				[snapshotRun],
+			);
+			while (resumeCalls === 0) await Bun.sleep(5);
+			await Bun.sleep(10);
+			expect(fake.calls).toHaveLength(0);
+			expect(agent.isAgentSessionBusy(sessionId)).toBe(true);
+		} finally {
+			clearRunState(sessionId);
+		}
+	});
+
 	it("claims a snapshot-only local host before the generic wake can re-prompt", async () => {
 		const sessionId = `local-host-snapshot-${crypto.randomUUID()}`;
 		const hostId = `rh-${crypto.randomUUID()}`;

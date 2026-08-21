@@ -100,7 +100,9 @@ function wakeOwningSession(snap: WorkflowRunSnapshot): void {
 			`Read its result with workflow_status ${snap.runId} and continue the task.` +
 			(snap.error ? `\nError: ${snap.error}` : "");
 		void ctrl
-			.deliverToSession(snap.sessionId, msg, snap.user)
+			.deliverToSession(snap.sessionId, msg, snap.user, {
+				deliveryId: `workflow:${snap.runId}:${snap.status}`,
+			})
 			.catch((e) =>
 				console.warn(`[workflow] ${snap.runId} wake delivery failed:`, e),
 			);

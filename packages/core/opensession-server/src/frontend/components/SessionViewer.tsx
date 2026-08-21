@@ -4866,7 +4866,7 @@ export function SessionViewer({
 		// Local acknowledgement first: the gesture must land visibly whether or
 		// not the engine can drop what it is doing this instant.
 		setStopRequestedAt((prev) => prev ?? Date.now());
-		send({ type: "cancel" });
+		send({ type: "cancel", sessionId: session.id });
 	}
 
 	function handleShare() {

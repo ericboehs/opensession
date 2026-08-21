@@ -51,7 +51,9 @@ describe("steer receipt restart persistence", () => {
 		]);
 		expect(promptDispatches.get(SESSION)?.promptEntryId).toBe("prompt-entry");
 
-		promptQueues.get(SESSION)?.push({ id: "new", content: "after boot" });
+		const queue = promptQueues.get(SESSION) || [];
+		queue.push({ id: "new", content: "after boot" });
+		promptQueues.set(SESSION, queue);
 		persistQueues(storePath);
 		const persisted = JSON.parse(await Bun.file(storePath).text());
 		expect(persisted.queued[SESSION].map((item: { id: string }) => item.id)).toEqual([
@@ -151,6 +153,64 @@ describe("steer receipt restart persistence", () => {
 		expect(steeredReceipts.has(SESSION)).toBe(false);
 	});
 
+	test("an ordinary unjournaled dispatch is still requeued", () => {
+		scratch = mkdtempSync(join(tmpdir(), "os-ordinary-dispatch-"));
+		const storePath = join(scratch, "prompt-queues.json");
+		writeFileSync(
+			storePath,
+			JSON.stringify({
+				dispatching: {
+					[SESSION]: {
+						promptEntryId: "ordinary-entry",
+						items: [{ id: "ordinary", content: "retry me" }],
+					},
+				},
+			}),
+		);
+		const restored = restorePersistedQueueState({
+			storePath,
+			sessionExists: () => true,
+			journalOwnsPrompt: () => false,
+			runOwnsSteers: () => false,
+			deliveredUserTexts: () => [],
+			effects: false,
+		});
+		expect(restored.queuedCount).toBe(1);
+		expect(promptQueues.get(SESSION)?.[0]?.promptEntryId).toBe("ordinary-entry");
+		expect(promptDispatches.has(SESSION)).toBe(false);
+	});
+
+	test("a cold restart preserves a create dispatch for plan recovery", () => {
+		scratch = mkdtempSync(join(tmpdir(), "os-create-dispatch-adopt-"));
+		const storePath = join(scratch, "prompt-queues.json");
+		writeFileSync(
+			storePath,
+			JSON.stringify({
+				dispatching: {
+					[SESSION]: {
+						promptEntryId: "create-request-1",
+						items: [{ id: "opening", content: "start" }],
+						kind: "create",
+					},
+				},
+			}),
+		);
+		const restored = restorePersistedQueueState({
+			storePath,
+			sessionExists: () => true,
+			journalOwnsPrompt: () => false,
+			runOwnsSteers: () => false,
+			deliveredUserTexts: () => [],
+			effects: false,
+		});
+		expect(restored.queuedCount).toBe(0);
+		expect(promptQueues.has(SESSION)).toBe(false);
+		expect(promptDispatches.get(SESSION)).toMatchObject({
+			promptEntryId: "create-request-1",
+			kind: "create",
+		});
+	});
+
 	test("matches duplicate and substring receipts one-for-one", () => {
 		const receipts = [
 			{ id: "first", content: "same", user: "Kent" },
@@ -165,4 +225,5 @@ describe("steer receipt restart persistence", () => {
 			undeliveredSteers(receipts, ["[Kent] same\n\n[Kent] same", "[Kent] history"]),
 		).toEqual([receipts[2]]);
 	});
+
 });

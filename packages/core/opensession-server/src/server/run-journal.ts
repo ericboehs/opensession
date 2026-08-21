@@ -90,6 +90,8 @@ export interface ActiveRunRecord {
    *  restart REATTACH to a detached server that survived (adoption via the
    *  pi-detach registry) instead of re-prompting a fresh one. */
   serverKey?: string;
+  /** Eager sandbox launch checkpoint. Prepared means full spec durable but no launch admitted. */
+  launchPhase?: "prepared" | "launching" | "started";
   /** Sandbox the run executes in (docs/self-hosting-sandboxes.md); absent = host process */
   sandboxId?: string;
   /** Persistent Runner that owns this run's remote workspace and run host. */

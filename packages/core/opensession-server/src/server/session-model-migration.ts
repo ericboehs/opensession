@@ -25,6 +25,7 @@ import { writeJsonAtomic } from "./shared/atomic-write";
 import { explicitEngineFor, resolveModel } from "./models";
 import type { ActiveRunRecord } from "./run-journal";
 import type { NativeSessionFile } from "./types";
+import { sessionKernel } from "./session-kernel";
 
 export type MigrateEngineResult =
   | { ok: true; sessionId: string; from?: string; to: string }
@@ -130,14 +131,16 @@ export function migrateSessionEngine(
   }
 
   const from = data.model;
-  writeJsonAtomic(path, {
-    ...data,
-    model: resolved.id,
-    modelHistory: [
-      ...(data.modelHistory || []),
-      { model: resolved.id, from, at: new Date().toISOString(), by },
-    ],
-    ...(options.preserveActivity ? {} : { lastActivity: new Date().toISOString() }),
-  });
+  sessionKernel(sessionId).applySync("model_migration", () =>
+    writeJsonAtomic(path, {
+      ...data,
+      model: resolved.id,
+      modelHistory: [
+        ...(data.modelHistory || []),
+        { model: resolved.id, from, at: new Date().toISOString(), by },
+      ],
+      ...(options.preserveActivity ? {} : { lastActivity: new Date().toISOString() }),
+    }),
+  );
   return { ok: true, sessionId, from, to: resolved.id };
 }

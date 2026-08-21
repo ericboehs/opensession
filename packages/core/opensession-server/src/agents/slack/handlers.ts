@@ -158,6 +158,7 @@ async function activateLinkedSession(
   text: string,
   channel: string,
   threadTs: string,
+  messageTs: string,
   slackUserId: string,
 ): Promise<{ status: string; message: string }> {
   const control = tryGetSessionControl();
@@ -166,7 +167,11 @@ async function activateLinkedSession(
     sessionId,
     text,
     slackIdToFirstName(slackUserId) || slackUserId,
-    { busy: "queue", slackReplyTo: { channel, threadTs } },
+    {
+      busy: "queue",
+      slackReplyTo: { channel, threadTs },
+      deliveryId: `slack:${channel}:${messageTs}`,
+    },
   );
   if (res.status !== "error") {
     pinSlackSession(sessionId, slackUserId);
@@ -1238,6 +1243,7 @@ export async function handleMessageEvent(event: any): Promise<void> {
           text,
           channel,
           thread_ts,
+          ts,
           user,
         );
         if (res.status !== "error")
@@ -1484,6 +1490,7 @@ export async function handleMentionEvent(event: any): Promise<void> {
         cleanText,
         channel,
         thread_ts,
+        ts,
         user,
       );
       // A stale link (session deleted since the index was built) falls through

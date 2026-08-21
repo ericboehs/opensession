@@ -89,7 +89,16 @@ import { join } from "node:path";
 // from a script or a test never touches live resources.
 import "./src/server/interactive-mcp"; // registerInteractiveMcpBuilder
 import { hydratePersistedQueueState } from "./src/server/queue-state";
+import { hydrateScheduledPromptTimers } from "./src/server/scheduled-prompts";
 import { beginShutdown } from "./src/server/shutdown-state";
+import { setServiceReadiness } from "./src/server/service-readiness";
+import {
+	reconcileSessionKernelOwnership,
+	startSessionKernelActor,
+	startSessionKernelRuntime,
+	stopSessionKernelRuntime,
+} from "./src/server/session-kernel";
+import { activeRunRecords } from "./src/server/run-journal";
 import "./src/server/session-control-wiring"; // opensession-sessions MCP + Slack-link bridge
 import "./src/server/keychain"; // registers the keychain human-ask domain handler
 import { websocketHandlers } from "./src/server/ws-handlers";
@@ -150,6 +159,9 @@ mkdirSync(SESSIONS_DIR, { recursive: true });
 // graceful (see SIGTERM handler below). A plain `bun run` (no --hot) just runs
 // each branch once, exactly as before.
 const g = globalThis as any;
+
+// The actor owns the writable kernel store before any gateway projection hydrates.
+if (!g.__opensessionBooted) await startSessionKernelActor();
 
 // Loaded agents (Plain/Linear/Slack/Stripe/…). Module-scoped because request
 // handlers (health routes) read it, and globalThis-backed so the set survives a
@@ -365,7 +377,8 @@ const server: import("bun").Server<WSClientData> = hotServe({
 				// deploy.sh's post-restart poll, monitors, and the client's
 				// bootId-change detection — all pre-auth by nature.
 				const openHealth =
-					path === "/api/health" && req.method === "GET";
+					req.method === "GET" &&
+					(path === "/api/health" || path === "/live" || path === "/ready");
 				// The landing page has one public write: submitting an email. The
 				// matching GET stays behind sign-in and the workspace-admin gate.
 				const openWaitlist =
@@ -626,29 +639,9 @@ if (!g.__opensessionBooted) {
 	});
 	startPrReviewNotificationTicker();
 
-	// Scheduled prompts ("send this to this session at 5pm") — deliver due ones
-	// through the SessionControl registry, exactly like a typed message.
-	setInterval(() => {
-		void (async () => {
-			const { takeDuePrompts } = await import(
-				"./src/server/scheduled-prompts"
-			);
-			for (const p of takeDuePrompts()) {
-				try {
-					const result = await getSessionControl().deliverToSession(
-						p.sessionId,
-						p.prompt,
-						p.user,
-					);
-					console.log(
-						`[scheduled-prompts] ${p.id} → ${p.sessionId}: ${result.status}`,
-					);
-				} catch (e) {
-					console.error(`[scheduled-prompts] ${p.id} delivery failed:`, e);
-				}
-			}
-		})();
-	}, 30_000);
+	// Scheduled prompts are durable SessionKernel timers. The runtime starts
+	// after run recovery below; hydrate their rows before that gate opens.
+	hydrateScheduledPromptTimers();
 
 	// Archive triage sessions when their Plain ticket is done.
 	startPlainArchiveSweep(() => {
@@ -743,8 +736,10 @@ if (!g.__opensessionBooted) {
 	// to resume, and resumeInterruptedRuns/restorePromptQueues re-prompt and
 	// re-deliver — the classic double-send if any state were shared.
 	if (!devInstance) {
+		setServiceReadiness("recovering");
 		setTimeout(() => {
 		void (async () => {
+		try {
 		const shutdownRecords = readActiveShutdownSnapshot();
 		const resumedIds = resumeInterruptedRuns(
 			(bksSessionId, terminalEvent) => {
@@ -840,11 +835,35 @@ if (!g.__opensessionBooted) {
 		resumeDrainedSessions(new Set(resumedIds), shutdownRecords);
 		// Re-deliver messages that were queued/steered when the process went down.
 		restorePromptQueues(new Set(resumedIds));
-		})();
+		const ownedSessionIds = new Set(
+			activeRunRecords()
+				.map((run) => run.osSessionId)
+				.filter((id): id is string => !!id),
+		);
+		for (const id of resumedIds) ownedSessionIds.add(id);
+		const staleKernelOwners = reconcileSessionKernelOwnership(ownedSessionIds);
+		if (staleKernelOwners.length)
+			console.warn(
+				`[session-kernel] Settled ${staleKernelOwners.length} session(s) without a recoverable run owner`,
+			);
+		} catch (error) {
+			throw error;
+		}
+		// Only now may durable timers and effects wake actors: every recovery
+		// stage above completed and ownership is established.
+		startSessionKernelRuntime();
+		setServiceReadiness("ready");
+		})().catch((error) => {
+			setServiceReadiness("failed", error);
+			console.error("[session-kernel] recovery gate failed; restarting fail-closed:", error);
+			setTimeout(() => process.exit(1), 1_000).unref?.();
+		});
 		// 1.5s: enough for boot-time state (agents, watchers, session-control
 		// registry) to settle before we start resuming, without adding dead air to
 		// every restart. Paired with the shorter drain above for faster recovery.
 		}, 1500);
+	} else {
+		setServiceReadiness("ready");
 	}
 
 	// Ongoing hygiene (every 6h): remove worktrees of sessions that were manually
@@ -908,10 +927,12 @@ if (!g.__opensessionBooted) {
 	const gracefulShutdown = async (signal: string) => {
 		if (shuttingDown) return;
 		shuttingDown = true;
+		setServiceReadiness("draining");
 		// Cross-module flag: run-session's queue drain parks new prompts from
 		// here on (the next boot delivers them) instead of starting turns that
 		// race the drain deadline.
 		beginShutdown();
+		stopSessionKernelRuntime();
 		// With poisoned timers (see run-ws.ts tripwire)
 		// every `await sleep` and Promise.race timeout below would wedge forever
 		// and systemd would SIGKILL us at TimeoutStopSec (observed: an 80s

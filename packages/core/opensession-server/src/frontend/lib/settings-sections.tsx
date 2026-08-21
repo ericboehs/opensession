@@ -49,6 +49,7 @@ export type SettingsSectionKey =
 	| "providers"
 	| "sandboxes"
 	| "runners"
+	| "reliability"
 	| "library"
 	| "integrations"
 	| "connections"
@@ -143,6 +144,13 @@ export const SECTIONS: {
 		label: "Runners",
 		group: "Workspace",
 		icon: <IconServer />,
+	},
+	{
+		key: "reliability",
+		label: "Reliability",
+		group: "Workspace",
+		adminOnly: true,
+		icon: <IconBandAid />,
 	},
 	{
 		key: "library",

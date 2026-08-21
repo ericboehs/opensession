@@ -81,6 +81,20 @@ jobs:
       # So they only protect anything when run on their own, which is what this
       # step does. Unlike the sweep it IS a gate: one file, no key, no network,
       # no engine subprocess, and it fails if the harness comes up unready.
+      - name: Session ownership and executor guarantees
+        run: >-
+          bun test
+          packages/core/opensession-server/src/server/session-kernel
+          packages/core/opensession-server/src/executor
+          packages/core/opensession-server/src/server/executor-client.test.ts
+          packages/core/opensession-server/src/server/host-client.test.ts
+          packages/core/opensession-server/src/server/sandbox/recovery.test.ts
+          packages/core/opensession-server/src/server/queue-state-restart.test.ts
+          packages/core/opensession-server/src/server/asks-restart.test.ts
+          packages/core/opensession-server/src/server/session-create-plan.test.ts
+          packages/core/opensession-server/src/frontend/lib/ws-command-outbox.test.ts
+          deploy/executor-service.test.ts
+
       - name: Transcript snapshots
         run: bun run test:snapshots
 
@@ -98,7 +112,7 @@ jobs:
       - name: Lint the installer
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          command -v shellcheck
           bash -n install.sh
           # Style-only findings should not fail the build; real bugs should.
           shellcheck --severity=warning install.sh
@@ -124,6 +138,14 @@ jobs:
           opensession version
           opensession --help > /dev/null
 
+      - name: Stub the engine intentionally omitted by this installer test
+        run: |
+          cat > "$HOME/.opensession/bin/opencode" <<'EOF'
+          #!/bin/sh
+          echo "opencode test stub"
+          EOF
+          chmod +x "$HOME/.opensession/bin/opencode"
+
       - name: PATH survives a non-interactive login shell
         if: runner.os == 'Linux'
         # Regression guard: appending only to ~/.bashrc is invisible to
@@ -131,8 +153,16 @@ jobs:
         # when scripted.
         run: bash -lc 'opensession version'
 
-      - name: Doctor reports no errors
-        run: opensession doctor
+      - name: Doctor reports only the intentionally missing capacity
+        run: |
+          set +e
+          output="$(opensession doctor 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -eq 1
+          grep -F "No Claude accounts are available" <<< "$output"
+          grep -Eq '^  1 error\(s\),' <<< "$output"
 
       - name: Service definition renders for this platform
         run: |

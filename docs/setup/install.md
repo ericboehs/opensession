@@ -394,10 +394,12 @@ opensession status
 opensession logs -f
 ```
 
-On Linux that installs a systemd unit (needs sudo). On macOS it installs a
+On Linux that installs the `opensession` and `opensession-executor` systemd
+units (needs sudo). On macOS it installs a
 per-user **LaunchAgent**, which needs no root at all.
 
-The repo's `opensession.service` is a **template**, not a file to install
+The repo's `opensession.service` and `opensession-executor.service` are
+**templates**, not files to install
 verbatim — it carries one deployment's user, checkout path and bun path.
 `opensession service install` rewrites those for your box. The username is
 resolved and then verified to exist: `os.userInfo()` returns the literal string
@@ -430,7 +432,9 @@ Unit choices worth knowing (comments in the file itself):
 The production unit intentionally does not use `bun --hot`: failed backend
 reloads on Bun 1.3.14 can permanently stop timer delivery while HTTP remains
 healthy. The in-process frontend watcher still rebuilds frontend edits live.
-All backend changes need `opensession restart` after commit and push.
+Gateway and kernel backend changes need `opensession restart` after commit and
+push. Executor-only deploys restart `opensession-executor.service` without
+dropping browser sockets or session state.
 Restarts are graceful: detached engine turns survive and the run journal
 reattaches them on boot, but they still churn active sessions, so restart once
 after the backend change rather than after every save.
