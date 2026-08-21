@@ -13,7 +13,7 @@
  */
 
 import { readFileSync, readdirSync, statfsSync } from "node:fs";
-import { cpus, freemem, loadavg, totalmem } from "node:os";
+import { cpus, loadavg, totalmem } from "node:os";
 
 const isLinux = process.platform === "linux";
 
@@ -51,10 +51,10 @@ export function systemStats(): Record<string, unknown> {
 
 /**
  * Memory totals, portable across platforms. Linux reads /proc/meminfo for the
- * kernel's own "available" estimate and swap accounting; elsewhere
- * os.totalmem()/freemem() stand in. Swap is null off Linux because there is no
- * cheap read for it there, and null (not 0) keeps "no swap pressure" distinct
- * from "not measured".
+ * kernel's own "available" estimate and swap accounting. Other platforms
+ * expose only the total: os.freemem() is strictly unused RAM and excludes
+ * reclaimable cache, so labelling it "available" would produce false low-memory
+ * alarms on macOS. Null keeps "not measured" distinct from real zero pressure.
  */
 function memoryStats(): Record<string, unknown> {
 	if (isLinux) {
@@ -72,12 +72,10 @@ function memoryStats(): Record<string, unknown> {
 			swapUsedGb: +(((mem.SwapTotal || 0) - (mem.SwapFree || 0)) / 1e9).toFixed(2),
 		};
 	}
-	const total = totalmem();
-	const free = freemem();
 	return {
-		totalGb: +(total / 1e9).toFixed(2),
-		availableGb: +(free / 1e9).toFixed(2),
-		availablePct: total ? +((free / total) * 100).toFixed(1) : null,
+		totalGb: +(totalmem() / 1e9).toFixed(2),
+		availableGb: null,
+		availablePct: null,
 		swapUsedGb: null,
 	};
 }
