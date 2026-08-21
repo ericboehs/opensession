@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useSetupStatus } from "../hooks/useSetupStatus";
-import { BASE_PATH } from "../lib/base";
 import { DEFAULT_DOC_TITLE, docTitle } from "../lib/brand";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
@@ -185,7 +184,13 @@ function StepRail({
   );
 }
 
-export function SetupPanel({ onDone }: { onDone?: () => void }) {
+export function SetupPanel({
+  onDone,
+  onOpenOnboarding,
+}: {
+  onDone?: () => void;
+  onOpenOnboarding: () => void;
+}) {
   const setup = useSetupStatus();
   const { status, failed, refetch } = setup;
   const [index, setIndex] = useState(0);
@@ -251,7 +256,7 @@ export function SetupPanel({ onDone }: { onDone?: () => void }) {
         title="Workspace setup"
         className="mb-8"
         actions={
-          <Button size="sm" render={<a href={`${BASE_PATH}/welcome`} />}>
+          <Button size="sm" onClick={onOpenOnboarding}>
             Open onboarding
           </Button>
         }
