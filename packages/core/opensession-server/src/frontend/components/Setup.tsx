@@ -15,9 +15,8 @@ import {
 import { LoadingState } from "../ui/state";
 import { EngineRow, SetupChecklist } from "./SetupChecklist";
 import { IdentityCard } from "./SetupIdentity";
-import { IntegrationsList } from "./SetupIntegrations";
+import { GithubAccounts } from "./Connections";
 import { ReposSection } from "./SetupRepos";
-import { SetupRestart } from "./SetupRestart";
 import {
   ClaudeAccountsSection,
   CodexAccountsSection,
@@ -335,12 +334,7 @@ export function SetupPanel({ onDone }: { onDone?: () => void }) {
                     </>
                   )}
                   {step.id === "github" && (
-                    <IntegrationsList
-                      integrations={status.integrations.filter(
-                        (integration) => integration.id === "github",
-                      )}
-                      onSaved={setup.applyIntegration}
-                    />
+                    <GithubAccounts onChanged={refetch} />
                   )}
                   {step.id === "engine" && (
                     <>
@@ -406,7 +400,6 @@ export function SetupPanel({ onDone }: { onDone?: () => void }) {
           </div>
         </>
       )}
-      <SetupRestart setup={setup} />
     </SettingsPanel>
   );
 }
