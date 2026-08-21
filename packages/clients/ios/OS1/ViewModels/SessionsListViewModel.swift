@@ -28,8 +28,33 @@ final class SessionsListViewModel {
     /// Kept separate from the live-list failure, whose banner describes a
     /// different request.
     private(set) var archivedLoadFailure: String?
+    /// Each visible Undo owns the snapshot archived by that action. Keeping
+    /// snapshots separate prevents a later archive from changing an older button.
+    private(set) var archiveUndoOffers: [ArchiveUndoOffer] = []
 
+    private let now: () -> Date
+    private let archiveUndoLifetime: TimeInterval
+    private let setArchived: (String, Bool) async throws -> Void
+    private let reconcilesArchiveMutations: Bool
+    @ObservationIgnored private var archiveUndoExpiryTasks: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var archiveRequests: [
+        String: (id: UUID, task: Task<Void, Never>)
+    ] = [:]
     private var pollTask: Task<Void, Never>?
+
+    init(
+        now: @escaping () -> Date = Date.init,
+        archiveUndoLifetime: TimeInterval = 7,
+        setArchived: @escaping (String, Bool) async throws -> Void = { id, archived in
+            try await OS1API.setArchived(sessionId: id, archived: archived)
+        },
+        reconcilesArchiveMutations: Bool = true
+    ) {
+        self.now = now
+        self.archiveUndoLifetime = archiveUndoLifetime
+        self.setArchived = setArchived
+        self.reconcilesArchiveMutations = reconcilesArchiveMutations
+    }
 
     /// The server's archived index, kept apart from `archivedSessions` so the
     /// local overlay (a row archived on this device, one restored a moment
@@ -663,35 +688,126 @@ final class SessionsListViewModel {
     /// Swipe-to-archive: drop the row immediately, tell the server in the
     /// background, and roll back (surfacing the error) if that fails.
     func archive(_ session: Session) {
+        archive([session])
+    }
+
+    /// Archive one workspace as one action, with one exact Undo snapshot.
+    func archive(_ archivedSessions: [Session]) {
+        guard !archivedSessions.isEmpty else { return }
         archiveFailure = nil
+        offerArchiveUndo(for: archivedSessions)
+        for session in archivedSessions {
+            archiveSession(session)
+        }
+    }
+
+    private func archiveSession(_ session: Session) {
         setSessions(
             sessions.filter { $0.id != session.id },
             rows: sidebarRowsCache.flatMap { rowsRemoving(sessionId: session.id, from: $0) }
         )
         var archived = session
         archived.archived = true
-        locallyArchived[session.id] = (archived, Date())
+        locallyArchived[session.id] = (archived, now())
         publishArchived()
-        Task {
+        let requestId = UUID()
+        let request = Task { [weak self] in
+            guard let self else { return }
             do {
-                try await OS1API.setArchived(sessionId: session.id, archived: true)
+                try await setArchived(session.id, true)
                 // Archived rows travel on their own request now, so the one
                 // just archived reaches the Archived screen only when that
-                // request is made again — ask straight away instead of
-                // leaving the local placeholder to stand in for half a minute.
-                await refreshArchived(force: true)
+                // request is made again. Ask straight away instead of leaving
+                // the local placeholder to stand in for half a minute.
+                if reconcilesArchiveMutations {
+                    await refreshArchived(force: true)
+                }
             } catch {
                 locallyArchived.removeValue(forKey: session.id)
+                removeFromArchiveUndo(sessionId: session.id)
                 publishArchived()
                 if !sessions.contains(where: { $0.id == session.id }) {
                     setSessions(
                         [session] + sessions,
-                        rows: sidebarRowsCache.flatMap { rowsInserting(session, into: $0) }
+                        rows: sidebarRowsCache.flatMap { self.rowsInserting(session, into: $0) }
                     )
                 }
-                archiveFailure = session
-                self.error = "Couldn't archive: \(error.localizedDescription)"
+                if !isLocallyUnarchived(session.id) {
+                    archiveFailure = session
+                    self.error = "Couldn't archive: \(error.localizedDescription)"
+                }
             }
+        }
+        archiveRequests[session.id] = (requestId, request)
+        Task { [weak self] in
+            await request.value
+            self?.archiveRequestFinished(sessionId: session.id, requestId: requestId)
+        }
+    }
+
+    private func archiveRequestFinished(sessionId: String, requestId: UUID) {
+        guard archiveRequests[sessionId]?.id == requestId else { return }
+        archiveRequests.removeValue(forKey: sessionId)
+    }
+
+    private func offerArchiveUndo(for sessions: [Session]) {
+        let offer = ArchiveUndoOffer(
+            id: UUID(),
+            sessions: sessions,
+            expiresAt: now().addingTimeInterval(archiveUndoLifetime)
+        )
+        archiveUndoOffers.append(offer)
+        let lifetime = archiveUndoLifetime
+        archiveUndoExpiryTasks[offer.id] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(lifetime))
+            guard !Task.isCancelled else { return }
+            self?.expireArchiveUndo(id: offer.id)
+        }
+    }
+
+    /// Spend one offer by id. The id resolves its own snapshot, never the most
+    /// recent archive, so repeated actions cannot repoint an older Undo.
+    @discardableResult
+    func undoArchive(_ offerId: UUID) -> Bool {
+        expireArchiveUndos(at: now())
+        guard let index = archiveUndoOffers.firstIndex(where: { $0.id == offerId }) else {
+            return false
+        }
+        let offer = archiveUndoOffers.remove(at: index)
+        archiveUndoExpiryTasks.removeValue(forKey: offerId)?.cancel()
+        for session in offer.sessions {
+            unarchive(session)
+        }
+        return true
+    }
+
+    func expireArchiveUndos(at date: Date) {
+        let expired = archiveUndoOffers.filter { $0.expiresAt <= date }.map(\.id)
+        guard !expired.isEmpty else { return }
+        let ids = Set(expired)
+        archiveUndoOffers.removeAll { ids.contains($0.id) }
+        for id in expired {
+            archiveUndoExpiryTasks.removeValue(forKey: id)?.cancel()
+        }
+    }
+
+    private func expireArchiveUndo(id: UUID) {
+        archiveUndoOffers.removeAll { $0.id == id }
+        archiveUndoExpiryTasks.removeValue(forKey: id)
+    }
+
+    private func removeFromArchiveUndo(sessionId: String) {
+        archiveUndoOffers = archiveUndoOffers.compactMap { offer in
+            let remaining = offer.sessions.filter { $0.id != sessionId }
+            guard !remaining.isEmpty else {
+                archiveUndoExpiryTasks.removeValue(forKey: offer.id)?.cancel()
+                return nil
+            }
+            return ArchiveUndoOffer(
+                id: offer.id,
+                sessions: remaining,
+                expiresAt: offer.expiresAt
+            )
         }
     }
 
@@ -704,7 +820,8 @@ final class SessionsListViewModel {
     /// server. The short-lived suppression avoids a cached archived row
     /// flashing back into the sheet before the PATCH reaches `/api/sessions`.
     func unarchive(_ session: Session) {
-        locallyUnarchived[session.id] = Date()
+        let pendingArchive = archiveRequests.removeValue(forKey: session.id)?.task
+        locallyUnarchived[session.id] = now()
         var restored = session
         restored.archived = false
         publishArchived()
@@ -713,20 +830,23 @@ final class SessionsListViewModel {
             rows: sidebarRowsCache.flatMap { rowsInserting(restored, into: $0) }
         )
         Task {
+            if let pendingArchive { await pendingArchive.value }
             do {
-                try await OS1API.setArchived(sessionId: session.id, archived: false)
+                try await setArchived(session.id, false)
                 // The restored row is a summary until the live list carries
                 // it (and the archived index stops), so ask both rather than
                 // leaving a half-populated row in the sidebar until the next
                 // poll comes round.
-                await refresh()
-                await refreshArchived(force: true)
+                if reconcilesArchiveMutations {
+                    await refresh()
+                    await refreshArchived(force: true)
+                }
             } catch {
                 locallyUnarchived.removeValue(forKey: session.id)
                 setSessions(sessions.filter { $0.id != session.id })
                 publishArchived()
                 self.error = "Couldn't restore: \(error.localizedDescription)"
-                await refresh()
+                if reconcilesArchiveMutations { await refresh() }
             }
         }
     }
