@@ -21,6 +21,7 @@ import {
   copyFileSync,
   existsSync,
   readFileSync,
+  rmSync,
   statSync,
   truncateSync,
 } from "node:fs";
@@ -151,10 +152,28 @@ const SERVICE_LOGS = ["server.log", "server.err.log"];
  * Rotate an oversized service log in place. launchd and systemd open the log
  * for append, so the running server's next write lands at the new end of file
  * rather than at a stale offset: copy-then-truncate is safe and leaves no
- * sparse hole. One generation is kept as `<name>.1` for a post-mortem; the
- * previous `.1` is overwritten. Returns the freed size, or 0 if nothing to do.
+ * sparse hole. One generation is kept as `<name>.1` for a post-mortem when
+ * space permits. On ENOSPC the partial rotation is removed and the live log is
+ * truncated as a last resort: recovering the filesystem is more important than
+ * preserving the copy. Returns the freed size, or 0 if nothing to do.
  */
-export function rotateLog(path: string, capBytes = LOG_CAP_BYTES): number {
+export interface LogRotationOps {
+  copy: (source: string, destination: string) => void;
+  truncate: (path: string) => void;
+  remove: (path: string) => void;
+}
+
+const DEFAULT_LOG_ROTATION_OPS: LogRotationOps = {
+  copy: (source, destination) => copyFileSync(source, destination),
+  truncate: (path) => truncateSync(path, 0),
+  remove: (path) => rmSync(path, { force: true }),
+};
+
+export function rotateLog(
+  path: string,
+  capBytes = LOG_CAP_BYTES,
+  ops: LogRotationOps = DEFAULT_LOG_ROTATION_OPS,
+): number {
   let size = 0;
   try {
     size = statSync(path).size;
@@ -162,12 +181,29 @@ export function rotateLog(path: string, capBytes = LOG_CAP_BYTES): number {
     return 0; // no such log yet
   }
   if (size <= capBytes) return 0;
+  const rotatedPath = `${path}.1`;
   try {
-    copyFileSync(path, `${path}.1`);
-    truncateSync(path, 0);
+    ops.copy(path, rotatedPath);
+    ops.truncate(path);
     return size;
-  } catch (e) {
-    console.error(`[maintenance] could not rotate ${path}:`, e);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOSPC") {
+      try {
+        ops.remove(rotatedPath);
+        ops.truncate(path);
+        console.warn(
+          `[maintenance] disk full while rotating ${path}; truncated without keeping .1`,
+        );
+        return size;
+      } catch (fallbackError) {
+        console.error(
+          `[maintenance] could not recover disk space from ${path}:`,
+          fallbackError,
+        );
+        return 0;
+      }
+    }
+    console.error(`[maintenance] could not rotate ${path}:`, error);
     return 0;
   }
 }
@@ -189,7 +225,7 @@ export function runMaintenance(): MaintenanceResult {
   }
   for (const r of rotated) {
     console.log(
-      `[maintenance] rotated ${r.path} (${(r.wasBytes / MB).toFixed(0)}MB -> 0, kept .1)`,
+      `[maintenance] rotated ${r.path} (${(r.wasBytes / MB).toFixed(0)}MB -> 0)`,
     );
   }
   if (rotated.length) audit({ event: "maintenance_log_rotate", rotated: rotated.length });

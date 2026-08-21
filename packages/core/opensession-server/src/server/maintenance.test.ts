@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rotateLog, serviceLogDirFromDefinition } from "./maintenance";
@@ -16,6 +24,25 @@ describe("rotateLog", () => {
     expect(freed).toBe(2048);
     expect(statSync(log).size).toBe(0); // live log truncated
     expect(readFileSync(`${log}.1`, "utf8")).toBe(body); // rotation preserved
+  });
+
+  test("truncates without a rotation when the copy runs out of space", () => {
+    const dir = mkdtempSync(join(tmpdir(), "os-maint-"));
+    const log = join(dir, "server.log");
+    writeFileSync(log, "x".repeat(2048));
+
+    const freed = rotateLog(log, 1024, {
+      copy: (_source, destination) => {
+        writeFileSync(destination, "partial");
+        throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+      },
+      truncate: (path) => truncateSync(path, 0),
+      remove: (path) => rmSync(path, { force: true }),
+    });
+
+    expect(freed).toBe(2048);
+    expect(statSync(log).size).toBe(0);
+    expect(existsSync(`${log}.1`)).toBe(false);
   });
 
   test("leaves a log under the cap untouched", () => {
