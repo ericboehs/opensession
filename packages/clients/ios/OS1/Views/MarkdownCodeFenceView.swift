@@ -64,10 +64,18 @@ struct MarkdownCodeFenceView: View {
             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
         )
         .task(id: HighlightRequest(code: fence.contents, colorScheme: colorScheme)) {
-            attributedText = await MarkdownCodeHighlighter.shared.attributedText(
+            let result = await MarkdownCodeHighlighter.shared.attributedText(
                 for: fence.contents,
                 colorScheme: colorScheme
             )
+            guard !Task.isCancelled else { return }
+            attributedText = result.map {
+                SyntaxHighlighting.restoringEdgeWhitespace(
+                    $0,
+                    in: fence.contents,
+                    fallbackColor: OS1VisualStyle.textDim
+                )
+            }
         }
         .onDisappear {
             feedbackTask?.cancel()
