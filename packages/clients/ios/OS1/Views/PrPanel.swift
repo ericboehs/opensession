@@ -55,13 +55,19 @@ struct SessionPrTarget: Equatable, Hashable {
 /// to verify without rendering a view.
 struct SessionPrRow: Identifiable, Equatable {
     let target: SessionPrTarget
-    let number: Int
+    let number: Int?
     let title: String?
     let state: String
     let url: URL?
     let isPrimary: Bool
 
     var id: SessionPrTarget { target }
+
+    @MainActor
+    var identityLabel: String {
+        let repo = RepoTile.label(for: target.repo)
+        return number.map { "\(repo) #\($0)" } ?? "\(repo) · \(target.branch)"
+    }
 }
 
 @MainActor
@@ -101,30 +107,41 @@ enum SessionPrSeries {
 
         var seen: Set<SessionPrTarget> = []
         return ordered.compactMap { ref in
-            guard let number = ref.number else { return nil }
             let target = SessionPrTarget(repo: ref.repo, branch: ref.branch)
             guard seen.insert(target).inserted else { return nil }
             return SessionPrRow(
                 target: target,
-                number: number,
+                number: ref.number,
                 title: ref.title,
                 state: stateLabel(for: ref),
                 url: ref.url.flatMap(URL.init(string:))
-                    ?? PrLinks.githubURL(for: .init(repo: ref.repo, number: number)),
+                    ?? ref.number.flatMap {
+                        PrLinks.githubURL(for: .init(repo: ref.repo, number: $0))
+                    },
                 isPrimary: ref.source == "primary"
                     || (ref.repo == session.effectiveRepo && ref.branch == session.branch)
             )
         }
     }
 
+    static func destination(for row: SessionPrRow, sessionId: String) async -> URL? {
+        if let url = row.url { return url }
+        let details = try? await OS1API.pr(
+            sessionId: sessionId,
+            repo: row.target.repo,
+            branch: row.target.branch
+        )
+        return details?.url.flatMap(URL.init(string:))
+    }
+
     private static func stateLabel(for ref: SessionPrRef) -> String {
         if ref.state == "MERGED" { return "Merged" }
         if ref.state == "CLOSED" { return "Closed" }
+        if ref.isDraft == true { return "Draft" }
         if (ref.checks?.failed ?? 0) > 0 { return "Checks failed" }
         if ref.reviewDecision == "CHANGES_REQUESTED" { return "Changes requested" }
         let pending = ref.checks?.pending ?? 0
         if pending > 0 { return "\(pending) check\(pending == 1 ? "" : "s") pending" }
-        if ref.isDraft == true { return "Draft" }
         if ref.reviewDecision == "APPROVED" { return "Approved" }
         return "Open"
     }
@@ -152,7 +169,7 @@ struct SessionPrSeriesRows: View {
                         .foregroundStyle(tint(for: row.state))
                         .frame(width: 22)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: "\(RepoTile.label(for: row.target.repo)) #\(row.number)")
+                        Text(verbatim: row.identityLabel)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(OS1VisualStyle.text)
                         if let title = row.title, !title.isEmpty {
@@ -178,7 +195,7 @@ struct SessionPrSeriesRows: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(
-                Text(verbatim: "\(RepoTile.label(for: row.target.repo)) pull request #\(row.number), \(row.state)")
+                Text(verbatim: "\(row.identityLabel), \(row.state)")
             )
         }
     }
@@ -408,7 +425,7 @@ struct PrPanelView: View {
                                 session: viewModel.session,
                                 includePrimary: true
                             ) { row in
-                                if let url = row.url { openURL(url) }
+                                openPrRow(row)
                             }
                         }
                         .background(
@@ -497,9 +514,19 @@ struct PrPanelView: View {
                 answer: Text("\(rows.count)").foregroundColor(OS1VisualStyle.textDim)
             ) {
                 SessionPrSeriesRows(session: viewModel.session) { row in
-                    if let url = row.url { openURL(url) }
+                    openPrRow(row)
                 }
             }
+        }
+    }
+
+    private func openPrRow(_ row: SessionPrRow) {
+        Task {
+            guard let url = await SessionPrSeries.destination(
+                for: row,
+                sessionId: viewModel.session.id
+            ) else { return }
+            openURL(url)
         }
     }
 

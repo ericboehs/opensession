@@ -726,8 +726,14 @@ struct WorktreeInfoView: View {
                 ) { row in
                     if row.isPrimary {
                         panel = .review(sessionId: currentSession.id)
-                    } else if let url = row.url {
-                        openURL(url)
+                    } else {
+                        Task {
+                            guard let url = await SessionPrSeries.destination(
+                                for: row,
+                                sessionId: currentSession.id
+                            ) else { return }
+                            openURL(url)
+                        }
                     }
                 }
             }
