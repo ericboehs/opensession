@@ -717,15 +717,36 @@ struct SessionView: View {
             }
             #else
             // macOS retains the PR chip in its roomier toolbar; on iOS the
-            // same panel lives in the title-opened workspace sheet.
+            // same series lives in the title-opened workspace sheet.
             if let prNumber = viewModel.prDetails?.number ?? viewModel.session.prNumber {
+                let prRows = SessionPrSeries.rows(for: viewModel.session)
                 ToolbarItem(placement: .topTrailingCompat) {
-                    Button {
-                        showPrPanel = true
-                    } label: {
-                        PrChipLabel(number: prNumber, summary: viewModel.prDetails?.summary)
+                    if prRows.count > 1 {
+                        Menu {
+                            Button {
+                                showPrPanel = true
+                            } label: {
+                                Text(verbatim: "Open pull request #\(prNumber)")
+                            }
+                            ForEach(prRows.filter { !$0.isPrimary }) { row in
+                                if let url = row.url {
+                                    Link(destination: url) {
+                                        Text(verbatim: "\(RepoTile.label(for: row.target.repo)) #\(row.number) · \(row.title ?? row.state)")
+                                    }
+                                }
+                            }
+                        } label: {
+                            PrChipLabel(number: prNumber, summary: viewModel.prDetails?.summary)
+                        }
+                        .accessibilityLabel(Text("Pull requests"))
+                    } else {
+                        Button {
+                            showPrPanel = true
+                        } label: {
+                            PrChipLabel(number: prNumber, summary: viewModel.prDetails?.summary)
+                        }
+                        .accessibilityLabel(Text(verbatim: "Pull request #\(prNumber)"))
                     }
-                    .accessibilityLabel(Text(verbatim: "Pull request #\(prNumber)"))
                 }
             }
             #endif
