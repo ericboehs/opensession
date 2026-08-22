@@ -8,9 +8,12 @@ test("the desktop tab strip cannot cover the header actions", () => {
 	expect(VIEWER_HEADER_ACTIONS).toContain("relative z-[1]");
 });
 
-test("the focused phone composer does not double-count the keyboard pan", () => {
-	// Safari pans this in-flow composer above the keyboard when its textarea
-	// focuses. Keep the visual gap, but do not add the keyboard height again.
-	expect(VIEWER_INPUT).toContain("phone:[body.kb-open_&]:pb-3");
-	expect(VIEWER_INPUT).not.toContain("var(--kb-inset");
+test("the focused phone composer is fixed to the keyboard edge", () => {
+	// Do not leave placement to Safari's focus pan: anchor the input to the
+	// viewport and lift it by exactly what the keyboard covers.
+	expect(VIEWER_INPUT).toContain("phone:[body.kb-open_&]:fixed");
+	expect(VIEWER_INPUT).toContain("phone:[body.kb-open_&]:bottom-0");
+	expect(VIEWER_INPUT).toContain(
+		"phone:[body.kb-open_&]:pb-[calc(12px+var(--kb-inset,0px))]",
+	);
 });

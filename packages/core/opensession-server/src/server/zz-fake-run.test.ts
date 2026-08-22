@@ -32,10 +32,12 @@ let queueState: typeof import("./queue-state");
 let fakeEngineMod: typeof import("./testing/fake-engine");
 let ocTranscript: typeof import("./transcript-persistence");
 let transcriptStoreMod: typeof import("./transcript-store");
+let memoryV2: typeof import("./memory-v2/runtime");
 let restoreSessionsDir: (() => void) | null = null;
 let restoreJournal: (() => void) | null = null;
 let redirected = false;
 const previousPiDetach = process.env.OPENSESSION_PI_DETACH;
+const previousMemoryDb = process.env.OPENSESSION_MEMORY_DB;
 
 function writeSessionFile(id: string, extra: Record<string, unknown> = {}) {
 	writeFileSync(
@@ -54,6 +56,7 @@ function writeSessionFile(id: string, extra: Record<string, unknown> = {}) {
 
 beforeAll(async () => {
 	process.env.OPENSESSION_PI_DETACH = "0";
+	process.env.OPENSESSION_MEMORY_DB = `${tmp}/memory-v2.sqlite`;
 	(globalThis as any).__opensessionBooted = true;
 	const paths = await import("./paths");
 	const prevDir = paths.__setSessionsDirForTest(tmp);
@@ -73,6 +76,8 @@ beforeAll(async () => {
 	fakeEngineMod = await import("./testing/fake-engine");
 	ocTranscript = await import("./transcript-persistence");
 	transcriptStoreMod = await import("./transcript-store");
+	memoryV2 = await import("./memory-v2/runtime");
+	memoryV2.closeMemoryRuntime();
 
 	// Redirect probe: a session file written to our temp dir must be visible
 	// through findSession, or earlier suite files froze the store elsewhere.
@@ -90,6 +95,9 @@ beforeAll(async () => {
 afterAll(() => {
 	if (previousPiDetach === undefined) delete process.env.OPENSESSION_PI_DETACH;
 	else process.env.OPENSESSION_PI_DETACH = previousPiDetach;
+	memoryV2?.closeMemoryRuntime();
+	if (previousMemoryDb === undefined) delete process.env.OPENSESSION_MEMORY_DB;
+	else process.env.OPENSESSION_MEMORY_DB = previousMemoryDb;
 	agentRunner?.__setEngineForTest(null);
 	restoreJournal?.();
 	restoreSessionsDir?.();
@@ -120,10 +128,8 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		expect(fake.calls).toHaveLength(1);
 		expect(fake.calls[0].prompt).toContain("do the thing");
 		const data = sessionJson(sid);
-		// engineSessionPatch persisted the fake engine session for later resumes.
-		expect(
-				data.claudeSessionId === "ses_zz_clean",
-		).toBe(true);
+		// engineSessionPatch persisted the fake Pi session for later resumes.
+		expect(data.piSessionId).toBe("ses_zz_clean");
 		expect(data.lastEngineProvider).toBe("pi");
 		expect(data.usage?.inputTokens).toBe(100);
 		expect(data.lastRunError).toBeUndefined();
@@ -138,7 +144,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 	test("failed run: lastRunError recorded, FSM failed (still settled)", async () => {
 		if (!redirected) return;
 		const sid = "bks-zz-error";
-		writeSessionFile(sid);
+		writeSessionFile(sid, { automation: true });
 		sessionCache.invalidateSessionsCache();
 		const fake = fakeEngineMod.makeFakeEngine([
 			// Non-transient, non-usage error: surfaces directly (no fallback walk).
@@ -147,7 +153,6 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		agentRunner.__setEngineForTest(fake.engine);
 
 		await runSession.runSessionPromptAndDrain(sid, "explode please", "Test");
-
 		expect(fake.calls).toHaveLength(1);
 		expect(sessionJson(sid).lastRunError?.message).toContain("boom");
 		expect(runState.getRunState(sid)).toBe("failed");
@@ -255,20 +260,19 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		writeSessionFile(sid, { model: "dial/medium" });
 		sessionCache.invalidateSessionsCache();
 		const fake = fakeEngineMod.makeFakeEngine([
-			{ kind: "error", content: "Our servers are currently overloaded" },
-			{ kind: "clean", engineSessionId: "ses_zz_terra", text: ["recovered"] },
+			{ kind: "error", content: "fetch failed (socket hang up)" },
+			{ kind: "clean", engineSessionId: "ses_zz_opus", text: ["recovered"] },
 		]);
 		agentRunner.__setEngineForTest(fake.engine);
 
 		await runSession.runSessionPromptAndDrain(sid, "keep going", "Test");
-
 		const data = sessionJson(sid);
 		expect(fake.calls.map((call) => call.model)).toEqual([
 			"pi/openai/gpt-5.6-sol",
-			"pi/openai/gpt-5.6-terra",
+			"pi/anthropic/claude-opus-5",
 		]);
 		expect(data.model).toBe("dial/medium");
-		expect(data.lastEngineModel).toBe("pi/openai/gpt-5.6-terra");
+		expect(data.lastEngineModel).toBe("pi/anthropic/claude-opus-5");
 		expect(data.modelHistory).toBeUndefined();
 	});
 
@@ -278,8 +282,8 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		writeSessionFile(sid, { model: "gpt-5.6-sol" });
 		sessionCache.invalidateSessionsCache();
 		const fake = fakeEngineMod.makeFakeEngine([
-			{ kind: "error", content: "Our servers are currently overloaded" },
-			{ kind: "clean", engineSessionId: "ses_zz_terra_direct", text: ["recovered"] },
+			{ kind: "error", content: "fetch failed (socket hang up)" },
+			{ kind: "clean", engineSessionId: "ses_zz_opus_direct", text: ["recovered"] },
 		]);
 		agentRunner.__setEngineForTest(fake.engine);
 
@@ -287,7 +291,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 
 		const data = sessionJson(sid);
 		expect(data.model).toBe("gpt-5.6-sol");
-		expect(data.lastEngineModel).toBe("pi/openai/gpt-5.6-terra");
+		expect(data.lastEngineModel).toBe("pi/anthropic/claude-opus-5");
 		expect(data.modelHistory).toBeUndefined();
 	});
 
@@ -305,7 +309,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		await runSession.runSessionPromptAndDrain(sid, "keep going", "Test");
 
 		const data = sessionJson(sid);
-		expect(data.model).toBe("pi/openai/gpt-5.6-terra");
+		expect(data.model).toBe("pi/anthropic/claude-opus-5");
 		expect(data.modelHistory).toHaveLength(1);
 		expect(data.modelHistory[0].by).toContain("out of credits");
 	});
@@ -385,7 +389,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 		writeSessionFile(sid, { model: "dial/medium" });
 		sessionCache.invalidateSessionsCache();
 		const fake = fakeEngineMod.makeFakeEngine([
-			{ kind: "error", content: "Our servers are currently overloaded" },
+			{ kind: "error", content: "fetch failed (socket hang up)" },
 			{ kind: "usage_exhausted" },
 			{ kind: "clean", engineSessionId: "ses_zz_luna", text: ["recovered"] },
 		]);
@@ -395,7 +399,7 @@ describe("fake-engine session runs (consumer loop end-to-end)", () => {
 
 		const data = sessionJson(sid);
 		expect(data.model).toBe("dial/medium");
-		expect(data.lastEngineModel).toBe("pi/openai/gpt-5.6-luna");
+		expect(data.lastEngineModel).toBe("pi/openai/gpt-5.6-terra");
 		expect(data.modelHistory).toBeUndefined();
 	});
 

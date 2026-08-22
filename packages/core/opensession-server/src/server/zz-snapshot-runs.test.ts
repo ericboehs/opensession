@@ -218,8 +218,8 @@ describe("transcript snapshots", () => {
     h.snapshot("engine-switch-handoff", { sessionId: sid, calls });
   });
 
-  // Memory scopes are retrieved for this query (repo / user / team), injected
-  // into the prompt, and logged into the transcript as a context-injection entry.
+  // Memory scopes are injected into the run's session note (repo / user / team)
+  // and logged into the transcript as a context-injection entry.
   test("memory scopes: retrieved into the turn prompt", async () => {
     if (!h.ready) return;
     const sid = "bks-snap-memory";
@@ -259,7 +259,7 @@ describe("transcript snapshots", () => {
       },
     );
 
-    expect(calls[0].prompt).toContain("tests only run from its own worktree");
+    expect(calls[0].opts.prompt).toContain("tests only run from its own worktree");
     h.snapshot("memory-scope-injection", { sessionId: sid, calls });
   });
 });

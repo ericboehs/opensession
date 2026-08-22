@@ -72,6 +72,7 @@ import {
 } from "../lib/pr-focus";
 import { providerFromUrl, prCapabilities } from "../lib/provider";
 import { pollWhileVisible, PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
+import { WS_SUMMARY_REVIEW_CLEARANCE } from "../lib/workspace-summary-classes";
 import { Textarea } from "../ui/input";
 import {
   IconArrowDown,
@@ -2049,14 +2050,16 @@ export function PrPanel({
 
   return (
     <div
-      className="selectable relative flex h-full min-h-0 flex-col overflow-hidden bg-surface"
+      className={`selectable relative flex h-full min-h-0 flex-col bg-surface ${compactToolbar ? "overflow-x-hidden overflow-y-auto" : "overflow-hidden"}`}
       data-review-canvas="true"
       ref={setRoot}
     >
       {/* The summary owns page navigation when it stands beside this canvas,
           so desktop can fold file controls into one identity row. Narrow and
           phone layouts keep the independent navigation row. */}
-      <div className="shrink-0 bg-surface desktop:mx-2 desktop:mt-2.5 desktop:mb-2 desktop:overflow-hidden desktop:rounded-lg desktop:border desktop:border-line">
+      <div
+        className={`shrink-0 bg-surface desktop:mt-2.5 desktop:mb-2 desktop:overflow-hidden desktop:rounded-lg desktop:border desktop:border-line ${compactToolbar ? `sticky top-0 z-20 desktop:ml-2 ${WS_SUMMARY_REVIEW_CLEARANCE}` : "desktop:mx-2"}`}
+      >
       <header className="flex h-10 shrink-0 items-center gap-2.5 px-6 phone:px-3">
         {/* State, in the app's own PR language, filled rather than drawn: the
             tone washes the whole chip and the glyph and word share its ink.
@@ -2267,7 +2270,9 @@ export function PrPanel({
         <StackLinkSection pr={pr} sessionId={sessionId} onLinked={load} />
       )}
 
-      <div className="flex min-h-0 flex-1">
+      <div
+        className={`flex min-h-0 flex-1 ${compactToolbar ? WS_SUMMARY_REVIEW_CLEARANCE : ""}`}
+      >
         {page === "files" && fileListMode !== "hidden" && files.length > 0 && (
           <PrFileTree
             files={reviewFiles}
@@ -2278,7 +2283,7 @@ export function PrPanel({
         )}
 
         <main
-          className={`min-w-0 flex-1 overflow-y-auto bg-surface [--review-file-header-top:0px] ${reviewing ? "pb-24 phone:pb-36" : "pb-4"}`}
+          className={`min-w-0 flex-1 bg-surface [--review-file-header-top:0px] ${compactToolbar ? "overflow-y-visible" : "overflow-y-auto"} ${reviewing ? "pb-24 phone:pb-36" : "pb-4"}`}
         >
           {page === "overview" ? (
             <SelectionToSession

@@ -72,7 +72,6 @@ import {
 	workspaceSummaryOpen,
 	WS_SUMMARY_ROOM_W,
 } from "../lib/workspace-summary-open";
-import { WS_SUMMARY_REVIEW_CLEARANCE } from "../lib/workspace-summary-classes";
 
 interface Props {
 	workspace: Workspace;
@@ -644,13 +643,7 @@ export function WorkspacePane({
 
 	if (tab === "review" && reviewTarget) {
 		return withPanel(
-			<div
-				className={cn(
-					VIEW_MAIN,
-					"h-full min-h-0 bg-surface",
-					reviewSummaryVisible && WS_SUMMARY_REVIEW_CLEARANCE,
-				)}
-			>
+			<div className={cn(VIEW_MAIN, "h-full min-h-0 bg-surface")}>
 				<PrPanel
 					onOpenPr={onOpenPr}
 					key={`${reviewTarget.repo}:${reviewTarget.branch}`}

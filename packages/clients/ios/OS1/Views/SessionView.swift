@@ -1090,12 +1090,14 @@ struct SessionView: View {
                 }
             }
             // Like WhatsApp, identity begins after Back and takes the room up
-            // to the actions. Keeping it outside the bar's glass morphs also
-            // prevents a closing menu from flattening the Back control.
+            // to the actions. Its 44pt minimum matches the controls on both
+            // sides while still allowing Dynamic Type to make it taller.
+            // Keeping it outside the bar's glass morphs also prevents a
+            // closing menu from flattening the Back control.
             .padding(.leading, 10)
             .padding(.trailing, 12)
             .padding(.vertical, 1)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Capsule())
             .background(OS1VisualStyle.background.opacity(0.7), in: Capsule())
             .background(.thickMaterial, in: Capsule())

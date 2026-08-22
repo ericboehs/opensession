@@ -615,8 +615,8 @@ struct FullScreenImagePreview: View {
     @State private var loaded: [String: UIImage] = [:]
     @State private var copied = false
 
-    /// The close-button row, above the safe area.
-    private static let topBarHeight: CGFloat = 52
+    /// The close-button row, below the top safe area.
+    private static let topBarHeight: CGFloat = 64
 
     init(
         items: [PreviewImage],
@@ -723,6 +723,8 @@ struct FullScreenImagePreview: View {
                         .foregroundStyle(.white)
                         .frame(width: 36, height: 36)
                         .background(.black.opacity(0.55), in: Circle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close image")
@@ -743,7 +745,7 @@ struct FullScreenImagePreview: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, safeTop + 8)
+        .padding(.top, safeTop + 12)
         .frame(maxWidth: .infinity)
         .frame(height: safeTop + Self.topBarHeight, alignment: .top)
         .opacity(chromeVisible ? 1 - dismissalProgress : 0)

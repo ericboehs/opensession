@@ -357,8 +357,11 @@ function checkRunStateWedge(
 }
 
 export function findSession(sessionId: string): UnifiedSession | undefined {
+	// Native ids map directly to the one session file we own. Detail and run
+	// paths should not depend on a materialized list snapshot having observed a
+	// newly created session, and they should never scan the list to open one.
 	const native = readNativeSession(sessionId);
-	if (native) return native;
+	if (native) return enrichSessionRuntime([native])[0];
 	return getCachedSessions().find(
 		(s) => s.id === sessionId || s.aliasIds?.includes(sessionId),
 	);
@@ -372,7 +375,7 @@ export async function findSessionAsync(
 	// in parallel. External and historical alias ids still need the full merged
 	// scan because only that scan knows which source won deduplication.
 	const native = readNativeSession(sessionId);
-	if (native) return native;
+	if (native) return enrichSessionRuntime([native])[0];
 	return (await getCachedSessionsAsync()).find(
 		(s) => s.id === sessionId || s.aliasIds?.includes(sessionId),
 	);

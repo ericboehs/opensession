@@ -797,7 +797,7 @@ show_path_refresh_hint() {
   if [ -n "$PATH_REFRESH_PROFILE" ]; then
     display_profile="$PATH_REFRESH_PROFILE"
     case "$display_profile" in
-      "$HOME"/*) display_profile="~${display_profile#"$HOME"}" ;;
+      "$HOME"/*) display_profile="$(printf '~/%s' "${display_profile#"$HOME"/}")" ;;
     esac
     info "Run this in your current shell: ${B}source $display_profile${N}"
   elif [ "$NO_MODIFY_PATH" = "1" ]; then

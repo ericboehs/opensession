@@ -44,9 +44,7 @@ test("workspace Review keeps the implementation summary beside the PR canvas", (
 	expect(source).toContain("<WorkspaceSummary");
 	expect(source).toContain("session={presentationSession}");
 	expect(source).toContain("onOpenChange={setReviewSummaryOpen}");
-	expect(source).toContain(
-		"reviewSummaryVisible && WS_SUMMARY_REVIEW_CLEARANCE",
-	);
+	expect(source).toContain("compactToolbar={reviewSummaryVisible}");
 	expect(viewerSource).toContain(
 		"summaryVisible && WS_SUMMARY_REVIEW_CLEARANCE",
 	);
@@ -55,7 +53,7 @@ test("workspace Review keeps the implementation summary beside the PR canvas", (
 
 test("the PR toolbar keeps a compact fallback navigation row", () => {
 	const toolbarStart = prPanelSource.indexOf(
-		'<div className="shrink-0 bg-surface desktop:mx-2',
+		'<div\n        className={`shrink-0 bg-surface',
 	);
 	const toolbarEnd = prPanelSource.indexOf(">", toolbarStart);
 	const toolbar = prPanelSource.slice(toolbarStart, toolbarEnd);
@@ -87,6 +85,15 @@ test("wide Review moves page navigation into the summary and uses one toolbar ro
 	expect(summarySource).toContain('aria-label="Pull request pages"');
 	expect(summarySource).toContain('onReviewPageChange("overview")');
 	expect(summarySource).toContain('onReviewPageChange("files")');
+	expect(prPanelSource).toContain(
+		'compactToolbar ? "overflow-x-hidden overflow-y-auto"',
+	);
+	expect(prPanelSource).toContain(
+		"compactToolbar ? WS_SUMMARY_REVIEW_CLEARANCE",
+	);
+	expect(prPanelSource).toContain(
+		'compactToolbar ? "overflow-y-visible" : "overflow-y-auto"',
+	);
 });
 
 test("a lone Review hides the tab strip and keeps New tab in the header", () => {
