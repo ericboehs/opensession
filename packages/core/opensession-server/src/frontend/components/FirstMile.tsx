@@ -7,18 +7,16 @@ import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { duration, ease } from "../ui/motion";
 import { LoadingState } from "../ui/state";
-import { SettingCard, SettingRow, SettingRowTitle } from "../ui/settings";
+import { BrandMark } from "./BrandTile";
 import { GithubAuthCard } from "./SetupIntegrations";
 import { ReposSection } from "./SetupRepos";
 import { SetupRestart } from "./SetupRestart";
 import { TeamSection } from "./SetupTeam";
+import { UserAvatar } from "./UserAvatar";
 import { OrganizationProfileSection } from "./settings/GeneralPanel";
-import {
-	ClaudeAccountsSection,
-	CodexAccountsSection,
-} from "./settings/ModelAccounts";
-import { IconCheck, IconChevronLeft } from "./icons";
-import { StateChip, githubAuthState, type SetupStatus } from "./setup-shared";
+import { ProviderAccountsSection } from "./settings/ModelAccounts";
+import { IconCheck, IconChevronLeft, IconRepo } from "./icons";
+import { githubAuthState, type SetupStatus } from "./setup-shared";
 
 interface FirstMileStep {
 	id: "welcome" | "github" | "organization" | "team" | "ai" | "repos" | "ready";
@@ -36,41 +34,164 @@ const STEPS: FirstMileStep[] = [
 	{ id: "ready", label: "Ready", title: "You’re ready" },
 ];
 
+function PreviewOverflow({
+	count,
+	transparent = false,
+}: {
+	count: number;
+	transparent?: boolean;
+}) {
+	if (count <= 0) return null;
+	return (
+		<span
+			className={cn(
+				"flex size-7 items-center justify-center rounded-full border text-meta font-semibold text-dim",
+				transparent ? "border-transparent bg-transparent" : "border-bg bg-bg/85",
+			)}
+		>
+			+{count}
+		</span>
+	);
+}
+
 function FirstMileSummary({ status }: { status: SetupStatus }) {
 	const github = githubAuthState(status.github);
-	const rows = [
-		{ title: "GitHub", tone: github.tone, label: github.label },
+	let githubOrganization = status.github.appOrg || "";
+	if (!githubOrganization) {
+		try {
+			const match = new URL(status.github.appCreateUrl).pathname.match(/^\/organizations\/([^/]+)/);
+			githubOrganization = match?.[1] ? decodeURIComponent(match[1]) : "";
+		} catch {}
+	}
+	const accountCount = status.engine.claudeAccounts + status.engine.codexAccounts;
+	const accounts = [
+		...Array.from({ length: status.engine.claudeAccounts }, (_, index) => ({
+			name: `Claude account ${index + 1}`,
+			provider: "claude" as const,
+		})),
+		...Array.from({ length: status.engine.codexAccounts }, (_, index) => ({
+			name: `Codex account ${index + 1}`,
+			provider: "codex" as const,
+		})),
+	];
+	const tiles = [
 		{
-			title: "AI",
-			tone: status.engine.ready ? ("on" as const) : ("warn" as const),
-			label: status.engine.ready ? "Ready" : "Needs setup",
+			title: "GitHub",
+			ready: github.tone === "on",
+			label: github.label,
+			preview: (
+				<div className="flex max-w-full items-center gap-1.5 rounded-full bg-bg/65 py-1 pr-2 pl-1 text-meta font-medium text-fg">
+					{githubOrganization ? (
+						<span className="relative flex size-6 shrink-0">
+							<UserAvatar
+								name={githubOrganization}
+								login={githubOrganization}
+								size={24}
+								className="rounded-full"
+							/>
+							<span className="absolute -right-0.5 -bottom-0.5 flex size-2.5 items-center justify-center rounded-full bg-fg text-bg ring-1 ring-bg">
+								<BrandMark name="github" size={7} />
+							</span>
+						</span>
+					) : (
+						<span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-fg text-bg">
+							<BrandMark name="github" size={15} />
+						</span>
+					)}
+					<span className="truncate">{githubOrganization || "GitHub"}</span>
+				</div>
+			),
+		},
+		{
+			title: "AI subscriptions",
+			ready: status.engine.ready,
+			label: `${accountCount} ${accountCount === 1 ? "account" : "accounts"} connected`,
+			preview: (
+				<div className="flex -space-x-2">
+					{accounts.slice(0, 4).map((account, index) => (
+						<span
+							key={`${account.provider}-${account.name}-${index}`}
+							title={account.name}
+							className="flex size-7 items-center justify-center rounded-full border border-bg bg-bg/85 text-fg"
+						>
+							<BrandMark name={account.provider} size={15} />
+						</span>
+					))}
+					<PreviewOverflow count={accounts.length - 4} />
+				</div>
+			),
 		},
 		{
 			title: "Repositories",
-			tone: status.repos.length > 0 ? ("on" as const) : ("warn" as const),
-			label: status.repos.length > 0 ? `${status.repos.length} added` : "None",
+			ready: status.repos.length > 0,
+			label: status.repos.length > 0 ? `${status.repos.length} added` : "None added",
+			preview: (
+				<div className="flex -space-x-2">
+					{status.repos.slice(0, 4).map((repo) => (
+						<span
+							key={repo.id}
+							title={repo.label}
+							className="flex size-7 items-center justify-center rounded-full border border-bg bg-bg/85 text-dim"
+						>
+							<IconRepo size={14} />
+						</span>
+					))}
+					<PreviewOverflow count={status.repos.length - 4} />
+				</div>
+			),
 		},
 		{
 			title: "Team",
-			tone: status.team.count > 0 ? ("on" as const) : ("warn" as const),
+			ready: status.team.count > 0,
 			label:
 				status.team.count > 0
 					? `${status.team.count} ${status.team.count === 1 ? "member" : "members"}`
-					: "None",
+					: "No members",
+			preview: (
+				<div className="flex -space-x-2">
+					{status.team.names.slice(0, 4).map((name) => (
+						<UserAvatar key={name} name={name} size={28} className="border border-bg" />
+					))}
+					<PreviewOverflow count={status.team.names.length - 4} transparent />
+				</div>
+			),
 		},
 	];
 
 	return (
-		<SettingCard>
-			{rows.map((row) => (
-				<SettingRow key={row.title}>
-					<SettingRowTitle>{row.title}</SettingRowTitle>
-					<div className="ml-auto">
-						<StateChip tone={row.tone} label={row.label} />
+		<div className="grid grid-cols-4 gap-3 phone:grid-cols-2">
+			{tiles.map((tile) => (
+				<div
+					key={tile.title}
+					className={cn(
+						"flex aspect-square min-w-0 flex-col justify-between rounded-2xl border p-4 backdrop-blur-xl phone:rounded-xl phone:p-3.5",
+						tile.ready
+							? "border-transparent bg-green-soft shadow-[inset_0_1px_0_color-mix(in_srgb,white_45%,transparent),0_12px_28px_-24px_color-mix(in_srgb,var(--green)_45%,transparent)]"
+							: "border-divider-soft bg-settings-plate/65",
+					)}
+				>
+					<div className="flex min-w-0 items-start justify-between gap-2">
+						<div className="min-w-0">{tile.preview}</div>
+						<div
+							className={cn(
+								"flex size-8 shrink-0 items-center justify-center rounded-full",
+								tile.ready ? "bg-bg/60 text-green" : "bg-faint/10 text-faint",
+							)}
+						>
+							{tile.ready ? (
+								<IconCheck size={18} />
+							) : (
+								<span className="size-2 rounded-full bg-current" />
+							)}
+						</div>
 					</div>
-				</SettingRow>
+					<div className="min-w-0">
+						<div className="text-item-title font-semibold text-fg">{tile.title}</div>
+						<div className="mt-1 text-supporting leading-snug text-dim">{tile.label}</div>
+					</div>
+				</div>
 			))}
-		</SettingCard>
+		</div>
 	);
 }
 
@@ -301,22 +422,12 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 											/>
 										)}
 										{step.id === "ai" && (
-											<div className="flex flex-col gap-4">
-												<ClaudeAccountsSection />
-												<CodexAccountsSection />
-											</div>
+											<ProviderAccountsSection onboarding onChanged={refetch} />
 										)}
 										{step.id === "repos" && (
 											<ReposSection repos={status.repos} onChanged={refetch} compact />
 										)}
-										{step.id === "ready" && (
-											<>
-												<div className="mx-auto mb-6 flex size-16 items-center justify-center rounded-full bg-green-soft text-green">
-													<IconCheck size={30} />
-												</div>
-												<FirstMileSummary status={status} />
-											</>
-										)}
+										{step.id === "ready" && <FirstMileSummary status={status} />}
 									</div>
 								</>
 							)}

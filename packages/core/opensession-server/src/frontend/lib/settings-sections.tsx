@@ -175,6 +175,7 @@ export const SECTIONS: {
 		key: "memory",
 		label: "Memories",
 		group: "Workspace",
+		adminOnly: true,
 		icon: <IconDatabase />,
 	},
 	{

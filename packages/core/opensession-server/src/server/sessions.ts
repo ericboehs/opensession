@@ -43,6 +43,7 @@ import type {
   SessionPrRef,
   TranscriptEntry,
 } from "./types";
+import { removeIndexedSession } from "./session-list-store";
 
 // The GitHub PR bulk cache lives in pr-cache.ts (extracted from this module);
 // re-export its public surface so existing consumers keep importing from here.
@@ -898,18 +899,19 @@ function nativeSessionRow(data: NativeSessionFile): UnifiedSession {
   };
 }
 
-/** Read one native session directly. Opening a known session must not wait for
- * the multi-thousand-file list scan that populates the sidebar. */
-export function readNativeSession(sessionId: string): UnifiedSession | undefined {
+/**
+ * Read the list projection source for one native session without resolving a
+ * transcript. Native writes use this to update the SQLite list index in O(1):
+ * opening a session still performs the richer direct read below, while a list
+ * update never warms or scans transcript directories.
+ */
+export function readNativeSessionListRow(
+  sessionId: string,
+): UnifiedSession | undefined {
   if (!/^[A-Za-z0-9_-]{1,160}$/.test(sessionId)) return undefined;
   const data = readJsonSafe<NativeSessionFile>(`${SESSIONS_DIR}/${sessionId}.json`);
   if (!data?.id || data.id !== sessionId) return undefined;
   const session = nativeSessionRow(data);
-  session.transcriptPath = resolveTranscriptPath(
-    findTranscriptPath(session.worktreeDir, session.claudeSessionId),
-    session.codexThreadId,
-    session.model,
-  );
   const generated = getGeneratedTitle(session.id);
   if (generated) session.title = generated;
   const title = getTitleOverride(session.id);
@@ -921,6 +923,19 @@ export function readNativeSession(sessionId: string): UnifiedSession | undefined
   if (status) session.manualStatus = status;
   const review = getReviewRequest(session.id);
   if (review) session.reviewRequest = review;
+  return session;
+}
+
+/** Read one native session directly. Opening a known session must not wait for
+ * the multi-thousand-file list scan that populates the sidebar. */
+export function readNativeSession(sessionId: string): UnifiedSession | undefined {
+  const session = readNativeSessionListRow(sessionId);
+  if (!session) return undefined;
+  session.transcriptPath = resolveTranscriptPath(
+    findTranscriptPath(session.worktreeDir, session.claudeSessionId),
+    session.codexThreadId,
+    session.model,
+  );
   return session;
 }
 
@@ -1354,6 +1369,7 @@ function removeSessionArtifacts(session: UnifiedSession): void {
       break;
     }
   }
+  removeIndexedSession(session.id);
   // Nobody's unsent draft should outlive the session it was typed into.
   purgeDraftsForSessions([session.id, ...(session.aliasIds || [])]);
   // Neither should its scratch dir (session-scratch.ts). Best-effort and

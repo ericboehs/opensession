@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { composerBox, composerFlapBorder } from "../lib/composer-classes";
 
 const CSS = new URL("./base.css", import.meta.url);
-const TAILWIND = new URL("./tailwind.css", import.meta.url);
 const SHIPPED = new URL(
 	"../components/ShippedChangeComposer.tsx",
 	import.meta.url,
@@ -18,9 +17,8 @@ test("phone composers use the same quiet edge as the desktop ring", () => {
 	);
 });
 
-test("the installed phone composer keeps a quiet edge and hides auxiliary controls", async () => {
+test("the installed phone composer keeps its add menu and hides only auxiliary controls", async () => {
 	const css = await Bun.file(CSS).text();
-	const tailwind = await Bun.file(TAILWIND).text();
 	const shipped = await Bun.file(SHIPPED).text();
 	const composer = await Bun.file(COMPOSER).text();
 	const mediaStart = css.indexOf(
@@ -36,12 +34,11 @@ test("the installed phone composer keeps a quiet edge and hides auxiliary contro
 	expect(standalonePhone).toContain(
 		"border-color: color-mix(in srgb, var(--composer-border) 35%, transparent)",
 	);
-	expect(standalonePhone).toContain(".app .pwa-send-option");
+	expect(standalonePhone).toContain(".app .pwa-composer-auxiliary");
 	expect(standalonePhone).toContain("display: none");
-	expect(composer.match(/pwa-send-option/g)).toHaveLength(3);
-	expect(tailwind).toContain(
-		"@custom-variant pwa (@media (display-mode: standalone))",
+	expect(composer.match(/pwa-composer-auxiliary/g)).toHaveLength(2);
+	expect(composer).not.toContain("pwa-note-option");
+	expect(composer).toContain(
+		'"composer-pop-wrap relative inline-flex shrink-0"',
 	);
-	expect(composer).toContain("pwa:phone:inline-flex");
-	expect(composer).toContain('aria-pressed={noteMode}');
 });

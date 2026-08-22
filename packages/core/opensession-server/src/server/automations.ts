@@ -1214,18 +1214,21 @@ export async function runAutomation(
       prompt += `\n\n## Triggering event\n\nThis run was triggered by ${source}. Event payload:\n\n\`\`\`\n${options.eventContext.slice(0, 10_000)}\n\`\`\``;
     }
 
+    const memoryQuery = prompt;
+
     // Channel-watch runs get the channel's memory (facts taught via
     // remember/forget in interactive Slack sessions) as standing context.
     // Read-only here — automation runs don't get the memory tools.
     if (automation.slackWatch) {
       try {
         const { renderMemoryForPrompt } = await import("../agents/slack/memory");
-        prompt += await renderMemoryForPrompt({
+        const memory = await renderMemoryForPrompt({
           channel: automation.slackWatch.channel,
           userId: "",
           isDM: false,
           isPrivate: true, // per-channel scope + read-only workspace view
-        });
+        }, memoryQuery);
+        if (memory) prompt += `\n\n${memory}`;
       } catch {}
     }
 
@@ -1238,12 +1241,28 @@ export async function runAutomation(
       const { renderSessionMemoryNote, sessionMemoryScopes } = await import(
         "./session-memory"
       );
-      const note = await renderSessionMemoryNote(
-        sessionMemoryScopes({
-          repos: [getRepo(automation.repo).id],
-          includeTeam: !automation.slackWatch,
-        })
+      const scopes = sessionMemoryScopes({
+        repos: [getRepo(automation.repo).id],
+        includeTeam: !automation.slackWatch,
+      });
+      const { memoryRolloutMode, retrieveMemoryForPrompt } = await import(
+        "./memory-v2"
       );
+      const mode = memoryRolloutMode();
+      const note = mode === "v2"
+        ? (
+            await retrieveMemoryForPrompt(memoryQuery, {
+              scopeKeys: scopes.map((scope) => scope.key),
+              primaryRepoKey: scopes.find((scope) => scope.kind === "repo")?.key,
+            })
+          ).text
+        : await renderSessionMemoryNote(scopes);
+      if (mode === "shadow") {
+        void retrieveMemoryForPrompt(memoryQuery, {
+          scopeKeys: scopes.map((scope) => scope.key),
+          primaryRepoKey: scopes.find((scope) => scope.kind === "repo")?.key,
+        }).catch(() => {});
+      }
       if (note) prompt += `\n\n${note}`;
     } catch {}
 

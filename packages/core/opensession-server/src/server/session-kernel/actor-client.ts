@@ -58,6 +58,17 @@ export class SessionKernelActorClient {
   private readonly pending = new Map<string, Pending>();
   private readonly executions = new Map<string, string>();
   private deadError?: Error;
+  // Synchronous calls cannot overlap on the gateway thread: Atomics.wait
+  // blocks until the actor finishes. Reuse their shared response buffers
+  // instead of allocating and faulting 256 KiB for every map read. Session
+  // list enrichment alone performs hundreds of small reads.
+  private readonly syncControlBuffer = new SharedArrayBuffer(
+    Int32Array.BYTES_PER_ELEMENT * 2,
+  );
+  private readonly syncSmallOutputBuffer = new SharedArrayBuffer(
+    SMALL_OUTPUT_BYTES,
+  );
+  private syncLargeOutputBuffer?: SharedArrayBuffer;
   readonly store: SessionKernelStoreApi;
 
   constructor(
@@ -374,11 +385,18 @@ export class SessionKernelActorClient {
     outputBytes = large ? LARGE_OUTPUT_BYTES : SMALL_OUTPUT_BYTES,
   ): TResult {
     if (this.deadError) throw this.deadError;
-    const controlBuffer = new SharedArrayBuffer(
-      Int32Array.BYTES_PER_ELEMENT * 2,
-    );
-    const outputBuffer = new SharedArrayBuffer(outputBytes);
+    const controlBuffer = this.syncControlBuffer;
+    const outputBuffer =
+      outputBytes === SMALL_OUTPUT_BYTES
+        ? this.syncSmallOutputBuffer
+        : outputBytes === LARGE_OUTPUT_BYTES
+          ? (this.syncLargeOutputBuffer ??= new SharedArrayBuffer(
+              LARGE_OUTPUT_BYTES,
+            ))
+          : new SharedArrayBuffer(outputBytes);
     const control = new Int32Array(controlBuffer);
+    Atomics.store(control, 0, 0);
+    Atomics.store(control, 1, 0);
     this.worker.postMessage({
       ...request,
       control: controlBuffer,

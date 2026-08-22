@@ -25,10 +25,10 @@ interface Props {
    *  - "breadcrumb" (default): the desktop session-header pill, followed by a
    *    "›" separator before the title.
    *  - "menu-row": a full-width row styled like the ⋯ overflow menu's other
-   *    items, so the switch/attach menu is reachable from there on a phone (the
-   *    phone top bar just *shows* the repo — settings live behind the heading).
+   *    items.
+   *  - "hero": the compact repository link below the phone Workspace title.
    */
-  variant?: "breadcrumb" | "menu-row";
+  variant?: "breadcrumb" | "menu-row" | "hero";
 }
 
 /**
@@ -175,13 +175,26 @@ export function RepoBar({
         </span>
         <IconChevronRight size={16} className="shrink-0 text-faint" />
       </Menu.Trigger>
+    ) : variant === "hero" ? (
+      <Menu.Trigger
+        className="inline-flex min-h-11 max-w-full shrink-0 cursor-pointer items-center rounded-md border-0 bg-transparent px-1.5 text-label font-medium text-dim transition-[color,background-color,scale] hover:bg-hover hover:text-fg active:scale-[0.96] data-[popup-open]:bg-hover data-[popup-open]:text-fg"
+        title="Switch or attach another repository"
+        aria-label={`Repository: ${repoLabel(primary)}. Change repository`}
+      >
+        <span className="truncate">{busy ?? repoLabel(primary)}</span>
+        {attached.length > 0 && (
+          <span className="ml-1 text-faint">+{attached.length}</span>
+        )}
+      </Menu.Trigger>
     ) : (
       <Menu.Trigger
         className="-mx-1.5 -my-1 flex min-w-0 shrink-0 cursor-pointer items-center gap-[7px] rounded-md border-0 bg-transparent px-1.5 py-1 text-item-title font-medium text-fg hover:bg-hover data-[popup-open]:bg-hover"
         title="Click to switch or attach another repo"
       >
         <RepoTile name={primary} />
-        <span className="max-w-[180px] truncate">{busy ?? repoLabel(primary)}</span>
+        {/* Type sits optically high beside a centered image tile: its descender
+            space otherwise makes the word look low even when the line boxes agree. */}
+        <span className="max-w-[180px] -translate-y-px truncate">{busy ?? repoLabel(primary)}</span>
         {attached.length > 0 && (
           <span
             className="text-label text-dim"

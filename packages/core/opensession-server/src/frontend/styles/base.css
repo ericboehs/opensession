@@ -95,6 +95,14 @@
 	--mobile-header-control-border: var(--border);
 	--mobile-header-control-surface: color-mix(in srgb, var(--bg) 68%, transparent);
 	--mobile-header-control-blur: blur(20px) saturate(1.7);
+	/* The docked tab strip follows iOS: the selected tab is the bright plate and
+	   the rest sit a step under it. Both are OPAQUE on purpose. iOS paints its
+	   pills over a thick material, so the transcript passing behind them is a
+	   change in tone, never legible text; a thinned fill here put running code
+	   through the tab labels. The blur stays for the pill's edge, not to see
+	   through it. */
+	--mobile-tab-surface-selected: var(--bg-hover);
+	--mobile-tab-surface: var(--bg-raised);
 	--mobile-header-control-shadow:
 		inset 0 1px 0 rgba(255, 255, 255, 0.07),
 		0 1px 3px -1px rgba(0, 0, 0, 0.06),
@@ -496,6 +504,10 @@ html[data-theme="light"] {
 	   the plate has to stay lighter than it to keep reading as glass rather than
 	   as a grey wash over the words underneath. */
 	--mobile-header-control-surface: color-mix(in srgb, var(--bg) 62%, transparent);
+	/* Light mode reaches the same two weights from the other side: the selected
+	   tab is pure white, the rest the grey a step under it. */
+	--mobile-tab-surface-selected: var(--bg);
+	--mobile-tab-surface: var(--bg-hover);
 	--mobile-header-control-shadow:
 		inset 0 1px 0 rgba(255, 255, 255, 0.6),
 		0 0 14px 1px rgba(0, 0, 0, 0.1);
@@ -1064,6 +1076,22 @@ body.kb-open {
 	height: 100% !important;
 }
 
+/* A palette is a surface you type into, so the page behind it must hold still.
+   Base UI's `trap-focus` mode deliberately neither inerts nor scroll-locks the
+   page (the "@"-mention popup portals to <body> and inerting would kill it), so
+   on a phone the transcript or list underneath still panned under the sheet and
+   took the composer with it. `touch-action` is the smallest lever that stops
+   it: it blocks the pan without touching overflow, so no scroller loses its
+   position and nothing reflows. Effective touch-action is the intersection down
+   the ancestor chain, so one declaration on the app root covers every scroller
+   inside it, and the palette itself is portaled outside .app and keeps
+   scrolling its own prompt. `:not([hidden])` is load-bearing: a keepMounted
+   palette (the Desk) is in the DOM from boot and would otherwise lock the page
+   forever. */
+body:has(.palette-backdrop:not([hidden])) .app {
+	touch-action: none;
+}
+
 /* ── Native feel: UI chrome isn't text-selectable ────────────────
    Disable text selection everywhere by default so labels, buttons,
    nav, headers, tabs and status text behave like a native app — no
@@ -1234,8 +1262,9 @@ a {
 	}
 
 	/* Keep the installed phone composer focused on drafting and sending. The
-	   browser view retains attachments, model selection, and dictation. */
-	.app .pwa-send-option {
+	   add menu remains available for images and session options; only model
+	   selection and dictation stay in the browser view. */
+	.app .pwa-composer-auxiliary {
 		display: none;
 	}
 
@@ -1583,6 +1612,12 @@ html:is(.wco, .desktop-shell)
 	border-radius: calc(8px * var(--rf)); corner-shape: var(--cs);
 	padding: 10px 12px;
 	margin: 2px 0 8px;
+	/* Preserve authored indentation and line breaks, but soft-wrap long lines so
+	   a fence reads at the conversation width instead of becoming a scroller.
+	   `anywhere` also catches URLs, hashes, and generated identifiers that have
+	   no natural wrap point. */
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
 	overflow-x: auto;
 	font-family: var(--mono);
 	/* The same ratio the inline chip below uses, so a block and an inline run

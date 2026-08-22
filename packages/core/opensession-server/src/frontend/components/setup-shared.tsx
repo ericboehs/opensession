@@ -39,6 +39,7 @@ export interface SetupGithub {
 	clientIdConfigured: boolean;
 	clientSecretConfigured: boolean;
 	botTokenPresent: boolean;
+	appOrg?: string | null;
 	appCreateUrl: string;
 }
 

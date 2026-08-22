@@ -45,7 +45,6 @@
    put a `desktop:` and an `lg:` on one property and it will. */
 @custom-variant phone (@media (max-width: 720px));
 @custom-variant desktop (@media (min-width: 721px));
-@custom-variant pwa (@media (display-mode: standalone));
 
 /* Design tokens: map the existing base.css variables (which already carry
    dark/light theming via html[data-theme]) into Tailwind's namespace, so

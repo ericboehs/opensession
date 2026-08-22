@@ -175,6 +175,26 @@ describe("creation branch intents", () => {
     }
   });
 
+  test("normalizes an empty optional base branch before persistence", async () => {
+    const input = {
+      ...branchInput,
+      sessionId: "create-branch-without-base",
+      identity: "request-branch-without-base",
+      baseBranch: "",
+    };
+    const { store, kernel } = harness(input.sessionId);
+    try {
+      await expect(requestCreationBranch(input, {
+        kernel,
+        timeoutMs: 5,
+        pollMs: 1,
+      })).rejects.toThrow("remains durably pending");
+      expect(store.pendingOutbox()[0]?.payload).not.toHaveProperty("baseBranch");
+    } finally {
+      store.close();
+    }
+  });
+
   test("leaves timed-out branch work durable and does not re-emit it", async () => {
     const { store, kernel } = harness(branchInput.sessionId);
     try {

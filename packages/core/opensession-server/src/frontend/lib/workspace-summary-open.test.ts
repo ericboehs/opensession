@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
 	WS_SUMMARY_MAX_SHIFT,
+	WS_SUMMARY_OPEN_EVENT,
 	WS_SUMMARY_OPEN_KEY,
 	WS_SUMMARY_ROOM_W,
+	openWorkspaceSummary,
 	workspaceSummaryCanStand,
 	workspaceSummaryOpen,
 	workspaceSummaryShift,
@@ -43,6 +45,7 @@ describe("workspace summary preference", () => {
 			configurable: true,
 			value: {
 				getItem: (key: string) => stored.get(key) ?? null,
+				setItem: (key: string, value: string) => stored.set(key, value),
 			},
 		});
 		try {
@@ -54,6 +57,44 @@ describe("workspace summary preference", () => {
 		} finally {
 			if (previous) Object.defineProperty(globalThis, "localStorage", previous);
 			else Reflect.deleteProperty(globalThis, "localStorage");
+		}
+	});
+
+	test("can be reopened when another surface yields room", () => {
+		const previousStorage = Object.getOwnPropertyDescriptor(
+			globalThis,
+			"localStorage",
+		);
+		const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+		const stored = new Map([[WS_SUMMARY_OPEN_KEY, "false"]]);
+		const events: string[] = [];
+		Object.defineProperty(globalThis, "localStorage", {
+			configurable: true,
+			value: {
+				getItem: (key: string) => stored.get(key) ?? null,
+				setItem: (key: string, value: string) => stored.set(key, value),
+			},
+		});
+		Object.defineProperty(globalThis, "window", {
+			configurable: true,
+			value: {
+				dispatchEvent: (event: Event) => {
+					events.push(event.type);
+					return true;
+				},
+			},
+		});
+		try {
+			openWorkspaceSummary();
+			expect(workspaceSummaryOpen()).toBe(true);
+			expect(events).toEqual([WS_SUMMARY_OPEN_EVENT]);
+		} finally {
+			if (previousStorage)
+				Object.defineProperty(globalThis, "localStorage", previousStorage);
+			else Reflect.deleteProperty(globalThis, "localStorage");
+			if (previousWindow)
+				Object.defineProperty(globalThis, "window", previousWindow);
+			else Reflect.deleteProperty(globalThis, "window");
 		}
 	});
 });

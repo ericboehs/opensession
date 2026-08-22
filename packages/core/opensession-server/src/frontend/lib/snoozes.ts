@@ -92,13 +92,13 @@ export function snoozePresets(now = new Date()): SnoozePreset[] {
 		label: `Next week (${fmtDay(nextWeek)} ${fmtTime(nextWeek)})`,
 		until: nextWeek.toISOString(),
 	});
-	out.push({ label: "Some day", until: SNOOZE_SOMEDAY });
+	out.push({ label: "Someday", until: SNOOZE_SOMEDAY });
 	return out;
 }
 
 /** Compact time-to-wake for the row badge: "57m", "14h", "6d". */
 export function formatRemaining(untilIso: string, nowMs = Date.now()): string {
-	if (untilIso === SNOOZE_SOMEDAY) return "Some day";
+	if (untilIso === SNOOZE_SOMEDAY) return "Someday";
 	const ms = Math.max(0, Date.parse(untilIso) - nowMs);
 	const minutes = Math.ceil(ms / 60_000);
 	if (minutes < 60) return `${minutes}m`;

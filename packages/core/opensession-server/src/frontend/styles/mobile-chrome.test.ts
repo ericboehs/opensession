@@ -65,15 +65,18 @@ test("every floating phone header control is made of the same glass", async () =
 		colored: false,
 	});
 	const activeTab = tabClass({ active: true, waiting: false, colored: false });
+	// Both phone states are blurred pills, and both fills are OPAQUE: the
+	// selected tab is the bright plate, the rest the grey a step under it.
+	// A thinned fill here let the transcript read through the tab labels.
 	expect(inactiveTab).toContain(MOBILE_CONTROL_GLASS_EFFECTS);
-	expect(inactiveTab).toContain(
-		"phone:bg-[var(--mobile-header-control-surface)]",
-	);
+	expect(inactiveTab).toContain("phone:bg-[var(--mobile-tab-surface)]");
 	expect(activeTab).toContain(MOBILE_CONTROL_GLASS_EFFECTS);
-	expect(activeTab).toContain("bg-panel");
-	expect(activeTab).not.toContain(
-		"phone:bg-[var(--mobile-header-control-surface)]",
-	);
+	expect(activeTab).toContain("phone:bg-[var(--mobile-tab-surface-selected)]");
+	expect(css).toContain("--mobile-tab-surface-selected: var(--bg-hover);");
+	expect(css).toContain("--mobile-tab-surface-selected: var(--bg);");
+	expect(css).toContain("--mobile-tab-surface: var(--bg-raised);");
+	expect(css).toContain("--mobile-tab-surface: var(--bg-hover);");
+	expect(css).not.toContain("--mobile-tab-surface: color-mix(");
 
 	const floatingHeader = appHeader({ detail: false, floating: true });
 	expect(floatingHeader).not.toContain("]:bg-surface");

@@ -72,24 +72,23 @@ export const TurnBlock = React.memo(function TurnBlock({
   const pathRoots = useToolPathRoots();
   const tools = items.filter((it) => it.type === "tool_use");
   const messages = items.filter((it) => it.type === "assistant");
+  const hasNarration = messages.length > 0;
 
-  // Default fold state follows the two preferences (Settings → Preferences)
-  // and nothing else. `work` answers whether this turn's working is on screen
-  // at all: the default opens it while the turn is working and folds it again
-  // the moment the turn settles. A failed step or a screenshot inside the turn
-  // used to pin it open forever, which is the one thing "Always folded" and
-  // "Expand while running" promise never happens. Failures are one click away
-  // inside the disclosure, and media the agent explicitly surfaced outlives
-  // the fold on its own (featuredTurnMedia) rather than holding every step
-  // open with it. Folded work stays folded even during a live turn, where the
-  // work line's tail reports the running tool instead.
+  // Default fold state follows the two preferences (Settings → Preferences),
+  // except that routine tool-only work stays one calm summary row. Opening a
+  // tool-only turn by default produced the same count twice: "Working 57
+  // steps" followed by "57 steps". Once the agent writes a real update there
+  // are distinct rows worth showing, so "Expand while running" opens them as
+  // before. "Always open" and a person's manual choice still win in either
+  // state. Failures stay one click away, and explicitly surfaced media
+  // outlives the fold on its own (featuredTurnMedia).
   const [pref, setPref] = useState(getTurnActivityPrefs);
   useEffect(
     () => onTurnActivityChanged(() => setPref(getTurnActivityPrefs())),
     []
   );
   const defaultExpanded =
-    pref.work === "open" || (pref.work === "running" && live);
+    pref.work === "open" || (pref.work === "running" && live && hasNarration);
   const [rememberedExpanded] = useState(() =>
     transcriptDisclosureLedger.read(
       "turn",
@@ -131,10 +130,16 @@ export const TurnBlock = React.memo(function TurnBlock({
   // event, and this walks every step it has taken so far (collectTouchedFiles
   // skips non-tool entries itself, so `items` and `tools` give the same set).
   const editedFiles = useMemo(() => collectTouchedFiles(items), [items]);
-  // Change detail stays behind this disclosure. The Changes tab remains the
-  // place for per-file diffs; this is only a compact turn-level summary.
-  const additions = editedFiles.reduce((n, f) => n + f.additions, 0);
-  const deletions = editedFiles.reduce((n, f) => n + f.deletions, 0);
+  // Presentation stats cover code-writing tools that do not expose their input
+  // as a plain Edit or Write call. Keep the parsed files for the hover card,
+  // but let the server-derived aggregate own the summary's total.
+  const toolAggregate =
+    tools.length > 0 ? toolRunAggregate(tools, toolResults, live) : null;
+  const additions = toolAggregate?.additions ?? 0;
+  const deletions = toolAggregate?.deletions ?? 0;
+  // A tool-only turn has no inner summary row anymore, so keep the small bits
+  // of aggregate status that do add information on the one remaining row.
+  const toolOnlyAggregate = !hasNarration ? toolAggregate : null;
 
   const countsLabel =
     tools.length > 0
@@ -179,6 +184,11 @@ export const TurnBlock = React.memo(function TurnBlock({
       <button
         type="button"
         aria-expanded={expanded}
+        aria-label={
+          toolOnlyAggregate?.statusLabel
+            ? `${live ? "Working" : "Worked"}. ${countsLabel}. ${toolOnlyAggregate.statusLabel}`
+            : undefined
+        }
         onClick={() => rememberExpansion(!expanded)}
         // Baseline, not centre: this row mixes its 14px title with 13px meta
         // runs, and centring aligns boxes rather than text. The chevron carries
@@ -207,8 +217,19 @@ export const TurnBlock = React.memo(function TurnBlock({
         )}
         {/* Hovering the counts opens what they count: the lines this turn
             wrote, per file, without unfolding it. */}
-        {additions + deletions > 0 && <TurnLineStatsCard files={editedFiles} />}
-        {live && !expanded && lastTool && (
+        {additions + deletions > 0 && (
+          <TurnLineStatsCard
+            files={editedFiles}
+            additions={additions}
+            deletions={deletions}
+          />
+        )}
+        {toolOnlyAggregate?.mediaLabel && (
+          <span className="flex-shrink-0 text-meta text-faint">
+            {toolOnlyAggregate.mediaLabel}
+          </span>
+        )}
+        {live && !expanded && hasNarration && lastTool && (
           <span className="min-w-0 truncate text-label leading-4 text-faint">
             {toolDisplayName(lastTool.toolName)}:{" "}
             {toolSummary(
@@ -257,11 +278,14 @@ export const TurnBlock = React.memo(function TurnBlock({
                 className="-ml-px desktop:ml-0"
                 data-eid={`${sec.items[sec.items.length - 1].id}#sec`}
               >
+                {/* The outer Working row is already the tool-only run's
+                    summary. If someone opens it, reveal the calls directly
+                    instead of inserting a second, identical disclosure. */}
                 <ToolSection
                   items={sec.items}
                   toolResults={toolResults}
                   live={live}
-                  expandAll={pref.tools === "open"}
+                  expandAll={!hasNarration || pref.tools === "open"}
                   sessionId={sessionId}
                   onOpenSubagent={onOpenSubagent}
                 />
@@ -565,7 +589,9 @@ function toolRunAggregate(
     videos += result?.videos?.length ?? 0;
     // Summed from what the rows themselves show, so opening the fold adds up
     // to the number that was on it.
-    const stats = toolLineStats(entry.toolName || "Tool", entry.toolInput);
+    const stats =
+      entry.presentation?.lineStats ??
+      toolLineStats(entry.toolName || "Tool", entry.toolInput);
     additions += stats?.additions ?? 0;
     deletions += stats?.deletions ?? 0;
   }

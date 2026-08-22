@@ -17,6 +17,7 @@ import { handleSlackComposeRoutes } from "./slack-compose";
 import { handleSystemRoutes } from "./system";
 import { handleSessionAssetsRoutes } from "./session-assets";
 import { handleSessionNotesRoutes } from "./session-notes";
+import { handleSessionContextRoutes } from "./session-context";
 import { handleEffectiveConfigRoutes } from "./effective-config";
 import { handleMentionsRoutes } from "./mentions";
 import { handleMentionPaletteRoutes } from "./mention-palette";
@@ -34,6 +35,7 @@ import { handleHumanAsksRoutes } from "./human-asks";
 import { handleKeychainRoutes } from "./keychain";
 import { handleDeployRoutes } from "./deploys";
 import { handlePeopleRoutes } from "./people";
+import { handleMemoryRoutes } from "./memory";
 import { handlePrefsRoutes } from "./prefs";
 import { handleProfileRoutes } from "./profile";
 import { handleSecurityRoutes } from "./security";
@@ -76,6 +78,7 @@ export const routeHandlers: RouteHandler[] = [
 	// swallowed by broader matches.
 	handleSessionAssetsRoutes,
 	handleSessionNotesRoutes,
+	handleSessionContextRoutes,
 	handleEffectiveConfigRoutes,
 	handleMentionsRoutes,
 	handleMentionPaletteRoutes,
@@ -93,6 +96,7 @@ export const routeHandlers: RouteHandler[] = [
 	handleKeychainRoutes,
 	handleDeployRoutes,
 	handlePeopleRoutes,
+	handleMemoryRoutes,
 	handlePrefsRoutes,
 	handleProfileRoutes,
 	handleSecurityRoutes,

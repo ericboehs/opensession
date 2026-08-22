@@ -165,10 +165,35 @@ export const WORKFLOW_INPROCESS_TOOL_DENIALS: Record<string, string> = {
 	"mcp__opensession-memory__store_memory":
 		"A workflow script cannot write memory (it would persist into future runs unseen). Return the fact in your result and store it from the session.",
 	"mcp__opensession-memory__supersede_memory":
-		"A workflow script cannot write memory. Return the correction in your result and store it from the session.",
+		"A workflow script cannot archive legacy memory. Name the entry in your result and change it from the session.",
+	"mcp__opensession-memory__update_memory":
+		"A workflow script cannot update memory. Return the correction in your result and update it from the session.",
+	"mcp__opensession-memory__archive_memory":
+		"A workflow script cannot archive memory. Name the entry in your result and archive it from the session.",
+	"mcp__opensession-memory__restore_memory":
+		"A workflow script cannot restore memory. Name the entry in your result and restore it from the session.",
+	"mcp__opensession-memory__confirm_memory":
+		"A workflow script cannot confirm memory. Name the entry in your result and confirm it from the session.",
 	"mcp__opensession-memory__forget_memory":
 		"A workflow script cannot delete memory. Name the entry in your result and remove it from the session.",
 };
+
+const WORKFLOW_MEMORY_READ_TOOLS = new Set([
+	"search_memory",
+	"list_memory",
+	"read_memory",
+]);
+
+function workflowToolDenied(
+	server: string,
+	tool: string,
+	denied: Record<string, string>,
+): string | undefined {
+	if (server === "opensession-memory" && !WORKFLOW_MEMORY_READ_TOOLS.has(tool)) {
+		return "A workflow script can only read memory. Return proposed changes in your result for the session to apply.";
+	}
+	return denied[`mcp__${server}__${tool}`];
+}
 
 export interface WorkflowMcpTool {
 	name: string;
@@ -419,7 +444,7 @@ export function createWorkflowMcpHost(
 			);
 		}
 		if (tool) {
-			const reason = denied[`mcp__${server}__${tool}`];
+			const reason = workflowToolDenied(server, tool, denied);
 			if (reason) throw new Error(`${server}.${tool} is not available: ${reason}`);
 		}
 	}
@@ -438,7 +463,7 @@ export function createWorkflowMcpHost(
 				`listing ${server} tools`,
 			);
 			return (listed.tools || [])
-				.filter((t) => !denied[`mcp__${server}__${t.name}`])
+				.filter((t) => !workflowToolDenied(server, t.name, denied))
 				.map((t) => ({
 					name: t.name,
 					description: t.description,

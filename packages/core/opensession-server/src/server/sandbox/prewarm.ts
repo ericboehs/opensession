@@ -66,6 +66,7 @@ import {
   assertDialbackReachable,
   bootstrapRemoteSandbox,
   bootstrapSignature,
+  listRemoteStates,
   type RemoteDriver,
 } from "./adapters/bootstrap";
 
@@ -817,11 +818,28 @@ export function restoreReadyPrewarms(now = Date.now()): number {
   return restored;
 }
 
+export function sessionOwnedSandboxIds(
+  states: Array<Pick<ReturnType<typeof listRemoteStates>[number], "sessionId" | "sandboxId">>,
+): Set<string> {
+  return new Set(
+    states
+      .filter((state) => !state.sessionId.startsWith("__prewarm__:") && state.sandboxId)
+      .map((state) => state.sandboxId),
+  );
+}
+
 function knownSandboxIds(provider: string): Set<string> {
   const known = new Set<string>();
   for (const { entry: e } of pool().values()) {
     if (e.provider === provider && e.sandboxId) known.add(e.sandboxId);
   }
+  // Provider labels are not an authority boundary. Daytona has returned an
+  // adopted session Sandbox from its prewarm-label query after setLabels(),
+  // and the orphan audit subsequently deleted live session compute once the
+  // claim tombstone expired. A durable session mapping is stronger evidence:
+  // never reap an id that an ordinary remote-session state file still owns.
+  for (const sandboxId of sessionOwnedSandboxIds(listRemoteStates(provider)))
+    known.add(sandboxId);
   try {
     const dir = prewarmDir();
     if (existsSync(dir)) {

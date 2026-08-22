@@ -1486,7 +1486,7 @@ const MAX_VISIBLE_DOTS = 7;
 // Download / Open: quiet pills in the top action cluster, matching the asset
 // preview's separation between actions above and descriptions below.
 const lightboxAction =
-	"inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-1 rounded-full border-0 bg-transparent px-2 text-xs text-white/60 no-underline transition-colors hover:bg-white/15 hover:text-white phone:h-11";
+	"inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-1 rounded-full border-0 bg-transparent px-2 text-xs text-white/60 no-underline transition-[transform,background-color,color] active:scale-[0.96] hover:bg-white/15 hover:text-white phone:h-11";
 
 const PREVIEW_LABEL: Record<LightboxItem["kind"], string> = {
 	image: "Image preview",
@@ -1557,6 +1557,17 @@ function MediaLightbox({
 	const closeRef = useRef<HTMLButtonElement>(null);
 	const commentInputRef = useRef<HTMLTextAreaElement>(null);
 	const commentCardRef = useRef<HTMLFormElement>(null);
+	/** The field is as tall as its own text, between one line and a bar that
+	 *  would start to cover the picture. Measured from scrollHeight, so it is
+	 *  the wrapped line count rather than the character count that decides. */
+	const fitCommentField = (field: HTMLTextAreaElement) => {
+		const min = isPhone ? 44 : 36;
+		// Zero, not "auto": a textarea's auto height is its `rows` height, so
+		// scrollHeight read against it never falls back below one row and the bar
+		// cannot shrink again when the text is deleted.
+		field.style.height = "0px";
+		field.style.height = `${Math.min(Math.max(field.scrollHeight, min), 132)}px`;
+	};
 	const reduceMotion = useReducedMotion();
 	const resetComment = () => {
 		setChromeVisible(true);
@@ -1755,9 +1766,14 @@ function MediaLightbox({
 
 	useEffect(() => {
 		if (!selection) return;
-		const frame = requestAnimationFrame(() =>
-			commentInputRef.current?.focus({ preventScroll: true }),
-		);
+		const frame = requestAnimationFrame(() => {
+			const field = commentInputRef.current;
+			if (!field) return;
+			// Before focus, so the bar is never one frame taller or shorter than
+			// the words already in it.
+			fitCommentField(field);
+			field.focus({ preventScroll: true });
+		});
 		return () => cancelAnimationFrame(frame);
 	}, [selection]);
 
@@ -1887,15 +1903,18 @@ function MediaLightbox({
 		>
 			<div
 				className={cn(
-					"absolute right-[calc(12px+env(safe-area-inset-right))] top-[calc(12px+env(safe-area-inset-top))] z-10 flex items-center gap-1",
+					"pointer-events-none absolute left-[calc(12px+env(safe-area-inset-left))] right-[calc(12px+env(safe-area-inset-right))] top-[calc(12px+env(safe-area-inset-top))] z-10 flex items-center justify-center",
 					isPhone &&
 						"transition-[opacity,transform] duration-[var(--dur)] ease-[var(--ease)] motion-reduce:transition-none",
-					isPhone && !chromeVisible && "pointer-events-none -translate-y-2 opacity-0",
+					isPhone && !chromeVisible && "-translate-y-2 opacity-0",
 				)}
 				inert={isPhone && !chromeVisible ? true : undefined}
 				aria-hidden={isPhone && !chromeVisible ? true : undefined}
 			>
-				<div className={isPhone ? "hidden" : "contents"}>
+				{/* Keep the actions on the viewport's centerline while Close owns the
+				    right corner. Grouping both at the edge made the row read like loose
+				    header controls rather than one action bar. */}
+				<div className={isPhone ? "hidden" : "pointer-events-auto flex items-center gap-1"}>
 				{commentable && (
 					<button
 						type="button"
@@ -1988,7 +2007,7 @@ function MediaLightbox({
 				<button
 					ref={closeRef}
 					type="button"
-					className={navBtn}
+					className={cn(navBtn, "pointer-events-auto absolute right-0")}
 					onClick={requestClose}
 					aria-label="Close"
 				>
@@ -2291,7 +2310,7 @@ function MediaLightbox({
 					/* Fixed and placed against the region: the remark and the pixels it
 					   is about read as one thing. Kept to a single row, because on a
 					   phone a taller card would cover the picture it is describing. */
-					className="fixed z-20 flex flex-col gap-1 rounded-[22px] border border-white/10 bg-black/55 p-1.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_16px_50px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150"
+					className="fixed z-20 flex cursor-text flex-col gap-1 rounded-[22px] bg-black/55 p-1.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_16px_50px_rgb(0_0_0/0.5)] backdrop-blur-2xl backdrop-saturate-150"
 					// It grows out of the corner of the region it belongs to, rather
 					// than fading in beside it.
 					initial={reduceMotion ? false : { opacity: 0, scale: 0.94 }}
@@ -2311,6 +2330,14 @@ function MediaLightbox({
 						event.preventDefault();
 						void sendRegionComment();
 					}}
+					// The whole bar is the field, the way a text input is: pressing
+					// the padding beside the words puts the caret in them rather than
+					// doing nothing. The buttons keep their own presses.
+					onPointerDown={(event) => {
+						if ((event.target as HTMLElement).closest("button, textarea")) return;
+						event.preventDefault();
+						commentInputRef.current?.focus({ preventScroll: true });
+					}}
 				>
 					<div className="flex items-end gap-1">
 						<textarea
@@ -2318,11 +2345,7 @@ function MediaLightbox({
 							value={commentText}
 							onChange={(event) => {
 								setCommentText(event.target.value);
-								// Grows with the remark instead of scrolling inside one line,
-								// and the card is re-placed as it grows.
-								const field = event.target;
-								field.style.height = "auto";
-								field.style.height = `${Math.min(field.scrollHeight, 96)}px`;
+								fitCommentField(event.target);
 							}}
 							onKeyDown={(event) => {
 								if (
@@ -2337,7 +2360,14 @@ function MediaLightbox({
 							}}
 							rows={1}
 							placeholder="What should change here?"
-							className="block max-h-24 min-h-9 w-full flex-1 resize-none rounded-xl bg-transparent px-2.5 py-2 text-body leading-snug text-white outline-none placeholder:text-white/45 phone:min-h-11 phone:text-input-phone"
+							// No surface of its own: the bar behind it is the input.
+							// border-0 explicitly, because this app leaves the browser's
+							// own control styling in place rather than importing a
+							// preflight, and a bare textarea draws a grey 1px frame.
+							// A long remark grows the bar rather than scrolling inside
+							// one line, up to the point where it would start covering
+							// the picture it is about.
+							className="block w-full flex-1 resize-none appearance-none border-0 bg-transparent px-2.5 py-2 text-body leading-snug text-white outline-none [scrollbar-width:none] placeholder:text-white/45 phone:text-input-phone [&::-webkit-scrollbar]:hidden"
 							disabled={sendingComment}
 						/>
 						<button

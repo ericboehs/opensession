@@ -43,10 +43,9 @@ const ICON_REBUILDING =
 	"cursor-pointer text-yellow opacity-72 hover:bg-yellow/13 hover:opacity-100";
 const ICON_PENDING = "cursor-default text-dim";
 
-/* The summary card's preview mark. It rides at the head of the PR band's
-   status row, immediately before the glyph for where the work stands, so the
-   band says both on one line: this is the pull request, and this is where you
-   can try it.
+/* The summary card's preview mark. It rides immediately before the PR band's
+   primary action, so the place to test the work stays with Merge, Push or Pull
+   instead of floating at the far edge of the status row.
 
    A 28px square rather than the card's 20px rail, which every other leading
    mark takes. Those marks are decoration on a row whose whole width is the
@@ -63,9 +62,9 @@ const SUMMARY_MARK =
 const SUMMARY_MARK_HOVER =
 	"hover:bg-[color-mix(in_srgb,currentColor_26%,transparent)] " +
 	"active:scale-[0.96] active:bg-[color-mix(in_srgb,currentColor_34%,transparent)]";
-/* The mark's 20px glyph sits inside a 28px target. Pull its box 4px toward the
-   following label so the visible glyph keeps the row's 6px icon-to-text gap. */
-const SUMMARY_MARK_PAIR = "-mr-1";
+/* The mark's 20px glyph sits inside a 28px target. Pull its box 2px toward the
+   following action so the visible glyph keeps an 8px icon-to-control gap. */
+const SUMMARY_MARK_PAIR = "-mr-0.5";
 
 /* Spinning ring around the globe while the preview environment builds.
    border-t-current picks up the amber/green icon tone; the ring sits just

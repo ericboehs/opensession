@@ -76,6 +76,42 @@ describe("hover cards drop the repo and the idle timestamp", () => {
 		expect(html).not.toContain("mt-3.5");
 	});
 
+	test("only running cards show a dot, beside their title", () => {
+		const sessionIdle = renderToStaticMarkup(
+			<SessionCardBody session={session()} />,
+		);
+		const sessionRunning = renderToStaticMarkup(
+			<SessionCardBody session={session({ isRunning: true })} />,
+		);
+		const workspaceIdle = renderToStaticMarkup(
+			<WsCardBody
+				row={row([session()])}
+				snoozed={false}
+				onToggleSnooze={() => {}}
+				onOpen={() => {}}
+			/>,
+		);
+		const workspaceRunning = renderToStaticMarkup(
+			<WsCardBody
+				row={{ ...row([session({ isRunning: true })]), running: true }}
+				snoozed={false}
+				onToggleSnooze={() => {}}
+				onOpen={() => {}}
+			/>,
+		);
+		const dot = "size-2 shrink-0 rounded-full";
+
+		for (const idle of [sessionIdle, workspaceIdle]) {
+			expect(idle).not.toContain(dot);
+		}
+		for (const running of [sessionRunning, workspaceRunning]) {
+			expect(running).toContain(dot);
+			expect(running.indexOf(dot)).toBeLessThan(
+				running.indexOf("Modernize UI design"),
+			);
+		}
+	});
+
 	// Snoozed work always offers the immediate way back from the card.
 	test("a snoozed workspace gets Unsnooze", () => {
 		const html = renderToStaticMarkup(

@@ -15,6 +15,11 @@
  * option.
  */
 
+import {
+	AGENT_PERSON_KEY,
+	AUTOMATION_MACHINE_IDENTITY,
+} from "./automation-audience";
+import { AGENT_NAME } from "./brand";
 import type { Person } from "./people";
 import type { UnifiedSession } from "./types";
 
@@ -58,6 +63,7 @@ export function ownerKey(
 	canonical: Map<string, string>,
 ): string {
 	const raw = (name || "").trim().toLowerCase();
+	if (raw === AUTOMATION_MACHINE_IDENTITY) return AGENT_PERSON_KEY;
 	return rosterNameFor(raw, canonical)?.toLowerCase() || raw;
 }
 
@@ -78,8 +84,9 @@ export function sessionHasOwner(
 }
 
 /**
- * Teammates who started something in `sessions`, most-active first. An
- * automation run belongs to whoever the automation reports to rather than to
+ * People who started something in `sessions`, most-active first. Machine-created
+ * sessions belong to the agent rather than to whichever teammate is looking.
+ * An automation run belongs to whoever the automation reports to rather than to
  * the name on the run, so it counts for nobody here; `exclude` drops the
  * signed-in person where their own row is offered separately.
  */
@@ -91,10 +98,12 @@ export function sessionOwners(
 	const entries = new Map<string, { label: string; count: number }>();
 	for (const s of sessions) {
 		if (s.automation || !s.startedBy) continue;
-		const label = rosterNameFor(s.startedBy, canonical);
-		if (!label) continue;
-		const key = label.toLowerCase();
-		if (key === exclude) continue;
+		const key = ownerKeyOf(s, canonical);
+		const label =
+			key === AGENT_PERSON_KEY
+				? AGENT_NAME
+				: rosterNameFor(s.startedBy, canonical);
+		if (!label || key === exclude) continue;
 		const entry = entries.get(key) || { label, count: 0 };
 		entry.count++;
 		entries.set(key, entry);

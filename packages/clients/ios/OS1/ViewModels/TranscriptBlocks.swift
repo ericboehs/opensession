@@ -292,6 +292,7 @@ struct WorkTurn: Identifiable, Equatable {
     var livePreview: String?
 
     var hasFailure: Bool { failureCount > 0 }
+    var hasNarration: Bool
 
     /// A fold this long is a wall on a phone. Media and failures still pull a
     /// short turn open — that's how you see a screenshot or a stack trace
@@ -302,6 +303,9 @@ struct WorkTurn: Identifiable, Equatable {
 
     /// How the fold should start out, before any manual toggle.
     func defaultExpanded(preference: TurnActivity) -> Bool {
+        // A tool-only turn already has one complete summary in its header.
+        // Keep it closed unless the person explicitly keeps all work open.
+        if !hasNarration, preference.work != .open { return false }
         if !isLive, toolCount <= Self.pinOpenStepLimit, hasFailure || hasMedia {
             return true
         }
@@ -310,6 +314,10 @@ struct WorkTurn: Identifiable, Equatable {
         // finished turn's notes can be put away, since the header then owns
         // them. The nested tool-call setting does not change this outer fold.
         return preference.defaultExpanded(isLive: isLive)
+    }
+
+    func rendersToolCallsInPlace(preference: TurnActivity) -> Bool {
+        !hasNarration || preference.rendersToolCallsInPlace
     }
 }
 
@@ -712,6 +720,10 @@ enum TranscriptGrouping {
             id: firstId,
             anchorId: lastId,
             items: items,
+            hasNarration: items.contains {
+                if case .message = $0 { return true }
+                return false
+            },
             isLive: isLive,
             duration: isLive ? nil : duration(from: start, to: end),
             families: Array(families.prefix(6)),

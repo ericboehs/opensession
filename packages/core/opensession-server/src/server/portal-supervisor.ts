@@ -10,7 +10,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { audit } from "./audit";
 import { configuredPaths, configuredServer } from "./config";
-import { ensureSandboxPortalRelay, mintSandboxPortalGrant, revokeSandboxPortalRelay } from "./sandbox-portal-relay";
+import { ensureSandboxPortalRelay, mintSandboxPortalGrant, revokeSandboxPortalRelay, waitForSandboxPortalRelay } from "./sandbox-portal-relay";
 import { remoteSandboxCallbackBaseUrl, usesOutboundSandboxPortalRelay } from "./sandbox/config";
 import { shellQuoteWord } from "./sandbox/adapters/bootstrap";
 import { sandboxHttpsPortFor } from "./sandbox/preview-ports";
@@ -495,7 +495,9 @@ export async function ensureRemoteSandboxPortalAgent(input: {
 	const grant = mintSandboxPortalGrant({ sessionId: input.sessionId, sandboxId: input.sandbox.id, port: input.port });
 	const callbackBase = remoteSandboxCallbackBaseUrl().replace(/\/$/, "");
 	const endpoint = `${callbackBase}/sandbox-portal-ws?session=${encodeURIComponent(input.sessionId)}&sandbox=${encodeURIComponent(input.sandbox.id)}&port=${input.port}`;
-	const relayLaunch = `OPENSESSION_SANDBOX_PORTAL_WS_URL=${shellQuoteWord(endpoint)} OPENSESSION_SANDBOX_PORTAL_TOKEN=${shellQuoteWord(grant.token)} OPENSESSION_SANDBOX_PORTAL_PORT=${shellQuoteWord(String(input.port))} setsid /home/ubuntu/.bun/bin/bun run ${shellQuoteWord(SANDBOX_PORTAL_AGENT_ENTRY)} >/dev/null 2>&1 &`;
+	const logDir = `/home/ubuntu/.opensession-session-scratch/${input.sessionId}`;
+	const logPath = `${logDir}/sandbox-portal-${input.port}.log`;
+	const relayLaunch = `mkdir -p ${shellQuoteWord(logDir)} && OPENSESSION_SANDBOX_PORTAL_WS_URL=${shellQuoteWord(endpoint)} OPENSESSION_SANDBOX_PORTAL_TOKEN=${shellQuoteWord(grant.token)} OPENSESSION_SANDBOX_PORTAL_PORT=${shellQuoteWord(String(input.port))} OPENSESSION_SANDBOX_PORTAL_EXPIRES_AT=${shellQuoteWord(String(grant.expiresAt))} setsid /home/ubuntu/.bun/bin/bun run ${shellQuoteWord(SANDBOX_PORTAL_AGENT_ENTRY)} </dev/null >${shellQuoteWord(logPath)} 2>&1 &`;
 	const started = await input.sandbox.exec(["bash", "-lc", relayLaunch]);
 	if (started.exitCode !== 0) throw new Error(started.stderr.trim() || "Could not start the Sandbox Portal relay.");
 	remoteRelayAgents.set(agentKey, { expiresAt: grant.expiresAt });
@@ -540,6 +542,12 @@ export async function startSandboxPortalService(input: {
 		},
 	});
 	await ensureRemoteSandboxPortalAgent({ sessionId: input.sessionId, sandbox: input.sandbox, port: awake.port });
+	if (usesOutboundSandboxPortalRelay(input.sandbox.provider) && !(await waitForSandboxPortalRelay({ sessionId: input.sessionId, sandboxId: input.sandbox.id, port: awake.port }, 15_000))) {
+		await stopPortal(sandboxPortalOps(input.sandbox), awake.name);
+		revokeSandboxPortalRelay(input.sandbox.id, awake.port);
+		forgetRemoteSandboxPortalAgents(input.sandbox.id, awake.port);
+		throw new Error(`Portal relay did not connect within 15 seconds. See sandbox-portal-${awake.port}.log in this session's scratch directory.`);
+	}
 	audit({ msg: "sandbox_portal_started", session_id: input.sessionId, sandbox_id: input.sandbox.id, portal: awake.name, port: awake.port });
 	// The Sandbox preview URL is derived per request from the published port,
 	// so the record stays url-free the way its callers persist it.

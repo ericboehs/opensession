@@ -305,6 +305,7 @@ final class FoldStateTests: XCTestCase {
             id: id,
             anchorId: id,
             items: [],
+            hasNarration: false,
             isLive: live,
             duration: nil,
             families: [.run],
@@ -367,13 +368,24 @@ final class FoldStateTests: XCTestCase {
         XCTAssertFalse(state.expanded, "a manual nested toggle still wins")
     }
 
-    func testFailuresAndMediaOnlyPullShortTurnsOpen() {
-        var short = turn("t1", tools: 4)
-        short.failureCount = 1
-        XCTAssertTrue(short.defaultExpanded(preference: TurnActivity(work: .folded)))
+    func testOnlyNarratedFailuresPullShortTurnsOpen() {
+        var toolOnly = turn("t1", tools: 4)
+        toolOnly.failureCount = 1
+        XCTAssertFalse(
+            toolOnly.defaultExpanded(preference: TurnActivity(work: .folded)),
+            "the one tool-only summary should stay closed until opened"
+        )
 
-        var long = turn("t2", tools: 40)
-        long.failureCount = 1
+        var narrated = turn("t2", tools: 4)
+        narrated.items = [
+            .message(TranscriptEntry(id: "note", type: "assistant", content: "Checking.")),
+        ]
+        narrated.hasNarration = true
+        narrated.failureCount = 1
+        XCTAssertTrue(narrated.defaultExpanded(preference: TurnActivity(work: .folded)))
+
+        var long = narrated
+        long.toolCount = 40
         XCTAssertFalse(
             long.defaultExpanded(preference: TurnActivity(work: .folded)),
             "a 40-step fold is a wall on a phone; its header carries the signal"

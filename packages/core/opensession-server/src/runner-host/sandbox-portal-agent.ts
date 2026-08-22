@@ -76,16 +76,28 @@ export function sendWebSocket(sockets: Map<string, PortalSocketState>, msg: any)
 	else if (state.socket.readyState === WebSocket.OPEN) state.socket.send(payload);
 }
 
-async function run(endpoint: string, token: string, port: number): Promise<void> {
-	while (true) {
-		await new Promise<void>((resolve) => {
+export function relayRetryDelayMs(failedAttempts: number): number {
+	return Math.min(30_000, 1_000 * 2 ** Math.min(Math.max(0, failedAttempts), 5));
+}
+
+async function run(endpoint: string, token: string, port: number, expiresAt: number): Promise<void> {
+	let failedAttempts = 0;
+	while (Date.now() < expiresAt) {
+		const connected = await new Promise<boolean>((resolve) => {
 			const sockets = new Map<string, PortalSocketState>();
 			let socket: WebSocket;
-			try { socket = new WebSocket(endpoint, { headers: { authorization: `Bearer ${token}` } } as any); } catch { setTimeout(resolve, 1000); return; }
+			let opened = false;
+			try { socket = new WebSocket(endpoint, { headers: { authorization: `Bearer ${token}` } } as any); }
+			catch { resolve(false); return; }
+			socket.addEventListener("open", () => { opened = true; });
 			socket.addEventListener("message", (event) => { try { const message = JSON.parse(String(event.data)); if (message.t === "http") void respond(socket, message, port); else if (message.t === "ws_open") openWebSocket(socket, sockets, message, port); else if (message.t === "ws_send") sendWebSocket(sockets, message); else if (message.t === "ws_close") { const state = sockets.get(String(message.id)); if (state) try { state.socket.close(); } catch {} } } catch {} });
-			socket.addEventListener("close", () => { for (const state of sockets.values()) try { state.socket.close(); } catch {} sockets.clear(); setTimeout(resolve, 1000); }, { once: true });
+			socket.addEventListener("close", () => { for (const state of sockets.values()) try { state.socket.close(); } catch {} sockets.clear(); resolve(opened); }, { once: true });
 			socket.addEventListener("error", () => { try { socket.close(); } catch {} });
 		});
+		failedAttempts = connected ? 0 : failedAttempts + 1;
+		const remaining = expiresAt - Date.now();
+		if (remaining <= 0) break;
+		await Bun.sleep(Math.min(remaining, relayRetryDelayMs(failedAttempts)));
 	}
 }
 
@@ -93,6 +105,7 @@ if (import.meta.main) {
 	const endpoint = process.env.OPENSESSION_SANDBOX_PORTAL_WS_URL || "";
 	const token = process.env.OPENSESSION_SANDBOX_PORTAL_TOKEN || "";
 	const port = Number(process.env.OPENSESSION_SANDBOX_PORTAL_PORT);
-	if (!endpoint || !token || !Number.isInteger(port)) process.exit(2);
-	void run(endpoint, token, port);
+	const expiresAt = Number(process.env.OPENSESSION_SANDBOX_PORTAL_EXPIRES_AT);
+	if (!endpoint || !token || !Number.isInteger(port) || !Number.isFinite(expiresAt)) process.exit(2);
+	void run(endpoint, token, port, expiresAt);
 }

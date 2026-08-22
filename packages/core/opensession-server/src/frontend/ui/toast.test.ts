@@ -1,7 +1,6 @@
 // The toast store, exercised without a DOM: firing, the visible cap, and the
-// action a toast can carry. The action is the part worth pinning — an archive
-// announces itself with an Undo, and a refactor that drops the field turns a
-// reversible action back into a silent one with nothing failing.
+// action a toast can carry. The action is worth pinning because some reversible
+// receipts provide Undo even though archiving itself stays quiet.
 
 import { beforeEach, describe, expect, test } from "bun:test";
 import { undoLatestAction } from "../lib/undo";
@@ -37,9 +36,16 @@ describe("toast", () => {
 		]);
 	});
 
-	test("carries an action, so an archive can offer its own undo", () => {
+	test("marks live status as ongoing until its owner dismisses it", () => {
+		const id = toast("Restarting", { ongoing: true });
+		expect(activeToasts()[0]).toMatchObject({ id, ongoing: true });
+		dismissToast(id);
+		expect(activeToasts()).toHaveLength(0);
+	});
+
+	test("carries an action for reversible feedback", () => {
 		let undone = 0;
-		toast("Archived", { action: { label: "Undo", onClick: () => undone++ } });
+		toast("Item removed", { action: { label: "Undo", onClick: () => undone++ } });
 		const t = activeToasts()[0];
 		expect(t?.action?.label).toBe("Undo");
 		t?.action?.onClick();
@@ -48,21 +54,20 @@ describe("toast", () => {
 
 	test("links a visible Undo action to the app-wide undo stack", () => {
 		let undone = 0;
-		toast("Archived", { action: { label: "Undo", onClick: () => undone++ } });
+		toast("Item removed", { action: { label: "Undo", onClick: () => undone++ } });
 
 		expect(undoLatestAction()).toBe(true);
 		expect(undone).toBe(1);
 		expect(activeToasts()).toHaveLength(0);
 	});
 
-	// A burst of archives must not wallpaper the screen, and the toasts that
-	// survive are the newest ones, whose Undo is the one still worth reaching.
+	// A burst of receipts must not wallpaper the screen. Keep the newest ones.
 	test("keeps only the newest three", () => {
-		for (const n of [1, 2, 3, 4]) toast(`Archived ${n} sessions`);
+		for (const n of [1, 2, 3, 4]) toast(`Removed item ${n}`);
 		expect(activeToasts().map((t) => t.message)).toEqual([
-			"Archived 2 sessions",
-			"Archived 3 sessions",
-			"Archived 4 sessions",
+			"Removed item 2",
+			"Removed item 3",
+			"Removed item 4",
 		]);
 	});
 });

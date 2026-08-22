@@ -63,6 +63,7 @@ export function TeamSection({
 	}, []);
 
 	const syncGithubMembers = useCallback(async () => {
+		setGithubSyncError(null);
 		try {
 			const body = await setupRequest<{
 				organization: string | null;
@@ -75,9 +76,9 @@ export function TeamSection({
 			setLoadFailed(false);
 			setGithubOrganization(body.synced ? body.organization : null);
 			setGithubSyncError(body.error ?? null);
-		} catch (cause: any) {
-			setGithubSyncError(cause?.message || "Couldn’t import GitHub members");
+		} catch {
 			await load();
+			setGithubSyncError("GitHub members weren’t added. Add them manually.");
 		}
 	}, [load]);
 
@@ -111,7 +112,15 @@ export function TeamSection({
 				{title ?? "Team members"}
 				{members && (showCount || !title) ? ` · ${members.length}` : ""}
 			</SettingsGroupLabel>
-			{githubSyncError && <InlineAlert>{githubSyncError}</InlineAlert>}
+			{githubSyncError && (
+				<InlineAlert
+					variant="warn"
+					onDismiss={() => setGithubSyncError(null)}
+					onRetry={() => void syncGithubMembers()}
+				>
+					{githubSyncError}
+				</InlineAlert>
+			)}
 			{!members && !loadFailed ? (
 				// The card itself is the ghost, so the roster lands in the block it
 				// was already occupying. Rendering the real card around a loading

@@ -412,7 +412,7 @@ export async function handlePrefsRoutes(
 	// ── Per-user workspace snoozes ──
 	// GET reads a user's snooze map; a write is a delta, for the reason in
 	// shared/map-delta.ts: a whole-map PUT from a client that loaded before the
-	// other device's snooze deleted it, which read as a Some day snooze waking
+	// other device's snooze deleted it, which read as a Someday snooze waking
 	// up on its own.
 	if (path === "/api/snoozes" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";

@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { AGENT_PERSON_KEY } from "./automation-audience";
+import { AGENT_NAME } from "./brand";
 import {
 	canonicalNames,
 	ownerKey,
@@ -34,6 +36,19 @@ describe("session owner lens", () => {
 
 	test("falls back to the raw name when the directory is empty", () => {
 		expect(ownerKeyOf(session({ startedBy: "Kent" }), new Map())).toBe("kent");
+	});
+
+	test("files the anonymous browser identity under the agent", () => {
+		const machine = session({
+			createdBy: "Automation",
+			startedBy: "Automation",
+		});
+		expect(ownerKeyOf(machine, canonical)).toBe(AGENT_PERSON_KEY);
+		expect(sessionHasOwner(machine, "michiel", canonical)).toBe(false);
+		expect(sessionHasOwner(machine, AGENT_PERSON_KEY, canonical)).toBe(true);
+		expect(sessionOwners([machine], canonical)).toEqual([
+			{ key: AGENT_PERSON_KEY, label: AGENT_NAME },
+		]);
 	});
 
 	test("offers only directory people, most-active first, without me", () => {

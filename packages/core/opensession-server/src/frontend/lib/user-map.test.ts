@@ -165,7 +165,7 @@ describe("makeUserMap", () => {
 		]);
 	});
 
-	// The bug this file exists for: a Some day snooze made on one device came
+	// The bug this file exists for: a Someday snooze made on one device came
 	// back on its own because another client PUT its whole (older) map.
 	test("a GET started before save confirmation cannot resurrect a removed key", async () => {
 		const h = harness();

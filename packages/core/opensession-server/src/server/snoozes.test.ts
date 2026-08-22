@@ -11,7 +11,7 @@ beforeEach(() => rmSync(root, { recursive: true, force: true }));
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe("per-user snoozes", () => {
-	test("keeps timed and Some day snoozes", () => {
+	test("keeps timed and Someday snoozes", () => {
 		setSnoozes("Michiel", {
 			"workspace:timed": "2027-01-01T09:00:00.000Z",
 			"workspace:someday": SNOOZE_SOMEDAY,
@@ -23,7 +23,7 @@ describe("per-user snoozes", () => {
 		});
 	});
 
-	test("migrates Settled rows to Some day once", () => {
+	test("migrates Settled rows to Someday once", () => {
 		setSnoozes("Michiel", {
 			"workspace:timed": "2027-01-01T09:00:00.000Z",
 		});

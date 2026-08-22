@@ -27,3 +27,12 @@ test("the first workspace session receives its draft attachments", () => {
 	expect(payload).toContain("files: files.map");
 	expect(source).toContain("dropStagingAttachments(draftKey)");
 });
+
+test("workspace Review keeps the implementation summary over the PR canvas", () => {
+	expect(source).toContain("sessionCarriesPr(s, reviewTarget)");
+	expect(source).toContain("s.workspaceId === workspace.id");
+	expect(source).toContain("fetchWorkspaceOverview(workspace.id)");
+	expect(source).toContain("<WorkspaceSummary");
+	expect(source).toContain("session={presentationSession}");
+	expect(source).toContain("walkthrough={presentationSession?.walkthrough}");
+});

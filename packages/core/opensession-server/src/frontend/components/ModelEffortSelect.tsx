@@ -54,9 +54,9 @@ type Props = {
 	disabled?: boolean;
 	title?: string;
 	className?: string;
-	/** The same menu can sit behind the compact composer pill or the full-width
-	 * model row in session info. Only the trigger changes. */
-	triggerVariant?: "pill" | "menu-row";
+	/** The same menu can sit behind the composer pill, the full-width settings
+	 * row, or the compact model link below the phone Workspace title. */
+	triggerVariant?: "pill" | "menu-row" | "hero";
 	/** Label fallback for a model that has not reached the catalog yet. */
 	fallbackModelLabel?: (id: string) => string;
 	/** Fires as the menu opens/closes. The phone composer needs it: the popup
@@ -652,6 +652,7 @@ export function ModelEffortSelect({
 	};
 
 	const menuRowTrigger = triggerVariant === "menu-row";
+	const heroTrigger = triggerVariant === "hero";
 
 	return (
 		<Menu.Root onOpenChange={onOpenChange}>
@@ -660,7 +661,9 @@ export function ModelEffortSelect({
 				className={cn(
 					menuRowTrigger
 						? "flex w-full cursor-pointer items-center gap-[7px] whitespace-nowrap rounded-control border border-line-strong bg-transparent px-3 py-[7px] text-control-label font-medium text-faint hover:bg-hover hover:text-fg data-[popup-open]:bg-hover data-[popup-open]:text-fg"
-						: "border-transparent hover:border-transparent hover:bg-hover",
+						: heroTrigger
+							? "inline-flex min-h-11 min-w-0 max-w-full cursor-pointer items-center rounded-md border-0 bg-transparent px-1.5 text-label font-medium text-dim transition-[color,background-color,scale] hover:bg-hover hover:text-fg active:scale-[0.96] data-[popup-open]:bg-hover data-[popup-open]:text-fg"
+							: "border-transparent hover:border-transparent hover:bg-hover",
 					className,
 				)}
 				title={title}
@@ -687,6 +690,8 @@ export function ModelEffortSelect({
 						</span>
 						<IconChevronRight size={16} className="shrink-0 text-faint" />
 					</>
+				) : heroTrigger ? (
+					<span className="truncate">{modelLabel}</span>
 				) : (
 					<>
 						{/* `data-effort` is a styling hook for the caller, not state: the
@@ -708,7 +713,7 @@ export function ModelEffortSelect({
 				)}
 			</Menu.Trigger>
 			<Menu.Popup
-				align={menuRowTrigger ? "start" : "end"}
+				align={menuRowTrigger ? "start" : heroTrigger ? "center" : "end"}
 				sideOffset={6}
 				className={cn(
 					"max-w-[min(360px,calc(100vw-1rem))]",

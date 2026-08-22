@@ -72,8 +72,8 @@ jobs:
               require_exact "opensession-$version-$os-$arch.tar.gz"
             done
           done
-          require_one '^OpenSession-.*-arm64\.dmg$'
-          require_one '^OpenSession-.*-arm64\.zip$'
+          require_exact "OpenSession-$version-arm64.dmg"
+          require_exact "OpenSession-$version-arm64.zip"
           count="$(wc -l < "$RUNNER_TEMP/assets" | tr -d ' ')"
           if [ "$count" != "10" ]; then
             echo "::error title=Release asset set is invalid::Expected 10 uploaded assets on $TAG, found $count."

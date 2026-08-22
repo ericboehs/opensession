@@ -150,7 +150,11 @@ import {
 	stageFileAttachments,
 	withUploadsNote,
 } from "./uploads";
-import { buildSessionNote } from "./session-repos";
+import {
+	buildSessionNote,
+	retrievedMemoryNoteFor,
+	sessionRepoIds,
+} from "./session-repos";
 import { automationSessionMcp, interactiveMcpServers } from "./interactive-mcp";
 import { makeAskHandler, settleRestoredAskAfterRecovery } from "./asks";
 
@@ -2054,6 +2058,18 @@ async function runSessionPromptInner(
 	const isAutomationSession = runInputs.isAutomationSession;
 	const mcpServers = runInputs.mcpServers;
 	const deniedTools = runInputs.deniedTools;
+
+	// Retrieval is query-specific context for this turn. Keep it out of the
+	// stable system prefix so an unrelated memory write cannot invalidate every
+	// cached token behind the run instructions.
+	if (!isAutomationSession) {
+		const memoryContext = await retrievedMemoryNoteFor(
+			content,
+			user,
+			sessionRepoIds(session),
+		);
+		if (memoryContext) prompt = `${memoryContext}\n\n${prompt}`;
+	}
 
 	// @session:<id> mentions → footer resolving them for the agent's
 	// opensession-sessions tools. Interactive sessions only (same gate as the tools).

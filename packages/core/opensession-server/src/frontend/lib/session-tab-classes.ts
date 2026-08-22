@@ -31,9 +31,11 @@ import { MOBILE_CONTROL_GLASS_EFFECTS } from "./app-header-classes";
  * exception list; they now carry that exception themselves — see `tabDotClass`.
  */
 
-/** 8px, the tab pill's corner. Authored the way base.css authors every corner
- *  so it tracks the squircle bump; there is no 8px step in the radius scale. */
+/** 8px, the compact trailing controls' corner. Authored the way base.css
+ * authors every corner; there is no 8px step in the radius scale. */
 const PILL = "rounded-[calc(8px*var(--rf))]";
+/** Desktop tabs use the standard medium squircle; phones become round pills. */
+const TAB_SHAPE = "desktop:rounded-md desktop:[corner-shape:squircle]";
 
 /* ── The strip ──────────────────────────────────────────────────────────── */
 
@@ -132,7 +134,7 @@ export const TAB_ITEM =
 /** Picked up: an inactive desktop tab has no surface of its own and would smear
  *  over every label it passes. It lifts into an opaque chip while dragging. */
 export const TAB_ITEM_DRAGGING =
-	`${PILL} cursor-grabbing bg-panel smooth-shadow-ring-sm desktop:rounded-control`;
+	`${TAB_SHAPE} cursor-grabbing bg-panel smooth-shadow-ring-sm`;
 
 /**
  * Where the dragged tab will land. Reorder already opens the gap live, but an
@@ -162,7 +164,7 @@ export const TAB_ACTIONS = "ml-auto flex flex-none items-center gap-[3px]";
  */
 const TAB_BASE =
 	"relative inline-flex max-w-[200px] shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap " +
-	"rounded-control border-0 px-2.5 py-1.5 text-label shadow-none " +
+	`${TAB_SHAPE} border-0 px-2.5 py-1.5 text-label shadow-none ` +
 	"transition-[background-color,color] " +
 	`phone:rounded-full phone:border phone:border-[color:var(--mobile-header-control-border)] ` +
 	`phone:shadow-[var(--mobile-header-control-shadow)] ${MOBILE_CONTROL_GLASS_EFFECTS}`;
@@ -176,7 +178,7 @@ export type TabState = {
 
 /**
  * The selected tab is the only ordinary desktop tab with a surface. Phone tabs
- * share the top bar's glass, with the selected state painted more strongly.
+ * are all glass: the selected one is the bright plate, the rest a dimmer wash.
  * Custom colours stay visible as an explicit exception, but use a quieter mix
  * while inactive.
  */
@@ -186,24 +188,26 @@ export function tabClass(state: TabState): string {
 	const surface = colored
 		? active
 			? "bg-[color-mix(in_srgb,var(--tab-color)_22%,var(--bg-panel))] " +
-				"hover:bg-[color-mix(in_srgb,var(--tab-color)_28%,var(--bg-panel))]"
+				"hover:bg-[color-mix(in_srgb,var(--tab-color)_28%,var(--bg-panel))] " +
+				"phone:bg-[color-mix(in_srgb,var(--tab-color)_22%,var(--mobile-tab-surface-selected))]"
 			: "bg-[color-mix(in_srgb,var(--tab-color)_9%,transparent)] " +
 				"hover:bg-[color-mix(in_srgb,var(--tab-color)_16%,transparent)] " +
-				"phone:bg-[color-mix(in_srgb,var(--tab-color)_9%,var(--mobile-header-control-surface))]"
+				"phone:bg-[color-mix(in_srgb,var(--tab-color)_9%,var(--mobile-tab-surface))]"
 		: active
-			? "bg-panel hover:bg-hover"
-			: "bg-transparent hover:bg-hover phone:bg-[var(--mobile-header-control-surface)]";
+			? "bg-panel hover:bg-hover phone:bg-[var(--mobile-tab-surface-selected)]"
+			: "bg-transparent hover:bg-hover phone:bg-[var(--mobile-tab-surface)]";
 
 	return `${TAB_BASE} ${ink} ${surface}`;
 }
 
-/** The label fades only when its content actually overflows. TabTitle adds
- *  stable trailing room for close, then fades under the control on hover. */
+/** The label uses the close control's space while the tab is idle. Hovering
+ *  reveals close over the title, with a wider fade keeping both legible. */
 export const TAB_TITLE =
 	"session-tab-title block min-w-0 max-w-[150px] overflow-hidden " +
 	"data-[overflow]:[mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_10px),transparent_100%)] " +
 	"desktop:max-w-[166px] " +
-	"desktop:group-hover/tab:[mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_18px),transparent_100%)]";
+	"desktop:group-hover/tab:[mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_36px),transparent_100%)] " +
+	"desktop:group-focus-within/tab:[mask-image:linear-gradient(to_right,#000_0,#000_calc(100%_-_36px),transparent_100%)]";
 
 /** An icon-only view tab (Staging → a globe): drop the label's text metrics so
  *  the tab sizes to the glyph. */
@@ -301,7 +305,7 @@ const CLOSE_BASE =
 	"rounded-sm border-0 bg-transparent p-0 text-dim " +
 	"hover:bg-pressed hover:text-fg [@media_(hover:none)]:size-[26px] [@media_(hover:none)]:-mr-1";
 
-/** Desktop close controls share one absolute position, so selecting a tab never
+/** Desktop close controls share one absolute position, so revealing one never
  * changes its width and never asks Motion to shuffle every sibling. */
 const CLOSE_OVERLAY_POSITION =
 	"[@media_(hover:hover)_and_(pointer:fine)]:absolute " +
@@ -318,19 +322,11 @@ const CLOSE_OVERLAY_HIDDEN =
 	"[@media_(hover:hover)_and_(pointer:fine)]:focus-visible:pointer-events-auto " +
 	"[@media_(hover:hover)_and_(pointer:fine)]:focus-visible:opacity-100";
 
-const CLOSE_OVERLAY_ACTIVE =
-	"[@media_(hover:hover)_and_(pointer:fine)]:pointer-events-auto " +
-	"[@media_(hover:hover)_and_(pointer:fine)]:opacity-100";
-
 /** Phones have no hover, so close stays in flow with a finger-sized hit area. */
 const CLOSE_TOUCH = "size-[26px] -mr-1";
 
-export const tabCloseClass = (phone: boolean, active: boolean) =>
-	`${CLOSE_BASE} ${
-		phone
-			? CLOSE_TOUCH
-			: `${CLOSE_OVERLAY_POSITION} ${active ? CLOSE_OVERLAY_ACTIVE : CLOSE_OVERLAY_HIDDEN}`
-	}`;
+export const tabCloseClass = (phone: boolean) =>
+	`${CLOSE_BASE} ${phone ? CLOSE_TOUCH : `${CLOSE_OVERLAY_POSITION} ${CLOSE_OVERLAY_HIDDEN}`}`;
 
 /**
  * The trailing controls use quiet chrome with no pill fill or shadow. History
@@ -355,26 +351,25 @@ const CTRL_BASE =
 	"font-[inherit] leading-none text-dim transition-[background-color,color] " +
 	"hover:bg-hover hover:text-fg";
 
+/** Desktop trailing controls match the tabs' 28px box and medium radius. */
+const CTRL_DESKTOP =
+	"desktop:size-7 desktop:min-h-auto desktop:self-center desktop:rounded-md desktop:p-0";
+
 /**
  * New-tab "+". Always visible once there is a strip, so adding a sibling does
  * not depend on discovering a hover state. It keeps a comfortable square hit
- * area on touch and matches the header's ⋯ control on desktop.
+ * area on touch and matches the tabs on desktop.
  */
 export const TAB_NEW =
-	`session-tab-new ${CTRL_BASE} justify-center text-[15px] ` +
-	"desktop:min-h-auto desktop:self-center desktop:rounded-control " +
-	"desktop:px-[5px] desktop:py-[3px] desktop:text-[22px]";
+	`session-tab-new ${CTRL_BASE} ${CTRL_DESKTOP} justify-center text-[15px] desktop:text-[22px]`;
 
 /**
  * Archived-sessions menu. Same desktop footprint as the "+" it sits beside:
- * the two are one pair of quiet square controls after the last tab, and a
- * taller plate here read as a control stretched to fill the 40px band. Stays
- * lit while its menu is open (`data-popup-open`).
+ * the two are one pair of quiet square controls after the last tab. Stays lit
+ * while its menu is open (`data-popup-open`).
  */
 export const TAB_HISTORY =
-	`${CTRL_BASE} justify-center ` +
-	"desktop:min-h-auto desktop:self-center desktop:rounded-control " +
-	"desktop:px-[5px] desktop:py-[3px] " +
+	`${CTRL_BASE} ${CTRL_DESKTOP} justify-center ` +
 	"data-[popup-open]:bg-hover data-[popup-open]:text-fg " +
 	CTRL_REVEAL;
 

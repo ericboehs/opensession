@@ -21,7 +21,7 @@ import { kickTranscriptBackfillOnce } from "./src/server/transcript-backfill";
 import { kickOrphanTranscriptSweep } from "./src/server/transcript-orphan-sweep";
 import { makeAskHandler, restorePendingAsks } from "./src/server/asks";
 import { automationResumeMcpForSession, ensureConfiguredAutomations, getWebhookRoutes, setEventSessionCallback, settleResumedAutomationRun, startScheduler } from "./src/server/automations";
-import { seedAccountFromEnvOrFile, startUsagePoller } from "./src/server/claude-accounts";
+import { startUsagePoller } from "./src/server/claude-accounts";
 import { startCodexUsagePoller } from "./src/server/codex-accounts";
 import { FRONTEND_SRC, IS_DEV, SPA_HEADERS, ensureFrontendBuilt, frontend, isPrebuiltFrontend, scheduleFrontendRebuild, sharedCheckoutEditors, spaEntry } from "./src/server/frontend-build";
 import { configuredIntegration } from "./src/server/config";
@@ -679,7 +679,6 @@ if (!g.__opensessionBooted) {
 
 	// Unattended installs stage a Claude token in the env or a file; import it
 	// into the pool before anything can ask for an account.
-	await seedAccountFromEnvOrFile();
 	// Poll per-account Claude usage (drives account picking + the Connections UI)
 	startUsagePoller();
 	// Poll supported ChatGPT/Codex rate-limit windows per registered CODEX_HOME.

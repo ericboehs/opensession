@@ -87,11 +87,16 @@ export function wrapContext(body: string, source?: ContextSource): string {
 	// never legitimate, so replacing the angle brackets is always safe. Matched
 	// as a pattern, not as two literals: an open tag may carry attributes, and
 	// `<opensession:context source="x">` would otherwise sail through.
-	const safe = body
-		.replace(OPEN_TAG_RE, (t) => `‹${t.slice(1, -1)}›`)
-		.replace(CLOSE_TAG_RE, (t) => `‹${t.slice(1, -1)}›`);
+	const safe = neutralizeContextSentinels(body);
 	const open = source ? `<opensession:context source="${source}">` : CTX_OPEN;
 	return `${open}\n${safe}\n${CTX_CLOSE}`;
+}
+
+/** Make context fence text inert before applying an exact output budget. */
+export function neutralizeContextSentinels(body: string): string {
+	return body
+		.replace(OPEN_TAG_RE, (t) => `‹${t.slice(1, -1)}›`)
+		.replace(CLOSE_TAG_RE, (t) => `‹${t.slice(1, -1)}›`);
 }
 
 const STRIP_RE =

@@ -23,11 +23,11 @@ export function WorkspaceSetup() {
 			className="flex min-h-full w-full items-center justify-center px-6"
 		>
 			<div className="flex flex-col items-center text-center">
-				<Spinner size="md" className="mb-2.5 text-faint" />
+				<Spinner size="md" className="mb-3 text-faint" />
 				<div className="text-item-title font-semibold text-fg">
 					Setting up workspace
 				</div>
-				<div className="mt-1 text-label font-medium text-dim">
+				<div className="mt-1.5 text-label font-medium text-faint">
 					Your message will send when it’s ready.
 				</div>
 			</div>

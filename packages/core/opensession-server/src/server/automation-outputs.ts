@@ -38,7 +38,7 @@ export interface SlackAutomationOutput extends AutomationOutputBase {
 export type AutomationOutput = ReportAutomationOutput | SlackAutomationOutput;
 
 const OUTPUT_ID_RE = /^[a-z0-9][a-z0-9_-]{0,40}$/;
-const SLACK_CHANNEL_RE = /^[CG][A-Z0-9]{6,}$/;
+const SLACK_CONVERSATION_RE = /^[CDG][A-Z0-9]{6,}$/;
 const URGENCY_SCORE: Record<ReportUrgency, number> = {
 	low: 0,
 	medium: 1,
@@ -101,8 +101,10 @@ export function sanitizeAutomationOutputs(
 		}
 		if (raw.type === "slack") {
 			const channel = String(raw.channel || "").trim().toUpperCase();
-			if (!SLACK_CHANNEL_RE.test(channel))
-				return { error: `${at}.channel must be a Slack C…/G… channel id` };
+			if (!SLACK_CONVERSATION_RE.test(channel))
+				return {
+					error: `${at}.channel must be a Slack C…/D…/G… conversation id`,
+				};
 			const minUrgency = raw.minUrgency || "high";
 			const minConfidence = raw.minConfidence || "high";
 			if (!(minUrgency in URGENCY_SCORE))
@@ -158,6 +160,44 @@ function neutralText(value: string, max: number): string {
 	return value.replace(/</g, "‹").replace(/>/g, "›").trim().slice(0, max);
 }
 
+export function automationSlackBlocks(
+	report: ReportMeta,
+	reportUrl: string,
+): any[] {
+	const title = neutralText(report.title, 150);
+	const summary = neutralText(
+		report.summary || "Open the report for details.",
+		1200,
+	);
+	const signal = `${report.urgency} urgency · ${report.confidence} confidence`;
+	const actions: any[] = [];
+	if (report.tasks?.length) {
+		actions.push({
+			type: "button",
+			text: { type: "plain_text", text: "Fix these" },
+			style: "primary",
+			action_id: "report-fix-all",
+			value: JSON.stringify({
+				automationId: report.automationId,
+				reportId: report.id,
+			}),
+		});
+	}
+	actions.push({
+		type: "button",
+		text: { type: "plain_text", text: "Open report" },
+		url: reportUrl,
+	});
+	return [
+		{ type: "header", text: { type: "plain_text", text: title } },
+		{
+			type: "section",
+			text: { type: "plain_text", text: `${signal}\n${summary}` },
+		},
+		{ type: "actions", elements: actions },
+	];
+}
+
 /**
  * Validate required reports and deliver enabled downstream sinks. Disabled
  * Slack outputs make no network calls. Receipts dedupe successful deliveries.
@@ -190,29 +230,16 @@ export async function deliverAutomationOutputs(opts: {
 		if (state.delivered[output.id]?.reportId === latest.id) continue;
 		const reportUrl = `${configuredServer().publicBaseUrl.replace(/\/+$/, "")}/reports/${encodeURIComponent(latest.automationId)}/${encodeURIComponent(latest.id)}`;
 		const title = neutralText(latest.title, 150);
-		const summary = neutralText(latest.summary || "Open the report for details.", 1200);
+		const summary = neutralText(
+			latest.summary || "Open the report for details.",
+			1200,
+		);
 		const signal = `${latest.urgency} urgency · ${latest.confidence} confidence`;
 		const { postSlackBlocks } = await import("../agents/slack/slack-api");
 		const response = await postSlackBlocks(
 			output.channel,
-			`${title} — ${signal}\n${summary}\n${reportUrl}`,
-			[
-				{ type: "header", text: { type: "plain_text", text: title } },
-				{
-					type: "section",
-					text: { type: "plain_text", text: `${signal}\n${summary}` },
-				},
-				{
-					type: "actions",
-					elements: [
-						{
-							type: "button",
-							text: { type: "plain_text", text: "Open report" },
-							url: reportUrl,
-						},
-					],
-				},
-			],
+			`${title}: ${signal}\n${summary}\n${reportUrl}`,
+			automationSlackBlocks(latest, reportUrl),
 		);
 		if (!response?.ok)
 			throw new Error(`Slack output failed: ${response?.error || "unknown error"}`);

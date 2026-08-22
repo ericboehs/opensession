@@ -54,6 +54,7 @@ import {
 import { cancelSession } from "./cancel";
 import { cancelAgentRun } from "../../server/agent-runner";
 import { worktreePathFor } from "../../server/worktree";
+import { handleReportFixAction } from "./report-actions";
 import { githubWebhookRoute } from "../github/webhook-route";
 import { setGithubPullRequestReviewHandler } from "../github/webhook";
 import {
@@ -328,6 +329,12 @@ export async function dispatchSlackInteractive(payload: any): Promise<void> {
       const askId = haOpt[1];
       const label = action.value;
       setImmediate(() => resolveHumanAsk(askId, label));
+      return;
+    }
+
+    // A report notification can start every proposed fix without leaving Slack.
+    if (actionId === "report-fix-all") {
+      await handleReportFixAction(payload, action.value);
       return;
     }
 

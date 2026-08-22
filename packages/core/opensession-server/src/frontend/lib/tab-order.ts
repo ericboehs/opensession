@@ -11,6 +11,21 @@ const CHANGE_EVENT = "opensession-tab-order-changed";
 
 type OrderMap = Record<string, string[]>;
 
+/**
+ * Keep every existing tab where it is and append ids that have just appeared.
+ * Session and pane tabs use the same rule, so no tab kind gets a privileged side.
+ */
+export function appendNewTabs(
+	previous: readonly string[],
+	current: readonly string[],
+): string[] {
+	const currentSet = new Set(current);
+	const previousSet = new Set(previous);
+	const added = current.filter((id) => !previousSet.has(id));
+	if (added.length === 0) return [...current];
+	return [...previous.filter((id) => currentSet.has(id)), ...added];
+}
+
 function read(): OrderMap {
 	try {
 		const v = JSON.parse(localStorage.getItem(KEY) || "{}");

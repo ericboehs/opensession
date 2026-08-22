@@ -65,6 +65,7 @@ describe("session effect executor registry", () => {
       project: "opensession",
       branch: "feature/create-one",
       worktreePath: "/worktrees/create-one",
+      baseBranch: "",
       isolated: true,
       existingBranch: true,
       credentialPrincipal: "user:alice",

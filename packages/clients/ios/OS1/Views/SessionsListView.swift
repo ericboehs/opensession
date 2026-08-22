@@ -94,6 +94,10 @@ struct SessionsListView: View {
     @State private var createError: String?
     @State private var createErrorTitle = "Couldn't start session"
     @State private var showArchived = false
+    #if DEBUG
+    /// One targeted archive used only by the simulator screenshot command.
+    @State private var didRunArchiveCaptureHook = false
+    #endif
     /// The view controls (`SessionsFilterPanel`): a sheet on the phone, a
     /// popover on the Mac.
     @State private var showFilterPanel = false
@@ -311,6 +315,14 @@ struct SessionsListView: View {
 
     var body: some View {
         navigationContainer
+            .overlay(alignment: .bottom) {
+                ArchiveUndoStack(
+                    offers: viewModel.archiveUndoOffers,
+                    onUndo: viewModel.undoArchive
+                )
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+            }
             // Session-id links in agent output (SessionLinks) are ordinary
             // markdown links on a private scheme; catching them here — above
             // the navigation container — is what lets a transcript push the
@@ -422,6 +434,9 @@ struct SessionsListView: View {
             .onChange(of: viewModel.hasLoaded) {
                 autoOpenFromEnvironment()
                 openRequestedSession()
+                #if DEBUG
+                archiveCaptureFixture()
+                #endif
             }
             // "Start an Agent" (StartAgentIntent — Action Button, widget,
             // Siri). It can run before this view exists (cold launch) or while
@@ -2575,7 +2590,7 @@ struct SessionsListView: View {
     }
     #endif
 
-    /// Reversible filing shared with the web. Snooze means Some day when the
+    /// Reversible filing shared with the web. Snooze means Someday when the
     /// row has no explicit wake date; a snoozed row gets Unsnooze.
     @ViewBuilder
     private func snoozeButton(
@@ -2657,14 +2672,25 @@ struct SessionsListView: View {
             // Mac hover button / Delete key / context menu: collapse the row
             // instead of blinking it out.
             withAnimation(.snappy(duration: 0.28)) {
-                workspace.sessions.forEach(viewModel.archive)
+                viewModel.archive(workspace.sessions)
             }
         } else {
             // Swipe path: the List's destructive-role delete animation owns
             // the removal; wrapping the mutation would fight it.
-            workspace.sessions.forEach(viewModel.archive)
+            viewModel.archive(workspace.sessions)
         }
     }
+
+    #if DEBUG
+    private func archiveCaptureFixture() {
+        guard !didRunArchiveCaptureHook, viewModel.hasLoaded,
+              let id = ProcessInfo.processInfo.environment["OS1_ARCHIVE_UNDO_SESSION"],
+              let session = viewModel.sessions.first(where: { $0.id == id })
+        else { return }
+        didRunArchiveCaptureHook = true
+        viewModel.archive(session)
+    }
+    #endif
 
     private var sessionCacheScope: SessionViewModelCache.Scope {
         let config = ServerConfig.shared
@@ -3621,6 +3647,45 @@ struct SessionsListView: View {
     }
 }
 
+private struct ArchiveUndoStack: View {
+    let offers: [ArchiveUndoOffer]
+    let onUndo: (UUID) -> Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ForEach(offers) { offer in
+                HStack(spacing: 12) {
+                    Image(systemName: "archivebox.fill")
+                        .foregroundStyle(.secondary)
+                    Text(offer.message)
+                        .font(.subheadline.weight(.medium))
+                    Spacer(minLength: 8)
+                    Button("Undo") {
+                        withAnimation(.snappy(duration: 0.22)) {
+                            _ = onUndo(offer.id)
+                        }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(OS1VisualStyle.accent)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .frame(maxWidth: 380)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(OS1VisualStyle.border.opacity(0.7), lineWidth: 0.5)
+                }
+                .shadow(color: .black.opacity(0.14), radius: 12, y: 4)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .accessibilityElement(children: .contain)
+            }
+        }
+        .animation(.snappy(duration: 0.22), value: offers.map(\.id))
+    }
+}
+
 private struct ArchivedSessionsView: View {
     let sessions: [Session]
     /// Whether the archived index has arrived. Archived rows travel on their
@@ -3944,7 +4009,7 @@ struct SessionRow: View {
     /// A parked workspace prompt has no session yet. It reuses the row's
     /// layout, but its pencil is the state mark rather than a session status.
     var isWorkspaceDraft = false
-    /// Active snooze value: an ISO wake time or Some day.
+    /// Active snooze value: an ISO wake time or Someday.
     var snoozeValue: String? = nil
     /// This shared checkout lands on its default branch, so no PR is expected.
     var shipsDirectlyToMain = false
@@ -3979,7 +4044,7 @@ struct SessionRow: View {
                         if let onToggleSnooze {
                             filingButton(
                                 snoozeValue != nil ? "moon.fill" : "moon",
-                                help: snoozeValue != nil ? "Unsnooze" : "Snooze until Some day",
+                                help: snoozeValue != nil ? "Unsnooze" : "Snooze until Someday",
                                 action: onToggleSnooze
                             )
                         }

@@ -214,14 +214,13 @@ function NavSearch({
  * sheet's detail page. Tool panels come in via children (App owns them). */
 function SectionPanel({
 	section,
-	onBack,
 	workspace,
+	onOpenOnboarding,
 	children,
 }: {
 	section: SettingsSectionKey;
-	/** Leaving settings — the Setup wizard's last step offers it as "Done". */
-	onBack?: () => void;
 	workspace?: Workspace;
+	onOpenOnboarding: () => void;
 	children?: React.ReactNode;
 }) {
 	return (
@@ -231,7 +230,9 @@ function SectionPanel({
 			{section === "preferences" && <PreferencesPanel />}
 			{section === "shortcuts" && <ShortcutsPanel />}
 			{section === "general" && <GeneralPanel />}
-			{section === "setup" && <SetupPanel onDone={onBack} />}
+			{section === "setup" && (
+				<SetupPanel onOpenOnboarding={onOpenOnboarding} />
+			)}
 			{section === "repos" && <ReposPanel />}
 			{section === "members" && <MembersPanel />}
 			{section === "library" && <LibraryPanel />}
@@ -259,6 +260,7 @@ export function Settings({
 	onSelect,
 	onShowRoot,
 	workspace,
+	onOpenOnboarding,
 	children,
 }: {
 	onBack: () => void;
@@ -271,6 +273,7 @@ export function Settings({
 	/** Phone sheet's back-to-root (navigate to sectionless /settings). */
 	onShowRoot?: () => void;
 	workspace?: Workspace;
+	onOpenOnboarding: () => void;
 	/** The active tool's panel (App owns the tool components and their props). */
 	children?: React.ReactNode;
 }) {
@@ -309,6 +312,7 @@ export function Settings({
 				onShowRoot={onShowRoot}
 				onBack={onBack}
 				workspace={workspace}
+				onOpenOnboarding={onOpenOnboarding}
 			>
 				{children}
 			</MobileSettings>
@@ -384,7 +388,13 @@ export function Settings({
 				)}
 			>
 				{TOOL_SECTIONS.has(active) ? (
-					<SectionPanel section={active} workspace={workspace}>{children}</SectionPanel>
+					<SectionPanel
+						section={active}
+						workspace={workspace}
+						onOpenOnboarding={onOpenOnboarding}
+					>
+						{children}
+					</SectionPanel>
 				) : (
 					<div
 						className={
@@ -393,7 +403,11 @@ export function Settings({
 								: SETTINGS_PANEL_FRAME
 						}
 					>
-						<SectionPanel section={active} onBack={onBack} workspace={workspace}>
+						<SectionPanel
+							section={active}
+							workspace={workspace}
+							onOpenOnboarding={onOpenOnboarding}
+						>
 							{children}
 						</SectionPanel>
 					</div>
@@ -416,6 +430,7 @@ function MobileSettings({
 	onShowRoot,
 	onBack,
 	workspace,
+	onOpenOnboarding,
 	children,
 }: {
 	groups: SectionGroup[];
@@ -424,6 +439,7 @@ function MobileSettings({
 	onShowRoot?: () => void;
 	onBack: () => void;
 	workspace?: Workspace;
+	onOpenOnboarding: () => void;
 	children?: React.ReactNode;
 }) {
 	const [query, setQuery] = useState("");
@@ -547,10 +563,20 @@ function MobileSettings({
 							{shownSection && (
 								<div data-settings-scroll className={SETTINGS_CONTENT_SHEET}>
 									{TOOL_SECTIONS.has(shownSection) ? (
-										<SectionPanel section={shownSection} workspace={workspace}>{children}</SectionPanel>
+										<SectionPanel
+											section={shownSection}
+											workspace={workspace}
+											onOpenOnboarding={onOpenOnboarding}
+										>
+											{children}
+										</SectionPanel>
 									) : (
 										<div className={SETTINGS_PANEL_FRAME_SHEET}>
-											<SectionPanel section={shownSection} onBack={onBack} workspace={workspace}>
+											<SectionPanel
+												section={shownSection}
+												workspace={workspace}
+												onOpenOnboarding={onOpenOnboarding}
+											>
 												{children}
 											</SectionPanel>
 										</div>

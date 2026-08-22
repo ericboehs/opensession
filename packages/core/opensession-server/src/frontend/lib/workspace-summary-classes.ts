@@ -83,8 +83,7 @@ export const WS_SUMMARY_SECTION =
  *  band supplies one for the whole group. Declared before its first use: these
  *  are module-scope consts, so a reference from a line above would evaluate in
  *  the temporal dead zone and throw at import. */
-const BAND_ROW =
-	" [.ws-summary-band_&]:mx-0 [.ws-summary-band_&]:w-full [.ws-summary-band_&]:px-2";
+const BAND_ROW = " [.ws-summary-band_&]:mx-0 [.ws-summary-band_&]:w-full";
 
 export const WS_SUMMARY_ROW =
 	"group/ws mx-2 flex h-[31px] w-[calc(100%_-_16px)] min-w-0 shrink-0 cursor-pointer items-center gap-1.5 " +
@@ -105,7 +104,7 @@ export const WS_SUMMARY_ROW =
  */
 export const WS_SUMMARY_STATUS_ROW =
 	"mx-2 flex min-h-[38px] w-[calc(100%_-_16px)] min-w-0 shrink-0 items-center gap-1.5 " +
-	"rounded-row px-2 text-left text-item-title text-fg" +
+	"rounded-row pr-2 pl-2.5 text-left text-item-title text-fg" +
 	BAND_ROW;
 
 /**

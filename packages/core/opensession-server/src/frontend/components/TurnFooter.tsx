@@ -455,14 +455,20 @@ const MAX_CARD_FILES = 4;
  * the transcript's chip cards do. Hover only, for the same reason those are:
  * a tap belongs to the fold, and the fold names the same files as chips.
  */
-export function TurnLineStatsCard({ files }: { files: TouchedFile[] }) {
+export function TurnLineStatsCard({
+  files,
+  additions = files.reduce((n, f) => n + f.additions, 0),
+  deletions = files.reduce((n, f) => n + f.deletions, 0),
+}: {
+  files: TouchedFile[];
+  additions?: number;
+  deletions?: number;
+}) {
   const roots = useToolPathRoots();
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLSpanElement | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const additions = files.reduce((n, f) => n + f.additions, 0);
-  const deletions = files.reduce((n, f) => n + f.deletions, 0);
   const shown = files
     .filter((f) => f.hunks.some(Boolean))
     .slice(0, MAX_CARD_FILES);

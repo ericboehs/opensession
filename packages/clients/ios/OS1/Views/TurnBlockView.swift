@@ -48,7 +48,12 @@ struct TurnBlockView: View {
                         worktreeDir: worktreeDir,
                         isLive: turn.isLive,
                         showsTools: true,
-                        rendersToolCallsInPlace: activity.rendersToolCallsInPlace,
+                        // The turn header already summarizes a tool-only run.
+                        // Opening it reveals calls directly instead of adding
+                        // a second row with the same step count.
+                        rendersToolCallsInPlace: turn.rendersToolCallsInPlace(
+                            preference: activity
+                        ),
                         expansionState: expansionState
                     )
 
@@ -159,9 +164,8 @@ struct TurnBlockView: View {
         .contentShape(Rectangle())
     }
 
-    /// Phones show only the outcome and the signals that may need attention.
-    /// Steps, tool families and changed files remain one tap away inside the
-    /// fold instead of competing with the answer on every settled turn.
+    /// Phones keep the outcome, step count, and code totals visible. Tool
+    /// families and changed-file names remain one tap away inside the fold.
     private var compactHeader: some View {
         FlowLayout(spacing: 6) {
             HStack(spacing: 6) {
@@ -171,14 +175,14 @@ struct TurnBlockView: View {
             }
             .fixedSize()
 
-            if let duration = turn.duration,
-               let label = TranscriptFormat.duration(duration) {
-                Text("· \(label)")
+            if !counters.isEmpty {
+                Text(counters)
                     .font(.footnote)
                     .fixedSize()
             }
 
             failureLabel
+            lineStats
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -239,7 +243,7 @@ struct TurnBlockView: View {
                     .fixedSize()
             }
 
-            if !state.expanded, !turn.lineStats.isEmpty {
+            if !turn.lineStats.isEmpty {
                 LineStatsView(stats: turn.lineStats)
             }
         }
@@ -331,25 +335,28 @@ struct TurnBlockView: View {
     /// truncate — a count is useless truncated, a filename still reads.
     @ViewBuilder
     private var trailingDetail: some View {
-        if !state.expanded {
-            if turn.isLive, let preview = turn.livePreview {
+        if state.expanded {
+            lineStats
+        } else if turn.isLive, turn.hasNarration, let preview = turn.livePreview {
+            HStack(spacing: 6) {
                 Text(preview)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(OS1VisualStyle.textFaint)
                     .lineLimit(1)
                     .truncationMode(.middle)
-            } else if turn.touchedFiles.isEmpty {
                 lineStats
-            } else {
-                // A name cut down to "….ts" is noise wearing a filename's
-                // clothes, and the footer's chips name every file anyway. So
-                // it shows whole, shows head-truncated while that still
-                // reads, or steps aside for the counts.
-                ViewThatFits(in: .horizontal) {
-                    editedFiles(width: nil)
-                    editedFiles(width: 72)
-                    lineStats
-                }
+            }
+        } else if turn.touchedFiles.isEmpty {
+            lineStats
+        } else {
+            // A name cut down to "….ts" is noise wearing a filename's
+            // clothes, and the footer's chips name every file anyway. So
+            // it shows whole, shows head-truncated while that still
+            // reads, or steps aside for the counts.
+            ViewThatFits(in: .horizontal) {
+                editedFiles(width: nil)
+                editedFiles(width: 72)
+                lineStats
             }
         }
     }

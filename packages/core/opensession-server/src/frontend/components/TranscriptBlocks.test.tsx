@@ -228,35 +228,34 @@ describe("TranscriptBlocks compact tool runs", () => {
 		{ id: `bash-result-${n}`, type: "tool_result", toolUseId: `bash-call-${n}`, content: "ok", timestamp: `2026-08-13T06:01:0${n}.500Z` },
 	];
 
-	test("folds routine calls to one icon-led row by default", () => {
+	test("keeps tool-only live work to one summary row by default", () => {
 		setTurnPrefs(null);
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks live entries={toolEntries} />,
 		);
 
-		expect(html).toContain('data-tool-run="true"');
-		// The folded row is the count and nothing else: which tools ran is
-		// what it folds away, and the names are left to the aria-label.
+		// The Working row already owns the count. Until the agent writes a real
+		// update, a second grouped-step row would only repeat the same information.
+		expect(html).toContain('aria-expanded="false"');
+		expect(html).toContain(">Working</span>");
 		expect(html).toContain("2 steps</span>");
-		expect(html).toContain("Show 2 grouped steps: Bash · Read");
-		expect(html).toContain('x="8.25" y="4.75" width="11" height="11" rx="2"');
-		expect(html).toContain("group-hover:opacity-0");
-		expect(html).toContain("group-hover:opacity-100");
+		expect(html).not.toContain('data-tool-run="true"');
+		expect(html).not.toContain("Show 2 grouped steps");
 		expect(html).not.toContain("git status");
 		expect(html).not.toContain("package.json");
 	});
 
-	test("keeps a lone live call inside its Working group", () => {
+	test("keeps a lone live call behind its Working row", () => {
 		setTurnPrefs(null);
 		const html = renderToStaticMarkup(
 			<TranscriptBlocks live entries={toolEntries.slice(0, 3)} />,
 		);
 
-		// One call does not need a nested tool-run disclosure, but it still belongs
-		// inside the turn's outer work group like every other tool call.
 		expect(html).not.toContain('data-tool-run="true"');
+		expect(html).toContain('aria-expanded="false"');
 		expect(html).toContain(">Working</span>");
-		expect(html).toContain("git status");
+		expect(html).toContain("1 step</span>");
+		expect(html).not.toContain("git status");
 	});
 
 	test("folds a settled lone call into its Worked group", () => {
@@ -364,15 +363,49 @@ describe("TranscriptBlocks compact tool runs", () => {
 			/>,
 		);
 
-		// One row for the whole run, edits included, carrying the lines those
-		// edits moved. The individual edit rows are behind it; the turn's own
-		// file chips still name what changed.
-		expect(html.match(/data-tool-run="true"/g)).toHaveLength(1);
+		// The one Working row carries both the total and the lines moved. The
+		// individual calls stay behind that row until someone opens it.
+		expect(html).not.toContain('data-tool-run="true"');
+		expect(html).toContain('aria-expanded="false"');
 		expect(html).toContain("4 steps");
 		expect(html).toContain("+3");
 		expect(html).toContain("-3");
-		expect(html).toContain("Show 4 grouped steps: Edit ×3 · Bash");
+		expect(html).not.toContain("Show 4 grouped steps");
 		expect(html).not.toContain('data-eid="edit-1"');
+	});
+
+	test("keeps server-derived code totals on the one Working row", () => {
+		setTurnPrefs(null);
+		const html = renderToStaticMarkup(
+			<TranscriptBlocks
+				live
+				entries={[
+					{ id: "prompt", type: "user", content: "Implement it", timestamp: "2026-08-13T06:00:00Z" },
+					{
+						id: "remote-edit",
+						type: "tool_use",
+						toolUseId: "remote-edit-call",
+						toolName: "remote_code_change",
+						toolInput: {},
+						content: "Editing",
+						timestamp: "2026-08-13T06:00:01Z",
+						presentation: {
+							canonical: "Edit",
+							name: "Edit",
+							family: "edit",
+							detail: { kind: "none" },
+							lineStats: { additions: 400, deletions: 23 },
+						},
+					},
+				]}
+			/>,
+		);
+
+		expect(html).toContain(">Working</span>");
+		expect(html).toContain("1 step</span>");
+		expect(html).toContain("+400");
+		expect(html).toContain("-23");
+		expect(html).not.toContain('data-tool-run="true"');
 	});
 
 	test("shows every call in place under the always-expanded preference", () => {
@@ -461,6 +494,13 @@ describe("TranscriptBlocks turn work and tool call preferences", () => {
 		{ id: "note", type: "assistant", content: "The repository is clean.", timestamp: "2026-08-19T06:00:05Z" },
 		{ id: "answer", type: "assistant", content: "All good.", timestamp: "2026-08-19T06:00:06Z" },
 	];
+	// A live message remains inside the work only after another step follows it.
+	// Until then it is the visible streaming tail outside the disclosure.
+	const liveNarratedTurn: TranscriptEntry[] = [
+		...narratedTurn.slice(0, -1),
+		{ id: "verify", type: "tool_use", toolUseId: "verify-call", toolName: "bash", toolInput: { command: "bun test" }, content: "Using bash", timestamp: "2026-08-19T06:00:06Z" },
+		{ id: "verify-result", type: "tool_result", toolUseId: "verify-call", content: "ok", timestamp: "2026-08-19T06:00:07Z" },
+	];
 
 	test("keeps grouped calls closed inside steps that stay open", () => {
 		setTurnPrefs("open", "folded");
@@ -476,7 +516,7 @@ describe("TranscriptBlocks turn work and tool call preferences", () => {
 	test("opens grouped calls independently of the step timing", () => {
 		setTurnPrefs("running", "open");
 		const html = renderToStaticMarkup(
-			<TranscriptBlocks live entries={narratedTurn.slice(0, -1)} />,
+			<TranscriptBlocks live entries={liveNarratedTurn} />,
 		);
 
 		expect(html).not.toContain('data-tool-run="true"');
@@ -510,7 +550,7 @@ describe("TranscriptBlocks turn work and tool call preferences", () => {
 	test("opens the outer steps only while a turn runs", () => {
 		setTurnPrefs("running", "folded");
 		const running = renderToStaticMarkup(
-			<TranscriptBlocks live entries={narratedTurn.slice(0, -1)} />,
+			<TranscriptBlocks live entries={liveNarratedTurn} />,
 		);
 		expect(running).toContain("The repository is clean.");
 		expect(running).toContain('data-tool-run="true"');

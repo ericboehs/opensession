@@ -95,7 +95,7 @@ function creationPayload<K extends Exclude<
         branch: requiredString(kind, value.branch, "branch"),
         worktreePath: requiredString(kind, value.worktreePath, "worktreePath"),
         baseBranch:
-          value.baseBranch === undefined
+          value.baseBranch === undefined || value.baseBranch === ""
             ? undefined
             : requiredString(kind, value.baseBranch, "baseBranch"),
         isolated: value.isolated === true,

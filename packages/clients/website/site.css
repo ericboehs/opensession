@@ -22,14 +22,14 @@
 	-moz-osx-font-smoothing: grayscale;
 	/* Neutral greys, not blue-black ink on a warm card: text is near-black,
 	   everything secondary is one flat mid grey, and the hairline is plain
-	   black at 9%. A single hue family is what keeps the page quiet. */
+	   black at 6%. A single hue family is what keeps the page quiet. */
 	--ink: #0a0a0a;
 	--page: #fff;
 	/* One quiet card fill and one hairline, used by every section in the feed.
 	   The page is white and the cards are a step off it, so a section reads as
 	   a panel without a shadow or a second colour doing the work. */
 	--card: #fafafb;
-	--line: rgba(var(--ink-rgb), 0.09);
+	--line: rgba(var(--ink-rgb), 0.06);
 	--muted: #787878;
 	/* The product's accent with more chroma, so the one filled control on the
 	   page carries some voltage: the app's own #1f82bb reads muted at this size
@@ -213,7 +213,7 @@ summary:focus-visible {
 .card {
 	padding: 34px;
 	border: 1px solid var(--line);
-	border-radius: calc(24px * var(--rf));
+	border-radius: calc(28px * var(--rf));
 	corner-shape: var(--cs);
 	background: var(--card);
 }
@@ -235,9 +235,9 @@ summary:focus-visible {
 
 /* ── The product, on its own background ──────────────────────────────── */
 
-/* The one loud surface on the page. The window is inset on three sides and
-   runs past the bottom edge, so it reads as an app that carries on rather
-   than a screenshot centred in a frame. */
+/* The one loud surface on the page. Both devices grow out of its bottom-right
+   corner: the background gives them air above and to the left, while the crop
+   makes the product feel larger than a screenshot centred in a frame. */
 .stage {
 	position: relative;
 	overflow: hidden;
@@ -249,7 +249,7 @@ summary:focus-visible {
 	container-type: size;
 	aspect-ratio: 3 / 2;
 	border: 1px solid var(--line);
-	border-radius: calc(24px * var(--rf));
+	border-radius: calc(28px * var(--rf));
 	corner-shape: var(--cs);
 	background: var(--stage-bg);
 }
@@ -277,20 +277,23 @@ summary:focus-visible {
 .preview-wrap {
 	--demo-scale: 1;
 	position: absolute;
-	/* Sat on the background rather than bleeding off it: the app's composer is
-	   14px above its own bottom edge, so any overshoot cuts the one control a
-	   visitor is meant to recognise. One value, in container-width units, so
-	   the frame reads as an even margin rather than a window pushed off
-	   centre. */
-	inset: 5.6cqw;
+	/* Keep one quiet inset above and to the left, then let the window continue
+	   through the stage's bottom-right corner. This enlarges the product without
+	   shrinking its fixed app layout, and the stage itself supplies the crop. */
+	top: 5.6cqw;
+	right: -1px;
+	bottom: -1px;
+	left: 5.6cqw;
 	overflow: hidden;
 	/* It is a <figure>, and a figure's UA margin offsets an absolutely
 	   positioned box even with all four insets set. */
 	margin: 0;
 	border: 1px solid rgba(var(--ink-rgb), 0.1);
-	/* A macOS 26 window corner, measured off Finder and Safari at 2x: a 26.7pt
-	   radius that fits a plain circle to within half a pixel. */
-	border-radius: calc(15px * var(--rf));
+	/* A macOS 26 window corner, measured off Finder and Safari at 2x. Only the
+	   corner contained by the stage is rounded; the other three carry through
+	   an edge, so rounding them would make the window look finished just where
+	   it is meant to continue. */
+	border-radius: calc(15px * var(--rf)) 0 0 0;
 	corner-shape: var(--cs);
 	background: var(--window);
 	box-shadow: 0 22px 54px var(--window-shadow);
@@ -337,25 +340,27 @@ summary:focus-visible {
 	pointer-events: auto;
 }
 
-/* The phone, in front of the window at the corner it overlaps.
-   Everything here is in cqw, a percentage of the stage's own width, so the
-   pair keeps its composition at every size the stage takes.
+/* The phone, in front of the window near their shared bottom-right origin.
+   A small right inset keeps the whole phone edge visible, while its bottom
+   still carries through the stage. Everything here is in cqw, a percentage
+   of the stage's own width, so the pair keeps its composition at every size
+   the stage takes.
 
    The size is not a taste: the window stands for a 14-inch MacBook Pro's
-   screen, 302mm across its 88.8cqw, which puts 1mm at 0.294cqw. An iPhone 17
-   Pro is 71.9 by 150mm, so it is 21.1 by 44.1cqw and the two objects are
+   screen, 302mm across its 94.4cqw, which puts 1mm at 0.313cqw. An iPhone 17
+   Pro is 71.9 by 150mm, so it is 22.5 by 46.9cqw and the two objects are
    drawn at one physical scale. The corner is the device's own, about 12% of
    its width, authored circular and multiplied by --rf like every other corner
    here so the squircle browsers land on the shape the phone really has. */
 .demo-phone {
 	position: absolute;
 	right: 2.5cqw;
-	bottom: 2.5cqw;
-	width: 21.1cqw;
-	height: 44.1cqw;
+	bottom: -1px;
+	width: 22.5cqw;
+	height: 46.9cqw;
 	object-fit: cover;
 	object-position: top center;
-	border-radius: calc(1.87cqw * var(--rf));
+	border-radius: calc(2cqw * var(--rf)) calc(2cqw * var(--rf)) 0 0;
 	corner-shape: var(--cs);
 	background: var(--window);
 	/* A hairline for the device's own edge, and a shadow deeper than the
@@ -634,7 +639,7 @@ summary:focus-visible {
 	width: min(100% - 32px, 440px);
 	padding: clamp(26px, 4vw, 34px);
 	border: 0;
-	border-radius: calc(22px * var(--rf));
+	border-radius: calc(25px * var(--rf));
 	corner-shape: var(--cs);
 	background: var(--surface);
 	box-shadow: 0 24px 60px var(--surface-shadow);
@@ -754,7 +759,7 @@ summary:focus-visible {
 
 	.card {
 		padding: 22px;
-		border-radius: calc(19px * var(--rf));
+		border-radius: calc(22px * var(--rf));
 		corner-shape: var(--cs);
 	}
 
@@ -768,7 +773,7 @@ summary:focus-visible {
 
 	.stage {
 		aspect-ratio: 5 / 4;
-		border-radius: calc(19px * var(--rf));
+		border-radius: calc(22px * var(--rf));
 		corner-shape: var(--cs);
 	}
 
@@ -862,7 +867,7 @@ summary:focus-visible {
 		--ink: #f4f4f5;
 		--page: #0c0c0d;
 		--card: #141416;
-		--line: rgba(255, 255, 255, 0.1);
+		--line: rgba(255, 255, 255, 0.07);
 		--muted: #939397;
 		--ink-rgb: 255, 255, 255;
 		--stage-bg: #14171d;

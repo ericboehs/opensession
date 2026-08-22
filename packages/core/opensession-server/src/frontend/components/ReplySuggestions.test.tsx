@@ -110,6 +110,10 @@ describe("ReplySuggestions", () => {
 		);
 	});
 
+	test("desktop keeps Next on the input's right edge", () => {
+		expect(VIEWER_ACTION_ROW).toContain("justify-end");
+	});
+
 	test("desktop centers the reading action between replies and Next", () => {
 		expect(VIEWER_ACTION_ROW_WITH_SCROLL).toContain("desktop:grid");
 		expect(VIEWER_ACTION_ROW_WITH_SCROLL).toContain(

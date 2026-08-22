@@ -13,7 +13,7 @@ enum WorkspaceSnooze {
     }
 
     static func label(_ value: String, now: Date = Date()) -> String {
-        if value == someDay { return "Some day" }
+        if value == someDay { return "Someday" }
         guard let wake = Session.parseISO(value) else { return "Snoozed" }
         let seconds = max(0, wake.timeIntervalSince(now))
         if seconds < 3_600 { return "\(max(1, Int(ceil(seconds / 60))))m" }

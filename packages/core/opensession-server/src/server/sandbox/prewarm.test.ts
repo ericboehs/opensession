@@ -35,6 +35,7 @@ import {
   discardClaimedPrewarm,
   prewarmRateLimited,
   requestPrewarm,
+  sessionOwnedSandboxIds,
   startPrewarmPool,
   sweepPrewarms,
   _prewarmPoolForTest,
@@ -586,6 +587,15 @@ describe("sweepPrewarms", () => {
     await sweepPrewarms();
     await until(() => destroyed.includes("pw-untracked"));
     expect(destroyed).not.toContain("pw-foreign");
+  });
+});
+
+describe("provider orphan protection", () => {
+  test("treats durable session mappings as stronger than stale prewarm labels", () => {
+    expect(sessionOwnedSandboxIds([
+      { sessionId: "os-live", sandboxId: "sandbox-adopted" },
+      { sessionId: "__prewarm__:daytona:tella-fusion", sandboxId: "sandbox-warm" },
+    ])).toEqual(new Set(["sandbox-adopted"]));
   });
 });
 

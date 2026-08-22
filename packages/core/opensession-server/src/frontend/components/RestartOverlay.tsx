@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { WSServerMessage } from "../lib/types";
 import { PRODUCT_NAME } from "../lib/brand";
-import { TRANSIENT_NOTICE_LANE } from "../lib/notification-classes";
-import { FloatingStatus } from "../ui/floating-status";
-import { toast } from "../ui/toast";
+import { dismissToast, toast } from "../ui/toast";
 import { fetchHealthStatus } from "../lib/health";
 
 // Give foreground recovery enough time to probe and replace the stale PWA
@@ -31,8 +29,8 @@ interface Props {
  *  - Socket loss with no restart signal → a calm "Reconnecting…" pill while
  *    useWebSocket retries. On reconnect the server's bootId (hello frame;
  *    /api/health fallback for servers without it) is compared: unchanged →
- *    pure blip, the pill clears silently; changed → it really was a restart —
- *    a brief toast, then business as usual.
+ *    pure blip; changed → it really was a restart. Either way, the pill clears
+ *    silently.
  *  - An explicit `server_restarting` broadcast (graceful drain) shows the same
  *    NON-blocking pill — restarts complete in a couple of seconds and Caddy
  *    parks in-flight requests, so nothing needs to block the composer or
@@ -47,13 +45,12 @@ interface Props {
 export function RestartOverlay({ connected, addHandler }: Props) {
   const [phase, setPhase] = useState<"ok" | "reconnecting" | "restarting" | "crashed">("ok");
   const [backOnline, setBackOnline] = useState(false);
-  // Who likely caused the restart: `by` on server_restarting (pill), `restartBy`
-  // on the new server's hello (post-restart toast).
+  // Who likely caused the restart: `by` on server_restarting, or `restartBy`
+  // on the new server's hello.
   const [restartBy, setRestartBy] = useState<string | null>(null);
-  const restartByRef = useRef<string | null>(null);
-  restartByRef.current = restartBy;
   const bootId = useRef<string | null>(null);
   const sawDown = useRef(false);
+  const statusToast = useRef<number | null>(null);
   // Set when the server explicitly told us it's going down; cleared only by
   // resolveRestart. The old instance's socket can stay open into the drain, so
   // "connected + health answering" alone must not clear the pill instantly.
@@ -65,18 +62,18 @@ export function RestartOverlay({ connected, addHandler }: Props) {
 
   const resolveRestart = () => {
     explicit.current = false;
+    if (statusToast.current !== null) {
+      dismissToast(statusToast.current);
+      statusToast.current = null;
+    }
     if (phaseRef.current === "restarting") setPhase("ok");
-    const by = restartByRef.current;
-    toast(`${PRODUCT_NAME} restarted${by ? ` · ${by}` : ""}`, {
-      variant: "success",
-    });
   };
 
-  // Adopt/compare a server-reported bootId. First sighting just records it —
+  // Adopt/compare a server-reported bootId. First sighting just records it,
   // unless an explicit restart is pending, where ANY fresh sighting after the
   // announcement is evidence of the new instance (a never-learned old bootId
-  // must not wedge the pill). A change outside the restart flow means the
-  // server restarted behind a blip-looking disconnect — say so briefly.
+  // must not wedge the pill). A change outside the restart flow needs no UI:
+  // there is no pending restart status to clear.
   const handleBootId = (id: unknown) => {
     if (typeof id !== "string" || !id) return;
     const prev = bootId.current;
@@ -84,12 +81,6 @@ export function RestartOverlay({ connected, addHandler }: Props) {
     if (explicit.current) {
       if (!prev || id !== prev) resolveRestart();
       return;
-    }
-    if (prev && id !== prev) {
-      const by = restartByRef.current;
-      toast(`${PRODUCT_NAME} restarted${by ? ` · ${by}` : ""}`, {
-        variant: "success",
-      });
     }
   };
 
@@ -119,13 +110,7 @@ export function RestartOverlay({ connected, addHandler }: Props) {
             setPhase("restarting");
           }
         } else if (msg.type === "hello") {
-          // Adopt the attribution BEFORE the bootId compare fires the
-          // "restarted" toast so the toast can name the culprit — setState
-          // is async, so write the ref directly too.
-          if (msg.restartBy) {
-            restartByRef.current = msg.restartBy;
-            setRestartBy(msg.restartBy);
-          }
+          if (msg.restartBy) setRestartBy(msg.restartBy);
           handleBootId(msg.bootId);
         }
       }),
@@ -240,30 +225,23 @@ export function RestartOverlay({ connected, addHandler }: Props) {
     };
   }, [phase]);
 
-  if (phase === "reconnecting" || phase === "restarting") {
+  // Connection recovery uses the regular toast lane above the composer. Unlike
+  // a receipt, this status has no expiry line and stays until recovery settles.
+  useEffect(() => {
+    if (phase !== "reconnecting" && phase !== "restarting") return;
     const restarting = phase === "restarting" || explicit.current;
-    return (
-      <div className={`${TRANSIENT_NOTICE_LANE} flex justify-end phone:justify-center`}>
-        <FloatingStatus
-          // Live restart status and its completion toast share one top-center
-          // lane and one glass surface, so the sequence changes state in place.
-          // The `sm` ring is calibrated for a compact control; `md` reads as a
-          // grey halo on a surface this small.
-          role="status"
-          aria-live="polite"
-        >
-          <span
-            aria-hidden
-            className="size-3 shrink-0 animate-spin rounded-full border border-current/25 border-t-current text-accent"
-          />
-          <span>{restarting ? "Restarting" : "Connection lost"}</span>
-          <span className="text-faint">
-            {restarting && restartBy ? restartBy : "Retrying"}
-          </span>
-        </FloatingStatus>
-      </div>
+    const id = toast(
+      restarting
+        ? `Restarting${restartBy ? ` · ${restartBy}` : ""}`
+        : "Connection lost · Retrying",
+      { ongoing: true },
     );
-  }
+    statusToast.current = id;
+    return () => {
+      dismissToast(id);
+      if (statusToast.current === id) statusToast.current = null;
+    };
+  }, [phase, restartBy]);
 
   if (phase !== "crashed") return null;
 

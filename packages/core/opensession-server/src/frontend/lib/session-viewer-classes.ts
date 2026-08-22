@@ -80,7 +80,7 @@ export const VIEWER_TITLE =
  * out — its text stays selectable and copyable.
  */
 export const VIEWER_BRANCH =
-	"min-w-0 max-w-[420px] select-text overflow-hidden text-ellipsis whitespace-nowrap text-item-title " +
+	"min-w-0 max-w-[420px] -translate-y-px select-text overflow-hidden text-ellipsis whitespace-nowrap text-item-title " +
 	"[-webkit-touch-callout:default] " +
 	"[html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] " +
 	"[html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]";
@@ -130,7 +130,7 @@ export const VIEWER_HEADER_ACTIONS =
 /** The presence facepile (Figma/Notion-style), just before Share. Labelled
  *  items in the row space themselves off the icon cluster; the icons keep the
  *  row's tight 2px gap. */
-export const VIEWER_PRESENCE = "mr-1.5 flex items-center";
+export const VIEWER_PRESENCE = "mx-1.5 flex items-center";
 
 /**
  * One face in it. They overlap by 8px so the pile reads as a stack, and the
@@ -288,10 +288,14 @@ export const VIEWER_INPUT =
 	// the very bottom edge. That gap is also all the room the composer's shadow
 	// gets in mobile Safari, where there is no safe-area inset.
 	"phone:px-3 phone:pb-[max(16px,env(safe-area-inset-bottom,0px))] " +
-	// Keyboard up: iOS keeps reporting the inset even though the keyboard now
-	// covers that area. Keep the ordinary 12px gap instead so the expanded
-	// composer's curved bottom and shadow remain inside the visible viewport.
-	"phone:[body.kb-open_&:has(.composer:not(.composer-min))]:pb-3";
+	// Keyboard up: iOS keeps reporting the safe-area inset even though the
+	// keyboard now covers that area, so the ordinary 12px gap takes over — and
+	// it is measured from the top of the KEYBOARD, not the bottom of the window.
+	// This column is laid out in the fixed viewport, which iOS does not shrink
+	// for the keyboard, so without `--kb-inset` (lib/keyboard-inset) the composer
+	// sits behind the keys and the page has to be panned to reach it. The
+	// variable is 0px wherever nothing covers the window.
+	"phone:[body.kb-open_&]:pb-[calc(12px+var(--kb-inset,0px))]";
 
 /**
  * The step the transcript and the composer take while the workspace summary
@@ -316,7 +320,7 @@ export const VIEWER_SUMMARY_STEP =
  * here is the composer's own box. Desktop keeps the input's 20px right inset.
  */
 export const VIEWER_ACTION_ROW =
-	"flex w-full max-w-[calc(var(--session-col)+40px)] items-center gap-3 pr-5 " +
+	"flex w-full max-w-[calc(var(--session-col)+40px)] items-center justify-end gap-3 pr-5 " +
 	"phone:flex-col phone:gap-2 phone:pr-0";
 
 /** Keep the reading action centred between replies and Next when all three
@@ -503,11 +507,17 @@ const PILL_PRESSABLE =
 	"group relative cursor-pointer transition-[scale] " +
 	"before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] " +
 	"before:[corner-shape:inherit] before:bg-transparent before:transition-colors before:content-[''] " +
-	"after:absolute after:-inset-1 after:content-[''] hover:before:bg-hover " +
+	"after:absolute after:content-[''] hover:before:bg-hover " +
 	"focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg active:scale-[0.96]";
 
-export const TRANSCRIPT_PILL_BUTTON = `${TRANSCRIPT_PILL} ${PILL_PRESSABLE}`;
-export const FLOATING_PILL_BUTTON = `${FLOATING_PILL} ${PILL_PRESSABLE}`;
+export const TRANSCRIPT_PILL_BUTTON = `${TRANSCRIPT_PILL} ${PILL_PRESSABLE} after:-inset-1`;
+export const FLOATING_PILL_BUTTON = `${FLOATING_PILL} ${PILL_PRESSABLE} after:-inset-1`;
+
+/** A compact transcript action whose visible surface is only the glyph. */
+export const TRANSCRIPT_ICON_BUTTON =
+	"inline-flex size-8 items-center justify-center rounded-full bg-popup-glass text-fg " +
+	"[backdrop-filter:var(--popup-blur)] [--smooth-ring-color:var(--popup-ring)] smooth-shadow-ring-sm " +
+	`${PILL_PRESSABLE} after:-inset-1.5`;
 
 /**
  * Centring for a pill that floats over the transcript.
@@ -631,7 +641,8 @@ export const INFO_HERO =
  *  `text-page-title` (22px). */
 export const INFO_NAME =
 	"max-w-full text-page-title font-semibold leading-[1.2] tracking-[-0.02em] break-words text-fg";
-export const INFO_SUB = "text-label font-medium text-dim";
+export const INFO_SUB =
+	"flex min-h-11 w-full max-w-full items-center justify-center gap-x-1 px-6 text-label font-medium text-dim";
 
 /** Phone PR strip frame: spacing + clipping only. The status tone itself
  * reaches the outer radius, so the row does not become a card inside a card. */
@@ -645,11 +656,10 @@ export const INFO_STATUS =
 
 export const INFO_CONTENT = "min-h-[320px] pb-2";
 
-/** One borderless card for the phone Workspace summary. The repo and model
- * settings lead into the same rows the desktop summary uses, so this reads as
- * one overview instead of a stack of unrelated settings plates. */
-export const INFO_SUMMARY_CARD =
-	"mx-3 mt-2 flex flex-col overflow-hidden rounded-2xl bg-panel py-2";
+/** The phone Workspace summary's card stack. Each semantic section supplies
+ * its own quiet background, so Review, Changes and media can be scanned as
+ * separate groups without returning to the old bordered dashboard. */
+export const INFO_SUMMARY_CARD = "mx-3 mt-2 flex flex-col gap-2.5";
 
 /** A section rendered by a component of its own (Agents, Reports) rather than
  *  by WorkspaceInfo. It gets the page's inset and the same 16px gap the panel
@@ -683,7 +693,7 @@ export const INFO_LIST_CLASS = "grid gap-px overflow-hidden rounded-lg bg-panel 
  * their labelled two-line content, but give up the separate plate and border
  * now that the summary card supplies one shared surface. */
 export const INFO_LIST =
-	"session-info-list mx-2 grid gap-px pb-1 " +
+	"session-info-list grid gap-px overflow-hidden rounded-2xl bg-panel p-2 " +
 	"[&>button]:min-h-11 [&>button]:w-full [&>button]:justify-start [&>button]:gap-2 [&>button]:text-left " +
 	"[&>button]:rounded-row [&>button]:border-0 " +
 	"[&>button]:bg-transparent [&>button]:px-3 [&>button]:py-2 [&>button]:text-label [&>button]:text-fg " +

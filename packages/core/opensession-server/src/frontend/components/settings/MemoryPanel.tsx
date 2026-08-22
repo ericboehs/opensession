@@ -1,12 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BASE_PATH } from "../../lib/base";
 import {
-	addMemoryEntryApi,
-	deleteMemoryEntryApi,
-	fetchMemory,
 	relativeTime,
-	updateMemoryEntryApi,
-	type MemoryEntryDto,
 	type MemoryScopeDto,
 } from "../../lib/api";
 import {
@@ -16,8 +11,11 @@ import {
 	markTileShadow,
 	type MarkTone,
 } from "../../lib/mark-tile";
+import { Badge } from "../../ui/badge";
 import { Button } from "../../ui/button";
-import { Field, Select, Textarea } from "../../ui/input";
+import { Checkbox } from "../../ui/checkbox";
+import { useConfirm } from "../../ui/confirm";
+import { Field, Input, Select, Textarea } from "../../ui/input";
 import { Modal } from "../../ui/modal";
 import {
 	SettingCard,
@@ -29,20 +27,45 @@ import { EmptyState, InlineAlert } from "../../ui/state";
 import { toast } from "../../ui/toast";
 import {
 	IconBranches,
+	IconArchive,
+	IconCheck,
 	IconChevronLeft,
 	IconChevronRight,
 	IconGlobe,
 	IconHash,
 	IconPencil,
+	IconPin,
 	IconPeople,
 	IconPlus,
+	IconRestore,
+	IconSearch,
 	IconTrash,
 } from "../icons";
 import { getCurrentUser } from "../UserPicker";
+import {
+	addStructuredMemory,
+	fetchMemoryPage,
+	fetchMemoryScopes,
+	memoryCreatedAt,
+	memoryNeedsReview,
+	memorySourceLabel,
+	memoryState,
+	memorySummary,
+	mergeMemoryRecords,
+	mutateMemoryRecord,
+	permanentlyDeleteMemory,
+	readMemoryRecord,
+	updateMemoryRecord,
+	type MemoryRecordDto,
+	type MemoryRecordKind,
+	type MemoryScopeSummaryDto,
+	type MemoryScopeV2Dto,
+	type MemoryState,
+	type MemoryV2Stats,
+} from "../../lib/memory-v2";
 
-// Settings maintenance for the repo, user, workspace, and Slack channel stores
-// behind the opensession-memory tools. This is only a different view over the
-// existing scopes and CRUD routes; storage and prompt injection stay unchanged.
+// Settings maintenance for structured repo, user, workspace, and Slack channel
+// memory. The server keeps provenance and controls what is pinned or retrieved.
 
 type MemoryKind = MemoryScopeDto["scope"]["kind"];
 
@@ -114,8 +137,8 @@ function CategoryIcon({ category }: { category: MemoryCategory }) {
 	);
 }
 
-function memoryCount(scopes: MemoryScopeDto[]): number {
-	return scopes.reduce((total, scoped) => total + scoped.entries.length, 0);
+function memoryCount(scopes: MemoryScopeSummaryDto[]): number {
+	return scopes.reduce((total, scoped) => total + scoped.count, 0);
 }
 
 function CategoryCard({
@@ -124,7 +147,7 @@ function CategoryCard({
 	onOpen,
 }: {
 	category: MemoryCategory;
-	scopes: MemoryScopeDto[];
+	scopes: MemoryScopeSummaryDto[];
 	onOpen: () => void;
 }) {
 	const count = memoryCount(scopes);
@@ -155,26 +178,64 @@ function CategoryCard({
 }
 
 type MemoryTableRow = {
-	scoped: MemoryScopeDto;
-	entry: MemoryEntryDto;
+	scoped: MemoryScopeV2Dto;
+	entry: MemoryRecordDto;
+};
+
+const PAGE_SIZE = 20;
+
+const KIND_LABELS: Record<MemoryRecordKind, string> = {
+	preference: "Preference",
+	constraint: "Constraint",
+	decision: "Decision",
+	gotcha: "Gotcha",
+	reference: "Reference",
+	status: "Status",
+};
+
+function entryKind(entry: MemoryRecordDto): MemoryRecordKind | "legacy" {
+	return entry.kind || "legacy";
+}
+
+function statusTone(state: ReturnType<typeof memoryState>) {
+	if (state === "active") return "success" as const;
+	if (state === "expired") return "warning" as const;
+	return "neutral" as const;
+}
+
+const STATE_LABELS: Record<MemoryState, string> = {
+	active: "Active",
+	archived: "Archived",
+	expired: "Expired",
+	superseded: "Superseded",
 };
 
 function MemoryRow({
 	row,
 	showScope,
+	selected,
+	onSelected,
 	onChanged,
 }: {
 	row: MemoryTableRow;
 	showScope: boolean;
+	selected: boolean;
+	onSelected: (selected: boolean) => void;
 	onChanged: () => void;
 }) {
 	const [editing, setEditing] = useState(false);
-	const [draft, setDraft] = useState(row.entry.text);
+	const [draft, setDraft] = useState(memorySummary(row.entry));
 	const [busy, setBusy] = useState(false);
 	const [expanded, setExpanded] = useState(false);
+	const [details, setDetails] = useState(row.entry.details);
 	const [canExpand, setCanExpand] = useState(false);
+	const [confirm, confirmDialog] = useConfirm();
 	const textRef = useRef<HTMLDivElement>(null);
 	const editRef = useRef<HTMLTextAreaElement>(null);
+	const summary = memorySummary(row.entry);
+	const state = memoryState(row.entry);
+	const kind = entryKind(row.entry);
+	const review = memoryNeedsReview(row.entry);
 
 	useLayoutEffect(() => {
 		if (!editing) return;
@@ -199,17 +260,17 @@ function MemoryRow({
 			setCanExpand(text.scrollHeight > text.clientHeight + 1);
 		});
 		return () => cancelAnimationFrame(frame);
-	}, [editing, expanded, row.entry.text]);
+	}, [editing, expanded, summary]);
 
 	async function save() {
 		const text = draft.trim();
-		if (!text || text === row.entry.text) {
+		if (!text || text === summary) {
 			setEditing(false);
 			return;
 		}
 		setBusy(true);
 		try {
-			await updateMemoryEntryApi(row.scoped.scope.key, row.entry.id, text);
+			await updateMemoryRecord(row.scoped.scope.key, row.entry.id, { summary: text });
 			setEditing(false);
 			onChanged();
 		} catch (error: any) {
@@ -219,10 +280,10 @@ function MemoryRow({
 		}
 	}
 
-	async function remove() {
+	async function permanentlyDelete() {
 		setBusy(true);
 		try {
-			await deleteMemoryEntryApi(row.scoped.scope.key, row.entry.id);
+			await permanentlyDeleteMemory(row.scoped.scope.key, row.entry.id);
 			toast("Memory forgotten", { variant: "success" });
 			onChanged();
 		} catch (error: any) {
@@ -231,20 +292,57 @@ function MemoryRow({
 		}
 	}
 
-	return (
+	async function expand() {
+		setExpanded(true);
+		if (details !== undefined || !row.entry.hasDetails) return;
+		try {
+			const response = await readMemoryRecord(row.scoped.scope.key, row.entry.id);
+			setDetails(response.entry.details || "");
+		} catch (error: any) {
+			toast(error?.message || "Failed to load memory details", { variant: "error" });
+		}
+	}
+
+	async function act(action: "pin" | "unpin" | "confirm" | "archive" | "restore") {
+		setBusy(true);
+		try {
+			await mutateMemoryRecord(row.scoped.scope.key, row.entry.id, action);
+			toast(
+				action === "pin" ? "Memory pinned" :
+				action === "unpin" ? "Memory unpinned" :
+				action === "confirm" ? "Memory confirmed" :
+				action === "archive" ? "Memory archived" : "Memory restored",
+				{ variant: "success" },
+			);
+			onChanged();
+		} catch (error: any) {
+			toast(error?.message || `Failed to ${action} memory`, { variant: "error" });
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	return <>
 		<tr className="border-t border-line align-top first:border-t-0 phone:grid phone:grid-cols-[minmax(0,1fr)_auto] phone:gap-x-3 phone:px-4 phone:py-3">
+			<td className="w-11 px-1 py-1 phone:col-start-2 phone:row-start-1 phone:w-auto phone:p-0">
+				<label className="flex size-10 cursor-pointer items-center justify-center phone:size-11">
+					<span className="sr-only">Select {summary}</span>
+					<Checkbox checked={selected} onCheckedChange={(checked) => onSelected(checked === true)} />
+				</label>
+			</td>
 			{showScope && (
 				<td className="w-32 px-4 py-3 text-label font-medium text-dim phone:col-start-1 phone:row-start-1 phone:w-auto phone:p-0">
 					{row.scoped.scope.label}
 				</td>
 			)}
-			<td className="px-4 py-3 phone:col-span-2 phone:row-start-2 phone:mt-1 phone:p-0">
+			<td className="px-4 py-3 phone:col-span-2 phone:row-start-2 phone:mt-2 phone:p-0">
 				{editing ? (
 					<div>
 						<Textarea
 							ref={editRef}
-							rows={1}
-							className="min-h-[7.5em] resize-none overflow-hidden text-supporting leading-relaxed"
+							rows={3}
+							maxLength={400}
+							className="min-h-[6em] resize-none overflow-hidden text-supporting leading-relaxed phone:text-input-phone"
 							value={draft}
 							autoFocus
 							onChange={(event) => setDraft(event.target.value)}
@@ -253,27 +351,43 @@ function MemoryRow({
 								if (event.key === "Escape") setEditing(false);
 							}}
 						/>
-						<div className="mt-2 flex items-center gap-2">
-							<Button size="sm" variant="primary" disabled={busy || !draft.trim()} onClick={() => void save()}>
+						<div className="mt-2 flex items-center justify-between gap-2">
+							<span className="text-meta tabular-nums text-faint">{draft.length}/400</span>
+							<div className="flex items-center gap-2">
+							<Button size="sm" variant="primary" className="phone:min-h-11" disabled={busy || !draft.trim()} onClick={() => void save()}>
 								Save
 							</Button>
-							<Button size="sm" variant="ghost" disabled={busy} onClick={() => {
-								setDraft(row.entry.text);
+							<Button size="sm" variant="ghost" className="phone:min-h-11" disabled={busy} onClick={() => {
+								setDraft(summary);
 								setEditing(false);
 							}}>
 								Cancel
 							</Button>
+							</div>
 						</div>
 					</div>
 				) : (
 					<div className="group/memory relative">
-						<div className={expanded ? "relative" : "relative h-[7.5em] overflow-hidden"}>
+						<div className="mb-2 flex flex-wrap items-center gap-1.5">
+							<Badge>{kind === "legacy" ? "Unclassified" : KIND_LABELS[kind]}</Badge>
+							<Badge tone={row.entry.tier === "pinned" ? "accent" : "neutral"}>
+								{row.entry.tier === "pinned" ? "Pinned" : "Retrievable"}
+							</Badge>
+							<Badge tone={statusTone(state)}>{STATE_LABELS[state]}</Badge>
+							{review ? <Badge tone="warning">Needs review</Badge> : row.entry.lastConfirmedAt ? <Badge tone="success">Confirmed</Badge> : null}
+						</div>
+						<div className={expanded ? "relative" : "relative max-h-[7.5em] overflow-hidden"}>
 							<div
 								ref={textRef}
 								className={`whitespace-pre-wrap break-words text-supporting leading-relaxed text-fg ${expanded ? "" : "line-clamp-5"}`}
 							>
-								{row.entry.text}
+								{summary}
 							</div>
+							{expanded && details && (
+								<div className="mt-2 whitespace-pre-wrap break-words text-meta leading-relaxed text-dim">
+									{details}
+								</div>
+							)}
 							{!expanded && canExpand && (
 								<span
 									aria-hidden="true"
@@ -281,23 +395,23 @@ function MemoryRow({
 								/>
 							)}
 						</div>
-						<div className="flex h-10 min-h-10 items-center justify-between gap-2">
+						<div className="flex min-h-10 items-center justify-between gap-2 phone:mt-1 phone:flex-wrap">
 							<div className="flex h-10 min-w-0 items-center">
-								{!expanded && canExpand && (
+								{!expanded && (canExpand || row.entry.hasDetails) && (
 									<button
 										type="button"
 										aria-expanded="false"
-										className="focus-ring inline-flex h-10 min-h-10 items-center rounded-md border-0 bg-transparent px-0 text-meta font-semibold leading-none text-dim opacity-0 transition-opacity duration-150 hover:text-fg group-hover/memory:opacity-100 group-focus-within/memory:opacity-100 phone:opacity-100"
-										onClick={() => setExpanded(true)}
+								className="focus-ring inline-flex h-10 min-h-10 items-center rounded-md border-0 bg-transparent px-0 text-meta font-semibold leading-none text-dim opacity-0 transition-opacity duration-150 hover:text-fg group-hover/memory:opacity-100 group-focus-within/memory:opacity-100 phone:h-11 phone:min-h-11 phone:opacity-100"
+									onClick={() => void expand()}
 									>
 										Read all
 									</button>
 								)}
-								{expanded && canExpand && (
+								{expanded && (canExpand || row.entry.hasDetails) && (
 									<button
 										type="button"
 										aria-expanded="true"
-										className="focus-ring inline-flex h-10 min-h-10 items-center rounded-md border-0 bg-transparent px-0 text-meta font-semibold leading-none text-dim hover:text-fg"
+								className="focus-ring inline-flex h-10 min-h-10 items-center rounded-md border-0 bg-transparent px-0 text-meta font-semibold leading-none text-dim hover:text-fg phone:h-11 phone:min-h-11"
 										onClick={() => setExpanded(false)}
 									>
 										Show less
@@ -305,6 +419,12 @@ function MemoryRow({
 								)}
 							</div>
 							<div className="ml-auto flex h-10 shrink-0 items-center justify-end gap-1 opacity-0 transition-opacity duration-150 group-hover/memory:opacity-100 group-focus-within/memory:opacity-100 phone:opacity-100">
+								{review && (
+									<Button size="sm" variant="ghost" aria-label="Confirm memory" className="size-10 min-h-10 phone:size-11 phone:min-h-11" icon={<IconCheck size={16} />} disabled={busy} onClick={() => void act("confirm")} />
+								)}
+								{state === "active" && (
+									<Button size="sm" variant="ghost" aria-label={row.entry.tier === "pinned" ? "Unpin memory" : "Pin memory"} className="size-10 min-h-10 phone:size-11 phone:min-h-11" icon={<IconPin size={16} />} disabled={busy} onClick={() => void act(row.entry.tier === "pinned" ? "unpin" : "pin")} />
+								)}
 								<Button
 									size="sm"
 									variant="ghost"
@@ -313,43 +433,63 @@ function MemoryRow({
 									icon={<IconPencil size={16} />}
 									disabled={busy}
 									onClick={() => {
-										setDraft(row.entry.text);
+										setDraft(summary);
 										setEditing(true);
 									}}
 								/>
 								<Button
 									size="sm"
 									variant="ghost"
-									aria-label="Forget memory"
-									className="size-10 min-h-10 hover:text-red phone:size-11 phone:min-h-11"
-									icon={<IconTrash size={16} />}
+									aria-label={state === "archived" ? "Restore memory" : "Archive memory"}
+									className="size-10 min-h-10 phone:size-11 phone:min-h-11"
+									icon={state === "archived" ? <IconRestore size={16} /> : <IconArchive size={16} />}
 									disabled={busy}
-									onClick={() => void remove()}
+									onClick={() => void act(state === "archived" ? "restore" : "archive")}
 								/>
+								{state === "archived" && (
+									<Button
+										size="sm"
+										variant="ghost"
+										aria-label="Delete memory permanently"
+										className="size-10 min-h-10 hover:text-red phone:size-11 phone:min-h-11"
+										icon={<IconTrash size={16} />}
+										disabled={busy}
+										onClick={() => confirm({
+											title: "Delete this memory permanently?",
+											description: "This cannot be restored. Archive memories you may need later.",
+											confirmLabel: "Delete",
+											destructive: true,
+											onConfirm: () => void permanentlyDelete(),
+										})}
+									/>
+								)}
 							</div>
 						</div>
 					</div>
 				)}
 			</td>
 			<td className="w-32 px-4 py-3 text-meta text-faint phone:col-start-1 phone:row-start-3 phone:mt-2 phone:w-auto phone:p-0">
-				<div className="font-medium text-dim">{row.entry.by}</div>
-				<div className="mt-0.5">{relativeTime(row.entry.at)}</div>
+				<div className="font-medium text-dim">{memorySourceLabel(row.entry)}</div>
+				<div className="mt-0.5">{relativeTime(memoryCreatedAt(row.entry))}</div>
+				{row.entry.expiresAt && <div className="mt-0.5">Expires {new Date(row.entry.expiresAt).toLocaleDateString()}</div>}
 			</td>
 		</tr>
-	);
+		{confirmDialog}
+	</>;
 }
 
 function MemoryTable({
-	scopes,
+	rows,
+	selectedIds,
+	onSelectedIdsChange,
 	onChanged,
 }: {
-	scopes: MemoryScopeDto[];
+	rows: MemoryTableRow[];
+	selectedIds: Set<string>;
+	onSelectedIdsChange: (ids: Set<string>) => void;
 	onChanged: () => void;
 }) {
-	const rows = scopes
-		.flatMap((scoped) => scoped.entries.map((entry) => ({ scoped, entry })))
-		.sort((left, right) => Date.parse(right.entry.at) - Date.parse(left.entry.at));
-	const showScope = scopes.length > 1;
+	const showScope = new Set(rows.map((row) => row.scoped.scope.key)).size > 1;
 
 	if (!rows.length) {
 		return <EmptyState placement="card">No memories in this category yet.</EmptyState>;
@@ -361,6 +501,7 @@ function MemoryTable({
 				<table className="w-full table-fixed border-collapse phone:block">
 					<thead className="border-b border-line text-left text-label font-semibold text-faint phone:sr-only">
 						<tr>
+							<th className="w-11 px-3 py-2.5"><span className="sr-only">Select</span></th>
 							{showScope && <th className="w-32 px-4 py-2.5">Scope</th>}
 							<th className="px-4 py-2.5">Memory</th>
 							<th className="w-32 px-4 py-2.5">Saved</th>
@@ -372,6 +513,12 @@ function MemoryTable({
 								key={`${row.scoped.scope.key}:${row.entry.id}`}
 								row={row}
 								showScope={showScope}
+								selected={selectedIds.has(row.entry.id)}
+								onSelected={(selected) => {
+									const next = new Set(selectedIds);
+									if (selected) next.add(row.entry.id); else next.delete(row.entry.id);
+									onSelectedIdsChange(next);
+								}}
 								onChanged={onChanged}
 							/>
 						))}
@@ -385,33 +532,49 @@ function MemoryTable({
 function AddMemoryDialog({
 	category,
 	scopes,
+	selectedScopeKey,
 	open,
 	onOpenChange,
 	onChanged,
 }: {
 	category: MemoryCategory;
-	scopes: MemoryScopeDto[];
+	scopes: MemoryScopeSummaryDto[];
+	selectedScopeKey: string;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onChanged: () => void;
 }) {
 	const [scopeKey, setScopeKey] = useState(scopes[0]?.scope.key || "");
 	const [draft, setDraft] = useState("");
+	const [kind, setKind] = useState<MemoryRecordKind>("decision");
+	const [expiresAt, setExpiresAt] = useState("");
 	const [busy, setBusy] = useState(false);
 
 	useEffect(() => {
 		if (open) {
-			setScopeKey(scopes[0]?.scope.key || "");
+			setScopeKey(
+				scopes.some((scope) => scope.scope.key === selectedScopeKey)
+					? selectedScopeKey
+					: scopes[0]?.scope.key || "",
+			);
 			setDraft("");
+			setKind("decision");
+			setExpiresAt("");
 		}
-	}, [open, scopes]);
+	}, [open, scopes, selectedScopeKey]);
 
 	async function add() {
 		const text = draft.trim();
 		if (!scopeKey || !text) return;
 		setBusy(true);
 		try {
-			await addMemoryEntryApi(scopeKey, text, getCurrentUser() || "settings");
+			await addStructuredMemory({
+				scopeKey,
+				summary: text,
+				kind,
+				expiresAt: kind === "status" ? new Date(expiresAt).toISOString() : undefined,
+				by: getCurrentUser() || "settings",
+			});
 			toast("Memory saved", { variant: "success" });
 			onOpenChange(false);
 			onChanged();
@@ -431,7 +594,7 @@ function AddMemoryDialog({
 				/>
 				{scopes.length > 1 && (
 					<Field label={category.targetLabel}>
-						<Select value={scopeKey} onChange={(event) => setScopeKey(event.target.value)}>
+						<Select className="phone:min-h-11 phone:text-input-phone" value={scopeKey} onChange={(event) => setScopeKey(event.target.value)}>
 							{scopes.map((scoped) => (
 								<option key={scoped.scope.key} value={scoped.scope.key}>
 									{scoped.scope.label}
@@ -443,20 +606,105 @@ function AddMemoryDialog({
 				<Field label="Memory">
 					<Textarea
 						rows={4}
+						maxLength={400}
 						value={draft}
 						autoFocus
 						placeholder="A durable, self-contained fact…"
+						className="phone:text-input-phone"
 						onChange={(event) => setDraft(event.target.value)}
 						onKeyDown={(event) => {
 							if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void add();
 						}}
 					/>
 				</Field>
+				<div className="mt-3 grid grid-cols-2 gap-3 phone:grid-cols-1">
+					<Field label="Kind">
+						<Select className="phone:min-h-11 phone:text-input-phone" value={kind} onChange={(event) => setKind(event.target.value as MemoryRecordKind)}>
+							{Object.entries(KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+						</Select>
+					</Field>
+					{kind === "status" && (
+						<Field label="Expires">
+							<Input className="phone:min-h-11 phone:text-input-phone" type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} />
+						</Field>
+					)}
+				</div>
+				<div className="mt-1 text-right text-meta tabular-nums text-faint">{draft.length}/400</div>
 				<Modal.Footer>
-					<Modal.Close render={<Button variant="ghost" disabled={busy}>Cancel</Button>} />
-					<Button variant="primary" disabled={busy || !scopeKey || !draft.trim()} onClick={() => void add()}>
+					<Modal.Close render={<Button className="phone:min-h-11" variant="ghost" disabled={busy}>Cancel</Button>} />
+					<Button className="phone:min-h-11" variant="primary" disabled={busy || !scopeKey || !draft.trim() || (kind === "status" && !expiresAt)} onClick={() => void add()}>
 						{busy ? "Saving…" : "Save memory"}
 					</Button>
+				</Modal.Footer>
+			</Modal.Content>
+		</Modal.Root>
+	);
+}
+
+function MergeMemoryDialog({
+	scopeKey,
+	ids,
+	open,
+	onOpenChange,
+	onChanged,
+}: {
+	scopeKey: string;
+	ids: string[];
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	onChanged: () => void;
+}) {
+	const [summary, setSummary] = useState("");
+	const [kind, setKind] = useState<MemoryRecordKind>("decision");
+	const [expiresAt, setExpiresAt] = useState("");
+	const [busy, setBusy] = useState(false);
+
+	useEffect(() => {
+		if (!open) return;
+		setSummary("");
+		setKind("decision");
+		setExpiresAt("");
+	}, [open]);
+
+	async function merge() {
+		setBusy(true);
+		try {
+			await mergeMemoryRecords({
+				scopeKey,
+				ids,
+				summary: summary.trim(),
+				kind,
+				expiresAt: kind === "status" ? new Date(expiresAt).toISOString() : undefined,
+			});
+			toast("Memories merged", { variant: "success" });
+			onOpenChange(false);
+			onChanged();
+		} catch (error: any) {
+			toast(error?.message || "Failed to merge memories", { variant: "error" });
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	return (
+		<Modal.Root open={open} onOpenChange={onOpenChange}>
+			<Modal.Content>
+				<Modal.Header title={`Merge ${ids.length} memories`} description="Replace the selected records with one concise fact. The originals stay recoverable." />
+				<Field label="Summary">
+					<Textarea className="phone:text-input-phone" rows={4} maxLength={400} value={summary} autoFocus onChange={(event) => setSummary(event.target.value)} />
+				</Field>
+				<div className="mt-3 grid grid-cols-2 gap-3 phone:grid-cols-1">
+					<Field label="Kind">
+						<Select className="phone:min-h-11 phone:text-input-phone" value={kind} onChange={(event) => setKind(event.target.value as MemoryRecordKind)}>
+							{Object.entries(KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+						</Select>
+					</Field>
+					{kind === "status" && <Field label="Expires"><Input className="phone:min-h-11 phone:text-input-phone" type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} /></Field>}
+				</div>
+				<div className="mt-1 text-right text-meta tabular-nums text-faint">{summary.length}/400</div>
+				<Modal.Footer>
+					<Modal.Close render={<Button className="phone:min-h-11" variant="ghost" disabled={busy}>Cancel</Button>} />
+					<Button className="phone:min-h-11" variant="primary" disabled={busy || !summary.trim() || (kind === "status" && !expiresAt)} onClick={() => void merge()}>{busy ? "Merging…" : "Merge"}</Button>
 				</Modal.Footer>
 			</Modal.Content>
 		</Modal.Root>
@@ -467,16 +715,71 @@ function CategoryPage({
 	category,
 	scopes,
 	onBack,
-	onChanged,
+	onScopesChanged,
 }: {
 	category: MemoryCategory;
-	scopes: MemoryScopeDto[];
+	scopes: MemoryScopeSummaryDto[];
 	onBack: () => void;
-	onChanged: () => void;
+	onScopesChanged: () => void;
 }) {
 	const [adding, setAdding] = useState(false);
+	const [scopeKey, setScopeKey] = useState(scopes[0]?.scope.key || "");
+	const [query, setQuery] = useState("");
+	const [kind, setKind] = useState<MemoryRecordKind | "">("");
+	const [state, setState] = useState<MemoryState | "">("");
+	const [review, setReview] = useState<"" | "needs_review" | "confirmed">("");
+	const [items, setItems] = useState<MemoryRecordDto[] | null>(null);
+	const [cursor, setCursor] = useState<string | undefined>();
+	const [cursorHistory, setCursorHistory] = useState<Array<string | undefined>>([]);
+	const [nextCursor, setNextCursor] = useState<string | undefined>();
+	const [error, setError] = useState<string | null>(null);
+	const [reloadId, setReloadId] = useState(0);
+	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+	const [merging, setMerging] = useState(false);
 	const count = memoryCount(scopes);
 	const canAdd = scopes.length > 0;
+	const selectedScope = scopes.find((scope) => scope.scope.key === scopeKey) || scopes[0];
+
+	useEffect(() => {
+		if (!scopeKey) return;
+		let cancelled = false;
+		const timer = window.setTimeout(() => {
+			fetchMemoryPage({ scopeKey, q: query, kind: kind || undefined, state: state || undefined, review: review || undefined, cursor, limit: PAGE_SIZE })
+				.then((page) => {
+					if (cancelled) return;
+					setItems(page.items);
+					setNextCursor(page.nextCursor);
+					setError(null);
+				})
+				.catch((fetchError) => {
+					if (!cancelled) setError(fetchError.message);
+				});
+		}, query ? 180 : 0);
+		return () => {
+			cancelled = true;
+			window.clearTimeout(timer);
+		};
+	}, [scopeKey, query, kind, state, review, cursor, reloadId]);
+
+	function resetPage() {
+		setCursor(undefined);
+		setCursorHistory([]);
+		setItems(null);
+		setSelectedIds(new Set());
+	}
+
+	function changed() {
+		setSelectedIds(new Set());
+		setReloadId((value) => value + 1);
+		onScopesChanged();
+	}
+
+	const rows: MemoryTableRow[] = selectedScope
+		? (items || []).map((entry) => ({
+			scoped: { scope: selectedScope.scope, entries: items || [] },
+			entry,
+		}))
+		: [];
 
 	return (
 		<SettingsPanel>
@@ -489,38 +792,100 @@ function CategoryPage({
 				className="relative z-20 phone:mt-1.5"
 			/>
 			<div className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-3 bg-surface px-5 py-2 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-11 before:bg-surface before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-[linear-gradient(to_bottom,var(--bg),transparent)] after:content-[''] phone:before:h-4">
-				<Button size="sm" variant="ghost" icon={<IconChevronLeft size={18} />} onClick={onBack}>
+				<Button size="sm" variant="ghost" className="phone:min-h-11" icon={<IconChevronLeft size={18} />} onClick={onBack}>
 					Back
 				</Button>
-				<Button size="sm" icon={<IconPlus size={16} />} disabled={!canAdd} onClick={() => setAdding(true)}>
+				<Button size="sm" className="phone:min-h-11" icon={<IconPlus size={16} />} disabled={!canAdd} onClick={() => setAdding(true)}>
 					Add memory
 				</Button>
 			</div>
+			{selectedIds.size >= 2 && (
+				<div className="mb-3 flex items-center justify-between rounded-lg bg-active px-4 py-2 phone:min-h-11">
+					<span className="text-label font-medium text-dim">{selectedIds.size} selected</span>
+					<Button size="sm" variant="soft" className="phone:min-h-11" onClick={() => setMerging(true)}>Merge</Button>
+				</div>
+			)}
+			{canAdd && (
+				<SettingCard className="mb-3 p-4">
+					<div className="grid grid-cols-[minmax(12rem,1fr)_repeat(3,minmax(8rem,auto))] gap-2 phone:grid-cols-1">
+						<label className="relative block min-w-0">
+							<span className="sr-only">Search memories</span>
+							<IconSearch size={16} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+							<Input className="pl-9 phone:min-h-11 phone:text-input-phone" type="search" value={query} placeholder="Search memories" onChange={(event) => { setQuery(event.target.value); resetPage(); }} />
+						</label>
+						<Select aria-label={category.targetLabel} className="phone:min-h-11 phone:text-input-phone" value={scopeKey} onChange={(event) => { setScopeKey(event.target.value); resetPage(); }}>
+							{scopes.map((scope) => <option key={scope.scope.key} value={scope.scope.key}>{scope.scope.label}</option>)}
+						</Select>
+						<Select aria-label="Memory kind" className="phone:min-h-11 phone:text-input-phone" value={kind} onChange={(event) => { setKind(event.target.value as MemoryRecordKind | ""); resetPage(); }}>
+							<option value="">All kinds</option>
+							{Object.entries(KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+						</Select>
+						<Select aria-label="Memory state" className="phone:min-h-11 phone:text-input-phone" value={state} onChange={(event) => { setState(event.target.value as MemoryState | ""); resetPage(); }}>
+							<option value="">Active</option>
+							<option value="archived">Archived</option>
+							<option value="expired">Expired</option>
+							<option value="superseded">Superseded</option>
+						</Select>
+					</div>
+					<div className="mt-2 flex items-center justify-between gap-3 phone:flex-col phone:items-stretch">
+						<Select aria-label="Review state" size="sm" className="max-w-44 phone:min-h-11 phone:max-w-none phone:text-input-phone" value={review} onChange={(event) => { setReview(event.target.value as typeof review); resetPage(); }}>
+							<option value="">All review states</option>
+							<option value="needs_review">Needs review</option>
+							<option value="confirmed">Confirmed</option>
+						</Select>
+						<span className="text-meta text-faint">{selectedScope?.count || 0} total · {selectedScope?.pinnedCount || 0} pinned · {selectedScope?.reviewCount || 0} to review</span>
+					</div>
+				</SettingCard>
+			)}
 			{!canAdd ? (
 				<EmptyState placement="card">
 					No {category.title.toLowerCase()} scopes exist yet. They appear here after that scope first stores a memory.
 				</EmptyState>
+			) : error ? (
+				<InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>
+			) : items === null ? (
+				<SettingCardSkeleton rows={3} label="Loading memories" />
 			) : (
-				<MemoryTable scopes={scopes} onChanged={onChanged} />
+				<>
+					<MemoryTable rows={rows} selectedIds={selectedIds} onSelectedIdsChange={setSelectedIds} onChanged={changed} />
+					{(cursorHistory.length > 0 || nextCursor) && (
+						<div className="mt-3 flex items-center justify-end gap-2">
+							<Button size="sm" variant="ghost" className="phone:min-h-11" disabled={!cursorHistory.length} onClick={() => {
+								const history = cursorHistory.slice(0, -1);
+								setCursor(cursorHistory.at(-1));
+								setCursorHistory(history);
+								setItems(null);
+							}}>Previous</Button>
+							<Button size="sm" variant="ghost" className="phone:min-h-11" disabled={!nextCursor} onClick={() => {
+								setCursorHistory((history) => [...history, cursor]);
+								setCursor(nextCursor);
+								setItems(null);
+							}}>Next</Button>
+						</div>
+					)}
+				</>
 			)}
 			<AddMemoryDialog
 				category={category}
 				scopes={scopes}
+				selectedScopeKey={scopeKey}
 				open={adding}
 				onOpenChange={setAdding}
-				onChanged={onChanged}
+				onChanged={changed}
 			/>
+			<MergeMemoryDialog scopeKey={scopeKey} ids={[...selectedIds]} open={merging} onOpenChange={setMerging} onChanged={changed} />
 		</SettingsPanel>
 	);
 }
 
 export function MemoryPanel() {
-	const [scopes, setScopes] = useState<MemoryScopeDto[] | null>(null);
+	const [scopes, setScopes] = useState<MemoryScopeSummaryDto[] | null>(null);
+	const [stats, setStats] = useState<MemoryV2Stats | null>(null);
 	const [selectedKind, setSelectedKind] = useState<MemoryKind | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	function reload() {
-		fetchMemory()
+		fetchMemoryScopes()
 			.then(async (response) => {
 				// Configured Slack channels are valid memory scopes even before their
 				// first entry creates a store file. Merge them into the UI model so the
@@ -534,10 +899,11 @@ export function MemoryPanel() {
 				for (const channel of channels) {
 					const key = `channel-${channel.id}`;
 					if (!next.some((scoped) => scoped.scope.key === key)) {
-						next.push({ scope: { key, kind: "channel", label: channel.name }, entries: [] });
+						next.push({ scope: { key, kind: "channel", label: channel.name }, count: 0, pinnedCount: 0, reviewCount: 0, ambientChars: 0 });
 					}
 				}
 				setScopes(next);
+				setStats(response.stats || null);
 				setError(null);
 			})
 			.catch((fetchError) => setError(fetchError.message));
@@ -572,7 +938,7 @@ export function MemoryPanel() {
 				category={selectedCategory}
 				scopes={scopes.filter((scoped) => scoped.scope.kind === selectedCategory.kind)}
 				onBack={() => setSelectedKind(null)}
-				onChanged={reload}
+				onScopesChanged={reload}
 			/>
 		);
 	}
@@ -584,6 +950,27 @@ export function MemoryPanel() {
 				description="Durable facts scoped to your workspace, repositories, team, and Slack channels."
 			/>
 			{error && <InlineAlert onDismiss={() => setError(null)}>{error}</InlineAlert>}
+			{stats && (
+				<SettingCard className="mb-3 px-5 py-4">
+					<div className="flex items-start justify-between gap-4 phone:flex-col">
+						<div>
+							<div className="text-item-title font-semibold text-fg">Prompt budget</div>
+							<div className="mt-1 text-supporting text-dim">
+								{stats.mode === "legacy"
+									? "Legacy rollback is active. Current facts are injected without v2 retrieval budgets."
+									: "Only pinned, trusted summaries are ambient. Other memories are retrieved when relevant."}
+							</div>
+						</div>
+						<div className="shrink-0 text-right phone:text-left">
+							<div className="text-item-title font-semibold tabular-nums text-fg">{(stats.ambientUsedBytes || 0).toLocaleString()} / {(stats.ambientBudgetBytes || 0).toLocaleString()} bytes</div>
+							<div className="mt-1 text-meta text-faint">{stats.reviewCount || 0} memories need review</div>
+						</div>
+					</div>
+					<div className="mt-3 h-1.5 overflow-hidden rounded-full bg-hover" role="progressbar" aria-label="Ambient memory budget" aria-valuemin={0} aria-valuemax={stats.ambientBudgetBytes || 1} aria-valuenow={Math.min(stats.ambientUsedBytes || 0, stats.ambientBudgetBytes || 1)}>
+						<div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${Math.min(100, ((stats.ambientUsedBytes || 0) / Math.max(1, stats.ambientBudgetBytes || 1)) * 100)}%` }} />
+					</div>
+				</SettingCard>
+			)}
 			<div className="grid gap-3">
 				{MEMORY_CATEGORIES.map((category) => (
 					<CategoryCard

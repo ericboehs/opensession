@@ -90,8 +90,11 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   Routine calls fold into one `N steps` run, and consecutive edits to the same
   file into one row — the path once, the summed ±lines, and a `×3` count —
   both opening to the individual calls.
-  Transcript videos stream inline on both platforms. Tool-result screenshots
-  and recordings marked as featured stay visible when their work fold closes,
+  Transcript videos stream inline on both platforms. An already-sent image can
+  be opened, cropped with a movable and resizable selection, and sent back with
+  a direct comment without changing the original or the current composer draft.
+  Tool-result screenshots and recordings marked as featured stay visible when
+  their work fold closes,
   while incidental media remains inside the producing tool row.
   A `Task` row opens the sub-agent's own transcript in a sheet (polled while
   the worker runs, via `GET /api/sessions/:id/subagent/:agentId`), and a
@@ -118,13 +121,15 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
    queries only that workspace's closed siblings and restores one directly into
    the strip. A workspace down to one session draws no strip, so that history
    moves to the Closed sessions submenu of the session's overflow menu, which
-   reopens a row the same way. On macOS, where the sidebar is the live-session switcher, the
-   same scoped history lives in the selected session's toolbar instead. On iOS the
-   trailing nav-bar control is a native overflow menu carrying this worktree's
-   actions — new session, worktree details, its pull request panel, rename,
-   share link, hide/restore, and archive (which pops back to the list) — the same
-   set the sidebar row offers under long press. A
-  bounded cache keeps recently visited conversations loaded while their
+   reopens a row the same way. On macOS, where the sidebar is the live-session
+   switcher, the same scoped history lives in the selected session's toolbar
+   instead. On iOS, the PWA-style Liquid Glass action bar floats above the
+   composer with Archive, session actions, New session, and Next chat. Focusing
+   the composer hides it completely so the keyboard gets that space back. The
+   actions menu carries
+   worktree details, the pull request panel, rename, share, hide or restore, and
+   archive, matching the sidebar row's long-press menu. A bounded cache keeps
+   recently visited conversations loaded while their
   off-screen sockets remain disconnected, so returning to a page does not show
   a loading screen. Fenced Markdown, expanded tool inputs and code assets use
   the PWA's GitHub light/dark syntax palette. Native-owned code surfaces show
@@ -407,6 +412,7 @@ OS1/
     TranscriptEntry.swift    Transcript entry (REST + WS frames)
     AskQuestion.swift        Pending AskUserQuestion
     AttachedImage.swift      Composer image attachments
+    ImageRegionComment.swift Normalized crop geometry and image derivation
     AttachedFile.swift       Open-in and staged file attachments
     ModelCatalog.swift       Workspace model catalog + engine routing
     ToolPresentation.swift   Canonical tool names, families, summaries, ±lines

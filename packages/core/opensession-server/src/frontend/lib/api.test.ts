@@ -3,6 +3,7 @@ import {
 	fetchRepos,
 	fetchReads,
 	fetchSessionsSnapshot,
+	fetchWorkspaceArchivedSessions,
 	newSessionApi,
 } from "./api";
 
@@ -91,6 +92,33 @@ test("session snapshots retain response validators on changed data", async () =>
 		etag: '"sessions-v2"',
 		notModified: false,
 	});
+});
+
+test("workspace archive fetches stay scoped and slim", async () => {
+	let url = "";
+	const archived = {
+		id: "archived-1",
+		source: "opensession" as const,
+		branch: "main",
+		worktreeDir: "/tmp/worktree",
+		startedBy: "Kent",
+		title: "Archived session",
+		lastActivity: "2026-08-22T10:00:00.000Z",
+		createdAt: "2026-08-22T09:00:00.000Z",
+		isRunning: false,
+		archived: true,
+	};
+	globalThis.fetch = (async (input: string | URL | Request) => {
+		url = String(input);
+		return Response.json([archived]);
+	}) as unknown as typeof fetch;
+
+	await expect(fetchWorkspaceArchivedSessions("ws / one")).resolves.toEqual([
+		archived,
+	]);
+	expect(url).toBe(
+		"/api/sessions?archived=only&slim=1&workspace=ws%20%2F%20one",
+	);
 });
 
 test("new workspace tabs create an idle sibling session", async () => {

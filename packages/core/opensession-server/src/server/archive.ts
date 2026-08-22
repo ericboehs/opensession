@@ -8,6 +8,7 @@ import { writeJsonAtomic } from "./shared/atomic-write";
 import { OPENSESSION_SESSIONS_DIR } from "./paths";
 import { unpinEverywhere } from "./pins";
 import type { UnifiedSession } from "./types";
+import { setIndexedSessionArchived } from "./session-list-store";
 
 const REGISTRY_PATH = `${OPENSESSION_SESSIONS_DIR}/archive-registry.json`;
 
@@ -95,6 +96,7 @@ export function setArchived(
   if (archived) registry[id] = { at: new Date().toISOString(), reason };
   else delete registry[id];
   save(registry);
+  setIndexedSessionArchived(id, archived, archived ? reason : undefined);
   // Archived work shouldn't stay pinned (for anyone) — it would resurface in
   // the Pinned band on unarchive. Callers that know more keys (alias ids, the
   // workspace pin) drop those on top of this.
@@ -122,6 +124,8 @@ export function archiveOlderThan(sessions: UnifiedSession[], days: number): numb
 
   if (archived > 0) {
     save(registry);
+    for (const session of justArchived)
+      setIndexedSessionArchived(session.id, true, "idle");
     // Registry is written, so isArchivedId now reflects this batch — drop the
     // stale session/alias pins and any workspace pin whose last session just went.
     unpinArchivedSessions(justArchived, sessions);

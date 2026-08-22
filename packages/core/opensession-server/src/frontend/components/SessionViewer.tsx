@@ -11,8 +11,8 @@ import React, {
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, Reorder } from "motion/react";
 import { duration, ease } from "../ui/motion";
+import { Spinner } from "../ui/spinner";
 import { TranscriptSkeleton } from "../ui/state";
-import { renderMarkdown } from "../lib/markdown";
 import { LiveTurnStore } from "../lib/live-turn-store";
 import { getLiveTypingPref } from "../lib/live-typing-pref";
 import { isTimelineOnlyRunnerNotice } from "../lib/runner-events";
@@ -50,11 +50,12 @@ import {
 	orderTranscriptEntries,
 	queueAttribution,
 } from "../lib/transcript-state";
-import { TranscriptBlocks } from "./TranscriptBlocks";
 import {
 	HISTORY_PAGE_ENTRIES,
 	shouldContinueHistoryReveal,
 } from "../lib/transcript-history";
+import { SessionTranscript } from "./SessionTranscript";
+import type { NewTabMorphOrigin } from "./SessionTabs";
 import { MessageRail } from "./MessageRail";
 import { collectSentMessages } from "../lib/sent-messages";
 import {
@@ -80,11 +81,7 @@ import {
 	getNextChatButtonPref,
 	onNextChatButtonChanged,
 } from "../lib/next-chat-pref";
-import { MarkdownBody, useMarkdownRepo } from "./MarkdownBody";
-import {
-	OpenAssetPathsProvider,
-	useOpenAssetPaths,
-} from "../lib/open-asset";
+import { OpenAssetPathsProvider } from "../lib/open-asset";
 import { SubagentPane, type SubagentRef } from "./SubagentPane";
 import { ShellPanel } from "./TerminalPanel";
 import { getCurrentUser, useCurrentUser } from "./UserPicker";
@@ -106,6 +103,7 @@ import {
 	fetchPreview,
 	moveSessionToBranchApi,
 	portalActionApi,
+	type WorkspaceMediaItem,
 	type ModelOption,
 	type ProviderAccountOption,
 	type SessionSubagentSnapshot,
@@ -210,7 +208,6 @@ import {
 	cacheTranscriptView,
 	cachedTranscriptView,
 	peekCachedTranscriptView,
-	type CachedTranscriptView,
 } from "./session-viewer/transcript-cache";
 import {
 	holdTranscriptAnchor,
@@ -224,7 +221,6 @@ import {
 	WorkspaceSetup,
 	WorkspaceWaiting,
 } from "./session-viewer/busy-indicators";
-import { StreamingMessage } from "./session-viewer/streaming-message";
 import { AskCard } from "./AskCard";
 import { PrPanel } from "./PrPanel";
 import { PrStatusBar } from "./PrStatusBar";
@@ -321,11 +317,7 @@ import {
 	composerQueueSendingStatus,
 	composerQueueTitle,
 } from "../lib/composer-classes";
-import {
-	msgBodyStreaming,
-	msgRow,
-	msgStreamingRow,
-} from "../lib/msg-classes";
+import { msgRow } from "../lib/msg-classes";
 import { Menu, MENU_ICON } from "../ui/menu";
 import { Modal } from "../ui/modal";
 import { Tooltip } from "../ui/tooltip";
@@ -368,6 +360,7 @@ import {
 	ACTION_WITH_REPLIES_CLEARANCE,
 	SCROLL_ACTION_CLEARANCE,
 	SUGGESTIONS_CLEARANCE,
+	TRANSCRIPT_ICON_BUTTON,
 	TRANSCRIPT_PILL_BUTTON,
 	TRANSCRIPT_PILL_LOADING,
 	TRANSCRIPT_PILL_SPINNER,
@@ -395,9 +388,11 @@ import {
 	VIEWER_SUMMARY_STEP,
 	VIEWER_TITLE,
 	INFO_CONTENT,
-	INFO_LIST,
+	INFO_HERO,
+	INFO_NAME,
 	INFO_PAGE,
 	INFO_SECTION,
+	INFO_SUB,
 	INFO_SUMMARY_CARD,
 	infoTopbarClass,
 	infoTopbarTitleClass,
@@ -501,7 +496,10 @@ interface Props {
 	    draw their sibling sessions from. */
 	allSessions?: UnifiedSession[];
 	/** Start a new session in this workspace. Phone surfaces it in More. */
-	onNewSession?: (mode: "share" | "stack" | "ask") => void;
+	onNewSession?: (
+		mode: "share" | "stack" | "ask",
+		origin?: NewTabMorphOrigin,
+	) => void;
 	/** Start a session in a new workspace. Phone surfaces it as +. */
 	onNewWorkspace?: () => void;
 	/** Open a sibling session with selected transcript text in its composer. */
@@ -1071,6 +1069,11 @@ export function SessionViewer({
 	// this is the FIRST render, before the session's detail has hydrated, and
 	// the list row carries the answer where it no longer carries the ids.
 	const [loading, setLoading] = useState(!cachedTranscript && !!session.ran);
+	// A cached transcript paints immediately while the watch handshake catches it
+	// up. Keep that background work visible without replacing readable history.
+	const [loadingMoreTranscript, setLoadingMoreTranscript] = useState(
+		Boolean(cachedTranscript),
+	);
 	// The initial transcript is the tail only when the file is large; these drive
 	// the "load earlier history" affordance at the top of the conversation.
 	const [historyTruncated, setHistoryTruncated] = useState(
@@ -1403,8 +1406,8 @@ export function SessionViewer({
 		[reviewResultKey], // eslint-disable-line react-hooks/exhaustive-deps
 	);
 	// Open state + width of the right panel. Browser-level, and shared with the
-	// session-less workspace route so the column keeps its place and size when
-	// a workspace has no session to show yet (hooks/useSidePanel).
+	// session-less workspace route so the chosen summary card or panel follows
+	// the person between workspaces (hooks/useSidePanel).
 	const {
 		open: panelOpen,
 		setOpen: setPanelOpen,
@@ -1704,10 +1707,10 @@ export function SessionViewer({
 	// pin new turns near the top, and surface a "Jump to latest" affordance.
 	const {
 		containerRef: messagesRef,
+		setContainerRef: setMessagesRef,
 		spacerRef,
 		followingLive,
 		following,
-		newBelow,
 		showScrollToBottom,
 		atTop,
 		scrollToLatest,
@@ -2249,10 +2252,10 @@ export function SessionViewer({
 	const waitingForWorkspace =
 		promoting ||
 		(workspacePreparing && entries.length === 0 && !liveTurnStore.hasText());
-	// The optimistic shell exists before the server can confirm whether setup is
-	// needed. Keep that brief gap in the same loading state, with its opening
-	// message in the queue rather than flashing it into an otherwise empty chat.
-	const settingUpWorkspace = waitingForWorkspace || optimisticEmpty;
+	// A sibling session already owns a ready workspace, so its optimistic shell
+	// can show the blank conversation and composer immediately. A genuinely new
+	// workspace keeps the setup state until its worktree is ready.
+	const settingUpWorkspace = waitingForWorkspace && !optimisticEmpty;
 
 	// Live worktree diff, handed to the Changes page as `diff=` so opening it
 	// reads the poll the panel already runs rather than starting a second one.
@@ -2411,6 +2414,7 @@ export function SessionViewer({
 					return;
 				}
 			}
+			if (up) leaveLatest();
 			el.scrollBy({
 				top: up ? -delta : delta,
 				behavior: "smooth",
@@ -2418,7 +2422,7 @@ export function SessionViewer({
 		}
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [focused, messagesRef, scrollToLatest]);
+	}, [focused, messagesRef, scrollToLatest, leaveLatest]);
 
 	// A "new tab" while this session is open is a fresh session *in this session*:
 	// clear the composer and jump to the live edge. We skip the first run (and
@@ -2606,6 +2610,9 @@ export function SessionViewer({
 					loadingHistoryRef.current = false;
 					setLoadingHistory(false);
 					setLoading(false);
+					// Indexed mode still owes the complete outline after this bounded
+					// tail. Keep the quiet footer spinner until that frame arrives.
+					if (!v2) setLoadingMoreTranscript(false);
 					// A whole-history walk ends here when the server answers with the
 					// whole transcript — the legacy path's only way to serve a backlog,
 					// and the seq path's fallback when a store read fails. A TRUNCATED
@@ -2669,6 +2676,7 @@ export function SessionViewer({
 					setTranscriptIndexExpected(true);
 					transcriptIndexEpochRef.current = msg.epoch;
 					setTranscriptIndexState({ sessionId: session.id, entries: msg.entries });
+					setLoadingMoreTranscript(false);
 					setHistoryTruncated(false);
 					backgroundHistoryRef.current = false;
 					historyRevealRef.current = null;
@@ -2939,6 +2947,10 @@ export function SessionViewer({
 					}
 					break;
 				case "session_status":
+					// This is the final frame in a legacy watch handshake. Indexed mode
+					// still owes its complete outline after this frame.
+					if (transcriptSeqRef.current?.sessionId !== session.id)
+						setLoadingMoreTranscript(false);
 					setIsRunningLive(msg.isRunning);
 					if (!msg.isRunning) {
 						// Every isRunning:false broadcast follows its run's stream_done,
@@ -3022,9 +3034,7 @@ export function SessionViewer({
 					break;
 				case "cache_warning":
 					if (msg.sessionId !== session.id) break;
-					toast("Prompt cache missed; this turn reprocessed the full context.", {
-						duration: 6000,
-					});
+					toast("Prompt cache missed");
 					break;
 				case "notice":
 					setEntries((prev) => [
@@ -3310,9 +3320,8 @@ export function SessionViewer({
 					resumeWatchRef.current = null;
 					scrollToLatest("auto");
 				}
-				relayout();
 			}),
-		[liveTurnStore, relayout, scrollToLatest],
+		[liveTurnStore, scrollToLatest],
 	);
 	useEffect(() => {
 		const el = messagesRef.current;
@@ -4274,10 +4283,10 @@ export function SessionViewer({
 			pendingBubbles.length === 0
 				? EMPTY_TRANSCRIPT_ENTRIES
 				: pendingBubbles.map((pending) => ({
-					id: pending.id,
-					type: "user",
-					content: pending.content,
-					timestamp: new Date(pending.sentAt).toISOString(),
+				id: pending.id,
+				type: "user",
+				content: pending.content,
+				timestamp: new Date(pending.sentAt).toISOString(),
 					...(pending.images?.length ? { images: pending.images } : {}),
 				})),
 		[pendingBubbles],
@@ -4788,6 +4797,16 @@ export function SessionViewer({
 	useLayoutEffect(() => {
 		const el = headerRef.current;
 		if (!el) return;
+		// Once by hand, before the first paint: the observer's own opening callback
+		// lands after it, and this width decides whether the summary card has room
+		// to stand open. A frame late is a frame of a card lying across a narrow
+		// transcript. Content box, to match what the observer reports below.
+		const box = getComputedStyle(el);
+		setHeaderW(
+			el.clientWidth -
+				parseFloat(box.paddingLeft) -
+				parseFloat(box.paddingRight),
+		);
 		const ro = new ResizeObserver((entries) => {
 			for (const e of entries) setHeaderW(e.contentRect.width);
 		});
@@ -4813,17 +4832,22 @@ export function SessionViewer({
 		mq.addEventListener("change", onChange);
 		return () => mq.removeEventListener("change", onChange);
 	}, []);
-	// The compact card and the full panel are two views of the same summary.
-	// Show only the one the person chose, never both at once.
+	// Whether the pane can hold the card beside the reading column instead of
+	// over it. Unmeasured counts as room: the width lands in a layout effect
+	// before the first paint, and assuming the common case keeps a pinned card
+	// from blinking on wide panes. Below the threshold the card hides itself and
+	// the header takes back the strip it had stood down for.
+	const summaryHasRoom = headerW === 0 || headerW >= WS_SUMMARY_ROOM_W;
 	const summaryVisible =
-		summaryOpen && !activePanelOpen && !isPhone && hasRepoWork;
+		summaryOpen &&
+		summaryHasRoom &&
+		!activePanelOpen &&
+		!isPhone &&
+		hasRepoWork;
 	// Keep a visible left step whenever the card is up. This composes the card,
 	// transcript and composer as two sides of one pane instead of letting the
 	// reading column drift back to centre as the window grows.
-	const summaryStep =
-		summaryVisible && headerW >= WS_SUMMARY_ROOM_W
-			? workspaceSummaryShift(headerW)
-			: 0;
+	const summaryStep = summaryVisible ? workspaceSummaryShift(headerW) : 0;
 	const summaryStepStyle =
 		summaryStep > 0
 			? ({ "--ws-summary-step": `-${summaryStep}px` } as React.CSSProperties)
@@ -4998,6 +5022,7 @@ export function SessionViewer({
 	// gesture closes it instead of popping the whole session back to the
 	// sidebar (App's layer, priority 0).
 	const infoPageRef = useRef<HTMLDivElement | null>(null);
+	const infoHeroNameRef = useRef<HTMLHeadingElement | null>(null);
 	useBackSwipe({
 		active: isPhone && infoPageOpen,
 		onBack: () => setInfoPageOpen(false),
@@ -5005,17 +5030,26 @@ export function SessionViewer({
 		priority: 2,
 	});
 	useEffect(() => {
-		if (!infoPageOpen) {
+		if (!infoPageOpen || panelPage !== null) {
 			setInfoPageScrolled(false);
 			return;
 		}
 		const root = infoPageRef.current;
-		if (!root) return;
-		const sync = () => setInfoPageScrolled(root.scrollTop > 4);
-		sync();
-		root.addEventListener("scroll", sync, { passive: true });
-		return () => root.removeEventListener("scroll", sync);
-	}, [infoPageOpen, isPhone]);
+		const title = infoHeroNameRef.current;
+		if (!root || !title) return;
+		const topbar = root.querySelector<HTMLElement>(".session-info-topbar");
+		const topInset = Math.ceil(topbar?.getBoundingClientRect().height || 52);
+		const observer = new IntersectionObserver(
+			([entry]) => setInfoPageScrolled(!entry.isIntersecting),
+			{
+				root,
+				rootMargin: `-${topInset}px 0px 0px`,
+				threshold: 0,
+			},
+		);
+		observer.observe(title);
+		return () => observer.disconnect();
+	}, [infoPageOpen, isPhone, panelPage]);
 	useEffect(() => {
 		if (!infoPageOpen) return;
 		const app = document.querySelector<HTMLElement>(".app");
@@ -5059,6 +5093,28 @@ export function SessionViewer({
 	// The pile is about the people you can't see, so your own sockets come out
 	// first (lib/presence.ts documents why, and is tested).
 	const others = otherViewers(viewers, me);
+
+	// Media queued for the current turn has not reached the workspace overview
+	// yet, so carry it into the phone summary directly.
+	const liveOverviewMedia = useMemo<WorkspaceMediaItem[]>(() => {
+		const fromImages = (
+			items: Array<{ images?: string[]; sentAt?: number }>,
+		): WorkspaceMediaItem[] =>
+			items.flatMap((item) =>
+				(item.images || []).map((src, i) => ({
+					kind: "image" as const,
+					src,
+					sessionId: session.id,
+					sessionTitle: session.title,
+					at: new Date((item.sentAt || Date.now()) + i).toISOString(),
+				})),
+			);
+		return [
+			...fromImages(pending),
+			...fromImages(queued),
+			...fromImages(visibleSteered),
+		];
+	}, [pending, queued, visibleSteered, session.id, session.title]);
 
 	async function handleDelete(cleanWorktree: boolean) {
 		setDeleteLabel(
@@ -6099,7 +6155,25 @@ export function SessionViewer({
 											variant="ghost"
 											size="md"
 											className="flex-none rounded-control"
-											onClick={() => onNewSession("share")}
+											onClick={(event) => {
+												const animate =
+													event.detail > 0 &&
+													!window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+												const rect = animate
+													? event.currentTarget.getBoundingClientRect()
+													: null;
+												onNewSession(
+													"share",
+													rect
+														? {
+																left: rect.left,
+																top: rect.top,
+																width: rect.width,
+																height: rect.height,
+															}
+														: undefined,
+												);
+											}}
 											aria-label="New tab"
 											// 22, the standard standalone step the ⋯ and side-panel
 											// glyphs use. IconPlus now draws the set's 14.5 span, so
@@ -6198,7 +6272,9 @@ export function SessionViewer({
 							onOpenPr={() => focusPrInReview()}
 							onOpenStackPr={onOpenPr}
 							onOpenChecks={() => focusPrInReview(undefined, "checks")}
+							onOpenAsset={openAssetFromTranscript}
 							onOpenAssets={onOpenAssets}
+							onOpenSession={onOpenSession}
 							onArchive={handleArchive}
 							// Already resolved across the workspace's sessions (the
 							// request may live on a sibling), and already folded
@@ -6211,6 +6287,9 @@ export function SessionViewer({
 							onOpenChange={setSummaryOpen}
 							tabStripVisible={tabStripVisible}
 							reviewMode={showReview}
+							// Too narrow for both, and the card gets out of the way
+							// until someone asks for it from the same button.
+							hasRoom={summaryHasRoom}
 						/>
 					)}
 					{/* Phones have no workspace panel and no status strip, so the PR
@@ -6279,11 +6358,10 @@ export function SessionViewer({
 									panelPage === "changes" ? "Changes" : "Workspace details"
 								}
 							>
-								{/* The phone's drill-in: this page IS the workspace panel
-								    here, so Changes navigates it rather than opening a
-								    column this width never renders. Same chevron, one
-								    level further in, and the bar names where you are
-								    straight away since there's no hero to scroll past. */}
+								{/* The phone's drill-in: this page is the workspace panel here,
+								    so Changes navigates it rather than opening a column. The
+								    workspace title moves into this bar as its large identity
+								    header scrolls away, like chat info on a phone. */}
 								<div
 									className={infoTopbarClass(
 										infoPageScrolled || panelPage !== null,
@@ -6314,7 +6392,9 @@ export function SessionViewer({
 										</svg>
 									</button>
 									<div
-										className={infoTopbarTitleClass(true)}
+										className={infoTopbarTitleClass(
+											infoPageScrolled || panelPage !== null,
+										)}
 									>
 										{panelPage === "changes"
 											? "Changes"
@@ -6338,21 +6418,30 @@ export function SessionViewer({
 										</div>
 									)
 								) : (
-									<div className={INFO_CONTENT}>
-										<div className={INFO_SUMMARY_CARD}>
-											{/* Repository and model remain directly editable here. They
-											    lead into the same quiet rows as the desktop summary. */}
-											<div className={INFO_LIST}>
-												{hasRepoWork && (
+									<>
+										<div className={INFO_HERO}>
+											{session.desk ? (
+												<IconDesk size={40} className="text-dim" />
+											) : (
+												<RepoTile name={session.repo || "repository"} size={40} />
+											)}
+											<h1 className={INFO_NAME} ref={infoHeroNameRef}>
+												{workspaceName || session.title}
+											</h1>
+											<div className={INFO_SUB}>
+												{!session.desk && hasRepoWork && (
 													<RepoBar
 														sessionId={session.id}
 														primaryRepo={session.repo || "repository"}
 														branch={session.branch}
 														initialAttached={session.attachedRepos || []}
-														variant="menu-row"
+														variant="hero"
 													/>
 												)}
-												{session.source === "opensession" && models.length > 0 && (
+												{!session.desk && hasRepoWork && models.length > 0 && (
+													<span aria-hidden="true">·</span>
+												)}
+												{session.source === "opensession" && models.length > 0 ? (
 													<ModelMenuRow
 														models={models}
 														model={model}
@@ -6367,17 +6456,25 @@ export function SessionViewer({
 														accountId={accountId}
 														onAccountChange={handleAccountChange}
 														usage={usage}
+														variant="hero"
 													/>
-												)}
-												{session.sandbox && (
-													<div className="flex min-h-11 items-center px-3">
-														<SandboxBadge
-															sessionId={session.id}
-															sandbox={session.sandbox}
-														/>
-													</div>
-												)}
+												) : models.length > 0 ? (
+													<span className="inline-flex min-h-11 items-center px-1.5">
+														{metadataModelLabel(effectiveModel, models)}
+													</span>
+												) : null}
 											</div>
+										</div>
+										<div className={INFO_CONTENT}>
+										<div className={INFO_SUMMARY_CARD}>
+											{session.sandbox && (
+												<div className="flex min-h-11 items-center rounded-2xl bg-panel px-5 py-2">
+													<SandboxBadge
+														sessionId={session.id}
+														sandbox={session.sandbox}
+													/>
+												</div>
+											)}
 											<WorkspaceSummaryBody
 												embedded
 												session={session}
@@ -6401,16 +6498,19 @@ export function SessionViewer({
 													setInfoPageOpen(false);
 													focusPrInReview(undefined, "checks");
 												}}
+												onOpenAsset={openAssetFromTranscript}
 												onOpenAssets={() => {
 													setInfoPageOpen(false);
 													onOpenAssets?.();
 												}}
+												onOpenSession={onOpenSession}
 												onArchive={handleArchive}
 												reviewRequest={effectiveReview?.req ?? null}
 												prReviewRequested={effectiveReview?.prReviewRequested}
 												running={isRunningLive}
 												send={connected ? send : undefined}
 												refreshTick={gitRefreshTick}
+												liveMedia={liveOverviewMedia}
 												close={() => setInfoPageOpen(false)}
 											/>
 										</div>
@@ -6428,15 +6528,16 @@ export function SessionViewer({
 												/>
 											</div>
 										)}
-										{sessionReports.length > 0 && (
-											<div className={INFO_SECTION}>
-												<SessionReportsPanel
-													reports={sessionReports}
-													onOpenNewSession={onOpenNewSession}
-												/>
-											</div>
-										)}
-									</div>
+											{sessionReports.length > 0 && (
+												<div className={INFO_SECTION}>
+													<SessionReportsPanel
+														reports={sessionReports}
+														onOpenNewSession={onOpenNewSession}
+													/>
+												</div>
+											)}
+										</div>
+									</>
 								)}
 							</div>,
 							document.body,
@@ -6466,7 +6567,7 @@ export function SessionViewer({
 			    picture of yourself. */}
 			{isPhone &&
 				headerRepoEl &&
-				(session.desk || hasWorkspace) &&
+				(session.desk || session.repo || hasWorkspace) &&
 				createPortal(
 					session.desk ? (
 						deskOwner && personKey(deskOwner) !== personKey(currentUser) ? (
@@ -6493,7 +6594,7 @@ export function SessionViewer({
 			    workspace/session setting, can be changed. */}
 			{isPhone &&
 				headerModelEl &&
-				(hasWorkspace || models.length > 0) &&
+				(hasWorkspace || effectiveModel || models.length > 0) &&
 				createPortal(
 					<span
 						className={`${HEADER_SESSIONBAR} session-settings-trigger`}
@@ -6514,8 +6615,10 @@ export function SessionViewer({
 						    steady and the working state reads alongside model · cost. */}
 						{isRunningLive && <PulseDot size={7} />}
 						{/* Repo now leads the pill (portaled into headerRepoEl in front of
-						    the title), so the metadata line is just model · cost. */}
-						{models.length > 0 && (
+						    the title), so the metadata line is just model · cost. The id
+						    has its own friendly fallback, so the optimistic shell can name
+						    it before this view's catalog fetch finishes. */}
+						{effectiveModel && (
 							<span className={HEADER_SESSIONBAR_MODEL}>
 								{/* Drop the "Claude " prefix — "Opus 4.8" reads fine in the
 								    thin subtitle and leaves room for the cost meter. */}
@@ -6834,7 +6937,7 @@ export function SessionViewer({
 								// the card's side of the composition.
 								summaryStep > 0 && VIEWER_SUMMARY_STEP,
 							)}
-							ref={messagesRef}
+							ref={setMessagesRef}
 							data-lightbox-session-id={session.id}
 							onScroll={handleMessagesScroll}
 							onClick={handleMessagesClick}
@@ -6947,16 +7050,18 @@ export function SessionViewer({
 											<ToolPathRootsProvider value={toolPathRoots}>
 												<LiveSubagentsProvider value={liveSubagents}>
 													<OpenAssetProvider value={openAssetFromTranscript}>
-														<TranscriptBlocks
-															entries={entries}
-															optimisticEntries={optimisticTranscriptEntries}
-															transcriptIndex={transcriptIndex ?? undefined}
-															transcriptRangeRetryGeneration={
-																transcriptRangeRetryGeneration
-															}
-															onLoadTranscriptRanges={loadTranscriptRanges}
-															live={isBusy}
-															sessionId={session.id}
+												<SessionTranscript
+													entries={entries}
+													optimisticEntries={optimisticTranscriptEntries}
+													transcriptIndex={transcriptIndex ?? undefined}
+													transcriptRangeRetryGeneration={
+														transcriptRangeRetryGeneration
+													}
+													onLoadTranscriptRanges={loadTranscriptRanges}
+													live={isBusy}
+													sessionId={session.id}
+													liveTurnStore={liveTurnStore}
+													onLiveLayout={relayout}
 															reviewResult={reviewResult}
 															onEditMessage={editSentMessageInComposer}
 															// Same gate the composer sends under: a busy session
@@ -6987,15 +7092,20 @@ export function SessionViewer({
 												</LiveSubagentsProvider>
 											</ToolPathRootsProvider>
 										</React.Profiler>
-
-										<StreamingMessage
-											store={liveTurnStore}
-											sessionId={session.id}
-										/>
 									</OpenAssetPathsProvider>
 								</>
 							)}
 							</AnimatePresence>
+
+							{loadingMoreTranscript && (
+								<div
+									role="status"
+									aria-label="Loading more messages"
+									className="mx-auto flex max-w-[var(--session-col)] justify-center py-3 text-faint"
+								>
+									<Spinner />
+								</div>
+							)}
 
 							{isBusy && !settingUpWorkspace && (
 								<BusyInline
@@ -7119,9 +7229,11 @@ export function SessionViewer({
 								>
 									<button
 										className={cn(
-											TRANSCRIPT_PILL_BUTTON,
+											TRANSCRIPT_ICON_BUTTON,
 											`absolute bottom-[calc(24px+var(--suggestions-under,0px))] left-1/2 z-[5] ${PILL_CENTRED}`,
 										)}
+										type="button"
+										aria-label="Scroll to the bottom"
 										onClick={() => scrollToLatest("auto")}
 									>
 										<IconArrowDown
@@ -7129,7 +7241,6 @@ export function SessionViewer({
 											className="text-dim transition-transform group-hover:translate-y-px"
 											aria-hidden
 										/>
-										{newBelow ? "New messages" : "Scroll to bottom"}
 									</button>
 								</Tooltip>
 							)}
@@ -7195,7 +7306,9 @@ export function SessionViewer({
 														shortcut={transcriptDownKeys ?? undefined}
 													>
 														<button
-															className={TRANSCRIPT_PILL_BUTTON}
+															className={TRANSCRIPT_ICON_BUTTON}
+															type="button"
+															aria-label="Scroll to the bottom"
 															onClick={() => scrollToLatest("auto")}
 														>
 															<IconArrowDown
@@ -7203,7 +7316,6 @@ export function SessionViewer({
 																className="text-dim transition-transform group-hover:translate-y-px"
 																aria-hidden
 															/>
-															{newBelow ? "New messages" : "Scroll to bottom"}
 														</button>
 													</Tooltip>
 												</div>
@@ -7490,13 +7602,16 @@ export function SessionViewer({
 											onOpenChecks={() =>
 												focusPrInReview(undefined, "checks")
 											}
+											onOpenAsset={openAssetFromTranscript}
 											onOpenAssets={onOpenAssets}
+											onOpenSession={onOpenSession}
 											onArchive={handleArchive}
 											reviewRequest={effectiveReview?.req ?? null}
 											prReviewRequested={effectiveReview?.prReviewRequested}
 											running={isRunningLive}
 											send={connected ? send : undefined}
 											refreshTick={gitRefreshTick}
+											liveMedia={liveOverviewMedia}
 											close={() => setActivePanelOpen(false)}
 										/>
 									</div>

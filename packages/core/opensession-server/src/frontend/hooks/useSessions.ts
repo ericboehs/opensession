@@ -21,9 +21,25 @@ const ARCHIVED_QUERY = "?archived=only&slim=1";
  */
 const ARCHIVED_POLL_MS = 30_000;
 
+export function sessionPatchNeedsAcknowledgement(
+  patch: Partial<UnifiedSession>,
+): boolean {
+  // Runtime state comes from the open chat's WebSocket before the cached list
+  // can observe it. Keep that exact state across list polls until the matching
+  // stop frame arrives, just as an archive survives an older poll in flight.
+  return "archived" in patch || "isRunning" in patch;
+}
+
+export interface PendingSessionPatch {
+  values: Partial<UnifiedSession>;
+  /** Runtime revision when a WebSocket status frame was applied. */
+  runtimeRevision?: number;
+}
+
 export function reconcilePendingSessionPatches(
   sessions: UnifiedSession[],
-  pendingPatches: Map<string, Partial<UnifiedSession>>,
+  pendingPatches: Map<string, PendingSessionPatch>,
+  snapshotRuntimeRevision = -1,
 ): UnifiedSession[] {
   // An archive is acknowledged by the row's ABSENCE. The live slice doesn't
   // carry archived sessions any more, so there are no field values left to
@@ -33,19 +49,37 @@ export function reconcilePendingSessionPatches(
   if (pendingPatches.size) {
     const present = new Set(sessions.map((s) => s.id));
     for (const [id, pending] of pendingPatches)
-      if (pending.archived === true && !present.has(id)) pendingPatches.delete(id);
+      if (pending.values.archived === true && !present.has(id))
+        pendingPatches.delete(id);
   }
   return sessions.map((session) => {
     const pending = pendingPatches.get(session.id);
     if (!pending) return session;
-    const acknowledged = Object.entries(pending).every(
+    // Only protect a WebSocket status frame from list requests that were
+    // already in flight when it arrived. A later snapshot is authoritative:
+    // the run may have finished after this viewer was unmounted, so keeping
+    // the last local `true` until the server repeats it can strand the row in
+    // In progress forever.
+    if (
+      pending.runtimeRevision !== undefined &&
+      snapshotRuntimeRevision >= pending.runtimeRevision
+    ) {
+      delete pending.values.isRunning;
+      delete pending.values.runStartedAt;
+      delete pending.runtimeRevision;
+    }
+    if (Object.keys(pending.values).length === 0) {
+      pendingPatches.delete(session.id);
+      return session;
+    }
+    const acknowledged = Object.entries(pending.values).every(
       ([key, value]) => session[key as keyof UnifiedSession] === value,
     );
     if (acknowledged) {
       pendingPatches.delete(session.id);
       return session;
     }
-    return { ...session, ...pending };
+    return { ...session, ...pending.values };
   });
 }
 
@@ -112,33 +146,43 @@ export function useSessions({
   // create lands seconds later. Keep these merged into every poll result until
   // the server's own copy shows up (auto-cleared here) or `unstick` drops it.
   const stickyRef = useRef<Map<string, UnifiedSession>>(new Map());
-  // Optimistic changes that must survive an older poll already in flight. Each
-  // entry is removed once a server snapshot contains the same field values.
-  const pendingPatchRef = useRef<Map<string, Partial<UnifiedSession>>>(new Map());
+  // Optimistic changes that must survive an older poll already in flight.
+  // Archive fields wait for value acknowledgement; runtime fields yield to the
+  // first snapshot started after their WebSocket frame.
+  const pendingPatchRef = useRef<Map<string, PendingSessionPatch>>(new Map());
+  // A poll captures this before it starts. Runtime frames increment it, which
+  // lets reconciliation distinguish an older response from a later, current
+  // server snapshot without relying on wall-clock timing.
+  const runtimeRevisionRef = useRef(0);
 
-  const applyServer = useCallback((parsed: UnifiedSession[]) => {
-    const reconciled = reconcilePendingSessionPatches(
-      parsed,
-      pendingPatchRef.current,
-    );
-    setLive((previous) => {
-      const next = reconciled;
-      if (stickyRef.current.size === 0) return next;
-      const present = new Set(next.map((s) => s.id));
-      const extras: UnifiedSession[] = [];
-      for (const [id, s] of stickyRef.current) {
-        if (present.has(id)) stickyRef.current.delete(id);
-        else extras.push(s);
-      }
-      return extras.length ? [...next, ...extras] : next;
-    });
-  }, []);
+  const applyServer = useCallback(
+    (parsed: UnifiedSession[], snapshotRuntimeRevision: number) => {
+      const reconciled = reconcilePendingSessionPatches(
+        parsed,
+        pendingPatchRef.current,
+        snapshotRuntimeRevision,
+      );
+      setLive((previous) => {
+        const next = reconciled;
+        if (stickyRef.current.size === 0) return next;
+        const present = new Set(next.map((s) => s.id));
+        const extras: UnifiedSession[] = [];
+        for (const [id, s] of stickyRef.current) {
+          if (present.has(id)) stickyRef.current.delete(id);
+          else extras.push(s);
+        }
+        return extras.length ? [...next, ...extras] : next;
+      });
+    },
+    [],
+  );
 
   const poll = useCallback((): Promise<void> => {
     if (pollPromiseRef.current) return pollPromiseRef.current;
     const controller = new AbortController();
     pollAbortRef.current = controller;
     const startedAt = Date.now();
+    const snapshotRuntimeRevision = runtimeRevisionRef.current;
     const promise = (async () => {
       try {
         const snapshot = await fetchSessionsSnapshot({
@@ -151,7 +195,7 @@ export function useSessions({
           etagRef.current = snapshot.etag;
           if (snapshot.text !== lastTextRef.current) {
             lastTextRef.current = snapshot.text;
-            applyServer(JSON.parse(snapshot.text));
+            applyServer(JSON.parse(snapshot.text), snapshotRuntimeRevision);
           }
         }
         liveAtRef.current = startedAt;
@@ -367,11 +411,18 @@ export function useSessions({
     (id: string, patch: Partial<UnifiedSession>) => {
       lastTextRef.current = null;
       etagRef.current = null;
-      if ("archived" in patch) {
+      if (sessionPatchNeedsAcknowledgement(patch)) {
+        const previous = pendingPatchRef.current.get(id);
+        const runtimeRevision =
+          "isRunning" in patch
+            ? ++runtimeRevisionRef.current
+            : previous?.runtimeRevision;
         pendingPatchRef.current.set(id, {
-          ...pendingPatchRef.current.get(id),
-          ...patch,
+          values: { ...previous?.values, ...patch },
+          runtimeRevision,
         });
+      }
+      if ("archived" in patch) {
         const at = Date.now();
         const drop = <V,>(prev: Map<string, V>) => {
           if (!prev.has(id)) return prev;

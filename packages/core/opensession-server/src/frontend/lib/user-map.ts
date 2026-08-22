@@ -10,7 +10,7 @@
 // client) had two caches that each believed they were the whole truth, and
 // neither was told when the other wrote. The second writer's PUT deleted every
 // entry the first had made since it loaded. For snoozes that looked like a
-// workspace parked for "Some day" waking up on its own: nothing expired it,
+// workspace parked for "Someday" waking up on its own: nothing expired it,
 // another client had simply overwritten the map without it. Two clients
 // editing different keys must not be able to erase each other.
 //

@@ -15,7 +15,14 @@ import {
 	sidebarStartsCollapsed,
 	storeSidebarCollapsed,
 } from "./lib/sidebar-collapse";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { openWorkspaceSummary } from "./lib/workspace-summary-open";
+import React, {
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { MotionConfig } from "motion/react";
@@ -67,13 +74,14 @@ import {
 	NewSession,
 	type NewSessionCreateDraft,
 } from "./components/NewSession";
-import { clearDraft, NEW_SESSION_DRAFT_KEY } from "./lib/drafts";
+import { clearDraft, saveDraft, NEW_SESSION_DRAFT_KEY } from "./lib/drafts";
 import { dropStagingAttachments } from "./lib/attachments";
 import { IconTile } from "./components/BrandTile";
 import { displayName } from "./brand-logos";
 import type { NewSessionPrefill } from "./lib/new-session-link";
 import { shouldOpenCreatedSession } from "./lib/new-session-navigation";
 import { primeSoftKeyboard } from "./lib/soft-keyboard";
+import { trackKeyboardInset } from "./lib/keyboard-inset";
 import {
 	SessionSearch,
 	type CommandPaletteAction,
@@ -113,7 +121,11 @@ import {
 	settingsReturnForNavigation,
 	type SettingsReturn,
 } from "./lib/settings-navigation";
-import { SessionTabs, type ViewTab } from "./components/SessionTabs";
+import {
+	SessionTabs,
+	type NewTabMorphOrigin,
+	type ViewTab,
+} from "./components/SessionTabs";
 import type { SubagentRef } from "./components/SubagentPane";
 import { SessionSplit, type SplitSide } from "./components/SessionSplit";
 import { RestartOverlay } from "./components/RestartOverlay";
@@ -148,7 +160,7 @@ import {
 	IconWrench,
 } from "./components/icons";
 import { DeskOverlay } from "./components/DeskOverlay";
-import { useSessions } from "./hooks/useSessions";
+import { sidebarSessionsQuery, useSessions } from "./hooks/useSessions";
 import { useHydratedSession } from "./hooks/useHydratedSession";
 import { hasDraft } from "./lib/drafts";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -167,6 +179,7 @@ import {
 	renameSessionApi,
 	setSessionStatusApi,
 	newSessionApi,
+	fetchWorkspaceArchivedSessions,
 	fetchWorkspaces,
 	updateWorkspaceApi,
 	deleteWorkspaceApi,
@@ -181,6 +194,9 @@ import {
 import {
 	defaultSessionWorkspaceView,
 	mainSession,
+	newSessionSource,
+	workspaceLandingReady,
+	workspaceSessionSeed,
 	pickLandingSession,
 	sessionNeverRan,
 } from "./lib/landing-session";
@@ -234,7 +250,12 @@ import {
 	setFilter,
 	useSidebarFilter,
 } from "./lib/sidebar-filter";
-import { applyTabOrder, saveTabOrder, onTabOrderChanged } from "./lib/tab-order";
+import {
+	appendNewTabs,
+	applyTabOrder,
+	saveTabOrder,
+	onTabOrderChanged,
+} from "./lib/tab-order";
 import { workspaceArchivedSessions } from "./lib/workspace-archive";
 import { useWorkspaceArchive } from "./hooks/useWorkspaceArchive";
 import {
@@ -420,11 +441,15 @@ const LANDING_SEARCH = location.search;
  * any route) forces it open on an instance that is already set up, so the
  * setup walkthrough can be reviewed without emptying the instance first.
  */
-function landedOnFirstMile(): boolean {
+function firstMileRequested(pathname: string, search: string): boolean {
 	return (
-		LANDING_PATH === "/welcome" ||
-		new URLSearchParams(LANDING_SEARCH).get("firstmile") === "1"
+		stripBasePath(pathname) === "/welcome" ||
+		new URLSearchParams(search).get("firstmile") === "1"
 	);
+}
+
+function landedOnFirstMile(): boolean {
+	return firstMileRequested(LANDING_PATH, LANDING_SEARCH);
 }
 
 function parseRoute(pathname: string): Route {
@@ -654,6 +679,8 @@ function samePanel(a: Route, b: Route): boolean {
 	return id(a) !== undefined && id(a) === id(b);
 }
 
+class MissingWorkspaceSessionSourceError extends Error {}
+
 export function App(
 	{
 		serviceWorker = true,
@@ -692,6 +719,16 @@ export function App(
 		}
 		return parsed;
 	});
+	const currentUser = useCurrentUser();
+	const sidebarFilter = useSidebarFilter();
+	const liveSessionsQuery = sidebarSessionsQuery({
+		user: currentUser,
+		person: sidebarFilter.person,
+		repo: sidebarFilter.repo,
+		autoCreated: sidebarFilter.autoCreated,
+		...(route.view === "session" ? { selectedSessionId: route.id } : {}),
+		...(route.view === "workspace" ? { selectedWorkspaceId: route.id } : {}),
+	});
 	const {
 		sessions,
 		loading,
@@ -703,7 +740,10 @@ export function App(
 		unstick,
 		patch,
 		remove,
-	} = useSessions({ loadArchived: route.view === "archived" });
+	} = useSessions({
+		loadArchived: route.view === "archived",
+		liveQuery: liveSessionsQuery,
+	});
 	const [launchComplete, setLaunchComplete] = useState(false);
 	// Seeded from the repos this browser saw last (lib/repo-cache): PR-mention
 	// chips need the registered set to resolve, so without it the first paint of
@@ -711,8 +751,8 @@ export function App(
 	const [registeredRepoInfo, setRegisteredRepoInfo] = useState(cachedRepos);
 	const [firstMileIsComplete, setFirstMileIsComplete] =
 		useState(firstMileComplete);
+	const [forceFirstMile, setForceFirstMile] = useState(landedOnFirstMile);
 	const auth = useAuthStatus();
-	const currentUser = useCurrentUser();
 	const { connected, send, setTyping, addHandler } = useWebSocket();
 	const sessionsRef = useRef(sessions);
 	sessionsRef.current = sessions;
@@ -817,6 +857,11 @@ export function App(
 	// that (see the `.mobile-detail` CSS and the back button below). It's inert on
 	// desktop, where the sidebar + detail are a static split.
 	const detailPaneRef = useRef<HTMLElement | null>(null);
+	const [detailPaneEl, setDetailPaneEl] = useState<HTMLElement | null>(null);
+	const captureDetailPane = useCallback((node: HTMLElement | null) => {
+		detailPaneRef.current = node;
+		setDetailPaneEl(node);
+	}, []);
 	// Desktop-only: collapse the left sidebar entirely (persisted per browser). A
 	// new browser starts collapsed so the workspace summary and conversation lead;
 	// opening it once remains an explicit preference. On mobile the page-stack
@@ -828,6 +873,7 @@ export function App(
 		setSidebarCollapsed((v) => {
 			const next = !v;
 			storeSidebarCollapsed(next);
+			if (next) openWorkspaceSummary();
 			return next;
 		});
 	}
@@ -929,6 +975,19 @@ export function App(
 	// "Session not found". pendingNewWorkspace words it for a brand-new
 	// workspace vs. a session added to an existing one.
 	const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+	const [newTabMorph, setNewTabMorph] = useState<{
+		id: string;
+		origin: NewTabMorphOrigin;
+	} | null>(null);
+	const newTabMorphTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+		undefined,
+	);
+	useEffect(
+		() => () => {
+			if (newTabMorphTimer.current) clearTimeout(newTabMorphTimer.current);
+		},
+		[],
+	);
 	// Keep the complete local shell beside the route until persistence lands.
 	// The session list and detail fetches are independent, so neither should be
 	// allowed to substitute the previous session while this id is still local.
@@ -971,7 +1030,6 @@ export function App(
 		workspacesLoaded &&
 		sessions.length === 0 &&
 		workspaces.length === 0;
-	const forceFirstMile = landedOnFirstMile();
 	const firstMileActive =
 		forceFirstMile ||
 		(auth?.admin !== false && productEmpty && !firstMileIsComplete);
@@ -999,14 +1057,21 @@ export function App(
 		return unsubscribe;
 	}, []);
 
+	function openFirstMile() {
+		// Keep the settings entry below the walkthrough so browser Back returns to
+		// the button that opened it. The walkthrough is app state, not a document
+		// reload, which also works inside the phone settings sheet.
+		history.pushState(history.state, "", `${BASE_PATH}/welcome`);
+		setForceFirstMile(true);
+	}
+
 	function finishFirstMile() {
 		completeFirstMile();
 		if (forceFirstMile) {
 			const url = new URL(location.href);
 			url.searchParams.delete("firstmile");
-			const path = stripBasePath(url.pathname) === "/welcome"
-				? routePath({ view: "prs" })
-				: url.pathname;
+			const leavingWelcome = stripBasePath(url.pathname) === "/welcome";
+			const path = leavingWelcome ? routePath({ view: "prs" }) : url.pathname;
 			// A `/welcome` load skips the home entry's navState stamp above, so give
 			// this entry a root depth on the way out or Back has nothing to count from.
 			history.replaceState(
@@ -1014,6 +1079,8 @@ export function App(
 				"",
 				`${path}${url.search}${url.hash}`,
 			);
+			setForceFirstMile(false);
+			if (leavingWelcome) setRoute({ view: "prs" });
 		}
 	}
 
@@ -1058,7 +1125,13 @@ export function App(
 	// while the keyboard covers that area. A `kb-open` body class lets the
 	// composer drop its safe-area bottom padding so it sits snug above the
 	// keyboard instead of floating ~34px above it.
+	//
+	// The same focus is what starts measuring HOW MUCH the keyboard covers
+	// (`--kb-inset`, lib/keyboard-inset): the class says a keyboard is up, the
+	// variable says how tall it is, and a surface resting on the bottom edge
+	// needs both.
 	useEffect(() => {
+		let releaseInset: (() => void) | null = null;
 		const isText = (el: Element | null) =>
 			!!el &&
 			(el.tagName === "TEXTAREA" ||
@@ -1068,13 +1141,18 @@ export function App(
 					)) ||
 				(el as HTMLElement).isContentEditable);
 		const onIn = (e: FocusEvent) => {
-			if (isText(e.target as Element)) document.body.classList.add("kb-open");
+			if (!isText(e.target as Element)) return;
+			document.body.classList.add("kb-open");
+			releaseInset ??= trackKeyboardInset();
 		};
 		const onOut = () => {
 			// activeElement updates a tick after focusout; defer so moving between
 			// fields doesn't flicker the class off and back on.
 			setTimeout(() => {
-				if (!isText(document.activeElement)) document.body.classList.remove("kb-open");
+				if (isText(document.activeElement)) return;
+				document.body.classList.remove("kb-open");
+				releaseInset?.();
+				releaseInset = null;
 			}, 0);
 		};
 		document.addEventListener("focusin", onIn);
@@ -1082,6 +1160,7 @@ export function App(
 		return () => {
 			document.removeEventListener("focusin", onIn);
 			document.removeEventListener("focusout", onOut);
+			releaseInset?.();
 		};
 	}, []);
 	useEffect(() => {
@@ -1094,7 +1173,7 @@ export function App(
 	// desktop, but as a bottom sheet over the root list on phones.
 	const settingsActive = isSettingsRoute(route);
 	const isPhone = useIsPhone();
-	const borrowedSidebar = useSidebarFilter().person !== "me";
+	const borrowedSidebar = sidebarFilter.person !== "me";
 
 	// A pushed detail page is showing (anything but the sidebar-root home view).
 	// On phones, Settings is a sheet floating over the root page rather than a
@@ -1777,7 +1856,8 @@ export function App(
 	useEffect(() => {
 		const onPop = () => {
 			// Depth travels with the entry (history.state), so there is nothing to
-			// recompute here — just follow the URL we landed on.
+			// recompute here. Follow the URL we landed on.
+			setForceFirstMile(firstMileRequested(location.pathname, location.search));
 			setRoute(parseRoute(location.pathname));
 		};
 		window.addEventListener("popstate", onPop);
@@ -1968,6 +2048,14 @@ export function App(
 					});
 					unstick(draft.id);
 					remove(draft.id);
+					// The accepted send cleared the global composer immediately. Put
+					// its submitted payload back before reopening only when creation
+					// itself fails, so recovery never holds the normal path hostage.
+					saveDraft(NEW_SESSION_DRAFT_KEY, {
+						text: draft.prompt,
+						images: draft.images ?? [],
+						files: draft.files ?? [],
+					});
 					if (
 						routeRef.current.view === "session" &&
 						routeRef.current.id === draft.id
@@ -2215,7 +2303,11 @@ export function App(
 	// opens Review. Declared after the wsKey reset effect above so the landing
 	// choice wins the same commit.
 	useEffect(() => {
-		if (route.view !== "workspace" || !workspacesLoaded) return;
+		if (
+			route.view !== "workspace" ||
+			!workspaceLandingReady(workspacesLoaded, loading)
+		)
+			return;
 		// One-shot: closing the Review tab replaces the URL (dropping /review),
 		// which re-runs this effect — without the suppress it would immediately
 		// re-seed the default pane and reopen the tab just closed.
@@ -2324,6 +2416,7 @@ export function App(
 	}, [
 		route.view === "workspace" ? `${route.id}:${route.tab ?? ""}` : null,
 		workspacesLoaded,
+		loading,
 	]);
 	// A PR reference (`/pr/<repo>/<number>`) that GitHub doesn't know: the
 	// number came out of prose, so it can be a typo or an invention.
@@ -2601,9 +2694,8 @@ export function App(
 					},
 				]
 			: [];
-	// Review leftmost, then Conversation, Preview environment, Preview, Portal,
-	// Assets, Terminal, and the sub-agent drill-in last (it comes and goes with
-	// the session).
+	// This list is only the fallback for tabs with no saved position. Once a tab
+	// opens, the mixed session-and-pane order below keeps it at the right edge.
 	// The workspace home joins these once the strip would otherwise be empty —
 	// see `homeViewTabs`, which needs the session tabs to know that.
 	const paneViewTabs: ViewTab[] = [
@@ -3234,6 +3326,18 @@ export function App(
 	const stripTabIds = tabOrderKey
 		? applyTabOrder(tabOrderKey, naturalStripTabIds)
 		: naturalStripTabIds;
+	const previousStripRef = useRef<{ key: string; ids: string[] } | null>(null);
+	useLayoutEffect(() => {
+		const previous = previousStripRef.current;
+		if (!tabOrderKey || previous?.key !== tabOrderKey) {
+			previousStripRef.current = { key: tabOrderKey, ids: stripTabIds };
+			return;
+		}
+		const appended = appendNewTabs(previous.ids, stripTabIds);
+		previousStripRef.current = { key: tabOrderKey, ids: appended };
+		if (appended.some((id, index) => id !== stripTabIds[index]))
+			saveTabOrder(tabOrderKey, appended);
+	}, [tabOrderKey, stripTabIds]);
 	// Teammates per tab, your own devices removed and one entry per person, so
 	// the strip can say WHICH session someone is in — the sidebar's workspace
 	// faces only say they are in this workspace somewhere.
@@ -3472,9 +3576,11 @@ export function App(
 				onNewSession={
 					barSessions.some((session) => session.desk) || emptyWorkspaceSession
 						? undefined
-						: (mode) => handleNewSession(mode, side)
+						: (mode, origin) => handleNewSession(mode, side, origin)
 				}
 				emptySessionId={emptyWorkspaceSession?.id}
+				morphingSessionId={newTabMorph?.id}
+				morphOrigin={newTabMorph?.origin}
 				onRename={async (id, title) => {
 					try {
 						await renameSessionApi(id, title);
@@ -3519,6 +3625,8 @@ export function App(
 		src: UnifiedSession,
 		mode: "share" | "stack" | "ask",
 		id: string,
+		morphOrigin?: NewTabMorphOrigin,
+		persistedSource: Promise<UnifiedSession> = Promise.resolve(src),
 	): Promise<string> {
 		const now = new Date().toISOString();
 		const user = getCurrentUser();
@@ -3560,12 +3668,19 @@ export function App(
 		// Commit the local shell before changing the route. Without this boundary,
 		// the route can render against the previous list and keep the old session's
 		// conversation visible until the create response arrives.
+		if (newTabMorphTimer.current) clearTimeout(newTabMorphTimer.current);
 		flushSync(() => {
 			inject(draft, { sticky: true });
 			setOptimisticSession(draft);
+			setPendingSessionId(id);
+			setPendingNewWorkspace(false);
+			setNewTabMorph(morphOrigin ? { id, origin: morphOrigin } : null);
 		});
-		setPendingSessionId(id);
-		setPendingNewWorkspace(false);
+		if (morphOrigin)
+			newTabMorphTimer.current = setTimeout(() => {
+				setNewTabMorph((current) => (current?.id === id ? null : current));
+				newTabMorphTimer.current = undefined;
+			}, 260);
 		clearTimeout(pendingTimer.current);
 		pendingTimer.current = setTimeout(() => {
 			setPendingSessionId(null);
@@ -3575,7 +3690,8 @@ export function App(
 		navigate({ view: "session", id });
 
 		try {
-			const created = await newSessionApi(src.id, user, mode, id);
+			const source = await persistedSource;
+			const created = await newSessionApi(source.id, user, mode, id);
 			const createdId = created.id;
 			if (abandonedSessionCreatesRef.current.delete(id)) {
 				unstick(id);
@@ -3617,8 +3733,13 @@ export function App(
 			setOptimisticSession((pending) => (pending?.id === id ? null : pending));
 			unstick(id);
 			remove(id);
-			if (routeRef.current.view === "session" && routeRef.current.id === id)
-				navigate({ view: "session", id: src.id });
+			if (routeRef.current.view === "session" && routeRef.current.id === id) {
+				if (src.id.startsWith("workspace:") && src.workspaceId) {
+					navigate({ view: "workspace", id: src.workspaceId, tab: "review" });
+				} else {
+					navigate({ view: "session", id: src.id });
+				}
+			}
 			throw error;
 		}
 	}
@@ -3657,46 +3778,81 @@ export function App(
 	const handleNewSession = async (
 		mode: "share" | "stack" | "ask",
 		side: SplitSide | null = null,
+		morphOrigin?: NewTabMorphOrigin,
 	) => {
 		if (emptyWorkspaceSession) {
 			setActiveViewTab(null);
 			navigate({ view: "session", id: emptyWorkspaceSession.id });
 			return;
 		}
-		const src = currentSession || mainSession(naturalSessions);
+
+		const openSessionlessWorkspaceComposer = () => {
+			if (route.view !== "workspace") return;
+			const workspace = workspaces.find((item) => item.id === route.id);
+			setPalette({
+				open: true,
+				workspaceId: route.id,
+				repo: workspace?.repo,
+				branch: workspace?.branch,
+				// Feed workspaces without a repo start in Scratch.
+				...(workspace?.externalRefs?.length && !workspace.repo
+					? { mode: "scratch" as const }
+					: {}),
+			});
+		};
+
+		let src = newSessionSource(
+			currentSession,
+			naturalSessions,
+			archivedSessions,
+		);
+		let persistedSource: Promise<UnifiedSession> | undefined;
+		if (!src && activeWorkspaceId && wsRecord) {
+			// Paint and route the local tab now. The cold archived-session lookup can
+			// take several seconds, but it is needed only when the server persists it.
+			src = workspaceSessionSeed(wsRecord, getCurrentUser());
+			persistedSource = (async () => {
+				try {
+					const archived = await fetchWorkspaceArchivedSessions(activeWorkspaceId);
+					const source = newSessionSource(null, [], archived);
+					if (source) return source;
+				} catch {
+					// Fall through to the existing session-less composer below.
+				}
+				throw new MissingWorkspaceSessionSourceError();
+			})();
+		}
 		if (!src) {
-			// "+" on an empty workspace (session-less route): no sibling to clone —
-			// open the new-session palette scoped to it, same as onOpenWorkspace.
-			if (route.view === "workspace") {
-				const p = workspaces.find((x) => x.id === route.id);
-				setPalette({
-					open: true,
-					workspaceId: route.id,
-					repo: p?.repo,
-					branch: p?.branch,
-					// Feed workspaces (externalRefs, no repo) default new sessions
-					// to Scratch — repo-less, like their existing sessions.
-					...(p?.externalRefs?.length && !p?.repo
-						? { mode: "scratch" as const }
-						: {}),
-				});
-			}
+			openSessionlessWorkspaceComposer();
 			return;
 		}
 		if (siblingCreateRef.current) return;
+		// The new session is the tab the + opens. Clear Review (or any other pane)
+		// before routing so its persisted workspace suffix cannot keep winning.
+		setActiveViewTab(null);
 		const optimisticId = newClientSessionId();
 		siblingCreateRef.current = optimisticId;
 		try {
-			const id = await createNewSessionFrom(src, mode, optimisticId);
+			const id = await createNewSessionFrom(
+				src,
+				mode,
+				optimisticId,
+				morphOrigin,
+				persistedSource,
+			);
 			if (side === "right" && tabOrderKey && activeTabSplit)
 				saveTabSplit(tabOrderKey, {
 					...toStoredSplit(activeTabSplit),
 					right: [...activeTabSplit.right, id],
 					rightActive: id,
 				});
-		} catch (e) {
-			console.error("New session failed:", e);
-			showToast("Couldn't create a new tab.");
+		} catch (error) {
+			if (error instanceof MissingWorkspaceSessionSourceError) {
+				openSessionlessWorkspaceComposer();
+			} else {
+				console.error("New session failed:", error);
+				showToast("Couldn't create a new tab.");
+			}
 		} finally {
 			if (siblingCreateRef.current === optimisticId)
 				siblingCreateRef.current = null;
@@ -3820,11 +3976,7 @@ export function App(
 		try {
 			if (neverRan && !pendingCreate) await deleteSessionApi(s.id, false);
 			else if (!neverRan) {
-				const { stoppedRun } = await archiveSessionApi(s.id, true);
-				showArchivedToast(
-					[s],
-					stoppedRun ? "stopped the running turn" : undefined,
-				);
+				await archiveSessionApi(s.id, true);
 				rememberArchived([s.id]);
 			}
 		} catch (e) {
@@ -3905,31 +4057,8 @@ export function App(
 	};
 	const unarchiveSession = (session: UnifiedSession) => unarchiveSessions([session]);
 
-	// Every archive announces itself and offers the way back. ⌘Z already undoes
-	// one, but only for people who know it is there, and archiving is one
-	// keypress or one mis-aimed swipe from being an accident.
-	// The toast holds the sessions it archived rather than reading the undo
-	// stack, so a second archive landing on top cannot repoint this Undo at the
-	// wrong session.
-	const undoArchive = async (archived: UnifiedSession[]) => {
-		if (!archived.length) return;
-		if (!(await unarchiveSessions(archived))) return;
-		const ids = new Set(archived.map((s) => s.id));
-		setArchiveUndo((prev) =>
-			prev
-				.map((entry) => entry.filter((id) => !ids.has(id)))
-				.filter((entry) => entry.length),
-		);
-		navigate({ view: "session", id: archived[0].id });
-	};
-	const showArchivedToast = (archived: UnifiedSession[], note?: string) => {
-		if (!archived.length) return;
-		const what =
-			archived.length === 1 ? "Archived" : `Archived ${archived.length} sessions`;
-		toast(note ? `${what} · ${note}` : what, {
-			action: { label: "Undo", onClick: () => void undoArchive(archived) },
-		});
-	};
+	// Archiving stays quiet. The row disappearing confirms the action, and the
+	// app-wide undo shortcut restores the latest archived session or workspace.
 
 	// The newest undo entry that's still restorable, resolved against the live
 	// list: an entry whose sessions were unarchived elsewhere (or deleted) falls
@@ -4105,6 +4234,13 @@ export function App(
 		// the viewer relays a session_status on every (re)open, and re-stamping
 		// here reset the sidebar's elapsed ticker to zero on each session switch.
 		const prev = sessionsRef.current.find((s) => s.id === id);
+		// The watch handshake repeats the current state on every open. Avoid
+		// replacing a list row, and re-rendering its workspace, when it agrees.
+		if (
+			prev?.isRunning === isRunning &&
+			(isRunning ? !!prev.runStartedAt : !prev.runStartedAt)
+		)
+			return;
 		patch(id, {
 			isRunning,
 			runStartedAt: isRunning
@@ -4544,11 +4680,7 @@ export function App(
 						? sidebarRef.current?.archiveSelected()
 						: closeSession(viewerSession)
 				}
-				onArchived={(stoppedRun) => {
-					showArchivedToast(
-						[viewerSession],
-						stoppedRun ? "stopped the running turn" : undefined,
-					);
+				onArchived={() => {
 					// Only fires when the viewer archived on its own — with onArchive
 					// passed (a focused pane) it defers to the sidebar path instead, so
 					// this can't double-record.
@@ -4559,7 +4691,10 @@ export function App(
 				addHandler={socket.addHandler}
 				connected={socket.connected}
 				optimisticEmpty={
-					focused && route.view === "session" && route.id === pendingSessionId
+					!pendingNewWorkspace &&
+					focused &&
+					route.view === "session" &&
+					route.id === pendingSessionId
 				}
 				initialPending={pendingInitialPrompts[viewerSession.id]}
 				topbarEl={focused ? topbarEl : null}
@@ -4644,7 +4779,7 @@ export function App(
 				onNewSession={
 					viewerSession.desk || emptyWorkspaceSession
 						? undefined
-						: handleNewSession
+						: (mode, origin) => handleNewSession(mode, null, origin)
 				}
 				onNewWorkspace={() => openPalette()}
 				onStartNewChat={(prompt) =>
@@ -4724,7 +4859,7 @@ export function App(
 		<UserGate>
 			<RestartOverlay connected={connected} addHandler={addHandler} />
 			<MediaLightboxHost />
-			<ToastHost />
+			<ToastHost container={settingsActive ? null : detailPaneEl} />
 			<Modal.Root
 				open={runningCloseConfirmation !== null}
 				onOpenChange={(open) => {
@@ -4906,6 +5041,7 @@ export function App(
 				{settingsActive && (
 					<Settings
 						onBack={leaveSettings}
+						onOpenOnboarding={openFirstMile}
 						workspace={settingsWorkspaceId ? workspaces.find((workspace) => workspace.id === settingsWorkspaceId) : undefined}
 						section={
 							route.view === "settings"
@@ -5197,11 +5333,7 @@ export function App(
 									if (wasOpen && !openNext?.()) goBack();
 									patch(s.id, { archived: true, archivedReason: "manual" });
 									try {
-										const { stoppedRun } = await archiveSessionApi(s.id, true);
-										showArchivedToast(
-											[s],
-											stoppedRun ? "stopped the running turn" : undefined,
-										);
+										await archiveSessionApi(s.id, true);
 										rememberArchived([s.id]);
 									} catch (e) {
 										console.error("Archive failed:", e);
@@ -5229,15 +5361,8 @@ export function App(
 										patch(session.id, { archived: true, archivedReason: "manual" });
 									}
 									try {
-										const results = await Promise.all(
+										await Promise.all(
 											sessions.map((c) => archiveSessionApi(c.id, true)),
-										);
-										const stopped = results.filter((r) => r.stoppedRun).length;
-										showArchivedToast(
-											sessions,
-											stopped > 0
-												? `stopped ${stopped} running turn${stopped === 1 ? "" : "s"}`
-												: undefined,
 										);
 										// One entry for the whole row, so ⌘Z brings the
 										// workspace back in a single press.
@@ -5284,7 +5409,7 @@ export function App(
 					</div>
 
 					<div className={WORKSPACE_SHELL}>
-						<main className={DETAIL_PANE} ref={detailPaneRef}>
+						<main className={DETAIL_PANE} ref={captureDetailPane}>
 						{/* WCO back/forward fallback: the primary cluster lives in the
 						    sidebar's top chrome row, which vanishes when the sidebar is
 						    collapsed — this floating copy shows only then (CSS-gated). */}

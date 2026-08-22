@@ -71,10 +71,11 @@ export function mineStatus(s: UnifiedSession): MineStatus {
 	// moment the question is answered / the run recovers), so it doesn't stomp the
 	// manual pin permanently — it just floats above it while live.
 	if (s.waitingForInput || runNeedsAttention(s)) return "needsinput";
-	// A human-pinned lane wins over the live run state below.
+	// Live execution is authoritative. A pinned lane parks idle work; it must
+	// never leave a visibly working chat filed under Backlog or another stage.
+	if (s.isRunning) return "inprogress";
 	const lane = pinnedLane(s);
 	if (lane) return lane;
-	if (s.isRunning) return "inprogress";
 	// Everything else is idle. A single session knows nothing about the PR
 	// lifecycle — the workspace row reads that across its sessions
 	// (prLaneForSessions), because a session that shipped one feature as three

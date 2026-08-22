@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useShortcutLabel } from "../hooks/useShortcutBindings";
-import { motion, Reorder, useReducedMotion } from "motion/react";
+import { Reorder, useReducedMotion } from "motion/react";
 import type { UnifiedSession } from "../lib/types";
 import { TAB_COLORS, colorHex } from "../lib/tab-colors";
 import { hasDraft, onDraftsChanged } from "../lib/drafts";
@@ -43,8 +43,7 @@ import {
 import { cn } from "../ui/cn";
 import {
 	animateEmptyTabClose,
-	EMPTY_TAB_COLLAPSED_WIDTH,
-	emptyTabTransition,
+	animateEmptyTabOpen,
 } from "./session-tabs/empty-tab-morph";
 import { useTabReorder } from "./session-tabs/useTabReorder";
 
@@ -71,6 +70,13 @@ import { useTabReorder } from "./session-tabs/useTabReorder";
  * A non-session pane (Review, …) surfaced in the strip. It starts after the session
  * tabs and is draggable from there like any session tab.
  */
+export type NewTabMorphOrigin = {
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+};
+
 export type ViewTab = {
 	/** Stable id, e.g. `review:<sessionId>`. */
 	id: string;
@@ -159,9 +165,16 @@ interface Props {
 	 * (the + button's plain-click default), stack = new worktree branched off it,
 	 * ask = no worktree.
 	 */
-	onNewSession?: (mode: "share" | "stack" | "ask") => void;
+	onNewSession?: (
+		mode: "share" | "stack" | "ask",
+		origin?: NewTabMorphOrigin,
+	) => void;
 	/** The workspace's reusable empty tab, which morphs from and back into +. */
 	emptySessionId?: string | null;
+	/** Client-minted tab id available in the same optimistic render as the click. */
+	morphingSessionId?: string | null;
+	/** Pointer control rectangle that the opening tab grows from. */
+	morphOrigin?: NewTabMorphOrigin | null;
 	/** Rename a session (double-click the title); empty title resets it. */
 	onRename: (id: string, title: string) => void;
 	/** Close (archive) a session — the × revealed on hover. */
@@ -181,12 +194,9 @@ type TabMember =
 function TabTitle({
 	children,
 	onDoubleClick,
-	reserveClose = true,
 }: {
 	children: React.ReactNode;
 	onDoubleClick?: React.MouseEventHandler<HTMLSpanElement>;
-	/** Keep the tab width stable while its close control changes visibility. */
-	reserveClose?: boolean;
 }) {
 	const ref = useRef<HTMLSpanElement>(null);
 	useEffect(() => {
@@ -201,11 +211,7 @@ function TabTitle({
 	}, [children]);
 
 	return (
-		<span
-			ref={ref}
-			className={cn(TAB_TITLE, reserveClose && "desktop:mr-3.5")}
-			onDoubleClick={onDoubleClick}
-		>
+		<span ref={ref} className={TAB_TITLE} onDoubleClick={onDoubleClick}>
 			{children}
 		</span>
 	);
@@ -232,6 +238,8 @@ export function SessionTabs({
 	onCloseView,
 	onNewSession,
 	emptySessionId,
+	morphingSessionId,
+	morphOrigin,
 	onRename,
 	onClose,
 	onRestore,
@@ -242,15 +250,6 @@ export function SessionTabs({
 	const reducedMotion = useReducedMotion();
 	const [editKey, setEditKey] = useState<string | null>(null);
 	const [draft, setDraft] = useState("");
-	const [animateNextEmpty, setAnimateNextEmpty] = useState(false);
-	useEffect(() => {
-		if (!animateNextEmpty) return;
-		const timer = setTimeout(
-			() => setAnimateNextEmpty(false),
-			emptySessionId ? emptyTabTransition.duration * 1000 + 40 : 1000,
-		);
-		return () => clearTimeout(timer);
-	}, [animateNextEmpty, emptySessionId]);
 	// Re-render when a composer draft appears/disappears — tabs check hasDraft()
 	// during render to show the unsent-draft pencil on sibling sessions.
 	const [, setDraftsRev] = useState(0);
@@ -379,9 +378,20 @@ export function SessionTabs({
 						className={cn(TAB_NEW, "relative z-[1]")}
 						aria-label="New session in this workspace"
 						title="New session. Shares this workspace's worktree (right-click for options)"
-						onClick={() => {
-							setAnimateNextEmpty(!reducedMotion && !isPhone);
-							onNewSession("share");
+						onClick={(event) => {
+							const animate = event.detail > 0 && !reducedMotion && !isPhone;
+							const rect = animate ? event.currentTarget.getBoundingClientRect() : null;
+							onNewSession(
+								"share",
+								rect
+									? {
+											left: rect.left,
+											top: rect.top,
+											width: rect.width,
+											height: rect.height,
+										}
+									: undefined,
+							);
 						}}
 					/>
 				}
@@ -457,11 +467,7 @@ export function SessionTabs({
 										onClick={() => onSelectView(v.id)}
 										title={v.label}
 									>
-										{/* Review's PR dot can change when another session tab becomes current.
-										    Keep its slot so that status update never shifts the tab row. */}
-										{(v.dotClass || v.id.startsWith("review:")) && (
-											<span className={`${PANEL_TAB_DOT} ${v.dotClass ?? "invisible"}`} />
-										)}
+										{v.dotClass && <span className={`${PANEL_TAB_DOT} ${v.dotClass}`} />}
 										{v.icon ? (
 											<span
 												className={cn(TAB_VICON, v.closable !== false && "desktop:mr-3.5")}
@@ -470,12 +476,12 @@ export function SessionTabs({
 												{v.icon}
 											</span>
 										) : (
-											<TabTitle reserveClose={v.closable !== false}>{v.label}</TabTitle>
+											<TabTitle>{v.label}</TabTitle>
 										)}
 										{v.closable !== false && (
 											<button
 												type="button"
-												className={tabCloseClass(isPhone, v.active)}
+												className={tabCloseClass(isPhone)}
 												aria-label={`Close ${v.label}`}
 												title={`Close ${v.label}`}
 												onClick={(e) => {
@@ -494,7 +500,8 @@ export function SessionTabs({
 						const waiting = !!session.waitingForInput;
 						const hex = colorHex(colors[key]);
 						const empty = key === emptySessionId;
-						const openingEmpty = empty && animateNextEmpty;
+						const openingEmpty = key === morphingSessionId && !!morphOrigin;
+						const emptyVisual = empty || openingEmpty;
 
 						const titleContent =
 							editKey === key ? (
@@ -514,7 +521,6 @@ export function SessionTabs({
 								/>
 							) : (
 								<TabTitle
-									reserveClose
 									onDoubleClick={(e) => {
 										e.stopPropagation();
 										setDraft(session.title);
@@ -529,23 +535,28 @@ export function SessionTabs({
 								<ContextMenu.Root>
 									<ContextMenu.Trigger
 										render={
-											<motion.div
+											<div
+												ref={(node) => {
+													if (!openingEmpty || !node || !morphOrigin) return;
+													animateEmptyTabOpen(node, morphOrigin);
+												}}
 												role="tab"
 												aria-selected={key === activeId}
-												className={`group/tab ${tabClass({
-													active: key === activeId,
-													waiting,
-													colored: !!hex,
-												})}`}
+												className={cn(
+													"group/tab",
+													tabClass({
+														active: key === activeId,
+														waiting,
+														colored: !!hex,
+													}),
+													emptyVisual && "desktop:pr-7",
+												)}
 												style={{
 													...(hex ? { "--tab-color": hex } : {}),
-													...(empty ? { overflow: "hidden" } : {}),
+													...(emptyVisual
+														? { overflow: "hidden", transition: "none" }
+														: {}),
 												} as React.CSSProperties}
-												initial={
-													openingEmpty ? { width: EMPTY_TAB_COLLAPSED_WIDTH } : false
-												}
-												animate={empty ? { width: "auto" } : undefined}
-												transition={emptyTabTransition}
 												onClick={() => onSelect(session)}
 												title={session.title}
 											/>
@@ -556,15 +567,13 @@ export function SessionTabs({
 										) : (
 											session.isRunning && <span className={tabDotClass(false)} />
 										)}
-										{empty ? (
-											<motion.span
+										{emptyVisual ? (
+											<span
 												className="inline-flex min-w-0"
-												initial={openingEmpty ? { opacity: 0, filter: "blur(4px)" } : false}
-												animate={{ opacity: 1, filter: "blur(0px)" }}
-												transition={emptyTabTransition}
+												data-empty-tab-title=""
 											>
 												{titleContent}
-											</motion.span>
+											</span>
 										) : (
 											titleContent
 										)}
@@ -606,7 +615,12 @@ export function SessionTabs({
 										)}
 										<button
 											type="button"
-											className={tabCloseClass(isPhone, key === activeId)}
+											className={tabCloseClass(isPhone)}
+											style={
+												emptyVisual && !isPhone
+													? { opacity: 1, pointerEvents: "auto" }
+													: undefined
+											}
 											aria-label="Close session"
 											title="Close session"
 											onClick={(e) => {
@@ -615,15 +629,10 @@ export function SessionTabs({
 												else onClose(session);
 											}}
 										>
-											{empty ? (
-												<motion.span
-													className="inline-flex"
-													initial={openingEmpty ? { rotate: 45, scale: 1.25 } : false}
-													animate={{ rotate: 0, scale: 1 }}
-													transition={emptyTabTransition}
-												>
+											{emptyVisual ? (
+												<span className="inline-flex" data-empty-tab-glyph="">
 													<IconX size={16} dense aria-hidden="true" />
-												</motion.span>
+												</span>
 											) : (
 												<IconX size={16} dense aria-hidden="true" />
 											)}

@@ -1,20 +1,21 @@
 /**
  * Screen-level notification lanes.
  *
- * Live status stays near the app header. Desktop toast receipts sit above the
- * composer; phone receipts sit below the top bar and any docked tab strip.
- * Persistent prompts use the bottom-left desktop shelf; their phone equivalents
- * belong in the app header so they remain visible without covering controls.
+ * Live status stays near the app header. Toast receipts sit above the composer
+ * at every width. Persistent prompts use the bottom-left desktop shelf; their
+ * phone equivalents belong in the app header so they remain visible without
+ * covering controls.
  */
 export const TRANSIENT_NOTICE_LANE =
 	"pointer-events-none fixed right-4 top-[calc(var(--desktop-header-h)+8px)] z-[200] " +
 	"phone:inset-x-0 phone:right-0 phone:px-3 phone:top-[calc(var(--header-h)+8px)]";
 
 export const TOAST_NOTICE_LANE =
-	"pointer-events-none fixed inset-x-0 bottom-[124px] z-[200] " +
-	"phone:top-[calc(var(--header-h)+8px)] phone:bottom-auto " +
-	"phone:[body:has(.session-tab-view)_&]:top-[calc(var(--header-h)+54px)] " +
-	"phone:[body:has(.session-tab-reorder~.session-tab-reorder)_&]:top-[calc(var(--header-h)+54px)]";
+	"pointer-events-none inset-x-0 bottom-[124px] z-[200]";
+
+/** Live phone status clears the fixed header and an optional docked tab strip. */
+export const ONGOING_TOAST_POSITION =
+	"phone:fixed phone:top-[calc(var(--pane-header-h)+var(--strip-clearance,0px)+8px)] phone:bottom-auto";
 
 export const PERSISTENT_NOTICE_SHELF =
 	"pointer-events-none fixed bottom-2 left-2 z-[9500] flex w-fit " +

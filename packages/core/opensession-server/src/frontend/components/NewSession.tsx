@@ -34,6 +34,7 @@ import { isApple } from "../lib/platform";
 import { AUTO_REPO, NO_REPO } from "../lib/session-repo";
 import { getDefaultRepoPref, setDefaultRepoPref } from "../lib/default-repo-pref";
 import { repoSelectionHint, toggleRepoSelection } from "../lib/repo-selection";
+import { fallbackBranchName } from "../lib/workspace-draft";
 import {
   NewSessionPrompt,
   type NewSessionPromptHandle,
@@ -134,6 +135,7 @@ export interface NewSessionCreateDraft {
   workspaceId?: string;
   model?: string;
   images?: string[];
+  files?: FileAttachment[];
   /** Open the optimistic session as soon as the create message is sent. */
   openImmediately?: boolean;
   /** Start the session without following it. */
@@ -463,18 +465,6 @@ function draftParkInFlight(text: string, workspaceId?: string): boolean {
   );
 }
 
-/** Fallback branch name from the prompt when Haiku's auto-suggest hasn't landed. */
-function slugifyBranch(text: string): string {
-  const slug = text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .split("-")
-    .slice(0, 6)
-    .join("-");
-  return slug || "new-session";
-}
-
 export function NewSession({ onBack, inline, focusSeq, send, addHandler, connected, prefillPrompt, initialMcpServers, forceMode, workspaceId, modelWorkspaceId, forceRepo, forceBranch, onCreateStarted }: Props) {
   const [prefill] = useState(readPrefill);
   // What the session may do, and nothing else — the footer's Ask toggle. The
@@ -628,7 +618,8 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
   const [newBranch, setNewBranch] = useState(prefill.branch);
   // An explicit prefill (Home hand-off, deep link) wins; otherwise restore the
   // stored draft so closing the palette / navigating away doesn't lose a
-  // half-written task. Cleared on session_created.
+  // half-written task. A default create clears it as soon as the send is
+  // accepted; App restores the submitted copy if creation fails.
   //
   // The draft itself belongs to NewSessionPrompt rather than to this component,
   // because typing must not re-render the palette around it. What stays here is
@@ -1193,9 +1184,9 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
     // answer. Start a fresh branch in the fallback repo instead of reusing it.
     const branch =
       createRepo === AUTO_REPO
-        ? slugifyBranch(prompt)
+        ? fallbackBranchName(prompt)
         : selectedWorktree === "__new__"
-          ? newBranch.trim() || slugifyBranch(prompt)
+          ? newBranch.trim() || fallbackBranchName(prompt)
           : selectedWorktree;
     const attachRepos =
       repo === AUTO_REPO
@@ -1218,6 +1209,10 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
           ? "stack"
           : "share";
     const clientSessionId = newClientSessionId();
+    // The server applies `defaultModel` when no personal override is sent. Carry
+    // that known choice into the optimistic shell so the phone title bar does
+    // not wait for its own catalog fetch before naming the model.
+    const optimisticModel = model || defaultModel;
     const optimisticCreate: NewSessionCreateDraft = {
       id: clientSessionId,
       prompt,
@@ -1231,8 +1226,9 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
           : createRepo,
       branch: createMode === "code" ? branch : null,
       ...(workspaceId ? { workspaceId } : {}),
-      ...(model ? { model } : {}),
+      ...(optimisticModel ? { model: optimisticModel } : {}),
       ...(images.length ? { images } : {}),
+      ...(files.length ? { files } : {}),
       // The default action opens against this deterministic id without waiting
       // for workspace or model setup. The other actions keep their own surface.
       ...(createAction === "open" ? { openImmediately: true } : {}),
@@ -1280,12 +1276,14 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
       send(createMessage);
       consumePendingDraftParks(prompt, workspaceId);
       if (createAction === "open") {
-        // App opens the optimistic session immediately, which unmounts this
-        // field before its success handler can cancel the debounced write.
-        // Park the exact text synchronously so an error can restore it, then
-        // App clears it once session_created confirms the create.
+        // The send was accepted. Consume the global composer now, before App
+        // opens the optimistic session, so reopening it during workspace setup
+        // starts on the next message rather than the one already queued.
+        // App owns the submitted copy and restores it if creation fails.
         promptHandle.current?.dropPendingDraftWrite();
-        saveDraft(DRAFT_KEY, { text: prompt });
+        dropStagingAttachments(DRAFT_KEY);
+        clearDraft(DRAFT_KEY);
+        promptHandle.current?.setText("");
       }
       onCreateStarted?.(optimisticCreate);
     } catch (error) {
@@ -2108,20 +2106,25 @@ export function NewSession({ onBack, inline, focusSeq, send, addHandler, connect
         data-global-file-composer="new-session"
         variant="palette"
         widthClassName="w-[min(820px,100%)] phone:w-full"
-        viewportClassName="phone:items-end phone:px-0 phone:pb-0 phone:pt-3"
+        // The bottom pad is the keyboard's own height (lib/keyboard-inset).
+        // The sheet is anchored to the bottom of the LAYOUT viewport, which iOS
+        // does not shrink for the keyboard, so without it the composer sits
+        // behind the keys and the page has to be panned to reach it. It is 0px
+        // wherever nothing covers the window.
+        viewportClassName="phone:items-end phone:px-0 phone:pb-[var(--kb-inset,0px)] phone:pt-3"
         className={cn(
           // A phone sheet carries a rounder top corner than the floating
           // palette does: it meets the screen's own edge on three sides, so the
           // two corners it keeps are the whole of its shape.
           //
-          // The keyboard cap is what keeps the title bar on screen. The sheet
-          // is anchored to the bottom of the LAYOUT viewport and grows upward,
-          // and `dvh` does not shrink for the keyboard, so a tall enough sheet
-          // (a prompt carrying an image) ran off the top of the screen and took
+          // The keyboard cap is what keeps the title bar on screen: a tall
+          // enough sheet (a prompt carrying an image) ran off the top and took
           // dismiss and send with it. 43dvh fits the strip left above an iPhone
-          // keyboard and its suggestion bar; past that the prompt scrolls,
+          // keyboard and its suggestion bar, and the 100% holds the sheet
+          // inside that strip on a client whose keyboard is taller than the
+          // one 43dvh was measured against. Past the cap the prompt scrolls,
           // which is what its scroller is for.
-          "max-h-[calc(89dvh-1rem)] phone:max-h-[calc(100dvh-12px)] phone:[body.kb-open_&]:max-h-[43dvh] phone:rounded-t-[calc(28px*var(--rf))] phone:rounded-b-none phone:[&_textarea]:min-h-[160px] phone:[&_textarea]:text-input-phone",
+          "max-h-[calc(89dvh-1rem)] phone:max-h-[calc(100dvh-12px)] phone:[body.kb-open_&]:max-h-[min(43dvh,100%)] phone:rounded-t-[calc(28px*var(--rf))] phone:rounded-b-none phone:[&_textarea]:min-h-[160px] phone:[&_textarea]:text-input-phone",
           ASK_SURFACE,
           mode === "ask" && "before:opacity-100 after:opacity-100",
         )}

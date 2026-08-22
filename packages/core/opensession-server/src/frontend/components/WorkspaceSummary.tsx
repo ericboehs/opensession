@@ -3,6 +3,7 @@ import {
 	cancelPrReviewApi,
 	setSessionReviewerApi,
 	sessionAssetPreviewUrl,
+	triggerPrActionApi,
 } from "../lib/api";
 import {
 	useSessionAssetsResource,
@@ -123,8 +124,12 @@ interface Props {
 	/** Open another layer of the stack on its own PR page. */
 	onOpenStackPr?: (repo: string, branch: string) => void;
 	onOpenChecks: () => void;
-	/** Open the Assets tab (the Assets list's destination). */
+	/** Preview one asset over the session without leaving the summary. */
+	onOpenAsset?: (path: string) => void;
+	/** Open the full Assets tab (the Assets list's deliberate destination). */
 	onOpenAssets?: () => void;
+	/** Open the live Auto-fix session created from a review finding. */
+	onOpenSession?: (id: string, created?: UnifiedSession | null) => void;
 	/** Archive through the owning viewer, so it can select the neighbouring
 	 *  sidebar row. Offered by the PR block once the work has landed. */
 	onArchive?: () => void;
@@ -344,36 +349,18 @@ export function WorkspaceSummary({
 		localStorage.setItem(WS_SUMMARY_OPEN_KEY, String(nextOpen));
 		window.dispatchEvent(new Event(WS_SUMMARY_OPEN_EVENT));
 	}
-	useEffect(() => {
-		if (!open) return;
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key !== "Escape" || event.defaultPrevented) return;
-			// A menu or modal opened from the summary owns the first Escape. Capture
-			// otherwise lets the card close before the composer can treat the same key
-			// as a request to stop a running turn.
-			if (
-				document.querySelector(
-					'.app-menu-popup, [role="dialog"][aria-modal="true"]:not([hidden])',
-				)
-			)
-				return;
-			event.preventDefault();
-			event.stopPropagation();
-			changeOpen(false);
-		};
-		window.addEventListener("keydown", onKeyDown, true);
-		return () => window.removeEventListener("keydown", onKeyDown, true);
-	}, [open, canStand]);
 	return (
 		<Popover.Root
 			open={open}
 			onOpenChange={(nextOpen, details) => {
 				// This is a pinned workspace view, not a transient menu. Keep it open
 				// while the person works elsewhere in the pane or changes workspace.
+				// Escape belongs to the surface behind the card, never to the card itself.
 				if (
 					!nextOpen &&
-					canStand &&
-					(details.reason === "outside-press" || details.reason === "focus-out")
+					(details.reason === "escape-key" ||
+						(canStand &&
+							(details.reason === "outside-press" || details.reason === "focus-out")))
 				)
 					return;
 				changeOpen(nextOpen);
@@ -403,7 +390,9 @@ export function WorkspaceSummary({
 				// ancestor moves the card and the chat edge in the same layout pass.
 				portalContainer={anchor}
 				positionMethod="absolute"
-				positionerClassName="z-[5000]"
+				// The summary is deliberately the top workspace layer. It stays above
+				// sticky diff headers, review controls and the side-panel overlay.
+				positionerClassName="z-[2147483647]"
 				// Pull past the header action row's 16px inset to leave a consistent
 				// 12px edge gutter. Its quiet shadow does not need more clearance.
 				alignOffset={-4}
@@ -445,7 +434,9 @@ export function WorkspaceSummaryBody({
 	onOpenPr,
 	onOpenStackPr,
 	onOpenChecks,
+	onOpenAsset,
 	onOpenAssets,
+	onOpenSession,
 	onArchive,
 	reviewRequest,
 	prReviewRequested,
@@ -504,6 +495,8 @@ export function WorkspaceSummaryBody({
 	const [reviewError, setReviewError] = useState<string | null>(null);
 	const [reviewBusy, setReviewBusy] = useState(false);
 	const [reviewCancelling, setReviewCancelling] = useState(false);
+	const [fixBusy, setFixBusy] = useState(false);
+	const [fixError, setFixError] = useState<string | null>(null);
 	useEffect(() => {
 		setSelectedReview(reviewRequest ?? null);
 		setReviewError(null);
@@ -519,6 +512,16 @@ export function WorkspaceSummaryBody({
 	function go(open?: () => void) {
 		close();
 		open?.();
+	}
+
+	/** Lift one file over the session. The full Assets tab is a deliberate
+	 *  follow-up from that preview, not the thumbnail's default destination. */
+	function openAsset(path: string) {
+		if (onOpenAsset) {
+			onOpenAsset(path);
+			return;
+		}
+		go(onOpenAssets);
 	}
 
 	function askCommit() {
@@ -542,6 +545,11 @@ export function WorkspaceSummaryBody({
 	const osReview = pr?.osReview;
 	const osReviewActive = Boolean(pr?.reviewActive);
 	const showOsReview = osReviewActive || Boolean(osReview);
+	const canFixOsReview =
+		pr?.state === "OPEN" &&
+		Boolean(osReview) &&
+		!osReview?.stale &&
+		Boolean(osReview?.findings);
 	let osReviewState = "Not reviewed yet";
 	if (osReviewActive) osReviewState = "Reviewing…";
 	else if (pr?.state === "MERGED") osReviewState = "Merged";
@@ -608,6 +616,28 @@ export function WorkspaceSummaryBody({
 		}
 	}
 
+	async function fixOsReview() {
+		if (!canFixOsReview || fixBusy) return;
+		setFixBusy(true);
+		setFixError(null);
+		try {
+			const result = await triggerPrActionApi(
+				session.id,
+				"autofix",
+				getCurrentUser(),
+				session.repo || undefined,
+			);
+			if (!result.ok) throw new Error(result.error || result.message || "Couldn't start");
+			if (result.openSession && result.bksId && onOpenSession) {
+				go(() => onOpenSession(result.bksId!, result.session ?? null));
+			}
+		} catch (error: any) {
+			setFixError(error?.message || "Couldn't start Auto-fix");
+		} finally {
+			setFixBusy(false);
+		}
+	}
+
 	function pickReviewer(name: string | null, recipients?: string[]) {
 		if (reviewBusy) return;
 		const previous = selectedReview;
@@ -630,135 +660,142 @@ export function WorkspaceSummaryBody({
 			.finally(() => setReviewBusy(false));
 	}
 
+	const groupClass = embedded
+		? "flex flex-col overflow-hidden rounded-2xl bg-raised py-2 empty:hidden"
+		: "contents";
+	const prGroupClass = embedded
+		? cn(
+				groupClass,
+				"py-0 [&_.ws-summary-band]:mx-0 [&_.ws-summary-band]:mb-0 [&_.ws-summary-band]:px-2 [&_.ws-summary-band]:py-3 [&_.ws-summary-band]:[border-radius:inherit]",
+			)
+		: groupClass;
+
 	return (
 		<div
 			className={
 				embedded
-					? "flex flex-col [&_button]:min-h-11 [&_a]:min-h-11"
+					? "flex flex-col gap-2.5 [&_button]:min-h-11 [&_a]:min-h-11"
 					: "contents"
 			}
 		>
-			{/* Which PR, where it stands, and the one thing to do about it. The
-			    strip owns all three; this card only says where they go. */}
-			<PrStatusBar
-				variant="summary"
-				sessionId={session.id}
-				repo={session.repo || undefined}
-				archived={session.archived}
-				prs={session.prs}
-				send={send}
-				running={running}
-				refreshTick={refreshTick}
-				onOpenPrTab={() => go(onOpenPr)}
-				onOpenStackPr={
-					onOpenStackPr
-						? (repo, branch) => go(() => onOpenStackPr(repo, branch))
-						: undefined
-				}
-				onOpenChecksTab={() => go(onOpenChecks)}
-				onArchive={onArchive ? () => go(onArchive) : undefined}
-			>
-				{/* The preview belongs to the same conditional section as its PR. */}
-				<StagingLink
-					session={session}
+			<div className={prGroupClass}>
+				{/* Which PR, where it stands, and the one thing to do about it. The
+				    strip owns all three; this card only says where they go. */}
+				<PrStatusBar
 					variant="summary"
+					sessionId={session.id}
+					repo={session.repo || undefined}
+					archived={session.archived}
+					prs={session.prs}
+					send={send}
+					running={running}
 					refreshTick={refreshTick}
-				/>
-			</PrStatusBar>
-
-			{/* One review section for both the automated reading and the people asked
-			    to review. The final row owns the picker, so adding or changing a
-			    reviewer never requires opening the workspace panel. */}
-			<div className={WS_SUMMARY_SECTION}>Review</div>
-			{showOsReview && (
-				<button
-					className={cn(
-						WS_SUMMARY_ROW,
-						"disabled:cursor-default disabled:opacity-70",
-					)}
-					onClick={
-						osReviewActive
-							? () => void cancelOsReview()
-							: () => go(() => onOpenPanelTab("info"))
+					onOpenPrTab={() => go(onOpenPr)}
+					onOpenStackPr={
+						onOpenStackPr
+							? (repo, branch) => go(() => onOpenStackPr(repo, branch))
+							: undefined
 					}
-					disabled={reviewCancelling}
-					aria-label={
-						osReviewActive ? `Cancel ${AGENT_NAME} review` : undefined
-					}
-					title={`${AGENT_NAME}${osScore ? ` · ${osScore}/5` : ""} · ${
-						reviewCancelling ? "Cancelling…" : osReviewState
-					}`}
+					onOpenChecksTab={() => go(onOpenChecks)}
+					onArchive={onArchive ? () => go(onArchive) : undefined}
 				>
-					<span className={WS_SUMMARY_RAIL}>
-						<IconRobot
-							size={20}
-							className={cn(WS_SUMMARY_ICON, osReviewActive && "animate-pulse")}
-						/>
-					</span>
-					<span className={WS_SUMMARY_LABEL}>
-						{AGENT_NAME}
-						{osReviewActive ? (
-							<>
-								<span className="text-faint"> · </span>
-								<span className="text-dim">
-									{reviewCancelling ? "Cancelling…" : "Reviewing…"}
-								</span>
-							</>
-						) : osScore ? (
-							<>
-								<span className="text-faint"> · </span>
-								<span className={cn("tabular-nums", osScoreTone)}>{osScore}/5</span>
-							</>
-						) : null}
-					</span>
-					{osReviewActive ? (
-						<span className={WS_SUMMARY_ACTION}>
-							{reviewCancelling ? "Stopping" : "Cancel"}
-						</span>
-					) : (
-						<span
+					{/* The preview belongs to the same conditional section as its PR. */}
+					<StagingLink
+						session={session}
+						variant="summary"
+						refreshTick={refreshTick}
+					/>
+				</PrStatusBar>
+			</div>
+
+			<div className={groupClass}>
+				{/* One review section for both the automated reading and the people asked
+				    to review. The final row owns the picker, so adding or changing a
+				    reviewer never requires opening the workspace panel. */}
+				<div className={WS_SUMMARY_SECTION}>Review</div>
+				{showOsReview && (
+					<>
+						<button
 							className={cn(
-								WS_SUMMARY_STATE,
-								osReview?.stale
-									? "text-faint"
-									: osReview?.blocking
-										? "text-red"
-										: "text-dim",
+								WS_SUMMARY_ROW,
+								"disabled:cursor-default disabled:opacity-70",
 							)}
+							onClick={
+								osReviewActive
+									? () => void cancelOsReview()
+									: canFixOsReview
+										? () => void fixOsReview()
+										: () => go(() => onOpenPanelTab("info"))
+							}
+							disabled={reviewCancelling || fixBusy}
+							aria-label={
+								osReviewActive
+									? `Cancel ${AGENT_NAME} review`
+									: canFixOsReview
+										? `Fix ${AGENT_NAME} review findings`
+										: undefined
+							}
+							title={`${AGENT_NAME}${osScore ? ` · ${osScore}/5` : ""} · ${
+								reviewCancelling ? "Cancelling…" : osReviewState
+							}`}
 						>
-							{osReviewState}
-						</span>
-					)}
-				</button>
-			)}
-			{otherReviewers.map((reviewer) => (
-				<button
-					key={reviewer.key}
-					className={WS_SUMMARY_ROW}
-					onClick={() => go(onOpenPr)}
-					title={`${reviewer.name} · ${reviewer.state}`}
-				>
-					<span className={WS_SUMMARY_RAIL}>
-						<UserAvatar
-							name={reviewer.name}
-							login={reviewer.login}
-							size={16}
-							edge={false}
-						/>
-					</span>
-					<span className={WS_SUMMARY_LABEL}>{reviewer.name}</span>
-					<span className={cn(WS_SUMMARY_STATE, reviewer.tone)}>
-						{reviewer.state}
-					</span>
-				</button>
-			))}
-
-			{humanReviewers.length > 0 &&
-				humanReviewers.map((reviewer) => (
+							<span className={WS_SUMMARY_RAIL}>
+								<IconRobot
+									size={20}
+									className={cn(WS_SUMMARY_ICON, osReviewActive && "animate-pulse")}
+								/>
+							</span>
+							<span className={WS_SUMMARY_LABEL}>
+								{AGENT_NAME}
+								{osReviewActive ? (
+									<>
+										<span className="text-faint"> · </span>
+										<span className="text-dim">
+											{reviewCancelling ? "Cancelling…" : "Reviewing…"}
+										</span>
+									</>
+								) : osScore ? (
+									<>
+										<span className="text-faint"> · </span>
+										<span className={cn("tabular-nums", osScoreTone)}>{osScore}/5</span>
+									</>
+								) : null}
+							</span>
+							{osReviewActive ? (
+								<span className={WS_SUMMARY_ACTION}>
+									{reviewCancelling ? "Stopping" : "Cancel"}
+								</span>
+							) : canFixOsReview ? (
+								<span className={cn(WS_SUMMARY_ACTION, "text-red")}>
+									{fixBusy ? "Starting…" : "Fix"}
+								</span>
+							) : (
+								<span
+									className={cn(
+										WS_SUMMARY_STATE,
+										osReview?.stale
+											? "text-faint"
+											: osReview?.blocking
+												? "text-red"
+												: "text-dim",
+									)}
+								>
+									{osReviewState}
+								</span>
+							)}
+						</button>
+						{fixError && (
+							<div className="px-4 py-1 text-supporting text-red" role="alert">
+								{fixError}
+							</div>
+						)}
+					</>
+				)}
+				{otherReviewers.map((reviewer) => (
 					<button
 						key={reviewer.key}
 						className={WS_SUMMARY_ROW}
-						onClick={() => go(() => onOpenPanelTab("info"))}
+						onClick={() => go(onOpenPr)}
 						title={`${reviewer.name} · ${reviewer.state}`}
 					>
 						<span className={WS_SUMMARY_RAIL}>
@@ -775,51 +812,75 @@ export function WorkspaceSummaryBody({
 						</span>
 					</button>
 				))}
-			{humanReviewers.length === 0 && (
-				<Menu.Root>
-					<Menu.Trigger
-						className={WS_SUMMARY_ROW}
-						disabled={reviewBusy}
-					>
-						<span className={WS_SUMMARY_RAIL}>
-							<IconPeople size={20} className={WS_SUMMARY_ICON} />
-						</span>
-						<span className={WS_SUMMARY_LABEL}>No reviewers</span>
-						<span className={cn(WS_SUMMARY_ACTION, "inline-flex items-center gap-0.5")}>
-							Add
-							<IconChevronDown size={14} />
-						</span>
-					</Menu.Trigger>
-					<Menu.Popup align="end" sideOffset={6} className="min-w-[200px]">
-					{people.map((person) => (
-						<Menu.Item key={person.name} onClick={() => pickReviewer(person.name)}>
-							<UserAvatar name={person.name} size={22} />
-							<span className="min-w-0 flex-1 truncate">{person.name}</span>
-							<Menu.Check on={selectedReview?.to === person.name} size={20} className="text-dim" />
-						</Menu.Item>
-					))}
-					{reviewTeams.length > 0 && <Menu.Separator />}
-					{reviewTeams.map((team) => (
-						<Menu.Item
-							key={team.github}
-							onClick={() => pickReviewer(team.github, team.members)}
+
+				{humanReviewers.length > 0 &&
+					humanReviewers.map((reviewer) => (
+						<button
+							key={reviewer.key}
+							className={WS_SUMMARY_ROW}
+							onClick={() => go(() => onOpenPanelTab("info"))}
+							title={`${reviewer.name} · ${reviewer.state}`}
 						>
-							<span className="grid size-[22px] place-items-center text-dim">
-								<IconStack size={20} />
+							<span className={WS_SUMMARY_RAIL}>
+								<UserAvatar
+									name={reviewer.name}
+									login={reviewer.login}
+									size={16}
+									edge={false}
+								/>
 							</span>
-							<span className="min-w-0 flex-1 truncate">{team.name}</span>
-							<Menu.Check on={selectedReview?.to === team.github} size={20} className="text-dim" />
-						</Menu.Item>
+							<span className={WS_SUMMARY_LABEL}>{reviewer.name}</span>
+							<span className={cn(WS_SUMMARY_STATE, reviewer.tone)}>
+								{reviewer.state}
+							</span>
+						</button>
 					))}
-					</Menu.Popup>
-				</Menu.Root>
-			)}
-			{reviewError && (
-				<div className="px-4 py-1 text-meta font-medium text-red">{reviewError}</div>
-			)}
+				{humanReviewers.length === 0 && (
+					<Menu.Root>
+						<Menu.Trigger
+							className={WS_SUMMARY_ROW}
+							disabled={reviewBusy}
+						>
+							<span className={WS_SUMMARY_RAIL}>
+								<IconPeople size={20} className={WS_SUMMARY_ICON} />
+							</span>
+							<span className={WS_SUMMARY_LABEL}>No reviewers</span>
+							<span className={cn(WS_SUMMARY_ACTION, "inline-flex items-center gap-0.5")}>
+								Add
+								<IconChevronDown size={14} />
+							</span>
+						</Menu.Trigger>
+						<Menu.Popup align="end" sideOffset={6} className="min-w-[200px]">
+						{people.map((person) => (
+							<Menu.Item key={person.name} onClick={() => pickReviewer(person.name)}>
+								<UserAvatar name={person.name} size={22} />
+								<span className="min-w-0 flex-1 truncate">{person.name}</span>
+								<Menu.Check on={selectedReview?.to === person.name} size={20} className="text-dim" />
+							</Menu.Item>
+						))}
+						{reviewTeams.length > 0 && <Menu.Separator />}
+						{reviewTeams.map((team) => (
+							<Menu.Item
+								key={team.github}
+								onClick={() => pickReviewer(team.github, team.members)}
+							>
+								<span className="grid size-[22px] place-items-center text-dim">
+									<IconStack size={20} />
+								</span>
+								<span className="min-w-0 flex-1 truncate">{team.name}</span>
+								<Menu.Check on={selectedReview?.to === team.github} size={20} className="text-dim" />
+							</Menu.Item>
+						))}
+						</Menu.Popup>
+					</Menu.Root>
+				)}
+				{reviewError && (
+					<div className="px-4 py-1 text-meta font-medium text-red">{reviewError}</div>
+				)}
+			</div>
 
 			{(changedFiles > 0 || dirty > 0) && (
-				<>
+				<div className={groupClass}>
 					<div className={WS_SUMMARY_SECTION}>Changes</div>
 					{changedFiles > 0 && (
 						<button
@@ -858,11 +919,11 @@ export function WorkspaceSummaryBody({
 							{!prompted && <span className={WS_SUMMARY_ACTION}>Commit</span>}
 						</button>
 					)}
-				</>
+				</div>
 			)}
 
 			{assets.length > 0 && (
-				<>
+				<div className={groupClass}>
 					<div
 						className={cn(
 							WS_SUMMARY_SECTION,
@@ -884,7 +945,7 @@ export function WorkspaceSummaryBody({
 									// list of quiet rows. It also keeps the two strips the same
 									// size when a card shows both.
 									className={cn(WS_SUMMARY_FRAME, "w-[calc((100%_-_30px)/2)]")}
-									onClick={() => go(onOpenAssets)}
+									onClick={() => openAsset(file.path)}
 									title={file.path}
 								>
 									<span className={WS_SUMMARY_FRAME_MEDIA}>
@@ -934,7 +995,7 @@ export function WorkspaceSummaryBody({
 							<button
 								key={file.path}
 								className={WS_SUMMARY_ROW}
-								onClick={() => go(onOpenAssets)}
+								onClick={() => openAsset(file.path)}
 								title={file.path}
 							>
 								<span className={WS_SUMMARY_RAIL}>
@@ -958,9 +1019,9 @@ export function WorkspaceSummaryBody({
 						))
 					)}
 					{/* Only under the list, where the last row is the only thing that
-					    says the folder ends here. The strip answers it three times over
-					    already: the heading carries the count, the sliver of the next
-					    frame says it scrolls, and any tile opens the Assets tab. */}
+					    says the folder ends here. The strip answers it three times over:
+					    the heading carries the count, the sliver of the next frame says
+					    it scrolls, and each tile previews its file on top. */}
 					{assetView === "list" && assetsHidden > 0 && (
 						<button className={WS_SUMMARY_ROW} onClick={() => go(onOpenAssets)}>
 							<span className={WS_SUMMARY_RAIL} />
@@ -969,7 +1030,7 @@ export function WorkspaceSummaryBody({
 							</span>
 						</button>
 					)}
-				</>
+				</div>
 			)}
 		</div>
 	);

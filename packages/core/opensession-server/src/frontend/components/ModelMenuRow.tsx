@@ -22,6 +22,7 @@ export function ModelMenuRow({
 	accountId,
 	onAccountChange,
 	usage,
+	variant = "menu-row",
 }: {
 	models: ModelOption[];
 	/** Current model id; "" = follow the default. */
@@ -38,13 +39,14 @@ export function ModelMenuRow({
 	accountId: string;
 	onAccountChange: (accountId: string) => void;
 	usage?: SessionUsage;
+	variant?: "menu-row" | "hero";
 }) {
 	const { preferredDefaultModel, setPreferredDefaultModel } =
 		useDefaultModelPreference();
 
 	return (
 		<ModelEffortSelect
-			triggerVariant="menu-row"
+			triggerVariant={variant}
 			title="Model and reasoning effort for this session"
 			models={models}
 			defaultModel={defaultModel}

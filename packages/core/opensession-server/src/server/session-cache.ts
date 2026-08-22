@@ -11,8 +11,14 @@ import {
 	getAllSessions,
 	getAllSessionsAsync,
 	readNativeSession,
+	readNativeSessionListRow,
 	type SessionArchiveSlice,
 } from "./sessions";
+import {
+	indexedSessions,
+	upsertIndexedSession,
+	upsertIndexedSessions,
+} from "./session-list-store";
 import { activeRunRecords } from "./run-journal";
 import {
 	getRunState,
@@ -38,7 +44,14 @@ export const SESSIONS_DIR = OPENSESSION_SESSIONS_DIR;
 
 const g = globalThis as any;
 
-type SessionsCache = { data: UnifiedSession[]; ts: number } | null;
+type SessionsCache = {
+	data: UnifiedSession[];
+	ts: number;
+	/** A process-local write landed after this snapshot. Synchronous readers
+	 * still rebuild immediately; async request paths may serve it briefly while
+	 * one cooperative refresh catches up. */
+	invalidated: boolean;
+} | null;
 const CACHE_SLICES = ["include", "exclude", "only"] as const;
 const sessionsCaches: Record<SessionArchiveSlice, SessionsCache> = {
 	include: null,
@@ -63,11 +76,14 @@ const sessionsCacheGenerations: Record<SessionArchiveSlice, number> = {
 // in-process mutations invalidate this cache immediately.
 const CACHE_TTL = 10_000;
 
-/** Drop the cached list so the next getCachedSessions() re-reads from disk. */
+/** Mark cached lists stale. Synchronous readers still re-read from disk on
+ * their next access. Async request paths retain the last complete snapshot so
+ * a routine session write cannot make unrelated HTTP requests wait for a scan
+ * of every historical session. */
 export function invalidateSessionsCache(): void {
 	for (const slice of CACHE_SLICES) {
 		sessionsCacheGenerations[slice]++;
-		sessionsCaches[slice] = null;
+		if (sessionsCaches[slice]) sessionsCaches[slice]!.invalidated = true;
 	}
 	// The list route caches its serialized response on top of this cache. Mark
 	// those snapshots stale so ordinary slices rebuild on their next request;
@@ -80,10 +96,13 @@ export function invalidateSessionsCache(): void {
 	for (const snapshot of responses?.values() || []) snapshot.expiresAt = 0;
 }
 
-function enrichCachedSessions(
-	slice: SessionArchiveSlice,
-	data: UnifiedSession[],
-): UnifiedSession[] {
+export interface SessionRuntimeSnapshot {
+	runStarts: Map<string, string>;
+	journalBusy: Set<string>;
+}
+
+/** Capture shared run-journal state once for a whole list projection. */
+export function sessionRuntimeSnapshot(): SessionRuntimeSnapshot {
 	// Earliest run-start per session id, from the run journal — feeds the "in
 	// progress" elapsed ticker and survives a page refresh (a session can carry
 	// its bks id and its engine session id across records; key on both).
@@ -98,6 +117,14 @@ function enrichCachedSessions(
 			if (!prev || r.startedAt < prev) runStarts.set(key, r.startedAt);
 		}
 	}
+	return { runStarts, journalBusy };
+}
+
+export function enrichSessionRuntime(
+	data: UnifiedSession[],
+	snapshot = sessionRuntimeSnapshot(),
+): UnifiedSession[] {
+	const { runStarts, journalBusy } = snapshot;
 	// Sessions driven from the web UI run in-process; surface those too
 	for (const s of data) {
 		const rs = getRunState(s.id);
@@ -115,20 +142,32 @@ function enrichCachedSessions(
 			journalBusy.has(s.id) ||
 			(!!s.claudeSessionId && journalBusy.has(s.claudeSessionId)) ||
 			(!!s.codexThreadId && journalBusy.has(s.codexThreadId));
-		if (!s.isRunning && (engineBusy || recoveryBusy || isRunStateUnsettled(rs))) {
-			s.isRunning = true;
-		}
+		// Indexed rows are snapshots and may still carry `isRunning: true` from
+		// an earlier write. Runtime state is authoritative in both directions:
+		// promote a newly active run and demote a finished one so the sidebar can
+		// leave In progress on its next poll.
+		s.isRunning = engineBusy || recoveryBusy || isRunStateUnsettled(rs);
 		if (s.isRunning) {
 			s.runStartedAt =
 				runStarts.get(s.id) ||
 				(s.claudeSessionId ? runStarts.get(s.claudeSessionId) : undefined) ||
 				(s.codexThreadId ? runStarts.get(s.codexThreadId) : undefined);
+		} else {
+			delete s.runStartedAt;
 		}
 		if (rs !== "idle") s.runState = rs;
 		checkRunStateWedge(s.id, rs, liveEngineBusy);
 	}
+	return data;
+}
+
+function enrichCachedSessions(
+	slice: SessionArchiveSlice,
+	data: UnifiedSession[],
+): UnifiedSession[] {
+	enrichSessionRuntime(data);
 	const ts = Date.now();
-	sessionsCaches[slice] = { data, ts };
+	sessionsCaches[slice] = { data, ts, invalidated: false };
 	// An internal/legacy whole-list scan already paid for both halves. Seed the
 	// narrower caches when they are idle so the next UI poll does not rescan the
 	// same files immediately after a background index refresh.
@@ -137,11 +176,13 @@ function enrichCachedSessions(
 			sessionsCaches.exclude = {
 				data: data.filter((session) => !session.archived),
 				ts,
+				invalidated: false,
 			};
 		if (!sessionsRefreshes.only && !sessionsCaches.only)
 			sessionsCaches.only = {
 				data: data.filter((session) => !!session.archived),
 				ts,
+				invalidated: false,
 			};
 	}
 	return data;
@@ -149,9 +190,17 @@ function enrichCachedSessions(
 
 export function getCachedSessions(): UnifiedSession[] {
 	const cached = sessionsCaches.include;
+	// Targeted writes update the authoritative session file and SQLite list row
+	// immediately. Rebuilding the entire materialized list after each one only
+	// turns active-run bookkeeping into continuous 10,000-row deserialization.
+	// Whole-list synchronous consumers may use the last complete snapshot for
+	// this short TTL, matching the async path below; direct session reads remain
+	// current.
 	if (cached && Date.now() - cached.ts < CACHE_TTL) {
 		return cached.data;
 	}
+	const indexed = indexedSessions("include");
+	if (indexed) return enrichCachedSessions("include", indexed);
 	// Supersede any cooperative scan already in flight. Its generation check
 	// prevents the older snapshot from replacing this synchronous result.
 	sessionsCacheGenerations.include++;
@@ -162,32 +211,60 @@ export function getCachedSessions(): UnifiedSession[] {
  * Return the same cache shape as getCachedSessions(), but let request traffic
  * through while thousands of session files are read.
  *
- * One call performs at most one cooperative scan. Session writes can invalidate
- * the cache faster than a 9,000-file scan completes; retrying until a scan sees
- * a completely quiet window turns that ordinary write traffic into a permanent
- * full-core rescan loop. If a write lands mid-scan, publish the completed
- * snapshot when no newer cache won the race. The direct native-session lookup
- * keeps the open conversation fresh, and the next poll repairs list-level
- * staleness without monopolising Bun's event loop.
+ * Once a complete snapshot exists, async request paths use stale-while-refresh:
+ * expiry or process-local invalidation starts one cooperative scan, while the
+ * caller immediately receives the last complete snapshot. This matters because
+ * active runs update session files often, and making every unrelated route join
+ * that refresh turned a background 10,000-file scan into multi-second TTFB.
+ *
+ * One call performs at most one cooperative scan. If a write lands mid-scan,
+ * publish the completed snapshot when no synchronous reader already installed
+ * a newer one. The direct native-session lookup keeps the open conversation
+ * fresh, and the next poll repairs list-level staleness without monopolising
+ * Bun's event loop.
  */
 export async function getCachedSessionsAsync(
 	slice: SessionArchiveSlice = "include",
 ): Promise<UnifiedSession[]> {
 	const cached = sessionsCaches[slice];
-	if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data;
+	// Async callers may serve a complete snapshot through the short TTL even
+	// after a targeted write. The SQLite row and detail endpoint are already
+	// current; invalidation must not turn a burst of writes into a burst of
+	// whole-list deserializations.
+	const needsRefresh = !cached || Date.now() - cached.ts >= CACHE_TTL;
+	if (cached && !needsRefresh) return cached.data;
+	const indexed = indexedSessions(slice);
+	if (indexed) return enrichCachedSessions(slice, indexed);
 
 	if (!sessionsRefreshes[slice]) {
 		const generation = ++sessionsCacheGenerations[slice];
+		const startingCache = sessionsCaches[slice];
 		sessionsRefreshes[slice] = getAllSessionsAsync(slice)
 			.then((data) => {
+				upsertIndexedSessions(data, slice);
 				const current = sessionsCaches[slice];
-				if (sessionsCacheGenerations[slice] === generation || !current)
+				if (
+					sessionsCacheGenerations[slice] === generation ||
+					current === startingCache ||
+					!current
+				)
 					return enrichCachedSessions(slice, data);
 				return current.data;
 			})
 			.finally(() => {
 				sessionsRefreshes[slice] = null;
 			});
+	}
+
+	if (cached) {
+		// Observe failures even though this request deliberately does not wait.
+		void sessionsRefreshes[slice]!.catch((error) =>
+			console.warn(
+				`[session-cache] ${slice} background refresh failed:`,
+				error instanceof Error ? error.message : error,
+			),
+		);
+		return cached.data;
 	}
 	return await sessionsRefreshes[slice];
 }
@@ -353,6 +430,11 @@ export function updateSessionFile(
 		const rev = (current as { rev?: unknown }).rev;
 		(next as { rev?: number }).rev = (typeof rev === "number" ? rev : 0) + 1;
 		writeJsonAtomic(path, next);
+		const indexed = readNativeSessionListRow(sessionId);
+		if (indexed) {
+			enrichSessionRuntime([indexed]);
+			upsertIndexedSession(indexed);
+		}
 		invalidateSessionsCache();
 	});
 }

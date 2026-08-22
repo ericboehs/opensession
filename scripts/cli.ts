@@ -29,6 +29,7 @@ import { findRecipe, installRecipe, installedKeys, listRecipes, removeRecipe } f
 import { plugins } from "./lib/plugins";
 import { connect, installRunnerService, runnerRun, runnerStatus, runnersList, runnersPair, runnersRemove } from "./lib/connect";
 import { sandbox } from "./lib/sandbox";
+import { configuredServerUrl } from "./lib/server-url";
 
 const argv = process.argv.slice(2);
 const command = argv[0] ?? "help";
@@ -125,8 +126,10 @@ async function version(): Promise<number> {
 }
 
 async function start(): Promise<number> {
+  const publicUrl = await configuredServerUrl();
   if (flags.has("--foreground") || flags.has("-f") || !(await service.isInstalled())) {
-    info(dim(`starting in the foreground — ${REPO_ROOT}`));
+    info(dim(`starting in the foreground · ${REPO_ROOT}`));
+    info(`Open ${bold(publicUrl)}`);
     // Compiled binary: re-exec ourselves as the server subcommand (there is no
     // `bun`/opensession.ts on disk). From source: run the entry under bun.
     const command = isCompiledBinary()
@@ -134,7 +137,9 @@ async function start(): Promise<number> {
       : ["bun", "run", "packages/core/opensession-server/opensession.ts"];
     return await runInherit(command, REPO_ROOT);
   }
-  return await service.control("start");
+  const code = await service.control("start");
+  if (code === 0) info(`Open ${bold(publicUrl)}`);
+  return code;
 }
 
 /**

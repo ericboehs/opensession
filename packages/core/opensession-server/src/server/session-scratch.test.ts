@@ -2,7 +2,6 @@ import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildRunInstructions } from "./run-instructions";
 import {
   ensureSessionScratch,
   removeSessionScratch,
@@ -125,14 +124,5 @@ describe("sweepSessionScratch", () => {
     expect(removed).toEqual(["os-dead"]);
     expect(existsSync(keep)).toBe(true);
     expect(existsSync(gone)).toBe(false);
-  });
-});
-
-describe("buildRunInstructions scratch section", () => {
-  it("names the scratch dir when set and omits the section when not", () => {
-    const s = buildRunInstructions({ isAsk: false, scratchDir: "/x/scratch/os-1" });
-    expect(s).toContain("## Session scratch directory");
-    expect(s).toContain("`/x/scratch/os-1`");
-    expect(buildRunInstructions({ isAsk: false })).not.toContain("## Session scratch directory");
   });
 });

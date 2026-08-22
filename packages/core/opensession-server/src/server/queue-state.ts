@@ -570,6 +570,20 @@ export function clientVisibleQueuedCount(sessionId: string): number {
 		.length;
 }
 
+/** One actor snapshot for list rendering, instead of one RPC per session. */
+export function clientVisibleQueuedCounts(): Map<string, number> {
+	const counts = new Map<string, number>();
+	for (const [sessionId, value] of sessionDelivery({
+		op: "entries",
+		slot: "queued",
+	})) {
+		const items = value as QueueItem[];
+		const visible = items.filter((item) => !item.reviewHandoff).length;
+		if (visible) counts.set(sessionId, visible);
+	}
+	return counts;
+}
+
 export function queueDisplayState(sessionId: string) {
 	const queued = queueWithIds(promptQueues.get(sessionId));
 	const steered = queueWithIds(steeredReceipts.get(sessionId));

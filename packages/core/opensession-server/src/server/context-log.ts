@@ -203,7 +203,12 @@ export type StandingContextSource =
 	 *  instructions file or the shared server's per-prompt `system`), which
 	 *  already folds in AGENTS.local.md / CLAUDE.local.md. Written wherever
 	 *  that text is final. */
-	| "instructions";
+	| "instructions"
+	/** The first run's complete effective provider input: Pi's final system
+	 *  prompt after AGENTS.md, skills and tool guidance have been applied, plus
+	 *  the schemas of the active tools. This is the source the session viewer
+	 *  exposes as its collapsed, lazy-loaded "Session context" row. */
+	| "session-start";
 
 export interface StandingContextInput {
 	/** Unified session id. No session ⇒ nothing to log against. */
@@ -213,6 +218,33 @@ export interface StandingContextInput {
 	source: StandingContextSource;
 	/** The full content, recorded verbatim. */
 	content?: string | null;
+}
+
+export interface SessionStartTool {
+	name: string;
+	description: string;
+	parameters: unknown;
+}
+
+/** Build the exact, human-readable snapshot shown at the start of a session.
+ * Kept here beside the writer so the audit record and the UI can never drift
+ * into two reconstructions of what the provider received. */
+export function sessionStartContext(
+	systemPrompt: string,
+	tools: SessionStartTool[],
+): string {
+	return [
+		"# System prompt",
+		systemPrompt,
+		"# Tools",
+		canonicalJson(
+			tools.map((tool) => ({
+				name: tool.name,
+				description: tool.description,
+				parameters: tool.parameters,
+			})),
+		),
+	].join("\n\n");
 }
 
 /**

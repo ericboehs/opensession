@@ -280,7 +280,7 @@ struct PreferencesSettingsView: View {
             Section {
                 Picker("Steps", selection: $turnWork) {
                     Text("Closed").tag("folded")
-                    Text("While running").tag("running")
+                    Text("With updates").tag("running")
                     Text("Open").tag("open")
                 }
                 Picker("Tool calls", selection: $toolCalls) {

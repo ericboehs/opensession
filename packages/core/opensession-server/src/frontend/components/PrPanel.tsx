@@ -4,12 +4,9 @@ import React, {
   useEffect,
   useState,
   useCallback,
-  useId,
   useMemo,
   useRef,
 } from "react";
-import { motion } from "motion/react";
-import { duration, ease } from "../ui/motion";
 import type {
   GitStatusInfo,
   DiffFileGroup,
@@ -599,12 +596,6 @@ export function PrPanel({
   const [headerCompact, setHeaderCompact] = useState(
     () => window.matchMedia("(max-width: 720px)").matches,
   );
-  /* One underline that MOVES between the two tabs rather than a mark that
-     blinks on and off, so the strip says which way the choice went — the same
-     shape (and the same id-per-instance rule) as the Segmented knob. It is
-     minted up here with the other hooks: the render below returns early while
-     the PR loads, and a `useId` past that point is a conditional hook. */
-  const tabUnderlineId = useId();
   const setRoot = useCallback((el: HTMLDivElement | null) => {
     rootRef.current = el;
     setRootEl(el);
@@ -1635,18 +1626,8 @@ export function PrPanel({
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
         <div className={PR_NO_PR_BAR}>
           {targetPicker}
-          <span className="flex min-w-0 items-center gap-1.5 text-label text-dim">
-            <IconBranches size={17} className="shrink-0 text-faint" />
-            <span className="truncate">{branchLabel || "Working changes"}</span>
-          </span>
-          <span className="flex-1" />
-          {linkable && (
-            <LinkPrControl
-              sessionId={sessionId}
-              variant="action"
-              onLinked={handleLinked}
-            />
-          )}
+          {/* The action leads the bar: opening the PR is what this state is
+              for, and the branch beside it only says which one. */}
           {showWorktreeDiff && !!send && (
             <Button
               variant="primary"
@@ -1659,6 +1640,18 @@ export function PrPanel({
               {prRequested ? "Opening…" : "Create PR"}
             </Button>
           )}
+          {linkable && (
+            <LinkPrControl
+              sessionId={sessionId}
+              variant="action"
+              onLinked={handleLinked}
+            />
+          )}
+          <span className="flex min-w-0 items-center gap-1.5 text-label text-dim">
+            <IconBranches size={17} className="shrink-0 text-faint" />
+            <span className="truncate">{branchLabel || "Working changes"}</span>
+          </span>
+          <span className="flex-1" />
         </div>
         {walkthrough && (
           <div className="mx-auto w-full max-w-[760px] px-4 pt-4 sm:px-5">
@@ -1922,19 +1915,11 @@ export function PrPanel({
       key={key}
       role="tab"
       aria-selected={page === key}
-      className={`relative flex h-11 shrink-0 items-center gap-1.5 border-0 bg-transparent px-3 text-control-label font-medium transition-colors ${
+      className={`flex h-10 shrink-0 items-center gap-1.5 border-0 bg-transparent px-3 text-control-label font-medium transition-colors phone:h-11 ${
         page === key ? "text-fg" : "text-dim hover:text-fg"
       }`}
       onClick={() => setPage(key)}
     >
-      {page === key && (
-        <motion.span
-          layoutId={tabUnderlineId}
-          aria-hidden
-          className="absolute inset-x-0 bottom-0 h-0.5 bg-accent"
-          transition={{ type: "tween", duration: duration.base, ease }}
-        />
-      )}
       {label}
       {count !== undefined && (
         <span
@@ -1949,7 +1934,7 @@ export function PrPanel({
   ));
 
   const reviewBar = (
-    <div className="flex h-11 shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden bg-surface px-6 shadow-[inset_0_-1px_0_var(--border)] [scrollbar-width:none] phone:px-2 [&::-webkit-scrollbar]:hidden">
+    <div className="flex h-10 shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden bg-surface px-6 shadow-[inset_0_-1px_0_var(--border)] [scrollbar-width:none] phone:h-11 phone:px-2 [&::-webkit-scrollbar]:hidden">
       <div
         className="flex shrink-0 items-center gap-0.5 self-stretch"
         role="tablist"

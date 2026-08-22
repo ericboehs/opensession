@@ -249,7 +249,7 @@ describe("single session ownership", () => {
 		// The direct host run must use the create dispatch's stable transcript id.
 		// Otherwise every cold recovery mints a new user row for the same prompt.
 		expect(create).toMatch(
-			/runAgent\(\{[\s\S]*?prompt: spec\.openingPrompt,[\s\S]*?promptEntryId: openingPromptEntryId,/,
+			/runAgent\(\{[\s\S]*?prompt: openingPromptForRun,[\s\S]*?promptEntryId: openingPromptEntryId,/,
 		);
 		expect(create).not.toContain("if (requeuePromptDispatch(bksId))");
 		const routes = read("routes/sessions.ts");

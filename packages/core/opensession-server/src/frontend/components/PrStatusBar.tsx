@@ -1074,11 +1074,11 @@ export function PrStatusBar({
 
 	// The summary card: one row for the PR, the way a sidebar row carries its
 	// own subtext. One row for all of it, including the preview deploy, which
-	// leads the row as a second mark rather than taking a line of its own to say
-	// a name the globe already says. Where the work stands is the line that matters, so the
-	// headline leads and the PR number sits under it as secondary. The PR title
-	// is gone: it restates the session title the card already hangs from, and it
-	// cost the card a whole row to do it.
+	// sits beside the primary action instead of taking a line of its own to say a
+	// name the globe already says. Where the work stands is the line that matters,
+	// so the headline leads and the PR number sits under it as secondary. The PR
+	// title is gone: it restates the session title the card already hangs from,
+	// and it cost the card a whole row to do it.
 	//
 	// The row is a div holding two targets rather than one row-wide button,
 	// which is the card's only departure from "the whole row is the target". It
@@ -1090,7 +1090,7 @@ export function PrStatusBar({
 		// wrapper would drop the focus ring with the box.
 		const labelClass = cn(
 			WS_SUMMARY_LABEL,
-			"group/prsum cursor-pointer rounded-sm border-none bg-transparent p-0 text-left focus-ring",
+			"group/prsum cursor-pointer rounded-sm border-none bg-transparent p-0 text-left focus-ring phone:flex phone:flex-col phone:justify-center",
 		);
 		const provider = pr ? providerFromUrl(pr.url) : null;
 		const externalHint = provider
@@ -1145,11 +1145,6 @@ export function PrStatusBar({
 		// trigger, and without one it is a plain div. Same children either way.
 		const rowBody = (
 			<>
-				{/* The preview environment this PR deployed is the row's only
-				    leading mark. The status label already says where the work stands,
-				    so repeating it with a glyph would only take space from that label.
-				    Renders nothing when the PR has no preview, and the row closes up. */}
-				{children}
 				{/* When checks exist, the headline is their control: hovering lists
 				    them and clicking opens Review's Checks tab. The PR's own title
 				    stays as the native fallback. */}
@@ -1216,16 +1211,18 @@ export function PrStatusBar({
 						{error}
 					</span>
 				)}
+				{/* Keep the preview environment with the action it informs. It sits
+				    immediately left of Merge, Push or Pull, and renders nothing when
+				    this PR has no preview. */}
+				{children}
 				{renderAction()}
 			</>
 		);
-		// Without a preview mark, give the headline more space from the band's
-		// left edge. Merged is shorter and quieter, so it only needs half the step.
+		// Without a preview mark, give the headline a small step from the band's
+		// left edge without letting the padding crowd the status and action.
 		const summaryRowClass = cn(
 			WS_SUMMARY_STATUS_ROW,
-			headline.key === "merged"
-				? "[&&:not(:has([data-summary-preview]))]:pl-3"
-				: "[&&:not(:has([data-summary-preview]))]:pl-4",
+			"[&&:not(:has([data-summary-preview]))]:pl-3",
 		);
 		const primarySummary = (
 			<div

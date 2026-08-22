@@ -4,7 +4,24 @@ import CoreTransferable
 import UniformTypeIdentifiers
 #if canImport(UIKit)
 import UIKit
+#else
+import AppKit
 #endif
+
+struct ImageRegionCommentAction {
+    let send: (_ text: String, _ image: AttachedImage) -> Bool
+}
+
+private struct ImageRegionCommentActionKey: EnvironmentKey {
+    static let defaultValue: ImageRegionCommentAction? = nil
+}
+
+extension EnvironmentValues {
+    var imageRegionCommentAction: ImageRegionCommentAction? {
+        get { self[ImageRegionCommentActionKey.self] }
+        set { self[ImageRegionCommentActionKey.self] = newValue }
+    }
+}
 
 /// Paperclip button that appends picked images to a binding. iOS picks from
 /// the photo library (PhotosPicker); macOS opens the file panel — the natural
@@ -287,6 +304,12 @@ struct ExpandableDataImage: View {
 
     @State private var previewPresented = false
 
+    private var allowsRegionComment: Bool {
+        guard gallery.indices.contains(galleryIndex) else { return false }
+        if case .conversation = gallery[galleryIndex].source { return true }
+        return false
+    }
+
     #if os(iOS)
     private var items: [PreviewImage] {
         gallery.isEmpty
@@ -336,7 +359,11 @@ struct ExpandableDataImage: View {
         .accessibilityHint("Shows the image larger")
         .help("Open image")
         .sheet(isPresented: $previewPresented) {
-            MacImagePreview(images: [data], index: 0)
+            MacImagePreview(
+                images: [data],
+                index: 0,
+                allowsRegionComment: allowsRegionComment
+            )
         }
         #endif
     }
@@ -484,6 +511,270 @@ struct ConversationImageStrip: View {
     }
 }
 
+#if canImport(UIKit)
+private typealias RegionPlatformImage = UIImage
+#else
+private typealias RegionPlatformImage = NSImage
+#endif
+
+/// Selects and comments on a crop without touching the ordinary composer.
+/// The crop is sent as an ordinary image attachment only after Send succeeds.
+private struct ImageRegionCommentEditor: View {
+    let image: RegionPlatformImage
+    let onSend: (_ text: String, _ image: AttachedImage) -> Bool
+    let onCancel: () -> Void
+
+    @State private var selection: ImageRegion?
+    @State private var comment = ""
+    @State private var error: String?
+    @FocusState private var commentFocused: Bool
+
+    private var imageSize: CGSize {
+        #if canImport(UIKit)
+        image.size
+        #else
+        image.size
+        #endif
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            GeometryReader { proxy in
+                let frame = aspectFit(imageSize, in: proxy.size)
+                imageView
+                    .frame(width: frame.width, height: frame.height)
+                    .overlay {
+                        ImageRegionSelectionCanvas(selection: $selection) {
+                            commentFocused = true
+                        }
+                    }
+                    .position(x: frame.midX, y: frame.midY)
+            }
+            .background(.black)
+            commentPanel
+        }
+        .background(.black)
+        #if os(macOS)
+        .frame(minWidth: 620, idealWidth: 760, minHeight: 560, idealHeight: 720)
+        #endif
+    }
+
+    private var header: some View {
+        HStack {
+            Button("Cancel", action: onCancel)
+                .buttonStyle(.plain)
+            Spacer()
+            Text("Comment on region")
+                .font(.headline)
+            Spacer()
+            Color.clear.frame(width: 48, height: 1)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 18)
+        .frame(height: 52)
+        .background(.black)
+    }
+
+    @ViewBuilder private var imageView: some View {
+        #if canImport(UIKit)
+        Image(uiImage: image).resizable().scaledToFit()
+        #else
+        Image(nsImage: image).resizable().scaledToFit()
+        #endif
+    }
+
+    private var commentPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Comment", text: $comment, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(1...4)
+                .focused($commentFocused)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .onSubmit(send)
+            if let error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+            HStack {
+                Text(selection == nil ? "Drag on the image to select a region." : "Drag the box or its handles to adjust it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Send", action: send)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canSend)
+            }
+        }
+        .padding(14)
+        .background(.regularMaterial)
+    }
+
+    private var canSend: Bool {
+        selection != nil && !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func send() {
+        let text = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let selection, !text.isEmpty,
+              let attachment = ImageRegionCrop.attachment(from: image, region: selection)
+        else { return }
+        if !onSend(text, attachment) {
+            error = "Could not send this comment."
+        }
+    }
+
+    private func aspectFit(_ image: CGSize, in available: CGSize) -> CGRect {
+        guard image.width > 0, image.height > 0 else {
+            return CGRect(origin: .zero, size: available)
+        }
+        let scale = min(available.width / image.width, available.height / image.height)
+        let size = CGSize(width: image.width * scale, height: image.height * scale)
+        return CGRect(
+            x: (available.width - size.width) / 2,
+            y: (available.height - size.height) / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+}
+
+private struct ImageRegionSelectionCanvas: View {
+    @Binding var selection: ImageRegion?
+    let onSelection: () -> Void
+    @State private var gestureStart: ImageRegion?
+    @State private var selectionStart: CGPoint?
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(createGesture(size: proxy.size))
+                if let selection {
+                    selectionOverlay(selection, size: proxy.size)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Image region selection")
+    }
+
+    private func selectionOverlay(_ region: ImageRegion, size: CGSize) -> some View {
+        let rect = screenRect(region, size: size)
+        return ZStack {
+            dimmedOutside(rect, size: size)
+                .allowsHitTesting(false)
+            Rectangle()
+                .fill(.clear)
+                .contentShape(Rectangle())
+                .frame(width: rect.width, height: rect.height)
+                .overlay { Rectangle().stroke(.white, lineWidth: 2) }
+                .position(x: rect.midX, y: rect.midY)
+                .gesture(moveGesture(size: size))
+            ForEach(ImageRegionHandle.allCases, id: \.self) { handle in
+                Circle()
+                    .fill(.white)
+                    .overlay { Circle().stroke(.black.opacity(0.45), lineWidth: 1) }
+                    .frame(width: 16, height: 16)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                    .position(handlePoint(handle, in: rect))
+                    .gesture(resizeGesture(handle, size: size))
+                    .accessibilityLabel("Resize selected region")
+            }
+        }
+    }
+
+    private func dimmedOutside(_ rect: CGRect, size: CGSize) -> some View {
+        ZStack {
+            Rectangle().fill(.black.opacity(0.52))
+            Rectangle()
+                .fill(.black)
+                .frame(width: rect.width, height: rect.height)
+                .position(x: rect.midX, y: rect.midY)
+                .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .frame(width: size.width, height: size.height)
+    }
+
+    private func createGesture(size: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if selectionStart == nil { selectionStart = normalized(value.startLocation, size: size) }
+                guard let selectionStart else { return }
+                selection = ImageRegion.between(selectionStart, normalized(value.location, size: size))
+            }
+            .onEnded { _ in
+                selectionStart = nil
+                if let selection,
+                   (selection.width * size.width < 12 || selection.height * size.height < 12) {
+                    self.selection = nil
+                } else {
+                    onSelection()
+                }
+            }
+    }
+
+    private func moveGesture(size: CGSize) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                if gestureStart == nil { gestureStart = selection }
+                guard let gestureStart else { return }
+                selection = gestureStart.moved(
+                    dx: value.translation.width / size.width,
+                    dy: value.translation.height / size.height
+                )
+            }
+            .onEnded { _ in gestureStart = nil }
+    }
+
+    private func resizeGesture(_ handle: ImageRegionHandle, size: CGSize) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                if gestureStart == nil { gestureStart = selection }
+                guard let gestureStart else { return }
+                selection = gestureStart.resized(
+                    from: handle,
+                    dx: value.translation.width / size.width,
+                    dy: value.translation.height / size.height,
+                    minimum: CGSize(width: 12 / size.width, height: 12 / size.height)
+                )
+            }
+            .onEnded { _ in gestureStart = nil }
+    }
+
+    private func screenRect(_ region: ImageRegion, size: CGSize) -> CGRect {
+        CGRect(
+            x: region.x * size.width,
+            y: region.y * size.height,
+            width: region.width * size.width,
+            height: region.height * size.height
+        )
+    }
+
+    private func normalized(_ point: CGPoint, size: CGSize) -> CGPoint {
+        CGPoint(x: point.x / max(1, size.width), y: point.y / max(1, size.height))
+    }
+
+    private func handlePoint(_ handle: ImageRegionHandle, in rect: CGRect) -> CGPoint {
+        switch handle {
+        case .northWest: CGPoint(x: rect.minX, y: rect.minY)
+        case .north: CGPoint(x: rect.midX, y: rect.minY)
+        case .northEast: CGPoint(x: rect.maxX, y: rect.minY)
+        case .east: CGPoint(x: rect.maxX, y: rect.midY)
+        case .southEast: CGPoint(x: rect.maxX, y: rect.maxY)
+        case .south: CGPoint(x: rect.midX, y: rect.maxY)
+        case .southWest: CGPoint(x: rect.minX, y: rect.maxY)
+        case .west: CGPoint(x: rect.minX, y: rect.midY)
+        }
+    }
+}
+
 #if os(macOS)
 /// A staged picture, large enough to check before it goes out.
 ///
@@ -503,13 +794,17 @@ struct ConversationImageStrip: View {
 /// without saying so. A composer's attachments are always bytes in hand.
 struct MacImagePreview: View {
     let images: [Data]
+    var allowsRegionComment = false
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.imageRegionCommentAction) private var commentAction
     @State private var index: Int
+    @State private var commenting = false
     private let idealHeight: CGFloat
 
-    init(images: [Data], index: Int) {
+    init(images: [Data], index: Int, allowsRegionComment: Bool = false) {
         self.images = images
+        self.allowsRegionComment = allowsRegionComment
         _index = State(initialValue: min(max(index, 0), max(images.count - 1, 0)))
         idealHeight = Self.idealHeight(for: images.first)
     }
@@ -521,6 +816,20 @@ struct MacImagePreview: View {
             controls
         }
         .frame(minWidth: 480, idealWidth: Self.idealWidth, minHeight: 380, idealHeight: idealHeight)
+        .sheet(isPresented: $commenting) {
+            if images.indices.contains(index), let image = NSImage(data: images[index]),
+               let commentAction {
+                ImageRegionCommentEditor(
+                    image: image,
+                    onSend: { text, attachment in
+                        let sent = commentAction.send(text, attachment)
+                        if sent { dismiss() }
+                        return sent
+                    },
+                    onCancel: { commenting = false }
+                )
+            }
+        }
     }
 
     private static let idealWidth: CGFloat = 760
@@ -574,6 +883,9 @@ struct MacImagePreview: View {
                     .accessibilityLabel("Next image")
             }
             Spacer()
+            if allowsRegionComment, commentAction != nil {
+                Button("Comment") { commenting = true }
+            }
             Button("Done") { dismiss() }
                 .keyboardShortcut(.cancelAction)
         }
@@ -617,6 +929,8 @@ struct FullScreenImagePreview: View {
     /// on the picture in front of you without fetching it again.
     @State private var loaded: [String: UIImage] = [:]
     @State private var copied = false
+    @State private var commenting = false
+    @Environment(\.imageRegionCommentAction) private var commentAction
 
     /// The close-button row, above the safe area.
     private static let topBarHeight: CGFloat = 52
@@ -681,6 +995,22 @@ struct FullScreenImagePreview: View {
         .ignoresSafeArea()
         .statusBarHidden()
         .persistentSystemOverlays(chromeVisible ? .automatic : .hidden)
+        .fullScreenCover(isPresented: $commenting) {
+            if let image = currentImage, let commentAction {
+                ImageRegionCommentEditor(
+                    image: image,
+                    onSend: { text, attachment in
+                        let sent = commentAction.send(text, attachment)
+                        if sent {
+                            commenting = false
+                            dismiss()
+                        }
+                        return sent
+                    },
+                    onCancel: { commenting = false }
+                )
+            }
+        }
     }
 
     private func pager(chromeInsets: UIEdgeInsets) -> some View {
@@ -860,9 +1190,31 @@ struct FullScreenImagePreview: View {
         HStack(spacing: 0) {
             shareButton
             Spacer()
+            if canCommentOnCurrentImage {
+                commentButton
+                Spacer()
+            }
             copyButton
         }
         .padding(.horizontal, 20)
+    }
+
+    private var canCommentOnCurrentImage: Bool {
+        guard currentImage != nil, commentAction != nil, items.indices.contains(index) else {
+            return false
+        }
+        if case .conversation = items[index].source { return true }
+        return false
+    }
+
+    private var commentButton: some View {
+        Button {
+            commenting = true
+        } label: {
+            actionIcon("text.bubble")
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Comment on image region")
     }
 
     @ViewBuilder private var shareButton: some View {

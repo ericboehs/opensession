@@ -36,6 +36,7 @@ import {
 	ShippedChangeComposer,
 	type ShippedChangeComposerProps,
 } from "./ShippedChangeComposer";
+import { SessionContextMessage } from "./SessionContextMessage";
 
 type RenderBlock =
 	| { kind: "entry"; entry: TranscriptEntry }
@@ -247,8 +248,16 @@ export const TranscriptBlocks = React.memo(function TranscriptBlocks(
 		[props.entries, props.optimisticEntries],
 	);
 	const renderedProps = entries === props.entries ? props : { ...props, entries };
-	if (props.transcriptIndex) return <IndexedTranscriptBlocks {...renderedProps} />;
-	return <LoadedTranscriptBlocks {...renderedProps} />;
+	return (
+		<>
+			{props.sessionId && <SessionContextMessage sessionId={props.sessionId} />}
+			{props.transcriptIndex ? (
+				<IndexedTranscriptBlocks {...renderedProps} />
+			) : (
+				<LoadedTranscriptBlocks {...renderedProps} />
+			)}
+		</>
+	);
 });
 
 const LoadedTranscriptBlocks = React.memo(function LoadedTranscriptBlocks({

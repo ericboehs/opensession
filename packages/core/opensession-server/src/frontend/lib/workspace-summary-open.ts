@@ -22,6 +22,12 @@ export function workspaceSummaryOpen(): boolean {
 	return localStorage.getItem(WS_SUMMARY_OPEN_KEY) !== "false";
 }
 
+/** Bring the compact workspace summary back when another surface yields room. */
+export function openWorkspaceSummary(): void {
+	localStorage.setItem(WS_SUMMARY_OPEN_KEY, "true");
+	window.dispatchEvent(new Event(WS_SUMMARY_OPEN_EVENT));
+}
+
 /**
  * The header width at which the card stops covering anything.
  *

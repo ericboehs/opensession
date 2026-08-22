@@ -17,6 +17,19 @@ export function defaultSessionWorkspaceView(
 }
 
 /**
+ * A bare workspace route decides whether it has a session exactly once. Wait
+ * for both lists before making that decision: workspaces commonly arrive first,
+ * and treating an unfinished session list as empty strands a real workspace on
+ * WorkspacePane's session-less Review shell instead of its SessionViewer.
+ */
+export function workspaceLandingReady(
+	workspacesLoaded: boolean,
+	sessionsLoading: boolean,
+): boolean {
+	return workspacesLoaded && !sessionsLoading;
+}
+
+/**
  * True for an untouched "New session" shell: never ran a turn (no engine session
  * on any provider), nothing running or queued, and no activity since
  * creation. These rows are minted eagerly by the new-session endpoints so a tab
@@ -59,6 +72,43 @@ export function mainSession(
 		liveOldestFirst.find((s) => !sessionNeverRan(s)) ??
 		liveOldestFirst[0]
 	);
+}
+
+/**
+ * The session whose workspace settings seed a new sibling tab. A workspace can
+ * have only a Review pane after its last session was closed, so its newest
+ * archived session remains a valid source instead of forcing the global composer.
+ */
+export function newSessionSource(
+	current: UnifiedSession | null | undefined,
+	liveOldestFirst: UnifiedSession[],
+	archivedNewestFirst: UnifiedSession[],
+): UnifiedSession | undefined {
+	return current ?? mainSession(liveOldestFirst) ?? archivedNewestFirst[0];
+}
+
+/**
+ * Local-only session shape that lets a Review-only workspace paint its blank
+ * tab while the archived source needed by the create endpoint is still loading.
+ */
+export function workspaceSessionSeed(
+	workspace: Workspace,
+	startedBy: string,
+): UnifiedSession {
+	return {
+		id: `workspace:${workspace.id}`,
+		source: "opensession",
+		branch: workspace.branch ?? null,
+		worktreeDir: workspace.worktreeDir ?? null,
+		startedBy,
+		title: "New session",
+		lastActivity: workspace.createdAt,
+		createdAt: workspace.createdAt,
+		isRunning: false,
+		workspaceId: workspace.id,
+		repo: workspace.repo,
+		mode: workspace.repo || workspace.worktreeDir ? "code" : "scratch",
+	};
 }
 
 /**

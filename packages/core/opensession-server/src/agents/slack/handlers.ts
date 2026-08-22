@@ -884,7 +884,7 @@ export async function processMessage(
       isDM: kind.isDM,
       isPrivate: kind.isPrivate,
     };
-    memoryAppend = await renderMemoryForPrompt(memCtx);
+    memoryAppend = await renderMemoryForPrompt(memCtx, msg.prompt);
     const memoryHash = `${channel}:${msg.userId}:${memoryAppend}`.substring(0, 40); // Simple hash
 
     // Check cache: reuse admin tools if memory hasn't changed
@@ -976,6 +976,7 @@ export async function processMessage(
   let runPrompt = continuingAfterRestart
     ? restartContinuationPrompt(prompt)
     : prompt;
+  if (memoryAppend) runPrompt = `${memoryAppend}\n\n${runPrompt}`;
   let images: ImageInput[] | undefined;
   // A resumed engine already has its opening attachments in history. Sending
   // them again would create another image-bearing user turn. If no engine id
@@ -1019,7 +1020,7 @@ export async function processMessage(
       // short-lived creds (restores a2655fc9, lost in the pi cutover).
       aws: true,
       inProcessMcp,
-      reposNote: SLACK_SYSTEM_PROMPT_APPEND + ADMIN_TOOLS_PROMPT + memoryAppend,
+      reposNote: SLACK_SYSTEM_PROMPT_APPEND + ADMIN_TOOLS_PROMPT,
       // osSessionId feeds the in-process MCP proxy path; resume-on-boot
       // skips "slack" kinds (the queue re-delivers interrupted messages).
       journal: { osSessionId: bksId, kind: "slack" },

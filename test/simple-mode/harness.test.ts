@@ -143,6 +143,7 @@ const limaExists = async () => (await limaStatus()) !== null;
 const bundlePath = join(WORK, "opensession.bundle");
 let branch = "";
 let tarballName = "";
+let commandWasOnPath = false;
 
 describe("simple mode install", () => {
   beforeAll(async () => {
@@ -239,6 +240,7 @@ describe("simple mode install", () => {
   }, 3 * MINUTES);
 
   test("install: install.sh from the bundle, non-interactive", async () => {
+    commandWasOnPath = (await guest("command -v opensession")).code === 0;
     // No flags (DoD 1): defaults-only onboarding, no Tailscale, the
     // installer's own service. `--advanced` is the operator path.
     const source = SOURCE
@@ -253,6 +255,10 @@ describe("simple mode install", () => {
     );
     expectOk(r, "install.sh");
     expect(r.stdout).toContain("Done");
+    expect(r.stdout).toContain(`Open http://127.0.0.1:${PORT}`);
+    if (!commandWasOnPath) {
+      expect(r.stdout).toContain("Run this in your current shell: source ~/.bashrc");
+    }
   }, 30 * MINUTES);
 
   test("start: the installer's user service, or a transient unit", async () => {

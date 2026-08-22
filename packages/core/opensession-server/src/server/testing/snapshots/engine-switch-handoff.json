@@ -42,7 +42,7 @@
       },
       "resumesEngineSession": false,
       "seedTranscriptEntries": 0,
-      "sessionNote": "## Memory\n\nManage memory with the opensession-memory tools: `store_memory` saves a fact (scope `repo` = this session's repo, `user` = whoever is prompting, `team` = shared workspace-wide, including Assistant in Slack), `forget_memory` removes one by id, `list_memory` shows everything. Store only durable, non-obvious facts worth every future session knowing (operational gotchas, decisions, preferences) — never conversation state, and never anything already in the repo's docs. When the user says \"remember ...\", store it.",
+      "sessionNote": null,
       "user": "SnapshotOwner"
     },
     {
@@ -91,8 +91,8 @@
         "visible": "keep going"
       },
       "resumesEngineSession": true,
-      "seedTranscriptEntries": 6,
-      "sessionNote": "## Memory\n\nManage memory with the opensession-memory tools: `store_memory` saves a fact (scope `repo` = this session's repo, `user` = whoever is prompting, `team` = shared workspace-wide, including Assistant in Slack), `forget_memory` removes one by id, `list_memory` shows everything. Store only durable, non-obvious facts worth every future session knowing (operational gotchas, decisions, preferences) — never conversation state, and never anything already in the repo's docs. When the user says \"remember ...\", store it.",
+      "seedTranscriptEntries": 5,
+      "sessionNote": null,
       "user": "SnapshotOwner"
     }
   ],
@@ -247,28 +247,21 @@
       "type": "user"
     },
     {
-      "content": "## Memory\n\nManage memory with the opensession-memory tools: `store_memory` saves a fact (scope `repo` = this session's repo, `user` = whoever is prompting, `team` = shared workspace-wide, including Assistant in Slack), `forget_memory` removes one by id, `list_memory` shows everything. Store only durable, non-obvious facts worth every future session knowing (operational gotchas, decisions, preferences) — never conversation state, and never anything already in the repo's docs. When the user says \"remember ...\", store it.",
-      "contextSource": "repos-note",
-      "noticeKind": "context-injection",
-      "seq": 2,
-      "type": "system"
-    },
-    {
       "content": "{\n  \"confirmTools\": [\n    \"mcp__stripe__cancel_subscription\",\n    \"mcp__stripe__create_refund\",\n    \"mcp__stripe__stripe_api_execute\",\n    \"mcp__stripe__stripe_api_write\",\n    \"mcp__stripe__update_subscription\"\n  ],\n  \"deniedTools\": [],\n  \"inProcess\": [\n    \"opensession-admin\",\n    \"opensession-ask\",\n    \"opensession-assets\",\n    \"opensession-goals\",\n    \"opensession-humans\",\n    \"opensession-keychain\",\n    \"opensession-memory\",\n    \"opensession-papercuts\",\n    \"opensession-portals\",\n    \"opensession-publish\",\n    \"opensession-repos\",\n    \"opensession-runners\",\n    \"opensession-search\",\n    \"opensession-self-deploy\",\n    \"opensession-sessions\",\n    \"opensession-slack\",\n    \"opensession-todos\",\n    \"opensession-walkthrough\",\n    \"opensession-web\",\n    \"opensession-workflows\"\n  ],\n  \"localWorkspaceToolsDisabled\": false,\n  \"mcpScope\": \"all\",\n  \"mode\": \"scratch\"\n}",
       "contextSource": "tools",
       "noticeKind": "standing-context",
-      "seq": 3,
+      "seq": 2,
       "type": "system"
     },
     {
       "content": "Renamed the first two call sites.",
       "model": "pi/anthropic/claude-sonnet-5",
-      "seq": 4,
+      "seq": 3,
       "type": "assistant"
     },
     {
       "content": "Using edit",
-      "seq": 5,
+      "seq": 4,
       "toolInput": {
         "file": "a.ts"
       },
@@ -277,32 +270,25 @@
     },
     {
       "content": "written",
-      "seq": 6,
+      "seq": 5,
       "type": "tool_result"
     },
     {
       "content": "keep going",
-      "seq": 7,
+      "seq": 6,
       "type": "user"
     },
     {
       "content": "## Engine handoff\n\nThis Open Session session was just switched mid-conversation from claude to you. You are continuing the *same* session, not starting a new task.\n\nYou resumed your own earlier thread in this session, so you remember the conversation up to the switch — the transcript below covers the turns the other engine ran in between, which you were not part of.\n\nConversation transcript:\n- User: start the migration\n- Assistant: Renamed the first two call sites.",
       "contextSource": "handoff",
       "noticeKind": "context-injection",
-      "seq": 8,
-      "type": "system"
-    },
-    {
-      "content": "## Memory\n\nManage memory with the opensession-memory tools: `store_memory` saves a fact (scope `repo` = this session's repo, `user` = whoever is prompting, `team` = shared workspace-wide, including Assistant in Slack), `forget_memory` removes one by id, `list_memory` shows everything. Store only durable, non-obvious facts worth every future session knowing (operational gotchas, decisions, preferences) — never conversation state, and never anything already in the repo's docs. When the user says \"remember ...\", store it.",
-      "contextSource": "repos-note",
-      "noticeKind": "context-injection",
-      "seq": 9,
+      "seq": 7,
       "type": "system"
     },
     {
       "content": "Continuing.",
       "model": "pi/openai/gpt-5.6-sol",
-      "seq": 10,
+      "seq": 8,
       "type": "assistant"
     }
   ]

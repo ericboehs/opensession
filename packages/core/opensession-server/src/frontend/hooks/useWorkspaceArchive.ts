@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchSessionsSnapshot } from "../lib/api";
+import { fetchWorkspaceArchivedSessions } from "../lib/api";
 import type { UnifiedSession } from "../lib/types";
 
 /**
@@ -36,12 +36,12 @@ export function useWorkspaceArchive(
 		const controller = new AbortController();
 		void (async () => {
 			try {
-				const snapshot = await fetchSessionsSnapshot({
-					signal: controller.signal,
-					query: `?archived=only&slim=1&workspace=${encodeURIComponent(workspaceId)}`,
-				});
-				if (!active || snapshot.text === null) return;
-				setRows(JSON.parse(snapshot.text) as UnifiedSession[]);
+				const sessions = await fetchWorkspaceArchivedSessions(
+					workspaceId,
+					controller.signal,
+				);
+				if (!active) return;
+				setRows(sessions);
 			} catch {
 				// The history menu is an extra; a failed fetch just leaves it out
 				// rather than putting an error in front of the session someone

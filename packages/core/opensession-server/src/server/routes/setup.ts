@@ -103,9 +103,39 @@ async function primaryGithubOrg(): Promise<string | undefined> {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
 }
 
+/** GitHub's new-App form accepts these settings as query parameters. Keep the
+ *  two personal choices editable: the generated name is only a likely-unique
+ *  starting point, and the Homepage URL has no role in the device-code flow. */
+export function buildOnboardingGithubAppCreateUrl(
+  org: string | undefined,
+  homepageUrl: string,
+  appName = `Open Session (${Math.random().toString(36).slice(2, 6)})`,
+): string {
+  const params = new URLSearchParams({
+    name: appName,
+    url: homepageUrl.trim() || "http://localhost:3850",
+    public: "false",
+    webhook_active: "false",
+    contents: "write",
+    issues: "write",
+    pull_requests: "write",
+    members: "read",
+    metadata: "read",
+    // Undocumented by GitHub, but supported by the new-App form. The onboarding
+    // still tells the person to check it in case GitHub ever drops the parameter.
+    device_flow_enabled: "true",
+  });
+  const owner = org?.trim();
+  const base = owner
+    ? `https://github.com/organizations/${encodeURIComponent(owner)}/settings/apps/new`
+    : "https://github.com/settings/apps/new";
+  return `${base}?${params}`;
+}
+
 async function githubSnapshot() {
   const { githubUserAuthSettings, githubAppOrg, githubAuthOnConnect } =
     await import("../github-auth");
+  const { configuredServer } = await import("../config");
   const github = githubUserAuthSettings();
   const org = await primaryGithubOrg();
   return {
@@ -118,9 +148,10 @@ async function githubSnapshot() {
     // the simple-mode connect handler consumes authOnConnect.
     appOrg: githubAppOrg(),
     authOnConnect: githubAuthOnConnect(),
-    appCreateUrl: org
-      ? `https://github.com/organizations/${org}/settings/apps/new`
-      : "https://github.com/settings/apps/new",
+    appCreateUrl: buildOnboardingGithubAppCreateUrl(
+      org,
+      configuredServer().publicBaseUrl,
+    ),
   };
 }
 

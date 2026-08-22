@@ -20,7 +20,7 @@ import { userStore } from "./shared/user-store";
 export const SNOOZE_SOMEDAY = "someday";
 export type Snoozes = Record<string, string>;
 
-/** Keep only string-key entries whose value is a wake time or Some day. */
+/** Keep only string-key entries whose value is a wake time or Someday. */
 function clean(input: unknown): Snoozes {
 	const out: Snoozes = {};
 	if (input && typeof input === "object") {

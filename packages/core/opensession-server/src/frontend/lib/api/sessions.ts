@@ -40,6 +40,18 @@ export async function fetchSessionsSnapshot(
 	};
 }
 
+/** Fetch the slim archived history for one workspace, newest activity first. */
+export async function fetchWorkspaceArchivedSessions(
+	workspaceId: string,
+	signal?: AbortSignal,
+): Promise<UnifiedSession[]> {
+	const snapshot = await fetchSessionsSnapshot({
+		signal,
+		query: `?archived=only&slim=1&workspace=${encodeURIComponent(workspaceId)}`,
+	});
+	return snapshot.text ? (JSON.parse(snapshot.text) as UnifiedSession[]) : [];
+}
+
 /**
  * One session, in the shape the list would have given it.
  *

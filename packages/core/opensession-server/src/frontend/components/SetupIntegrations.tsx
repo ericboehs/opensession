@@ -243,6 +243,10 @@ function githubSetupSteps(): React.ReactNode[] {
 const GITHUB_ONBOARDING_STEPS: React.ReactNode[] = [
 	<>Create a GitHub App in your organization.</>,
 	<>
+		Choose any app name. The Homepage URL can be any URL, such as your company
+		website.
+	</>,
+	<>
 		Turn on <strong>Device Flow</strong>.
 	</>,
 	<>Grant Contents, Pull requests and Issues write, Members read.</>,
@@ -412,7 +416,7 @@ export function GithubAuthCard({
 	return (
 		<>
 			<div className="grid px-4 phone:px-0">
-				<SettingCard>
+				<SettingCard className={onboarding && !active ? "hidden" : undefined}>
 					<div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 px-5 py-4 phone:grid-cols-[auto_minmax(0,1fr)] phone:px-3 phone:py-2">
 						<IconTile name="github" size={40} />
 						<div

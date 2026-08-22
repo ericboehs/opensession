@@ -202,10 +202,39 @@ final class TranscriptGroupingTests: XCTestCase {
             return XCTFail("expected a fold")
         }
         XCTAssertTrue(turn.isLive)
+        XCTAssertTrue(turn.hasNarration)
+        XCTAssertTrue(turn.defaultExpanded(preference: .standard))
+        XCTAssertFalse(
+            turn.rendersToolCallsInPlace(preference: .standard),
+            "tool runs around narration keep their own grouped step rows"
+        )
         XCTAssertNotNil(turn.livePreview, "a collapsed live fold must say what it is doing")
         for block in blocks {
             if case .footer = block { XCTFail("a running turn has no settled duration") }
         }
+    }
+
+    func testToolOnlyLiveTurnUsesOneClosedSummaryUntilOpened() {
+        viewModel.handle(.sessionStatus(sessionId: "bks-1", isRunning: true))
+        append([
+            TranscriptEntry(id: "u1", type: "user", content: "go"),
+            toolUse("t1", name: "Edit", input: [
+                "file_path": .string("/tmp/x.swift"),
+                "old_string": .string("old"),
+                "new_string": .string("one\ntwo"),
+            ]),
+        ])
+
+        guard case .work(let turn) = viewModel.displayBlocks[1] else {
+            return XCTFail("expected a work fold")
+        }
+        XCTAssertFalse(turn.hasNarration)
+        XCTAssertFalse(turn.defaultExpanded(preference: .standard))
+        XCTAssertTrue(
+            turn.rendersToolCallsInPlace(preference: .standard),
+            "opening the only summary must reveal calls without another step row"
+        )
+        XCTAssertEqual(turn.lineStats, ToolLineStats(additions: 2, deletions: 1))
     }
 
     func testFooterCarriesDurationModelAndTouchedFiles() {

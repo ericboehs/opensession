@@ -78,13 +78,16 @@ jobs:
       # The repository ships a portable default (localhost) so a fresh clone does
       # not point at someone else's server. Release builds stamp the real one in.
       # Set the OS1_SERVER_URL repository variable to override.
-      - name: Stamp deployment server
+      - name: Stamp release configuration
         env:
           SERVER: ${{ vars.OS1_SERVER_URL || 'https://os.tella.dev/' }}
         run: |
-          jq --arg s "$SERVER" '.opensession.defaultServer = $s' package.json > /tmp/pkg.json
+          set -euo pipefail
+          version="$(jq -r .version package.json)"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then version="${GITHUB_REF_NAME#v}"; fi
+          jq --arg s "$SERVER" --arg version "$version"             '.opensession.defaultServer = $s | .version = $version'             package.json > /tmp/pkg.json
           mv /tmp/pkg.json package.json
-          jq -r '"default server: " + .opensession.defaultServer' package.json
+          jq -r '"default server: " + .opensession.defaultServer + " · version: " + .version' package.json
 
       - name: Build, sign & notarize
         run: |

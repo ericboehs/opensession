@@ -5,7 +5,7 @@ import {
 } from "../hooks/useShortcutBindings";
 import type { ModelOption, FileMention, ProviderAccountOption } from "../lib/api";
 import { splitAttachments, imageFilesFromPaste, type FileAttachment } from "../lib/images";
-import { loadDraft, onDraftsChanged, saveDraft } from "../lib/drafts";
+import { clearDraft, loadDraft, onDraftsChanged, saveDraft } from "../lib/drafts";
 import { appendDictation } from "../lib/dictation";
 import {
   addStaging,
@@ -624,7 +624,13 @@ export function Composer({
     const sentPastedIds = new Set(pastedTexts.map((attachment) => attachment.id));
     const consume = () => {
       onTyping?.(false);
-      if (!isControlled) setInnerValue("");
+      if (!isControlled) {
+        // Clear the store before React commits the empty field. On iOS the send
+        // button can blur the textarea first; a pending remote draft would then
+        // see the old stored value and restore the message that just sent.
+        if (draftKey) clearDraft(draftKey);
+        setInnerValue("");
+      }
       setPastedTexts((current) =>
         current.filter((attachment) => !sentPastedIds.has(attachment.id)),
       );
@@ -1461,11 +1467,11 @@ export function Composer({
           if (!dictating) setDictationClipping(false);
         }}
         // `composer` and `composer-min` stay on the markup as hooks, not as
-        // styling: the viewer's input wrap keys the phone keyboard gap off the
-        // pair with `body.kb-open .viewer-input:has(.composer:not(
-        // .composer-min))` (see lib/session-viewer-classes.ts), and
-        // VoiceInput's recording overlay fills `.composer` as its positioned
-        // ancestor.
+        // styling: `.composer.composer-min .palette-icon-btn` is styled from
+        // the stylesheet, and VoiceInput's recording overlay fills `.composer`
+        // as its positioned ancestor. (The phone keyboard gap used to read this
+        // pair too; it now keys off `--kb-inset` instead, which does not care
+        // which composer is up — see lib/session-viewer-classes.ts.)
         className={cn(
           "composer",
           minimized && "composer-min",
@@ -1789,7 +1795,7 @@ export function Composer({
               // `composer-pop-wrap` stays as a hook: the outside-click handler
               // above dismisses the menu for any mousedown that isn't inside one.
               className={cn(
-                "pwa-send-option composer-pop-wrap relative inline-flex shrink-0",
+                "composer-pop-wrap relative inline-flex shrink-0",
                 // Phones pull the model pill to the front of the toolbar, so the
                 // "+" has to lead it; in the resting pill it opens the row.
                 minimized ? "order-1" : "phone:order-[-2]",
@@ -1943,41 +1949,6 @@ export function Composer({
             </motion.div>
           )}
 
-          {/* The installed PWA deliberately hides the "+" and its auxiliary
-              options, but a team note is a primary message type, not an
-              attachment setting. Keep that path directly visible on the
-              phone PWA while browsers continue to find it in the "+" menu. */}
-          {onNoteModeChange && (
-            <span
-              className={cn(
-                "pwa-note-option hidden shrink-0 pwa:phone:inline-flex",
-                minimized && "order-3",
-              )}
-            >
-              <Tooltip
-                label={noteMode ? "Back to prompting" : "Write a team note"}
-              >
-                <button
-                  type="button"
-                  className={cn(
-                    composerIconButtonClass,
-                    "size-11",
-                    noteMode &&
-                      "text-yellow before:bg-[color-mix(in_srgb,var(--yellow-tint)_18%,transparent)] hover:text-yellow hover:before:bg-[color-mix(in_srgb,var(--yellow-tint)_24%,transparent)]",
-                  )}
-                  {...tapProps(() => onNoteModeChange(!noteMode))}
-                  disabled={disabled}
-                  aria-label={
-                    noteMode ? "Back to prompting" : "Write a team note"
-                  }
-                  aria-pressed={noteMode}
-                >
-                  <IconNote size={22} />
-                </button>
-              </Tooltip>
-            </span>
-          )}
-
           {/* Ask mode used to keep a marker here, next to the "+". It says
               itself in a chip above the field now, with the ✕ that leaves it
               (see ComposerContextChip), which is where note mode already
@@ -1998,7 +1969,7 @@ export function Composer({
                 key="model-effort"
                 layout="position"
                 {...composerChipMotion}
-                className={cn("pwa-send-option", composerToolbarSelect)}
+                className={cn("pwa-composer-auxiliary", composerToolbarSelect)}
               >
                 <ModelEffortSelect
                   className={cn(palettePill, composerToolbarPill)}
@@ -2044,7 +2015,7 @@ export function Composer({
             transition={composerMorph}
             layoutDependency={minimized}
             className={cn(
-              "pwa-send-option inline-flex shrink-0 items-center",
+              "pwa-composer-auxiliary inline-flex shrink-0 items-center",
               minimized && "order-3",
             )}
           >

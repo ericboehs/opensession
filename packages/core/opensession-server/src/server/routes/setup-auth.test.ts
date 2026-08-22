@@ -2,7 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { handleSetupRoutes } from "./setup";
+import {
+	buildOnboardingGithubAppCreateUrl,
+	handleSetupRoutes,
+} from "./setup";
 import type { RouteContext } from "./context";
 
 const savedConfig = process.env.OPENSESSION_CONFIG;
@@ -82,6 +85,33 @@ function singleUserConfig(): void {
 	process.env.OPENSESSION_CONFIG = path;
 	delete process.env.OPENSESSION_GITHUB_CLIENT_ID;
 }
+
+describe("GitHub App onboarding link", () => {
+	test("prefills the new-App form while keeping personal fields editable", () => {
+		const url = new URL(
+			buildOnboardingGithubAppCreateUrl(
+				"acme inc",
+				"https://os.acme.test/",
+				"Acme Session App",
+			),
+		);
+
+		expect(url.origin).toBe("https://github.com");
+		expect(url.pathname).toBe("/organizations/acme%20inc/settings/apps/new");
+		expect(Object.fromEntries(url.searchParams)).toEqual({
+			name: "Acme Session App",
+			url: "https://os.acme.test/",
+			public: "false",
+			webhook_active: "false",
+			contents: "write",
+			issues: "write",
+			pull_requests: "write",
+			members: "read",
+			metadata: "read",
+			device_flow_enabled: "true",
+		});
+	});
+});
 
 describe("setup status github snapshot exposes install intent", () => {
 	test("appOrg + authOnConnect ride the snapshot", async () => {

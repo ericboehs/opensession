@@ -1,11 +1,17 @@
 import { expect, test } from "bun:test";
-import { loopbackHeaders, openWebSocket, sendWebSocket, type PortalSocketState } from "./sandbox-portal-agent";
+import { loopbackHeaders, openWebSocket, relayRetryDelayMs, sendWebSocket, type PortalSocketState } from "./sandbox-portal-agent";
 
 test("uses local-dev host semantics and disables upstream compression", () => {
 	const headers = loopbackHeaders({ host: "portal.example:22000", "accept-encoding": "gzip, br", cookie: "session=abc" }, 4300);
 	expect(headers.get("host")).toBe("localhost:4300");
 	expect(headers.get("accept-encoding")).toBe("identity");
 	expect(headers.get("cookie")).toBe("session=abc");
+});
+
+test("backs stale relay credentials off instead of flooding public ingress", () => {
+	expect([0, 1, 2, 3, 4, 5, 20].map(relayRetryDelayMs)).toEqual([
+		1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000,
+	]);
 });
 
 class FakeWebSocket extends EventTarget {

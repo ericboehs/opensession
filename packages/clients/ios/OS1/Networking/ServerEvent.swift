@@ -195,7 +195,8 @@ enum ServerEvent: Sendable {
                     requestId: requestId,
                     status: status,
                     channel: channel,
-                    permalink: frame.permalink
+                    permalink: frame.permalink,
+                    ts: frame.ts
                 )
             )
         case "workflow_update":
@@ -261,8 +262,34 @@ struct SlackComposeReceipt: Equatable, Sendable, Identifiable {
     let status: Status
     let channel: Channel?
     let permalink: String?
+    /// The Slack message timestamp. Present when the message can still be
+    /// taken back out of Slack.
+    let ts: String?
+
+    /// The defaults keep the older call sites that never knew a timestamp,
+    /// such as the cancel path, building a receipt in one line.
+    init(
+        requestId: String,
+        status: Status,
+        channel: Channel? = nil,
+        permalink: String? = nil,
+        ts: String? = nil
+    ) {
+        self.requestId = requestId
+        self.status = status
+        self.channel = channel
+        self.permalink = permalink
+        self.ts = ts
+    }
 
     var id: String { requestId }
+
+    /// Slack accepts a delete only from the account that posted, which is the
+    /// person's own grant, so offering this can never touch someone else's
+    /// message. It needs both the channel and the timestamp to name one.
+    var canUndo: Bool {
+        status == .sent && channel != nil && !(ts ?? "").isEmpty
+    }
 }
 
 /// One server-generated quick reply. The short label is the chip; the full
@@ -457,6 +484,7 @@ private struct RawFrame: Decodable {
     let status: String?
     let channel: WireSlackChannel?
     let permalink: String?
+    let ts: String?
     let run: WorkflowRun?
     let repo: String?
     let branch: String?

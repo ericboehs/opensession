@@ -103,6 +103,7 @@ import {
 	setSnooze,
 	snoozeIsActive,
 } from "../lib/snoozes";
+import { activityBandFor, type ActivityBand } from "../lib/sidebar-activity";
 import { sortInboxByCreation } from "../lib/sidebar-inbox";
 import {
 	clearHides,
@@ -3315,7 +3316,7 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					{row.sessions.length > 0 ? (
 						<>
 							<Tooltip
-								label={snoozed ? "Unsnooze workspace" : "Snooze workspace until Some day"}
+								label={snoozed ? "Unsnooze workspace" : "Snooze workspace until Someday"}
 							>
 								<span
 									role="button"
@@ -3709,8 +3710,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		return lanes;
 	}
 
-	// Activity sections keep blocked work first, then parked drafts, followed by
-	// Recent, Yesterday, and Earlier. Rows rank by activity inside each band.
+	// Activity sections separate live work from idle work, then keep attention and
+	// draft rows ahead of the date bands. Rows rank by activity inside each band.
 	function renderInboxBands(
 		rows: WsRow[],
 		ns = "",
@@ -3725,34 +3726,31 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		const todayMs = dayStart.getTime();
 		const yesterdayMs = todayMs - 24 * 60 * 60 * 1000;
 		const bands: Array<{
-			key: string;
+			key: ActivityBand;
 			label: string;
 			rows: WsRow[];
 			prs: ReviewQueueItem[];
 		}> = [
+			{ key: "inprogress", label: "In progress", rows: [], prs: [] },
 			{ key: "needsaction", label: "Needs action", rows: [], prs: [] },
 			{ key: "drafts", label: "Drafts", rows: [], prs: [] },
 			{ key: "recent", label: "Recent", rows: [], prs: [] },
 			{ key: "yesterday", label: "Yesterday", rows: [], prs: [] },
 			{ key: "earlier", label: "Earlier", rows: [], prs: [] },
 		];
-		const [needsAction, drafts, recent, yesterday, earlier] = bands;
+		const bandFor = (key: ActivityBand) =>
+			bands.find((band) => band.key === key)!;
 		for (const row of sorted) {
-			const time = Date.parse(row.lastActivity || "");
-			if (isDraftWsRow(row)) drafts.rows.push(row);
-			else if (row.status === "needsinput" || row.mention)
-				needsAction.rows.push(row);
-			else if (row.running || time >= todayMs) recent.rows.push(row);
-			else if (time >= yesterdayMs) yesterday.rows.push(row);
-			else earlier.rows.push(row);
+			const key = activityBandFor(row, todayMs, isDraftWsRow(row));
+			bandFor(key).rows.push(row);
 		}
 		for (const item of [...prItems].sort((a, b) =>
 			(b.pr.updatedAt || "").localeCompare(a.pr.updatedAt || ""),
 		)) {
 			const time = Date.parse(item.pr.updatedAt || "");
-			if (time >= todayMs) recent.prs.push(item);
-			else if (time >= yesterdayMs) yesterday.prs.push(item);
-			else earlier.prs.push(item);
+			if (time >= todayMs) bandFor("recent").prs.push(item);
+			else if (time >= yesterdayMs) bandFor("yesterday").prs.push(item);
+			else bandFor("earlier").prs.push(item);
 		}
 		const nodes = bands
 			.filter((band) => band.rows.length > 0 || band.prs.length > 0)

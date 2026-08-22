@@ -19,7 +19,7 @@ const flag = (name: string, fallback?: string) => {
 };
 if (!outputArg) {
   console.error(
-    "usage: bun scripts/capture-ui.ts <output.png> [--route /] [--width 1440] [--height 900] [--theme light|dark] [--web] [--wait 3000]",
+    "usage: bun scripts/capture-ui.ts <output.png> [--route /] [--width 1440] [--height 900] [--theme light|dark] [--user 'Local User'] [--web] [--wait 3000]",
   );
   process.exit(2);
 }
@@ -30,6 +30,7 @@ const route = flag("route", "/")!;
 const width = Number(flag("width", "1440"));
 const height = Number(flag("height", "900"));
 const theme = flag("theme", "light");
+const captureUser = flag("user");
 // A session route loads its transcript after the app shell, so 3s catches it
 // mid-"Checking sign-in". Give slow routes a longer settle rather than a
 // screenshot of the loading state.
@@ -94,7 +95,11 @@ try {
     });
   }
   await send("Page.addScriptToEvaluateOnNewDocument", {
-    source: captureInitScript({ theme, electronMaterial, freezeCss: FREEZE }),
+    source: `${captureInitScript({ theme, electronMaterial, freezeCss: FREEZE })}\n${
+      captureUser
+        ? `try { localStorage.setItem('opensession-user', ${JSON.stringify(captureUser)}); } catch (e) {}`
+        : ""
+    }`,
   });
   await send("Emulation.setDeviceMetricsOverride", viewport);
   await send("Page.navigate", { url: new URL(route, APP).href });

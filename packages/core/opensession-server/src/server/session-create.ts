@@ -59,7 +59,15 @@ type ResolvedSandboxProvider = Extract<
 >["provider"];
 
 import { SESSION_EFFORTS, findSession, findSessionAsync, invalidateSessionsCache, recordRunOutcome, touchNativeSession, updateSessionFile } from "./session-cache";
-import { attachRepo, buildBranchNote, buildReposNote, memoryNoteFor, planCreateAttachRepos, workspaceOwningWorktree } from "./session-repos";
+import {
+	attachRepo,
+	buildBranchNote,
+	buildReposNote,
+	memoryNoteFor,
+	planCreateAttachRepos,
+	retrievedMemoryNoteFor,
+	workspaceOwningWorktree,
+} from "./session-repos";
 
 import { ownedWorktree } from "./session-workspace";
 import { engineSessionPatch } from "./sessions";
@@ -72,11 +80,9 @@ import { resolveWorkspaceModelPreset } from "./workspace-model-presets";
 import { type Workspace, getWorkspace, updateWorkspace, } from "./workspaces";
 import {
 	ensureCreationPlanned,
-	requestCreationBranch,
-	requestCreationCredential,
 	requestCreationWorkspace,
 } from "./session-kernel";
-import { AUTO_REPO, ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, listWorktrees, NO_REPO, repoForPath, repoForPathOrNull, resolveUniqueBranch, sharedCheckoutForNewSessions, worktreeHeadBranch, worktreePathFor, } from "./worktree";
+import { AUTO_REPO, createWorktree, createWorktreeForExistingBranch, ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, listWorktrees, NO_REPO, repoForPath, repoForPathOrNull, resolveUniqueBranch, sharedCheckoutForNewSessions, worktreeHeadBranch, worktreePathFor, } from "./worktree";
 import { type WSClientData, broadcastToSession, preparingWorkspaces, } from "./ws-hub";
 import { sessionIdForRequest } from "./session-request-id";
 import { isClientSessionId } from "./paths";
@@ -104,7 +110,6 @@ export interface CreateSessionMessage {
 	/** Client-minted native id used to replay this create safely after reconnect. */
 	clientSessionId?: unknown;
 	prompt: string;
-	/** Prompt with session-reference display names, used only for title generation. */
 	titlePrompt?: unknown;
 	requestId?: string;
 	user?: string;
@@ -378,41 +383,6 @@ export function runOpeningCreateOnce(
 	return { owner: true, done };
 }
 
-function actorWorktreeMaterializer(input: {
-	sessionId: string;
-	identity: string;
-	project: string;
-	branch: string;
-	worktreePath: string;
-	baseBranch?: string;
-	isolated: boolean;
-	existingBranch?: boolean;
-	credentialPrincipal?: string;
-}): () => Promise<string> {
-	return async () => {
-		if (input.credentialPrincipal) {
-			await requestCreationCredential({
-				sessionId: input.sessionId,
-				identity: input.identity,
-				principal: input.credentialPrincipal,
-				scope: `git:${input.project}`,
-			});
-		}
-		await requestCreationBranch({
-			sessionId: input.sessionId,
-			identity: input.identity,
-			project: input.project,
-			branch: input.branch,
-			worktreePath: input.worktreePath,
-			baseBranch: input.baseBranch,
-			isolated: input.isolated,
-			existingBranch: input.existingBranch,
-			credentialPrincipal: input.credentialPrincipal,
-		});
-		return input.worktreePath;
-	};
-}
-
 export async function resumePlannedCreate(sessionId: string): Promise<boolean> {
 	const plan = readCreatePlanForRecovery(sessionId);
 	const dispatch = promptDispatches.get(sessionId);
@@ -428,17 +398,25 @@ export async function resumePlannedCreate(sessionId: string): Promise<boolean> {
 		? await isRegisteredWorktree(restored.wtPath, restored.repoId!, restored.branch)
 		: true;
 	const materializeWorktree = restored.needsWorktree && !ready
-		? actorWorktreeMaterializer({
-				sessionId,
-				identity: plan.identity,
-				project: restored.repoId!,
-				branch: restored.branch,
-				worktreePath: restored.wtPath,
-				baseBranch: restored.stackedOn?.branch,
-				isolated: restored.worktreeIsolated === true,
-				existingBranch: restored.worktreeKind === "existing",
-				credentialPrincipal: restored.gitPrincipal,
-			})
+		? async () => {
+				if (existsSync(restored.wtPath!))
+					throw new Error(
+						`Incomplete worktree exists at ${restored.wtPath}; refusing to resume the session`,
+					);
+				return restored.worktreeKind === "existing"
+					? createWorktreeForExistingBranch(
+							restored.branch!,
+							restored.repoId!,
+							restoredGitEnv,
+						)
+					: createWorktree(restored.branch!, restored.repoId!, {
+							...(restored.stackedOn?.branch
+								? { base: restored.stackedOn.branch }
+								: {}),
+							...(restored.worktreeIsolated ? { isolated: true } : {}),
+							...(restoredGitEnv ? { gitEnv: restoredGitEnv } : {}),
+						});
+			}
 		: undefined;
 	const imageUrls = dispatch.items.flatMap((item) => item.images || []);
 	const spec: ResolvedCreate = {
@@ -699,6 +677,15 @@ export async function openCreatedSession(
 				}
 			}
 
+			const retrievedMemory = await retrievedMemoryNoteFor(
+				spec.openingPrompt,
+				spec.user,
+				[...spec.memoryRepoIds, ...attachedRepoIds],
+			);
+			const openingPromptForRun = retrievedMemory
+				? `${retrievedMemory}\n\n${spec.openingPrompt}`
+				: spec.openingPrompt;
+
 			// Sandbox session: route the OPENING turn through the same
 			// launcher the prompt path uses (the session file was persisted
 			// above, so it resolves) — bind mode included, so the first turn
@@ -715,7 +702,7 @@ export async function openCreatedSession(
 				const created = findSession(bksId);
 				sandboxOpeningRun = created
 					? await maybeLaunchSandboxedRun(created, {
-							prompt: spec.openingPrompt,
+							prompt: openingPromptForRun,
 							cwd: spec.wtPath,
 							user: spec.user,
 							images: spec.images,
@@ -752,7 +739,7 @@ export async function openCreatedSession(
 				const created = findSession(bksId);
 				runnerOpeningRun = created
 					? await maybeLaunchRunnerRun(created, {
-						prompt: spec.openingPrompt,
+						prompt: openingPromptForRun,
 						images: spec.images,
 						mcpServers: spec.runMcpServers ?? [],
 						user: spec.user,
@@ -772,7 +759,7 @@ export async function openCreatedSession(
 			// worktrees that were actually cut.
 			const spanning = attachedRepoIds.length ? findSession(bksId) : null;
 			for await (const event of sandboxOpeningRun ?? runnerOpeningRun ?? runAgent({
-				prompt: spec.openingPrompt,
+				prompt: openingPromptForRun,
 				// A recovered create is the same logical turn. Reuse the durable
 				// intake id so Pi and the context log upsert the original rows
 				// instead of rendering the opening message again after each restart.
@@ -1802,19 +1789,14 @@ export async function handleCreateSessionMessage(
 			gitEnv: githubGitEnv,
 			needsWorktree,
 			worktreeKind: fromPr ? "existing" : "new",
-			worktreeIsolated: false,
 			materializeWorktree: needsWorktree
-				? actorWorktreeMaterializer({
-						sessionId: bksId,
-						identity: createIdentity,
-						project: repo.id,
-						branch,
-						worktreePath: wtPath,
-						baseBranch: stackBase,
-						isolated: false,
-						existingBranch: fromPr,
-						credentialPrincipal: githubCredential?.principal,
-					})
+				? () =>
+						fromPr
+							? createWorktreeForExistingBranch(branch, repo.id, githubGitEnv)
+							: createWorktree(branch, repo.id, {
+									...(stackBase ? { base: stackBase } : {}),
+									...(githubGitEnv ? { gitEnv: githubGitEnv } : {}),
+								})
 				: undefined,
 			fork: canFork
 				? {
@@ -1847,17 +1829,30 @@ export async function handleCreateSessionMessage(
 			typeof restoredSpec.wtPath === "string" &&
 			typeof restoredSpec.branch === "string" &&
 			typeof restoredSpec.repoId === "string"
-				? actorWorktreeMaterializer({
-						sessionId: bksId,
-						identity: createIdentity,
-						project: restoredSpec.repoId,
-						branch: restoredSpec.branch,
-						worktreePath: restoredSpec.wtPath,
-						baseBranch: restoredSpec.stackedOn?.branch,
-						isolated: restoredSpec.worktreeIsolated === true,
-						existingBranch: restoredSpec.worktreeKind === "existing",
-						credentialPrincipal: restoredSpec.gitPrincipal,
-					})
+				? async () => {
+						if (existsSync(restoredSpec.wtPath!))
+							throw new Error(
+								`Incomplete worktree exists at ${restoredSpec.wtPath}; refusing to start the session`,
+							);
+						return fromPr
+							? createWorktreeForExistingBranch(
+									restoredSpec.branch!,
+									restoredSpec.repoId!,
+									restoredGitEnv,
+								)
+							: createWorktree(
+									restoredSpec.branch!,
+									restoredSpec.repoId!,
+									{
+										...(restoredSpec.stackedOn?.branch
+											? { base: restoredSpec.stackedOn.branch }
+											: {}),
+										...(restoredGitEnv
+											? { gitEnv: restoredGitEnv }
+											: {}),
+									},
+								);
+					}
 				: undefined;
 		spec = restoredSpec
 			? {

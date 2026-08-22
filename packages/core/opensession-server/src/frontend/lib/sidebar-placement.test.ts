@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { AGENT_PERSON_KEY } from "./automation-audience";
 import type { UnifiedSession } from "./types";
 import type { WsRow } from "./sidebar-types";
 import {
@@ -188,10 +189,9 @@ describe("sidebar row placement", () => {
 		]);
 	});
 
-	// Machine-started work has no band of its own: when someone opts in, it lands
-	// in the ordinary lanes wearing a robot. The lens still has to admit it then,
-	// since its owner is nobody.
-	test("files ordinary machine-created work into the status lanes", () => {
+	// Machine-started work has no band of its own: it lands in the agent's
+	// ordinary lanes wearing a robot rather than appearing as every teammate's.
+	test("files ordinary machine-created work under the agent", () => {
 		const candidate = row(
 			"native-parity",
 			[
@@ -204,8 +204,9 @@ describe("sidebar row placement", () => {
 		);
 
 		expect(classifySidebarPlacement(candidate, context)).toBe("status");
-		expect(rowAutoCreatedInLens(candidate, "me")).toBe(true);
+		expect(rowAutoCreatedInLens(candidate, "me")).toBe(false);
 		expect(rowAutoCreatedInLens(candidate, "kent")).toBe(false);
+		expect(rowAutoCreatedInLens(candidate, AGENT_PERSON_KEY)).toBe(true);
 		// Out of scope is what the caller's hide filter produces.
 		expect(
 			classifySidebarPlacement(candidate, { ...context, inStatusScope: false }),
@@ -299,7 +300,8 @@ describe("sidebar row placement", () => {
 		});
 
 		expect(rowWasAutoCreated(draft)).toBe(true);
-		expect(rowAutoCreatedInLens(draft, "me")).toBe(true);
+		expect(rowAutoCreatedInLens(draft, "me")).toBe(false);
+		expect(rowAutoCreatedInLens(draft, AGENT_PERSON_KEY)).toBe(true);
 		expect(classifySidebarPlacement(draft, context)).toBe("status");
 	});
 

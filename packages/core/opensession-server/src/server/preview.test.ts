@@ -9,6 +9,7 @@ import {
   repoLifecycle,
   resolvePreviewBoot,
   sandboxPreviewIdentityContext,
+  seedSandboxPortsConf,
   startPreview,
 } from "./preview";
 
@@ -40,6 +41,28 @@ describe("sandbox preview identity", () => {
       repoId: "tella-fusion",
       trustProfile: "interactive",
     });
+  });
+
+  test("adds WEBAPP_PORT when Portal records created the registry first", async () => {
+    const scratch = mkdtempSync(join(tmpdir(), "sandbox-preview-ports-"));
+    const conf = join(scratch, ".ports.conf");
+    writeFileSync(conf, "# opensession-portal {}\nPORTAL_RELAY_SMOKE_PORT=4000\n");
+    const sandbox = {
+      async exec(command: string[]) {
+        const proc = Bun.spawn(command, { cwd: scratch, stdout: "pipe", stderr: "pipe" });
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited,
+        ]);
+        return { stdout, stderr, exitCode };
+      },
+    } as any;
+    try {
+      await seedSandboxPortsConf(sandbox, scratch, 3300);
+      expect(await Bun.file(conf).text()).toContain("WEBAPP_PORT=3300");
+      expect(await Bun.file(conf).text()).toContain("PORTAL_RELAY_SMOKE_PORT=4000");
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
   });
 });
 

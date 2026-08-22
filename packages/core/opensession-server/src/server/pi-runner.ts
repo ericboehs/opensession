@@ -70,7 +70,12 @@ import {
   readLocalInstructions,
 } from "./run-policy";
 import { buildRunInstructions } from "./run-instructions";
-import { logInjectedContext, logStandingContext, logStandingJson } from "./context-log";
+import {
+  logInjectedContext,
+  logStandingContext,
+  logStandingJson,
+  sessionStartContext,
+} from "./context-log";
 import { wrapContext } from "./prompt-context";
 import { EMPTY_REPLY_RETRY_PROMPT } from "./auto-continue";
 import { bashAskPolicyReply } from "./command-policy";
@@ -2078,7 +2083,6 @@ async function* runPiAttempt(
       isRepoLess: !cwdRepo,
       reposNote: opts.reposNote,
       prReviewer: opts.prReviewer,
-      scratchDir: opts.scratchDir,
       // Same host-awareness as the previous runner runner: code.storage repos get
       // push-the-branch instructions instead of `gh pr create`.
       repoHost: isScratch ? undefined : cwdRepo?.host,
@@ -2088,8 +2092,6 @@ async function* runPiAttempt(
       user,
       author,
       githubUserLogin,
-      deniedToolNotes: policy.noteGroups,
-      commandPolicyGated: bashGated,
       dialOracle:
         resolved?.dial && dialOracleAgent
           ? {
@@ -2262,6 +2264,29 @@ async function* runPiAttempt(
       settingsManager,
     });
     session = created.session;
+    // The first complete provider input only exists after Pi has combined its
+    // base prompt with Open Session instructions, AGENTS.md, skills and active
+    // tool guidance. Record it once for the collapsed transcript-start audit
+    // row. Later turns can change ambient memory, but this row deliberately
+    // answers what preceded the session's initial message.
+    if (!opts.sessionId) {
+      const activeToolNames = new Set(session.getActiveToolNames());
+      logStandingContext({
+        sessionId: unifiedSessionId,
+        turnId: opts.promptEntryId || opts.startToken,
+        source: "session-start",
+        content: sessionStartContext(
+          session.systemPrompt,
+          customTools
+            .filter((tool) => activeToolNames.has(tool.name))
+            .map((tool) => ({
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters,
+            })),
+        ),
+      });
+    }
     // previous runner appends every pending noReply steer before its next LLM step.
     // Match that behavior instead of Pi's one-message-per-step default.
     session.setSteeringMode("all");

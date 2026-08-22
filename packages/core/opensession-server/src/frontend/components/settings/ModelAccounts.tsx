@@ -945,7 +945,13 @@ export function CodexAccountsSection({
 /** Every subscription account in one provider-neutral list. Provider marks and
  * metadata preserve where each account comes from without splitting the pool
  * into separate cards. */
-export function ProviderAccountsSection() {
+export function ProviderAccountsSection({
+	onboarding = false,
+	onChanged,
+}: {
+	onboarding?: boolean;
+	onChanged?: () => void | Promise<void>;
+} = {}) {
 	const claude = useClaudeAccounts();
 	const codex = useCodexAccounts();
 	const [adding, setAdding] = useState<"claude" | "codex" | null>(null);
@@ -953,6 +959,22 @@ export function ProviderAccountsSection() {
 	const loading = claude.accounts === null || codex.accounts === null;
 	const empty = !loading && claude.accounts?.length === 0 && codex.accounts?.length === 0;
 	const refreshing = claude.refreshing || codex.refreshing;
+	const onboardingAccounts = [
+		...(claude.accounts || []).map((account) => ({
+			id: `claude-${account.id}`,
+			name: account.name,
+			provider: "Claude" as const,
+			icon: "claude" as const,
+			ready: account.usable && !account.exhaustedUntil,
+		})),
+		...(codex.accounts || []).map((account) => ({
+			id: `codex-${account.id}`,
+			name: account.name,
+			provider: "OpenAI" as const,
+			icon: "codex" as const,
+			ready: account.usable && !account.exhaustedUntil,
+		})),
+	];
 
 	function refreshUsage() {
 		void Promise.allSettled([claude.load(true), codex.load(true)]);
@@ -963,16 +985,18 @@ export function ProviderAccountsSection() {
 			<SettingsGroupLabel
 				actions={
 				<>
-					<Button
-						size="sm"
-						variant="ghost"
-						className="phone:min-h-11"
-						icon={<IconHistory size={16} className={refreshing ? "animate-spin" : ""} />}
-						onClick={refreshUsage}
-						disabled={refreshing}
-					>
-						{refreshing ? "Checking…" : "Refresh usage"}
-					</Button>
+					{!onboarding && (
+						<Button
+							size="sm"
+							variant="ghost"
+							className="phone:min-h-11"
+							icon={<IconHistory size={16} className={refreshing ? "animate-spin" : ""} />}
+							onClick={refreshUsage}
+							disabled={refreshing}
+						>
+							{refreshing ? "Checking…" : "Refresh usage"}
+						</Button>
+					)}
 					<Menu.Root>
 						<Menu.Trigger
 							render={
@@ -1017,7 +1041,10 @@ export function ProviderAccountsSection() {
 			<Modal.Root open={adding === "claude"} onOpenChange={(open) => !open && setAdding(null)}>
 				<Modal.Content widthClassName="max-w-[32rem]">
 					<AddClaudeAccountForm
-						onAccountAdded={() => void claude.load()}
+						onAccountAdded={() => {
+							void claude.load();
+							void onChanged?.();
+						}}
 						onDone={() => setAdding(null)}
 					/>
 				</Modal.Content>
@@ -1029,6 +1056,7 @@ export function ProviderAccountsSection() {
 						onAdded={() => {
 							setAdding(null);
 							void codex.load();
+							void onChanged?.();
 						}}
 					/>
 				</Modal.Content>
@@ -1039,9 +1067,30 @@ export function ProviderAccountsSection() {
 					<LoadingState placement="row">Loading accounts…</LoadingState>
 				) : empty ? (
 					<EmptyState placement="row">
-						No accounts yet. Runs use this server's Claude and Codex sign-ins until you add
-						an Anthropic or OpenAI account.
+						{onboarding
+							? "Connect a Claude or OpenAI account to use its subscription."
+							: "No accounts yet. Runs use this server's Claude and Codex sign-ins until you add an Anthropic or OpenAI account."}
 					</EmptyState>
+				) : onboarding ? (
+					<>
+						{onboardingAccounts.map((account) => (
+							<SettingRow key={account.id}>
+								<IconTile name={account.icon} size={28} />
+								<SettingRowText>
+									<SettingRowTitle>{account.name}</SettingRowTitle>
+									<div className="mt-0.5 text-meta text-dim">{account.provider}</div>
+								</SettingRowText>
+								<span
+									className={cn(
+										"ml-auto shrink-0 pl-3 text-label font-medium",
+										account.ready ? "text-green" : "text-dim",
+									)}
+								>
+									{account.ready ? "Ready" : "Unavailable"}
+								</span>
+							</SettingRow>
+						))}
+					</>
 				) : (
 					<>
 						<ClaudeAccountRows state={claude} />

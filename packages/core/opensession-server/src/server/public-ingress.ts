@@ -155,16 +155,27 @@ async function ingressFetch(req: Request, server: IngressServer): Promise<Respon
   }
   const workloadIdentity = await handleWorkloadIdentityRequest(req);
   if (workloadIdentity) return workloadIdentity;
-  if (path.startsWith("/run-ws/") || path === "/rpc-ws" || path === "/sandbox-portal-ws") {
+  if (path === "/sandbox-portal-ws") {
+    // Authenticate first so expired sidecars from a coordinator restart cannot
+    // spend the shared provider egress IP's whole rate-limit budget and lock a
+    // newly minted, valid Portal out. Invalid attempts still count and cap.
+    const response = handleSandboxPortalRelayUpgrade(req, server, path);
+    if (response?.status === 403 && rateLimited(clientIp(req, server))) {
+      return new Response(null, {
+        status: 429,
+        headers: { "retry-after": String(Math.ceil(WINDOW_MS / 1000)) },
+      });
+    }
+    return response;
+  }
+  if (path.startsWith("/run-ws/") || path === "/rpc-ws") {
     if (rateLimited(clientIp(req, server))) {
       return new Response(null, {
         status: 429,
         headers: { "retry-after": String(Math.ceil(WINDOW_MS / 1000)) },
       });
     }
-    return path === "/sandbox-portal-ws"
-      ? handleSandboxPortalRelayUpgrade(req, server, path)
-      : handleSandboxWsUpgrade(req, server, path);
+    return handleSandboxWsUpgrade(req, server, path);
   }
   // Everything else: a bodyless 404 — never JSON, never a route list.
   return new Response(null, { status: 404 });

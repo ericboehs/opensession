@@ -157,15 +157,30 @@ describe("in-process opensession-* surface", () => {
 	});
 
 	test("memory writes are denied even though the server is mounted", async () => {
-		await expect(
-			inProcessHost().call("opensession-memory", "store_memory", {}),
-		).rejects.toThrow(/cannot write memory/);
+		for (const tool of [
+			"store_memory",
+			"update_memory",
+			"archive_memory",
+			"restore_memory",
+			"confirm_memory",
+			"forget_memory",
+		]) {
+			await expect(
+				inProcessHost().call("opensession-memory", tool, {}),
+			).rejects.toThrow(/(?:cannot (?:write|update|archive|restore|confirm|delete) memory|can only read memory)/);
+		}
 	});
 
 	test("memory reads are not denied by the built-in denials", () => {
 		expect(
 			WORKFLOW_INPROCESS_TOOL_DENIALS["mcp__opensession-memory__search_memory"],
 		).toBeUndefined();
+	});
+
+	test("future memory mutations fail closed", async () => {
+		await expect(
+			inProcessHost().call("opensession-memory", "future_mutation", {}),
+		).rejects.toThrow(/can only read memory/);
 	});
 
 	test("without an inProcessMcp builder the surface stays external-only", () => {

@@ -6,7 +6,7 @@
  * while exactly one client is writing. A person with the web app open in two
  * tabs, or the web app and a native client, has two caches that each believe
  * they are the whole truth. The second writer's PUT then deletes every entry
- * the first made since it loaded. This is how a workspace snoozed for Some day
+ * the first made since it loaded. This is how a workspace snoozed for Someday
  * came back on its own: nothing expired it, another client overwrote the map
  * without it.
  *

@@ -683,14 +683,14 @@ export function PreferencesPanel() {
 				<SettingGroup>
 					<SettingRow
 						title="Steps"
-						desc="Choose whether a turn’s steps stay closed, open only while it runs, or remain open."
+						desc="Choose whether steps stay closed, open when the agent writes updates, or remain open."
 						control={
 							<Select
 								label="Steps"
 								value={turnActivity.work}
 								options={[
 									{ value: "folded", label: "Closed" },
-									{ value: "running", label: "While running" },
+									{ value: "running", label: "With updates" },
 									{ value: "open", label: "Open" },
 								]}
 								onChange={setTurnWorkPref}

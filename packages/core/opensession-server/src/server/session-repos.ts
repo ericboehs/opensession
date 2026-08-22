@@ -32,6 +32,11 @@ import {
 	snapshotMemoryNote,
 	sessionMemoryScopes,
 } from "./session-memory";
+import {
+	memoryRolloutMode,
+	renderAmbientMemoryForPrompt,
+	retrieveMemoryForPrompt,
+} from "./memory-v2";
 import { DESK_NOTE } from "./desk";
 import { deskBriefingFor } from "./desk-state";
 import { personalOutputStyleNoteFor } from "./personal-output-style";
@@ -264,17 +269,60 @@ export async function memoryNoteFor(
 		personalPromptNoteFor(user),
 	];
 	try {
-		parts.push(
-			await snapshotMemoryNote(sessionId, () =>
-				renderSessionMemoryNote(sessionMemoryScopes({ user, repos }), {
-					tools: true,
-				}),
-			),
-		);
+		const scopes = sessionMemoryScopes({ user, repos });
+		const mode = memoryRolloutMode();
+		if (mode === "v2") {
+			parts.push(
+				await snapshotMemoryNote(sessionId, async () =>
+					(
+						await renderAmbientMemoryForPrompt({
+							scopeKeys: scopes.map((scope) => scope.key),
+							primaryRepoKey: scopes.find((scope) => scope.kind === "repo")?.key,
+						})
+					).text,
+				),
+			);
+		} else {
+			parts.push(
+				await snapshotMemoryNote(sessionId, () =>
+					renderSessionMemoryNote(scopes, { tools: true }),
+				),
+			);
+			if (mode === "shadow") {
+				void renderAmbientMemoryForPrompt({
+					scopeKeys: scopes.map((scope) => scope.key),
+					primaryRepoKey: scopes.find((scope) => scope.kind === "repo")?.key,
+				}).catch(() => {});
+			}
+		}
 	} catch (e) {
 		console.warn("[memory] failed to render session memory note:", e);
 	}
 	return parts.filter(Boolean).join("\n\n");
+}
+
+/**
+ * Prompt-matched memory belongs to this turn, not the stable system prefix.
+ * It is fenced and context-logged by retrieveMemoryForPrompt.
+ */
+export async function retrievedMemoryNoteFor(
+	query: string,
+	user: string | undefined,
+	repos: string[],
+): Promise<string> {
+	const mode = memoryRolloutMode();
+	if (mode === "legacy") return "";
+	try {
+		const scopes = sessionMemoryScopes({ user, repos });
+		const result = await retrieveMemoryForPrompt(query, {
+			scopeKeys: scopes.map((scope) => scope.key),
+			primaryRepoKey: scopes.find((scope) => scope.kind === "repo")?.key,
+		});
+		return mode === "v2" ? result.text : "";
+	} catch (e) {
+		console.warn("[memory] failed to retrieve turn memory:", e);
+		return "";
+	}
 }
 
 export interface WorktreeTarget {

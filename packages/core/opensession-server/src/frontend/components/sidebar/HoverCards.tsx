@@ -10,7 +10,7 @@ import {
 	runNeedsAttention,
 	workspaceRunNeedingAttention,
 } from "../../lib/sidebar-lanes";
-import { MINE_STATUS_META, type LaneChoice, type MineStatus } from "../../lib/sidebar-types";
+import { type LaneChoice, type MineStatus } from "../../lib/sidebar-types";
 import { SNOOZE_SOMEDAY, formatRemaining, snoozePresets } from "../../lib/snoozes";
 import { elapsedSince, fullTime } from "../../lib/time";
 import type { UnifiedSession } from "../../lib/types";
@@ -42,6 +42,8 @@ export function SessionCardBody({ session: s }: { session: UnifiedSession }) {
 	const state = hoverState(s);
 	const ov = useSessionOverview(s);
 	const rows: Array<[string, React.ReactNode]> = [];
+	const hasHead =
+		(s.prAdditions != null && s.prDeletions != null) || !!s.prOsReview;
 
 	const owner = s.automation || s.startedBy;
 	if (owner) rows.push([s.automation ? "Automation" : "Started by", owner]);
@@ -70,27 +72,38 @@ export function SessionCardBody({ session: s }: { session: UnifiedSession }) {
 			    changed on. The repo used to stand in when there was no diff to
 			    show, which spent the card's first line naming the band the row
 			    was already filed under. */}
-			<div className="flex min-w-0 items-center gap-[7px]">
-				<span className={`size-2 shrink-0 rounded-full ${state.dotClass}`} />
-				<span className="min-w-0 flex-1 truncate text-meta">
-					{s.prAdditions != null && s.prDeletions != null && (
-						<>
-							<span className="text-green">+{compactNum(s.prAdditions)}</span>{" "}
-							<span className="text-red">-{compactNum(s.prDeletions)}</span>
-						</>
-					)}
-				</span>
-				{/* What the automated review made of this session's PR, in the same
-				    place the workspace card puts it. */}
-				{s.prOsReview && (
-					<span className="min-w-0 shrink truncate text-right text-meta">
-						<span className="text-faint">OS review </span>
-						{osReviewLabel(s.prOsReview)}
+			{hasHead && (
+				<div className="flex min-w-0 items-center gap-[7px]">
+					<span className="min-w-0 flex-1 truncate text-meta">
+						{s.prAdditions != null && s.prDeletions != null && (
+							<>
+								<span className="text-green">+{compactNum(s.prAdditions)}</span>{" "}
+								<span className="text-red">-{compactNum(s.prDeletions)}</span>
+							</>
+						)}
 					</span>
-				)}
-			</div>
+					{/* What the automated review made of this session's PR, in the same
+					    place the workspace card puts it. */}
+					{s.prOsReview && (
+						<span className="min-w-0 shrink truncate text-right text-meta">
+							<span className="text-faint">OS review </span>
+							{osReviewLabel(s.prOsReview)}
+						</span>
+					)}
+				</div>
+			)}
 
-			<div className="mt-[5px] text-label font-semibold leading-[1.3]">{s.title}</div>
+			<div
+				className={cn(
+					"flex min-w-0 items-center gap-[7px] text-label font-semibold leading-[1.3]",
+					hasHead && "mt-[5px]",
+				)}
+			>
+				{s.isRunning && (
+					<span className={`size-2 shrink-0 rounded-full ${state.dotClass}`} />
+				)}
+				<span className="min-w-0 truncate">{s.title}</span>
+			</div>
 
 			{!runNeedsAttention(s) && (
 				<div className={`mt-[3px] text-meta font-medium ${TONE_TEXT[state.tone]}`}>
@@ -188,7 +201,7 @@ export function SnoozeBadge({
 	return (
 		<span
 			className={cn(SIDEBAR_WS_SNOOZE, className)}
-			title={until === SNOOZE_SOMEDAY ? "Snoozed: Some day" : `Snoozed until ${new Date(until).toLocaleString()}`}
+			title={until === SNOOZE_SOMEDAY ? "Snoozed: Someday" : `Snoozed until ${new Date(until).toLocaleString()}`}
 		>
 			<IconMoon size={20} />
 			{formatRemaining(until, now)}
@@ -443,7 +456,9 @@ function WsOverviewInfo({
 	ov: WorkspaceOverview | null;
 }) {
 	const { prSession } = wsPrInfo(row);
-	const meta = MINE_STATUS_META.find((m) => m.key === row.status);
+	const hasHead =
+		(prSession?.prAdditions != null && prSession?.prDeletions != null) ||
+		!!prSession?.prOsReview;
 	const failedSession = workspaceRunNeedingAttention(row.sessions);
 	return (
 		<>
@@ -454,36 +469,46 @@ function WsOverviewInfo({
 			    repo, which only ever named the band the row is filed under. The
 			    verdict reads better here than under the title, where it sat between
 			    the name and the description and pushed them apart. */}
-			<div className="flex min-w-0 items-center gap-[7px]">
-				{/* The diff is two short numbers and never truncates; the verdict is
-				    the variable-length half, so it takes the slack and gives it back. */}
-				<span className="shrink-0 text-meta">
-					{prSession?.prAdditions != null && prSession?.prDeletions != null && (
-						<>
-							<span className="text-green">
-								+{compactNum(prSession.prAdditions)}
-							</span>{" "}
-							<span className="text-red">
-								-{compactNum(prSession.prDeletions)}
-							</span>
-						</>
-					)}
-				</span>
-				{/* What os-review made of this PR — the question a Ready-to-merge row
-				    raises, answered without opening GitHub. */}
-				{prSession?.prOsReview && (
-					<span className="min-w-0 flex-1 truncate text-right text-meta">
-						<span className="text-faint">OS review </span>
-						{osReviewLabel(prSession.prOsReview)}
+			{hasHead && (
+				<div className="flex min-w-0 items-center gap-[7px]">
+					{/* The diff is two short numbers and never truncates; the verdict is
+					    the variable-length half, so it takes the slack and gives it back. */}
+					<span className="shrink-0 text-meta">
+						{prSession?.prAdditions != null && prSession?.prDeletions != null && (
+							<>
+								<span className="text-green">
+									+{compactNum(prSession.prAdditions)}
+								</span>{" "}
+								<span className="text-red">
+									-{compactNum(prSession.prDeletions)}
+								</span>
+							</>
+						)}
 					</span>
-				)}
-				{/* `ml-auto` only bites when there is no verdict to take the slack. */}
-				<span className="ml-auto flex shrink-0 items-center" title={meta?.label}>
-					<WsStatusMark row={row} size={22} />
-				</span>
-			</div>
+					{/* What os-review made of this PR: the question a Ready-to-merge row
+					    raises, answered without opening GitHub. */}
+					{prSession?.prOsReview && (
+						<span className="min-w-0 flex-1 truncate text-right text-meta">
+							<span className="text-faint">OS review </span>
+							{osReviewLabel(prSession.prOsReview)}
+						</span>
+					)}
+				</div>
+			)}
 
-			<div className="mt-[5px] text-label font-semibold leading-[1.3]">{row.name}</div>
+			<div
+				className={cn(
+					"flex min-w-0 items-center gap-[7px] text-label font-semibold leading-[1.3]",
+					hasHead && "mt-[5px]",
+				)}
+			>
+				{row.running && (
+					<span
+						className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.running}`}
+					/>
+				)}
+				<span className="min-w-0 truncate">{row.name}</span>
+			</div>
 
 			{row.status === "needsinput" &&
 				(row.sessions.some((c) => c.waitingForInput) ? (

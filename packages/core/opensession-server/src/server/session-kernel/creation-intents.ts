@@ -153,7 +153,7 @@ export async function requestCreationBranch(
           project: input.project,
           branch: input.branch,
           worktreePath: input.worktreePath,
-          baseBranch: input.baseBranch,
+          baseBranch: input.baseBranch || undefined,
           isolated: input.isolated,
           existingBranch: input.existingBranch,
           credentialPrincipal: input.credentialPrincipal,

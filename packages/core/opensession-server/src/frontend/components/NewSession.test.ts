@@ -86,18 +86,38 @@ test("the default create exposes its deterministic session id immediately", asyn
   expect(createHandler).toContain("onCreateStarted?.(optimisticCreate)");
 });
 
-test("immediate create preserves the latest draft until success", async () => {
+test("immediate create consumes the sent draft before opening the session", async () => {
   const source = await Bun.file(new URL("./NewSession.tsx", import.meta.url)).text();
   const createStart = source.indexOf("function handleCreate()");
   const createEnd = source.indexOf("const canCreate =", createStart);
   const createHandler = source.slice(createStart, createEnd);
 
+  const sent = createHandler.indexOf("send(createMessage)");
   const drop = createHandler.indexOf("dropPendingDraftWrite()");
-  const park = createHandler.indexOf("saveDraft(DRAFT_KEY, { text: prompt })");
+  const clear = createHandler.indexOf("clearDraft(DRAFT_KEY)");
+  const empty = createHandler.indexOf('setText("")');
   const handoff = createHandler.indexOf("onCreateStarted?.(optimisticCreate)");
-  expect(drop).toBeGreaterThan(-1);
-  expect(drop).toBeLessThan(park);
-  expect(park).toBeLessThan(handoff);
+  expect(sent).toBeGreaterThan(-1);
+  expect(sent).toBeLessThan(drop);
+  expect(drop).toBeLessThan(clear);
+  expect(clear).toBeLessThan(empty);
+  expect(empty).toBeLessThan(handoff);
+  expect(createHandler).not.toContain("saveDraft(DRAFT_KEY, { text: prompt })");
+});
+
+test("a failed immediate create restores the submitted composer payload", async () => {
+  const source = await Bun.file(new URL("../App.tsx", import.meta.url)).text();
+  const errorStart = source.indexOf('if (msg.type === "error")');
+  const errorEnd = source.indexOf('if (msg.type === "pins_changed")', errorStart);
+  const recovery = source.slice(errorStart, errorEnd);
+
+  expect(recovery).toContain("saveDraft(NEW_SESSION_DRAFT_KEY, {");
+  expect(recovery).toContain("text: draft.prompt");
+  expect(recovery).toContain("images: draft.images ?? []");
+  expect(recovery).toContain("files: draft.files ?? []");
+  expect(recovery.indexOf("saveDraft(NEW_SESSION_DRAFT_KEY")).toBeLessThan(
+    recovery.indexOf("setPaletteState"),
+  );
 });
 
 test("the new session title uses the visible names of pasted session links", async () => {

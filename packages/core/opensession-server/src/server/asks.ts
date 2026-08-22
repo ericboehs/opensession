@@ -36,6 +36,7 @@ import {
 	EphemeralSessionMap,
 	fireStoredSessionTimer,
 	registerSessionTimerHandler,
+	sessionAsk,
 	sessionKernel,
 	sessionKernelStore,
 } from "./session-kernel";
@@ -74,6 +75,16 @@ export function pendingAskAwaitingAnswer(
 ): PendingAsk | undefined {
 	const pending = pendingAsks.get(sessionId);
 	return pending?.answerReceived ? undefined : pending;
+}
+
+/** One actor snapshot for list rendering, instead of one RPC per session. */
+export function pendingAskIdsAwaitingAnswer(): Set<string> {
+	const ids = new Set<string>();
+	for (const [sessionId, value] of sessionAsk({ op: "entries" })) {
+		const pending = value as { answerReceived?: boolean } | undefined;
+		if (!pending?.answerReceived) ids.add(sessionId);
+	}
+	return ids;
 }
 
 type PersistedPendingAsk = {

@@ -734,6 +734,13 @@ fi
 
 # ── PATH ────────────────────────────────────────────────────────────────────
 
+# An installer subprocess cannot update the PATH of the shell that launched it.
+# Remember whether the command already works there so the final output can name
+# the profile to source when this is a fresh install.
+PATH_NEEDS_REFRESH=1
+command -v opensession >/dev/null 2>&1 && PATH_NEEDS_REFRESH=0
+PATH_REFRESH_PROFILE=""
+
 add_to_path() {
   config_file="$1"; line="$2"
   if grep -Fxq "$line" "$config_file" 2>/dev/null; then
@@ -775,6 +782,9 @@ if [ "$NO_MODIFY_PATH" != "1" ]; then
   esac
   for profile in $profiles; do
     add_to_path "$profile" "$line"
+    if [ -z "$PATH_REFRESH_PROFILE" ] && grep -Fxq "$line" "$profile" 2>/dev/null; then
+      PATH_REFRESH_PROFILE="$profile"
+    fi
   done
 fi
 export PATH="$BIN_DIR:$PATH"
@@ -782,12 +792,26 @@ export PATH="$BIN_DIR:$PATH"
 # GitHub Actions needs PATH additions written to a file rather than exported.
 [ -n "${GITHUB_PATH:-}" ] && echo "$BIN_DIR" >>"$GITHUB_PATH"
 
+show_path_refresh_hint() {
+  [ "$PATH_NEEDS_REFRESH" = "1" ] || return 0
+  if [ -n "$PATH_REFRESH_PROFILE" ]; then
+    display_profile="$PATH_REFRESH_PROFILE"
+    case "$display_profile" in
+      "$HOME"/*) display_profile="~${display_profile#"$HOME"}" ;;
+    esac
+    info "Run this in your current shell: ${B}source $display_profile${N}"
+  elif [ "$NO_MODIFY_PATH" = "1" ]; then
+    info "Add ${B}$BIN_DIR${N} to PATH before running opensession."
+  fi
+}
+
 # ── onboard ─────────────────────────────────────────────────────────────────
 
 if [ "$NO_ONBOARD" = "1" ]; then
   printf '\n'
   step "Installed"
   info "Next: ${B}opensession onboard${N}"
+  show_path_refresh_hint
   exit 0
 fi
 
@@ -841,25 +865,51 @@ if [ "$ADVANCED" != "1" ] && [ "$NO_ONBOARD" != "1" ]; then
   fi
 fi
 
+# Resolve both addresses before the summary. The public URL is what the person
+# opens; the bind address is the truthful local health probe when a reverse
+# proxy or custom domain fronts the server.
+url=""
+health_url=""
+server_ready=0
+if [ -f "$OPENSESSION_HOME/config.json" ]; then
+  url="$(sed -n 's/.*"publicBaseUrl": *"\([^"]*\)".*/\1/p' "$OPENSESSION_HOME/config.json" | head -1)"
+  host="$(sed -n 's/.*"host": *"\([^"]*\)".*/\1/p' "$OPENSESSION_HOME/config.json" | head -1)"
+  port="$(sed -n 's/.*"port": *\([0-9]*\).*/\1/p' "$OPENSESSION_HOME/config.json" | head -1)"
+  host="${host:-127.0.0.1}"
+  port="${port:-3850}"
+  case "$host" in 0.0.0.0|::|\[::\]) host="127.0.0.1" ;; esac
+  health_url="http://$host:$port"
+  [ -n "$url" ] || url="$health_url"
+  if curl -fsS --max-time 3 "$health_url/api/health" >/dev/null 2>&1; then
+    server_ready=1
+  fi
+fi
+
 printf '\n'
-step "Done"
+if [ "$ADVANCED" != "1" ] && [ "$server_ready" != "1" ]; then
+  step "Needs attention"
+  if [ -z "$url" ]; then
+    warn "the installer did not create the server configuration"
+  else
+    warn "the server did not start at $health_url"
+    info "Expected URL: ${B}$url${N}"
+  fi
+  info "Inspect the failure: ${B}$BIN_DIR/opensession logs -n 80${N}"
+  info "Retry startup:       ${B}$BIN_DIR/opensession start${N}"
+else
+  step "Done"
+fi
 info "opensession status    ${D}is the server up?${N}"
 info "opensession doctor    ${D}check the install${N}"
 info "opensession --help    ${D}everything else${N}"
-case ":$PATH:" in
-  *":$BIN_DIR:"*) ;;
-  *) muted "open a new shell (or source your profile) to get 'opensession' on PATH" ;;
-esac
-# The last line is the URL, when there is a server to open. Read the bind from
-# the config the wizard just wrote; a public URL set there wins.
-if [ -f "$OPENSESSION_HOME/config.json" ]; then
-  url="$(sed -n 's/.*"publicBaseUrl": *"\([^"]*\)".*/\1/p' "$OPENSESSION_HOME/config.json" | head -1)"
-  if [ -z "$url" ]; then
-    port="$(sed -n 's/.*"port": *\([0-9]*\).*/\1/p' "$OPENSESSION_HOME/config.json" | head -1)"
-    url="http://127.0.0.1:${port:-3850}"
-  fi
-  if curl -fsS --max-time 3 "$url/api/health" >/dev/null 2>&1; then
-    printf '\n  %sOpen %s%s\n' "$B" "$url" "$N"
-  fi
+show_path_refresh_hint
+if [ "$server_ready" = "1" ]; then
+  printf '\n  %sOpen %s%s\n' "$B" "$url" "$N"
 fi
 printf '\n'
+
+# Simple mode promises a running server. Do not report a successful install
+# when launchd or systemd accepted a unit that then failed to boot.
+if [ "$ADVANCED" != "1" ] && [ "$server_ready" != "1" ]; then
+  exit 1
+fi

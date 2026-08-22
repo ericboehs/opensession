@@ -1,9 +1,9 @@
 // How a turn's work reads in the transcript, as two answers rather than one.
 //
 // `work` decides whether a turn's working is on screen at all. "running" is
-// the default: it opens while the turn is going and folds again the moment
-// the turn settles. "open" keeps it open, "folded" keeps it away even while
-// live, where the work line's tail reports the running tool instead.
+// the default: a tool-only turn stays one summary row, then opens if the agent
+// writes an update and folds again when the turn settles. "open" keeps it open,
+// while "folded" keeps it closed even during a live narrated turn.
 //
 // `tools` decides whether grouped tool runs start open. "open" renders every
 // call in place; "folded" keeps consecutive routine calls behind their compact
