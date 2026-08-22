@@ -9,6 +9,24 @@ import XCTest
 final class SessionViewModelTests: XCTestCase {
     private let serverA = SessionViewModelCache.Scope(serverURL: "server-a", token: "token-a")
     private let serverB = SessionViewModelCache.Scope(serverURL: "server-b", token: "token-b")
+    private var savedLiveTyping: Bool?
+
+    override func setUp() {
+        super.setUp()
+        savedLiveTyping = UserDefaults.standard.object(
+            forKey: "os1.transcript.liveTyping"
+        ) as? Bool
+        UserDefaults.standard.set(true, forKey: "os1.transcript.liveTyping")
+    }
+
+    override func tearDown() {
+        if let savedLiveTyping {
+            UserDefaults.standard.set(savedLiveTyping, forKey: "os1.transcript.liveTyping")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "os1.transcript.liveTyping")
+        }
+        super.tearDown()
+    }
 
     private func makeViewModel() -> SessionViewModel {
         SessionViewModel(session: Session(id: "bks-1"))
