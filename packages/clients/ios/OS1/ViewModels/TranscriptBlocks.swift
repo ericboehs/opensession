@@ -273,7 +273,6 @@ struct WorkTurn: Identifiable, Equatable {
     var id: String
     var anchorId: String
     var items: [TurnItem]
-    var hasNarration: Bool
     /// The turn is still producing output — the header says "Working".
     var isLive: Bool
     var duration: TimeInterval?
@@ -293,6 +292,7 @@ struct WorkTurn: Identifiable, Equatable {
     var livePreview: String?
 
     var hasFailure: Bool { failureCount > 0 }
+    var hasNarration: Bool
 
     /// How the fold should start out, before any manual toggle.
     func defaultExpanded(preference: TurnActivity) -> Bool {

@@ -47,7 +47,7 @@
       },
       "resumesEngineSession": false,
       "seedTranscriptEntries": 0,
-      "sessionNote": "## Memory\n\nManage memory with the opensession-memory tools: `store_memory` saves a fact (scope `repo` = this session's repo, `user` = whoever is prompting, `team` = shared workspace-wide, including Assistant in Slack), `forget_memory` removes one by id, `list_memory` shows everything. Store only durable, non-obvious facts worth every future session knowing (operational gotchas, decisions, preferences) — never conversation state, and never anything already in the repo's docs. When the user says \"remember ...\", store it.",
+      "sessionNote": null,
       "user": "Teammate"
     }
   ],
@@ -138,28 +138,21 @@
       "type": "system"
     },
     {
-      "content": "## Memory\n\nManage memory with the opensession-memory tools: `store_memory` saves a fact (scope `repo` = this session's repo, `user` = whoever is prompting, `team` = shared workspace-wide, including Assistant in Slack), `forget_memory` removes one by id, `list_memory` shows everything. Store only durable, non-obvious facts worth every future session knowing (operational gotchas, decisions, preferences) — never conversation state, and never anything already in the repo's docs. When the user says \"remember ...\", store it.",
-      "contextSource": "repos-note",
-      "noticeKind": "context-injection",
-      "seq": 3,
-      "type": "system"
-    },
-    {
       "content": "{\n  \"confirmTools\": [\n    \"mcp__stripe__cancel_subscription\",\n    \"mcp__stripe__create_refund\",\n    \"mcp__stripe__stripe_api_execute\",\n    \"mcp__stripe__stripe_api_write\",\n    \"mcp__stripe__update_subscription\"\n  ],\n  \"deniedTools\": [],\n  \"inProcess\": [\n    \"opensession-admin\",\n    \"opensession-ask\",\n    \"opensession-assets\",\n    \"opensession-goals\",\n    \"opensession-humans\",\n    \"opensession-keychain\",\n    \"opensession-memory\",\n    \"opensession-papercuts\",\n    \"opensession-portals\",\n    \"opensession-publish\",\n    \"opensession-repos\",\n    \"opensession-runners\",\n    \"opensession-search\",\n    \"opensession-self-deploy\",\n    \"opensession-sessions\",\n    \"opensession-slack\",\n    \"opensession-todos\",\n    \"opensession-walkthrough\",\n    \"opensession-web\",\n    \"opensession-workflows\"\n  ],\n  \"localWorkspaceToolsDisabled\": false,\n  \"mcpScope\": \"all\",\n  \"mode\": \"scratch\"\n}",
       "contextSource": "tools",
       "noticeKind": "standing-context",
-      "seq": 4,
+      "seq": 3,
       "type": "system"
     },
     {
       "content": "The sweep re-reads every shard per tick.",
       "model": "pi/anthropic/claude-sonnet-5",
-      "seq": 5,
+      "seq": 4,
       "type": "assistant"
     },
     {
       "content": "Using bash",
-      "seq": 6,
+      "seq": 5,
       "toolInput": {
         "command": "rg -n tick"
       },
@@ -168,7 +161,7 @@
     },
     {
       "content": "3 matches",
-      "seq": 7,
+      "seq": 6,
       "type": "tool_result"
     }
   ]

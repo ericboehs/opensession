@@ -165,7 +165,7 @@ jobs:
           set -e
           printf '%s\n' "$output"
           test "$status" -eq 1
-          grep -F "No Claude accounts are available" <<< "$output"
+          grep -F "No usable Claude accounts are available" <<< "$output"
           grep -Eq '^  1 error\(s\),' <<< "$output"
 
       - name: Service definition renders for this platform

@@ -357,6 +357,8 @@ function checkRunStateWedge(
 }
 
 export function findSession(sessionId: string): UnifiedSession | undefined {
+	const native = readNativeSession(sessionId);
+	if (native) return native;
 	return getCachedSessions().find(
 		(s) => s.id === sessionId || s.aliasIds?.includes(sessionId),
 	);
