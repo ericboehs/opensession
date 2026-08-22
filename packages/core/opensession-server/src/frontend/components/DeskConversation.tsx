@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { TranscriptEntry } from "../lib/types";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { getCurrentUser } from "./UserPicker";
-import { renderMarkdown } from "../lib/markdown";
 import {
 	fetchFileMentions,
 	fetchMentionSuggestions,
@@ -11,19 +10,16 @@ import {
 	type ModelOption,
 } from "../lib/api";
 import { splitAttachments, type FileAttachment } from "../lib/images";
-import { TranscriptBlocks } from "./TranscriptBlocks";
 import { Composer } from "./Composer";
 import { mergeTranscriptEntries } from "../lib/transcript-state";
 import { CONTINUE_AFTER_FAILURE_PROMPT } from "../lib/continue-run";
+import { LiveTurnStore } from "../lib/live-turn-store";
+import { getLiveTypingPref } from "../lib/live-typing-pref";
+import { isTimelineOnlyRunnerNotice } from "../lib/runner-events";
 import { otherTypingUsers } from "../lib/typing";
 import { cn } from "../ui/cn";
-import {
-	msgBodyStreaming,
-	msgBubbleUser,
-	msgOwnTurn,
-	msgRow,
-	msgStreamingRow,
-} from "../lib/msg-classes";
+import { msgBubbleUser, msgOwnTurn, msgRow } from "../lib/msg-classes";
+import { SessionTranscript } from "./SessionTranscript";
 import { TypingIndicator } from "./TypingIndicator";
 import { duration, ease } from "../ui/motion";
 import {
@@ -82,9 +78,9 @@ export function DeskConversation({
 	const { connected, send, setTyping, addHandler } = useWebSocket(presenceActive);
 	const [entries, setEntries] = useState<TranscriptEntry[]>([]);
 	const [typingUsers, setTypingUsers] = useState<string[]>([]);
-	const [streamText, setStreamText] = useState("");
 	const [isRunning, setIsRunning] = useState(false);
 	const [pending, setPending] = useState<string | null>(null);
+	const [hasLiveText, setHasLiveText] = useState(false);
 	const [dictationHidesSuggestions, setDictationHidesSuggestions] = useState(false);
 	// Attachments staged for the next send. The Composer stages files to disk
 	// itself (no `onAddAttachments`), the same way the catch-up deck's reply box
@@ -112,6 +108,10 @@ export function DeskConversation({
 	const bodyRef = useRef<HTMLDivElement | null>(null);
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 	const globalFileComposerRef = useRef<HTMLDivElement | null>(null);
+	// Stick to the live edge only while the reader is already there, so a
+	// streaming reply doesn't yank them up from scrollback.
+	const followRef = useRef(true);
+	const liveTurnStore = useMemo(() => new LiveTurnStore(), [sessionId]);
 
 	useEffect(() => {
 		if (!autoFocus) return;
@@ -127,6 +127,7 @@ export function DeskConversation({
 		// start makes the two pieces read as one compacting surface.
 		setDictationHidesSuggestions(active);
 	}
+
 	async function addDeskAttachments(picked: FileList | File[]) {
 		const selected = Array.from(picked);
 		const batch = countStaging(selected);
@@ -216,17 +217,13 @@ export function DeskConversation({
 		};
 	}, [presenceActive, connected, sessionId]);
 
-	// Stick to the live edge only while the reader is already there, so a
-	// streaming reply doesn't yank them up from scrollback.
-	const followRef = useRef(true);
-	const streamSeqRef = useRef(0);
-
 	// The Desk's "Clear" marker: everything at/before it stays out of this view
 	// (locally-minted system lines have fresh timestamps and survive).
 	const visibleEntries = hideBefore
 		? entries.filter((e) => !e.timestamp || e.timestamp > hideBefore)
 		: entries;
-	const hasContent = visibleEntries.length > 0 || !!streamText || !!pending;
+	const hasContent =
+		visibleEntries.length > 0 || hasLiveText || isRunning || !!pending;
 
 	useEffect(() => {
 		fetchModels()
@@ -241,7 +238,7 @@ export function DeskConversation({
 	useEffect(() => {
 		if (!connected) return;
 		setEntries([]);
-		setStreamText("");
+		liveTurnStore.clear();
 		setPending(null);
 		followRef.current = true;
 		// supportsSeq: transcript v2 capability (docs/transcripts.md).
@@ -276,13 +273,13 @@ export function DeskConversation({
 					const landed = msg.entries.filter(
 						(e) => e.type === "assistant" && e.content,
 					);
-					if (landed.length) {
-						setStreamText((prev) => {
-							let next = prev;
-							for (const e of landed) next = next.replace(e.content, "");
-							return next.trim() ? next : "";
-						});
-					}
+					if (landed.length)
+						liveTurnStore.land(
+							landed.map((entry) => ({
+								id: entry.id,
+								content: entry.content,
+							})),
+						);
 					break;
 				}
 				case "session_status":
@@ -292,25 +289,24 @@ export function DeskConversation({
 					setTypingUsers(otherTypingUsers(msg.users, getCurrentUser()));
 					break;
 				case "stream_start":
-					streamSeqRef.current++;
 					setIsRunning(true);
-					setStreamText("");
+					liveTurnStore.start(msg.by);
 					setPending(null);
 					break;
 				case "stream_text":
-					setStreamText((prev) => prev + msg.text);
+					// Live typing is per viewer (Settings > Preferences), default off;
+					// with it off the reply appears as each block's durable entry lands.
+					if (!isTimelineOnlyRunnerNotice(msg.text) && getLiveTypingPref())
+						liveTurnStore.append(msg.text, msg.blockId);
 					break;
 				case "stream_tool_use":
 				case "stream_tool_result":
 					setEntries((prev) => mergeTranscriptEntries(prev, [msg.entry]));
 					break;
-				case "stream_done": {
-					const seq = streamSeqRef.current;
-					window.setTimeout(() => {
-						if (streamSeqRef.current === seq) setStreamText("");
-					}, 5000);
+				case "stream_done":
+					setIsRunning(false);
+					liveTurnStore.finish();
 					break;
-				}
 				// A slash-command reply / server heads-up. Weave it in as a system
 				// line so it reads inline with the conversation (mirrors SessionViewer).
 				case "notice":
@@ -328,9 +324,8 @@ export function DeskConversation({
 				// surface the error where the reply would have been and clear any
 				// streaming/sending state so nothing sticks (mirrors SessionViewer).
 				case "error":
-					streamSeqRef.current++;
 					setIsRunning(false);
-					setStreamText("");
+					liveTurnStore.clear();
 					setPending(null);
 					if (msg.message) {
 						setEntries((prev) => [
@@ -350,8 +345,23 @@ export function DeskConversation({
 		return () => {
 			unsubscribe();
 			send({ type: "unwatch", sessionId });
+			liveTurnStore.clear();
 		};
-	}, [connected, sessionId, send, addHandler]);
+	}, [connected, sessionId, send, addHandler, liveTurnStore]);
+
+	// The live tail updates through an external store so the whole Desk does not
+	// re-render for every frame. Only mirror its empty boundary for the board and
+	// keep a following reader pinned after React paints each new frame.
+	useEffect(() => {
+		const unsubscribe = liveTurnStore.subscribe(() => {
+			setHasLiveText(liveTurnStore.hasText());
+		});
+		return unsubscribe;
+	}, [liveTurnStore]);
+	const relayoutLive = React.useCallback(() => {
+		const el = bodyRef.current;
+		if (el && followRef.current) el.scrollTop = el.scrollHeight;
+	}, []);
 
 	// Keep a following reader pinned to the live edge as content lands. With no
 	// conversation the pane holds the board instead, which is read top-down —
@@ -360,7 +370,7 @@ export function DeskConversation({
 		if (!hasContent) return;
 		const el = bodyRef.current;
 		if (el && followRef.current) el.scrollTop = el.scrollHeight;
-	}, [entries, streamText, pending, hasContent]);
+	}, [entries, pending, hasContent]);
 
 	function onScroll() {
 		const el = bodyRef.current;
@@ -455,8 +465,6 @@ export function DeskConversation({
 		});
 		followRef.current = true;
 	}
-
-
 	return (
 		// `--desk-under` is what the composer takes back off the conversation: the
 		// input box rides up over the last rows in normal flow, so they scroll
@@ -492,10 +500,12 @@ export function DeskConversation({
 						    large result is truncated with a "Show full message"
 						    button that can't fetch, and any screenshot a tool
 						    returned renders as a broken image. */}
-						<TranscriptBlocks
+						<SessionTranscript
 							entries={visibleEntries}
 							live={isRunning}
 							sessionId={sessionId}
+							liveTurnStore={liveTurnStore}
+							onLiveLayout={relayoutLive}
 							onOpenSubagent={onOpenSubagent}
 							// The Desk shows the same failure pill as a session, so it
 							// offers the same one press out of it. Gated like handleSend.
@@ -503,14 +513,6 @@ export function DeskConversation({
 								connected && !isRunning ? continueAfterFailure : undefined
 							}
 						/>
-						{streamText && (
-							<div className={cn(msgRow, msgStreamingRow)}>
-								<div
-									className={cn(msgBodyStreaming, "markdown")}
-									dangerouslySetInnerHTML={{ __html: renderMarkdown(streamText) }}
-								/>
-							</div>
-						)}
 						{/* Optimistic echo of the just-sent message — rendered as a normal
 						    sent bubble (not the dimmed "sending" look) so it reads as
 						    delivered the instant Enter lands; reconciles away when the

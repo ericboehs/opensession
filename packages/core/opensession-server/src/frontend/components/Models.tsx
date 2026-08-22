@@ -14,10 +14,10 @@ import {
 } from "../ui/settings";
 import { Switch } from "../ui/switch";
 
-// Settings → Models: which model a run starts on and which engine carries it.
-// The subscription accounts those runs draw from, and how full they are, moved
-// to Settings → Usage (settings/ModelAccounts.tsx). Usage is read far more
-// often than any of this is changed. Everything here follows the Settings idiom
+// The default-model half of Settings → Providers: which model a run starts on
+// and which engine carries it. The subscription accounts those runs draw from,
+// and how full they are, sit further down the same page
+// (settings/ModelAccounts.tsx). Everything here follows the Settings idiom
 // (setting-card row lists), not the Connections card grid.
 
 interface ModelInfo {
@@ -28,14 +28,19 @@ interface ModelInfo {
 	efforts: string[];
 }
 
-/** The model half of Settings → Models: what new runs start on. Renders as
- * groups, not a page: Settings' ModelsPanel owns the header. */
-export function ModelDefaultsSection() {
+/** The model half of Settings → Providers: what new runs start on. Renders as
+ * groups, not a page: ProvidersPanel owns the header. */
+export function ModelDefaultsSection({
+	onChanged,
+}: {
+	compact?: boolean;
+	onChanged?: () => void | Promise<void>;
+} = {}) {
 	return (
 		<>
 			<SettingsGroupLabel className="mt-0">Default model</SettingsGroupLabel>
 			<SettingCard>
-				<DefaultModelRow />
+				<DefaultModelRow onChanged={onChanged} />
 				<AutoFallbackRow />
 			</SettingCard>
 			<SettingsHint>Applies to new runs unless the session has its own model.</SettingsHint>
@@ -45,7 +50,11 @@ export function ModelDefaultsSection() {
 
 // ── Default model ──────────────────────────────────────────────────────────
 
-function DefaultModelRow() {
+function DefaultModelRow({
+	onChanged,
+}: {
+	onChanged?: () => void | Promise<void>;
+}) {
 	const [models, setModels] = useState<ModelInfo[] | null>(null);
 	const [current, setCurrent] = useState<string>("");
 	const [saving, setSaving] = useState(false);
@@ -75,6 +84,7 @@ function DefaultModelRow() {
 			const body = await res.json();
 			if (!res.ok) throw new Error(body.error || `Failed: ${res.status}`);
 			setCurrent(body.default);
+			await onChanged?.();
 		} catch (e: any) {
 			setError(e.message);
 		}

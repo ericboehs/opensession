@@ -17,6 +17,7 @@
 
 import { fetchUiPrefs, saveUiPrefsApi } from "./api";
 import { getCurrentUser } from "../components/UserPicker";
+import { whenCurrentUserReady } from "./auth-ready";
 
 export type TurnWorkPref = "folded" | "running" | "open";
 export type ToolCallsPref = "folded" | "open";
@@ -194,7 +195,7 @@ async function hydrate(user: string) {
 }
 
 migrateLegacyLocal();
-void hydrate(getCurrentUser());
+whenCurrentUserReady((user) => void hydrate(user));
 window.addEventListener(USER_CHANGE_EVENT, () => void hydrate(getCurrentUser()));
 
 export function onTurnActivityChanged(handler: () => void): () => void {

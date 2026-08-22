@@ -423,7 +423,7 @@ function RepoPickRow({
 					)}
 				</div>
 				{repo.description && (
-					<div className="mt-0.5 truncate text-meta text-faint">
+					<div className="mt-0.5 truncate text-supporting text-faint">
 						{repo.description}
 					</div>
 				)}

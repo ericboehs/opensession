@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   requestCreationBranch,
-  requestCreationCredential,
   requestCreationWorkspace,
 } from "./creation-intents";
 import {
@@ -42,7 +41,6 @@ const branchInput = {
   worktreePath: "/worktrees/branch-intent",
   baseBranch: "main",
   isolated: true,
-  credentialPrincipal: "user:alice",
 };
 
 describe("creation workspace intents", () => {
@@ -166,30 +164,9 @@ describe("creation branch intents", () => {
             worktreePath: "/worktrees/branch-intent",
             baseBranch: "main",
             isolated: true,
-            credentialPrincipal: "user:alice",
           },
         },
       ]);
-    } finally {
-      store.close();
-    }
-  });
-
-  test("normalizes an empty optional base branch before persistence", async () => {
-    const input = {
-      ...branchInput,
-      sessionId: "create-branch-without-base",
-      identity: "request-branch-without-base",
-      baseBranch: "",
-    };
-    const { store, kernel } = harness(input.sessionId);
-    try {
-      await expect(requestCreationBranch(input, {
-        kernel,
-        timeoutMs: 5,
-        pollMs: 1,
-      })).rejects.toThrow("remains durably pending");
-      expect(store.pendingOutbox()[0]?.payload).not.toHaveProperty("baseBranch");
     } finally {
       store.close();
     }
@@ -210,105 +187,6 @@ describe("creation branch intents", () => {
         pollMs: 1,
       })).rejects.toThrow("remains durably pending");
       expect(store.pendingOutbox()).toHaveLength(1);
-    } finally {
-      store.close();
-    }
-  });
-});
-
-describe("creation credential intents", () => {
-  test("persists only a stable selector and scope before receipt", async () => {
-    const input = {
-      sessionId: "create-credential-intent",
-      identity: "request-credential-intent",
-      principal: "user:alice",
-      scope: "git:opensession",
-    };
-    const { store, kernel } = harness(input.sessionId);
-    try {
-      setTimeout(() => {
-        store.applyCreationEvent({
-          sessionId: input.sessionId,
-          identity: input.identity,
-          event: "preparation_started",
-          effectId: `credential:${input.principal}:${input.scope}`,
-        });
-      }, 5);
-      const state = await requestCreationCredential(input, {
-        kernel,
-        timeoutMs: 200,
-        pollMs: 1,
-      });
-      expect(state.completedEffectIds).toEqual([
-        `credential:${input.principal}:${input.scope}`,
-      ]);
-      const [effect] = store.pendingOutbox();
-      expect(effect).toMatchObject({
-        kind: "creation_credential_resolve",
-        payload: {
-          principal: "user:alice",
-          scope: "git:opensession",
-        },
-      });
-      expect(JSON.stringify(effect)).not.toContain("gitEnv");
-      expect(JSON.stringify(effect)).not.toContain("token");
-    } finally {
-      store.close();
-    }
-  });
-
-  test("continues from a credential receipt to one credential-bound branch", async () => {
-    const credential = {
-      sessionId: "credential-branch-sequence",
-      identity: "request-credential-branch",
-      principal: "user:alice",
-      scope: "git:opensession",
-    };
-    const branch = {
-      ...branchInput,
-      sessionId: credential.sessionId,
-      identity: credential.identity,
-    };
-    const { store, kernel } = harness(credential.sessionId);
-    try {
-      setTimeout(() => {
-        store.applyCreationEvent({
-          sessionId: credential.sessionId,
-          identity: credential.identity,
-          event: "preparation_started",
-          effectId: `credential:${credential.principal}:${credential.scope}`,
-        });
-      }, 5);
-      await requestCreationCredential(credential, {
-        kernel,
-        timeoutMs: 200,
-        pollMs: 1,
-      });
-      const [credentialEffect] = store.pendingOutbox();
-      store.ackOutbox(credentialEffect.id);
-      setTimeout(() => {
-        store.applyCreationEvent({
-          sessionId: branch.sessionId,
-          identity: branch.identity,
-          event: "preparation_started",
-          effectId: `branch:${branch.project}:${branch.branch}`,
-        });
-      }, 5);
-      const state = await requestCreationBranch(branch, {
-        kernel,
-        timeoutMs: 200,
-        pollMs: 1,
-      });
-      expect(state.completedEffectIds).toEqual([
-        `credential:${credential.principal}:${credential.scope}`,
-        `branch:${branch.project}:${branch.branch}`,
-      ]);
-      expect(store.pendingOutbox()).toMatchObject([
-        {
-          kind: "creation_branch_prepare",
-          payload: { credentialPrincipal: "user:alice" },
-        },
-      ]);
     } finally {
       store.close();
     }

@@ -7,9 +7,36 @@ import {
 	type LocalArchiveOverride,
 } from "../lib/session-slices";
 
-/** The live list. Archived sessions are ~46% of the unsliced payload and none
- *  of the cold start; the Archived screen requests them separately. */
+/** The unscoped live list, kept as a compatibility fallback. */
 const LIVE_QUERY = "?archived=exclude";
+
+export interface SidebarSessionsQueryOptions {
+  user: string;
+  person: string;
+  repo: string;
+  autoCreated: "show" | "hide";
+  selectedSessionId?: string;
+  selectedWorkspaceId?: string;
+}
+
+/** Build the opt-in server-side projection used by the left sidebar. */
+export function sidebarSessionsQuery(
+  options: SidebarSessionsQueryOptions,
+): string {
+  const params = new URLSearchParams({
+    archived: "exclude",
+    view: "sidebar",
+    user: options.user,
+    person: options.person,
+    repo: options.repo,
+    autoCreated: options.autoCreated,
+  });
+  if (options.selectedSessionId)
+    params.set("session", options.selectedSessionId);
+  if (options.selectedWorkspaceId)
+    params.set("workspace", options.selectedWorkspaceId);
+  return `?${params.toString()}`;
+}
 /** The archived index: the narrow row the Archived surfaces render. */
 const ARCHIVED_QUERY = "?archived=only&slim=1";
 /**
@@ -86,9 +113,11 @@ export function reconcilePendingSessionPatches(
 export function useSessions({
   loadArchived = false,
   pollInterval = 5000,
+  liveQuery = LIVE_QUERY,
 }: {
   loadArchived?: boolean;
   pollInterval?: number;
+  liveQuery?: string;
 } = {}) {
   const [live, setLive] = useState<UnifiedSession[]>([]);
   // When the live list last came back. Settles a local unarchive: a poll that
@@ -138,7 +167,11 @@ export function useSessions({
   // SessionViewer's `session` prop, …) for nothing.
   const lastTextRef = useRef<string | null>(null);
   const etagRef = useRef<string | null>(null);
-  const pollPromiseRef = useRef<Promise<void> | null>(null);
+  const appliedLiveQueryRef = useRef(liveQuery);
+  const pollPromiseRef = useRef<{
+    query: string;
+    promise: Promise<void>;
+  } | null>(null);
   const pollAbortRef = useRef<AbortController | null>(null);
   // Optimistically-injected sessions the server hasn't caught up to yet (a
   // just-created workspace/session). A plain poll replaces the whole array and
@@ -178,7 +211,14 @@ export function useSessions({
   );
 
   const poll = useCallback((): Promise<void> => {
-    if (pollPromiseRef.current) return pollPromiseRef.current;
+    if (pollPromiseRef.current?.query === liveQuery)
+      return pollPromiseRef.current.promise;
+    if (pollPromiseRef.current) pollAbortRef.current?.abort();
+    if (appliedLiveQueryRef.current !== liveQuery) {
+      appliedLiveQueryRef.current = liveQuery;
+      etagRef.current = null;
+      lastTextRef.current = null;
+    }
     const controller = new AbortController();
     pollAbortRef.current = controller;
     const startedAt = Date.now();
@@ -188,7 +228,7 @@ export function useSessions({
         const snapshot = await fetchSessionsSnapshot({
           etag: etagRef.current,
           signal: controller.signal,
-          query: LIVE_QUERY,
+          query: liveQuery,
         });
         if (!mountedRef.current) return;
         if (!snapshot.notModified && snapshot.text !== null) {
@@ -214,12 +254,13 @@ export function useSessions({
         }
       }
     })().finally(() => {
-      if (pollPromiseRef.current === promise) pollPromiseRef.current = null;
+      if (pollPromiseRef.current?.promise === promise)
+        pollPromiseRef.current = null;
       if (pollAbortRef.current === controller) pollAbortRef.current = null;
     });
-    pollPromiseRef.current = promise;
+    pollPromiseRef.current = { query: liveQuery, promise };
     return promise;
-  }, [applyServer]);
+  }, [applyServer, liveQuery]);
 
   useEffect(() => {
     mountedRef.current = true;

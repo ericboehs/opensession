@@ -5,9 +5,9 @@ import Observation
 /// `GET /api/settings/identity`.
 ///
 /// The name matters wherever the app puts the agent beside a person — the
-/// Review section names both reviewers, and "Agent · 4/5" reads as a category
-/// where "Michael · 4/5" reads as somebody. Every instance sets its own, so it
-/// cannot be a constant; until the fetch lands (or on a server too old to
+/// Review section names both reviewers, and the configured persona may read as
+/// a person rather than a category. Every instance sets its own, so it cannot
+/// be a constant; until the fetch lands (or on a server too old to
 /// answer) the fallback is the generic word, which is never wrong.
 @MainActor
 @Observable

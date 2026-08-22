@@ -11,6 +11,7 @@ import { cn } from "../ui/cn";
 import { DeviceCode } from "../ui/device-code";
 import { InlineAlert } from "../ui/state";
 import { PulseDot } from "../ui/status";
+import { AUTH_STATUS_EVENT } from "../lib/auth-ready";
 
 /**
  * Mutable compatibility view for older consumers. `usePeople()` owns the
@@ -79,7 +80,6 @@ export interface AuthStatus {
 // Shared auth state: UserGate fetches /api/auth/status once on load; other
 // components (Settings' account footer) read it reactively from here
 // instead of re-fetching.
-const AUTH_STATUS_EVENT = "opensession-auth-status-changed";
 let authStatusCache: AuthStatus | null = null;
 
 function setAuthStatusCache(status: AuthStatus) {
@@ -196,7 +196,7 @@ function AuthCard({
 			<AuthBackdrop />
 			<div className="relative w-[400px] max-w-full rounded-2xl bg-surface p-8 text-center shadow-(--auth-card-edge) phone:p-6 [html.wco_&]:[-webkit-app-region:no-drag] [html.wco_&]:[app-region:no-drag] [html.desktop-shell_&]:[-webkit-app-region:no-drag] [html.desktop-shell_&]:[app-region:no-drag]">
 				<img
-					src={`${BASE_PATH}/mac-app-icon.png`}
+					src={`${BASE_PATH}/mac-app-icon.png?v=7`}
 					alt=""
 					width={56}
 					height={56}
@@ -235,12 +235,10 @@ export function UserGate({ children }: { children: React.ReactNode }) {
   const user = useCurrentUser();
   const roster = usePeople();
   TEAM.splice(0, TEAM.length, ...roster.map(({ name }) => name));
-  const [auth, setAuth] = useState<AuthStatus | null>(null);
+	const [auth, setAuth] = useState<AuthStatus | null>(null);
 	const [authFailed, setAuthFailed] = useState(false);
-	const [showAuthWait, setShowAuthWait] = useState(false);
 	const loadAuth = () => {
 		setAuthFailed(false);
-		setShowAuthWait(false);
 		fetch(`${BASE_PATH}/api/auth/status`)
 			.then((r) => {
 				if (!r.ok) throw new Error(`Authentication status failed: ${r.status}`);
@@ -249,11 +247,13 @@ export function UserGate({ children }: { children: React.ReactNode }) {
 			.then((body: AuthStatus | null) => {
 				if (!body) throw new Error("Authentication status was empty");
 				setAuth(body);
-				setAuthStatusCache(body);
 				if (body.required && body.authenticated && body.name) {
 					const user = body.name.split(" ")[0];
 					setStoredUser(user);
 				}
+				// Publish readiness after localStorage carries the verified name so
+				// deferred per-user stores hydrate the authenticated account.
+				setAuthStatusCache(body);
 			})
 			.catch(() => setAuthFailed(true));
 	};
@@ -261,12 +261,6 @@ export function UserGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
 		loadAuth();
   }, []);
-
-	useEffect(() => {
-		if (auth || authFailed) return;
-		const timer = window.setTimeout(() => setShowAuthWait(true), 300);
-		return () => window.clearTimeout(timer);
-	}, [auth, authFailed]);
 
 	// Returning visitors already have a local identity. Let the app paint while
 	// the server verifies its HttpOnly session, as it did before this check grew
@@ -284,18 +278,9 @@ export function UserGate({ children }: { children: React.ReactNode }) {
 				</AuthCard>
 			);
 		}
-		// The same backdrop, so the wait and the card it resolves into are one
-		// screen rather than a white flash and then a picture.
-		return (
-			<div className="relative flex h-screen items-center justify-center overflow-hidden [html.wco_&]:[-webkit-app-region:drag] [html.wco_&]:[app-region:drag] [html.desktop-shell_&]:[-webkit-app-region:drag] [html.desktop-shell_&]:[app-region:drag]">
-				<AuthBackdrop />
-				{showAuthWait ? (
-					<div role="status" aria-live="polite" className="relative text-supporting text-dim">
-						Checking sign-in
-					</div>
-				) : null}
-			</div>
-		);
+		// The static launch splash stays visible while this returns nothing. Only
+		// mount the sign-in scene once the server says it is actually needed.
+		return null;
 	}
 
   // GitHub sign-in is configured: it is the only way in, and the name picker

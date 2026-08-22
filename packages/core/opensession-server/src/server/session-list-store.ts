@@ -85,6 +85,9 @@ export class SessionListStore {
 				WHERE archived = 0;
 			CREATE INDEX IF NOT EXISTS idx_session_list_workspace_activity
 				ON session_list(workspace_id, archived, last_activity_ms DESC);
+			CREATE INDEX IF NOT EXISTS idx_session_list_archive_workspace
+				ON session_list(archived, workspace_id)
+				WHERE workspace_id IS NOT NULL;
 			CREATE INDEX IF NOT EXISTS idx_session_list_worktree_activity
 				ON session_list(worktree_dir, archived, last_activity_ms DESC);
 			CREATE INDEX IF NOT EXISTS idx_session_list_repo_activity
@@ -243,6 +246,18 @@ export class SessionListStore {
 		return decodeRows(rows);
 	}
 
+	/** Workspace ids that can produce a live sidebar row, without decoding the
+	 * session payloads behind them. */
+	activeWorkspaceIds(): string[] {
+		return (
+			this.db
+				.query(
+					"SELECT DISTINCT workspace_id FROM session_list WHERE archived = 0 AND workspace_id IS NOT NULL",
+				)
+				.all() as Array<{ workspace_id: string }>
+		).map((row) => row.workspace_id);
+	}
+
 	/**
 	 * Return every human-created live row and only the useful automation tail.
 	 * Ranking and counting stay inside SQLite, so JavaScript never parses the
@@ -326,6 +341,11 @@ export function indexedWorkspaceSessions(
 	return store.hasCoverage("only")
 		? store.listWorkspace(workspaceId, worktreeDir)
 		: null;
+}
+
+export function indexedActiveWorkspaceIds(): string[] | null {
+	const store = sessionListStore();
+	return store.hasCoverage("exclude") ? store.activeWorkspaceIds() : null;
 }
 
 export function upsertIndexedSession(session: UnifiedSession): void {

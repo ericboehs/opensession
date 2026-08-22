@@ -132,7 +132,8 @@ export function SidebarItem({
 	// The row's tooltips advertise whatever the user has these bound to.
 	const pinKeys = useShortcutKeys("session-pin");
 	const archiveKeys = useShortcutKeys("session-archive");
-	const waiting = !!session.waitingForInput || runNeedsAttention(session);
+	const waitingForInput = !!session.waitingForInput;
+	const failed = runNeedsAttention(session);
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState("");
 	// Desktop right-click menu (mobile long-press opens the action sheet).
@@ -153,8 +154,8 @@ export function SidebarItem({
 	// row turns into owns the interaction).
 	const btnRef = useRef<HTMLButtonElement>(null);
 	const card = useRowHoverCard(editing);
-	const onArchive = () => onArchiveRequest(btnRef.current);
 	const closeHover = card.close;
+	const onArchive = () => onArchiveRequest(btnRef.current);
 
 	// Mobile long-press → action sheet, and — importantly — the *tap* to open a
 	// session is driven from `touchend`, not the synthesized `click`. The row
@@ -407,7 +408,10 @@ export function SidebarItem({
 						// own opaque plate that kept a long title out of the way;
 						// a solid chip can't sit on a translucent row. `hover:`, not
 						// `group-hover:` — this element is the group itself.
-						"hover:pr-[68px]",
+						// Two chips' worth while the pin is there to unpin; one
+						// chip less (26px + the 4px gap) on an unpinned row, which
+						// reveals archive alone.
+						pinned ? "hover:pr-[68px]" : "hover:pr-[38px]",
 						// No trim here for other people's sessions, which stack a meta
 						// line under the title. That used to re-state `py-[7px]` against
 						// a 9px base; the base is now the shared `--sidebar-row-pad`, and
@@ -426,10 +430,11 @@ export function SidebarItem({
 						// the idle list (dozens of retina-sized layers is a real tax).
 						(dragging || swipeOpen) && "will-change-transform",
 					)}
-					data-sidebar-item-key={`session:${session.id}`}
 					data-sidebar-row=""
+					data-sidebar-item-key={`session:${session.id}`}
 					data-selected={selected || undefined}
-					data-waiting={waiting || undefined}
+					data-waiting={waitingForInput || undefined}
+					data-failed={failed || undefined}
 					data-running={session.isRunning || undefined}
 					data-unread={unread || undefined}
 					style={
@@ -479,14 +484,18 @@ export function SidebarItem({
 			    SIDEBAR_RAIL slot in front, that pair is what puts every title on
 			    one rail. */}
 			<div className={cn("flex min-w-0 items-center", SIDEBAR_RAIL_GAP)}>
-				{/* Match workspace rows: blocked-on-you takes the rail first and in
-				    blue, then the live run, then the PR glyph — where merged PRs keep
-				    the glyph itself purple instead of adding metadata. */}
+				{/* Questions stay blue. A stopped run is red, so it cannot look as
+				    though it is waiting for a reply. */}
 				<span className={SIDEBAR_RAIL}>
-					{waiting && <span className="sr-only">Needs your attention</span>}
-					{waiting ? (
+					{waitingForInput && <span className="sr-only">Waiting for your input</span>}
+					{failed && <span className="sr-only">Last run failed</span>}
+					{waitingForInput ? (
 						<span
 							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.waiting}`}
+						/>
+					) : failed ? (
+						<span
+							className={`size-2 shrink-0 rounded-full ${SIDEBAR_STATUS_DOT.failed}`}
 						/>
 					) : session.isRunning ? (
 						<span
@@ -597,9 +606,13 @@ export function SidebarItem({
 					))}
 				</div>
 			)}
-			{!isPhone && (
+			{/* Pin is not one of the row's standing actions. An unpinned row
+			    reveals archive alone, and pinning stays on the context menu, the
+			    keyboard chord and the swipe. A pinned row gets the chip back,
+			    because unpinning has to be reachable from the thing it marks. */}
+			{!isPhone && pinned && (
 			<Tooltip
-				label={pinned ? "Unpin session" : "Pin session"}
+				label="Unpin session"
 				shortcut={selected ? (pinKeys ?? undefined) : undefined}
 			>
 				<span
@@ -611,16 +624,16 @@ export function SidebarItem({
 						// It has to be a calc: the chip narrows with the density.
 						"right-[calc(var(--sidebar-row-action,26px)_+_11px)] data-[on]:bg-pressed data-[on]:text-fg",
 					)}
-					data-on={pinned || undefined}
+					data-on=""
 					role="button"
-					aria-label={pinned ? "Unpin session" : "Pin session"}
+					aria-label="Unpin session"
 					onMouseEnter={closeHover}
 					onClick={(e) => {
 						e.stopPropagation();
 						onTogglePin();
 					}}
 				>
-					<IconPin size={19} fill={pinned ? "currentColor" : "none"} />
+					<IconPin size={19} fill="currentColor" />
 				</span>
 			</Tooltip>
 			)}

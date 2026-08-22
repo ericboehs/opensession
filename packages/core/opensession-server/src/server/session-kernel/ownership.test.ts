@@ -127,11 +127,6 @@ describe("single session ownership", () => {
 		expect(creationExecutors).toContain(
 			'registerSessionEffectExecutor(\n      "creation_branch_prepare"',
 		);
-		expect(creationExecutors).toContain(
-			'"creation_credential_resolve",\n      executeCreationCredentialResolve',
-		);
-		expect(creationExecutors).toContain("resolveCurrentCredential");
-		expect(creationExecutors).not.toContain("payload.gitEnv");
 		expect(creationExecutors).toContain("assertAdoptableWorkspace(workspace, item)");
 		expect(creationExecutors.indexOf("dependencies.result(item)")).toBeGreaterThan(
 			creationExecutors.indexOf("dependencies.createWorkspace({"),
@@ -242,8 +237,7 @@ describe("single session ownership", () => {
 	test("interrupted creates resume their environment setup, not only their prompt", () => {
 		const create = read("session-create.ts");
 		expect(create).toContain("const recoveringSession = findSession(bksId)");
-		expect(create).toContain('existingBranch: restored.worktreeKind === "existing"');
-		expect(create).toContain("identity: plan.identity");
+		expect(create).toContain("fromPr\n\t\t\t\t\t\t\t? createWorktreeForExistingBranch");
 		expect(create.indexOf("openingPromptEntryId = beginPromptDispatch"))
 			.toBeLessThan(create.indexOf("await persist()"));
 		// The direct host run must use the create dispatch's stable transcript id.
@@ -262,20 +256,13 @@ describe("single session ownership", () => {
 		expect(wiring).toContain("createPlan.resolved");
 		expect(wiring).toContain("ensureCreationPlanned(bksId, createIdentity)");
 		expect(wiring).toContain("await requestCreationWorkspace({");
-		expect(wiring.match(/await requestCreationCredential\(\{/g)?.length).toBe(2);
-		expect(wiring.match(/await requestCreationBranch\(\{/g)?.length).toBe(2);
-		expect(wiring).not.toMatch(/\bcreateWorkspace\(/);
-		expect(wiring).not.toMatch(/\bcreateWorktree\(/);
+		expect(wiring).toContain("await requestCreationBranch({");
+		expect(wiring).not.toContain("createWorkspace(");
 		const create = read("session-create.ts");
 		expect(create).toContain("createPlan.resolved");
 		expect(create).toContain("ensureCreationPlanned(bksId, createIdentity)");
 		expect(create.match(/await requestCreationWorkspace\(\{/g)?.length).toBe(2);
-		expect(create).toContain("actorWorktreeMaterializer({");
-		expect(create).toContain("await requestCreationCredential({");
-		expect(create).toContain("await requestCreationBranch({");
-		expect(create).not.toMatch(/\bcreateWorkspace\(/);
-		expect(create).not.toMatch(/\bcreateWorktree\(/);
-		expect(create).not.toMatch(/\bcreateWorktreeForExistingBranch\(/);
+		expect(create).not.toContain("createWorkspace(");
 		expect(create).toContain("spec.openingPromptEntryId");
 		expect(wiring).toContain('legacyGatewayEffect("cancel_session"');
 		expect(wiring).toContain('legacyGatewayEffect("answer_question"');

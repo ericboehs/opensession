@@ -42,6 +42,13 @@ export const WS_SUMMARY_CARD =
 	"[border-radius:calc(18px*var(--rf))]!";
 
 /**
+ * Review gives the standing summary its own column instead of letting the
+ * popup cover the diff. The 324px clearance is the 300px card, its 12px edge
+ * gutter, and another 12px between the card and review canvas.
+ */
+export const WS_SUMMARY_REVIEW_CLEARANCE = "desktop:mr-[324px]";
+
+/**
  * Band label ("Assets"), taken from the sidebar so the card heads its lists
  * the way the sidebar heads its own. It shares the rows' 16px content rail,
  * but not their 31px pitch: a label belongs to the rows under it, so it keeps

@@ -11,6 +11,7 @@
 
 import { fetchUiPrefs, saveUiPrefsApi } from "./api";
 import { getCurrentUser } from "../components/UserPicker";
+import { whenCurrentUserReady } from "./auth-ready";
 
 const USER_CHANGE_EVENT = "opensession-user-changed";
 
@@ -88,7 +89,7 @@ export function makeUserPref<T>(opts: {
 		}
 	}
 
-	void hydrate(getCurrentUser());
+	whenCurrentUserReady((user) => void hydrate(user));
 	window.addEventListener(USER_CHANGE_EVENT, () =>
 		void hydrate(getCurrentUser()),
 	);

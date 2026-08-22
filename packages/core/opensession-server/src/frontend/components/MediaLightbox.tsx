@@ -98,12 +98,15 @@ interface LightboxState {
 	origin?: HTMLElement;
 	originIndex: number;
 	useHeroTransition: boolean;
+	startCommenting?: boolean;
 }
 
 interface LightboxRequest {
 	items: LightboxItem[];
 	index: number;
 	origin?: HTMLElement;
+	/** Enter image-region comment mode as soon as the lightbox opens. */
+	startCommenting?: boolean;
 }
 
 interface ViewTransitionHandle {
@@ -220,6 +223,7 @@ export function openLightbox(
 	items: (LightboxItem | WorkspaceMediaItem)[],
 	index: number,
 	origin?: Element | null,
+	options: { startCommenting?: boolean } = {},
 ) {
 	const source = mediaElement(origin);
 	const fromDom = commentSessionIdFor(source);
@@ -237,6 +241,7 @@ export function openLightbox(
 		}),
 		index,
 		origin: source,
+		startCommenting: options.startCommenting,
 	});
 }
 
@@ -474,6 +479,7 @@ export function MediaLightboxHost() {
 			}
 			onClose={(allowHeroTransition) => close(state, allowHeroTransition)}
 			useHeroTransition={state.useHeroTransition}
+			startCommenting={state.startCommenting}
 			heroTransitionName={
 				state.useHeroTransition && state.index === state.originIndex
 					? HERO_TRANSITION_NAME
@@ -1500,6 +1506,7 @@ function MediaLightbox({
 	onIndex,
 	onClose,
 	useHeroTransition,
+	startCommenting = false,
 	heroTransitionName,
 }: {
 	items: LightboxItem[];
@@ -1507,6 +1514,7 @@ function MediaLightbox({
 	onIndex: (i: number) => void;
 	onClose: (allowHeroTransition?: boolean) => void;
 	useHeroTransition: boolean;
+	startCommenting?: boolean;
 	heroTransitionName?: string;
 }) {
 	const isPhone = useIsPhone();
@@ -1537,7 +1545,7 @@ function MediaLightbox({
 	// the side it came from — set by the arrows and the keyboard too, not just
 	// by the drag, so every route through the gallery reads the same.
 	const [direction, setDirection] = useState<-1 | 0 | 1>(0);
-	const [commenting, setCommenting] = useState(false);
+	const [commenting, setCommenting] = useState(startCommenting);
 	const [selection, setSelection] = useState<ImageRegion | null>(null);
 	/** Where that selection sits on screen, reported by the viewer. */
 	const [selectionRect, setSelectionRect] = useState<ScreenRect | null>(null);

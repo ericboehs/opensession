@@ -53,9 +53,10 @@ export function placeQuoteOffer(
 		side === "above"
 			? above
 			: Math.min(last.bottom + OFFER_GAP, Math.max(OFFER_MARGIN, bottomLimit));
+	const centered = anchor.left + (anchor.right - anchor.left - pill.width) / 2;
 	const rightLimit = Math.max(OFFER_MARGIN, viewport.width - OFFER_MARGIN - pill.width);
 	return {
-		left: Math.min(Math.max(anchor.left, OFFER_MARGIN), rightLimit),
+		left: Math.min(Math.max(centered, OFFER_MARGIN), rightLimit),
 		top,
 		side,
 	};

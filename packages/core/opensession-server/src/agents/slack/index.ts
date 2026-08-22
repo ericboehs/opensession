@@ -1,6 +1,6 @@
 /**
- * Slack Agent Module — handles Slack DMs, @mentions, GitHub PR reviews,
- * worktree channel management, and Block Kit interactions.
+ * Slack Agent Module — handles Slack DMs, @mentions, worktree channel
+ * management, and Block Kit interactions.
  *
  * Implements the AgentModule interface for the opensession webhook server.
  */
@@ -21,19 +21,16 @@ import {
 } from "../../server/shared/bounded-body";
 import { handleMessageEvent, handleMentionEvent } from "./handlers";
 import {
-  socketModeEnabled,
-  startSlackSocket,
-  stopSlackSocket,
-} from "./socket-mode";
-import {
   shouldHandleAppMention,
   shouldHandleDirectMessage,
 } from "./event-routing";
 import { handleLinkShared } from "./unfurl";
+import { inviteRelevantUsersToChannel } from "./github-reviews";
 import {
-  handlePullRequestReview,
-  inviteRelevantUsersToChannel,
-} from "./github-reviews";
+  githubWebhookCompatibilityFallbackEnabled,
+  handleGithubWebhook,
+} from "../github/webhook-intake";
+import { githubWebhookCount } from "../github/webhook-deliveries";
 import {
   worktreeChannels,
   branchToChannel,
@@ -55,8 +52,6 @@ import { cancelSession } from "./cancel";
 import { cancelAgentRun } from "../../server/agent-runner";
 import { worktreePathFor } from "../../server/worktree";
 import { handleReportFixAction } from "./report-actions";
-import { githubWebhookRoute } from "../github/webhook-route";
-import { setGithubPullRequestReviewHandler } from "../github/webhook";
 import {
   slackApiCall,
   sendSlackMessage,
@@ -85,7 +80,6 @@ import {
   pendingAnswers,
   slackTeamId,
   slackBotUserId,
-  githubWebhooksReceived,
   setSlackTeamId,
   setSlackBotUserId,
   loadActiveSessionsOnStartup,
@@ -538,30 +532,18 @@ export function slackOwnsGithubWebhookIntake(): boolean {
 
 export class SlackAgent implements AgentModule {
   name = "slack";
-  private ownsGithubWebhookForwarder = false;
-
   getRoutes(): Map<string, (req: Request, url: URL) => Promise<Response>> {
     const routes = new Map<
       string,
       (req: Request, url: URL) => Promise<Response>
     >();
 
-    // Slack review notifications still consume GitHub webhooks even when the
-    // independently gated GitHub agent is off. Register the shared route only
-    // in that configuration so enabling both agents produces one route owner.
-    if (slackOwnsGithubWebhookIntake())
-      routes.set("POST /github/webhook", githubWebhookRoute);
-    setGithubPullRequestReviewHandler((payload) =>
-      handlePullRequestReview(payload, branchToChannel).catch((e) =>
-        console.error("[slack] Error handling PR review webhook:", e),
-      ),
-    );
+    // GithubAgent owns this route when enabled. Retain the historical Slack-only
+    // configuration by registering the same handler only when GitHub is disabled.
+    if (githubWebhookCompatibilityFallbackEnabled()) {
+      routes.set("POST /github/webhook", handleGithubWebhook);
+    }
 
-    // Slack event + interactivity intake. With an app-level token configured we
-    // run Socket Mode (an outbound WebSocket, armed in startup()) and register
-    // no inbound HTTP routes at all — no public URL, no signing secret. Without
-    // it, fall back to the HTTP Events API + interactivity endpoints.
-    if (!socketModeEnabled()) {
     // ----- POST /slack/events -----
     routes.set("POST /slack/events", async (req) => {
       // Slack retries a delivery when the original didn't get a 200 — which,
@@ -630,7 +612,6 @@ export class SlackAgent implements AgentModule {
 
       return new Response("", { status: 200 });
     });
-    }
 
     // ----- POST /worktree/create-channel -----
     routes.set("POST /worktree/create-channel", async (req) => {
@@ -805,17 +786,6 @@ export class SlackAgent implements AgentModule {
     await loadQueueFromDisk();
     loadProcessedEvents();
 
-    // When the GitHub agent is disabled, Slack owns both the shared webhook
-    // route and the outbound transport feeding it. Arm this before Slack's
-    // network bootstrap so GitHub intake is not delayed by auth.test.
-    this.ownsGithubWebhookForwarder = slackOwnsGithubWebhookIntake();
-    if (this.ownsGithubWebhookForwarder) {
-      const { startGithubWebhookForward } = await import(
-        "../github/webhook-forward"
-      );
-      void startGithubWebhookForward();
-    }
-
     // Fetch team ID and bot user ID for streaming APIs
     try {
       const authResp = await fetchWithTimeout("https://slack.com/api/auth.test", {
@@ -835,11 +805,6 @@ export class SlackAgent implements AgentModule {
       console.warn("[slack] Failed to fetch Slack team info:", e);
     }
 
-    // Socket Mode: arm the outbound WebSocket here (never at import — the
-    // module must stay side-effect-free). Self-gates on SLACK_APP_TOKEN, so
-    // this is a no-op for HTTP-transport installs.
-    startSlackSocket();
-
     console.log("[slack] Agent started");
   }
 
@@ -847,14 +812,6 @@ export class SlackAgent implements AgentModule {
     // A server restart must not masquerade as a person's Stop action. Keep the
     // queue head on disk and let startup continue it against the saved engine
     // session; handlers render the existing card as "Restarting".
-    stopSlackSocket();
-    if (this.ownsGithubWebhookForwarder) {
-      const { stopGithubWebhookForward } = await import(
-        "../github/webhook-forward"
-      );
-      stopGithubWebhookForward();
-      this.ownsGithubWebhookForwarder = false;
-    }
     const interrupted = interruptQueuesForRestart();
     console.log(`[slack] Agent shut down (${interrupted} run(s) preserved for restart)`);
   }
@@ -871,16 +828,22 @@ export class SlackAgent implements AgentModule {
       };
     }
 
+    const githubWebhookHealth = githubWebhookCompatibilityFallbackEnabled()
+      ? {
+          githubWebhookConfigured: !!process.env.GITHUB_WEBHOOK_SECRET,
+          githubApiTokenConfigured: !!process.env.GITHUB_API_TOKEN,
+          githubWebhooksReceived: githubWebhookCount(),
+        }
+      : {};
+
     return {
       status: "operational",
       agent: `${personaName()} (Slack)`,
-      transport: socketModeEnabled() ? "socket-mode" : "http",
+      transport: "http",
       activeSessions: activeSessions.size,
       activeQueues: sessionQueues.size,
       pendingQuestions: pendingAnswers.size,
-      githubWebhookConfigured: !!process.env.GITHUB_WEBHOOK_SECRET,
-      githubApiTokenConfigured: !!process.env.GITHUB_API_TOKEN,
-      githubWebhooksReceived,
+      ...githubWebhookHealth,
       queueDetails,
     };
   }

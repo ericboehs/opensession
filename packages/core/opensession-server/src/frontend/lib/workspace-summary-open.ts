@@ -72,11 +72,11 @@ export function workspaceSummaryCanStand(
 	return hasRoom;
 }
 
-/** Clear both Review bars before placing its summary card. */
+/** Place the card directly below the workspace tab strip. Review now gives
+ *  the card its own column, so its inner PR bars no longer need clearance. */
 export function workspaceSummarySideOffset(
 	tabStripVisible: boolean,
-	reviewMode: boolean,
+	_reviewMode: boolean,
 ): number {
-	const sessionOffset = tabStripVisible ? 49 : 20;
-	return sessionOffset + (reviewMode ? 84 : 0);
+	return tabStripVisible ? 49 : 20;
 }

@@ -57,10 +57,6 @@ struct ComposerSessionProjection {
         self.references = references
     }
 
-    /// The text currently shown in the composer. This is suitable for naming
-    /// a new session while `canonicalText` remains the model's prompt.
-    var titlePrompt: String { displayText }
-
     /// Apply one field edit without ever replacing the canonical draft with
     /// its projected titles. Editing any part of a title consumes that whole
     /// reference, matching its atomic presentation.

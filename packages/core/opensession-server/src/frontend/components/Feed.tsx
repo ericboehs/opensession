@@ -175,14 +175,14 @@ export function Feed({ sessions, teamViewing, onSelect }: Props) {
 	const [widening, setWidening] = useState(true);
 	useEffect(() => {
 		let active = true;
-		fetchRecentPrs()
+		fetchRecentPrs(undefined, { days })
 			.then((prs) => active && setRecentPrs(prs))
 			.catch(() => {})
 			.finally(() => active && setRecentPrsLoading(false));
 		return () => {
 			active = false;
 		};
-	}, []);
+	}, [days]);
 	useEffect(() => {
 		let active = true;
 		setWidening(true);

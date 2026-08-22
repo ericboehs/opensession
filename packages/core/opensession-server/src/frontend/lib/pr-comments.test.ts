@@ -12,7 +12,7 @@ describe("isMachinePrComment", () => {
 		expect(
 			isMachinePrComment({
 				author: "tella-butler",
-				body: "<!-- os-review -->\n### 🤖 Michael review · **approve**",
+				body: "<!-- os-review -->\n### 🤖 OS review · **approve**",
 			}),
 		).toBe(true);
 	});
@@ -33,13 +33,13 @@ describe("isMachinePrComment", () => {
 		expect(
 			isMachinePrComment({
 				author: "tella-butler",
-				body: "**Kent** via Michael:\n\nCan we keep the old spacing here?",
+				body: "**Kent** via OS:\n\nCan we keep the old spacing here?",
 			}),
 		).toBe(false);
 		expect(
 			isMachinePrComment({
 				author: "tella-butler",
-				body: "Review by **Kent** via Michael.",
+				body: "Review by **Kent** via OS.",
 			}),
 		).toBe(false);
 	});
@@ -61,14 +61,9 @@ describe("isMachinePrComment", () => {
 });
 
 describe("isOutdatedReviewComment", () => {
-	test("recognizes current and legacy superseded review markers", () => {
+	test("recognizes superseded review markers", () => {
 		expect(
 			isOutdatedReviewComment("<!-- os-review-outdated -->\n<details>...</details>"),
-		).toBe(true);
-		expect(
-			isOutdatedReviewComment(
-				"<!-- michael-review-outdated -->\n<details>...</details>",
-			),
 		).toBe(true);
 	});
 

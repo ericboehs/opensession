@@ -618,6 +618,7 @@ describe("runPi pi/openai account wiring (fake engine, no network)", () => {
           sessionId: "fake-api-key",
           pendingMessageCount: 0,
           agent: { continue: async () => {} },
+          getActiveToolNames: () => [],
           setSteeringMode: () => {},
           subscribe: (fn: (event: any) => void) => {
             listener = fn;
@@ -662,7 +663,8 @@ describe("runPi pi/openai account wiring (fake engine, no network)", () => {
         disableLocalWorkspaceTools: true,
       });
       expect(runtimeKeys).toEqual([["openai", "sk-test-remote-runtime"]]);
-      expect(events.filter((event) => event.type === "error")).toHaveLength(0);
+      const errors = events.filter((event) => event.type === "error");
+      expect(errors, JSON.stringify(errors)).toHaveLength(0);
       expect(events.find((event) => event.type === "done")).toMatchObject({ result: "ok" });
     } finally {
       sdkState.__piSdkPromise = previousSdkPromise;

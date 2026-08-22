@@ -7,6 +7,7 @@ import {
 } from "../../shared/accent-theme";
 import { getCurrentUser } from "../components/UserPicker";
 import { fetchUiPrefs, saveUiPrefsApi } from "./api";
+import { whenCurrentUserReady } from "./auth-ready";
 
 /**
  * Seven accents, ordered as a walk around the hue wheel from the blues.
@@ -148,7 +149,7 @@ if (
 	// contract still holds if that bootstrap is ever removed.
 	const theme = getAccentTheme();
 	applyAccentTheme(theme);
-	void hydrateAccentTheme(getCurrentUser());
+	whenCurrentUserReady((user) => void hydrateAccentTheme(user));
 	window.addEventListener(USER_CHANGE_EVENT, () =>
 		void hydrateAccentTheme(getCurrentUser()),
 	);

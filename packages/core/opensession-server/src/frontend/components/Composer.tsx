@@ -683,8 +683,9 @@ export function Composer({
 
   // Phones get a ChatGPT-style resting state: while the field is empty and
   // unfocused, the composer collapses to a single-row pill ("+ · placeholder ·
-  // mic · send"), hiding the model/effort/goal chips. Focusing the field or
-  // adding any content (text or attachment) expands it to the full toolbar.
+  // mic · send"), hiding the model/effort/goal chips. Note mode keeps this
+  // compact yellow state too; focusing the field reveals its context chip.
+  // Focusing the field or adding content expands it to the full toolbar.
   // The open model menu also holds it expanded: the portaled popup takes focus
   // (blurring the textarea), and collapsing would unmount the pill trigger and
   // slam the menu shut mid-interaction.
@@ -1531,10 +1532,10 @@ export function Composer({
             )}
             {/* Note mode is context attached to the next send, exactly like a
                 quoted selection, so it says so in the same place and the same
-                shape rather than as a marker down in the toolbar — where the ✕
-                had to be small enough to fit beside the "+" and the model pill,
-                which made it hard to read and hard to hit. */}
-            {noteMode && (
+                shape rather than as a marker down in the toolbar. The resting
+                phone pill communicates it through its yellow surface and
+                placeholder; the named chip appears once the field expands. */}
+            {noteMode && !minimized && (
               <ComposerContextChip
                 key="note-mode"
                 icon={<IconNote size={15} />}

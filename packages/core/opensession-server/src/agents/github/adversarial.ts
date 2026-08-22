@@ -1,5 +1,5 @@
 /**
- * Behavior: the `os-adversarial` label (legacy `michael-adversarial`). Runs the repo's adversarial-code-review
+ * Behavior: the `os-adversarial` label. Runs the repo's adversarial-code-review
  * skill (two independent hostile review passes, adjudicated) in code mode, with
  * the agent responsible for implementing the accepted findings, then pushes any
  * resulting changes to the PR branch and posts a summary. One-shot.

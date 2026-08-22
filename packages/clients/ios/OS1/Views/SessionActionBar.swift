@@ -61,7 +61,9 @@ struct SessionActionBar: View {
                 .padding(.horizontal, 2)
                 .fixedSize()
                 .clipShape(Capsule())
-                .background { Color.clear.glassSurface(in: Capsule()) }
+                // Clear Liquid Glass keeps these secondary actions lighter
+                // than the solid writing surface directly below.
+                .background { Color.clear.glassEffect(.clear, in: Capsule()) }
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 6)
                 .transition(

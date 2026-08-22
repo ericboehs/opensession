@@ -38,7 +38,7 @@ describe("editorName", () => {
 
 	it("keeps a label that was never an id, like an agent loop", () => {
 		roster();
-		expect(editorName("Michael (loops)")).toBe("Michael (loops)");
+		expect(editorName("Agent (loops)")).toBe("Agent (loops)");
 	});
 
 	it("has nothing to say about an empty user", () => {

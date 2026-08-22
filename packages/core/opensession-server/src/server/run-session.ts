@@ -27,7 +27,7 @@ import {
 import { syncAgentSessionEngine } from "./agent-session-sync";
 import { runAgentHosted } from "./host-client";
 import { getRunState, transitionRunState } from "./run-state";
-import { getAutomation, selfImproveMcpForSession } from "./automations";
+import { getAutomation } from "./automations";
 import { resolveSessionRunInputs } from "./session-run-inputs";
 import { defaultRepo } from "./config";
 import { isDevInstance } from "./dev-mode";
@@ -2332,15 +2332,17 @@ async function runSessionPromptInner(
 				: undefined,
 		mcpServers: mcpServers ?? "all",
 		// Self-management tools for normal sessions; withheld from automation
-		// sessions (and their interactive resumes) — same gate as deniedTools above.
-		// Exception: a selfImprove automation's sessions keep their scoped pair
-		// (spawn_task suite + own-prompt update) so a Slack thread reply reaches
-		// a session with the same tools its nightly run had.
+		// sessions (and their interactive resumes), same gate as deniedTools
+		// above. Automation-owned sessions keep their automation-bar set
+		// (papercuts + report/workflows rebuild + the selfImprove pair, the
+		// same fail-closed set the hosted path proxies and run-rpc's fallback
+		// builder serves) so a Slack thread reply reaches a session with the
+		// same tools its unattended run had.
 		// A goal-driven session also gets its own opensession-goal-self controls, so an
 		// interactive turn (a human steering it in the UI) can set the next wake,
 		// append to the ledger, or pause/finish — the same tools the headless wake has.
 		inProcessMcp: isAutomationSession
-			? selfImproveMcpForSession(session, sessionId)
+			? automationSessionMcp(session, sessionId)
 			: session.goalId
 				? {
 						...interactiveMcpServers(user, sessionId),

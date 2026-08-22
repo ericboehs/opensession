@@ -137,7 +137,12 @@ struct NewSessionView: View {
                 Divider()
                 controls
             }
-            .background(OS1VisualStyle.background)
+            // Keep the sheet surface behind the translucent keyboard.
+            // Otherwise its background stops at the keyboard safe-area edge,
+            // leaving a hard full-width seam under the action row.
+            .background(
+                OS1VisualStyle.background.ignoresSafeArea(.keyboard, edges: .bottom)
+            )
             .navigationTitle("New session")
             .inlineTitleBarCompat()
             .toolbar {
@@ -1064,11 +1069,6 @@ struct NewSessionView: View {
         Haptics.play(.send)
         dictation.stop()
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let titlePrompt = sessionProjection.titlePrompt(
-            for: prompt,
-            titleGeneration: TranscriptLinks.shared.generation,
-            refreshTitles: !promptFocused
-        ).trimmingCharacters(in: .whitespacesAndNewlines)
         let imageURLs = images.map(\.dataURL)
         if repo != Session.noRepoID { lastRepo = repo }
         let provisionalTitle = text.isEmpty
@@ -1096,7 +1096,6 @@ struct NewSessionView: View {
             do {
                 let id = try await OS1API.createSession(
                     prompt: text,
-                    titlePrompt: titlePrompt,
                     repo: repo,
                     mode: mode,
                     model: model.isEmpty ? nil : model,

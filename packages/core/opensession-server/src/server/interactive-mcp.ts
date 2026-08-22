@@ -228,8 +228,8 @@ export function interactiveMcpServers(
 							})),
 						linkPr: (input) => linkPr(sessionId, input),
 					}),
-					// Durable repo/user/team memory (stored under ~/.michael-memory,
-					// shared both ways with Slack's channel memory). Write tools are
+					// Durable repo/user/team memory, shared both ways with Slack's
+					// channel memory. Write tools are
 					// interactive-only — automation runs get read-only injection; see
 					// memory-tools.ts for the trust model.
 					"opensession-memory": createMemoryMcpServer({

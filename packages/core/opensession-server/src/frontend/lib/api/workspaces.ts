@@ -61,7 +61,7 @@ export async function fetchWorkspaces(): Promise<Workspace[]> {
 		const data = await request<{
 			workspaces?: Workspace[];
 			defaultModelSettings?: Workspace["modelSettings"];
-		}>("/workspaces");
+		}>("/workspaces?active=1");
 		if (data?.defaultModelSettings) defaultModelSettings = data.defaultModelSettings;
 		return data?.workspaces ?? [];
 	} catch (e) {

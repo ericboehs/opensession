@@ -76,8 +76,10 @@ The webhook server (`packages/core/opensession-server/src/server/webhook-server.
 TLS-terminating proxy in front of it for GitHub to reach it — Tella, for
 example, uses Caddy on a public hostname.
 
-- Route: `POST /github/webhook` (registered by the Slack agent,
-  `packages/core/opensession-server/src/agents/slack/index.ts`, which forwards PR events to the github agent).
+- Route: `POST /github/webhook` (registered by the GitHub agent,
+  `packages/core/opensession-server/src/agents/github/index.ts`). For an existing Slack-only deployment with
+  GitHub disabled, Slack registers the same GitHub-owned handler as a
+  compatibility fallback. When both are enabled, only GitHub registers it.
 - Verification: `GITHUB_WEBHOOK_SECRET`, HMAC-SHA256 over the raw body,
   header `x-hub-signature-256` (`sha256=<hex>`), timing-safe compare; invalid
   signature → 401. Deliveries are deduped by `x-github-delivery`.
@@ -89,10 +91,10 @@ the code consumes (`packages/core/opensession-server/src/agents/github/webhook.t
 | Event | What happens |
 | --- | --- |
 | `issue_comment`, `pull_request_review_comment` (action `created`) | if the body matches a configured mention handle: intent-classified → whole-PR action (review / autofix / simplify / adversarial) or a conversational reply run in a PR-branch worktree |
-| `pull_request` action `labeled` | labels `os-review` / `os-auto-fix` / `os-simplify` / `os-adversarial` trigger the corresponding behavior (the legacy `michael-*` names are accepted as aliases — `packages/core/opensession-server/src/agents/github/constants.ts`; create the labels on your repo first); auto-fix also merges the current base into conflicting PR branches and resolves the conflicts without force-pushing |
+| `pull_request` action `labeled` | labels `os-review` / `os-auto-fix` / `os-simplify` / `os-adversarial` trigger the corresponding behavior; create the labels on your repo first. Auto-fix also merges the current base into conflicting PR branches and resolves the conflicts without force-pushing. |
 | `pull_request` `opened`/`reopened`/`synchronize`/`ready_for_review` | auto-review, if the PR is non-draft and either carries `os-review` or the review automation is enabled |
 | `pull_request` action `closed` + merged | notifies linked sessions; fires the docs-sync automation on `github:pr_merged` |
-| `pull_request_review` | handled by the Slack agent (review → Slack notification) |
+| `pull_request_review` | refreshes PR state; when the Slack agent is enabled, review → Slack notification |
 | `workflow_run` | notifies sessions waiting on a merged PR's deploy |
 
 **Multi-repo**: events are accepted for **any repo in the config registry**

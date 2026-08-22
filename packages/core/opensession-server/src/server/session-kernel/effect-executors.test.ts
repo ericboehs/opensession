@@ -35,13 +35,9 @@ describe("session effect executor registry", () => {
   test("decodes creation references without forwarding durable secrets or bodies", async () => {
     const registry = new SessionEffectExecutorRegistry();
     let credential: unknown;
-    let branch: unknown;
     let attachment: unknown;
     registry.register("creation_credential_resolve", (item) => {
       credential = item.payload;
-    });
-    registry.register("creation_branch_prepare", (item) => {
-      branch = item.payload;
     });
     registry.register("creation_attachment_stage", (item) => {
       attachment = item.payload;
@@ -59,28 +55,6 @@ describe("session effect executor registry", () => {
       principal: "github:alice",
       scope: "repo:read",
       mode: "resolve_current",
-    });
-    expect(await registry.execute(outbox({
-      ...fence,
-      project: "opensession",
-      branch: "feature/create-one",
-      worktreePath: "/worktrees/create-one",
-      baseBranch: "",
-      isolated: true,
-      existingBranch: true,
-      credentialPrincipal: "user:alice",
-      mode: "adopt_or_create",
-      gitEnv: { GIT_ASKPASS: "must-not-cross" },
-    }, "creation_branch_prepare"))).toBe(true);
-    expect(branch).toEqual({
-      ...fence,
-      project: "opensession",
-      branch: "feature/create-one",
-      worktreePath: "/worktrees/create-one",
-      isolated: true,
-      existingBranch: true,
-      credentialPrincipal: "user:alice",
-      mode: "adopt_or_create",
     });
     expect(await registry.execute(outbox({
       ...fence,

@@ -46,6 +46,7 @@ import {
 	animateEmptyTabOpen,
 } from "./session-tabs/empty-tab-morph";
 import { useTabReorder } from "./session-tabs/useTabReorder";
+import { shouldShowTabStrip } from "../lib/split-tabs";
 
 /**
  * The tab strip is scoped to ONE Workspace: it shows the sibling sessions of the
@@ -354,13 +355,10 @@ export function SessionTabs({
 	// Closed sessions of this workspace, if there are any to offer.
 	const hasHistory = showHistory && archived.length > 0;
 
-	// One session and no view tabs → no strip. A bar holding a single tab is a
-	// row of chrome that names what the header already names, so it goes: the
-	// lone workspace's "+ New tab" button lives next to the session title in the
-	// header instead, and its closed sessions move to the header's ⋯ menu. But
-	// once a non-session pane (Review) is open, the strip appears so it has
-	// somewhere to live — a lone code session then reads as [session][Review].
-	if (!inSplit && tabs.length <= 1 && viewTabs.length === 0) return null;
+	// One tab of either kind → no strip. The pane header already names a lone
+	// Chat, Review or other view, and carries the + that the hidden strip would
+	// have owned. A session plus Review remains a real two-way choice.
+	if (!shouldShowTabStrip(tabs.length + viewTabs.length, inSplit)) return null;
 
 	function closeEmptySession(button: HTMLButtonElement, session: UnifiedSession) {
 		if (!reducedMotion && !isPhone) animateEmptyTabClose(button);

@@ -17,6 +17,7 @@ import {
 	listFeedDescriptors,
 } from "../feeds";
 import { listProjects } from "../projects";
+import { conditionalJsonResponse } from "../http-json";
 
 export async function handleFeedsRoutes(
 	ctx: RouteContext,
@@ -129,7 +130,7 @@ export async function handleFeedsRoutes(
 			);
 			if (!items)
 				return Response.json({ error: "Unknown feed" }, { status: 404 });
-			return Response.json({ items });
+			return conditionalJsonResponse(req, { items });
 		} catch (e: any) {
 			console.error(`[feeds] Items fetch failed for ${feedId}:`, e);
 			return Response.json(

@@ -4,7 +4,7 @@ import {
 	type OrganizationSettingsDto,
 } from "../lib/api";
 
-export const DEFAULT_APP_ICON_URL = "/mac-app-icon.png";
+export const DEFAULT_APP_ICON_URL = "/mac-app-icon.png?v=7";
 
 let iconUrl: string | null | undefined;
 let request: Promise<void> | null = null;

@@ -10,7 +10,7 @@ final class CommitDetailsTests: XCTestCase {
           "shortSha":"4ed1ef09",
           "title":"Fix transcript references",
           "body":"Keep the parser conservative.",
-          "author":"Michael Robot",
+          "author":"OS Robot",
           "person":null,
           "committedAt":"2026-08-17T10:20:30Z",
           "filesChanged":3,

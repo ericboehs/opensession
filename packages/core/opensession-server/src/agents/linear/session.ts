@@ -75,10 +75,8 @@ export interface ActiveSession extends StoredSession {
   issueDescription: string;
   teamId: string;
   abortController?: AbortController;
-  /** `"michael"` is the pre-rename spelling of `"agent"`. Stored session
-   *  files may carry it, so it stays accepted on READ; nothing writes it. */
   planningConversation: Array<{
-    role: "agent" | "michael" | "user";
+    role: "agent" | "user";
     content: string;
     timestamp: string;
   }>;
@@ -99,15 +97,13 @@ export function extractPrUrl(result: string): string | null {
 
 export function formatConversationHistory(
   conversation: Array<{
-    role: "agent" | "michael" | "user";
+    role: "agent" | "user";
     content: string;
     timestamp: string;
   }>
 ): string {
   if (conversation.length === 0) return "";
   return conversation
-    // Anything that is not the person is the agent, so a legacy `"michael"`
-    // role renders under the current persona name rather than as the user.
     .map((msg) => `**${msg.role === "user" ? "User" : personaName()}:** ${msg.content}`)
     .join("\n\n");
 }

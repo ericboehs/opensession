@@ -10,19 +10,7 @@ export type EffectiveTheme = "light" | "dark";
 
 // Keep this key in sync with the pre-paint script in index.html.
 const KEY = "opensession-theme";
-const LEGACY_KEY = "michael-theme";
 const CHANGE_EVENT = "opensession-theme-changed";
-
-// One-time migration from the pre-rename key (mirrors index.html's pre-paint
-// script, so the pref survives even if that inline script is ever dropped):
-// adopt the old value when the new key is unset, then drop the old key.
-try {
-	if (localStorage.getItem(KEY) === null) {
-		const legacy = localStorage.getItem(LEGACY_KEY);
-		if (legacy !== null) localStorage.setItem(KEY, legacy);
-	}
-	localStorage.removeItem(LEGACY_KEY);
-} catch {}
 
 export function getThemePref(): ThemePref {
 	const v = localStorage.getItem(KEY);

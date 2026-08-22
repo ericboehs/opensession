@@ -45,6 +45,13 @@ describe("SessionListStore", () => {
 		expect(
 			store
 				.queryPlan(
+					"SELECT DISTINCT workspace_id FROM session_list WHERE archived = 0 AND workspace_id IS NOT NULL",
+				)
+				.join("\n"),
+		).toContain("idx_session_list_archive_workspace");
+		expect(
+			store
+				.queryPlan(
 					"SELECT payload FROM session_list WHERE workspace_id = ? AND archived = 1 ORDER BY last_activity_ms DESC",
 					"workspace-one",
 				)
@@ -66,6 +73,20 @@ describe("SessionListStore", () => {
 				)
 				.join("\n"),
 		).toContain("idx_session_list_live_automation_activity");
+	});
+
+	test("lists active workspace ids without decoding session payloads", () => {
+		const store = memoryStore();
+		store.upsertMany([
+			session("live-one", "2026-08-22T12:00:00.000Z", { workspaceId: "one" }),
+			session("live-two", "2026-08-22T11:00:00.000Z", { workspaceId: "one" }),
+			session("archived", "2026-08-22T10:00:00.000Z", {
+				workspaceId: "two",
+				archived: true,
+			}),
+		]);
+
+		expect(store.activeWorkspaceIds()).toEqual(["one"]);
 	});
 
 	test("returns only five ordinary runs per automation without parsing the rest", () => {

@@ -45,14 +45,13 @@ import { handleSlashCommand } from "./slash-commands";
 import { type UnifiedSession } from "./types";
 import { type Workspace, getWorkspace, updateWorkspace } from "./workspaces";
 import { ownedWorktree } from "./session-workspace";
-import { ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, listWorktrees, repoForPath, repoForPathOrNull, resolveUniqueBranch, worktreePathFor } from "./worktree";
+import { createWorktree, ensureAskCheckout, ensureScratchDir, getRepo, isRegisteredWorktree, listWorktrees, repoForPath, repoForPathOrNull, resolveUniqueBranch, worktreePathFor } from "./worktree";
 import { broadcastToSession } from "./ws-hub";
 import { randomUUIDv7 } from "bun";
 import {
 	ensureCreationPlanned,
 	legacyGatewayEffect,
 	requestCreationBranch,
-	requestCreationCredential,
 	requestCreationWorkspace,
 	sessionKernel,
 	sessionKernelOwnsCurrentCommand,
@@ -655,31 +654,24 @@ registerSessionControl({
 				if (!wtPath) {
 					const worktreeOptions = {
 						...(isolatedWorktree ? { isolated: true } : {}),
+						...(githubGitEnv ? { gitEnv: githubGitEnv } : {}),
 					};
 					wtPath = worktreePathFor(sessionBranch, repo.id, worktreeOptions);
 					const plannedBranch = sessionBranch;
 					const plannedWorktreePath = wtPath;
-					const credentialPrincipal = githubCredential?.principal;
-					materializeWorktree = async () => {
-						if (credentialPrincipal) {
-							await requestCreationCredential({
-								sessionId: bksId,
-								identity: createIdentity,
-								principal: credentialPrincipal,
-								scope: `git:${repo.id}`,
-							});
-						}
-						await requestCreationBranch({
-							sessionId: bksId,
-							identity: createIdentity,
-							project: repo.id,
-							branch: plannedBranch,
-							worktreePath: plannedWorktreePath,
-							isolated: isolatedWorktree === true,
-							credentialPrincipal,
-						});
-						return plannedWorktreePath;
-					};
+					materializeWorktree = githubGitEnv
+						? () => createWorktree(plannedBranch, repo.id, worktreeOptions)
+						: async () => {
+								await requestCreationBranch({
+									sessionId: bksId,
+									identity: createIdentity,
+									project: repo.id,
+									branch: plannedBranch,
+									worktreePath: plannedWorktreePath,
+									isolated: isolatedWorktree === true,
+								});
+								return plannedWorktreePath;
+							};
 				}
 			}
 		}
@@ -959,25 +951,14 @@ ${createMentionsNote}`;
 			typeof restoredSpec.branch === "string" &&
 			typeof restoredSpec.repoId === "string"
 				? async () => {
-						const credentialPrincipal = restoredSpec.gitPrincipal;
-						if (credentialPrincipal) {
-							await requestCreationCredential({
-								sessionId: bksId,
-								identity: createIdentity,
-								principal: credentialPrincipal,
-								scope: `git:${restoredSpec.repoId!}`,
-							});
-						}
-						await requestCreationBranch({
-							sessionId: bksId,
-							identity: createIdentity,
-							project: restoredSpec.repoId!,
-							branch: restoredSpec.branch!,
-							worktreePath: restoredSpec.wtPath!,
-							isolated: restoredSpec.worktreeIsolated === true,
-							credentialPrincipal,
+						if (existsSync(restoredSpec.wtPath!))
+							throw new Error(
+								`Incomplete worktree exists at ${restoredSpec.wtPath}; refusing to start the session`,
+							);
+						return createWorktree(restoredSpec.branch!, restoredSpec.repoId!, {
+							...(isolatedWorktree ? { isolated: true } : {}),
+							...(restoredGitEnv ? { gitEnv: restoredGitEnv } : {}),
 						});
-						return restoredSpec.wtPath!;
 					}
 				: undefined;
 		const spec: ResolvedCreate = restoredSpec

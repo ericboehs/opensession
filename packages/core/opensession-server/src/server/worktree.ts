@@ -596,23 +596,6 @@ export async function reviveWorktree(branch: string, repoId?: string): Promise<s
 }
 
 /**
- * Remove a leftover legacy-suffix worktree from the michael-* → os-* rename
- * (path + its checkout branch, best-effort). Callers hold the git lock; the
- * PR-agent per-PR locks guarantee nothing is running inside the legacy tree
- * when its os-* replacement is being set up.
- */
-async function removeLegacySuffixWorktree(
-  repo: Repo,
-  wtPath: string,
-  branch: string,
-): Promise<void> {
-  if (!existsSync(wtPath)) return;
-  await $`git -C ${repo.repo} worktree remove --force ${wtPath}`.quiet().nothrow();
-  await $`git -C ${repo.repo} branch -D ${branch}`.quiet().nothrow();
-  console.log(`[worktree] removed legacy-suffix worktree ${wtPath}`);
-}
-
-/**
  * Fetch branches, guaranteeing their `origin/<branch>` refs exist afterwards.
  *
  * `git fetch origin <branch>` writes `refs/remotes/origin/<branch>` only when the
@@ -650,11 +633,6 @@ export async function createWorktreeForPrBranch(headRef: string, repoId?: string
   const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-os`;
 
   const reused = await withGitLock(async () => {
-    await removeLegacySuffixWorktree(
-      repo,
-      `${worktreesDir()}/${repo.wtPrefix}-${headRef}-michael`,
-      `${headRef}-michael`,
-    );
     await fetchBranchesWithTracking(repo.repo, headRef);
     if (existsSync(wtPath)) {
       await $`git -C ${wtPath} fetch origin ${headRef} --quiet`.nothrow();
@@ -691,11 +669,6 @@ export async function createReviewWorktreeForPrHead(
   const repo = getRepo(repoId);
   const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-os-review`;
   return withGitLock(async () => {
-    await removeLegacySuffixWorktree(
-      repo,
-      `${worktreesDir()}/${repo.wtPrefix}-${headRef}-michael-review`,
-      `${headRef}-michael-review`,
-    );
     await fetchBranchesWithTracking(repo.repo, headRef, baseRef || repo.defaultBranch);
     if (existsSync(wtPath)) {
       // A code session recovering from a deleted worktree may have borrowed this

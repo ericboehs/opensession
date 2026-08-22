@@ -1034,7 +1034,11 @@ export function getRecentPrs(): RecentPrEntry[] {
 	const out: RecentPrEntry[] = [];
 	for (const [repoId, byBranch] of getPrsByRepo()) {
 		const repoCfg = configuredRepos()[repoId];
-		const capabilities = repoCfg ? prHostFor(repoCfg).capabilities : undefined;
+		// GitHub is the client default. Only alternate hosts need to repeat a
+		// capability object on every row.
+		const capabilities = repoCfg?.host === "codestorage"
+			? prHostFor(repoCfg).capabilities
+			: undefined;
 		for (const [branch, pr] of byBranch) {
 			out.push({
 				capabilities,
@@ -1179,7 +1183,9 @@ export function getOpenPrs(): OpenPrEntry[] {
 	for (const [repoId, byBranch] of getPrsByRepo()) {
 		const repoCfg = configuredRepos()[repoId];
 		const ghRepo = repoCfg?.ghRepo;
-		const capabilities = repoCfg ? prHostFor(repoCfg).capabilities : undefined;
+		const capabilities = repoCfg?.host === "codestorage"
+			? prHostFor(repoCfg).capabilities
+			: undefined;
 		for (const [branch, pr] of byBranch) {
 			if (pr.state !== "OPEN") continue;
 			const review = getPrReviewStatus(pr.number, ghRepo, pr.headRefOid);

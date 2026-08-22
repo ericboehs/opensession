@@ -153,19 +153,6 @@ export async function bootstrapUserAuthOnConnect(
 	};
 }
 
-async function syncGithubWebhookForwarder(): Promise<void> {
-	try {
-		const { syncGithubWebhookForwardCredential } = await import(
-			"../../agents/github/webhook-forward"
-		);
-		await syncGithubWebhookForwardCredential();
-	} catch (error) {
-		// The account mutation succeeded. The old process was stopped before a
-		// replacement was attempted, so log startup failures without lying to the UI.
-		console.warn("[github-forward] could not synchronize the connected account:", error);
-	}
-}
-
 export async function handleConnectionsRoutes(
 	ctx: RouteContext,
 ): Promise<Response | undefined> {
@@ -419,7 +406,7 @@ export async function handleConnectionsRoutes(
 		if (BRIDGE_PROVIDER_IDS.has(id)) {
 			return Response.json(
 				{
-					error: `"${id}" runs on the subscription bridges (Settings → Usage), not a raw API key`,
+					error: `"${id}" runs on the subscription bridges (Settings → Providers), not a raw API key`,
 				},
 				{ status: 400 },
 			);
@@ -693,13 +680,11 @@ export async function handleConnectionsRoutes(
 			if (githubAuthOnConnect()) {
 				const boot = await bootstrapUserAuthOnConnect(result.login, result.name);
 				if ("error" in boot) {
-					await syncGithubWebhookForwarder();
 					return Response.json({ status: "error", error: boot.error });
 				}
 				// Native clients can't hold the HttpOnly cookie — they ask for the
 				// token in the body (native:true) and send it back as Bearer.
 				const native = body?.native === true;
-				await syncGithubWebhookForwarder();
 				return Response.json(
 					{
 						...result,
@@ -713,8 +698,6 @@ export async function handleConnectionsRoutes(
 				);
 			}
 		}
-		if (result.status === "ok" && simpleMode)
-			await syncGithubWebhookForwarder();
 		return Response.json(result);
 	}
 
@@ -750,7 +733,6 @@ export async function handleConnectionsRoutes(
 		// The child keeps a copied process environment. Stop it immediately
 		// after every removal so a deleted operator credential cannot keep
 		// receiving deliveries until restart or process exit.
-		await syncGithubWebhookForwarder();
 		return Response.json({ ok: true });
 	}
 

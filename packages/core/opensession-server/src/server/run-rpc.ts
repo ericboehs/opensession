@@ -31,19 +31,6 @@ import { audit } from "./audit";
 import { devInstanceBootError, isDevInstance } from "./dev-mode";
 import { MCP_HTTP_PORT, rpcSocketPath } from "./run-rpc-protocol";
 
-/**
- * In-process MCP server ids renamed michael-* → opensession-*.
- * Legacy ids still arrive at runtime from persisted state: journaled runs
- * resumed after a restart (RunHostSpec.proxyMcpServers, per-run proxy env)
- * and engine sessions whose context still names old tool ids. Normalize at
- * lookup points; never at definition sites (those use the new ids only).
- */
-export function canonicalMcpServerId(name: string): string {
-	return name.startsWith("michael-")
-		? `opensession-${name.slice("michael-".length)}`
-		: name;
-}
-
 const g = globalThis as any;
 
 // Proxied tool calls can legitimately block for many minutes (opensession-humans
@@ -167,16 +154,9 @@ export async function dispatchRunRpc(path: string, body: any): Promise<RunRpcDis
   const builder: InteractiveMcpBuilder | undefined = g.__runRpcMcpBuilder;
   if (!builder) return imm(503, { error: "MCP builder not registered yet" });
 
-  // Legacy michael-* ids still arrive from journaled runs resumed across the
-  // 2026-07-09 opensession-* rename — normalize before lookup.
-  const serverName = canonicalMcpServerId(String(body?.server || ""));
+  const serverName = String(body?.server || "");
   const perSession = sessionServers.get(ctx.sessionId);
-  const cfg =
-    (perSession
-      ? Object.fromEntries(
-          Object.entries(perSession).map(([n, s]) => [canonicalMcpServerId(n), s]),
-        )[serverName]
-      : undefined) ?? builder(ctx.sessionId, ctx.user)[serverName];
+  const cfg = perSession?.[serverName] ?? builder(ctx.sessionId, ctx.user)[serverName];
   if (!cfg?.instance) {
     // tools/list for a server this session doesn't carry (shared servers list
     // the union of in-process servers in their config) answers with an empty
@@ -399,7 +379,7 @@ async function handleMcpHttp(req: Request): Promise<Response> {
   }
   const m = url.pathname.match(/^\/mcp\/([A-Za-z0-9_-]+)$/);
   if (!m) return json({ error: "not found" }, 404);
-  const server = canonicalMcpServerId(m[1]);
+  const server = m[1];
   if (req.method !== "POST") {
     // GET is the client's optional standalone SSE stream probe — a 405 tells
     // it we don't push server-initiated messages, which is true.

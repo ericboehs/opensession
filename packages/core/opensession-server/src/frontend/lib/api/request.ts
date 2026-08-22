@@ -1,4 +1,5 @@
 import { BASE_PATH } from "../base";
+import { resolveAnonymousUserPath } from "../auth-ready";
 
 export const BASE = `${BASE_PATH}/api`;
 
@@ -42,6 +43,11 @@ export function request<T>(
 	} = {},
 ): Promise<T> {
 	const method = opts.method || "GET";
+	if (method === "GET" && /[?&]user=Anonymous(?:&|$)/.test(path)) {
+		return resolveAnonymousUserPath(path).then((resolvedPath) =>
+			request<T>(resolvedPath, opts),
+		);
+	}
 	const share = method === "GET" && opts.body === undefined && !opts.signal;
 	if (share) {
 		const existing = inflightGets.get(path);

@@ -131,6 +131,56 @@ export async function setupRequest<T = unknown>(
 
 export type ChipTone = "on" | "warn" | "off";
 
+export function publicUrlState(publicBaseUrl: string): {
+	tone: ChipTone;
+	label: string;
+	description: string;
+} {
+	try {
+		const url = new URL(publicBaseUrl);
+		if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
+		const host = url.hostname.toLowerCase();
+		if (
+			host === "localhost" ||
+			host === "127.0.0.1" ||
+			host === "0.0.0.0" ||
+			host === "::1" ||
+			host === "[::1]"
+		) {
+			return {
+				tone: "warn",
+				label: "Local only",
+				description: "Only this server can open the instance. Set a Tailscale address during server setup.",
+			};
+		}
+		const octets = host.split(".").map(Number);
+		const tailnetIp =
+			octets.length === 4 &&
+			octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255) &&
+			octets[0] === 100 &&
+			octets[1]! >= 64 &&
+			octets[1]! <= 127;
+		if (tailnetIp || host.endsWith(".ts.net")) {
+			return {
+				tone: "on",
+				label: "Private address",
+				description: `Configured for Tailscale at ${publicBaseUrl}.`,
+			};
+		}
+		return {
+			tone: "warn",
+			label: "Check access",
+			description: `${publicBaseUrl} is configured, but setup cannot verify that it is private or reachable.`,
+		};
+	} catch {
+		return {
+			tone: "warn",
+			label: "Invalid",
+			description: "The instance URL is not valid. Run the server setup again.",
+		};
+	}
+}
+
 const CHIP_DOTS: Record<ChipTone, string> = {
 	on: "var(--green)",
 	warn: "var(--yellow)",
@@ -148,12 +198,10 @@ export function chipDotColor(tone: ChipTone): string {
  *  it is rendered by. */
 export type SetupStepId =
 	| "server"
-	| "engine"
-	| "identity"
-	| "repos"
-	| "team"
-	| "integrations"
 	| "github"
+	| "identity"
+	| "engine"
+	| "repos"
 	| "review";
 
 export function integrationState(i: SetupIntegration): {
@@ -167,27 +215,12 @@ export function integrationState(i: SetupIntegration): {
 }
 
 export function githubAuthState(g: SetupGithub): { tone: ChipTone; label: string } {
-	if (g.userPrAuth && g.clientIdConfigured) return { tone: "on", label: "Active" };
+	if (g.userPrAuth && g.clientIdConfigured && g.clientSecretConfigured)
+		return { tone: "on", label: "Active" };
+	if (g.userPrAuth && g.clientIdConfigured)
+		return { tone: "warn", label: "Missing client secret" };
 	if (g.userPrAuth) return { tone: "warn", label: "Missing client id" };
 	return { tone: "off", label: "Off" };
-}
-
-/** Whether a public base URL is configured, for the setup chip. A blank value
- *  is the unset default; any non-empty URL counts as configured. */
-export function publicUrlState(publicBaseUrl: string): { tone: ChipTone; label: string } {
-	// The server defaults publicBaseUrl to a loopback address (127.0.0.1:3850),
-	// so a blank check alone reads that default as "Configured" on a fresh
-	// install. A loopback URL is not reachable from other devices, so treat it,
-	// like an empty value, as not configured.
-	const url = publicBaseUrl.trim();
-	if (!url) return { tone: "off", label: "Not set" };
-	let host = url;
-	try {
-		host = new URL(url).hostname;
-	} catch {}
-	if (host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]")
-		return { tone: "off", label: "Not set" };
-	return { tone: "on", label: "Configured" };
 }
 
 /** Does this repo carry what a session needs to provision and boot it on its
@@ -436,7 +469,7 @@ export function SecretField({
 					</button>
 				)}
 			</div>
-			{description && <div className="text-meta text-faint">{description}</div>}
+			{description && <div className="text-supporting text-faint">{description}</div>}
 			<input
 				type={type}
 				// Mono for the value you paste, but not for the placeholder: every

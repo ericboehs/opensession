@@ -41,7 +41,7 @@ import { searchSkills } from "../skills";
 import { handleSlashCommand } from "../slash-commands";
 import { sanitizeBranchSlug } from "../suggest-branch";
 import { type NativeSessionFile, type StackedOn } from "../types";
-import { DEFAULT_WORKSPACE_MODEL_SETTINGS, type Workspace, type WorkspaceDraft, type WorkspaceModelSettings, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace } from "../workspaces";
+import { DEFAULT_WORKSPACE_MODEL_SETTINGS, type Workspace, type WorkspaceDraft, type WorkspaceModelSettings, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace, workspaceListVersion } from "../workspaces";
 import { resolveExternalWorkspace, resolvePlainWorkspace, resolvePrWorkspace } from "../workspace-resolve";
 import { resolveModel } from "../models";
 import { REPOS, createWorktree, createWorktreeForExistingBranch, ensureScratchDir, getRepo, isSharedCheckoutDir, listWorktrees, repoForPath, resolveUniqueBranch, sessionRepoId, worktreeHasWork, worktreeHeadBranch } from "../worktree";
@@ -49,6 +49,8 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync } from "fs";
 import { isClientSessionId, isNativeSessionId, newSessionId } from "../paths";
 import { isReusableEmptySession } from "../empty-session";
 import { githubMutationCredential } from "./github-credential";
+import { conditionalJsonResponse } from "../http-json";
+import { indexedActiveWorkspaceIds } from "../session-list-store";
 
 /**
  * Validate a `draft` field from a workspace create/patch body. `null` (clear)
@@ -425,9 +427,29 @@ export async function handleWorkspaceRoutes(
 		// The defaults ride once at the top level; a workspace row carries
 		// modelSettings only when someone saved their own copy. Stamping the
 		// defaults on every row multiplied the payload by the workspace count.
-		return Response.json({
-			workspaces: listWorkspaces(),
+		let workspaces = listWorkspaces();
+		const activeOnly = url.searchParams.get("active") === "1";
+		if (activeOnly) {
+			const indexedIds = indexedActiveWorkspaceIds();
+			const activeWorkspaceIds = new Set(indexedIds ??
+				(await getCachedSessionsAsync("exclude"))
+					.map((session) => session.workspaceId)
+					.filter((id): id is string => typeof id === "string" && !!id));
+			workspaces = workspaces.filter(
+				(workspace) => activeWorkspaceIds.has(workspace.id) || !!workspace.draft,
+			);
+		}
+		return conditionalJsonResponse(req, {
+			workspaces,
 			defaultModelSettings: DEFAULT_WORKSPACE_MODEL_SETTINGS,
+		}, {
+			cache: {
+				key: activeOnly ? "workspaces-list-active" : "workspaces-list-all",
+				// Active membership can change without workspace metadata changing.
+				version: activeOnly
+					? `${workspaceListVersion()}:${workspaces.map((workspace) => workspace.id).join(",")}`
+					: workspaceListVersion(),
+			},
 		});
 	}
 

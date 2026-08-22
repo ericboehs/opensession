@@ -256,12 +256,12 @@ import {
 	workspaceRunNeedingAttention,
 } from "../lib/sidebar-lanes";
 import { sessionHasPr } from "../lib/session-prs";
+import { sessionHasWorkspace } from "../lib/session-workspace";
 import {
 	nextRenderedSidebarChat,
 	nextRenderedSidebarItem,
 	nextUnreadRenderedWorkspaceItem,
 } from "../lib/sidebar-next";
-import { sessionHasWorkspace } from "../lib/session-workspace";
 import {
 	LONG_PRESS_MS,
 	LONG_PRESS_SLOP,
@@ -283,8 +283,8 @@ import {
 	type CtxEntry,
 	type Group,
 	type GroupBand,
-	type OpenNextSidebarItem,
 	type MineStatus,
+	type OpenNextSidebarItem,
 	type Props,
 	type SidebarHandle,
 	type WsRow,
@@ -781,8 +781,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 	const [workspaceMenu, setWorkspaceMenu] = useState<{
 		id: string;
 		x: number;
-		source: HTMLButtonElement;
 		y: number;
+		source: HTMLButtonElement;
 	} | null>(null);
 	const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
 	const [workspaceDraft, setWorkspaceDraft] = useState("");
@@ -3004,8 +3004,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 						(draggingRow || swipeSide) && "will-change-transform",
 					)}
 					data-sidebar-row=""
-					data-sidebar-item-key={`workspace:${row.key}`}
 					data-ws-row=""
+					data-sidebar-item-key={`workspace:${row.key}`}
 					data-selected={active || undefined}
 					data-waiting={waiting || undefined}
 					data-running={row.running || undefined}
@@ -3056,8 +3056,8 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					setWorkspaceMenu({
 						id: row.workspace ? row.workspace.id : row.key,
 						x: e.clientX,
-						source: e.currentTarget,
 						y: e.clientY,
+						source: e.currentTarget,
 					});
 					}}
 					// The button's label replaces its content for assistive tech, so
@@ -3068,9 +3068,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 							? `${row.name}, last run failed`
 							: waiting
 								? `${row.name}, needs your attention`
-								: needsMyReview
-									? `${row.name}, needs your review`
-									: row.name
+							: needsMyReview
+								? `${row.name}, needs your review`
+								: row.name
 					}
 				>
 				{/* A question or requested review is blue. A stopped run is red, so
@@ -4904,7 +4904,11 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					{!borrowedLens && <div className="min-w-0 flex-1" />}
 					{/* Grouped so the pair's combined width can be measured when deciding
 					    whether the repo chip fits inline. Gone on phones, where filter
-					    moves to the top bar and the red FAB covers new-session. */}
+					    moves to the top bar and the red FAB covers new-session. Gone in a
+					    borrowed lens too: both act on YOUR sidebar, so grouping or
+					    starting a session from inside someone else's bar is either a
+					    no-op you can't see or work filed somewhere you didn't mean. The
+					    bar keeps the one action that belongs to it, which is leaving. */}
 					<div
 						className={cn(
 							"shrink-0 items-center gap-1.5",

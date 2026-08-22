@@ -1,6 +1,6 @@
 import { BASE_PATH } from "./base";
 
-const HEALTH_URL = `${BASE_PATH}/api/health`;
+const HEALTH_URL = `${BASE_PATH}/api/health?brief=1`;
 
 export interface HealthStatus {
 	bootId?: unknown;

@@ -26,8 +26,16 @@ export interface EngineStatus {
 
 export function engineStatus(): EngineStatus {
   const enabled = piEngineEnabled();
-  const claudeAccounts = listAccountsPublic().length;
-  const codexAccounts = listCodexAccountsPublic().length;
+  const claudePool = listAccountsPublic();
+  const codexPool = listCodexAccountsPublic();
+  const claudeAccounts = claudePool.length;
+  const codexAccounts = codexPool.length;
+  const claudeAvailable = claudePool.filter(
+    (account) => account.usable && !account.exhaustedUntil,
+  ).length;
+  const codexAvailable = codexPool.filter(
+    (account) => account.usable && !account.exhaustedUntil,
+  ).length;
   const defaultModel = interactiveDefaultModel();
   const provider = accountProviderForModel(defaultModel);
   const base = {
@@ -52,22 +60,22 @@ export function engineStatus(): EngineStatus {
       true,
     );
   }
-  if (provider === "claude" && !claudeAccounts) {
+  if (provider === "claude" && !claudeAvailable) {
     return blocked(
-      "No Claude accounts are available for the default model.",
-      "Add a Claude account under Workspace → Models.",
+      "No usable Claude accounts are available for the default model.",
+      "Add a Claude account under Workspace → Setup, or wait for an exhausted account to reset.",
     );
   }
-  if (provider === "codex" && !codexAccounts) {
+  if (provider === "codex" && !codexAvailable) {
     return blocked(
-      "No ChatGPT accounts are available for the default model.",
-      "Add a ChatGPT account under Workspace → Models.",
+      "No usable ChatGPT accounts are available for the default model.",
+      "Add a ChatGPT account under Workspace → Setup, or wait for an exhausted account to reset.",
     );
   }
   if (
     !provider &&
-    !claudeAccounts &&
-    !codexAccounts &&
+    !claudeAvailable &&
+    !codexAvailable &&
     !Object.keys(modelProviders()).length
   ) {
     return blocked(

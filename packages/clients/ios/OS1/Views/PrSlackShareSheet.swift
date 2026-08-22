@@ -371,8 +371,7 @@ struct PrSlackShareSheet: View {
                         channel: response.channel.map {
                             .init(id: $0.id, name: $0.name)
                         },
-                        permalink: response.permalink,
-                        ts: response.ts
+                        permalink: response.permalink
                     ))
                 } else if request.merged {
                     var screenshots: [String] = []

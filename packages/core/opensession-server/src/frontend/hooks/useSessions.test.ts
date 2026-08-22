@@ -3,11 +3,28 @@ import type { UnifiedSession } from "../lib/types";
 import {
   reconcilePendingSessionPatches,
   sessionPatchNeedsAcknowledgement,
+  sidebarSessionsQuery,
 } from "./useSessions";
 
 function session(archived: boolean): UnifiedSession {
   return { id: "session-1", archived } as UnifiedSession;
 }
+
+describe("sidebarSessionsQuery", () => {
+  test("asks for the active server-side sidebar projection", () => {
+    expect(
+      sidebarSessionsQuery({
+        user: "Ada Lovelace",
+        person: "me",
+        repo: "tella fusion",
+        autoCreated: "hide",
+        selectedSessionId: "os-1",
+      }),
+    ).toBe(
+      "?archived=exclude&view=sidebar&user=Ada+Lovelace&person=me&repo=tella+fusion&autoCreated=hide&session=os-1",
+    );
+  });
+});
 
 describe("reconcilePendingSessionPatches", () => {
   test("keeps the chat's running state applied across a stale list poll", () => {

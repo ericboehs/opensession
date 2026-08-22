@@ -106,8 +106,8 @@ describe("workspace summary in Review", () => {
 		expect(workspaceSummaryCanStand(false, true)).toBe(false);
 	});
 
-	test("clears the Review identity and navigation bars", () => {
+	test("places session and Review summaries below the workspace tabs", () => {
 		expect(workspaceSummarySideOffset(true, false)).toBe(49);
-		expect(workspaceSummarySideOffset(true, true)).toBe(133);
+		expect(workspaceSummarySideOffset(true, true)).toBe(49);
 	});
 });

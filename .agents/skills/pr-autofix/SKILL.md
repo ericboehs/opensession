@@ -6,7 +6,7 @@ argument-hint: "[pr-number] (defaults to the current branch's PR)"
 
 # PR auto-fix
 
-Address ALL the open review feedback on a PR — from EVERY reviewer (Michael, Greptile, and humans alike) — AND any failing CI, then commit, push, and reply in each thread you addressed. This is the methodology behind Michael's `michael-auto-fix` label loop; it also runs standalone from a session.
+Address ALL the open review feedback on a PR, from automated and human reviewers alike, plus any failing CI. Then commit, push, and reply in each thread you addressed. This is the methodology behind Open Session's `os-auto-fix` label loop; it also runs standalone from a session.
 
 You are expected to fix everything actionable, not just blockers — P2 and P3 findings included. Only leave a finding unfixed when you have a clear reason, and record that reason (see the disposition lines at the end).
 
@@ -57,11 +57,11 @@ Only genuine blockers justify breaking scope: active data loss, crash, broken bu
 
 So reviewers see it was handled. Reply via `gh api repos/<repo>/pulls/<pr>/comments/<id>/replies -f body="<body>"`. Attribute honestly — only claim work you actually did:
 
-- A finding **you** fixed in a commit you pushed this run: `<!-- michael-fixed -->\nFixed in <your-short-sha> — <what you changed>.`
-- A finding that was **already resolved by an existing commit** (someone else's work, before your run): `<!-- michael-fixed -->\nLooks addressed in <short-sha> — <how it's handled now>.` Do NOT say you fixed it.
-- A finding you **deliberately did not act on**: reply with your reasoning, and do NOT include the `<!-- michael-fixed -->` marker or the words "Fixed in" — that keeps the thread open for a human.
+- A finding **you** fixed in a commit you pushed this run: `<!-- os-fixed -->\nFixed in <your-short-sha>: <what you changed>.`
+- A finding that was **already resolved by an existing commit** (someone else's work, before your run): `<!-- os-fixed -->\nLooks addressed in <short-sha>: <how it is handled now>.` Do NOT say you fixed it.
+- A finding you **deliberately did not act on**: reply with your reasoning, and do NOT include the `<!-- os-fixed -->` marker or the words "Fixed in". That keeps the thread open for a human.
 
-The `<!-- michael-fixed -->` marker (or a leading "Fixed in") is what marks a thread resolved, so only put it on threads that are genuinely handled. Never claim you or Michael fixed something a human actually fixed. This applies to human reviewers' comments too, not just Michael's.
+The `<!-- os-fixed -->` marker (or a leading "Fixed in") is what marks a thread resolved, so only put it on threads that are genuinely handled. Never claim you or the agent fixed something a human actually fixed. This applies to human reviewers' comments too.
 
 ## Disposition lines (required output contract)
 

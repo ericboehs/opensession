@@ -117,12 +117,18 @@ import {
 } from "./github-credential";
 import { defaultRepo } from "../config";
 import type { UnifiedSession } from "../types";
-import { transcriptSearchWorkerArgv } from "../../runner-host/exe";
 import {
 	indexedSessions,
 	indexedSidebarSessions,
 	indexedWorkspaceSessions,
 } from "../session-list-store";
+import {
+	loadSidebarSessionScopeContext,
+	parseSidebarSessionScope,
+	scopeSessionsForSidebar,
+	sidebarSessionScopeKey,
+	type SidebarSessionScope,
+} from "../sidebar-session-scope";
 
 const SESSIONS_RESPONSE_TTL_MS = 5_000;
 interface SessionsResponseSnapshot {
@@ -227,12 +233,10 @@ export function archivedScope(
 // session-cache uses to reach promptQueues). Without that, archiving a session
 // stayed visible for up to SESSIONS_RESPONSE_TTL_MS after the underlying cache
 // had already been invalidated — the response snapshot outlived its source.
-const sessionsResponseSnapshots: Map<
-	SessionsVariant,
-	SessionsResponseSnapshot
-> = ((globalThis as any).__osSessionsResponseSnapshots ??= new Map());
+const sessionsResponseSnapshots: Map<string, SessionsResponseSnapshot> =
+	((globalThis as any).__osSessionsResponseSnapshots ??= new Map());
 const sessionsResponseRefreshes: Map<
-	SessionsVariant,
+	string,
 	Promise<SessionsResponseSnapshot>
 > = ((globalThis as any).__osSessionsResponseRefreshes ??= new Map());
 
@@ -629,10 +633,7 @@ async function searchStoredTranscripts(
 	if (!sessionIds.length || !existsSync(transcriptDbPath()))
 		return { matches: [], searchedSessions: 0 };
 	const proc = Bun.spawn(
-		transcriptSearchWorkerArgv(
-			process.execPath,
-			`${import.meta.dir}/../transcript-search-worker.ts`,
-		),
+		[process.execPath, `${import.meta.dir}/../transcript-search-worker.ts`],
 		{
 			stdin: "pipe",
 			stdout: "pipe",
@@ -699,6 +700,39 @@ async function ripgrepFiles(
 		}
 	}
 	return [...hits];
+}
+
+function refreshSidebarSessionsResponse(
+	scope: SidebarSessionScope,
+): Promise<SessionsResponseSnapshot> {
+	const key = sidebarSessionScopeKey(scope);
+	const current = sessionsResponseRefreshes.get(key);
+	if (current) return current;
+	const refresh = (async () => {
+		const signals = sessionListRuntimeSignals();
+		const indexed = indexedSidebarSessions(scope.selectedSessionId);
+		const sliced = (
+			indexed ?? (await getCachedSessionsAsync("exclude"))
+		).map((session) => enrichSession(session, signals));
+		const bounded = indexed ? sliced : sidebarLiveSessions(sliced);
+		const scoped = scopeSessionsForSidebar(
+			bounded,
+			scope,
+			loadSidebarSessionScopeContext(scope, bounded),
+		);
+		const text = JSON.stringify(scoped.map(sessionListRow));
+		const snapshot: SessionsResponseSnapshot = {
+			text,
+			hash: Bun.hash(text).toString(16),
+			expiresAt: Date.now() + SESSIONS_RESPONSE_TTL_MS,
+		};
+		sessionsResponseSnapshots.set(key, snapshot);
+		return snapshot;
+	})().finally(() => {
+		sessionsResponseRefreshes.delete(key);
+	});
+	sessionsResponseRefreshes.set(key, refresh);
+	return refresh;
 }
 
 function refreshSessionsResponse(
@@ -878,6 +912,20 @@ export async function handleSessionsRoutes(
 	// they learn to fetch the index and hydrate what they open.
 	if (path === "/api/sessions" && req.method === "GET") {
 		const variant = sessionsVariant(url.searchParams);
+		const sidebarScope = parseSidebarSessionScope(
+			url.searchParams,
+			requestUser(ctx, url.searchParams.get("user")),
+		);
+		if (variant === "exclude" && sidebarScope) {
+			const key = sidebarSessionScopeKey(sidebarScope);
+			const cached = sessionsResponseSnapshots.get(key);
+			return await sessionsListResponse(
+				req,
+				cached && cached.expiresAt > Date.now()
+					? cached
+					: await refreshSidebarSessionsResponse(sidebarScope),
+			);
+		}
 		// `?workspace=<id>` narrows an archived slice to one workspace's group,
 		// which is what the tab strip's history menu needs: a few rows instead
 		// of the whole index (1,984 KB and growing on this instance), fetched

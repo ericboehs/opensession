@@ -4,6 +4,7 @@
 
 import { getCurrentUser } from "../components/UserPicker";
 import { fetchUiPrefs, saveUiPrefsApi } from "./api";
+import { whenCurrentUserReady } from "./auth-ready";
 
 const LOCAL_KEY_PREFIX = "opensession-sidebar-hidden-feeds:";
 const PREF_KEY = "sidebar-hidden-feeds";
@@ -96,7 +97,7 @@ async function hydrate(user: string) {
 // module that re-exports from here) throws on `localStorage` at import time,
 // before any test has had a chance to install a shim.
 if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-	void hydrate(getCurrentUser());
+	whenCurrentUserReady((user) => void hydrate(user));
 	window.addEventListener(USER_CHANGE_EVENT, () => {
 		writeStamp++;
 		window.dispatchEvent(new Event(CHANGE_EVENT));

@@ -1,8 +1,8 @@
 import React from "react";
 import type { ReviewQueueItem } from "./review-queue";
 import type { FeedDescriptor, FeedItem, SupportThread, UnifiedSession, Workspace } from "./types";
-export type OpenNextSidebarItem = () => boolean;
 
+export type OpenNextSidebarItem = () => boolean;
 
 export interface Props {
 	sessions: UnifiedSession[];

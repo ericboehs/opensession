@@ -39,7 +39,7 @@ in-process tool (both name external MCP tools):
 
 | Server | Tools | Runs | Condition |
 | --- | --- | --- | --- |
-| [`opensession-sessions`](#opensession-sessions) | 11 | interactive, Slack loop, automation | Automation runs get it ONLY with the human-set `selfImprove` flag, and then in the `automationSelf` build below. |
+| [`opensession-sessions`](#opensession-sessions) | 14 | interactive, Slack loop, automation | Automation runs get it ONLY with the human-set `selfImprove` flag, and then in the `automationSelf` build below. |
 | [`opensession-admin`](#opensession-admin) | 13 | interactive, Slack loop | – |
 | [`opensession-runners`](#opensession-runners) | 5 | interactive | – |
 | [`opensession-goals`](#opensession-goals) | 8 | interactive | – |
@@ -49,7 +49,7 @@ in-process tool (both name external MCP tools):
 | [`opensession-keychain`](#opensession-keychain) | 3 | interactive | Needs a session id. |
 | [`opensession-publish`](#opensession-publish) | 4 | interactive | Needs a session id. |
 | [`opensession-repos`](#opensession-repos) | 4 | interactive | Needs a session id. |
-| [`opensession-memory`](#opensession-memory) | 5 | interactive | Needs a session id. |
+| [`opensession-memory`](#opensession-memory) | 9 | interactive | Needs a session id. |
 | [`opensession-web`](#opensession-web) | 3 | interactive | Needs a session id. |
 | [`opensession-portals`](#opensession-portals) | 5 | interactive | Needs a session id. |
 | [`opensession-walkthrough`](#opensession-walkthrough) | 2 | interactive | Needs a session id. |
@@ -66,7 +66,7 @@ in-process tool (both name external MCP tools):
 | [`opensession-github`](#opensession-github) | 4 | Slack loop | – |
 | [`opensession-goal-self`](#opensession-goal-self) | 6 | goal wake | Only on a session that carries a goalId. |
 
-26 servers, 104 tools.
+26 servers, 111 tools.
 
 ## opensession-sessions
 
@@ -89,6 +89,24 @@ List Open Session sessions with their live state and explicit creator metadata. 
 `mcp__opensession-sessions__get_session` · input: `id` (string, required), `transcript_lines` (number)
 
 Get detail on one session by id, including explicit createdBy and createdAt metadata (createdBy is null when the origin did not record identity), state, any pending question, queue depth, and transcript tail.
+
+### `wait_for`
+
+`mcp__opensession-sessions__wait_for` · input: `kind` ("timer" | "pr_checks", required), `seconds` (number), `repo` (string), `branch` (string), `timeout_seconds` (number), `prompt` (string)
+
+End this turn cleanly and wake this same session later without sleeping in a tool call. Register the wait, then write the human a normal status/final message and STOP the turn. A timer wakes after the requested delay. A pr_checks wait polls durably outside the model turn, waits for the check set to remain settled, then starts a new turn with the result; it also wakes on PR close/merge or timeout. One wait may be active per session, and a new one replaces it. Never call sleep after this tool succeeds.
+
+### `wait_status`
+
+`mcp__opensession-sessions__wait_status` · input: none
+
+Inspect the background wait registered by this session.
+
+### `cancel_wait`
+
+`mcp__opensession-sessions__cancel_wait` · input: none
+
+Cancel this session's registered background wait. This does not stop a currently running turn.
 
 ### `answer_session_question`
 
@@ -146,7 +164,7 @@ Cancel a spawned task's in-flight run (drops queued messages too). Only runs thi
 
 ### Variant · selfImprove automation (isAdmin: false, automationSelf: true)
 
-Built for: automation. 5 tools, without `answer_session_question`, `send_to_session`, `send_file_to_session`, `cancel_session`, `create_session`, `migrate_session_engine`.
+Built for: automation. 5 tools, without `wait_for`, `wait_status`, `cancel_wait`, `answer_session_question`, `send_to_session`, `send_file_to_session`, `cancel_session`, `create_session`, `migrate_session_engine`.
 
 ## opensession-admin
 
@@ -503,33 +521,57 @@ Durable repo / user / team memory, shared with Slack channel memory.
 
 ### `store_memory`
 
-`mcp__opensession-memory__store_memory` · input: `text` (string, required), `scope` ("repo" | "user" | "team"), `repo` (string), `supersedes` (string[])
+`mcp__opensession-memory__store_memory` · input: `summary` (string, required), `kind` ("preference" | "constraint" | "decision" | "gotcha" | "reference" | "status", required), `scope` ("repo" | "user" | "team", required), `repo` (string), `details` (string), `tags` (string[]), `expiresAt` (string), `supersedes` (string[])
 
-Store a durable fact in memory so future sessions know it without being told. Scopes: 'repo' (default) = facts about this session's codebase (gotchas, operational quirks, decisions — things that don't belong in checked-in docs); 'user' = facts about the person prompting (preferences, context); 'team' = workspace-wide facts everyone (including Assistant in Slack) should know. Store only durable, non-obvious facts — never conversation state, never things already in the repo's docs.
+Store one durable, non-obvious fact. The summary is compact and retrieval-only by default; supporting evidence belongs in details. Do not store task progress, completion reports, PR history, incident narration, or facts already documented in the repo. Status requires expiry. Team writes require a separately verified privilege.
 
 ### `search_memory`
 
-`mcp__opensession-memory__search_memory` · input: `query` (string, required), `limit` (number), `includeArchived` (boolean)
+`mcp__opensession-memory__search_memory` · input: `query` (string, required), `kind` ("preference" | "constraint" | "decision" | "gotcha" | "reference" | "status"), `scope` ("repo" | "user" | "team"), `state` ("active" | "archived" | "expired" | "superseded"), `cursor` (string), `limit` (integer)
 
-Search everything ever remembered for this session's scopes, including entries that are no longer injected — older facts held back to keep the Memory section a sane size, and entries superseded by a later correction. Reach for this before re-deriving something that smells familiar, or when the Memory section says entries were held back. Exact tokens work best: file names, error strings, flag names.
+Search this session's memory scopes. Returns compact summaries only; use read_memory for details.
 
-### `supersede_memory`
+### `read_memory`
 
-`mcp__opensession-memory__supersede_memory` · input: `ids` (string[], required)
+`mcp__opensession-memory__read_memory` · input: `ids` (string[], required)
 
-Archive memory entries that are wrong or obsolete, without storing a replacement. They stop being injected but stay reachable through search_memory. Use forget_memory only when an entry should not have been recorded at all.
+Read full supporting details for selected memory ids returned by search_memory or list_memory.
 
 ### `list_memory`
 
-`mcp__opensession-memory__list_memory` · input: none
+`mcp__opensession-memory__list_memory` · input: `query` (string), `kind` ("preference" | "constraint" | "decision" | "gotcha" | "reference" | "status"), `scope` ("repo" | "user" | "team"), `state` ("active" | "archived" | "expired" | "all"), `review` ("needs_review" | "confirmed" | "all"), `cursor` (string), `limit` (integer)
 
-List everything in this session's memory scopes (repo(s), user, team) with the ids needed to forget entries.
+List a bounded page of compact memory summaries. Details are omitted.
+
+### `update_memory`
+
+`mcp__opensession-memory__update_memory` · input: `id` (string, required), `summary` (string), `kind` ("preference" | "constraint" | "decision" | "gotcha" | "reference" | "status"), `details` (string | null), `tags` (string[]), `expiresAt` (string | null)
+
+Update one memory in place. Keep the summary atomic and put evidence in details.
+
+### `archive_memory`
+
+`mcp__opensession-memory__archive_memory` · input: `ids` (string[], required)
+
+Archive memories without deleting them. Archived records stop appearing in active retrieval.
+
+### `restore_memory`
+
+`mcp__opensession-memory__restore_memory` · input: `ids` (string[], required)
+
+Restore archived memories to active or expired state.
+
+### `confirm_memory`
+
+`mcp__opensession-memory__confirm_memory` · input: `ids` (string[], required)
+
+Confirm that memories remain accurate, refreshing their verification timestamp.
 
 ### `forget_memory`
 
-`mcp__opensession-memory__forget_memory` · input: `id` (string, required)
+`mcp__opensession-memory__forget_memory` · input: `id` (string, required), `confirm` (boolean, required)
 
-Remove a memory entry by id (see list_memory or the [id] tags in the Memory section). Works on any of this session's scopes.
+Permanently delete one memory. Prefer archive_memory because deletion cannot be recovered.
 
 ## opensession-web
 

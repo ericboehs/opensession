@@ -52,16 +52,30 @@ export const REPO_TILE_INK = "#ffffff";
 const assigned = new Map<string, string>();
 /** When each repo's icon last changed, so a new one isn't served from cache. */
 const revisions = new Map<string, number>();
+/** Repositories that have their own icon rather than a colored letter tile. */
+const iconRepos = new Set<string>();
 
 /** Record the assignment that came down with the repo list. */
 export function rememberRepoColors(
-	repos: Array<{ id: string; color?: string; iconRev?: number | null }>,
+	repos: Array<{
+		id: string;
+		color?: string;
+		hasIcon?: boolean;
+		iconRev?: number | null;
+	}>,
 ): void {
 	for (const repo of repos) {
 		if (repo.color) assigned.set(repo.id, repo.color);
+		if (repo.hasIcon) iconRepos.add(repo.id);
+		else iconRepos.delete(repo.id);
 		if (repo.iconRev) revisions.set(repo.id, repo.iconRev);
 		else revisions.delete(repo.id);
 	}
+}
+
+/** Whether the repository has custom artwork worth requesting from the server. */
+export function hasRepoIcon(id: string): boolean {
+	return iconRepos.has(id);
 }
 
 /**

@@ -28,9 +28,9 @@ export function hoverState(s: UnifiedSession): {
 		};
 	if (runNeedsAttention(s))
 		return {
-			label: "Last run failed. Needs attention.",
+			label: "Last run failed. Send a prompt to retry.",
 			tone: "accent",
-			dotClass: SIDEBAR_STATUS_DOT.waiting,
+			dotClass: SIDEBAR_STATUS_DOT.failed,
 		};
 	if (s.isRunning)
 		return {

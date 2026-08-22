@@ -25,8 +25,6 @@ export type CreationBranchPrepareEffect = {
     worktreePath: string;
     baseBranch?: string;
     isolated: boolean;
-    existingBranch?: boolean;
-    credentialPrincipal?: string;
     mode: "adopt_or_create";
   };
 };

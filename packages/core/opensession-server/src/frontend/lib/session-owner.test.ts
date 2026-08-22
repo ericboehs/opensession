@@ -62,7 +62,7 @@ describe("session owner lens", () => {
 				session({ startedBy: "worker os-019fe194-5fbe-7000-a81e-d0a656ad77f4" }),
 				session({ startedBy: "Publish the OS 0.4.0 Mac release (goal)" }),
 				session({ startedBy: "Slack" }),
-				session({ startedBy: "Michael" }),
+				session({ startedBy: "Agent" }),
 				session({ startedBy: "USLACK" }),
 				session({ startedBy: "Kent", automation: "nightly" }),
 			],

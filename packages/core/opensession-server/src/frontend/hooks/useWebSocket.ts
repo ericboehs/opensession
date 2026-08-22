@@ -5,6 +5,7 @@ import { countSessionPerf } from "../lib/session-performance";
 import { withMutationRequestId } from "../lib/ws-request-id";
 import { BASE_PATH } from "../lib/base";
 import { toast } from "../ui/toast";
+import { whenCurrentUserReady } from "../lib/auth-ready";
 import {
   localCommandScope,
   shouldRetireCommandResult,
@@ -331,7 +332,7 @@ export function useWebSocket(presenceActive = true) {
 
   useEffect(() => {
     disposedRef.current = false;
-    connect();
+    const cancelInitialConnect = whenCurrentUserReady(() => connect());
 
     // Steady-state heartbeat: ping every beat; a socket that answered nothing
     // since the previous ping is dead — close it so onclose reconnects.
@@ -443,6 +444,7 @@ export function useWebSocket(presenceActive = true) {
 
     return () => {
       disposedRef.current = true;
+      cancelInitialConnect();
       syncPresenceRef.current = () => {};
       clearTimeout(reconnectTimer.current);
       clearInterval(heartbeat);

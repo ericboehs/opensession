@@ -54,7 +54,13 @@ function PreviewOverflow({
 	);
 }
 
-function FirstMileSummary({ status }: { status: SetupStatus }) {
+function FirstMileSummary({
+	status,
+	onSelect,
+}: {
+	status: SetupStatus;
+	onSelect: (step: FirstMileStep["id"]) => void;
+}) {
 	const github = githubAuthState(status.github);
 	let githubOrganization = status.github.appOrg || "";
 	if (!githubOrganization) {
@@ -77,6 +83,7 @@ function FirstMileSummary({ status }: { status: SetupStatus }) {
 	const tiles = [
 		{
 			title: "GitHub",
+			step: "github" as const,
 			ready: github.tone === "on",
 			label: github.label,
 			preview: (
@@ -104,6 +111,7 @@ function FirstMileSummary({ status }: { status: SetupStatus }) {
 		},
 		{
 			title: "AI subscriptions",
+			step: "ai" as const,
 			ready: status.engine.ready,
 			label: `${accountCount} ${accountCount === 1 ? "account" : "accounts"} connected`,
 			preview: (
@@ -123,6 +131,7 @@ function FirstMileSummary({ status }: { status: SetupStatus }) {
 		},
 		{
 			title: "Repositories",
+			step: "repos" as const,
 			ready: status.repos.length > 0,
 			label: status.repos.length > 0 ? `${status.repos.length} added` : "None added",
 			preview: (
@@ -142,6 +151,7 @@ function FirstMileSummary({ status }: { status: SetupStatus }) {
 		},
 		{
 			title: "Team",
+			step: "team" as const,
 			ready: status.team.count > 0,
 			label:
 				status.team.count > 0
@@ -161,10 +171,13 @@ function FirstMileSummary({ status }: { status: SetupStatus }) {
 	return (
 		<div className="grid grid-cols-4 gap-3 phone:grid-cols-2">
 			{tiles.map((tile) => (
-				<div
+				<button
+					type="button"
 					key={tile.title}
+					onClick={() => onSelect(tile.step)}
+					aria-label={`Edit ${tile.title}`}
 					className={cn(
-						"flex aspect-square min-w-0 flex-col justify-between rounded-2xl border p-4 backdrop-blur-xl phone:rounded-xl phone:p-3.5",
+						"focus-ring flex aspect-square min-w-0 cursor-pointer flex-col justify-between rounded-2xl border p-4 text-left backdrop-blur-xl transition-[transform,filter] duration-150 hover:brightness-[0.98] active:scale-[0.96] motion-reduce:transform-none phone:rounded-xl phone:p-3.5",
 						tile.ready
 							? "border-transparent bg-green-soft shadow-[inset_0_1px_0_color-mix(in_srgb,white_45%,transparent),0_12px_28px_-24px_color-mix(in_srgb,var(--green)_45%,transparent)]"
 							: "border-divider-soft bg-settings-plate/65",
@@ -189,7 +202,7 @@ function FirstMileSummary({ status }: { status: SetupStatus }) {
 						<div className="text-item-title font-semibold text-fg">{tile.title}</div>
 						<div className="mt-1 text-supporting leading-snug text-dim">{tile.label}</div>
 					</div>
-				</div>
+				</button>
 			))}
 		</div>
 	);
@@ -427,7 +440,14 @@ export function FirstMile({ onDone }: { onDone: () => void }) {
 										{step.id === "repos" && (
 											<ReposSection repos={status.repos} onChanged={refetch} compact />
 										)}
-										{step.id === "ready" && <FirstMileSummary status={status} />}
+										{step.id === "ready" && (
+											<FirstMileSummary
+												status={status}
+												onSelect={(stepId) =>
+													goTo(STEPS.findIndex((item) => item.id === stepId))
+												}
+											/>
+										)}
 									</div>
 								</>
 							)}

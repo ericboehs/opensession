@@ -2,7 +2,7 @@ import React from "react";
 import { SETTINGS_NAV_ICON, SETTINGS_NAV_ROW } from "../lib/settings-classes";
 import { SIDEBAR_HOVER_LAYER, SIDEBAR_RAIL_GAP } from "../lib/sidebar-classes";
 import { Menu } from "../ui/menu";
-import { IconCheck, IconLogOut } from "./icons";
+import { IconCheck, IconChevronRight, IconLogOut } from "./icons";
 import {
 	TEAM,
 	setCurrentUser,
@@ -81,22 +81,7 @@ export function SettingsAccountFooter() {
 						className={`flex w-full min-w-0 items-center ${SIDEBAR_RAIL_GAP} rounded-row border-none bg-transparent py-[var(--sidebar-row-pad)] pl-2.5 pr-2 text-left data-[popup-open]:bg-selected ${SIDEBAR_HOVER_LAYER}`}
 					>
 						<AccountIdentity name={currentUser} subtitle={subtitle} />
-						<svg
-							className="shrink-0 text-faint"
-							width="14"
-							height="14"
-							viewBox="0 0 10 10"
-							aria-hidden="true"
-						>
-							<path
-								d="M3.5 2L6.5 5L3.5 8"
-								fill="none"
-								stroke="currentColor"
-								strokeWidth="1.5"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-							/>
-						</svg>
+						<IconChevronRight size={20} className="shrink-0 text-faint" />
 					</Menu.Trigger>
 					{/* The trigger sits at the very bottom — open upward. */}
 					<Menu.Popup side="top" align="start" sideOffset={8} className="min-w-[200px]">
@@ -123,7 +108,7 @@ export function SettingsAccountFooter() {
 			{canSignOut && (
 				<button className={SETTINGS_NAV_ROW} onClick={() => void signOut()}>
 					<span className={SETTINGS_NAV_ICON}>
-						<IconLogOut size={18} />
+						<IconLogOut />
 					</span>
 					Sign out
 				</button>

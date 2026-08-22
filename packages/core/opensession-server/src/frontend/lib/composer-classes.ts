@@ -20,8 +20,7 @@
 /* ── The composer box ──────────────────────────────────────────────
    `.composer` stays on the markup as a hook: legacy.css still reaches through
    it into controls this family does not own (`.composer.composer-min
-   .palette-icon-btn`, whose ::before wash is styled from the stylesheet, and
-   `body.kb-open .viewer-input:has(.composer:not(.composer-min))`). The
+   .palette-icon-btn`, whose ::before wash is styled from the stylesheet). The
    declarations below are what that rule used to paint. */
 export const composerBox =
 	"relative border border-[color:color-mix(in_srgb,var(--composer-border)_35%,transparent)] bg-[var(--composer-surface)] shadow-[var(--composer-shadow)] transition-[border-color,box-shadow] " +

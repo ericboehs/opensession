@@ -291,12 +291,9 @@ describe("SessionKernel", () => {
 		const secondStore = new SessionKernelStore(path);
 		__setSessionKernelStoreForTest(secondStore);
 		try {
-			expect(secondStore.command("restart", "accepted")).toMatchObject({
-				status: "failed",
-				replaySafe: true,
-				retryable: true,
-				error: "actor restarted before execution admission",
-			});
+			expect(secondStore.command("restart", "accepted")?.status).toBe(
+				"pending",
+			);
 			let calls = 0;
 			const accepted = await sessionKernel("restart").dispatchLegacy(
 				testEffect({
@@ -315,36 +312,6 @@ describe("SessionKernel", () => {
 		} finally {
 			secondStore.close();
 			__setSessionKernelStoreForTest(store);
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test("turns pre-execution pending admission into a durable retry receipt", () => {
-		const dir = mkdtempSync(join(tmpdir(), "session-kernel-pending-restart-"));
-		const path = join(dir, "kernel.sqlite");
-		const firstStore = new SessionKernelStore(path);
-		firstStore.acceptCommand({
-			sessionId: "pending-restart",
-			requestId: "accepted-not-started",
-			type: "session_file_updated",
-			payload: { value: 1 },
-		});
-		firstStore.close();
-		const recovered = new SessionKernelStore(path);
-		try {
-			expect(recovered.command("pending-restart", "accepted-not-started")).toMatchObject({
-				status: "failed",
-				replaySafe: true,
-				retryable: true,
-				error: "actor restarted before execution admission",
-			});
-			expect(recovered.stats()).toMatchObject({
-				pendingCommands: 0,
-				indeterminateCommands: 0,
-				oldestPendingCommandAt: undefined,
-			});
-		} finally {
-			recovered.close();
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
@@ -370,9 +337,8 @@ describe("SessionKernel", () => {
 		const migrated = new SessionKernelStore(path);
 		try {
 			expect(migrated.command("legacy", "request")).toMatchObject({
-				status: "failed",
+				status: "pending",
 				replaySafe: true,
-				retryable: true,
 			});
 		} finally {
 			migrated.close();
@@ -427,12 +393,6 @@ describe("SessionKernel", () => {
 				status: "indeterminate",
 				retryable: false,
 			});
-			expect(secondStore.stats()).toMatchObject({
-				pendingCommands: 0,
-				indeterminateCommands: 1,
-				oldestPendingCommandAt: undefined,
-			});
-			expect(secondStore.stats().oldestIndeterminateCommandAt).toBeNumber();
 		} finally {
 			secondStore.close();
 			rmSync(dir, { recursive: true, force: true });

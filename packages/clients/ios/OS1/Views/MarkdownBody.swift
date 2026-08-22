@@ -42,11 +42,10 @@ struct MarkdownBody: View {
         self.dimmed = dimmed
     }
 
-    /// One rendered piece of a message: prose for the library, a code fence,
-    /// a diagram, or a table this app lays out itself.
+    /// One rendered piece of a message: prose for the library, a diagram, or a
+    /// table this app lays out itself.
     private enum Block {
         case markdown(String)
-        case codeFence(MarkdownCodeFence)
         case mermaid(String)
         case table(MarkdownTable)
     }
@@ -67,8 +66,6 @@ struct MarkdownBody: View {
                     switch block {
                     case .markdown(let value):
                         markdown(value)
-                    case .codeFence(let fence):
-                        MarkdownCodeFenceView(fence: fence)
                     case .mermaid(let source):
                         MermaidDiagramView(source: source)
                     case .table(let table):
@@ -86,17 +83,10 @@ struct MarkdownBody: View {
             case .mermaid(let source):
                 return [.mermaid(source)]
             case .markdown(let value):
-                return MarkdownTableSegmenter.split(value).flatMap { piece -> [Block] in
+                return MarkdownTableSegmenter.split(value).map { piece in
                     switch piece {
-                    case .markdown(let prose):
-                        return MarkdownCodeFenceParser.split(prose).map { segment in
-                            switch segment {
-                            case .markdown(let value): .markdown(value)
-                            case .fence(let fence): .codeFence(fence)
-                            }
-                        }
-                    case .table(let table):
-                        return [.table(table)]
+                    case .markdown(let prose): .markdown(prose)
+                    case .table(let table): .table(table)
                     }
                 }
             }

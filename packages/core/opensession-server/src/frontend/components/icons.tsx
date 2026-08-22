@@ -1132,6 +1132,19 @@ export function IconBox(p: IconProps) {
   );
 }
 
+// A drawn region, which is what the screenshot markup tool makes. IconBox is
+// a 3D carton and reads as a package; this is the rectangle you drag around
+// the thing that is wrong. Corners span the set's 4.75 → 19.25 on the wide
+// axis, with the shorter axis inset so it reads as a frame rather than a
+// square button.
+export function IconRectangle(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect {...stroke} x="4.75" y="6.75" width="14.5" height="10.5" rx="2" />
+    </Svg>
+  );
+}
+
 // A handset for mobile experiences. Narrow body plus a home indicator, so it
 // reads as a phone rather than as a card or a vertical panel.
 export function IconPhone(p: IconProps) {

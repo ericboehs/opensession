@@ -1,5 +1,11 @@
 import { AGENT_NAME } from "../lib/brand";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import type { Workspace, UnifiedSession, WSServerMessage } from "../lib/types";
@@ -15,7 +21,7 @@ import { ConversationPane } from "./ConversationPane";
 import { FeedWebPane, refWebPanel } from "./FeedWebPane";
 import { SlackChannelPane } from "./SlackChannelPane";
 import { MarkdownRepoProvider } from "./MarkdownBody";
-import { PrPanel } from "./PrPanel";
+import { PrPanel, type PrReviewPage } from "./PrPanel";
 import type { PrFocus } from "../lib/pr-focus";
 import { RepoTile } from "./RepoTile";
 import { WorkspaceInfo } from "./WorkspaceInfo";
@@ -23,9 +29,10 @@ import { WorkspaceSummary } from "./WorkspaceSummary";
 import { useCurrentUser } from "./UserPicker";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { useSidePanel } from "../hooks/useSidePanel";
-import { IconArrowUpToLine, IconSidebarRight } from "./icons";
+import { IconArrowUpToLine, IconPlus, IconSidebarRight } from "./icons";
 import { Button } from "../ui/button";
 import { Tooltip } from "../ui/tooltip";
+import { cn } from "../ui/cn";
 import {
 	PANEL_BODY,
 	PANEL_OVERLAY,
@@ -60,6 +67,12 @@ import { InlineAlert } from "../ui/state";
 import { duration, ease } from "../ui/motion";
 import { mainSession } from "../lib/landing-session";
 import { sessionCarriesPr } from "../lib/session-prs";
+import type { NewTabMorphOrigin } from "./SessionTabs";
+import {
+	workspaceSummaryOpen,
+	WS_SUMMARY_ROOM_W,
+} from "../lib/workspace-summary-open";
+import { WS_SUMMARY_REVIEW_CLEARANCE } from "../lib/workspace-summary-classes";
 
 interface Props {
 	workspace: Workspace;
@@ -84,6 +97,11 @@ interface Props {
 	 * means. See lib/pr-focus.ts.
 	 */
 	focusPr?: PrFocus & { workspaceId?: string };
+	/** Whether the workspace has a real choice of tabs. A lone Review pane keeps
+	 *  the strip hidden and moves its + into the header, like a lone Chat. */
+	tabStripVisible: boolean;
+	/** Start a sibling session from the header when the lone-tab strip is hidden. */
+	onNewSession?: (origin?: NewTabMorphOrigin) => void;
 	/** The app's top-bar slot. The header row portals in here, the same slot and
 	    the same row a session's header uses, so the chrome doesn't change shape
 	    when a workspace has no session yet. */
@@ -126,6 +144,8 @@ export function WorkspacePane({
 	onOpenSession,
 	onOpenPr,
 	focusPr,
+	tabStripVisible,
+	onNewSession,
 	topbarEl,
 	rightPanelEl,
 }: Props) {
@@ -226,6 +246,7 @@ export function WorkspacePane({
 	// preference. If someone opens it here, keep that choice while this pane stays
 	// mounted, then restore the ordinary preference on the other tabs.
 	const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
+	const [reviewPage, setReviewPage] = useState<PrReviewPage>("files");
 	const panelOpen = tab === "review" ? reviewPanelOpen : sidePanel.open;
 	const setPanelOpen = tab === "review" ? setReviewPanelOpen : sidePanel.setOpen;
 
@@ -366,6 +387,7 @@ export function WorkspacePane({
 		: workspace.branch
 			? { repo: workspace.repo || "repository", branch: workspace.branch }
 			: null;
+	useEffect(() => setReviewPage("files"), [reviewTarget?.repo, reviewTarget?.branch]);
 	const reviewSessions = useMemo(() => {
 		if (!reviewTarget) return [];
 		return sessions.filter(
@@ -512,12 +534,66 @@ export function WorkspacePane({
 
 	// The header row, in the app's own top-bar slot so it lands exactly where a
 	// session's header does — beside the pane, not across the panel.
+	const headerRef = useRef<HTMLDivElement>(null);
 	const headerActionsRef = useRef<HTMLDivElement>(null);
+	const [headerW, setHeaderW] = useState(0);
+	const [reviewSummaryOpen, setReviewSummaryOpen] = useState(workspaceSummaryOpen);
+	useLayoutEffect(() => {
+		const el = headerRef.current;
+		if (!el) return;
+		const box = getComputedStyle(el);
+		setHeaderW(
+			el.clientWidth -
+				parseFloat(box.paddingLeft) -
+				parseFloat(box.paddingRight),
+		);
+		const observer = new ResizeObserver(([entry]) => {
+			setHeaderW(entry.contentRect.width);
+		});
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, [topbarEl]);
+	const reviewSummaryHasRoom = headerW === 0 || headerW >= WS_SUMMARY_ROOM_W;
+	const reviewSummaryVisible =
+		tab === "review" &&
+		reviewSummaryOpen &&
+		reviewSummaryHasRoom &&
+		!panelOpen &&
+		!isPhone;
 	const header = !isPhone && (
-		<div className={VIEWER_HEADER}>
+		<div ref={headerRef} className={VIEWER_HEADER}>
 			<div className={VIEWER_TITLE}>
 				{workspace.repo && <RepoTile name={workspace.repo} />}
 				<span className={VIEWER_BRANCH}>{workspace.name}</span>
+				{!tabStripVisible && onNewSession && (
+					<Tooltip label="New tab in this workspace">
+						<Button
+							variant="ghost"
+							size="md"
+							className="-ml-1 flex-none rounded-control"
+							onClick={(event) => {
+								const reduceMotion = window.matchMedia(
+									"(prefers-reduced-motion: reduce)",
+								).matches;
+								const rect = event.detail > 0 && !reduceMotion
+									? event.currentTarget.getBoundingClientRect()
+									: null;
+								onNewSession(
+									rect
+										? {
+												left: rect.left,
+												top: rect.top,
+												width: rect.width,
+												height: rect.height,
+											}
+										: undefined,
+								);
+							}}
+							aria-label="New tab"
+							icon={<IconPlus size={22} />}
+						/>
+					</Tooltip>
+				)}
 			</div>
 			<div ref={headerActionsRef} className={VIEWER_HEADER_ACTIONS}>
 				{tab === "review" && presentationSession && !panelOpen && (
@@ -530,8 +606,12 @@ export function WorkspacePane({
 						onOpenChecks={() => {}}
 						onOpenSession={onOpenSession}
 						send={connected && !presentationSession.archived ? send : undefined}
-						tabStripVisible
+						onOpenChange={setReviewSummaryOpen}
+						tabStripVisible={tabStripVisible}
 						reviewMode
+						reviewPage={reviewPage}
+						onReviewPageChange={setReviewPage}
+						hasRoom={reviewSummaryHasRoom}
 					/>
 				)}
 				<Tooltip label="Toggle side panel">
@@ -564,7 +644,13 @@ export function WorkspacePane({
 
 	if (tab === "review" && reviewTarget) {
 		return withPanel(
-			<div className={`${VIEW_MAIN} h-full min-h-0 bg-surface`}>
+			<div
+				className={cn(
+					VIEW_MAIN,
+					"h-full min-h-0 bg-surface",
+					reviewSummaryVisible && WS_SUMMARY_REVIEW_CLEARANCE,
+				)}
+			>
 				<PrPanel
 					onOpenPr={onOpenPr}
 					key={`${reviewTarget.repo}:${reviewTarget.branch}`}
@@ -578,6 +664,10 @@ export function WorkspacePane({
 						reviewSession ? () => onOpenSession(reviewSession.id) : undefined
 					}
 					walkthrough={presentationSession?.walkthrough}
+					hideWideOverviewRail={Boolean(presentationSession)}
+					page={reviewPage}
+					onPageChange={setReviewPage}
+					compactToolbar={reviewSummaryVisible}
 				/>
 			</div>,
 		);

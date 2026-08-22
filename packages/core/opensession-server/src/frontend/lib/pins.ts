@@ -5,6 +5,7 @@
 // optimistic — update the cache + fire the change event immediately, then PUT.
 import { fetchPins, fetchUiPrefs, savePinsApi, saveUiPrefsApi } from "./api";
 import { getCurrentUser } from "../components/UserPicker";
+import { whenCurrentUserReady } from "./auth-ready";
 
 const LEGACY_KEY = "opensession-pins"; // old per-browser store, migrated once
 const MIGRATED_FLAG = "opensession-pins-migrated";
@@ -59,7 +60,7 @@ async function load(user: string) {
 	emit();
 }
 
-void load(getCurrentUser());
+whenCurrentUserReady((user) => void load(user));
 window.addEventListener(USER_CHANGE_EVENT, () => void load(getCurrentUser()));
 
 export function getPins(): string[] {
@@ -171,7 +172,7 @@ async function hydratePinPrefs(user: string) {
 	}
 }
 
-void hydratePinPrefs(getCurrentUser());
+whenCurrentUserReady((user) => void hydratePinPrefs(user));
 window.addEventListener(USER_CHANGE_EVENT, () =>
 	void hydratePinPrefs(getCurrentUser()),
 );

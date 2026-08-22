@@ -4,24 +4,7 @@ import CoreTransferable
 import UniformTypeIdentifiers
 #if canImport(UIKit)
 import UIKit
-#else
-import AppKit
 #endif
-
-struct ImageRegionCommentAction {
-    let send: (_ text: String, _ image: AttachedImage) -> Bool
-}
-
-private struct ImageRegionCommentActionKey: EnvironmentKey {
-    static let defaultValue: ImageRegionCommentAction? = nil
-}
-
-extension EnvironmentValues {
-    var imageRegionCommentAction: ImageRegionCommentAction? {
-        get { self[ImageRegionCommentActionKey.self] }
-        set { self[ImageRegionCommentActionKey.self] = newValue }
-    }
-}
 
 /// Paperclip button that appends picked images to a binding. iOS picks from
 /// the photo library (PhotosPicker); macOS opens the file panel — the natural
@@ -304,12 +287,6 @@ struct ExpandableDataImage: View {
 
     @State private var previewPresented = false
 
-    private var allowsRegionComment: Bool {
-        guard gallery.indices.contains(galleryIndex) else { return false }
-        if case .conversation = gallery[galleryIndex].source { return true }
-        return false
-    }
-
     #if os(iOS)
     private var items: [PreviewImage] {
         gallery.isEmpty
@@ -359,11 +336,7 @@ struct ExpandableDataImage: View {
         .accessibilityHint("Shows the image larger")
         .help("Open image")
         .sheet(isPresented: $previewPresented) {
-            MacImagePreview(
-                images: [data],
-                index: 0,
-                allowsRegionComment: allowsRegionComment
-            )
+            MacImagePreview(images: [data], index: 0)
         }
         #endif
     }
@@ -511,270 +484,6 @@ struct ConversationImageStrip: View {
     }
 }
 
-#if canImport(UIKit)
-private typealias RegionPlatformImage = UIImage
-#else
-private typealias RegionPlatformImage = NSImage
-#endif
-
-/// Selects and comments on a crop without touching the ordinary composer.
-/// The crop is sent as an ordinary image attachment only after Send succeeds.
-private struct ImageRegionCommentEditor: View {
-    let image: RegionPlatformImage
-    let onSend: (_ text: String, _ image: AttachedImage) -> Bool
-    let onCancel: () -> Void
-
-    @State private var selection: ImageRegion?
-    @State private var comment = ""
-    @State private var error: String?
-    @FocusState private var commentFocused: Bool
-
-    private var imageSize: CGSize {
-        #if canImport(UIKit)
-        image.size
-        #else
-        image.size
-        #endif
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            header
-            GeometryReader { proxy in
-                let frame = aspectFit(imageSize, in: proxy.size)
-                imageView
-                    .frame(width: frame.width, height: frame.height)
-                    .overlay {
-                        ImageRegionSelectionCanvas(selection: $selection) {
-                            commentFocused = true
-                        }
-                    }
-                    .position(x: frame.midX, y: frame.midY)
-            }
-            .background(.black)
-            commentPanel
-        }
-        .background(.black)
-        #if os(macOS)
-        .frame(minWidth: 620, idealWidth: 760, minHeight: 560, idealHeight: 720)
-        #endif
-    }
-
-    private var header: some View {
-        HStack {
-            Button("Cancel", action: onCancel)
-                .buttonStyle(.plain)
-            Spacer()
-            Text("Comment on region")
-                .font(.headline)
-            Spacer()
-            Color.clear.frame(width: 48, height: 1)
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 18)
-        .frame(height: 52)
-        .background(.black)
-    }
-
-    @ViewBuilder private var imageView: some View {
-        #if canImport(UIKit)
-        Image(uiImage: image).resizable().scaledToFit()
-        #else
-        Image(nsImage: image).resizable().scaledToFit()
-        #endif
-    }
-
-    private var commentPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextField("Comment", text: $comment, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...4)
-                .focused($commentFocused)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .onSubmit(send)
-            if let error {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-            HStack {
-                Text(selection == nil ? "Drag on the image to select a region." : "Drag the box or its handles to adjust it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Send", action: send)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!canSend)
-            }
-        }
-        .padding(14)
-        .background(.regularMaterial)
-    }
-
-    private var canSend: Bool {
-        selection != nil && !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func send() {
-        let text = comment.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let selection, !text.isEmpty,
-              let attachment = ImageRegionCrop.attachment(from: image, region: selection)
-        else { return }
-        if !onSend(text, attachment) {
-            error = "Could not send this comment."
-        }
-    }
-
-    private func aspectFit(_ image: CGSize, in available: CGSize) -> CGRect {
-        guard image.width > 0, image.height > 0 else {
-            return CGRect(origin: .zero, size: available)
-        }
-        let scale = min(available.width / image.width, available.height / image.height)
-        let size = CGSize(width: image.width * scale, height: image.height * scale)
-        return CGRect(
-            x: (available.width - size.width) / 2,
-            y: (available.height - size.height) / 2,
-            width: size.width,
-            height: size.height
-        )
-    }
-}
-
-private struct ImageRegionSelectionCanvas: View {
-    @Binding var selection: ImageRegion?
-    let onSelection: () -> Void
-    @State private var gestureStart: ImageRegion?
-    @State private var selectionStart: CGPoint?
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .gesture(createGesture(size: proxy.size))
-                if let selection {
-                    selectionOverlay(selection, size: proxy.size)
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Image region selection")
-    }
-
-    private func selectionOverlay(_ region: ImageRegion, size: CGSize) -> some View {
-        let rect = screenRect(region, size: size)
-        return ZStack {
-            dimmedOutside(rect, size: size)
-                .allowsHitTesting(false)
-            Rectangle()
-                .fill(.clear)
-                .contentShape(Rectangle())
-                .frame(width: rect.width, height: rect.height)
-                .overlay { Rectangle().stroke(.white, lineWidth: 2) }
-                .position(x: rect.midX, y: rect.midY)
-                .gesture(moveGesture(size: size))
-            ForEach(ImageRegionHandle.allCases, id: \.self) { handle in
-                Circle()
-                    .fill(.white)
-                    .overlay { Circle().stroke(.black.opacity(0.45), lineWidth: 1) }
-                    .frame(width: 16, height: 16)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-                    .position(handlePoint(handle, in: rect))
-                    .gesture(resizeGesture(handle, size: size))
-                    .accessibilityLabel("Resize selected region")
-            }
-        }
-    }
-
-    private func dimmedOutside(_ rect: CGRect, size: CGSize) -> some View {
-        ZStack {
-            Rectangle().fill(.black.opacity(0.52))
-            Rectangle()
-                .fill(.black)
-                .frame(width: rect.width, height: rect.height)
-                .position(x: rect.midX, y: rect.midY)
-                .blendMode(.destinationOut)
-        }
-        .compositingGroup()
-        .frame(width: size.width, height: size.height)
-    }
-
-    private func createGesture(size: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                if selectionStart == nil { selectionStart = normalized(value.startLocation, size: size) }
-                guard let selectionStart else { return }
-                selection = ImageRegion.between(selectionStart, normalized(value.location, size: size))
-            }
-            .onEnded { _ in
-                selectionStart = nil
-                if let selection,
-                   (selection.width * size.width < 12 || selection.height * size.height < 12) {
-                    self.selection = nil
-                } else {
-                    onSelection()
-                }
-            }
-    }
-
-    private func moveGesture(size: CGSize) -> some Gesture {
-        DragGesture()
-            .onChanged { value in
-                if gestureStart == nil { gestureStart = selection }
-                guard let gestureStart else { return }
-                selection = gestureStart.moved(
-                    dx: value.translation.width / size.width,
-                    dy: value.translation.height / size.height
-                )
-            }
-            .onEnded { _ in gestureStart = nil }
-    }
-
-    private func resizeGesture(_ handle: ImageRegionHandle, size: CGSize) -> some Gesture {
-        DragGesture()
-            .onChanged { value in
-                if gestureStart == nil { gestureStart = selection }
-                guard let gestureStart else { return }
-                selection = gestureStart.resized(
-                    from: handle,
-                    dx: value.translation.width / size.width,
-                    dy: value.translation.height / size.height,
-                    minimum: CGSize(width: 12 / size.width, height: 12 / size.height)
-                )
-            }
-            .onEnded { _ in gestureStart = nil }
-    }
-
-    private func screenRect(_ region: ImageRegion, size: CGSize) -> CGRect {
-        CGRect(
-            x: region.x * size.width,
-            y: region.y * size.height,
-            width: region.width * size.width,
-            height: region.height * size.height
-        )
-    }
-
-    private func normalized(_ point: CGPoint, size: CGSize) -> CGPoint {
-        CGPoint(x: point.x / max(1, size.width), y: point.y / max(1, size.height))
-    }
-
-    private func handlePoint(_ handle: ImageRegionHandle, in rect: CGRect) -> CGPoint {
-        switch handle {
-        case .northWest: CGPoint(x: rect.minX, y: rect.minY)
-        case .north: CGPoint(x: rect.midX, y: rect.minY)
-        case .northEast: CGPoint(x: rect.maxX, y: rect.minY)
-        case .east: CGPoint(x: rect.maxX, y: rect.midY)
-        case .southEast: CGPoint(x: rect.maxX, y: rect.maxY)
-        case .south: CGPoint(x: rect.midX, y: rect.maxY)
-        case .southWest: CGPoint(x: rect.minX, y: rect.maxY)
-        case .west: CGPoint(x: rect.minX, y: rect.midY)
-        }
-    }
-}
-
 #if os(macOS)
 /// A staged picture, large enough to check before it goes out.
 ///
@@ -794,17 +503,13 @@ private struct ImageRegionSelectionCanvas: View {
 /// without saying so. A composer's attachments are always bytes in hand.
 struct MacImagePreview: View {
     let images: [Data]
-    var allowsRegionComment = false
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.imageRegionCommentAction) private var commentAction
     @State private var index: Int
-    @State private var commenting = false
     private let idealHeight: CGFloat
 
-    init(images: [Data], index: Int, allowsRegionComment: Bool = false) {
+    init(images: [Data], index: Int) {
         self.images = images
-        self.allowsRegionComment = allowsRegionComment
         _index = State(initialValue: min(max(index, 0), max(images.count - 1, 0)))
         idealHeight = Self.idealHeight(for: images.first)
     }
@@ -816,20 +521,6 @@ struct MacImagePreview: View {
             controls
         }
         .frame(minWidth: 480, idealWidth: Self.idealWidth, minHeight: 380, idealHeight: idealHeight)
-        .sheet(isPresented: $commenting) {
-            if images.indices.contains(index), let image = NSImage(data: images[index]),
-               let commentAction {
-                ImageRegionCommentEditor(
-                    image: image,
-                    onSend: { text, attachment in
-                        let sent = commentAction.send(text, attachment)
-                        if sent { dismiss() }
-                        return sent
-                    },
-                    onCancel: { commenting = false }
-                )
-            }
-        }
     }
 
     private static let idealWidth: CGFloat = 760
@@ -883,9 +574,6 @@ struct MacImagePreview: View {
                     .accessibilityLabel("Next image")
             }
             Spacer()
-            if allowsRegionComment, commentAction != nil {
-                Button("Comment") { commenting = true }
-            }
             Button("Done") { dismiss() }
                 .keyboardShortcut(.cancelAction)
         }
@@ -919,18 +607,13 @@ struct FullScreenImagePreview: View {
     @Environment(\.dismiss) private var dismiss
     @State private var index: Int
     @State private var dragOffset: CGSize = .zero
-    /// Photos' immersive toggle: a tap on the picture takes the chrome away and
-    /// gives the whole screen to the image, and another brings it back.
+    /// Photos' immersive toggle: a tap on the picture hides the chrome without
+    /// moving or resizing the image, and another brings it back.
     @State private var chromeVisible = true
-    /// Measured rather than assumed — the bar is taller with a caption under a
-    /// walkthrough still, and the picture is fitted into whatever is left.
-    @State private var bottomBarHeight: CGFloat = 0
     /// Every page hands back the bytes it decoded, so sharing and copying act
     /// on the picture in front of you without fetching it again.
     @State private var loaded: [String: UIImage] = [:]
     @State private var copied = false
-    @State private var commenting = false
-    @Environment(\.imageRegionCommentAction) private var commentAction
 
     /// The close-button row, above the safe area.
     private static let topBarHeight: CGFloat = 52
@@ -976,16 +659,7 @@ struct FullScreenImagePreview: View {
                     .opacity(1 - dismissalProgress * 0.55)
                     .ignoresSafeArea()
 
-                pager(
-                    chromeInsets: chromeVisible
-                        ? UIEdgeInsets(
-                            top: safeTop + Self.topBarHeight,
-                            left: 0,
-                            bottom: bottomBarHeight,
-                            right: 0
-                        )
-                        : .zero
-                )
+                pager
 
                 topBar(safeTop: safeTop)
             }
@@ -995,30 +669,13 @@ struct FullScreenImagePreview: View {
         .ignoresSafeArea()
         .statusBarHidden()
         .persistentSystemOverlays(chromeVisible ? .automatic : .hidden)
-        .fullScreenCover(isPresented: $commenting) {
-            if let image = currentImage, let commentAction {
-                ImageRegionCommentEditor(
-                    image: image,
-                    onSend: { text, attachment in
-                        let sent = commentAction.send(text, attachment)
-                        if sent {
-                            commenting = false
-                            dismiss()
-                        }
-                        return sent
-                    },
-                    onCancel: { commenting = false }
-                )
-            }
-        }
     }
 
-    private func pager(chromeInsets: UIEdgeInsets) -> some View {
+    private var pager: some View {
         TabView(selection: $index) {
             ForEach(Array(items.enumerated()), id: \.offset) { position, item in
                 PreviewPage(
                     item: item,
-                    chromeInsets: chromeInsets,
                     onDragChanged: { dragOffset = $0 },
                     onDragEnded: { translation, projected in
                         if abs(translation.height) > 100 || abs(projected.height) > 220 {
@@ -1107,9 +764,6 @@ struct FullScreenImagePreview: View {
         .padding(.bottom, max(safeBottom, 14))
         .frame(maxWidth: .infinity)
         .background(scrim)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-            bottomBarHeight = height
-        }
         .opacity(chromeVisible ? 1 - dismissalProgress : 0)
         .allowsHitTesting(chromeVisible)
     }
@@ -1189,32 +843,16 @@ struct FullScreenImagePreview: View {
     private var actions: some View {
         HStack(spacing: 0) {
             shareButton
-            Spacer()
-            if canCommentOnCurrentImage {
-                commentButton
-                Spacer()
-            }
+                .frame(maxWidth: .infinity)
             copyButton
+                .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 20)
-    }
-
-    private var canCommentOnCurrentImage: Bool {
-        guard currentImage != nil, commentAction != nil, items.indices.contains(index) else {
-            return false
+        .padding(4)
+        .frame(width: 152)
+        .background(.black.opacity(0.55), in: Capsule())
+        .overlay {
+            Capsule().stroke(.white.opacity(0.1), lineWidth: 0.5)
         }
-        if case .conversation = items[index].source { return true }
-        return false
-    }
-
-    private var commentButton: some View {
-        Button {
-            commenting = true
-        } label: {
-            actionIcon("text.bubble")
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Comment on image region")
     }
 
     @ViewBuilder private var shareButton: some View {
@@ -1252,7 +890,7 @@ struct FullScreenImagePreview: View {
     private func actionIcon(_ name: String) -> some View {
         Image(systemName: name)
             .font(.system(size: 17, weight: .medium))
-            .foregroundStyle(.white)
+            .foregroundStyle(.white.opacity(0.62))
             .frame(width: 44, height: 44)
             .contentShape(Rectangle())
     }
@@ -1385,10 +1023,6 @@ private extension PreviewImage.WalkthroughLabel {
 /// image, or a staged walkthrough still — and hands them to the zoom surface.
 private struct PreviewPage: View {
     let item: PreviewImage
-    /// What the chrome is covering. The picture is fitted into what is left,
-    /// the way Photos fits a photo between its bars and grows it into the whole
-    /// screen once they are gone.
-    let chromeInsets: UIEdgeInsets
     let onDragChanged: (CGSize) -> Void
     let onDragEnded: (_ translation: CGSize, _ projected: CGSize) -> Void
     let onEscape: () -> Void
@@ -1404,7 +1038,6 @@ private struct PreviewPage: View {
             if let image {
                 ZoomableImage(
                     image: image,
-                    chromeInsets: chromeInsets,
                     onDragChanged: onDragChanged,
                     onDragEnded: onDragEnded,
                     onEscape: onEscape,
@@ -1451,7 +1084,6 @@ private struct PreviewPage: View {
 /// backdrop fade and the dismiss/spring-back decision.
 private struct ZoomableImage: UIViewRepresentable {
     let image: UIImage
-    let chromeInsets: UIEdgeInsets
     let onDragChanged: (CGSize) -> Void
     let onDragEnded: (_ translation: CGSize, _ projected: CGSize) -> Void
     let onEscape: () -> Void
@@ -1468,7 +1100,6 @@ private struct ZoomableImage: UIViewRepresentable {
         scrollView.showsVerticalScrollIndicator = false
         scrollView.backgroundColor = .clear
         scrollView.imageView.image = image
-        scrollView.chromeInsets = chromeInsets
         context.coordinator.scrollView = scrollView
 
         let doubleTap = UITapGestureRecognizer(
@@ -1510,18 +1141,6 @@ private struct ZoomableImage: UIViewRepresentable {
         if scrollView.imageView.image !== image {
             scrollView.imageView.image = image
             scrollView.setNeedsLayout()
-        }
-        // The chrome arriving or leaving resizes the box the picture is fitted
-        // into, and that has to travel with the fade rather than snap.
-        if scrollView.chromeInsets != chromeInsets {
-            UIView.animate(
-                withDuration: 0.25,
-                delay: 0,
-                options: [.curveEaseInOut, .beginFromCurrentState]
-            ) {
-                scrollView.chromeInsets = chromeInsets
-                scrollView.layoutIfNeeded()
-            }
         }
     }
 
@@ -1626,19 +1245,8 @@ final class ZoomScrollView: UIScrollView {
     var onEscape: (() -> Void)?
     private(set) var doubleTapZoomScale: CGFloat = 1
 
-    /// What the viewer's chrome is covering. The picture is fitted into the
-    /// box that is left, so the toolbars sit beside the photo rather than on
-    /// top of it — and leaving hands the whole screen back.
-    var chromeInsets: UIEdgeInsets = .zero {
-        didSet {
-            guard chromeInsets != oldValue else { return }
-            setNeedsLayout()
-        }
-    }
-
     private var laidOutBounds: CGSize = .zero
     private var laidOutImage: CGSize = .zero
-    private var laidOutInsets: UIEdgeInsets = .zero
     /// The pager this page sits in, while it is being held still.
     private weak var lockedPager: UIScrollView?
 
@@ -1665,21 +1273,12 @@ final class ZoomScrollView: UIScrollView {
         // Rebuilding on every pass would fight `zoom(to:)`; only a genuinely
         // new box or image invalidates the scales. The first pass inside a
         // `fullScreenCover` can be zero-sized, which is why it is guarded.
-        if bounds.size != laidOutBounds || size != laidOutImage || chromeInsets != laidOutInsets {
+        if bounds.size != laidOutBounds || size != laidOutImage {
             laidOutBounds = bounds.size
             laidOutImage = size
-            laidOutInsets = chromeInsets
             configureZoom(for: size)
         }
         centerContent()
-    }
-
-    /// The screen minus whatever the chrome is covering.
-    private var availableSize: CGSize {
-        CGSize(
-            width: max(1, bounds.width - chromeInsets.left - chromeInsets.right),
-            height: max(1, bounds.height - chromeInsets.top - chromeInsets.bottom)
-        )
     }
 
     private func configureZoom(for size: CGSize) {
@@ -1688,9 +1287,8 @@ final class ZoomScrollView: UIScrollView {
         // the scroll view is holding a zoom transform on desynchronizes the
         // two, and every scale derived afterwards (the fit a double tap zooms
         // back out to) is computed from geometry that no longer matches what
-        // is on screen. Chrome leaving refits a photo that is zoomed in, which
-        // is exactly when that happens.
-        let box = availableSize
+        // is on screen.
+        let box = bounds.size
         let wasZoomedOut = isZoomedOut
         let previousScale = zoomScale
         if zoomScale != 1 {
@@ -1710,9 +1308,6 @@ final class ZoomScrollView: UIScrollView {
         minimumZoomScale = fit
         maximumZoomScale = max(fit * 4, pixelPerfect)
         doubleTapZoomScale = min(maximumZoomScale, max(fit * 2, pixelPerfect))
-        // A chrome change refits a photo that was sitting at the fit scale.
-        // Pulling a zoomed-in one back because the bars left would throw away
-        // whatever you had gone in to read.
         zoomScale = wasZoomedOut || previousScale < fit
             ? fit
             : min(previousScale, maximumZoomScale)
@@ -1765,14 +1360,13 @@ final class ZoomScrollView: UIScrollView {
     }
 
     private func centerContent() {
-        let box = availableSize
-        let slackX = max(0, (box.width - imageView.frame.width) / 2)
-        let slackY = max(0, (box.height - imageView.frame.height) / 2)
+        let slackX = max(0, (bounds.width - imageView.frame.width) / 2)
+        let slackY = max(0, (bounds.height - imageView.frame.height) / 2)
         contentInset = UIEdgeInsets(
-            top: chromeInsets.top + slackY,
-            left: chromeInsets.left + slackX,
-            bottom: chromeInsets.bottom + slackY,
-            right: chromeInsets.right + slackX
+            top: slackY,
+            left: slackX,
+            bottom: slackY,
+            right: slackX
         )
     }
 

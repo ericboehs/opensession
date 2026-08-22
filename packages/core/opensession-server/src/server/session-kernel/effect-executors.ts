@@ -84,9 +84,7 @@ function creationPayload<K extends Exclude<
     case "creation_branch_prepare":
       if (
         value.mode !== "adopt_or_create" ||
-        typeof value.isolated !== "boolean" ||
-        (value.existingBranch !== undefined &&
-          typeof value.existingBranch !== "boolean")
+        typeof value.isolated !== "boolean"
       )
         throw new Error(`Invalid ${kind} effect payload: mode`);
       return {
@@ -95,18 +93,10 @@ function creationPayload<K extends Exclude<
         branch: requiredString(kind, value.branch, "branch"),
         worktreePath: requiredString(kind, value.worktreePath, "worktreePath"),
         baseBranch:
-          value.baseBranch === undefined || value.baseBranch === ""
+          value.baseBranch === undefined
             ? undefined
             : requiredString(kind, value.baseBranch, "baseBranch"),
         isolated: value.isolated === true,
-        existingBranch:
-          value.existingBranch === undefined
-            ? undefined
-            : value.existingBranch === true,
-        credentialPrincipal:
-          value.credentialPrincipal === undefined
-            ? undefined
-            : requiredString(kind, value.credentialPrincipal, "credentialPrincipal"),
         mode: value.mode,
       } as SessionActorEffectFor<K>["payload"];
     case "creation_sandbox_prepare":

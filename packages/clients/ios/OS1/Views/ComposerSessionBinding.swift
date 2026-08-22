@@ -90,18 +90,6 @@ final class ComposerSessionProjectionState {
         )
     }
 
-    func titlePrompt(
-        for canonical: String,
-        titleGeneration: Int,
-        refreshTitles: Bool
-    ) -> String {
-        projection(
-            for: canonical,
-            titleGeneration: titleGeneration,
-            refreshTitles: refreshTitles
-        ).titlePrompt
-    }
-
     private func projection(
         for canonical: String,
         titleGeneration: Int,

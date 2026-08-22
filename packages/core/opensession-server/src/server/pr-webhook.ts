@@ -1,6 +1,6 @@
 /**
- * GitHub webhook → PR-cache sync. The single GitHub webhook (the Slack
- * agent's signature-verified `POST /github/webhook`) forwards every delivery
+ * GitHub webhook → PR-cache sync. GithubAgent's signature-verified
+ * `POST /github/webhook` forwards every delivery
  * here so PR state in OS1 reacts to external events (a teammate's review, CI
  * finishing, a merge from github.com) instead of waiting out polling TTLs:
  *

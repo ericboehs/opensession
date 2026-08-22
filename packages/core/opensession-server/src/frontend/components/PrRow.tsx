@@ -100,6 +100,10 @@ export function PrRow({
 								className={cn(
 									SIDEBAR_ROW,
 									SIDEBAR_WS_ROW,
+									// An unpinned row reveals one chip fewer (the pin only
+									// appears once there is something to unpin), so it gives
+									// that much of its right end back to the title.
+									!pinned && "hover:pr-[68px]",
 									SIDEBAR_HOVER_LAYER,
 									selected && "bg-selected",
 								)}
@@ -155,17 +159,17 @@ export function PrRow({
 			    this row sits beside workspace rows whose trailing icon archives
 			    locally, and a mis-click here closes someone's PR on GitHub. */}
 			<span className={cn(SIDEBAR_WS_ACTIONS, SIDEBAR_WS_ACTIONS_HOVER)}>
-				<Tooltip label={pinned ? "Unpin pull request" : "Pin pull request"}>
+				{/* Pin only shows on a row that IS pinned, where it is the way
+				    back out. Pinning itself lives in the context menu. */}
+				{pinned && (
+				<Tooltip label="Unpin pull request">
 					<span
 						role="button"
 						tabIndex={0}
-						className={cn(
-							SIDEBAR_WS_ACTION,
-							// One colour, picked here rather than stacking two `text-*`
-							// utilities, whose winner would be Tailwind's ordering.
-							pinned ? "text-accent" : "text-faint hover:text-fg",
-						)}
-						aria-label={pinned ? "Unpin pull request" : "Pin pull request"}
+						// One colour, picked here rather than stacking two `text-*`
+						// utilities, whose winner would be Tailwind's ordering.
+						className={cn(SIDEBAR_WS_ACTION, "text-accent")}
+						aria-label="Unpin pull request"
 						onMouseEnter={card.close}
 						onClick={(e) => {
 							e.stopPropagation();
@@ -178,9 +182,10 @@ export function PrRow({
 							}
 						}}
 					>
-						<IconPin size={19} fill={pinned ? "currentColor" : "none"} />
+						<IconPin size={19} fill="currentColor" />
 					</span>
 				</Tooltip>
+				)}
 				<Tooltip label="Close pull request">
 					<span
 						role="button"

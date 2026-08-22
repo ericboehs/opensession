@@ -68,9 +68,10 @@ behind your TLS proxy):
 - `POST /slack/events` — Events API callbacks (handles Slack's
   `url_verification` challenge)
 - `POST /slack/actions` — Block Kit interactivity
-- `POST /github/webhook`, `POST /worktree/create-channel`,
-  `POST /worktree/archive-channel` — co-located here (see
-  [github.md](github.md))
+- `POST /worktree/create-channel`, `POST /worktree/archive-channel`
+- `POST /github/webhook` only when GitHub is disabled. This is a compatibility
+  fallback using GitHub's shared handler; when GitHub is enabled, GitHub owns
+  the route (see [github.md](github.md)).
 
 Point your Slack app's Event Subscriptions and Interactivity request URLs at
 the first two, and set `SLACK_SIGNING_SECRET`. Events are acked 200 immediately
@@ -134,8 +135,8 @@ not in the bot scope list above.
 
 ## Channel memory
 
-`packages/core/opensession-server/src/agents/slack/memory.ts`, stored under `~/.michael-memory/` (a legacy
-directory name kept for state compatibility), one JSON file per scope,
+`packages/core/opensession-server/src/agents/slack/memory.ts`, stored under
+`~/.opensession-memory/`, one JSON file per scope,
 injected into the system prompt each run and edited via the admin
 `remember`/`list_memory`/`forget` tools:
 

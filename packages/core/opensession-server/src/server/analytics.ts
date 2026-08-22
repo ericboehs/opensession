@@ -421,6 +421,8 @@ function loadSessionMeta(): Map<string, SessionMeta> {
 // loadSessionMeta and used to land in an anonymous "Slack" row. They do record
 // who wrote the message: read that (read-only, per AGENTS.md) and credit them.
 const SLACK_SESSIONS_DIR = statePath(".slack-sessions");
+// GitHub delivery replay state remains in this legacy directory so upgrades
+// preserve accepted delivery IDs after webhook ownership moved to GithubAgent.
 const SLACK_STORE_SKIP = new Set(["processed-events.json", "github-deliveries.json"]);
 let slackOwnerCache: { at: number; map: Map<string, string> } | null = null;
 

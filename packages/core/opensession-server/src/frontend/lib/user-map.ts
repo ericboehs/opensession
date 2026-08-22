@@ -32,6 +32,7 @@
 // lib/pins.ts stays hand-rolled because it is an ordered array with a legacy
 // localStorage migration and a server-push path.
 import { getCurrentUser } from "../components/UserPicker";
+import { whenCurrentUserReady } from "./auth-ready";
 
 const USER_CHANGE_EVENT = "opensession-user-changed";
 
@@ -263,7 +264,7 @@ export function makeUserMap<V>(opts: {
 	}
 
 	if (hasDom()) {
-		void hydrate(currentUser());
+		whenCurrentUserReady((user) => void hydrate(user));
 		window.addEventListener(USER_CHANGE_EVENT, () => void hydrate());
 		// A tab left open all day is the one most likely to be showing a map
 		// another device has moved on from.

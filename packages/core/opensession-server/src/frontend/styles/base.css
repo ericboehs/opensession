@@ -2112,27 +2112,32 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	background: rgba(0, 0, 0, 0.75);
 }
 
-/* ── Copy control on a rendered code fence ──────────────────────
-   Same shape as the diagram's expand button above, and a sibling of the
-   scroller for the same reason: a long line scrolls the <pre> sideways, and a
-   button inside it would ride off the edge with the code. It is opaque
-   because of that movement. A translucent chip with a line of code sliding
-   under it reads as a rendering fault, and the well it sits on has no single
-   colour to borrow (light paints it as translucent ink over whichever surface
-   the turn uses, see the .markdown pre rules above). Built by
-   lib/code-copy.ts, which is also why this cannot be a utility. */
+/* ── Controls on a rendered code fence ─────────────────────────
+   Copy and per-block wrapping are built by lib/code-copy.ts as siblings of
+   the <pre>. They therefore stay fixed while an unwrapped block scrolls, and
+   never become part of selected or copied code. Renderer-emitted markup is
+   also why these styles live here rather than in a component utility. */
 .md-code-wrap {
 	position: relative;
 }
-/* Room at the end of the first line so the button never lands on top of code
-   at rest. Once scrolled, the fill is what covers the rest. */
-.md-code-wrap > pre {
-	padding-right: 46px;
+.md-code-wrap[data-wrapped="false"] > pre {
+	white-space: pre;
+	overflow-wrap: normal;
 }
-.md-code-copy {
+/* Keep the first line clear of both controls. The switch stays visible while
+   copy follows the app's reveal-on-approach convention below. */
+.md-code-wrap > pre {
+	padding-right: 96px;
+}
+.md-code-controls {
 	position: absolute;
 	top: 6px;
 	right: 6px;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+.md-code-copy {
 	display: grid;
 	place-items: center;
 	width: 28px;
@@ -2166,9 +2171,56 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	opacity: 1;
 }
 
-/* A hover client gets it on approach, so a message full of fences is not a
-   message full of buttons. Keyboard focus counts as approach, or the control
-   would be invisible to the tab that reaches it. */
+/* A compact version of the shared switch shape. This one cannot use the Base
+   UI primitive because MarkdownBody owns the fence as injected HTML rather
+   than JSX; role=switch and aria-checked are set in lib/code-copy.ts. */
+.md-code-wrap-toggle {
+	position: relative;
+	width: 44px;
+	height: 28px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+}
+.md-code-wrap-toggle::before,
+.md-code-wrap-toggle::after {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 4px;
+	height: 20px;
+	border-radius: 999px;
+}
+.md-code-wrap-toggle::before {
+	width: 44px;
+	background: var(--bg-active);
+}
+.md-code-wrap-toggle::after {
+	left: 2px;
+	top: 6px;
+	width: 26px;
+	height: 16px;
+	background: var(--on-accent-control, var(--on-accent));
+	box-shadow:
+		0 1px 3px color-mix(in srgb, var(--text) 22%, transparent),
+		0 0 0 1px color-mix(in srgb, var(--text) 7%, transparent);
+}
+.md-code-wrap[data-wrapped="true"] .md-code-wrap-toggle::before {
+	background: var(--accent-control, var(--accent));
+}
+.md-code-wrap[data-wrapped="true"] .md-code-wrap-toggle::after {
+	translate: 14px 0;
+}
+.md-code-wrap-toggle:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+	border-radius: 999px;
+}
+
+/* A hover client gets copy on approach, so a message full of fences is not a
+   message full of copy buttons. Keyboard focus counts as approach, or the
+   control would be invisible to the tab that reaches it. */
 @media (hover: hover) and (pointer: fine) {
 	.md-code-copy {
 		opacity: 0;
@@ -2181,21 +2233,29 @@ html[data-theme="light"] .composer-hl .cmp-fence {
 	}
 }
 
-/* A touch client has no hover and so no way to discover the control at all:
-   there it is simply always on. 36px rather than the 44 a standalone target
-   takes, because this one floats over the block's own horizontal scroll area
-   and a 44px corner covers most of what you drag to scroll a one-line fence.
-   Selecting the text by hand still works, so the button is not the only way
-   to copy. */
+/* Touch has no hover, so copy is always visible and both controls get a taller
+   target. They float over the block's own horizontal scroll area only when
+   wrapping is switched off; selecting text by hand remains available too. */
 @media (hover: none) and (pointer: coarse) {
-	.md-code-copy {
+	.md-code-controls {
 		top: 4px;
 		right: 4px;
-		width: 36px;
+	}
+	.md-code-copy,
+	.md-code-wrap-toggle {
 		height: 36px;
 	}
+	.md-code-copy {
+		width: 36px;
+	}
+	.md-code-wrap-toggle::before {
+		top: 8px;
+	}
+	.md-code-wrap-toggle::after {
+		top: 10px;
+	}
 	.md-code-wrap > pre {
-		padding-right: 50px;
+		padding-right: 100px;
 	}
 }
 

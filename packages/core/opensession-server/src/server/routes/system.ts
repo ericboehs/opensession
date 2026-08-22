@@ -119,6 +119,13 @@ export async function handleSystemRoutes(
 	// frontendVersion lets clients detect a frontend-only rebuild (no bootId
 	// change) and refresh.
 	if (path === "/api/health") {
+		if (url.searchParams.get("brief") === "1") {
+			return Response.json({
+				ok: true,
+				bootId: BOOT_ID,
+				frontendVersion: frontend?.version ?? null,
+			});
+		}
 		const agentHealth: Record<string, unknown> = {};
 		for (const a of getAgents()) {
 			agentHealth[a.name] = a.health();

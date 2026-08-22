@@ -336,6 +336,7 @@ import {
 	WS_SUMMARY_ROOM_W,
 	workspaceSummaryShift,
 } from "../lib/workspace-summary-open";
+import { WS_SUMMARY_REVIEW_CLEARANCE } from "../lib/workspace-summary-classes";
 import { blockingOverlayOpen } from "../lib/blocking-overlay";
 import { matchesShortcut } from "../lib/shortcuts";
 import { PulseDot } from "../ui/status";
@@ -6863,7 +6864,12 @@ export function SessionViewer({
 							</div>
 						) : null
 					) : showReview && hasWorkspace ? (
-						<div className={VIEWER_REVIEW_MAIN}>
+						<div
+							className={cn(
+								VIEWER_REVIEW_MAIN,
+								summaryVisible && WS_SUMMARY_REVIEW_CLEARANCE,
+							)}
+						>
 							<PrPanel
 									onOpenPr={onOpenPr}
 									sessionId={session.id}
@@ -6883,6 +6889,7 @@ export function SessionViewer({
 									linkedPrs={session.linkedPrs}
 									discoveredPrs={discoveredPrs}
 									focusTarget={reviewFocus}
+									hideWideOverviewRail
 									linkable
 									walkthrough={session.walkthrough}
 								/>

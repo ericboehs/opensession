@@ -220,7 +220,7 @@ describe("transcript snapshots", () => {
 
   // Memory scopes are injected into the run's session note (repo / user / team)
   // and logged into the transcript as a context-injection entry.
-  test("memory scopes: retrieved into the turn prompt", async () => {
+  test("memory scopes: injected into the session note", async () => {
     if (!h.ready) return;
     const sid = "bks-snap-memory";
     h.writeSession(sid, {
@@ -251,7 +251,7 @@ describe("transcript snapshots", () => {
       async () => {
         await h.prompt({
           sessionId: sid,
-          content: "How do this fixture repo's tests run?",
+          content: "what do you already know here?",
           user: "SnapshotUser",
           collect: calls,
           turns: [{ kind: "clean", engineSessionId: "ses_snap_memory", text: ["Three standing facts."] }],
@@ -259,7 +259,7 @@ describe("transcript snapshots", () => {
       },
     );
 
-    expect(calls[0].opts.prompt).toContain("tests only run from its own worktree");
+    expect(calls[0].opts.reposNote).toContain("mem-repo-1");
     h.snapshot("memory-scope-injection", { sessionId: sid, calls });
   });
 });

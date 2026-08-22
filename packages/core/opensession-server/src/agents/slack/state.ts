@@ -119,16 +119,12 @@ export function markEventProcessed(id: string): void {
 
 export let slackTeamId = "";
 export let slackBotUserId = "";
-export let githubWebhooksReceived = 0;
 
 export function setSlackTeamId(id: string) {
   slackTeamId = id;
 }
 export function setSlackBotUserId(id: string) {
   slackBotUserId = id;
-}
-export function incrementGithubWebhooks() {
-  githubWebhooksReceived++;
 }
 
 // ---------------------------------------------------------------------------

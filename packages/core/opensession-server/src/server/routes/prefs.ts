@@ -33,6 +33,7 @@ import {
 import { refreshWarmTemplate, setWarmTemplateConfig, warmTemplateStatus } from "../warm-template";
 import { previewPoolStatus, refreshGoldenImage, setPreviewPoolConfig } from "../preview-pool";
 import { REPOS } from "../worktree";
+import { conditionalJsonResponse } from "../http-json";
 
 export async function handlePrefsRoutes(
 	ctx: RouteContext,
@@ -209,7 +210,7 @@ export async function handlePrefsRoutes(
 	// the full list on every toggle and on first-load localStorage migration).
 	if (path === "/api/pins" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ pins: getUserPins(user) });
+		return conditionalJsonResponse(req, { pins: getUserPins(user) });
 	}
 
 	if (path === "/api/pins" && req.method === "PUT") {
@@ -291,7 +292,7 @@ export async function handlePrefsRoutes(
 	// (the frontend pushes its full map on every mark change), same shape as pins.
 	if (path === "/api/reads" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ reads: getUserReads(user) });
+		return conditionalJsonResponse(req, { reads: getUserReads(user) });
 	}
 
 	if (path === "/api/reads" && req.method === "PUT") {
@@ -321,7 +322,7 @@ export async function handlePrefsRoutes(
 	// drafts.
 	if (path === "/api/drafts" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ drafts: getDrafts(user) });
+		return conditionalJsonResponse(req, { drafts: getDrafts(user) });
 	}
 
 	if (path === "/api/drafts" && req.method === "PUT") {
@@ -364,7 +365,7 @@ export async function handlePrefsRoutes(
 	// merge, not replace, so one device can't clobber keys set on another.
 	if (path === "/api/ui-prefs" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ prefs: getUiPrefs(user) });
+		return conditionalJsonResponse(req, { prefs: getUiPrefs(user) });
 	}
 
 	if (path === "/api/ui-prefs" && req.method === "PUT") {
@@ -392,7 +393,7 @@ export async function handlePrefsRoutes(
 	// shared/map-delta.ts. Older whole-map clients are accepted merge-only.
 	if (path === "/api/lanes" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ lanes: getUserLanes(user) });
+		return conditionalJsonResponse(req, { lanes: getUserLanes(user) });
 	}
 
 	if (path === "/api/lanes" && req.method === "PUT") {
@@ -416,7 +417,7 @@ export async function handlePrefsRoutes(
 	// up on its own.
 	if (path === "/api/snoozes" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ snoozes: getUserSnoozes(user) });
+		return conditionalJsonResponse(req, { snoozes: getUserSnoozes(user) });
 	}
 
 	if (path === "/api/snoozes" && req.method === "PUT") {
@@ -441,7 +442,7 @@ export async function handlePrefsRoutes(
 	// running for everyone else. Same per-user model as pins, same delta write.
 	if (path === "/api/hides" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ hides: getUserHides(user) });
+		return conditionalJsonResponse(req, { hides: getUserHides(user) });
 	}
 
 	if (path === "/api/hides" && req.method === "PUT") {
@@ -463,7 +464,7 @@ export async function handlePrefsRoutes(
 	// keyed by workspace-row identity and carries explicit Settle/Unsettle acts.
 	if (path === "/api/settlements" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ settlements: getUserSettlements(user) });
+		return conditionalJsonResponse(req, { settlements: getUserSettlements(user) });
 	}
 
 	if (path === "/api/settlements" && req.method === "PUT") {
@@ -490,7 +491,7 @@ export async function handlePrefsRoutes(
 	// delta, same as the maps above.
 	if (path === "/api/tab-colors" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user")) || "Anonymous";
-		return Response.json({ colors: getUserTabColors(user) });
+		return conditionalJsonResponse(req, { colors: getUserTabColors(user) });
 	}
 
 	if (path === "/api/tab-colors" && req.method === "PUT") {

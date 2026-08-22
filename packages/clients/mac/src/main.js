@@ -507,7 +507,7 @@ function inWindow(url) {
 }
 
 // Sign-in pages for external services (e.g. the ChatGPT device-code sign-in
-// from Settings → Models). The default browser is often not where you're
+// from Settings → Providers). The default browser is often not where you're
 // logged into these accounts, so prefer Chrome and fall back to the default
 // browser when it isn't installed. github.com is NOT in this list: it is also
 // where every PR and docs link goes, and those belong in whichever browser

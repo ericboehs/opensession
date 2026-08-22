@@ -84,7 +84,7 @@ struct PrComment: Decodable, Equatable {
     /// something to read (`isOutdatedReviewComment` on the web).
     var isOutdatedReview: Bool {
         body.range(
-            of: "<!--\\s*(?:os|michael)-review-outdated\\s*-->",
+            of: "<!--\\s*os-review-outdated\\s*-->",
             options: .regularExpression
         ) != nil
     }

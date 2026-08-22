@@ -74,33 +74,6 @@ final class SessionTests: XCTestCase {
     }
 
     @MainActor
-    func testSessionCreationCarriesVisibleTitlePromptWithoutChangingPrompt() {
-        let canonical = "Compare @session:os-01901901-2345-7123-8123-123456789abc"
-        let visible = "Compare @session:Checkout reliability"
-        let body = OS1API.createSessionBody(
-            prompt: canonical,
-            titlePrompt: visible,
-            repo: "opensession",
-            mode: "ask",
-            user: "Alice"
-        )
-
-        XCTAssertEqual(body["prompt"] as? String, canonical)
-        XCTAssertEqual(body["titlePrompt"] as? String, visible)
-    }
-
-    @MainActor
-    func testSlackComposerUndoBodyNamesThePostedMessage() {
-        let body = OS1API.slackComposerUndoBody(
-            channelId: "C123",
-            ts: "1700000000.000000"
-        )
-
-        XCTAssertEqual(body["channel"] as? String, "C123")
-        XCTAssertEqual(body["ts"] as? String, "1700000000.000000")
-    }
-
-    @MainActor
     func testSessionCreationCarriesOnlyStagedFiles() {
         let staged = AttachedFile(
             name: "incident.pdf",

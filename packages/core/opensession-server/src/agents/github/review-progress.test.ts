@@ -13,10 +13,10 @@ describe("isReviewProgressForHead", () => {
     ).toBe(true);
   });
 
-  test("accepts legacy markers and placeholders without a displayed SHA", () => {
+  test("accepts placeholders without a displayed SHA", () => {
     expect(
       isReviewProgressForHead(
-        "<!-- michael-review -->\n### 🤖 Michael review\n\n🔄 Reviewing… · open session",
+        "<!-- os-review -->\n### 🤖 OS review\n\n🔄 Reviewing… · open session",
         SHA,
       ),
     ).toBe(true);

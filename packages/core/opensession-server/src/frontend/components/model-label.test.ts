@@ -45,4 +45,8 @@ describe("workspace preset labels", () => {
 		expect(workspacePresetLabel("pi/anthropic/claude-sonnet-5", models)).toBeNull();
 		expect(shortModelLabel("pi/anthropic/claude-sonnet-5", models)).toBe("Sonnet 5");
 	});
+
+	it("names OpenRouter's nested Ox Alpha slug", () => {
+		expect(shortModelLabel("pi/openrouter/stealth/ox-alpha", models)).toBe("Ox Alpha");
+	});
 });

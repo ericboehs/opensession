@@ -1,5 +1,5 @@
 /**
- * Behavior 2: the `os-auto-fix` label (legacy `michael-auto-fix`). Checks out the PR head branch in a dedicated
+ * Behavior 2: the `os-auto-fix` label. Checks out the PR head branch in a dedicated
  * worktree, fixes merge conflicts + review findings + failing CI, pushes to the PR branch,
  * polls CI, and re-fixes until green AND a fresh review of the pushed
  * code finds nothing blocking — bounded so it can never run away. The loop is

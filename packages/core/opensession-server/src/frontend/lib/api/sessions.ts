@@ -3,6 +3,7 @@ import type {
 	SessionNote,
 	UnifiedSession,
 } from "../types";
+import { resolveAnonymousUserPath } from "../auth-ready";
 
 /**
  * One slice of the session list.
@@ -20,7 +21,8 @@ export async function fetchSessionsSnapshot(
 	etag: string | null;
 	notModified: boolean;
 }> {
-	const res = await fetch(`${BASE}/sessions${opts.query || ""}`, {
+	const path = await resolveAnonymousUserPath(`/sessions${opts.query || ""}`);
+	const res = await fetch(`${BASE}${path}`, {
 		signal: opts.signal,
 		headers: opts.etag ? { "If-None-Match": opts.etag } : undefined,
 	});

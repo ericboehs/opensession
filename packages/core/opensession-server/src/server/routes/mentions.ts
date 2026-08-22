@@ -11,6 +11,7 @@
 import { requestUser, type RouteContext } from "./context";
 import { clearAllMentions, clearMention, listMentions } from "../mentions";
 import { broadcastToAll } from "../ws-hub";
+import { conditionalJsonResponse } from "../http-json";
 
 export async function handleMentionsRoutes(
 	ctx: RouteContext,
@@ -19,8 +20,8 @@ export async function handleMentionsRoutes(
 
 	if (path === "/api/mentions" && req.method === "GET") {
 		const user = requestUser(ctx, url.searchParams.get("user"));
-		if (!user) return Response.json({ mentions: [] });
-		return Response.json({ mentions: listMentions(user) });
+		if (!user) return conditionalJsonResponse(req, { mentions: [] });
+		return conditionalJsonResponse(req, { mentions: listMentions(user) });
 	}
 
 	if (path === "/api/mentions/clear" && req.method === "POST") {

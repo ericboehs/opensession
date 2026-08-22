@@ -1662,6 +1662,7 @@ function AddCodexAccountForm({
 				<Field label="Name">
 					<Input
 						ref={nameRef}
+						required
 						value={name}
 						onChange={(e) => setName(e.target.value)}
 						placeholder="team"
@@ -1691,6 +1692,7 @@ function AddCodexAccountForm({
 					<Field label={kind === "api_key" ? "API key" : "CODEX_HOME path"}>
 						<Input
 							type={kind === "api_key" ? "password" : "text"}
+							required
 							autoComplete={kind === "api_key" ? "off" : undefined}
 							value={value}
 							onChange={(e) => setValue(e.target.value)}
@@ -1713,7 +1715,7 @@ function AddCodexAccountForm({
 			{login && (
 				// A well inside the dialog, so the live sign-in stands apart
 				// from the fields without another border.
-				<div className="rounded-md bg-surface px-4 py-3 text-supporting">
+				<div role="status" aria-live="polite" className="rounded-md bg-surface px-4 py-3 text-supporting">
 					{login.state === "starting" && <div className="text-dim">Starting sign-in…</div>}
 					{login.state === "awaiting_code" && (
 						<>

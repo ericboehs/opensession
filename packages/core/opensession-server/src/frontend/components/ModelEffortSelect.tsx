@@ -109,6 +109,7 @@ export { baseModelId, engineModelId, modelEngine, piModelId } from "../lib/model
 export function friendlyModelSlug(slug: string): string {
 	if (slug === "gpt-oss-120b") return "GPT OSS 120B";
 	if (slug === "gemma-4-31b") return "Gemma 4 31B";
+	if (slug === "stealth/ox-alpha") return "Ox Alpha";
 	const glm = slug.match(/^(zai-)?glm-?(\d+(?:\.\d+)*)(?:-(.+))?$/i);
 	if (glm) {
 		const prefix = glm[1] ? "Z.ai " : "";

@@ -39,17 +39,4 @@ final class SyntaxHighlightingTests: XCTestCase {
         )
         XCTAssertNil(SyntaxHighlighting.splitGutter("result.swift\n2:first"))
     }
-
-    func testHighlightingRestoresSignificantEdgeWhitespace() {
-        let source = "  return value\n"
-        let highlighted = AttributedString("return value")
-
-        let restored = SyntaxHighlighting.restoringEdgeWhitespace(
-            highlighted,
-            in: source,
-            fallbackColor: OS1VisualStyle.textDim
-        )
-
-        XCTAssertEqual(String(restored.characters), source)
-    }
 }

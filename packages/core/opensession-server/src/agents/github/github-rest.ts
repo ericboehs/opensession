@@ -15,13 +15,7 @@ const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
 export const GITHUB_REPO = defaultRepo().ghRepo;
 /** The bot account our token posts as — used to recognise our own comments/events. */
 export const BOT_LOGIN = githubBotLogins()[0] || "";
-/**
- * Hidden markers the agent stamps on the comments it posts (one per
- * behavior). New comments carry the os-* form; comments written before the
- * michael-* → os-* rename carry the legacy form, so every place that MATCHES
- * a marker must accept both (legacyMarker / hasMarker) — only writes use
- * these constants directly.
- */
+/** Hidden markers the agent stamps on the comments it posts. */
 export const REVIEW_MARKER = "<!-- os-review -->";
 const REVIEW_OUTDATED_MARKER = "<!-- os-review-outdated -->";
 export const REPLY_MARKER = "<!-- os-reply -->";
@@ -29,12 +23,6 @@ export const AUTOFIX_MARKER = "<!-- os-autofix -->";
 export const SIMPLIFY_MARKER = "<!-- os-simplify -->";
 export const ADVERSARIAL_MARKER = "<!-- os-adversarial -->";
 
-/** The michael-* form of a marker, as stamped on pre-rename comments. */
-function legacyMarker(marker: string): string {
-  return marker.replace("<!-- os-", "<!-- michael-");
-}
-/** Every marker, current AND legacy forms — used to skip our own comments
- *  (no self-trigger loop). Older comments still carry the michael-* form. */
 export const OWN_MARKERS = [
   REVIEW_MARKER,
   REVIEW_OUTDATED_MARKER,
@@ -42,11 +30,11 @@ export const OWN_MARKERS = [
   AUTOFIX_MARKER,
   SIMPLIFY_MARKER,
   ADVERSARIAL_MARKER,
-].flatMap((m) => [m, legacyMarker(m)]);
+];
 
 /** Whether a comment is the unfinished review placeholder for this head. */
 export function isReviewProgressForHead(body: string, headSha: string): boolean {
-  if (!(body.startsWith(REVIEW_MARKER) || body.startsWith(legacyMarker(REVIEW_MARKER)))) return false;
+  if (!body.startsWith(REVIEW_MARKER)) return false;
   const match = body.match(/🔄 Reviewing(?: `([0-9a-f]{7,40})`)?…/i);
   if (!match) return false;
   const shownSha = match[1];
@@ -171,15 +159,9 @@ async function listIssueComments(prNumber: number, ghRepo: string): Promise<Issu
 
 /** Find the current (active, not-outdated) agent review comment id, if any. */
 export async function findActiveReviewComment(prNumber: number, ghRepo: string = GITHUB_REPO): Promise<number | null> {
-  // Newest first. Match either marker generation: pre-rename review comments
-  // start with the michael-* form.
   const mine = (await listIssueComments(prNumber, ghRepo))
     .reverse()
-    .find(
-      (c) =>
-        typeof c.body === "string" &&
-        (c.body.startsWith(REVIEW_MARKER) || c.body.startsWith(legacyMarker(REVIEW_MARKER))),
-    );
+    .find((c) => typeof c.body === "string" && c.body.startsWith(REVIEW_MARKER));
   return mine ? mine.id : null;
 }
 
@@ -199,13 +181,9 @@ export async function findReviewProgressComment(
 export async function supersedeReviewComment(commentId: number, ghRepo: string = GITHUB_REPO): Promise<void> {
   const old = await getComment(commentId, ghRepo);
   if (!old?.body) return;
-  // Strip the active marker and any previous outdated wrapper (either marker
-  // generation), then re-collapse.
   let inner = old.body
     .replace(REVIEW_MARKER, "")
     .replace(REVIEW_OUTDATED_MARKER, "")
-    .replace(legacyMarker(REVIEW_MARKER), "")
-    .replace(legacyMarker(REVIEW_OUTDATED_MARKER), "")
     .trim();
   const detailsMatch = inner.match(/<details>[\s\S]*?<summary>[\s\S]*?<\/summary>\s*([\s\S]*?)<\/details>/i);
   if (detailsMatch) inner = detailsMatch[1].trim(); // avoid nesting details on re-supersede
@@ -351,7 +329,7 @@ export async function submitReview(
 // ── Review thread resolution (GraphQL) ───────────────────────
 
 /** Hidden marker the auto-fixer stamps on its "Fixed in <sha>" thread replies. */
-export const FIXED_REPLY_MARKER = "<!-- michael-fixed -->";
+export const FIXED_REPLY_MARKER = "<!-- os-fixed -->";
 
 export interface ReviewThreadComment {
   login: string;
@@ -536,13 +514,9 @@ export async function fetchReviewFindings(prNumber: number, ghRepo?: string): Pr
     lines.push(`- [@${c.login} · comment ${c.id}] ${c.path}:${c.line} — ${c.body.replace(/\s+/g, " ").trim().slice(0, 400)}`);
   }
   for (const rv of reviews) {
-    // Skip the agent's own short "<persona> review · <sha>" boilerplate (legacy "Michael review" form included) (the inline
-    // comments above already carry its findings).
-    if (
-      rv.login === BOT_LOGIN &&
-      (rv.body.trim().startsWith(`${personaName()} review`) || rv.body.trim().startsWith("Michael review"))
-    )
-      continue;
+    // Skip the agent's own short review boilerplate. Inline comments already
+    // carry its findings.
+    if (rv.login === BOT_LOGIN && rv.body.trim().startsWith(`${personaName()} review`)) continue;
     const state = rv.state ? ` ${rv.state.toLowerCase().replace(/_/g, " ")}` : "";
     lines.push(`- [@${rv.login} review${state}] ${rv.body.replace(/\s+/g, " ").trim().slice(0, 600)}`);
   }

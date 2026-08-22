@@ -1598,7 +1598,6 @@ enum OS1API {
     /// server-suggested branch; the opening run starts immediately.
     static func createSession(
         prompt: String,
-        titlePrompt: String? = nil,
         repo: String,
         mode: String,
         model: String? = nil,
@@ -1613,7 +1612,6 @@ enum OS1API {
         struct CreateResponse: Decodable { let id: String }
         var body = createSessionBody(
             prompt: prompt,
-            titlePrompt: titlePrompt,
             repo: repo,
             mode: mode,
             model: model,
@@ -1643,7 +1641,6 @@ enum OS1API {
     /// omitting `repo` means inherit-or-default and is not repo-less.
     static func createSessionBody(
         prompt: String,
-        titlePrompt: String? = nil,
         repo: String,
         mode: String,
         model: String? = nil,
@@ -1657,7 +1654,6 @@ enum OS1API {
         requestId: String? = nil
     ) -> [String: Any] {
         var body: [String: Any] = ["prompt": prompt, "mode": mode]
-        if let titlePrompt, !titlePrompt.isEmpty { body["titlePrompt"] = titlePrompt }
         if let requestId, !requestId.isEmpty { body["requestId"] = requestId }
         // Sent only when the composer actually offered the choice. Omitting it
         // lets the instance's own sandbox default decide, which is the right
@@ -1677,21 +1673,6 @@ enum OS1API {
         if !stagedFiles.isEmpty { body["files"] = stagedFiles }
         if !user.isEmpty { body["user"] = user }
         return body
-    }
-
-    static func undoSlackComposer(sessionId: String, channelId: String, ts: String) async throws {
-        struct UndoResponse: Decodable, Sendable { let status: String }
-        let encoded = sessionId.addingPercentEncoding(
-            withAllowedCharacters: .urlPathAllowed
-        ) ?? sessionId
-        let _: UndoResponse = try await post(
-            "/api/sessions/\(encoded)/slack-composer/undo",
-            body: slackComposerUndoBody(channelId: channelId, ts: ts)
-        )
-    }
-
-    static func slackComposerUndoBody(channelId: String, ts: String) -> [String: Any] {
-        ["channel": channelId, "ts": ts]
     }
 
     /// Upload one composer file before it rides a prompt or session create.

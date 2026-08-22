@@ -179,13 +179,28 @@ function fromDisk(p: Workspace): Workspace {
   return p;
 }
 
+let workspaceNameGeneration = 0;
+let workspaceListCache: {
+  dir: string;
+  generation: number;
+  workspaces: Workspace[];
+} | null = null;
+
 export function listWorkspaces(): Workspace[] {
-  if (!existsSync(workspacesDir())) return [];
+  const dir = workspacesDir();
+  if (
+    workspaceListCache?.dir === dir &&
+    workspaceListCache.generation === workspaceNameGeneration
+  ) return workspaceListCache.workspaces.slice();
+  if (!existsSync(dir)) {
+    workspaceListCache = { dir, generation: workspaceNameGeneration, workspaces: [] };
+    return [];
+  }
   const out: Workspace[] = [];
-  for (const file of readdirSync(workspacesDir())) {
+  for (const file of readdirSync(dir)) {
     if (!file.endsWith(".json")) continue;
     try {
-      const p = JSON.parse(readFileSync(`${workspacesDir()}/${file}`, "utf8"));
+      const p = JSON.parse(readFileSync(`${dir}/${file}`, "utf8"));
       // No defaults backfill here: stamping the ~3KB default modelSettings on
       // every row multiplied the list payload by the workspace count (13 MB on
       // this instance). Absent modelSettings means "inherit the defaults":
@@ -199,7 +214,13 @@ export function listWorkspaces(): Workspace[] {
       (a.order ?? (Date.parse(a.createdAt) || 0)) -
         (b.order ?? (Date.parse(b.createdAt) || 0)) || a.name.localeCompare(b.name),
   );
-  return out;
+  workspaceListCache = { dir, generation: workspaceNameGeneration, workspaces: out };
+  return out.slice();
+}
+
+/** Stable version for conditional workspace-list responses. */
+export function workspaceListVersion(): string {
+  return `${workspacesDir()}:${workspaceNameGeneration}`;
 }
 
 /**
@@ -219,7 +240,6 @@ let workspaceNameCache: {
   names: Map<string, string>;
 } | null = null;
 let workspaceNameRefresh: Promise<void> | null = null;
-let workspaceNameGeneration = 0;
 
 function workspaceNameMap(): Map<string, string> {
   const dir = workspacesDir();

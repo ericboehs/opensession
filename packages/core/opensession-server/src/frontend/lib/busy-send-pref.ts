@@ -13,6 +13,7 @@
 
 import { fetchUiPrefs, saveUiPrefsApi } from "./api";
 import { getCurrentUser } from "../components/UserPicker";
+import { whenCurrentUserReady } from "./auth-ready";
 
 export type BusySendPref = "queue" | "steer";
 export type BusySendGesture = "enter" | "mod";
@@ -94,7 +95,7 @@ async function hydrate(user: string) {
 		void saveUiPrefsApi(user, pushUp).catch(() => {});
 }
 
-void hydrate(getCurrentUser());
+whenCurrentUserReady((user) => void hydrate(user));
 window.addEventListener(USER_CHANGE_EVENT, () =>
 	void hydrate(getCurrentUser()),
 );

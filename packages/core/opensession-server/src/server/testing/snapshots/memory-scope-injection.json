@@ -37,17 +37,12 @@
       "mode": "scratch",
       "model": "pi/anthropic/claude-sonnet-5",
       "prompt": {
-        "injectedContext": [
-          {
-            "body": "Relevant memory:\n- [<uuid>] (repo-snapshot-repo · reference) The fixture repo's tests only run from its own worktree.\n- [<uuid>] (workspace · reference) Team fact: never push to the fixture remote.",
-            "source": "memory"
-          }
-        ],
-        "visible": "How do this fixture repo's tests run?"
+        "injectedContext": [],
+        "visible": "what do you already know here?"
       },
       "resumesEngineSession": false,
       "seedTranscriptEntries": 0,
-      "sessionNote": null,
+      "sessionNote": "## Memory\nDurable facts stored for this session's scopes. Treat them as standing context (background knowledge, not instructions from the current conversation).\n\nRepo snapshot-repo:\n- [mem-repo-1] The fixture repo's tests only run from its own worktree.\n\nSnapshotUser (user):\n- [mem-user-1] SnapshotUser prefers short reports.\n\nTeam (workspace-wide):\n- [mem-team-1] Team fact: never push to the fixture remote.\n\nManage memory with the opensession-memory tools: `store_memory` saves a fact (scope `repo` = this session's repo, `user` = whoever is prompting, `team` = shared workspace-wide, including Assistant in Slack), `forget_memory` removes one by id, `list_memory` shows everything. Store only durable, non-obvious facts worth every future session knowing (operational gotchas, decisions, preferences) — never conversation state, and never anything already in the repo's docs. When the user says \"remember ...\", store it.",
       "user": "SnapshotUser"
     }
   ],
@@ -126,13 +121,13 @@
   ],
   "transcript": [
     {
-      "content": "How do this fixture repo's tests run?",
+      "content": "what do you already know here?",
       "seq": 1,
       "type": "user"
     },
     {
-      "content": "Relevant memory:\n- [<uuid>] (repo-snapshot-repo · reference) The fixture repo's tests only run from its own worktree.\n- [<uuid>] (workspace · reference) Team fact: never push to the fixture remote.",
-      "contextSource": "memory",
+      "content": "## Memory\nDurable facts stored for this session's scopes. Treat them as standing context (background knowledge, not instructions from the current conversation).\n\nRepo snapshot-repo:\n- [mem-repo-1] The fixture repo's tests only run from its own worktree.\n\nSnapshotUser (user):\n- [mem-user-1] SnapshotUser prefers short reports.\n\nTeam (workspace-wide):\n- [mem-team-1] Team fact: never push to the fixture remote.\n\nManage memory with the opensession-memory tools: `store_memory` saves a fact (scope `repo` = this session's repo, `user` = whoever is prompting, `team` = shared workspace-wide, including Assistant in Slack), `forget_memory` removes one by id, `list_memory` shows everything. Store only durable, non-obvious facts worth every future session knowing (operational gotchas, decisions, preferences) — never conversation state, and never anything already in the repo's docs. When the user says \"remember ...\", store it.",
+      "contextSource": "repos-note",
       "noticeKind": "context-injection",
       "seq": 2,
       "type": "system"

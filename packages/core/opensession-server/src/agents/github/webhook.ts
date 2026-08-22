@@ -1,8 +1,9 @@
 /**
- * Dispatch target for the shared `POST /github/webhook` handler. This routes
- * pull request events to the review, auto-fix, and simplify behaviors.
+ * Dispatch target for GitHub PR webhooks. GithubAgent owns
+ * `POST /github/webhook` and forwards PR events here for review, auto-fix, and
+ * simplify behaviors.
  *
- * Defensive: never throws into the Slack handler; all behaviors are fired
+ * Defensive: never throws into the webhook handler; all behaviors are fired
  * fire-and-forget (GitHub's 10s webhook timeout).
  */
 import { listAutomations, fireAutomationsForEvent } from "../../server/automations";

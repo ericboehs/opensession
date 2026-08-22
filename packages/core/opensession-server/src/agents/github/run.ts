@@ -219,18 +219,12 @@ export function authorForLogin(login?: string): GitIdentity | null {
  * subagents…") never lands on the PR.
  */
 export const SUMMARY_SENTINEL = "===OPENSESSION-SUMMARY===";
-// Pre-rename sentinel — runs prompted before a deploy (or resumed across one)
-// still emit it, so extraction accepts both.
-const LEGACY_SUMMARY_SENTINEL = "===MICHAEL-SUMMARY===";
 
 /** Text after the last summary sentinel; falls back to the full trimmed text. */
 export function finalSummary(text: string): string {
   if (!text) return "";
-  for (const sentinel of [SUMMARY_SENTINEL, LEGACY_SUMMARY_SENTINEL]) {
-    const idx = text.lastIndexOf(sentinel);
-    if (idx !== -1) return text.slice(idx + sentinel.length).trim();
-  }
-  return text.trim();
+  const idx = text.lastIndexOf(SUMMARY_SENTINEL);
+  return idx === -1 ? text.trim() : text.slice(idx + SUMMARY_SENTINEL.length).trim();
 }
 
 function readSessionFile(bksId: string): NativeSessionFile | null {

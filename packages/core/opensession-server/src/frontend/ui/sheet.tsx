@@ -81,6 +81,7 @@ export function ResponsiveDialog({
 	sheetClassName,
 	modalClassName,
 	backdropClassName,
+	showPhoneGrabber = true,
 	children,
 }: {
 	open: boolean;
@@ -104,6 +105,8 @@ export function ResponsiveDialog({
 	modalClassName?: string;
 	/** Override the shared backdrop when a surface needs stronger separation. */
 	backdropClassName?: string;
+	/** Full-screen phone lightboxes close explicitly and have no sheet grabber. */
+	showPhoneGrabber?: boolean;
 	children: React.ReactNode | ((dismiss: () => void) => React.ReactNode);
 }) {
 	// The sheet always animates: its drag-to-dismiss needs something to follow.
@@ -267,7 +270,7 @@ export function ResponsiveDialog({
 					phone ? sheetClassName : modalClassName,
 				)}
 			>
-				{phone && (
+				{phone && showPhoneGrabber && (
 					<div
 						className="flex shrink-0 touch-none justify-center pb-1.5 pt-2.5"
 						onTouchStart={onTouchStart}

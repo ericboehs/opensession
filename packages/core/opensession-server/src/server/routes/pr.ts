@@ -31,6 +31,7 @@ import {
 	githubCredentialRequiredResponse,
 	githubMutationCredential,
 } from "./github-credential";
+import { conditionalJsonResponse } from "../http-json";
 
 function validDiffGroupingInput(body: any): {
 	files: Array<{
@@ -100,7 +101,7 @@ export async function handlePrRoutes(
 	// identity table — the sidebar's Open PRs section (which must include
 	// PRs that have no Open Session session).
 	if (path === "/api/open-prs" && req.method === "GET") {
-		return Response.json({ prs: getOpenPrs() });
+		return conditionalJsonResponse(req, { prs: getOpenPrs() });
 	}
 
 	// Resolved review threads shown at the bottom of each file. GitHub's REST
@@ -181,7 +182,19 @@ export async function handlePrRoutes(
 	// Open Session workspace. Powers the root shipped-worktree index.
 	if (path === "/api/recent-prs" && req.method === "GET") {
 		const person = url.searchParams.get("person");
-		return Response.json({ prs: person ? await getRecentPrsForPerson(person) : getRecentPrs() });
+		let prs = person ? await getRecentPrsForPerson(person) : getRecentPrs();
+		const days = Math.min(3650, Math.max(0, Number(url.searchParams.get("days")) || 0));
+		if (days) {
+			const cutoff = Date.now() - days * 86_400_000;
+			const older = prs.find((pr) => (Date.parse(pr.updatedAt) || 0) < cutoff);
+			prs = prs.filter((pr) => (Date.parse(pr.updatedAt) || 0) >= cutoff);
+			// One marker beyond the requested window tells the feed that "Show
+			// more" has useful work without sending the whole older history.
+			if (older) prs.push(older);
+		}
+		const limit = Math.min(5000, Math.max(0, Number(url.searchParams.get("limit")) || 0));
+		if (limit) prs = prs.slice(0, limit);
+		return conditionalJsonResponse(req, { prs });
 	}
 
 	// The same window for repos that ship without pull requests: commits on

@@ -23,6 +23,7 @@
 import { fetchDrafts, saveDraftApi } from "./api";
 import { reconcileDrafts } from "./drafts-sync";
 import { getCurrentUser } from "../components/UserPicker";
+import { whenCurrentUserReady } from "./auth-ready";
 import type { FileAttachment } from "./images";
 import type { PastedTextAttachment } from "./pasted-text";
 
@@ -416,21 +417,23 @@ if (
   typeof window !== "undefined" &&
   typeof window.addEventListener === "function"
 ) {
-  void hydrate(getCurrentUser());
+  whenCurrentUserReady((user) => void hydrate(user));
   window.addEventListener("opensession-user-changed", rehydrateForCurrentUser);
   window.addEventListener("storage", (event) => {
     if (event.key === "opensession-user" || event.key === "backstage-user") {
       rehydrateForCurrentUser();
     }
   });
-  // Coming back to a tab that sat in the background: pick up what was typed
-  // (or sent) on the other device while it was away.
-  document.addEventListener?.("visibilitychange", () => {
-    if (document.visibilityState === "visible") void hydrate(getCurrentUser());
-  });
-  window.setInterval(() => {
-    if (document.visibilityState === "visible") void hydrate(getCurrentUser());
-  }, 30_000);
+  if (typeof document !== "undefined") {
+    // Coming back to a tab that sat in the background: pick up what was typed
+    // (or sent) on the other device while it was away.
+    document.addEventListener?.("visibilitychange", () => {
+      if (document.visibilityState === "visible") void hydrate(getCurrentUser());
+    });
+    window.setInterval(() => {
+      if (document.visibilityState === "visible") void hydrate(getCurrentUser());
+    }, 30_000);
+  }
   // Don't let the debounce eat the last keystrokes when the tab goes away.
   window.addEventListener("pagehide", () => {
     unloading = true;

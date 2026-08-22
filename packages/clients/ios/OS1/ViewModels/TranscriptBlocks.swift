@@ -294,21 +294,11 @@ struct WorkTurn: Identifiable, Equatable {
 
     var hasFailure: Bool { failureCount > 0 }
 
-    /// A fold this long is a wall on a phone. Media and failures still pull a
-    /// short turn open — that's how you see a screenshot or a stack trace
-    /// without hunting — but past this many steps the header's own signals
-    /// (the failure count, the edited files) carry it instead, and opening
-    /// stays the reader's choice.
-    private static let pinOpenStepLimit = 8
-
     /// How the fold should start out, before any manual toggle.
     func defaultExpanded(preference: TurnActivity) -> Bool {
         // A tool-only turn already has one complete summary in its header.
         // Keep it closed unless the person explicitly keeps all work open.
         if !hasNarration, preference.work != .open { return false }
-        if !isLive, toolCount <= Self.pinOpenStepLimit, hasFailure || hasMedia {
-            return true
-        }
         // The default is open while the work is happening and folded the
         // moment it settles, which is also the only work setting where a
         // finished turn's notes can be put away, since the header then owns
@@ -720,10 +710,6 @@ enum TranscriptGrouping {
             id: firstId,
             anchorId: lastId,
             items: items,
-            hasNarration: items.contains {
-                if case .message = $0 { return true }
-                return false
-            },
             isLive: isLive,
             duration: isLive ? nil : duration(from: start, to: end),
             families: Array(families.prefix(6)),
@@ -733,7 +719,11 @@ enum TranscriptGrouping {
             lineStats: stats,
             hasMedia: tools.contains(where: \.hasMedia),
             featuredMedia: featuredMedia(from: tools),
-            livePreview: preview
+            livePreview: preview,
+            hasNarration: items.contains {
+                if case .message = $0 { return true }
+                return false
+            }
         )
     }
 

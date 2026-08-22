@@ -361,7 +361,7 @@ export function WorkspaceModelPresets({
 	);
 }
 
-/** Workspace-specific entry inside Settings → Models. */
+/** Workspace-specific entry inside Settings → Providers. */
 export function WorkspaceModelPresetSettings({ workspace }: { workspace?: Workspace }) {
 	const [open, setOpen] = useState(false);
 	return (

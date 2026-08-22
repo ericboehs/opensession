@@ -251,13 +251,13 @@ export function Prs({
 
   useEffect(() => {
     let active = true;
-    fetchRecentPrs()
+    fetchRecentPrs(undefined, showArchived ? {} : { limit: 500 })
       .then((prs) => active && setRecentPrs(prs))
       .catch(() => {});
     return () => {
       active = false;
     };
-  }, []);
+  }, [showArchived]);
 
   useEffect(() => {
     if (person === "all") {

@@ -20,12 +20,6 @@ import { writeFileAtomic, writeJsonAtomic } from "../../server/shared/atomic-wri
 import { join } from "path";
 import { unlinkSync } from "fs";
 
-/** Former name of the store, from when the agent was called Michael. Read
- *  when it exists and the current one does not: the store holds hundreds of
- *  entries, and renaming a state directory without accepting the old name is
- *  how the sessions-dir rename silently orphaned 459 stored media paths. */
-const LEGACY_MEMORY_DIR = `${process.env.HOME}/.michael-memory`;
-
 export const MEMORY_DIR = `${process.env.HOME}/.opensession-memory`;
 
 // Test seam: the snapshot harness (src/server/testing/) redirects the store so
@@ -37,27 +31,19 @@ let memoryDirOverride: string | null = null;
 /**
  * Directory backing the scope stores.
  *
- * Resolution order: a test override, then the current name, then the legacy
- * name when it is the only one that exists. An instance that never migrates
- * keeps working; `bun scripts/migrate-memory-dir.ts` moves it for real.
+ * Resolution order: a test override, isolated state, then the live store.
  */
 export function memoryDir(): string {
   if (memoryDirOverride) return memoryDirOverride;
   if (process.env.OPENSESSION_STATE_DIR) {
     return `${process.env.OPENSESSION_STATE_DIR}/.opensession-memory`;
   }
-  if (existsSync(MEMORY_DIR)) return MEMORY_DIR;
-  if (existsSync(LEGACY_MEMORY_DIR)) return LEGACY_MEMORY_DIR;
   return MEMORY_DIR;
 }
 
-/** Legacy JSON roots eligible for a v2 import. Isolated instances never read
- * the live home-directory stores. */
+/** JSON roots eligible for a v2 import. */
 export function memoryImportDirs(): string[] {
-  if (memoryDirOverride || process.env.OPENSESSION_STATE_DIR) return [memoryDir()];
-  if (existsSync(MEMORY_DIR)) return [MEMORY_DIR];
-  if (existsSync(LEGACY_MEMORY_DIR)) return [LEGACY_MEMORY_DIR];
-  return [MEMORY_DIR];
+  return [memoryDir()];
 }
 
 const MEMORY_V2_DIRTY_MARKER = ".memory-v2-dirty";
@@ -76,11 +62,6 @@ export function clearMemoryImportDirty(sourceDirs: string[]): void {
       unlinkSync(join(directory, MEMORY_V2_DIRTY_MARKER));
     } catch {}
   }
-}
-
-/** The legacy path, for the migration script and its test. */
-export function legacyMemoryDir(): string {
-  return LEGACY_MEMORY_DIR;
 }
 
 /** Point the memory store at another directory; returns the previous value. */

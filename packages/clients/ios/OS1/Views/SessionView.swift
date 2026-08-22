@@ -542,6 +542,10 @@ struct SessionView: View {
                             // reader has scrolled up (or the keyboard resized the
                             // viewport), leaving the sent bubble below the fold.
                             scrollToBottom(proxy, animated: true)
+                            // The message arrives after the outbox round trip,
+                            // so keep following while its row and the keyboard
+                            // inset settle instead of stopping at the old tail.
+                            beginHold(proxy, after: .milliseconds(450))
                         }
                     // The size-change anchor alone doesn't reliably hold the
                     // bottom while new output arrives (keyboard insets + lazy
@@ -620,8 +624,8 @@ struct SessionView: View {
             }
             #endif
         }
-        let chromeContent = transcriptContent
-            .environment(\.transcriptSessionId, viewModel.session.id)
+		let chromeContent = transcriptContent
+			.environment(\.transcriptSessionId, viewModel.session.id)
             .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
                 #if os(iOS)
@@ -646,6 +650,9 @@ struct SessionView: View {
                         onRestore: { _ in }
                     )
                 }
+                #endif
+                #if os(iOS)
+                SessionToastBanner(viewModel: viewModel)
                 #endif
                 statusBanner
             }
@@ -1226,12 +1233,7 @@ struct SessionView: View {
                 .transcriptTail(true)
         }
         if let receipt = viewModel.slackComposeReceipt {
-            SlackComposeReceiptRow(
-                receipt: receipt,
-                isUndoing: viewModel.isUndoingSlackComposeReceipt
-            ) {
-                Task { await viewModel.undoSlackComposeReceipt() }
-            }
+            SlackComposeReceiptRow(receipt: receipt)
                 .id("slack-receipt-\(receipt.id)")
                 .transcriptTail(true)
         }
@@ -1305,12 +1307,6 @@ struct SessionView: View {
                 try await viewModel.deleteSessionNote(note)
             },
             failureContinuation: continuation
-        )
-        .environment(
-            \.imageRegionCommentAction,
-            ImageRegionCommentAction { text, image in
-                viewModel.sendImageRegionComment(text, image: image)
-            }
         )
         .id(block.id)
         .transcriptTail(block.id == tailId)
@@ -1418,8 +1414,6 @@ private extension View {
 
 private struct SlackComposeReceiptRow: View {
     let receipt: SlackComposeReceipt
-    let isUndoing: Bool
-    let onUndo: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
@@ -1439,14 +1433,6 @@ private struct SlackComposeReceiptRow: View {
                     Link("Open in Slack", destination: url)
                         .underline()
                 }
-                if receipt.canUndo {
-                    Text("·").foregroundStyle(OS1VisualStyle.textFaint)
-                    Button(isUndoing ? "Undoing…" : "Undo", action: onUndo)
-                        .buttonStyle(.plain)
-                        .underline()
-                        .disabled(isUndoing)
-                        .accessibilityHint("Removes this message from Slack")
-                }
             } else {
                 Text("Slack message cancelled")
             }
@@ -1454,7 +1440,7 @@ private struct SlackComposeReceiptRow: View {
         .font(.footnote)
         .foregroundStyle(OS1VisualStyle.textDim)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .contain)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -2717,7 +2703,7 @@ private struct SessionInputBar: View {
             }
 
             if (viewModel.queuedCount > 0 && viewModel.queuedItems.isEmpty)
-                || visibleNotice != nil {
+                || composerNotice != nil {
                 composerChip
                     // Grows out of the composer it belongs to, rather than
                     // being cut in above it.
@@ -2780,7 +2766,7 @@ private struct SessionInputBar: View {
         .padding(.horizontal, horizontalInset)
         .padding(.top, Self.barTopPadding)
         .padding(.bottom, 8)
-        .animation(.smooth(duration: 0.22), value: visibleNotice)
+        .animation(.smooth(duration: 0.22), value: composerNotice)
         .animation(.smooth(duration: 0.18), value: noteMode)
         .animation(.smooth(duration: 0.2), value: viewModel.replySuggestions)
         .animation(.smooth(duration: 0.18), value: viewModel.quoteSelection.text)
@@ -3004,10 +2990,11 @@ private struct SessionInputBar: View {
     }
 
     /// The compact chip floating above the composer: what is waiting to be
-    /// sent, and a word to the person who just tapped — a refused send, a
-    /// switch that didn't happen. A notice about the SESSION goes to the
-    /// transcript instead (`noteLocally`), where it reads in order and
-    /// doesn't sit over the composer after the thing it describes is over.
+    /// sent. On Mac it also carries a word to the person who just tapped — a
+    /// refused send, a switch that didn't happen. iOS presents that feedback
+    /// below the session tabs instead, where it cannot cover the composer.
+    /// A notice about the SESSION goes to the transcript (`noteLocally`),
+    /// where it reads in order.
     ///
     /// The notice wears its tone rather than a blanket orange — the same
     /// grey/amber/red the transcript's own notices use, so "run failed" and
@@ -3015,7 +3002,7 @@ private struct SessionInputBar: View {
     /// one: the wording is the server's, and truncating a sentence mid-word
     /// to keep a capsule tidy loses the half that says what to do.
     @ViewBuilder private var composerChip: some View {
-        let notice = visibleNotice
+        let notice = composerNotice
         let tone = notice.map(NoticeTone.derived(fromText:)) ?? .info
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             if viewModel.queuedCount > 0, viewModel.queuedItems.isEmpty {
@@ -3103,6 +3090,14 @@ private struct SessionInputBar: View {
         .background(OS1VisualStyle.panel, in: Capsule())
         .overlay { Capsule().stroke(OS1VisualStyle.border.opacity(0.6), lineWidth: 0.5) }
         .help(viewModel.quoteSelection.text ?? "")
+    }
+
+    private var composerNotice: String? {
+        #if os(iOS)
+        nil
+        #else
+        visibleNotice
+        #endif
     }
 
     private var visibleNotice: String? {
@@ -3505,18 +3500,11 @@ private struct SessionInputBar: View {
         .background {
             Color.clear
                 #if os(iOS)
-                // Near-solid surface, not a see-through pane: the transcript
-                // passes BEHIND the composer, and a washed-out bar over live
-                // text made the draft hard to read. The page color on top of a
-                // thick material lands on white in light mode and stays dark in
-                // dark mode — the session still shows around and below the
-                // pill, just not through it.
+                // Solid writing surface: the transcript passes BEHIND the
+                // composer, but never through the draft. This resolves to full
+                // white in light appearance and the system background in dark.
                 .background(
-                    OS1VisualStyle.background.opacity(0.7),
-                    in: composerShape
-                )
-                .background(
-                    .thickMaterial,
+                    OS1VisualStyle.background,
                     in: composerShape
                 )
                 #endif

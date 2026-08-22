@@ -178,7 +178,6 @@ export async function loadSnapshotHarness(): Promise<SnapshotHarness> {
     join(d.root, "engine-session-map.json"),
   );
   const memory = await import("../../agents/slack/memory");
-  const memoryV2 = await import("../memory-v2/runtime");
   const prevMemoryDir = memory.__setMemoryDirForTest(d.memory);
 
   const runSession = await import("../run-session");
@@ -282,16 +281,10 @@ export async function loadSnapshotHarness(): Promise<SnapshotHarness> {
           }),
         );
       const prev = memory.__setMemoryDirForTest(dir);
-      const prevDb = process.env.OPENSESSION_MEMORY_DB;
-      process.env.OPENSESSION_MEMORY_DB = join(dir, "memory-v2.sqlite");
-      memoryV2.closeMemoryRuntime();
       normalizer.path(dir, "<memory>");
       try {
         await fn();
       } finally {
-        memoryV2.closeMemoryRuntime();
-        if (prevDb === undefined) delete process.env.OPENSESSION_MEMORY_DB;
-        else process.env.OPENSESSION_MEMORY_DB = prevDb;
         memory.__setMemoryDirForTest(prev);
       }
     },

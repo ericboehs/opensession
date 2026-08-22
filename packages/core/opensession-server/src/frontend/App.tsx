@@ -1,4 +1,3 @@
-import "./lib/storage-migrate"; // must run before any lib reads its pref keys
 import { BASE_PATH, stripBasePath } from "./lib/base";
 import { DEFAULT_REPO_ID, PRODUCT_NAME } from "./lib/brand";
 import {
@@ -106,7 +105,6 @@ import { UserGate, getCurrentUser, useAuthStatus, useCurrentUser } from "./compo
 import { PreviewWait, matchPreviewWaitRoute } from "./components/PreviewWait";
 import { SettingsButton } from "./components/SettingsButton";
 import { TitleBar } from "./components/TitleBar";
-import { Settings } from "./components/Settings";
 import { FirstMile } from "./components/FirstMile";
 import {
 	completeFirstMile,
@@ -220,6 +218,7 @@ import type { ReviewQueueItem } from "./lib/review-queue";
 import { pushRecent } from "./lib/recents";
 import { setLane, type Lane } from "./lib/lanes";
 import { markRead } from "./lib/reads";
+import { resolveAnonymousUserPath } from "./lib/auth-ready";
 import {
 	nextRenderedSidebarChat,
 	nextUnreadRenderedWorkspaceItem,
@@ -264,6 +263,7 @@ import {
 	onTabSplitChanged,
 	saveTabSplit,
 	resolveSplit,
+	shouldShowTabStrip,
 	type ResolvedSplit,
 	type TabSplit,
 } from "./lib/split-tabs";
@@ -291,6 +291,23 @@ import type { UnifiedSession } from "./lib/types";
 import "./styles/base.css";
 import "./styles/legacy.css";
 import { EmptyState, LoadingState } from "./ui/state";
+
+function deferred<T extends React.ComponentType<any>>(
+	load: () => Promise<{ default: T }>,
+	fallback: React.ReactNode = null,
+): T {
+	const Component = React.lazy(load);
+	const Deferred = (props: React.ComponentProps<T>) => (
+		<React.Suspense fallback={fallback}>
+			<Component {...(props as any)} />
+		</React.Suspense>
+	);
+	return Deferred as T;
+}
+
+const Settings = deferred(() =>
+	import("./components/Settings").then((module) => ({ default: module.Settings })),
+);
 
 type Route =
 	// The app's root. There is no home: `/` lands on the pull request list,
@@ -1761,9 +1778,10 @@ export function App(
 		let stale = false;
 		const load = async () => {
 			try {
-				const res = await fetch(
+				const path = await resolveAnonymousUserPath(
 					`${BASE_PATH}/api/todos?user=${encodeURIComponent(getCurrentUser())}`,
 				);
+				const res = await fetch(path);
 				const data = (await res.json()) as { todos?: unknown[] };
 				if (!stale) setTaskCount(data.todos?.length ?? 0);
 			} catch {}
@@ -3359,6 +3377,11 @@ export function App(
 	// either column of a split either. The split is kept, not cleared — going back
 	// up to the parent restores it.
 	const activeTabSplit = currentSession && !viewingWorker ? tabSplit : null;
+	const tabStripVisible = shouldShowTabStrip(
+		stripTabIds.length,
+		!!activeTabSplit,
+		!!viewingWorker,
+	);
 	const deskFabPosition = useDeskFabPosition(
 		!isPhone && !activeViewTabShown,
 		`${focusedTopTabId ?? ""}:${activeTabSplit?.rightActive ?? ""}:${activeTabSplit?.ratio ?? ""}`,
@@ -4786,18 +4809,13 @@ export function App(
 					openNewSessionInWorkspace(viewerSession, "share", prompt)
 				}
 				// Mirrors SessionTabs' own "render nothing" rule so the header's
-				// lone-session + never doubles up with the strip's — and, just as
+				// lone-tab + never doubles up with the strip's — and, just as
 				// important, so it APPEARS whenever the strip doesn't. Closed
 				// sessions are not part of the rule: they live in the strip's
 				// history button when there is a strip and in the header's ⋯ menu
 				// when there isn't, so counting them here would leave a lone
 				// session with neither + .
-				tabStripVisible={
-					!viewingWorker &&
-					(!!activeTabSplit ||
-						workspaceSessions.length > 1 ||
-						viewTabs.length > 0)
-				}
+				tabStripVisible={tabStripVisible}
 				archivedSessions={archivedSessions}
 				onRestoreSession={restoreSession}
 				parentSession={
@@ -5467,7 +5485,7 @@ export function App(
 								</span>
 							)}
 						</div>
-						{!activeTabSplit && !viewingWorker && renderTabBar(null)}
+						{!activeTabSplit && tabStripVisible && renderTabBar(null)}
 						{splitDropSide && (
 							<div
 								className={tabSplitDropPreviewClass(splitDropSide)}
@@ -5497,6 +5515,13 @@ export function App(
 									workspace={routeWorkspace}
 									workspaceSessions={workspaceSessions}
 									sessions={sessions}
+									tabStripVisible={tabStripVisible}
+									onNewSession={
+										workspaceSessions.some((session) => session.desk) ||
+										emptyWorkspaceSession
+											? undefined
+											: (origin) => void handleNewSession("share", null, origin)
+									}
 									tab={
 										reviewActive
 											? "review"

@@ -1,26 +1,23 @@
 /**
- * The copy control on a rendered code fence.
- *
- * A ```fence is the thing people most often want out of a message and the
- * hardest to get by hand: selecting it means dragging across a well that
- * scrolls sideways under the finger, and usually catching the prose around it.
- * This puts the button every editor and code host has there, on a fence
- * whether it holds one line or forty.
+ * The controls on a rendered code fence: copy, plus a per-block wrap switch.
  *
  * Built as DOM rather than JSX for the same reason the mermaid expand button
  * is (MarkdownBody.tsx): a markdown body is injected as an innerHTML string,
- * so there is no element for React to own. The button is a SIBLING of the
- * <pre> rather than a child, because a long line scrolls the <pre> sideways
- * and a button inside it would ride off the edge with the code.
+ * so there is no element for React to own. The controls are siblings of the
+ * <pre>, keeping them fixed while an unwrapped block scrolls sideways and
+ * keeping their labels out of copied code.
  */
 
 import { checkIconMarkup, copyIconMarkup } from "../components/icons";
 import { copyToClipboard } from "./share-link";
 
 const WRAP_CLASS = "md-code-wrap";
-const BUTTON_CLASS = "md-code-copy";
+const CONTROLS_CLASS = "md-code-controls";
+const COPY_BUTTON_CLASS = "md-code-copy";
+const WRAP_BUTTON_CLASS = "md-code-wrap-toggle";
 const COPY_LABEL = "Copy code";
 const COPIED_LABEL = "Copied";
+const WRAP_LABEL = "Wrap code";
 /** How long the check stays before the copy glyph comes back. */
 const COPIED_MS = 1600;
 
@@ -57,7 +54,7 @@ function flashCopied(button: HTMLElement): void {
 }
 
 /**
- * Give every code fence under `root` a copy button. Idempotent: a fence that
+ * Give every code fence under `root` its controls. Idempotent: a fence that
  * already sits in a wrapper is left alone, so this can run again after a
  * re-render without stacking controls.
  */
@@ -71,38 +68,71 @@ export function decorateCodeBlocks(root: HTMLElement): void {
 		if (pre.querySelector('code[class*="language-mermaid"]')) continue;
 		const wrap = document.createElement("div");
 		wrap.className = WRAP_CLASS;
-		const button = document.createElement("button");
-		button.type = "button";
-		button.className = BUTTON_CLASS;
-		button.title = COPY_LABEL;
-		button.setAttribute("aria-label", COPY_LABEL);
+		wrap.dataset.wrapped = "true";
+
+		const controls = document.createElement("div");
+		controls.className = CONTROLS_CLASS;
+
+		const copyButton = document.createElement("button");
+		copyButton.type = "button";
+		copyButton.className = COPY_BUTTON_CLASS;
+		copyButton.title = COPY_LABEL;
+		copyButton.setAttribute("aria-label", COPY_LABEL);
 		// Both glyphs are always in the DOM, stacked in one grid cell, so the
 		// swap to the check has no layout in it and cannot shift the button.
-		button.innerHTML =
+		copyButton.innerHTML =
 			`<span class="md-code-copy-glyph" data-state="idle">${copyIconMarkup()}</span>` +
 			`<span class="md-code-copy-glyph" data-state="done">${checkIconMarkup()}</span>`;
+
+		const wrapButton = document.createElement("button");
+		wrapButton.type = "button";
+		wrapButton.className = WRAP_BUTTON_CLASS;
+		wrapButton.title = "Turn off code wrapping";
+		wrapButton.setAttribute("role", "switch");
+		wrapButton.setAttribute("aria-label", WRAP_LABEL);
+		wrapButton.setAttribute("aria-checked", "true");
+
 		pre.replaceWith(wrap);
-		wrap.append(pre, button);
+		controls.append(copyButton, wrapButton);
+		wrap.append(pre, controls);
 	}
 }
 
 /**
- * Listen for copy clicks under `root`. Delegated because the buttons are
- * created and destroyed by innerHTML rewrites; a `<button>` also turns
+ * Listen for code-control clicks under `root`. Delegated because the buttons
+ * are created and destroyed by innerHTML rewrites; real buttons also turn
  * keyboard Enter and Space into the same click, so this is the whole
  * interaction. Returns the detach function.
  */
 export function attachCodeCopy(root: HTMLElement): () => void {
 	function onClick(e: MouseEvent) {
 		const target = e.target as HTMLElement | null;
-		const button = target?.closest?.(`button.${BUTTON_CLASS}`) as
+		const wrapButton = target?.closest?.(`button.${WRAP_BUTTON_CLASS}`) as
 			| HTMLElement
 			| null;
-		if (!button || !root.contains(button)) return;
-		const pre = button.parentElement?.querySelector("pre");
+		if (wrapButton && root.contains(wrapButton)) {
+			const wrap = wrapButton.closest(`.${WRAP_CLASS}`) as HTMLElement | null;
+			if (!wrap) return;
+			const wrapped = wrap.dataset.wrapped !== "false";
+			wrap.dataset.wrapped = String(!wrapped);
+			wrapButton.setAttribute("aria-checked", String(!wrapped));
+			wrapButton.title = wrapped
+				? "Turn on code wrapping"
+				: "Turn off code wrapping";
+			e.preventDefault();
+			return;
+		}
+
+		const copyButton = target?.closest?.(`button.${COPY_BUTTON_CLASS}`) as
+			| HTMLElement
+			| null;
+		if (!copyButton || !root.contains(copyButton)) return;
+		const pre = copyButton.closest(`.${WRAP_CLASS}`)?.querySelector("pre");
 		if (!pre) return;
 		e.preventDefault();
-		copyToClipboard(codeText(pre as HTMLElement), () => flashCopied(button));
+		copyToClipboard(codeText(pre as HTMLElement), () =>
+			flashCopied(copyButton),
+		);
 	}
 	root.addEventListener("click", onClick);
 	return () => root.removeEventListener("click", onClick);

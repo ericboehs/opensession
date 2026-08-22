@@ -7,6 +7,7 @@
 
 import { getCurrentUser } from "../components/UserPicker";
 import { fetchUiPrefs, saveUiPrefsApi } from "./api";
+import { whenCurrentUserReady } from "./auth-ready";
 
 // Feed leads. The tools below it are places you go to act on one kind of
 // thing; Feed is what the team has actually been doing, which is the page you
@@ -357,7 +358,7 @@ export function onSidebarToolsChanged(listener: () => void) {
 }
 
 if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-	void hydrate(getCurrentUser());
+	whenCurrentUserReady((user) => void hydrate(user));
 	window.addEventListener(USER_CHANGE_EVENT, () => {
 		writeStamp++;
 		announce();

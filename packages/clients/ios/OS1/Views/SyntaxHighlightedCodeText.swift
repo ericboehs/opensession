@@ -144,28 +144,6 @@ enum SyntaxHighlighting {
         )
     }
 
-    /// HighlightSwift trims the input before converting its HTML. Put those
-    /// exact edge characters back so rendering never changes source layout.
-    static func restoringEdgeWhitespace(
-        _ value: AttributedString,
-        in text: String,
-        fallbackColor: Color
-    ) -> AttributedString {
-        var fallback = AttributedString(text)
-        fallback.foregroundColor = fallbackColor
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let range = text.range(of: trimmed) else {
-            return fallback
-        }
-        var output = AttributedString(String(text[..<range.lowerBound]))
-        output.foregroundColor = fallbackColor
-        output.append(value)
-        var suffix = AttributedString(String(text[range.upperBound...]))
-        suffix.foregroundColor = fallbackColor
-        output.append(suffix)
-        return output
-    }
-
     private static let store = Store()
 
     private actor Store {
@@ -254,13 +232,7 @@ struct SyntaxHighlightedCodeText: View {
                 colorScheme: colorScheme
             )
             guard !Task.isCancelled else { return }
-            highlighted = result.map {
-                SyntaxHighlighting.restoringEdgeWhitespace(
-                    $0,
-                    in: renderedText,
-                    fallbackColor: fallbackColor
-                )
-            }
+            highlighted = result.map(restoringWhitespace)
         }
     }
 
@@ -308,6 +280,22 @@ struct SyntaxHighlightedCodeText: View {
             index = characters.index(after: index)
         }
         appendLine(lineStart..<characters.endIndex)
+        return output
+    }
+
+    /// HighlightSwift trims the input before converting its HTML. Put those
+    /// exact characters back so selecting a code asset still copies its source.
+    private func restoringWhitespace(_ value: AttributedString) -> AttributedString {
+        let trimmed = renderedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let range = renderedText.range(of: trimmed) else {
+            return fallback
+        }
+        var output = AttributedString(String(renderedText[..<range.lowerBound]))
+        output.foregroundColor = fallbackColor
+        output.append(value)
+        var suffix = AttributedString(String(renderedText[range.upperBound...]))
+        suffix.foregroundColor = fallbackColor
+        output.append(suffix)
         return output
     }
 }

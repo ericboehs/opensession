@@ -397,7 +397,7 @@ describe("classifyEntry", () => {
 			classifyEntry(
 				entry({
 					content:
-						"This session was interrupted by a Michael service restart mid-run. Continue.",
+						"This session was interrupted by an OS service restart mid-run. Continue.",
 				}),
 			).notice,
 		).toEqual({

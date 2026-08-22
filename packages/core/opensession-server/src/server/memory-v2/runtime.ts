@@ -53,8 +53,6 @@ export async function ensureMemoryV2Ready(): Promise<{
   store: MemoryStore;
   migration: LegacyImportResult;
 }> {
-  // Resolve sources before opening the DB: creating ~/.opensession-memory for
-  // SQLite must not hide an older ~/.michael-memory source directory.
   const sourceDirs = memoryImportDirs();
   const store = memoryStore();
   if (!runtime) throw new Error("Memory runtime was not initialized.");
