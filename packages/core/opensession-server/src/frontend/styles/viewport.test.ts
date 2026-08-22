@@ -25,18 +25,21 @@ describe("app viewport", () => {
 		const html = await Bun.file(HTML).text();
 
 		expect(html).toContain('matchMedia("(display-mode: standalone)").matches');
-		expect(html).toContain("document.documentElement.style.height = height");
-		expect(html).toContain("document.body.style.height = height");
+		expect(html).toContain("setRootHeight(height + \"px\")");
 		expect(html).toContain("window.screen.height");
-		expect(html).toContain("keyboardOpen()");
 	});
 
-	test("the standalone correction does not trust WebKit's short innerHeight", async () => {
+	test("a window that stays short gives the forced height back", async () => {
 		const html = await Bun.file(HTML).text();
 
-		// A short innerHeight is the iOS bug being corrected. Treating it as
-		// evidence that the fill failed restores the letterboxed viewport.
-		expect(html).not.toContain("window.innerHeight");
-		expect(html).not.toContain('style.height = ""');
+		// Forcing the roots past the visible window is only safe while WebKit
+		// answers by growing that window. Without this check the composer sits
+		// below the fold on every launch, unreachable by scrolling.
+		expect(html).toContain("window.innerHeight >= height - 1");
+		expect(html).toContain("standaloneFillTaken = false");
+		expect(html).toContain('setRootHeight("")');
+		// An open keyboard shrinks the window deliberately, so it must not be
+		// read as the correction having failed.
+		expect(html).toContain("keyboardOpen()");
 	});
 });

@@ -288,13 +288,14 @@ export const VIEWER_INPUT =
 	// the very bottom edge. That gap is also all the room the composer's shadow
 	// gets in mobile Safari, where there is no safe-area inset.
 	"phone:px-3 phone:pb-[max(16px,env(safe-area-inset-bottom,0px))] " +
-	// Keyboard up: pin the input to the fixed viewport instead of relying on
-	// WebKit's focus pan, which can stop with the toolbar above the keyboard rather
-	// than the whole input seated against it. The measured inset lifts the composer
-	// to the keyboard; because it is bottom padding on this painted wrapper, the
-	// gradient's solid white tail continues all the way down behind that edge.
+	// Keyboard up: pin the input to Safari's fixed viewport instead of relying on
+	// its focus pan, which can stop with the toolbar floating above the keyboard.
+	// Fixed bottom already follows the visible keyboard edge on iOS Safari, so do
+	// not add `--kb-inset` again: that double-counts the keyboard and lifts the
+	// composer by hundreds of pixels. The painted wrapper keeps the solid tail of
+	// the fade behind the ordinary 12px gap down to the keyboard.
 	"phone:[body.kb-open_&]:fixed phone:[body.kb-open_&]:inset-x-0 phone:[body.kb-open_&]:bottom-0 " +
-	"phone:[body.kb-open_&]:pb-[calc(12px+var(--kb-inset,0px))]";
+	"phone:[body.kb-open_&]:pb-3";
 
 /**
  * The step the transcript and the composer take while the workspace summary

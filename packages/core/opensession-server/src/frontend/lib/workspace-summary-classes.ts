@@ -48,6 +48,12 @@ export const WS_SUMMARY_CARD =
  */
 export const WS_SUMMARY_REVIEW_CLEARANCE = "desktop:mr-[324px]";
 
+/** Wide Review scrolls outside the summary column. Its file canvas adds its
+ * own 8px inset, so reserve 316px here and 324px on the toolbar above; both
+ * visible borders then finish together with a 12px card gap on overlay-scrollbar
+ * platforms. */
+export const WS_SUMMARY_REVIEW_CANVAS_CLEARANCE = "desktop:mr-[316px]";
+
 /**
  * Band label ("Assets"), taken from the sidebar so the card heads its lists
  * the way the sidebar heads its own. It shares the rows' 16px content rail,

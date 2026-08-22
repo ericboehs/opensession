@@ -72,7 +72,10 @@ import {
 } from "../lib/pr-focus";
 import { providerFromUrl, prCapabilities } from "../lib/provider";
 import { pollWhileVisible, PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
-import { WS_SUMMARY_REVIEW_CLEARANCE } from "../lib/workspace-summary-classes";
+import {
+  WS_SUMMARY_REVIEW_CANVAS_CLEARANCE,
+  WS_SUMMARY_REVIEW_CLEARANCE,
+} from "../lib/workspace-summary-classes";
 import { Textarea } from "../ui/input";
 import {
   IconArrowDown,
@@ -2271,7 +2274,7 @@ export function PrPanel({
       )}
 
       <div
-        className={`flex min-h-0 flex-1 ${compactToolbar ? WS_SUMMARY_REVIEW_CLEARANCE : ""}`}
+        className={`flex min-h-0 flex-1 ${compactToolbar ? WS_SUMMARY_REVIEW_CANVAS_CLEARANCE : ""}`}
       >
         {page === "files" && fileListMode !== "hidden" && files.length > 0 && (
           <PrFileTree

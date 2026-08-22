@@ -101,18 +101,33 @@
         && (matchMedia("(display-mode: standalone)").matches
           || navigator.standalone === true);
       if (iphoneStandalone) {
+        // The correction only works if WebKit answers it by re-laying the
+        // standalone window out. When it keeps the short window, the roots
+        // stand taller than what you can see, and everything anchored to the
+        // bottom of the app (the composer) falls below the fold with no way
+        // to scroll it back. Measure the result and hand the height back when
+        // that happens: a letterboxed strip is better than a cut-off composer.
+        var standaloneFillTaken = true;
+        var setRootHeight = function (value) {
+          document.documentElement.style.height = value;
+          if (document.body) document.body.style.height = value;
+        };
         var keyboardOpen = function () {
           return !!document.body && document.body.classList.contains("kb-open");
         };
+        var verifyStandaloneScreen = function (height) {
+          // An open keyboard shrinks the window on purpose, so it can neither
+          // confirm nor disprove the correction.
+          if (!standaloneFillTaken || keyboardOpen()) return;
+          if (window.innerHeight >= height - 1) return;
+          standaloneFillTaken = false;
+          setRootHeight("");
+        };
         var fillStandaloneScreen = function () {
           var height = window.screen.height;
-          if (!height || keyboardOpen()) return;
-          // Do not validate this against innerHeight. The iOS regression this
-          // corrects is precisely that innerHeight keeps reporting the short,
-          // letterboxed window even after roots sized to the physical screen
-          // paint through the whole standalone surface.
-          document.documentElement.style.height = height + "px";
-          if (document.body) document.body.style.height = height + "px";
+          if (!height || !standaloneFillTaken || keyboardOpen()) return;
+          setRootHeight(height + "px");
+          setTimeout(function () { verifyStandaloneScreen(height); }, 300);
         };
         var resyncStandaloneScreen = function () {
           fillStandaloneScreen();
