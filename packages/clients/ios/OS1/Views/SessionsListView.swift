@@ -4334,8 +4334,11 @@ struct SessionRow: View {
         if let mention { parts.insert("\(mention.by) mentioned you", at: 0) }
         // Same for the plate: colour alone never carries meaning.
         if highlighted { parts.insert("last opened", at: 0) }
-        if let prState = session.prState?.lowercased() {
-            parts.append("pull request \(prState)")
+        switch session.pullRequestState {
+        case .open: parts.append("pull request open")
+        case .merged: parts.append("pull request merged")
+        case .closed: parts.append("pull request closed")
+        case nil: break
         }
         // The faces are the only cue that someone else is viewing this row.
         if !rowViewers.isEmpty {
