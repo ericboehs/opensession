@@ -1064,6 +1064,11 @@ struct NewSessionView: View {
         Haptics.play(.send)
         dictation.stop()
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let titlePrompt = sessionProjection.titlePrompt(
+            for: prompt,
+            titleGeneration: TranscriptLinks.shared.generation,
+            refreshTitles: !promptFocused
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
         let imageURLs = images.map(\.dataURL)
         if repo != Session.noRepoID { lastRepo = repo }
         let provisionalTitle = text.isEmpty
@@ -1091,6 +1096,7 @@ struct NewSessionView: View {
             do {
                 let id = try await OS1API.createSession(
                     prompt: text,
+                    titlePrompt: titlePrompt,
                     repo: repo,
                     mode: mode,
                     model: model.isEmpty ? nil : model,

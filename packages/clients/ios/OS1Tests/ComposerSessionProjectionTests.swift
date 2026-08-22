@@ -20,6 +20,14 @@ final class ComposerSessionProjectionTests: XCTestCase {
         XCTAssertEqual(projection.canonicalText, canonical)
     }
 
+    func testTitlePromptUsesTheVisibleSessionName() {
+        let canonical = "Compare @session:\(id) now"
+        let projection = ComposerSessionProjection(canonical)
+
+        XCTAssertEqual(projection.titlePrompt, "Compare @session:\(title) now")
+        XCTAssertEqual(projection.canonicalText, canonical)
+    }
+
     func testPastedSessionURLProjectsTitleButRetainsCanonicalURL() {
         let url = "\(serverOrigin)/workspace/ws-example/session/\(id)"
         let canonical = "Use \(url) for context"

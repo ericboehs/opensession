@@ -258,6 +258,53 @@ final class SessionViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.slackComposeReceipt, current)
     }
 
+    func testSlackReceiptIsRemovedOnlyAfterUndoSucceeds() async {
+        var request: (String, String, String)?
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1"),
+            slackComposerUndoer: { request = ($0, $1, $2) }
+        )
+        let receipt = SlackComposeReceipt(
+            requestId: "slack-1",
+            status: .sent,
+            channel: .init(id: "C123", name: "shipping"),
+            permalink: nil,
+            ts: "1700000000.000000"
+        )
+        viewModel.resolveSlackComposer(receipt)
+
+        await viewModel.undoSlackComposeReceipt()
+
+        XCTAssertEqual(request?.0, "bks-1")
+        XCTAssertEqual(request?.1, "C123")
+        XCTAssertEqual(request?.2, "1700000000.000000")
+        XCTAssertNil(viewModel.slackComposeReceipt)
+        XCTAssertEqual(viewModel.notice, "Removed from Slack")
+    }
+
+    func testFailedSlackUndoKeepsReceiptAndReportsTheFailure() async {
+        let viewModel = SessionViewModel(
+            session: Session(id: "bks-1"),
+            slackComposerUndoer: { _, _, _ in
+                throw OS1API.APIError.server("Slack could not delete that message")
+            }
+        )
+        let receipt = SlackComposeReceipt(
+            requestId: "slack-1",
+            status: .sent,
+            channel: .init(id: "C123", name: "shipping"),
+            permalink: nil,
+            ts: "1700000000.000000"
+        )
+        viewModel.resolveSlackComposer(receipt)
+
+        await viewModel.undoSlackComposeReceipt()
+
+        XCTAssertEqual(viewModel.slackComposeReceipt, receipt)
+        XCTAssertEqual(viewModel.notice, "Slack could not delete that message")
+        XCTAssertFalse(viewModel.isUndoingSlackComposeReceipt)
+    }
+
     func testResyncDropsCachedPartialPrefixOfOffscreenCompletion() {
         let viewModel = makeViewModel()
         viewModel.handle(.sessionStatus(sessionId: "bks-1", isRunning: true))

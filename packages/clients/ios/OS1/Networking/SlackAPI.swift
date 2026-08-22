@@ -21,6 +21,8 @@ enum SlackAPI {
         let status: String
         let channel: Channel?
         let permalink: String?
+        /// The posted message's timestamp, which is what an undo names.
+        let ts: String?
     }
 
     private struct UploadResponse: Decodable, Sendable {
