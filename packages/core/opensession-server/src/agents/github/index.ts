@@ -249,7 +249,7 @@ export class GithubAgent implements AgentModule {
     // the store itself.
     loadGithubDeliveries();
     if (!githubConfigured()) {
-      console.warn("[github] GITHUB_API_TOKEN unset — review/fix/simplify can't post; agent idle");
+      console.warn("[github] no GitHub credential (App install or GITHUB_API_TOKEN) — review/fix/simplify can't post; agent idle");
     }
     if (!GITHUB_WEBHOOK_SECRET) {
       console.warn("[github] GITHUB_WEBHOOK_SECRET unset — PR webhooks won't be verified");
@@ -279,7 +279,7 @@ export class GithubAgent implements AgentModule {
   health(): Record<string, unknown> {
     const { autoEnabled } = resolveReviewConfig();
     return {
-      status: githubConfigured() ? "operational" : "missing GITHUB_API_TOKEN",
+      status: githubConfigured() ? "operational" : "no GitHub credential",
       reviewAutomationEnabled: autoEnabled,
       trackedPrs: listPrStates().length,
       activeCodeLoops: activeCodeLoops(),

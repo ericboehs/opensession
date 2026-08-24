@@ -4,13 +4,14 @@
  * calls the review/fix/simplify behaviors need: the single updating summary
  * comment, formal reviews with inline comments, and label removal.
  *
- * Auth: the same `GITHUB_API_TOKEN` PAT the Slack agent uses (Bearer).
+ * Auth: the App installation token (write-scoped) when an App is configured,
+ * else the `GITHUB_API_TOKEN` PAT — resolved per call by `githubToken` because
+ * an installation token is short-lived and refreshes, unlike a static PAT.
  */
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import { defaultRepo, githubBotLogins, personaName } from "../../server/config";
+import { githubAppConfigured, githubToken } from "../../server/github-app";
 import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "../../server/github-limit";
-
-const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
 /** The PR agent's target — the instance's default repo (config-driven). */
 export const GITHUB_REPO = defaultRepo().ghRepo;
 /** The bot account our token posts as — used to recognise our own comments/events. */
@@ -42,7 +43,7 @@ export function isReviewProgressForHead(body: string, headSha: string): boolean 
 }
 
 export function githubConfigured(): boolean {
-  return !!GITHUB_TOKEN;
+  return githubAppConfigured() || !!process.env.GITHUB_API_TOKEN;
 }
 
 interface GithubResult<T = any> {
@@ -57,14 +58,15 @@ export async function githubRequest<T = any>(
   path: string,
   body?: unknown
 ): Promise<GithubResult<T>> {
-  if (!GITHUB_TOKEN) return { ok: false, status: 0, data: null, error: "GITHUB_API_TOKEN unset" };
+  const token = await githubToken({ write: true });
+  if (!token) return { ok: false, status: 0, data: null, error: "no GitHub credential (App or GITHUB_API_TOKEN)" };
   try {
     // Timeout matters here: these calls run while holding a per-PR lock with
     // no TTL — a hung fetch would block that PR until the next restart.
     const resp = await fetchWithTimeout(`https://api.github.com${path}`, {
       method,
       headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         ...(body ? { "Content-Type": "application/json" } : {}),
@@ -108,13 +110,14 @@ async function githubGraphQL<T = any>(
   query: string,
   variables?: Record<string, unknown>,
 ): Promise<T | null> {
-  if (!GITHUB_TOKEN) return null;
+  const token = await githubToken({ write: true });
+  if (!token) return null;
   if (ghRateLimited()) return null;
   try {
     const resp = await fetchWithTimeout("https://api.github.com/graphql", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ query, variables: variables || {} }),

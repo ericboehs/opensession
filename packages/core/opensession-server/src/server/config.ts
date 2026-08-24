@@ -926,11 +926,16 @@ export function githubWriteOwners(): string[] {
 
 export function githubBotLogins(): string[] {
   const env = process.env.GITHUB_BOT_LOGIN?.trim();
+  const appSlug = configuredIntegration("github").appSlug;
   return [
     ...new Set(
       [
         ...(getConfig().policy?.githubBotLogins || []),
         ...(env ? [env] : []),
+        // The App authors comments as "<app-slug>[bot]". Recognise it as ours
+        // so the agent never treats its own App-posted comments as human
+        // replies to answer — the same reason the bot PAT's login is listed.
+        ...(typeof appSlug === "string" && appSlug.trim() ? [`${appSlug.trim()}[bot]`] : []),
       ].map((login) => login.toLowerCase()),
     ),
   ];
