@@ -244,6 +244,20 @@ describe("GitHub App config (simple mode)", () => {
     ).toBe(400);
   });
 
+  test("changing App identity without a new key clears the previous key", async () => {
+    await handleConnectionsRoutes(
+      context(APP, "POST", null, { clientId: "Iv1.app-a", slug: "app-a", secret: "shh" }),
+    );
+    const keyPath = join(dir, "github-app.pem");
+    writeFileSync(keyPath, "app-a-key\n", { mode: 0o600 });
+
+    const response = await handleConnectionsRoutes(
+      context(APP, "POST", null, { clientId: "Iv1.app-b", slug: "app-b", secret: "shh" }),
+    );
+    expect(response?.status).toBe(200);
+    expect(existsSync(keyPath)).toBe(false);
+  });
+
   test("DELETE clears the App keys but leaves other github config intact", async () => {
     await handleConnectionsRoutes(
       context(APP, "POST", null, { clientId: "Iv1.abc", slug: "my-app", secret: "shh" }),

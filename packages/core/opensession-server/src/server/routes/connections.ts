@@ -816,6 +816,8 @@ export async function handleConnectionsRoutes(
 		return withConfigMutationLock(async () => {
 			const config = rawConfig();
 			const github = githubIntegrationSection(config, true)!;
+			const keyMutation = privateKey ||
+				(github.oauthClientId !== clientId ? null : undefined);
 			github.oauthClientId = clientId;
 			github.appSlug = slug;
 			github.oauthClientSecret = secret;
@@ -837,7 +839,7 @@ export async function handleConnectionsRoutes(
 			try {
 				const { commitGithubAppKeyMutation } = await import("../github-app");
 				await commitGithubAppKeyMutation(
-					privateKey || undefined,
+					keyMutation,
 					() => persistRawConfig(config),
 				);
 			} catch (e) {
