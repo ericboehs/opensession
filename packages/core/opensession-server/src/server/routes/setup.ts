@@ -440,6 +440,13 @@ export async function handleSetupRoutes(
         (nextClientId !== undefined && github.oauthClientId !== nextClientId
           ? null
           : undefined);
+      const effectiveBotCredential = body.botCredential ?? github.botCredential ?? "pat";
+      if (keyMutation === null && effectiveBotCredential === "app") {
+        return Response.json(
+          { error: "Switch bot actions to the PAT before changing the GitHub App without a replacement key" },
+          { status: 409 },
+        );
+      }
 
       // Turning on the sign-in gate must never strand a personal install with
       // nobody who can pass it. Organization onboarding already rosters people

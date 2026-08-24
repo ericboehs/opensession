@@ -244,6 +244,35 @@ describe("GitHub App config (simple mode)", () => {
     ).toBe(400);
   });
 
+  test("cannot strand selected App bot actions by clearing their key", async () => {
+    const path = process.env.OPENSESSION_CONFIG!;
+    writeFileSync(
+      path,
+      JSON.stringify({
+        integrations: {
+          github: {
+            oauthClientId: "Iv1.app-a",
+            appSlug: "app-a",
+            oauthClientSecret: "shh",
+            botCredential: "app",
+          },
+        },
+      }),
+    );
+    const keyPath = join(dir, "github-app.pem");
+    writeFileSync(keyPath, "app-a-key\n", { mode: 0o600 });
+
+    const replace = await handleConnectionsRoutes(
+      context(APP, "POST", null, { clientId: "Iv1.app-b", slug: "app-b", secret: "shh" }),
+    );
+    expect(replace?.status).toBe(409);
+    expect(readFileSync(keyPath, "utf-8")).toBe("app-a-key\n");
+
+    const remove = await handleConnectionsRoutes(context(APP, "DELETE", null));
+    expect(remove?.status).toBe(409);
+    expect(readFileSync(keyPath, "utf-8")).toBe("app-a-key\n");
+  });
+
   test("changing App identity without a new key clears the previous key", async () => {
     await handleConnectionsRoutes(
       context(APP, "POST", null, { clientId: "Iv1.app-a", slug: "app-a", secret: "shh" }),
