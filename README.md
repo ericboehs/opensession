@@ -5,6 +5,11 @@ and GitHub agents, driving coding sessions through the Pi engine
 (any model provider) in git worktrees on your own box, or in isolated
 sandboxes — Docker locally, with pluggable adapters for other providers.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/hero-dark.webp">
+  <img alt="Open Session on desktop and phone: a session that added multiplayer workspace presence and opened a pull request" src="docs/hero-light.webp">
+</picture>
+
 ![The Open Session session view: a running agent turn with its tool calls, next to the workspace sidebar](docs/screenshot.png)
 
 *More: [pull-request review, diffs, automations, mobile →](docs/screenshots.md)*
