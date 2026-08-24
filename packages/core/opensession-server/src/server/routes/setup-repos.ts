@@ -34,6 +34,7 @@ import { cloneCsCheckout, ensureCsCredentialHelper } from "../codestorage/remote
 import {
   persistRawConfig,
   rawConfig,
+  reposForMutation,
   repoSectionForMutation,
   withConfigMutationLock,
 } from "../config-mutation";
