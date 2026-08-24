@@ -70,7 +70,10 @@ const PRIMARY_MODEL_IDS = [
 	"claude-fable-5",
 	"claude-opus-5",
 	"claude-sonnet-5",
-	"gpt-5.5",
+	"claude-haiku-4-5",
+	"gpt-5.6-sol",
+	"gpt-5.6-terra",
+	"gpt-5.6-luna",
 ] as const;
 const PRIMARY_MODEL_ID_SET = new Set<string>(PRIMARY_MODEL_IDS);
 
@@ -249,10 +252,10 @@ const MODEL_TAIL_ORDER = [
 const ENGINE_PROVIDERS = new Set(["pi"]);
 
 /**
- * Split the registry into the first-class engine entries (engine + pi,
- * sorted for display) and the legacy native claude/codex ones. When engine
- * models are configured they ARE the model list; natives tuck under
- * LEGACY_GROUP_LABEL.
+ * Split the registry into the first-class Pi entries and current canonical
+ * model slugs, sorted for display. Only retired direct-SDK entries belong in
+ * the legacy group; Fable, Sol, and their current siblings remain ordinary
+ * choices even against an older server that still returns native ids.
  */
 export function splitModelOptions(models: ModelOption[]): {
 	primary: ModelOption[];
@@ -262,12 +265,14 @@ export function splitModelOptions(models: ModelOption[]): {
 		const i = MODEL_TAIL_ORDER.indexOf(m.id.split("/").pop() || "");
 		return i === -1 ? MODEL_TAIL_ORDER.length : i;
 	};
+	const isPrimary = (model: ModelOption) =>
+		ENGINE_PROVIDERS.has(model.provider) || PRIMARY_MODEL_ID_SET.has(model.id);
 	const primary = models
-		.filter((m) => ENGINE_PROVIDERS.has(m.provider))
+		.filter(isPrimary)
 		.map((m, i) => [m, i] as const)
 		.sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1])
 		.map(([m]) => m);
-	return { primary, legacy: models.filter((m) => !ENGINE_PROVIDERS.has(m.provider)) };
+	return { primary, legacy: models.filter((m) => !isPrimary(m)) };
 }
 
 /**
@@ -490,19 +495,13 @@ export function ModelEffortSelect({
 		const primaryFirst = primaryModels.length > 0;
 		const availableModelIds = new Set(models.map((m) => m.id));
 		const allPrimaryOptions = primaryFirst
-			? [
-					...(availableModelIds.has(defaultModel) ? [] : [optionFor(defaultModel)]),
-					...primaryModels.map((m) => optionFor(m.id)),
-				]
+			? primaryModels.map((m) => optionFor(m.id))
 			: PRIMARY_MODEL_IDS.filter((id) => availableModelIds.has(id)).map((id) => optionFor(id));
 		const allOtherOptions = primaryFirst
 			? legacyModels.map(legacyOptionFor)
-			: [
-					...(PRIMARY_MODEL_ID_SET.has(defaultModel) ? [] : [optionFor(defaultModel)]),
-					...models
-						.filter((m) => m.id !== defaultModel && !PRIMARY_MODEL_ID_SET.has(m.id))
-						.map((m) => optionFor(m.id)),
-				];
+			: models
+					.filter((m) => !PRIMARY_MODEL_ID_SET.has(m.id))
+					.map((m) => optionFor(m.id));
 		return { primaryFirst, allPrimaryOptions, allOtherOptions };
 	}, [models, modelById, defaultModel]);
 	// The stored routing prefix narrows the list rather than greying half of it
