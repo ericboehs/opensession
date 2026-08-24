@@ -599,6 +599,18 @@ describe("renderMarkdown PR mentions", () => {
     expect(html).toContain('data-pr-tone="purple"');
   });
 
+  it("does not let stale session state resurrect an archived PR", () => {
+    setKnownPrStates([
+      { repo: "tella-fusion", number: 5528, state: "OPEN" },
+    ]);
+    setKnownRepoPrStates([
+      { repo: "tella-fusion", number: 5528, state: "MERGED" },
+    ]);
+    const html = renderMarkdown("Fixed in #5528.", fusion);
+    expect(html).toContain('data-pr-state="merged"');
+    expect(html).toContain('data-pr-tone="purple"');
+  });
+
   it("drops stale state when the PR cache no longer contains the reference", () => {
     setKnownPrStates([
       { repo: "tella-fusion", number: 5528, state: "OPEN" },

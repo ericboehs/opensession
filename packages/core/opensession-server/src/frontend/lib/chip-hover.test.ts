@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { chipPr, chipPrIsWorthShowing, chipTarget } from "./chip-hover";
-import type { OpenPr } from "./api";
+import type { OpenPr, RecentPr } from "./api";
 import type { UnifiedSession } from "./types";
 
 // The chips are HTML the markdown renderer wrote, so the only handle the card
@@ -33,6 +33,15 @@ const openPr = (over: Partial<OpenPr>): OpenPr =>
 		checks: { total: 4, passed: 4, failed: 0, pending: 0 },
 		...over,
 	}) as OpenPr;
+
+const recentPr = (over: Partial<RecentPr>): RecentPr =>
+	({
+		...openPr({}),
+		state: "MERGED",
+		additions: 120,
+		deletions: 24,
+		...over,
+	}) as RecentPr;
 
 describe("chipTarget", () => {
 	test("reads a session chip", () => {
@@ -86,6 +95,50 @@ describe("chipPr", () => {
 		expect(chipPr("opensession", 128, [owner], [openPr({})])?.state).toBe(
 			"MERGED",
 		);
+	});
+
+	test("an archived PR resolves from recent history without a live session", () => {
+		const pr = chipPr("opensession", 128, [], [], [recentPr({})]);
+		expect(pr).toMatchObject({
+			title: "Hover cards for transcript chips",
+			state: "MERGED",
+			additions: 120,
+			deletions: 24,
+		});
+		expect(chipPrIsWorthShowing(pr)).toBe(true);
+	});
+
+	test("terminal history beats stale open session and open-list state", () => {
+		const owner = session({
+			repo: "opensession",
+			prNumber: 128,
+			prState: "OPEN",
+		});
+		const pr = chipPr(
+			"opensession",
+			128,
+			[owner],
+			[openPr({})],
+			[recentPr({ state: "CLOSED" })],
+		);
+		expect(pr?.state).toBe("CLOSED");
+	});
+
+	test("keeps richer live conflict status while a PR remains open", () => {
+		const owner = session({
+			repo: "opensession",
+			prNumber: 128,
+			prState: "OPEN",
+			prMergeable: "CONFLICTING",
+		});
+		const pr = chipPr(
+			"opensession",
+			128,
+			[owner],
+			[openPr({ mergeable: "UNKNOWN" })],
+			[recentPr({ state: "OPEN", mergeable: "UNKNOWN" })],
+		);
+		expect(pr?.mergeable).toBe("CONFLICTING");
 	});
 
 	test("falls back to the PRs a session merely spans", () => {

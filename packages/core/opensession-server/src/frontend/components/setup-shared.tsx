@@ -179,17 +179,19 @@ export function publicUrlState(publicBaseUrl: string): {
 				description: `Configured for Tailscale at ${publicBaseUrl}.`,
 			};
 		}
+		// A TLS address is served by the instance's own reverse proxy, so it is
+		// reachable by definition — the page you are reading came through it.
 		if (url.protocol === "https:") {
 			return {
 				tone: "on",
-				label: "Custom address",
-				description: `Configured at ${publicBaseUrl}. Verify that the app remains private.`,
+				label: "Online",
+				description: `Serving at ${publicBaseUrl}.`,
 			};
 		}
 		return {
 			tone: "warn",
-			label: "HTTPS needed",
-			description: `${publicBaseUrl} is configured without HTTPS.`,
+			label: "Check access",
+			description: `${publicBaseUrl} is configured over plain http, so setup cannot verify that it is private or reachable.`,
 		};
 	} catch {
 		return {

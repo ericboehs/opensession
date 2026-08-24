@@ -11,6 +11,9 @@ import {
 	cachedChipCommit,
 	cachedChipSession,
 	cachedOpenPrs,
+	cachedRecentPr,
+	cachedRecentPrs,
+	cacheRecentPrs,
 	chipCommitResolved,
 	chipPr,
 	chipPrIsWorthShowing,
@@ -18,12 +21,13 @@ import {
 	loadChipCommit,
 	loadChipSession,
 	loadOpenPrs,
+	loadRecentPr,
 	type ChipPr,
 	type ChipTarget,
 } from "../lib/chip-hover";
 import type { CommitDetails } from "../lib/api";
 import { setKnownRepoPrStates } from "../lib/markdown";
-import { refState, refTone } from "../lib/pr-refs";
+import { prStatusDisplay } from "../lib/pr-status";
 import { PR_STATE_TEXT } from "../lib/pr-tone-classes";
 import { providerFromUrl } from "../lib/provider";
 import { repoLabel } from "../lib/repo-label";
@@ -75,8 +79,9 @@ const CARD_ATTR = "data-chip-card";
 const PR_STATES_REFRESH_MS = 60_000;
 
 function syncRepoPrStates(open: OpenPr[], recent: RecentPr[]): void {
+	cacheRecentPrs(recent);
 	setKnownRepoPrStates([
-		...recent,
+		...cachedRecentPrs(),
 		...open.map((pr) => ({ ...pr, state: "OPEN" as const })),
 	]);
 }
@@ -205,17 +210,40 @@ export function ChipHoverCards({ sessions }: { sessions: UnifiedSession[] }) {
 				alive = false;
 			};
 		}
-		const known = chipPr(target.repo, target.number, sessions, cachedOpenPrs());
-		if (chipPrIsWorthShowing(known)) {
+		const recent = cachedRecentPr(target.repo, target.number);
+		const known = chipPr(
+			target.repo,
+			target.number,
+			sessions,
+			cachedOpenPrs(),
+			recent ? [recent] : [],
+		);
+		if (chipPrIsWorthShowing(known))
 			setCard({ key: target.key, kind: "pr", pr: known });
-			return;
-		}
-		void loadOpenPrs().then((prs) => {
-			if (!alive) return;
-			const filled = chipPr(target.repo, target.number, sessions, prs);
-			if (chipPrIsWorthShowing(filled))
-				setCard({ key: target.key, kind: "pr", pr: filled });
-		});
+		// Revalidate even when the synchronous sources can name it. The old path
+		// returned above and froze the first open-PR snapshot forever, which is how
+		// a merged PR kept an Open card and then lost its card once archived.
+		void Promise.all([
+			loadOpenPrs(),
+			loadRecentPr(target.repo, target.number),
+		])
+			.then(([openPrs, recentPr]) => {
+				if (!alive) return;
+				syncRepoPrStates(openPrs, recentPr ? [recentPr] : []);
+				const filled = chipPr(
+					target.repo,
+					target.number,
+					sessions,
+					openPrs,
+					recentPr ? [recentPr] : [],
+				);
+				if (chipPrIsWorthShowing(filled)) {
+					setCard({ key: target.key, kind: "pr", pr: filled });
+				} else {
+					setCard((current) => (current?.key === target.key ? null : current));
+				}
+			})
+			.catch(() => {});
 		return () => {
 			alive = false;
 		};
@@ -403,7 +431,8 @@ function CommitChipCardBody({ commit }: { commit: CommitDetails }) {
  * takes the row the queue would have spent on why it is waiting.
  */
 function PrChipCardBody({ pr }: { pr: ChipPr }) {
-	const tone = refTone(pr);
+	const status = prStatusDisplay(pr);
+	const tone = status.tone;
 	const rows: Array<[string, React.ReactNode]> = [];
 	if (pr.author) rows.push(["Author", pr.author]);
 	rows.push(["Repo", repoLabel(pr.repo)]);
@@ -448,7 +477,7 @@ function PrChipCardBody({ pr }: { pr: ChipPr }) {
 			</div>
 
 			<div className={`mt-[3px] text-meta font-medium ${PR_STATE_TEXT[tone]}`}>
-				{refState(pr)}
+				{status.label}
 			</div>
 
 			<CardRows rows={rows} />
