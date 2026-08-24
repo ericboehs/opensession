@@ -229,11 +229,44 @@ export function writeGithubAppKey(pem: string): void {
 /** Remove only a UI-managed key. An ops-managed path is external authority and
  * must never be mutated by the Settings removal flow. */
 export function removeGithubAppKey(): void {
-  if (process.env.OPENSESSION_GITHUB_APP_KEY)
-    throw new Error("OPENSESSION_GITHUB_APP_KEY is set; not removing an ops-managed key");
-  rmSync(keyPath(), { force: true });
+  // The App config may be UI-managed while its key path is ops-managed. In
+  // that mixed mode, preserve the external file but still invalidate tokens.
+  if (!process.env.OPENSESSION_GITHUB_APP_KEY)
+    rmSync(keyPath(), { force: true });
   g.__ghAppTokenCacheRead = null;
   g.__ghAppTokenCacheWrite = null;
+}
+
+/** Keep the key and matching config mutation in one recoverable transaction.
+ * `undefined` leaves the key alone, `null` removes it, and a string replaces
+ * it. If the config commit fails, restore the exact prior key atomically. */
+export async function commitGithubAppKeyMutation<T>(
+  key: string | null | undefined,
+  commitConfig: () => T | Promise<T>,
+): Promise<T> {
+  if (key === undefined || (key === null && process.env.OPENSESSION_GITHUB_APP_KEY)) {
+    if (key === null) {
+      g.__ghAppTokenCacheRead = null;
+      g.__ghAppTokenCacheWrite = null;
+    }
+    return commitConfig();
+  }
+  if (key !== null && process.env.OPENSESSION_GITHUB_APP_KEY)
+    throw new Error("OPENSESSION_GITHUB_APP_KEY is set; not overwriting an ops-managed key");
+
+  const path = keyPath();
+  const previous = existsSync(path) ? await Bun.file(path).text() : null;
+  if (key === null) removeGithubAppKey();
+  else writeGithubAppKey(key);
+  try {
+    return await commitConfig();
+  } catch (error) {
+    if (previous === null) rmSync(path, { force: true });
+    else writeFileAtomic(path, previous, 0o600);
+    g.__ghAppTokenCacheRead = null;
+    g.__ghAppTokenCacheWrite = null;
+    throw error;
+  }
 }
 
 /**
