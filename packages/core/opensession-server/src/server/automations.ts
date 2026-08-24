@@ -13,6 +13,7 @@ import {
   webhookBodyTooLargeResponse,
 } from "./shared/bounded-body";
 import { labelIdentity } from "./shared/user-mappings";
+import { isShuttingDown } from "./shutdown-state";
 import { parseCron, cronMatches, nextRun } from "./cron";
 import {
   STRIPE_CONFIRM_TOOLS,
@@ -1122,6 +1123,10 @@ export async function runAutomation(
     modelOverride?: string;
   }
 ): Promise<void> {
+  if (isShuttingDown()) {
+    console.log(`[automations] "${automation.name}" parked during shutdown`);
+    return;
+  }
   const trigger = options?.trigger || "manual";
   // Cron/manual runs don't stack; event/webhook runs are per-event, so they may overlap
   const concurrent = trigger === "event" || trigger === "webhook";
@@ -1676,6 +1681,7 @@ export function startScheduler(onSessionCreated?: (sessionId: string) => void): 
   if (schedulerInterval) return;
 
   schedulerInterval = setInterval(() => {
+    if (isShuttingDown()) return;
     const now = new Date();
     const minuteKey = now.toISOString().slice(0, 16);
     if (minuteKey === lastFiredMinute) return;
@@ -1720,6 +1726,8 @@ export function getWebhookRoutes(
   const routes = new Map<string, (req: Request, url: URL) => Promise<Response>>();
 
   routes.set("POST /automations/*", async (req, url) => {
+    if (isShuttingDown())
+      return Response.json({ error: "Server restarting" }, { status: 503 });
     const m = url.pathname.match(/^\/automations\/([^/]+)\/([^/]+)$/);
     if (!m) return Response.json({ error: "Bad path" }, { status: 400 });
 
