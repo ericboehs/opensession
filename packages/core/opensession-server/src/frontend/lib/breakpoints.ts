@@ -23,3 +23,16 @@
  * with everything here at exactly 720px wide.
  */
 export const PHONE_QUERY = "(max-width: 720px)";
+
+/**
+ * The same two queries as StyleX media-query keys, spelled once here so the
+ * boundary has exactly one authoring site now that styles are declared in
+ * TypeScript: `phone:` / `desktop:` variants used to carry it in
+ * `styles/tailwind.css`, and base.css repeats it in its own blocks. StyleX
+ * rejects a query string that differs from an earlier declaration of the same
+ * key, which is what makes these constants the enforcement mechanism too.
+ *
+ * 720 included on the phone side, exactly like PHONE_QUERY and base.css.
+ */
+export const PHONE_MQ = "@media (max-width: 720px)" as const;
+export const DESKTOP_MQ = "@media (min-width: 721px)" as const;

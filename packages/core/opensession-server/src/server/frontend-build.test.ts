@@ -67,6 +67,7 @@ describe("renderIndexHtml", () => {
 		entryName: "App-abc.js",
 		cssName: "global-def.css",
 		twName: "tailwind-ghi.css",
+		sxName: null,
 		assets: ["App-abc.js", "global-def.css", "tailwind-ghi.css"],
 	};
 
@@ -82,7 +83,9 @@ describe("renderIndexHtml", () => {
 	it("omits the Tailwind link when no sheet compiled", () => {
 		const html = renderIndexHtml({ ...meta, twName: null });
 		expect(html).not.toContain('href="/tailwind-');
-		expect(bundleVersion({ ...meta, twName: null })).toBe("App-abc.js|global-def.css|no-tw");
+		expect(bundleVersion({ ...meta, twName: null })).toBe(
+			"App-abc.js|global-def.css|no-tw|no-sx",
+		);
 	});
 
 	it("only enables Agentation through the explicit runtime flag", () => {

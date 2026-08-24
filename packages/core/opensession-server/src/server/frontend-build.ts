@@ -11,6 +11,7 @@ import type { BunFile, BunPlugin } from "bun";
 import { transformSync } from "oxc-transform-react";
 import { EMBEDDED_FRONTEND } from "./embedded-frontend";
 import { activeRunRecords } from "./run-journal";
+import { newStylexCollector, stylexBunPlugin, stylexCss } from "./stylex-build";
 import { writeFileAtomic } from "./shared/atomic-write";
 import { gitIdentityFor } from "./shared/user-mappings";
 import { broadcastToAll } from "./ws-hub";
@@ -162,6 +163,8 @@ export type BundleMeta = {
 	entryName: string;
 	cssName: string;
 	twName: string | null;
+	/** The StyleX sheet (null while the tree still declares no stylex styles). */
+	sxName: string | null;
 	/** Every servable file compileAssets wrote (entry, chunks, sheets). */
 	assets: string[];
 	bunVersion?: string;
@@ -245,6 +248,7 @@ export async function compileAssets(): Promise<BundleMeta> {
 	// the next boot rather than being masked by a post-build stamp.
 	const inputsHash = frontendInputsHash();
 	compilerCount.n = 0;
+	const stylexCollector = newStylexCollector();
 	const result = await Bun.build({
 		entrypoints: [`${FRONTEND_SRC}/App.tsx`],
 		outdir: FRONTEND_DIST,
@@ -260,7 +264,7 @@ export async function compileAssets(): Promise<BundleMeta> {
 			chunk: "[name]-[hash].[ext]",
 			asset: "[name]-[hash].[ext]",
 		},
-		plugins: [reactCompilerPlugin(compilerCount)],
+		plugins: [stylexBunPlugin(stylexCollector), reactCompilerPlugin(compilerCount)],
 	});
 	if (!result.success) {
 		throw new AggregateError(result.logs, "frontend build failed");
@@ -357,12 +361,23 @@ export async function compileAssets(): Promise<BundleMeta> {
 		}
 	}
 
+	// StyleX pass output (see stylex-build.ts): one hashed sheet holding every
+	// compiled rule, linked after the Tailwind utilities so a migrated style
+	// wins a source-order tie against the class it replaced.
+	let sxName: string | null = null;
+	if (stylexCollector.rules.size > 0) {
+		const sxCss = stylexCss(stylexCollector);
+		sxName = `stylex-${Bun.hash(sxCss).toString(36)}.css`;
+		writeFileAtomic(`${FRONTEND_DIST}/${sxName}`, sxCss);
+	}
+
 	const meta: BundleMeta = {
 		inputsHash,
 		entryName,
 		cssName,
 		twName,
-		assets: [...outputNames, cssName, ...(twName ? [twName] : [])],
+		sxName,
+		assets: [...outputNames, cssName, ...(twName ? [twName] : []), ...(sxName ? [sxName] : [])],
 		bunVersion: Bun.version,
 		builtAt: new Date().toISOString(),
 	};
@@ -376,7 +391,7 @@ export async function compileAssets(): Promise<BundleMeta> {
 
 /** Changes whenever the entry or a stylesheet hash changes, so clients know to refresh. */
 export function bundleVersion(meta: BundleMeta): string {
-	return `${meta.entryName}|${meta.cssName}|${meta.twName ?? "no-tw"}`;
+	return `${meta.entryName}|${meta.cssName}|${meta.twName ?? "no-tw"}|${meta.sxName ?? "no-sx"}`;
 }
 
 /**
@@ -433,13 +448,16 @@ export function renderIndexHtml(meta: BundleMeta): string {
 	const twLink = meta.twName
 		? `\n  <link rel="stylesheet" href="/${meta.twName}">`
 		: "";
+	const sxLink = meta.sxName
+		? `\n  <link rel="stylesheet" href="/${meta.sxName}">`
+		: "";
 	// Inject before the LAST head close: the first "</head>" in the source can
 	// legitimately appear inside inline-script comment text (2026-08-05: a
 	// comment literal ate the stylesheet links and broke the boot script).
 	const headClose = indexHtml.lastIndexOf("</head>");
 	return (
 		indexHtml.slice(0, headClose) +
-		`  <link rel="stylesheet" href="/${meta.cssName}">${twLink}\n` +
+		`  <link rel="stylesheet" href="/${meta.cssName}">${twLink}${sxLink}\n` +
 		indexHtml.slice(headClose)
 	);
 }
@@ -542,7 +560,7 @@ function readBundleMeta(): BundleMeta | null {
 	try {
 		const meta = JSON.parse(readFileSync(BUNDLE_META, "utf8")) as Partial<BundleMeta>;
 		if (!meta.inputsHash || !meta.entryName || !meta.cssName || !Array.isArray(meta.assets)) return null;
-		return { ...meta, twName: meta.twName ?? null } as BundleMeta;
+		return { ...meta, twName: meta.twName ?? null, sxName: meta.sxName ?? null } as BundleMeta;
 	} catch {
 		return null;
 	}
