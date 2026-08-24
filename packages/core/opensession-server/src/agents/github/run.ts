@@ -32,6 +32,7 @@ import { repoForPath } from "../../server/worktree";
 import { PR_EVENT_KEY, prKey, repoForFullName } from "./constants";
 import type { NativeSessionFile } from "../../server/types";
 import { configuredServer, defaultRepo } from "../../server/config";
+import { githubServiceCredentialEnv } from "../../server/github-app";
 import {
   shouldPersistModelSwitch,
   type StreamEvent,
@@ -341,9 +342,17 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
 
   // Group this and the PR's other sessions under one Project folder.
   let repoId: string | null = null;
+  let runGhRepo = opts.ghRepo;
   try {
-    repoId = repoForPath(opts.cwd).id;
+    const repo = repoForPath(opts.cwd);
+    repoId = repo.id;
+    runGhRepo ||= repo.ghRepo;
   } catch {}
+  if (opts.mode === "code" && opts.detached) {
+    throw new Error("GitHub code runs cannot be detached with an ephemeral credential");
+  }
+  const githubEnv =
+    opts.mode === "code" ? await githubServiceCredentialEnv(runGhRepo) : undefined;
   const workspaceId = await workspaceIdForPr(opts.prNumber, opts.branch, opts.title, repoId);
 
   const existingSessionFile = readSessionFile(bksId);
@@ -500,6 +509,7 @@ export async function runGithubAgent(opts: GithubRunOpts): Promise<GithubRunResu
         author: opts.author,
         fallbackModel: DEFAULT_FALLBACK_MODEL,
         mcpServers: githubFlowMcpServers(),
+        githubEnv,
         journal: { osSessionId: bksId, kind: `github-${opts.kind}` },
       });
     }

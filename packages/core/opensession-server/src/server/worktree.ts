@@ -609,22 +609,10 @@ export async function reviveWorktree(branch: string, repoId?: string): Promise<s
  * Explicit refspecs bypass the remote config. Found on a repo cloned
  * single-branch during node provisioning; `--unshallow` fixes depth, not this.
  */
-/**
- * Git env that authenticates a server-side fetch/push against `ghRepo` with the
- * App installation token (contents scope), so the code-mode PR worktrees below
- * resolve on PRIVATE repos with no bot PAT. Empty when the App can't mint — a
- * public repo fetches anonymously, and the injected env just re-passes the
- * process env. The token is cached in github-app.ts, so this does not re-mint
- * per call.
- */
-async function gitAppCredentialEnv(
-  ghRepo: string | undefined,
-): Promise<Record<string, string>> {
-  if (!ghRepo) return {};
-  const { githubAppRepositoryToken } = await import("./github-app");
-  const { githubGitCredentialEnv } = await import("./github-git-credential");
-  const token = await githubAppRepositoryToken(ghRepo);
-  return token ? githubGitCredentialEnv(token) : {};
+async function githubServiceGitEnv(ghRepo: string | undefined) {
+  const { githubServiceCredentialEnv } = await import("./github-app");
+  return { ...process.env, ...(await githubServiceCredentialEnv(ghRepo)) };
+}
 }
 
 async function fetchBranchesWithTracking(
@@ -636,11 +624,9 @@ async function fetchBranchesWithTracking(
     (b) => `+refs/heads/${b}:refs/remotes/origin/${b}`,
   );
   if (specs.length === 0) return;
-  const env = await gitAppCredentialEnv(ghRepo);
-  await $`git -C ${gitDir} fetch origin ${specs} --quiet`.env({
-    ...process.env,
-    ...env,
-  });
+  await $`git -C ${gitDir} fetch origin ${specs} --quiet`.env(
+    await githubServiceGitEnv(ghRepo),
+  );
 }
 
 /**
@@ -659,7 +645,7 @@ export async function createWorktreeForPrBranch(headRef: string, repoId?: string
     await fetchBranchesWithTracking(repo.repo, repo.ghRepo, headRef);
     if (existsSync(wtPath)) {
       await $`git -C ${wtPath} fetch origin ${headRef} --quiet`
-        .env({ ...process.env, ...(await gitAppCredentialEnv(repo.ghRepo)) })
+        .env(await githubServiceGitEnv(repo.ghRepo))
         .nothrow();
       await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet().nothrow();
       return true;
