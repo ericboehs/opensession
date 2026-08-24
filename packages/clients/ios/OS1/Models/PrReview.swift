@@ -160,9 +160,8 @@ enum PrPatchParser {
 
 // MARK: - How the diff is drawn
 
-/// Unified or side by side, and whether long lines wrap. The same pair of
-/// settings the web review canvas keeps in local storage: a reader picks them
-/// once, so they persist across sessions rather than resetting per file.
+/// Unified or side by side. The persisted native rendering preferences that
+/// use this value are shared by pull request review and worktree Changes.
 enum PrDiffStyle: String, CaseIterable, Sendable {
     case unified, split
 

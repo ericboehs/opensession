@@ -161,7 +161,9 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   split of what is already in hand (`PatchSplitter`) rather than a request per
   row — the split runs once per load, off the main actor, into a path-keyed
   index. A session spanning several repos gets a repo switcher; binary files
-  and a truncated patch say so rather than pushing an empty page.
+  and a truncated patch say so rather than pushing an empty page. Its native
+  code-display controls share persisted layout, wrapping, edit highlighting,
+  file-statistics, and light/dark theme choices with PR review.
 - **File paths in the transcript are links** (`FileLinks`) — a path an agent
   names in its own prose opens that file's diff, so the file you are reading
   about is one tap away instead of a trip through the overflow menu. Only
@@ -239,7 +241,9 @@ Pure SwiftUI with SwiftStreamingMarkdown for CommonMark/GFM rendering, iOS 26+
   so an unconnected account gets the server's "connect your GitHub account"
   sentence in the panel rather than a status code. It is
   pushed as a panel (`PrPanelView(chrome: .pushed)` drops its own navigation
-  stack and Done button); the sheet form is what the Mac still uses.
+  stack and Done button); the sheet form is what the Mac still uses. The Files
+  page and worktree Changes use the same device-local code-display defaults and
+  controls, including unified/split rendering and a code-only theme override.
 - **New session** (`NewSessionView.swift`): the repo sits across the top, the
   prompt fills the middle, and run controls sit in the footer. On iOS, Code is
   the quiet default, so there is no default New branch chip. Ask and Sandbox

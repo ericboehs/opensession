@@ -28,6 +28,7 @@ struct ChangesView: View {
     @State private var loadFailed = false
     /// The file being read, pushed one level deeper.
     @State private var openFile: FilePatch?
+    @AppStorage(CodeDisplaySettings.statsKey) private var showFileStats = true
 
     var body: some View {
         Group {
@@ -50,6 +51,9 @@ struct ChangesView: View {
         .navigationTitle(focus.map(Self.fileName) ?? "Changes")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                CodeDisplaySettingsButton()
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 if let focus, let file = focusedPatch(focus) {
                     Button {
@@ -93,11 +97,13 @@ struct ChangesView: View {
                         row(file)
                     }
                 } header: {
-                    Text(
-                        "\(diff.files.count) file"
-                        + "\(diff.files.count == 1 ? "" : "s") changed · "
-                        + "+\(diff.totalAdditions) −\(diff.totalDeletions)"
-                    )
+                    if showFileStats {
+                        Text(
+                            "\(diff.files.count) file"
+                            + "\(diff.files.count == 1 ? "" : "s") changed · "
+                            + "+\(diff.totalAdditions) −\(diff.totalDeletions)"
+                        )
+                    }
                 } footer: {
                     if diff.truncated == true {
                         Text("This diff is too large to send in full. The "
@@ -139,8 +145,10 @@ struct ChangesView: View {
                     }
                 }
                 Spacer(minLength: 8)
-                Text(counts(file))
-                    .font(.caption.monospacedDigit())
+                if showFileStats {
+                    Text(counts(file))
+                        .font(.caption.monospacedDigit())
+                }
                 if patch != nil {
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
@@ -284,6 +292,14 @@ struct ChangesView: View {
             repos = loaded
             patchIndex = index
             loadFailed = false
+            #if DEBUG
+            if focus == nil,
+               ProcessInfo.processInfo.environment["OS1_OPEN_CHANGES_FILE"] == "1" {
+                openFile = loaded.lazy.compactMap { repo in
+                    repo.diff.files.lazy.compactMap { index[repo.repo]?[$0.path] }.first
+                }.first
+            }
+            #endif
         } else {
             loadFailed = repos.isEmpty
         }
@@ -304,6 +320,8 @@ struct ChangesView: View {
 /// One file's diff, full height.
 private struct FileDiffView: View {
     let file: FilePatch
+    @State private var parsed: PrPatchFile?
+    @State private var parsing = true
     /// `.bare` is for the case where this IS the panel: the panel already
     /// names the file in the navigation bar, and a second title would blank
     /// the first one.
@@ -312,14 +330,30 @@ private struct FileDiffView: View {
     enum Chrome { case titled, bare }
 
     var body: some View {
-        ScrollView {
-            DiffText(patch: file.patch, maxLines: 2_000)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        Group {
+            if let parsed {
+                PrFileDiffBody(file: parsed, comment: nil, inline: false)
+            } else if parsing {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    DiffText(patch: file.patch, maxLines: 2_000)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
         }
         .background(OS1VisualStyle.background)
+        .codeDisplayTheme()
         .modifier(FileDiffChrome(file: file, chrome: chrome))
+        .task(id: file) {
+            parsing = true
+            parsed = await Task.detached(priority: .userInitiated) {
+                PrPatchParser.files(in: file.patch).first
+            }.value
+            parsing = false
+        }
     }
 }
 

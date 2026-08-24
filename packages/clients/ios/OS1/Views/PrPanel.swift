@@ -291,6 +291,8 @@ struct PrPanelView: View {
             #if DEBUG && os(iOS)
             if ProcessInfo.processInfo.environment["OS1_OPEN_PR_INFO"] == "1" {
                 page = .info
+            } else if ProcessInfo.processInfo.environment["OS1_OPEN_PR_FILES"] == "1" {
+                page = .files
             }
             #endif
         }
@@ -359,8 +361,14 @@ struct PrPanelView: View {
                 // The code page's own controls, only where they apply.
                 if page == .files {
                     ToolbarItem(placement: .topTrailingCompat) {
-                        PrViewOptionsMenu(lens: $lens, showsDiffDisplay: lens != .flow)
+                        PrViewOptionsMenu(lens: $lens)
                             .labelStyle(.iconOnly)
+                    }
+                    if lens != .flow {
+                        ToolbarItem(placement: .topTrailingCompat) {
+                            CodeDisplaySettingsButton()
+                                .labelStyle(.iconOnly)
+                        }
                     }
                 }
                 ToolbarItem(placement: .topTrailingCompat) { actionsMenu(pr) }

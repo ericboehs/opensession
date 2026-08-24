@@ -58,6 +58,7 @@ struct PrReviewCanvas: View {
     @State private var flow: PrCodeFlow?
     @State private var flowLoading = false
     @State private var flowError: String?
+    @AppStorage(CodeDisplaySettings.statsKey) private var showFileStats = true
 
     var body: some View {
         Group {
@@ -137,14 +138,16 @@ struct PrReviewCanvas: View {
     private var fileList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("\(files.count) file\(files.count == 1 ? "" : "s") changed")
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(OS1VisualStyle.textDim)
-                    Spacer(minLength: 8)
-                    changeCounts
+                if showFileStats {
+                    HStack {
+                        Text("\(files.count) file\(files.count == 1 ? "" : "s") changed")
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(OS1VisualStyle.textDim)
+                        Spacer(minLength: 8)
+                        changeCounts
+                    }
+                    .padding(.horizontal, 4)
                 }
-                .padding(.horizontal, 4)
 
                 if !draftComments.isEmpty {
                     Text("\(draftComments.count) pending inline comment\(draftComments.count == 1 ? "" : "s") · saved locally until you submit one review")
@@ -210,7 +213,7 @@ struct PrReviewCanvas: View {
                             }
                         }
                         Spacer(minLength: 8)
-                        fileCounts(file)
+                        if showFileStats { fileCounts(file) }
                         Image(systemName: "chevron.down")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(OS1VisualStyle.textDim)
@@ -560,16 +563,10 @@ struct PrCodeFlowRow: Identifiable {
     }
 }
 
-/// The lens picker, and the display settings for the lenses that draw a diff.
-/// The settings live in app storage rather than view state so they survive
-/// leaving the canvas, and so the file view below reads the same values.
+/// Picks what the review canvas shows. Rendering preferences have their own
+/// shared control beside this one because they also apply to worktree Changes.
 struct PrViewOptionsMenu: View {
     @Binding var lens: PrReviewCanvas.Lens
-    var showsDiffDisplay = true
-
-    @AppStorage(PrDiffDisplay.styleKey) private var styleRaw = ""
-    @AppStorage(PrDiffDisplay.wrapKey) private var wrapLines = false
-    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         Menu {
@@ -579,45 +576,11 @@ struct PrViewOptionsMenu: View {
                 }
             }
             .pickerStyle(.inline)
-
-            if showsDiffDisplay {
-                Section {
-                    Picker("Diff display", selection: styleBinding) {
-                        ForEach(PrDiffStyle.allCases, id: \.self) { style in
-                            Label(style.label, systemImage: style.symbol).tag(style)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                    Toggle(isOn: $wrapLines) {
-                        Label("Wrap long lines", systemImage: "text.append")
-                    }
-                }
-            }
         } label: {
             Label("View options", systemImage: "slider.horizontal.3")
         }
     }
 
-    private var styleBinding: Binding<PrDiffStyle> {
-        Binding(
-            get: { PrDiffDisplay.style(styleRaw, sizeClass: sizeClass) },
-            set: { styleRaw = $0.rawValue }
-        )
-    }
-}
-
-/// Where the display settings are stored, and what an unset value means.
-enum PrDiffDisplay {
-    static let styleKey = "os1.pr.diffStyle"
-    static let wrapKey = "os1.pr.wrapLines"
-
-    /// Side-by-side columns don't fit a phone, so a reader who has never
-    /// picked gets unified there and split where there is room — the same
-    /// default the web applies at its phone breakpoint.
-    static func style(_ raw: String, sizeClass: UserInterfaceSizeClass?) -> PrDiffStyle {
-        if let stored = PrDiffStyle(rawValue: raw) { return stored }
-        return sizeClass == .regular ? .split : .unified
-    }
 }
 
 /// A file's diff. The same body whether it is folded open inside the list or
@@ -634,34 +597,47 @@ enum PrDiffDisplay {
 /// honours the setting, which is what it is for.
 struct PrFileDiffBody: View {
     let file: PrPatchFile
-    let comment: (Int) -> Void
+    /// Nil on worktree Changes, where there is no GitHub review thread to
+    /// anchor a comment to.
+    let comment: ((Int) -> Void)?
     /// Inline, the enclosing list scrolls vertically and this must not.
     var inline = true
 
-    @AppStorage(PrDiffDisplay.styleKey) private var styleRaw = ""
-    @AppStorage(PrDiffDisplay.wrapKey) private var wrapLines = false
-    @Environment(\.horizontalSizeClass) private var sizeClass
+    @AppStorage(CodeDisplaySettings.styleKey) private var styleRaw = "unified"
+    @AppStorage(CodeDisplaySettings.wrapKey) private var wrapLines = false
+    @AppStorage(CodeDisplaySettings.highlightKey) private var highlightEdits = true
+    @AppStorage(CodeDisplaySettings.themeKey) private var themeRaw = "system"
     @State private var viewportHeight: CGFloat = 0
 
-    private var style: PrDiffStyle { PrDiffDisplay.style(styleRaw, sizeClass: sizeClass) }
+    private var style: PrDiffStyle {
+        PrDiffStyle(rawValue: styleRaw) ?? CodeDisplaySettings.defaults.style
+    }
 
     var body: some View {
-        if inline {
-            lines
-        } else if wrapLines {
-            ScrollView(.vertical) { lines.padding(.vertical, 8) }
-        } else {
-            // A two-axis scroll view centres content smaller than itself, which
-            // parks a short file in the middle of the screen. The min height
-            // pins it to the top instead.
-            ScrollView([.horizontal, .vertical]) {
+        Group {
+            if inline {
                 lines
-                    .frame(minWidth: style == .split ? 1040 : 680, alignment: .leading)
-                    .frame(minHeight: viewportHeight, alignment: .top)
-                    .padding(.vertical, 8)
+            } else if wrapLines {
+                ScrollView(.vertical) { lines.padding(.vertical, 8) }
+            } else {
+                // A two-axis scroll view centres content smaller than itself, which
+                // parks a short file in the middle of the screen. The min height
+                // pins it to the top instead.
+                ScrollView([.horizontal, .vertical]) {
+                    lines
+                        .frame(minWidth: style == .split ? 1040 : 680, alignment: .leading)
+                        .frame(minHeight: viewportHeight, alignment: .top)
+                        .padding(.vertical, 8)
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
         }
+        .background(
+            themeRaw == CodeDisplaySettings.Theme.system.rawValue
+                ? Color.clear
+                : OS1VisualStyle.background
+        )
+        .codeDisplayTheme()
     }
 
     @ViewBuilder
@@ -670,11 +646,21 @@ struct PrFileDiffBody: View {
         LazyVStack(alignment: .leading, spacing: 0) {
             if style == .split {
                 ForEach(PrPatchParser.rows(file.lines)) { row in
-                    PrReviewSplitRowView(row: row, wraps: wraps, comment: comment)
+                    PrReviewSplitRowView(
+                        row: row,
+                        wraps: wraps,
+                        highlightsEdits: highlightEdits,
+                        comment: comment
+                    )
                 }
             } else {
                 ForEach(file.lines) { line in
-                    PrReviewLineView(line: line, wraps: wraps, comment: comment)
+                    PrReviewLineView(
+                        line: line,
+                        wraps: wraps,
+                        highlightsEdits: highlightEdits,
+                        comment: comment
+                    )
                 }
             }
         }
@@ -695,7 +681,7 @@ private struct PrReviewFileView: View {
             .inlineTitleBarCompat()
             .toolbar {
                 ToolbarItem(placement: .topTrailingCompat) {
-                    PrDiffDisplayMenu()
+                    CodeDisplaySettingsButton()
                 }
                 ToolbarItem(placement: .topTrailingCompat) {
                     Button(action: toggleViewed) {
@@ -716,42 +702,11 @@ private struct PrReviewFileView: View {
 
 }
 
-/// The display half of the canvas' options, repeated on the file itself: a
-/// reader who decides mid-file that they want side by side shouldn't have to
-/// walk back out to say so.
-private struct PrDiffDisplayMenu: View {
-    @AppStorage(PrDiffDisplay.styleKey) private var styleRaw = ""
-    @AppStorage(PrDiffDisplay.wrapKey) private var wrapLines = false
-    @Environment(\.horizontalSizeClass) private var sizeClass
-
-    var body: some View {
-        Menu {
-            Picker("Diff display", selection: styleBinding) {
-                ForEach(PrDiffStyle.allCases, id: \.self) { style in
-                    Label(style.label, systemImage: style.symbol).tag(style)
-                }
-            }
-            .pickerStyle(.inline)
-            Toggle(isOn: $wrapLines) {
-                Label("Wrap long lines", systemImage: "text.append")
-            }
-        } label: {
-            Label("Diff display", systemImage: "slider.horizontal.3")
-        }
-    }
-
-    private var styleBinding: Binding<PrDiffStyle> {
-        Binding(
-            get: { PrDiffDisplay.style(styleRaw, sizeClass: sizeClass) },
-            set: { styleRaw = $0.rawValue }
-        )
-    }
-}
-
 private struct PrReviewLineView: View {
     let line: PrPatchLine
     var wraps = false
-    let comment: (Int) -> Void
+    var highlightsEdits = true
+    let comment: ((Int) -> Void)?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -768,20 +723,20 @@ private struct PrReviewLineView: View {
                 .frame(maxWidth: wraps ? .infinity : nil, alignment: .leading)
                 .padding(.leading, 10)
             if !wraps { Spacer(minLength: 0) }
-            if let anchor = line.commentLine {
+            if let anchor = line.commentLine, let comment {
                 Button { comment(anchor) } label: {
                     Image(systemName: "plus.bubble")
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 8)
                 .accessibilityLabel("Add inline comment on line \(anchor)")
-            } else {
+            } else if comment != nil {
                 Color.clear.frame(width: 36)
             }
         }
         .font(.system(.caption, design: .monospaced))
         .foregroundStyle(PrDiffInk.foreground(line.kind))
-        .background(PrDiffInk.background(line.kind))
+        .background(highlightsEdits ? PrDiffInk.background(line.kind) : .clear)
         .textSelection(.enabled)
     }
 }
@@ -791,7 +746,8 @@ private struct PrReviewLineView: View {
 private struct PrReviewSplitRowView: View {
     let row: PrPatchRow
     var wraps = false
-    let comment: (Int) -> Void
+    var highlightsEdits = true
+    let comment: ((Int) -> Void)?
 
     var body: some View {
         if let header = row.header {
@@ -826,20 +782,22 @@ private struct PrReviewSplitRowView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 8)
-            if let anchor {
+            if let anchor, let comment {
                 Button { comment(anchor) } label: {
                     Image(systemName: "plus.bubble")
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 6)
                 .accessibilityLabel("Add inline comment on line \(anchor)")
-            } else {
+            } else if comment != nil {
                 Color.clear.frame(width: 26)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(PrDiffInk.foreground(line?.kind ?? .context))
-        .background(PrDiffInk.background(line?.kind ?? .context))
+        .background(
+            highlightsEdits ? PrDiffInk.background(line?.kind ?? .context) : .clear
+        )
     }
 }
 
