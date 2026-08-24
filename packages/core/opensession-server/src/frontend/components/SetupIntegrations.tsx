@@ -271,6 +271,7 @@ export function GithubAuthCard({
 	const [userPrAuth, setUserPrAuth] = useState(github.userPrAuth);
 	const [clientId, setClientId] = useState("");
 	const [clientSecret, setClientSecret] = useState("");
+	const [privateKey, setPrivateKey] = useState("");
 	const [clearId, setClearId] = useState(false);
 	const [clearSecret, setClearSecret] = useState(false);
 	const [saving, setSaving] = useState(false);
@@ -287,6 +288,7 @@ export function GithubAuthCard({
 		userPrAuth !== github.userPrAuth ||
 		clientId.trim() !== "" ||
 		clientSecret.trim() !== "" ||
+		privateKey.trim() !== "" ||
 		idCleared ||
 		secretCleared;
 
@@ -312,10 +314,12 @@ export function GithubAuthCard({
 						: secretCleared
 							? { oauthClientSecret: "" }
 							: {}),
+					...(privateKey.trim() ? { privateKey: privateKey.trim() } : {}),
 				},
 			});
 			setClientId("");
 			setClientSecret("");
+			setPrivateKey("");
 			setClearId(false);
 			setClearSecret(false);
 			toast("GitHub sign-in settings saved");
@@ -406,6 +410,25 @@ export function GithubAuthCard({
 						setClientSecret("");
 					}}
 				/>
+				<label className="flex flex-col gap-1">
+					<span className="text-supporting text-fg">Private key (PEM)</span>
+					<textarea
+						className="min-h-20 w-full resize-y rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono text-supporting text-fg outline-none focus-ring"
+						value={privateKey}
+						onChange={(e) => setPrivateKey(e.target.value)}
+						placeholder="-----BEGIN RSA PRIVATE KEY-----"
+						aria-label="GitHub App private key (PEM)"
+						disabled={saving}
+						autoCapitalize="none"
+						autoComplete="off"
+						spellCheck={false}
+					/>
+					<span className="text-meta leading-snug text-faint">
+						In the App&rsquo;s Private keys, Generate a private key and paste the
+						.pem here. Lets the bot and PR checks run on the App; leave blank for
+						sign-in only.
+					</span>
+				</label>
 				<p className="m-0 text-supporting text-faint">
 					Credentials stay on this server and are never shown back.
 				</p>

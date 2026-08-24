@@ -339,6 +339,7 @@ export async function handleSetupRoutes(
       userPrAuth?: unknown;
       oauthClientId?: unknown;
       oauthClientSecret?: unknown;
+      privateKey?: unknown;
     } | null;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return Response.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -353,12 +354,52 @@ export async function handleSetupRoutes(
         return Response.json({ error: `${field}: ${invalid}` }, { status: 400 });
       }
     }
+    // The private key is a multi-line PEM, so it bypasses validateSetting (single
+    // line). Require a complete block that parses, so a truncated paste cannot
+    // overwrite a working key on disk.
+    const privateKey =
+      typeof body.privateKey === "string" ? body.privateKey.trim() : "";
+    if (privateKey) {
+      const { createPrivateKey } = await import("node:crypto");
+      const wellFormed =
+        /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]+-----END [A-Z ]*PRIVATE KEY-----/.test(
+          privateKey,
+        );
+      let parses = false;
+      if (wellFormed) {
+        try {
+          createPrivateKey(privateKey);
+          parses = true;
+        } catch {
+          parses = false;
+        }
+      }
+      if (!parses)
+        return Response.json(
+          { error: "privateKey must be a valid PEM private key" },
+          { status: 400 },
+        );
+    }
     if (
       body.userPrAuth === undefined &&
       body.oauthClientId === undefined &&
-      body.oauthClientSecret === undefined
+      body.oauthClientSecret === undefined &&
+      !privateKey
     ) {
       return Response.json({ error: "Nothing to change" }, { status: 400 });
+    }
+    // Store the key first: writeGithubAppKey refuses an env-managed key, and we
+    // surface that before writing config rather than half-configuring.
+    if (privateKey) {
+      const { writeGithubAppKey } = await import("../github-app");
+      try {
+        writeGithubAppKey(privateKey);
+      } catch (e) {
+        return Response.json(
+          { error: String((e as Error)?.message || e) },
+          { status: 409 },
+        );
+      }
     }
 
     const { rawConfig, persistRawConfig, withConfigMutationLock } =
