@@ -94,6 +94,17 @@ describe("GitHub clone credential cutover", () => {
 });
 
 describe("remote engine credential projection", () => {
+  test("remote GitHub authority comes from server-owned sandbox state", () => {
+    const source = readFileSync(join(import.meta.dir, "bootstrap.ts"), "utf-8");
+    const projection = source.slice(
+      source.indexOf("// GitHub credentials are projected"),
+      source.indexOf("const githubAuthPath"),
+    );
+    expect(projection).toContain("readRemoteState(provider, sandboxId)?.repoId");
+    expect(projection).toContain("getRepo(repoId)");
+    expect(projection).not.toContain("git remote get-url origin");
+  });
+
   test("every remote provider delegates launch credential projection to bootstrap", () => {
     for (const provider of ["daytona", "box", "e2b", "modal"]) {
       const source = readFileSync(join(import.meta.dir, `${provider}.ts`), "utf-8");

@@ -1723,13 +1723,15 @@ function makeRemoteLauncher(
         spec.mode === "code" &&
         (spec.journalKind || "").startsWith("github-");
       if (!githubAuth.GH_TOKEN && (!automationProfile || githubCodeAutomation)) {
-        const origin = await driver.exec("git remote get-url origin", { cwd: spec.cwd });
-        const match = origin.exitCode === 0
-          ? origin.stdout.trim().match(/^https:\/\/github\.com\/(?:x-access-token:[^@]+@)?([^/]+\/[^/]+)$/i)
-          : null;
-        if (match) {
+        // The sandbox origin is mutable by repository setup code. Bind service
+        // authority only to the server-owned repo id recorded at ensure time.
+        const repoId = readRemoteState(provider, sandboxId)?.repoId;
+        const registeredRepo = repoId
+          ? (await import("../../worktree")).getRepo(repoId)
+          : undefined;
+        if (registeredRepo?.host !== "codestorage" && registeredRepo?.ghRepo) {
           const { githubServiceCredentialEnv } = await import("../../github-app");
-          githubAuth = await githubServiceCredentialEnv(match[1].replace(/\.git$/i, ""));
+          githubAuth = await githubServiceCredentialEnv(registeredRepo.ghRepo);
         }
       }
       const githubAuthPath = `${dir}/github-auth.json`;

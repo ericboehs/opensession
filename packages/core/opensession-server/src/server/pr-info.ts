@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync } from "fs";
 import { audited } from "./audit";
 import { ghRateLimited, noteGhRateLimited, isGhRateLimitMsg } from "./github-limit";
 import { serviceGithubCredential, type GithubCredential } from "./github-auth";
-import { githubAppEnv } from "./github-app";
+import { githubBotCredentialMode, githubToken } from "./github-app";
 import { reviewRequestRemovalSpecs } from "./github-review-requests";
 import { getPrStack, unmergedLayersBelow } from "./pr-stack";
 import type {
@@ -315,6 +315,23 @@ export function seedPrDiff(repo: string, branch: string, data: PrDiffData): void
 const diffInflight: Map<string, Promise<PrDiffData | null>> =
   ((globalThis as any).__prDiffInflight ??= new Map());
 
+async function selectedGhEnv(
+  opts: { write?: boolean } = {},
+): Promise<Record<string, string>> {
+  const token = await githubToken(opts);
+  if (!token) throw new Error("The selected GitHub bot credential is unavailable");
+  return { GH_TOKEN: token, GITHUB_TOKEN: token };
+}
+
+async function resolvedGithubCredential(
+  credential: GithubCredential,
+  opts: { write?: boolean } = {},
+): Promise<GithubCredential> {
+  return credential.kind === "service" && !credential.env.GH_TOKEN
+    ? { ...credential, env: await selectedGhEnv(opts) }
+    : credential;
+}
+
 function spawnGh(args: string[], credential: GithubCredential, stdin?: "pipe") {
   return Bun.spawn(["gh", ...args], {
     ...(stdin ? { stdin } : {}),
@@ -358,8 +375,17 @@ function completePatchPrefix(text: string, truncated: boolean): { patch: string;
   };
 }
 
-async function boundedCommandPatch(argv: string[], limit: number): Promise<{ patch: string; skippedFiles: number }> {
-  const child = Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "pipe", env: process.env });
+async function boundedCommandPatch(
+  argv: string[],
+  limit: number,
+  env: Record<string, string> = {},
+): Promise<{ patch: string; skippedFiles: number }> {
+  const child = Bun.spawn(argv, {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, ...env },
+  });
   const [output, error] = await Promise.all([
     processPrefix(child.stdout, limit, () => child.kill()),
     processPrefix(child.stderr, 64 * 1024, () => child.kill()),
@@ -396,9 +422,10 @@ async function getMutationPrMeta(
   repo: string,
   credential: GithubCredential,
 ): Promise<MutationPrMeta | null> {
+  const resolvedCredential = await resolvedGithubCredential(credential);
   const proc = spawnGh(
     ["pr", "view", branch, "--repo", repo, "--json", "number,headRefOid,state,isDraft,url"],
-    credential,
+    resolvedCredential,
   );
   const [out, err, code] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -432,8 +459,10 @@ export async function getPrDiff(
 
   const refresh = (async () => {
     try {
+      const ghEnv = await selectedGhEnv();
       const readMeta = async () => JSON.parse(
         await $`gh pr view ${branch} --repo ${repo} --json number,headRefOid,baseRefName,baseRefOid`
+          .env({ ...process.env, ...ghEnv })
           .quiet()
           .text(),
       );
@@ -446,11 +475,15 @@ export async function getPrDiff(
             const bounded = await boundedCommandPatch(
               ["gh", "pr", "diff", String(meta.number), "--repo", repo],
               maxPatchBytes,
+              ghEnv,
             );
             patch = bounded.patch;
             skippedFiles = bounded.skippedFiles;
           } else {
-            patch = await $`gh pr diff ${meta.number} --repo ${repo}`.quiet().text();
+            patch = await $`gh pr diff ${meta.number} --repo ${repo}`
+              .env({ ...process.env, ...ghEnv })
+              .quiet()
+              .text();
           }
         } catch (diffErr: any) {
           // GitHub refuses API diffs over 300 files; reconstruct from the same
@@ -536,6 +569,7 @@ export async function postPrComment(
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true; url?: string } | { error: string }> {
   try {
+    credential = await resolvedGithubCredential(credential, { write: true });
     if (input.path && input.line) {
       const meta = await getMutationPrMeta(branch, repo, credential);
       if (!meta) return { error: "No PR found for this branch" };
@@ -600,6 +634,7 @@ export async function submitPrReview(
   repo: string = DEFAULT_REPO(),
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true; url?: string } | { error: string }> {
+  credential = await resolvedGithubCredential(credential, { write: true });
   if (!input.comments.length && !input.body?.trim()) {
     return { error: "Nothing to submit" };
   }
@@ -671,6 +706,7 @@ export async function closePr(
   repo: string = DEFAULT_REPO(),
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true; url?: string; number: number } | { error: string }> {
+  credential = await resolvedGithubCredential(credential, { write: true });
   const pr = await getMutationPrMeta(branch, repo, credential);
   if (!pr) return { error: "No PR found for this branch" };
   if (pr.state !== "OPEN") return { error: `PR #${pr.number} is ${pr.state.toLowerCase()}, not open` };
@@ -711,6 +747,7 @@ export async function mergePr(
   repo: string = DEFAULT_REPO(),
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true; url?: string } | { error: string }> {
+  credential = await resolvedGithubCredential(credential, { write: true });
   const pr = await getMutationPrMeta(branch, repo, credential);
   if (!pr) return { error: "No PR found for this branch" };
   if (pr.state !== "OPEN") return { error: `PR #${pr.number} is ${pr.state.toLowerCase()}, not open` };
@@ -786,6 +823,7 @@ export async function editPrReviewers(
   repo: string = DEFAULT_REPO(),
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<{ ok: true } | { error: string }> {
+  credential = await resolvedGithubCredential(credential, { write: true });
   const args = ["pr", "edit", branch, "--repo", repo];
   if (opts.add) args.push("--add-reviewer", opts.add);
   // A list, because withdrawing a request made on GitHub rather than here can
@@ -822,6 +860,7 @@ export async function prReviewerSpecs(
   repo: string = DEFAULT_REPO(),
   credential: GithubCredential = serviceGithubCredential,
 ): Promise<string[] | null> {
+  credential = await resolvedGithubCredential(credential);
   const proc = spawnGh(
     ["pr", "view", branch, "--repo", repo, "--json", "reviewRequests"],
     credential,
@@ -858,9 +897,10 @@ export async function updatePrBody(
   repo: string = DEFAULT_REPO()
 ): Promise<{ ok: true; number: number; url: string } | { error: string }> {
   try {
+    const ghEnv = await selectedGhEnv({ write: true });
     const view = Bun.spawn(
       ["gh", "pr", "view", branch, "--repo", repo, "--json", "body,number,url"],
-      { stdout: "pipe", stderr: "pipe" }
+      { stdout: "pipe", stderr: "pipe", env: { ...process.env, ...ghEnv } }
     );
     const [out, viewErr, viewCode] = await Promise.all([
       new Response(view.stdout).text(),
@@ -877,7 +917,7 @@ export async function updatePrBody(
     try {
       const edit = Bun.spawn(
         ["gh", "api", "-X", "PATCH", `repos/${repo}/pulls/${pr.number}`, "--input", tmp],
-        { stdout: "pipe", stderr: "pipe" }
+        { stdout: "pipe", stderr: "pipe", env: { ...process.env, ...ghEnv } }
       );
       const [, editErr, editCode] = await Promise.all([
         new Response(edit.stdout).text(),
@@ -1051,25 +1091,21 @@ async function fetchPrDetails(
     // treating it as "no PR" broke PR actions (PR #4910). Retry transient
     // failures; a genuine "no pull requests found" stays a fast null.
     let raw = "";
-    let appEnv = await githubAppEnv();
+    const selectedEnv = await selectedGhEnv();
+    const appSelected = githubBotCredentialMode() === "app";
     for (let attempt = 1; ; attempt++) {
       const baseFields =
         "number,title,url,state,isDraft,baseRefName,headRefName,headRefOid,additions,deletions,changedFiles,reviewDecision,author,body,mergeable,mergeStateStatus,comments,commits,files,latestReviews,reviewRequests";
-      const includeRollup = !!appEnv || !skipStatusCheckRollup;
+      const includeRollup = appSelected || !skipStatusCheckRollup;
       const fields = includeRollup ? `${baseFields},statusCheckRollup` : baseFields;
       try {
-        const cmd = $`gh pr view ${branch} --repo ${repo} --json ${fields}`;
-        raw = await (appEnv ? cmd.env({ ...process.env, ...appEnv }) : cmd).quiet().text();
+        raw = await $`gh pr view ${branch} --repo ${repo} --json ${fields}`
+          .env({ ...process.env, ...selectedEnv })
+          .quiet()
+          .text();
         break;
       } catch (e: any) {
         const msg = String(e?.stderr || e?.message || e).slice(0, 300);
-        // A minted-but-dead app token (revoked key) must not sink the fetch —
-        // drop to the bot PAT once and re-run the attempt.
-        if (appEnv && /authentication|bad credentials|resource not accessible/i.test(msg)) {
-          console.warn(`[pr-info] app-token gh call failed (${msg.slice(0, 80)}) — falling back to bot credential`);
-          appEnv = null;
-          continue;
-        }
         // Keyed on THIS call's field list, not the global flag — a concurrent
         // fetch may trip the flag while our rollup-carrying request is in
         // flight, and that must not turn our retry into a hard failure.
