@@ -3,9 +3,11 @@ import { Button } from "../ui/button";
 import { Field, Input } from "../ui/input";
 import { Modal } from "../ui/modal";
 import { Popover } from "../ui/popover";
+import { Segmented, SegmentedOption } from "../ui/segmented";
 import { Switch } from "../ui/switch";
 import { cn } from "../ui/cn";
 import { EmptyState, InlineAlert, LoadingState } from "../ui/state";
+import { Spinner } from "../ui/spinner";
 import {
 	SettingCard,
 	SettingRow,
@@ -46,9 +48,9 @@ import { Badge } from "../ui/badge";
 // token) the add flow browses the reachable repos; without one it falls back
 // to a manual owner/name entry. When the code.storage integration is
 // configured, its org's repos are offered in their own section alongside
-// GitHub. Registering clones the repo server-side, so an add can take tens of
-// seconds — the row keeps a working state the whole way and nothing here
-// times out early.
+// GitHub. Remote registration clones server-side, so an add can take tens of
+// seconds. Pending state stays owned by the settings panel so it remains
+// visible if the dialog closes. Existing local checkouts register in place.
 
 export function ReposSection({
 	repos,
@@ -65,6 +67,8 @@ export function ReposSection({
 	compact?: boolean;
 }) {
 	const [pickerOpen, setPickerOpen] = useState(false);
+	const [pendingRepo, setPendingRepo] = useState<PendingRepo | null>(null);
+	const [pickerError, setPickerError] = useState<string | null>(null);
 	// Focused when the picker opens, so a long list is one keystroke from
 	// being filtered. Only one of the picker's two inputs renders at a time.
 	const pickerInput = useRef<HTMLInputElement>(null);
@@ -96,10 +100,15 @@ export function ReposSection({
 				actions={
 					<Button
 						size="sm"
-						icon={<IconPlus size={16} />}
+						icon={pendingRepo ? <Spinner /> : <IconPlus size={16} />}
+						disabled={pendingRepo !== null}
 						onClick={() => setPickerOpen(true)}
 					>
-						Add repository
+						{pendingRepo
+							? pendingRepo.action === "clone"
+								? "Cloning…"
+								: "Registering…"
+							: "Add repository"}
 					</Button>
 				}
 			>
@@ -112,13 +121,23 @@ export function ReposSection({
 			{/* On top rather than inline: the picker is a list of its own, and
 			    pushing the registered repos down the page to browse a second
 			    list made the two read as one. Adding stays a detour. */}
+			{pickerError && !pickerOpen && (
+				<InlineAlert className="mb-3">{pickerError}</InlineAlert>
+			)}
 			<Modal.Root open={pickerOpen} onOpenChange={setPickerOpen}>
 				<Modal.Content widthClassName="max-w-[34rem]" initialFocus={pickerInput}>
 					<Modal.Header
 						title="Add repository"
-						description="Clone a repository onto the server so sessions can work in it."
+						description="Clone a remote repository or register a Git checkout already on the server."
 					/>
-					<AddRepoPicker inputRef={pickerInput} onAdded={onChanged} />
+					<AddRepoPicker
+						inputRef={pickerInput}
+						onAdded={onChanged}
+						pendingRepo={pendingRepo}
+						onPendingChange={setPendingRepo}
+						error={pickerError}
+						setError={setPickerError}
+					/>
 				</Modal.Content>
 			</Modal.Root>
 			<SettingCard>
@@ -159,9 +178,10 @@ export function ReposSection({
 				)}
 			</SettingCard>
 			<SettingsHint>
-				Registering clones the repo onto the server. Code sessions use isolated
-				worktrees by default. Commit <code>.agents/</code> scripts to provision those
-				worktrees and boot previews. See docs/repo-lifecycle.md.
+				Remote repositories are cloned onto the server. Local folders stay where
+				they are. Code sessions use isolated worktrees by default. New repos are
+				usable right away with no restart. Commit <code>.agents/</code> scripts to
+				provision those worktrees and boot previews. See docs/repo-lifecycle.md.
 			</SettingsHint>
 		</>
 	);
@@ -568,6 +588,19 @@ interface CsBrowseResult {
 }
 
 type RepoSource = "github" | "codestorage";
+type AddRepoMode = "remote" | "local";
+
+interface PendingRepo {
+	label: string;
+	action: "clone" | "register";
+}
+
+interface RepoRegistration {
+	pending: PendingRepo;
+	json: Record<string, string>;
+	successMessage: string;
+	onRegistered?: () => void;
+}
 
 function filterRepos(repos: BrowseRepo[], filter: string): BrowseRepo[] {
 	const q = filter.trim().toLowerCase();
@@ -582,14 +615,10 @@ function filterRepos(repos: BrowseRepo[], filter: string): BrowseRepo[] {
 function RepoPickRow({
 	repo,
 	registered,
-	working,
-	disabled,
 	onAdd,
 }: {
 	repo: BrowseRepo;
 	registered: boolean;
-	working: boolean;
-	disabled: boolean;
 	onAdd: () => void;
 }) {
 	return (
@@ -614,10 +643,10 @@ function RepoPickRow({
 			<Button
 				size="sm"
 				variant={registered ? "ghost" : "default"}
-				disabled={registered || disabled}
+				disabled={registered}
 				onClick={onAdd}
 			>
-				{registered ? "Added" : working ? "Cloning…" : "Add"}
+				{registered ? "Added" : "Add"}
 			</Button>
 		</div>
 	);
@@ -626,11 +655,145 @@ function RepoPickRow({
 function AddRepoPicker({
 	inputRef,
 	onAdded,
+	pendingRepo,
+	onPendingChange,
+	error,
+	setError,
 }: {
 	/** Focused once the list resolves. Which input exists depends on whether
 	 *  there's a credential to browse with, so both branches take it. */
 	inputRef?: React.RefObject<HTMLInputElement | null>;
 	onAdded: () => void | Promise<void>;
+	pendingRepo: PendingRepo | null;
+	onPendingChange: (pending: PendingRepo | null) => void;
+	error: string | null;
+	setError: (error: string | null) => void;
+}) {
+	const [mode, setMode] = useState<AddRepoMode>("remote");
+	const [localPath, setLocalPath] = useState("");
+
+	useEffect(() => {
+		if (!pendingRepo && mode === "local") inputRef?.current?.focus();
+	}, [mode, pendingRepo, inputRef]);
+
+	async function registerRepo(input: RepoRegistration): Promise<void> {
+		if (pendingRepo) return;
+		onPendingChange(input.pending);
+		setError(null);
+		try {
+			// Remote clones can take tens of seconds. Keep the request unbounded and
+			// the panel-level pending state visible until registration and refresh end.
+			await setupRequest("/api/setup/repos", {
+				method: "POST",
+				json: input.json,
+			});
+			input.onRegistered?.();
+			toast(input.successMessage);
+			notifyReposChanged();
+			await onAdded();
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : String(cause));
+		} finally {
+			onPendingChange(null);
+		}
+	}
+
+	async function addLocalRepo() {
+		const path = localPath.trim();
+		if (!path) return;
+		await registerRepo({
+			pending: { label: path, action: "register" },
+			json: { source: "local", path },
+			successMessage: "Repository registered",
+			onRegistered: () => setLocalPath(""),
+		});
+	}
+
+	return (
+		// No surface of its own: the dialog is already the card this sits on.
+		<div>
+			{pendingRepo && (
+				<div className="flex min-h-[240px] flex-col items-center justify-center text-center">
+					<LoadingState className="max-w-full [&>div]:max-w-full">
+						<span className="max-w-full break-all">
+							{pendingRepo.action === "clone" ? "Cloning " : "Registering "}
+							{pendingRepo.label}…
+						</span>
+					</LoadingState>
+					<p className="m-0 mt-2 max-w-[38ch] text-supporting leading-relaxed text-dim">
+						You can close this window. The repository will appear here when it is
+						ready.
+					</p>
+				</div>
+			)}
+			<div className={pendingRepo ? "hidden" : undefined}>
+				<Segmented
+					className="mb-3 w-full"
+					label="Repository source"
+					value={mode}
+					onValueChange={(value) => {
+						setMode(value as AddRepoMode);
+						setError(null);
+					}}
+				>
+					<SegmentedOption value="remote" className="flex-1 justify-center">
+						Remote
+					</SegmentedOption>
+					<SegmentedOption value="local" className="flex-1 justify-center">
+						Local folder
+					</SegmentedOption>
+				</Segmented>
+				{mode === "local" && (
+					<>
+						<div className="text-supporting leading-relaxed text-dim">
+							Use a Git checkout on the server with a working origin remote.
+						</div>
+						<div className="mt-2.5 flex items-center gap-2 phone:flex-col phone:items-stretch">
+							<input
+								ref={inputRef}
+								className={cn(settingsInputClass, "min-w-0 flex-1 font-mono")}
+								value={localPath}
+								onChange={(e) => setLocalPath(e.target.value)}
+								placeholder="/srv/repos/repository"
+								aria-label="Absolute repository path"
+								autoCapitalize="none"
+								autoCorrect="off"
+								spellCheck={false}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" && localPath.trim()) addLocalRepo();
+								}}
+							/>
+							<Button
+								variant="primary"
+								disabled={!localPath.trim()}
+								onClick={addLocalRepo}
+							>
+								Add
+							</Button>
+						</div>
+					</>
+				)}
+				<div className={mode === "remote" ? undefined : "hidden"}>
+					<RemoteRepoPicker
+						active={mode === "remote" && !pendingRepo}
+						inputRef={inputRef}
+						registerRepo={registerRepo}
+					/>
+				</div>
+			</div>
+			{error && <InlineAlert className="mt-2.5">{error}</InlineAlert>}
+		</div>
+	);
+}
+
+function RemoteRepoPicker({
+	active,
+	inputRef,
+	registerRepo,
+}: {
+	active: boolean;
+	inputRef?: React.RefObject<HTMLInputElement | null>;
+	registerRepo: (input: RepoRegistration) => Promise<void>;
 }) {
 	const [browse, setBrowse] = useState<BrowseResult | null>(null);
 	const [browseFailed, setBrowseFailed] = useState(false);
@@ -638,79 +801,62 @@ function AddRepoPicker({
 	// answers; an unconfigured integration answers `source: null` (no section).
 	const [csBrowse, setCsBrowse] = useState<CsBrowseResult | null>(null);
 	// Configured-but-failing (bad key path, API outage): the route answers 502
-	// with the server's error — distinct from "not configured", which hides the
-	// section entirely.
+	// with the server's error, unlike the unconfigured 200 response.
 	const [csError, setCsError] = useState<string | null>(null);
 	const [filter, setFilter] = useState("");
-	const [addingRepo, setAddingRepo] = useState<string | null>(null);
 	const [added, setAdded] = useState<ReadonlySet<string>>(new Set());
-	const [error, setError] = useState<string | null>(null);
 	const [manual, setManual] = useState("");
 
 	useEffect(() => {
 		let cancelled = false;
 		(async () => {
 			await (async () => {
-const body = await setupRequest<BrowseResult>("/api/setup/github/repos");
+				const body = await setupRequest<BrowseResult>("/api/setup/github/repos");
 				if (!cancelled) setBrowse(body);
-})().catch(async () => {
-if (!cancelled) setBrowseFailed(true);
-});
+			})().catch(async () => {
+				if (!cancelled) setBrowseFailed(true);
+			});
 		})();
 		(async () => {
 			await (async () => {
-const body = await setupRequest<CsBrowseResult>(
+				const body = await setupRequest<CsBrowseResult>(
 					"/api/setup/codestorage/repos",
 				);
 				if (!cancelled) setCsBrowse(body);
-})().catch(async (e: any) => {
-// A throw means configured-but-failing (the route answers 200 with
+			})().catch(async (e: any) => {
+				// A throw means configured-but-failing (the route answers 200 with
 				// source: null when unconfigured) — surface the server's error
 				// instead of silently hiding the section. GitHub is unaffected.
 				if (!cancelled)
 					setCsError(e?.message || "Couldn’t reach code.storage right now.");
-});
+			});
 		})();
 		return () => {
 			cancelled = true;
 		};
 	}, []);
 
-	// The list arrives after the dialog has opened, so the dialog's initial
-	// focus finds no field to land on. Focus it the moment it exists.
+	// The list arrives after the dialog opens, so initialFocus has no field yet.
 	useEffect(() => {
-		if (browse || browseFailed) inputRef?.current?.focus();
-	}, [browse, browseFailed, inputRef]);
+		if (active && (browse || browseFailed)) inputRef?.current?.focus();
+	}, [active, browse, browseFailed, inputRef]);
+
+	async function addRepo(fullName: string, source: RepoSource = "github") {
+		const key = `${source}:${fullName}`;
+		await registerRepo({
+			pending: { label: fullName, action: "clone" },
+			json: source === "codestorage" ? { source, fullName } : { fullName },
+			successMessage: `${fullName} registered`,
+			onRegistered: () => {
+				setAdded((previous) => new Set(previous).add(key));
+				setManual("");
+			},
+		});
+	}
 
 	const filtered = (filterRepos(browse?.repos ?? [], filter));
 	const csFiltered = (filterRepos(csBrowse?.repos ?? [], filter));
 	const csConfigured = csBrowse?.source === "org";
-
-	async function addRepo(fullName: string, source: RepoSource = "github") {
-		if (addingRepo) return;
-		const key = `${source}:${fullName}`;
-		setAddingRepo(key);
-		setError(null);
-		await (async () => {
-// Registering clones server-side — can take tens of seconds. No client
-			// timeout; the button holds its working state until the server answers.
-			// code.storage repos reuse the same submit shape with a source marker.
-			await setupRequest("/api/setup/repos", {
-				method: "POST",
-				json:
-					source === "codestorage" ? { source, fullName } : { fullName },
-			});
-			setAdded((prev) => new Set(prev).add(key));
-			setManual("");
-			toast(`${fullName} registered`);
-			notifyReposChanged();
-			await onAdded();
-})().catch(async (e: any) => {
-setError(e.message);
-}).finally(async () => {
-setAddingRepo(null);
-});
-	}
 
 	const manualValid = /^[^/\s]+\/[^/\s]+$/.test(manual.trim());
 	const totalListed =
@@ -718,8 +864,7 @@ setAddingRepo(null);
 		(csConfigured ? (csBrowse?.repos.length ?? 0) : 0);
 
 	return (
-		// No surface of its own: the dialog is already the card this sits on.
-		<div>
+		<>
 			{!browse && !browseFailed ? (
 				<LoadingState placement="row">Looking up your GitHub repositories…</LoadingState>
 			) : browse && browse.source !== null ? (
@@ -748,9 +893,9 @@ setAddingRepo(null);
 								<RepoPickRow
 									key={r.fullName}
 									repo={r}
-									registered={r.registered || added.has(`github:${r.fullName}`)}
-									working={addingRepo === `github:${r.fullName}`}
-									disabled={addingRepo !== null}
+									registered={
+										r.registered || added.has(`github:${r.fullName}`)
+									}
 									onAdd={() => addRepo(r.fullName)}
 								/>
 							))
@@ -787,16 +932,16 @@ setAddingRepo(null);
 							autoCapitalize="none"
 							spellCheck={false}
 							onKeyDown={(e) => {
-								if (e.key === "Enter" && manualValid && !addingRepo)
+								if (e.key === "Enter" && manualValid)
 									addRepo(manual.trim());
 							}}
 						/>
 						<Button
 							variant="primary"
-							disabled={!manualValid || addingRepo !== null}
+							disabled={!manualValid}
 							onClick={() => addRepo(manual.trim())}
 						>
-							{addingRepo ? "Cloning…" : "Add"}
+							Add
 						</Button>
 					</div>
 				</>
@@ -826,8 +971,6 @@ setAddingRepo(null);
 										registered={
 											r.registered || added.has(`codestorage:${r.fullName}`)
 										}
-										working={addingRepo === `codestorage:${r.fullName}`}
-										disabled={addingRepo !== null}
 										onAdd={() => addRepo(r.fullName, "codestorage")}
 									/>
 								))
@@ -836,7 +979,6 @@ setAddingRepo(null);
 					)}
 				</>
 			)}
-			{error && <InlineAlert className="mt-2.5">{error}</InlineAlert>}
-		</div>
+		</>
 	);
 }

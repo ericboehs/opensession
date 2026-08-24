@@ -1,8 +1,18 @@
 import { $ } from "bun";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { createWorktree } from "../worktree";
 import {
   adoptExistingCheckout,
   githubCredentialHelperCommand,
@@ -12,6 +22,7 @@ import {
   validGithubFullName,
   listReposViaAppInstallation,
 } from "./setup-repos";
+import type { RouteContext } from "./context";
 
 const originalConfig = process.env.OPENSESSION_CONFIG;
 const tempDirs: string[] = [];
@@ -401,6 +412,8 @@ describe("adoptExistingCheckout", () => {
     await $`git -C ${dir} init -q -b main`.quiet();
     await $`git -C ${dir} remote add origin ${origin}`.quiet();
     await $`git -C ${dir} -c user.email=t@e -c user.name=t commit -q --allow-empty -m init`.quiet();
+    await $`git -C ${dir} update-ref refs/remotes/origin/main HEAD`.quiet();
+    await $`git -C ${dir} symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main`.quiet();
     return dir;
   }
 
@@ -456,5 +469,274 @@ describe("adoptExistingCheckout", () => {
     expect(adoptExistingCheckout(dest, () => true)).rejects.toThrow(
       /Clone destination already exists/,
     );
+  });
+});
+
+const savedConfig = process.env.OPENSESSION_CONFIG;
+const savedWorktreesDir = process.env.OPENSESSION_WORKTREES_DIR;
+const localRoots: string[] = [];
+
+afterEach(() => {
+  if (savedConfig === undefined) delete process.env.OPENSESSION_CONFIG;
+  else process.env.OPENSESSION_CONFIG = savedConfig;
+  if (savedWorktreesDir === undefined) delete process.env.OPENSESSION_WORKTREES_DIR;
+  else process.env.OPENSESSION_WORKTREES_DIR = savedWorktreesDir;
+  for (const dir of localRoots.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+function localRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), "opensession-local-repo-"));
+  localRoots.push(root);
+  return root;
+}
+
+function gitRaw(args: string[], cwd?: string): string {
+  const result = Bun.spawnSync(["git", ...args], {
+    ...(cwd ? { cwd } : {}),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr.toString() || `git ${args.join(" ")} failed`);
+  }
+  return result.stdout.toString();
+}
+
+function git(args: string[], cwd?: string): string {
+  return gitRaw(args, cwd).trim();
+}
+
+function createRemoteCheckout(
+  root: string,
+  name = "existing-checkout",
+  defaultBranch = "trunk",
+): string {
+  const remote = join(root, `${name}.git`);
+  const checkout = join(root, name);
+  git(["init", "--bare", "-b", defaultBranch, remote]);
+  git(["init", "-b", defaultBranch, checkout]);
+  git(["config", "user.name", "Open Session test"], checkout);
+  git(["config", "user.email", "test@opensession.dev"], checkout);
+  writeFileSync(join(checkout, "README.md"), `${name}\n`);
+  git(["add", "README.md"], checkout);
+  git(["commit", "-m", "Initial commit"], checkout);
+  git(["remote", "add", "origin", remote], checkout);
+  git(["push", "-u", "origin", defaultBranch], checkout);
+  git(["remote", "set-head", "origin", defaultBranch], checkout);
+  return checkout;
+}
+
+function postRepo(body: unknown): RouteContext {
+  const url = new URL("http://localhost/api/setup/repos");
+  return {
+    req: new Request(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+    url,
+    path: url.pathname,
+    publicPrefix: "",
+  };
+}
+
+describe("local repository registration", () => {
+  test.serial("registers a usable checkout without cloning it", async () => {
+    const root = localRoot();
+    const checkout = createRemoteCheckout(root);
+    const configPath = join(root, "config.json");
+    writeFileSync(configPath, JSON.stringify({ repos: {} }));
+    process.env.OPENSESSION_CONFIG = configPath;
+    process.env.OPENSESSION_WORKTREES_DIR = join(root, "worktrees");
+
+    const response = await handleSetupRepoRoutes(
+      postRepo({ source: "local", path: checkout }),
+    );
+
+    expect(response?.status).toBe(201);
+    expect(await response?.json()).toMatchObject({
+      id: "existing-checkout",
+      repo: realpathSync(checkout),
+      defaultBranch: "trunk",
+      default: true,
+    });
+    const worktree = await createWorktree("registered-worktree", "existing-checkout");
+    expect(existsSync(worktree)).toBe(true);
+    expect(git(["branch", "--show-current"], worktree)).toBe("registered-worktree");
+  });
+
+  test.serial("preserves the implicit built-in repository", async () => {
+    const root = localRoot();
+    const checkout = createRemoteCheckout(root, "local-project");
+    const configPath = join(root, "missing-config.json");
+    process.env.OPENSESSION_CONFIG = configPath;
+
+    const response = await handleSetupRepoRoutes(
+      postRepo({ source: "local", path: checkout }),
+    );
+
+    expect(response?.status).toBe(201);
+    const saved = JSON.parse(readFileSync(configPath, "utf-8"));
+    expect(saved.repos.opensession).toMatchObject({
+      label: "Open Session",
+      sharedCheckout: true,
+      default: true,
+    });
+    expect(saved.repos["local-project"]).toMatchObject({
+      repo: realpathSync(checkout),
+      defaultBranch: "trunk",
+    });
+  });
+
+  test.serial("uses the remote default instead of the checked-out topic branch", async () => {
+    const root = localRoot();
+    const checkout = createRemoteCheckout(root, "topic-checkout", "main");
+    git(["switch", "-c", "topic"], checkout);
+    writeFileSync(join(checkout, "topic.txt"), "topic\n");
+    git(["add", "topic.txt"], checkout);
+    git(["commit", "-m", "Topic commit"], checkout);
+    git(["push", "-u", "origin", "topic"], checkout);
+    git(["remote", "set-head", "origin", "-d"], checkout);
+    const configPath = join(root, "config.json");
+    writeFileSync(configPath, JSON.stringify({ repos: {} }));
+    process.env.OPENSESSION_CONFIG = configPath;
+
+    const response = await handleSetupRepoRoutes(
+      postRepo({ source: "local", path: checkout }),
+    );
+
+    expect(response?.status).toBe(201);
+    expect(await response?.json()).toMatchObject({ defaultBranch: "main" });
+  });
+
+  test.serial("rejects a repository without a usable origin", async () => {
+    const root = localRoot();
+    const checkout = join(root, "originless");
+    git(["init", "-b", "main", checkout]);
+    git(["config", "user.name", "Open Session test"], checkout);
+    git(["config", "user.email", "test@opensession.dev"], checkout);
+    writeFileSync(join(checkout, "README.md"), "originless\n");
+    git(["add", "README.md"], checkout);
+    git(["commit", "-m", "Initial commit"], checkout);
+    const configPath = join(root, "config.json");
+    writeFileSync(configPath, JSON.stringify({ repos: {} }));
+    process.env.OPENSESSION_CONFIG = configPath;
+
+    const response = await handleSetupRepoRoutes(
+      postRepo({ source: "local", path: checkout }),
+    );
+
+    expect(response?.status).toBe(400);
+    expect(await response?.json()).toEqual({
+      error: "Repository must have an origin remote",
+    });
+  });
+
+  test.serial("rejects the same checkout through a symlink", async () => {
+    const root = localRoot();
+    const checkout = createRemoteCheckout(root, "duplicate-target");
+    const symlink = join(root, "checkout-link");
+    symlinkSync(checkout, symlink);
+    const configPath = join(root, "config.json");
+    writeFileSync(configPath, JSON.stringify({
+      repos: {
+        existing: { repo: symlink, wtPrefix: "existing", defaultBranch: "trunk" },
+      },
+    }));
+    process.env.OPENSESSION_CONFIG = configPath;
+
+    const response = await handleSetupRepoRoutes(
+      postRepo({ source: "local", path: checkout }),
+    );
+
+    expect(response?.status).toBe(409);
+    expect(await response?.json()).toEqual({
+      error: `Repository is already registered: ${realpathSync(checkout)}`,
+    });
+  });
+
+  test.serial("rejects a duplicate worktree prefix", async () => {
+    const root = localRoot();
+    const checkout = createRemoteCheckout(root, "prefix-target");
+    const configPath = join(root, "config.json");
+    writeFileSync(configPath, JSON.stringify({
+      repos: {
+        existing: {
+          repo: join(root, "different-checkout"),
+          wtPrefix: "prefix-target",
+          defaultBranch: "main",
+        },
+      },
+    }));
+    process.env.OPENSESSION_CONFIG = configPath;
+
+    const response = await handleSetupRepoRoutes(
+      postRepo({ source: "local", path: checkout }),
+    );
+
+    expect(response?.status).toBe(409);
+    expect(await response?.json()).toEqual({
+      error: "Worktree prefix already registered: prefix-target",
+    });
+  });
+
+  test.serial("configures a detected code.storage checkout", async () => {
+    const root = localRoot();
+    const checkout = createRemoteCheckout(root, "cs-checkout");
+    git(["remote", "set-url", "origin", "https://acme.code.storage/team/widget.git"], checkout);
+    const configPath = join(root, "config.json");
+    writeFileSync(configPath, JSON.stringify({
+      repos: {},
+      integrations: {
+        codeStorage: { org: "acme", privateKeyPath: join(root, "key.pem") },
+      },
+    }));
+    process.env.OPENSESSION_CONFIG = configPath;
+
+    const response = await handleSetupRepoRoutes(
+      postRepo({ source: "local", path: checkout }),
+    );
+
+    expect(response?.status).toBe(201);
+    expect(await response?.json()).toMatchObject({
+      host: "codestorage",
+      csRepo: "team/widget",
+    });
+    expect(
+      gitRaw([
+        "config",
+        "--get-all",
+        "credential.https://acme.code.storage.helper",
+      ], checkout).replace(/\n$/, "").split("\n"),
+    ).toEqual(["", expect.stringContaining("scripts/cs-credential.ts")]);
+  });
+
+  test.serial("does not overwrite a malformed repos config", async () => {
+    const root = localRoot();
+    const checkout = createRemoteCheckout(root, "malformed-config");
+    const configPath = join(root, "config.json");
+    writeFileSync(configPath, JSON.stringify({ repos: [] }));
+    process.env.OPENSESSION_CONFIG = configPath;
+
+    const response = await handleSetupRepoRoutes(
+      postRepo({ source: "local", path: checkout }),
+    );
+
+    expect(response?.status).toBe(500);
+    expect(await response?.json()).toEqual({
+      error: "Config repos must contain a JSON object",
+    });
+    expect(JSON.parse(readFileSync(configPath, "utf-8"))).toEqual({ repos: [] });
+  });
+
+  test.serial("requires an absolute path", async () => {
+    const response = await handleSetupRepoRoutes(
+      postRepo({ source: "local", path: "relative/repo" }),
+    );
+
+    expect(response?.status).toBe(400);
+    expect(await response?.json()).toEqual({
+      error: "path must be an absolute path to a Git repository",
+    });
   });
 });

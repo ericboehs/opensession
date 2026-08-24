@@ -28,6 +28,16 @@ function githubRepoFromRemote(remote: string): string | undefined {
   return match?.[1];
 }
 
+function defaultBranchFromLsRemote(output: string): string | undefined {
+  return output.match(/^ref:\s+refs\/heads\/(.+)\s+HEAD$/m)?.[1];
+}
+
+async function hasCommit(path: string, ref: string): Promise<boolean> {
+  return (
+    await git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], path)
+  ).exitCode === 0;
+}
+
 export async function inspectRepo(repoPath: string): Promise<{
   path: string;
   defaultBranch: string;
@@ -37,18 +47,48 @@ export async function inspectRepo(repoPath: string): Promise<{
   const root = await git(["rev-parse", "--show-toplevel"], repoPath);
   if (root.exitCode !== 0 || !root.stdout) throw new Error("Path is not a Git repository");
   const path = realpathSync(root.stdout);
-  const remoteSymref = await git(["ls-remote", "--symref", "origin", "HEAD"], path);
-  const remoteDefault = remoteSymref.stdout.match(/^ref:\s+refs\/heads\/(\S+)\s+HEAD$/m)?.[1];
-  const remoteHead = await git(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], path);
-  const current = await git(["branch", "--show-current"], path);
-  const defaultBranch = remoteDefault || remoteHead.stdout.replace(/^origin\//, "") || current.stdout;
-  if (!defaultBranch) throw new Error("Repository must have a checked-out branch");
-  const origin = await git(["remote", "get-url", "origin"], path);
-  const cs = origin.exitCode === 0 ? parseCsRemote(origin.stdout) : null;
+  const [origin, remoteSymref, remoteHead] = await Promise.all([
+    git(["remote", "get-url", "origin"], path),
+    git(["ls-remote", "--symref", "origin", "HEAD"], path),
+    git(
+      ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+      path,
+    ),
+  ]);
+  if (origin.exitCode !== 0 || !origin.stdout) {
+    throw new Error("Repository must have an origin remote");
+  }
+
+  const defaultBranch =
+    defaultBranchFromLsRemote(remoteSymref.stdout) ||
+    remoteHead.stdout.replace(/^origin\//, "");
+  if (!defaultBranch) {
+    throw new Error(
+      "Could not determine origin's default branch. Fetch the repository and set origin/HEAD, then try again",
+    );
+  }
+
+  const remoteRef = `refs/remotes/origin/${defaultBranch}`;
+  if (!(await hasCommit(path, remoteRef))) {
+    await git(
+      [
+        "fetch",
+        "--quiet",
+        "origin",
+        `+refs/heads/${defaultBranch}:${remoteRef}`,
+      ],
+      path,
+    );
+  }
+  if (!(await hasCommit(path, remoteRef))) {
+    throw new Error(`Repository must have a commit on origin/${defaultBranch}`);
+  }
+
+  const cs = parseCsRemote(origin.stdout);
   return {
     path,
     defaultBranch,
-    ...(origin.exitCode === 0 ? { ghRepo: githubRepoFromRemote(origin.stdout) } : {}),
+    ghRepo: githubRepoFromRemote(origin.stdout),
     ...(cs ? { cs } : {}),
   };
 }
