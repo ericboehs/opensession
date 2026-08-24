@@ -435,6 +435,12 @@ export async function handleSetupRoutes(
           : {};
       integrations.github = github;
 
+      const nextClientId = body.oauthClientId;
+      const keyMutation = privateKey ||
+        (nextClientId !== undefined && github.oauthClientId !== nextClientId
+          ? null
+          : undefined);
+
       // Turning on the sign-in gate must never strand a personal install with
       // nobody who can pass it. Organization onboarding already rosters people
       // before enabling the gate; the Settings toggle also serves single-user
@@ -503,7 +509,7 @@ export async function handleSetupRoutes(
       try {
         const { commitGithubAppKeyMutation } = await import("../github-app");
         await commitGithubAppKeyMutation(
-          privateKey || undefined,
+          keyMutation,
           () => persistRawConfig(config),
         );
       } catch (e) {
