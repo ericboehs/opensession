@@ -203,6 +203,9 @@ interface PoolContainer {
 
 interface PoolState {
   golden?: { sha: string; builtAt: string; lastError?: string };
+  /** A default-branch change retired the old pool and still needs a complete
+   * golden rebuild before any replacement members may be spawned. */
+  branchRebuildPending?: boolean;
   containers: Record<string, PoolContainer>;
 }
 
@@ -213,7 +216,11 @@ function stateFile(repoId: string): string {
 function readState(repoId: string): PoolState {
   try {
     const s = JSON.parse(readFileSync(stateFile(repoId), "utf-8"));
-    return { golden: s.golden, containers: s.containers ?? {} };
+    return {
+      golden: s.golden,
+      branchRebuildPending: s.branchRebuildPending === true,
+      containers: s.containers ?? {},
+    };
   } catch {
     return { containers: {} };
   }
@@ -1123,17 +1130,17 @@ async function originDefaultSha(repo: Repo): Promise<string | null> {
   return sha || null;
 }
 
-export async function refreshGoldenImage(repoId: string, force = false): Promise<void> {
+export async function refreshGoldenImage(repoId: string, force = false): Promise<boolean> {
   const existing = busy.get(`golden-${repoId}`);
-  if (existing) return existing as Promise<void>;
+  if (existing) return existing as Promise<boolean>;
   // The microvm golden derives FROM the docker golden image: refresh the
   // docker image first (skips when fresh), then run the export→boot→warm→
   // snapshot pipeline (deploy/sandbox/microvm/refresh-golden.sh, ~15 min).
   const backend = previewPoolConfig(repoId).backend;
-  const job =
+  const job: Promise<boolean> =
     backend === "microvm"
       ? (async () => {
-          await doRefreshGolden(repoId, force);
+          if (!(await doRefreshGolden(repoId, force))) return false;
           const env = await getAgentAwsEnv();
           const section = [
             `aws_access_key_id = ${env.AWS_ACCESS_KEY_ID}`,
@@ -1172,33 +1179,46 @@ export async function refreshGoldenImage(repoId: string, force = false): Promise
             ],
             30 * 60_000,
           );
-          if (!r.ok) console.warn(`[preview-pool] ${repoId}: microvm golden refresh failed: ${redactUrl(r.out.slice(-600))}`);
-          else console.log(`[preview-pool] ${repoId}: microvm golden refreshed`);
+          if (!r.ok) {
+            console.warn(`[preview-pool] ${repoId}: microvm golden refresh failed: ${redactUrl(r.out.slice(-600))}`);
+            return false;
+          }
+          console.log(`[preview-pool] ${repoId}: microvm golden refreshed`);
+          return true;
         })()
       : doRefreshGolden(repoId, force);
-  const run = job.finally(() => busy.delete(`golden-${repoId}`));
+  const run = job
+    .then((succeeded) => {
+      if (succeeded) {
+        const state = readState(repoId);
+        delete state.branchRebuildPending;
+        writeState(repoId, state);
+      }
+      return succeeded;
+    })
+    .finally(() => busy.delete(`golden-${repoId}`));
   busy.set(`golden-${repoId}`, run);
   return run;
 }
 
-async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
+async function doRefreshGolden(repoId: string, force: boolean): Promise<boolean> {
   const repo = configuredRepos()[repoId];
-  if (!repo) return;
+  if (!repo) return false;
   const cfg = previewPoolConfig(repoId);
-  if (!cfg.enabled && !force) return;
+  if (!cfg.enabled && !force) return true;
   const state = readState(repoId);
   const sha = await originDefaultSha(repo);
-  if (!sha) return;
+  if (!sha) return false;
   const imageExists = (await docker(["image", "inspect", `${goldenImage(repoId)}:latest`])).ok;
   const ageMs = state.golden?.builtAt ? Date.now() - Date.parse(state.golden.builtAt) : Infinity;
   if (!force && imageExists && state.golden?.sha && ageMs < cfg.goldenIntervalHours * 3_600_000) {
-    return;
+    return true;
   }
   const started = Date.now();
   const name = `os-preview-goldenbuild-${repoId}`;
   const cloneUrl = await cloneUrlFor(repo);
   console.log(`[preview-pool] ${repoId}: building golden image at ${sha.slice(0, 10)}`);
-  const fail = async (rawMsg: string) => {
+  const fail = async (rawMsg: string): Promise<false> => {
     // git failure output can echo the full authed clone URL (live JWT).
     const msg = redactUrl(rawMsg);
     console.warn(`[preview-pool] ${repoId}: golden build failed: ${msg.slice(0, 800)}`);
@@ -1207,6 +1227,7 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
       golden: { ...(readState(repoId).golden ?? { sha: "", builtAt: "" }), lastError: msg.slice(0, 500) },
     });
     await docker(["rm", "-f", name]);
+    return false;
   };
 
   try {
@@ -1219,21 +1240,21 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
       "--cpus", String(cfg.cpus), "--memory", cfg.memory,
       "opensession-runner:latest", "sleep", "infinity",
     ]);
-    if (!run.ok) return void (await fail(`docker run: ${run.out}`));
+    if (!run.ok) return fail(`docker run: ${run.out}`);
 
     // Workspace: clone from the RO-mounted host checkout (fast), then align
     // to origin/<default> over https so the golden never lags the remote.
     // Depth 1: the workspace never needs history (worktree->container sync is
     // computed host-side; the container only ever resets to a fetched tip).
     let r = await dockerExec(name, `git clone --depth 1 --branch ${shellQuoteWord(repo.defaultBranch)} file:///src ${WORKSPACE}`, 5 * 60_000);
-    if (!r.ok) return void (await fail(`clone: ${r.out.slice(-500)}`));
+    if (!r.ok) return fail(`clone: ${r.out.slice(-500)}`);
     if (cloneUrl) {
       r = await dockerExec(
         name,
         `cd ${WORKSPACE} && git fetch --depth 1 ${JSON.stringify(cloneUrl)} ${shellQuoteWord(repo.defaultBranch)} && git reset --hard FETCH_HEAD`,
         5 * 60_000,
       );
-      if (!r.ok) return void (await fail(`fetch/reset: ${r.out.slice(-500)}`));
+      if (!r.ok) return fail(`fetch/reset: ${r.out.slice(-500)}`);
     }
     const wsSha = (await dockerExec(name, `git -C ${WORKSPACE} rev-parse HEAD`)).out.trim();
 
@@ -1255,21 +1276,21 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
       `cd ${WORKSPACE} && [ -f .agents/setup ] && OPENSESSION_BOOT_MODE=fresh bash .agents/setup || true`,
       15 * 60_000,
     );
-    if (setup.out.includes("ERROR:")) return void (await fail(`.agents/setup: ${setup.out.slice(-500)}`));
+    if (setup.out.includes("ERROR:")) return fail(`.agents/setup: ${setup.out.slice(-500)}`);
     // The setup hook treats a failed WASM install as a non-fatal WARN, but a golden
     // without these artifacts boots into module-not-found crashes on first
     // page compile — verify hard instead of shipping a degraded image.
     for (const marker of provisionMarkers(repoId)) {
       const chk = await dockerExec(name, `test -e ${WORKSPACE}/${marker}`);
       if (!chk.ok) {
-        return void (await fail(`provisioning incomplete: ${marker} missing after .agents/setup (S3 WASM install failed? ${setup.out.slice(-300)})`));
+        return fail(`provisioning incomplete: ${marker} missing after .agents/setup (S3 WASM install failed? ${setup.out.slice(-300)})`);
       }
     }
 
     // Boot, wait (with failure exits), warm, stop cleanly.
     const inspect = await docker(["port", name, `${CONTAINER_PORT}/tcp`]);
     const hostPort = parseInt(inspect.out.match(/:(\d+)$/m)?.[1] ?? "", 10);
-    if (!hostPort) return void (await fail(`no published port: ${inspect.out}`));
+    if (!hostPort) return fail(`no published port: ${inspect.out}`);
     await docker([
       "exec", "-d",
       "-e", `WEBAPP_PORT=${CONTAINER_PORT}`, "-e", "OPENSESSION_BOOT_MODE=fresh",
@@ -1277,7 +1298,7 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
       "bash", "-c", `${BOOT_PREP} && exec bash .agents/start.sh > /tmp/boot.log 2>&1`,
     ]);
     const up = await waitForUp(name, hostPort, 5 * 60_000);
-    if (!up.ok) return void (await fail(`boot: ${up.detail}`));
+    if (!up.ok) return fail(`boot: ${up.detail}`);
     await warmRoutes(repo, hostPort);
     // Route warming compiles real pages — if that crashed the dev tree
     // (e.g. missing artifacts), the image is broken; don't commit it.
@@ -1285,7 +1306,7 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
       name,
       `grep -aE 'error: Recipe|fatal error' /tmp/boot.log | head -2; true`,
     );
-    if (post.out.trim()) return void (await fail(`dev server died during route warming: ${post.out.slice(0, 300)}`));
+    if (post.out.trim()) return fail(`dev server died during route warming: ${post.out.slice(0, 300)}`);
 
     // Graceful stop so the image carries no dev-server runtime state.
     await dockerExec(
@@ -1306,7 +1327,7 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
     // Committing an ~8GB layer is I/O-bound and can take many minutes when
     // the host is busy — a timeout here discards a fully verified build.
     const commit = await docker(["commit", name, `${goldenImage(repoId)}:new`], 15 * 60_000);
-    if (!commit.ok) return void (await fail(`commit: ${commit.out}`));
+    if (!commit.ok) return fail(`commit: ${commit.out}`);
     // Rotate: latest -> prev, new -> latest.
     await docker(["rmi", `${goldenImage(repoId)}:prev`]);
     await docker(["tag", `${goldenImage(repoId)}:latest`, `${goldenImage(repoId)}:prev`]);
@@ -1327,8 +1348,9 @@ async function doRefreshGolden(repoId: string, force: boolean): Promise<void> {
     for (const [cname, c] of Object.entries(st.containers)) {
       if (c.state !== "claimed") await destroyContainer(repoId, cname);
     }
+    return true;
   } catch (e) {
-    await fail(String((e as Error)?.message || e));
+    return fail(String((e as Error)?.message || e));
   }
 }
 
@@ -1410,6 +1432,18 @@ async function destroyContainer(repoId: string, name: string): Promise<void> {
   patchContainer(repoId, name, null);
 }
 
+/** Refill only when a branch-derived golden artifact was rebuilt. Daytona
+ * provisions directly and therefore has no golden gate. */
+export async function rebuildInvalidatedPreviewPool(
+  backend: PreviewPoolBackend,
+  rebuildGolden: () => Promise<boolean>,
+  refill: () => Promise<void>,
+): Promise<boolean> {
+  if (backend !== "daytona" && !(await rebuildGolden())) return false;
+  await refill();
+  return true;
+}
+
 /** Retire every unclaimed member derived from the previous default branch,
  * then rebuild and refill from the new one. Multiple changes coalesce, but a
  * change arriving during a rebuild advances the generation and gets another
@@ -1425,6 +1459,7 @@ export function invalidatePreviewPoolDefaultBranch(repoId: string): void {
     );
     for (const container of retired) delete state.containers[container.name];
     delete state.golden;
+    state.branchRebuildPending = true;
     writeState(repoId, state);
     if (retired.length) {
       const queued = retiredDefaultBranchMembers.get(repoId) || [];
@@ -1463,10 +1498,13 @@ export function invalidatePreviewPoolDefaultBranch(repoId: string): void {
       const repo = configuredRepos()[repoId];
       if (!repo) return;
       const cfg = previewPoolConfig(repoId);
-      if (cfg.enabled && cfg.backend !== "daytona") {
-        await refreshGoldenImage(repoId, true);
+      if (cfg.enabled) {
+        await rebuildInvalidatedPreviewPool(
+          cfg.backend,
+          () => refreshGoldenImage(repoId, true),
+          () => ensurePool(repo),
+        );
       }
-      if (cfg.enabled) await ensurePool(repo);
       handledVersion = targetVersion;
     }
   })()
@@ -1522,9 +1560,21 @@ async function ensurePool(repo: Repo): Promise<void> {
     return;
   }
 
+  // A failed branch-change rebuild leaves the old artifact installed, but it
+  // must stay quarantined. Retry the rebuild and do not spawn until the full
+  // backend-specific pipeline succeeds and clears this persistent marker.
+  if (
+    cfg.backend !== "daytona" &&
+    readState(repo.id).branchRebuildPending &&
+    !(await refreshGoldenImage(repo.id, true))
+  ) {
+    return;
+  }
+
   // Golden images are a docker concept; daytona sandboxes provision directly.
   if (cfg.backend === "docker" && !(await docker(["image", "inspect", `${goldenImage(repo.id)}:latest`])).ok) {
-    return refreshGoldenImage(repo.id);
+    await refreshGoldenImage(repo.id);
+    return;
   }
   // The microvm backend needs its golden snapshot before anything can spawn.
   if (cfg.backend === "microvm" && !mvmGoldenReady()) {
@@ -1662,6 +1712,7 @@ async function claimPoolPreviewInner(repoId: string, worktreeDir: string): Promi
 
   const backend = previewPoolConfig(repoId).backend;
   const state = readState(repoId);
+  if (backend !== "daytona" && state.branchRebuildPending) return null;
   const eligible = Object.values(state.containers).filter(
     (c) => (c.backend ?? "docker") === backend,
   );
@@ -2069,9 +2120,14 @@ async function sweepPool(): Promise<void> {
       }
       // Golden images are docker-only; daytona sandboxes provision directly.
       if (cfg.backend === "docker") {
-        await refreshGoldenImage(repo.id).catch((e) =>
-          console.warn(`[preview-pool] golden refresh ${repo.id} failed:`, e),
-        );
+        const refreshed = await refreshGoldenImage(repo.id).catch((e) => {
+          console.warn(`[preview-pool] golden refresh ${repo.id} failed:`, e);
+          return false;
+        });
+        // A normal age-based refresh may keep serving the last good image on
+        // failure. A branch-change rebuild may not, and ensurePool would only
+        // repeat the same expensive failed build during this sweep.
+        if (!refreshed && readState(repo.id).branchRebuildPending) continue;
       }
       await ensurePool(repo).catch((e) => console.warn(`[preview-pool] ensure ${repo.id} failed:`, e));
       if (cfg.backend === "microvm") {

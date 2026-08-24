@@ -434,6 +434,23 @@ export function invalidateAskCheckoutRefresh(repoId: string): void {
   askCheckoutRefreshedAt.delete(repoId);
 }
 
+async function refreshAskCheckoutLocked(repo: Repo, dir: string): Promise<void> {
+  const fetch =
+    await $`git -C ${dir} fetch origin ${repo.defaultBranch} --quiet`.quiet().nothrow();
+  if (fetch.exitCode !== 0) {
+    throw new Error(
+      `Could not fetch ${repo.id}'s default branch ${repo.defaultBranch}: ${fetch.stderr.toString().trim()}`,
+    );
+  }
+  const reset =
+    await $`git -C ${dir} reset --hard origin/${repo.defaultBranch}`.quiet().nothrow();
+  if (reset.exitCode !== 0) {
+    throw new Error(
+      `Could not pin ${repo.id}'s Ask checkout to ${repo.defaultBranch}: ${reset.stderr.toString().trim()}`,
+    );
+  }
+}
+
 function refreshAskCheckout(
   repo: Repo,
   dir: string,
@@ -442,22 +459,7 @@ function refreshAskCheckout(
   const existing = askCheckoutRefreshes.get(repo.id);
   if (existing && existing.version >= version) return existing.promise;
 
-  const promise = withGitLock(async () => {
-    const fetch =
-      await $`git -C ${dir} fetch origin ${repo.defaultBranch} --quiet`.quiet().nothrow();
-    if (fetch.exitCode !== 0) {
-      throw new Error(
-        `Could not fetch ${repo.id}'s default branch ${repo.defaultBranch}: ${fetch.stderr.toString().trim()}`,
-      );
-    }
-    const reset =
-      await $`git -C ${dir} reset --hard origin/${repo.defaultBranch}`.quiet().nothrow();
-    if (reset.exitCode !== 0) {
-      throw new Error(
-        `Could not pin ${repo.id}'s Ask checkout to ${repo.defaultBranch}: ${reset.stderr.toString().trim()}`,
-      );
-    }
-  }).finally(() => {
+  const promise = withGitLock(() => refreshAskCheckoutLocked(repo, dir)).finally(() => {
     if (askCheckoutRefreshes.get(repo.id)?.promise === promise) {
       askCheckoutRefreshes.delete(repo.id);
     }
@@ -489,7 +491,17 @@ export async function ensureAskCheckout(repoId?: string): Promise<string> {
     return dir;
   }
   return withGitLock(async () => {
-    if (existsSync(dir)) return dir; // lost the create race to a sibling call
+    if (existsSync(dir)) {
+      // A sibling may have created the checkout from the previous default
+      // while this call was waiting for the Git lock. Apply the generation
+      // captured by this call before returning instead of bypassing it.
+      if (requiredVersion > (askCheckoutAppliedVersion.get(repo.id) || 0)) {
+        await refreshAskCheckoutLocked(repo, dir);
+        askCheckoutRefreshedAt.set(repo.id, Date.now());
+        askCheckoutAppliedVersion.set(repo.id, requiredVersion);
+      }
+      return dir;
+    }
     await $`git -C ${repo.repo} fetch origin ${repo.defaultBranch} --quiet`.nothrow();
     await $`git -C ${repo.repo} worktree prune`.quiet().nothrow();
     const add =
