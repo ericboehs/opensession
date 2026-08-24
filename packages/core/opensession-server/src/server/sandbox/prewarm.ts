@@ -574,15 +574,21 @@ async function runPrewarmBootstrap(record: PrewarmRecord, adapter: PrewarmAdapte
           // refresh with "index.lock: File exists". This prewarm sandbox is
           // the clone's only writer, so clearing dead locks before syncing
           // is safe.
-          const refreshed = await driver.exec(
-            `find .git -name "*.lock" -type f -delete 2>/dev/null; ` +
-              `git remote set-url origin ${shellQuoteWord(cloneUrl)} && ` +
-              `git fetch origin ${shellQuoteWord(repo.defaultBranch)} --quiet && ` +
-              `git reset --hard ${shellQuoteWord(`origin/${repo.defaultBranch}`)}`,
-            { cwd: warmDir, timeoutMs: 10 * 60_000 },
-          );
-          if (refreshed.exitCode !== 0) {
-            throw new Error(`could not refresh ${repo.id} project image: ${(refreshed.stderr || refreshed.stdout).trim().slice(0, 300)}`);
+          try {
+            const refreshed = await driver.exec(
+              `find .git -name "*.lock" -type f -delete 2>/dev/null; ` +
+                `git remote set-url origin ${shellQuoteWord(cloneUrl)} && ` +
+                `git fetch origin ${shellQuoteWord(repo.defaultBranch)} --quiet && ` +
+                `git reset --hard ${shellQuoteWord(`origin/${repo.defaultBranch}`)}`,
+              { cwd: warmDir, timeoutMs: 10 * 60_000 },
+            );
+            if (refreshed.exitCode !== 0) {
+              throw new Error(`could not refresh ${repo.id} project image: ${(refreshed.stderr || refreshed.stdout).trim().slice(0, 300)}`);
+            }
+          } finally {
+            // A retained checkout must be safe both before repository setup
+            // runs and between transient refresh retries.
+            await scrubRemoteWarmWorkspaceAuthority(driver, repo, warmDir);
           }
         });
         // Updating source without rerunning setup republishes stale generated
@@ -595,7 +601,6 @@ async function runPrewarmBootstrap(record: PrewarmRecord, adapter: PrewarmAdapte
           provider: entry.provider,
           repoId: repo.id,
         });
-        await scrubRemoteWarmWorkspaceAuthority(driver, repo, warmDir);
       }
     } else if (adapter.prepare) {
       setPrewarmStage(entry, "Preparing project workspace", 40);

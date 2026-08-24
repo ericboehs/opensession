@@ -48,7 +48,7 @@ describe("remote repo lifecycle", () => {
 		expect(bootstrapSignature()).toContain("node@24.18.1");
 		expect(bootstrapSignature()).toContain("just@1.43.1");
 		expect(bootstrapSignature()).toContain("gh@2.83.1");
-		expect(bootstrapSignature()).toContain("workspace-runtime-v7");
+		expect(bootstrapSignature()).toContain("workspace-runtime-v8");
 	});
 
 	test("setup is skipped after its durable stamp", async () => {
@@ -190,6 +190,29 @@ describe("remote repo lifecycle", () => {
 		expect(d.commands[1]!.command).toContain("ln -s");
 		expect(d.commands[1]!.command).not.toContain("mount --bind");
 		expect(d.commands[2]!.command).toContain("git clone --filter=blob:none");
+	});
+
+	test("scrubs a short-lived GitHub token after the bounded clone", async () => {
+		const d = driver([
+			{ exitCode: 0, stdout: "none\n" },
+			{ exitCode: 0 },
+			{ exitCode: 0, stdout: "feature/new-ui\n" },
+			{ exitCode: 0 },
+			{ exitCode: 0, stdout: "absent\n" },
+		]);
+		await setupRemoteWorkspace(
+			d.value,
+			"/work/feature",
+			"https://x-access-token:short-lived@github.com/tellahq/opensession.git",
+			"feature/new-ui",
+			"main",
+		);
+
+		const scrub = d.commands.find(({ command }) =>
+			command.startsWith("git remote set-url origin"),
+		);
+		expect(scrub?.command).toContain("https://github.com/tellahq/opensession.git");
+		expect(scrub?.command).not.toContain("short-lived");
 	});
 
 	test("cleans up a failed warm attach before cold-cloning", async () => {

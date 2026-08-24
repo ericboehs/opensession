@@ -26,6 +26,7 @@ import { configuredIntegration } from "./config";
 import { githubGitCredentialEnv } from "./github-git-credential";
 import { writeFileAtomic } from "./shared/atomic-write";
 import {
+  GITHUB_APP_CODE_PERMISSIONS as CODE_PERMISSIONS,
   GITHUB_APP_READ_PERMISSIONS as READ_PERMISSIONS,
   GITHUB_APP_WRITE_PERMISSIONS as WRITE_PERMISSIONS,
 } from "../shared/github-app-permissions";
@@ -47,6 +48,7 @@ type AppTokenCache = {
   token: string;
   expiresAt: number; // ms epoch
   installationId: number;
+  installationOwner: string;
 };
 
 const g = globalThis as {
@@ -62,8 +64,7 @@ const g = globalThis as {
 // create-app URL grants, so a mint never asks for a scope the App was not
 // granted. Still installation-scoped, so an out-of-org write fails at GitHub's
 // side just as the scoped bot PAT does (security-model.md, GitHub credential
-// scoping). If the App does not hold a set the mint is rejected and the caller
-// falls back to the PAT.
+// scoping). If the App does not hold a set, minting fails closed in App mode.
 
 function appJwt(clientId: string, key: string): string {
   const now = Math.floor(Date.now() / 1000);
@@ -75,15 +76,19 @@ function appJwt(clientId: string, key: string): string {
 
 /**
  * Installation access token for the app's (sole) installation, or null when
- * the app key/client id isn't configured or minting fails. Fail-soft: callers
- * fall back to the bot PAT.
+ * the app key/client id isn't configured or minting fails. App mode callers
+ * treat null as a closed credential boundary; PAT mode never calls this path.
  */
 export async function githubAppInstallationToken(
   opts: { write?: boolean } = {},
 ): Promise<string | null> {
   const slot = opts.write ? "__ghAppTokenCacheWrite" : "__ghAppTokenCacheRead";
   const cached = g[slot];
-  if (cached && cached.expiresAt - Date.now() > 5 * 60_000) return cached.token;
+  if (
+    cached &&
+    cached.installationOwner &&
+    cached.expiresAt - Date.now() > 5 * 60_000
+  ) return cached.token;
 
   const { clientId } = githubUserAuthSettings();
   if (!clientId || !existsSync(keyPath())) return null;
@@ -102,6 +107,12 @@ export async function githubAppInstallationToken(
       configuredInstallationId ||
       g.__ghAppTokenCacheRead?.installationId ||
       g.__ghAppTokenCacheWrite?.installationId;
+    let installationOwner =
+      g.__ghAppTokenCacheRead?.installationId === installationId
+        ? g.__ghAppTokenCacheRead?.installationOwner
+        : g.__ghAppTokenCacheWrite?.installationId === installationId
+          ? g.__ghAppTokenCacheWrite?.installationOwner
+          : undefined;
     if (!installationId) {
       const res = await fetch("https://api.github.com/app/installations", { headers });
       const installs = (await res.json()) as Array<{ id: number; account?: { login?: string } }>;
@@ -129,6 +140,20 @@ export async function githubAppInstallationToken(
         );
       }
       installationId = selected.id;
+      installationOwner = selected.account?.login;
+    }
+    if (!installationOwner) {
+      const installationRes = await fetch(
+        `https://api.github.com/app/installations/${installationId}`,
+        { headers },
+      );
+      const installation = (await installationRes.json()) as {
+        account?: { login?: string };
+      };
+      installationOwner = installation.account?.login;
+      if (!installationRes.ok || !installationOwner) {
+        throw new Error(`cannot resolve installation owner (${installationRes.status})`);
+      }
     }
 
     const res = await fetch(
@@ -147,6 +172,7 @@ export async function githubAppInstallationToken(
       token: tok.token,
       expiresAt: tok.expires_at ? Date.parse(tok.expires_at) : Date.now() + 55 * 60_000,
       installationId,
+      installationOwner,
     };
     g.__ghAppTokenWarned = false;
     return tok.token;
@@ -251,6 +277,15 @@ export async function commitGithubAppKeyMutation<T>(
  * askpass helper immediately after git finishes. It is never persisted in a
  * session file, host spec, URL, transcript, or Runner registry.
  */
+export function githubRepositoryMatchesInstallation(
+  ghRepo: string,
+  installationOwner: string | undefined,
+): boolean {
+  const [owner, repo, extra] = ghRepo.split("/");
+  return !!owner && !!repo && !extra &&
+    !!installationOwner && owner.toLowerCase() === installationOwner.toLowerCase();
+}
+
 export async function githubAppRepositoryToken(ghRepo: string): Promise<string | null> {
   if (githubBotCredentialMode() !== "app") return null;
   const [owner, repo] = ghRepo.split("/");
@@ -258,8 +293,15 @@ export async function githubAppRepositoryToken(ghRepo: string): Promise<string |
   // Resolve the installation id through the existing credential path. It keeps
   // installation selection in one place and may populate the shared cache.
   await githubAppInstallationToken();
-  const installationId =
-    g.__ghAppTokenCacheRead?.installationId || g.__ghAppTokenCacheWrite?.installationId;
+  const installation =
+    g.__ghAppTokenCacheRead || g.__ghAppTokenCacheWrite;
+  const installationId = installation?.installationId;
+  if (!githubRepositoryMatchesInstallation(ghRepo, installation?.installationOwner)) {
+    console.warn(
+      `[github-app] refusing repository token for ${ghRepo}: selected installation belongs to ${installation?.installationOwner || "unknown"}`,
+    );
+    return null;
+  }
   const { clientId } = githubUserAuthSettings();
   if (!installationId || !clientId || !existsSync(keyPath())) return null;
   try {
@@ -274,11 +316,9 @@ export async function githubAppRepositoryToken(ghRepo: string): Promise<string |
         },
         body: JSON.stringify({
           repositories: [repo],
-          permissions: {
-            contents: "write",
-            pull_requests: "write",
-            metadata: "read",
-          },
+          // Trusted repository code runs can push/reply and inspect the
+          // failing checks and Actions logs they are expected to repair.
+          permissions: CODE_PERMISSIONS,
         }),
       },
     );

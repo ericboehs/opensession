@@ -94,7 +94,7 @@ export async function uploadUserAttachment(
   const cacheKey = [ghRepo, filePath, stat.size, stat.mtimeMs].join("\u0000");
   const cached = uploadCache.get(cacheKey);
   if (cached) return cached;
-  const token = await botGhToken();
+  const token = await botGhToken({ write: true });
   if (!token) return null;
   const repoId = await repoDbId(ghRepo, token);
   if (repoId === null) return null;

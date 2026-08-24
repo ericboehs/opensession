@@ -57,7 +57,7 @@ import { authedRemoteUrl } from "./codestorage/auth";
 import { homeDir, OPENSESSION_SESSIONS_DIR } from "./paths";
 import { isDevInstance } from "./dev-mode";
 import { sandboxConfig } from "./sandbox/config";
-import { shellQuoteWord } from "./sandbox/adapters/bootstrap";
+import { injectCloneCredential, shellQuoteWord } from "./sandbox/adapters/bootstrap";
 import { redactUrl } from "./shared/redact";
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -840,7 +840,7 @@ async function refreshContainerCreds(target: string | PoolContainer): Promise<bo
   return r.ok;
 }
 
-async function cloneUrlFor(
+export async function cloneUrlFor(
   repo: Repo,
   opts?: { longLived?: boolean },
 ): Promise<string | null> {
@@ -855,11 +855,15 @@ async function cloneUrlFor(
     return authedRemoteUrl(repo.csRepo, opts?.longLived ? { ttlSeconds: 30 * 24 * 3600 } : {});
   }
   if (!repo.ghRepo) return null;
-  const cred = sandboxConfig().cloneCredential;
-  if (cred?.type === "https-token" && cred.token) {
-    return `https://x-access-token:${cred.token}@github.com/${repo.ghRepo}.git`;
-  }
-  return `https://github.com/${repo.ghRepo}.git`;
+  const { githubBotCredentialMode } = await import("./github-app");
+  const mode = githubBotCredentialMode();
+  // Installation tokens expire too quickly to bake into a container command
+  // that may restart days later. App-mode warm restarts use the golden tree;
+  // one-shot golden/Daytona operations mint a fresh repository token below.
+  if (opts?.longLived && mode === "app") return null;
+  const plain = `https://github.com/${repo.ghRepo}.git`;
+  const selected = await injectCloneCredential(plain);
+  return mode === "app" && selected === plain ? null : selected;
 }
 
 /** Boot preamble every warm/golden boot runs: lock cleanup + full ports.conf. */
@@ -1017,7 +1021,7 @@ async function warmRoutesPool(repo: Repo, c: PoolContainer): Promise<void> {
 async function spawnDaytonaWarm(repo: Repo): Promise<void> {
   const cloneUrl = await cloneUrlFor(repo);
   if (!cloneUrl) {
-    return console.warn(`[preview-pool] ${repo.id}: daytona backend needs a ghRepo + cloneCredential`);
+    return console.warn(`[preview-pool] ${repo.id}: daytona backend needs a ghRepo + selected GitHub credential`);
   }
   const client = await daytonaClientForPool();
   const scfg = sandboxConfig();
@@ -1081,6 +1085,17 @@ async function spawnDaytonaWarm(repo: Repo): Promise<void> {
       8 * 60_000,
     );
     if (!clone.ok) return void (await fail(`clone: ${clone.out.slice(-400)}`));
+    if (repo.host !== "codestorage") {
+      // git clone persists its authority in remote.origin.url. Remove the
+      // repository-scoped App token before any repository-owned setup/start
+      // code can inspect it.
+      const safeOrigin = `https://github.com/${repo.ghRepo}.git`;
+      const scrub = await poolExec(
+        c,
+        `git -C ${WORKSPACE} remote set-url origin ${shellQuoteWord(safeOrigin)}`,
+      );
+      if (!scrub.ok) return void (await fail(`credential scrub: ${scrub.out.slice(-400)}`));
+    }
 
     for (const rel of SEED_ENV_FILES) {
       const content = envSeedContent(repo, rel);
@@ -1364,9 +1379,9 @@ async function spawnWarmContainer(repo: Repo): Promise<void> {
   const { previewHost, httpsPortFor } = await import("./preview");
   const host = await previewHost();
   const previewUrl = `https://${host}:${httpsPortFor(hostPort)}`;
-  // longLived: this URL is baked into the container's boot command, which the
-  // `docker restart` clean-reboot path re-runs long after spawn — a 1h token
-  // would make that advance fetch fail silently (`|| true`) onto a stale tree.
+  // PAT mode may use its long-lived credential here. App mode deliberately
+  // returns null rather than baking an hour-lived repository token into a boot
+  // command that can be re-run days later.
   const cloneUrl = await cloneUrlFor(repo, { longLived: true });
 
   patchContainer(repo.id, name, {

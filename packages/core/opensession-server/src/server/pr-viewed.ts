@@ -42,7 +42,7 @@ async function viewerToken(
 		const credential = githubCredentialForLogin(login);
 		if (credential?.env.GH_TOKEN) return credential.env.GH_TOKEN;
 	}
-	return botGhToken();
+	return botGhToken({ write: true });
 }
 
 async function graphql(

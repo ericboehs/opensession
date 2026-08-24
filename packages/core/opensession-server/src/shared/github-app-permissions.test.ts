@@ -6,6 +6,7 @@
 
 import { describe, test, expect } from "bun:test";
 import {
+	GITHUB_APP_CODE_PERMISSIONS,
 	GITHUB_APP_GRANT_PERMISSIONS,
 	GITHUB_APP_READ_PERMISSIONS,
 	GITHUB_APP_WRITE_PERMISSIONS,
@@ -29,6 +30,13 @@ describe("github app permission sets", () => {
 		expect(uncoveredScopes(GITHUB_APP_WRITE_PERMISSIONS)).toEqual([]);
 	});
 
+	test("the repository code mint is within the grant", () => {
+		expect(uncoveredScopes(GITHUB_APP_CODE_PERMISSIONS)).toEqual([]);
+		expect(GITHUB_APP_CODE_PERMISSIONS.actions).toBe("read");
+		expect(GITHUB_APP_CODE_PERMISSIONS.checks).toBe("read");
+		expect(GITHUB_APP_CODE_PERMISSIONS.issues).toBe("write");
+	});
+
 	test("the grant includes the scopes the two capabilities depend on", () => {
 		// checks:read is the App-only capability (no PAT can read check runs);
 		// issues+pull_requests+contents:write are the agent's write path.
@@ -36,6 +44,8 @@ describe("github app permission sets", () => {
 		expect(GITHUB_APP_GRANT_PERMISSIONS.issues).toBe("write");
 		expect(GITHUB_APP_GRANT_PERMISSIONS.pull_requests).toBe("write");
 		expect(GITHUB_APP_GRANT_PERMISSIONS.contents).toBe("write");
+		expect(GITHUB_APP_READ_PERMISSIONS.members).toBe("read");
+		expect(GITHUB_APP_READ_PERMISSIONS.deployments).toBe("read");
 	});
 
 	test("the write mint carries no read-only scope whose absence would 422 it", () => {

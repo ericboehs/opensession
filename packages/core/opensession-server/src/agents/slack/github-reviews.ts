@@ -17,7 +17,6 @@ import { GITHUB_REPO } from "./state";
 import { ghRateLimited, noteGhRateLimited } from "../../server/github-limit";
 import { configuredIntegration } from "../../server/config";
 
-const GITHUB_TOKEN = process.env.GITHUB_API_TOKEN;
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 
 // ---------------------------------------------------------------------------
@@ -25,11 +24,13 @@ const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 // ---------------------------------------------------------------------------
 
 export async function githubApi(path: string): Promise<any> {
-  if (!GITHUB_TOKEN) return null;
+  const { githubToken } = await import("../../server/github-app");
+  const token = await githubToken();
+  if (!token) return null;
   try {
     const resp = await fetchWithTimeout(`https://api.github.com${path}`, {
       headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
       },
     });
