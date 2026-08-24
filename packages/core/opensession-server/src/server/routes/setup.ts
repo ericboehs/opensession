@@ -135,6 +135,8 @@ export function buildOnboardingGithubAppCreateUrl(
 async function githubSnapshot() {
   const { githubUserAuthSettings, githubAppOrg, githubAuthOnConnect } =
     await import("../github-auth");
+  const { githubAppConfigured, githubBotCredentialMode } =
+    await import("../github-app");
   const { configuredServer } = await import("../config");
   const github = githubUserAuthSettings();
   const org = await primaryGithubOrg();
@@ -143,6 +145,8 @@ async function githubSnapshot() {
     clientIdConfigured: !!github.clientId,
     clientSecretConfigured: !!github.clientSecret,
     botTokenPresent: !!process.env.GITHUB_API_TOKEN,
+    botCredential: githubBotCredentialMode(),
+    appCredentialConfigured: githubAppConfigured(),
     // Captured install/app-setup intent: the org the App is owned by, and
     // whether connecting should turn on per-user sign-in. Both are inert until
     // the simple-mode connect handler consumes authOnConnect.
@@ -339,12 +343,28 @@ export async function handleSetupRoutes(
       userPrAuth?: unknown;
       oauthClientId?: unknown;
       oauthClientSecret?: unknown;
+      botCredential?: unknown;
     } | null;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return Response.json({ error: "Invalid JSON body" }, { status: 400 });
     }
     if (body.userPrAuth !== undefined && typeof body.userPrAuth !== "boolean") {
       return Response.json({ error: "userPrAuth must be a boolean" }, { status: 400 });
+    }
+    if (
+      body.botCredential !== undefined &&
+      body.botCredential !== "pat" &&
+      body.botCredential !== "app"
+    ) {
+      return Response.json({ error: "botCredential must be pat or app" }, { status: 400 });
+    }
+    if (body.botCredential === "app") {
+      const { githubAppConfigured } = await import("../github-app");
+      if (!githubAppConfigured())
+        return Response.json(
+          { error: "Configure the GitHub App client id and private key before switching" },
+          { status: 409 },
+        );
     }
     for (const field of ["oauthClientId", "oauthClientSecret"] as const) {
       if (body[field] === undefined) continue;
@@ -356,7 +376,8 @@ export async function handleSetupRoutes(
     if (
       body.userPrAuth === undefined &&
       body.oauthClientId === undefined &&
-      body.oauthClientSecret === undefined
+      body.oauthClientSecret === undefined &&
+      body.botCredential === undefined
     ) {
       return Response.json({ error: "Nothing to change" }, { status: 400 });
     }
@@ -439,6 +460,7 @@ export async function handleSetupRoutes(
         }
       }
       if (body.userPrAuth !== undefined) github.userPrAuth = body.userPrAuth;
+      if (body.botCredential !== undefined) github.botCredential = body.botCredential;
       for (const field of ["oauthClientId", "oauthClientSecret"] as const) {
         const value = body[field];
         if (value === undefined) continue;
@@ -448,7 +470,7 @@ export async function handleSetupRoutes(
       persistRawConfig(config);
       audit({
         kind: "setup_github_update",
-        fields: (["userPrAuth", "oauthClientId", "oauthClientSecret"] as const).filter(
+        fields: (["userPrAuth", "oauthClientId", "oauthClientSecret", "botCredential"] as const).filter(
           (f) => body[f] !== undefined,
         ),
       });

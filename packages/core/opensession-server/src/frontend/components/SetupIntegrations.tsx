@@ -269,6 +269,7 @@ export function GithubAuthCard({
 	// The secret is never echoed; the status exposes presence only.
 	const secretConfigured = github.clientSecretConfigured;
 	const [userPrAuth, setUserPrAuth] = useState(github.userPrAuth);
+	const [botCredential, setBotCredential] = useState(github.botCredential);
 	const [clientId, setClientId] = useState("");
 	const [clientSecret, setClientSecret] = useState("");
 	const [clearId, setClearId] = useState(false);
@@ -279,12 +280,14 @@ export function GithubAuthCard({
 
 	useEffect(() => {
 		setUserPrAuth(github.userPrAuth);
-	}, [github.userPrAuth]);
+		setBotCredential(github.botCredential);
+	}, [github.userPrAuth, github.botCredential]);
 
 	const idCleared = github.clientIdConfigured && clearId && !clientId.trim();
 	const secretCleared = secretConfigured && clearSecret && !clientSecret.trim();
 	const dirty =
 		userPrAuth !== github.userPrAuth ||
+		botCredential !== github.botCredential ||
 		clientId.trim() !== "" ||
 		clientSecret.trim() !== "" ||
 		idCleared ||
@@ -302,6 +305,7 @@ export function GithubAuthCard({
 				method: "PUT",
 				json: {
 					...(userPrAuth !== github.userPrAuth ? { userPrAuth } : {}),
+					...(botCredential !== github.botCredential ? { botCredential } : {}),
 					...(clientId.trim()
 						? { oauthClientId: clientId.trim() }
 						: idCleared
@@ -372,6 +376,25 @@ export function GithubAuthCard({
 				/>
 			</div>
 			<div className="mt-4 flex flex-col gap-4 border-t border-line pt-4">
+				<div className="flex items-center gap-4">
+					<div className="min-w-0 flex-1">
+						<div className="text-item-title font-medium text-fg">Use the GitHub App for bot actions</div>
+						<div className="mt-0.5 text-supporting text-dim">
+							Switches reviews, comments, clones and pushes away from the PAT.
+						</div>
+					</div>
+					<Switch
+						checked={botCredential === "app"}
+						onCheckedChange={(checked) => setBotCredential(checked ? "app" : "pat")}
+						disabled={saving || !github.appCredentialConfigured}
+						aria-label="Use the GitHub App for bot actions"
+					/>
+				</div>
+				{!github.appCredentialConfigured && (
+					<p className="m-0 text-supporting text-faint">
+						Add the App private key before switching credentials.
+					</p>
+				)}
 				<SecretField
 					name="Client id"
 					type="text"

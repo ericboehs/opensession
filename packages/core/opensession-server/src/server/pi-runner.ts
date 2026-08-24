@@ -1598,9 +1598,16 @@ async function* runPiAttempt(
     const githubUserLogin = interactiveGithub
       ? githubUserLoginForRun(user || author?.name)
       : null;
-    const githubEnv = interactiveGithub
-      ? githubRunEnv(user || author?.name)
-      : {};
+    // Only the dedicated GitHub code workflows may inject a service
+    // credential into an unattended run. Other automations remain credential-
+    // free even if a caller accidentally supplies githubEnv.
+    const githubCodeRun =
+      mode === "code" && baseJournalKind(journal?.kind).startsWith("github-");
+    const githubEnv = githubCodeRun
+      ? opts.githubEnv || {}
+      : interactiveGithub
+        ? githubRunEnv(user || author?.name)
+        : {};
 
     // pi/openai: pick the codex account + build the seeded credential BEFORE
     // the SDK import or any engine work — a dry/unconfigured pool must fail

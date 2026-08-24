@@ -23,6 +23,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { githubUserAuthSettings } from "./github-auth";
 import { configuredIntegration } from "./config";
+import { githubGitCredentialEnv } from "./github-git-credential";
 
 const KEY_PATH =
   process.env.OPENSESSION_GITHUB_APP_KEY || join(homedir(), ".opensession-github-app.pem");
@@ -161,26 +162,31 @@ export async function githubAppInstallationToken(
   }
 }
 
-/**
- * The GitHub credential the server should present for a REST/GraphQL call: the
- * App installation token when an App is configured (read- or write-scoped as
- * asked), falling back to the bot PAT (`GITHUB_API_TOKEN`) when no App is set
- * up. The App path is preferred because it is installation-scoped, has its own
- * rate-limit bucket, and can read check runs the PAT cannot — it supersedes the
- * PAT for every server-side operation. Null when neither is available.
- */
+/** The operator-controlled credential cutover. PAT remains the default so a
+ * deploy cannot silently change the identity or permissions of live GitHub
+ * operations. Selecting `app` is fail-closed: no hidden PAT fallback can mask a
+ * broken App installation after the operator deliberately switches. */
+export function githubBotCredentialMode(): "pat" | "app" {
+  return configuredIntegration("github").botCredential === "app" ? "app" : "pat";
+}
+
+/** The selected GitHub credential for REST/GraphQL calls. */
 export async function githubToken(
   opts: { write?: boolean } = {},
 ): Promise<string | null> {
-  const appToken = await githubAppInstallationToken(opts);
-  if (appToken) return appToken;
+  if (githubBotCredentialMode() === "app")
+    return githubAppInstallationToken(opts);
   return process.env.GITHUB_API_TOKEN || null;
 }
 
-/** Whether a GitHub App is configured (client id + private key on disk), the
- *  synchronous precondition for `githubToken` to mint an installation token.
- *  Lets callers report "GitHub is set up" from an installed App alone, without
- *  a bot PAT. */
+/** Whether the currently selected bot credential is configured. */
+export function githubConfiguredCredential(): boolean {
+  return githubBotCredentialMode() === "app"
+    ? githubAppConfigured()
+    : !!process.env.GITHUB_API_TOKEN;
+}
+
+/** Whether a GitHub App can mint installation tokens (client id + private key). */
 export function githubAppConfigured(): boolean {
   return !!githubUserAuthSettings().clientId && existsSync(KEY_PATH);
 }
@@ -193,6 +199,7 @@ export function githubAppConfigured(): boolean {
  * session file, host spec, URL, transcript, or Runner registry.
  */
 export async function githubAppRepositoryToken(ghRepo: string): Promise<string | null> {
+  if (githubBotCredentialMode() !== "app") return null;
   const [owner, repo] = ghRepo.split("/");
   if (!owner || !repo || ghRepo.split("/").length !== 2) return null;
   // Resolve the installation id through the existing credential path. It keeps
@@ -238,4 +245,19 @@ export async function githubAppRepositoryToken(ghRepo: string): Promise<string |
 export async function githubAppEnv(): Promise<Record<string, string> | null> {
   const token = await githubAppInstallationToken();
   return token ? { GH_TOKEN: token } : null;
+}
+
+/** Ephemeral Git + gh capability for one trusted GitHub code run. The token is
+ * process-local and never written into Git config, URLs, session files, or the
+ * run journal. */
+export async function githubServiceCredentialEnv(
+  ghRepo?: string,
+): Promise<Record<string, string>> {
+  const token =
+    githubBotCredentialMode() === "app"
+      ? ghRepo
+        ? await githubAppRepositoryToken(ghRepo)
+        : await githubAppInstallationToken({ write: true })
+      : process.env.GITHUB_API_TOKEN || null;
+  return token ? githubGitCredentialEnv(token) : {};
 }
