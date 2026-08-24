@@ -868,6 +868,15 @@ export async function handleConnectionsRoutes(
 				},
 				{ status: 409 },
 			);
+		try {
+			const { removeGithubAppKey } = await import("../github-app");
+			removeGithubAppKey();
+		} catch (e) {
+			return Response.json(
+				{ error: String((e as Error)?.message || e) },
+				{ status: 409 },
+			);
+		}
 		const { rawConfig, persistRawConfig, withConfigMutationLock } =
 			await import("../config-mutation");
 		return withConfigMutationLock(async () => {

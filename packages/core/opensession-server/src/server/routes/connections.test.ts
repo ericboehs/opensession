@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { bootstrapUserAuthOnConnect, handleConnectionsRoutes } from "./connections";
+import { __setGithubAppKeyPathForTest } from "../github-app";
 import type { RouteContext } from "./context";
 
 // The GitHub connect routes behave differently by mode: operator mode (web
@@ -30,9 +31,11 @@ beforeEach(() => {
   process.env.OPENSESSION_CONFIG = join(dir, "config.json");
   process.env.OPENSESSION_GITHUB_AUTH_STORE = join(dir, "github-auth.json");
   process.env.OPENSESSION_WEB_SESSIONS_STORE = join(dir, "web-sessions.json");
+  __setGithubAppKeyPathForTest(join(dir, "github-app.pem"));
 });
 
 afterEach(() => {
+  __setGithubAppKeyPathForTest(undefined);
   rmSync(dir, { recursive: true, force: true });
   for (const k of ENV_KEYS) {
     if (saved[k] === undefined) delete process.env[k];
@@ -213,7 +216,10 @@ describe("GitHub App config (simple mode)", () => {
     await handleConnectionsRoutes(
       context(APP, "POST", null, { clientId: "Iv1.abc", slug: "my-app", secret: "shh" }),
     );
-    // An unrelated github key, to prove the clear is surgical.
+    // A UI-managed key must be removed with the App; an unrelated github
+    // config key proves the config clear remains surgical.
+    const keyPath = join(dir, "github-app.pem");
+    writeFileSync(keyPath, "old-app-private-key", { mode: 0o600 });
     const path = process.env.OPENSESSION_CONFIG!;
     const cfg = JSON.parse(readFileSync(path, "utf-8"));
     cfg.integrations.github.userPrAuth = false;
@@ -226,6 +232,7 @@ describe("GitHub App config (simple mode)", () => {
     expect(after.integrations.github.oauthClientId).toBeUndefined();
     expect(after.integrations.github.appSlug).toBeUndefined();
     expect(after.integrations.github.userPrAuth).toBe(false);
+    expect(existsSync(keyPath)).toBe(false);
 
     const get = await handleConnectionsRoutes(context(GET, "GET", null));
     expect((await get?.json()).connectAvailable).toBe(false);
