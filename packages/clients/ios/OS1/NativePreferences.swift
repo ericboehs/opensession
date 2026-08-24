@@ -15,6 +15,10 @@ enum NativePreferences {
     private static var pendingLocalWrites = 0
     private static let identityKey = "os1.preferences.identity"
     private static let bucketKey = "os1.preferences.bucket"
+    static let recentModelsStorageKey = "os1.composer.recentModels"
+    static let recentModelsPrefKey = "recent-models"
+    static let recentModelLimit = 12
+    static let recentModelDisplayLimit = 3
 
     static func context() -> Context {
         let config = ServerConfig.shared
@@ -86,6 +90,8 @@ enum NativePreferences {
                 ?? SidebarTools.defaultHiddenJSON
             prefs[SidebarFeeds.prefKey] = defaults.string(forKey: SidebarFeeds.storageKey)
                 ?? "[]"
+            prefs[recentModelsPrefKey] = defaults.string(forKey: recentModelsStorageKey)
+                ?? "[]"
         }
         let previousIdentity = defaults.string(forKey: identityKey)
         let previousBucket = defaults.string(forKey: bucketKey)
@@ -95,6 +101,15 @@ enum NativePreferences {
             prefs["default-model"],
             default: "",
             key: "os1.composer.defaultModel",
+            resetMissing: changedIdentity,
+            in: defaults
+        )
+        // Keep ids this instance does not currently expose. They may become
+        // available again on another workspace or device.
+        set(
+            validatedRecentModels(prefs[recentModelsPrefKey]),
+            default: "[]",
+            key: recentModelsStorageKey,
             resetMissing: changedIdentity,
             in: defaults
         )
@@ -266,6 +281,66 @@ enum NativePreferences {
     /// that is already running. Off until the account says otherwise.
     nonisolated static var liveTypingIsOn: Bool {
         UserDefaults.standard.object(forKey: "os1.transcript.liveTyping") as? Bool ?? false
+    }
+
+    /// Decode the web's newest-first recent-model list. Unknown model ids are
+    /// deliberately retained; only malformed, blank and duplicate entries are
+    /// removed, and storage is capped independently of the three visible rows.
+    static func decodeRecentModels(_ value: String?) -> [String]? {
+        guard let value,
+              let data = value.data(using: .utf8),
+              let values = (try? JSONSerialization.jsonObject(with: data)) as? [Any]
+        else { return nil }
+        var seen = Set<String>()
+        return values.compactMap { value -> String? in
+            guard let id = value as? String,
+                  !id.isEmpty,
+                  seen.insert(id).inserted
+            else { return nil }
+            return id
+        }.prefix(recentModelLimit).map { $0 }
+    }
+
+    static func addingRecentModel(_ id: String, to models: [String]) -> [String] {
+        guard !id.isEmpty else { return Array(models.prefix(recentModelLimit)) }
+        return Array(([id] + models.filter { $0 != id }).prefix(recentModelLimit))
+    }
+
+    static func availableRecentModelIDs(
+        _ models: [String],
+        available: Set<String>
+    ) -> [String] {
+        Array(models.filter(available.contains).prefix(recentModelDisplayLimit))
+    }
+
+    static func recordRecentModel(_ id: String) {
+        guard !id.isEmpty else { return }
+        let defaults = UserDefaults.standard
+        let current = decodeRecentModels(defaults.string(forKey: recentModelsStorageKey)) ?? []
+        let next = addingRecentModel(id, to: current)
+        guard let data = try? JSONEncoder().encode(next) else { return }
+        let raw = String(decoding: data, as: UTF8.self)
+        defaults.set(raw, forKey: recentModelsStorageKey)
+
+        let requestContext = context()
+        beginLocalWrite()
+        Task {
+            defer { endLocalWrite() }
+            guard let response = try? await SettingsAPI.updateUiPrefs(
+                user: requestContext.user,
+                prefs: [recentModelsPrefKey: raw]
+            ) else { return }
+            var confirmed = response
+            if confirmed[recentModelsPrefKey] == nil { confirmed[recentModelsPrefKey] = raw }
+            _ = apply(confirmed, for: requestContext)
+        }
+    }
+
+    private static func validatedRecentModels(_ value: String?) -> String? {
+        guard let models = decodeRecentModels(value),
+              let data = try? JSONEncoder().encode(models)
+        else { return nil }
+        return String(decoding: data, as: UTF8.self)
     }
 
     /// The shape both list-valued prefs share (repo order, hidden sources): a

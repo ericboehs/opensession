@@ -14,6 +14,7 @@ import SwiftUI
 /// time one of them moves.
 struct ModelSettingsMenu: View {
     @AppStorage("os1.composer.defaultModel") private var preferredModel = ""
+    @AppStorage(NativePreferences.recentModelsStorageKey) private var recentModelsJSON = "[]"
 
     let viewModel: SessionViewModel
     let catalog: ModelCatalog?
@@ -27,19 +28,16 @@ struct ModelSettingsMenu: View {
             UsageMenuSection(usage: viewModel.usage)
         }
         if let catalog {
+            if !recentModels.isEmpty {
+                Section("Recent models") {
+                    ForEach(recentModels) { option in
+                        modelButton(option)
+                    }
+                }
+            }
             Menu {
                 ForEach(catalog.presets + catalog.regular) { option in
-                    let routed = ModelCatalog.routedID(option.id, engine: currentEngine)
-                    Button {
-                        if let routed { viewModel.changeModel(to: routed) }
-                    } label: {
-                        if option.id == ModelCatalog.baseID(currentModel) {
-                            Label(option.displayLabel, systemImage: "checkmark")
-                        } else {
-                            Text(option.displayLabel)
-                        }
-                    }
-                    .disabled(routed == nil)
+                    modelButton(option)
                 }
             } label: {
                 Label("Model · \(catalog.label(for: currentModel))", systemImage: "cpu")
@@ -129,6 +127,36 @@ struct ModelSettingsMenu: View {
 
     private var currentModel: String {
         viewModel.model.isEmpty ? (catalog?.defaultModel ?? "") : viewModel.model
+    }
+
+    private var recentModels: [ModelOption] {
+        guard let catalog,
+              let ids = NativePreferences.decodeRecentModels(recentModelsJSON)
+        else { return [] }
+        let available = Dictionary(
+            catalog.models.map { ($0.id, $0) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        return NativePreferences.availableRecentModelIDs(
+            ids,
+            available: Set(available.keys)
+        ).compactMap { available[$0] }
+    }
+
+    private func modelButton(_ option: ModelOption) -> some View {
+        let routed = ModelCatalog.routedID(option.id, engine: currentEngine)
+        return Button {
+            guard let routed else { return }
+            viewModel.changeModel(to: routed)
+            NativePreferences.recordRecentModel(option.id)
+        } label: {
+            if option.id == ModelCatalog.baseID(currentModel) {
+                Label(option.displayLabel, systemImage: "checkmark")
+            } else {
+                Text(option.displayLabel)
+            }
+        }
+        .disabled(routed == nil)
     }
 
     private var engineChoices: [ModelEngineOption] {

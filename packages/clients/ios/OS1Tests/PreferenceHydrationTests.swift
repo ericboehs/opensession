@@ -3,6 +3,41 @@ import XCTest
 
 @MainActor
 final class PreferenceHydrationTests: XCTestCase {
+    func testRecentModelsPromoteWithoutDuplicatesAndCapStorage() {
+        let models = (0...NativePreferences.recentModelLimit).map { "model-\($0)" }
+
+        XCTAssertEqual(
+            NativePreferences.addingRecentModel("model-2", to: models),
+            ["model-2"] + Array(
+                models.filter { $0 != "model-2" }.prefix(NativePreferences.recentModelLimit - 1)
+            )
+        )
+    }
+
+    func testRecentModelsShowThreeAvailableChoicesWithoutDeletingGaps() {
+        let stored = ["unavailable", "one", "two", "also-unavailable", "three", "four"]
+
+        XCTAssertEqual(
+            NativePreferences.availableRecentModelIDs(
+                stored,
+                available: ["one", "two", "three", "four"]
+            ),
+            ["one", "two", "three"]
+        )
+        XCTAssertEqual(stored.first, "unavailable")
+    }
+
+    func testRecentModelsDecodeWebStorageWithoutDroppingUnknownIds() throws {
+        let values: [Any] = ["unknown/future", "available", "available", 3, "", "later"]
+        let raw = String(decoding: try JSONSerialization.data(withJSONObject: values), as: UTF8.self)
+
+        XCTAssertEqual(
+            NativePreferences.decodeRecentModels(raw),
+            ["unknown/future", "available", "later"]
+        )
+        XCTAssertNil(NativePreferences.decodeRecentModels("not-json"))
+    }
+
     func testReplySuggestionsPreferenceUsesWebValues() {
         XCTAssertEqual(NativePreferences.replySuggestionsEnabled("on"), true)
         XCTAssertEqual(NativePreferences.replySuggestionsEnabled("off"), false)
