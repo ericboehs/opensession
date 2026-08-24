@@ -22,6 +22,7 @@
  */
 
 import { audit } from "../audit";
+import { GITHUB_APP_GRANT_PERMISSIONS } from "../../shared/github-app-permissions";
 import { envRequired, type IntegrationSpec } from "../integrations/registry";
 import { requireWorkspaceAdmin } from "../workspace-auth";
 import type { RouteContext } from "./context";
@@ -116,11 +117,10 @@ export function buildOnboardingGithubAppCreateUrl(
     url: homepageUrl.trim() || "http://localhost:3850",
     public: "false",
     webhook_active: "false",
-    contents: "write",
-    issues: "write",
-    pull_requests: "write",
-    members: "read",
-    metadata: "read",
+    // The canonical grant set (checks + statuses + issues included) — the same
+    // permissions the installation token mints request, so a created App is
+    // never born missing a scope the server needs.
+    ...GITHUB_APP_GRANT_PERMISSIONS,
     // Undocumented by GitHub, but supported by the new-App form. The onboarding
     // still tells the person to check it in case GitHub ever drops the parameter.
     device_flow_enabled: "true",

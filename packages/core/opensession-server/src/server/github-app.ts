@@ -18,11 +18,15 @@
  * same containment story as the App user tokens.
  */
 import { createSign } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync, chmodSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { githubUserAuthSettings } from "./github-auth";
 import { configuredIntegration } from "./config";
+import {
+  GITHUB_APP_READ_PERMISSIONS as READ_PERMISSIONS,
+  GITHUB_APP_WRITE_PERMISSIONS as WRITE_PERMISSIONS,
+} from "../shared/github-app-permissions";
 
 const KEY_PATH =
   process.env.OPENSESSION_GITHUB_APP_KEY || join(homedir(), ".opensession-github-app.pem");
@@ -41,31 +45,13 @@ const g = globalThis as {
   __ghAppTokenWarned?: boolean;
 };
 
-/** Read is strictly weaker than the bot PAT (no write at all). */
-const READ_PERMISSIONS = {
-  checks: "read",
-  statuses: "read",
-  actions: "read",
-  pull_requests: "read",
-  contents: "read",
-  issues: "read",
-  metadata: "read",
-} as const;
-/** Write asks for EXACTLY what the PR agent needs — post reviews and comments
- *  (pull_requests, issues) and push fixes (contents), plus metadata. It does NOT
- *  spread the read set: a mint is all-or-nothing, so requesting a read scope the
- *  App wasn't granted (e.g. checks, which no create flow grants today) would 422
- *  the whole write token even though writes never touch checks. Still
- *  installation-scoped, so an out-of-org write fails at GitHub's side just as the
- *  scoped bot PAT does (security-model.md, GitHub credential scoping). The App
- *  must hold these; if it does not the mint is rejected and the caller falls back
- *  to the PAT. */
-const WRITE_PERMISSIONS = {
-  pull_requests: "write",
-  issues: "write",
-  contents: "write",
-  metadata: "read",
-} as const;
+// READ_PERMISSIONS / WRITE_PERMISSIONS are the canonical sets imported at the
+// top of the file (shared/github-app-permissions) — the same definition the
+// create-app URL grants, so a mint never asks for a scope the App was not
+// granted. Still installation-scoped, so an out-of-org write fails at GitHub's
+// side just as the scoped bot PAT does (security-model.md, GitHub credential
+// scoping). If the App does not hold a set the mint is rejected and the caller
+// falls back to the PAT.
 
 function appJwt(clientId: string, key: string): string {
   const now = Math.floor(Date.now() / 1000);
@@ -183,6 +169,20 @@ export async function githubToken(
  *  a bot PAT. */
 export function githubAppConfigured(): boolean {
   return !!githubUserAuthSettings().clientId && existsSync(KEY_PATH);
+}
+
+/** Persist the App's private key (0600) at KEY_PATH — the piece the device-flow
+ *  setup never captured, so installation tokens (bot/agent, checks-read) could
+ *  never mint. The App-manifest flow returns this PEM at creation. Drops any
+ *  cached installation token, which belonged to a previous key. Honors the
+ *  OPENSESSION_GITHUB_APP_KEY override so an ops-managed key is never clobbered. */
+export function writeGithubAppKey(pem: string): void {
+  if (process.env.OPENSESSION_GITHUB_APP_KEY)
+    throw new Error("OPENSESSION_GITHUB_APP_KEY is set; not overwriting an ops-managed key");
+  writeFileSync(KEY_PATH, pem.endsWith("\n") ? pem : `${pem}\n`, { mode: 0o600 });
+  try { chmodSync(KEY_PATH, 0o600); } catch {}
+  g.__ghAppTokenCacheRead = null;
+  g.__ghAppTokenCacheWrite = null;
 }
 
 /**
