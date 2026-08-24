@@ -51,17 +51,20 @@ const READ_PERMISSIONS = {
   issues: "read",
   metadata: "read",
 } as const;
-/** Write adds exactly what the PR agent needs — post reviews and comments
- *  (pull_requests, issues) and push fixes (contents). Still installation-scoped,
- *  so an out-of-org write fails at GitHub's side just as the scoped bot PAT does
- *  (security-model.md, GitHub credential scoping). The App must have been
- *  granted these; a mint that requests more than the installation holds is
- *  rejected, and the caller falls back to the PAT. */
+/** Write asks for EXACTLY what the PR agent needs — post reviews and comments
+ *  (pull_requests, issues) and push fixes (contents), plus metadata. It does NOT
+ *  spread the read set: a mint is all-or-nothing, so requesting a read scope the
+ *  App wasn't granted (e.g. checks, which no create flow grants today) would 422
+ *  the whole write token even though writes never touch checks. Still
+ *  installation-scoped, so an out-of-org write fails at GitHub's side just as the
+ *  scoped bot PAT does (security-model.md, GitHub credential scoping). The App
+ *  must hold these; if it does not the mint is rejected and the caller falls back
+ *  to the PAT. */
 const WRITE_PERMISSIONS = {
-  ...READ_PERMISSIONS,
   pull_requests: "write",
-  contents: "write",
   issues: "write",
+  contents: "write",
+  metadata: "read",
 } as const;
 
 function appJwt(clientId: string, key: string): string {
