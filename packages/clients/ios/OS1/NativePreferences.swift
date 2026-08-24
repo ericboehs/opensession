@@ -13,6 +13,7 @@ enum NativePreferences {
 
     private static var generation = 0
     private static var pendingLocalWrites = 0
+    private static var recentModelsWriteTail: Task<Void, Never>?
     private static let identityKey = "os1.preferences.identity"
     private static let bucketKey = "os1.preferences.bucket"
     static let recentModelsStorageKey = "os1.composer.recentModels"
@@ -323,13 +324,19 @@ enum NativePreferences {
         defaults.set(raw, forKey: recentModelsStorageKey)
 
         let requestContext = context()
+        let previousWrite = recentModelsWriteTail
         beginLocalWrite()
-        Task {
+        recentModelsWriteTail = Task {
             defer { endLocalWrite() }
-            guard let response = try? await SettingsAPI.updateUiPrefs(
-                user: requestContext.user,
-                prefs: [recentModelsPrefKey: raw]
-            ) else { return }
+            // Each PUT replaces the whole recent list. Waiting for the prior
+            // selection prevents an older snapshot from landing last.
+            _ = await previousWrite?.value
+            guard context() == requestContext,
+                  let response = try? await SettingsAPI.updateUiPrefs(
+                      user: requestContext.user,
+                      prefs: [recentModelsPrefKey: raw]
+                  )
+            else { return }
             var confirmed = response
             if confirmed[recentModelsPrefKey] == nil { confirmed[recentModelsPrefKey] = raw }
             _ = apply(confirmed, for: requestContext)
