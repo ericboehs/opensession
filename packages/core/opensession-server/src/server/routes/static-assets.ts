@@ -32,6 +32,12 @@ export function pwaManifest(publicPrefix: string) {
 		start_url: `${publicPrefix}/`,
 		display: "standalone",
 		display_override: ["window-controls-overlay"],
+		// A link into the app from outside it (a Plain card, a Slack message)
+		// navigates the installed window to that link. Without this the default
+		// is to focus the existing window and ignore the URL, so the deep link
+		// silently lands on whatever was already open — and there is no history
+		// entry behind it, so Back does nothing either.
+		launch_handler: { client_mode: "navigate-existing" },
 		// Match the current dark page and chrome surfaces. WebKit exposes the
 		// manifest background if its standalone window is briefly letterboxed.
 		background_color: "#1c1c1c",

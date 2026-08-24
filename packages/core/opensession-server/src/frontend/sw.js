@@ -78,6 +78,13 @@ const NAV_STALL_MS = 5000;
 // matches sw.js itself (no dash) or icons/splash (not js/css).
 const ASSET_RE = /^\/(?:opensession\/|backstage\/)?[\w.]+-\w+\.(?:js|css)$/;
 const API_RE = /^\/(?:opensession\/|backstage\/)?api\//;
+// Server routes that answer a navigation with a REDIRECT rather than the app
+// shell. The stall guard below must never fire on these: they can legitimately
+// take longer than NAV_STALL_MS (a Plain triage boot runs 15-120s), and
+// painting the shell over one strands the document at a URL the router has no
+// route for — which the app then treats as "landed on home" and replaces with
+// the viewer's last session. Let them go straight to the network and redirect.
+const REDIRECT_RE = /^\/(?:opensession\/|backstage\/)?plain-triage\//;
 // A build ships ~a dozen chunks; 80 keeps a few builds' worth before pruning.
 const MAX_ASSETS = 80;
 
@@ -112,7 +119,11 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-  if (req.mode === "navigate" && !API_RE.test(url.pathname)) {
+  if (
+    req.mode === "navigate" &&
+    !API_RE.test(url.pathname) &&
+    !REDIRECT_RE.test(url.pathname)
+  ) {
     event.respondWith(shellNavigate(req));
   } else if (ASSET_RE.test(url.pathname)) {
     event.respondWith(hashedAsset(req));
