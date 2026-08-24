@@ -8,7 +8,17 @@ import {
   remoteModelProviderId,
   remoteRunNeedsAnthropic,
   remoteRunNeedsOpenai,
+  selectedCloneToken,
 } from "./bootstrap";
+
+describe("GitHub clone credential cutover", () => {
+  test("App mode never falls back to a persisted PAT", () => {
+    expect(selectedCloneToken(undefined, "retired-pat", true, "app")).toBeUndefined();
+    expect(selectedCloneToken("fresh-app", "retired-pat", true, "app")).toBe("fresh-app");
+    expect(selectedCloneToken(undefined, "active-pat", true, "pat")).toBe("active-pat");
+    expect(selectedCloneToken(undefined, "other-host", false, "app")).toBe("other-host");
+  });
+});
 
 describe("remote engine credential projection", () => {
   test("every remote provider delegates launch credential projection to bootstrap", () => {

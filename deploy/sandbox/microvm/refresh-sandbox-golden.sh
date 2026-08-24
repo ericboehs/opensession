@@ -60,7 +60,7 @@ compute_pins() {
   (
   cd "$ROOT"
   # Server-env parity: the systemd unit loads ~/.opensession.env
-  # (EnvironmentFile=), and injectToken prefers a live GITHUB_API_TOKEN from
+  # (EnvironmentFile=), and injectCloneCredential resolves the selected live GitHub credential from
   # the environment over persisted config tokens. Load the same file here so
   # the pin computation resolves the clone URL exactly like the server would
   # (a real env var also outranks the repo-local .env bun auto-loads).
@@ -68,7 +68,7 @@ compute_pins() {
     set -a; . "$CFG_HOME/.opensession.env"; set +a
   fi
   HOME="$CFG_HOME" GOLDEN_WANT_CLONE_URL="${1:-}" "$BUN_BIN" -e '
-import { bootstrapSignature, remoteCloneUrl } from "./src/server/sandbox/adapters/bootstrap.ts";
+import { bootstrapSignature, injectCloneCredential, remoteCloneUrl } from "./src/server/sandbox/adapters/bootstrap.ts";
 import { sandboxConfig } from "./src/server/sandbox/config.ts";
 import { REPO_ROOT } from "./src/runner-host/protocol.ts";
 const cfg = sandboxConfig();
@@ -77,7 +77,7 @@ console.log(cfg.runnerSha || "");
 if (process.env.GOLDEN_WANT_CLONE_URL) {
   let url;
   if (cfg.runnerRepoUrl) {
-    // Mirror bootstrap.ts toHttpsUrl+injectToken for the explicit-URL case.
+    // Mirror bootstrap.ts toHttpsUrl+injectCloneCredential for the explicit-URL case.
     let https = cfg.runnerRepoUrl;
     const scp = https.match(/^git@([^:]+):(.+?)(\.git)?$/);
     const ssh = https.match(/^ssh:\/\/git@([^/]+)\/(.+?)(\.git)?$/);
@@ -86,13 +86,7 @@ if (process.env.GOLDEN_WANT_CLONE_URL) {
     if (!/^https:\/\//.test(https)) {
       throw new Error(`runnerRepoUrl is not https-reachable: ${cfg.runnerRepoUrl}`);
     }
-    const cred = cfg.cloneCredential;
-    if (cred?.type === "https-token") {
-      const live = /^https:\/\/github\.com\//i.test(https) ? process.env.GITHUB_API_TOKEN : undefined;
-      const token = live || cred.token;
-      if (token) https = https.replace(/^https:\/\//, `https://x-access-token:${token}@`);
-    }
-    url = https;
+    url = await injectCloneCredential(https);
   } else {
     url = await remoteCloneUrl({ id: "opensession", repo: REPO_ROOT });
   }
