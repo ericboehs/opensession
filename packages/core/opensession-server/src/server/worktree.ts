@@ -613,7 +613,6 @@ async function githubServiceGitEnv(ghRepo: string | undefined) {
   const { githubServiceCredentialEnv } = await import("./github-app");
   return { ...process.env, ...(await githubServiceCredentialEnv(ghRepo)) };
 }
-}
 
 async function fetchBranchesWithTracking(
   gitDir: string,

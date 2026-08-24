@@ -592,6 +592,15 @@ function credentialFreeHttpsUrl(httpsUrl: string): string {
   return parsed.toString();
 }
 
+function isGithubHttpsUrl(httpsUrl: string): boolean {
+  try {
+    const parsed = new URL(httpsUrl);
+    return parsed.protocol === "https:" && parsed.hostname.toLowerCase() === "github.com";
+  } catch {
+    return false;
+  }
+}
+
 async function injectToken(httpsUrl: string): Promise<string> {
   const cred = sandboxConfig().cloneCredential;
   if (cred?.type === "https-token") {
@@ -1374,8 +1383,8 @@ export async function setupRemoteWorkspace(
   }
   if (!cloned) {
     console.log(`[sandbox-remote] cloning ${redactUrl(cloneUrl)} into ${cwd}`);
-    // Blobless partial clone: full history/refs but blobs fetched lazily via
-    // the persisted (tokenized) origin URL. A large repo's full .git can be
+    // Blobless partial clone: full history/refs, with later blobs fetched via
+    // a fresh run-scoped credential helper. A large repo's full .git can be
     // ~2.4GB vs ~450MB blobless — on a 10GiB sandbox disk that headroom is
     // the difference between working and ENOSPC (verified live 2026-07-09:
     // full clone died on the default 3GiB disk with an EMPTY git error,
@@ -1421,6 +1430,19 @@ export async function setupRemoteWorkspace(
     }
   }
   mark("branch ready");
+  // Installation tokens expire in about an hour. Keep them only for this
+  // bounded clone/fetch, then leave a credential-free GitHub origin. Every run
+  // projects a fresh token through the process-local credential helper below,
+  // so lazy blob fetches and pushes never depend on a token at rest.
+  if (isGithubHttpsUrl(cloneUrl)) {
+    const safeOrigin = credentialFreeHttpsUrl(cloneUrl);
+    const scrubbed = await driver.exec(
+      `git remote set-url origin ${shellQuoteWord(safeOrigin)}`,
+      { cwd },
+    );
+    if (scrubbed.exitCode !== 0)
+      throw new Error(`could not scrub GitHub clone credential: ${scrubbed.stderr.trim().slice(0, 300)}`);
+  }
   // Per-session only: warm/template preparation never calls this path, so
   // private files are injected after restore and can never land in a shared
   // provider snapshot.
@@ -1645,13 +1667,28 @@ function makeRemoteLauncher(
       ]);
       secureFiles.push(claudeAccountsPath, REMOTE_MCP_CONFIG);
 
-      // Interactive parity for GitHub uses a run-scoped access-token file.
-      // Do not put it in spec.json or the launch command, and never project it
-      // into the fail-closed automation profile. githubRunEnv reads this file
-      // inside the guest and installs a process-local HTTPS credential helper.
-      const githubAuth = automationProfile
+      // GitHub credentials are projected through a private, run-scoped file,
+      // never spec.json, argv, or the persisted origin. Interactive runs prefer
+      // their user's token. GitHub code automations and user-less interactive
+      // runs receive a freshly resolved service credential for this one repo;
+      // every other automation stays credential-free.
+      let githubAuth = automationProfile
         ? {}
         : githubAuthEnv(spec.user || spec.author?.name);
+      const githubCodeAutomation =
+        automationProfile &&
+        spec.mode === "code" &&
+        (spec.journalKind || "").startsWith("github-");
+      if (!githubAuth.GH_TOKEN && (!automationProfile || githubCodeAutomation)) {
+        const origin = await driver.exec("git remote get-url origin", { cwd: spec.cwd });
+        const match = origin.exitCode === 0
+          ? origin.stdout.trim().match(/^https:\/\/github\.com\/(?:x-access-token:[^@]+@)?([^/]+\/[^/]+)$/i)
+          : null;
+        if (match) {
+          const { githubServiceCredentialEnv } = await import("../../github-app");
+          githubAuth = await githubServiceCredentialEnv(match[1].replace(/\.git$/i, ""));
+        }
+      }
       const githubAuthPath = `${dir}/github-auth.json`;
       if (githubAuth.GH_TOKEN) {
         await driver.writeFile(githubAuthPath, JSON.stringify(githubAuth));

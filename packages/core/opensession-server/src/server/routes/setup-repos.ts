@@ -130,6 +130,26 @@ async function listReposViaUserRepos(token: string): Promise<PickerRepo[]> {
   return repos.slice(0, REPO_LIST_CAP);
 }
 
+/** GitHub App installation-token path. Installation tokens cannot call the
+ * user endpoints used by PATs and App user tokens. */
+export async function listReposViaAppInstallation(token: string): Promise<PickerRepo[]> {
+  const registered = registeredGhRepos();
+  const repos: PickerRepo[] = [];
+  for (let page = 1; repos.length < REPO_LIST_CAP && page <= 5; page++) {
+    const { ok, body } = await githubJson(
+      token,
+      `https://api.github.com/installation/repositories?per_page=100&page=${page}`,
+    );
+    if (!ok || !Array.isArray(body?.repositories)) break;
+    for (const raw of body.repositories) {
+      const repo = toPickerRepo(raw, registered);
+      if (repo) repos.push(repo);
+    }
+    if (body.repositories.length < 100) break;
+  }
+  return repos.slice(0, REPO_LIST_CAP);
+}
+
 /** GitHub App user-token path: union of the token's accessible installations.
  *  Returns null when the token isn't installation-scoped (classic OAuth/PAT)
  *  so the caller can fall back to /user/repos. */
@@ -496,7 +516,8 @@ export async function handleSetupRepoRoutes(
     // the bot PAT, else an empty (but well-formed) answer.
     const userCredential = actingGithubCredential(ctx);
     // Bot credential: the App installation token when configured, else the PAT.
-    const { githubToken } = await import("../github-app");
+    const { githubBotCredentialMode, githubToken } = await import("../github-app");
+    const botCredential = githubBotCredentialMode();
     const botToken = userCredential ? null : await githubToken();
     const token = userCredential?.env.GH_TOKEN || botToken;
     const source: "user" | "bot" | null = userCredential
@@ -507,7 +528,9 @@ export async function handleSetupRepoRoutes(
     if (!token || !source) {
       return Response.json({ source: null, repos: [] });
     }
-    const cacheKey = userCredential ? userCredential.principal : "bot";
+    const cacheKey = userCredential
+      ? userCredential.principal
+      : `bot:${botCredential}`;
     const cached = repoListCache.get(cacheKey);
     if (cached && Date.now() - cached.at < REPO_CACHE_TTL_MS) {
       return Response.json(cached.payload);
@@ -517,8 +540,10 @@ export async function handleSetupRepoRoutes(
       // OAuth) via /user/repos. The installations call itself tells us which
       // kind we have — a non-App token gets an error and we fall back.
       const repos =
-        (source === "user" ? await listReposViaInstallations(token) : null) ??
-        (await listReposViaUserRepos(token));
+        source === "bot" && botCredential === "app"
+          ? await listReposViaAppInstallation(token)
+          : (source === "user" ? await listReposViaInstallations(token) : null) ??
+            (await listReposViaUserRepos(token));
       repos.sort((a, b) => (b.pushedAt || "").localeCompare(a.pushedAt || ""));
       const payload = {
         source,
