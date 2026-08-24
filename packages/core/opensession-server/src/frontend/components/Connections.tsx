@@ -1,4 +1,5 @@
 import { BASE_PATH } from "../lib/base";
+import { GITHUB_APP_GRANT_PERMISSIONS } from "../../shared/github-app-permissions";
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Menu } from "../ui/menu";
 import { OptionSelect } from "../ui/select";
@@ -552,10 +553,10 @@ function buildGithubAppCreateUrl(name: string, org: string): string {
     url: "http://localhost:3850",
     public: "false",
     webhook_active: "false",
-    contents: "write",
-    pull_requests: "write",
-    members: "read",
-    metadata: "read",
+    // The canonical grant set — the same permissions the install tokens mint
+    // request, so the App is not born missing `issues` or `checks` (the drift
+    // this builder used to have: no issues, no checks).
+    ...GITHUB_APP_GRANT_PERMISSIONS,
     device_flow_enabled: "true",
   }).toString();
   const base = org.trim()

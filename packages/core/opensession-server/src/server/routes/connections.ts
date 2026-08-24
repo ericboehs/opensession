@@ -764,6 +764,7 @@ export async function handleConnectionsRoutes(
 			slug?: unknown;
 			secret?: unknown;
 			appOrg?: unknown;
+			privateKey?: unknown;
 		} | null;
 		const clientId =
 			typeof body?.clientId === "string" ? body.clientId.trim() : "";
@@ -772,6 +773,12 @@ export async function handleConnectionsRoutes(
 		// Present ⇒ the App is owned by an org (owner=Organization); empty/absent ⇒
 		// a personal App (single-user).
 		const appOrg = typeof body?.appOrg === "string" ? body.appOrg.trim() : "";
+		// The App's private key (PEM), generated once in the App's settings UI.
+		// Optional here — an App can be configured for per-user sign-in (device
+		// flow, keyless) alone — but it is what lets installation tokens mint, so
+		// without it the bot/agent and checks-read stay on the PAT.
+		const privateKey =
+			typeof body?.privateKey === "string" ? body.privateKey.trim() : "";
 		// The secret is required on the UI config path: the device-flow token
 		// expires and Open Session refreshes it with the secret, so without one
 		// the connection would silently stop working after ~8h. (Env-configured
@@ -781,6 +788,24 @@ export async function handleConnectionsRoutes(
 				{ error: "clientId, slug and secret are required" },
 				{ status: 400 },
 			);
+		if (privateKey && !/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(privateKey))
+			return Response.json(
+				{ error: "privateKey must be a PEM private key" },
+				{ status: 400 },
+			);
+		// Store the key first: if it is env-managed writeGithubAppKey refuses, and
+		// we surface that before touching config rather than half-configuring.
+		if (privateKey) {
+			const { writeGithubAppKey } = await import("../github-app");
+			try {
+				writeGithubAppKey(privateKey);
+			} catch (e) {
+				return Response.json(
+					{ error: String((e as Error)?.message || e) },
+					{ status: 409 },
+				);
+			}
+		}
 		const { rawConfig, persistRawConfig, withConfigMutationLock } =
 			await import("../config-mutation");
 		return withConfigMutationLock(async () => {
