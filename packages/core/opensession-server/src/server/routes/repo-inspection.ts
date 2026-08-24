@@ -22,6 +22,32 @@ export function repoIdFromName(input: string): string {
   return id || "repo";
 }
 
+function remotePathIdentity(path: string): string {
+  return path.replace(/^\/+/, "").replace(/[\\/]+$/, "").replace(/\.git$/i, "");
+}
+
+/** Protocol- and credential-free origin identity used only for duplicate checks. */
+export function normalizeRepoOrigin(remote: string): string {
+  const value = remote.trim();
+  if (!value) return "";
+
+  if (value.includes("://")) {
+    try {
+      const url = new URL(value);
+      if (url.hostname) {
+        const host = `${url.hostname.toLowerCase()}${url.port ? `:${url.port}` : ""}`;
+        return `${host}/${remotePathIdentity(url.pathname)}`;
+      }
+    } catch {
+      // Fall through to Git's scp-like and local-path forms.
+    }
+  }
+
+  const scp = value.match(/^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/);
+  if (scp) return `${scp[1].toLowerCase()}/${remotePathIdentity(scp[2])}`;
+  return remotePathIdentity(value);
+}
+
 function githubRepoFromRemote(remote: string): string | undefined {
   const normalized = remote.trim().replace(/\.git$/i, "");
   const match = normalized.match(/^(?:https?:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/]+\/[^/]+)$/i);
@@ -38,9 +64,20 @@ async function hasCommit(path: string, ref: string): Promise<boolean> {
   ).exitCode === 0;
 }
 
+export async function repoOriginIdentity(repoPath: string): Promise<string | null> {
+  try {
+    const origin = await git(["remote", "get-url", "origin"], repoPath);
+    if (origin.exitCode !== 0 || !origin.stdout) return null;
+    return normalizeRepoOrigin(origin.stdout) || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function inspectRepo(repoPath: string): Promise<{
   path: string;
   defaultBranch: string;
+  originIdentity: string;
   ghRepo?: string;
   cs?: { org: string; repoId: string };
 }> {
@@ -88,6 +125,7 @@ export async function inspectRepo(repoPath: string): Promise<{
   return {
     path,
     defaultBranch,
+    originIdentity: normalizeRepoOrigin(origin.stdout),
     ghRepo: githubRepoFromRemote(origin.stdout),
     ...(cs ? { cs } : {}),
   };

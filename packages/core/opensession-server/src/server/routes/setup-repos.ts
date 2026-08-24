@@ -28,6 +28,7 @@ import {
   type Repo,
   type RepoSection,
 } from "../config";
+import { remoteUrl as csRemoteUrl } from "../codestorage/auth";
 import { getRepo as getCsRepo, listRepos as listCsRepos } from "../codestorage/client";
 import { cloneCsCheckout, ensureCsCredentialHelper } from "../codestorage/remote";
 import {
@@ -44,9 +45,11 @@ import { shellSafeDefaultBranch } from "../repo-branch";
 import type { RouteContext } from "./context";
 import {
   inspectRepo,
+  normalizeRepoOrigin,
   repoCurrentBranch,
   repoHasBranch,
   repoIdFromName,
+  repoOriginIdentity,
 } from "./repo-inspection";
 
 /** Strict: this value reaches a spawn argv (always array-spawned, never a
@@ -397,6 +400,37 @@ function assertRepoSlotAvailable(
   }
 }
 
+function assertRepoPathAvailable(path: string, registered: Record<string, Repo>): void {
+  const canonical = canonicalRepoPath(path);
+  if (
+    Object.values(registered).some(
+      (repo) => canonicalRepoPath(repo.repo) === canonical,
+    )
+  ) {
+    throw setupRepoError(`Repository is already registered: ${canonical}`, 409);
+  }
+}
+
+async function assertRepoOriginAvailable(
+  originIdentity: string,
+  registered: Record<string, Repo>,
+): Promise<void> {
+  if (!originIdentity) return;
+  const matches = await Promise.all(
+    Object.values(registered).map(async (repo) => ({
+      repo,
+      originIdentity: await repoOriginIdentity(repo.repo),
+    })),
+  );
+  const duplicate = matches.find((match) => match.originIdentity === originIdentity);
+  if (duplicate) {
+    throw setupRepoError(
+      `Repository origin is already registered: ${duplicate.repo.id}`,
+      409,
+    );
+  }
+}
+
 /** Once config has an explicit `repos` object it becomes authoritative. Seed
  *  it from the effective registry when the first repo is added so turning an
  *  implicit built-in registry into an explicit one cannot remove that repo. */
@@ -500,6 +534,11 @@ async function registerGithubRepo(input: {
   }
   const root = checkoutsRoot();
   const dest = `${root}/${id}`;
+  assertRepoPathAvailable(dest, registered);
+  await assertRepoOriginAvailable(
+    normalizeRepoOrigin(`https://github.com/${input.fullName}.git`),
+    registered,
+  );
   const adopted = await adoptExistingCheckout(
     dest,
     (i) => (i.ghRepo || "").toLowerCase() === input.fullName.toLowerCase(),
@@ -563,13 +602,7 @@ async function registerLocalRepo(input: {
   const { inspected, name, id } = input;
   const registered = configuredRepos();
   assertRepoSlotAvailable(id, registered);
-  if (
-    Object.values(registered).some(
-      (repo) => canonicalRepoPath(repo.repo) === inspected.path,
-    )
-  ) {
-    throw setupRepoError(`Repository is already registered: ${inspected.path}`, 409);
-  }
+  assertRepoPathAvailable(inspected.path, registered);
   if (
     inspected.ghRepo &&
     Object.values(registered).some(
@@ -591,6 +624,7 @@ async function registerLocalRepo(input: {
       409,
     );
   }
+  await assertRepoOriginAvailable(inspected.originIdentity, registered);
   if (inspected.cs) {
     const csConfig = codeStorageConfig();
     if (!csConfig) {
@@ -668,17 +702,13 @@ async function registerCodestorageRepo(input: {
   ) {
     throw setupRepoError(`code.storage repository is already registered: ${csRepo}`, 409);
   }
-  if (
-    Object.values(configuredRepos()).some(
-      (repo) => repo.host === "codestorage" && repo.csRepo === csRepo,
-    )
-  ) {
-    const err = new Error(`code.storage repository already registered: ${csRepo}`);
-    (err as any).status = 409;
-    throw err;
-  }
   const root = checkoutsRoot();
   const dest = `${root}/${id}`;
+  assertRepoPathAvailable(dest, registered);
+  await assertRepoOriginAvailable(
+    normalizeRepoOrigin(csRemoteUrl(cfg.org, csRepo)),
+    registered,
+  );
   const adopted = await adoptExistingCheckout(
     dest,
     (i) => matchesCodeStorageCheckout(i, cfg.org, csRepo),

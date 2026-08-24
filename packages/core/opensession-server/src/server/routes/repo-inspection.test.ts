@@ -2,11 +2,34 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { inspectRepo, repoHasBranch } from "./repo-inspection";
+import {
+  inspectRepo,
+  normalizeRepoOrigin,
+  repoHasBranch,
+  repoOriginIdentity,
+} from "./repo-inspection";
 
 function git(...args: string[]): void {
   expect(Bun.spawnSync(["git", ...args]).exitCode).toBe(0);
 }
+
+describe("normalizeRepoOrigin", () => {
+  test("treats HTTPS and scp-style remotes as the same repository", () => {
+    expect(normalizeRepoOrigin("https://gitlab.com/acme/widget.git")).toBe(
+      "gitlab.com/acme/widget",
+    );
+    expect(normalizeRepoOrigin("git@gitlab.com:acme/widget.git")).toBe(
+      "gitlab.com/acme/widget",
+    );
+    expect(normalizeRepoOrigin("https://token@gitlab.com/acme/widget.git")).toBe(
+      "gitlab.com/acme/widget",
+    );
+  });
+
+  test("ignores registered checkouts that are unavailable", async () => {
+    await expect(repoOriginIdentity("/missing/repository")).resolves.toBeNull();
+  });
+});
 
 describe("inspectRepo", () => {
   test("uses the remote HEAD when the local origin/HEAD is stale", async () => {

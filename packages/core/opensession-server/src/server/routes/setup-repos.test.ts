@@ -474,6 +474,7 @@ describe("adoptExistingCheckout", () => {
 
 const savedConfig = process.env.OPENSESSION_CONFIG;
 const savedWorktreesDir = process.env.OPENSESSION_WORKTREES_DIR;
+const savedHome = process.env.HOME;
 const localRoots: string[] = [];
 
 afterEach(() => {
@@ -481,6 +482,8 @@ afterEach(() => {
   else process.env.OPENSESSION_CONFIG = savedConfig;
   if (savedWorktreesDir === undefined) delete process.env.OPENSESSION_WORKTREES_DIR;
   else process.env.OPENSESSION_WORKTREES_DIR = savedWorktreesDir;
+  if (savedHome === undefined) delete process.env.HOME;
+  else process.env.HOME = savedHome;
   for (const dir of localRoots.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -677,6 +680,61 @@ describe("local repository registration", () => {
     expect(response?.status).toBe(409);
     expect(await response?.json()).toEqual({
       error: "Worktree prefix already registered: prefix-target",
+    });
+  });
+
+  test.serial("rejects another checkout with the same generic origin", async () => {
+    const root = localRoot();
+    const registeredCheckout = createRemoteCheckout(root, "registered", "main");
+    const duplicateCheckout = join(root, "duplicate");
+    git(["clone", join(root, "registered.git"), duplicateCheckout]);
+    const configPath = join(root, "config.json");
+    writeFileSync(configPath, JSON.stringify({
+      repos: {
+        existing: {
+          repo: registeredCheckout,
+          wtPrefix: "existing",
+          defaultBranch: "main",
+        },
+      },
+    }));
+    process.env.OPENSESSION_CONFIG = configPath;
+
+    const response = await handleSetupRepoRoutes(
+      postRepo({ source: "local", path: duplicateCheckout }),
+    );
+
+    expect(response?.status).toBe(409);
+    expect(await response?.json()).toEqual({
+      error: "Repository origin is already registered: existing",
+    });
+  });
+
+  test.serial("rejects a remote registration whose checkout path is already owned", async () => {
+    const root = localRoot();
+    const checkouts = join(root, "checkouts");
+    mkdirSync(checkouts, { recursive: true });
+    const checkout = createRemoteCheckout(checkouts, "widget", "main");
+    const configPath = join(root, "config.json");
+    writeFileSync(configPath, JSON.stringify({
+      repos: {
+        legacy: {
+          repo: checkout,
+          wtPrefix: "legacy",
+          defaultBranch: "main",
+        },
+      },
+    }));
+    process.env.HOME = root;
+    process.env.OPENSESSION_CONFIG = configPath;
+
+    const response = await handleSetupRepoRoutes(
+      postRepo({ fullName: "acme/widget" }),
+    );
+
+    expect(response?.status).toBe(409);
+    expect(await response?.json()).toEqual({
+      error: `Repository is already registered: ${realpathSync(checkout)}`,
     });
   });
 
