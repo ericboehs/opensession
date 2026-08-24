@@ -18,19 +18,30 @@
  * same containment story as the App user tokens.
  */
 import { createSign } from "node:crypto";
-import { existsSync, writeFileSync, chmodSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { githubUserAuthSettings } from "./github-auth";
 import { configuredIntegration } from "./config";
 import { githubGitCredentialEnv } from "./github-git-credential";
+import { writeFileAtomic } from "./shared/atomic-write";
 import {
   GITHUB_APP_READ_PERMISSIONS as READ_PERMISSIONS,
   GITHUB_APP_WRITE_PERMISSIONS as WRITE_PERMISSIONS,
 } from "../shared/github-app-permissions";
 
-const KEY_PATH =
-  process.env.OPENSESSION_GITHUB_APP_KEY || join(homedir(), ".opensession-github-app.pem");
+let keyPathOverride: string | undefined;
+
+function keyPath(): string {
+  return keyPathOverride ||
+    process.env.OPENSESSION_GITHUB_APP_KEY ||
+    join(homedir(), ".opensession-github-app.pem");
+}
+
+/** Test seam: isolate key mutations from the operator's real key file. */
+export function __setGithubAppKeyPathForTest(path: string | undefined): void {
+  keyPathOverride = path;
+}
 
 type AppTokenCache = {
   token: string;
@@ -79,9 +90,9 @@ export async function githubAppInstallationToken(
   ) return cached.token;
 
   const { clientId } = githubUserAuthSettings();
-  if (!clientId || !existsSync(KEY_PATH)) return null;
+  if (!clientId || !existsSync(keyPath())) return null;
   try {
-    const key = await Bun.file(KEY_PATH).text();
+    const key = await Bun.file(keyPath()).text();
     const jwt = appJwt(clientId, key);
     const headers = { Authorization: `Bearer ${jwt}`, Accept: "application/vnd.github+json" };
 
@@ -199,10 +210,10 @@ export function githubConfiguredCredential(): boolean {
 
 /** Whether a GitHub App can mint installation tokens (client id + private key). */
 export function githubAppConfigured(): boolean {
-  return !!githubUserAuthSettings().clientId && existsSync(KEY_PATH);
+  return !!githubUserAuthSettings().clientId && existsSync(keyPath());
 }
 
-/** Persist the App's private key (0600) at KEY_PATH — the piece the device-flow
+/** Persist the App's private key (0600) at the key path — the piece the device-flow
  *  setup never captured, so installation tokens (bot/agent, checks-read) could
  *  never mint. The App-manifest flow returns this PEM at creation. Drops any
  *  cached installation token, which belonged to a previous key. Honors the
@@ -210,8 +221,17 @@ export function githubAppConfigured(): boolean {
 export function writeGithubAppKey(pem: string): void {
   if (process.env.OPENSESSION_GITHUB_APP_KEY)
     throw new Error("OPENSESSION_GITHUB_APP_KEY is set; not overwriting an ops-managed key");
-  writeFileSync(KEY_PATH, pem.endsWith("\n") ? pem : `${pem}\n`, { mode: 0o600 });
-  try { chmodSync(KEY_PATH, 0o600); } catch {}
+  writeFileAtomic(keyPath(), pem.endsWith("\n") ? pem : `${pem}\n`, 0o600);
+  g.__ghAppTokenCacheRead = null;
+  g.__ghAppTokenCacheWrite = null;
+}
+
+/** Remove only a UI-managed key. An ops-managed path is external authority and
+ * must never be mutated by the Settings removal flow. */
+export function removeGithubAppKey(): void {
+  if (process.env.OPENSESSION_GITHUB_APP_KEY)
+    throw new Error("OPENSESSION_GITHUB_APP_KEY is set; not removing an ops-managed key");
+  rmSync(keyPath(), { force: true });
   g.__ghAppTokenCacheRead = null;
   g.__ghAppTokenCacheWrite = null;
 }
@@ -249,9 +269,9 @@ export async function githubAppRepositoryToken(ghRepo: string): Promise<string |
     return null;
   }
   const { clientId } = githubUserAuthSettings();
-  if (!installationId || !clientId || !existsSync(KEY_PATH)) return null;
+  if (!installationId || !clientId || !existsSync(keyPath())) return null;
   try {
-    const key = await Bun.file(KEY_PATH).text();
+    const key = await Bun.file(keyPath()).text();
     const res = await fetch(
       `https://api.github.com/app/installations/${installationId}/access_tokens`,
       {
