@@ -6,6 +6,7 @@ import {
   applyEnvEdits,
   applyEnvFileEdits,
   envFilePath,
+  prepareEnvFileEdits,
   readEnvFileValues,
   validateEnvValue,
   WEB_SETUP_MARKER,
@@ -111,10 +112,22 @@ describe("applyEnvFileEdits (disk)", () => {
     expect(readEnvFileValues().KEY).toBe('with "quotes"');
   });
 
-  test("commented-out keys disappear from readEnvFileValues", () => {
+  test("commented-out keys disappear unless unset values are requested", () => {
     writeFileSync(file, "KEY=live\n");
     applyEnvFileEdits({ KEY: "" });
     expect(readEnvFileValues().KEY).toBeUndefined();
+    expect(readEnvFileValues({ includeUnset: true }).KEY).toBe("");
+  });
+
+  test("prepared edits can roll back after a later config write fails", () => {
+    writeFileSync(file, "KEY=before\n");
+    const edit = prepareEnvFileEdits({ KEY: "after" });
+
+    edit.commit();
+    expect(readFileSync(file, "utf-8")).toBe("KEY=after\n");
+    edit.rollback();
+
+    expect(readFileSync(file, "utf-8")).toBe("KEY=before\n");
   });
 
   test("envFilePath honors the OPENSESSION_ENV_FILE override", () => {

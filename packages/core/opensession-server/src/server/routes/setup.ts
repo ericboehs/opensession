@@ -204,9 +204,9 @@ export async function handleSetupRoutes(
     const { readEnvFileValues } = await import("../env-file-edit");
     const { repoLifecycle } = await import("../preview");
     const { engineStatus } = await import("../engine-status");
-    const envValues = readEnvFileValues();
+    const envValues = readEnvFileValues({ includeUnset: true });
 
-    const access = setupAccessSnapshot();
+    const access = setupAccessSnapshot({ persistedEnv: envValues });
 
     return Response.json({
       // Compatibility field for the native app's tolerant setup snapshot.

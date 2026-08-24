@@ -48,16 +48,13 @@ export async function handleSetupAccessRoutes(
     );
   }
 
-  const { applyEnvFileEdits } = await import("../env-file-edit");
+  const { prepareEnvFileEdits } = await import("../env-file-edit");
   const { rawConfig, persistRawConfig, withConfigMutationLock } =
     await import("../config-mutation");
 
   return withConfigMutationLock(async () => {
-    applyEnvFileEdits({
-      OPENSESSION_UI_BASE: publicBaseUrl,
-      OPENSESSION_WEBHOOK_BASE: webhookBaseUrl,
-    });
-
+    // Parse and prepare both stores before either is changed. If the second
+    // atomic write fails, restore the first so a failed request is a no-op.
     const config = rawConfig();
     const server =
       config.server &&
@@ -69,7 +66,18 @@ export async function handleSetupAccessRoutes(
     server.publicBaseUrl = publicBaseUrl;
     if (webhookBaseUrl) server.webhookBaseUrl = webhookBaseUrl;
     else delete server.webhookBaseUrl;
-    persistRawConfig(config);
+    const envEdit = prepareEnvFileEdits({
+      OPENSESSION_UI_BASE: publicBaseUrl,
+      OPENSESSION_WEBHOOK_BASE: webhookBaseUrl,
+    });
+
+    envEdit.commit();
+    try {
+      persistRawConfig(config);
+    } catch (error) {
+      envEdit.rollback();
+      throw error;
+    }
 
     audit({
       kind: "setup_access_update",

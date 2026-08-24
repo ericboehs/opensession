@@ -24,6 +24,9 @@ function normalizeOrigin(value: string, label: string): URL {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error(`${label} must use http or https`);
   }
+  if (url.protocol === "https:" && url.port) {
+    throw new Error(`${label} must use the default HTTPS port 443`);
+  }
   if (url.username || url.password) throw new Error(`${label} cannot include credentials`);
   if (url.pathname !== "/" || url.search || url.hash) {
     throw new Error(`${label} must not include a path, query, or fragment`);
@@ -88,23 +91,45 @@ export interface SetupAccessSnapshot {
 }
 
 /** The access facts shared by GET status and the access-save response. Explicit
- * overrides keep the just-written values truthful before the process restarts
- * and reloads its environment file. */
+ * origins keep the save response truthful; persisted env values keep later GETs
+ * truthful while process.env still contains boot-time values. */
 export function setupAccessSnapshot(
-  overrides: {
+  options: {
     publicBaseUrl?: string;
     webhookBaseUrl?: string | null;
+    persistedEnv?: Readonly<Record<string, string>>;
   } = {},
 ): SetupAccessSnapshot {
   const server = configuredServer();
+  const configServer = getConfig().server;
+  const persistedOrigin = (
+    key: "OPENSESSION_UI_BASE" | "OPENSESSION_WEBHOOK_BASE",
+    configValue: string | undefined,
+    bootValue: string | undefined,
+  ): string | null => {
+    if (options.persistedEnv && key in options.persistedEnv) {
+      return options.persistedEnv[key]?.trim() || null;
+    }
+    return configValue?.trim() || bootValue?.trim() || null;
+  };
+  const publicBaseUrl =
+    options.publicBaseUrl ??
+    persistedOrigin(
+      "OPENSESSION_UI_BASE",
+      configServer?.publicBaseUrl,
+      server.publicBaseUrl,
+    ) ??
+    server.publicBaseUrl;
   const configuredWebhook =
-    overrides.webhookBaseUrl !== undefined
-      ? overrides.webhookBaseUrl
-      : process.env.OPENSESSION_WEBHOOK_BASE?.trim() ||
-        getConfig().server?.webhookBaseUrl?.trim() ||
-        null;
+    options.webhookBaseUrl !== undefined
+      ? options.webhookBaseUrl
+      : persistedOrigin(
+          "OPENSESSION_WEBHOOK_BASE",
+          configServer?.webhookBaseUrl,
+          process.env.OPENSESSION_WEBHOOK_BASE,
+        );
   return {
-    publicBaseUrl: (overrides.publicBaseUrl || server.publicBaseUrl).replace(/\/$/, ""),
+    publicBaseUrl: publicBaseUrl.replace(/\/$/, ""),
     webhookBaseUrl: configuredWebhook
       ? configuredWebhook.replace(/\/$/, "")
       : null,

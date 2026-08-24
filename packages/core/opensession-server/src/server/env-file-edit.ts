@@ -16,7 +16,7 @@
  * there).
  */
 
-import { chmodSync, existsSync, readFileSync } from "fs";
+import { chmodSync, existsSync, readFileSync, rmSync } from "fs";
 import { statePath } from "./paths";
 import { backupFile } from "./config-mutation";
 import { writeFileAtomic } from "./shared/atomic-write";
@@ -112,6 +112,46 @@ export function applyEnvEdits(
   return lines.length ? `${lines.join("\n")}\n` : "";
 }
 
+/** A prepared env-file edit can be rolled back if a second file in the same
+ * config mutation fails to commit. Call only while holding the shared lock. */
+export interface PreparedEnvFileEdit {
+  commit(): void;
+  rollback(): void;
+}
+
+export function prepareEnvFileEdits(
+  edits: Record<string, string>,
+): PreparedEnvFileEdit {
+  const path = envFilePath();
+  const existed = existsSync(path);
+  const before = existed ? readFileSync(path, "utf-8") : "";
+  const after = applyEnvEdits(before, edits);
+  let committed = false;
+  return {
+    commit() {
+      if (committed) return;
+      backupFile(path);
+      writeFileAtomic(path, after);
+      committed = true;
+      try {
+        chmodSync(path, 0o600);
+      } catch {}
+    },
+    rollback() {
+      if (!committed) return;
+      if (existed) {
+        writeFileAtomic(path, before);
+        try {
+          chmodSync(path, 0o600);
+        } catch {}
+      } else {
+        rmSync(path, { force: true });
+      }
+      committed = false;
+    },
+  };
+}
+
 /**
  * Apply edits to the env file on disk: `.bak-<n>` backup first (same scheme
  * as scripts/lib/config-edit.ts), atomic write, 0600 after. Serialize calls
@@ -119,34 +159,37 @@ export function applyEnvEdits(
  * mutation.
  */
 export function applyEnvFileEdits(edits: Record<string, string>): void {
-  const path = envFilePath();
-  const before = existsSync(path) ? readFileSync(path, "utf-8") : "";
-  backupFile(path);
-  writeFileAtomic(path, applyEnvEdits(before, edits));
-  try {
-    chmodSync(path, 0o600);
-  } catch {}
+  prepareEnvFileEdits(edits).commit();
 }
 
-/** Parse the env file's ACTIVE definitions (uncommented `KEY=value` lines).
- *  Values are returned unquoted; used to compute truthful presence for setup
- *  responses (process.env lags the file until the next restart). */
-export function readEnvFileValues(): Record<string, string> {
+/** Parse the env file's active definitions. With `includeUnset`, a commented
+ * definition is represented as an empty string so status snapshots can tell a
+ * pending clear from an unchanged boot-time process.env value. */
+export function readEnvFileValues(options?: {
+  includeUnset?: boolean;
+}): Record<string, string> {
   const path = envFilePath();
   if (!existsSync(path)) return {};
   const values: Record<string, string> = {};
   for (const line of readFileSync(path, "utf-8").split("\n")) {
     const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/);
-    if (!m) continue;
-    let value = m[2].trim();
-    const quoted = value.match(/^"((?:[^"\\]|\\.)*)"$/);
-    if (quoted) {
-      value = quoted[1].replace(/\\(.)/g, "$1");
-    } else {
-      const single = value.match(/^'([^']*)'$/);
-      if (single) value = single[1];
+    if (m) {
+      let value = m[2].trim();
+      const quoted = value.match(/^"((?:[^"\\]|\\.)*)"$/);
+      if (quoted) {
+        value = quoted[1].replace(/\\(.)/g, "$1");
+      } else {
+        const single = value.match(/^'([^']*)'$/);
+        if (single) value = single[1];
+      }
+      values[m[1]] = value;
+      continue;
     }
-    values[m[1]] = value;
+    if (!options?.includeUnset) continue;
+    const commented = line.match(
+      /^\s*#\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/,
+    );
+    if (commented && !(commented[1] in values)) values[commented[1]] = "";
   }
   return values;
 }

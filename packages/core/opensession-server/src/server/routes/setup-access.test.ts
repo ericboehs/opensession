@@ -4,9 +4,12 @@ import { tmpdir } from "os";
 import { join } from "path";
 import type { RouteContext } from "./context";
 import { handleSetupAccessRoutes } from "./setup-access";
+import { handleSetupRoutes } from "./setup";
 
 const savedConfig = process.env.OPENSESSION_CONFIG;
 const savedEnvFile = process.env.OPENSESSION_ENV_FILE;
+const savedUiBase = process.env.OPENSESSION_UI_BASE;
+const savedWebhookBase = process.env.OPENSESSION_WEBHOOK_BASE;
 const dirs: string[] = [];
 
 function fixture() {
@@ -44,11 +47,26 @@ function context(body: unknown): RouteContext {
   };
 }
 
+function statusContext(): RouteContext {
+  const url = new URL("http://localhost/api/setup/status");
+  return {
+    req: new Request(url),
+    url,
+    path: url.pathname,
+    publicPrefix: "",
+    authUser: { login: "admin", name: "Admin" },
+  };
+}
+
 afterEach(() => {
   if (savedConfig === undefined) delete process.env.OPENSESSION_CONFIG;
   else process.env.OPENSESSION_CONFIG = savedConfig;
   if (savedEnvFile === undefined) delete process.env.OPENSESSION_ENV_FILE;
   else process.env.OPENSESSION_ENV_FILE = savedEnvFile;
+  if (savedUiBase === undefined) delete process.env.OPENSESSION_UI_BASE;
+  else process.env.OPENSESSION_UI_BASE = savedUiBase;
+  if (savedWebhookBase === undefined) delete process.env.OPENSESSION_WEBHOOK_BASE;
+  else process.env.OPENSESSION_WEBHOOK_BASE = savedWebhookBase;
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -79,6 +97,40 @@ describe("setup access route", () => {
     expect(env).toContain("OPENSESSION_WEBHOOK_BASE=https://hooks.example.com");
   });
 
+  test("status refetches use pending file values instead of boot-time origins", async () => {
+    fixture();
+    process.env.OPENSESSION_UI_BASE = "http://100.72.1.4:3850";
+    process.env.OPENSESSION_WEBHOOK_BASE = "https://old-hooks.example.com";
+
+    await handleSetupAccessRoutes(
+      context({
+        publicBaseUrl: "https://os.example.com",
+        webhookBaseUrl: "https://hooks.example.com",
+      }),
+    );
+    const savedStatus = await handleSetupRoutes(statusContext());
+    expect(await savedStatus?.json()).toMatchObject({
+      access: {
+        publicBaseUrl: "https://os.example.com",
+        webhookBaseUrl: "https://hooks.example.com",
+      },
+    });
+
+    await handleSetupAccessRoutes(
+      context({
+        publicBaseUrl: "https://os.example.com",
+        webhookBaseUrl: "",
+      }),
+    );
+    const clearedStatus = await handleSetupRoutes(statusContext());
+    expect(await clearedStatus?.json()).toMatchObject({
+      access: {
+        publicBaseUrl: "https://os.example.com",
+        webhookBaseUrl: null,
+      },
+    });
+  });
+
   test("clears the separate webhook origin from both stores", async () => {
     const paths = fixture();
     await handleSetupAccessRoutes(
@@ -106,6 +158,22 @@ describe("setup access route", () => {
     expect(readFileSync(paths.env, "utf-8")).toContain(
       "# OPENSESSION_WEBHOOK_BASE=https://hooks.example.com",
     );
+  });
+
+  test("does not edit the env file when config preparation fails", async () => {
+    const paths = fixture();
+    const before = readFileSync(paths.env, "utf-8");
+    writeFileSync(paths.config, "{ invalid json");
+
+    await expect(
+      handleSetupAccessRoutes(
+        context({
+          publicBaseUrl: "https://os.example.com",
+          webhookBaseUrl: "https://hooks.example.com",
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(readFileSync(paths.env, "utf-8")).toBe(before);
   });
 
   test("rejects a private webhook origin without changing config", async () => {

@@ -36,6 +36,15 @@ describe("setup access origins", () => {
     expect(() =>
       normalizeWebhookOrigin("https://os.example.com", "https://os.example.com"),
     ).toThrow("different hostname");
+    expect(() =>
+      normalizeWebhookOrigin(
+        "https://hooks.example.com:8443",
+        "https://os.example.com",
+      ),
+    ).toThrow("default HTTPS port 443");
+    expect(() => normalizeAppOrigin("https://os.example.com:8443")).toThrow(
+      "default HTTPS port 443",
+    );
   });
 
   test("rejects addresses providers cannot reach", () => {
