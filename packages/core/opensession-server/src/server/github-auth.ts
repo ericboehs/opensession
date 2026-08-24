@@ -813,20 +813,31 @@ function projectedGithubAuthEnv(): Record<string, string> {
   }
 }
 
-/** GitHub environment for one interactive run. Besides the API variables, set
- * a process-local Git credential helper so HTTPS remotes can push without
- * persisting the short-lived user token in .git/config or ~/.config/gh. */
-export function githubRunEnv(user?: string | null): Record<string, string> {
-  const auth = githubAuthEnv(user);
-  const projected = Object.keys(auth).length ? auth : projectedGithubAuthEnv();
-  if (!projected.GH_TOKEN) return {};
+function githubProcessEnv(auth: Record<string, string>): Record<string, string> {
+  if (!auth.GH_TOKEN) return {};
   return {
-    ...projected,
+    ...auth,
     GIT_TERMINAL_PROMPT: "0",
     GIT_CONFIG_COUNT: "1",
     GIT_CONFIG_KEY_0: "credential.https://github.com.helper",
     GIT_CONFIG_VALUE_0: "!gh auth git-credential",
   };
+}
+
+/** Consume only the private run-scoped file projected by a remote launcher.
+ * Unlike githubRunEnv(), this can never consult a connected human account. */
+export function projectedGithubRunEnv(): Record<string, string> {
+  return githubProcessEnv(projectedGithubAuthEnv());
+}
+
+/** GitHub environment for one interactive run. Besides the API variables, set
+ * a process-local Git credential helper so HTTPS remotes can push without
+ * persisting the short-lived user token in .git/config or ~/.config/gh. */
+export function githubRunEnv(user?: string | null): Record<string, string> {
+  const auth = githubAuthEnv(user);
+  return githubProcessEnv(
+    Object.keys(auth).length ? auth : projectedGithubAuthEnv(),
+  );
 }
 
 export interface GithubCredential {
