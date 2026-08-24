@@ -1,4 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   accountProviderForModel,
   explicitEngineFor,
@@ -9,7 +12,19 @@ import {
   resolveModel,
   routeModel,
   toPiModel,
+  KNOWN_MODELS,
+  refreshPickerModels,
 } from "./models";
+
+const originalPiConfig = process.env.OPENSESSION_PI_CONFIG;
+let pickerConfigDir = "";
+afterEach(() => {
+  if (originalPiConfig === undefined) delete process.env.OPENSESSION_PI_CONFIG;
+  else process.env.OPENSESSION_PI_CONFIG = originalPiConfig;
+  refreshPickerModels();
+  if (pickerConfigDir) rmSync(pickerConfigDir, { recursive: true, force: true });
+  pickerConfigDir = "";
+});
 
 describe("Pi-only model routing", () => {
   test("maps native model ids to Pi", () => {
@@ -72,5 +87,20 @@ describe("Pi-only model routing", () => {
 
   test("labels Pi models without an engine prefix", () => {
     expect(modelLabel("pi/openai/gpt-5.6-sol")).toBe("GPT-5.6 Sol");
+  });
+
+  test("seeds subscription models without the retired pickerModels setting", () => {
+    pickerConfigDir = mkdtempSync(join(tmpdir(), "pi-picker-models-"));
+    const path = join(pickerConfigDir, "pi.json");
+    writeFileSync(path, JSON.stringify({ enabled: true, pickerModels: [] }));
+    process.env.OPENSESSION_PI_CONFIG = path;
+
+    refreshPickerModels();
+
+    const pickerIds = KNOWN_MODELS
+      .filter((model) => model.provider === "pi")
+      .map((model) => model.id);
+    expect(pickerIds).toContain("pi/openai/gpt-5.6-sol");
+    expect(pickerIds).toContain("pi/anthropic/claude-fable-5");
   });
 });
