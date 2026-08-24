@@ -601,7 +601,19 @@ function isGithubHttpsUrl(httpsUrl: string): boolean {
   }
 }
 
-async function injectToken(httpsUrl: string): Promise<string> {
+/** Pick clone authority without crossing the operator's credential cutover.
+ * In App mode a missing live GitHub token fails closed; the persisted token may
+ * be the retired PAT. Non-GitHub hosts retain their explicit clone credential. */
+export function selectedCloneToken(
+  liveToken: string | undefined,
+  persistedToken: string | undefined,
+  github: boolean,
+  mode: "pat" | "app",
+): string | undefined {
+  return liveToken || (github && mode === "app" ? undefined : persistedToken);
+}
+
+export async function injectCloneCredential(httpsUrl: string): Promise<string> {
   const cred = sandboxConfig().cloneCredential;
   if (cred?.type === "https-token") {
     // GitHub clones get a freshly resolved credential — used only for the
@@ -622,7 +634,13 @@ async function injectToken(httpsUrl: string): Promise<string> {
         (await githubToken()) ||
         undefined;
     }
-    const token = liveGithubToken || cred.token;
+    const { githubBotCredentialMode } = await import("../../github-app");
+    const token = selectedCloneToken(
+      liveGithubToken,
+      cred.token,
+      !!ghMatch,
+      githubBotCredentialMode(),
+    );
     if (token) {
       return httpsUrl.replace(/^https:\/\//, `https://x-access-token:${token}@`);
     }
@@ -665,7 +683,7 @@ export async function remoteCloneUrl(repo: {
       `repo ${repo.id} has no https-reachable origin (origin="${redactUrl(origin) || "none"}") — remote sandboxes clone over https; set an origin or ghRepo`,
     );
   }
-  return await injectToken(https);
+  return await injectCloneCredential(https);
 }
 
 /**
@@ -946,7 +964,7 @@ export async function bootstrapRemoteSandbox(
   const runnerCloneUrl = cfg.runnerBundleUrl
     ? undefined
     : cfg.runnerRepoUrl && toHttpsUrl(cfg.runnerRepoUrl)
-      ? await injectToken(toHttpsUrl(cfg.runnerRepoUrl)!)
+      ? await injectCloneCredential(toHttpsUrl(cfg.runnerRepoUrl)!)
       : await remoteCloneUrl(runnerRepo);
   const hasRepo = await driver.exec(`test -f ${REMOTE_REPO}/package.json`);
   if (hasRepo.exitCode !== 0) {
