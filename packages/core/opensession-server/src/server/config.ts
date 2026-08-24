@@ -19,6 +19,7 @@ import { existsSync, readFileSync, statSync } from "fs";
 import { resolve as resolvePath } from "path";
 import { statePath } from "./paths";
 import { writeFileAtomic } from "./shared/atomic-write";
+import { shellSafeDefaultBranch } from "./repo-branch";
 
 const HOME = homeDir();
 const OPENSESSION_ROOT = resolvePath(import.meta.dir, "../../../../..");
@@ -376,7 +377,7 @@ function parseRepoSection(v: unknown): RepoSection | undefined {
     description: str(o.description),
     repo: str(o.repo),
     wtPrefix: str(o.wtPrefix),
-    defaultBranch: str(o.defaultBranch),
+    defaultBranch: shellSafeDefaultBranch(o.defaultBranch),
     ghRepo: str(o.ghRepo),
     host,
     csRepo: str(o.csRepo),

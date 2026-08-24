@@ -297,22 +297,6 @@ export function SetupPanel({
             >
               <SetupChecklist status={status} onChanged={refetch} />
             </SetupPageSection>
-
-            <SetupPageSection
-              id="members"
-              title="Members"
-              description="Everyone who uses this instance, so sessions and commits attribute to real people."
-            >
-              <TeamSection onChanged={refetch} />
-            </SetupPageSection>
-
-            <SetupPageSection
-              id="review"
-              title="Review"
-              description="Everything this instance needs, and what each part is doing right now."
-            >
-              <SetupChecklist status={status} onChanged={refetch} />
-            </SetupPageSection>
           </div>
           <SetupSummary status={status} onSelect={scrollToSection} />
         </div>

@@ -239,6 +239,8 @@ const g = globalThis as unknown as {
   __previewPoolSyncs?: Map<string, { timer: ReturnType<typeof setInterval>; mtimes: Map<string, number> }>;
 };
 const busy: Map<string, Promise<unknown>> = (g.__previewPoolBusy ??= new Map());
+const defaultBranchInvalidationVersion = new Map<string, number>();
+const retiredDefaultBranchMembers = new Map<string, PoolContainer[]>();
 /** worktreeDir -> live sync loop. */
 const syncs = (g.__previewPoolSyncs ??= new Map());
 
@@ -1408,6 +1410,73 @@ async function destroyContainer(repoId: string, name: string): Promise<void> {
   patchContainer(repoId, name, null);
 }
 
+/** Retire every unclaimed member derived from the previous default branch,
+ * then rebuild and refill from the new one. Multiple changes coalesce, but a
+ * change arriving during a rebuild advances the generation and gets another
+ * pass rather than being lost behind the in-flight work. */
+export function invalidatePreviewPoolDefaultBranch(repoId: string): void {
+  const version = (defaultBranchInvalidationVersion.get(repoId) || 0) + 1;
+  defaultBranchInvalidationVersion.set(repoId, version);
+
+  const detachUnclaimed = () => {
+    const state = readState(repoId);
+    const retired = Object.values(state.containers).filter(
+      (container) => container.state !== "claimed",
+    );
+    for (const container of retired) delete state.containers[container.name];
+    delete state.golden;
+    writeState(repoId, state);
+    if (retired.length) {
+      const queued = retiredDefaultBranchMembers.get(repoId) || [];
+      queued.push(...retired);
+      retiredDefaultBranchMembers.set(repoId, queued);
+    }
+  };
+  // Remove stale members from the claimable state before any asynchronous
+  // cleanup so a request racing this invalidation cannot claim one.
+  detachUnclaimed();
+
+  const key = `default-branch-${repoId}`;
+  if (busy.has(key)) return;
+  let handledVersion = 0;
+  const run = (async () => {
+    while (handledVersion < (defaultBranchInvalidationVersion.get(repoId) || 0)) {
+      const targetVersion = defaultBranchInvalidationVersion.get(repoId) || 0;
+      const sweep = busy.get("sweep");
+      if (sweep) await sweep;
+      const golden = busy.get(`golden-${repoId}`);
+      if (golden) await golden;
+
+      // A sweep or golden build that was already in flight may have added more
+      // old-branch members after the synchronous detach above.
+      detachUnclaimed();
+      const retired = retiredDefaultBranchMembers.get(repoId)?.splice(0) || [];
+      for (const container of retired) {
+        await poolDestroyRef(container).catch((error) => {
+          console.warn(
+            `[preview-pool] ${repoId}: could not retire ${container.name}:`,
+            error,
+          );
+        });
+      }
+
+      const repo = configuredRepos()[repoId];
+      if (!repo) return;
+      const cfg = previewPoolConfig(repoId);
+      if (cfg.enabled && cfg.backend !== "daytona") {
+        await refreshGoldenImage(repoId, true);
+      }
+      if (cfg.enabled) await ensurePool(repo);
+      handledVersion = targetVersion;
+    }
+  })()
+    .catch((error) => {
+      console.warn(`[preview-pool] ${repoId}: default branch invalidation failed:`, error);
+    })
+    .finally(() => busy.delete(key));
+  busy.set(key, run);
+}
+
 /** Reconcile one repo's pool: docker truth vs state, then top up. */
 async function ensurePool(repo: Repo): Promise<void> {
   const cfg = previewPoolConfig(repo.id);
@@ -1583,7 +1652,11 @@ export async function claimPoolPreview(repoId: string, worktreeDir: string): Pro
 
 async function claimPoolPreviewInner(repoId: string, worktreeDir: string): Promise<PoolClaim | null> {
   const repo = configuredRepos()[repoId];
-  if (!repo || !previewPoolEnabled(repoId)) return null;
+  if (
+    !repo ||
+    !previewPoolEnabled(repoId) ||
+    busy.has(`default-branch-${repoId}`)
+  ) return null;
   const already = poolClaimFor(worktreeDir);
   if (already) return already;
 

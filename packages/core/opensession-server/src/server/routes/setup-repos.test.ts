@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { shellQuoteWord } from "../sandbox/adapters/bootstrap";
 import {
   githubCredentialHelperCommand,
   handleSetupRepoRoutes,
@@ -124,10 +123,10 @@ describe("normalizeDefaultBranch", () => {
     await expect(normalizeDefaultBranch("-dangerous")).resolves.toBeNull();
   });
 
-  test("quotes git-valid shell metacharacters at command boundaries", async () => {
-    const branch = "release;echo-not-a-command";
-    await expect(normalizeDefaultBranch(branch)).resolves.toBe(branch);
-    expect(shellQuoteWord(branch)).toBe("'release;echo-not-a-command'");
+  test("rejects git-valid shell and Markdown metacharacters", async () => {
+    await expect(normalizeDefaultBranch("release;echo-not-a-command")).resolves.toBeNull();
+    await expect(normalizeDefaultBranch("release`whoami`")).resolves.toBeNull();
+    await expect(normalizeDefaultBranch("release$(whoami)")).resolves.toBeNull();
   });
 });
 

@@ -7,6 +7,7 @@ import {
   createWorktree,
   ensureAskCheckout,
   getRepo,
+  invalidateAskCheckoutRefresh,
   isSharedCheckoutDir,
   prepareAttachedWorktree,
   sharedCheckoutForNewSessions,
@@ -134,6 +135,73 @@ describe("selfDev absent/shared — byte-identical current behavior", () => {
     expect(worktreePathFor("feat-x")).toBe(OPENSESSION_ROOT);
     expect(await createWorktree("feat-x")).toBe(OPENSESSION_ROOT);
     expect(await ensureAskCheckout()).toBe(OPENSESSION_ROOT);
+  });
+});
+
+describe("Ask checkout default branch invalidation", () => {
+  test("waits for the checkout to move to the new default before returning", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bks-ask-checkout-test-"));
+    dirs.push(dir);
+    const repo = join(dir, "repo");
+    const remote = join(dir, "remote.git");
+    const worktrees = join(dir, "worktrees");
+    const config = join(dir, "config.json");
+    const git = (...args: string[]) => {
+      expect(Bun.spawnSync(["git", ...args]).exitCode).toBe(0);
+    };
+
+    git("init", "-q", "-b", "main", repo);
+    writeFileSync(join(repo, "README.md"), "main\n");
+    git("-C", repo, "add", "README.md");
+    git(
+      "-C", repo,
+      "-c", "user.name=Test",
+      "-c", "user.email=test@example.com",
+      "commit", "-q", "-m", "main",
+    );
+    git("-C", repo, "checkout", "-q", "-b", "release");
+    writeFileSync(join(repo, "README.md"), "release\n");
+    git("-C", repo, "add", "README.md");
+    git(
+      "-C", repo,
+      "-c", "user.name=Test",
+      "-c", "user.email=test@example.com",
+      "commit", "-q", "-m", "release",
+    );
+    git("-C", repo, "checkout", "-q", "main");
+    git("init", "-q", "--bare", remote);
+    git("-C", repo, "remote", "add", "origin", remote);
+    git("-C", repo, "push", "-q", "-u", "origin", "main", "release");
+
+    const writeConfig = (defaultBranch: string) => {
+      writeFileSync(
+        config,
+        JSON.stringify({
+          paths: { worktreesDir: worktrees },
+          repos: {
+            app: { repo, wtPrefix: "app", defaultBranch, default: true },
+          },
+        }),
+      );
+      process.env.OPENSESSION_CONFIG = config;
+    };
+
+    writeConfig("main");
+    const askDir = await ensureAskCheckout("app");
+    const mainHead = Bun.spawnSync(["git", "-C", repo, "rev-parse", "origin/main"])
+      .stdout.toString().trim();
+    expect(
+      Bun.spawnSync(["git", "-C", askDir, "rev-parse", "HEAD"]).stdout.toString().trim(),
+    ).toBe(mainHead);
+
+    writeConfig("release");
+    invalidateAskCheckoutRefresh("app");
+    expect(await ensureAskCheckout("app")).toBe(askDir);
+    const releaseHead = Bun.spawnSync(["git", "-C", repo, "rev-parse", "origin/release"])
+      .stdout.toString().trim();
+    expect(
+      Bun.spawnSync(["git", "-C", askDir, "rev-parse", "HEAD"]).stdout.toString().trim(),
+    ).toBe(releaseHead);
   });
 });
 

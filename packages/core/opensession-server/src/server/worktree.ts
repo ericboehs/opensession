@@ -416,26 +416,75 @@ export function ensureScratchDir(key: string): string {
  * hiccup degrades to the old behavior instead of failing the session.
  */
 const askCheckoutRefreshedAt = new Map<string, number>();
+const askCheckoutInvalidationVersion = new Map<string, number>();
+const askCheckoutAppliedVersion = new Map<string, number>();
+const askCheckoutRefreshes = new Map<
+  string,
+  { version: number; promise: Promise<void> }
+>();
 const ASK_REFRESH_MS = 5 * 60_000;
 
-/** Force the next Ask session to re-pin this repo's shared read-only checkout. */
+/** Force the next Ask session to wait until this repo's read-only checkout is
+ * pinned to the newly configured default branch. */
 export function invalidateAskCheckoutRefresh(repoId: string): void {
+  askCheckoutInvalidationVersion.set(
+    repoId,
+    (askCheckoutInvalidationVersion.get(repoId) || 0) + 1,
+  );
   askCheckoutRefreshedAt.delete(repoId);
+}
+
+function refreshAskCheckout(
+  repo: Repo,
+  dir: string,
+  version: number,
+): Promise<void> {
+  const existing = askCheckoutRefreshes.get(repo.id);
+  if (existing && existing.version >= version) return existing.promise;
+
+  const promise = withGitLock(async () => {
+    const fetch =
+      await $`git -C ${dir} fetch origin ${repo.defaultBranch} --quiet`.quiet().nothrow();
+    if (fetch.exitCode !== 0) {
+      throw new Error(
+        `Could not fetch ${repo.id}'s default branch ${repo.defaultBranch}: ${fetch.stderr.toString().trim()}`,
+      );
+    }
+    const reset =
+      await $`git -C ${dir} reset --hard origin/${repo.defaultBranch}`.quiet().nothrow();
+    if (reset.exitCode !== 0) {
+      throw new Error(
+        `Could not pin ${repo.id}'s Ask checkout to ${repo.defaultBranch}: ${reset.stderr.toString().trim()}`,
+      );
+    }
+  }).finally(() => {
+    if (askCheckoutRefreshes.get(repo.id)?.promise === promise) {
+      askCheckoutRefreshes.delete(repo.id);
+    }
+  });
+  askCheckoutRefreshes.set(repo.id, { version, promise });
+  return promise;
 }
 
 export async function ensureAskCheckout(repoId?: string): Promise<string> {
   const repo = getRepo(repoId);
   if (sharedCheckoutForNewSessions(repo)) return repo.repo;
   const dir = `${worktreesDir()}/${repo.wtPrefix}-ask-checkout`;
+  const requiredVersion = askCheckoutInvalidationVersion.get(repo.id) || 0;
   if (existsSync(dir)) {
     const last = askCheckoutRefreshedAt.get(repo.id) || 0;
-    if (Date.now() - last > ASK_REFRESH_MS) {
+    const force = requiredVersion > (askCheckoutAppliedVersion.get(repo.id) || 0);
+    if (force || Date.now() - last > ASK_REFRESH_MS) {
       askCheckoutRefreshedAt.set(repo.id, Date.now());
-      void withGitLock(async () => {
-        await $`git -C ${dir} fetch origin ${repo.defaultBranch} --quiet`.quiet().nothrow();
-        // Detached tree with no writers: hard-pin to the fresh default tip.
-        await $`git -C ${dir} reset --hard origin/${repo.defaultBranch}`.quiet().nothrow();
-      });
+      const refresh = refreshAskCheckout(repo, dir, requiredVersion);
+      if (force) {
+        await refresh;
+        askCheckoutAppliedVersion.set(repo.id, requiredVersion);
+      } else {
+        void refresh.catch((error) => {
+          console.warn(`[worktree] Ask checkout refresh failed for ${repo.id}:`, error);
+        });
+      }
     }
     return dir;
   }
@@ -454,6 +503,7 @@ export async function ensureAskCheckout(repoId?: string): Promise<string> {
       return repo.repo;
     }
     askCheckoutRefreshedAt.set(repo.id, Date.now());
+    askCheckoutAppliedVersion.set(repo.id, requiredVersion);
     void installWorktreeDeps(repo, dir, "ask-checkout");
     return dir;
   });

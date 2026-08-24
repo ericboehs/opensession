@@ -27,6 +27,7 @@ import { githubCredentialForLogin, soleGithubAccount, type GithubCredential } fr
 import { githubCredentialHelperCommand } from "../github-git-credential";
 import { homeDir } from "../paths";
 import { fetchWithTimeout } from "../shared/fetch-with-timeout";
+import { shellSafeDefaultBranch } from "../repo-branch";
 import type { RouteContext } from "./context";
 import {
   inspectRepo,
@@ -45,17 +46,24 @@ export function validGithubFullName(value: unknown): value is string {
   return typeof value === "string" && GITHUB_FULL_NAME_RE.test(value);
 }
 
-/** Normalize a branch name through git's own ref validator so the editor
- * accepts exactly the branch grammar the rest of the git layer supports. */
+/** After the shared shell/Markdown boundary check, let Git enforce the
+ * remaining ref grammar. */
 export async function normalizeDefaultBranch(value: unknown): Promise<string | null> {
-  if (typeof value !== "string") return null;
-  const branch = value.trim();
+  const branch = shellSafeDefaultBranch(value);
   if (!branch) return null;
   const checked = Bun.spawn(["git", "check-ref-format", "--branch", branch], {
     stdout: "ignore",
     stderr: "ignore",
   });
   return (await checked.exited) === 0 ? branch : null;
+}
+
+async function normalizeInspectedDefaultBranch(value: unknown): Promise<string> {
+  const branch = await normalizeDefaultBranch(value);
+  if (branch) return branch;
+  throw new Error(
+    "Repository default branch may use only letters, numbers, '.', '_', '@', '%', '+', '=', ':', ',', '/', and '-'",
+  );
 }
 
 /**
@@ -357,13 +365,14 @@ async function registerGithubRepo(input: {
     // nothing to answer with.
     if (input.credential) await configureGithubCredentialHelper(dest);
     const inspected = await inspectRepo(dest);
+    const defaultBranch = await normalizeInspectedDefaultBranch(inspected.defaultBranch);
     const config = rawConfig();
     const repos = reposForMutation(config) as Record<string, RepoSection>;
     const entry: RepoSection = {
       label: name,
       repo: inspected.path,
       wtPrefix: id,
-      defaultBranch: inspected.defaultBranch,
+      defaultBranch,
       ghRepo: inspected.ghRepo || input.fullName,
       ...(Object.keys(configuredRepos()).length === 0 ? { default: true } : {}),
     };
@@ -423,13 +432,16 @@ async function registerCodestorageRepo(input: {
     // wires the URL-scoped credential helper for ambient git fetch/push.
     await cloneCsCheckout(csRepo, dest);
     const inspected = await inspectRepo(dest);
+    const defaultBranch = await normalizeInspectedDefaultBranch(
+      inspected.defaultBranch || resolved.default_branch || "main",
+    );
     const config = rawConfig();
     const repos = reposForMutation(config) as Record<string, RepoSection>;
     const entry: RepoSection = {
       label: name,
       repo: inspected.path,
       wtPrefix: id,
-      defaultBranch: inspected.defaultBranch || resolved.default_branch || "main",
+      defaultBranch,
       host: "codestorage",
       csRepo,
       ...(Object.keys(configuredRepos()).length === 0 ? { default: true } : {}),
@@ -607,7 +619,7 @@ export async function handleSetupRepoRoutes(
     const defaultBranch = await normalizeDefaultBranch(body?.defaultBranch);
     if (!defaultBranch) {
       return Response.json(
-        { error: "defaultBranch must be a valid Git branch" },
+        { error: "defaultBranch must be a shell-safe Git branch" },
         { status: 400 },
       );
     }
@@ -649,13 +661,18 @@ export async function handleSetupRepoRoutes(
         return Response.json({ error: `Unknown repository: ${id}` }, { status: 404 });
       }
       if (process.env.NODE_ENV !== "test") {
-        const [{ scheduleSandboxEnvironmentInvalidation }, { invalidateAskCheckoutRefresh }] =
-          await Promise.all([
-            import("../sandbox/environments"),
-            import("../worktree"),
-          ]);
+        const [
+          { scheduleSandboxEnvironmentInvalidation },
+          { invalidateAskCheckoutRefresh },
+          { invalidatePreviewPoolDefaultBranch },
+        ] = await Promise.all([
+          import("../sandbox/environments"),
+          import("../worktree"),
+          import("../preview-pool"),
+        ]);
         invalidateAskCheckoutRefresh(id);
         scheduleSandboxEnvironmentInvalidation(id);
+        invalidatePreviewPoolDefaultBranch(id);
       }
       return Response.json(updated);
     } catch (e) {
