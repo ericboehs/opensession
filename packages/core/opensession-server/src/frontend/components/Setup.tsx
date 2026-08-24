@@ -22,11 +22,7 @@ import { ProviderAccountsSection } from "./settings/ModelAccounts";
 import { ModelProvidersPanel } from "./ModelProviders";
 import { ModelDefaultsSection } from "./Models";
 import { IconCheck } from "./icons";
-import {
-  integrationState,
-  publicUrlState,
-  type SetupStatus,
-} from "./setup-shared";
+import { integrationState, type SetupStatus } from "./setup-shared";
 
 // Settings → Setup: every part of a new instance, in the order someone fills
 // it in, with a summary rail that jumps to the section that still needs work.
@@ -66,16 +62,14 @@ function SetupSummary({
   const github = status.integrations.find(
     (integration) => integration.id === "github",
   );
-  const serverReady = publicUrlState(status.publicBaseUrl).tone === "on";
   const githubReady = !!github && integrationState(github).tone === "on";
   const requiredReady =
-    serverReady &&
     githubReady &&
     status.engine.ready &&
     status.repos.length > 0 &&
     status.team.count > 0;
   const steps: { id: SectionId; label: string; complete: boolean }[] = [
-    { id: "server", label: "Server", complete: serverReady },
+    { id: "server", label: "Server", complete: true },
     { id: "github", label: "GitHub", complete: githubReady },
     { id: "organisation", label: "Organisation", complete: true },
     { id: "providers", label: "Providers", complete: status.engine.ready },
