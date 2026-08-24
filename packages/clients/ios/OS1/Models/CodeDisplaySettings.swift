@@ -156,6 +156,11 @@ struct CodeDisplaySettingsButton: View {
                 themeRaw = CodeDisplaySettings.Theme.dark.rawValue
             }
             if environment["OS1_OPEN_CODE_SETTINGS"] == "1" {
+                // Let UIKit attach the toolbar button before asking its popover
+                // controller for an anchor. Presenting during the first body
+                // pass aborts because the source view is not in a window yet.
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
                 presented = true
             }
             #endif
