@@ -20,7 +20,7 @@ import { startLiveActivitySync } from "./src/server/live-activities";
 import { kickTranscriptBackfillOnce } from "./src/server/transcript-backfill";
 import { kickOrphanTranscriptSweep } from "./src/server/transcript-orphan-sweep";
 import { makeAskHandler, restorePendingAsks } from "./src/server/asks";
-import { automationResumeMcpForSession, ensureConfiguredAutomations, getWebhookRoutes, setEventSessionCallback, settleResumedAutomationRun, startScheduler } from "./src/server/automations";
+import { activeAutomationPreparationCount, automationResumeMcpForSession, ensureConfiguredAutomations, getWebhookRoutes, resumePendingAutomationRuns, setEventSessionCallback, settleResumedAutomationRun, startScheduler } from "./src/server/automations";
 import { startUsagePoller } from "./src/server/claude-accounts";
 import { startCodexUsagePoller } from "./src/server/codex-accounts";
 import { FRONTEND_SRC, IS_DEV, SPA_HEADERS, ensureFrontendBuilt, frontend, isPrebuiltFrontend, scheduleFrontendRebuild, sharedCheckoutEditors, spaEntry } from "./src/server/frontend-build";
@@ -32,7 +32,7 @@ import { startPlainArchiveSweep } from "./src/server/plain-archive";
 import { devInstanceBootError, isDevInstance } from "./src/server/dev-mode";
 import { startPrReviewNotificationTicker } from "./src/server/pr-review-notifications";
 import { startPublicIngress } from "./src/server/public-ingress";
-import { readActiveShutdownSnapshot, recoverableLocalHostSnapshotRecords, recordRecoveredRunEvent, restorePromptQueues, resumeDrainedSessions, snapshotActiveSessions, startLoopTicker } from "./src/server/run-session";
+import { creationOwnsPrompt, readActiveShutdownSnapshot, recoverableLocalHostSnapshotRecords, recordRecoveredRunEvent, restorePromptQueues, resumeDrainedSessions, settleRecoveredCreationOpening, snapshotActiveSessions, startLoopTicker } from "./src/server/run-session";
 import { startMcpHttpServer, startRunRpcServer } from "./src/server/run-rpc";
 import { handleSandboxWsUpgrade, startTimerPoisonHeartbeat, timerPoisonRequestCheck } from "./src/server/run-ws";
 import {
@@ -658,12 +658,12 @@ if (!g.__opensessionBooted) {
 	}
 
 	// Cron-scheduled automations + internal event bus (agents → automations)
-	startScheduler(() => {
-		invalidateSessionsCache();
-	});
-	setEventSessionCallback(() => {
-		invalidateSessionsCache();
-	});
+	const onAutomationSession = () => invalidateSessionsCache();
+	setEventSessionCallback(onAutomationSession);
+	const resumedAutomationIntents = resumePendingAutomationRuns(onAutomationSession);
+	if (resumedAutomationIntents)
+		console.log(`[automations] Resumed ${resumedAutomationIntents} pre-launch intent(s)`);
+	startScheduler(onAutomationSession);
 	startPrReviewNotificationTicker();
 
 	// Scheduled prompts are durable SessionKernel timers. The runtime starts
@@ -770,11 +770,22 @@ if (!g.__opensessionBooted) {
 		try {
 		const shutdownRecords = readActiveShutdownSnapshot();
 		const resumedIds = resumeInterruptedRuns(
-			(bksSessionId, terminalEvent) => {
+			(bksSessionId, terminalEvent, recoveredRun) => {
 				if (bksSessionId && terminalEvent) {
 					const failed =
 						terminalEvent.type === "error" ||
 						!!terminalEvent.usageLimitExhausted;
+					if (recoveredRun?.promptEntryId) {
+						settleRecoveredCreationOpening(
+							bksSessionId,
+							recoveredRun.promptEntryId,
+							failed
+								? terminalEvent.content ||
+									terminalEvent.result ||
+									"Recovered opening run failed"
+								: undefined,
+						);
+					}
 					recordRunOutcome(
 						bksSessionId,
 						failed
@@ -853,6 +864,11 @@ if (!g.__opensessionBooted) {
 			},
 			recordRecoveredRunEvent,
 			recoverableLocalHostSnapshotRecords(shutdownRecords),
+			(run) =>
+				!!run.osSessionId &&
+				!!run.promptEntryId &&
+				!!(run.runnerId || run.sandboxId) &&
+				creationOwnsPrompt(run.osSessionId, run.promptEntryId),
 		);
 		if (resumedIds.length > 0) {
 			console.log(
@@ -1040,7 +1056,10 @@ if (!g.__opensessionBooted) {
 		// executing, and the next boot adopts the servers + reattaches the runs
 		// from the journal. Waiting on those would just delay the restart.
 		const undrainable = () =>
-			Math.max(0, activeAgentRunCount() - activeDetachedAgentRunCount());
+			Math.max(
+				activeAutomationPreparationCount(),
+				Math.max(0, activeAgentRunCount() - activeDetachedAgentRunCount()),
+			);
 		const deadline = timersDead ? 0 : Date.now() + DRAIN_TIMEOUT_MS;
 		let n = undrainable();
 		while (n > 0 && Date.now() < deadline) {

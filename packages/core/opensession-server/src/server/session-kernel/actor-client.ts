@@ -34,6 +34,7 @@ const LARGE_OUTPUT_BYTES = 8 * 1024 * 1024;
 const MAX_DYNAMIC_OUTPUT_BYTES = 128 * 1024 * 1024;
 const LARGE_STORE_RESPONSES = new Set([
   "changesSince",
+  "creationState",
   "pendingOutbox",
   "dueTimers",
   "runStates",
@@ -345,6 +346,7 @@ export class SessionKernelActorClient {
         },
       },
       "creation event decision",
+      true,
     );
   }
 
@@ -679,6 +681,14 @@ class RemoteStore implements SessionKernelStoreApi {
       sessionId,
       items,
     });
+  }
+  claimNextDeliveryDispatch(
+    input: Parameters<SessionKernelStoreApi["claimNextDeliveryDispatch"]>[0],
+  ): ReturnType<SessionKernelStoreApi["claimNextDeliveryDispatch"]> {
+    return this.actor.decideDelivery({
+      op: "claim_next_dispatch",
+      ...input,
+    }) as ReturnType<SessionKernelStoreApi["claimNextDeliveryDispatch"]>;
   }
   claimDeliveryDispatch(
     input: Parameters<SessionKernelStoreApi["claimDeliveryDispatch"]>[0],

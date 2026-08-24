@@ -1,6 +1,11 @@
 import { repoLabel } from "../lib/repo-label";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import type { GitStatusInfo, PrDetails } from "../lib/types";
+import type { PrDetails } from "../lib/types";
+import {
+	deriveHeadline,
+	summarizeChecks,
+	type PrHeadline,
+} from "../lib/pr-headline";
 import {
 	refChipText,
 	refLabel,
@@ -94,133 +99,10 @@ import {
  * instead of minting a bare PR from the header.
  */
 
-interface PrHeadline {
-	key:
-		| "merged"
-		| "closed"
-		| "conflicts"
-		| "failing"
-		| "running"
-		| "draft"
-		| "changes-requested"
-		| "stack-blocked" // a lower layer of this PR's stack is still open
-		| "ready"
-		| "ahead"
-		| "behind" // behind the branch's own upstream → Pull
-		| "behind-base" // clean tree, no PR, behind origin/<base> → Pull
-		| "no-pr"
-		| "clean";
-	label: string;
-	tone: "green" | "purple" | "red" | "yellow" | "muted";
-}
-
-/** Roll PR + local git state up into the one line the header shows. */
-function deriveHeadline(
-	pr: PrDetails | null,
-	git: GitStatusInfo | null,
-): PrHeadline {
-	const ahead = git?.ahead ?? 0;
-	const behind = git?.behind ?? 0;
-	if (pr) {
-		if (pr.state === "MERGED") return { key: "merged", label: "Merged", tone: "purple" };
-		if (pr.state === "CLOSED") return { key: "closed", label: "Closed", tone: "muted" };
-		if (ahead > 0)
-			return {
-				key: "ahead",
-				label: `Ahead by ${ahead} commit${ahead === 1 ? "" : "s"}`,
-				tone: "yellow",
-			};
-		// Local checkout is stale vs the PR branch (someone else pushed) — the
-		// PR data below would describe commits this worktree doesn't have yet.
-		if (behind > 0)
-			return {
-				key: "behind",
-				label: `Behind by ${behind} commit${behind === 1 ? "" : "s"}`,
-				tone: "yellow",
-			};
-		if (pr.mergeable === "CONFLICTING")
-			return { key: "conflicts", label: "Merge conflicts", tone: "red" };
-		const checks = summarizeChecks(pr);
-		if (checks.failed > 0) return { key: "failing", label: "Checks failed", tone: "red" };
-		if (checks.pending > 0)
-			return {
-				key: "running",
-				label: `${checks.pending} check${checks.pending === 1 ? "" : "s"} pending…`,
-				tone: "yellow",
-			};
-		if (pr.isDraft) return { key: "draft", label: "Draft", tone: "muted" };
-		if (pr.reviewDecision === "CHANGES_REQUESTED")
-			return { key: "changes-requested", label: "Changes requested", tone: "red" };
-		// A stack layer never lands alone while the layers under it are open — it
-		// lands as a stack merge, which takes them along, so it is genuinely
-		// ready. The one refusal we can see from here is a draft in that set:
-		// GitHub's stack merge won't take one, and the whole merge is atomic.
-		const draftBelow = stackMergePlan(pr)?.blockedBy;
-		if (draftBelow)
-			return {
-				key: "stack-blocked",
-				label: `Draft #${draftBelow.number} below it`,
-				tone: "yellow",
-			};
-		return { key: "ready", label: "Ready to merge", tone: "green" };
-	}
-	if (behind > 0)
-		return {
-			key: "behind",
-			label: `Behind by ${behind} commit${behind === 1 ? "" : "s"}`,
-			tone: "yellow",
-		};
-	// A shared-checkout repo lands work on its default branch, so unpushed
-	// commits are the only PR-adjacent state this card needs to show for it.
-	if (git?.sharedCheckout && ahead > 0)
-		return {
-			key: "ahead",
-			label: `Ahead by ${ahead} commit${ahead === 1 ? "" : "s"}`,
-			tone: "yellow",
-		};
-	if (ahead > 0 || (git?.uncommittedFiles ?? 0) > 0)
-		return { key: "no-pr", label: "No PR open", tone: "muted" };
-	if ((git?.behindBase ?? 0) > 0)
-		return {
-			key: "behind-base",
-			label: `${git!.behindBase} commit${git!.behindBase === 1 ? "" : "s"} behind ${git!.baseBranch}`,
-			tone: "muted",
-		};
-	// A pushed branch is level with its upstream, so `ahead` is zero even when
-	// it still needs a PR. Keep the creation path in the summary for every clean
-	// session worktree, not only while commits or dirty files happen to be local.
-	if (git?.branch && !git.sharedCheckout)
-		return { key: "no-pr", label: "No PR open", tone: "muted" };
-	return { key: "clean", label: "Up to date", tone: "muted" };
-}
-
 export type { SessionPrRef } from "../lib/pr-refs";
 // Re-exported so the strip stays the one import site for PR-ref presentation.
 export { refTone } from "../lib/pr-refs";
-
-export function summarizeChecks(pr: PrDetails | null): {
-	passed: number;
-	failed: number;
-	pending: number;
-	total: number;
-} {
-	let passed = 0,
-		failed = 0,
-		pending = 0;
-	for (const c of pr?.checks || []) {
-		// StatusContexts (Vercel deploys) report a state, not a status — PENDING
-		// there means running, and must not read as done.
-		if (
-			(c.status !== "COMPLETED" && c.status !== "") ||
-			c.conclusion === "PENDING" ||
-			c.conclusion === "EXPECTED"
-		)
-			pending++;
-		else if (c.conclusion === "SUCCESS") passed++;
-		else if (["FAILURE", "TIMED_OUT", "ERROR"].includes(c.conclusion)) failed++;
-	}
-	return { passed, failed, pending, total: (pr?.checks || []).length };
-}
+export { summarizeChecks } from "../lib/pr-headline";
 
 interface Props {
 	sessionId: string;
@@ -1215,11 +1097,6 @@ export function PrStatusBar({
 						</button>
 					</Tooltip>
 				)}
-				{error && (
-					<span className={PR_HEAD_ERROR} title={error}>
-						{error}
-					</span>
-				)}
 				{/* Keep the preview environment with the action it informs. It sits
 				    immediately left of Merge, Push or Pull, and renders nothing when
 				    this PR has no preview. */}
@@ -1259,6 +1136,11 @@ export function PrStatusBar({
 					</ContextMenu.Root>
 				) : (
 					<div className={summaryRowClass}>{rowBody}</div>
+				)}
+				{error && (
+					<p role="alert" className="mx-5 mb-2 mt-1 text-meta leading-snug text-red">
+						{error}
+					</p>
 				)}
 			</div>
 		);

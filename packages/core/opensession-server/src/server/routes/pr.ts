@@ -183,6 +183,11 @@ export async function handlePrRoutes(
 	if (path === "/api/recent-prs" && req.method === "GET") {
 		const person = url.searchParams.get("person");
 		let prs = person ? await getRecentPrsForPerson(person) : getRecentPrs();
+		const repo = url.searchParams.get("repo");
+		const number = Number(url.searchParams.get("number"));
+		if (repo) prs = prs.filter((pr) => pr.repo === repo);
+		if (Number.isInteger(number) && number > 0)
+			prs = prs.filter((pr) => pr.number === number);
 		const days = Math.min(3650, Math.max(0, Number(url.searchParams.get("days")) || 0));
 		if (days) {
 			const cutoff = Date.now() - days * 86_400_000;

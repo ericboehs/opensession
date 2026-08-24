@@ -25,6 +25,7 @@ import { updateSessionFile } from "./session-cache";
 import { attachSessionWatchersToEngineTranscript } from "./run-session";
 import type { NativeSessionFile } from "./types";
 import { shouldPersistModelSwitch } from "./run-events";
+import { shellQuoteWord } from "./sandbox/adapters/bootstrap";
 import { newSessionId } from "./paths";
 
 const g = globalThis as any;
@@ -72,21 +73,24 @@ function buildGoalWakePrompt(goal: Goal, wake: number, cwd: string): string {
 	];
 	if (goal.mode === "code") {
 		const repo = getRepo(goal.repo);
+		const branchLabel = JSON.stringify(repo.defaultBranch);
+		const branchArg = shellQuoteWord(repo.defaultBranch);
+		const remoteRefArg = shellQuoteWord(`origin/${repo.defaultBranch}`);
 		if (repo.sharedCheckout) {
 			// Shared-checkout repos (opensession) have NO isolated worktree — `cwd` is
 			// the live main checkout the running server and every other session share.
 			// A `git checkout -B`/`reset`/`pull` here yanks the working tree out from
 			// under everyone and orphans their un-pushed commits, so forbid it.
 			parts.push(
-				`Shipping code: you are in the SHARED, live main checkout at ${cwd} on \`${repo.defaultBranch}\` — the running server and other sessions use this exact working tree at the same time. NEVER create or switch branches, \`reset\`, \`pull\`, \`stash\`, or \`checkout\` (that rips the tree out from under everyone and orphans their commits). Just edit files, then \`git add <your specific files>\` → \`git commit\` → \`git push\` on \`${repo.defaultBranch}\`. Commit + push frequently. No feature branch and no PR — this repo ships directly from \`${repo.defaultBranch}\`.`,
+				`Shipping code: you are in the SHARED, live main checkout at ${cwd} on branch ${branchLabel}. The running server and other sessions use this exact working tree at the same time. NEVER create or switch branches, \`reset\`, \`pull\`, \`stash\`, or \`checkout\` (that rips the tree out from under everyone and orphans their commits). Just edit files, then \`git add <your specific files>\` → \`git commit\` → \`git push origin ${branchArg}\`. Commit + push frequently. No feature branch and no PR. This repo ships directly from branch ${branchLabel}.`,
 			);
 		} else if (repo.host === "codestorage") {
 			parts.push(
-				`Shipping code: you are in a persistent worktree at ${cwd} (kept stable across wakes so your session resumes cleanly). For each change, start clean from the default branch (\`git fetch origin && git checkout -B <feature-branch> origin/${repo.defaultBranch}\`), make edits, follow the repo's AGENTS.md and run its checks/format, then commit and push your branch with \`git push -u origin <feature-branch>\` — this repo is hosted on Code Storage; there is no gh CLI and no pull requests; a pushed branch IS the change request. NEVER merge into \`${repo.defaultBranch}\` — the merge is the human gate.`,
+				`Shipping code: you are in a persistent worktree at ${cwd} (kept stable across wakes so your session resumes cleanly). For each change, start clean from the default branch (\`git fetch origin ${branchArg} && git checkout -B <feature-branch> ${remoteRefArg}\`), make edits, follow the repo's AGENTS.md and run its checks/format, then commit and push your branch with \`git push -u origin <feature-branch>\`. This repo is hosted on Code Storage; there is no gh CLI and no pull requests; a pushed branch IS the change request. NEVER merge into branch ${branchLabel}. The merge is the human gate.`,
 			);
 		} else {
 			parts.push(
-				`Shipping code: you are in a persistent worktree at ${cwd} (kept stable across wakes so your session resumes cleanly). For each change, start clean from the default branch (\`git fetch origin && git checkout -B <feature-branch> origin/${repo.defaultBranch}\`), make edits, follow the repo's AGENTS.md and run its checks/format, then open a PR with \`gh pr create --base ${repo.defaultBranch}\`. NEVER merge — a PR is the human gate.`,
+				`Shipping code: you are in a persistent worktree at ${cwd} (kept stable across wakes so your session resumes cleanly). For each change, start clean from the default branch (\`git fetch origin ${branchArg} && git checkout -B <feature-branch> ${remoteRefArg}\`), make edits, follow the repo's AGENTS.md and run its checks/format, then open a PR with \`gh pr create --base ${branchArg}\`. NEVER merge. A PR is the human gate.`,
 			);
 		}
 	}

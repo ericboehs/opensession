@@ -16,6 +16,7 @@ import {
 } from "../../core/opensession-server/src/frontend/components/icons";
 import "./site.css";
 import { AgentationFeedback } from "./AgentationFeedback";
+import { MarbleField } from "./MarbleField";
 import { ProductDemo } from "./ProductDemo";
 import { TellaBackground } from "./TellaBackground";
 import { assetUrl } from "./asset-url";
@@ -116,6 +117,8 @@ function LandingPage() {
 			</aside>
 
 			<main className="feed">
+				{/* The field is the loud surface now, so the stage uses the neutral
+				    Silver Silk loop instead of another colourful background. */}
 				<section className="stage">
 					<div className="gradient-fallback" aria-hidden="true" />
 					<TellaBackground />
@@ -219,6 +222,7 @@ if (!root) throw new Error("Missing landing page root");
 
 createRoot(root).render(
 	<>
+		<MarbleField />
 		<LandingPage />
 		<AgentationFeedback />
 	</>,

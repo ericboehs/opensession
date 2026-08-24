@@ -419,6 +419,8 @@ export interface SessionPrRef {
   title?: string;
   isDraft?: boolean;
   reviewDecision?: string;
+  /** MERGEABLE | CONFLICTING | UNKNOWN — the provider's conflict probe. */
+  mergeable?: string;
   additions?: number;
   deletions?: number;
   checks?: { total: number; passed: number; failed: number; pending: number };

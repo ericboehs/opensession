@@ -20,7 +20,6 @@ import {
 	SettingRowControl,
 	SettingRowText,
 	SettingRowTitle,
-	SettingsGroupLabel,
 	SettingsHeader,
 	SettingsHint,
 	SettingsPanel,
@@ -29,7 +28,7 @@ import {
 import { toast } from "../../ui/toast";
 import { InlineAlert } from "../../ui/state";
 import { IconArrowUpToLine, IconTrash } from "../icons";
-import { IdentityCard } from "../SetupIdentity";
+import { IdentityRows } from "../SetupIdentity";
 
 const NAME_INPUT_CLASS = cn(settingsInputClass, "w-[220px] max-w-full");
 
@@ -45,8 +44,10 @@ const NAME_INPUT_CLASS = cn(settingsInputClass, "w-[220px] max-w-full");
  */
 export function OrganizationProfileSection({
 	githubOrganization,
+	showDomain = true,
 }: {
 	githubOrganization?: string;
+	showDomain?: boolean;
 } = {}) {
 	const [settings, setSettings] = useState<OrganizationSettingsDto | null>(null);
 	const [draft, setDraft] = useState("");
@@ -265,30 +266,33 @@ export function OrganizationProfileSection({
 								aria-label="Organization name"
 							/>
 						</SettingRow>
-						<SettingRow>
-							<SettingRowText>
-								<SettingRowTitle>Email domain</SettingRowTitle>
-							</SettingRowText>
-							<input
-								className={NAME_INPUT_CLASS}
-								value={domainDraft}
-								maxLength={80}
-								disabled={busy}
-								placeholder="acme.com"
-								inputMode="url"
-								autoCapitalize="none"
-								autoCorrect="off"
-								spellCheck={false}
-								onChange={(event) => setDomainDraft(event.target.value)}
-								onBlur={() => void commitDomain()}
-								onKeyDown={(event) => {
-									if (event.key === "Enter") event.currentTarget.blur();
-									else if (event.key === "Escape")
-										setDomainDraft(settings.organizationDomain);
-								}}
-								aria-label="Organization email domain"
-							/>
-						</SettingRow>
+						{showDomain && (
+							<SettingRow>
+								<SettingRowText>
+									<SettingRowTitle>Email domain</SettingRowTitle>
+								</SettingRowText>
+								<input
+									className={NAME_INPUT_CLASS}
+									value={domainDraft}
+									maxLength={80}
+									disabled={busy}
+									placeholder="acme.com"
+									inputMode="url"
+									autoCapitalize="none"
+									autoCorrect="off"
+									spellCheck={false}
+									onChange={(event) => setDomainDraft(event.target.value)}
+									onBlur={() => void commitDomain()}
+									onKeyDown={(event) => {
+										if (event.key === "Enter") event.currentTarget.blur();
+										else if (event.key === "Escape")
+											setDomainDraft(settings.organizationDomain);
+									}}
+									aria-label="Organization email domain"
+								/>
+							</SettingRow>
+						)}
+						<IdentityRows />
 					</SettingCard>
 					<SettingsHint>
 						Shared by everyone in this organization. Clearing the name restores the
@@ -308,8 +312,6 @@ export function GeneralPanel() {
 		<SettingsPanel>
 			<SettingsHeader title="General" className="phone:hidden" />
 			<OrganizationProfileSection />
-			<SettingsGroupLabel>Identity</SettingsGroupLabel>
-			<IdentityCard />
 		</SettingsPanel>
 	);
 }

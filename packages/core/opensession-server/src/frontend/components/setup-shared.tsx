@@ -60,6 +60,9 @@ export interface SetupRepo {
 	id: string;
 	label: string;
 	path: string;
+	defaultBranch: string;
+	/** Where new code sessions run. Existing sessions keep their current checkout. */
+	isolatedWorktrees: boolean;
 	lifecycle: SetupRepoLifecycle;
 }
 
@@ -78,8 +81,20 @@ export interface SetupEngine {
 	fixableInApp: boolean;
 }
 
-export interface SetupStatus {
+export interface SetupAccess {
 	publicBaseUrl: string;
+	/** The separate public webhook origin, or null when integrations fall back to the app. */
+	webhookBaseUrl: string | null;
+	port: number;
+	webhookPort: number;
+	tailnetIp: string | null;
+	caddyInstalled: boolean;
+}
+
+export interface SetupStatus {
+	/** Kept at the top level for tolerant native clients on the shared snapshot. */
+	publicBaseUrl: string;
+	access: SetupAccess;
 	repos: SetupRepo[];
 	engine: SetupEngine;
 	team: { count: number; names: string[] };
@@ -169,10 +184,19 @@ export function publicUrlState(publicBaseUrl: string): {
 				description: `Configured for Tailscale at ${publicBaseUrl}.`,
 			};
 		}
+		// A TLS address is served by the instance's own reverse proxy, so it is
+		// reachable by definition — the page you are reading came through it.
+		if (url.protocol === "https:") {
+			return {
+				tone: "on",
+				label: "Online",
+				description: `Serving at ${publicBaseUrl}.`,
+			};
+		}
 		return {
 			tone: "warn",
 			label: "Check access",
-			description: `${publicBaseUrl} is configured, but setup cannot verify that it is private or reachable.`,
+			description: `${publicBaseUrl} is configured over plain http, so setup cannot verify that it is private or reachable.`,
 		};
 	} catch {
 		return {

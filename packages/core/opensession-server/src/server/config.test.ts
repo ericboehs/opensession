@@ -156,6 +156,21 @@ describe("config loader", () => {
     expect(configuredPaths().worktreesDir).toBe("/srv/worktrees");
   });
 
+  test("unsafe default branch text falls back before reaching prompts", () => {
+    withConfig(
+      JSON.stringify({
+        repos: {
+          app: {
+            repo: "/srv/app",
+            defaultBranch: "main;echo-not-a-command",
+            default: true,
+          },
+        },
+      }),
+    );
+    expect(configuredRepos().app.defaultBranch).toBe("main");
+  });
+
   test("repo entry without a checkout path is ignored", () => {
     withConfig(JSON.stringify({ repos: { phantom: { ghRepo: "acme/phantom" } } }));
     expect(configuredRepos()["phantom"]).toBeUndefined();

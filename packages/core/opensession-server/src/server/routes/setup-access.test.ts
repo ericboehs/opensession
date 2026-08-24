@@ -1,0 +1,213 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import type { RouteContext } from "./context";
+import { handleSetupAccessRoutes } from "./setup-access";
+import { handleSetupRoutes } from "./setup";
+
+const savedConfig = process.env.OPENSESSION_CONFIG;
+const savedEnvFile = process.env.OPENSESSION_ENV_FILE;
+const savedUiBase = process.env.OPENSESSION_UI_BASE;
+const savedWebhookBase = process.env.OPENSESSION_WEBHOOK_BASE;
+const dirs: string[] = [];
+
+function fixture() {
+  const dir = mkdtempSync(join(tmpdir(), "opensession-setup-access-"));
+  dirs.push(dir);
+  const config = join(dir, "config.json");
+  const env = join(dir, "opensession.env");
+  writeFileSync(
+    config,
+    JSON.stringify({
+      server: { publicBaseUrl: "http://100.72.1.4:3850" },
+      identity: {
+        team: [{ name: "Admin", github: "admin", admin: true }],
+      },
+    }),
+  );
+  writeFileSync(env, "OPENSESSION_UI_BASE=http://100.72.1.4:3850\n");
+  process.env.OPENSESSION_CONFIG = config;
+  process.env.OPENSESSION_ENV_FILE = env;
+  return { config, env };
+}
+
+function context(body: unknown): RouteContext {
+  const url = new URL("http://localhost/api/setup/access");
+  return {
+    req: new Request(url, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+    url,
+    path: url.pathname,
+    publicPrefix: "",
+    authUser: { login: "admin", name: "Admin" },
+  };
+}
+
+function statusContext(): RouteContext {
+  const url = new URL("http://localhost/api/setup/status");
+  return {
+    req: new Request(url),
+    url,
+    path: url.pathname,
+    publicPrefix: "",
+    authUser: { login: "admin", name: "Admin" },
+  };
+}
+
+afterEach(() => {
+  if (savedConfig === undefined) delete process.env.OPENSESSION_CONFIG;
+  else process.env.OPENSESSION_CONFIG = savedConfig;
+  if (savedEnvFile === undefined) delete process.env.OPENSESSION_ENV_FILE;
+  else process.env.OPENSESSION_ENV_FILE = savedEnvFile;
+  if (savedUiBase === undefined) delete process.env.OPENSESSION_UI_BASE;
+  else process.env.OPENSESSION_UI_BASE = savedUiBase;
+  if (savedWebhookBase === undefined) delete process.env.OPENSESSION_WEBHOOK_BASE;
+  else process.env.OPENSESSION_WEBHOOK_BASE = savedWebhookBase;
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+describe("setup access route", () => {
+  test("stores separate app and webhook origins in config and the service env", async () => {
+    const paths = fixture();
+    const response = await handleSetupAccessRoutes(
+      context({
+        publicBaseUrl: "https://OS.Example.com/",
+        webhookBaseUrl: "https://Hooks.Example.com/",
+      }),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(await response?.json()).toMatchObject({
+      access: {
+        publicBaseUrl: "https://os.example.com",
+        webhookBaseUrl: "https://hooks.example.com",
+      },
+      restartRequired: true,
+    });
+    expect(JSON.parse(readFileSync(paths.config, "utf-8")).server).toMatchObject({
+      publicBaseUrl: "https://os.example.com",
+      webhookBaseUrl: "https://hooks.example.com",
+    });
+    const env = readFileSync(paths.env, "utf-8");
+    expect(env).toContain("OPENSESSION_UI_BASE=https://os.example.com");
+    expect(env).toContain("OPENSESSION_WEBHOOK_BASE=https://hooks.example.com");
+  });
+
+  test("status refetches use pending file values instead of boot-time origins", async () => {
+    fixture();
+    process.env.OPENSESSION_UI_BASE = "http://100.72.1.4:3850";
+    process.env.OPENSESSION_WEBHOOK_BASE = "https://old-hooks.example.com";
+
+    await handleSetupAccessRoutes(
+      context({
+        publicBaseUrl: "https://os.example.com",
+        webhookBaseUrl: "https://hooks.example.com",
+      }),
+    );
+    const savedStatus = await handleSetupRoutes(statusContext());
+    expect(await savedStatus?.json()).toMatchObject({
+      access: {
+        publicBaseUrl: "https://os.example.com",
+        webhookBaseUrl: "https://hooks.example.com",
+      },
+    });
+
+    await handleSetupAccessRoutes(
+      context({
+        publicBaseUrl: "https://os.example.com",
+        webhookBaseUrl: "",
+      }),
+    );
+    const clearedStatus = await handleSetupRoutes(statusContext());
+    expect(await clearedStatus?.json()).toMatchObject({
+      access: {
+        publicBaseUrl: "https://os.example.com",
+        webhookBaseUrl: null,
+      },
+    });
+  });
+
+  test("ignores example comments when a webhook origin is configured", async () => {
+    const paths = fixture();
+    const config = JSON.parse(readFileSync(paths.config, "utf-8"));
+    config.server.webhookBaseUrl = "https://ingress.example.com";
+    writeFileSync(paths.config, JSON.stringify(config));
+    writeFileSync(
+      paths.env,
+      `${readFileSync(paths.env, "utf-8")}# OPENSESSION_WEBHOOK_BASE=https://hooks.example.com\n`,
+    );
+    delete process.env.OPENSESSION_WEBHOOK_BASE;
+
+    const response = await handleSetupRoutes(statusContext());
+
+    expect(await response?.json()).toMatchObject({
+      access: { webhookBaseUrl: "https://ingress.example.com" },
+    });
+  });
+
+  test("clears the separate webhook origin from both stores", async () => {
+    const paths = fixture();
+    await handleSetupAccessRoutes(
+      context({
+        publicBaseUrl: "https://os.example.com",
+        webhookBaseUrl: "https://hooks.example.com",
+      }),
+    );
+    const response = await handleSetupAccessRoutes(
+      context({
+        publicBaseUrl: "https://os.example.com",
+        webhookBaseUrl: "",
+      }),
+    );
+
+    expect(await response?.json()).toMatchObject({
+      access: {
+        publicBaseUrl: "https://os.example.com",
+        webhookBaseUrl: null,
+      },
+    });
+    expect(JSON.parse(readFileSync(paths.config, "utf-8")).server).toEqual({
+      publicBaseUrl: "https://os.example.com",
+    });
+    expect(readFileSync(paths.env, "utf-8")).toContain(
+      "# OPENSESSION_WEBHOOK_BASE=https://hooks.example.com",
+    );
+  });
+
+  test("does not edit the env file when config preparation fails", async () => {
+    const paths = fixture();
+    const before = readFileSync(paths.env, "utf-8");
+    writeFileSync(paths.config, "{ invalid json");
+
+    await expect(
+      handleSetupAccessRoutes(
+        context({
+          publicBaseUrl: "https://os.example.com",
+          webhookBaseUrl: "https://hooks.example.com",
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(readFileSync(paths.env, "utf-8")).toBe(before);
+  });
+
+  test("rejects a private webhook origin without changing config", async () => {
+    const paths = fixture();
+    const before = readFileSync(paths.config, "utf-8");
+    const response = await handleSetupAccessRoutes(
+      context({
+        publicBaseUrl: "https://os.example.com",
+        webhookBaseUrl: "https://hooks.tailnet.ts.net",
+      }),
+    );
+
+    expect(response?.status).toBe(400);
+    expect(await response?.json()).toEqual({
+      error: "Webhook address must be reachable from the public internet",
+    });
+    expect(readFileSync(paths.config, "utf-8")).toBe(before);
+  });
+});

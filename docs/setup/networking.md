@@ -258,6 +258,12 @@ When the UI stays on a private hostname, give callbacks their own public origin:
 automation URLs, and Linear's default OAuth callback use this origin; session
 links and authenticated app callbacks continue to use `publicBaseUrl`.
 
+Workspace Settings → Setup → Server access writes both values to the config and
+service environment. It also generates the two Caddy site blocks for the
+current ports. Caddy runs on the Open Session machine by default. Keep its app
+site bound to the Tailscale address, and expose only the separate webhook site
+on the public interface.
+
 If you do not use inbound webhooks, leave 3848 on `127.0.0.1` and forget it
 exists.
 

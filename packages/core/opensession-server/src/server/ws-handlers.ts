@@ -54,6 +54,7 @@ import { BOOT_ID, allClients, broadcastToAll, broadcastToSession, globalPresence
 import { existsSync, readFileSync, statSync, watch } from "fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { isInternalKernelDispatch } from "./session-kernel/ws-command-bridge";
 import {
 	acknowledgeSessionCommand,
 	isRetryableSessionCommandError,
@@ -430,6 +431,7 @@ function serveTranscriptV2(
 
 const kernelDispatchTokens = new Set<string>();
 const kernelDispatchResults = new Map<string, unknown>();
+const kernelDispatchErrors = new Map<string, Error>();
 
 export const websocketHandlers: WebSocketHandler<WSClientData> = {
 	// Default is 16 MB — too small for a base64'd attachment near MAX_UPLOAD_BYTES,
@@ -534,8 +536,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 			"reorder_queued_prompt",
 			"cancel",
 			"answer_question",
-				"create_session",
 		]);
+		// Creation already has its own durable FSM and outbox. Wrapping it in a
+		// websocket_command holds the per-session mailbox while the opening effect
+		// tries to enter session_file_updated, so neither command can finish.
 		const requestId =
 				typeof msg.requestId === "string" && msg.requestId
 					? msg.requestId.slice(0, 200)
@@ -556,9 +560,10 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				: typeof ws.data?.watchingSessionId === "string"
 					? ws.data.watchingSessionId
 					: undefined;
-		const internalKernelToken =
-			typeof msg.__sessionKernelToken === "string" &&
-			kernelDispatchTokens.delete(msg.__sessionKernelToken);
+		const internalKernelToken = isInternalKernelDispatch(
+			kernelDispatchTokens,
+			msg.__sessionKernelToken,
+		);
 		if (
 			!internalKernelToken &&
 			commandSessionId &&
@@ -605,6 +610,8 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 							__sessionKernelToken: kernelToken,
 						}),
 					);
+					const dispatchError = kernelDispatchErrors.get(kernelToken);
+					if (dispatchError) throw dispatchError;
 					return kernelDispatchResults.get(kernelToken);
 				},
 					);
@@ -649,6 +656,7 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 				} finally {
 			kernelDispatchTokens.delete(kernelToken);
 					kernelDispatchResults.delete(kernelToken);
+					kernelDispatchErrors.delete(kernelToken);
 				}
 			return;
 		}
@@ -1530,14 +1538,27 @@ export const websocketHandlers: WebSocketHandler<WSClientData> = {
 		}
 		} catch (e) {
 			console.error(`[ws] ${msg?.type || "unknown"} handler failed:`, e);
-			try {
-				ws.send(
-					JSON.stringify({
-						type: "error",
-						message: `Internal error handling "${msg?.type || "message"}" — see server log`,
-					}),
+			const kernelToken = isInternalKernelDispatch(
+				kernelDispatchTokens,
+				msg?.__sessionKernelToken,
+			)
+				? msg.__sessionKernelToken
+				: undefined;
+			if (kernelToken) {
+				kernelDispatchErrors.set(
+					kernelToken,
+					e instanceof Error ? e : new Error(String(e)),
 				);
-			} catch {}
+			} else {
+				try {
+					ws.send(
+						JSON.stringify({
+							type: "error",
+							message: `Internal error handling "${msg?.type || "message"}" — see server log`,
+						}),
+					);
+				} catch {}
+			}
 		}
 	},
 

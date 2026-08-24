@@ -1,14 +1,65 @@
 import { $ } from "bun";
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
   adoptExistingCheckout,
   githubCredentialHelperCommand,
+  handleSetupRepoRoutes,
   matchesCodeStorageCheckout,
+  normalizeDefaultBranch,
   validGithubFullName,
 } from "./setup-repos";
+
+const originalConfig = process.env.OPENSESSION_CONFIG;
+const tempDirs: string[] = [];
+
+function createGitRepo(dir: string): string {
+  const repo = join(dir, "repo");
+  const remote = join(dir, "remote.git");
+  expect(Bun.spawnSync(["git", "init", "-q", "-b", "main", repo]).exitCode).toBe(0);
+  writeFileSync(join(repo, "README.md"), "test\n");
+  expect(Bun.spawnSync(["git", "-C", repo, "add", "README.md"]).exitCode).toBe(0);
+  expect(
+    Bun.spawnSync([
+      "git",
+      "-C",
+      repo,
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "-q",
+      "-m",
+      "initial",
+    ]).exitCode,
+  ).toBe(0);
+  expect(Bun.spawnSync(["git", "-C", repo, "branch", "master"]).exitCode).toBe(0);
+  expect(Bun.spawnSync(["git", "init", "-q", "--bare", remote]).exitCode).toBe(0);
+  expect(Bun.spawnSync(["git", "-C", repo, "remote", "add", "origin", remote]).exitCode).toBe(0);
+  expect(
+    Bun.spawnSync([
+      "git",
+      "-C",
+      repo,
+      "push",
+      "-q",
+      "-u",
+      "origin",
+      "main",
+      "master",
+    ]).exitCode,
+  ).toBe(0);
+  return repo;
+}
+
+afterEach(() => {
+  if (originalConfig === undefined) delete process.env.OPENSESSION_CONFIG;
+  else process.env.OPENSESSION_CONFIG = originalConfig;
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 describe("validGithubFullName", () => {
   test("accepts ordinary owner/name pairs", () => {
@@ -41,12 +92,11 @@ describe("validGithubFullName", () => {
     expect(validGithubFullName("https://github.com/owner/repo")).toBe(false);
     expect(validGithubFullName("owner/repo?x=1")).toBe(false);
     expect(validGithubFullName("owner/repo#frag")).toBe(false);
-    // Matches the regex, but is harmless: the clone always receives the full
-    // https URL via array spawn, so a "-"-prefixed owner can't become a flag.
+    // The clone receives the full https URL through an argv array, so a
+    // hyphen-prefixed owner cannot become a command flag.
     expect(validGithubFullName("--flag/repo")).toBe(true);
   });
 });
-
 
 describe("githubCredentialHelperCommand", () => {
   test("uses the stable installed command for compiled releases", () => {
@@ -60,7 +110,249 @@ describe("githubCredentialHelperCommand", () => {
     expect(command).toStartWith("!bun ");
     expect(command).toEndWith("scripts/gh-credential.ts");
   });
+});
 
+describe("normalizeDefaultBranch", () => {
+  test("accepts ordinary and nested branch names", async () => {
+    await expect(normalizeDefaultBranch("master")).resolves.toBe("master");
+    await expect(normalizeDefaultBranch(" release/12.x ")).resolves.toBe("release/12.x");
+  });
+
+  test("rejects values git cannot use as branch names", async () => {
+    await expect(normalizeDefaultBranch(undefined)).resolves.toBeNull();
+    await expect(normalizeDefaultBranch(" ")).resolves.toBeNull();
+    await expect(normalizeDefaultBranch("bad branch")).resolves.toBeNull();
+    await expect(normalizeDefaultBranch("feature..next")).resolves.toBeNull();
+    await expect(normalizeDefaultBranch("-dangerous")).resolves.toBeNull();
+  });
+
+  test("rejects git-valid shell and Markdown metacharacters", async () => {
+    await expect(normalizeDefaultBranch("release;echo-not-a-command")).resolves.toBeNull();
+    await expect(normalizeDefaultBranch("release`whoami`")).resolves.toBeNull();
+    await expect(normalizeDefaultBranch("release$(whoami)")).resolves.toBeNull();
+  });
+});
+
+describe("repository default branch settings", () => {
+  test("updates only the selected repo config", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensession-repo-config-"));
+    tempDirs.push(dir);
+    const path = join(dir, "config.json");
+    const repo = createGitRepo(dir);
+    process.env.OPENSESSION_CONFIG = path;
+    writeFileSync(
+      path,
+      JSON.stringify({
+        repos: {
+          "compiler:legacy": {
+            label: "Compiler",
+            repo,
+            defaultBranch: "main",
+            customSetting: "preserved",
+          },
+        },
+      }),
+    );
+
+    const url = new URL("http://localhost/api/setup/repos/compiler%3Alegacy");
+    const response = await handleSetupRepoRoutes({
+      req: new Request(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defaultBranch: "master" }),
+      }),
+      url,
+      path: url.pathname,
+      publicPrefix: "",
+    });
+
+    expect(response?.status).toBe(200);
+    expect(await response?.json()).toEqual({
+      id: "compiler:legacy",
+      defaultBranch: "master",
+      isolatedWorktrees: true,
+    });
+    const saved = JSON.parse(readFileSync(path, "utf8"));
+    expect(saved.repos["compiler:legacy"].defaultBranch).toBe("master");
+    expect(saved.repos["compiler:legacy"].customSetting).toBe("preserved");
+  });
+
+  test("updates worktree isolation only for the selected repository", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensession-repo-config-"));
+    tempDirs.push(dir);
+    const path = join(dir, "config.json");
+    const repo = createGitRepo(dir);
+    process.env.OPENSESSION_CONFIG = path;
+    writeFileSync(
+      path,
+      JSON.stringify({
+        repos: {
+          compiler: {
+            repo,
+            defaultBranch: "main",
+            sharedCheckout: true,
+            customSetting: "preserved",
+          },
+          docs: { repo: join(dir, "docs"), defaultBranch: "main", sharedCheckout: true },
+        },
+      }),
+    );
+
+    const url = new URL("http://localhost/api/setup/repos/compiler");
+    const response = await handleSetupRepoRoutes({
+      req: new Request(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isolatedWorktrees: true }),
+      }),
+      url,
+      path: url.pathname,
+      publicPrefix: "",
+    });
+
+    expect(response?.status).toBe(200);
+    expect(await response?.json()).toEqual({
+      id: "compiler",
+      defaultBranch: "main",
+      isolatedWorktrees: true,
+    });
+    const saved = JSON.parse(readFileSync(path, "utf8"));
+    expect(saved.repos.compiler.sharedCheckout).toBe(false);
+    expect(saved.repos.compiler.customSetting).toBe("preserved");
+    expect(saved.repos.docs.sharedCheckout).toBe(true);
+  });
+
+  test("migrates the legacy global override without changing other repos", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensession-repo-config-"));
+    tempDirs.push(dir);
+    const path = join(dir, "config.json");
+    const repo = createGitRepo(dir);
+    process.env.OPENSESSION_CONFIG = path;
+    writeFileSync(
+      path,
+      JSON.stringify({
+        selfDev: "worktree",
+        repos: {
+          app: { repo, defaultBranch: "main", sharedCheckout: true },
+          docs: { repo: join(dir, "docs"), defaultBranch: "main", sharedCheckout: true },
+        },
+      }),
+    );
+
+    const url = new URL("http://localhost/api/setup/repos/app");
+    const response = await handleSetupRepoRoutes({
+      req: new Request(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isolatedWorktrees: false }),
+      }),
+      url,
+      path: url.pathname,
+      publicPrefix: "",
+    });
+
+    expect(response?.status).toBe(200);
+    const saved = JSON.parse(readFileSync(path, "utf8"));
+    expect(saved.selfDev).toBeUndefined();
+    expect(saved.repos.app.sharedCheckout).toBe(true);
+    expect(saved.repos.docs.sharedCheckout).toBe(false);
+  });
+
+  test("rejects a non-boolean worktree setting", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensession-repo-config-"));
+    tempDirs.push(dir);
+    const path = join(dir, "config.json");
+    const repo = createGitRepo(dir);
+    process.env.OPENSESSION_CONFIG = path;
+    writeFileSync(path, JSON.stringify({ repos: { app: { repo, defaultBranch: "main" } } }));
+
+    const url = new URL("http://localhost/api/setup/repos/app");
+    const response = await handleSetupRepoRoutes({
+      req: new Request(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isolatedWorktrees: "yes" }),
+      }),
+      url,
+      path: url.pathname,
+      publicPrefix: "",
+    });
+
+    expect(response?.status).toBe(400);
+    expect(JSON.parse(readFileSync(path, "utf8")).repos.app.sharedCheckout).toBeUndefined();
+  });
+
+  test("rejects a branch that does not exist without changing config", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensession-repo-config-"));
+    tempDirs.push(dir);
+    const path = join(dir, "config.json");
+    const repo = createGitRepo(dir);
+    process.env.OPENSESSION_CONFIG = path;
+    writeFileSync(path, JSON.stringify({ repos: { compiler: { repo, defaultBranch: "main" } } }));
+
+    const url = new URL("http://localhost/api/setup/repos/compiler");
+    const response = await handleSetupRepoRoutes({
+      req: new Request(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defaultBranch: "missing" }),
+      }),
+      url,
+      path: url.pathname,
+      publicPrefix: "",
+    });
+
+    expect(response?.status).toBe(400);
+    expect(JSON.parse(readFileSync(path, "utf8")).repos.compiler.defaultBranch).toBe("main");
+  });
+
+  test("rejects prototype-special repository ids", async () => {
+    const url = new URL("http://localhost/api/setup/repos/__proto__");
+    const response = await handleSetupRepoRoutes({
+      req: new Request(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defaultBranch: "main" }),
+      }),
+      url,
+      path: url.pathname,
+      publicPrefix: "",
+    });
+
+    expect(response?.status).toBe(400);
+    expect(Object.prototype).not.toHaveProperty("defaultBranch");
+  });
+
+  test("rejects a shared checkout branch that is not currently checked out", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensession-repo-config-"));
+    tempDirs.push(dir);
+    const path = join(dir, "config.json");
+    const repo = createGitRepo(dir);
+    process.env.OPENSESSION_CONFIG = path;
+    writeFileSync(
+      path,
+      JSON.stringify({
+        repos: {
+          app: { repo, defaultBranch: "main", sharedCheckout: true },
+        },
+      }),
+    );
+
+    const url = new URL("http://localhost/api/setup/repos/app");
+    const response = await handleSetupRepoRoutes({
+      req: new Request(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defaultBranch: "master" }),
+      }),
+      url,
+      path: url.pathname,
+      publicPrefix: "",
+    });
+
+    expect(response?.status).toBe(400);
+    expect(JSON.parse(readFileSync(path, "utf8")).repos.app.defaultBranch).toBe("main");
+  });
 });
 
 describe("adoptExistingCheckout", () => {

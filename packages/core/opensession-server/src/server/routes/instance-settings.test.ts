@@ -135,12 +135,46 @@ describe("instance general settings", () => {
 		expect(stored.future).toEqual({ keep: true });
 	});
 
+	test("persists the worktree policy for new shared-checkout sessions", async () => {
+		const { config } = seed();
+		const initial = await handleInstanceSettingsRoutes(
+			context("/api/settings/worktrees", "GET", { login: "ada" }),
+		);
+		expect(initial?.status).toBe(200);
+		expect((await initial?.json()).mode).toBe("shared");
+
+		const updated = await handleInstanceSettingsRoutes(
+			context("/api/settings/worktrees", "PUT", {
+				login: "ada",
+				body: { mode: "worktree" },
+			}),
+		);
+		expect(updated?.status).toBe(200);
+		expect((await updated?.json()).mode).toBe("worktree");
+		const stored = JSON.parse(readFileSync(config, "utf-8"));
+		expect(stored.selfDev).toBe("worktree");
+		expect(stored.future).toEqual({ keep: true });
+	});
+
+	test("rejects an invalid worktree policy", async () => {
+		const { config } = seed();
+		const response = await handleInstanceSettingsRoutes(
+			context("/api/settings/worktrees", "PUT", {
+				login: "ada",
+				body: { mode: "sometimes" },
+			}),
+		);
+		expect(response?.status).toBe(400);
+		expect(JSON.parse(readFileSync(config, "utf-8")).selfDev).toBeUndefined();
+	});
+
 	test("rejects shared-setting writes from non-admin teammates", async () => {
 		const { config } = seed();
 		for (const path of [
 			"/api/settings/general",
 			"/api/settings/identity",
 			"/api/settings/asset-storage",
+			"/api/settings/worktrees",
 		]) {
 			const response = await handleInstanceSettingsRoutes(
 				context(path, "PUT", {

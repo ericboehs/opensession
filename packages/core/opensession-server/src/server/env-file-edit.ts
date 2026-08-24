@@ -11,12 +11,12 @@
  * Line handling: an existing `KEY=...` (or commented-out `# KEY=...`) line is
  * replaced in place; a new key is appended at the end under a
  * `# --- added via web setup ---` marker. Setting a key to the empty string
- * unsets it by commenting the line out (so the systemd EnvironmentFile stops
- * defining it after the next restart, but the operator can still see what was
- * there).
+ * unsets it by commenting the line out with a web-setup tombstone (so the
+ * systemd EnvironmentFile stops defining it after the next restart, but the
+ * operator can still see what was there).
  */
 
-import { chmodSync, existsSync, readFileSync } from "fs";
+import { chmodSync, existsSync, readFileSync, rmSync } from "fs";
 import { statePath } from "./paths";
 import { backupFile } from "./config-mutation";
 import { writeFileAtomic } from "./shared/atomic-write";
@@ -31,6 +31,7 @@ export function envFilePath(): string {
 }
 
 export const WEB_SETUP_MARKER = "# --- added via web setup ---";
+export const WEB_SETUP_UNSET_SUFFIX = " # unset via web setup";
 
 const MAX_ENV_VALUE_LENGTH = 4096;
 
@@ -83,7 +84,9 @@ export function applyEnvEdits(
     const commented = commentedLineRe(key);
     if (value === "") {
       for (let i = 0; i < lines.length; i++) {
-        if (active.test(lines[i])) lines[i] = `# ${lines[i].trim()}`;
+        if (active.test(lines[i])) {
+          lines[i] = `# ${lines[i].trim()}${WEB_SETUP_UNSET_SUFFIX}`;
+        }
       }
       continue;
     }
@@ -112,6 +115,46 @@ export function applyEnvEdits(
   return lines.length ? `${lines.join("\n")}\n` : "";
 }
 
+/** A prepared env-file edit can be rolled back if a second file in the same
+ * config mutation fails to commit. Call only while holding the shared lock. */
+export interface PreparedEnvFileEdit {
+  commit(): void;
+  rollback(): void;
+}
+
+export function prepareEnvFileEdits(
+  edits: Record<string, string>,
+): PreparedEnvFileEdit {
+  const path = envFilePath();
+  const existed = existsSync(path);
+  const before = existed ? readFileSync(path, "utf-8") : "";
+  const after = applyEnvEdits(before, edits);
+  let committed = false;
+  return {
+    commit() {
+      if (committed) return;
+      backupFile(path);
+      writeFileAtomic(path, after);
+      committed = true;
+      try {
+        chmodSync(path, 0o600);
+      } catch {}
+    },
+    rollback() {
+      if (!committed) return;
+      if (existed) {
+        writeFileAtomic(path, before);
+        try {
+          chmodSync(path, 0o600);
+        } catch {}
+      } else {
+        rmSync(path, { force: true });
+      }
+      committed = false;
+    },
+  };
+}
+
 /**
  * Apply edits to the env file on disk: `.bak-<n>` backup first (same scheme
  * as scripts/lib/config-edit.ts), atomic write, 0600 after. Serialize calls
@@ -119,34 +162,38 @@ export function applyEnvEdits(
  * mutation.
  */
 export function applyEnvFileEdits(edits: Record<string, string>): void {
-  const path = envFilePath();
-  const before = existsSync(path) ? readFileSync(path, "utf-8") : "";
-  backupFile(path);
-  writeFileAtomic(path, applyEnvEdits(before, edits));
-  try {
-    chmodSync(path, 0o600);
-  } catch {}
+  prepareEnvFileEdits(edits).commit();
 }
 
-/** Parse the env file's ACTIVE definitions (uncommented `KEY=value` lines).
- *  Values are returned unquoted; used to compute truthful presence for setup
- *  responses (process.env lags the file until the next restart). */
-export function readEnvFileValues(): Record<string, string> {
+/** Parse the env file's active definitions. With `includeUnset`, only a
+ * web-setup tombstone is represented as an empty string, so example comments
+ * remain inert while pending clears override boot-time process.env values. */
+export function readEnvFileValues(options?: {
+  includeUnset?: boolean;
+}): Record<string, string> {
   const path = envFilePath();
   if (!existsSync(path)) return {};
   const values: Record<string, string> = {};
   for (const line of readFileSync(path, "utf-8").split("\n")) {
     const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/);
-    if (!m) continue;
-    let value = m[2].trim();
-    const quoted = value.match(/^"((?:[^"\\]|\\.)*)"$/);
-    if (quoted) {
-      value = quoted[1].replace(/\\(.)/g, "$1");
-    } else {
-      const single = value.match(/^'([^']*)'$/);
-      if (single) value = single[1];
+    if (m) {
+      let value = m[2].trim();
+      const quoted = value.match(/^"((?:[^"\\]|\\.)*)"$/);
+      if (quoted) {
+        value = quoted[1].replace(/\\(.)/g, "$1");
+      } else {
+        const single = value.match(/^'([^']*)'$/);
+        if (single) value = single[1];
+      }
+      values[m[1]] = value;
+      continue;
     }
-    values[m[1]] = value;
+    if (!options?.includeUnset) continue;
+    if (!line.endsWith(WEB_SETUP_UNSET_SUFFIX)) continue;
+    const tombstone = line.match(
+      /^\s*#\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/,
+    );
+    if (tombstone && !(tombstone[1] in values)) values[tombstone[1]] = "";
   }
   return values;
 }

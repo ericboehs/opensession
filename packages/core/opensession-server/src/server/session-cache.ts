@@ -623,14 +623,14 @@ export const runErrors: Map<string, { message: string; at: string }> =
  * Never throws — a dead transcript store must not break outcome recording.
  */
 function persistRunFailureNotice(
+	sessionId: string,
 	engineSessionId: string | null | undefined,
 	message: string,
 	label: string,
 ): void {
-	if (!engineSessionId) return;
 	try {
 		const m = require("./transcript-persistence") as typeof import("./transcript-persistence");
-		m.appendTranscriptEntries(engineSessionId, [
+		m.applyForwardedTranscript(sessionId, engineSessionId || sessionId, [
 			m.transcriptLineRunnerNotice(`${label}: ${message}`),
 		]);
 	} catch {}
@@ -680,6 +680,7 @@ export function recordRunOutcome(
 						? "codex"
 						: "claude");
 			persistRunFailureNotice(
+				id,
 				opts?.engineSessionId ||
 					(session ? engineSessionIdFor(session, provider) : undefined),
 				errorMessage,

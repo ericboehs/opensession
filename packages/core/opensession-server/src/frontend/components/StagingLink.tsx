@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { PR_WEBHOOK_FALLBACK_POLL_MS } from "../lib/poll";
 import { useSessionPrResource } from "../hooks/useApiResources";
 import type { PrCheck, UnifiedSession } from "../lib/types";
@@ -10,7 +9,8 @@ import { cn } from "../ui/cn";
 import { Tooltip } from "../ui/tooltip";
 import { toast } from "../ui/toast";
 import { CopyCheck, useCopy } from "../ui/copy";
-import { IconArrowUpRight, IconGlobe, IconLink } from "./icons";
+import { ContextMenu, MENU_ICON } from "../ui/menu";
+import { IconArrowUpRight, IconCheck, IconCopy, IconGlobe } from "./icons";
 import { checkClass, isDeployment } from "./PrPanel";
 import { useShortcutLabel } from "../hooks/useShortcutBindings";
 
@@ -18,16 +18,22 @@ import { useShortcutLabel } from "../hooks/useShortcutBindings";
 // mounts once per layout variant, so a listener here would register several
 // times. All that happens here is advertising whatever it is bound to.
 
-/* The amber pill in the workspace panel. Sized to the Merge button it sits
-   beside (13px/600, 5px 11px, 7px corner) so the two read as one row. The base
-   carries geometry only — each state below brings its own border and ink, so
-   nothing has two competing colour utilities on it. */
+/* The pill in the workspace panel. Sized to the Merge button it sits beside
+   (13px/600, 5px 11px, 7px corner) so the two read as one row. The base carries
+   geometry only — each state below brings its own border and ink, so nothing
+   has two competing colour utilities on it.
+
+   Same three-state colouring as the header globe, because it reports the same
+   thing: green once the deploy is up and the link actually works, amber while
+   one is in flight. */
 const LINK_BASE =
 	"inline-flex items-center gap-[5px] whitespace-nowrap rounded-md border px-[11px] py-[5px] text-label font-semibold no-underline";
-const LINK_READY = "border-yellow/45 text-yellow hover:bg-yellow/12";
-/* Deploy still building — not testable yet, so a plain click is swallowed (see
-   onClick) and the pill reads as not-ready with a spinning globe. */
-const LINK_BUILDING = `${LINK_READY} cursor-default opacity-55`;
+const LINK_READY = "border-green/45 text-green hover:bg-green-soft";
+/* A deploy is in flight. A rebuild still opens the previous deploy, so it stays
+   a live link; a first build is not testable yet, so LINK_BUILDING below
+   swallows the click (see onClick) on top of this. */
+const LINK_DEPLOYING = "border-yellow/45 text-yellow hover:bg-yellow/12";
+const LINK_BUILDING = `${LINK_DEPLOYING} cursor-default opacity-55`;
 /* Nothing to link to yet: quiet, and no hover wash to imply it opens. */
 const LINK_PENDING = "border-line text-dim cursor-default";
 
@@ -64,9 +70,11 @@ const SUMMARY_MARK =
 const SUMMARY_MARK_HOVER =
 	"hover:bg-[color-mix(in_srgb,currentColor_26%,transparent)] " +
 	"active:scale-[0.96] active:bg-[color-mix(in_srgb,currentColor_34%,transparent)]";
-/* The mark's 20px glyph sits inside a 28px target. Pull its box 2px toward the
-   following action so the visible glyph keeps an 8px icon-to-control gap. */
-const SUMMARY_MARK_PAIR = "-mr-0.5";
+/* The mark's 20px glyph sits inside a 28px target, so its visible edge already
+   sits 4px inside the box. Push the box 2px off the following action to land a
+   12px gap between the globe and Merge: the two are a pair, not one control,
+   and at the row's bare 6px they read as a split button. */
+const SUMMARY_MARK_PAIR = "mr-0.5";
 
 /* Spinning ring around the globe while the preview environment builds.
    border-t-current picks up the amber/green icon tone; the ring sits just
@@ -114,20 +122,6 @@ export function StagingLink({
 	refreshTick?: number;
 }) {
 	const { copied, copy } = useCopy();
-	const [copyModifierHeld, setCopyModifierHeld] = useState(false);
-	useEffect(() => {
-		const syncModifier = (e: KeyboardEvent) =>
-			setCopyModifierHeld(e.metaKey || e.ctrlKey);
-		const clearModifier = () => setCopyModifierHeld(false);
-		window.addEventListener("keydown", syncModifier);
-		window.addEventListener("keyup", syncModifier);
-		window.addEventListener("blur", clearModifier);
-		return () => {
-			window.removeEventListener("keydown", syncModifier);
-			window.removeEventListener("keyup", syncModifier);
-			window.removeEventListener("blur", clearModifier);
-		};
-	}, []);
 	// Read up here with the other hooks, not beside the tooltip it feeds. Every
 	// state below this line returns early, so a call further down runs on some
 	// renders and not others: the render where the URL lands would add a hook the
@@ -260,14 +254,11 @@ export function StagingLink({
 	// opens the feature under test, not the app root.
 	const href = withPreviewPath(staging.url, session.previewPath);
 
-	// ⌘/Ctrl-click copies the link instead of opening it (mirrors the browser's
-	// own modifier semantics elsewhere) — hold Cmd on macOS, Ctrl on Windows.
+	// A click opens the preview, including ⌘-click, which keeps the browser's own
+	// open-in-a-new-tab meaning. Copying moved to the right-click menu below: a
+	// modifier that quietly replaces a link's normal behaviour can only be
+	// discovered by reading a tooltip, and it cost the control its click.
 	const onClick = (e: React.MouseEvent) => {
-		if (e.metaKey || e.ctrlKey) {
-			e.preventDefault();
-			copy(href, { toast: "Link copied" });
-			return;
-		}
 		// Before the first deploy goes Ready the alias 404s, so swallow a plain
 		// click — but never silently (an unexplained dead link reads as a bug).
 		if (building) {
@@ -280,18 +271,21 @@ export function StagingLink({
 
 	// The globe carries a spinning ring while any deploy is in flight — first
 	// build (link dead until it lands) and rebuild (link opens the previous
-	// deploy) alike. While a ⌘-copy is fresh the globe morphs into a drawing
-	// checkmark; holding the copy modifier previews the link action, and the
-	// globe remains the resting (optionally spinning) state.
+	// deploy) alike. After a copy from the right-click menu the globe morphs into
+	// a drawing checkmark for a beat and then settles back.
+	//
+	// The glyph shows the deploy's state and nothing else. It used to repaint into
+	// a chain link whenever ⌘ was held, which hid both the globe and its spinner
+	// behind a transient keypress — and a macOS screenshot chord holds ⌘, so no
+	// capture ever showed the real state.
 	const spinning = building || rebuilding;
-	const restingIcon = (size: number) =>
-		copyModifierHeld ? <IconLink size={size} /> : <IconGlobe size={size} />;
+	const restingIcon = (size: number) => <IconGlobe size={size} />;
 	const globe = (size: number, ring: string) =>
 		copied ? (
 			<CopyCheck copied size={size} idle={restingIcon(size)} />
 		) : (
 			<span className="relative inline-flex items-center justify-center">
-				{spinning && !copyModifierHeld && (
+				{spinning && (
 					<span
 						className={`${RING_BASE} ${RING_MOTION} ${ring}`}
 						aria-hidden="true"
@@ -306,19 +300,69 @@ export function StagingLink({
 		: rebuilding
 			? ICON_REBUILDING
 			: ICON_READY;
-	const chordHint = openChord ? `${openChord}; ` : "";
-	const tooltip = (copyHint: string) =>
-		copied
-			? "Link copied"
-			: building
-				? `Preview environment ${staging.status.toLowerCase()}… ${copyHint}`
-				: rebuilding
-					? `Redeploying for the latest push. Opens the previous deploy until it lands (${chordHint}${copyHint})`
-					: `Open the preview environment to test this PR (${chordHint}${copyHint})`;
+	/* The parenthetical is built from whatever hints this surface actually has:
+	   the phone grid cell has no right-click, so it passes none and must not end
+	   up with a dangling "( )". */
+	const tooltip = (copyHint: string) => {
+		const hints = [openChord, copyHint].filter(Boolean).join("; ");
+		const aside = hints ? ` (${hints})` : "";
+		if (copied) return "Link copied";
+		if (building)
+			return `Preview environment ${staging.status.toLowerCase()}…${copyHint ? ` ${copyHint}` : ""}`;
+		if (rebuilding)
+			return `Redeploying for the latest push. Opens the previous deploy until it lands${aside}`;
+		return `Open the preview environment to test this PR${aside}`;
+	};
+
+	/**
+	 * A left click opens the preview — that is the whole point of the control, so
+	 * nothing else competes for the click. Taking the link away is a right-click
+	 * menu, the same gesture the PR chip beside it already answers to, instead of
+	 * a modifier that only the tooltip could ever have told you about.
+	 */
+	const withCopyMenu = (trigger: React.ReactNode) => (
+		<ContextMenu.Root>
+			{/* An inline-flex box, not `contents`: the popup positions from the
+			    cursor but Base UI still measures the trigger, and a box-less element
+			    measures as a zero rect at the origin. */}
+			<ContextMenu.Trigger render={<span className="inline-flex shrink-0" />}>
+				{trigger}
+			</ContextMenu.Trigger>
+			<ContextMenu.Popup>
+				<ContextMenu.Item
+					render={
+						<a
+							href={href}
+							target="_blank"
+							rel="noopener"
+							className="no-underline"
+						/>
+					}
+				>
+					<IconArrowUpRight size={20} className={MENU_ICON} />
+					<span className="grow">Open preview</span>
+				</ContextMenu.Item>
+				{/* Keeps the popup open so the checkmark lands where it was clicked,
+				    matching the PR menu's copy rows. */}
+				<ContextMenu.Item closeOnClick={false} onClick={() => copy(href)}>
+					{copied ? (
+						<IconCheck size={20} className="text-green" />
+					) : (
+						<IconCopy size={20} className={MENU_ICON} />
+					)}
+					<span className="grow">{copied ? "Copied" : "Copy link"}</span>
+				</ContextMenu.Item>
+			</ContextMenu.Popup>
+		</ContextMenu.Root>
+	);
 
 	if (variant === "header") {
-		return (
-			<Tooltip label={tooltip("⌘-click to copy the link")} side="bottom" multiline>
+		return withCopyMenu(
+			<Tooltip
+				label={tooltip("right-click to copy the link")}
+				side="bottom"
+				multiline
+			>
 				<a
 					href={href}
 					target="_blank"
@@ -334,7 +378,7 @@ export function StagingLink({
 					    icons to read at the same weight in the top bar. */}
 					{globe(25, RING_LG)}
 				</a>
-			</Tooltip>
+			</Tooltip>,
 		);
 	}
 	if (variant === "action") {
@@ -346,7 +390,8 @@ export function StagingLink({
 				onClick={onClick}
 				aria-disabled={building || undefined}
 				className={`flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-supporting font-semibold no-underline outline-none transition-colors hover:bg-hover focus-visible:bg-hover ${building ? "cursor-default text-faint" : "text-fg"}`}
-				title={`${tooltip("⌘-click to copy the link")} · ${href}`}
+				/* A phone grid cell: no right-click, so no copy to advertise. */
+				title={`${tooltip("")} · ${href}`}
 			>
 				<span className="inline-flex size-5 shrink-0 items-center justify-center text-faint">
 					{globe(17, RING_LG)}
@@ -356,10 +401,14 @@ export function StagingLink({
 		);
 	}
 	if (variant === "summary") {
-		return (
+		return withCopyMenu(
 			// The band is at the top of a floating card, so the tip hangs below it
 			// rather than over the header the card came from.
-			<Tooltip label={tooltip("⌘-click to copy the link")} side="bottom" multiline>
+			<Tooltip
+				label={tooltip("right-click to copy the link")}
+				side="bottom"
+				multiline
+			>
 				<a
 					href={href}
 					target="_blank"
@@ -375,32 +424,33 @@ export function StagingLink({
 					className={cn(
 						SUMMARY_MARK,
 						SUMMARY_MARK_PAIR,
-						// Amber only while a deploy is in flight. A card of quiet rows
-						// keeps its colour for the ones with something to report, and a
-						// preview that is simply up has nothing.
-						spinning ? "text-yellow" : WS_SUMMARY_ICON,
+						// Same three-state colouring as the header globe, because it is
+						// the same control moved into the card: green once the preview is
+						// up and testable, amber while a deploy is in flight. "Up" is the
+						// state you act on here, so it is not the state that goes quiet.
+						spinning ? "text-yellow" : "text-green",
 						building ? "cursor-default" : SUMMARY_MARK_HOVER,
 					)}
 				>
 					{globe(20, RING_LG)}
 				</a>
-			</Tooltip>
+			</Tooltip>,
 		);
 	}
 
-	return (
+	return withCopyMenu(
 		<a
 			href={href}
 			target="_blank"
 			rel="noopener"
 			onClick={onClick}
 			aria-disabled={building || undefined}
-			className={`${LINK_BASE} ${building ? LINK_BUILDING : LINK_READY}`}
-			title={`${tooltip("⌘-click to copy the link")} · ${href}`}
+			className={`${LINK_BASE} ${building ? LINK_BUILDING : rebuilding ? LINK_DEPLOYING : LINK_READY}`}
+			title={`${tooltip("right-click to copy the link")} · ${href}`}
 		>
 			{globe(15, RING_SM)}
 			Preview environment
 			<IconArrowUpRight size={15} className="-ml-px opacity-80" />
-		</a>
+		</a>,
 	);
 }

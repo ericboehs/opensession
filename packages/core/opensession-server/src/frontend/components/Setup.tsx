@@ -5,26 +5,24 @@ import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import {
   SettingCard,
-  SettingsGroupLabel,
   SettingsHeader,
-  SettingsHint,
   SettingsPanel,
 } from "../ui/settings";
 import { LoadingState } from "../ui/state";
 import { SetupChecklist } from "./SetupChecklist";
-import { IdentityCard } from "./SetupIdentity";
 import { IntegrationsList } from "./SetupIntegrations";
 import { ReposSection } from "./SetupRepos";
 import { SetupRestart } from "./SetupRestart";
+import { SetupServerAccess } from "./SetupServerAccess";
 import { TeamSection } from "./SetupTeam";
 import { OrganizationProfileSection } from "./settings/GeneralPanel";
 import { ProviderAccountsSection } from "./settings/ModelAccounts";
 import { ModelProvidersPanel } from "./ModelProviders";
 import { ModelDefaultsSection } from "./Models";
-import { IconArrowUpRight, IconCheck, IconGlobe } from "./icons";
+import { IconCheck } from "./icons";
 import {
   integrationState,
-  StateChip,
+  publicUrlState,
   type SetupStatus,
 } from "./setup-shared";
 
@@ -67,13 +65,15 @@ function SetupSummary({
     (integration) => integration.id === "github",
   );
   const githubReady = !!github && integrationState(github).tone === "on";
+  const serverReady = publicUrlState(status.publicBaseUrl).tone === "on";
   const requiredReady =
+    serverReady &&
     githubReady &&
     status.engine.ready &&
     status.repos.length > 0 &&
     status.team.count > 0;
   const steps: { id: SectionId; label: string; complete: boolean }[] = [
-    { id: "server", label: "Server", complete: true },
+    { id: "server", label: "Server", complete: serverReady },
     { id: "github", label: "GitHub", complete: githubReady },
     { id: "organisation", label: "Organisation", complete: true },
     { id: "providers", label: "Providers", complete: status.engine.ready },
@@ -201,38 +201,13 @@ export function SetupPanel({
             <SetupPageSection
               id="server"
               title="Server access"
-              description="Keep the instance private and make it reachable from your devices."
+              description="Add a private app domain and a separate public address for signed webhooks."
               className="mt-0"
             >
-              <SettingCard>
-                <div className="flex items-start gap-3 px-5 py-4">
-                  <IconGlobe
-                    size={22}
-                    className="mt-0.5 shrink-0 text-dim"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-row-title font-medium text-fg">
-                      This server is online
-                    </div>
-                    <p className="m-0 mt-1 break-words text-supporting leading-relaxed text-dim">
-                      Configured address: {status.publicBaseUrl}
-                    </p>
-                    <a
-                      href="https://opensession.com/setup"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-label font-medium text-blue hover:underline desktop:min-h-0"
-                    >
-                      View server guide <IconArrowUpRight size={16} />
-                    </a>
-                  </div>
-                  <StateChip tone="on" label="Online" />
-                </div>
-              </SettingCard>
-              <SettingsHint>
-                This instance currently opens at {status.publicBaseUrl}. Keep
-                ports 3848 and 3850 closed to the public internet.
-              </SettingsHint>
+              <SetupServerAccess
+                access={status.access}
+                onSaved={setup.applyAccess}
+              />
             </SetupPageSection>
 
             <SetupPageSection
@@ -254,8 +229,6 @@ export function SetupPanel({
               description="Your organisation's name and mark, and the names this instance and its agent use when they introduce themselves."
             >
               <OrganizationProfileSection />
-              <SettingsGroupLabel>Identity</SettingsGroupLabel>
-              <IdentityCard />
             </SetupPageSection>
 
             <SetupPageSection
@@ -273,7 +246,11 @@ export function SetupPanel({
               title="Add repositories"
               description="Register the repositories sessions can work in."
             >
-              <ReposSection repos={status.repos} onChanged={refetch} />
+              <ReposSection
+                repos={status.repos}
+                onChanged={refetch}
+                onRepoUpdated={setup.applyRepo}
+              />
             </SetupPageSection>
 
             <SetupPageSection
