@@ -64,6 +64,28 @@ const sx = stylex.create({
 	shrink0: {
 			flexShrink: "0"
 	},
+	size2: {
+		width: "8px",
+		height: "8px",
+	},
+	roundedFull: {
+		borderRadius: "calc(infinity * 1px)",
+	},
+	bgAccent: {
+		backgroundColor: "var(--accent)",
+	},
+	bgRed: {
+		backgroundColor: "var(--red)",
+	},
+	bgYellow: {
+		backgroundColor: "var(--yellow)",
+	},
+	bgPurple: {
+		backgroundColor: "var(--purple)",
+	},
+	bgFaint: {
+		backgroundColor: "var(--text-faint)",
+	},
 	justifyCenter: {
 			justifyContent: "center"
 	},
@@ -258,13 +280,13 @@ const KBD =
 const ITEM =
 	"group flex w-full cursor-pointer items-center gap-3 rounded-lg border-none bg-transparent px-3 py-2.5 text-left text-fg aria-selected:bg-pressed";
 
-const STATUS_META: Record<Status, { label: string; dotClass: string }> = {
-	needsinput: { label: "Needs input", dotClass: "bg-accent" },
-	failed: { label: "Run failed", dotClass: "bg-red" },
-	running: { label: "Running", dotClass: "bg-yellow" },
-	review: { label: "In review", dotClass: "bg-yellow" },
-	merged: { label: "Merged", dotClass: "bg-purple" },
-	pending: { label: "Pending", dotClass: "bg-faint" },
+const STATUS_META: Record<Status, { label: string; dotStyle: stylex.StyleXStyles }> = {
+	needsinput: { label: "Needs input", dotStyle: sx.bgAccent },
+	failed: { label: "Run failed", dotStyle: sx.bgRed },
+	running: { label: "Running", dotStyle: sx.bgYellow },
+	review: { label: "In review", dotStyle: sx.bgYellow },
+	merged: { label: "Merged", dotStyle: sx.bgPurple },
+	pending: { label: "Pending", dotStyle: sx.bgFaint },
 };
 
 const STATUS_ORDER: Status[] = [
@@ -549,7 +571,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 				label: STATUS_META[value].label,
 				icon: (
 					<span
-						className={`size-2 rounded-full ${STATUS_META[value].dotClass}`}
+						{...stylex.props(sx.size2, sx.roundedFull, STATUS_META[value].dotStyle)}
 					/>
 				),
 			})),
@@ -874,7 +896,7 @@ if (!ctrl.signal.aborted) setSearching(false);
 									onMouseMove={() => setActiveKey(resultKey(result))}
 									onClick={() => selectResult(result)}
 								>
-									<span className={`size-2 shrink-0 rounded-full ${meta.dotClass}`} />
+									<span {...stylex.props(sx.size2, sx.shrink0, sx.roundedFull, meta.dotStyle)} />
 									<span {...stylex.props(sx.flex, sx.minW0, sx.flex1, sx.flexCol, sx.gap05)}>
 										<span {...stylex.props(sx.truncate, sx.fontMedium, typography.label)}>{s.title}</span>
 										{result.snippet && (

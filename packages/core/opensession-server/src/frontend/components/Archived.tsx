@@ -115,6 +115,15 @@ const sx = stylex.create({
 	textDim: {
 			color: "var(--text-dim)"
 	},
+	textFg: {
+		color: "var(--text)",
+	},
+	mt4: {
+		marginTop: "16px",
+	},
+	bgActive: {
+		backgroundColor: "var(--active)",
+	},
 	hidden: {
 			display: "none"
 	},
@@ -473,7 +482,7 @@ setBusy(null);
 							variant="ghost"
 							icon={<IconFilter size={18} />}
 							aria-label={`Filters, ${activeFilterCount} active`}
-							className={activeFilterCount > 0 ? "shrink-0 text-fg" : "shrink-0"}
+							{...stylex.props(sx.shrink0, activeFilterCount > 0 && sx.textFg)}
 						>
 							Filters{activeFilterCount > 0 ? ` ${activeFilterCount}` : ""}
 						</Button>
@@ -604,7 +613,7 @@ setBusy(null);
 			) : (
 				<div className={ARCHIVED_LIST}>
 					{sections.map((section, sectionIndex) => (
-						<section key={section.key} className={sectionIndex > 0 ? "mt-4" : undefined}>
+						<section key={section.key} {...stylex.props(sectionIndex > 0 && sx.mt4)}>
 							<h2 className={ARCHIVED_SECTION_LABEL}>{section.label}</h2>
 							<ul className={ARCHIVED_SECTION_ROWS}>
 								{section.items.map((s) => {
@@ -615,7 +624,7 @@ setBusy(null);
 									// reason. The repo is the tile, which carries it in a glance.
 									const meta = [
 										chip && (
-											<span key="chip" className={cn(SOURCE_CHIP, chip.tone)}>
+											<span key="chip" className={`${SOURCE_CHIP} ${chip.tone}`}>
 												{chip.label}
 											</span>
 										),
@@ -627,7 +636,8 @@ setBusy(null);
 										reason === "all" && isAutoReason(s) && (
 											<span
 												key="auto"
-												className={cn(SOURCE_CHIP, "bg-active text-dim")}
+												className={SOURCE_CHIP}
+												{...stylex.props(sx.bgActive, sx.textDim)}
 												title={`Auto-archived (${s.archivedReason})`}
 											>
 												auto

@@ -7,7 +7,6 @@ import { PRODUCT_NAME } from "../lib/brand";
 import { usePeople } from "../lib/people";
 import { effectiveTheme, onThemeChanged } from "../lib/theme";
 import { Button } from "../ui/button";
-import { cn } from "../ui/cn";
 import { DeviceCode } from "../ui/device-code";
 import { InlineAlert } from "../ui/state";
 import { PulseDot } from "../ui/status";
@@ -172,6 +171,18 @@ const sx = stylex.create({
 	},
 	textLeft: {
 			textAlign: "left"
+	},
+	grid: {
+		display: "grid",
+	},
+	gridCols1: {
+		gridTemplateColumns: "repeat(1, minmax(0, 1fr))",
+	},
+	gridCols2: {
+		gridTemplateColumns: {
+			default: "repeat(2, minmax(0, 1fr))",
+			"@media (max-width: 720px)": "repeat(1, minmax(0, 1fr))",
+		},
 	},
 });
 
@@ -505,11 +516,12 @@ export function UserGate({ children }: { children: React.ReactNode }) {
         sessions.
       </AuthCopy>
       <div
-        className={cn(
-          "grid gap-2",
+        {...stylex.props(
+          sx.grid,
+          sx.gap2,
           // One tile has no column to pair with: a half-width button floating
           // in a card reads as a layout that lost its other half.
-          roster.length > 1 ? "grid-cols-2 phone:grid-cols-1" : "grid-cols-1",
+          roster.length > 1 ? sx.gridCols2 : sx.gridCols1,
         )}
       >
         {(roster.length ? roster.map(({ name }) => name) : ["Local User"]).map(

@@ -4,7 +4,6 @@ import { IconShare, IconX } from "./icons";
 import { desktopProtocolUrlFromBrowser } from "../lib/desktop-link";
 import { PERSISTENT_NOTICE_CARD } from "../lib/notification-classes";
 import { Button } from "../ui/button";
-import { cn } from "../ui/cn";
 import { duration, ease } from "../ui/motion";
 import { Tooltip } from "../ui/tooltip";
 import * as stylex from "@stylexjs/stylex";
@@ -51,6 +50,9 @@ const sx = stylex.create({
 	gap1: {
 			gap: "4px"
 	},
+	animationNone: {
+		animation: "none",
+	},
 });
 
 export function DesktopLinkToast() {
@@ -62,7 +64,8 @@ export function DesktopLinkToast() {
 		<AnimatePresence>
 			{!dismissed && (
 				<motion.div
-					className={cn(PERSISTENT_NOTICE_CARD, "animate-none")}
+					className={PERSISTENT_NOTICE_CARD}
+					{...stylex.props(sx.animationNone)}
 					role="region"
 					aria-label="View in the app"
 					initial={{ opacity: 0, x: -12 }}

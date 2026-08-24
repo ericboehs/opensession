@@ -41,6 +41,12 @@ const sx = stylex.create({
 	AppRegionNoDrag: {
 			appRegion: "no-drag"
 	},
+	phoneHidden: {
+		display: {
+			default: null,
+			"@media (max-width: 720px)": "none",
+		},
+	},
 });
 
 /**
@@ -92,7 +98,10 @@ export function TitleBar({
 	}, [pane]);
 
 	return (
-		<div className={`${pane ? "wco-nav wco-nav-pane" : "wco-nav"} phone:hidden`}>
+		<div
+			className={pane ? "wco-nav wco-nav-pane" : "wco-nav"}
+			{...stylex.props(sx.phoneHidden)}
+		>
 			<Tooltip label="Back" side="bottom" shortcut={backKeys ?? undefined}>
 				<button
 					className="hover:bg-hover hover:text-fg [-webkit-app-region:no-drag]" {...stylex.props(sx.inlineFlex, sx.size30px, sx.cursorPointer, sx.itemsCenter, sx.justifyCenter, sx.roundedMd, sx.borderNone, sx.bgTransparent, sx.p0, sx.textDim, sx.AppRegionNoDrag)}

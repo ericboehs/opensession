@@ -110,6 +110,9 @@ const sx = stylex.create({
 	textPurple: {
 			color: "var(--purple)"
 	},
+	fontMedium: {
+		fontWeight: "var(--font-weight-medium)",
+	},
 });
 
 /**
@@ -463,9 +466,12 @@ function CommitChipCardBody({ commit }: { commit: CommitDetails }) {
 
 			{/* Whether it shipped, in the same slot the PR card puts its state. */}
 			<div
-				className={`mt-[3px] text-meta font-medium ${
-					commit.onDefaultBranch ? "text-green" : "text-faint"
-				}`}
+				{...stylex.props(
+					sx.mt3px,
+					typography.meta,
+					sx.fontMedium,
+					commit.onDefaultBranch ? sx.textGreen : sx.textFaint,
+				)}
 			>
 				{commit.onDefaultBranch
 					? `On ${commit.defaultBranch}`
@@ -541,7 +547,10 @@ function PrChipCardBody({ pr }: { pr: ChipPr }) {
 				{pr.title}
 			</div>
 
-			<div className={`mt-[3px] text-meta font-medium ${PR_STATE_TEXT[tone]}`}>
+			<div
+				className={PR_STATE_TEXT[tone]}
+				{...stylex.props(sx.mt3px, typography.meta, sx.fontMedium)}
+			>
 				{status.label}
 			</div>
 

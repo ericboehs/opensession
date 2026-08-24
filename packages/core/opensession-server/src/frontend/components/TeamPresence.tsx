@@ -7,6 +7,7 @@ import { Menu } from "../ui/menu";
 import { IconChevronDown } from "./icons";
 import { UserAvatar } from "./UserAvatar";
 import * as stylex from "@stylexjs/stylex";
+import { type as typography } from "../styles/typography.stylex";
 
 /* Converted from Tailwind utilities; names mirror the original class tokens. */
 const sx = stylex.create({
@@ -63,6 +64,37 @@ const sx = stylex.create({
 	size22px: {
 			width: "22px",
 			height: "22px"
+	},
+	block: {
+		display: "block",
+	},
+	sizeFull: {
+		width: "100%",
+		height: "100%",
+	},
+	bgGreen: {
+		backgroundColor: "var(--green)",
+	},
+	borderGreen: {
+		borderColor: "var(--green)",
+		borderStyle: "solid",
+		borderWidth: "1px",
+	},
+	away: {
+		opacity: 0.45,
+		filter: "grayscale(100%)",
+	},
+	itemsCenter: {
+		alignItems: "center",
+	},
+	ml15: {
+		marginLeft: "6px",
+	},
+	fontSemibold: {
+		fontWeight: "var(--font-weight-semibold)",
+	},
+	tabularNums: {
+		fontVariantNumeric: "tabular-nums",
 	},
 });
 
@@ -216,19 +248,17 @@ export function StatusDot({
 			aria-hidden="true"
 		>
 			<span
-				className={cn(
-					"block size-full rounded-full",
-					state === "working" ? "bg-green" : "border border-green",
+				{...stylex.props(
+					sx.block,
+					sx.sizeFull,
+					sx.roundedFull,
+					state === "working" ? sx.bgGreen : sx.borderGreen,
 				)}
 				style={state === "working" ? undefined : { background: ring }}
 			/>
 		</span>
 	);
 }
-
-/** The "+N" tail of a capped pile, in both its readings (plain count, menu). */
-const OVERFLOW_COUNT =
-	"ml-1.5 flex items-center text-meta font-semibold tabular-nums";
 
 /** A face. `status` adds the dim/dot presence reading; the accessible name
  *  says the same thing in words, so the colour isn't carrying it alone. */
@@ -256,7 +286,7 @@ function Face({
 			<UserAvatar
 				name={member.person.name}
 				size={size}
-				className={cn(status && state === "away" && "opacity-45 grayscale")}
+				{...stylex.props(status && state === "away" && sx.away)}
 				style={{
 					// The ring paints the row's own colour just outside the picture,
 					// so the face in front cuts a clean gap into the one behind it
@@ -316,7 +346,7 @@ export function TeamFacepile({
 	const selectedIndex = selectedKey ? shown.findIndex((m) => m.key === selectedKey) : -1;
 	const selectedTuck = Math.max(2, Math.round(size * 0.08));
 	return (
-		<div className={cn("flex items-center", className)}>
+		<div className={className} {...stylex.props(sx.flex, sx.itemsCenter)}>
 			{shown.map((m, i) => {
 				const selected = !!selectedKey && m.key === selectedKey;
 				const label = status
@@ -350,7 +380,14 @@ export function TeamFacepile({
 				// doesn't need to be reachable — the menu this pile opens lists
 				// everyone, capped or not.
 				<span
-					className={OVERFLOW_COUNT}
+					{...stylex.props(
+						sx.ml15,
+						sx.flex,
+						sx.itemsCenter,
+						typography.meta,
+						sx.fontSemibold,
+						sx.tabularNums,
+					)}
 					style={{ height: size }}
 					title={rest.map((m) => m.person.fullName).join(", ")}
 				>
