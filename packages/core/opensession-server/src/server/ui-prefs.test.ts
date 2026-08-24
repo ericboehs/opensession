@@ -25,6 +25,17 @@ describe("UI preference limits", () => {
 		expect(shortcuts.length).toBeLessThanOrEqual(maxValueLength("shortcuts"));
 	});
 
+	test("recent models can hold twelve routed model IDs", () => {
+		const recents = JSON.stringify(
+			Array.from(
+				{ length: 12 },
+				(_, index) => `pi/provider-${index}/configured-model-${index}`,
+			),
+		);
+		expect(recents.length).toBeGreaterThan(200);
+		expect(recents.length).toBeLessThanOrEqual(maxValueLength("recent-models"));
+	});
+
 	test("ordinary scalar preferences remain tightly bounded", () => {
 		expect(maxValueLength("turn-activity")).toBe(200);
 	});
