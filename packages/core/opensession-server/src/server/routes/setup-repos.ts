@@ -310,6 +310,36 @@ async function configureGithubCredentialHelper(checkoutPath: string): Promise<vo
   await $`git -C ${checkoutPath} config --add ${helperKey} ${githubCredentialHelperCommand()}`.quiet();
 }
 
+/**
+ * Adopt a checkout already sitting at the clone destination, or refuse.
+ *
+ * Uninstall deliberately preserves ~/checkouts — it is the user's code, not
+ * app state — so a reinstall (or any re-registration after the repo was
+ * removed from config) starts with an empty config and a full checkouts dir.
+ * Registering the same repo again should take what is on disk instead of
+ * failing, which also works before GitHub auth is set up: adoption needs no
+ * token, only the existing origin.
+ *
+ * Returns the inspected repo when the path holds a checkout of the very repo
+ * being registered (so the caller can skip the clone and keep the checkout on
+ * a later failure), null when nothing is there. Anything else at the path — a
+ * non-git directory, or a checkout of a DIFFERENT repo — still throws, since
+ * adopting it would silently register the wrong code.
+ */
+type InspectedRepo = Awaited<ReturnType<typeof inspectRepo>>;
+
+export async function adoptExistingCheckout(
+  dest: string,
+  matches: (inspected: InspectedRepo) => boolean,
+): Promise<InspectedRepo | null> {
+  if (!existsSync(dest)) return null;
+  const inspected = await inspectRepo(dest).catch(() => null);
+  if (!inspected || !matches(inspected)) {
+    throw new Error(`Clone destination already exists: ${dest}`);
+  }
+  return inspected;
+}
+
 async function registerGithubRepo(input: {
   fullName: string;
   id?: string;
@@ -325,18 +355,20 @@ async function registerGithubRepo(input: {
   }
   const root = checkoutsRoot();
   const dest = `${root}/${id}`;
-  if (existsSync(dest)) {
-    throw new Error(`Clone destination already exists: ${dest}`);
-  }
+  const adopted = await adoptExistingCheckout(
+    dest,
+    (i) => (i.ghRepo || "").toLowerCase() === input.fullName.toLowerCase(),
+  );
   mkdirSync(root, { recursive: true });
   try {
-    await cloneGithubRepo(input.fullName, dest, input.credential?.env.GH_TOKEN);
+    if (!adopted) await cloneGithubRepo(input.fullName, dest, input.credential?.env.GH_TOKEN);
     // A private clone authenticated through a one-shot GIT_ASKPASS; the remote
     // it leaves is tokenless, so wire the credential helper for future
     // fetch/push. No-op for a public (tokenless) clone — the helper simply has
-    // nothing to answer with.
+    // nothing to answer with. An adopted checkout gets it too, so a checkout
+    // left by a previous install authenticates with the current credential.
     if (input.credential) await configureGithubCredentialHelper(dest);
-    const inspected = await inspectRepo(dest);
+    const inspected = adopted ?? (await inspectRepo(dest));
     const config = rawConfig();
     const repos = {
       ...((config.repos && typeof config.repos === "object" && !Array.isArray(config.repos)
@@ -354,10 +386,17 @@ async function registerGithubRepo(input: {
     repos[id] = entry;
     config.repos = repos;
     persistRawConfig(config);
-    audit({ kind: "setup_repo_register", repo: input.fullName, id, path: inspected.path });
+    audit({
+      kind: "setup_repo_register",
+      repo: input.fullName,
+      id,
+      path: inspected.path,
+      ...(adopted ? { adopted: true } : {}),
+    });
     return { id, ...entry };
   } catch (error) {
-    rmSync(dest, { recursive: true, force: true });
+    // Only clean up a checkout this call created. An adopted one predates us.
+    if (!adopted) rmSync(dest, { recursive: true, force: true });
     throw error;
   }
 }
@@ -368,6 +407,17 @@ export const CS_REPO_ID_RE = /^[\w.-]+(?:\/[\w.-]+)*$/;
 
 export function validCsRepoId(value: unknown): value is string {
   return typeof value === "string" && CS_REPO_ID_RE.test(value);
+}
+
+export function matchesCodeStorageCheckout(
+  inspected: InspectedRepo,
+  org: string,
+  repoId: string,
+): boolean {
+  return (
+    inspected.cs?.org.toLowerCase() === org.toLowerCase() &&
+    inspected.cs.repoId.toLowerCase() === repoId.toLowerCase()
+  );
 }
 
 async function registerCodestorageRepo(input: {
@@ -389,15 +439,18 @@ async function registerCodestorageRepo(input: {
   }
   const root = checkoutsRoot();
   const dest = `${root}/${id}`;
-  if (existsSync(dest)) {
-    throw new Error(`Clone destination already exists: ${dest}`);
-  }
+  const adopted = await adoptExistingCheckout(
+    dest,
+    (i) => matchesCodeStorageCheckout(i, cfg.org, csRepo),
+  );
   mkdirSync(root, { recursive: true });
   try {
     // Clones with a short-lived JWT, persists the credential-free remote, and
-    // wires the URL-scoped credential helper for ambient git fetch/push.
-    await cloneCsCheckout(csRepo, dest);
-    const inspected = await inspectRepo(dest);
+    // wires the URL-scoped credential helper for ambient git fetch/push. An
+    // adopted checkout already carries both (boot re-wires the helper for
+    // every configured code.storage repo).
+    if (!adopted) await cloneCsCheckout(csRepo, dest);
+    const inspected = adopted ?? (await inspectRepo(dest));
     const config = rawConfig();
     const repos = {
       ...((config.repos && typeof config.repos === "object" && !Array.isArray(config.repos)
@@ -416,10 +469,16 @@ async function registerCodestorageRepo(input: {
     repos[id] = entry;
     config.repos = repos;
     persistRawConfig(config);
-    audit({ kind: "setup_repo_register", repo: csRepo, id, path: inspected.path });
+    audit({
+      kind: "setup_repo_register",
+      repo: csRepo,
+      id,
+      path: inspected.path,
+      ...(adopted ? { adopted: true } : {}),
+    });
     return { id, ...entry };
   } catch (error) {
-    rmSync(dest, { recursive: true, force: true });
+    if (!adopted) rmSync(dest, { recursive: true, force: true });
     throw error;
   }
 }
