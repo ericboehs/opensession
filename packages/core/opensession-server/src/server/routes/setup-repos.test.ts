@@ -8,6 +8,7 @@ import {
   githubCredentialHelperCommand,
   matchesCodeStorageCheckout,
   validGithubFullName,
+  listReposViaAppInstallation,
 } from "./setup-repos";
 
 describe("validGithubFullName", () => {
@@ -47,6 +48,35 @@ describe("validGithubFullName", () => {
   });
 });
 
+
+describe("App installation repository listing", () => {
+  test("uses the installation endpoint rather than a user endpoint", async () => {
+    const originalFetch = globalThis.fetch;
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      urls.push(String(input));
+      return Response.json({
+        repositories: [
+          {
+            full_name: "tellahq/opensession",
+            private: true,
+            default_branch: "main",
+            pushed_at: "2026-08-24T00:00:00Z",
+          },
+        ],
+      });
+    }) as typeof fetch;
+    try {
+      const repos = await listReposViaAppInstallation("ghs_installation");
+      expect(repos.map((repo) => repo.fullName)).toEqual(["tellahq/opensession"]);
+      expect(urls).toEqual([
+        "https://api.github.com/installation/repositories?per_page=100&page=1",
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
 
 describe("githubCredentialHelperCommand", () => {
   test("uses the stable installed command for compiled releases", () => {

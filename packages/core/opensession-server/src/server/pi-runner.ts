@@ -1604,7 +1604,7 @@ async function* runPiAttempt(
     const githubCodeRun =
       mode === "code" && baseJournalKind(journal?.kind).startsWith("github-");
     const githubEnv = githubCodeRun
-      ? opts.githubEnv || {}
+      ? opts.githubEnv || githubRunEnv()
       : interactiveGithub
         ? githubRunEnv(user || author?.name)
         : {};
