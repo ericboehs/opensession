@@ -1915,9 +1915,7 @@ export class SessionKernelStore {
         });
         if (plan.kind === "hold") return plan;
         const promptEntryId =
-          plan.batch.length === 1 && plan.batch[0]?.promptEntryId
-            ? plan.batch[0].promptEntryId
-            : input.promptEntryId;
+          plan.batch[0]?.promptEntryId || input.promptEntryId;
         if (!promptEntryId || promptEntryId.length > 256)
           throw new Error("Invalid claimed prompt dispatch identity");
         state.queued = plan.rest;
@@ -2036,7 +2034,11 @@ export class SessionKernelStore {
         { promptEntryId?: string; items?: unknown[] } | undefined;
       if (dispatch?.promptEntryId !== promptEntryId)
         throw new Error("Prompt dispatch changed before failure settlement");
-      const restored = dispatch.items ?? [];
+      const restored = (dispatch.items ?? []).map((item, index) =>
+        index === 0 && item && typeof item === "object" && !Array.isArray(item)
+          ? { ...(item as Record<string, unknown>), promptEntryId }
+          : item,
+      );
       const restoredIds = new Set(
         (restored as Array<{ id?: string }>)
           .map((item) => item.id)
