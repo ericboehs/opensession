@@ -22,12 +22,13 @@ export const GITHUB_APP_GRANT_PERMISSIONS: Record<string, string> = {
 	pull_requests: "write", // reviews, comments, open/merge
 	issues: "write", // issue and PR comments
 	members: "read", // team roster / attribution
+	deployments: "read", // Vercel preview deployment + status polling
 	metadata: "read", // required baseline
 };
 
 /** Read installation token (pr-info's statusCheckRollup) — the read view of the
- *  grant. Contents/pull_requests/issues at read, checks/statuses/metadata as
- *  granted. No `actions`: the rollup needs check runs and statuses, not workflow
+ *  grant. Contents/pull_requests/issues at read, plus checks/statuses, members,
+ *  deployments, and metadata as granted. No `actions`: the rollup needs check runs and statuses, not workflow
  *  runs, and requesting an ungranted scope would 422 the token. */
 export const GITHUB_APP_READ_PERMISSIONS: Record<string, string> = {
 	checks: "read",
@@ -35,6 +36,8 @@ export const GITHUB_APP_READ_PERMISSIONS: Record<string, string> = {
 	pull_requests: "read",
 	contents: "read",
 	issues: "read",
+	members: "read",
+	deployments: "read",
 	metadata: "read",
 };
 

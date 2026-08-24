@@ -36,6 +36,8 @@ describe("github app permission sets", () => {
 		expect(GITHUB_APP_GRANT_PERMISSIONS.issues).toBe("write");
 		expect(GITHUB_APP_GRANT_PERMISSIONS.pull_requests).toBe("write");
 		expect(GITHUB_APP_GRANT_PERMISSIONS.contents).toBe("write");
+		expect(GITHUB_APP_READ_PERMISSIONS.members).toBe("read");
+		expect(GITHUB_APP_READ_PERMISSIONS.deployments).toBe("read");
 	});
 
 	test("the write mint carries no read-only scope whose absence would 422 it", () => {

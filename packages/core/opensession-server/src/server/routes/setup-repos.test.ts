@@ -10,6 +10,7 @@ import {
   matchesCodeStorageCheckout,
   normalizeDefaultBranch,
   validGithubFullName,
+  listReposViaAppInstallation,
 } from "./setup-repos";
 
 const originalConfig = process.env.OPENSESSION_CONFIG;
@@ -95,6 +96,35 @@ describe("validGithubFullName", () => {
     // The clone receives the full https URL through an argv array, so a
     // hyphen-prefixed owner cannot become a command flag.
     expect(validGithubFullName("--flag/repo")).toBe(true);
+  });
+});
+
+describe("App installation repository listing", () => {
+  test("uses the installation endpoint rather than a user endpoint", async () => {
+    const originalFetch = globalThis.fetch;
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      urls.push(String(input));
+      return Response.json({
+        repositories: [
+          {
+            full_name: "tellahq/opensession",
+            private: true,
+            default_branch: "main",
+            pushed_at: "2026-08-24T00:00:00Z",
+          },
+        ],
+      });
+    }) as typeof fetch;
+    try {
+      const repos = await listReposViaAppInstallation("ghs_installation");
+      expect(repos.map((repo) => repo.fullName)).toEqual(["tellahq/opensession"]);
+      expect(urls).toEqual([
+        "https://api.github.com/installation/repositories?per_page=100&page=1",
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

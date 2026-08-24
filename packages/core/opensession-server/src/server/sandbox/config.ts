@@ -252,9 +252,9 @@ export interface SandboxConfig {
   firecrackerMicrovm?: SandboxFirecrackerMicrovmConfig;
   /** Credential-minimal unattended-run profile. */
   automation?: SandboxAutomationConfig;
-  /** Clone auth for remote-provider workspaces + runner bootstrap. On hosted
-   *  GitHub clones, the live GITHUB_API_TOKEN takes precedence so an expiring
-   *  GitHub App user token is never treated as durable sandbox config. */
+  /** Clone auth for remote-provider workspaces + runner bootstrap. The selected
+   *  live GitHub service credential takes precedence; App mode never falls back
+   *  to a persisted token because it may be the retired PAT. */
   cloneCredential?: SandboxCloneCredential;
   /** Warm-on-typing prewarm pool. Absent = defaults, with `enabled` true
    *  whenever a provider with a prewarm adapter is configured. */

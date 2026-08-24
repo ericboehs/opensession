@@ -109,14 +109,22 @@ export function noteGhRateLimited(source: string, resetEpochMs?: number): void {
   persistBackoff();
   state.probe = (async () => {
     try {
-      const proc = Bun.spawn(
-        ["gh", "api", "rate_limit", "--jq", ".resources.graphql.reset"],
-        { stdout: "pipe", stderr: "ignore" },
-      );
-      const raw = await new Response(proc.stdout).text();
-      if ((await proc.exited) === 0) {
-        const reset = parseInt(raw.trim(), 10) * 1000;
-        if (reset > Date.now()) {
+      // Probe with the operator-selected service credential. Invoking ambient
+      // `gh` here would cross the App cutover through hosts.yml on failures.
+      const { githubToken } = await import("./github-app");
+      const token = await githubToken();
+      if (token) {
+        const response = await fetch("https://api.github.com/rate_limit", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "User-Agent": "opensession",
+          },
+          signal: AbortSignal.timeout(10_000),
+        });
+        const data = await response.json().catch(() => null) as any;
+        const reset = Number(data?.resources?.graphql?.reset) * 1000;
+        if (response.ok && reset > Date.now()) {
           state.backoffUntil = reset + 30_000;
           persistBackoff();
         }
@@ -131,11 +139,17 @@ export function noteGhRateLimited(source: string, resetEpochMs?: number): void {
 
 /**
  * Token for direct api.github.com calls made on the bot's behalf (conditional
- * change probes and the like): the GITHUB_API_TOKEN PAT when configured, else
- * the gh CLI's own token, probed once and cached for the process lifetime.
+ * change probes and the like): the App installation token (or GITHUB_API_TOKEN)
+ * that the REST helpers use, else the gh CLI's own token, probed once and cached
+ * for the process lifetime.
  */
 export async function botGhToken(): Promise<string | null> {
-  if (process.env.GITHUB_API_TOKEN) return process.env.GITHUB_API_TOKEN;
+  const { githubBotCredentialMode, githubToken } = await import("./github-app");
+  const primary = await githubToken();
+  if (primary) return primary;
+  // App mode is an explicit credential boundary. Do not silently resume with
+  // a user login or retired PAT cached by gh when App token minting fails.
+  if (githubBotCredentialMode() === "app") return null;
   if (state.botToken !== undefined) return state.botToken;
   try {
     const proc = Bun.spawn(["gh", "auth", "token"], {
