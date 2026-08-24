@@ -1,7 +1,8 @@
 /** Shared readiness check for Setup and `opensession doctor`. */
 import { listAccountsPublic } from "./claude-accounts";
 import { listCodexAccountsPublic } from "./codex-accounts";
-import { accountProviderForModel, interactiveDefaultModel } from "./models";
+import { accountProviderForModel } from "./models";
+import { configuredInteractiveDefaultModel } from "./model-catalog";
 import { modelProviders } from "./model-providers";
 import { piConfigPath, piEngineEnabled } from "./pi-config";
 import { homeDir } from "./paths";
@@ -36,7 +37,7 @@ export function engineStatus(): EngineStatus {
   const codexAvailable = codexPool.filter(
     (account) => account.usable && !account.exhaustedUntil,
   ).length;
-  const defaultModel = interactiveDefaultModel();
+  const defaultModel = configuredInteractiveDefaultModel();
   const provider = accountProviderForModel(defaultModel);
   const base = {
     piEnabled: enabled,
