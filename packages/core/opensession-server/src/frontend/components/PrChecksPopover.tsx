@@ -51,6 +51,11 @@ export function PrChecksPopover({
 		<Popover.Root exclusive={!nested}>
 			<Popover.Trigger render={trigger} openOnHover delay={200} closeDelay={120} />
 			<Popover.Popup
+				// Base UI inherits a parent popover's portal container. The workspace
+				// summary lives in the header actions, whose z-1 stacking context sits
+				// below Review's sticky topbar. Escape that context so this child preview
+				// can use the shared floating layer above both surfaces.
+				portalContainer={nested && typeof document !== "undefined" ? document.body : undefined}
 				side="left"
 				align="start"
 				sideOffset={10}

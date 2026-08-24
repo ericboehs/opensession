@@ -5,6 +5,7 @@ import {
   onSessionTitleResolutionRequested,
   resetResolvedSessionTitles,
   setKnownPeople,
+  setKnownRepoPrStates,
   setKnownRepos,
   setKnownPrStates,
   setResolvedSessionTitles,
@@ -16,6 +17,7 @@ afterEach(() => {
   resetResolvedSessionTitles();
   setKnownRepos([]);
   setKnownPrStates([]);
+  setKnownRepoPrStates([]);
 });
 
 describe("renderMarkdown session links", () => {
@@ -569,6 +571,32 @@ describe("renderMarkdown PR mentions", () => {
       expect(html).toContain(`· ${label}`);
       expect(html).not.toContain("pr-ref-state");
     }
+  });
+
+  it("shows open state for a PR no loaded session owns", () => {
+    setKnownRepoPrStates([
+      {
+        repo: "tella-fusion",
+        number: 5528,
+        state: "OPEN",
+        checks: { failed: 0, pending: 0 },
+      },
+    ]);
+    const html = renderMarkdown("Fixed in #5528.", fusion);
+    expect(html).toContain('data-pr-state="open"');
+    expect(html).toContain('data-pr-tone="green"');
+  });
+
+  it("prefers richer session state over the repo-wide open list", () => {
+    setKnownRepoPrStates([
+      { repo: "tella-fusion", number: 5528, state: "OPEN" },
+    ]);
+    setKnownPrStates([
+      { repo: "tella-fusion", number: 5528, state: "MERGED" },
+    ]);
+    const html = renderMarkdown("Fixed in #5528.", fusion);
+    expect(html).toContain('data-pr-state="merged"');
+    expect(html).toContain('data-pr-tone="purple"');
   });
 
   it("drops stale state when the PR cache no longer contains the reference", () => {

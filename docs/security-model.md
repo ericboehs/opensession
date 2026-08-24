@@ -118,10 +118,10 @@ two people who should see it.
 
 ## GitHub credential scoping (out-of-org writes fail server-side)
 
-The "public repositories require confirmation" rule in AGENTS.md is enforced
-with credential scope, not just prompts: run the bot on a fine-grained token
-whose resource owner is your org (no Administration/Secrets, no gists, cannot
-fork or create repos outside the org), and give teammates GitHub App user
+The "repositories outside your org require confirmation" rule in AGENTS.md is
+enforced with credential scope, not just prompts: run the bot on a fine-grained
+token whose resource owner is your org (no Administration/Secrets, no gists,
+cannot fork or create repos outside the org), and give teammates GitHub App user
 tokens limited to the app's installation on that org. Then any GitHub write
 outside the org, from ANY code path including raw API calls and CLI/tmux
 sessions, fails at GitHub's side with 403 "Resource not accessible". Caveat:

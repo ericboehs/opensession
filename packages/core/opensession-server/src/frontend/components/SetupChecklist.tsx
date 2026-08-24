@@ -82,7 +82,7 @@ export function EngineRow({
 
 	return (
 		<ChecklistRow
-			title="Engine"
+			title="Providers"
 			description={
 				engine.ready
 					? `Ready to run turns on ${engine.defaultModel} (${pool}).`
@@ -125,6 +125,9 @@ export function SetupChecklist({
 	const githubTone: ChipTone = githubState.tone === "on" ? "on" : "warn";
 	const publicUrl = publicUrlState(status.publicBaseUrl);
 	const reposTone: ChipTone = status.repos.length > 0 ? "on" : "warn";
+	const membersTone: ChipTone = status.team.count > 0 ? "on" : "warn";
+	const memberNames = status.team.names.slice(0, 3).join(", ");
+	const remainingMembers = status.team.count - 3;
 	const bootable = status.repos.filter((r) => repoLifecycleState(r).tone === "on");
 	const missing = status.repos.filter((r) => repoLifecycleState(r).tone !== "on");
 	const namedMissing = missing
@@ -152,6 +155,12 @@ export function SetupChecklist({
 				tone={githubTone}
 				label={githubState.label}
 				action={fix("github", githubTone)}
+			/>
+			<ChecklistRow
+				title="Organisation"
+				description="The organisation profile and instance identity are configured here."
+				tone="on"
+				label="Configured"
 			/>
 			<EngineRow engine={status.engine} onChanged={onChanged} />
 			<ChecklistRow
@@ -187,6 +196,21 @@ export function SetupChecklist({
 					label={`${bootable.length}/${status.repos.length} bootable`}
 				/>
 			)}
+			<ChecklistRow
+				title="Members"
+				description={
+					status.team.count > 0
+						? `${memberNames}${remainingMembers > 0 ? ` and ${remainingMembers} more` : ""}`
+						: "Add everyone who uses this instance so sessions and commits attribute to real people."
+				}
+				tone={membersTone}
+				label={
+					status.team.count === 1
+						? "1 member"
+						: `${status.team.count} members`
+				}
+				action={fix("members", membersTone)}
+			/>
 		</SettingCard>
 	);
 }

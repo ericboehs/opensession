@@ -21,38 +21,6 @@ export interface ModelOption {
 }
 
 type ModelCatalog = { models: ModelOption[]; default: string };
-const MODEL_CACHE_MS = 60_000;
-const modelCatalogCache = new Map<string, { value: ModelCatalog; fetchedAt: number; pending?: Promise<ModelCatalog> }>();
-
-function modelCatalogKey(workspaceId?: string): string {
-	return workspaceId || "global";
-}
-
-async function refreshModelCatalog(workspaceId?: string): Promise<ModelCatalog> {
-	const key = modelCatalogKey(workspaceId);
-	const current = modelCatalogCache.get(key);
-	if (current?.pending) return current.pending;
-	const params = new URLSearchParams();
-	if (workspaceId) params.set("workspace", workspaceId);
-	const pending = request<ModelCatalog>(`/models${params.size ? `?${params}` : ""}`, {
-		label: "Failed to fetch models",
-	}).then((value) => {
-		modelCatalogCache.set(key, { value, fetchedAt: Date.now() });
-		return value;
-	}).finally(() => {
-		const entry = modelCatalogCache.get(key);
-		if (entry?.pending) delete entry.pending;
-	});
-	modelCatalogCache.set(key, { value: current?.value || { models: [], default: "" }, fetchedAt: current?.fetchedAt || 0, pending });
-	return pending;
-}
-
-/** Clear one workspace's picker catalog after its preset settings change. */
-export function invalidateModelsCache(workspaceId?: string): void {
-	for (const key of modelCatalogCache.keys()) {
-		if (!workspaceId || key.endsWith(`:${workspaceId}`)) modelCatalogCache.delete(key);
-	}
-}
 
 /**
  * Ask the backend (a quick Haiku call) to suggest a branch name for a task
@@ -131,17 +99,12 @@ export async function transcribeClip(audio: Blob): Promise<string> {
 	return typeof data?.text === "string" ? data.text : "";
 }
 
-export async function fetchModels(workspaceId?: string): Promise<{
-	models: ModelOption[];
-	default: string;
-}> {
-	const cached = modelCatalogCache.get(modelCatalogKey(workspaceId));
-	if (cached?.value.models.length) {
-		if (Date.now() - cached.fetchedAt > MODEL_CACHE_MS)
-			void refreshModelCatalog(workspaceId).catch(() => {});
-		return cached.value;
-	}
-	return refreshModelCatalog(workspaceId);
+export async function fetchModels(workspaceId?: string): Promise<ModelCatalog> {
+	const params = new URLSearchParams();
+	if (workspaceId) params.set("workspace", workspaceId);
+	return request<ModelCatalog>(`/models${params.size ? `?${params}` : ""}`, {
+		label: "Failed to fetch models",
+	});
 }
 
 /** Trimmed provider account shape for the per-session account picker. */

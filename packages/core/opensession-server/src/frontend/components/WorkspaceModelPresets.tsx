@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import type { Workspace } from "../lib/types";
 import { randomUUID } from "../lib/random-uuid";
-import { defaultWorkspaceModelSettings, fetchModels, updateWorkspaceApi, invalidateModelsCache, type ModelOption } from "../lib/api";
+import { defaultWorkspaceModelSettings, fetchModels, updateWorkspaceApi, type ModelOption } from "../lib/api";
 import { Button } from "../ui/button";
 import { CardList } from "../ui/card";
 import { cn } from "../ui/cn";
@@ -305,7 +305,6 @@ export function WorkspaceModelPresets({
 					.filter((preset) => preset.id && preset.label && preset.lead.model),
 			};
 			await updateWorkspaceApi(workspace.id, { modelSettings: clean });
-			invalidateModelsCache(workspace.id);
 			onSaved();
 			onOpenChange(false);
 		} catch (e) {

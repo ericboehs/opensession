@@ -1000,6 +1000,16 @@
 	gap: 10px;
 }
 
+button.setup-download-card {
+	text-align: left;
+	cursor: pointer;
+	font: inherit;
+}
+
+button.setup-download-card:hover {
+	background: rgba(var(--ink-rgb), 0.052);
+}
+
 .setup-download-card,
 .setup-terminal-option {
 	border: 0;
@@ -1028,6 +1038,7 @@ a.setup-download-card:hover {
 }
 
 .setup-download-card img,
+.setup-download-mark,
 .setup-terminal-mark {
 	display: grid;
 	width: 58px;
@@ -1059,12 +1070,27 @@ a.setup-download-card:hover {
 }
 
 .setup-download-action {
-	color: var(--accent-blue);
-	font-size: 12px;
+	display: inline-flex;
+	height: 36px;
+	align-items: center;
+	justify-content: center;
+	padding: 0 18px;
+	border-radius: calc(11px * var(--rf));
+	corner-shape: var(--cs);
+	background: var(--ink);
+	color: var(--page);
+	font-size: 13px;
 	font-weight: 600;
+	white-space: nowrap;
+	transition: filter 160ms ease;
+}
+
+.setup-download-card:hover .setup-download-action {
+	filter: brightness(1.12);
 }
 
 .setup-download-card[aria-disabled="true"] .setup-download-action {
+	background: rgba(var(--ink-rgb), 0.07);
 	color: var(--muted);
 }
 
@@ -1094,6 +1120,15 @@ a.setup-download-card:hover {
 }
 
 .setup-terminal-mark {
+	background: #1c1c1e;
+	color: #fff;
+}
+
+.setup-download-mark {
+	color: var(--ink);
+}
+
+.setup-download-mark-dark {
 	background: #1c1c1e;
 	color: #fff;
 }

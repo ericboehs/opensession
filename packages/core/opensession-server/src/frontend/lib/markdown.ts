@@ -759,6 +759,8 @@ const PR_MARK_LABEL: Record<string, string> = {
 };
 
 let knownPrStates = new Map<string, PrDisplayState>();
+let sessionPrStates = new Map<string, PrDisplayState>();
+let repoPrStates = new Map<string, PrDisplayState>();
 
 function prStateKey(repo: string, number: string | number): string {
   return `${repo}\u0000${number}`;
@@ -808,8 +810,7 @@ function syncRenderedPrStates(): void {
   }
 }
 
-/** Register live PR state from the session list for transcript references. */
-export function setKnownPrStates(prs: Iterable<PrStateInput>): void {
+function collectPrStates(prs: Iterable<PrStateInput>): Map<string, PrDisplayState> {
   const next = new Map<string, PrDisplayState>();
   for (const pr of prs) {
     if (!pr.repo || !pr.number) continue;
@@ -817,6 +818,13 @@ export function setKnownPrStates(prs: Iterable<PrStateInput>): void {
     const key = prStateKey(pr.repo, pr.number);
     if (state && !next.has(key)) next.set(key, state);
   }
+  return next;
+}
+
+function syncKnownPrStates(): void {
+  // Repo-wide lists fill references no loaded session owns. Session state wins
+  // when both know a PR because it also carries richer linked-workspace data.
+  const next = new Map([...repoPrStates, ...sessionPrStates]);
   if (
     next.size === knownPrStates.size &&
     [...next].every(
@@ -830,6 +838,18 @@ export function setKnownPrStates(prs: Iterable<PrStateInput>): void {
   knownPrStates = next;
   mdCache.clear();
   syncRenderedPrStates();
+}
+
+/** Register live PR state from the session list for transcript references. */
+export function setKnownPrStates(prs: Iterable<PrStateInput>): void {
+  sessionPrStates = collectPrStates(prs);
+  syncKnownPrStates();
+}
+
+/** Register repo-wide PRs, including PRs no loaded session owns. */
+export function setKnownRepoPrStates(prs: Iterable<PrStateInput>): void {
+  repoPrStates = collectPrStates(prs);
+  syncKnownPrStates();
 }
 
 /** Register the repos, so `<repo>#123` mentions link and chips know GitHub. */

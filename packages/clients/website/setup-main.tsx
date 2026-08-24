@@ -9,6 +9,7 @@ import {
   IconChevronLeft,
   IconCopy,
   IconGlobe,
+  IconPhone,
   IconServer,
   IconSparkle,
   IconTerminal,
@@ -127,8 +128,6 @@ function setupOptionsFor(provider: Provider): Array<{
   ];
 }
 
-const installCommand =
-  "curl -fsSL https://raw.githubusercontent.com/tellahq/opensession/main/install.sh | bash";
 const macDownloadUrl =
   "https://github.com/tellahq/opensession/releases/download/v0.4.0/OpenSession-0.4.0-arm64.dmg";
 const tailscaleCommand =
@@ -624,59 +623,78 @@ function SetupPage() {
     </section>,
     <section className="setup-panel" key="install">
       <StepLayout
-        title="Download Open Session"
-        description="Choose a Mac app, or install the server from Terminal."
+        title="Download apps"
+        description="Get the Mac app, open it in a browser, or install it on your phone."
       >
         <div className="setup-download-options">
           <a className="setup-download-card" href={macDownloadUrl}>
             <img src={markUrl} alt="" />
             <span className="setup-download-card-copy">
-              <strong>Download for Mac</strong>
+              <strong>Mac app</strong>
               <small>Electron · Apple silicon</small>
             </span>
             <span className="setup-download-action">Download</span>
           </a>
-          <div className="setup-download-card" aria-disabled="true">
-            <img src={nativeMarkUrl} alt="" />
-            <span className="setup-download-card-copy">
-              <strong>Mac App Store</strong>
-              <small>Native app · Available at launch</small>
+          <button
+            type="button"
+            className="setup-download-card"
+            onClick={() => setStep(4)}
+          >
+            <span className="setup-download-mark" aria-hidden="true">
+              <IconGlobe size={26} />
             </span>
-            <span className="setup-download-action">At launch</span>
-          </div>
+            <span className="setup-download-card-copy">
+              <strong>Web</strong>
+              <small>Any browser on your tailnet · Nothing to install</small>
+            </span>
+            <span className="setup-download-action">Open</span>
+          </button>
           <details className="setup-terminal-option">
             <summary>
-              <span className="setup-terminal-mark" aria-hidden="true">
-                <IconTerminal size={22} />
+              <span
+                className="setup-download-mark setup-download-mark-dark"
+                aria-hidden="true"
+              >
+                <IconPhone size={26} />
               </span>
               <span className="setup-download-card-copy">
-                <strong>Install via Terminal</strong>
-                <small>Set up the server from the command line</small>
+                <strong>iPhone and iPad PWA</strong>
+                <small>Add the web app to your home screen</small>
               </span>
               <IconChevronLeft className="setup-terminal-chevron" size={17} />
             </summary>
             <div className="setup-terminal-content">
-              <CopyCommand command={installCommand} label="install command" />
               <ol className="setup-mini-steps">
                 <li>
                   <span className="setup-mini-step-index">1</span>
-                  <span>Run the command as your regular user.</span>
+                  <span>Install Tailscale on the phone and sign in.</span>
                 </li>
                 <li>
                   <span className="setup-mini-step-index">2</span>
                   <span>
-                    Choose the <code>100.x</code> Tailscale address when asked.
+                    Open your instance in Safari, for example{" "}
+                    <code>http://100.64.12.34:3850</code>.
                   </span>
                 </li>
                 <li>
                   <span className="setup-mini-step-index">3</span>
-                  <span>
-                    Install and start the service when the installer asks.
-                  </span>
+                  <span>Tap Share, then Add to Home Screen.</span>
+                </li>
+                <li>
+                  <span className="setup-mini-step-index">4</span>
+                  <span>Open it from the home screen for full screen.</span>
                 </li>
               </ol>
             </div>
           </details>
+          <div className="setup-download-card" aria-disabled="true">
+            <img src={nativeMarkUrl} alt="" />
+            <span className="setup-download-card-copy">
+              <strong>iOS app</strong>
+              <small>Native app · App Store</small>
+            </span>
+            <span className="setup-download-action">Coming soon</span>
+          </div>
         </div>
       </StepLayout>
     </section>,

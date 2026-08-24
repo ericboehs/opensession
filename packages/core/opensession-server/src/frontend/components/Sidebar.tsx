@@ -4542,8 +4542,459 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		);
 	}
 
+	// The sidebar's fixed head: the organization row, the tool rows, and the
+	// Workspaces band heading with its filter and new-session buttons.
+	//
+	// On desktop this whole block is chrome — it holds its place under the window
+	// chrome while only the workspace list below it scrolls, so the top of the
+	// rail never slides away and there is no edge for a hairline to mark. The
+	// strip that used to name whose sidebar this is went with the same move: the
+	// Workspaces band heading says it once.
+	//
+	// The band used to earn its place by pinning (SIDEBAR_STICKY_BAND, still on
+	// it for the phone layout). Out here it does not have to: it is simply above
+	// the scrollport, which is what pinning was imitating. That also means the
+	// tier-2 lane headers inside the list pin at the scroll's own top rather than
+	// one band-slot down — see the `--sidebar-band-slot` override on SIDEBAR_LIST.
+	//
+	// Phones keep the whole sidebar as one page, so there the same markup is the
+	// scroll's first child and scrolls away with the list.
+	const sidebarChrome = (
+	<div
+		// Desktop lifts this strip out of the scrollport, so it sets the rail's
+		// own scales here rather than inheriting them from the scroll root. On
+		// phones it is still the scroll's first child and reads the same values
+		// twice, which costs nothing: they are one string either way.
+		data-density={density}
+		className={cn(
+			"block max-w-full min-w-0 flex-none",
+			SIDEBAR_DENSITY_VARS,
+			SIDEBAR_NAV_X,
+		)}
+		style={{ order: 0 }}
+	>
+	{/* The tools carry no heading. "Tools" named a handful of self-evident
+	    destinations (Home, Reviews, Tasks) sitting at the very top of the
+	    rail, where nothing else can be confused for them, and it cost a
+	    caption plus the gap around it before the first thing you can
+	    click. Phones already listed them bare; desktop matches now.
+
+	    Its two jobs moved rather than went: the collapse is gone (it hid
+	    at most a few rows and a collapsed band left the top of the
+	    sidebar looking empty), and the ••• menu that chose which tools
+	    show is now in the right-click menu on any tool row, beside the
+	    "Remove from toolbar" that already lived there. Take the last
+	    tool off and the organization selector remains; the sidebar's own
+	    right-click menu still lists every tool. */}
+	<nav
+			className={cn(
+				// `--sidebar-nav-x` is the sidebar's own (SIDEBAR_NAV_X); the strip
+				// reads it rather than setting one, so the tools sit on the same
+				// edges as the lists under them.
+				//
+				// One vertical list at every width. Phones used to get a
+				// horizontally-scrolling line of Slack-home style tap cards, which
+				// put the tools in a different language from everything under
+				// them: the sidebar is a column of rows, and the cards were a
+				// sideways shelf that kept its own tail off the right edge. A list
+				// reads the same on both clients, shows every tool at once without
+				// a gesture, and takes a quarter of the height per tool.
+				//
+				// The organization row leads this rail on desktop now that the old
+				// heading is gone. Pull it slightly closer to the fixed top bar there;
+				// phones keep the original spacing because their first row is a tool.
+				"flex flex-col gap-0.5 px-[var(--sidebar-nav-x)] pt-2 pb-1.5 desktop:pt-1",
+			)}
+		>
+			<div className="phone:hidden">
+				<OrganizationSwitcher
+					connected={connected}
+					onOpenSettings={onOpenSettings}
+				/>
+			</div>
+			{visibleTools.map((tool) => {
+				const rowClass = cn(
+					// One look at both widths. Only the box changes, and only
+					// because a phone row is pressed rather than read.
+					"group flex items-center text-left transition-colors",
+					// Rows use control-label type, with glyphs matching the
+					// sidebar's standard 22px leading rail.
+					// `--sidebar-tool-pad` is 5px for a 32px box: the tools are a
+					// short utility strip above the work lists, and at the session
+					// rows' 36px the four of them took more of the rail than what
+					// they lead to. The glyph and the label's left rail are
+					// untouched, so they still line up with the rows below; only
+					// the air around them is tighter.
+					// Don't take it below 30. At 28 (`py-[3px]`, the pre-ffd11ffc
+					// value) the 22px glyph has 3px of margin and the hover pill
+					// stops reading as a row; the compact density's 4px stops at
+					// 30, level with the rows under it rather than below them.
+					// Phones override it to the 13px the session rows take
+					// (SIDEBAR_ROW, lib/sidebar-classes.ts) for a 48px box: 32px is
+					// a reading height, not a tap target.
+					`w-full ${SIDEBAR_RAIL_GAP} rounded-row bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[var(--sidebar-tool-pad)] phone:py-[13px] text-body font-medium text-dim desktop:text-item-title hover:text-fg`,
+					SIDEBAR_HOVER_LAYER,
+					tool.active && "bg-selected text-fg",
+				);
+				const rowBody = (
+					<>
+						<span
+							className={cn(
+								"inline-flex text-faint [&_svg]:size-[22px]",
+								tool.active ? "text-dim" : "group-hover:text-dim",
+							)}
+						>
+							{tool.icon}
+						</span>
+						{tool.label}
+						{!!tool.count && (
+							// `rounded-full`, not `rounded-[999px]`: this pill never
+							// carried a corner-shape, and rounded-full is the one
+							// radius spelling base.css does NOT squircle.
+							<span className="ml-auto rounded-full bg-accent px-[7px] py-px text-meta leading-[1.5] font-semibold text-on-accent">
+								{tool.count}
+							</span>
+						)}
+					</>
+				);
+				// Right-click drops this tool from the strip, the same gesture
+				// the feed headers use to hide themselves, and opens the chooser
+				// that puts any of them back. Desktop only: phones have no
+				// right-click, and the chooser is itself desktop-only, so a
+				// stray long-press there would only be recoverable from
+				// Settings.
+				const row = isPhone ? (
+					<button
+						key={tool.id}
+						className={rowClass}
+						onClick={() => tool.onClick()}
+						title={tool.title}
+					>
+						{rowBody}
+					</button>
+				) : (
+					<ContextMenu.Root key={tool.id}>
+						<ContextMenu.Trigger
+							render={
+								<button
+									className={rowClass}
+									onClick={() => tool.onClick()}
+									title={tool.title}
+								/>
+							}
+						>
+							{rowBody}
+						</ContextMenu.Trigger>
+						{/* This menu is now the only place that chooses which tools
+						    show, since the band heading that held the ••• is gone.
+						    "Remove from toolbar" leads, about the row you opened the
+						    menu on: the list under it can do the same thing by
+						    unticking that row, but the command names the tool you
+						    already aimed at, which is the common case and the one
+						    worth a click rather than a read. "Hide tools from
+						    sidebar" used to close the menu, and it went: it was the
+						    same decision as unticking every row, a step further than
+						    anyone reaches for by accident. */}
+						<ContextMenu.Popup>
+							<ContextMenu.Item
+								onClick={() => setToolVisible(tool.id, false)}
+							>
+								<IconEyeOff size={20} className={MENU_ICON} />
+								<span className="min-w-0 flex-1 truncate">
+									Remove from toolbar
+								</span>
+							</ContextMenu.Item>
+							<ContextMenu.Separator />
+							<ContextMenu.Group>
+								<ContextMenu.GroupLabel>
+									Show in toolbar
+								</ContextMenu.GroupLabel>
+								{/* The same rows the sidebar's own right-click menu lists
+								    (SidebarToolRows), so the two menus cannot drift: each
+								    wears the mark it wears in the sidebar, the tick sits
+								    at the trailing edge, and Support stays a submenu of
+								    surfaces rather than a tick. */}
+								<SidebarToolRows
+									tools={sidebarMenuTools}
+									onToggleTool={setToolVisible}
+									onSetSupport={setSupportSurface}
+								/>
+							</ContextMenu.Group>
+						</ContextMenu.Popup>
+					</ContextMenu.Root>
+				);
+				// Feed carries the team at its right edge, with every face shown
+				// neutrally, and lets you pick up someone's sidebar without
+				// leaving the row you're on. The pile opens the same lens menu
+				// the Feed page's own chips write, so the row is both a way in
+				// and the shortcut past it. It has to be a sibling of the row,
+				// not a child: a button can't nest one. Phones carry it too,
+				// now that the tools are rows there rather than cards: the row
+				// has the width for a pile at its right edge, and the pile is
+				// its own target laid over it rather than a hover reveal, so a
+				// tap on a face opens the lens and a tap anywhere else opens
+				// Feed.
+				if (tool.id !== "feed" || team.length === 0) return row;
+				return (
+					<div key={tool.id} className="group/team-lens relative">
+						{row}
+						<TeamLensMenu
+							members={team}
+							size={20}
+							max={4}
+							// The ring is opaque so the face behind cannot bleed into
+							// the gap. Match whichever sidebar surface the trigger is
+							// currently painted on.
+							ring="var(--team-face-ring)"
+							compact
+							side="right"
+							align="start"
+							value={personLensValue(filter.person, currentUser)}
+							label={personLensName}
+							onPick={(next) =>
+								setFilter({ person: personLensFilter(next, currentUser) })
+							}
+							// Phones pad the trigger out to the row's own height so
+							// the faces are a thumb-sized target rather than a 24px
+							// one. It stays a pill either way, so the padding is only
+							// reach: nothing about it reads larger at rest.
+							className="absolute right-2 top-1/2 -translate-y-1/2 phone:py-2.5 [--team-face-ring:var(--sidebar-bg)] group-hover/team-lens:[--team-face-ring:var(--row-chip)] data-[popup-open]:[--team-face-ring:var(--row-chip)]"
+						/>
+					</div>
+				);
+			})}
+		</nav>
+
+	<div
+		className={cn(
+			// SIDEBAR_STICKY_BAND_ROW folds this into one fixed slot, but it is
+			// desktop-gated, so on phones the raw `mt-1 pt-3` stands. With the
+			// caption hidden and the chevron invisible-but-in-layout, that was a
+			// near-empty band between the tool cards and the first project, which
+			// read as the strip being bottom-heavy. Nothing to set off there.
+			"mt-1 pb-0.5 pt-3 phone:mt-0 phone:pt-0",
+			// A borrowed lens hides the tools strip, so this bar becomes the
+			// first thing in the phone scroll. Give it enough air to clear the
+			// floating top bar's fade instead of letting its top edge wash out.
+			borrowedLens && "phone:pt-4",
+			// A caption starts on the rail's 16px text column; the borrowed
+			// lens's strip is a filled bar, so it takes the rows' own 8px
+			// inset instead and lines up with the workspace pills under it.
+			borrowedLens ? "px-2" : "px-[16px] pr-[7px]",
+			SIDEBAR_STICKY_BAND,
+			SIDEBAR_STICKY_BAND_ROW,
+			SIDEBAR_STUCK_BACKING,
+		)}
+		data-sticky-head
+	>
+		<div
+			className={cn(
+				"group/wshead flex min-w-0 items-center gap-1.5 desktop:w-full",
+				// In someone else's sidebar this row IS the strip: one bar that
+				// names whose lanes these are, takes you back out, and carries
+				// the header's own actions. The name was being said twice —
+				// once by a strip above the tools, once by this heading — and
+				// each said it with its own ✕.
+				borrowedLens &&
+					"min-h-10 w-full rounded-row bg-blue-soft pl-3 pr-1 phone:min-h-12 phone:pl-3.5 desktop:h-full desktop:min-h-0",
+			)}
+			ref={headRef}
+		>
+			{borrowedLens ? (
+				<>
+					{/* The bar reports the active lens. Closing it is a separate
+					    action at the far edge, so the label stays visually stable and
+					    the close control gets a full touch target. */}
+					<div
+						className="flex min-w-0 flex-1 items-center gap-2 text-sm text-fg phone:text-base"
+						ref={(node) => {
+							titleRef.current = node;
+						}}
+					>
+						{filter.person === "everyone" ? (
+							<IconPeople
+								size={20}
+								className="shrink-0 translate-y-[0.5px] text-dim phone:-translate-y-px"
+							/>
+						) : (
+							filter.person !== "unassigned" && (
+								<UserAvatar
+									name={personLensName}
+									size={20}
+									className="shrink-0"
+								/>
+							)
+						)}
+						<span className="min-w-0 truncate font-semibold">
+							{filter.person === "everyone"
+								? "Everyone"
+								: filter.person === "unassigned"
+									? "Unassigned"
+									: personLensName}
+						</span>
+					</div>
+					<Tooltip label="Back to your workspaces">
+						<button
+							className="relative flex size-10 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-dim transition-[color,scale] before:absolute before:inset-2 before:rounded-md before:transition-colors before:content-[''] hover:text-fg hover:before:bg-hover active:scale-[0.96] phone:size-11 motion-reduce:transform-none [&>*]:relative [&>*]:z-[1]"
+							onClick={() => setFilter({ person: "me" })}
+							aria-label="Back to your workspaces"
+						>
+							<IconX size={18} aria-hidden="true" />
+						</button>
+					</Tooltip>
+				</>
+			) : (
+			<button
+				className={cn(
+					"group/wstoggle flex min-w-0 items-center gap-[5px] [font:inherit]",
+					// On phones the caption is hidden and the chevron only paints on
+					// hover, so while the band is open this button is a 22px row of
+					// nothing between the tool cards and the first project. That row
+					// is most of what made the strip read bottom-heavy, and an
+					// invisible tap target is not an affordance worth its space.
+					// Collapsed it stays: the chevron IS visible then
+					// (SIDEBAR_BAND_CHEVRON_COLLAPSED), and it is the only way to
+					// open the band back up.
+					isPhone && workspacesOpen && "hidden",
+				)}
+				onClick={() => toggleBand("workspaces")}
+				aria-expanded={workspacesOpen}
+				title={workspacesOpen ? "Collapse workspaces" : "Expand workspaces"}
+			>
+				{/* The heading takes the same inset every other glyphless label
+				    does, so it starts on the column its repo tiles and lane
+				    captions do (see
+				    the band toggle). The sidebar header already reads as
+				    "Workspaces" on phones, so the in-header title is redundant
+				    there. */}
+				<span
+					className={cn(
+						// The band caption, same as SIDEBAR_BAND_LABEL wears one
+						// section down: this heading is written inline rather than
+						// composed from it only because of the strip above.
+						"shrink-0 text-label font-semibold text-dim group-hover/wshead:text-fg",
+						isPhone && "hidden",
+					)}
+					ref={(node) => {
+						titleRef.current = node;
+					}}
+				>
+					Workspaces
+				</span>
+				<IconChevronDown
+					className={cn(
+						SIDEBAR_BAND_CHEVRON,
+						"group-hover/wstoggle:visible",
+						!workspacesOpen && SIDEBAR_BAND_CHEVRON_COLLAPSED,
+					)}
+					size={18}
+					style={{
+						transform: workspacesOpen ? "none" : "rotate(-90deg)",
+					}}
+				/>
+			</button>
+			)}
+			{/* Repo filter chip, inline behind the title when it fits. */}
+			{filter.repo !== "all" && repoInline && (
+				<RepoFilterChip
+					repo={filter.repo}
+					repos={repos}
+					onClear={() => setFilter({ repo: "all" })}
+					onSelect={(v) => setFilter({ repo: v })}
+					variant="inline"
+				/>
+			)}
+			{/* The active lens label already grows to push its close control to
+			    this edge. Your own sidebar still needs the flexible spacer. */}
+			{!borrowedLens && <div className="min-w-0 flex-1" />}
+			{/* Grouped so the pair's combined width can be measured when deciding
+			    whether the repo chip fits inline. Gone on phones, where filter
+			    moves to the top bar and the red FAB covers new-session. Gone in a
+			    borrowed lens too: both act on YOUR sidebar, so grouping or
+			    starting a session from inside someone else's bar is either a
+			    no-op you can't see or work filed somewhere you didn't mean. The
+			    bar keeps the one action that belongs to it, which is leaving. */}
+			<div
+				className={cn(
+					"shrink-0 items-center gap-1.5",
+					isPhone || borrowedLens ? "hidden" : "flex",
+				)}
+				ref={actionsRef}
+			>
+				<Tooltip label="Group, filter & sort">
+				<button
+					ref={filterBtnRef}
+					className={cn(
+						SIDEBAR_HEADER_BTN,
+						isPhone
+							? cn(SIDEBAR_HEADER_BTN_PHONE, "min-h-[38px] min-w-[38px]")
+							: SIDEBAR_HEADER_BTN_DESKTOP,
+						"inline-flex items-center justify-center",
+						// The open state paints the stronger wash and the hover now
+						// layers OVER it (SIDEBAR_HOVER_LAYER), so the button no
+						// longer has to withhold its hover to keep from washing
+						// itself back out while open.
+						SIDEBAR_HOVER_LAYER,
+						filterOpen && "border-line-strong bg-pressed",
+						// A set filter is already spelled out in the header (the repo
+						// chip) and in the popover itself, so the button stays a plain
+						// glyph: full contrast under the pointer or while open.
+						filterOpen ? "text-fg" : "text-dim hover:text-fg",
+					)}
+					// A Base UI tooltip is a DESCRIPTION, not a name, so an
+					// icon-only trigger still needs one of its own. The phone twin
+					// below always carried this; the desktop button did not.
+					aria-label="Group, filter & sort"
+					onClick={() => setFilterOpen((o) => !o)}
+				>
+					{/* 22, the scale's standalone step: these are section-header
+					    actions, not the primary buttons or window chrome that take
+					    24. At 24 the plus drew a 16px span against the 15.5 of the
+					    search glyph in the titlebar row right above, and the filter
+					    is filled bars, so the pair read a step larger than the row
+					    they sit under. */}
+					<IconFilter size={22} />
+				</button>
+				</Tooltip>
+				{/* ⌘S, not the ⌘⌥N this used to advertise: that chord opens a
+				    sibling session inside the workspace you have open, while
+				    this button (onNewSession → the palette) starts one in a new
+				    workspace. */}
+				<Tooltip
+					label="New session"
+					shortcut={newSessionKeys ?? undefined}
+				>
+				<button
+					className={cn(
+						SIDEBAR_HEADER_BTN,
+						isPhone
+							? SIDEBAR_HEADER_BTN_PHONE
+							: SIDEBAR_HEADER_BTN_DESKTOP,
+						"inline-flex items-center justify-center text-dim hover:bg-hover hover:text-fg",
+					)}
+					onClick={onNewSession}
+				>
+					<IconPlus size={22} />
+				</button>
+				</Tooltip>
+			</div>
+			{/* Off-layout probe: measures the chip's natural width so the effect
+			    above can decide whether it fits inline (never rendered visibly). */}
+			{filter.repo !== "all" && (
+				<RepoFilterChip repo={filter.repo} variant="probe" ref={probeRef} />
+			)}
+		</div>
+	</div>
+	</div>
+	);
+
 	return (
 		<>
+		{/* Desktop: fixed chrome above the scrollport. It is a sibling of the
+		    scroll rather than its first child, so the organization row, the tools
+		    and the Workspaces heading hold their place while the list runs under
+		    them. */}
+		{!isPhone && sidebarChrome}
 		{/* The scrollport is the right-click target for the sidebar's own menu.
 		    Only the background reaches it, since every row stops the event on its
 		    way up to open its own menu. Phones are left alone because row sheets
@@ -4556,10 +5007,6 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 			// attribute the compact values key off, so density is a property the
 			// rows inherit rather than a flag every family has to be handed.
 			data-density={density}
-			// The chrome strip above this list is App's, not the sidebar's, and it
-			// draws a hairline while the list runs under it — this is what its
-			// hook (useScrollEdge) finds the scrollport by.
-			data-sidebar-scroll
 			className={cn(
 				"flex w-full min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
 				SIDEBAR_DENSITY_VARS,
@@ -4583,427 +5030,9 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 		/>
 			}
 		>
-			{/* The strip that says whose sidebar this is used to sit here, above
-			    the tools, with the workspaces heading repeating the name a row
-			    lower. It is the heading now — see the Workspaces band below. */}
-			<div
-				className="block max-w-full min-w-0 flex-none"
-				style={{ order: 0 }}
-			>
-			{/* The tools carry no heading. "Tools" named a handful of self-evident
-			    destinations (Home, Reviews, Tasks) sitting at the very top of the
-			    rail, where nothing else can be confused for them, and it cost a
-			    caption plus the gap around it before the first thing you can
-			    click. Phones already listed them bare; desktop matches now.
-
-			    Its two jobs moved rather than went: the collapse is gone (it hid
-			    at most a few rows and a collapsed band left the top of the
-			    sidebar looking empty), and the ••• menu that chose which tools
-			    show is now in the right-click menu on any tool row, beside the
-			    "Remove from toolbar" that already lived there. Take the last
-			    tool off and the organization selector remains; the sidebar's own
-			    right-click menu still lists every tool. */}
-			<nav
-					className={cn(
-						// `--sidebar-nav-x` is the sidebar's own (SIDEBAR_NAV_X); the strip
-						// reads it rather than setting one, so the tools sit on the same
-						// edges as the lists under them.
-						//
-						// One vertical list at every width. Phones used to get a
-						// horizontally-scrolling line of Slack-home style tap cards, which
-						// put the tools in a different language from everything under
-						// them: the sidebar is a column of rows, and the cards were a
-						// sideways shelf that kept its own tail off the right edge. A list
-						// reads the same on both clients, shows every tool at once without
-						// a gesture, and takes a quarter of the height per tool.
-						//
-						// The organization row leads this rail on desktop now that the old
-						// heading is gone. Phones keep it in the top bar instead, where it
-						// remains reachable while this list scrolls.
-						"flex flex-col gap-0.5 px-[var(--sidebar-nav-x)] pt-2 pb-1.5",
-					)}
-				>
-					<div className="phone:hidden">
-						<OrganizationSwitcher
-							connected={connected}
-							onOpenSettings={onOpenSettings}
-						/>
-					</div>
-					{visibleTools.map((tool) => {
-						const rowClass = cn(
-							// One look at both widths. Only the box changes, and only
-							// because a phone row is pressed rather than read.
-							"group flex items-center text-left transition-colors",
-							// Rows use control-label type, with glyphs matching the
-							// sidebar's standard 22px leading rail.
-							// `--sidebar-tool-pad` is 5px for a 32px box: the tools are a
-							// short utility strip above the work lists, and at the session
-							// rows' 36px the four of them took more of the rail than what
-							// they lead to. The glyph and the label's left rail are
-							// untouched, so they still line up with the rows below; only
-							// the air around them is tighter.
-							// Don't take it below 30. At 28 (`py-[3px]`, the pre-ffd11ffc
-							// value) the 22px glyph has 3px of margin and the hover pill
-							// stops reading as a row; the compact density's 4px stops at
-							// 30, level with the rows under it rather than below them.
-							// Phones override it to the 13px the session rows take
-							// (SIDEBAR_ROW, lib/sidebar-classes.ts) for a 48px box: 32px is
-							// a reading height, not a tap target.
-							`w-full ${SIDEBAR_RAIL_GAP} rounded-row bg-transparent px-[calc(var(--sidebar-icon-left)-var(--sidebar-nav-x))] py-[var(--sidebar-tool-pad)] phone:py-[13px] text-body font-medium text-dim desktop:text-item-title hover:text-fg`,
-							SIDEBAR_HOVER_LAYER,
-							tool.active && "bg-selected text-fg",
-						);
-						const rowBody = (
-							<>
-								<span
-									className={cn(
-										"inline-flex text-faint [&_svg]:size-[22px]",
-										tool.active ? "text-dim" : "group-hover:text-dim",
-									)}
-								>
-									{tool.icon}
-								</span>
-								{tool.label}
-								{!!tool.count && (
-									// `rounded-full`, not `rounded-[999px]`: this pill never
-									// carried a corner-shape, and rounded-full is the one
-									// radius spelling base.css does NOT squircle.
-									<span className="ml-auto rounded-full bg-accent px-[7px] py-px text-meta leading-[1.5] font-semibold text-on-accent">
-										{tool.count}
-									</span>
-								)}
-							</>
-						);
-						// Right-click drops this tool from the strip, the same gesture
-						// the feed headers use to hide themselves, and opens the chooser
-						// that puts any of them back. Desktop only: phones have no
-						// right-click, and the chooser is itself desktop-only, so a
-						// stray long-press there would only be recoverable from
-						// Settings.
-						const row = isPhone ? (
-							<button
-								key={tool.id}
-								className={rowClass}
-								onClick={() => tool.onClick()}
-								title={tool.title}
-							>
-								{rowBody}
-							</button>
-						) : (
-							<ContextMenu.Root key={tool.id}>
-								<ContextMenu.Trigger
-									render={
-										<button
-											className={rowClass}
-											onClick={() => tool.onClick()}
-											title={tool.title}
-										/>
-									}
-								>
-									{rowBody}
-								</ContextMenu.Trigger>
-								{/* This menu is now the only place that chooses which tools
-								    show, since the band heading that held the ••• is gone.
-								    "Remove from toolbar" leads, about the row you opened the
-								    menu on: the list under it can do the same thing by
-								    unticking that row, but the command names the tool you
-								    already aimed at, which is the common case and the one
-								    worth a click rather than a read. "Hide tools from
-								    sidebar" used to close the menu, and it went: it was the
-								    same decision as unticking every row, a step further than
-								    anyone reaches for by accident. */}
-								<ContextMenu.Popup>
-									<ContextMenu.Item
-										onClick={() => setToolVisible(tool.id, false)}
-									>
-										<IconEyeOff size={20} className={MENU_ICON} />
-										<span className="min-w-0 flex-1 truncate">
-											Remove from toolbar
-										</span>
-									</ContextMenu.Item>
-									<ContextMenu.Separator />
-									<ContextMenu.Group>
-										<ContextMenu.GroupLabel>
-											Show in toolbar
-										</ContextMenu.GroupLabel>
-										{/* The same rows the sidebar's own right-click menu lists
-										    (SidebarToolRows), so the two menus cannot drift: each
-										    wears the mark it wears in the sidebar, the tick sits
-										    at the trailing edge, and Support stays a submenu of
-										    surfaces rather than a tick. */}
-										<SidebarToolRows
-											tools={sidebarMenuTools}
-											onToggleTool={setToolVisible}
-											onSetSupport={setSupportSurface}
-										/>
-									</ContextMenu.Group>
-								</ContextMenu.Popup>
-							</ContextMenu.Root>
-						);
-						// Feed carries the team at its right edge, with every face shown
-						// neutrally, and lets you pick up someone's sidebar without
-						// leaving the row you're on. The pile opens the same lens menu
-						// the Feed page's own chips write, so the row is both a way in
-						// and the shortcut past it. It has to be a sibling of the row,
-						// not a child: a button can't nest one. Phones carry it too,
-						// now that the tools are rows there rather than cards: the row
-						// has the width for a pile at its right edge, and the pile is
-						// its own target laid over it rather than a hover reveal, so a
-						// tap on a face opens the lens and a tap anywhere else opens
-						// Feed.
-						if (tool.id !== "feed" || team.length === 0) return row;
-						return (
-							<div key={tool.id} className="group/team-lens relative">
-								{row}
-								<TeamLensMenu
-									members={team}
-									size={20}
-									max={4}
-									// The ring is opaque so the face behind cannot bleed into
-									// the gap. Match whichever sidebar surface the trigger is
-									// currently painted on.
-									ring="var(--team-face-ring)"
-									compact
-									side="right"
-									align="start"
-									value={personLensValue(filter.person, currentUser)}
-									label={personLensName}
-									onPick={(next) =>
-										setFilter({ person: personLensFilter(next, currentUser) })
-									}
-									// Phones pad the trigger out to the row's own height so
-									// the faces are a thumb-sized target rather than a 24px
-									// one. It stays a pill either way, so the padding is only
-									// reach: nothing about it reads larger at rest.
-									className="absolute right-2 top-1/2 -translate-y-1/2 phone:py-2.5 [--team-face-ring:var(--sidebar-bg)] group-hover/team-lens:[--team-face-ring:var(--row-chip)] data-[popup-open]:[--team-face-ring:var(--row-chip)]"
-								/>
-							</div>
-						);
-					})}
-				</nav>
-			</div>
+			{isPhone && sidebarChrome}
 
 			<div className="block max-w-full min-w-0 flex-none">
-			<div
-				className={cn(
-					// SIDEBAR_STICKY_BAND_ROW folds this into one fixed slot, but it is
-					// desktop-gated, so on phones the raw `mt-1 pt-3` stands. With the
-					// caption hidden and the chevron invisible-but-in-layout, that was a
-					// near-empty band between the tool cards and the first project, which
-					// read as the strip being bottom-heavy. Nothing to set off there.
-					"mt-1 pb-0.5 pt-3 phone:mt-0 phone:pt-0",
-					// A borrowed lens hides the tools strip, so this bar becomes the
-					// first thing in the phone scroll. Give it enough air to clear the
-					// floating top bar's fade instead of letting its top edge wash out.
-					borrowedLens && "phone:pt-4",
-					// A caption starts on the rail's 16px text column; the borrowed
-					// lens's strip is a filled bar, so it takes the rows' own 8px
-					// inset instead and lines up with the workspace pills under it.
-					borrowedLens ? "px-2" : "px-[16px] pr-[7px]",
-					SIDEBAR_STICKY_BAND,
-					SIDEBAR_STICKY_BAND_ROW,
-					SIDEBAR_STUCK_BACKING,
-				)}
-				data-sticky-head
-			>
-				<div
-					className={cn(
-						"group/wshead flex min-w-0 items-center gap-1.5 desktop:w-full",
-						// In someone else's sidebar this row IS the strip: one bar that
-						// names whose lanes these are, takes you back out, and carries
-						// the header's own actions. The name was being said twice —
-						// once by a strip above the tools, once by this heading — and
-						// each said it with its own ✕.
-						borrowedLens &&
-							"min-h-10 w-full rounded-row bg-blue-soft pl-3 pr-1 phone:min-h-12 phone:pl-3.5 desktop:h-full desktop:min-h-0",
-					)}
-					ref={headRef}
-				>
-					{borrowedLens ? (
-						<>
-							{/* The bar reports the active lens. Closing it is a separate
-							    action at the far edge, so the label stays visually stable and
-							    the close control gets a full touch target. */}
-							<div
-								className="flex min-w-0 flex-1 items-center gap-2 text-sm text-fg phone:text-base"
-								ref={(node) => {
-									titleRef.current = node;
-								}}
-							>
-								{filter.person === "everyone" ? (
-									<IconPeople
-										size={20}
-										className="shrink-0 translate-y-[0.5px] text-dim phone:-translate-y-px"
-									/>
-								) : (
-									filter.person !== "unassigned" && (
-										<UserAvatar
-											name={personLensName}
-											size={20}
-											className="shrink-0"
-										/>
-									)
-								)}
-								<span className="min-w-0 truncate font-semibold">
-									{filter.person === "everyone"
-										? "Everyone"
-										: filter.person === "unassigned"
-											? "Unassigned"
-											: personLensName}
-								</span>
-							</div>
-							<Tooltip label="Back to your workspaces">
-								<button
-									className="relative flex size-10 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-dim transition-[color,scale] before:absolute before:inset-2 before:rounded-md before:transition-colors before:content-[''] hover:text-fg hover:before:bg-hover active:scale-[0.96] phone:size-11 motion-reduce:transform-none [&>*]:relative [&>*]:z-[1]"
-									onClick={() => setFilter({ person: "me" })}
-									aria-label="Back to your workspaces"
-								>
-									<IconX size={18} aria-hidden="true" />
-								</button>
-							</Tooltip>
-						</>
-					) : (
-					<button
-						className={cn(
-							"group/wstoggle flex min-w-0 items-center gap-[5px] [font:inherit]",
-							// On phones the caption is hidden and the chevron only paints on
-							// hover, so while the band is open this button is a 22px row of
-							// nothing between the tool cards and the first project. That row
-							// is most of what made the strip read bottom-heavy, and an
-							// invisible tap target is not an affordance worth its space.
-							// Collapsed it stays: the chevron IS visible then
-							// (SIDEBAR_BAND_CHEVRON_COLLAPSED), and it is the only way to
-							// open the band back up.
-							isPhone && workspacesOpen && "hidden",
-						)}
-						onClick={() => toggleBand("workspaces")}
-						aria-expanded={workspacesOpen}
-						title={workspacesOpen ? "Collapse workspaces" : "Expand workspaces"}
-					>
-						{/* The heading takes the same inset every other glyphless label
-						    does, so it starts on the column its repo tiles and lane
-						    captions do (see
-						    the band toggle). The sidebar header already reads as
-						    "Workspaces" on phones, so the in-header title is redundant
-						    there. */}
-						<span
-							className={cn(
-								// The band caption, same as SIDEBAR_BAND_LABEL wears one
-								// section down: this heading is written inline rather than
-								// composed from it only because of the strip above.
-								"shrink-0 text-label font-semibold text-dim group-hover/wshead:text-fg",
-								isPhone && "hidden",
-							)}
-							ref={(node) => {
-								titleRef.current = node;
-							}}
-						>
-							Workspaces
-						</span>
-						<IconChevronDown
-							className={cn(
-								SIDEBAR_BAND_CHEVRON,
-								"group-hover/wstoggle:visible",
-								!workspacesOpen && SIDEBAR_BAND_CHEVRON_COLLAPSED,
-							)}
-							size={18}
-							style={{
-								transform: workspacesOpen ? "none" : "rotate(-90deg)",
-							}}
-						/>
-					</button>
-					)}
-					{/* Repo filter chip, inline behind the title when it fits. */}
-					{filter.repo !== "all" && repoInline && (
-						<RepoFilterChip
-							repo={filter.repo}
-							repos={repos}
-							onClear={() => setFilter({ repo: "all" })}
-							onSelect={(v) => setFilter({ repo: v })}
-							variant="inline"
-						/>
-					)}
-					{/* The active lens label already grows to push its close control to
-					    this edge. Your own sidebar still needs the flexible spacer. */}
-					{!borrowedLens && <div className="min-w-0 flex-1" />}
-					{/* Grouped so the pair's combined width can be measured when deciding
-					    whether the repo chip fits inline. Gone on phones, where filter
-					    moves to the top bar and the red FAB covers new-session. Gone in a
-					    borrowed lens too: both act on YOUR sidebar, so grouping or
-					    starting a session from inside someone else's bar is either a
-					    no-op you can't see or work filed somewhere you didn't mean. The
-					    bar keeps the one action that belongs to it, which is leaving. */}
-					<div
-						className={cn(
-							"shrink-0 items-center gap-1.5",
-							isPhone || borrowedLens ? "hidden" : "flex",
-						)}
-						ref={actionsRef}
-					>
-						<Tooltip label="Group, filter & sort">
-						<button
-							ref={filterBtnRef}
-							className={cn(
-								SIDEBAR_HEADER_BTN,
-								isPhone
-									? cn(SIDEBAR_HEADER_BTN_PHONE, "min-h-[38px] min-w-[38px]")
-									: SIDEBAR_HEADER_BTN_DESKTOP,
-								"inline-flex items-center justify-center",
-								// The open state paints the stronger wash and the hover now
-								// layers OVER it (SIDEBAR_HOVER_LAYER), so the button no
-								// longer has to withhold its hover to keep from washing
-								// itself back out while open.
-								SIDEBAR_HOVER_LAYER,
-								filterOpen && "border-line-strong bg-pressed",
-								// A set filter is already spelled out in the header (the repo
-								// chip) and in the popover itself, so the button stays a plain
-								// glyph: full contrast under the pointer or while open.
-								filterOpen ? "text-fg" : "text-dim hover:text-fg",
-							)}
-							// A Base UI tooltip is a DESCRIPTION, not a name, so an
-							// icon-only trigger still needs one of its own. The phone twin
-							// below always carried this; the desktop button did not.
-							aria-label="Group, filter & sort"
-							onClick={() => setFilterOpen((o) => !o)}
-						>
-							{/* 22, the scale's standalone step: these are section-header
-							    actions, not the primary buttons or window chrome that take
-							    24. At 24 the plus drew a 16px span against the 15.5 of the
-							    search glyph in the titlebar row right above, and the filter
-							    is filled bars, so the pair read a step larger than the row
-							    they sit under. */}
-							<IconFilter size={22} />
-						</button>
-						</Tooltip>
-						{/* ⌘S, not the ⌘⌥N this used to advertise: that chord opens a
-						    sibling session inside the workspace you have open, while
-						    this button (onNewSession → the palette) starts one in a new
-						    workspace. */}
-						<Tooltip
-							label="New session"
-							shortcut={newSessionKeys ?? undefined}
-						>
-						<button
-							className={cn(
-								SIDEBAR_HEADER_BTN,
-								isPhone
-									? SIDEBAR_HEADER_BTN_PHONE
-									: SIDEBAR_HEADER_BTN_DESKTOP,
-								"inline-flex items-center justify-center text-dim hover:bg-hover hover:text-fg",
-							)}
-							onClick={onNewSession}
-						>
-							<IconPlus size={22} />
-						</button>
-						</Tooltip>
-					</div>
-					{/* Off-layout probe: measures the chip's natural width so the effect
-					    above can decide whether it fits inline (never rendered visibly). */}
-					{filter.repo !== "all" && (
-						<RepoFilterChip repo={filter.repo} variant="probe" ref={probeRef} />
-					)}
-				</div>
-			</div>
 
 				{/* Fallback row: only when the chip doesn't fit inline. */}
 				{filter.repo !== "all" && !repoInline && (
@@ -5249,7 +5278,19 @@ export const Sidebar = React.forwardRef<SidebarHandle, Props>(function Sidebar({
 					);
 				})()}
 			{workspacesOpen && (
-				<div className={SIDEBAR_LIST} data-sidebar-list>
+				<div
+					className={cn(
+						SIDEBAR_LIST,
+						// The band heading these lanes sit under is fixed chrome above the
+						// scrollport on desktop, not a pinned row inside it, so there is no
+						// band slot for them to clear: a lane pins at the scroll's own top.
+						// Scoped here rather than on the scroll root because the bands BELOW
+						// this list (Automations, People) still pin inside it and their lanes
+						// still have to clear them.
+						"desktop:[--sidebar-band-slot:0px]",
+					)}
+					data-sidebar-list
+				>
 				{sessionsLoading && sessions.length === 0 && (
 					<ListSkeleton
 						variant="bare"

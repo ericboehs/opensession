@@ -40,7 +40,6 @@ import {
 	DETAIL_TOPBAR_TITLE,
 	DETAIL_TOPBAR_TITLE_TEXT,
 	RIGHT_PANEL_SLOT,
-	SCROLL_EDGE_DIVIDER,
 	tabSplitDropPreviewClass,
 	WORKSPACE_SHELL,
 } from "./lib/app-shell-classes";
@@ -957,14 +956,10 @@ export function App(
 	// falls is this row's own bottom, which on the routes whose header floats
 	// over the content is not where the pane starts.
 	const [appHeaderEl, setAppHeaderEl] = useState<HTMLElement | null>(null);
-	// The sidebar's chrome strip, held for the same reason: the hairline it grows
-	// once its list has scrolled under it is driven from here (useScrollEdge).
-	const [sidebarBrandEl, setSidebarBrandEl] = useState<HTMLDivElement | null>(
-		null,
-	);
-	// Each half of the top row answers its own scroller: the pane's bar to the
-	// transcript beneath it, the sidebar's strip to the list. Both scrollers
-	// belong to other components, so they are found by their own hooks.
+	// Only the pane's bar answers a scroller now. The sidebar's chrome strip used
+	// to as well, but nothing passes beneath it any more: the organization row and
+	// the tools are fixed chrome under it and only the workspace list scrolls, so
+	// there is no edge for a hairline to mark and no state to track.
 	// Either scroller can be the one under the bar: a session's transcript, or
 	// a page's own list. Only one of the two is ever in the pane, and the bar
 	// no longer carries a line of its own, so a page that failed to answer here
@@ -973,7 +968,6 @@ export function App(
 		topbarEl,
 		".viewer-messages, [data-page-scroll], [data-review-canvas]",
 	);
-	useScrollEdge(sidebarBrandEl, "[data-sidebar-scroll]");
 	// Centered under the mobile top-bar title: the composer's model pill is hidden
 	// on phones, so the session viewer portals a compact tap-to-switch model
 	// selector into this slot — the only place a session's model surfaces there.
@@ -5215,12 +5209,10 @@ export function App(
 						    row pulls its own in to keep the logo on the list icons'
 						    --sidebar-icon-left column. */}
 						<div
-							ref={setSidebarBrandEl}
 							className={cn(
 								"sidebar-brand wco-chrome h-[var(--desktop-header-h)] min-w-0 shrink-0 items-center justify-start gap-2 py-0 pr-3 pl-[calc(var(--sidebar-icon-left)-8px)]",
-								// Closes the strip off while the list runs underneath it,
-								// alongside the pane's bar doing the same on its own scroller.
-								SCROLL_EDGE_DIVIDER,
+								// No scroll hairline: the tools sit fixed below this row and
+								// only the workspace list scrolls, so nothing passes under it.
 								// The brand row (and its account menu) is a desktop
 								// affordance; on phones the top bar carries the brand
 								// instead. Gated in JS rather than at `phone:` because

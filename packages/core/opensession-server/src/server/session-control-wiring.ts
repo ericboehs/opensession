@@ -21,7 +21,8 @@ import { personaName } from "./config";
 import { cancelAgentRun, isAgentSessionBusy, steerAgentRun } from "./agent-runner";
 import { pendingAskAwaitingAnswer } from "./asks";
 import { relinkAskThreads } from "./human-asks";
-import { SESSION_EFFORTS, type SessionEffort, interactiveDefaultModel, providerFor, resolveModel } from "./models";
+import { SESSION_EFFORTS, type SessionEffort, providerFor, resolveModel } from "./models";
+import { configuredInteractiveDefaultModel } from "./model-catalog";
 import { deliveryQueueState, durableQueueItem, liftUserStop, promptQueues, acceptQueuedSteer, prepareQueuedSteer, rejectQueuedSteer, requeueSteerReceipts, stoppedSessions } from "./queue-state";
 import { drainQueue, enqueuePrompt, runSessionPrompt, sessionMentionsNote, watchExternalRunAndDrain } from "./run-session";
 import { parseImageDataUrls, stageFileAttachments, withUploadsNote } from "./uploads";
@@ -484,7 +485,7 @@ registerSessionControl({
 		const model = fork
 			? fork.source.model
 			: (modelInput ? resolveModel(String(modelInput))?.id : undefined) ||
-				interactiveDefaultModel();
+				configuredInteractiveDefaultModel();
 		// Same validation as the web palette's create_session: unknown efforts
 		// are dropped rather than persisted; images arrive as data URLs. Forks
 		// inherit the source's effort/fast-mode/account pin, like the web path.

@@ -10,16 +10,15 @@ import {
   SettingsPanel,
 } from "../ui/settings";
 import { LoadingState } from "../ui/state";
-import { EngineRow } from "./SetupChecklist";
+import { SetupChecklist } from "./SetupChecklist";
 import { IdentityCard } from "./SetupIdentity";
 import { IntegrationsList } from "./SetupIntegrations";
 import { ReposSection } from "./SetupRepos";
 import { SetupRestart } from "./SetupRestart";
 import { SetupServerAccess } from "./SetupServerAccess";
-import {
-  ClaudeAccountsSection,
-  CodexAccountsSection,
-} from "./settings/ModelAccounts";
+import { TeamSection } from "./SetupTeam";
+import { OrganizationProfileSection } from "./settings/GeneralPanel";
+import { ProviderAccountsSection } from "./settings/ModelAccounts";
 import { ModelProvidersPanel } from "./ModelProviders";
 import { ModelDefaultsSection } from "./Models";
 import { IconCheck } from "./icons";
@@ -29,21 +28,64 @@ import {
   type SetupStatus,
 } from "./setup-shared";
 
-function SetupSummary({ status }: { status: SetupStatus }) {
+// Settings → Setup: every part of a new instance, in the order someone fills
+// it in, with a summary rail that jumps to the section that still needs work.
+// Sections match the onboarding steps, so the two never disagree on what
+// "set up" means.
+
+type SectionId =
+  | "server"
+  | "github"
+  | "organisation"
+  | "providers"
+  | "repositories"
+  | "members"
+  | "review";
+
+function sectionAnchor(id: SectionId) {
+  return `setup-${id}`;
+}
+
+function scrollToSection(id: SectionId) {
+  const target = document.getElementById(sectionAnchor(id));
+  if (!target) return;
+  const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  target.scrollIntoView({
+    behavior: reduced ? "auto" : "smooth",
+    block: "start",
+  });
+}
+
+function SetupSummary({
+  status,
+  onSelect,
+}: {
+  status: SetupStatus;
+  onSelect: (id: SectionId) => void;
+}) {
   const github = status.integrations.find(
     (integration) => integration.id === "github",
   );
   const serverReady = publicUrlState(status.publicBaseUrl).tone === "on";
   const githubReady = !!github && integrationState(github).tone === "on";
   const requiredReady =
-    serverReady && githubReady && status.engine.ready && status.repos.length > 0;
-  const steps = [
-    { label: "Server", complete: serverReady },
-    { label: "GitHub", complete: githubReady },
-    { label: "Identity", complete: true },
-    { label: "AI", complete: status.engine.ready },
-    { label: "Repositories", complete: status.repos.length > 0 },
-    { label: "Review", complete: requiredReady },
+    serverReady &&
+    githubReady &&
+    status.engine.ready &&
+    status.repos.length > 0 &&
+    status.team.count > 0;
+  const steps: { id: SectionId; label: string; complete: boolean }[] = [
+    { id: "server", label: "Server", complete: serverReady },
+    { id: "github", label: "GitHub", complete: githubReady },
+    { id: "organisation", label: "Organisation", complete: true },
+    { id: "providers", label: "Providers", complete: status.engine.ready },
+    {
+      id: "repositories",
+      label: "Repositories",
+      complete: status.repos.length > 0,
+    },
+    { id: "members", label: "Members", complete: status.team.count > 0 },
+    { id: "review", label: "Review", complete: requiredReady },
   ];
 
   return (
@@ -59,7 +101,12 @@ function SetupSummary({ status }: { status: SetupStatus }) {
       </h2>
       <SettingCard>
         {steps.map((step) => (
-          <div key={step.label} className="flex items-center gap-2.5 px-4 py-3">
+          <button
+            key={step.id}
+            type="button"
+            onClick={() => onSelect(step.id)}
+            className="focus-ring flex w-full cursor-pointer items-center gap-2.5 px-4 py-3 text-left hover:bg-hover"
+          >
             <span
               className={cn(
                 "flex size-5 shrink-0 items-center justify-center rounded-full",
@@ -80,7 +127,7 @@ function SetupSummary({ status }: { status: SetupStatus }) {
             <span className="sr-only">
               {step.complete ? ", complete" : ", needs setup"}
             </span>
-          </div>
+          </button>
         ))}
       </SettingCard>
     </aside>
@@ -88,18 +135,20 @@ function SetupSummary({ status }: { status: SetupStatus }) {
 }
 
 function SetupPageSection({
+  id,
   title,
   description,
   children,
   className = "mt-10",
 }: {
+  id: SectionId;
   title: string;
   description: string;
   children: React.ReactNode;
   className?: string;
 }) {
   return (
-    <section className={className}>
+    <section id={sectionAnchor(id)} className={cn("scroll-mt-4", className)}>
       <div className="mb-3 px-5">
         <h2 className="m-0 text-section-title font-title tracking-[-0.015em] text-fg">
           {title}
@@ -152,6 +201,7 @@ export function SetupPanel({
         <div className="grid items-start desktop:grid-cols-[minmax(0,720px)_220px] desktop:gap-10">
           <div className="min-w-0 desktop:col-start-1 desktop:row-start-1">
             <SetupPageSection
+              id="server"
               title="Server access"
               description="Add a private app domain and a separate public address for signed webhooks."
               className="mt-0"
@@ -163,6 +213,7 @@ export function SetupPanel({
             </SetupPageSection>
 
             <SetupPageSection
+              id="github"
               title="Connect GitHub"
               description="Give sessions access to repositories and pull requests."
             >
@@ -175,34 +226,50 @@ export function SetupPanel({
             </SetupPageSection>
 
             <SetupPageSection
-              title="Name your instance"
-              description="Choose the names this instance and its agent use when they introduce themselves."
+              id="organisation"
+              title="Organisation"
+              description="Your organisation's name and mark, and the names this instance and its agent use when they introduce themselves."
             >
+              <OrganizationProfileSection />
+              <SettingsGroupLabel>Identity</SettingsGroupLabel>
               <IdentityCard />
             </SetupPageSection>
 
             <SetupPageSection
-              title="Choose your AI"
-              description="Connect Claude, OpenAI Codex, or another provider with an API key."
+              id="providers"
+              title="Providers"
+              description="All providers available to runs, with the accounts connected to each one."
             >
               <ModelDefaultsSection key={aiRevision} />
-              <SettingsGroupLabel>Engine</SettingsGroupLabel>
-              <SettingCard>
-                <EngineRow engine={status.engine} onChanged={refetch} />
-              </SettingCard>
-              <ClaudeAccountsSection compact onChanged={refreshAi} />
-              <CodexAccountsSection compact onChanged={refreshAi} />
+              <ProviderAccountsSection onChanged={refreshAi} />
               <ModelProvidersPanel />
             </SetupPageSection>
 
             <SetupPageSection
+              id="repositories"
               title="Add repositories"
               description="Register the repositories sessions can work in."
             >
               <ReposSection repos={status.repos} onChanged={refetch} />
             </SetupPageSection>
+
+            <SetupPageSection
+              id="members"
+              title="Members"
+              description="Everyone who uses this instance, so sessions and commits attribute to real people."
+            >
+              <TeamSection onChanged={refetch} />
+            </SetupPageSection>
+
+            <SetupPageSection
+              id="review"
+              title="Review"
+              description="Everything this instance needs, and what each part is doing right now."
+            >
+              <SetupChecklist status={status} onChanged={refetch} />
+            </SetupPageSection>
           </div>
-          <SetupSummary status={status} />
+          <SetupSummary status={status} onSelect={scrollToSection} />
         </div>
       )}
       <SetupRestart setup={setup} />

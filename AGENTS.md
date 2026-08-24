@@ -3,11 +3,16 @@ Default to Bun instead of Node.js.
 Keep instance-private operator instructions in an untracked `AGENTS.local.md` or
 `CLAUDE.local.md`, never in this file.
 
-## Public repositories
+## Publishing to repositories
 
-Never publish to a public or third-party repository without explicit user
-confirmation in the current conversation. Local investigation and commits are
-allowed; issues, comments, branches, forks, pushes, and pull requests are not.
+Repositories owned by your own organization are fair game, including public
+ones: commit, push, and open issues, comments, and pull requests there as part
+of normal work.
+
+For any repository outside your organization, public or third-party, never
+publish without explicit user confirmation in the current conversation. Local
+investigation and commits are allowed; issues, comments, branches, forks,
+pushes, and pull requests are not.
 
 ## Choose the client first
 

@@ -12,10 +12,14 @@ const summarySource = await Bun.file(
 const popupClassesSource = await Bun.file(
 	new URL("../ui/popup-classes.ts", import.meta.url),
 ).text();
+const tooltipSource = await Bun.file(
+	new URL("../ui/tooltip.tsx", import.meta.url),
+).text();
 const floatingPrimitiveSources = await Promise.all([
-	...["menu.tsx", "popover.tsx", "select.tsx", "tooltip.tsx"].map((file) =>
+	...["menu.tsx", "popover.tsx", "select.tsx"].map((file) =>
 		Bun.file(new URL(`../ui/${file}`, import.meta.url)).text(),
 	),
+	tooltipSource,
 	Bun.file(new URL("./useFileMentions.tsx", import.meta.url)).text(),
 ]);
 
@@ -29,6 +33,10 @@ test("shared floating interactions paint above the workspace summary", () => {
 	}
 });
 
+test("tooltips escape nested popup portal containers", () => {
+	expect(tooltipSource).toContain("document.body");
+});
+
 test("the summary's checks preview stays open with its parent", () => {
 	const summaryStart = statusBarSource.indexOf('if (variant === "summary")');
 	const summaryEnd = statusBarSource.indexOf('if (variant === "header")');
@@ -38,4 +46,5 @@ test("the summary's checks preview stays open with its parent", () => {
 	expect(summary).toContain("<PrChecksPopover");
 	expect(summary).toContain("nested");
 	expect(popoverSource).toContain("<Popover.Root exclusive={!nested}>");
+	expect(popoverSource).toContain("document.body");
 });

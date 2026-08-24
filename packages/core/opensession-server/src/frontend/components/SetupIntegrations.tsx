@@ -132,7 +132,7 @@ export function IntegrationsList({
 }) {
 	return (
 		<>
-			<div className="grid gap-3 px-4">
+			<div className="grid gap-3">
 				{integrations.map((i) => (
 					<IntegrationCard
 						key={i.id}
