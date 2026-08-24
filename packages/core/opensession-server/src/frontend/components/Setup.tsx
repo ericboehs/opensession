@@ -24,7 +24,7 @@ import { ModelDefaultsSection } from "./Models";
 import { IconArrowUpRight, IconCheck, IconGlobe } from "./icons";
 import {
   integrationState,
-  publicUrlState,
+  StateChip,
   type SetupStatus,
 } from "./setup-shared";
 
@@ -66,16 +66,14 @@ function SetupSummary({
   const github = status.integrations.find(
     (integration) => integration.id === "github",
   );
-  const serverReady = publicUrlState(status.publicBaseUrl).tone === "on";
   const githubReady = !!github && integrationState(github).tone === "on";
   const requiredReady =
-    serverReady &&
     githubReady &&
     status.engine.ready &&
     status.repos.length > 0 &&
     status.team.count > 0;
   const steps: { id: SectionId; label: string; complete: boolean }[] = [
-    { id: "server", label: "Server", complete: serverReady },
+    { id: "server", label: "Server", complete: true },
     { id: "github", label: "GitHub", complete: githubReady },
     { id: "organisation", label: "Organisation", complete: true },
     { id: "providers", label: "Providers", complete: status.engine.ready },
@@ -214,11 +212,10 @@ export function SetupPanel({
                   />
                   <div className="min-w-0 flex-1">
                     <div className="text-row-title font-medium text-fg">
-                      Private server setup
+                      This server is online
                     </div>
-                    <p className="m-0 mt-1 text-supporting leading-relaxed text-dim">
-                      Create a VPS, connect it through Tailscale, and install Open
-                      Session.
+                    <p className="m-0 mt-1 break-words text-supporting leading-relaxed text-dim">
+                      Configured address: {status.publicBaseUrl}
                     </p>
                     <a
                       href="https://opensession.com/setup"
@@ -226,9 +223,10 @@ export function SetupPanel({
                       rel="noreferrer"
                       className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-label font-medium text-blue hover:underline desktop:min-h-0"
                     >
-                      Set up a server <IconArrowUpRight size={16} />
+                      View server guide <IconArrowUpRight size={16} />
                     </a>
                   </div>
+                  <StateChip tone="on" label="Online" />
                 </div>
               </SettingCard>
               <SettingsHint>

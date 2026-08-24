@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { relativeTime } from "../lib/api";
+import {
+	fetchRecentPrs,
+	relativeTime,
+	type OpenPr,
+	type RecentPr,
+} from "../lib/api";
 import {
 	CHIP_SELECTOR,
 	applyChipCommit,
@@ -17,6 +22,7 @@ import {
 	type ChipTarget,
 } from "../lib/chip-hover";
 import type { CommitDetails } from "../lib/api";
+import { setKnownRepoPrStates } from "../lib/markdown";
 import { refState, refTone } from "../lib/pr-refs";
 import { PR_STATE_TEXT } from "../lib/pr-tone-classes";
 import { providerFromUrl } from "../lib/provider";
@@ -66,6 +72,14 @@ const CLOSE_MS = 140;
 
 /** Marks the card's own subtree, so hovering it holds it open. */
 const CARD_ATTR = "data-chip-card";
+const PR_STATES_REFRESH_MS = 60_000;
+
+function syncRepoPrStates(open: OpenPr[], recent: RecentPr[]): void {
+	setKnownRepoPrStates([
+		...recent,
+		...open.map((pr) => ({ ...pr, state: "OPEN" as const })),
+	]);
+}
 
 type ChipCard =
 	| { key: string; kind: "session"; session: UnifiedSession }
@@ -120,6 +134,30 @@ export function ChipHoverCards({ sessions }: { sessions: UnifiedSession[] }) {
 	api.current = { enter, scheduleClose, close, cancelTimers };
 	useEffect(() => cancelTimers, []);
 
+	// A PR mention should carry state before someone has to hover it. Sessions
+	// only cover PRs opened by loaded workspaces, so fold in the repo-wide open
+	// and recent PR caches as a second source for standalone references.
+	useEffect(() => {
+		let alive = true;
+		const refresh = () => {
+			void Promise.all([
+				loadOpenPrs(),
+				fetchRecentPrs(undefined, { days: 7, limit: 500 }),
+			])
+				.then(([open, recent]) => {
+					if (alive) syncRepoPrStates(open, recent);
+				})
+				.catch(() => {});
+		};
+		refresh();
+		const timer = setInterval(refresh, PR_STATES_REFRESH_MS);
+		return () => {
+			alive = false;
+			clearInterval(timer);
+			setKnownRepoPrStates([]);
+		};
+	}, []);
+
 	// Resolve what the dwelled-on chip is about. The session list answers most
 	// chips outright; the rest fall back to a cached fetch (an archived session,
 	// a PR no loaded session owns).
@@ -173,8 +211,9 @@ export function ChipHoverCards({ sessions }: { sessions: UnifiedSession[] }) {
 			return;
 		}
 		void loadOpenPrs().then((prs) => {
+			if (!alive) return;
 			const filled = chipPr(target.repo, target.number, sessions, prs);
-			if (alive && chipPrIsWorthShowing(filled))
+			if (chipPrIsWorthShowing(filled))
 				setCard({ key: target.key, kind: "pr", pr: filled });
 		});
 		return () => {

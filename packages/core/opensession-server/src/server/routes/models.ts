@@ -9,6 +9,7 @@
 import { requestUser, type RouteContext } from "./context";
 import { DIAL_PRESETS, KNOWN_MODELS, ORCHESTRATOR_PRESETS, accountProviderForModel, getDefaultModel, getModelFallbackAuto, interactiveDefaultModel, modelEfforts, piModelLabel, refreshPickerModels, setDefaultModel, setInteractiveDefaultModel, setModelFallbackAuto, toPiModel } from "../models";
 import { orchestratorEnabled } from "../model-providers";
+import { configuredInteractiveDefaultModel, configuredModelProviders, modelFitsConfiguredProviders, pickerModelId, presetFitsConfiguredProviders } from "../model-catalog";
 import { type Sandbox } from "../sandbox";
 import { suggestBranchName } from "../suggest-branch";
 import { suggestRepos } from "../suggest-repos";
@@ -36,6 +37,7 @@ export async function handleModelsRoutes(
 			? getWorkspace(url.searchParams.get("workspace")!)
 			: null;
 		const settings = workspaceModelSettings(workspace);
+		const configuredProviders = configuredModelProviders();
 		// One engine-agnostic list: every entry (models and presets alike) runs
 		// on any configured engine — the composer's Engine choice routes it by
 		// prefix at dispatch (`engines` below is the only engine signal). Native
@@ -46,7 +48,8 @@ export async function handleModelsRoutes(
 		const engineModels = KNOWN_MODELS.filter((m) => m.provider === "pi");
 		const engineConfigured = engineModels.length > 0;
 		const visibleModels = (engineConfigured ? engineModels : KNOWN_MODELS)
-			.filter((model) => model.group !== "dial" && model.group !== "orchestrator");
+			.filter((model) => model.group !== "dial" && model.group !== "orchestrator")
+			.filter((model) => modelFitsConfiguredProviders(model.id, configuredProviders));
 		// A workspace's editable presets replace the global ones. A request with
 		// no workspace (the /new composer) gets the global Dial and, when opted
 		// in, Orchestrator presets instead — the entries resolveModel already
@@ -66,7 +69,8 @@ export async function handleModelsRoutes(
 		const presetModels = workspace ? (settings.presets || [])
 			.filter((preset) =>
 				/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(preset.id) &&
-				!!preset.label?.trim() && !!preset.lead?.model?.trim(),
+				!!preset.label?.trim() && !!preset.lead?.model?.trim() &&
+				presetFitsConfiguredProviders(preset, configuredProviders),
 			)
 			.map((preset) => ({
 				id: `pi/workspace-preset/${workspace!.id}/${preset.id}`,
@@ -81,13 +85,25 @@ export async function handleModelsRoutes(
 				].join(" · "),
 			})) : engineConfigured
 				? [
-						...DIAL_PRESETS.map((p) => globalPresetEntry(p, "dial")),
+						...DIAL_PRESETS
+							.filter((p) => presetFitsConfiguredProviders({
+								group: "dial",
+								lead: { model: p.model },
+							}, configuredProviders))
+							.map((p) => globalPresetEntry(p, "dial")),
 						...(orchestratorEnabled()
-							? ORCHESTRATOR_PRESETS.map((p) => globalPresetEntry(p, "orchestrator"))
+							? ORCHESTRATOR_PRESETS
+								.filter((p) => presetFitsConfiguredProviders({
+									group: "orchestrator",
+									lead: { model: p.model },
+								}, configuredProviders))
+								.map((p) => globalPresetEntry(p, "orchestrator"))
 							: []),
 					]
 				: [];
-		const interactiveDefault = engineConfigured ? interactiveDefaultModel() : getDefaultModel();
+		const interactiveDefault = engineConfigured
+			? configuredInteractiveDefaultModel(configuredProviders)
+			: getDefaultModel();
 		// Older installations may still have a Dial/Orchestrator id as their
 		// interactive default. In a workspace that id now means the matching
 		// editable preset record, so the picker and the created session agree.
@@ -104,14 +120,19 @@ export async function handleModelsRoutes(
 				? `${pi ? "pi/" : ""}workspace-preset/${workspace.id}/${preset.id}`
 				: interactiveDefault;
 		})();
+		const catalogModels = [...presetModels, ...visibleModels].map((model) => ({
+			...model,
+			efforts: modelEfforts(model.id),
+			accountProvider: accountProviderForModel(model.id),
+			fastModeSupported: supportsOpenaiFastMode(toPiModel(model.id)),
+		}));
+		const routedDefault = pickerModelId(defaultForWorkspace);
+		const catalogDefault = catalogModels.some((model) => model.id === routedDefault)
+			? routedDefault
+			: catalogModels[0]?.id || routedDefault;
 		return Response.json({
-			models: [...presetModels, ...visibleModels].map((model) => ({
-				...model,
-				efforts: modelEfforts(model.id),
-				accountProvider: accountProviderForModel(model.id),
-				fastModeSupported: supportsOpenaiFastMode(toPiModel(model.id)),
-			})),
-			default: defaultForWorkspace,
+			models: catalogModels,
+			default: catalogDefault,
 			autoFallback: getModelFallbackAuto(),
 			// The engines a model can be routed to, and which of them are ready
 			// to run: the composer's Engine choice composes the engine's prefix

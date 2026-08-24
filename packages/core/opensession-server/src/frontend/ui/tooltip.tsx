@@ -65,7 +65,12 @@ export function Tooltip({
 	return (
 		<BaseTooltip.Root>
 			<BaseTooltip.Trigger render={children} />
-			<BaseTooltip.Portal>
+			<BaseTooltip.Portal
+				// Base UI otherwise inherits a containing popup's portal target. Mount
+				// tooltips at the page root so their floating layer can sit above that
+				// popup instead of being trapped inside its stacking context.
+				container={typeof document !== "undefined" ? document.body : undefined}
+			>
 				<BaseTooltip.Positioner
 					side={side}
 					align={align}
