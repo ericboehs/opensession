@@ -10,7 +10,7 @@
  */
 import { fetchWithTimeout } from "../../server/shared/fetch-with-timeout";
 import { defaultRepo, githubBotLogins, isGithubBotLogin, personaName } from "../../server/config";
-import { githubAppConfigured, githubToken } from "../../server/github-app";
+import { githubConfiguredCredential, githubToken } from "../../server/github-app";
 import { ghRateLimited, isGhRateLimitMsg, noteGhRateLimited } from "../../server/github-limit";
 /** The PR agent's target — the instance's default repo (config-driven). */
 export const GITHUB_REPO = defaultRepo().ghRepo;
@@ -43,7 +43,7 @@ export function isReviewProgressForHead(body: string, headSha: string): boolean 
 }
 
 export function githubConfigured(): boolean {
-  return githubAppConfigured() || !!process.env.GITHUB_API_TOKEN;
+  return githubConfiguredCredential();
 }
 
 interface GithubResult<T = any> {

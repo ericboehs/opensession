@@ -91,6 +91,9 @@ export interface RunAgentOpts {
   sessionId?: string;
   cwd: string;
   mode?: "ask" | "code" | "scratch";
+  /** Ephemeral GitHub capability for a narrowly scoped trusted GitHub code run.
+   * Never persist this value in a host spec, journal, or session file. */
+  githubEnv?: Record<string, string>;
   /** Session-scoped scratch dir (session-scratch.ts). runAgent ensures it for
    *  any run with an osSessionId; engines export it (pi sets TMPDIR +
    *  OPENSESSION_SCRATCH in the bash env) and the run instructions name it,

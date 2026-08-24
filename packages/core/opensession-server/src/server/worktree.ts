@@ -609,15 +609,23 @@ export async function reviveWorktree(branch: string, repoId?: string): Promise<s
  * Explicit refspecs bypass the remote config. Found on a repo cloned
  * single-branch during node provisioning; `--unshallow` fixes depth, not this.
  */
+async function githubServiceGitEnv(ghRepo: string | undefined) {
+  const { githubServiceCredentialEnv } = await import("./github-app");
+  return { ...process.env, ...(await githubServiceCredentialEnv(ghRepo)) };
+}
+
 async function fetchBranchesWithTracking(
   gitDir: string,
+  ghRepo: string | undefined,
   ...branches: (string | undefined)[]
 ): Promise<void> {
   const specs = [...new Set(branches.filter((b): b is string => !!b))].map(
     (b) => `+refs/heads/${b}:refs/remotes/origin/${b}`,
   );
   if (specs.length === 0) return;
-  await $`git -C ${gitDir} fetch origin ${specs} --quiet`;
+  await $`git -C ${gitDir} fetch origin ${specs} --quiet`.env(
+    await githubServiceGitEnv(ghRepo),
+  );
 }
 
 /**
@@ -633,9 +641,11 @@ export async function createWorktreeForPrBranch(headRef: string, repoId?: string
   const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-os`;
 
   const reused = await withGitLock(async () => {
-    await fetchBranchesWithTracking(repo.repo, headRef);
+    await fetchBranchesWithTracking(repo.repo, repo.ghRepo, headRef);
     if (existsSync(wtPath)) {
-      await $`git -C ${wtPath} fetch origin ${headRef} --quiet`.nothrow();
+      await $`git -C ${wtPath} fetch origin ${headRef} --quiet`
+        .env(await githubServiceGitEnv(repo.ghRepo))
+        .nothrow();
       await $`git -C ${wtPath} reset --hard origin/${headRef}`.quiet().nothrow();
       return true;
     }
@@ -669,7 +679,7 @@ export async function createReviewWorktreeForPrHead(
   const repo = getRepo(repoId);
   const wtPath = `${worktreesDir()}/${repo.wtPrefix}-${headRef}-os-review`;
   return withGitLock(async () => {
-    await fetchBranchesWithTracking(repo.repo, headRef, baseRef || repo.defaultBranch);
+    await fetchBranchesWithTracking(repo.repo, repo.ghRepo, headRef, baseRef || repo.defaultBranch);
     if (existsSync(wtPath)) {
       // A code session recovering from a deleted worktree may have borrowed this
       // path and switched it onto the source branch. Restore review ownership.
