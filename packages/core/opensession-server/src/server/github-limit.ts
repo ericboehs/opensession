@@ -131,11 +131,14 @@ export function noteGhRateLimited(source: string, resetEpochMs?: number): void {
 
 /**
  * Token for direct api.github.com calls made on the bot's behalf (conditional
- * change probes and the like): the GITHUB_API_TOKEN PAT when configured, else
- * the gh CLI's own token, probed once and cached for the process lifetime.
+ * change probes and the like): the App installation token (or GITHUB_API_TOKEN)
+ * that the REST helpers use, else the gh CLI's own token, probed once and cached
+ * for the process lifetime.
  */
 export async function botGhToken(): Promise<string | null> {
-  if (process.env.GITHUB_API_TOKEN) return process.env.GITHUB_API_TOKEN;
+  const { githubToken } = await import("./github-app");
+  const primary = await githubToken();
+  if (primary) return primary;
   if (state.botToken !== undefined) return state.botToken;
   try {
     const proc = Bun.spawn(["gh", "auth", "token"], {

@@ -592,18 +592,27 @@ function credentialFreeHttpsUrl(httpsUrl: string): string {
   return parsed.toString();
 }
 
-function injectToken(httpsUrl: string): string {
+async function injectToken(httpsUrl: string): Promise<string> {
   const cred = sandboxConfig().cloneCredential;
   if (cred?.type === "https-token") {
-    // A hosted instance keeps a long-lived, org-scoped bot credential in
-    // GITHUB_API_TOKEN. Prefer it for GitHub clones over the config's token:
-    // GitHub App user tokens expire in ~8h, so persisting one in sandbox.json
-    // makes every fresh Daytona/Modal bootstrap fail days later. Self-hosters
-    // without the env keep the explicit cloneCredential.token behavior, and
+    // GitHub clones get a freshly resolved credential — used only for the
+    // bounded clone/fetch, then stripped (the origin is left credential-free),
+    // so a short-lived token is fine here. Prefer the App installation token
+    // (repo-scoped write), then the org-scoped bot PAT. Both are resolved live
+    // per bootstrap, never the config's persisted token, which goes stale and
+    // fails days later. Self-hosters without either keep cloneCredential.token;
     // non-GitHub origins never receive our GitHub-specific credential.
-    const liveGithubToken = /^https:\/\/github\.com\//i.test(httpsUrl)
-      ? process.env.GITHUB_API_TOKEN
-      : undefined;
+    let liveGithubToken: string | undefined;
+    const ghMatch = httpsUrl.match(/^https:\/\/github\.com\/(.+?)(?:\.git)?$/i);
+    if (ghMatch) {
+      const { githubAppRepositoryToken, githubToken } = await import(
+        "../../github-app"
+      );
+      liveGithubToken =
+        (await githubAppRepositoryToken(ghMatch[1])) ||
+        (await githubToken()) ||
+        undefined;
+    }
     const token = liveGithubToken || cred.token;
     if (token) {
       return httpsUrl.replace(/^https:\/\//, `https://x-access-token:${token}@`);
@@ -647,7 +656,7 @@ export async function remoteCloneUrl(repo: {
       `repo ${repo.id} has no https-reachable origin (origin="${redactUrl(origin) || "none"}") — remote sandboxes clone over https; set an origin or ghRepo`,
     );
   }
-  return injectToken(https);
+  return await injectToken(https);
 }
 
 /**
@@ -928,7 +937,7 @@ export async function bootstrapRemoteSandbox(
   const runnerCloneUrl = cfg.runnerBundleUrl
     ? undefined
     : cfg.runnerRepoUrl && toHttpsUrl(cfg.runnerRepoUrl)
-      ? injectToken(toHttpsUrl(cfg.runnerRepoUrl)!)
+      ? await injectToken(toHttpsUrl(cfg.runnerRepoUrl)!)
       : await remoteCloneUrl(runnerRepo);
   const hasRepo = await driver.exec(`test -f ${REMOTE_REPO}/package.json`);
   if (hasRepo.exitCode !== 0) {

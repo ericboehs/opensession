@@ -152,7 +152,8 @@ const repoVisibilityCache = new Map<string, boolean>();
 export async function repoIsPrivate(ghRepo: string): Promise<boolean | null> {
   const cached = repoVisibilityCache.get(ghRepo);
   if (cached !== undefined) return cached;
-  const token = process.env.GITHUB_API_TOKEN || process.env.GH_TOKEN;
+  const { githubToken } = await import("./github-app");
+  const token = (await githubToken()) || process.env.GH_TOKEN;
   if (!token) return null;
   try {
     const res = await fetch(`https://api.github.com/repos/${ghRepo}`, {

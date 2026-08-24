@@ -495,10 +495,13 @@ export async function handleSetupRepoRoutes(
     // user in operator mode, the sole connected account in simple mode), else
     // the bot PAT, else an empty (but well-formed) answer.
     const userCredential = actingGithubCredential(ctx);
-    const token = userCredential?.env.GH_TOKEN || process.env.GITHUB_API_TOKEN;
+    // Bot credential: the App installation token when configured, else the PAT.
+    const { githubToken } = await import("../github-app");
+    const botToken = userCredential ? null : await githubToken();
+    const token = userCredential?.env.GH_TOKEN || botToken;
     const source: "user" | "bot" | null = userCredential
       ? "user"
-      : process.env.GITHUB_API_TOKEN
+      : botToken
         ? "bot"
         : null;
     if (!token || !source) {

@@ -286,6 +286,33 @@ async function githubPatIssues(): Promise<Issue[]> {
   ];
 }
 
+/**
+ * The GitHub App is the credential the bot now rides on most installs. If it is
+ * configured (client id + key) but cannot mint an installation token — a revoked
+ * key, an uninstalled App, a wrong installation owner — every bot gh/PR flow is
+ * down, exactly like a dead PAT. Warn on that. Skipped when no App is set up, so
+ * a PAT-only install is unaffected.
+ */
+async function githubAppIssues(): Promise<Issue[]> {
+  const { githubAppConfigured, githubAppInstallationToken } = await import(
+    "./github-app"
+  );
+  if (!githubAppConfigured()) return [];
+  if (await githubAppInstallationToken()) return [];
+  const agent = personaName();
+  const owner = githubWriteOwners()[0] || "the configured owner";
+  return [
+    {
+      key: "github:app:dead",
+      message:
+        `${agent} here — the GitHub App is configured but cannot mint an ` +
+        `installation token: every bot gh/PR flow is down. Check the App is still ` +
+        `installed on ${owner}'s repositories and that its private key is valid.`,
+      notify: FALLBACK_TEAMMATE,
+    },
+  ];
+}
+
 /** One sweep: detect, dedupe against state, DM, persist. Exported for tests/manual runs. */
 export async function sweepAccountHealth(): Promise<Issue[]> {
   // Repair before detecting: refresh idle codex accounts' ChatGPT tokens so
@@ -293,7 +320,11 @@ export async function sweepAccountHealth(): Promise<Issue[]> {
   await refreshIdleCodexTokens().catch((e) =>
     console.warn("[account-health] codex token refresh failed:", e)
   );
-  const issues = [...detectAccountIssues(), ...(await githubPatIssues())];
+  const issues = [
+    ...detectAccountIssues(),
+    ...(await githubPatIssues()),
+    ...(await githubAppIssues()),
+  ];
   const state = readState();
   const now = Date.now();
   const live = new Set(issues.map((i) => i.key));

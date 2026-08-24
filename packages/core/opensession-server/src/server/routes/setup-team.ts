@@ -190,9 +190,10 @@ async function syncGithubOrganizationMembers(ctx: RouteContext): Promise<Respons
   const userCredential = ctx.authUser?.login
     ? githubCredentialForLogin(ctx.authUser.login)
     : null;
+  const { githubToken } = await import("../github-app");
   const credentials = [
     userCredential?.env.GH_TOKEN,
-    process.env.GITHUB_API_TOKEN,
+    await githubToken(),
   ].filter((token, index, all): token is string => !!token && all.indexOf(token) === index);
   if (credentials.length === 0) {
     return Response.json({
