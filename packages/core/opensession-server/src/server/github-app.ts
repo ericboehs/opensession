@@ -282,11 +282,9 @@ export async function githubAppRepositoryToken(ghRepo: string): Promise<string |
         },
         body: JSON.stringify({
           repositories: [repo],
-          permissions: {
-            contents: "write",
-            pull_requests: "write",
-            metadata: "read",
-          },
+          // Trusted repository code runs need the same write surface as the
+          // PR agent, including issue comments used by autofix threads.
+          permissions: WRITE_PERMISSIONS,
         }),
       },
     );
